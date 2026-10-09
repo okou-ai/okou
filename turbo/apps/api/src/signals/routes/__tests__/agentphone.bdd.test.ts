@@ -262,7 +262,7 @@ async function completeSandboxRun(
       exitCode,
       ...(exitCode === 0
         ? {
-            checkpoint: {
+            completion: {
               cliAgentType: options.cliAgentType ?? "claude-code",
               cliAgentSessionId: agentPhoneCliAgentSessionIdForRun(runId),
               cliAgentSessionHistoryHash: createHash("sha256")
@@ -1112,7 +1112,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         {
           runId,
           exitCode: 0,
-          checkpoint: {
+          completion: {
             cliAgentType: "claude-code",
             cliAgentSessionId: agentPhoneCliAgentSessionIdForRun(runId),
             cliAgentSessionHistoryHash: createHash("sha256")

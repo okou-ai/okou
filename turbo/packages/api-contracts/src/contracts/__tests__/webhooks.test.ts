@@ -15,7 +15,6 @@ import {
   storageManifestFilesSchema,
 } from "../storages";
 import {
-  webhookCheckpointsContract,
   webhookCompleteContract,
   webhookEventsContract,
   webhookSessionOutputContract,
@@ -506,30 +505,46 @@ describe("Pi memory citation event transport", () => {
   });
 });
 
-describe("Run completion metadata generations", () => {
+describe("Run completion metadata", () => {
   const completion = {
     cliAgentType: "codex",
     cliAgentSessionId: "native-session",
     cliAgentSessionHistoryHash: manifestHash,
   };
   const body = { runId: "run", exitCode: 0 };
-  it("accepts current and draining Guests and metadata-free Runner fallback", () => {
-    for (const metadata of [{ completion }, { checkpoint: completion }, {}]) {
+  it("accepts Guest finalization and metadata-free Runner fallback", () => {
+    for (const metadata of [
+      { completion },
+      {
+        completion: {
+          cliAgentType: "codex",
+          cliAgentSessionId: "native-session",
+          cliAgentSessionHistoryDisposition: "unavailable",
+        },
+      },
+      {
+        completion: {
+          cliAgentType: "codex",
+          cliAgentSessionId: "native-session",
+          cliAgentSessionHistoryDisposition: "discarded_oversized",
+        },
+      },
+      {},
+    ]) {
       expect(
         webhookCompleteContract.complete.body.parse({ ...body, ...metadata }),
       ).toStrictEqual({ ...body, ...metadata });
     }
   });
-  it("rejects ambiguous metadata and preserves native history authority", () => {
-    expect(
-      webhookCompleteContract.complete.body.safeParse({
-        ...body,
-        completion,
-        checkpoint: completion,
-      }).success,
-    ).toBe(false);
-    for (const field of ["completion", "checkpoint"]) {
+  it("preserves native history authority", () => {
+    for (const field of ["completion"]) {
       for (const invalid of [
+        { ...completion, cliAgentSessionHistoryHash: undefined },
+        {
+          ...completion,
+          cliAgentSessionHistoryHash: undefined,
+          cliAgentSessionHistoryDisposition: "unknown",
+        },
         { ...completion, runId: "other-run" },
         { ...completion, cliAgentSessionHistoryDisposition: "unavailable" },
         { ...completion, cliAgentSessionHistoryHash: "A".repeat(64) },
@@ -542,91 +557,6 @@ describe("Run completion metadata generations", () => {
         ).toBe(false);
       }
     }
-  });
-});
-
-describe("agent checkpoint session history", () => {
-  const runId = "00000000-0000-4000-8000-000000000000";
-  const checkpointMetadata = {
-    cliAgentType: "codex",
-    cliAgentSessionId: "00000000-0000-4000-8000-000000000001",
-  };
-  const baseBody = { runId, ...checkpointMetadata };
-
-  it("accepts exactly one uploaded hash or historyless disposition", () => {
-    expect(
-      webhookCheckpointsContract.create.body.safeParse({
-        ...baseBody,
-        cliAgentSessionHistoryHash: manifestHash,
-      }).success,
-    ).toBe(true);
-    expect(
-      webhookCompleteContract.complete.body.safeParse({
-        runId,
-        exitCode: 0,
-        checkpoint: {
-          ...checkpointMetadata,
-          cliAgentSessionHistoryHash: manifestHash,
-        },
-      }).success,
-    ).toBe(true);
-    expect(
-      webhookCheckpointsContract.create.body.safeParse({
-        ...baseBody,
-        cliAgentSessionHistoryDisposition: "discarded_oversized",
-      }).success,
-    ).toBe(true);
-    expect(
-      webhookCheckpointsContract.create.body.safeParse({
-        ...baseBody,
-        cliAgentSessionHistoryDisposition: "unavailable",
-      }).success,
-    ).toBe(true);
-  });
-
-  it("rejects missing, conflicting, and unknown history dispositions", () => {
-    const invalidMetadata = [
-      checkpointMetadata,
-      {
-        ...checkpointMetadata,
-        cliAgentSessionHistoryHash: manifestHash,
-        cliAgentSessionHistoryDisposition: "discarded_oversized",
-      },
-      {
-        ...checkpointMetadata,
-        cliAgentSessionHistoryDisposition: "unknown",
-      },
-    ];
-
-    for (const checkpoint of invalidMetadata) {
-      expect(
-        webhookCheckpointsContract.create.body.safeParse({
-          runId,
-          ...checkpoint,
-        }).success,
-      ).toBe(false);
-      expect(
-        webhookCompleteContract.complete.body.safeParse({
-          runId,
-          exitCode: 0,
-          checkpoint,
-        }).success,
-      ).toBe(false);
-    }
-  });
-
-  it("keeps the outer completion run ID authoritative", () => {
-    expect(
-      webhookCompleteContract.complete.body.safeParse({
-        runId,
-        exitCode: 0,
-        checkpoint: {
-          runId,
-          ...checkpointMetadata,
-          cliAgentSessionHistoryDisposition: "unavailable",
-        },
-      }).success,
-    ).toBe(false);
   });
 });
 

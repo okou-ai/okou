@@ -258,7 +258,7 @@ describe("CHAT-02: run-level model overrides", () => {
       await completeSandboxFirstPiRun({
         actor,
         answer: "Luna standard sandbox answer",
-        checkpointObjects: objects,
+        historyObjects: objects,
         claim: firstClaim,
         prompt: "Luna standard start",
         run: first,
@@ -293,7 +293,7 @@ describe("CHAT-02: run-level model overrides", () => {
       await completeSandboxFirstPiRun({
         actor,
         answer: "Luna Fast sandbox answer",
-        checkpointObjects: objects,
+        historyObjects: objects,
         claim: fastClaim,
         prompt: "Luna Fast continuation",
         run: fast,
@@ -326,7 +326,7 @@ describe("CHAT-02: run-level model overrides", () => {
       await completeSandboxFirstPiRun({
         actor,
         answer: "Luna standard sandbox answer",
-        checkpointObjects: objects,
+        historyObjects: objects,
         claim: standardClaim,
         prompt: "Luna standard return",
         run: standard,

@@ -1,4 +1,4 @@
-import { prepareRunnerCheckpointHistory } from "./helpers/runner-checkpoint-history";
+import { prepareRunnerSessionHistory } from "./helpers/runner-session-history";
 import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 import {
   mockGoogleText,
@@ -563,7 +563,7 @@ async function completeSandboxRun(args: {
   if (args.exitCode === 0) {
     const cliAgentSessionId = `bdd-teams-cli-${args.runId}`;
     const cliAgentSessionHistory = `bdd teams history ${args.runId}`;
-    const cliAgentSessionHistoryHash = await prepareRunnerCheckpointHistory(
+    const cliAgentSessionHistoryHash = await prepareRunnerSessionHistory(
       context,
       args.runId,
       sandboxHeaders,
@@ -573,7 +573,7 @@ async function completeSandboxRun(args: {
       {
         runId: args.runId,
         exitCode: args.exitCode,
-        checkpoint: {
+        completion: {
           cliAgentType: "claude-code",
           cliAgentSessionId,
           cliAgentSessionHistoryHash,

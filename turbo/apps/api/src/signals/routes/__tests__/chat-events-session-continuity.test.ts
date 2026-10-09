@@ -500,7 +500,7 @@ describe("CHAT-02: run-level model overrides", () => {
         runId: first.runId,
         exitCode: 0,
         lastEventSequence: 0,
-        checkpoint: {
+        completion: {
           cliAgentType: "claude-code",
           cliAgentSessionId: `discarded-cli-${first.runId}`,
           cliAgentSessionHistoryDisposition: "discarded_oversized",

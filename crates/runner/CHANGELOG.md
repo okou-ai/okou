@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.222.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.222.0...runner-rs-v0.222.1) (2026-10-09)
+
+
+### Documentation
+
+* reorganize engineering guides and align testing policies ([#38421](https://github.com/okou-ai/okou/issues/38421)) ([60f5783](https://github.com/okou-ai/okou/commit/60f57836b2877b5e065bf27b7adf75c2f633b95d))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.222.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.221.5...runner-rs-v0.222.0) (2026-10-09)
 
 

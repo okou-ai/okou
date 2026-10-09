@@ -2365,7 +2365,7 @@ describe("WHCB-06: sandbox agent artifact webhook boundaries", () => {
     expect(mismatchedCheckpoint.body.error.code).toBe("UNAUTHORIZED");
 
     const mismatchedHistoryPrepare =
-      await api.requestAgentCheckpointPrepareHistory(
+      await api.requestAgentSessionHistoryPrepare(
         { runId, hash, rawSize: 128, encodedSize: 128 },
         mismatchedHeaders,
         [401],
@@ -2374,7 +2374,7 @@ describe("WHCB-06: sandbox agent artifact webhook boundaries", () => {
     expect(mismatchedHistoryPrepare.body.error.code).toBe("UNAUTHORIZED");
 
     const malformedHistoryPrepare =
-      await api.requestAgentCheckpointPrepareHistoryUnchecked(
+      await api.requestAgentSessionHistoryPrepareUnchecked(
         { runId, hash, rawSize: 0, encodedSize: 0 },
         headers,
         [400],
@@ -2383,7 +2383,7 @@ describe("WHCB-06: sandbox agent artifact webhook boundaries", () => {
     expect(malformedHistoryPrepare.body.error.code).toBe("BAD_REQUEST");
 
     const uppercaseHistoryPrepare =
-      await api.requestAgentCheckpointPrepareHistoryUnchecked(
+      await api.requestAgentSessionHistoryPrepareUnchecked(
         { runId, hash: "A".repeat(64), rawSize: 128, encodedSize: 128 },
         headers,
         [400],
@@ -2392,7 +2392,7 @@ describe("WHCB-06: sandbox agent artifact webhook boundaries", () => {
     expect(uppercaseHistoryPrepare.body.error.code).toBe("BAD_REQUEST");
 
     const oversizedHistoryPrepare =
-      await api.requestAgentCheckpointPrepareHistoryUnchecked(
+      await api.requestAgentSessionHistoryPrepareUnchecked(
         {
           runId,
           hash,
@@ -2496,7 +2496,7 @@ describe("WHCB-09: sandbox storage writes and checkpoint history blobs land in t
     const historyHash = createHash("sha256")
       .update(`bdd history blob ${run.runId}`)
       .digest("hex");
-    const firstHistory = await api.requestAgentCheckpointPrepareHistory(
+    const firstHistory = await api.requestAgentSessionHistoryPrepare(
       { runId: run.runId, hash: historyHash, rawSize: 456, encodedSize: 456 },
       headers,
       [200],
@@ -2507,7 +2507,7 @@ describe("WHCB-09: sandbox storage writes and checkpoint history blobs land in t
     expect(firstHistory.body.existing).toBeFalsy();
     expect(firstHistory.body.presignedUrl).toMatch(/^https/);
 
-    const repeatedHistory = await api.requestAgentCheckpointPrepareHistory(
+    const repeatedHistory = await api.requestAgentSessionHistoryPrepare(
       { runId: run.runId, hash: historyHash, rawSize: 456, encodedSize: 456 },
       headers,
       [200],
@@ -2521,7 +2521,7 @@ describe("WHCB-09: sandbox storage writes and checkpoint history blobs land in t
     });
 
     const ghostRunId = randomUUID();
-    const missingHistoryRun = await api.requestAgentCheckpointPrepareHistory(
+    const missingHistoryRun = await api.requestAgentSessionHistoryPrepare(
       { runId: ghostRunId, hash: historyHash, rawSize: 456, encodedSize: 456 },
       {
         authorization: `Bearer ${runs.sandboxTokenForRun(actor, ghostRunId)}`,

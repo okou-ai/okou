@@ -1,5 +1,5 @@
 import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
-import { prepareRunnerCheckpointHistory } from "./helpers/runner-checkpoint-history";
+import { prepareRunnerSessionHistory } from "./helpers/runner-session-history";
 import { publicRunOwner } from "./helpers/public-run-owner";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { Buffer } from "node:buffer";
@@ -470,7 +470,7 @@ async function completeCanonicalChatRun(args: {
   const cliAgentSessionId = `bdd-telegram-cli-${args.runId}`;
   const cliAgentSessionHistory = `bdd telegram history ${args.runId}`;
   const headers = { authorization: `Bearer ${args.sandboxToken}` };
-  const cliAgentSessionHistoryHash = await prepareRunnerCheckpointHistory(
+  const cliAgentSessionHistoryHash = await prepareRunnerSessionHistory(
     context,
     args.runId,
     headers,
@@ -480,7 +480,7 @@ async function completeCanonicalChatRun(args: {
     {
       runId: args.runId,
       exitCode: 0,
-      checkpoint: {
+      completion: {
         cliAgentType: args.cliAgentType ?? "claude-code",
         cliAgentSessionId,
         cliAgentSessionHistoryHash,

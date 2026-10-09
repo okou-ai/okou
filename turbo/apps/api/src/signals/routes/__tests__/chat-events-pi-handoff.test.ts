@@ -59,7 +59,7 @@ describe("CHAT-02: model-first routing", () => {
     async (encoding) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       await configureSubscriptionPiModel(actor);
-      const checkpointObjects = mockPiCheckpointObjectStore();
+      const historyObjects = mockPiCheckpointObjectStore();
       let resourceDownloads = 0;
       server.use(
         http.get(PI_RESOURCE_ARCHIVE_DOWNLOAD_URL, () => {
@@ -119,7 +119,7 @@ describe("CHAT-02: model-first routing", () => {
       const invalidHash = createHash("sha256")
         .update(randomUUID())
         .digest("hex");
-      await webhooks.requestAgentCheckpointPrepareHistory(
+      await webhooks.requestAgentSessionHistoryPrepare(
         {
           runId: run.runId,
           hash: invalidHash,
@@ -136,7 +136,7 @@ describe("CHAT-02: model-first routing", () => {
           : encoding === "gzip"
             ? "blob.gz"
             : "blob.zst";
-      checkpointObjects.set(
+      historyObjects.set(
         `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${invalidHash}.${invalidSuffix}`,
         encoded,
       );
@@ -144,7 +144,7 @@ describe("CHAT-02: model-first routing", () => {
         {
           runId: run.runId,
           exitCode: 0,
-          checkpoint: {
+          completion: {
             cliAgentType: "pi",
             cliAgentSessionId: run.threadId,
             cliAgentSessionHistoryHash: invalidHash,
@@ -161,7 +161,7 @@ describe("CHAT-02: model-first routing", () => {
       await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
         status: "running",
       });
-      await webhooks.requestAgentCheckpointPrepareHistory(
+      await webhooks.requestAgentSessionHistoryPrepare(
         {
           runId: run.runId,
           hash,
@@ -179,12 +179,12 @@ describe("CHAT-02: model-first routing", () => {
             ? "blob.gz"
             : "blob.zst";
       const blobKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${hash}.${suffix}`;
-      checkpointObjects.set(blobKey, encoded);
+      historyObjects.set(blobKey, encoded);
       const completed = await webhooks.requestAgentComplete(
         {
           runId: run.runId,
           exitCode: 0,
-          checkpoint: {
+          completion: {
             cliAgentType: "pi",
             cliAgentSessionId: run.threadId,
             cliAgentSessionHistoryHash: hash,
@@ -240,7 +240,7 @@ describe("CHAT-02: model-first routing", () => {
             );
           }),
       ).toBeFalsy();
-      await webhooks.requestAgentCheckpointPrepareHistory(
+      await webhooks.requestAgentSessionHistoryPrepare(
         {
           runId: resumed.runId,
           hash: "f".repeat(64),
@@ -266,7 +266,7 @@ describe("CHAT-02: model-first routing", () => {
     async (prompt) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       await publishPendingPiInstructions(actor, agentId);
-      const checkpointObjects = mockPiCheckpointObjectStore();
+      const historyObjects = mockPiCheckpointObjectStore();
       let resourceDownloads = 0;
       server.use(
         http.get(PI_RESOURCE_ARCHIVE_DOWNLOAD_URL, () => {
@@ -341,7 +341,7 @@ describe("CHAT-02: model-first routing", () => {
             new URL(resumeSession.historyRef.url).searchParams.get("object"),
           ).toBe(`${bucket}/blobs/${hash}.blob`);
         }
-        const h0 = piSandboxBaseSession(claim.claim, checkpointObjects);
+        const h0 = piSandboxBaseSession(claim.claim, historyObjects);
         if (turn === 2) {
           expect(h0).toStrictEqual(expectedH0);
         }
@@ -374,7 +374,7 @@ describe("CHAT-02: model-first routing", () => {
         await completeSandboxFirstPiRun({
           actor,
           answer,
-          checkpointObjects,
+          historyObjects,
           claim,
           prompt: originalPrompt,
           run,
@@ -409,7 +409,7 @@ describe("CHAT-02: model-first routing", () => {
           applicationSession = completedSession;
         }
         expect(completedSession).toBe(applicationSession);
-        const blob = [...checkpointObjects.entries()]
+        const blob = [...historyObjects.entries()]
           .filter(([key]) => {
             return key.startsWith(`${bucket}/blobs/`);
           })

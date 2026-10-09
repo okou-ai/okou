@@ -18,8 +18,6 @@ import { knownRunFailureReasonSchema } from "../contracts/run-failure-reasons";
 import { modelProviderCodexRuntimeConfigSchema } from "../contracts/model-providers";
 import { fileEntryWithHashSchema } from "../contracts/storages";
 import {
-  webhookCheckpointsContract,
-  webhookCheckpointsPrepareHistoryContract,
   webhookSessionHistoryPrepareContract,
   webhookCompleteContract,
   webhookStoragesCommitContract,
@@ -107,14 +105,6 @@ export const rustTypeModuleDocs = [
   {
     rustModulePath: ["webhooks", "agent"],
     rustDoc: ["Agent webhook DTOs exchanged between sandboxes and the API."],
-  },
-  {
-    rustModulePath: ["webhooks", "agent", "checkpoints"],
-    rustDoc: ["DTOs for creating recoverable agent checkpoints."],
-  },
-  {
-    rustModulePath: ["webhooks", "agent", "checkpoints", "prepare_history"],
-    rustDoc: ["DTOs for preparing direct session-history uploads."],
   },
   {
     rustModulePath: ["webhooks", "agent", "session_history"],
@@ -697,109 +687,6 @@ export const rustTypeBindings = [
     ],
   },
   {
-    schema:
-      webhookCheckpointsContract.create.body.shape.artifactSnapshots.unwrap()
-        .element,
-    rustModulePath: ["webhooks", "agent", "checkpoints"],
-    rustTypeName: "ArtifactSnapshot",
-    direction: "request",
-    fieldTypeOverrides: {
-      missingRootPolicy:
-        "crate::generated::types::runners::storage::ArtifactEntryMissingRootPolicy",
-    },
-    declarations: [
-      {
-        rustTypeName: "ArtifactSnapshot",
-        rustDoc: ["Artifact version captured by an agent checkpoint."],
-        fields: {
-          name: ["User-facing artifact name referenced by the run."],
-          version: ["Artifact version selected for the checkpoint."],
-          mountPath: ["Guest filesystem path where the artifact is mounted."],
-          missingRootPolicy: [
-            "Optional policy retained when the artifact mount root is missing.",
-          ],
-        },
-      },
-    ],
-  },
-  {
-    schema: webhookCheckpointsContract.create.body,
-    rustModulePath: ["webhooks", "agent", "checkpoints"],
-    rustTypeName: "Request",
-    direction: "request",
-    fieldTypeOverrides: {
-      artifactSnapshots: "Vec<ArtifactSnapshot>",
-    },
-    declarations: [
-      {
-        rustTypeName: "RequestVolumeVersionsSnapshot",
-        rustDoc: ["Volume versions captured by an agent checkpoint."],
-        fields: {
-          versions: ["Volume names mapped to their captured versions."],
-        },
-      },
-      {
-        rustTypeName: "RequestCliAgentSessionHistoryDisposition",
-        rustDoc: [
-          "Reason a checkpoint intentionally omits resumable CLI agent session history.",
-        ],
-        variants: {
-          discarded_oversized: [
-            "The native history was oversized and had no safe bounded generation.",
-          ],
-          unavailable: [
-            "The native history was missing, unsafe, ambiguous, or otherwise unusable.",
-          ],
-        },
-      },
-      {
-        rustTypeName: "Request",
-        rustDoc: ["Request body for creating a recoverable agent checkpoint."],
-        fields: {
-          runId: ["Agent run identifier bound to the sandbox token."],
-          cliAgentType: ["CLI agent implementation that produced the session."],
-          cliAgentSessionId: [
-            "CLI agent session identifier being checkpointed.",
-          ],
-          cliAgentSessionHistoryHash: [
-            "Optional SHA-256 hash of the uploaded CLI agent session history.",
-          ],
-          cliAgentSessionHistoryDisposition: [
-            "Optional reason resumable CLI agent session history was intentionally omitted.",
-          ],
-          artifactSnapshots: [
-            "Optional artifact versions captured by the checkpoint.",
-          ],
-          volumeVersionsSnapshot: [
-            "Optional volume versions captured by the checkpoint.",
-          ],
-        },
-      },
-    ],
-  },
-  {
-    schema: webhookCheckpointsContract.create.responses[200],
-    rustModulePath: ["webhooks", "agent", "checkpoints"],
-    rustTypeName: "Response",
-    direction: "response",
-    fieldTypeOverrides: {
-      artifacts: "Vec<ArtifactSnapshot>",
-    },
-    declarations: [
-      {
-        rustTypeName: "Response",
-        rustDoc: ["Response body returned after creating an agent checkpoint."],
-        fields: {
-          checkpointId: ["Created checkpoint identifier."],
-          agentSessionId: ["Agent session associated with the checkpoint."],
-          conversationId: ["Conversation captured by the checkpoint."],
-          artifacts: ["Optional artifact versions captured by the checkpoint."],
-          volumes: ["Optional volume versions captured by the checkpoint."],
-        },
-      },
-    ],
-  },
-  {
     schema: knownRunFailureReasonSchema,
     rustModulePath: ["webhooks", "agent", "complete"],
     rustTypeName: "RequestFailureReason",
@@ -891,71 +778,6 @@ export const rustTypeBindings = [
         },
       },
       {
-        rustTypeName: "RequestCheckpoint",
-        rustDoc: ["Final checkpoint metadata included with completion."],
-        fields: {
-          cliAgentType: ["CLI agent implementation that produced the session."],
-          cliAgentSessionId: [
-            "CLI agent session identifier being checkpointed.",
-          ],
-          cliAgentSessionHistoryHash: [
-            "Optional SHA-256 hash of uploaded CLI agent session history.",
-          ],
-          cliAgentSessionHistoryDisposition: [
-            "Optional reason resumable session history was omitted.",
-          ],
-          artifactSnapshots: [
-            "Optional artifact versions captured by the checkpoint.",
-          ],
-          volumeVersionsSnapshot: [
-            "Optional volume versions captured by the checkpoint.",
-          ],
-        },
-      },
-      {
-        rustTypeName: "RequestCheckpointCliAgentSessionHistoryDisposition",
-        rustDoc: [
-          "Reason a final checkpoint intentionally omits resumable CLI agent session history.",
-        ],
-        variants: {
-          discarded_oversized: [
-            "The native history exceeded the bounded checkpoint limit.",
-          ],
-          unavailable: ["The native history was unavailable or unusable."],
-        },
-      },
-      {
-        rustTypeName: "RequestCheckpointArtifactSnapshot",
-        rustDoc: ["Artifact version captured by a final checkpoint."],
-        fields: {
-          name: ["User-facing artifact name referenced by the run."],
-          version: ["Artifact version selected for the checkpoint."],
-          mountPath: ["Guest filesystem path where the artifact is mounted."],
-          missingRootPolicy: [
-            "Optional policy retained when the artifact mount root is missing.",
-          ],
-        },
-      },
-      {
-        rustTypeName: "RequestCheckpointArtifactSnapshotMissingRootPolicy",
-        rustDoc: [
-          "Policy used when a final checkpoint artifact root is missing.",
-        ],
-        variants: {
-          fail: ["Treat a missing artifact root as an error."],
-          preserveParentVersion: [
-            "Preserve the parent artifact version when the root is missing.",
-          ],
-        },
-      },
-      {
-        rustTypeName: "RequestCheckpointVolumeVersionsSnapshot",
-        rustDoc: ["Volume versions captured by a final checkpoint."],
-        fields: {
-          versions: ["Volume names mapped to their captured versions."],
-        },
-      },
-      {
         rustTypeName: "RequestCompletion",
         rustDoc: ["Final Run output metadata included with completion."],
         fields: {
@@ -1043,70 +865,6 @@ export const rustTypeBindings = [
           completion: [
             "Native history and published file outputs saved with completion.",
           ],
-          checkpoint: [
-            "Legacy Guest metadata adapter; remove after deployed Guests drain.",
-          ],
-        },
-      },
-    ],
-  },
-  {
-    schema: sessionHistoryEncodingSchema,
-    rustModulePath: ["webhooks", "agent", "checkpoints", "prepare_history"],
-    rustTypeName: "SessionHistoryEncoding",
-    direction: "request",
-    declarations: [
-      {
-        rustTypeName: "SessionHistoryEncoding",
-        rustDoc: ["Encoding used for persisted CLI agent session history."],
-        variants: {
-          identity: ["Uncompressed session history bytes."],
-          gzip: ["Gzip-compressed session history bytes."],
-          zstd: ["Zstandard-compressed session history bytes."],
-        },
-      },
-    ],
-  },
-  {
-    schema: webhookCheckpointsPrepareHistoryContract.prepare.body,
-    rustModulePath: ["webhooks", "agent", "checkpoints", "prepare_history"],
-    rustTypeName: "Request",
-    direction: "request",
-    fieldTypeOverrides: {
-      rawSize: "u64",
-      encodedSize: "u64",
-      encoding: "SessionHistoryEncoding",
-    },
-    declarations: [
-      {
-        rustTypeName: "Request",
-        rustDoc: ["Request body for preparing a session-history upload."],
-        fields: {
-          runId: ["Agent run identifier bound to the sandbox token."],
-          hash: ["SHA-256 hash of the uncompressed session history."],
-          rawSize: ["Uncompressed session-history size in bytes."],
-          encodedSize: ["Encoded session-history size in bytes."],
-          encoding: ["Optional encoding used for the uploaded bytes."],
-        },
-      },
-    ],
-  },
-  {
-    schema: webhookCheckpointsPrepareHistoryContract.prepare.responses[200],
-    rustModulePath: ["webhooks", "agent", "checkpoints", "prepare_history"],
-    rustTypeName: "Response",
-    direction: "response",
-    fieldTypeOverrides: {
-      encoding: "SessionHistoryEncoding",
-    },
-    declarations: [
-      {
-        rustTypeName: "Response",
-        rustDoc: ["Response body returned when preparing session history."],
-        fields: {
-          presignedUrl: ["Optional presigned URL for uploading new content."],
-          existing: ["Whether the requested session history already exists."],
-          encoding: ["Optional encoding of the persisted session history."],
         },
       },
     ],

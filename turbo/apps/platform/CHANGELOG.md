@@ -12,6 +12,27 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1007.1](https://github.com/okou-ai/okou/compare/app-v0.1007.0...app-v0.1007.1) (2026-10-09)
+
+
+### Documentation
+
+* reorganize engineering guides and align testing policies ([#38421](https://github.com/okou-ai/okou/issues/38421)) ([60f5783](https://github.com/okou-ai/okou/commit/60f57836b2877b5e065bf27b7adf75c2f633b95d))
+
+
+### Refactoring
+
+* canonicalize historical model selections and constrain runtime captures ([#38389](https://github.com/okou-ai/okou/issues/38389)) ([1ab1fc2](https://github.com/okou-ai/okou/commit/1ab1fc21a3aabe940ee044cc6f4226faee2a668f))
+* **platform:** remove redundant inner oauth consent z-index ([#38435](https://github.com/okou-ai/okou/issues/38435)) ([ce1f574](https://github.com/okou-ai/okou/commit/ce1f574b5cf11882de2bf92de2335712b309c567))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.739.1
+    * @okouai/ui bumped to 1.13.1
+
 ## [0.1007.0](https://github.com/okou-ai/okou/compare/app-v0.1006.1...app-v0.1007.0) (2026-10-09)
 
 

@@ -373,7 +373,7 @@ async function waitForRunContext(actor: ApiTestUser, runId: string) {
   return response;
 }
 
-function chatRunCheckpoint(runId: string): {
+function chatRunCompletion(runId: string): {
   readonly cliAgentType: "claude-code";
   readonly cliAgentSessionId: string;
   readonly cliAgentSessionHistoryHash: string;
@@ -416,7 +416,7 @@ async function completeChatRunOk(
     {
       runId,
       exitCode: 0,
-      checkpoint: chatRunCheckpoint(runId),
+      completion: chatRunCompletion(runId),
       ...(lastEventSequence === undefined ? {} : { lastEventSequence }),
     },
     sandboxHeaders,
@@ -2396,7 +2396,7 @@ describe("CHAT-02/RUN-03: cancellation recovery barrier", () => {
         runId: run.runId,
         exitCode: 0,
         lastEventSequence: 0,
-        checkpoint: chatRunCheckpoint(run.runId),
+        completion: chatRunCompletion(run.runId),
       },
       sandboxHeaders,
       [200],

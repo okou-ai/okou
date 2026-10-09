@@ -39,7 +39,7 @@ describe("CHAT-02: personal subscription model selection", () => {
 
     const usagePricingResolution = await createGptUsagePricingResolution();
     mockPiResourceArchiveDownloads();
-    const checkpointObjects = mockPiCheckpointObjectStore();
+    const historyObjects = mockPiCheckpointObjectStore();
     let threadId: string | undefined;
     let sessionId: string | null | undefined;
     const models = [...GPT_PI_BDD_MODELS, "gpt-6-luna"] as const;
@@ -66,7 +66,7 @@ describe("CHAT-02: personal subscription model selection", () => {
         actor,
         run,
         claim,
-        checkpointObjects,
+        historyObjects,
         prompt: `continue with ${model}`,
         answer: `answer ${index + 1}`,
         responsesModel: { provider: "openai", model },
@@ -95,7 +95,7 @@ describe("CHAT-02: personal subscription model selection", () => {
     await configureSubscriptionPiModel(actor, {}, piModel);
 
     mockPiResourceArchiveDownloads();
-    const checkpointObjects = mockPiCheckpointObjectStore();
+    const historyObjects = mockPiCheckpointObjectStore();
     const firstPiAnswer = "first Pi generation answer";
     const returnedPiAnswer = "returned Pi generation answer";
     const repeatedPiAnswer = "repeated Pi generation answer";
@@ -113,7 +113,7 @@ describe("CHAT-02: personal subscription model selection", () => {
       actor,
       run: firstPi,
       claim: await claimChatRun(runnerGroup, firstPi.runId),
-      checkpointObjects,
+      historyObjects,
       prompt: firstPiPrompt,
       answer: firstPiAnswer,
       responsesModel,
@@ -199,7 +199,7 @@ describe("CHAT-02: personal subscription model selection", () => {
       actor,
       run: returnedPi,
       claim: returnedPiClaim,
-      checkpointObjects,
+      historyObjects,
       prompt: returnedPiPrompt,
       answer: returnedPiAnswer,
       responsesModel,
@@ -237,7 +237,7 @@ describe("CHAT-02: personal subscription model selection", () => {
     });
     expect(
       MemoryPiSession.fromJsonl(
-        piSandboxBaseSession(piFollowUpClaim.claim, checkpointObjects).toString(
+        piSandboxBaseSession(piFollowUpClaim.claim, historyObjects).toString(
           "utf8",
         ),
       ).getSessionId(),
@@ -335,7 +335,7 @@ describe("CHAT-02: personal subscription model selection", () => {
       actor,
       run: repeatedPi,
       claim: repeatedPiClaim,
-      checkpointObjects,
+      historyObjects,
       prompt: repeatedPiPrompt,
       answer: repeatedPiAnswer,
       responsesModel,

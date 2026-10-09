@@ -1,5 +1,20 @@
 # Changelog
 
+## [9.383.1](https://github.com/okou-ai/okou/compare/cli-v9.383.0...cli-v9.383.1) (2026-10-09)
+
+
+### Documentation
+
+* reorganize engineering guides and align testing policies ([#38421](https://github.com/okou-ai/okou/issues/38421)) ([60f5783](https://github.com/okou-ai/okou/commit/60f57836b2877b5e065bf27b7adf75c2f633b95d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.739.1
+    * @okouai/pi-agent-runtime bumped to 1.49.1
+
 ## [9.383.0](https://github.com/okou-ai/okou/compare/cli-v9.382.1...cli-v9.383.0) (2026-10-09)
 
 

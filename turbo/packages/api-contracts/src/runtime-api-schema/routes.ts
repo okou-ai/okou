@@ -7,7 +7,6 @@ import {
   runnersPollContract,
 } from "../contracts/runners";
 import {
-  webhookCheckpointsPrepareHistoryContract,
   webhookSessionHistoryPrepareContract,
   webhookCompleteContract,
   webhookEventsContract,
@@ -72,11 +71,6 @@ export const runtimeApiRouteBindings = [
     id: "webhooks.agent.events",
     owner: "guest-agent",
     route: webhookEventsContract.send,
-  },
-  {
-    id: "webhooks.agent.checkpoints.prepareHistory",
-    owner: "guest-agent",
-    route: webhookCheckpointsPrepareHistoryContract.prepare,
   },
   {
     id: "webhooks.agent.sessionHistory.prepare",

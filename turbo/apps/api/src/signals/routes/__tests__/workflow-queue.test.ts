@@ -349,7 +349,7 @@ async function requestRunCompletionThroughSandbox(
     {
       runId,
       exitCode: 0,
-      checkpoint: {
+      completion: {
         cliAgentType: "claude-code",
         cliAgentSessionId: `workflow-queue-cli-${runId}`,
         cliAgentSessionHistoryHash: createHash("sha256")

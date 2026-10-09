@@ -11,7 +11,7 @@ const bdd = createBddApi(context);
 const runs = createRunsApi(context);
 const webhooks = createWebhookCallbackApi(context);
 
-async function checkpointedRun(actor: ApiTestUser, agentId?: string) {
+async function completedRun(actor: ApiTestUser, agentId?: string) {
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
@@ -33,25 +33,25 @@ async function checkpointedRun(actor: ApiTestUser, agentId?: string) {
   await runs.heartbeatRunner(runnerGroup);
   const claim = await runs.claimRunnerJob(run.runId);
   const headers = { authorization: `Bearer ${claim.sandboxToken}` };
-  const checkpoint = {
+  const completion = {
     cliAgentType: "claude-code" as const,
     cliAgentSessionId: run.runId,
     cliAgentSessionHistoryHash: hash,
   };
   await webhooks.requestAgentComplete(
-    { runId: run.runId, exitCode: 0, checkpoint },
+    { runId: run.runId, exitCode: 0, completion },
     headers,
     [200],
   );
   await expect(runs.readRun(actor, run.runId)).resolves.toMatchObject({
     status: "completed",
   });
-  return { ...run, agentId: targetAgentId, hash, headers, checkpoint };
+  return { ...run, agentId: targetAgentId, hash, headers, completion };
 }
 
 test("deletes a completed Run with its Agent and rejects repeated deletion", async () => {
   const actor = bdd.user();
-  const run = await checkpointedRun(actor);
+  const run = await completedRun(actor);
   await bdd.requestDeleteAgent(actor, run.agentId, [204]);
   const deleted = await runs.requestReadRun(actor, run.runId, [404]);
   expect(deleted.body).toMatchObject({ error: { code: "NOT_FOUND" } });
@@ -62,7 +62,7 @@ test.each(["user", "organization"] as const)(
   "rejects a completed Runner callback after a verified Clerk %s deletion",
   async (kind) => {
     const actor = bdd.user();
-    const run = await checkpointedRun(actor);
+    const run = await completedRun(actor);
     webhooks.configureClerkWebhookSecret();
     webhooks.verifyNextClerkWebhook({
       type: kind === "user" ? "user.deleted" : "organization.deleted",
@@ -71,7 +71,7 @@ test.each(["user", "organization"] as const)(
     await webhooks.requestClerkWebhook("{}", {}, [200]);
     await flushWaitUntilForTest();
     const late = await webhooks.requestAgentComplete(
-      { runId: run.runId, exitCode: 0, checkpoint: run.checkpoint },
+      { runId: run.runId, exitCode: 0, completion: run.completion },
       run.headers,
       [404],
     );

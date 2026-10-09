@@ -3288,7 +3288,7 @@ test("promotes a queued workflow after failure and completes it with a real Runn
       return presign(client, command, options);
     },
   );
-  const prepared = await webhooks.requestAgentCheckpointPrepareHistory(
+  const prepared = await webhooks.requestAgentSessionHistoryPrepare(
     {
       runId: next.runId,
       hash: historyHash,
@@ -3327,7 +3327,7 @@ test("promotes a queued workflow after failure and completes it with a real Runn
     {
       runId: next.runId,
       exitCode: 0,
-      checkpoint: {
+      completion: {
         cliAgentType: "claude-code",
         cliAgentSessionId: sessionId,
         cliAgentSessionHistoryHash: historyHash,
