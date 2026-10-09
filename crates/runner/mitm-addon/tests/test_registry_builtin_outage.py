@@ -18,6 +18,7 @@ import registry_observation
 import state_file
 from tests.registry_builtin_helpers import cache_firewall, write_registry_with_cache
 from tests.registry_helpers import builtin_sandbox, inline_sandbox, write_multi_sandbox_registry
+from tests.requestheaders_helpers import await_requestheaders_result
 
 
 def _write_outage_files(tmp_path: Path) -> tuple[Path, Path]:
@@ -48,7 +49,7 @@ def _write_outage_files(tmp_path: Path) -> tuple[Path, Path]:
 async def _request_pair(flow) -> None:
     pending = mitm_addon.requestheaders(flow)
     if pending is not None:
-        await pending
+        await await_requestheaders_result(pending)
     await mitm_addon.request(flow)
 
 
