@@ -1037,7 +1037,7 @@ const sandboxOperationSchema = z.object({
     .enum(["raw_source", "retained_zstd", "codex_pruning_guard"])
     .optional(),
   session_history_transfer_source: z
-    .enum(["workspace_cache", "downloaded", "inline"])
+    .enum(["workspace_cache", "home_cache", "downloaded", "inline"])
     .optional(),
   session_history_wire_codec: z.enum(["none", "zstd"]).optional(),
   session_history_codec_decision: z

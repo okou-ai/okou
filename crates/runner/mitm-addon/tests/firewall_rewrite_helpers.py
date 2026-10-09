@@ -53,6 +53,7 @@ def _make_rewrite_inputs(
     if auth_overrides:
         auth_config.update(auth_overrides)
     api_entry = {
+        "id": "run-1:0",
         "base": api_base,
         "auth": auth_config,
     }

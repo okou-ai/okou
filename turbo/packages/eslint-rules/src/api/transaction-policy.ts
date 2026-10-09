@@ -15,7 +15,7 @@ export const legacyTransactionDate = "2026-10-09";
 // The initial inventory is reconstructed from this reviewed main revision, not
 // from the enabling PR's source or a caller-supplied revision.
 export const transactionBootstrapCommit =
-  "b73d44a9a9e52185c50f968ced4f5cfb12584093";
+  "9b1bedb5b9a10a930e6a44e1cde479dfb0c31fb8";
 export const transactionBaselinePath = "turbo/db-transaction-baseline.json";
 export const transactionSourceRoots = ["turbo/apps/api", "turbo/packages/db"];
 

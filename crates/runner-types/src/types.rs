@@ -18,6 +18,10 @@ pub const MAX_ACTIVE_REUSE_PRODUCERS: usize = 1024;
 pub const MAX_WORKSPACE_CACHES_PER_REUSE_KEY: usize = 8;
 pub const MAX_WORKSPACE_CACHES_PER_HEARTBEAT: usize = 1024;
 pub const WORKSPACE_AFFINITY_VERSION: u8 = 1;
+pub const MAX_HELD_HOME_STATES: usize = 1024;
+pub const MAX_HOME_CACHES_PER_REUSE_KEY: usize = 8;
+pub const MAX_HOME_CACHES_PER_HEARTBEAT: usize = 1024;
+pub const HOME_AFFINITY_VERSION: u8 = 1;
 
 fn is_false(value: &bool) -> bool {
     !*value
@@ -1773,6 +1777,22 @@ pub struct HeldWorkspaceState {
     pub workspace_caches: Vec<WorkspaceCacheCapability>,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct HomeCacheCapability {
+    pub profile: String,
+    pub home_affinity_version: u8,
+}
+
+/// Canonical home evidence; never populated from workspace image observations.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct HeldHomeState {
+    pub reuse_key: String,
+    pub last_completed_at: String,
+    pub home_caches: Vec<HomeCacheCapability>,
+}
+
 /// An active run that can still produce an exact reusable sandbox. This is not
 /// an idle sandbox: the claimant must verify the predecessor locally.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -1800,6 +1820,10 @@ pub struct HeartbeatState {
     pub admittable_profiles: Vec<String>,
     pub held_sandbox_states: Vec<HeldSandboxState>,
     pub held_workspace_states: Vec<HeldWorkspaceState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub home_affinity_version: Option<u8>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub held_home_states: Vec<HeldHomeState>,
     pub active_reuse_producers: Vec<ActiveReuseProducer>,
     /// Host-local WSS ingress service state, not public WSS reachability.
     pub wss_ingress_service_active: bool,
@@ -2831,6 +2855,8 @@ mod tests {
                     workspace_affinity_version: WORKSPACE_AFFINITY_VERSION,
                 }],
             }],
+            home_affinity_version: None,
+            held_home_states: Vec::new(),
             active_reuse_producers: vec![ActiveReuseProducer {
                 run_id: "22222222-2222-4222-8222-222222222222".parse().unwrap(),
                 reuse_key: "thread:thread-abc".into(),
@@ -2916,6 +2942,8 @@ mod tests {
             admittable_profiles: vec!["vm0/default".into()],
             held_sandbox_states: Vec::new(),
             held_workspace_states: Vec::new(),
+            home_affinity_version: None,
+            held_home_states: Vec::new(),
             active_reuse_producers: Vec::new(),
             wss_ingress_service_active: false,
             mode: "running".into(),

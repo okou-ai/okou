@@ -3,7 +3,7 @@
  *
  * Tests command-level behavior via parseAsync() following CLI testing principles:
  * - Entry point: command.parseAsync()
- * - Mock (external): none for the source-selection path
+ * - Mock (external): API feature availability via MSW
  * - Real (internal): prompt parsing and authoring packet generation
  */
 

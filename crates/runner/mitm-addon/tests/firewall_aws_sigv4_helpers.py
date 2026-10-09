@@ -138,7 +138,7 @@ def aws_allow(
     rule: str = "POST /",
     rel_path: str = "/",
 ) -> matching.FirewallAllow:
-    resolved_api_entry = aws_api_entry() if api_entry is None else api_entry
+    resolved_api_entry = aws_api_entry(api_id="run-1:0") if api_entry is None else api_entry
     return matching.FirewallAllow(
         copy.deepcopy(dict(resolved_api_entry)),
         firewall_name,
@@ -336,7 +336,7 @@ def _aws_auth_cache_key(
     )
     return auth_cache_key(
         run_id=resolved_sandbox_info["runId"],
-        api_id=resolved_api_entry.get("id", resolved_api_entry["base"]),
+        api_id=resolved_api_entry["id"],
         auth_identity=auth._build_firewall_auth_identity(
             firewall_name=resolved_allow.name,
             firewall_base=resolved_api_entry["base"],

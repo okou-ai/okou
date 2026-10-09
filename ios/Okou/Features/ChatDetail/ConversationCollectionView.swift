@@ -1,3 +1,4 @@
+import ChatDomain
 import SwiftUI
 
 /// Presentation revisions include every input that can change a row's measured size.

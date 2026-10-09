@@ -8,6 +8,7 @@ import {
   isMutableHostedSitePath,
   type HostedArtifactKind,
   type HostedSitePrepareRequest,
+  type HostedSitePreview,
 } from "@okouai/api-contracts/contracts/host";
 import {
   CURRENT_LINK_LAYOUT,
@@ -217,6 +218,7 @@ function buildManifest(args: {
   readonly artifactKind: HostedArtifactKind;
   readonly spaFallback: boolean;
   readonly files: readonly HostedSiteFile[];
+  readonly preview?: HostedSitePreview;
   readonly createdAt: Date;
   readonly layout: LinkLayout;
 }): HostedSiteManifest {
@@ -246,6 +248,7 @@ function buildManifest(args: {
     artifactKind: args.artifactKind,
     spaFallback: args.spaFallback,
     files: manifestFiles,
+    ...(args.preview ? { preview: args.preview } : {}),
   };
 }
 
@@ -293,6 +296,7 @@ function hostedDeploymentValues(
     artifactKind: args.body.artifactKind,
     spaFallback: args.body.spaFallback,
     files: args.body.files,
+    preview: args.body.preview,
     createdAt: context.now,
     layout,
   });

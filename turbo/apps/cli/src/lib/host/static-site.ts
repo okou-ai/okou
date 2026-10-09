@@ -327,5 +327,13 @@ export async function readStaticSiteFile(
     throw new Error(`Hosted-site file has no source: ${file.path}`);
   }
   const bytes = await readFile(file.absolutePath);
+  if (
+    bytes.length !== file.size ||
+    createHash("sha256").update(bytes).digest("hex") !== file.sha256
+  ) {
+    throw new Error(
+      `Hosted-site file changed after preparation: ${file.path}. Finish editing, capture the preview again, and republish`,
+    );
+  }
   return new Uint8Array(bytes);
 }

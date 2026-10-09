@@ -240,7 +240,7 @@ def _prepare_firewall_metadata(
     """Store firewall match metadata once before auth resolution starts."""
     api_entry = allow.api_entry
     firewall_base = api_entry["base"]
-    api_id = api_entry.get("id", firewall_base)
+    api_id = api_entry["id"]
     firewall_billable = is_billable_firewall(allow.name, sandbox_info)
 
     flow.metadata[metadata_keys.FIREWALL_BASE] = firewall_base

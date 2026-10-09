@@ -257,6 +257,8 @@ function runnerHeartbeatBody(
     readonly runningCount?: RunnerHeartbeatBody["runningCount"];
     readonly heldSandboxStates?: RunnerHeartbeatBody["heldSandboxStates"];
     readonly heldWorkspaceStates?: RunnerHeartbeatBody["heldWorkspaceStates"];
+    readonly heldHomeStates?: RunnerHeartbeatBody["heldHomeStates"];
+    readonly homeAffinityVersion?: RunnerHeartbeatBody["homeAffinityVersion"];
     readonly activeReuseProducers?: RunnerHeartbeatBody["activeReuseProducers"];
     readonly wssIngressServiceActive?: boolean;
     readonly mode?: RunnerHeartbeatBody["mode"];
@@ -276,6 +278,10 @@ function runnerHeartbeatBody(
     admittableProfiles: args.admittableProfiles ?? ["vm0/default"],
     heldSandboxStates: args.heldSandboxStates ?? [],
     heldWorkspaceStates: args.heldWorkspaceStates ?? [],
+    heldHomeStates: args.heldHomeStates ?? [],
+    ...(args.homeAffinityVersion === undefined
+      ? {}
+      : { homeAffinityVersion: args.homeAffinityVersion }),
     activeReuseProducers: args.activeReuseProducers ?? [],
     ...(args.wssIngressServiceActive === undefined
       ? {}
@@ -1239,6 +1245,8 @@ export function createRunsApi(
         readonly runningCount?: RunnerHeartbeatBody["runningCount"];
         readonly heldSandboxStates?: RunnerHeartbeatBody["heldSandboxStates"];
         readonly heldWorkspaceStates?: RunnerHeartbeatBody["heldWorkspaceStates"];
+        readonly heldHomeStates?: RunnerHeartbeatBody["heldHomeStates"];
+        readonly homeAffinityVersion?: RunnerHeartbeatBody["homeAffinityVersion"];
         readonly activeReuseProducers?: RunnerHeartbeatBody["activeReuseProducers"];
         readonly wssIngressServiceActive?: boolean;
         readonly mode?: RunnerHeartbeatBody["mode"];

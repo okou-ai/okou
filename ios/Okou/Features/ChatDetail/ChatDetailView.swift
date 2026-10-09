@@ -1,3 +1,4 @@
+import ChatDomain
 import SwiftUI
 
 struct ChatDetailView: View {

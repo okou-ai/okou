@@ -1,5 +1,31 @@
 # Deployment Compatibility
 
+## CI build and test source (2026-10-09)
+
+Ordinary PR previews build and test the event's captured merge commit
+(`github.sha`), not the isolated PR head or a merge ref resolved later. API,
+public CLI, App, Runner, and CLI E2E lifecycle sources use that same revision.
+API seed/deploy `CLI_PKG_URL` and public CLI publication concurrency identify
+that source's commit-addressed archive. Archive/ready-marker schemas, integrity
+checks, publication order, release skips, and PR namespace ownership do not
+change. A new merge commit can require a new public CLI artifact even when the
+PR head is unchanged; Runner content-based caches remain reusable.
+
+Build source is not Actions producer/run identity: Runner `PRODUCER_HEAD_SHA`
+and consumer `LOOKUP_SHA` retain the PR head for provenance and API run lookup.
+GitHub deployment-record attribution is unchanged and is not proof of the
+exact build source. The shared Vercel action and Release Please workflow are
+unchanged; this repair only aligns ordinary preview build/test sources and
+CLI artifact addresses.
+
+No API/Runner wire format, persisted data, runtime protocol, or artifact
+migration is required. New previews publish and capture merge-addressed CLI
+URLs; already captured contexts retain their existing URLs, and their archives
+must stay available. Rolling the workflows back restores previous source
+selection without rewriting historical deployment records or deleting captured
+artifacts. Production artifact selection, deployment records, and
+serving-promotion behavior remain unchanged.
+
 ## Free memory preset routing (2026-10-09)
 
 New Stage 1 extraction and Phase 2 consolidation use the platform OpenRouter key
@@ -5256,6 +5282,21 @@ skipped, so the old client simply stops purging. Its saved
 `account-erasure-status-capability:*` localStorage entries remain inert and
 are not migrated. A new App against an older API makes no such calls. Rollback
 is safe; an older API resumes serving the routes with the same signing key.
+
+## Sandbox-hosted artifact covers (#36205)
+
+Hosted deployment requests may include a separately uploaded private preview
+when the default-off `artifactPreviews` switch is enabled. The same switch gates
+CLI capture, generation guidance and server prepare/complete admission.
+When disabled, capture is a silent no-op and supplied previews are ignored;
+hosting continues normally. Prepare/complete use `previewSkipped: true` to
+acknowledge an ignored cover, including disabling between those requests.
+Published covers remain readable after disabling the switch.
+Deploy and drain API readers before the new CLI/generation instructions; a
+mixed completion fleet must not ignore the preview requirement. Old requests
+retain backend screenshots until the separately planned retirement. The
+manifest's optional preview metadata and existing file/catalog image reference
+need no database migration. See [the publishing, storage and rollout contract](sandbox-artifact-previews.md).
 
 ## Artifact and hosted-site link layouts (2026-09-25)
 

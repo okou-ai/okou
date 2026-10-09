@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "frozenAt": "b73d44a9a9e52185c50f968ced4f5cfb12584093",
+  "frozenAt": "9b1bedb5b9a10a930e6a44e1cde479dfb0c31fb8",
   "sites": [
     {
       "id": "TX-0001",
@@ -336,7 +336,7 @@
       "id": "TX-0056",
       "file": "turbo/apps/api/src/signals/services/artifact-catalog.service.ts",
       "owner": "syncHostedArtifact$",
-      "fingerprint": "e6a66cb97869240341b4ae8a39619122ddf4470c6f5fa225bc62cfbf893ca07a"
+      "fingerprint": "0d0ebef01a793cc86e5c672e1ecb3f3114d387e4b9994074a63e3a01be65ce28"
     },
     {
       "id": "TX-0057",
@@ -588,13 +588,13 @@
       "id": "TX-0098",
       "file": "turbo/apps/api/src/signals/services/clerk-agent-lifecycle.service.ts",
       "owner": "deleteClerkUserLifecycleData$",
-      "fingerprint": "a09e3a79f47a2e42c04da73d6b4964c7897b551ba7a2132b3ca7b74a0030e5a4"
+      "fingerprint": "505bf33af585d1699d9233870df49cc76d135eb98e5e4364bafcd8df80d2a503"
     },
     {
       "id": "TX-0099",
       "file": "turbo/apps/api/src/signals/services/clerk-agent-lifecycle.service.ts",
       "owner": "deleteClerkOrganizationLifecycleData$",
-      "fingerprint": "3da1b077f4e3d8702a8f4b4280471956b32dae6aa1a8d768333de9c115d52308"
+      "fingerprint": "49b3ed70a22ae479de4d1e95da7f159be088194d1ec6740663fa306c20bf650b"
     },
     {
       "id": "TX-0100",
@@ -1422,7 +1422,7 @@
       "id": "TX-0237",
       "file": "turbo/apps/api/src/signals/services/run-uploaded-files.service.ts",
       "owner": "recordRunUploadedFile$",
-      "fingerprint": "893a1badc35d5f8738d31e789799df1ff0c122ceacd395b00a47f1a034140648"
+      "fingerprint": "f6769f360701d46dda64c93cec1f1a152700e6280993e116cf616a636f238c4b"
     },
     {
       "id": "TX-0238",

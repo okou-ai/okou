@@ -320,6 +320,7 @@ jobs:
             .github/scripts/tests/check-workflow-shell-compatibility-test.sh \
             .github/scripts/tests/check-pr-ci-capacity-test.sh \
             .github/scripts/tests/checkout-depth-test.sh \
+            .github/scripts/tests/ci-source-revision-workflow-test.sh \
             .github/scripts/tests/cleanup-pr-runner-test.sh \
             .github/scripts/tests/cleanup-stale-runners-test.sh \
             .github/scripts/tests/clerk-test-resource-workflow-test.sh \

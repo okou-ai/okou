@@ -18,7 +18,7 @@ There is no billing-directory, test-directory or new migration exemption. The in
 
 ## Frozen Legacy Inventory
 
-The initial inventory is frozen at main `b73d44a9a9e52185c50f968ced4f5cfb12584093`, on 2026-10-09. `turbo/db-transaction-baseline.json` registers each detected site with a unique ID, repository-relative file, named owner and SHA-256 AST fingerprint.
+The initial inventory is frozen at main `9b1bedb5b9a10a930e6a44e1cde479dfb0c31fb8`, on 2026-10-09. `turbo/db-transaction-baseline.json` registers each detected site with a unique ID, repository-relative file, named owner and SHA-256 AST fingerprint.
 
 Each existing boundary has this next-line marker:
 

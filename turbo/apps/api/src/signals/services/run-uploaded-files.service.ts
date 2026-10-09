@@ -37,6 +37,7 @@ interface RecordWebUploadedFileArgs {
 }
 
 interface RecordHostedSiteArtifactArgs {
+  readonly previewImageUrl?: string;
   readonly runId: string | null | undefined;
   readonly userId: string;
   readonly orgId: string;
@@ -108,7 +109,7 @@ interface RecordRunUploadedFileArgs {
     | "sizeBytes"
     | "url"
     | "metadata"
-  >;
+  > & { readonly previewImageUrl?: string };
   readonly resetPreviewForDeploymentId?: string;
 }
 
@@ -142,7 +143,8 @@ const recordRunUploadedFile$ = command(
               ...args.file,
               // Mutable legacy aliases lose their preview only when a different
               // deployment takes over. Versioned rows preserve their preview.
-              ...(args.resetPreviewForDeploymentId === undefined
+              ...(args.resetPreviewForDeploymentId === undefined ||
+              args.file.previewImageUrl !== undefined
                 ? {}
                 : {
                     previewImageUrl: sql`case
@@ -236,6 +238,9 @@ export const recordHostedSiteArtifact$ = command(
           orgId: args.orgId,
           filename,
           contentType: "text/html",
+          ...(args.previewImageUrl === undefined
+            ? {}
+            : { previewImageUrl: args.previewImageUrl }),
           sizeBytes: args.sizeBytes,
           url: args.url,
           metadata: {

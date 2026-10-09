@@ -34,3 +34,16 @@ export interface RunnerHeldWorkspaceState {
 }
 
 export type RunnerHeldWorkspaceStates = RunnerHeldWorkspaceState[];
+
+interface RunnerHeldHomeCache {
+  readonly profile: string;
+  readonly homeAffinityVersion: 1;
+}
+
+export interface RunnerHeldHomeState {
+  readonly reuseKey: string;
+  readonly lastCompletedAt: string;
+  readonly homeCaches: readonly [RunnerHeldHomeCache, ...RunnerHeldHomeCache[]];
+}
+
+export type RunnerHeldHomeStates = RunnerHeldHomeState[];

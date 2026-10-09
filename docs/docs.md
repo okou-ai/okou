@@ -32,6 +32,8 @@ surface; the index does not replace their detailed rules.
 - [Testing](./testing.md): testing strategy, patterns, and anti-patterns.
 - [Deployment compatibility](./deployment-compatibility.md): compatibility
   requirements for independently deployed components and persisted state.
+- [Home-cache protocol rollout](./home-cache-protocol-rollout.md): independent
+  capability stamps, recipient-safe preparation and later activation/SQL drain gates.
 - [Agent mail notifications](./agent-mail-notifications.md): CLI notification
   receipts, idempotency, opt-out handling, and the staged Morning Brief rollout.
 - [Model identity PR2](./model-identity-pr2.md): canonical new writes,

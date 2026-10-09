@@ -223,6 +223,12 @@ function connectorManualGrantResponse(
 }
 
 export const apiHandlers = [
+  http.get("*/api/feature-switches", () => {
+    return HttpResponse.json({
+      switches: {},
+      effectiveSwitches: { artifactPreviews: false },
+    });
+  }),
   // GET /api/connectors - listConnectors
   http.get("http://localhost:3000/api/connectors", () => {
     return HttpResponse.json(

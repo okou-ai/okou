@@ -101,16 +101,14 @@ def _api_entry(
     *,
     base: str = "https://api.github.com",
     auth_config: dict | None = None,
-    api_id: str | None = None,
+    api_id: str = "run-1:0",
 ) -> dict:
     auth_config_copy = _copy_auth_config(auth_config)
-    entry = {
+    return {
+        "id": api_id,
         "base": base,
         "auth": auth_config_copy,
     }
-    if api_id is not None:
-        entry["id"] = api_id
-    return entry
 
 
 def _copy_auth_config(auth_config: dict | None) -> dict:

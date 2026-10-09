@@ -171,6 +171,94 @@ fn periodic_png_fixture_preserves_dimensions_crc_and_every_uncompressed_pixel()
 }
 
 #[tokio::test]
+async fn raw_http_recording_preserves_headers_and_lossy_body()
+-> Result<(), Box<dyn std::error::Error>> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let server = RecordingServer::start(503, Duration::ZERO).await?;
+    let addr = server
+        .base_url
+        .strip_prefix("http://")
+        .ok_or("missing address")?;
+    let mut expected = Vec::new();
+    for (path, body, status) in [
+        ("/empty", Vec::new(), 200),
+        (
+            "/channels/raw",
+            b"head\r\n\r\n\0\xff\xce\xb1\xfe-tail".to_vec(),
+            503,
+        ),
+    ] {
+        let headers = format!(
+            "POST {path} HTTP/1.1\r\naUthorization: Bearer fixture-token\r\ncOntent-Type: application/octet-stream\r\nx-client-request-id: fixture-id\r\ncOntent-Length: {}\r\n\r\n",
+            body.len()
+        );
+        let mut wire = headers.into_bytes();
+        wire.extend_from_slice(&body);
+        tokio::time::timeout(Duration::from_secs(5), async {
+            let mut socket = tokio::net::TcpStream::connect(addr).await?;
+            for chunk in wire.chunks(3) {
+                socket.write_all(chunk).await?;
+            }
+            socket.shutdown().await?;
+            let mut response = Vec::new();
+            socket.read_to_end(&mut response).await?;
+            assert!(response.starts_with(format!("HTTP/1.1 {status} ").as_bytes()));
+            Ok::<_, std::io::Error>(())
+        })
+        .await??;
+        expected.extend([
+            RecordedHttpEvent::Request(RecordedRequest {
+                path: path.into(),
+                authorization: Some("Bearer fixture-token".into()),
+                content_type: Some("application/octet-stream".into()),
+                client_request_id: Some("fixture-id".into()),
+                body: String::from_utf8_lossy(&body).into_owned(),
+            }),
+            RecordedHttpEvent::Response {
+                path: path.into(),
+                status,
+            },
+        ]);
+    }
+    assert_eq!(server.events()?, expected);
+    Ok(())
+}
+
+#[tokio::test]
+async fn raw_http_recording_rejects_early_close_without_recording_partial_requests()
+-> Result<(), Box<dyn std::error::Error>> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let server = RecordingServer::start(200, Duration::ZERO).await?;
+    let addr = server
+        .base_url
+        .strip_prefix("http://")
+        .ok_or("missing address")?;
+    for wire in [
+        "POST /partial HTTP/1.1\r\nContent-Length: 5\r\n".to_string(),
+        "POST /partial HTTP/1.1\r\nContent-Length: 5\r\n\r\nab".to_string(),
+        format!(
+            "POST /partial HTTP/1.1\r\nContent-Length: {}\r\n\r\nab",
+            usize::MAX / 2
+        ),
+    ] {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            let mut socket = tokio::net::TcpStream::connect(addr).await?;
+            socket.write_all(wire.as_bytes()).await?;
+            socket.shutdown().await?;
+            let mut response = Vec::new();
+            socket.read_to_end(&mut response).await?;
+            assert!(response.starts_with(b"HTTP/1.1 400 Bad Request\r\n"));
+            Ok::<_, std::io::Error>(())
+        })
+        .await??;
+        assert!(server.events()?.is_empty());
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn quiet_recording_returns_complete_independent_http_snapshots()
 -> Result<(), Box<dyn std::error::Error>> {
     let server = RecordingServer::start(200, Duration::ZERO).await?;

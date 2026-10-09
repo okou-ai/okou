@@ -26,6 +26,25 @@ describe("FeatureSwitchKey", () => {
 });
 
 describe("isFeatureEnabled", () => {
+  it("keeps artifact previews off for staff and external users until explicitly enabled", () => {
+    for (const context of [
+      {},
+      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
+      { orgId: "external-org" },
+    ]) {
+      expect(
+        getAllFeatureStates(context)[FeatureSwitchKey.ArtifactPreviews],
+      ).toBe(false);
+      for (const enabled of [true, false]) {
+        expect(
+          isFeatureEnabled(FeatureSwitchKey.ArtifactPreviews, {
+            ...context,
+            overrides: { [FeatureSwitchKey.ArtifactPreviews]: enabled },
+          }),
+        ).toBe(enabled);
+      }
+    }
+  });
   it("enables presentation conversion for Bingjie across workspaces", () => {
     for (const orgId of [
       undefined,
