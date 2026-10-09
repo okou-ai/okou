@@ -6,6 +6,7 @@ interface FixtureOperationOwner {
 
 export function createFixtureOperationOwner(
   teardown: () => Promise<unknown>,
+  options: { readonly beforeDrain?: () => void } = {},
 ): FixtureOperationOwner {
   let teardownStarted = false;
   const operations: Promise<unknown>[] = [];
@@ -21,6 +22,7 @@ export function createFixtureOperationOwner(
 
   onTestFinished(async () => {
     teardownStarted = true;
+    options.beforeDrain?.();
     // A timed-out route can still own a non-cancellable database query.
     await Promise.allSettled(operations);
     await teardown();

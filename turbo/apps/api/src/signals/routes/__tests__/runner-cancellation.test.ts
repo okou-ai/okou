@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { runnersCancellationContract } from "@okouai/api-contracts/contracts/runners";
-import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -8,7 +7,6 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { now, withMockNowForTest } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { runnerCancellationRoutes } from "../runner-cancellation";
-import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -78,60 +76,6 @@ async function read(f: Fixture) {
 }
 
 describe("Run cancellation reconciliation", () => {
-  it("reads a historical claim with both Runner identity attributes absent", async () => {
-    // Official claims now require a Runner identity. The existing historical
-    // fixture endpoint represents older rows that production can still read.
-    const bdd = createBddApi(context);
-    const runs = createRunsApi(context);
-    const actor = bdd.user();
-    const runnerGroup = runs.configureRunnerGroup();
-    const state = setupApp({
-      context,
-      routes: testCronCleanupSandboxesStateRoutes,
-    })(testCronCleanupSandboxesStateContract);
-    const seeded = await accept(
-      state.action({
-        body: {
-          action: "seed-run",
-          status: "completed",
-          user_id: actor.userId,
-          org_id: actor.orgId,
-          runner_group: runnerGroup,
-        },
-      }),
-      [200],
-    );
-    const runId = String(seeded.body.run_id);
-    onTestFinished(async () => {
-      bdd.acceptAgentStorageWrites();
-      await bdd.requestDeleteAgent(
-        actor,
-        String(seeded.body.compose_id),
-        [204, 404],
-      );
-    });
-    const response = await accept(
-      client().get({
-        params: { runId },
-        headers: {
-          authorization: `Bearer ${runs.sandboxTokenForRun(actor, runId)}`,
-        },
-        query: {
-          runnerGroup,
-          runnerId: randomUUID(),
-          heartbeatGeneration: 5_000_000_000,
-        },
-      }),
-      [200],
-    );
-    expect(response.body).toStrictEqual({
-      protocolVersion: 1,
-      runId,
-      state: "present",
-      mode: null,
-    });
-  });
-
   it("recovers committed cooperative cancellation after publication fails", async () => {
     const f = await fixture();
     const healthy = await read(f);

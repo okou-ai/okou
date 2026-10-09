@@ -26,9 +26,17 @@ function blobEntriesOf(objects: ReadonlyMap<string, Buffer>) {
 
 describe("CHAT-02: model-first routing", () => {
   it("preserves an ordinary Pi stop checkpoint for referenced Sandbox continuation", async () => {
-    const { actor, agentId, runnerGroup, claimChatRun, sendChatRun } =
-      await publicChatActor(context);
-    await configureSubscriptionPiModel(actor, {}, "gpt-6-luna");
+    const {
+      run: own,
+      actor,
+      agentId,
+      runnerGroup,
+      claimChatRun,
+      sendChatRun,
+    } = await publicChatActor(context);
+    await own(async () => {
+      return await configureSubscriptionPiModel(actor, {}, "gpt-6-luna");
+    });
 
     const objects = mockPiCheckpointObjectStore();
     const answer = "the last complete canonical answer";
@@ -42,13 +50,15 @@ describe("CHAT-02: model-first routing", () => {
     // The first turn has no stored history, so the Sandbox starts fresh.
     expect(firstClaim.claim.resumeSession).toBeNull();
     expect(firstClaim.claim.piSessionId).toBe(first.threadId);
-    await completeSandboxFirstPiRun({
-      actor,
-      answer,
-      historyObjects: objects,
-      claim: firstClaim,
-      prompt: firstPrompt,
-      run: first,
+    await own(async () => {
+      return await completeSandboxFirstPiRun({
+        actor,
+        answer,
+        historyObjects: objects,
+        claim: firstClaim,
+        prompt: firstPrompt,
+        run: first,
+      });
     });
     const blobEntries = blobEntriesOf(objects);
     expect(blobEntries).toHaveLength(1);
@@ -77,12 +87,15 @@ describe("CHAT-02: model-first routing", () => {
       new URL(resumeSession.historyRef.url).searchParams.get("object"),
     ).toBe(`${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${h0Hash}.blob`);
     expect(piSandboxBaseSession(claimed.claim, objects)).toStrictEqual(h0);
-    await cancelChatRun(actor, resumed.runId, claimed.sandboxHeaders);
+    await own(async () => {
+      return await cancelChatRun(actor, resumed.runId, claimed.sandboxHeaders);
+    });
     expect(blobEntriesOf(objects)).toStrictEqual(blobEntries);
   }, 90_000);
 
   it("preserves subscription H0 and active input during referenced Sandbox transfer", async () => {
     const {
+      run: own,
       actor,
       agentId,
       runnerGroup,
@@ -90,8 +103,10 @@ describe("CHAT-02: model-first routing", () => {
       sendChatRun,
       requestSendEvent,
     } = await publicChatActor(context);
-    await configureSubscriptionPiModel(actor, {
-      accountId: "model-handoff-account",
+    await own(async () => {
+      return await configureSubscriptionPiModel(actor, {
+        accountId: "model-handoff-account",
+      });
     });
     const historyObjects = mockPiCheckpointObjectStore();
     const firstPrompt = "establish original subscription history";
@@ -101,14 +116,16 @@ describe("CHAT-02: model-first routing", () => {
       prompt: firstPrompt,
     });
     const firstClaim = await claimChatRun(runnerGroup, first.runId);
-    await completeSandboxFirstPiRun({
-      actor,
-      answer: "previous settled subscription answer",
-      historyObjects,
-      claim: firstClaim,
-      prompt: firstPrompt,
-      responsesModel: { provider: "openai-codex", model: "gpt-6-luna" },
-      run: first,
+    await own(async () => {
+      return await completeSandboxFirstPiRun({
+        actor,
+        answer: "previous settled subscription answer",
+        historyObjects,
+        claim: firstClaim,
+        prompt: firstPrompt,
+        responsesModel: { provider: "openai-codex", model: "gpt-6-luna" },
+        run: first,
+      });
     });
     const prompt = "resume from the settled subscription H0";
     const run = await sendChatRun(actor, {
@@ -173,8 +190,10 @@ describe("CHAT-02: model-first routing", () => {
     ).toStrictEqual([]);
     expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
     await expectThreadModelCredits(context, actor, run.threadId, 0);
-    await cancelChatRun(actor, run.runId, {
-      authorization: `Bearer ${claim.sandboxToken}`,
+    await own(async () => {
+      return await cancelChatRun(actor, run.runId, {
+        authorization: `Bearer ${claim.sandboxToken}`,
+      });
     });
   }, 90_000);
 });

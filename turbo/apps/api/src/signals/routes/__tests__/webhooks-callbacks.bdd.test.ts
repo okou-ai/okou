@@ -1,3 +1,9 @@
+import { prepareSessionHistoryBytes } from "./helpers/prepared-session-history";
+import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
+import { gzipSync } from "node:zlib";
+import { Header } from "tar";
+import { publicChatActor } from "./helpers/public-chat-actor";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { oomEvidenceSchema } from "@okouai/api-contracts/contracts/oom-evidence";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createHash, randomUUID } from "node:crypto";
@@ -30,11 +36,7 @@ import {
 } from "./helpers/api-bdd-connectors";
 import { createGithubBddApi, newGithubUserId } from "./helpers/api-bdd-github";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
-import {
-  transitionRunToTerminal,
-  transitionRunToTimeout,
-  type TestTerminalRunStatus,
-} from "./helpers/api-bdd-run-timeout";
+
 import {
   createRunsApi,
   expectCanonicalStorageManifest,
@@ -49,12 +51,7 @@ import {
 } from "./helpers/connector-credential-storage-state";
 
 const context = testContext();
-const TERMINAL_RUN_STATUSES = [
-  "completed",
-  "failed",
-  "cancelled",
-  "timeout",
-] as const satisfies readonly TestTerminalRunStatus[];
+const TERMINAL_RUN_STATUSES = ["completed", "failed", "cancelled"] as const;
 const api = createWebhookCallbackApi(context);
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 const DEFAULT_AGENT_AVATAR_URL =
@@ -171,38 +168,207 @@ async function createLimitedFreeOrgFromClerk(): Promise<ApiTestUser> {
 }
 
 async function sandboxStorageWriteFixture(label: string) {
-  const bdd = createBddApi(context);
+  function captureObjectStore() {
+    const send = context.mocks.s3.send.getMockImplementation();
+    const sign = context.mocks.s3.getSignedUrl.getMockImplementation();
+    return () => {
+      if (send) {
+        context.mocks.s3.send.mockImplementation(send);
+      }
+      if (sign) {
+        context.mocks.s3.getSignedUrl.mockImplementation(sign);
+      }
+    };
+  }
+  let restoreAccepted = captureObjectStore();
+  let restorePrevious: (() => void) | undefined;
+  onTestFinished(() => {
+    restorePrevious?.();
+  });
+  const owned = await publicChatActor(context, {
+    restoreEnvironment: () => {
+      restorePrevious ??= captureObjectStore();
+      restoreAccepted();
+    },
+  });
   const runs = createRunsApi(context);
-  const actor = bdd.user();
-  bdd.acceptAgentStorageWrites();
-  runs.acceptStorageDownloads();
-  runs.acceptTelemetryIngest();
-  const runnerGroup = runs.configureRunnerGroup();
-  await runs.heartbeatRunner(runnerGroup);
-  await runs.grantProEntitlement(actor);
-  await runs.ensurePersonalSubscriptionModel(actor);
-  const agent = await bdd.createAgent(actor, {
-    displayName: `BDD sandbox storage ${label}`,
-    visibility: "private",
+  const chat = createChatEventsFixture(context);
+  const claimed = await owned.run(async () => {
+    await runs.updateUserModelPreference(owned.actor, "claude-fable-5-1");
+    const sent = await owned.sendChatRun(owned.actor, {
+      agentId: owned.agentId,
+      prompt: `write ${label} from the sandbox`,
+    });
+    return {
+      ...sent,
+      ...(await owned.claimChatRun(owned.runnerGroup, sent.runId)),
+    };
   });
-  const run = await runs.createThreadRun(actor, {
-    agentId: agent.agentId,
-    prompt: `write ${label} from the sandbox`,
-  });
-  const claim = await runs.claimRunnerJob(run.runId);
-  const manifest = expectCanonicalStorageManifest(claim.storageManifest);
-  const mount = manifest?.storageMounts.find((candidate) => {
-    return candidate.writeback === true;
+  const mount = expectCanonicalStorageManifest(
+    claimed.claim.storageManifest,
+  )?.storageMounts.find((candidate) => {
+    return candidate.writeback;
   });
   if (!mount) {
     throw new Error("Expected a canonical writeback mount");
   }
+  function run<T>(operation: () => Promise<T>): Promise<T> {
+    restoreAccepted = captureObjectStore();
+    return owned.run(operation);
+  }
   return {
-    actor,
-    runId: run.runId,
+    actor: owned.actor,
+    runId: claimed.runId,
     mount,
-    headers: { authorization: `Bearer ${claim.sandboxToken}` },
+    headers: claimed.sandboxHeaders,
+    run,
+    terminal: (status: (typeof TERMINAL_RUN_STATUSES)[number]) => {
+      return run(async () => {
+        if (status === "cancelled") {
+          await chat.cancelChatRun(
+            owned.actor,
+            claimed.runId,
+            claimed.sandboxHeaders,
+          );
+        } else if (status === "failed") {
+          await chat.failChatRun(
+            claimed.runId,
+            claimed.sandboxHeaders,
+            "Storage writer failed",
+          );
+        } else {
+          const hash = await prepareSessionHistoryBytes(
+            context,
+            claimed.runId,
+            claimed.sandboxHeaders,
+            Buffer.from(`Public storage writer session ${claimed.runId}`),
+            (restore) => {
+              restoreAccepted = restore;
+            },
+          );
+          await run(() => {
+            return api.requestAgentComplete(
+              {
+                runId: claimed.runId,
+                exitCode: 0,
+                completion: {
+                  cliAgentType: "claude-code",
+                  cliAgentSessionId: claimed.threadId,
+                  cliAgentSessionHistoryHash: hash,
+                },
+              },
+              claimed.sandboxHeaders,
+              [200],
+            );
+          });
+        }
+        await flushWaitUntilForTest();
+        expect((await runs.readRun(owned.actor, claimed.runId)).status).toBe(
+          status,
+        );
+      });
+    },
+    currentMount: () => {
+      return run(async () => {
+        const next = await owned.sendChatRun(owned.actor, {
+          agentId: owned.agentId,
+          threadId: claimed.threadId,
+          prompt: "Read the current storage mount",
+        });
+        const nextClaim = await owned.claimChatRun(
+          owned.runnerGroup,
+          next.runId,
+        );
+        const current = expectCanonicalStorageManifest(
+          nextClaim.claim.storageManifest,
+        )?.storageMounts.find((candidate) => {
+          return candidate.storageId === mount.storageId;
+        });
+        if (!current) {
+          throw new Error("Expected the successor's same storage mount");
+        }
+        return current;
+      });
+    },
   };
+}
+
+function storageFile(path: string, size: number) {
+  const content = Buffer.alloc(size, path);
+  return {
+    path,
+    size,
+    hash: createHash("sha256").update(content).digest("hex"),
+  };
+}
+
+function acceptPreparedStorageBytes(
+  prepared: Extract<
+    Awaited<ReturnType<typeof api.requestAgentStoragePrepare>>,
+    { status: 200 }
+  >["body"],
+  files: readonly {
+    readonly path: string;
+    readonly hash: string;
+    readonly size: number;
+  }[],
+) {
+  if (!prepared.uploads) {
+    throw new Error("Expected real storage upload authorization");
+  }
+  const blocks: Buffer[] = [];
+  for (const file of files) {
+    const content = Buffer.alloc(file.size, file.path);
+    expect(createHash("sha256").update(content).digest("hex")).toBe(file.hash);
+    const header = Buffer.alloc(512);
+    new Header({
+      path: file.path,
+      size: file.size,
+      type: "File",
+      mode: 0o644,
+    }).encode(header);
+    blocks.push(header, content, Buffer.alloc((512 - (file.size % 512)) % 512));
+  }
+  blocks.push(Buffer.alloc(1024));
+  const objects = new Map([
+    [prepared.uploads.archive.key, gzipSync(Buffer.concat(blocks))],
+    [
+      prepared.uploads.manifest.key,
+      Buffer.from(
+        JSON.stringify({
+          version: 1,
+          files,
+          createdAt: new Date(0).toISOString(),
+        }),
+      ),
+    ],
+  ]);
+  const fallback = context.mocks.s3.send.getMockImplementation();
+  context.mocks.s3.send.mockImplementation((command: unknown) => {
+    if (
+      command instanceof HeadObjectCommand ||
+      command instanceof GetObjectCommand
+    ) {
+      const bytes = objects.get(command.input.Key ?? "");
+      if (bytes) {
+        return Promise.resolve({
+          ContentLength: bytes.length,
+          Body: {
+            async *[Symbol.asyncIterator]() {
+              yield bytes;
+            },
+            transformToByteArray: () => {
+              return Promise.resolve(bytes);
+            },
+          },
+        });
+      }
+    }
+    if (!fallback) {
+      throw new Error("Expected the external storage adapter");
+    }
+    return fallback(command);
+  });
 }
 
 function oauthStateFromAuthorizationUrl(authorizationUrl: string): string {
@@ -2677,7 +2843,7 @@ describe("WHCB-09: sandbox storage writes and checkpoint history blobs land in t
   });
 });
 
-describe("WHCB-10: timeout closes sandbox storage write authority", () => {
+describe("WHCB-10: terminal Runs close sandbox storage write authority", () => {
   it("rejects prepare when its owner cancels the run during upload URL signing", async () => {
     const fixture = await sandboxStorageWriteFixture("cancel during prepare");
     const runs = createRunsApi(context);
@@ -2693,17 +2859,21 @@ describe("WHCB-10: timeout closes sandbox storage write authority", () => {
       await releaseSigning.promise;
       return "https://r2.example.test/cancelled-storage-upload";
     });
-    const preparation = api.requestAgentStoragePrepare(
-      {
-        runId: fixture.runId,
-        storageId: fixture.mount.storageId,
-        files: [{ path: "cancelled.txt", hash: "a".repeat(64), size: 1 }],
-      },
-      fixture.headers,
-      [404],
-    );
+    const preparation = fixture.run(() => {
+      return api.requestAgentStoragePrepare(
+        {
+          runId: fixture.runId,
+          storageId: fixture.mount.storageId,
+          files: [{ path: "cancelled.txt", hash: "a".repeat(64), size: 1 }],
+        },
+        fixture.headers,
+        [404],
+      );
+    });
     await signingStarted.promise;
-    await runs.requestCancelRun(fixture.actor, fixture.runId, [200]);
+    await fixture.run(() => {
+      return runs.requestCancelRun(fixture.actor, fixture.runId, [200]);
+    });
     releaseSigning.resolve(undefined);
     const prepared = await preparation;
     expectApiError(prepared.body);
@@ -2718,31 +2888,20 @@ describe("WHCB-10: timeout closes sandbox storage write authority", () => {
   it.each(TERMINAL_RUN_STATUSES)(
     "rejects prepare before issuing upload URLs after %s",
     async (status) => {
-      const fixture = await sandboxStorageWriteFixture("timeout prepare");
+      const fixture = await sandboxStorageWriteFixture("terminal prepare");
+      await fixture.terminal(status);
       const signedUrlCalls = context.mocks.s3.getSignedUrl.mock.calls.length;
-
-      const terminal = await transitionRunToTerminal(
-        context,
-        fixture.runId,
-        status,
-      );
-      expect(terminal.body.ok).toBeTruthy();
-
-      const prepared = await api.requestAgentStoragePrepare(
-        {
-          runId: fixture.runId,
-          storageId: fixture.mount.storageId,
-          files: [
-            {
-              path: `${status}.txt`,
-              hash: createHash("sha256").update(status).digest("hex"),
-              size: 1,
-            },
-          ],
-        },
-        fixture.headers,
-        [404],
-      );
+      const prepared = await fixture.run(() => {
+        return api.requestAgentStoragePrepare(
+          {
+            runId: fixture.runId,
+            storageId: fixture.mount.storageId,
+            files: [storageFile(`${status}.txt`, 1)],
+          },
+          fixture.headers,
+          [404],
+        );
+      });
       expectApiError(prepared.body);
       expect(prepared.body.error.code).toBe("NOT_FOUND");
       expect(context.mocks.s3.getSignedUrl).toHaveBeenCalledTimes(
@@ -2751,133 +2910,86 @@ describe("WHCB-10: timeout closes sandbox storage write authority", () => {
     },
   );
 
-  it("keeps prepare-then-timeout commit completely write-free", async () => {
-    const fixture = await sandboxStorageWriteFixture("timeout commit");
-    const storages = createStoragesBddApi(context);
+  it("rejects prepare-then-cancel commit without object writes or moving the current mount", async () => {
+    const fixture = await sandboxStorageWriteFixture("cancel commit");
     const parentVersionId = fixture.mount.versionId;
-    const files = [
-      {
-        path: "timeout.txt",
-        hash: createHash("sha256")
-          .update(`timeout ${fixture.runId}`)
-          .digest("hex"),
-        size: 2048,
-      },
-    ];
-    const prepared = await api.requestAgentStoragePrepare(
-      {
-        runId: fixture.runId,
-        storageId: fixture.mount.storageId,
-        parentVersionId,
-        files,
-      },
-      fixture.headers,
-      [200],
-    );
-    if (prepared.status !== 200) {
-      throw new Error("Expected storage prepare to succeed before timeout");
-    }
-    const before = await storages.inspectWriteback({
-      storageId: fixture.mount.storageId,
-      versionId: prepared.body.versionId,
-      runId: fixture.runId,
-      parentVersionId,
+    const files = [storageFile("cancelled.txt", 2048)];
+    const prepared = await fixture.run(() => {
+      return api.requestAgentStoragePrepare(
+        {
+          runId: fixture.runId,
+          storageId: fixture.mount.storageId,
+          parentVersionId,
+          files,
+        },
+        fixture.headers,
+        [200],
+      );
     });
-    expect(before.version).toBeNull();
-    expect(before.lineageCount).toBe(0);
-
-    const timeout = await transitionRunToTimeout(context, fixture.runId);
-    expect(timeout.body.ok).toBeTruthy();
+    if (prepared.status !== 200) {
+      throw new Error("Expected storage prepare before cancellation");
+    }
+    await fixture.terminal("cancelled");
     const s3Calls = context.mocks.s3.send.mock.calls.length;
-
-    const committed = await api.requestAgentStorageCommit(
-      {
-        runId: fixture.runId,
-        storageId: fixture.mount.storageId,
-        versionId: prepared.body.versionId,
-        parentVersionId,
-        files,
-        message: "must not commit after timeout",
-      },
-      fixture.headers,
-      [404],
-    );
+    const committed = await fixture.run(() => {
+      return api.requestAgentStorageCommit(
+        {
+          runId: fixture.runId,
+          storageId: fixture.mount.storageId,
+          versionId: prepared.body.versionId,
+          parentVersionId,
+          files,
+          message: "must not commit after cancellation",
+        },
+        fixture.headers,
+        [404],
+      );
+    });
     expectApiError(committed.body);
     expect(committed.body.error.code).toBe("NOT_FOUND");
     expect(context.mocks.s3.send).toHaveBeenCalledTimes(s3Calls);
-    await expect(
-      storages.inspectWriteback({
-        storageId: fixture.mount.storageId,
-        versionId: prepared.body.versionId,
-        runId: fixture.runId,
-        parentVersionId,
-      }),
-    ).resolves.toStrictEqual(before);
+    await expect(fixture.currentMount()).resolves.toMatchObject({
+      versionId: parentVersionId,
+    });
   });
 
-  it("acknowledges a proven committed retry after timeout without writes", async () => {
-    const fixture = await sandboxStorageWriteFixture("timeout exact retry");
-    const storages = createStoragesBddApi(context);
+  it("acknowledges a proven committed retry after cancellation without writes", async () => {
+    const fixture = await sandboxStorageWriteFixture("cancel exact retry");
     const parentVersionId = fixture.mount.versionId;
-    const files = [
-      {
-        path: "committed.txt",
-        hash: createHash("sha256")
-          .update(`committed ${fixture.runId}`)
-          .digest("hex"),
-        size: 4096,
-      },
-    ];
-    const message = "committed before timeout";
-    const prepared = await api.requestAgentStoragePrepare(
-      {
-        runId: fixture.runId,
-        storageId: fixture.mount.storageId,
-        parentVersionId,
-        files,
-      },
-      fixture.headers,
-      [200],
-    );
+    const files = [storageFile("committed.txt", 4096)];
+    const message = "committed before cancellation";
+    const prepared = await fixture.run(() => {
+      return api.requestAgentStoragePrepare(
+        {
+          runId: fixture.runId,
+          storageId: fixture.mount.storageId,
+          parentVersionId,
+          files,
+        },
+        fixture.headers,
+        [200],
+      );
+    });
     if (prepared.status !== 200) {
-      throw new Error("Expected storage prepare to succeed before timeout");
+      throw new Error("Expected storage prepare before cancellation");
     }
-    await api.requestAgentStorageCommit(
-      {
-        runId: fixture.runId,
-        storageId: fixture.mount.storageId,
-        versionId: prepared.body.versionId,
-        parentVersionId,
-        files,
-        message,
-      },
-      fixture.headers,
-      [200],
-    );
-    const before = await storages.inspectWriteback({
+    acceptPreparedStorageBytes(prepared.body, files);
+    const body = {
+      runId: fixture.runId,
       storageId: fixture.mount.storageId,
       versionId: prepared.body.versionId,
-      runId: fixture.runId,
       parentVersionId,
+      files,
+      message,
+    };
+    await fixture.run(() => {
+      return api.requestAgentStorageCommit(body, fixture.headers, [200]);
     });
-    expect(before.version).not.toBeNull();
-    expect(before.lineageCount).toBe(1);
-
-    const timeout = await transitionRunToTimeout(context, fixture.runId);
-    expect(timeout.body.ok).toBeTruthy();
-
-    const retried = await api.requestAgentStorageCommit(
-      {
-        runId: fixture.runId,
-        storageId: fixture.mount.storageId,
-        versionId: prepared.body.versionId,
-        parentVersionId,
-        files,
-        message,
-      },
-      fixture.headers,
-      [200],
-    );
+    await fixture.terminal("cancelled");
+    const s3Calls = context.mocks.s3.send.mock.calls.length;
+    const retried = await fixture.run(() => {
+      return api.requestAgentStorageCommit(body, fixture.headers, [200]);
+    });
     if (retried.status !== 200) {
       throw new Error("Expected exact committed retry to succeed");
     }
@@ -2888,107 +3000,93 @@ describe("WHCB-10: timeout closes sandbox storage write authority", () => {
       fileCount: 1,
       deduplicated: true,
     });
-    await expect(
-      storages.inspectWriteback({
-        storageId: fixture.mount.storageId,
-        versionId: prepared.body.versionId,
-        runId: fixture.runId,
-        parentVersionId,
-      }),
-    ).resolves.toStrictEqual(before);
+    expect(context.mocks.s3.send).toHaveBeenCalledTimes(s3Calls);
+    await expect(fixture.currentMount()).resolves.toMatchObject({
+      versionId: prepared.body.versionId,
+    });
   });
 
-  it("keeps a deduplicated head move provable after timeout", async () => {
+  it("keeps a deduplicated head move observable after cancellation", async () => {
     const fixture = await sandboxStorageWriteFixture(
-      "timeout deduplicated retry",
+      "cancel deduplicated retry",
     );
-    const storages = createStoragesBddApi(context);
     const initialVersionId = fixture.mount.versionId;
-    const restoredFiles = [
-      {
-        path: "restored.txt",
-        hash: createHash("sha256")
-          .update(`restored ${fixture.runId}`)
-          .digest("hex"),
-        size: 1024,
-      },
-    ];
-    const restoredMessage = "restored before timeout";
-    const restoredPrepare = await api.requestAgentStoragePrepare(
-      {
-        runId: fixture.runId,
-        storageId: fixture.mount.storageId,
-        parentVersionId: initialVersionId,
-        files: restoredFiles,
-      },
-      fixture.headers,
-      [200],
-    );
+    const restoredFiles = [storageFile("restored.txt", 1024)];
+    const restoredMessage = "restored before cancellation";
+    const restoredPrepare = await fixture.run(() => {
+      return api.requestAgentStoragePrepare(
+        {
+          runId: fixture.runId,
+          storageId: fixture.mount.storageId,
+          parentVersionId: initialVersionId,
+          files: restoredFiles,
+        },
+        fixture.headers,
+        [200],
+      );
+    });
     if (restoredPrepare.status !== 200) {
-      throw new Error("Expected restored version prepare to succeed");
+      throw new Error("Expected restored version prepare");
     }
-    await api.requestAgentStorageCommit(
-      {
-        runId: fixture.runId,
-        storageId: fixture.mount.storageId,
-        versionId: restoredPrepare.body.versionId,
-        parentVersionId: initialVersionId,
-        files: restoredFiles,
-        message: restoredMessage,
-      },
-      fixture.headers,
-      [200],
-    );
-
-    const replacementFiles = [
-      {
-        path: "replacement.txt",
-        hash: createHash("sha256")
-          .update(`replacement ${fixture.runId}`)
-          .digest("hex"),
-        size: 4096,
-      },
-    ];
-    const replacementPrepare = await api.requestAgentStoragePrepare(
-      {
-        runId: fixture.runId,
-        storageId: fixture.mount.storageId,
-        parentVersionId: restoredPrepare.body.versionId,
-        files: replacementFiles,
-      },
-      fixture.headers,
-      [200],
-    );
+    acceptPreparedStorageBytes(restoredPrepare.body, restoredFiles);
+    await fixture.run(() => {
+      return api.requestAgentStorageCommit(
+        {
+          runId: fixture.runId,
+          storageId: fixture.mount.storageId,
+          versionId: restoredPrepare.body.versionId,
+          parentVersionId: initialVersionId,
+          files: restoredFiles,
+          message: restoredMessage,
+        },
+        fixture.headers,
+        [200],
+      );
+    });
+    const replacementFiles = [storageFile("replacement.txt", 4096)];
+    const replacementPrepare = await fixture.run(() => {
+      return api.requestAgentStoragePrepare(
+        {
+          runId: fixture.runId,
+          storageId: fixture.mount.storageId,
+          parentVersionId: restoredPrepare.body.versionId,
+          files: replacementFiles,
+        },
+        fixture.headers,
+        [200],
+      );
+    });
     if (replacementPrepare.status !== 200) {
-      throw new Error("Expected replacement version prepare to succeed");
+      throw new Error("Expected replacement version prepare");
     }
-    await api.requestAgentStorageCommit(
-      {
-        runId: fixture.runId,
-        storageId: fixture.mount.storageId,
-        versionId: replacementPrepare.body.versionId,
-        parentVersionId: restoredPrepare.body.versionId,
-        files: replacementFiles,
-        message: "replacement before restore",
-      },
-      fixture.headers,
-      [200],
-    );
-
-    const restored = await api.requestAgentStorageCommit(
-      {
-        runId: fixture.runId,
-        storageId: fixture.mount.storageId,
-        versionId: restoredPrepare.body.versionId,
-        parentVersionId: replacementPrepare.body.versionId,
-        files: restoredFiles,
-        message: restoredMessage,
-      },
-      fixture.headers,
-      [200],
-    );
+    acceptPreparedStorageBytes(replacementPrepare.body, replacementFiles);
+    await fixture.run(() => {
+      return api.requestAgentStorageCommit(
+        {
+          runId: fixture.runId,
+          storageId: fixture.mount.storageId,
+          versionId: replacementPrepare.body.versionId,
+          parentVersionId: restoredPrepare.body.versionId,
+          files: replacementFiles,
+          message: "replacement before restore",
+        },
+        fixture.headers,
+        [200],
+      );
+    });
+    const body = {
+      runId: fixture.runId,
+      storageId: fixture.mount.storageId,
+      versionId: restoredPrepare.body.versionId,
+      parentVersionId: replacementPrepare.body.versionId,
+      files: restoredFiles,
+      message: restoredMessage,
+    };
+    const restored = await fixture.run(() => {
+      return api.requestAgentStorageCommit(body, fixture.headers, [200]);
+    });
     if (restored.status !== 200) {
-      throw new Error("Expected deduplicated head move to succeed");
+      throw new Error("Expected deduplicated head move");
     }
     expect(restored.body).toMatchObject({
       success: true,
@@ -2997,46 +3095,17 @@ describe("WHCB-10: timeout closes sandbox storage write authority", () => {
       fileCount: 1,
       deduplicated: true,
     });
-
-    const before = await storages.inspectWriteback({
-      storageId: fixture.mount.storageId,
-      versionId: restoredPrepare.body.versionId,
-      runId: fixture.runId,
-      parentVersionId: replacementPrepare.body.versionId,
+    await fixture.terminal("cancelled");
+    const retried = await fixture.run(() => {
+      return api.requestAgentStorageCommit(body, fixture.headers, [200]);
     });
-    expect(before.storage).toMatchObject({
-      headVersionId: restoredPrepare.body.versionId,
-      size: 1024,
-      fileCount: 1,
-    });
-    expect(before.lineageCount).toBe(1);
-
-    const timeout = await transitionRunToTimeout(context, fixture.runId);
-    expect(timeout.body.ok).toBeTruthy();
-    const retried = await api.requestAgentStorageCommit(
-      {
-        runId: fixture.runId,
-        storageId: fixture.mount.storageId,
-        versionId: restoredPrepare.body.versionId,
-        parentVersionId: replacementPrepare.body.versionId,
-        files: restoredFiles,
-        message: restoredMessage,
-      },
-      fixture.headers,
-      [200],
-    );
     if (retried.status !== 200) {
-      throw new Error("Expected deduplicated exact retry to succeed");
+      throw new Error("Expected deduplicated exact retry");
     }
     expect(retried.body.deduplicated).toBeTruthy();
-    await expect(
-      storages.inspectWriteback({
-        storageId: fixture.mount.storageId,
-        versionId: restoredPrepare.body.versionId,
-        runId: fixture.runId,
-        parentVersionId: replacementPrepare.body.versionId,
-      }),
-    ).resolves.toStrictEqual(before);
+    await expect(fixture.currentMount()).resolves.toMatchObject({
+      versionId: restoredPrepare.body.versionId,
+    });
   });
 });
 

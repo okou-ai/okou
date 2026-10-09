@@ -112,12 +112,6 @@ export const testConnectorCredentialStorageStateActionBodySchema =
       connector_account_id: z.uuid(),
     }),
     z.object({
-      action: z.literal("delete-custom-credential-values"),
-      org_id: z.string(),
-      user_id: z.string(),
-      custom_connector_id: z.uuid(),
-    }),
-    z.object({
       action: z.literal("clear-feishu-connector-ownership"),
       org_id: z.string(),
       installation_id: z.uuid(),
@@ -133,17 +127,6 @@ export const testConnectorCredentialStorageStateActionBodySchema =
       user_id: z.string(),
       installation_id: z.uuid(),
       connector_id: z.uuid().nullable(),
-    }),
-    z.object({
-      action: z.literal("seed-owned-secret"),
-      org_id: z.string(),
-      user_id: z.string(),
-      connector_slug: z.string(),
-      auth_method: z.string(),
-      storage_version: z.number().int().positive(),
-      name: z.string(),
-      encrypted_value: z.string(),
-      description: z.string().nullable(),
     }),
     z.object({
       action: z.literal("seed-connector"),
@@ -162,15 +145,6 @@ export const testConnectorCredentialStorageStateActionBodySchema =
       token_expires_at: z.iso.datetime().nullable().optional(),
     }),
     z.object({
-      action: z.literal("set-builtin-oauth-scope-facts"),
-      org_id: z.string(),
-      user_id: z.string(),
-      connector_slug: z.string(),
-      connector_id: z.uuid(),
-      oauth_scopes: z.array(z.string()),
-      oauth_granted_scopes: z.array(z.string()).nullable(),
-    }),
-    z.object({
       action: z.literal("set-connector-default"),
       org_id: z.string(),
       user_id: z.string(),
@@ -183,12 +157,6 @@ export const testConnectorCredentialStorageStateActionBodySchema =
       user_id: z.string(),
       connector_id: z.uuid(),
       external_id: z.string().nullable(),
-    }),
-    z.object({
-      action: z.literal("seed-builtin-thread-selection"),
-      chat_thread_id: z.uuid(),
-      connector_id: z.uuid(),
-      connector_slug: z.string(),
     }),
     z.object({
       action: z.literal("seed-custom-thread-selection"),
@@ -209,13 +177,6 @@ export const testConnectorCredentialStorageStateActionBodySchema =
       auth_method: z.enum(["none", "manual", "oauth"]),
       storage_version: z.number().int().positive(),
       needs_reconnect: z.boolean().optional(),
-    }),
-    z.object({
-      action: z.literal("set-secret-owner"),
-      org_id: z.string(),
-      user_id: z.string(),
-      name: z.string(),
-      connector_id: z.uuid(),
     }),
     z.object({
       action: z.literal("set-variable-owner"),

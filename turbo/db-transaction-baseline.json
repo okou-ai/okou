@@ -107,54 +107,9 @@
       "owner": "seedAutomaticOAuthBinding"
     },
     {
-      "id": "TX-0025",
-      "file": "turbo/apps/api/src/signals/routes/test-connector-credential-storage-state.ts",
-      "owner": "deleteCustomCredentialValues"
-    },
-    {
-      "id": "TX-0026",
-      "file": "turbo/apps/api/src/signals/routes/test-connector-credential-storage-state.ts",
-      "owner": "seedOwnedSecret"
-    },
-    {
-      "id": "TX-0027",
-      "file": "turbo/apps/api/src/signals/routes/test-cron-cleanup-sandboxes-state.ts",
-      "owner": "seedRunForAction"
-    },
-    {
-      "id": "TX-0028",
-      "file": "turbo/apps/api/src/signals/routes/test-cron-cleanup-sandboxes-state.ts",
-      "owner": "seedRunForAction"
-    },
-    {
-      "id": "TX-0029",
-      "file": "turbo/apps/api/src/signals/routes/test-cron-cleanup-sandboxes-state.ts",
-      "owner": "seedHostedPublication"
-    },
-    {
-      "id": "TX-0030",
-      "file": "turbo/apps/api/src/signals/routes/test-cron-cleanup-sandboxes-state.ts",
-      "owner": "seedOwnershipUsage"
-    },
-    {
-      "id": "TX-0031",
-      "file": "turbo/apps/api/src/signals/routes/test-cron-cleanup-sandboxes-state.ts",
-      "owner": "deleteRunOwnershipForAction"
-    },
-    {
-      "id": "TX-0032",
-      "file": "turbo/apps/api/src/signals/routes/test-cron-cleanup-sandboxes-state.ts",
-      "owner": "transitionRunTerminalForAction"
-    },
-    {
       "id": "TX-0033",
       "file": "turbo/apps/api/src/signals/routes/test-official-workflow-catalog-state.ts",
       "owner": "seedPreviousSchemaRelease$"
-    },
-    {
-      "id": "TX-0035",
-      "file": "turbo/apps/api/src/signals/routes/test-telegram-state.ts",
-      "owner": "seedOrgDefaultAgentForAction"
     },
     {
       "id": "TX-0036",

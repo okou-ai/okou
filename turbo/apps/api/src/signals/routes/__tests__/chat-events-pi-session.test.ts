@@ -31,9 +31,17 @@ const {
 
 describe("CHAT-02: personal subscription model selection", () => {
   it("preserves one Pi session while selecting Luna, Sol, Luna, and Luna again", async () => {
-    const { actor, agentId, runnerGroup, claimChatRun, sendChatRun } =
-      await publicChatActor(context);
-    await configureSubscriptionPiModel(actor);
+    const {
+      run: own,
+      actor,
+      agentId,
+      runnerGroup,
+      claimChatRun,
+      sendChatRun,
+    } = await publicChatActor(context);
+    await own(async () => {
+      return await configureSubscriptionPiModel(actor);
+    });
 
     mockPiResourceArchiveDownloads();
     const historyObjects = mockPiCheckpointObjectStore();
@@ -60,14 +68,16 @@ describe("CHAT-02: personal subscription model selection", () => {
         });
         expect(claim.claim.piModelConfig).not.toHaveProperty("serviceTier");
       }
-      await completeSandboxFirstPiRun({
-        actor,
-        run,
-        claim,
-        historyObjects,
-        prompt: `continue with ${model}`,
-        answer: `answer ${index + 1}`,
-        responsesModel: { provider: "openai", model },
+      await own(async () => {
+        return await completeSandboxFirstPiRun({
+          actor,
+          run,
+          claim,
+          historyObjects,
+          prompt: `continue with ${model}`,
+          answer: `answer ${index + 1}`,
+          responsesModel: { provider: "openai", model },
+        });
       });
       const session = await readCompletedRunSessionId(
         context,
@@ -83,14 +93,22 @@ describe("CHAT-02: personal subscription model selection", () => {
   }, 90_000);
 
   it("preserves generations across Luna Pi and fast Astra Codex boundaries", async () => {
-    const { actor, agentId, runnerGroup, claimChatRun, sendChatRun } =
-      await publicChatActor(context);
+    const {
+      run: own,
+      actor,
+      agentId,
+      runnerGroup,
+      claimChatRun,
+      sendChatRun,
+    } = await publicChatActor(context);
     const orgId = actor.orgId;
     if (!orgId) {
       throw new Error("Expected entitled chat actor to have an org");
     }
     const piModel = "gpt-6-luna";
-    await configureSubscriptionPiModel(actor, {}, piModel);
+    await own(async () => {
+      return await configureSubscriptionPiModel(actor, {}, piModel);
+    });
 
     mockPiResourceArchiveDownloads();
     const historyObjects = mockPiCheckpointObjectStore();
@@ -106,14 +124,16 @@ describe("CHAT-02: personal subscription model selection", () => {
       model: piModel,
     });
     await flushWaitUntilForTest();
-    await completeSandboxFirstPiRun({
-      actor,
-      run: firstPi,
-      claim: await claimChatRun(runnerGroup, firstPi.runId),
-      historyObjects,
-      prompt: firstPiPrompt,
-      answer: firstPiAnswer,
-      responsesModel,
+    await own(async () => {
+      return await completeSandboxFirstPiRun({
+        actor,
+        run: firstPi,
+        claim: await claimChatRun(runnerGroup, firstPi.runId),
+        historyObjects,
+        prompt: firstPiPrompt,
+        answer: firstPiAnswer,
+        responsesModel,
+      });
     });
     const firstSessionId = await readCompletedRunSessionId(
       context,
@@ -144,15 +164,28 @@ describe("CHAT-02: personal subscription model selection", () => {
     expect(firstCodexClaim.claim.piLaunchConfig).toBeUndefined();
     expect(firstCodexClaim.claim.resumeSession).toBeNull();
     chatCallbacks.mockChatOutputEvents([assistantEvent(0, firstCodexAnswer)]);
-    await completeChatRunOk(firstCodex.runId, firstCodexClaim.sandboxHeaders, {
-      cliAgentType: "codex",
-      lastEventSequence: 0,
+    await own(async () => {
+      return await completeChatRunOk(
+        firstCodex.runId,
+        firstCodexClaim.sandboxHeaders,
+        {
+          cliAgentType: "codex",
+          lastEventSequence: 0,
+        },
+      );
     });
     await flushWaitUntilForTest();
 
     const returnedPiPrompt = "return to Pi with every visible prior turn";
-    await chat.updateThreadModelSelection(actor, firstPi.threadId, piModel, {
-      codexServiceTier: null,
+    await own(async () => {
+      return await chat.updateThreadModelSelection(
+        actor,
+        firstPi.threadId,
+        piModel,
+        {
+          codexServiceTier: null,
+        },
+      );
     });
     const returnedPi = await sendChatRun(actor, {
       agentId,
@@ -187,14 +220,16 @@ describe("CHAT-02: personal subscription model selection", () => {
     ]) {
       expect(occurrences(returnedPiInstructions, prior)).toBe(1);
     }
-    await completeSandboxFirstPiRun({
-      actor,
-      run: returnedPi,
-      claim: returnedPiClaim,
-      historyObjects,
-      prompt: returnedPiPrompt,
-      answer: returnedPiAnswer,
-      responsesModel,
+    await own(async () => {
+      return await completeSandboxFirstPiRun({
+        actor,
+        run: returnedPi,
+        claim: returnedPiClaim,
+        historyObjects,
+        prompt: returnedPiPrompt,
+        answer: returnedPiAnswer,
+        responsesModel,
+      });
     });
 
     const piFollowUpPrompt = "resume the returned Pi generation once";
@@ -233,11 +268,13 @@ describe("CHAT-02: personal subscription model selection", () => {
         ),
       ).getSessionId(),
     ).toBe(firstPi.threadId);
-    await cancelChatRun(
-      actor,
-      piFollowUp.runId,
-      piFollowUpClaim.sandboxHeaders,
-    );
+    await own(async () => {
+      return await cancelChatRun(
+        actor,
+        piFollowUp.runId,
+        piFollowUpClaim.sandboxHeaders,
+      );
+    });
 
     const repeatedCodexPrompt = "cross Codex before returning to Pi again";
     const repeatedCodexAnswer = "second intervening Codex answer";
@@ -264,16 +301,25 @@ describe("CHAT-02: personal subscription model selection", () => {
     chatCallbacks.mockChatOutputEvents([
       assistantEvent(0, repeatedCodexAnswer),
     ]);
-    await completeChatRunOk(
-      repeatedCodex.runId,
-      repeatedCodexClaim.sandboxHeaders,
-      { cliAgentType: "codex", lastEventSequence: 0 },
-    );
+    await own(async () => {
+      return await completeChatRunOk(
+        repeatedCodex.runId,
+        repeatedCodexClaim.sandboxHeaders,
+        { cliAgentType: "codex", lastEventSequence: 0 },
+      );
+    });
     await flushWaitUntilForTest();
 
     const repeatedPiPrompt = "return to a third Pi generation";
-    await chat.updateThreadModelSelection(actor, firstPi.threadId, piModel, {
-      codexServiceTier: null,
+    await own(async () => {
+      return await chat.updateThreadModelSelection(
+        actor,
+        firstPi.threadId,
+        piModel,
+        {
+          codexServiceTier: null,
+        },
+      );
     });
     const repeatedPi = await sendChatRun(actor, {
       agentId,
@@ -318,14 +364,16 @@ describe("CHAT-02: personal subscription model selection", () => {
     ]) {
       expect(occurrences(repeatedPiInstructions, prior)).toBe(1);
     }
-    await completeSandboxFirstPiRun({
-      actor,
-      run: repeatedPi,
-      claim: repeatedPiClaim,
-      historyObjects,
-      prompt: repeatedPiPrompt,
-      answer: repeatedPiAnswer,
-      responsesModel,
+    await own(async () => {
+      return await completeSandboxFirstPiRun({
+        actor,
+        run: repeatedPi,
+        claim: repeatedPiClaim,
+        historyObjects,
+        prompt: repeatedPiPrompt,
+        answer: repeatedPiAnswer,
+        responsesModel,
+      });
     });
 
     for (const completed of [

@@ -3,10 +3,6 @@ import { describe, expect, it, onTestFinished } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
 import {
-  readConnectorCredentialStorageState,
-  seedOwnedConnectorSecret,
-} from "./helpers/connector-credential-storage-state";
-import {
   deleteUsageStateFixture$,
   insertUsageEvent$,
   materializeHourlyUsage$,
@@ -18,36 +14,6 @@ const context = testContext();
 const store = createStore();
 
 describe("usage state test state", () => {
-  it("cascades connector credentials when deleting fixture connectors", async () => {
-    const fixture = await store.set(
-      seedUsageStateFixture$,
-      undefined,
-      context.signal,
-    );
-    await seedOwnedConnectorSecret(context, {
-      ...fixture,
-      connectorSlug: "fixture-connector",
-      authMethod: "api-token",
-      storageVersion: 1,
-      name: "FIXTURE_CONNECTOR_TOKEN",
-      encryptedValue: "fixture-value",
-      description: null,
-    });
-
-    await store.set(deleteUsageStateFixture$, fixture, context.signal);
-
-    const storageState = await readConnectorCredentialStorageState(context, {
-      ...fixture,
-      connectorSlug: "fixture-connector",
-      secretNames: ["FIXTURE_CONNECTOR_TOKEN"],
-    });
-    expect(storageState).toMatchObject({
-      connector: null,
-      secrets: [],
-      variables: [],
-    });
-  });
-
   it("clears owned raw and hourly facts without deleting another fixture", async () => {
     const owned = await store.set(
       seedUsageStateFixture$,

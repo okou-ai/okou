@@ -1,3 +1,6 @@
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { publicChatActor } from "./helpers/public-chat-actor";
+import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
 import { randomUUID } from "node:crypto";
 
 import {
@@ -7,7 +10,6 @@ import {
   type ConnectorCheckRequestBody,
   connectorCheckContract,
 } from "@okouai/api-contracts/contracts/connector-check";
-import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
@@ -45,12 +47,8 @@ import {
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 
 import { connectorCheckRoutes } from "../connector-check";
-import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 
-const TEST_APP_ROUTES = Object.freeze([
-  ...connectorCheckRoutes,
-  ...testCronCleanupSandboxesStateRoutes,
-]);
+const TEST_APP_ROUTES = Object.freeze([...connectorCheckRoutes]);
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -88,12 +86,6 @@ const trackCustomFixture = createFixtureTracker<{
 
 function client() {
   return setupApp({ context, routes: TEST_APP_ROUTES })(connectorCheckContract);
-}
-
-function stateClient() {
-  return setupApp({ context, routes: TEST_APP_ROUTES })(
-    testCronCleanupSandboxesStateContract,
-  );
 }
 
 function currentSecond(): number {
@@ -1886,80 +1878,58 @@ describe("POST /api/connectors/diagnostics/check", () => {
     });
   });
 
-  it("propagates malformed registration and distinguishes missing from terminal state", async () => {
-    const actor = bdd.user();
-    await seedAdminMembership(actor);
-    const { runId } = await createOwnedRun(actor);
-    const token = okouToken(actor, runId, ["connector:read", "agent-run:read"]);
-
-    await accept(
-      stateClient().action({
-        body: {
-          action: "corrupt-connector-diagnostic-registration",
-          run_id: runId,
+  it("reads a real registration and rejects diagnostics after normal Run cancellation", async () => {
+    const {
+      actor,
+      agentId,
+      runnerGroup,
+      run: own,
+      sendChatRun,
+      claimChatRun,
+    } = await publicChatActor(context);
+    await own(async () => {
+      await runsApi.updateUserModelPreference(actor, "claude-fable-5-1");
+      const sent = await sendChatRun(actor, {
+        agentId,
+        prompt: "Inspect active connector registration",
+      });
+      const claimed = await claimChatRun(runnerGroup, sent.runId);
+      const token = okouTokenFromClaim(claimed.claim);
+      const active = await checkWithToken(token, {
+        mode: "environment",
+        environmentName: "GH_TOKEN",
+      });
+      expect(active.body).toStrictEqual({
+        outcome: "resolved",
+        mode: "environment",
+        connector: {
+          connectorSlug: "github",
+          label: "GitHub",
+          visibility: "available",
+          credentialResolution: "network-boundary",
         },
-      }),
-      [200],
-    );
-    const malformed = await accept(
-      client().check({
-        headers: { authorization: `Bearer ${token}` },
-        body: {
-          mode: "environment",
-          environmentName: "GH_TOKEN",
-        },
-      }),
-      [500],
-    );
-    expect(malformed.body).toStrictEqual({ error: "Internal server error" });
-
-    await accept(
-      stateClient().action({
-        body: {
-          action: "delete-connector-diagnostic-registration",
-          run_id: runId,
-        },
-      }),
-      [200],
-    );
-
-    const legacy = await checkWithToken(token, {
-      mode: "environment",
-      environmentName: "GH_TOKEN",
+        environmentName: "GH_TOKEN",
+        run: { status: "not-configured" },
+        permission: null,
+      });
+      await runsApi.requestCancelRun(actor, sent.runId, [200]);
+      await createWebhookCallbackApi(context).requestAgentComplete(
+        { runId: sent.runId, exitCode: 1, error: "Run cancelled" },
+        claimed.sandboxHeaders,
+        [200],
+      );
+      const terminal = await accept(
+        client().check({
+          headers: { authorization: `Bearer ${token}` },
+          body: { mode: "environment", environmentName: "GH_TOKEN" },
+        }),
+        [404],
+      );
+      expect(terminal.body.error).toStrictEqual({
+        code: "NOT_FOUND",
+        message: "Agent run not found",
+      });
+      expect(context.mocks.axiom.query).not.toHaveBeenCalled();
     });
-    expect(legacy.body).toStrictEqual({ outcome: "run-context-unavailable" });
-
-    await accept(
-      stateClient().action({
-        body: {
-          action: "transition-run-terminal",
-          run_id: runId,
-          status: "completed",
-        },
-      }),
-      [200],
-    );
-    const terminal = await accept(
-      client().check({
-        headers: { authorization: `Bearer ${token}` },
-        body: {
-          mode: "environment",
-          environmentName: "GH_TOKEN",
-        },
-      }),
-      [404],
-    );
-    expect(terminal.body.error).toStrictEqual({
-      code: "NOT_FOUND",
-      message: "Agent run not found",
-    });
-    expect(context.mocks.axiom.query).not.toHaveBeenCalled();
-
-    await accept(
-      stateClient().action({
-        body: { action: "delete-run", run_id: runId },
-      }),
-      [200],
-    );
   });
 });

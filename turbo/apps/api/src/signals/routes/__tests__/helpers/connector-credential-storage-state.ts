@@ -166,22 +166,6 @@ export async function readAutomaticOAuthBindingState(
   return response.automatic_oauth_binding;
 }
 
-export async function deleteCustomConnectorCredentialValues(
-  context: TestContext,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly customConnectorId: string;
-  },
-): Promise<void> {
-  await postAction(context, {
-    action: "delete-custom-credential-values",
-    org_id: args.orgId,
-    user_id: args.userId,
-    custom_connector_id: args.customConnectorId,
-  });
-}
-
 export async function clearFeishuConnectorOwnership(
   context: TestContext,
   args: {
@@ -226,36 +210,6 @@ export async function setFeishuMemberConnectorLink(
     installation_id: args.installationId,
     connector_id: args.connectorId,
   });
-}
-
-export async function seedOwnedConnectorSecret(
-  context: TestContext,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connectorSlug: string;
-    readonly authMethod: string;
-    readonly storageVersion: number;
-    readonly name: string;
-    readonly encryptedValue: string;
-    readonly description: string | null;
-  },
-): Promise<string> {
-  const response = await postAction(context, {
-    action: "seed-owned-secret",
-    org_id: args.orgId,
-    user_id: args.userId,
-    connector_slug: args.connectorSlug,
-    auth_method: args.authMethod,
-    storage_version: args.storageVersion,
-    name: args.name,
-    encrypted_value: args.encryptedValue,
-    description: args.description,
-  });
-  if (!response.connector_id) {
-    throw new Error("Connector storage test fixture id was not returned");
-  }
-  return response.connector_id;
 }
 
 export async function seedConnectorStorageRow(
@@ -304,29 +258,6 @@ export async function setConnectorCredentialStorageState(
   });
 }
 
-export async function setBuiltinOAuthScopeFacts(
-  context: TestContext,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connectorSlug: string;
-    readonly connectorId: string;
-    readonly oauthScopes: readonly string[];
-    readonly oauthGrantedScopes: readonly string[] | null;
-  },
-): Promise<void> {
-  await postAction(context, {
-    action: "set-builtin-oauth-scope-facts",
-    org_id: args.orgId,
-    user_id: args.userId,
-    connector_slug: args.connectorSlug,
-    connector_id: args.connectorId,
-    oauth_scopes: [...args.oauthScopes],
-    oauth_granted_scopes:
-      args.oauthGrantedScopes === null ? null : [...args.oauthGrantedScopes],
-  });
-}
-
 export async function setConnectorDefaultState(
   context: TestContext,
   args: {
@@ -360,22 +291,6 @@ export async function setConnectorExternalIdState(
     user_id: args.userId,
     connector_id: args.connectorId,
     external_id: args.externalId,
-  });
-}
-
-export async function seedBuiltinThreadConnectorSelection(
-  context: TestContext,
-  args: {
-    readonly chatThreadId: string;
-    readonly connectorId: string;
-    readonly connectorSlug: string;
-  },
-): Promise<void> {
-  await postAction(context, {
-    action: "seed-builtin-thread-selection",
-    chat_thread_id: args.chatThreadId,
-    connector_id: args.connectorId,
-    connector_slug: args.connectorSlug,
   });
 }
 
@@ -434,24 +349,6 @@ export async function setCustomConnectorCredentialStorageState(
     ...(args.needsReconnect === undefined
       ? {}
       : { needs_reconnect: args.needsReconnect }),
-  });
-}
-
-export async function setConnectorSecretOwner(
-  context: TestContext,
-  args: {
-    readonly connectorId: string;
-    readonly name: string;
-    readonly orgId: string;
-    readonly userId: string;
-  },
-): Promise<void> {
-  await postAction(context, {
-    action: "set-secret-owner",
-    connector_id: args.connectorId,
-    name: args.name,
-    org_id: args.orgId,
-    user_id: args.userId,
   });
 }
 

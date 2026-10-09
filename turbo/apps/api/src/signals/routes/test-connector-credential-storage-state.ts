@@ -348,56 +348,6 @@ async function readAutomaticOAuthBinding(
   });
 }
 
-async function deleteCustomCredentialValues(
-  db: Db,
-  body: ConnectorCredentialStorageAction<"delete-custom-credential-values">,
-  signal: AbortSignal,
-) {
-  const [connector] = await db
-    .select({ id: connectors.id })
-    .from(connectors)
-    .where(
-      and(
-        eq(connectors.orgId, body.org_id),
-        eq(connectors.userId, body.user_id),
-        eq(connectors.customConnectorId, body.custom_connector_id),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  if (!connector) {
-    return {
-      status: 400 as const,
-      body: { error: "Custom connector storage test fixture was not found" },
-    };
-  }
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0025; new non-billing transactions are prohibited.
-  await db.transaction(async (tx) => {
-    await tx
-      .delete(secrets)
-      .where(
-        and(
-          eq(secrets.connectorId, connector.id),
-          eq(secrets.orgId, body.org_id),
-          eq(secrets.userId, body.user_id),
-          eq(secrets.type, "connector"),
-        ),
-      );
-    await tx
-      .delete(variables)
-      .where(
-        and(
-          eq(variables.connectorId, connector.id),
-          eq(variables.orgId, body.org_id),
-          eq(variables.userId, body.user_id),
-          eq(variables.type, "connector"),
-        ),
-      );
-  });
-  signal.throwIfAborted();
-  return actionOk();
-}
-
 async function clearFeishuConnectorOwnership(
   db: Db,
   body: ConnectorCredentialStorageAction<"clear-feishu-connector-ownership">,
@@ -506,41 +456,6 @@ async function seedCustomOAuthStateContext(
   return actionOk();
 }
 
-async function seedOwnedSecret(
-  db: Db,
-  body: ConnectorCredentialStorageAction<"seed-owned-secret">,
-  signal: AbortSignal,
-) {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0026; new non-billing transactions are prohibited.
-  const connectorId = await db.transaction(async (tx) => {
-    const [connector] = await tx
-      .insert(connectors)
-      .values({
-        orgId: body.org_id,
-        userId: body.user_id,
-        connectorSlug: body.connector_slug,
-        authMethod: body.auth_method,
-        storageVersion: body.storage_version,
-      })
-      .returning({ id: connectors.id });
-    if (!connector) {
-      throw new Error("Expected connector storage test fixture");
-    }
-    await tx.insert(secrets).values({
-      connectorId: connector.id,
-      orgId: body.org_id,
-      userId: body.user_id,
-      name: body.name,
-      encryptedValue: body.encrypted_value,
-      description: body.description,
-      type: "connector",
-    });
-    return connector.id;
-  });
-  signal.throwIfAborted();
-  return actionOk({ connector_id: connectorId });
-}
-
 async function seedConnector(
   db: Db,
   body: ConnectorCredentialStorageAction<"seed-connector">,
@@ -598,38 +513,6 @@ async function setConnectorState(
       };
 }
 
-async function setBuiltinOAuthScopeFacts(
-  db: Db,
-  body: ConnectorCredentialStorageAction<"set-builtin-oauth-scope-facts">,
-  signal: AbortSignal,
-) {
-  const [updated] = await db
-    .update(connectors)
-    .set({
-      oauthScopes: JSON.stringify(body.oauth_scopes),
-      oauthGrantedScopes:
-        body.oauth_granted_scopes === null
-          ? null
-          : JSON.stringify(body.oauth_granted_scopes),
-    })
-    .where(
-      and(
-        eq(connectors.orgId, body.org_id),
-        eq(connectors.userId, body.user_id),
-        eq(connectors.connectorSlug, body.connector_slug),
-        eq(connectors.id, body.connector_id),
-      ),
-    )
-    .returning({ id: connectors.id });
-  signal.throwIfAborted();
-  return updated
-    ? actionOk()
-    : {
-        status: 400 as const,
-        body: { error: "Connector storage test fixture was not found" },
-      };
-}
-
 async function setConnectorDefault(
   db: Db,
   body: ConnectorCredentialStorageAction<"set-connector-default">,
@@ -678,20 +561,6 @@ async function setConnectorExternalId(
         status: 400 as const,
         body: { error: "Connector storage test fixture was not found" },
       };
-}
-
-async function seedBuiltinThreadSelection(
-  db: Db,
-  body: ConnectorCredentialStorageAction<"seed-builtin-thread-selection">,
-  signal: AbortSignal,
-) {
-  await db.insert(chatThreadConnectorSelections).values({
-    chatThreadId: body.chat_thread_id,
-    connectorId: body.connector_id,
-    connectorSlug: body.connector_slug,
-  });
-  signal.throwIfAborted();
-  return actionOk();
 }
 
 async function seedCustomThreadSelection(
@@ -758,32 +627,6 @@ async function setCustomParentState(
       };
 }
 
-async function setSecretOwner(
-  db: Db,
-  body: ConnectorCredentialStorageAction<"set-secret-owner">,
-  signal: AbortSignal,
-) {
-  const [updated] = await db
-    .update(secrets)
-    .set({ connectorId: body.connector_id })
-    .where(
-      and(
-        eq(secrets.orgId, body.org_id),
-        eq(secrets.userId, body.user_id),
-        eq(secrets.name, body.name),
-        eq(secrets.type, "connector"),
-      ),
-    )
-    .returning({ id: secrets.id });
-  signal.throwIfAborted();
-  return updated
-    ? actionOk()
-    : {
-        status: 400 as const,
-        body: { error: "Connector secret test fixture was not found" },
-      };
-}
-
 async function setVariableOwner(
   db: Db,
   body: ConnectorCredentialStorageAction<"set-variable-owner">,
@@ -827,12 +670,6 @@ async function mutateConnectorAccountCompatibilityState(
     }
     case "set-connector-external-id": {
       return await setConnectorExternalId(db, body, signal);
-    }
-    case "set-builtin-oauth-scope-facts": {
-      return await setBuiltinOAuthScopeFacts(db, body, signal);
-    }
-    case "seed-builtin-thread-selection": {
-      return await seedBuiltinThreadSelection(db, body, signal);
     }
     case "seed-custom-thread-selection": {
       return await seedCustomThreadSelection(db, body, signal);
@@ -907,14 +744,8 @@ const mutateConnectorCredentialStorageState$ = command(
       case "read-custom-oauth-state": {
         return await readCustomOAuthState(db, body, signal);
       }
-      case "delete-custom-credential-values": {
-        return await deleteCustomCredentialValues(db, body, signal);
-      }
       case "clear-feishu-connector-ownership": {
         return await clearFeishuConnectorOwnership(db, body, signal);
-      }
-      case "seed-owned-secret": {
-        return await seedOwnedSecret(db, body, signal);
       }
       case "seed-connector": {
         return await seedConnector(db, body, signal);
@@ -924,9 +755,6 @@ const mutateConnectorCredentialStorageState$ = command(
       }
       case "set-custom-parent-state": {
         return await setCustomParentState(db, body, signal);
-      }
-      case "set-secret-owner": {
-        return await setSecretOwner(db, body, signal);
       }
       case "set-variable-owner": {
         return await setVariableOwner(db, body, signal);

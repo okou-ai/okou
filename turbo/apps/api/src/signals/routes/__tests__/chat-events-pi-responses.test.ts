@@ -5,13 +5,14 @@ import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { describe, expect, it } from "vitest";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { testContext } from "../../../__tests__/test-context";
-import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { env, mockEnv, mockOptionalEnv, optionalEnv } from "../../../lib/env";
 import {
   getSecretKmsClient,
   setSecretKmsClientForTests,
 } from "../../../lib/secret-kms-client";
 
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { settleIncludingAbort } from "../../utils";
 
 import { chatEventDisplayText } from "./helpers/chat-event";
 import { seedBuiltInModelKey } from "./helpers/runtime-state";
@@ -59,11 +60,35 @@ async function configureResponsesWithOwnedRuns(args: {
   readonly model: string | null;
   /** The run model that executes the selection. */
   readonly runModel: string;
+  readonly run: ReturnType<typeof createFixtureOperationOwner>["run"];
   readonly sendChatRun: typeof sendChatRun;
   readonly claimChatRun: typeof claimChatRun;
   readonly cancelChatRun: typeof cancelChatRun;
 }> {
   const model = args.selectedModel;
+
+  function captureExternalState() {
+    const storage = context.mocks.s3.send.getMockImplementation();
+    const signedUrl = context.mocks.s3.getSignedUrl.getMockImplementation();
+    const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
+    const kmsKey = env("SECRETS_KMS_KEY_ID");
+    const kms = getSecretKmsClient();
+    return () => {
+      mockEnv("R2_USER_STORAGES_BUCKET_NAME", bucket);
+      mockOptionalEnv("SECRETS_KMS_KEY_ID", kmsKey);
+      mockOptionalEnv("RUNNER_DEFAULT_GROUP", args.runnerGroup);
+      setSecretKmsClientForTests(kms);
+      if (storage) {
+        context.mocks.s3.send.mockImplementation(storage);
+      }
+      if (signedUrl) {
+        context.mocks.s3.getSignedUrl.mockImplementation(signedUrl);
+      }
+    };
+  }
+
+  let restoreAcceptedState = captureExternalState();
+  let previousCleanupRunnerGroup: string | undefined;
 
   const owned = new Map<
     string,
@@ -117,30 +142,35 @@ async function configureResponsesWithOwnedRuns(args: {
 
   // These selected callbacks own every main Run before its first claim. This
   // hook and the producer hook both finish Runs before releasing model state.
-  const operations = createFixtureOperationOwner(cleanupOwnedRuns);
+  const operations = createFixtureOperationOwner(
+    async () => {
+      const result = await settleIncludingAbort(cleanupOwnedRuns);
+      mockOptionalEnv("RUNNER_DEFAULT_GROUP", previousCleanupRunnerGroup);
+      if (!result.ok) {
+        throw result.error;
+      }
+    },
+    {
+      beforeDrain() {
+        previousCleanupRunnerGroup = optionalEnv("RUNNER_DEFAULT_GROUP");
+        restoreAcceptedState();
+      },
+    },
+  );
+
+  function runOwned<T>(operation: () => Promise<T>): Promise<T> {
+    restoreAcceptedState = captureExternalState();
+    return operations.run(operation);
+  }
 
   async function sendOwnedRun(...parameters: Parameters<typeof sendChatRun>) {
+    const restoreExternalState = captureExternalState();
     const run = await sendChatRun(...parameters);
-    const storage = context.mocks.s3.send.getMockImplementation();
-    const signedUrl = context.mocks.s3.getSignedUrl.getMockImplementation();
-    const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
-    const kmsKey = env("SECRETS_KMS_KEY_ID");
-    const kms = getSecretKmsClient();
     owned.set(run.runId, {
       actor: parameters[0],
       usagePricingResolution: parameters[2],
       finished: false,
-      restoreExternalState() {
-        mockEnv("R2_USER_STORAGES_BUCKET_NAME", bucket);
-        mockOptionalEnv("SECRETS_KMS_KEY_ID", kmsKey);
-        setSecretKmsClientForTests(kms);
-        if (storage) {
-          context.mocks.s3.send.mockImplementation(storage);
-        }
-        if (signedUrl) {
-          context.mocks.s3.getSignedUrl.mockImplementation(signedUrl);
-        }
-      },
+      restoreExternalState,
     });
     return run;
   }
@@ -170,25 +200,28 @@ async function configureResponsesWithOwnedRuns(args: {
     run.finished = true;
   }
 
-  await (model === "okou-1.0"
-    ? configureBuiltInPiModel(args.actor, model)
-    : configureSubscriptionPiModel(args.actor, {}, model));
+  await runOwned(async () => {
+    await (model === "okou-1.0"
+      ? configureBuiltInPiModel(args.actor, model)
+      : configureSubscriptionPiModel(args.actor, {}, model));
+  });
 
   return {
     model: model === "okou-1.0" ? null : model,
     runModel: model,
+    run: runOwned,
     sendChatRun: (...parameters) => {
-      return operations.run(() => {
+      return runOwned(() => {
         return sendOwnedRun(...parameters);
       });
     },
     claimChatRun: (...parameters) => {
-      return operations.run(() => {
+      return runOwned(() => {
         return claimOwnedRun(...parameters);
       });
     },
     cancelChatRun: (...parameters) => {
-      return operations.run(() => {
+      return runOwned(() => {
         return cancelOwnedRun(...parameters);
       });
     },
@@ -231,13 +264,18 @@ describe("CHAT-02: model-first routing", () => {
 
   it("transfers pre-migration OpenRouter Chat JSONL by reference", async () => {
     const { actor, agentId, runnerGroup } = await publicChatActor(context);
-    const { model, sendChatRun, claimChatRun, cancelChatRun } =
-      await configureResponsesWithOwnedRuns({
-        actor,
-        agentId,
-        runnerGroup,
-        selectedModel: "gpt-6-luna",
-      });
+    const {
+      run: own,
+      model,
+      sendChatRun,
+      claimChatRun,
+      cancelChatRun,
+    } = await configureResponsesWithOwnedRuns({
+      actor,
+      agentId,
+      runnerGroup,
+      selectedModel: "gpt-6-luna",
+    });
 
     mockPiResourceArchiveDownloads();
     const historyObjects = mockPiCheckpointObjectStore();
@@ -311,50 +349,56 @@ describe("CHAT-02: model-first routing", () => {
     });
     const legacyJsonl = legacy.toJsonl();
     const legacyHash = createHash("sha256").update(legacyJsonl).digest("hex");
-    await webhooks.requestAgentSessionHistoryPrepare(
-      {
-        runId: first.runId,
-        hash: legacyHash,
-        rawSize: Buffer.byteLength(legacyJsonl),
-        encodedSize: Buffer.byteLength(legacyJsonl),
-        encoding: "identity",
-      },
-      firstClaim.sandboxHeaders,
-      [200],
-    );
+    await own(async () => {
+      return await webhooks.requestAgentSessionHistoryPrepare(
+        {
+          runId: first.runId,
+          hash: legacyHash,
+          rawSize: Buffer.byteLength(legacyJsonl),
+          encodedSize: Buffer.byteLength(legacyJsonl),
+          encoding: "identity",
+        },
+        firstClaim.sandboxHeaders,
+        [200],
+      );
+    });
     historyObjects.set(
       `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${legacyHash}.blob`,
       Buffer.from(legacyJsonl, "utf8"),
     );
-    await webhooks.requestAgentEvents(
-      {
-        runId: first.runId,
-        events: [
-          {
-            type: "result",
-            sequenceNumber: 1,
-            result: "legacy API tool conclusion",
-          },
-        ],
-      },
-      firstClaim.sandboxHeaders,
-      [200],
-    );
-    await webhooks.requestAgentComplete(
-      {
-        runId: first.runId,
-        exitCode: 0,
-        lastEventSequence: 1,
-        completion: {
-          cliAgentType: "pi",
-          cliAgentSessionId: first.threadId,
-          cliAgentSessionHistoryHash: legacyHash,
+    await own(async () => {
+      return await webhooks.requestAgentEvents(
+        {
+          runId: first.runId,
+          events: [
+            {
+              type: "result",
+              sequenceNumber: 1,
+              result: "legacy API tool conclusion",
+            },
+          ],
         },
-      },
-      firstClaim.sandboxHeaders,
-      [200],
-      undefined,
-    );
+        firstClaim.sandboxHeaders,
+        [200],
+      );
+    });
+    await own(async () => {
+      return await webhooks.requestAgentComplete(
+        {
+          runId: first.runId,
+          exitCode: 0,
+          lastEventSequence: 1,
+          completion: {
+            cliAgentType: "pi",
+            cliAgentSessionId: first.threadId,
+            cliAgentSessionHistoryHash: legacyHash,
+          },
+        },
+        firstClaim.sandboxHeaders,
+        [200],
+        undefined,
+      );
+    });
     await waitForRunStatus(actor, first.runId, "completed");
     await flushWaitUntilForTest();
 
@@ -400,13 +444,17 @@ describe("CHAT-02: model-first routing", () => {
   it("reuses one OpenRouter Responses Pi session across standard, fast, and standard turns for gpt-6-luna", async () => {
     const selectedModel = "gpt-6-luna";
     const { actor, agentId, runnerGroup } = await publicChatActor(context);
-    const { model, sendChatRun, claimChatRun } =
-      await configureResponsesWithOwnedRuns({
-        actor,
-        agentId,
-        runnerGroup,
-        selectedModel,
-      });
+    const {
+      run: own,
+      model,
+      sendChatRun,
+      claimChatRun,
+    } = await configureResponsesWithOwnedRuns({
+      actor,
+      agentId,
+      runnerGroup,
+      selectedModel,
+    });
 
     mockPiResourceArchiveDownloads();
     const historyObjects = mockPiCheckpointObjectStore();
@@ -432,14 +480,16 @@ describe("CHAT-02: model-first routing", () => {
       model: selectedModel,
     });
     expect(firstClaim.claim.piModelConfig).not.toHaveProperty("serviceTier");
-    await completeSandboxFirstPiRun({
-      actor,
-      answer: answers[0],
-      historyObjects,
-      claim: firstClaim,
-      prompt: prompts[0],
-      run: first,
-      responsesModel: { provider: "openai-codex", model: selectedModel },
+    await own(async () => {
+      return await completeSandboxFirstPiRun({
+        actor,
+        answer: answers[0],
+        historyObjects,
+        claim: firstClaim,
+        prompt: prompts[0],
+        run: first,
+        responsesModel: { provider: "openai-codex", model: selectedModel },
+      });
     });
     const firstSessionId = await readCompletedRunSessionId(
       context,
@@ -460,21 +510,30 @@ describe("CHAT-02: model-first routing", () => {
       model: selectedModel,
       serviceTier: "fast",
     });
-    await completeSandboxFirstPiRun({
-      actor,
-      answer: answers[1],
-      historyObjects,
-      claim: fastClaim,
-      prompt: prompts[1],
-      run: fast,
-      responsesModel: { provider: "openai-codex", model: selectedModel },
+    await own(async () => {
+      return await completeSandboxFirstPiRun({
+        actor,
+        answer: answers[1],
+        historyObjects,
+        claim: fastClaim,
+        prompt: prompts[1],
+        run: fast,
+        responsesModel: { provider: "openai-codex", model: selectedModel },
+      });
     });
     await expect(
       readCompletedRunSessionId(context, actor, fast.runId),
     ).resolves.toBe(firstSessionId);
 
-    await chat.updateThreadModelSelection(actor, first.threadId, model, {
-      codexServiceTier: null,
+    await own(async () => {
+      return await chat.updateThreadModelSelection(
+        actor,
+        first.threadId,
+        model,
+        {
+          codexServiceTier: null,
+        },
+      );
     });
     const returned = await sendChatRun(actor, {
       agentId,
@@ -488,21 +547,25 @@ describe("CHAT-02: model-first routing", () => {
       model: selectedModel,
     });
     expect(returnedClaim.claim.piModelConfig).not.toHaveProperty("serviceTier");
-    await completeSandboxFirstPiRun({
-      actor,
-      answer: answers[2],
-      historyObjects,
-      claim: returnedClaim,
-      prompt: prompts[2],
-      run: returned,
-      responsesModel: { provider: "openai-codex", model: selectedModel },
+    await own(async () => {
+      return await completeSandboxFirstPiRun({
+        actor,
+        answer: answers[2],
+        historyObjects,
+        claim: returnedClaim,
+        prompt: prompts[2],
+        run: returned,
+        responsesModel: { provider: "openai-codex", model: selectedModel },
+      });
     });
     await expect(
       readCompletedRunSessionId(context, actor, returned.runId),
     ).resolves.toBe(firstSessionId);
 
     for (const run of [first, fast, returned]) {
-      const claim = await api.requestClaimRunnerJob(true, run.runId, [404]);
+      const claim = await own(() => {
+        return api.requestClaimRunnerJob(true, run.runId, [404]);
+      });
       expect(claim.status).toBe(404);
     }
     for (const runId of [fast.runId, returned.runId]) {
@@ -583,6 +646,7 @@ describe("CHAT-02: model-first routing", () => {
   it("promotes queued fast gpt-6-luna to a priority Pi Sandbox run", async () => {
     const selectedModel = "gpt-6-luna";
     const {
+      run: own,
       actor,
       agentId,
       runnerGroup,
@@ -592,7 +656,9 @@ describe("CHAT-02: model-first routing", () => {
     } = await publicChatActor(context);
     // The anchor must stay on the native Runner while the queued target
     // proves Pi promotion; Sonnet 5 would itself run through Pi.
-    await api.updateUserModelPreference(actor, "claude-fable-5-1");
+    await own(async () => {
+      return await api.updateUserModelPreference(actor, "claude-fable-5-1");
+    });
     const anchor = await sendChatRun(actor, {
       agentId,
       prompt: "hold the thread before queued fast Luna",
@@ -600,7 +666,9 @@ describe("CHAT-02: model-first routing", () => {
     });
     const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
 
-    await configureSubscriptionPiModel(actor, {}, selectedModel);
+    await own(async () => {
+      return await configureSubscriptionPiModel(actor, {}, selectedModel);
+    });
 
     mockPiResourceArchiveDownloads();
     const historyObjects = mockPiCheckpointObjectStore();
@@ -626,7 +694,13 @@ describe("CHAT-02: model-first routing", () => {
     expect(queued.body.runId).toBeNull();
 
     chatCallbacks.mockChatOutputEvents([]);
-    await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders, {});
+    await own(async () => {
+      return await completeChatRunOk(
+        anchor.runId,
+        anchorClaim.sandboxHeaders,
+        {},
+      );
+    });
     await flushWaitUntilForTest();
     const messages = await waitForThreadMessages(
       actor,
@@ -654,14 +728,16 @@ describe("CHAT-02: model-first routing", () => {
       model: selectedModel,
       serviceTier: "fast",
     });
-    await completeSandboxFirstPiRun({
-      actor,
-      answer,
-      historyObjects,
-      claim: promotedClaim,
-      prompt,
-      run: { runId: promotedRunId, threadId: anchor.threadId },
-      responsesModel: { provider: "openai-codex", model: selectedModel },
+    await own(async () => {
+      return await completeSandboxFirstPiRun({
+        actor,
+        answer,
+        historyObjects,
+        claim: promotedClaim,
+        prompt,
+        run: { runId: promotedRunId, threadId: anchor.threadId },
+        responsesModel: { provider: "openai-codex", model: selectedModel },
+      });
     });
     const finalEvents = await waitForThreadMessages(
       actor,

@@ -514,6 +514,7 @@ export function createRunsApi(
         readonly periodEndUnix?: number;
         readonly subscriptionMetadata?: Record<string, string>;
         readonly cancelAtUnix?: number | null;
+        readonly onExternalStateReady?: (restoreWebhook: () => void) => void;
       } = {},
     ): Promise<{
       readonly customerId: string;
@@ -590,6 +591,21 @@ export function createRunsApi(
       context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(
         invoicePaidEvent,
       );
+      // An operation owner may need to finish this accepted webhook after
+      // afterEach resets external mocks. Retain this exact provider event.
+      options.onExternalStateReady?.(() => {
+        context.mocks.stripe.webhooks.constructEvent.mockReset();
+        context.mocks.stripe.webhooks.constructEvent.mockImplementation(
+          (payload) => {
+            if (String(payload) !== JSON.stringify(invoicePaidEvent)) {
+              throw new Error(
+                "Unexpected Stripe webhook while draining actor setup",
+              );
+            }
+            return invoicePaidEvent;
+          },
+        );
+      });
       await accept(
         runApp(context)(webhookStripeContract).post({
           body: JSON.stringify(invoicePaidEvent),

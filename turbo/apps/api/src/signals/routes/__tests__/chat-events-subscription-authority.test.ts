@@ -237,9 +237,17 @@ describe("CHAT-02: run-level model overrides", () => {
   )(
     "reuses one $name Pi session across standard, Fast, and standard requests",
     async (route) => {
-      const { actor, agentId, runnerGroup, claimChatRun, sendChatRun } =
-        await publicChatActor(context);
-      const { secret } = await configureUserOwnedGptPiModel(actor, route);
+      const {
+        run: own,
+        actor,
+        agentId,
+        runnerGroup,
+        claimChatRun,
+        sendChatRun,
+      } = await publicChatActor(context);
+      const { secret } = await own(async () => {
+        return await configureUserOwnedGptPiModel(actor, route);
+      });
       mockPiResourceArchiveDownloads();
       const objects = mockPiCheckpointObjectStore();
 
@@ -255,14 +263,16 @@ describe("CHAT-02: run-level model overrides", () => {
         model: route.runtimeModel,
       });
       expect(firstClaim.claim.piModelConfig).not.toHaveProperty("serviceTier");
-      await completeSandboxFirstPiRun({
-        actor,
-        answer: "Luna standard sandbox answer",
-        historyObjects: objects,
-        claim: firstClaim,
-        prompt: "Luna standard start",
-        run: first,
-        responsesModel: { provider: "openai", model: route.selectedModel },
+      await own(async () => {
+        return await completeSandboxFirstPiRun({
+          actor,
+          answer: "Luna standard sandbox answer",
+          historyObjects: objects,
+          claim: firstClaim,
+          prompt: "Luna standard start",
+          run: first,
+          responsesModel: { provider: "openai", model: route.selectedModel },
+        });
       });
       const firstSession = await readCompletedRunSessionId(
         context,
@@ -289,24 +299,28 @@ describe("CHAT-02: run-level model overrides", () => {
         model: route.runtimeModel,
         serviceTier: route.type === "codex-oauth-token" ? "fast" : "priority",
       });
-      await completeSandboxFirstPiRun({
-        actor,
-        answer: "Luna Fast sandbox answer",
-        historyObjects: objects,
-        claim: fastClaim,
-        prompt: "Luna Fast continuation",
-        run: fast,
-        responsesModel: { provider: "openai", model: route.selectedModel },
+      await own(async () => {
+        return await completeSandboxFirstPiRun({
+          actor,
+          answer: "Luna Fast sandbox answer",
+          historyObjects: objects,
+          claim: fastClaim,
+          prompt: "Luna Fast continuation",
+          run: fast,
+          responsesModel: { provider: "openai", model: route.selectedModel },
+        });
       });
       await expect(
         readCompletedRunSessionId(context, actor, fast.runId),
       ).resolves.toBe(firstSession);
-      await chat.updateThreadModelSelection(
-        actor,
-        first.threadId,
-        route.selectedModel,
-        { codexServiceTier: null },
-      );
+      await own(async () => {
+        return await chat.updateThreadModelSelection(
+          actor,
+          first.threadId,
+          route.selectedModel,
+          { codexServiceTier: null },
+        );
+      });
       const standard = await sendChatRun(actor, {
         agentId,
         threadId: first.threadId,
@@ -321,14 +335,16 @@ describe("CHAT-02: run-level model overrides", () => {
       expect(standardClaim.claim.piModelConfig).not.toHaveProperty(
         "serviceTier",
       );
-      await completeSandboxFirstPiRun({
-        actor,
-        answer: "Luna standard sandbox answer",
-        historyObjects: objects,
-        claim: standardClaim,
-        prompt: "Luna standard return",
-        run: standard,
-        responsesModel: { provider: "openai", model: route.selectedModel },
+      await own(async () => {
+        return await completeSandboxFirstPiRun({
+          actor,
+          answer: "Luna standard sandbox answer",
+          historyObjects: objects,
+          claim: standardClaim,
+          prompt: "Luna standard return",
+          run: standard,
+          responsesModel: { provider: "openai", model: route.selectedModel },
+        });
       });
       await expect(
         readCompletedRunSessionId(context, actor, standard.runId),
