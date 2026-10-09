@@ -882,11 +882,6 @@
       "owner": "writePersonalAccount"
     },
     {
-      "id": "TX-0186",
-      "file": "turbo/apps/api/src/signals/services/model-provider-account.service.ts",
-      "owner": "activatePersonalModelProviderAccount$"
-    },
-    {
       "id": "TX-0187",
       "file": "turbo/apps/api/src/signals/services/model-provider-account.service.ts",
       "owner": "disconnectPersonalModelProviderAccounts$"
