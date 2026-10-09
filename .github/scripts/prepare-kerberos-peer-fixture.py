@@ -45,7 +45,7 @@ def main():
     parent = REPO / "crates/target/kerberos-peer-fixture"
     parent.mkdir(parents=True, exist_ok=True)
     assert parent.resolve() == parent and not parent.is_symlink()
-    assert call(["git", "check-ignore", str(parent)], cwd=REPO).strip()
+    assert call(["git", "-c", "safe.directory=" + str(REPO), "check-ignore", str(parent)], cwd=REPO).strip()
     base = pathlib.Path(tempfile.mkdtemp(prefix="signed-noble-", dir=parent))
     base.chmod(0o700)
     for name in ("state/lists/partial", "cache/archives/partial", "logs", "downloads", "runtime"):

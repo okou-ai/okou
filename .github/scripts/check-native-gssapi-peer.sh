@@ -5,10 +5,11 @@
 set -euo pipefail
 [[ $# == 0 ]] || { echo 'usage: check-native-gssapi-peer.sh' >&2; exit 1; }
 cd "$(git rev-parse --show-toplevel)"
+source .github/scripts/native-test-environment.sh
 arch=$(uname -m)
 case "$arch" in x86_64|aarch64) ;; *) echo 'unsupported native GSSAPI architecture' >&2; exit 1 ;; esac
 receipt="$PWD/crates/target/native-gssapi-peer-receipt"
-mkdir -p "$receipt"
+native_build mkdir -p "$receipt"
 [[ ! -L "$receipt" && "$(realpath "$receipt")" == "$receipt" ]] || exit 1
 for name in compiler.json package.json provider.json tests.txt toolchain.txt executable.txt; do
   [[ ! -L "$receipt/$name" ]] || exit 1
@@ -17,13 +18,13 @@ done
 : > "$receipt/tests.txt"
 # Clear old results before ANY fallible test, then run inert regressions before
 # provisioning/native execution. A failed preflight cannot retain old success.
-python3 -B -m unittest discover -s crates/rfb-client/tests/fixtures \
+native_build python3 -B -m unittest discover -s crates/rfb-client/tests/fixtures \
   -p qemu_gssapi_runtime_test.py
-runtime=$(python3 .github/scripts/prepare-kerberos-peer-fixture.py)
-cargo test --manifest-path crates/Cargo.toml --profile local --locked -j 1 \
+runtime=$(native_build python3 .github/scripts/prepare-kerberos-peer-fixture.py)
+native_build cargo test --manifest-path crates/Cargo.toml --profile local --locked -j 1 \
   -p rfb-client --test qemu_gssapi --no-run --message-format=json-render-diagnostics \
   > "$receipt/compiler.json"
-python3 - "$receipt" "$runtime" "$arch" <<'PY'
+native_build python3 - "$receipt" "$runtime" "$arch" <<'PY'
 import hashlib,json,os,subprocess,sys
 from pathlib import Path
 receipt,runtime,arch=Path(sys.argv[1]),Path(sys.argv[2]),sys.argv[3]
@@ -57,12 +58,12 @@ PY
 executable=$(< "$receipt/executable.txt")
 # PID1 remains a supervising parent. The two synthetic KDCs plus native input
 # roots share a bounded CHILD-ONLY tmpfs; no checkout ancestor is widened.
-sudo unshare --mount --pid --fork --kill-child --mount-proc --propagation private \
+native_privileged unshare --mount --pid --fork --kill-child --mount-proc --propagation private \
   bash -c 'set -euo pipefail; mount -t tmpfs -o size=67108864,nr_inodes=256,mode=0755 none /run; mkdir -m 0700 /run/kerberos-native-fixture; export KERBEROS_NATIVE_TEST_ROOT=/run/kerberos-native-fixture; python3 crates/rfb-client/tests/fixtures/qemu_gssapi.py --runtime-dir "$1" --controlled-peer-only --test-executable "$2" & child=$!; wait "$child"' \
   bash "$runtime" "$executable" | tee "$receipt/tests.txt"
-cargo --version > "$receipt/toolchain.txt"
-rustc --version >> "$receipt/toolchain.txt"
-python3 - "$receipt" <<'PY'
+native_build cargo --version > "$receipt/toolchain.txt"
+native_build rustc --version >> "$receipt/toolchain.txt"
+native_build python3 - "$receipt" <<'PY'
 import json,re,sys
 from pathlib import Path
 receipt=Path(sys.argv[1]);tests=(receipt/'tests.txt').read_text()

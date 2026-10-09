@@ -65,6 +65,8 @@ jobs:
     outputs:
       any-changed: ${{ steps.detect.outputs.any-changed }}
       ci-changed: ${{ steps.detect.outputs.ci-changed }}
+      native-kerberos-needed: ${{ steps.detect.outputs.native-kerberos-needed }}
+      native-gssapi-peer-needed: ${{ steps.detect.outputs.native-gssapi-peer-needed }}
       mitm-addon-test-inputs-changed: ${{ steps.detect.outputs.mitm-addon-test-inputs-changed }}
       mitm-addon-pricing-seed-changed: ${{ steps.detect.outputs.mitm-addon-pricing-seed-changed }}
       runner-firewall-contract-inputs-changed: ${{ steps.detect.outputs.runner-firewall-contract-inputs-changed }}
@@ -105,12 +107,13 @@ jobs:
             rc=0
             ./scripts/crate-changed.sh "$1" "$BASE_REF" && rc=0 || rc=$?
             if [ $rc -eq 0 ]; then
-              echo "$1-changed=true" >> "$GITHUB_OUTPUT"
+              crate_changed=true
             elif [ $rc -eq 1 ]; then
-              echo "$1-changed=false" >> "$GITHUB_OUTPUT"
+              crate_changed=false
             else
               exit $rc
             fi
+            echo "$1-changed=$crate_changed" >> "$GITHUB_OUTPUT"
           }
           check_crate ably-subscriber
           check_crate api-contracts
@@ -153,6 +156,34 @@ jobs:
           done < "$changed_files"
           echo "api-contracts-rust-bindings-changed=$api_contracts_rust_bindings_changed" >> "$GITHUB_OUTPUT"
 
+          # Native checks own separate dependency closures and harness inputs.
+          # Keep these outside the generic Rust/CI aggregation above.
+          check_crate kerberos-worker
+          native_kerberos_needed=$crate_changed
+          check_crate rfb-client
+          native_gssapi_peer_needed=$crate_changed
+          while IFS= read -r changed_file; do
+            case "$changed_file" in
+              .github/workflows/crates.yml | \
+              .github/scripts/changed-base-ref.sh | \
+              scripts/crate-changed.sh | \
+              .github/scripts/native-test-environment.sh | \
+              .github/scripts/tests/runner-firewall-contract-workflow-test.sh | \
+              docker/toolchain/Dockerfile)
+                native_kerberos_needed=true
+                native_gssapi_peer_needed=true
+                ;;
+              .github/scripts/check-native-kerberos.sh)
+                native_kerberos_needed=true
+                ;;
+              .github/scripts/check-native-gssapi-peer.sh | \
+              .github/scripts/prepare-kerberos-peer-fixture.py)
+                native_gssapi_peer_needed=true
+                ;;
+            esac
+          done < "$changed_files"
+          echo "native-kerberos-needed=$native_kerberos_needed" >> "$GITHUB_OUTPUT"
+          echo "native-gssapi-peer-needed=$native_gssapi_peer_needed" >> "$GITHUB_OUTPUT"
           rm -f "$changed_files"
 
           # Shared contract fixtures are stored under turbo but are read by
@@ -663,8 +694,12 @@ jobs:
   native-kerberos-runtime:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+      # Allow namespace bootstrap; retain Docker's seccomp and worker isolation.
+      options: --cap-add=SYS_ADMIN --security-opt apparmor=unconfined
     needs: [detect]
-    if: needs.detect.outputs.any-changed == 'true'
+    if: needs.detect.outputs.native-kerberos-needed == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -673,13 +708,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - name: Select host stable Rust (same policy as the toolchain image)
-        shell: bash
-        run: rustup toolchain install stable --profile minimal
       - name: Compile sealed package and run real native containment/lifecycle conformance
         shell: bash
         env:
           RUSTUP_TOOLCHAIN: stable
+          NATIVE_TEST_OWNER: ubuntu
         run: bash .github/scripts/check-native-kerberos.sh --privileged-synthetic
       - name: Preserve exact-head native receipts
         if: always()
@@ -693,8 +726,12 @@ jobs:
   native-gssapi-independent-peer:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+      # Allow namespace bootstrap; retain Docker's seccomp and worker isolation.
+      options: --cap-add=SYS_ADMIN --security-opt apparmor=unconfined
     needs: [detect]
-    if: needs.detect.outputs.any-changed == 'true'
+    if: needs.detect.outputs.native-gssapi-peer-needed == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -703,13 +740,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - name: Select host stable Rust (same policy as the toolchain image)
-        shell: bash
-        run: rustup toolchain install stable --profile minimal
       - name: Verify native mutual GSS and RFB controls against signed independent MIT
         shell: bash
         env:
           RUSTUP_TOOLCHAIN: stable
+          NATIVE_TEST_OWNER: ubuntu
         run: bash .github/scripts/check-native-gssapi-peer.sh
       - name: Preserve exact-head independent protocol receipts
         if: always()
@@ -1410,6 +1445,8 @@ jobs:
         env:
           IS_RELEASE: ${{ needs.detect-release.outputs.skip }}
           COVERAGE_NEEDED: ${{ needs.detect.outputs.any-changed == 'true' }}
+          NATIVE_KERBEROS_NEEDED: ${{ needs.detect.outputs.native-kerberos-needed }}
+          NATIVE_GSSAPI_PEER_NEEDED: ${{ needs.detect.outputs.native-gssapi-peer-needed }}
           FIREWALL_CONTRACT_NEEDED: ${{ needs.detect.outputs.runner-firewall-contract-inputs-changed == 'true' }}
           RUNNER_IMAGE_NEEDED: ${{ needs.detect.outputs.metal-job-ref != '' && needs.detect.outputs.crates-runner-consumer-needed == 'true' }}
           CPU_FAIRNESS_NEEDED: ${{ needs.detect.outputs.metal-job-ref != '' && needs.detect.outputs.crates-runner-consumer-needed == 'true' && (needs.detect.outputs.sandbox-firecracker-changed == 'true' || needs.detect.outputs.ci-changed == 'true') }}
@@ -1462,11 +1499,27 @@ jobs:
             FIREWALL_CONTRACT_ALLOW_SKIP=""
           fi
 
+          # Native selection must be explicit; missing/invalid outputs refuse.
+          NATIVE_KERBEROS_ALLOW_SKIP=""
+          NATIVE_GSSAPI_PEER_ALLOW_SKIP=""
+          for selection in "$NATIVE_KERBEROS_NEEDED" "$NATIVE_GSSAPI_PEER_NEEDED"; do
+            if [ "$selection" != "true" ] && [ "$selection" != "false" ]; then
+              echo "::error::Missing or invalid native test selection"
+              FAILED=1
+            fi
+          done
+          if [ "$NATIVE_KERBEROS_NEEDED" = "false" ]; then
+            NATIVE_KERBEROS_ALLOW_SKIP=true
+          fi
+          if [ "$NATIVE_GSSAPI_PEER_NEEDED" = "false" ]; then
+            NATIVE_GSSAPI_PEER_ALLOW_SKIP=true
+          fi
+
           # May-skip only when the corresponding work was not selected.
           check_result "check" "${{ needs.check.result }}" "true"
           check_result "coverage" "${{ needs.coverage.result }}" "$COVERAGE_ALLOW_SKIP"
-          check_result "native-kerberos-runtime" "${{ needs.native-kerberos-runtime.result }}" "$COVERAGE_ALLOW_SKIP"
-          check_result "native-gssapi-independent-peer" "${{ needs.native-gssapi-independent-peer.result }}" "$COVERAGE_ALLOW_SKIP"
+          check_result "native-kerberos-runtime" "${{ needs.native-kerberos-runtime.result }}" "$NATIVE_KERBEROS_ALLOW_SKIP"
+          check_result "native-gssapi-independent-peer" "${{ needs.native-gssapi-independent-peer.result }}" "$NATIVE_GSSAPI_PEER_ALLOW_SKIP"
           check_result "api-contracts-rust-bindings" "${{ needs.api-contracts-rust-bindings.result }}" "true"
           check_result "runner-firewall-contract-test" "${{ needs.runner-firewall-contract-test.result }}" "$FIREWALL_CONTRACT_ALLOW_SKIP"
           check_result "mitm-addon-test" "${{ needs.mitm-addon-test.result }}" "true"
