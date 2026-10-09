@@ -7,10 +7,10 @@ import { Link } from "../router/link.tsx";
 
 export const STRUCTURED_INLINE_REFERENCE_CLASS =
   "relative -top-px mx-0.5 inline-flex h-7 max-w-[240px] items-center " +
-  "gap-1.5 rounded-md px-2 align-middle text-[13px] font-medium text-foreground";
+  "gap-1.5 rounded-md bg-muted px-2 align-middle text-[13px] font-medium text-foreground";
 const STRUCTURED_INLINE_INTERACTIVE_CLASS =
-  "transition-colors hover:bg-state-hover focus-visible:outline-none " +
-  "focus-visible:ring-2 focus-visible:ring-ring/50 active:bg-state-pressed";
+  "transition-colors hover:bg-state-hover-overlay focus-visible:outline-none " +
+  "focus-visible:ring-2 focus-visible:ring-ring/50 active:bg-state-pressed-overlay";
 export const STRUCTURED_INLINE_LINK_REFERENCE_CLASS = `${STRUCTURED_INLINE_REFERENCE_CLASS} ${STRUCTURED_INLINE_INTERACTIVE_CLASS}`;
 
 /**
@@ -20,8 +20,8 @@ export const STRUCTURED_INLINE_LINK_REFERENCE_CLASS = `${STRUCTURED_INLINE_REFER
  * a chip inside Markdown looking like one in a user message.
  */
 const MARKDOWN_CHIP_RESET_CLASS =
-  "bg-transparent! text-foreground! no-underline! " +
-  "hover:bg-state-hover! active:bg-state-pressed!";
+  "bg-muted! text-foreground! no-underline! " +
+  "hover:bg-state-hover-overlay! active:bg-state-pressed-overlay!";
 
 /**
  * An in-App link to a chat thread, shown as an inline chip with its title.
