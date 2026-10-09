@@ -13,7 +13,6 @@ import type {
   IndexedDbDiagnostics,
   IndexedDbSnapshotMeasurement,
 } from "../shared-database/computed-key.ts";
-import type { ConnectionDiagnostics } from "./connection-diagnostics.ts";
 import {
   reloadChatIndicatorsCounter$,
   reloadChatIndicatorsLocally$,
@@ -28,18 +27,8 @@ const reloadQueueDataFromWorker$ = command(({ set }): void => {
   });
 });
 
-const internalReloadConnectionDiagnosticsFromWorker$ = state(0);
-
 const internalReloadIndexedDbDiagnosticsFromWorker$ = state(0);
 const internalIndexedDbSnapshotMeasurementRequest$ = state(0);
-
-export const reloadConnectionDiagnosticsFromWorker$ = command(
-  ({ set }): void => {
-    set(internalReloadConnectionDiagnosticsFromWorker$, (value) => {
-      return value + 1;
-    });
-  },
-);
 
 export const reloadIndexedDbDiagnosticsFromWorker$ = command(
   ({ set }): void => {
@@ -65,10 +54,6 @@ export const reloadComputedFromWorker$ = command(
       }
       case "computer-use-hosts": {
         // The composer reads its host briefs from the user overview.
-        return;
-      }
-      case "connection-diagnostics": {
-        set(reloadConnectionDiagnosticsFromWorker$);
         return;
       }
       case "indexeddb-diagnostics": {
@@ -100,15 +85,6 @@ export const queueDataFromWorker$ = computed(
   async (get): Promise<QueueResponse> => {
     get(internalReloadQueueDataFromWorker$);
     return await get(installedSharedDatabaseBridge$).getComputed("queue-data");
-  },
-);
-
-export const connectionDiagnosticsFromWorker$ = computed(
-  async (get): Promise<ConnectionDiagnostics> => {
-    get(internalReloadConnectionDiagnosticsFromWorker$);
-    return await get(installedSharedDatabaseBridge$).getComputed(
-      "connection-diagnostics",
-    );
   },
 );
 

@@ -4974,24 +4974,6 @@
           "enabled_other": "Abilitato per le prossime {{count}} esecuzioni",
           "title": "Acquisisci i contenuti di rete"
         },
-        "connectionDiagnostics": {
-          "activeWaits": "Attese attive",
-          "channel": "canale",
-          "clear": "Cancella",
-          "connection": "connessione",
-          "copyJson": "Copia JSON",
-          "description": "Esamina i segnali di autenticazione e connessione Ably.",
-          "empty": "Nessun evento diagnostico registrato.",
-          "events": "eventi",
-          "log": "Registro eventi",
-          "refresh": "Aggiorna",
-          "title": "Diagnostica della connessione in tempo reale",
-          "unavailable": "non disponibile",
-          "workerDescription": "Esamina la registrazione dello shared worker che mantiene la connessione realtime.",
-          "workerLoading": "Caricamento in corso",
-          "workerTitle": "Diagnostica di connessione dello shared worker",
-          "workerUnavailable": "Non disponibile"
-        },
         "indexedDb": {
           "countExplanation": "Il conteggio usa transazioni di sola lettura e non legge il contenuto dei record.",
           "description": "Controlla il numero di record nella cache chat locale gestita dallo shared worker.",

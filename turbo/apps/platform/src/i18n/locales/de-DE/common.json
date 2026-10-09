@@ -4906,24 +4906,6 @@
           "enabled_other": "Für {{count}} kommende Ausführungen aktiviert",
           "title": "Netzwerk-Bodys erfassen"
         },
-        "connectionDiagnostics": {
-          "activeWaits": "Aktive Wartevorgänge",
-          "channel": "Kanal",
-          "clear": "Leeren",
-          "connection": "Verbindung",
-          "copyJson": "JSON kopieren",
-          "description": "Authentifizierungs- und Ably-Verbindungssignale untersuchen.",
-          "empty": "Keine Diagnoseereignisse aufgezeichnet.",
-          "events": "Ereignisse",
-          "log": "Ereignisprotokoll",
-          "refresh": "Aktualisieren",
-          "title": "Echtzeit-Verbindungsdiagnose",
-          "unavailable": "nicht verfügbar",
-          "workerDescription": "Die Aufzeichnung des Shared Workers prüfen, der die Echtzeitverbindung hält.",
-          "workerLoading": "Laden",
-          "workerTitle": "Verbindungsdiagnose des Shared Workers",
-          "workerUnavailable": "Nicht verfügbar"
-        },
         "indexedDb": {
           "countExplanation": "Die Zählung verwendet schreibgeschützte Transaktionen und liest keine Datensatzinhalte.",
           "description": "Datensatzanzahlen im lokalen Chat-Cache des Shared Workers prüfen.",

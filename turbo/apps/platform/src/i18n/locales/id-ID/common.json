@@ -4885,24 +4885,6 @@
           "enabled_other": "Diaktifkan untuk {{count}} eksekusi berikutnya",
           "title": "Tangkap body jaringan"
         },
-        "connectionDiagnostics": {
-          "activeWaits": "Penantian aktif",
-          "channel": "kanal",
-          "clear": "Hapus",
-          "connection": "koneksi",
-          "copyJson": "Salin JSON",
-          "description": "Periksa sinyal autentikasi dan koneksi Ably.",
-          "empty": "Tidak ada peristiwa diagnostik yang direkam.",
-          "events": "peristiwa",
-          "log": "Log peristiwa",
-          "refresh": "Segarkan",
-          "title": "Diagnostik koneksi waktu nyata",
-          "unavailable": "tidak tersedia",
-          "workerDescription": "Periksa rekaman diagnostik dari shared worker yang memegang koneksi realtime.",
-          "workerLoading": "Memuat",
-          "workerTitle": "Diagnostik koneksi shared worker",
-          "workerUnavailable": "Tidak tersedia"
-        },
         "indexedDb": {
           "countExplanation": "Penghitungan menggunakan transaksi hanya-baca dan tidak membaca isi rekaman.",
           "description": "Periksa jumlah rekaman dalam cache chat lokal yang dikelola shared worker.",

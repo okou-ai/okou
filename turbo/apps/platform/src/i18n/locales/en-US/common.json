@@ -4898,24 +4898,6 @@
           "enabled_other": "Enabled for the next {{count}} runs",
           "title": "Capture network bodies"
         },
-        "connectionDiagnostics": {
-          "activeWaits": "Active waits",
-          "channel": "channel",
-          "clear": "Clear",
-          "connection": "connection",
-          "copyJson": "Copy JSON",
-          "description": "Inspect authentication and Ably connection signals.",
-          "empty": "No diagnostic events recorded.",
-          "events": "events",
-          "log": "Event log",
-          "refresh": "Refresh",
-          "title": "Realtime connection diagnostics",
-          "unavailable": "unavailable",
-          "workerDescription": "Inspect the capture recorded by the shared worker that owns the realtime connection.",
-          "workerLoading": "Loading",
-          "workerTitle": "Shared worker connection diagnostics",
-          "workerUnavailable": "Unavailable"
-        },
         "indexedDb": {
           "countExplanation": "Counts use read-only transactions and do not read record bodies.",
           "description": "Inspect record counts in the local chat cache owned by the shared worker.",

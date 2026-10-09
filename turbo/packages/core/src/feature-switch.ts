@@ -217,7 +217,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.OkouDebug]: {
     maintainer: "ethan@okou.ai",
     description:
-      "Reveal activity debug surfaces, activity log navigation, appended system prompts, realtime connection diagnostics, and Debug preferences",
+      "Reveal activity debug surfaces, activity log navigation, appended system prompts, and Debug preferences",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

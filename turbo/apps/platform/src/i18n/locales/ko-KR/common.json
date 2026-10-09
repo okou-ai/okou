@@ -4885,24 +4885,6 @@
           "enabled_other": "다음 {{count}}회 실행 동안 활성화됨",
           "title": "네트워크 본문 캡처"
         },
-        "connectionDiagnostics": {
-          "activeWaits": "활성 대기",
-          "channel": "채널",
-          "clear": "지우기",
-          "connection": "연결",
-          "copyJson": "JSON 복사",
-          "description": "인증 및 Ably 연결 신호를 확인합니다.",
-          "empty": "기록된 진단 이벤트가 없습니다.",
-          "events": "이벤트",
-          "log": "이벤트 로그",
-          "refresh": "새로 고침",
-          "title": "실시간 연결 진단",
-          "unavailable": "사용 불가",
-          "workerDescription": "실시간 연결을 담당하는 공유 워커가 기록한 진단을 확인합니다.",
-          "workerLoading": "로딩 중",
-          "workerTitle": "공유 워커 연결 진단",
-          "workerUnavailable": "사용 불가"
-        },
         "indexedDb": {
           "countExplanation": "읽기 전용 트랜잭션으로 개수를 집계하며 레코드 본문은 읽지 않습니다.",
           "description": "Shared Worker가 관리하는 로컬 채팅 캐시의 레코드 수를 확인합니다.",

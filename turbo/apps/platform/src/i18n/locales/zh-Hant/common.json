@@ -4885,24 +4885,6 @@
           "enabled_other": "已對接下來{{count}}次執行啟用",
           "title": "抓取網路請求內容"
         },
-        "connectionDiagnostics": {
-          "activeWaits": "活躍等待",
-          "channel": "頻道",
-          "clear": "清空",
-          "connection": "連線",
-          "copyJson": "複製JSON",
-          "description": "檢視認證和Ably連線訊號。",
-          "empty": "沒有記錄到診斷事件。",
-          "events": "事件",
-          "log": "事件日誌",
-          "refresh": "重新整理",
-          "title": "實時連線診斷",
-          "unavailable": "不可用",
-          "workerDescription": "檢視持有實時連線的共享Worker所記錄的抓取內容。",
-          "workerLoading": "載入中",
-          "workerTitle": "共享Worker連線診斷",
-          "workerUnavailable": "不可用"
-        },
         "indexedDb": {
           "countExplanation": "計數使用只讀事務，不會讀取記錄內容。",
           "description": "檢視共享Worker持有的本地聊天快取中的記錄數。",
