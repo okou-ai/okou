@@ -17,6 +17,38 @@ import {
 
 const context = testContext();
 
+test("HTML artifact cards resolve their stored private cover image", async () => {
+  const fileId = "f0000000-0000-4000-a000-000000000005";
+  const preview = artifactReferencePath(fileId, "preview.png");
+  const resolved = "https://private.example/preview.png?signature=authorized";
+  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
+    return respond(200, {
+      artifacts: [
+        artifact({
+          kind: "hosted-site",
+          title: "Website with a sandbox cover",
+          thumbnail: { url: preview },
+        }),
+      ],
+      nextCursor: null,
+    });
+  });
+  context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
+    return respond(200, {
+      url: resolved,
+      expiresAt: "2099-01-01T00:00:00.000Z",
+      filename: "preview.png",
+      contentType: "image/png",
+      target: { kind: "file", id: fileId },
+    });
+  });
+  await setupArtifactCatalogPage(context);
+  const card = await findArtifactAction("Website with a sandbox cover");
+  await expect(
+    within(card).findByTestId("artifact-catalog-thumbnail"),
+  ).resolves.toHaveAttribute("src", resolved);
+});
+
 test("An avatar card and its viewer share one private video URL", async () => {
   const fileId = "f0000000-0000-4000-a000-000000000004";
   const canonicalUrl = artifactReferencePath(fileId, "avatar-video.mp4");

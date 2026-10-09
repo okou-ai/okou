@@ -151,20 +151,86 @@ describe("RunningIndicator", () => {
     }
   });
 
-  it("realigns recreated animations without remounting the indicator", () => {
-    render(<RunningIndicator data-testid="running-indicator" />);
+  it.each([0, 1 / 12])(
+    "realigns recreated animations without remounting at offset %s",
+    (phaseOffset) => {
+      render(
+        <RunningIndicator
+          data-testid="running-indicator"
+          phaseOffset={phaseOffset}
+        />,
+      );
+      const indicator = screen.getByTestId("running-indicator");
+
+      for (const layer of indicator.children) {
+        const initialAnimation = mockAnimation(layer, 125);
+        fireEvent.animationStart(layer);
+        expect(initialAnimation.startTime).toBe(0);
+
+        // Hiding and showing an ancestor creates a new CSS animation on the
+        // same element, rather than mounting a new RunningIndicator.
+        const restartedAnimation = mockAnimation(layer, 975);
+        fireEvent.animationStart(layer);
+        expect(restartedAnimation.startTime).toBe(0);
+      }
+    },
+  );
+
+  it.each([
+    { offset: 0, delay: 0 },
+    { offset: 1 / 12, delay: -11 / 12 },
+    { offset: 13 / 12, delay: -11 / 12 },
+    { offset: 6406 / 12, delay: -1 / 6 },
+  ])("enters the wave immediately for offset $offset", ({ offset, delay }) => {
+    render(
+      <RunningIndicator data-testid="running-indicator" phaseOffset={offset} />,
+    );
     const indicator = screen.getByTestId("running-indicator");
+    const phase = Number(
+      indicator.style.getPropertyValue("--running-indicator-phase"),
+    );
+    expect(phase).toBeCloseTo(delay);
+    expect(phase).toBeGreaterThan(-1);
+    expect(phase).toBeLessThanOrEqual(0);
+    expect(indicator).not.toHaveAttribute("phaseOffset");
+  });
 
-    for (const layer of indicator.children) {
-      const initialAnimation = mockAnimation(layer, 125);
+  it("follows a new row position without remounting or losing caller styles", () => {
+    const { rerender } = render(
+      <RunningIndicator
+        data-testid="running-indicator"
+        phaseOffset={1 / 12}
+        className="ml-1"
+        style={{ opacity: 0.5 }}
+      />,
+    );
+    const indicator = screen.getByTestId("running-indicator");
+    const animations = Array.from(indicator.children, (layer) => {
+      const animation = mockAnimation(layer, 975);
       fireEvent.animationStart(layer);
-      expect(initialAnimation.startTime).toBe(0);
-
-      // Hiding and showing an ancestor creates a new CSS animation on the
-      // same element, rather than mounting a new RunningIndicator.
-      const restartedAnimation = mockAnimation(layer, 975);
-      fireEvent.animationStart(layer);
-      expect(restartedAnimation.startTime).toBe(0);
+      return animation;
+    });
+    rerender(
+      <RunningIndicator
+        data-testid="running-indicator"
+        phaseOffset={3 / 12}
+        className="ml-1"
+        style={{ opacity: 0.5 }}
+      />,
+    );
+    expect(screen.getByTestId("running-indicator")).toBe(indicator);
+    expect(
+      Number(indicator.style.getPropertyValue("--running-indicator-phase")),
+    ).toBe(-0.75);
+    expect(indicator.style.opacity).toBe("0.5");
+    expect(indicator).toHaveClass("ml-1");
+    for (const animation of animations) {
+      expect(animation.startTime).toBe(0);
     }
+    rerender(<RunningIndicator data-testid="running-indicator" />);
+    expect(screen.getByTestId("running-indicator")).toBe(indicator);
+    expect(
+      Number(indicator.style.getPropertyValue("--running-indicator-phase")),
+    ).toBe(0);
   });
 });

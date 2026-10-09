@@ -86,7 +86,9 @@ async def test_re_signs_header_sigv4_request_to_reference_signature(
     mitm_ctx,
 ):
     auth_response = aws_auth_response(include_session_token=False)
-    api_entry = aws_api_entry(base="https://iam.amazonaws.com", include_session_token=False)
+    api_entry = aws_api_entry(
+        api_id="run-1:0", base="https://iam.amazonaws.com", include_session_token=False
+    )
     flow = real_flow(
         with_response=False,
         host="iam.amazonaws.com",
@@ -141,7 +143,9 @@ async def test_re_signs_header_sigv4_request_with_leading_dot_segments(
     mitm_ctx,
 ):
     auth_response = aws_auth_response(include_session_token=False)
-    api_entry = aws_api_entry(base="https://iam.amazonaws.com", include_session_token=False)
+    api_entry = aws_api_entry(
+        api_id="run-1:0", base="https://iam.amazonaws.com", include_session_token=False
+    )
     flow = real_flow(
         with_response=False,
         host="iam.amazonaws.com",
@@ -189,7 +193,9 @@ async def test_re_signs_header_sigv4_request_with_encoded_path(
     mitm_ctx,
 ):
     auth_response = aws_auth_response(include_session_token=False)
-    api_entry = aws_api_entry(base="https://iam.amazonaws.com", include_session_token=False)
+    api_entry = aws_api_entry(
+        api_id="run-1:0", base="https://iam.amazonaws.com", include_session_token=False
+    )
     flow = real_flow(
         with_response=False,
         host="iam.amazonaws.com",
@@ -238,7 +244,9 @@ async def test_re_signs_header_sigv4_request_with_normalized_host(
     mitm_ctx,
 ):
     auth_response = aws_auth_response(include_session_token=False)
-    api_entry = aws_api_entry(base="https://iam.amazonaws.com", include_session_token=False)
+    api_entry = aws_api_entry(
+        api_id="run-1:0", base="https://iam.amazonaws.com", include_session_token=False
+    )
     flow = real_flow(
         with_response=False,
         host="IAM.AMAZONAWS.COM",
@@ -282,7 +290,9 @@ async def test_re_signs_header_sigv4_request_with_trusted_original_url(
     mitm_ctx,
 ):
     auth_response = aws_auth_response(include_session_token=False)
-    api_entry = aws_api_entry(base="https://iam.amazonaws.com", include_session_token=False)
+    api_entry = aws_api_entry(
+        api_id="run-1:0", base="https://iam.amazonaws.com", include_session_token=False
+    )
     flow = real_flow(
         with_response=False,
         host="203.0.113.10",
@@ -333,6 +343,7 @@ async def test_re_signs_header_sigv4_request_keeps_resolved_query_with_trusted_u
         query={"Trace": "secret-value"},
     )
     api_entry = aws_api_entry(
+        api_id="run-1:0",
         base="https://iam.amazonaws.com",
         auth_query={"Trace": "${{ secrets.TRACE }}"},
         include_session_token=False,
@@ -615,7 +626,7 @@ async def test_header_sigv4_seeded_cache_matches_auth_query_identity(
     tmp_path,
     mitm_ctx,
 ):
-    api_entry = aws_api_entry(auth_query={"trace": "${{ secrets.TRACE_ID }}"})
+    api_entry = aws_api_entry(api_id="run-1:0", auth_query={"trace": "${{ secrets.TRACE_ID }}"})
     allow = aws_allow(api_entry)
     sandbox_info = aws_sandbox_info(tmp_path)
     flow = make_sts_header_sigv4_flow(real_flow, headers)
@@ -650,9 +661,10 @@ async def test_header_sigv4_cache_miss_when_auth_query_changes(
     tmp_path,
     mitm_ctx,
 ):
-    cached_allow = aws_allow(aws_api_entry(include_session_token=False))
+    cached_allow = aws_allow(aws_api_entry(api_id="run-1:0", include_session_token=False))
     active_allow = aws_allow(
         aws_api_entry(
+            api_id="run-1:0",
             auth_query={"trace": "${{ secrets.TRACE_ID }}"},
             include_session_token=False,
         )

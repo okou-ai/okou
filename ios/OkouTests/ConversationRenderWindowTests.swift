@@ -1,3 +1,4 @@
+import ChatDomain
 import XCTest
 
 @testable import Okou

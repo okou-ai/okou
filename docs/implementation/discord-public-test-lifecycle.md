@@ -104,8 +104,12 @@ same fail-closed data-only backfill. A later demonstrated collision with main's
 `1356_drop_organization_usage_allowance` required retaining that main migration
 and regenerating the still-unreleased Discord schema as
 `1357_discord_oauth_onboarding`, again with Drizzle metadata and the identical
-fail-closed backfill. Migration 1357 remains intact in the current chain; earlier
-1346/1356 Discord receipts are historical. Drizzle-generated migration 1358 adds
+fail-closed backfill. Main subsequently shipped `1357_prepare_home_affinity`,
+so a demonstrated collision required Drizzle regeneration of the unreleased
+onboarding as 1358 and native grant lifecycle as 1359. Main's complete history
+and 1357 snapshot remain unchanged; both PR SQL bodies retain their earlier
+semantics. Earlier 1346/1356/1357 Discord receipts are historical.
+Drizzle-generated migration 1359 adds
 real personal/organization authorization lineage and replaces the separate
 identity reservation with a native active-connection ownership exclusion constraint.
 It adds no fabricated historical OAuth grants, coordinator field, custom database

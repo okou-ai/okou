@@ -27,6 +27,7 @@ class TestAuthBaseUrlRewriteSuccess:
         flow.metadata[metadata_keys.SANDBOX_RUN_ID] = "test-run"
         original_url = flow.request.url
         api_entry = {
+            "id": "run-1:0",
             "base": "https://api.github.com",
             "auth": {"headers": {"Authorization": "Bearer ${{ secrets.GITHUB_TOKEN }}"}},
         }
@@ -125,6 +126,7 @@ class TestAuthBaseUrlRewriteSuccess:
         flow = real_flow(with_response=False, host="api.github.com", path="/repos")
         flow.metadata[metadata_keys.SANDBOX_RUN_ID] = "test-run"
         api_entry = {
+            "id": "run-1:0",
             "base": "https://api.github.com",
             "auth": {"headers": {"Authorization": "Bearer ${{ secrets.TOKEN }}"}},
         }

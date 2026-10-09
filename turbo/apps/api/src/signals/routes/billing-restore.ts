@@ -70,18 +70,17 @@ const restoreAuthed$ = command(async ({ get, set }, signal: AbortSignal) => {
   };
 });
 
+const restoreAuth$ = authRoute(
+  { requireOrganization: true, missingOrganizationStatus: 401 },
+  restoreAuthed$,
+);
+
 const restore$ = command(async ({ set }, signal: AbortSignal) => {
   if (!optionalEnv("STRIPE_SECRET_KEY")) {
     return providerUnavailable("Billing not configured");
   }
 
-  return await set(
-    authRoute(
-      { requireOrganization: true, missingOrganizationStatus: 401 },
-      restoreAuthed$,
-    ),
-    signal,
-  );
+  return await set(restoreAuth$, signal);
 });
 
 export const billingRestoreRoutes: readonly RouteEntry[] = [

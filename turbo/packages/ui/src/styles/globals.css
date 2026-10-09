@@ -114,6 +114,7 @@
   --color-interrupt-foreground: hsl(var(--interrupt-foreground));
   --color-muted: hsl(var(--muted));
   --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-skeleton: hsl(var(--skeleton));
   --color-accent: hsl(var(--accent));
   --color-accent-foreground: hsl(var(--accent-foreground));
   --color-popover: hsl(var(--popover));
@@ -243,9 +244,14 @@
      animate `transform`, so consumers must set `transform` rather than the
      individual `translate`/`scale` properties, which would compose on top of
      the animation instead of being replaced by it. */
-  --animate-running-indicator-center: running-indicator-center 2400ms
-    cubic-bezier(0.33, 0, 0.66, 1) infinite;
-  --animate-running-indicator-ripple: running-indicator-ripple 2400ms ease-out
+  --duration-running-indicator: 2400ms;
+  --animate-running-indicator-center: running-indicator-center
+    var(--duration-running-indicator) cubic-bezier(0.33, 0, 0.66, 1) infinite;
+  --animate-running-indicator-ripple: running-indicator-ripple
+    var(--duration-running-indicator) ease-out infinite;
+
+  /* Keep loading placeholders visible throughout their breathing cycle. */
+  --animate-skeleton-pulse: okou-skeleton-pulse 2s cubic-bezier(0.4, 0, 0.6, 1)
     infinite;
 
   /* ===================================
@@ -638,6 +644,7 @@
 
     --muted: var(--gray-100); /* gray-100 */
     --muted-foreground: var(--gray-800); /* gray-800 */
+    --skeleton: var(--gray-200); /* #F0ECEA; follows palette overrides */
 
     --accent: var(--gray-100); /* gray-100 - matches navigation hover */
     --accent-foreground: var(--foreground); /* tracks body copy */
@@ -810,6 +817,7 @@
       --gray-200
     ); /* gray-200 - lighter than card for visible inner surfaces */
     --muted-foreground: var(--gray-800); /* gray-800 */
+    --skeleton: var(--gray-300); /* #494847; follows palette overrides */
 
     --accent: var(
       --gray-300
@@ -962,6 +970,16 @@
   to {
     opacity: 0;
     transform: translateY(8px);
+  }
+}
+
+@keyframes okou-skeleton-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
   }
 }
 

@@ -5,6 +5,9 @@
 //! masking, and derives diagnostic-only multiline variants for bounded CLI
 //! stderr tails.
 
+mod stream;
+pub(crate) use stream::StreamingSecretMasker;
+
 use crate::env;
 use aho_corasick::{AhoCorasick, MatchKind};
 use base64::Engine;

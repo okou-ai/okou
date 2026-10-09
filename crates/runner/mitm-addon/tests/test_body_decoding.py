@@ -794,6 +794,68 @@ class TestDecodeRequestBodyForNetworkLogCapture:
         hdrs = headers(("Content-Encoding", encoding))
         assert decode_request_body_for_network_log_capture(compressed, hdrs) == b""
 
+    @pytest.mark.parametrize("encoding", ["gzip", "deflate"])
+    @pytest.mark.parametrize("member_count", [64, 65, 4096])
+    @pytest.mark.parametrize("body", [b"", b"A" * 32], ids=["empty", "exact-output-limit"])
+    def test_zlib_member_budget_bounds_capture_work(
+        self, headers, monkeypatch, encoding, member_count, body
+    ):
+        empty_member = _compress_one_shot_body(encoding, b"")
+        compressed = _compress_one_shot_body(encoding, body) + empty_member * (member_count - 1)
+        stats = track_zlib_decompressor(monkeypatch, "zlib_decoding.zlib.decompressobj")
+        hdrs = headers(("Content-Encoding", encoding))
+
+        decoded = decode_request_body_for_network_log_capture(
+            compressed, hdrs, max_output=max(1, len(body))
+        )
+
+        if member_count == 64:
+            assert decoded == body
+        else:
+            assert decoded is None
+        assert stats["objects"] == 64
+        # A member can span a fresh 1 KiB input boundary; the empty-member
+        # suffix must still stop after bounded calls rather than traversing it.
+        assert stats["calls"] <= 66
+        _assert_zlib_input_is_bounded(stats)
+
+    @pytest.mark.parametrize("encoding", ["gzip", "deflate"])
+    def test_zlib_exact_limit_accepts_small_concatenation_and_empty_tails(self, headers, encoding):
+        first = b"A" * 16
+        second = b"B" * 16
+        compressed = (
+            _compress_one_shot_body(encoding, first)
+            + _compress_one_shot_body(encoding, second)
+            + _compress_one_shot_body(encoding, b"") * 2
+        )
+        hdrs = headers(("Content-Encoding", encoding))
+
+        assert (
+            decode_request_body_for_network_log_capture(compressed, hdrs, max_output=32)
+            == first + second
+        )
+
+    @pytest.mark.parametrize("encoding", ["gzip", "deflate"])
+    @pytest.mark.parametrize("tail_kind", ["invalid", "incomplete", "overflow"])
+    def test_zlib_last_allowed_member_preserves_failure_policy(self, headers, encoding, tail_kind):
+        body = b"A" * 32
+        empty_member = _compress_one_shot_body(encoding, b"")
+        if tail_kind == "invalid":
+            tail = b"not compressed"
+        elif tail_kind == "incomplete":
+            tail = empty_member[:-1]
+        else:
+            tail = _compress_one_shot_body(encoding, b"B")
+        compressed = _compress_one_shot_body(encoding, body) + empty_member * 62 + tail
+        hdrs = headers(("Content-Encoding", encoding))
+
+        decoded = decode_request_body_for_network_log_capture(compressed, hdrs, max_output=32)
+
+        if tail_kind == "overflow":
+            assert decoded == body
+        else:
+            assert decoded is None
+
     def test_raw_deflate_remains_unsupported(self, headers):
         body = b'{"hello":"world"}'
         compressed = zlib.compress(body, wbits=-zlib.MAX_WBITS)

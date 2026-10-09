@@ -180,6 +180,15 @@ retain complete parsed-body assertions and reject missing or invalid sequences.
 Reuse periodic synthetic pixel rows only when all original dimensions, pixel
 values, compression settings and actual encoded/retained buffers remain intact.
 
+Test-owned HTTP recorders should move complete requests into their owner when
+only a path is needed afterward. Parse headers once, grow body buffers from
+received bytes rather than untrusted declared lengths, and consume valid UTF-8
+buffers without another full-body copy. Preserve fragmented headers, exact
+Content-Length boundaries, empty bodies, existing lossy decoding, early-close
+failures and response gates. Repeated JSONL budget fixtures may reuse one owned
+entry while writing every canonical line; keep map ordering, full source files,
+request counts and exact overflow diagnostics unchanged.
+
 Keep real process/socket deadlines, full payload/file/pixel boundaries, key/KDF
 strengths, every assertion and actual retained image buffers. Compare complete
 unchanged target selections with matching profile/instrumentation/thread settings;

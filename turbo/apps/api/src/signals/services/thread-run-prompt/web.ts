@@ -6,11 +6,12 @@ import {
 } from "../chat-user-message.service";
 import { resolveIntegrationNotePrompt } from "../integration-note-prompt.service";
 import { buildWebChatAppendSystemPrompt } from "../web-chat-session-prompt.service";
-import type { IntegrationPromptVariables, ThreadPromptSource } from "./types";
+import type { RunPromptAndSkills } from "../run-prompt-and-skills";
+import type { ThreadPromptSource } from "./types";
 
 export function createWebThreadPrompt(
   source$: Computed<Promise<ThreadPromptSource | null>>,
-): Computed<Promise<IntegrationPromptVariables | null>> {
+): Computed<Promise<RunPromptAndSkills | null>> {
   return computed(async (get) => {
     const source = await get(source$);
     if (
@@ -47,8 +48,8 @@ export function createWebThreadPrompt(
             }),
           },
         }),
-        channelUserIdentity: "",
       },
+      skillVolumes: [],
     };
   });
 }

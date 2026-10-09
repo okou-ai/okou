@@ -1,11 +1,15 @@
-// The two-pane slash panel. The left column indexes what you can make and the
-// workflows you have; the right pane previews a type independently of selection.
+// The slash panel indexes creation types and workflows. Composer-anchored menus
+// embed desktop previews on the right; the legacy menu uses a separate flyout.
 // It renders inside the slash menu's popover shell from slash-workflow.tsx.
 import type { Ref } from "react";
 import { ChevronRight, Globe, Image, Presentation, Route } from "lucide-react";
-import { cn, Popover, PopoverContent } from "@okouai/ui";
+import { cn, Popover, PopoverContent, useMediaQuery } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
-import { SlashWorkflowName } from "./slash-workflow.tsx";
+import {
+  scrollSlashWorkflowIntoView,
+  SlashWorkflowName,
+} from "./slash-workflow.tsx";
+import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "./sidebar-breakpoint.ts";
 import { i18n } from "../../i18n/index.ts";
 import type { ComposerSlashWorkflowMatch } from "../../signals/okou-page/workflow-composer-domain.ts";
 import {
@@ -30,6 +34,7 @@ interface SlashTemplatePanelProps {
   readonly categories: readonly SlashTemplateCategory[];
   readonly workflows: readonly ComposerSlashWorkflowMatch[];
   readonly workflowsLoading: boolean;
+  readonly reversed: boolean;
   /** Categories precede workflows in the editor's shared suggestion index. */
   readonly selectedIndex: number;
   /** The row the pointer is previewing, or null while the keyboard leads. */
@@ -136,9 +141,11 @@ function SlashTemplateCover({
 
 function SlashTemplateDetailPane({
   category,
+  embedded = false,
   onSelectTemplate,
 }: {
   readonly category: SlashTemplateCategory;
+  readonly embedded?: boolean;
   readonly onSelectTemplate: (
     preview: SlashTemplatePreview,
     category: SlashTemplateCategory,
@@ -148,8 +155,14 @@ function SlashTemplateDetailPane({
   const nativeAspect = isSlashTemplateNativeAspectCategory(category);
   return (
     <div
-      // The pane paints its own surface inside the shadowless positioning box.
-      className="h-full w-[320px] overflow-hidden rounded-[12px] border border-[hsl(var(--gray-400))] bg-card shadow-lg"
+      className={cn(
+        "h-full overflow-hidden",
+        embedded
+          ? "w-[320px] max-w-1/2 shrink-0 border-l border-border/60"
+          : "w-[320px] rounded-[12px] border border-[hsl(var(--gray-400))] bg-card shadow-lg",
+      )}
+      role={embedded ? "region" : undefined}
+      aria-label={embedded ? slashTemplateCategoryLabel(category) : undefined}
       data-slot="slash-template-detail"
       data-category={category}
     >
@@ -306,12 +319,16 @@ function SlashPanelWorkflowList({
   workflows,
   loading,
   markedIndex,
+  selectedIndex,
+  reversed,
   onPreview,
   onSelect,
   workflowOptionId,
 }: {
   readonly workflows: readonly ComposerSlashWorkflowMatch[];
   readonly loading: boolean;
+  readonly selectedIndex: number;
+  readonly reversed: boolean;
   /** Relative to this list; negative while no row carries the mark. */
   readonly markedIndex: number;
   readonly onPreview: (index: number) => void;
@@ -339,38 +356,128 @@ function SlashPanelWorkflowList({
   }
   return (
     <div className="px-1">
-      {workflows.map((workflow, index) => {
-        return (
-          <button
-            key={workflow.id}
-            id={workflowOptionId(workflow.id)}
-            type="button"
-            data-active={markedIndex === index ? "true" : undefined}
-            className={cn(
-              "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors",
-              markedIndex === index
-                ? "bg-state-selected hover:bg-state-selected-hover"
-                : "hover:bg-state-hover",
-            )}
-            onMouseMove={() => {
-              onPreview(index);
-            }}
-            onClick={() => {
-              onSelect(workflow);
-            }}
-          >
-            <Route
-              size={16}
-              className="shrink-0 text-muted-foreground"
-              aria-hidden
-            />
-            <SlashWorkflowName
-              workflow={workflow}
-              className="min-w-0 flex-1 text-[13px]"
-            />
-          </button>
-        );
-      })}
+      {(reversed ? [...workflows].reverse() : workflows).map(
+        (workflow, visualIndex) => {
+          const index = reversed
+            ? workflows.length - 1 - visualIndex
+            : visualIndex;
+          return (
+            <button
+              key={workflow.id}
+              id={workflowOptionId(workflow.id)}
+              ref={
+                reversed && selectedIndex === index
+                  ? () => {
+                      scrollSlashWorkflowIntoView(workflow);
+                    }
+                  : undefined
+              }
+              type="button"
+              data-active={markedIndex === index ? "true" : undefined}
+              className={cn(
+                "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors",
+                markedIndex === index
+                  ? "bg-state-selected hover:bg-state-selected-hover"
+                  : "hover:bg-state-hover",
+              )}
+              onMouseMove={() => {
+                onPreview(index);
+              }}
+              onClick={() => {
+                onSelect(workflow);
+              }}
+            >
+              <Route
+                size={16}
+                className="shrink-0 text-muted-foreground"
+                aria-hidden
+              />
+              <SlashWorkflowName
+                workflow={workflow}
+                className="min-w-0 flex-1 text-[13px]"
+              />
+            </button>
+          );
+        },
+      )}
+    </div>
+  );
+}
+
+function SlashPanelCategoryList({
+  categories,
+  markedIndex,
+  selectedIndex,
+  reversed,
+  onPreview,
+  onSelectCategory,
+  categoryOptionId,
+}: Pick<
+  SlashTemplatePanelProps,
+  | "categories"
+  | "selectedIndex"
+  | "reversed"
+  | "onPreview"
+  | "onSelectCategory"
+  | "categoryOptionId"
+> & { readonly markedIndex: number }) {
+  const { t } = useTranslation();
+  if (reversed && categories.length === 0) {
+    return null;
+  }
+  return (
+    <div>
+      <SectionLabel>
+        {t(($) => {
+          return $.chat.composer.slashPanel.make;
+        })}
+      </SectionLabel>
+      <div className="px-1">
+        {(reversed ? [...categories].reverse() : categories).map(
+          (category, visualIndex) => {
+            const index = reversed
+              ? categories.length - 1 - visualIndex
+              : visualIndex;
+            const Icon = SLASH_TEMPLATE_CATEGORY_ICONS[category];
+            const label = slashTemplateCategoryLabel(category);
+            return (
+              <button
+                key={category}
+                id={categoryOptionId(category)}
+                ref={
+                  reversed && selectedIndex === index
+                    ? () => {
+                        scrollSlashWorkflowIntoView({ id: category });
+                      }
+                    : undefined
+                }
+                type="button"
+                aria-label={label}
+                data-active={markedIndex === index ? "true" : undefined}
+                className={cn(
+                  "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-foreground transition-colors",
+                  markedIndex === index
+                    ? "bg-state-selected hover:bg-state-selected-hover"
+                    : "hover:bg-state-hover",
+                )}
+                onMouseMove={() => {
+                  onPreview(index);
+                }}
+                onClick={() => {
+                  onSelectCategory(category);
+                }}
+              >
+                <Icon
+                  size={16}
+                  className="shrink-0 text-muted-foreground"
+                  aria-hidden
+                />
+                <span className="min-w-0 flex-1 truncate">{label}</span>
+              </button>
+            );
+          },
+        )}
+      </div>
     </div>
   );
 }
@@ -380,6 +487,7 @@ export function SlashTemplatePanel({
   categories,
   workflows,
   workflowsLoading,
+  reversed,
   selectedIndex,
   previewIndex,
   onPreview,
@@ -392,6 +500,7 @@ export function SlashTemplatePanel({
   categoryOptionId,
 }: SlashTemplatePanelProps) {
   const { t } = useTranslation();
+  const isDesktop = useMediaQuery(SIDEBAR_DESKTOP_MEDIA_QUERY);
   // Keep the mark on the previewed row while the pointer crosses into its
   // flyout. Keyboard navigation or leaving both cards restores the keyboard
   // selection and its preview together.
@@ -399,9 +508,70 @@ export function SlashTemplatePanel({
   // A workflow row indexes past the categories, so it previews nothing and the
   // flyout closes.
   const detailCategory = categories[markedIndex] ?? null;
+  const makeSection = (
+    <SlashPanelCategoryList
+      key="make"
+      categories={categories}
+      markedIndex={markedIndex}
+      selectedIndex={selectedIndex}
+      reversed={reversed}
+      onPreview={onPreview}
+      onSelectCategory={onSelectCategory}
+      categoryOptionId={categoryOptionId}
+    />
+  );
+  const workflowSection = (
+    <div key="workflows">
+      <SectionLabel>
+        {t(($) => {
+          return $.chat.composer.workflows.title;
+        })}
+      </SectionLabel>
+      <SlashPanelWorkflowList
+        workflows={workflows}
+        loading={workflowsLoading}
+        markedIndex={markedIndex - categories.length}
+        selectedIndex={selectedIndex - categories.length}
+        reversed={reversed}
+        onPreview={(index) => {
+          onPreview(categories.length + index);
+        }}
+        onSelect={onSelectWorkflow}
+        workflowOptionId={workflowOptionId}
+      />
+    </div>
+  );
+  const browseAll = (
+    <div
+      className={cn(
+        "shrink-0 border-border/60 p-1",
+        reversed ? "border-b" : "border-t",
+      )}
+    >
+      <button
+        type="button"
+        className="flex h-8 w-full items-center justify-between rounded-lg px-2 text-sm text-foreground transition-colors hover:bg-state-hover"
+        onClick={onBrowseAll}
+      >
+        <span className="truncate">
+          {t(($) => {
+            return $.chat.composer.slashPanel.browseAll;
+          })}
+        </span>
+        <ChevronRight
+          size={16}
+          className="shrink-0 text-muted-foreground"
+          aria-hidden
+        />
+      </button>
+    </div>
+  );
   return (
     <div
-      className="flex h-full w-full flex-col overflow-hidden"
+      className={cn(
+        "flex h-full w-full overflow-hidden",
+        reversed ? "flex-row" : "flex-col",
+      )}
       data-slot="slash-panel"
       onMouseLeave={(event) => {
         // Moving into the flyout is not leaving the menu, even though the two
@@ -412,88 +582,28 @@ export function SlashTemplatePanel({
         onPreview(null);
       }}
     >
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {/*
           Make and Workflows scroll as one list. Scrolling only the workflows
           left a row sliced in half under a pinned section label, and hid that
           the two groups are one index.
         */}
+        {reversed && browseAll}
         <div className="min-h-0 flex-1 overflow-y-auto pb-1">
-          <SectionLabel>
-            {t(($) => {
-              return $.chat.composer.slashPanel.make;
-            })}
-          </SectionLabel>
-          <div className="px-1">
-            {categories.map((category, index) => {
-              const Icon = SLASH_TEMPLATE_CATEGORY_ICONS[category];
-              const label = slashTemplateCategoryLabel(category);
-              return (
-                <button
-                  key={category}
-                  id={categoryOptionId(category)}
-                  type="button"
-                  aria-label={label}
-                  data-active={markedIndex === index ? "true" : undefined}
-                  className={cn(
-                    "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-foreground transition-colors",
-                    markedIndex === index
-                      ? "bg-state-selected hover:bg-state-selected-hover"
-                      : "hover:bg-state-hover",
-                  )}
-                  onMouseMove={() => {
-                    onPreview(index);
-                  }}
-                  onClick={() => {
-                    onSelectCategory(category);
-                  }}
-                >
-                  <Icon
-                    size={16}
-                    className="shrink-0 text-muted-foreground"
-                    aria-hidden
-                  />
-                  <span className="min-w-0 flex-1 truncate">{label}</span>
-                </button>
-              );
-            })}
-          </div>
-          <SectionLabel>
-            {t(($) => {
-              return $.chat.composer.workflows.title;
-            })}
-          </SectionLabel>
-          <SlashPanelWorkflowList
-            workflows={workflows}
-            loading={workflowsLoading}
-            markedIndex={markedIndex - categories.length}
-            onPreview={(index) => {
-              onPreview(categories.length + index);
-            }}
-            onSelect={onSelectWorkflow}
-            workflowOptionId={workflowOptionId}
-          />
+          {reversed
+            ? [workflowSection, makeSection]
+            : [makeSection, workflowSection]}
         </div>
-        <div className="shrink-0 border-t border-border/60 p-1">
-          <button
-            type="button"
-            className="flex h-8 w-full items-center justify-between rounded-lg px-2 text-sm text-foreground transition-colors hover:bg-state-hover"
-            onClick={onBrowseAll}
-          >
-            <span className="truncate">
-              {t(($) => {
-                return $.chat.composer.slashPanel.browseAll;
-              })}
-            </span>
-            <ChevronRight
-              size={16}
-              className="shrink-0 text-muted-foreground"
-              aria-hidden
-            />
-          </button>
-        </div>
+        {!reversed && browseAll}
       </div>
-      {detailCategory !== null && (
+      {detailCategory !== null && reversed && isDesktop && (
+        <SlashTemplateDetailPane
+          embedded
+          category={detailCategory}
+          onSelectTemplate={onSelectTemplate}
+        />
+      )}
+      {detailCategory !== null && !reversed && (
         <SlashTemplateDetailFlyout
           menuRef={menuRef}
           onClose={onClose}

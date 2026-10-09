@@ -1,6 +1,7 @@
 import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { getTableColumns, sql, type SQL, type WithSubquery } from "drizzle-orm";
+import { explicitModelSettings } from "@okouai/core/auto-run-model";
 import type { DefaultModelFirstPin } from "./model-selection.service";
 import {
   chatThreadEventInsertSql,
@@ -31,7 +32,7 @@ export function integrationChatThreadValues(
     selectedModel: args.initialModel.selectedModel,
     codexServiceTier:
       args.initialModel.serviceTier === "priority" ? ("fast" as const) : null,
-    modelSettings: defaults.modelSettings,
+    modelSettings: explicitModelSettings(defaults.modelSettings),
     cloudBrowserEnabled: defaults.cloudBrowserEnabled,
     title: null,
     lastReadAt: args.currentTime,

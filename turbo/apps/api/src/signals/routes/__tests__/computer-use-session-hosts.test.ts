@@ -8,9 +8,12 @@ import {
   computerUseHostCommandsContract,
 } from "@okouai/api-contracts/contracts/computer-use";
 
-import { accept, testContext } from "../../../__tests__/test-context";
+import {
+  accept,
+  desktopCompatibility,
+  testContext,
+} from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
 import { mockNow } from "../../../lib/time";
 import { computerUseRoutes } from "../computer-use";
 
@@ -68,7 +71,7 @@ describe("Native Computer Use session authentication", () => {
   it("requires an upgrade at registration, including legacy clients that claim a supported version", async () => {
     const api = await app();
     authenticate(identity());
-    mockEnv("OKOU_DESKTOP_MINIMUM_SUPPORTED_VERSION", "0.51.0");
+    desktopCompatibility.minimumSupportedVersion = "0.51.0";
     const old = await accept(
       api(contract).register({ headers, body: runtimeBody }),
       [426],
@@ -119,7 +122,7 @@ describe("Native Computer Use session authentication", () => {
       }),
       [200],
     );
-    mockEnv("OKOU_DESKTOP_MINIMUM_SUPPORTED_VERSION", "0.51.0");
+    desktopCompatibility.minimumSupportedVersion = "0.51.0";
     await accept(
       client.next({
         headers,
@@ -197,7 +200,7 @@ describe("Native Computer Use session authentication", () => {
       }),
       [200],
     );
-    mockEnv("OKOU_DESKTOP_MINIMUM_SUPPORTED_VERSION", "0.51.0");
+    desktopCompatibility.minimumSupportedVersion = "0.51.0";
     await accept(
       api(computerUseHostCommandsContract).next({
         headers: legacyHeaders,

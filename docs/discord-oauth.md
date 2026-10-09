@@ -21,7 +21,7 @@ Use `docs/discord-integration.md` for the broader Gateway, native-message, permi
 
 The API requires the existing `DISCORD_APPLICATION_ID`, `DISCORD_BOT_TOKEN`, `DISCORD_PUBLIC_KEY` and `DISCORD_GATEWAY_SECRET` settings, plus the typed optional **`DISCORD_OAUTH_CLIENT_SECRET`**. Configure `APP_URL` to the fixed authorized App origin. The API selects its callback origin through the existing canonical OAuth-origin resolver.
 
-Missing OAuth configuration returns an actionable 503 from `start`; it does not invent credentials or change the existing native `isAvailable` status meaning. Keep the `DiscordIntegration` feature switch off until separately authorized. Use the normal generated Drizzle migration pipeline, including `1357_discord_oauth_onboarding`; do not hand-edit journal/snapshot metadata or seed business authorization rows.
+Missing OAuth configuration returns an actionable 503 from `start`; it does not invent credentials or change the existing native `isAvailable` status meaning. Keep the `DiscordIntegration` feature switch off until separately authorized. Use the normal generated Drizzle migration pipeline, including `1358_discord_oauth_onboarding` and `1359_discord_native_grant_lifecycle`; do not hand-edit journal/snapshot metadata or seed business authorization rows.
 
 ## Uniform browser protocol
 

@@ -78,6 +78,14 @@ Unopened conversations catch up when opened. Notifications carry invalidation
 identities only, never authoritative message content. HTTP 426 from navigation,
 indicators, or conversation operations blocks the workspace and closes its work.
 
+The local [ChatDomain package](Packages/ChatDomain/Package.swift) owns message
+and thread models, domain event inputs, ChatEventProjection, and ChatThreadReplay.
+Its target has no package dependencies and imports only Foundation. App services,
+wire adapters, stores, and views explicitly import ChatDomain; the package cannot
+reference App types such as WorkspaceStore or networking/cache implementations.
+Public value initializers and replay entry points define this dependency boundary.
+Realtime notification parsing and presentation-window state remain in the App.
+
 Wire rows, snapshot DTOs, raw JSON, and synchronization cursors remain in the
 network/data layer. They convert to ChatEvent, ChatThreadChange, and ChatThread
 before pure domain replay. The raw bytes and existing SQLite schema remain
@@ -207,15 +215,19 @@ measured text/block layout, behind the same ChatMessage input. Telegram's
 asynchronous node layout is a useful design reference for that experiment.
 Migrating the whole application to a new UI framework is not needed to try it.
 
-Keep feature state isolated as capabilities grow. A Swift Package boundary can
-be considered separately after measuring remaining coupling. API contract
-generation and CI consumer selection are outside these iOS presentation changes.
+Keep feature state isolated as capabilities grow. ChatDomain establishes the
+first compile-time boundary; additional modules should follow actual ownership
+needs. API contract generation and cross-language CI consumer selection remain
+separate work.
 
 ## Acceptance
 
 Automated checks cover pinned-renderer attribute parity, relative links/images,
 cache eviction, oversized content, source changes, and workspace isolation.
 Existing synchronization, replay, cache, and send-recovery tests remain required.
+Eight domain regressions run independently with `swift test` and exercise the
+package's public API with domain values. App HTTP-boundary tests retain real wire
+decoding, synchronization, SQLite, and store ownership. CI runs both suites.
 
 The October 7 ownership refactor passed all 57 XCTest cases with zero failures
 and a Debug simulator build on Xcode 26.3. HTTP-boundary regressions cover

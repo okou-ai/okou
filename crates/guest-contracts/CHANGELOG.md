@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.18.11](https://github.com/okou-ai/okou/compare/guest-contracts-v0.18.10...guest-contracts-v0.18.11) (2026-10-09)
+
+
+### Bug Fixes
+
+* **guest-agent:** describe terminal event delivery failures accurately ([#38356](https://github.com/okou-ai/okou/issues/38356)) ([9a32460](https://github.com/okou-ai/okou/commit/9a3246062f207542dcc8d7af66dad9f97210b498))
+
+## [0.18.10](https://github.com/okou-ai/okou/compare/guest-contracts-v0.18.9...guest-contracts-v0.18.10) (2026-10-09)
+
+
+### Bug Fixes
+
+* **runner:** reconcile retained state and scrub terminal private files ([#38153](https://github.com/okou-ai/okou/issues/38153)) ([9824493](https://github.com/okou-ai/okou/commit/9824493f88b89ad219b243438d635e6cd085514b))
+
 ## [0.18.9](https://github.com/okou-ai/okou/compare/guest-contracts-v0.18.8...guest-contracts-v0.18.9) (2026-10-09)
 
 ## [0.18.8](https://github.com/okou-ai/okou/compare/guest-contracts-v0.18.7...guest-contracts-v0.18.8) (2026-10-08)

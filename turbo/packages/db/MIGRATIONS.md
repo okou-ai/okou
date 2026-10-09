@@ -112,6 +112,31 @@ are enforced by the integration ingress tests.
 
 ### Active transition validators
 
+- `scripts/test-runner-home-affinity-preparation.ts` protects migration
+  `1357_prepare_home_affinity`: default-empty home observations, preservation of
+  outgoing workspace data, real outgoing/prepared ORM INSERT/UPSERT/SELECT and
+  implicit RETURNING, independently stamped capability, outgoing API generation
+  and sequence advancement without updating home columns, replay fencing and
+  capable empty state. Its frozen outgoing mapping is from
+  `3dcf096997cdd5448a74df524afba9a2ac46df91`. The three standalone home
+  version/order columns are temporary: the final model keeps only
+  `held_home_states` and existing shared heartbeat order. Its test-only
+  prospective canonical mapping executes real INSERT/UPSERT/SELECT/UPDATE and
+  implicit RETURNING on both retained and simulated contracted shapes, checking
+  preserved home/sandbox/capacity data, empty-state replacement, replay/lower
+  sequence and generation reset. That fixture is SQL feasibility evidence, not
+  #38139's actual application integration or a deployed floor.
+  Retain the validator/fixtures through #38139's deployed application-SQL
+  retirement of `held_workspace_states`, `home_affinity_version`,
+  `home_affinity_generation`, `home_affinity_sequence` and #38140's **later**
+  physical four-column contraction/drain gate. PR5 retains all four physical
+  columns; PR6 drops them only after the exact independent application deploys
+  and previous SQL/rollback artifacts exit. Promote surviving canonical
+  invariants to permanent coverage before eligible fixture retirement. Merge or
+  elapsed time does not satisfy those gates. Run only on disposable databases.
+  Migration precedes prepared API promotion; no production migration is
+  performed by this validator.
+
 - `scripts/test-usage-allowance-retirement.ts` protects migration
   `1356_drop_organization_usage_allowance`: positive team Allowance rows are
   discarded while ordinary usage quantities, original credit charges and wallets

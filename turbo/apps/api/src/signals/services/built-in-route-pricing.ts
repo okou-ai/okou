@@ -333,9 +333,14 @@ function builtInRouteForContext(
   ) {
     return null;
   }
+  const runtime = modelProvider.builtInModelRuntimeRoute;
+  if (modelProvider.selectedModel === AUTO_SELECTED_MODEL && !runtime) {
+    throw new Error(
+      "Canonical Auto billing requires its captured runtime route",
+    );
+  }
   const concreteProviderType =
-    modelProvider.builtInModelRuntimeRoute?.providerType ??
-    modelProvider.concreteType;
+    runtime?.providerType ?? modelProvider.concreteType;
   if (!concreteProviderType) {
     return null;
   }
@@ -344,7 +349,6 @@ function builtInRouteForContext(
     modelProvider.selectedModel,
     concreteProviderType,
   );
-  const runtime = modelProvider.builtInModelRuntimeRoute;
   // Captured runtime owns billing even if the organization's current preset changed.
   return route && runtime && modelProvider.selectedModel === AUTO_SELECTED_MODEL
     ? {

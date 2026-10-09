@@ -10,10 +10,6 @@ import { setApiClientRuntime$ } from "../signals/api-client-runtime.ts";
 import { initializeAppVersion$ } from "../signals/app-version.ts";
 import { setAuthenticatedIdentity$ } from "../signals/auth-context.ts";
 import {
-  connectionDiagnostics$,
-  setupConnectionDiagnostics$,
-} from "../signals/connection-diagnostics.ts";
-import {
   computerUseHosts$,
   reloadComputerUseHosts$,
 } from "../signals/external/computer-use-hosts.ts";
@@ -234,7 +230,6 @@ export const bootstrapWorker$ = command(
     const params = new URL(location.href).searchParams;
     const apiBaseUrl = derivePlatformServiceOrigin(location.origin, "api");
     const vercelProtectionBypass = params.get(VERCEL_PROTECTION_BYPASS_NAME);
-    set(setupConnectionDiagnostics$, signal);
     const oauthApiBaseUrl =
       resolvePlatformEnvironment() === "production"
         ? derivePlatformServiceOrigin(location.origin, "www")
@@ -305,11 +300,6 @@ const reloadWorkerComputed$ = command(
       }
       case "computer-use-hosts": {
         set(reloadComputerUseHosts$);
-        return;
-      }
-      case "connection-diagnostics": {
-        // Diagnostics derive from Worker Store state, so there is no fetch to
-        // repeat: the next read already observes every recorded event.
         return;
       }
       case "queue-data": {
@@ -556,9 +546,6 @@ export const getComputedStoreMessage$ = command(
     signal: AbortSignal,
   ): Promise<ComputedValue<ComputedKey>> => {
     set(requireConnectionSignal$, connectionId, signal);
-    if (message.computedKey === "connection-diagnostics") {
-      return get(connectionDiagnostics$);
-    }
     if (message.computedKey === "indexeddb-diagnostics") {
       const diagnostics = await requireRuntime(
         get(workerRuntimeState$),

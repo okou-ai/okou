@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.17](https://github.com/okou-ai/okou/compare/runner-host-v0.2.16...runner-host-v0.2.17) (2026-10-09)
+
+## [0.2.16](https://github.com/okou-ai/okou/compare/runner-host-v0.2.15...runner-host-v0.2.16) (2026-10-09)
+
+
+### Refactoring
+
+* **runner:** move storage-cache gc into runner-storage ([#38285](https://github.com/okou-ai/okou/issues/38285)) ([ed47c2a](https://github.com/okou-ai/okou/commit/ed47c2aabb22c37ac87804de7f7c8206f8995794))
+
 ## [0.2.15](https://github.com/okou-ai/okou/compare/runner-host-v0.2.14...runner-host-v0.2.15) (2026-10-09)
 
 

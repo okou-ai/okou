@@ -646,3 +646,39 @@ describe("segment control track", () => {
     expect(lightTheme).toMatch(/--sidebar-foreground:\s*var\(--gray-950\);/);
   });
 });
+
+describe("skeleton fills", () => {
+  it.each(THEMES)(
+    "keeps $name placeholders distinct at the dimmest pulse frame",
+    ({ selector }) => {
+      const animationName = readDeclarationValue(
+        globalCss,
+        "animate-skeleton-pulse",
+      )
+        .trim()
+        .split(/\s+/)[0];
+      const keyframes = readRuleBody(globalCss, `@keyframes ${animationName}`);
+      const opacities = [...keyframes.matchAll(/opacity:\s*([\d.]+);/g)].map(
+        ([, opacity]) => {
+          return Number(opacity);
+        },
+      );
+      expect(opacities.length).toBeGreaterThan(0);
+      const minimumOpacity = Math.min(...opacities);
+      expect(minimumOpacity).toBeGreaterThanOrEqual(0.7);
+      expect(minimumOpacity).toBeLessThanOrEqual(1);
+
+      const properties = readCustomProperties(
+        readRuleBody(globalCss, selector),
+      );
+      const fill = color(properties, "--skeleton");
+      for (const surface of ["--background", "--card"]) {
+        const background = color(properties, surface);
+        const painted = composite(background, fill, minimumOpacity);
+        // This is a quiet decorative fill, not text, but it must not disappear
+        // into either common surface during the breathing animation.
+        expect(contrastRatio(painted, background)).toBeGreaterThanOrEqual(1.1);
+      }
+    },
+  );
+});

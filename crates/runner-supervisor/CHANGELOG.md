@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.2.30...runner-supervisor-v0.3.0) (2026-10-09)
+
+
+### Features
+
+* **api:** prepare home cache affinity and runner state ([#38314](https://github.com/okou-ai/okou/issues/38314)) ([21ce097](https://github.com/okou-ai/okou/commit/21ce0978ad9a5bc7eddb94bc9d2bc25f1897095f))
+
+## [0.2.30](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.2.29...runner-supervisor-v0.2.30) (2026-10-09)
+
+
+### Bug Fixes
+
+* **runner:** reconcile retained state and scrub terminal private files ([#38153](https://github.com/okou-ai/okou/issues/38153)) ([9824493](https://github.com/okou-ai/okou/commit/9824493f88b89ad219b243438d635e6cd085514b))
+
 ## [0.2.29](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.2.28...runner-supervisor-v0.2.29) (2026-10-09)
 
 ## [0.2.28](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.2.27...runner-supervisor-v0.2.28) (2026-10-08)

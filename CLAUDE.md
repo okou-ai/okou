@@ -26,6 +26,9 @@ guidance only for the surface being changed.
   [code quality](docs/bad-smell.md) for the project's specific boundaries.
 - Write repository artifacts, comments, commits, issues, and PRs in English.
   Use the user's preferred language in direct conversation.
+- Keep `docs/` focused on engineering principles, framework architecture, and
+  reusable development guidance. Feature-specific business logic belongs in
+  self-explanatory source code rather than separate documents.
 
 ## Task Routing
 

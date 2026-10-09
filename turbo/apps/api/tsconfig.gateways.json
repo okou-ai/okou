@@ -11,7 +11,6 @@
     "tsBuildInfoFile": "./.typecheck/gateways.tsbuildinfo"
   },
   "include": [
-    "src/lib/desktop-version.ts",
     "src/lib/env.ts",
     "src/lib/log.ts",
     "src/lib/secret-kms-client.ts",

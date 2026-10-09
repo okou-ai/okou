@@ -1,3 +1,4 @@
+import ChatDomain
 import SwiftUI
 import XCTest
 

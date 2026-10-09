@@ -1,6 +1,6 @@
 {
-  "id": "1ea2afaf-c310-43ec-8159-367378b8012b",
-  "prevId": "275ecdc6-86ac-465d-8abb-f54a80070c61",
+  "id": "369f53f4-8ae8-4af3-9c06-6f6f17cd8351",
+  "prevId": "b86708d7-8863-49d7-814b-3def84c583d1",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -12325,7 +12325,7 @@
           "name": "completion_token_hash",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "approval_token_hash": {
           "name": "approval_token_hash",
@@ -12464,16 +12464,6 @@
           "columns": [
             "state_hash"
           ]
-        },
-        "uq_discord_oauth_grant_owner": {
-          "name": "uq_discord_oauth_grant_owner",
-          "nullsNotDistinct": false,
-          "columns": [
-            "id",
-            "user_id",
-            "verified_discord_user_id",
-            "verified_guild_id"
-          ]
         }
       },
       "policies": {},
@@ -12521,12 +12511,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "oauth_grant_id": {
-          "name": "oauth_grant_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
         },
         "created_at": {
           "name": "created_at",
@@ -12582,23 +12566,19 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "fk_discord_connection_oauth_grant": {
-          "name": "fk_discord_connection_oauth_grant",
+        "fk_discord_connection_identity_owner": {
+          "name": "fk_discord_connection_identity_owner",
           "tableFrom": "discord_org_connections",
-          "tableTo": "discord_oauth_states",
+          "tableTo": "discord_user_identities",
           "columnsFrom": [
-            "oauth_grant_id",
-            "user_id",
             "discord_user_id",
-            "guild_id"
+            "user_id"
           ],
           "columnsTo": [
-            "id",
-            "user_id",
-            "verified_discord_user_id",
-            "verified_guild_id"
+            "discord_user_id",
+            "user_id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "restrict",
           "onUpdate": "no action"
         }
       },
@@ -12642,149 +12622,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.discord_org_grants": {
-      "name": "discord_org_grants",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "org_id": {
-          "name": "org_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "initiated_by_user_id": {
-          "name": "initiated_by_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "requested_guild_id": {
-          "name": "requested_guild_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "verified_guild_id": {
-          "name": "verified_guild_id",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "verified_bot_user_id": {
-          "name": "verified_bot_user_id",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "approved_at": {
-          "name": "approved_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "idx_discord_org_grants_org": {
-          "name": "idx_discord_org_grants_org",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_discord_org_grants_initiator": {
-          "name": "idx_discord_org_grants_initiator",
-          "columns": [
-            {
-              "expression": "initiated_by_user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_discord_org_grants_expiry": {
-          "name": "idx_discord_org_grants_expiry",
-          "columns": [
-            {
-              "expression": "expires_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "uq_discord_org_grant_installation": {
-          "name": "uq_discord_org_grant_installation",
-          "nullsNotDistinct": false,
-          "columns": [
-            "id",
-            "org_id",
-            "verified_guild_id",
-            "verified_bot_user_id",
-            "approved_at"
-          ]
-        },
-        "uq_discord_org_grant_installer": {
-          "name": "uq_discord_org_grant_installer",
-          "nullsNotDistinct": false,
-          "columns": [
-            "id",
-            "initiated_by_user_id"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "chk_discord_org_grant_evidence": {
-          "name": "chk_discord_org_grant_evidence",
-          "value": "(\"discord_org_grants\".\"verified_guild_id\" IS NULL) = (\"discord_org_grants\".\"verified_bot_user_id\" IS NULL)"
-        },
-        "chk_discord_org_grant_approval": {
-          "name": "chk_discord_org_grant_approval",
-          "value": "\"discord_org_grants\".\"approved_at\" IS NULL OR (\"discord_org_grants\".\"verified_guild_id\" IS NOT NULL AND \"discord_org_grants\".\"verified_bot_user_id\" IS NOT NULL)"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.discord_org_installations": {
       "name": "discord_org_installations",
       "schema": "",
@@ -12816,12 +12653,6 @@
         "installed_by_user_id": {
           "name": "installed_by_user_id",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "org_grant_id": {
-          "name": "org_grant_id",
-          "type": "uuid",
           "primaryKey": false,
           "notNull": false
         },
@@ -12863,44 +12694,7 @@
           "with": {}
         }
       },
-      "foreignKeys": {
-        "fk_discord_installation_org_grant": {
-          "name": "fk_discord_installation_org_grant",
-          "tableFrom": "discord_org_installations",
-          "tableTo": "discord_org_grants",
-          "columnsFrom": [
-            "org_grant_id",
-            "org_id",
-            "guild_id",
-            "bot_user_id",
-            "created_at"
-          ],
-          "columnsTo": [
-            "id",
-            "org_id",
-            "verified_guild_id",
-            "verified_bot_user_id",
-            "approved_at"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "fk_discord_installation_grant_installer": {
-          "name": "fk_discord_installation_grant_installer",
-          "tableFrom": "discord_org_installations",
-          "tableTo": "discord_org_grants",
-          "columnsFrom": [
-            "org_grant_id",
-            "installed_by_user_id"
-          ],
-          "columnsTo": [
-            "id",
-            "initiated_by_user_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "cascade"
-        }
-      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "uq_discord_org_installations_org": {
@@ -13005,6 +12799,40 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.discord_user_identities": {
+      "name": "discord_user_identities",
+      "schema": "",
+      "columns": {
+        "discord_user_id": {
+          "name": "discord_user_id",
+          "type": "varchar(255)",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "uq_discord_user_identity_owner": {
+          "name": "uq_discord_user_identity_owner",
+          "nullsNotDistinct": false,
+          "columns": [
+            "discord_user_id",
+            "user_id"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -24596,6 +24424,31 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'[]'::jsonb"
+        },
+        "held_home_states": {
+          "name": "held_home_states",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "home_affinity_version": {
+          "name": "home_affinity_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "home_affinity_generation": {
+          "name": "home_affinity_generation",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "home_affinity_sequence": {
+          "name": "home_affinity_sequence",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
         },
         "active_reuse_producers": {
           "name": "active_reuse_producers",

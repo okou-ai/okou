@@ -24,7 +24,7 @@ function useSession(fixture: ReturnType<typeof seedFixture>) {
 }
 describe("member image preference", () => {
   it.each([null, "auto"])(
-    "keeps member Auto intent %s predecessor-compatible",
+    "stores canonical Auto for nullable or explicit intent %s",
     async (selectedModel) => {
       useSession(seedFixture());
       const client = setupApp({ context, routes: userModelPreferenceRoutes })(
@@ -38,13 +38,13 @@ describe("member image preference", () => {
         [200],
       );
       expect(stored.body).toMatchObject({
-        selectedModel: null,
+        selectedModel: "auto",
         serviceTier: null,
         modelSettings: {},
       });
       const read = await accept(client.get({ headers: authHeaders() }), [200]);
       expect(read.body).toMatchObject({
-        selectedModel: null,
+        selectedModel: "auto",
         serviceTier: null,
       });
       await accept(
@@ -80,7 +80,7 @@ describe("member image preference", () => {
       [200],
     );
     expect(stored.body).toMatchObject({
-      selectedModel: null,
+      selectedModel: "auto",
       selectedImageModel: "fal-ai/flux-pro/v1.1",
     });
     expect(stored.body.updatedAt).not.toBeNull();
@@ -93,7 +93,7 @@ describe("member image preference", () => {
       [200],
     );
     expect(preserved.body).toMatchObject({
-      selectedModel: null,
+      selectedModel: "auto",
       selectedImageModel: "fal-ai/flux-pro/v1.1",
     });
 

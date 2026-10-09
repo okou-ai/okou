@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.6.0](https://github.com/okou-ai/okou/compare/runner-provider-v0.5.13...runner-provider-v0.6.0) (2026-10-09)
+
+
+### Features
+
+* **api:** prepare home cache affinity and runner state ([#38314](https://github.com/okou-ai/okou/issues/38314)) ([21ce097](https://github.com/okou-ai/okou/commit/21ce0978ad9a5bc7eddb94bc9d2bc25f1897095f))
+
+## [0.5.13](https://github.com/okou-ai/okou/compare/runner-provider-v0.5.12...runner-provider-v0.5.13) (2026-10-09)
+
+
+### Bug Fixes
+
+* **runner:** defer incomplete response alerts until degradation ([#38281](https://github.com/okou-ai/okou/issues/38281)) ([c3e28db](https://github.com/okou-ai/okou/commit/c3e28db3f0d5292c821a496522b854aba4286429))
+
 ## [0.5.12](https://github.com/okou-ai/okou/compare/runner-provider-v0.5.11...runner-provider-v0.5.12) (2026-10-09)
 
 ## [0.5.11](https://github.com/okou-ai/okou/compare/runner-provider-v0.5.10...runner-provider-v0.5.11) (2026-10-08)

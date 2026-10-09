@@ -20,12 +20,13 @@ import {
   type SQLWrapper,
   or,
 } from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import { command } from "ccstate";
 import { writeDb$ } from "../external/db";
 import { piMemoryPhase2Checkpoints } from "@okouai/db/schema/pi-memory-phase2-checkpoint";
 
-import type { ApiDb, Tx } from "../../lib/db-types";
+import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
 import { piMemoryPhase2PublicationCondition } from "./pi-memory-phase2-publication.service";
 import type {
@@ -109,15 +110,12 @@ export async function lockPiMemoryPhase2CompletionStorage(
  * job constraints make these fields move together, while spelling them out
  * here keeps cleanup fail-closed if an invalid legacy row is ever observed.
  */
-export function activePiMemoryPhase2MaintenanceRunCondition(
-  db: Pick<ApiDb, "select">,
-  args: {
-    readonly runId: string | SQLWrapper;
-    readonly orgId: string | SQLWrapper;
-    readonly userId: string | SQLWrapper;
-    readonly currentTime: Date;
-  },
-): SQL {
+export function activePiMemoryPhase2MaintenanceRunCondition(args: {
+  readonly runId: string | SQLWrapper;
+  readonly orgId: string | SQLWrapper;
+  readonly userId: string | SQLWrapper;
+  readonly currentTime: Date;
+}): SQL {
   return and(
     eq(piMemoryPhase2Jobs.maintenanceRunId, args.runId),
     eq(piMemoryPhase2Jobs.orgId, args.orgId),
@@ -141,7 +139,7 @@ export function activePiMemoryPhase2MaintenanceRunCondition(
     isNotNull(piMemoryPhase2Jobs.claimedSelectedCount),
     isNotNull(piMemoryPhase2Jobs.claimedSelectedUtf8Bytes),
     exists(
-      db
+      new QueryBuilder()
         .select({ id: agentRunCallbacks.id })
         .from(agentRunCallbacks)
         .where(
@@ -195,7 +193,7 @@ export async function lockPiMemoryPhase2MaintenanceCleanupProtection(
     .select({ memoryStorageId: piMemoryPhase2Jobs.memoryStorageId })
     .from(piMemoryPhase2Jobs)
     .where(
-      activePiMemoryPhase2MaintenanceRunCondition(tx, {
+      activePiMemoryPhase2MaintenanceRunCondition({
         ...args,
         currentTime: nowDate(),
       }),

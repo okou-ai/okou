@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.7.2](https://github.com/okou-ai/okou/compare/ios-v0.7.1...ios-v0.7.2) (2026-10-09)
+
+
+### Bug Fixes
+
+* **ios:** share static artifact storage across release environments ([#38353](https://github.com/okou-ai/okou/issues/38353)) ([608ed35](https://github.com/okou-ai/okou/commit/608ed35b352eb75c233c01c00dd8a211434bc1a1))
+
+
+### Refactoring
+
+* **ios:** extract chat domain into a local swift package ([#38362](https://github.com/okou-ai/okou/issues/38362)) ([9b3fc18](https://github.com/okou-ai/okou/commit/9b3fc18cfb00e31ee8176981f70712d4c34aedc8))
+
+## [0.7.1](https://github.com/okou-ai/okou/compare/ios-v0.7.0...ios-v0.7.1) (2026-10-09)
+
+
+### CI
+
+* **ios:** promote verified immutable archives to testflight ([#38232](https://github.com/okou-ai/okou/issues/38232)) ([e7107ba](https://github.com/okou-ai/okou/commit/e7107ba0aba194ef052ee6a087eeb752959ba01e))
+
 ## [0.7.0](https://github.com/okou-ai/okou/compare/ios-v0.6.8...ios-v0.7.0) (2026-10-09)
 
 

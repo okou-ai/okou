@@ -439,6 +439,28 @@ traffic or modify status, headers, or wire body bytes. The final network-log row
 still reaches the existing writer. Old runners retain their previous capture
 policy until updated; the log schema and its consumers do not change.
 
+### Request capture member traversal
+
+Opt-in request body capture inspects at most 64 complete gzip or zlib-wrapped
+`deflate` members, independently of its 64 KiB decoded capture-output limit.
+Empty members count toward the budget, including empty tails after the exact
+output boundary. Exactly 64 complete members with no remaining input can be
+captured; remaining input after member 64 fails capture closed before another
+decompressor is constructed. Normal concatenation and a few empty trailing
+members remain supported.
+
+An exhausted member budget omits the request body rather than persisting a
+plausible decoded prefix. Nonempty wire bodies retain the existing
+`request_body_encoding: "binary"` failure representation. Decoded-output overflow
+still uses the existing truncated-prefix policy. This limit applies to both
+buffered and retained streamed request capture, not request forwarding,
+authorization, signing, billing inspection, response capture, or JSON-usage
+decoding. The log schema and terminal flow cleanup are unchanged. Old runners
+retain their previous embedded-addon policy until updated.
+
+The member budget bounds repeated decoder construction; it is not a general CPU
+deadline for every compression pattern within a single member.
+
 ### JSONL append recovery
 
 The asynchronous writer accepts caller-framed JSONL bytes and opens the

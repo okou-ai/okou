@@ -1,4 +1,5 @@
 import { command, computed, type Computed } from "ccstate";
+import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
 import { initializeMemberMemory$ } from "./member-memory-initialization.service";
 import type {
   OnboardingIndustry,
@@ -60,6 +61,7 @@ const markMemberOnboardingComplete$ = command(
       .values({
         orgId,
         userId,
+        selectedModel: AUTO_SELECTED_MODEL,
         onboardingCompletedAt: completedAt,
         createdAt: completedAt,
         updatedAt: completedAt,
@@ -102,6 +104,7 @@ const preserveOrStoreTimezoneFallback$ = command(
       .values({
         orgId: args.orgId,
         userId: args.userId,
+        selectedModel: AUTO_SELECTED_MODEL,
         timezone: args.timezone,
         createdAt: updatedAt,
         updatedAt,

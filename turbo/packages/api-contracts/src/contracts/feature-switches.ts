@@ -38,6 +38,7 @@ export const featureSwitchesContract = c.router({
     responses: {
       200: featureSwitchesResponseSchema,
       401: apiErrorSchema,
+      403: apiErrorSchema,
       500: apiErrorSchema,
     },
     summary: "Get feature switch overrides",
@@ -51,6 +52,7 @@ export const featureSwitchesContract = c.router({
       200: featureSwitchesResponseSchema,
       400: apiErrorSchema,
       401: apiErrorSchema,
+      403: apiErrorSchema,
       500: apiErrorSchema,
     },
     summary: "Update feature switch overrides",
@@ -63,6 +65,7 @@ export const featureSwitchesContract = c.router({
     responses: {
       200: z.object({ deleted: z.literal(true) }),
       401: apiErrorSchema,
+      403: apiErrorSchema,
       500: apiErrorSchema,
     },
     summary: "Delete feature switch overrides",

@@ -30,6 +30,11 @@ xcode_args=(
   CLERK_PUBLISHABLE_KEY=
 )
 
+# Pure domain tests use the public package API without booting an app or simulator.
+xcrun swift-format lint --strict --recursive ios/Packages/ChatDomain/Package.swift \
+  ios/Packages/ChatDomain/Sources ios/Packages/ChatDomain/Tests
+swift test --package-path ios/Packages/ChatDomain --scratch-path "$build_root/ChatDomain"
+
 xcodebuild "${xcode_args[@]}" -resolvePackageDependencies
 cmp "$resolved" "$build_root/Package.resolved.before"
 

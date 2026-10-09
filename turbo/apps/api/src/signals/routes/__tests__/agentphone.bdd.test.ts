@@ -1275,7 +1275,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     },
   );
 
-  it("switches the existing DM thread to Auto as an empty selection", async () => {
+  it("switches the existing DM thread to canonical Auto", async () => {
     const { actor, send, sends, complete } = await modelSessionScenario({
       channel: "sms",
       withConversation: false,
@@ -1293,9 +1293,12 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       actor,
       original.threadId,
     );
-    expect(metadata.selectedModel).toBeNull();
+    expect(metadata.selectedModel).toBe("auto");
     await send("/model");
     expect(lastSend(sends).body).toContain("Current: Auto");
+    expect(lastSend(sends).body).toContain(
+      "/model auto - Auto (current, default)",
+    );
   });
 
   it("rejects unavailable personal DM input without silently billing Auto", async () => {
@@ -1316,7 +1319,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     await expect(
       integrations.readUserModelPreference(actor),
     ).resolves.toMatchObject({
-      selectedModel: null,
+      selectedModel: "auto",
     });
     await seedBuiltInModelKey(context, SEEDED_SYSTEM_DEFAULT_MODEL);
     await send("use the system default");

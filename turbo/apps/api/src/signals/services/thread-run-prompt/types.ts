@@ -33,25 +33,3 @@ export interface ThreadPromptSource {
   readonly event: PickedThreadInputEvent;
   readonly featureSwitchContext: FeatureSwitchContext;
 }
-
-export interface IntegrationPromptVariables {
-  readonly userPromptVariables: {
-    readonly message: string;
-  };
-  readonly systemPromptVariables: {
-    readonly integrationContext: string;
-    readonly channelUserIdentity: string;
-  };
-}
-
-export interface CommonPromptVariables {
-  readonly userIdentity: string;
-  readonly continuationContext: string;
-  readonly generationTemplatePrompt: string;
-  readonly computerUseContext: string;
-}
-
-export interface ThreadPrompt {
-  readonly userPrompt: string;
-  readonly systemPrompt: string;
-}

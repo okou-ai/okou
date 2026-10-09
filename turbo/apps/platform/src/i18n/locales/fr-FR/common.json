@@ -4974,24 +4974,6 @@
           "enabled_other": "Activé pour les prochaines exécutions de {{count}}",
           "title": "Capturer les corps réseau"
         },
-        "connectionDiagnostics": {
-          "activeWaits": "Attentes actives",
-          "channel": "canal",
-          "clear": "Effacer",
-          "connection": "connexion",
-          "copyJson": "Copier le JSON",
-          "description": "Inspectez les signaux d’authentification et de connexion Ably.",
-          "empty": "Aucun événement de diagnostic enregistré.",
-          "events": "événements",
-          "log": "Journal des événements",
-          "refresh": "Actualiser",
-          "title": "Diagnostic de connexion en temps réel",
-          "unavailable": "indisponible",
-          "workerDescription": "Inspectez l'enregistrement du shared worker qui détient la connexion en temps réel.",
-          "workerLoading": "Chargement",
-          "workerTitle": "Diagnostic de connexion du shared worker",
-          "workerUnavailable": "Indisponible"
-        },
         "indexedDb": {
           "countExplanation": "Le comptage utilise des transactions en lecture seule et ne lit pas le contenu des enregistrements.",
           "description": "Consultez le nombre d’enregistrements du cache de discussion local géré par le worker partagé.",
@@ -5011,6 +4993,13 @@
           "stores": "magasins d’objets",
           "title": "Stockage IndexedDB",
           "unavailable": "Le stockage IndexedDB est indisponible."
+        },
+        "openrouterPreset": {
+          "description": "S’applique aux nouvelles exécutions Auto et Okou 1.0 intégré de toute l’organisation. Les exécutions existantes restent inchangées.",
+          "loading": "Chargement…",
+          "systemDefault": "Valeur par défaut du système",
+          "title": "Preset OpenRouter",
+          "unavailable": "Indisponible"
         },
         "welcomeThread": {
           "create": "Créer une discussion de bienvenue",

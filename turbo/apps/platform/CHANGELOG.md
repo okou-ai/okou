@@ -12,6 +12,76 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1006.0](https://github.com/okou-ai/okou/compare/app-v0.1005.0...app-v0.1006.0) (2026-10-09)
+
+
+### Features
+
+* add sandbox covers for hosted artifacts ([#38149](https://github.com/okou-ai/okou/issues/38149)) ([f4a3140](https://github.com/okou-ai/okou/commit/f4a3140275a8c3334135080ed2427e837bc9fc89))
+* **platform:** gate composer-anchored suggestion menus ([#38331](https://github.com/okou-ai/okou/issues/38331)) ([80aee42](https://github.com/okou-ai/okou/commit/80aee42a4cf92772b0d8b193df68089588a3b39f))
+* **ui:** add a top-to-bottom wave to running chat indicators ([#37657](https://github.com/okou-ai/okou/issues/37657)) ([cfeeb01](https://github.com/okou-ai/okou/commit/cfeeb01c713cb8c44365f23448b418789ad712e8))
+
+
+### Bug Fixes
+
+* **platform:** stop retrying failed realtime handlers and use ably retry defaults ([#38375](https://github.com/okou-ai/okou/issues/38375)) ([9813db4](https://github.com/okou-ai/okou/commit/9813db4b51faa42c982dcfec1720caf5bd5b1b82))
+
+
+### Refactoring
+
+* **platform:** simplify transcript-local stacking ([#38360](https://github.com/okou-ai/okou/issues/38360)) ([e278a3e](https://github.com/okou-ai/okou/commit/e278a3e460f0f958a5607f7d935d465392bcb2e0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.545.0
+    * @okouai/core bumped to 8.738.0
+    * @okouai/ui bumped to 1.13.0
+
+## [0.1005.0](https://github.com/okou-ai/okou/compare/app-v0.1004.2...app-v0.1005.0) (2026-10-09)
+
+
+### Features
+
+* allow debug admins to switch organization openrouter presets ([#38327](https://github.com/okou-ai/okou/issues/38327)) ([3ab4dfc](https://github.com/okou-ai/okou/commit/3ab4dfc68ffdf7afe085c52e3cf9040354c117d9))
+
+
+### Bug Fixes
+
+* **platform:** gate anchored composer layout for initial rollout ([#37976](https://github.com/okou-ai/okou/issues/37976)) ([80770f9](https://github.com/okou-ai/okou/commit/80770f9736da88ef673a21eba968bdb7349874a6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.544.0
+    * @okouai/core bumped to 8.737.3
+
+## [0.1004.2](https://github.com/okou-ai/okou/compare/app-v0.1004.1...app-v0.1004.2) (2026-10-09)
+
+
+### Bug Fixes
+
+* **platform:** register workflow file menu actions ([#38030](https://github.com/okou-ai/okou/issues/38030)) ([69bf326](https://github.com/okou-ai/okou/commit/69bf326e077760ed6e622b6c5ced1b242dd601f8))
+* stop reporting handled clerk ui and invalid workflow payload errors ([#38299](https://github.com/okou-ai/okou/issues/38299)) ([d138629](https://github.com/okou-ai/okou/commit/d13862990122a1309790326f956e5b093faa73ad))
+
+
+### Refactoring
+
+* **artifacts:** use artifact identity for google drive uploads ([#38300](https://github.com/okou-ai/okou/issues/38300)) ([e223f5e](https://github.com/okou-ai/okou/commit/e223f5e45fd22cdd729f84f075686ec5afb24b6e))
+* retire organization usage allowance ([#37971](https://github.com/okou-ai/okou/issues/37971)) ([2659878](https://github.com/okou-ai/okou/commit/26598788903fb817edd71d82ccbdfcd66cfa3a0a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.543.0
+    * @okouai/core bumped to 8.737.2
+
 ## [0.1004.1](https://github.com/okou-ai/okou/compare/app-v0.1004.0...app-v0.1004.1) (2026-10-09)
 
 

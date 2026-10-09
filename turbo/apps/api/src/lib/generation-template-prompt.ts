@@ -21,6 +21,7 @@ import {
 import {
   PRESENTATION_IMAGE_BATCH_INSTRUCTION,
   PRESENTATION_STATIC_HTML_INSTRUCTION,
+  PRESENTATION_PREVIEW_INSTRUCTION,
 } from "@okouai/core/presentation-generation-instructions";
 import { WEBSITE_IMAGE_BATCH_INSTRUCTION } from "@okouai/core/website-generation-instructions";
 import { generationTemplateKind } from "@okouai/core/generation-template-kind";
@@ -105,6 +106,7 @@ type GenerationTemplatePromptResult =
  * leave it empty and lose the guidance rather than point at nothing.
  */
 interface GenerationTemplatePromptOptions {
+  readonly artifactPreviewsEnabled?: boolean;
   readonly mountedUserPresentationTemplateIds?: readonly string[];
   /**
    * The custom templates this run will carry, each with the kind its row says
@@ -131,7 +133,10 @@ export function buildGenerationTemplatePrompt(
     return buildWorkflowGenerationTemplatePrompt(generationTemplate);
   }
   if (generationTemplate.type === "website") {
-    return buildWebsiteGenerationTemplatePrompt(generationTemplate);
+    return buildWebsiteGenerationTemplatePrompt(
+      generationTemplate,
+      options.artifactPreviewsEnabled === true,
+    );
   }
   if (generationTemplate.type === "custom") {
     return buildCustomGenerationTemplatePrompt(
@@ -143,6 +148,7 @@ export function buildGenerationTemplatePrompt(
   return buildPresentationGenerationTemplatePrompt(
     generationTemplate,
     options.mountedUserPresentationTemplateIds ?? [],
+    options.artifactPreviewsEnabled === true,
   );
 }
 
@@ -286,6 +292,7 @@ function buildCustomGenerationTemplatePrompt(
 function buildPresentationGenerationTemplatePrompt(
   generationTemplate: PresentationGenerationTemplateInput,
   mountedUserPresentationTemplateIds: readonly string[],
+  artifactPreviewsEnabled: boolean,
 ): GenerationTemplatePromptResult {
   const { templateId } = generationTemplate.selection;
   if (isUserPresentationTemplateId(templateId)) {
@@ -298,7 +305,7 @@ function buildPresentationGenerationTemplatePrompt(
     if (!mountedUserPresentationTemplateIds.includes(rowId)) {
       return { status: "invalid", message: "Presentation template not found" };
     }
-    return buildUserPresentationTemplatePrompt(rowId);
+    return buildUserPresentationTemplatePrompt(rowId, artifactPreviewsEnabled);
   }
   // Presentation picker selections are valid only when they resolve to a
   // self-contained runbook package. The legacy multi-resource registry flow has
@@ -307,7 +314,11 @@ function buildPresentationGenerationTemplatePrompt(
   if (!runbookPackage) {
     return { status: "invalid", message: "Unknown generation template" };
   }
-  return buildPresentationRunbookPrompt(generationTemplate, runbookPackage);
+  return buildPresentationRunbookPrompt(
+    generationTemplate,
+    runbookPackage,
+    artifactPreviewsEnabled,
+  );
 }
 
 /**
@@ -325,6 +336,7 @@ function buildPresentationGenerationTemplatePrompt(
  */
 function buildUserPresentationTemplatePrompt(
   rowId: string,
+  artifactPreviewsEnabled: boolean,
 ): GenerationTemplatePromptResult {
   return {
     status: "resolved",
@@ -341,7 +353,8 @@ function buildUserPresentationTemplatePrompt(
       "- Use the slide count the user asks for; if unspecified, default to 8 pages.",
       PRESENTATION_IMAGE_BATCH_INSTRUCTION,
       PRESENTATION_STATIC_HTML_INSTRUCTION,
-      "- Host the finished deck: okou host <output-dir> --site <slug> --artifact-kind presentation-html",
+      ...(artifactPreviewsEnabled ? [PRESENTATION_PREVIEW_INSTRUCTION] : []),
+      `- Host the finished deck: okou host <output-dir> --site <slug> --artifact-kind presentation-html${artifactPreviewsEnabled ? " --preview ./generated/previews/cover.png" : ""}`,
       "- Return only the generated HTML deck as the final deliverable.",
     ].join("\n"),
   };
@@ -350,6 +363,7 @@ function buildUserPresentationTemplatePrompt(
 function buildPresentationRunbookPrompt(
   generationTemplate: PresentationGenerationTemplateInput,
   runbookPackage: PresentationRunbookPackage,
+  artifactPreviewsEnabled: boolean,
 ): GenerationTemplatePromptResult {
   const color = resolvePresentationRunbookColorToken(
     runbookPackage,
@@ -368,6 +382,7 @@ function buildPresentationRunbookPrompt(
       ...templateFraming("a presentation"),
       ...buildPresentationRunbookInstructionLines({
         runbookPackage,
+        artifactPreviewsEnabled,
         colorSystemToken: color.token,
       }),
     ].join("\n"),
@@ -376,6 +391,7 @@ function buildPresentationRunbookPrompt(
 
 function buildWebsiteGenerationTemplatePrompt(
   generationTemplate: WebsiteGenerationTemplateInput,
+  artifactPreviewsEnabled: boolean,
 ): GenerationTemplatePromptResult {
   const item = findWebsiteTemplateItem(
     generationTemplate.selection.websiteTemplateId,
@@ -389,12 +405,13 @@ function buildWebsiteGenerationTemplatePrompt(
     return { status: "invalid", message: "Unknown website template" };
   }
 
-  return buildWebsiteTemplatePackagePrompt(item, pkg);
+  return buildWebsiteTemplatePackagePrompt(item, pkg, artifactPreviewsEnabled);
 }
 
 function buildWebsiteTemplatePackagePrompt(
   item: WebsiteTemplateItem,
   pkg: WebsiteTemplatePackage,
+  artifactPreviewsEnabled: boolean,
 ): GenerationTemplatePromptResult {
   const packageDir = `./generated/resources/${pkg.slug}`;
 
@@ -417,7 +434,14 @@ function buildWebsiteTemplatePackagePrompt(
       "- Assemble the page once with `node tools/compose.mjs <section-ids...>`, then author the composed index.html directly. The command refuses a second compose pass; bypassing that guard would discard authored work.",
       `- ${WEBSITE_IMAGE_BATCH_INSTRUCTION}`,
       "- Repair every blocking failure from `bash checks/verify.sh index.html qa` until it prints QA_READY.",
-      "- Stage and host once: `node tools/stage.mjs publish` writes a clean ./publish directory, then `okou host ./publish --site <slug>`.",
+      ...(artifactPreviewsEnabled
+        ? [
+            "- Stage once: `node tools/stage.mjs publish` writes a clean ./publish directory. Capture it with `okou host screenshot ./publish --out ./generated/previews/cover.png`, inspect the PNG and repair/re-capture incomplete content, then publish once with `okou host ./publish --site <slug> --preview ./generated/previews/cover.png`.",
+            "- Keep the PNG and receipt outside ./publish. Use the user's local PNG/JPEG cover with --preview if provided. Never omit --preview to hide a capture failure.",
+          ]
+        : [
+            "- Stage and host once: `node tools/stage.mjs publish` writes a clean ./publish directory, then `okou host ./publish --site <slug>`.",
+          ]),
       "- Check the deployed page with `bash checks/verify-published.sh <url>`; a local pass is not evidence about the deployment.",
       "- Use this built-in R2-backed package; do not substitute generic Open Design website templates for the selected template.",
       "- Return the hosted website URL and keep the generated static site as the final deliverable.",

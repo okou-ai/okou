@@ -3,7 +3,7 @@
  *
  * Tests command-level behavior via parseAsync() following CLI testing principles:
  * - Entry point: command.parseAsync()
- * - Mock (external): none for the source-selection path
+ * - Mock (external): API feature availability via MSW
  * - Real (internal): prompt parsing and authoring packet generation
  */
 
@@ -101,7 +101,7 @@ describe("okou generate presentation command", () => {
 
     const stdout = mockConsoleLog.mock.calls.flat().join("\n");
     const hostInstructions = stdout.split("\n").filter((line) => {
-      return line.includes("okou host ");
+      return line.startsWith("- Host the finished deck:");
     });
     expect(hostInstructions).toEqual([
       "- Host the finished deck: okou host <output-dir> --site team-plan --artifact-kind presentation-html --visibility org",

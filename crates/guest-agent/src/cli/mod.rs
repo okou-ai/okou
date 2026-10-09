@@ -1271,7 +1271,7 @@ async fn execute_cli_inner(
         let projection =
             pi_rpc::PiRpcProjection::new(runtime.run_id.as_ref(), runtime.pi_session_id.as_ref());
         match pi_session_output {
-            Some(output) => projection.with_session_output(output),
+            Some(output) => projection.with_session_output(output, masker),
             None => projection,
         }
     });

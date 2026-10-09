@@ -208,6 +208,7 @@ function PwaChatThreads({
             >
               <ChatThreadItem
                 signals={signals}
+                rowIndex={index}
                 shortcutNumber={undefined}
                 touch
               />

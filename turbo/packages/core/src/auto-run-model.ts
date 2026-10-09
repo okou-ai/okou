@@ -1,9 +1,22 @@
-/** The future selected Auto identity, accepted before writers switch to it. */
+/** Canonical Auto identity for new selections and captured decisions. */
 export const AUTO_SELECTED_MODEL = "auto";
 
 /** Selected Auto aliases only; absence and runtime presets are not selections. */
 export function isAutoSelectedModel(model: string | null | undefined): boolean {
   return model === AUTO_SELECTED_MODEL || model === AUTO_RUN_MODEL;
+}
+
+/** New preference copies keep explicit-model overrides, never Auto/preset effort.
+ * Existing saved objects remain readable; #38114 owns historical conversion.
+ */
+export function explicitModelSettings<T>(
+  settings: Readonly<Record<string, T>>,
+): Record<string, T> {
+  return Object.fromEntries(
+    Object.entries(settings).filter(([model]) => {
+      return !isAutoSelectedModel(model) && !model.startsWith("@preset/");
+    }),
+  );
 }
 
 /** Compare selectable choices across the nullable and explicit Auto protocols. */
@@ -18,7 +31,7 @@ export function sameSelectedModel(
   );
 }
 
-/** The platform-owned chat route. Personal subscriptions are separate sources. */
+/** Legacy captured Auto ID/catalog metadata. Retire only under #38114's gates. */
 export const AUTO_RUN_MODEL = "okou-1.0";
 export const AUTO_RUN_PROVIDER = "openrouter-codex";
 /** The `built_in_model_keys.vendor` of the managed OpenRouter key Auto runs on. */
@@ -26,7 +39,7 @@ export const AUTO_RUN_KEY_VENDOR = "openrouter";
 export const AUTO_RUN_UPSTREAM_MODEL = "@preset/okou-1-0";
 export const AUTO_RUN_PRICING_PROVIDER = "okou-1.0";
 
-/** Future captured Auto bills its runtime; old captures keep their original key. */
+/** Canonical captured Auto bills its runtime; old captures keep their original key. */
 export function autoRunBillingProvider(
   selectedModel: string,
   runtimeModel: string,
@@ -47,5 +60,14 @@ export function isAutoRunPreset(
     value.length <= 255
   );
 }
-/** Preserve Auto's existing long-context classification without a catalog lookup. */
+/** Retained legacy Auto captures keep the original Luna billing boundary. */
 export const AUTO_RUN_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS = 272001;
+
+/** New canonical Auto uses the approved Haiku tariff, including Luna fallback. */
+export function autoRunPricingLongContextMinTotalInputTokens(
+  selectedModel: string,
+): number {
+  return selectedModel === AUTO_SELECTED_MODEL
+    ? 100001
+    : AUTO_RUN_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS;
+}

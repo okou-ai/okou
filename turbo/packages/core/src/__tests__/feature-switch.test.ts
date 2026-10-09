@@ -26,6 +26,25 @@ describe("FeatureSwitchKey", () => {
 });
 
 describe("isFeatureEnabled", () => {
+  it("keeps artifact previews off for staff and external users until explicitly enabled", () => {
+    for (const context of [
+      {},
+      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
+      { orgId: "external-org" },
+    ]) {
+      expect(
+        getAllFeatureStates(context)[FeatureSwitchKey.ArtifactPreviews],
+      ).toBe(false);
+      for (const enabled of [true, false]) {
+        expect(
+          isFeatureEnabled(FeatureSwitchKey.ArtifactPreviews, {
+            ...context,
+            overrides: { [FeatureSwitchKey.ArtifactPreviews]: enabled },
+          }),
+        ).toBe(enabled);
+      }
+    }
+  });
   it("enables presentation conversion for Bingjie across workspaces", () => {
     for (const orgId of [
       undefined,
@@ -141,6 +160,23 @@ describe("isFeatureEnabled", () => {
     });
   });
 
+  it("keeps the running-indicator wave staff-only and honors overrides", () => {
+    const key = FeatureSwitchKey.ChatRunningIndicatorWave;
+    expect(isFeatureEnabled(key, {})).toBe(false);
+    expect(isFeatureEnabled(key, { orgId: "org_external" })).toBe(false);
+    const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
+    expect(isFeatureEnabled(key, staff)).toBe(true);
+    expect(
+      isFeatureEnabled(key, { ...staff, overrides: { [key]: false } }),
+    ).toBe(false);
+    expect(
+      isFeatureEnabled(key, {
+        orgId: "org_external",
+        overrides: { [key]: true },
+      }),
+    ).toBe(true);
+  });
+
   it("enables chat thread archiving for staff and honors explicit overrides", () => {
     for (const context of [{}, { orgId: "org_nonexistent" }]) {
       expect(
@@ -185,37 +221,6 @@ describe("isFeatureEnabled", () => {
         userId: "some-user",
       }),
     ).toBe(false);
-  });
-
-  it("enables the Monday MCP connector for staff and honors explicit overrides", () => {
-    expect(FeatureSwitchKey.MondayConnector).toBe("mondayConnector");
-    for (const context of [{}, { orgId: "org_nonexistent" }]) {
-      expect(isFeatureEnabled(FeatureSwitchKey.MondayConnector, context)).toBe(
-        false,
-      );
-    }
-    const staffContext = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.MondayConnector, staffContext),
-    ).toBe(true);
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.MondayConnector, {
-        ...staffContext,
-        overrides: { [FeatureSwitchKey.MondayConnector]: false },
-      }),
-    ).toBe(false);
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.MondayConnector, {
-        overrides: { [FeatureSwitchKey.MondayConnector]: true },
-      }),
-    ).toBe(true);
-    expect(
-      getFeatureSwitchMetadata()[FeatureSwitchKey.MondayConnector],
-    ).toEqual({
-      maintainer: "liangyou@okou.ai",
-      description: "Enable the Monday.com MCP connector",
-      rolloutStage: "beta",
-    });
   });
 
   it("enables the Plaud MCP connector for staff and honors explicit overrides", () => {

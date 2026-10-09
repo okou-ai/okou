@@ -203,6 +203,7 @@ export const runnerPreferenceSchema = z.discriminatedUnion("kind", [
         "finalizingPredecessor",
         "reusableSandbox",
         "workspaceCache",
+        "homeCache",
       ]),
       expiresAt: z.string().datetime({ offset: true }),
     })
@@ -452,6 +453,8 @@ export const DEFAULT_PROFILE = "vm0/default";
 
 const runnersPollBodySchema = z.object({
   runnerId: z.uuid().optional(),
+  // Additive process identity; never extend the strict claim capabilities.
+  heartbeatGeneration: runnerHeartbeatGenerationSchema.optional(),
   group: runnerGroupSchema,
   supportedProfiles: runnerSupportedProfileListSchema,
   excludedRunIds: z
@@ -500,6 +503,15 @@ export const heldWorkspaceStateSchema = z.object({
   reuseKey: z.string(),
   lastCompletedAt: z.string().datetime({ offset: true }),
   workspaceCaches: z.array(heldWorkspaceCacheSchema).min(1).max(8),
+});
+
+export const heldHomeStateSchema = z.object({
+  reuseKey: z.string(),
+  lastCompletedAt: z.string().datetime({ offset: true }),
+  homeCaches: z
+    .array(z.object({ profile: z.string(), homeAffinityVersion: z.literal(1) }))
+    .min(1)
+    .max(8),
 });
 
 /**
@@ -1606,6 +1618,9 @@ export const heartbeatBodySchema = z
     admittableProfiles: runnerProfileListSchema,
     heldSandboxStates: z.array(heldSandboxStateSchema).max(1024),
     heldWorkspaceStates: z.array(heldWorkspaceStateSchema).max(1024),
+    heldHomeStates: z.array(heldHomeStateSchema).max(1024).default([]),
+    // Capability exists even when a prepared Runner holds no home images.
+    homeAffinityVersion: z.literal(1).optional(),
     activeReuseProducers: z.array(activeReuseProducerSchema).max(1024),
     // This shared endpoint also accepts PAT and older Runner heartbeats without
     // a host observation. Absence is a first-class unknown, never WSS-eligible.
@@ -1619,15 +1634,23 @@ export const heartbeatBodySchema = z
       },
       0,
     );
-    if (workspaceCacheCount <= 1024) {
-      return;
+    if (workspaceCacheCount > 1024) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["heldWorkspaceStates"],
+        message: "heartbeat may contain at most 1024 workspace caches",
+      });
     }
-
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["heldWorkspaceStates"],
-      message: "heartbeat may contain at most 1024 workspace caches",
-    });
+    const homeCacheCount = heartbeat.heldHomeStates.reduce((count, state) => {
+      return count + state.homeCaches.length;
+    }, 0);
+    if (homeCacheCount > 1024) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["heldHomeStates"],
+        message: "heartbeat may contain at most 1024 home caches",
+      });
+    }
   });
 
 /**
@@ -1666,6 +1689,7 @@ export type RunnerPreferenceClaimState = z.infer<
 export type ActiveReuseProducer = z.infer<typeof activeReuseProducerSchema>;
 export type HeldSandboxState = z.infer<typeof heldSandboxStateSchema>;
 export type HeldWorkspaceState = z.infer<typeof heldWorkspaceStateSchema>;
+export type HeldHomeState = z.infer<typeof heldHomeStateSchema>;
 export type ExecutionContext = z.infer<typeof executionContextSchema>;
 export type StoredExecutionContext = z.infer<
   typeof storedExecutionContextSchema

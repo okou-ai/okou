@@ -1,3 +1,4 @@
+import ChatDomain
 import Foundation
 
 // Current contracts: turbo/packages/api-contracts/src/contracts/chat-threads.ts.

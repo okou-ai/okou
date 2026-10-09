@@ -983,7 +983,7 @@ checksum = "1c133bc6a41be0d194c306b5506d15e6feeea7b1d6604bd3f8310dfb2ca96486"
 
 [[package]]
 name = "claude-mock"
-version = "0.22.26"
+version = "0.22.28"
 dependencies = [
  "api-contracts",
  "guest-contracts",
@@ -1021,7 +1021,7 @@ checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
 
 [[package]]
 name = "codex-mock"
-version = "0.11.58"
+version = "0.11.60"
 dependencies = [
  "chrono",
  "clap",
@@ -1762,7 +1762,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.104.8"
+version = "0.104.10"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -1801,7 +1801,7 @@ dependencies = [
 
 [[package]]
 name = "guest-contracts"
-version = "0.18.9"
+version = "0.18.11"
 dependencies = [
  "api-contracts",
  "base64 0.23.1",
@@ -1816,7 +1816,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-client"
-version = "0.22.29"
+version = "0.22.31"
 dependencies = [
  "guest-contracts",
  "guest-control-proto",
@@ -1835,7 +1835,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-proto"
-version = "0.21.53"
+version = "0.21.55"
 dependencies = [
  "guest-contracts",
  "proptest",
@@ -1843,7 +1843,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-server"
-version = "0.22.9"
+version = "0.22.11"
 dependencies = [
  "chrono",
  "guest-contracts",
@@ -1859,7 +1859,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-tests"
-version = "0.12.44"
+version = "0.12.46"
 dependencies = [
  "guest-contracts",
  "guest-control-client",
@@ -1875,7 +1875,7 @@ dependencies = [
 
 [[package]]
 name = "guest-init"
-version = "0.17.9"
+version = "0.17.11"
 dependencies = [
  "guest-contracts",
  "guest-control-server",
@@ -1894,7 +1894,7 @@ dependencies = [
 
 [[package]]
 name = "guest-storage-apply"
-version = "0.24.41"
+version = "0.24.43"
 dependencies = [
  "flate2",
  "guest-contracts",
@@ -1913,7 +1913,7 @@ dependencies = [
 
 [[package]]
 name = "guest-telemetry"
-version = "0.3.124"
+version = "0.3.126"
 dependencies = [
  "chrono",
  "guest-contracts",
@@ -1925,7 +1925,7 @@ dependencies = [
 
 [[package]]
 name = "guest-tool-exec"
-version = "0.1.113"
+version = "0.1.115"
 dependencies = [
  "guest-contracts",
  "libc",
@@ -1947,7 +1947,7 @@ dependencies = [
 
 [[package]]
 name = "guest-write-file"
-version = "0.1.207"
+version = "0.1.209"
 dependencies = [
  "guest-contracts",
  "guest-control-proto",
@@ -3432,7 +3432,7 @@ dependencies = [
 
 [[package]]
 name = "rfb-client"
-version = "0.21.2"
+version = "0.21.3"
 dependencies = [
  "aes",
  "base64 0.23.1",
@@ -3572,7 +3572,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.221.1"
+version = "0.221.4"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3639,7 +3639,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.6.0"
+version = "0.6.2"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3686,7 +3686,7 @@ dependencies = [
 
 [[package]]
 name = "runner-host"
-version = "0.2.15"
+version = "0.2.17"
 dependencies = [
  "chrono",
  "futures-util",
@@ -3710,7 +3710,7 @@ dependencies = [
 
 [[package]]
 name = "runner-lifecycle"
-version = "0.1.38"
+version = "0.1.40"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3741,7 +3741,7 @@ dependencies = [
 
 [[package]]
 name = "runner-network"
-version = "0.2.11"
+version = "0.2.13"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3772,7 +3772,7 @@ dependencies = [
 
 [[package]]
 name = "runner-provider"
-version = "0.5.12"
+version = "0.6.0"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -3807,7 +3807,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.10.10"
+version = "0.10.12"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -3882,7 +3882,7 @@ dependencies = [
 
 [[package]]
 name = "runner-storage"
-version = "0.2.8"
+version = "0.2.10"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3923,7 +3923,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.2.29"
+version = "0.3.0"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3954,7 +3954,7 @@ dependencies = [
 
 [[package]]
 name = "runner-types"
-version = "0.4.7"
+version = "0.5.0"
 dependencies = [
  "api-contracts",
  "idna",
@@ -4227,7 +4227,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.44.10"
+version = "0.44.12"
 dependencies = [
  "async-trait",
  "clap",
@@ -4262,7 +4262,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-mock"
-version = "0.11.42"
+version = "0.11.44"
 dependencies = [
  "async-trait",
  "guest-contracts",
@@ -4510,7 +4510,7 @@ dependencies = [
 
 [[package]]
 name = "session-history-selector"
-version = "0.3.138"
+version = "0.3.140"
 dependencies = [
  "guest-contracts",
  "proptest",
@@ -5054,9 +5054,9 @@ dependencies = [
 
 [[package]]
 name = "toml"
-version = "1.1.7+spec-1.1.0"
+version = "1.1.8+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7874cd34dd99040fc24e30923aa64a60a81ff3ddfe2b8129ccc84ba24949deed"
+checksum = "20489e00e4d8741d6be680764cc12e270655e375a20d1011e844a9c3379e678d"
 dependencies = [
  "indexmap",
  "serde_core",
@@ -5078,9 +5078,9 @@ dependencies = [
 
 [[package]]
 name = "toml_parser"
-version = "1.1.4+spec-1.1.0"
+version = "1.1.5+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bed810ee007d8e7f9cf20b4774e7198142fa27186e0f805871da7f3c39eaf333"
+checksum = "baa693a8032d7e1cada7d0041e96126df243179ff061456783ac7f12bda4744c"
 dependencies = [
  "winnow",
 ]
@@ -5873,18 +5873,18 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.8.61"
+version = "0.8.62"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "879fb705ce98c32e41ebdb970fbe1204f8492423b314c6ab0354c3e7b5542866"
+checksum = "86502bf56ac7c77571a32e2647bb2a15894565e981fb2a48d7bde2d91c965a9d"
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.61"
+version = "0.8.62"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "708882a28301d604fa039cc7727607a98d04c4b86dc76ec9cc683f805d709759"
+checksum = "5457206954b06561e2608c7e19cf58b1926586d999c246eebe4502f7e2039d1a"
 dependencies = [
  "proc-macro2",
  "quote",

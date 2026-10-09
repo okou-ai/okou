@@ -12,7 +12,9 @@
     "tsBuildInfoFile": "./.typecheck/foundation.tsbuildinfo"
   },
   "include": [
+    "src/lib/desktop-compatibility.json",
     "src/lib/desktop-compatibility.ts",
+    "src/lib/desktop-version.ts",
     "src/lib/db-instrumentation.ts",
     "src/lib/db-raw-rows.ts",
     "src/lib/db-structured-result.ts",
@@ -160,6 +162,8 @@
     "src/signals/services/agent-run-contracts.ts",
     "src/signals/services/agent-storage-context.service.ts",
     "src/signals/services/authorized-connectors.service.ts",
+    "src/signals/services/connectors-context.service.ts",
+    "src/signals/services/run-prompt-and-skills.ts",
     "src/signals/services/api-dispatch-timing.service.ts",
     "src/signals/services/built-in-model-runtime-route.service.ts",
     "src/signals/services/built-in-route-pricing.ts",

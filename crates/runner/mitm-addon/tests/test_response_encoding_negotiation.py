@@ -10,6 +10,8 @@ import body_decoding
 import flow_metadata_keys as metadata_keys
 import mitm_addon
 import response_encoding_negotiation
+from tests.flow_helpers import response_stream
+from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 from tests.request_handler_helpers import _single_firewall_sandbox, _write_registry
 from tests.requestheaders_helpers import await_requestheaders_result
 
@@ -985,6 +987,117 @@ async def test_model_provider_websocket_upgrade_injects_auth_and_keeps_accept_en
     assert flow.request.headers["Authorization"] == "Bearer x"
     assert flow.request.headers[_ACCEPT_ENCODING] == "gzip, zstd, br"
     assert metadata_keys.RESPONSE_ENCODING_NEGOTIATION not in flow.metadata
+
+
+@pytest.mark.parametrize(
+    ("firewall_name", "host", "path", "content_type", "content_encoding"),
+    [
+        pytest.param(
+            _X_FIREWALL_NAME,
+            _X_HOST,
+            "/2/tweets/search/stream",
+            "application/x-ndjson",
+            "zstd",
+            id="connector-stream",
+        ),
+        pytest.param(
+            _MODEL_PROVIDER_FIREWALL_NAME,
+            _MODEL_PROVIDER_HOST,
+            _MODEL_PROVIDER_PATH,
+            "application/json",
+            "unsupported-encoding",
+            id="model-json",
+        ),
+        pytest.param(
+            _MODEL_PROVIDER_FIREWALL_NAME,
+            _MODEL_PROVIDER_HOST,
+            _MODEL_PROVIDER_PATH,
+            "text/event-stream",
+            "zstd",
+            id="model-sse",
+        ),
+    ],
+)
+@pytest.mark.parametrize("header_phase", [False, True], ids=["request", "requestheaders"])
+async def test_upgrade_request_rejects_uninspectable_http_response(
+    tmp_path: Path,
+    real_flow: Callable[..., http.HTTPFlow],
+    headers: Callable[..., http.Headers],
+    mitm_ctx,
+    fake_firewall_headers,
+    firewall_name: str,
+    host: str,
+    path: str,
+    content_type: str,
+    content_encoding: str,
+    header_phase: bool,
+) -> None:
+    if firewall_name == _MODEL_PROVIDER_FIREWALL_NAME:
+        reg_path = _model_provider_registry(
+            tmp_path,
+            rule_method="GET",
+            capture_network_bodies=header_phase,
+        )
+    else:
+        reg_path = _connector_registry(
+            tmp_path,
+            firewall_name=firewall_name,
+            host=host,
+            path=path,
+            billable=True,
+            capture_network_bodies=header_phase,
+        )
+    flow = _request_flow(
+        real_flow,
+        headers,
+        host=host,
+        path=path,
+        method="GET",
+        accept_encoding="gzip, zstd, br",
+        extra_headers=(
+            ("Connection", "Upgrade"),
+            ("Upgrade", "websocket"),
+            ("Sec-WebSocket-Key", _WEBSOCKET_KEY),
+            ("Sec-WebSocket-Version", "13"),
+        ),
+    )
+
+    with (
+        mitm_ctx(registry_path=str(reg_path), api_url="https://api.okou.ai"),
+        fake_firewall_headers(),
+    ):
+        if header_phase:
+            await await_requestheaders_result(mitm_addon.requestheaders(flow))
+        await mitm_addon.request(flow)
+
+        assert flow.response is None
+        assert flow.metadata[metadata_keys.WEBSOCKET_UPGRADE_REQUEST] is True
+        assert metadata_keys.RESPONSE_ENCODING_NEGOTIATION not in flow.metadata
+        assert flow.request.headers[_ACCEPT_ENCODING] == "gzip, zstd, br"
+
+        flow.response = http.Response.make(
+            200,
+            b"",
+            {"Content-Type": content_type},
+        )
+        # Assign the upstream encoding after make(), which otherwise strips unsupported codecs.
+        flow.response.headers["Content-Encoding"] = content_encoding
+        mitm_addon.responseheaders(flow)
+
+    assert flow.response.status_code == 502
+    assert flow.response.content == b""
+    stream = response_stream(flow)
+    assert stream(b"upstream chunk one") == b""
+    assert stream(b"upstream chunk two") == b""
+    assert stream(b"") == b""
+    [entry] = [
+        entry
+        for entry in read_jsonl_entries_after_flush(tmp_path / "proxy.jsonl")
+        if entry.get("type") == "usage_underbilling"
+    ]
+    assert entry["status_code"] == 200
+    assert entry["inspection_disposition"] == "fail_closed"
+    assert entry["request_encoding_negotiation"] is None
 
 
 @pytest.mark.parametrize(

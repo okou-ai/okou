@@ -214,8 +214,8 @@ test("Keep foreground presence until the last visible tab hides or disconnects",
   second.bridge.setTabVisibility("visible");
   first.bridge.setTabVisibility("hidden");
   // A query round trip observes both preceding state messages on each port.
-  await first.bridge.getComputed("connection-diagnostics");
-  await second.bridge.getComputed("connection-diagnostics");
+  await first.bridge.getComputed("chat-thread-indicators");
+  await second.bridge.getComputed("chat-thread-indicators");
   expect(context.mocks.ably.getPresenceCount(channel)).toBe(1);
 
   second.bridge.setTabVisibility("hidden");

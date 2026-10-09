@@ -667,7 +667,7 @@ describe("Discord account preferences through private controls", () => {
 
     expect(selected.content).toContain("Model selected for this conversation");
     const after = await accept(preference.get({ headers }), [200]);
-    expect(after.body.selectedModel).toBeNull();
+    expect(after.body.selectedModel).toBe("auto");
     expect(
       (await chat.readThreadMetadata(owner, thread.id)).selectedModel,
     ).toBe("gpt-6-astra");
@@ -684,7 +684,7 @@ describe("Discord account preferences through private controls", () => {
     );
   });
 
-  it("switches the routed server thread to Auto as an empty selection", async () => {
+  it("switches the routed server thread to canonical Auto", async () => {
     const owner = actor();
     mockDiscordMemberships(context, [owner]);
     await configureModelPreferences({ owner });
@@ -709,7 +709,7 @@ describe("Discord account preferences through private controls", () => {
     );
     expect(
       (await chat.readThreadMetadata(owner, thread.id)).selectedModel,
-    ).toBeNull();
+    ).toBe("auto");
     expect(
       preselected(await discord.send(commandPayload(sender, "model"))),
     ).toStrictEqual(["auto"]);
@@ -733,7 +733,7 @@ describe("Discord account preferences through private controls", () => {
     );
     expect(selected.content).toContain("Model selected for this conversation");
     const before = await accept(preference.get({ headers }), [200]);
-    expect(before.body.selectedModel).toBeNull();
+    expect(before.body.selectedModel).toBe("auto");
 
     await createMiscRoutesApi(context).deletePersonalModelProvider(
       scope.owner,
@@ -752,7 +752,7 @@ describe("Discord account preferences through private controls", () => {
       preselected(await discord.send(commandPayload(sender, "model"))),
     ).toStrictEqual([]);
     const after = await accept(preference.get({ headers }), [200]);
-    expect(after.body.selectedModel).toBeNull();
+    expect(after.body.selectedModel).toBe("auto");
   });
   it.each(["sender", "channel", "expired"] as const)(
     "rejects a signed control with changed %s context",
@@ -786,7 +786,7 @@ describe("Discord account preferences through private controls", () => {
 
       expect(rejected.content).toContain("expired or your access has changed");
       const after = await accept(preference.get({ headers }), [200]);
-      expect(after.body.selectedModel).toBeNull();
+      expect(after.body.selectedModel).toBe("auto");
     },
   );
 
@@ -908,7 +908,7 @@ describe("Discord account preferences through private controls", () => {
       );
       expect(rejected.components).toStrictEqual([]);
       const after = await accept(preference.get({ headers }), [200]);
-      expect(after.body.selectedModel).toBeNull();
+      expect(after.body.selectedModel).toBe("auto");
     },
   );
 });
