@@ -843,6 +843,33 @@ test("The connector step says what it costs the user before it hands them off", 
   });
 });
 
+test("Closing the connector intro keeps its content while the dialog exits", async () => {
+  configureQuestPage(context, "admin");
+  context.mocks.browser.open();
+  mockQuestCatalog();
+  await setupPage({
+    context,
+    path: questChatPath(),
+  });
+
+  await openQuestPanel();
+  click(screen.getByTestId("get-started-quest-connector"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Okou works inside the tools you already use",
+  });
+  await within(dialog).findByTestId("quest-connector-picker");
+
+  click(within(dialog).getByRole("button", { name: "Close" }));
+  // The exit transition paints whatever is still mounted, so the intro body
+  // must survive the close rather than being emptied at once.
+  expect(
+    within(dialog).queryByTestId("quest-connector-picker"),
+  ).toBeInTheDocument();
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+});
+
 test("Picking a connector in the dialog starts its authorization", async () => {
   configureQuestPage(context, "admin");
   mockQuestCatalog();
