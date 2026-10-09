@@ -25,7 +25,6 @@ import { commitMemoryVersion } from "./helpers/memory";
 import {
   createChatEventsFixture,
   requireOrgId,
-  createPiUsagePricingResolution,
   claimEnvironment,
   eventBackedContents,
 } from "./helpers/chat-events-fixture";
@@ -36,7 +35,7 @@ const {
   chat,
   webhooks,
   entitledChatActor,
-  configureBuiltInPiModelOnOpenRouter,
+  configureSubscriptionPiModel,
   sendChatRunAfterPick,
   claimChatRun,
   waitForRunStatus,
@@ -180,9 +179,8 @@ describe("CHAT-02: model-first routing", () => {
   async function piActivityScenario(): Promise<void> {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const orgId = requireOrgId(actor);
-    const usagePricingResolution =
-      await createPiUsagePricingResolution("okou-1.0");
-    const model = await configureBuiltInPiModelOnOpenRouter(actor, "okou-1.0");
+    const model = "gpt-6-luna";
+    await configureSubscriptionPiModel(actor, {}, model);
     await updateFeatureSwitchesForUser(
       context,
       { ...actor, orgId },
@@ -197,15 +195,11 @@ describe("CHAT-02: model-first routing", () => {
       "# Sandbox checkpoint\n\nPersist this staged sandbox note.\n";
     const checkpointObjects = mockPiCheckpointObjectStore();
     const prompt = "use the Okou CLI in the Sandbox";
-    const run = await sendChatRunAfterPick(
-      actor,
-      {
-        agentId,
-        prompt,
-        model,
-      },
-      usagePricingResolution,
-    );
+    const run = await sendChatRunAfterPick(actor, {
+      agentId,
+      prompt,
+      model,
+    });
     const claimed = await claimChatRun(runnerGroup, run.runId);
     expect(claimed.claim.cliAgentType).toBe("pi");
     expect(claimed.claim.piSessionId).toBe(run.threadId);
@@ -215,8 +209,8 @@ describe("CHAT-02: model-first routing", () => {
       piSandboxBaseSession(claimed.claim, checkpointObjects).toString("utf8"),
     );
     expect(claimed.claim.piModelConfig).toMatchObject({
-      provider: "openrouter",
-      model: "@preset/okou-1-0",
+      provider: "openai-codex",
+      model: "gpt-6-luna",
     });
     expect(claimed.claim.piModelConfig).not.toHaveProperty("api");
     expect(claimed.claim.piLaunchConfig).toMatchObject({ schemaVersion: 2 });
@@ -248,7 +242,7 @@ describe("CHAT-02: model-first routing", () => {
     const sandboxUsageEvent = {
       idempotencyKey: randomUUID(),
       kind: "model" as const,
-      provider: "okou-1.0",
+      provider: "gpt-6-luna",
       category: "tokens.output",
       quantity: 2,
     };
@@ -257,13 +251,11 @@ describe("CHAT-02: model-first routing", () => {
         { runId: run.runId, events: [sandboxUsageEvent] },
         claimed.sandboxHeaders,
         [200],
-        usagePricingResolution,
       ),
       webhooks.requestAgentUsageEvent(
         { runId: run.runId, events: [sandboxUsageEvent] },
         claimed.sandboxHeaders,
         [200],
-        usagePricingResolution,
       ),
     ]);
     expect(
@@ -369,8 +361,8 @@ describe("CHAT-02: model-first routing", () => {
         { type: "text", text: "after parallel tools" },
       ],
       api: "openai-responses",
-      provider: "openrouter",
-      model: "@preset/okou-1-0",
+      provider: "openai-codex",
+      model: "gpt-6-luna",
       usage: {
         input: 0,
         output: 0,
@@ -409,8 +401,8 @@ describe("CHAT-02: model-first routing", () => {
       role: "assistant",
       content: [{ type: "text", text: "Sandbox H2 complete" }],
       api: "openai-responses",
-      provider: "openrouter",
-      model: "@preset/okou-1-0",
+      provider: "openai-codex",
+      model: "gpt-6-luna",
       usage: {
         input: 5,
         output: 3,
@@ -457,12 +449,20 @@ describe("CHAT-02: model-first routing", () => {
       `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${h2Hash}.blob`,
       Buffer.from(h2, "utf8"),
     );
-    const checkpointedMemory = await commitMemoryVersion(context, actor, [
+    const checkpointedMemory = await commitMemoryVersion(
+      context,
       {
-        path: `extensions/ad_hoc/notes/${adHocNoteFilename}`,
-        content: adHocNote,
+        runId: run.runId,
+        sandboxHeaders: claimed.sandboxHeaders,
+        storageManifest: claimed.claim.storageManifest,
       },
-    ]);
+      [
+        {
+          path: `extensions/ad_hoc/notes/${adHocNoteFilename}`,
+          content: adHocNote,
+        },
+      ],
+    );
     expect(checkpointedMemory.storageId).toBe(lunaMemoryMount.storageId);
     const memoryArtifactSnapshots = [
       {
@@ -490,7 +490,6 @@ describe("CHAT-02: model-first routing", () => {
       claimed.sandboxHeaders,
       [200],
       undefined,
-      usagePricingResolution,
     );
     expect(combinedH2.body).toStrictEqual({
       success: true,
@@ -539,8 +538,8 @@ describe("CHAT-02: model-first routing", () => {
       role: "assistant",
       content: [{ type: "text", text: "late replacement H2" }],
       api: "openai-responses",
-      provider: "openrouter",
-      model: "@preset/okou-1-0",
+      provider: "openai-codex",
+      model: "gpt-6-luna",
       usage: {
         input: 0,
         output: 0,
@@ -816,7 +815,7 @@ describe("CHAT-02: model-first routing", () => {
   }
 
   it(
-    "launches fixed Auto in the Sandbox, captures guest tool activity, and checkpoints Pi memory notes",
+    "launches personal Codex in the Sandbox, captures guest tool activity, and checkpoints Pi memory notes",
     piActivityScenario,
     150_000,
   );
