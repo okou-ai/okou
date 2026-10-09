@@ -98,10 +98,7 @@ widen those producers only after incompatible readers sharing the cache homes
 have exited, including their active and background work. A healthy replacement
 or drain acknowledgement is not proof of that exit. After enlarged entries can
 exist, rollback tags must contain the preparation release; stopping the new
-writer does not make retained entries readable by earlier versions. The marker
-`.github/rollback-floors/decoded-storage-large-reader` identifies the merged
-preparation commit, not a branch SHA. Preparation alone installs no rollback
-restriction; activation enforces that floor against the selected Runner tag.
+writer does not make retained entries readable by earlier versions.
 No cache schema adapter, migration, cleanup, or retry after Guest mutation is
 introduced by this sequence.
 

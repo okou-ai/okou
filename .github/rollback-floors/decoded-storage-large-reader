@@ -1,9 +1,0 @@
-The first-parent main commit adding this marker prepares Runner persisted-v1
-readers and bundled Guest consumers for bounded large decoded-storage inputs.
-It retains the preceding small producer and outbound admission policy.
-
-Once a later release enables larger positive v1 writes, supported Runner rollback
-tags must descend from this reader-preparation commit. Stopping larger writers
-does not remove their persisted entries. Resolve the merged main commit from
-this marker rather than using a feature-branch SHA. Activation enforces this
-floor; this preparation alone does not reject earlier rollback targets.
