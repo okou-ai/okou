@@ -399,11 +399,6 @@ written with the wrong wall-clock timezone: recreate a disposable fixture rather
 than shifting business rows. Do not alter a shared or production database for a
 local test run.
 
-The API CI service deliberately starts in `Asia/Shanghai` to exercise this
-contract. Its migration connection requests UTC separately so migration seed
-writes are correct before test bootstrap; API tests receive the bare connection
-URL and must establish UTC themselves.
-
 Direct JavaScript `Date` parameters passed to pg are a separate process-timezone
 boundary. Keep Drizzle's timestamp-column serialization; for UTC-naive raw SQL
 values use the existing `timestampWithoutTimeZone()` helper. Database-owned
