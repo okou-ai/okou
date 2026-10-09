@@ -190,7 +190,9 @@ long-history performance checks remain outside the completed interactive sample.
 The transcript uses a native `UICollectionView` cell for each message, with
 SwiftUI message content and measured row heights. A bounded batch of temporary
 hosts settles Markdown layout before a snapshot is applied. Cell reuse keeps
-these heights, and pending content changes wait until scrolling ends. Reading
+these heights, and pending content changes wait until scrolling ends. A per-detail
+ConversationScrollCoordinator owns latest/history intent and bottom-button policy;
+the native collection owns motion and the anchor owns offset correction. Reading
 positions update when late message markers become ready, even without a change
 to the list's size or offset. Initial
 positioning targets the latest prepared messages; starting a manual scroll stops
