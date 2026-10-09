@@ -116,9 +116,14 @@ replace the Runner or Guest executable while retaining the other version.
 The optional in-flight semaphore stays at 64 MiB with two workers. Its transient
 reservation becomes 8 MiB (2 MiB source, 4 MiB content, 2 MiB bounded metadata and
 decoder allowance), releasing unused permits for retained files. This is not a
-whole-process RSS or disk quota. A metadata-first read budget preserves the old
-16 MiB content read-ahead envelope and can skip a large entry while retaining a
-later small hit. The 15 MiB encoded payload, 64 KiB manifest and 16 MiB wire limits
+whole-process RSS or disk quota. Metadata-first read budgets preserve the old
+16 MiB content and 4,096-file ready-read-ahead envelopes independently, including
+empty files that consume no content budget. A valid entry too large for either
+remaining budget can miss before its bodies are opened, while a later smaller
+entry can still fit. Metadata validation precedes both budget checks; selected
+content corruption remains an error. The file budget is per lookup batch, not a
+persisted rejection or a new wire cap. The 15 MiB encoded payload, 64 KiB manifest
+and 16 MiB wire limits
 remain; selection retains ordinary archive delivery when aggregate files do not
 fit. Malformed selected positive entries remain errors, not recovery by archive
 replay after mutation.

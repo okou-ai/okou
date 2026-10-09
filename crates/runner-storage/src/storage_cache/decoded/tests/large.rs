@@ -315,6 +315,48 @@ async fn large_ready_read_ahead_skips_a_body_that_does_not_fit_but_keeps_small_h
 }
 
 #[tokio::test]
+async fn empty_files_preserve_ready_file_read_ahead_and_allow_later_small_hits() {
+    let root = tempfile::tempdir().unwrap();
+    let home = HomePaths::with_root(root.path().to_owned());
+    let cancel = CancellationToken::new();
+    for (name, count) in [
+        ("wide", 1024),
+        ("medium", 1000),
+        ("small", 24),
+        ("single", 1),
+    ] {
+        disk::publish(
+            &home,
+            name,
+            "v1",
+            MAX_COMPRESSED_BYTES,
+            Some(&fixture_files(count, 0, false)),
+            &cancel,
+        )
+        .unwrap();
+    }
+    let cache = DecodedCache::new(home);
+    let keys = ["wide", "wide", "wide", "medium", "wide", "small", "single"];
+    let ready = cache
+        .get_ready_batch(&keys.map(|name| Some((name, "v1"))))
+        .await
+        .unwrap();
+    assert_eq!(
+        ready.iter().map(Option::is_some).collect::<Vec<_>>(),
+        [true, true, true, true, false, true, false]
+    );
+    let mut files = ready.iter().flatten().flat_map(|entry| &entry.files);
+    assert_eq!(files.clone().count(), 4096);
+    assert!(files.all(|file| file.content.is_empty()));
+    drop(ready);
+    assert_eq!(cache.0.memory.available_permits(), CAPACITY);
+    // This is a per-batch optional budget, not persistent rejection of a valid entry.
+    assert!(cache.get_ready("wide", "v1").await.unwrap().is_some());
+    cache.shutdown().await;
+    assert_eq!(cache.0.memory.available_permits(), CAPACITY);
+}
+
+#[tokio::test]
 async fn retained_large_hits_exhaust_optional_budget_without_leaking_permits() {
     let root = tempfile::tempdir().unwrap();
     let home = HomePaths::with_root(root.path().to_owned());

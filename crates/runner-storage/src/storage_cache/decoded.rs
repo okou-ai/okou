@@ -18,6 +18,8 @@ const MAX_COMPRESSED_BYTES: usize = 2 * 1024 * 1024;
 // The semaphore covers optional cache work, not total Runner process RSS.
 const FILL_RESERVATION: u32 = 8 * 1024 * 1024;
 const READ_AHEAD_BYTES: usize = 16 * 1024 * 1024;
+// Preserve the original 128-key/32-file ready-read-ahead envelope for tiny files.
+const READ_AHEAD_FILES: usize = 128 * 32;
 // A bounded lookup window avoids repeatedly pausing archive delivery for misses.
 pub(super) const LOOKUP_BATCH_SIZE: usize = 128;
 // Retain the former 16-key worst-case string budget while batching typical keys.
@@ -188,15 +190,18 @@ impl DecodedCache {
                 let mut first_memory = Some(memory);
                 let mut result = Vec::with_capacity(keys.len());
                 let mut ready_bytes = 0;
+                let mut ready_files = 0;
                 for key in keys {
                     let Some((name, version)) = key else {
                         result.push(None);
                         continue;
                     };
-                    // Preserve the original read-ahead envelope independently
-                    // of the larger per-storage cap; metadata is checked before
-                    // loading a body that would exceed the remaining budget.
-                    if ready_bytes >= storage_files::MAX_PAYLOAD_BYTES {
+                    // Preserve the original content and file read-ahead envelopes
+                    // independently of the larger per-storage caps. Metadata is
+                    // validated before bodies can exceed either remaining budget.
+                    if ready_bytes >= storage_files::MAX_PAYLOAD_BYTES
+                        || ready_files >= READ_AHEAD_FILES
+                    {
                         result.push(None);
                         continue;
                     }
@@ -214,11 +219,13 @@ impl DecodedCache {
                         &name,
                         &version,
                         READ_AHEAD_BYTES - ready_bytes,
+                        READ_AHEAD_FILES - ready_files,
                         &inner.cancel,
                     )?
                     .flatten();
                     if let Some(files) = &files {
                         ready_bytes += files.iter().map(|file| file.content.len()).sum::<usize>();
+                        ready_files += files.len();
                     }
                     result.push(files.map(|files| {
                         // Only a scheduling hint, not authority to delete. An

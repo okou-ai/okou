@@ -231,6 +231,7 @@ pub(super) fn read(
         name,
         version,
         storage_files::MAX_STORAGE_BYTES,
+        storage_files::MAX_FILES,
         cancel,
     )
 }
@@ -240,9 +241,18 @@ pub(super) fn read_with_budget(
     name: &str,
     version: &str,
     content_budget: usize,
+    file_budget: usize,
     cancel: &CancellationToken,
 ) -> io::Result<Option<Option<Vec<StorageFile>>>> {
-    read_entry(home, name, version, false, content_budget, cancel)
+    read_entry(
+        home,
+        name,
+        version,
+        false,
+        content_budget,
+        file_budget,
+        cancel,
+    )
 }
 
 pub(super) fn is_rejected(
@@ -251,7 +261,7 @@ pub(super) fn is_rejected(
     version: &str,
     cancel: &CancellationToken,
 ) -> io::Result<bool> {
-    read_entry(home, name, version, true, 0, cancel).map(|entry| entry.is_some())
+    read_entry(home, name, version, true, 0, 0, cancel).map(|entry| entry.is_some())
 }
 
 /// A fresh rejection can omit only optional warming of a still-present source.
@@ -302,6 +312,7 @@ fn read_entry(
     version: &str,
     rejected: bool,
     content_budget: usize,
+    file_budget: usize,
     cancel: &CancellationToken,
 ) -> io::Result<Option<Option<Vec<StorageFile>>>> {
     check_cancel(cancel)?;
@@ -332,7 +343,15 @@ fn read_entry(
             }
         }
     };
-    read_locked_entry(home, name, version, rejected, content_budget, cancel)
+    read_locked_entry(
+        home,
+        name,
+        version,
+        rejected,
+        content_budget,
+        file_budget,
+        cancel,
+    )
 }
 
 /// Caller holds the entry lock throughout validation and any dependent action.
@@ -342,6 +361,7 @@ fn read_locked_entry(
     version: &str,
     rejected: bool,
     content_budget: usize,
+    file_budget: usize,
     cancel: &CancellationToken,
 ) -> io::Result<Option<Option<Vec<StorageFile>>>> {
     let path = EntryKey::new(name, version, rejected).directory(home);
@@ -398,9 +418,9 @@ fn read_locked_entry(
     {
         return Err(invalid("decoded cache expansion exceeds admission"));
     }
-    if total > content_budget {
-        // A valid optional entry can miss this batch without reading its body.
-        // Later smaller entries may still fit; malformed metadata remains an error.
+    if total > content_budget || files.len() > file_budget {
+        // A valid optional entry can miss either batch budget without reading its
+        // bodies. Later smaller entries may fit; malformed metadata remains an error.
         return Ok(None);
     }
     let data = File::from(
@@ -495,6 +515,7 @@ pub(super) fn retire_archive(
         version,
         false,
         storage_files::MAX_STORAGE_BYTES,
+        storage_files::MAX_FILES,
         cancel,
     )?
     .flatten()
