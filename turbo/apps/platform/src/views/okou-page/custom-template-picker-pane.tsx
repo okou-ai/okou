@@ -531,7 +531,7 @@ function CustomTemplateKindFilters({
             // The search and the import beside them are h-9 too, so the band
             // reads as one row of equal controls.
             size="default"
-            className="flex-1 max-[374px]:px-2 max-[374px]:text-xs lg:flex-none"
+            className="flex-1 max-sm:px-2 max-[374px]:text-xs lg:flex-none"
           >
             {label}
           </Toggle>
