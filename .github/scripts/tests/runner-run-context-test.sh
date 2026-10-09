@@ -123,6 +123,10 @@ curl() {
     printf '%s\n%s' "$body" "$http_status"
 }
 
+# Unsetting Bash's special SECONDS property makes it an ordinary variable, so
+# slow fixture processing cannot advance this controlled observation clock.
+unset SECONDS
+
 # Advance only the shell observation clock; the regression has no real sleeps
 # or elapsed-wall-clock assertions. Production still waits on the public GET.
 sleep() {
