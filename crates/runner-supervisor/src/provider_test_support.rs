@@ -740,7 +740,7 @@ mod tests {
         let claimed = provider
             .claim(JobCandidate::new(
                 candidate_run_id,
-                crate::profile::DEFAULT_PROFILE.to_owned(),
+                runner_types::profile_name::DEFAULT_PROFILE.to_owned(),
             ))
             .await;
 
@@ -756,7 +756,7 @@ mod tests {
         let claimed = provider
             .claim(JobCandidate::new(
                 run_id,
-                crate::profile::DEFAULT_PROFILE.to_owned(),
+                runner_types::profile_name::DEFAULT_PROFILE.to_owned(),
             ))
             .await
             .expect("matching context should be claimed");

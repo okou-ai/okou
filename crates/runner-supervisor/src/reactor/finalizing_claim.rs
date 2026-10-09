@@ -59,39 +59,37 @@ use futures_util::FutureExt;
 use tokio::task::JoinSet;
 use tracing::info;
 
-use super::factory_lifecycle::SharedFactory;
 use super::job_discovery::{
     activation_resources, build_spawn_job_request, claimed_activation_resources,
 };
 use super::job_spawn::{SpawnContext, run_job};
 #[cfg(test)]
 use super::{OuterJobPanicPoint, maybe_panic_outer_job};
+use crate::SharedFactory;
+use crate::claimed_activation::{ClaimedActivationGuard, ClaimedJobSetup, ReadyClaimedResource};
+use crate::claimed_resource_activation::{
+    ReservedActivation, ReservedActivationRequest, activate_reserved_idle,
+};
 use crate::executor::{
     ExecutionFailure, FinalizingDiagnostics, FinalizingHandoffOutcome, FinalizingHandoffReason,
     RunnerPreSpawnPhase, RunnerPreSpawnTiming, validate_resume_session_id,
 };
+#[cfg(not(test))]
+use crate::finalizing_admission::select_finalizing_resource;
+use crate::finalizing_admission::{
+    FinalizingAdmission, FinalizingResource, FinalizingSelectionRequest,
+    FinalizingSelectionResources,
+};
+#[cfg(test)]
+use crate::finalizing_admission::{
+    FinalizingSelectionTestHooks, select_finalizing_resource_with_test_hooks,
+};
+use crate::idle_lifecycle::{ReservedIdleActivation, rollback_reserved_idle_for_spawn};
 use crate::resource_budget::BudgetLease;
 use crate::telemetry::JobTelemetry;
 use crate::workspace_image_cache::WorkspaceImagePrepareLockPolicy;
 use runner_provider::ClaimedJob;
 use runner_provider::RunCancellationRegistration;
-use runner_supervisor::claimed_activation::{
-    ClaimedActivationGuard, ClaimedJobSetup, ReadyClaimedResource,
-};
-use runner_supervisor::claimed_resource_activation::{
-    ReservedActivation, ReservedActivationRequest, activate_reserved_idle,
-};
-#[cfg(not(test))]
-use runner_supervisor::finalizing_admission::select_finalizing_resource;
-use runner_supervisor::finalizing_admission::{
-    FinalizingAdmission, FinalizingResource, FinalizingSelectionRequest,
-    FinalizingSelectionResources,
-};
-#[cfg(test)]
-use runner_supervisor::finalizing_admission::{
-    FinalizingSelectionTestHooks, select_finalizing_resource_with_test_hooks,
-};
-use runner_supervisor::idle_lifecycle::{ReservedIdleActivation, rollback_reserved_idle_for_spawn};
 use runner_types::types::{CompleteRequest, SandboxReuseResult};
 
 pub(super) struct FinalizingClaimRequest {

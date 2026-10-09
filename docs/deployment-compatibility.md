@@ -74,6 +74,15 @@ contexts. Keep the exact captured package available through queueing, execution,
 and finalization. Do not infer the CLI version from the current API or Runner
 version, or remove a protocol merely because a new package has been published.
 
+Never replace a captured package's bytes or redirect its historical URL to a
+newer package. Use the exact artifact and required runtime identity for
+compatibility decisions. Package semver is a sufficient floor only when the
+release process guarantees it advances for every relevant artifact change.
+
+A Runner drain acknowledgement means it stopped admitting new work; claimed
+work and finalization can still be running. A healthy replacement or promotion
+warning does not prove that every old process exited.
+
 Workspace-cache images, metadata, and history sidecars can outlive their producer
 and be consumed by another Runner release. Keep old formats readable or
 explicitly invalidate and purge incompatible disposable entries before the new
@@ -132,6 +141,10 @@ ordering. Verify the actual deployed artifact and consumer population.
 Compatibility branches must name their surface, removal condition, and owning
 follow-up; see [fallback declarations](fallback.md#9-declare-new-fallbacks-in-the-pr-summary-and-the-review).
 Do not add broad defaults to hide corrupt data or incompatible protocols.
+
+An explicitly accepted breaking cutover must record the affected consumers,
+accepted interruption, migration order, and rollback boundary in its owning
+issue or PR. Removing historical notes does not establish that acceptance.
 
 ## Database/API Transitions
 

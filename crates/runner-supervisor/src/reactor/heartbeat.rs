@@ -1,12 +1,12 @@
-//! Concrete Runner configuration projection for supervisor heartbeats.
+//! Minimal runtime resource projection for supervisor heartbeats.
 
 use std::collections::BTreeMap;
 
-use crate::config::ProfileConfig;
-use runner_supervisor::heartbeat::HeartbeatProfile;
+use super::RuntimeProfile;
+use crate::heartbeat::HeartbeatProfile;
 
 pub(super) fn heartbeat_profiles(
-    profiles: &BTreeMap<String, ProfileConfig>,
+    profiles: &BTreeMap<String, RuntimeProfile>,
 ) -> BTreeMap<String, HeartbeatProfile> {
     profiles
         .iter()

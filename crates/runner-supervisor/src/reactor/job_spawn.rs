@@ -15,21 +15,34 @@ use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 use tracing::{error, warn};
 
-use super::factory_lifecycle::SharedFactory;
 use super::job_terminal_log::log_terminal_job_outcome;
 #[cfg(test)]
 use super::{
     OuterJobPanicPoint, StartLoopTestObserver, finalization_test_hooks, maybe_panic_outer_job,
 };
+use crate::SharedFactory;
+use crate::blank_pool::BlankPoolDiagnostics;
 use crate::executor::{
     self, ExecutorConfig, RunnerPreSpawnConcurrency, RunnerPreSpawnPhase, RunnerPreSpawnTiming,
     SessionHistoryRestorePlan,
 };
 use crate::guest_timezone::GuestTimezoneIntent;
+use crate::idle_lifecycle::{IdleDestroyTracker, SharedIdlePool};
 use crate::idle_pool::{ParkingGate, ReusableIdleSandbox};
+use crate::job_lifecycle::{
+    ActiveBudgetLease, CompletionPayload, FinalizedJob, RunCleanupState, completion_failure_reason,
+    recover_panicked_run,
+};
 use crate::network_log_drain::NetworkLogDrainCoordinator;
 use crate::network_logs;
+use crate::orphan_reap::OrphanedActiveRuns;
+use crate::ownership::RunSandbox;
 use crate::resource_budget::{BudgetLease, ResourceBudget};
+use crate::sandbox_finalization::FinalizeContext;
+#[cfg(not(test))]
+use crate::sandbox_finalization::finalize_claimed_run;
+#[cfg(test)]
+use crate::sandbox_finalization::finalize_claimed_run_with_test_hooks;
 use crate::status::StatusTracker;
 use crate::storage_fingerprints::StorageFingerprints;
 use crate::telemetry::JobTelemetry;
@@ -37,19 +50,6 @@ use runner_lifecycle::active_runs::{ActiveRunGuard, ActiveRunReusePublisher, Act
 use runner_lifecycle::workspace_image_cache::snapshot::WorkspaceCacheStateSnapshot;
 use runner_provider::{ClaimedJob, JobProvider};
 use runner_provider::{RunCancellationHandle, RunCancellationRegistration, RunCancellationSignals};
-use runner_supervisor::blank_pool::BlankPoolDiagnostics;
-use runner_supervisor::idle_lifecycle::{IdleDestroyTracker, SharedIdlePool};
-use runner_supervisor::job_lifecycle::{
-    ActiveBudgetLease, CompletionPayload, FinalizedJob, RunCleanupState, completion_failure_reason,
-    recover_panicked_run,
-};
-use runner_supervisor::orphan_reap::OrphanedActiveRuns;
-use runner_supervisor::ownership::RunSandbox;
-use runner_supervisor::sandbox_finalization::FinalizeContext;
-#[cfg(not(test))]
-use runner_supervisor::sandbox_finalization::finalize_claimed_run;
-#[cfg(test)]
-use runner_supervisor::sandbox_finalization::finalize_claimed_run_with_test_hooks;
 use runner_types::ids::RunId;
 use runner_types::types::{ExecutionContext, SandboxReuseResult};
 
@@ -72,6 +72,7 @@ pub(super) struct JobProfile {
 #[derive(Clone)]
 pub(super) struct SpawnContext {
     pub(super) runner_id: String,
+    pub(super) diagnostic_error_tail_max_bytes: usize,
     pub(super) provider: Arc<dyn JobProvider>,
     pub(super) exec_config: Arc<ExecutorConfig>,
     pub(super) idle_pool: SharedIdlePool,
@@ -444,7 +445,7 @@ impl DeferredUploadPhase {
 /// The provider has already claimed the job and the caller has reserved
 /// resources in the budget. The spawned task runs the executor, reports
 /// completion through the supervisor, which owns the post-executor
-/// park-or-destroy decision in [`runner_supervisor::sandbox_finalization::finalize_claimed_run`].
+/// park-or-destroy decision in [`crate::sandbox_finalization::finalize_claimed_run`].
 ///
 /// If `reuse_entry` is `Some`, the job reuses an existing idle sandbox.
 /// Otherwise it creates a new one via the factory.
@@ -455,7 +456,7 @@ impl DeferredUploadPhase {
 /// idle-pool transfer, or pool rejection falls back to destruction.
 ///
 /// The ownership state returned by finalization carries
-/// [`BudgetOwnership`](runner_supervisor::job_lifecycle::BudgetOwnership). Non-accepted paths
+/// [`BudgetOwnership`](crate::job_lifecycle::BudgetOwnership). Non-accepted paths
 /// keep the active lease until provider completion and active-status settlement
 /// have both finished, then release it. An accepted idle entry owns and retains
 /// the lease until reuse or destruction.
@@ -626,6 +627,7 @@ pub(super) async fn run_job(
     executor
         .pre_spawn_timing
         .record_phase_elapsed(RunnerPreSpawnPhase::SpawnJobSetup, started_at);
+    let diagnostic_error_tail_max_bytes = ctx.diagnostic_error_tail_max_bytes;
     let body = async move {
         #[cfg(test)]
         maybe_panic_outer_job(outer_job_panic, OuterJobPanicPoint::ActiveOrUnknown, run_id);
@@ -638,6 +640,7 @@ pub(super) async fn run_job(
             reused,
             cancelled_for_log,
             executor_result.outcome.failure.as_ref(),
+            diagnostic_error_tail_max_bytes,
         );
         let failure_reason = completion_failure_reason(
             executor_result.exit_code,
@@ -747,19 +750,19 @@ mod tests {
     use sandbox::SandboxId;
 
     use crate::http::{HttpClient, HttpClientConfig};
+    use crate::idle_lifecycle::SharedIdlePool;
     use crate::idle_pool::{
         IdlePool, IdlePoolConfig, IdleUnparkResult, ParkResult,
         test_support::ParkedIdleCandidateBuilder,
     };
     use crate::idle_reuse_preparation::mock_sandbox_ready_for_idle_reuse;
+    use crate::job_lifecycle::{RunCleanupDisposition, RunCleanupState};
+    use crate::orphan_reap::OrphanedActiveRuns;
     use crate::resource_budget::ResourceBudget;
     use crate::restored_session_identity::RestoredSessionIdentity;
     use crate::status::StatusTracker;
     use runner_lifecycle::active_runs::ActiveRuns;
     use runner_provider::RunCancellationRegistry;
-    use runner_supervisor::idle_lifecycle::SharedIdlePool;
-    use runner_supervisor::job_lifecycle::{RunCleanupDisposition, RunCleanupState};
-    use runner_supervisor::orphan_reap::OrphanedActiveRuns;
     use runner_types::ids::RunId;
 
     fn test_http_client() -> HttpClient {
