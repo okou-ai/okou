@@ -55,12 +55,14 @@ unauthorized, replacement, control, output and hidden automation IDs are not
 valid original-input selectors. Unreadable history or an unavailable consuming
 Run is an explicit error, never a fabricated queued result.
 
-Input observation and recall use indexed origin/predecessor/successor reads only
-when one authorized repeatable-read snapshot proves the conversation has no
-archive. Retention requires archive coverage, so live primary/revoke keys then
-establish complete relevant identity and facts. Only those rows count toward
-the existing history byte/row budgets; unrelated live content is not loaded.
-A hot-origin miss still delegates to the complete canonical reader.
+Input observation and recall use one authorized, bounded recursive SQL statement
+for indexed origin/predecessor/successor reads only when that statement snapshot
+proves the conversation has no archive. Retention requires archive coverage, so
+live primary/revoke keys then establish complete relevant identity and facts.
+Metadata traversal stops with an explicit error at an invalid or over-budget
+edge; payloads are transferred only after complete preflight. Only relevant rows
+count toward the existing history byte/row budgets; unrelated live content is not
+loaded. A hot-origin miss still delegates to the complete canonical reader.
 
 Any archive-backed conversation retains full verified archive-plus-tail reading,
 even for an origin newer than the archive watermark. Ordering proves where
@@ -542,8 +544,16 @@ strict removal of protocol fields, sparse metadata and ordinary Run reads.
 Synthetic signed tokens do not prove real Clerk consent/issuance/refresh or
 production activation. Those require the provider setup gate above.
 
-History SQL owns one short repeatable-read transaction for authorized snapshot
-pointer, byte preflight and tail consistency; archive S3 reads occur after that
-transaction commits. Agent/thread/candidate reads retain short read-only
-transactions only to scope their existing three-second `SET LOCAL` deadline.
-No mutation-specific transaction, lock, retry or coordination protocol is added.
+Full-history SQL owns one short repeatable-read transaction for authorized
+snapshot pointer, byte preflight and tail consistency; archive S3 reads occur
+after that transaction commits. The targeted no-archive input reader has no
+explicit transaction: its one business statement provides the snapshot. It
+exclusively leases a client from the existing pool, captures its timeout/read-only
+defaults, applies a three-second server-side statement timeout and read-only mode,
+then restores those exact defaults before reuse. Any SQL, validation, cancellation
+or restoration failure discards that client instead; no session setting leaks
+into another request and no second pool is created. Caller cancellation and the
+15-second operation budget remain separate from server query cancellation.
+Agent/thread/candidate reads retain short read-only transactions only to scope
+their existing three-second `SET LOCAL` deadline. No mutation-specific transaction,
+lock, retry or coordination protocol is added.

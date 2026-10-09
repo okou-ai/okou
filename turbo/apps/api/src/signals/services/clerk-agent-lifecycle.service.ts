@@ -181,9 +181,8 @@ const deleteClerkOrganizationLifecycleData$ = command(
           id: orgId,
         });
         await tx.delete(jobs.table).where(jobs.condition);
-        // Raw and hourly usage go first because hourly rollups reference
-        // allowance windows; the entitlement (and its window cascade) is then
-        // deleted by the loop's ordinary DELETE, with no explicit row lock.
+        // Raw deletion precedes hourly cleanup so a winning compaction's
+        // committed fragments are visible to the following DELETE.
         for (const target of usage) {
           await tx.delete(target.table).where(target.condition);
         }

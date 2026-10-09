@@ -4429,7 +4429,8 @@ test.each(["Enter", "Space"])(
   },
 );
 
-test("Delete a supplementary workflow file", async () => {
+test("Reach workflow file actions with arrows and typeahead, then delete with Enter", async () => {
+  const user = userEvent.setup();
   const updateBodies: WorkflowUpdateRequest[] = [];
   mockWorkflowApis([salesResearch()], (body) => {
     updateBodies.push(body);
@@ -4444,8 +4445,16 @@ test("Delete a supplementary workflow file", async () => {
   });
   click(screen.getByLabelText("Workflow files"));
   click(workflowFileItemByText(/config\/settings\.json/));
-  click(screen.getByLabelText("Workflow files"));
-  click(screen.getByLabelText("Delete config/settings.json"));
+  await user.click(screen.getByLabelText("Workflow files"));
+  await user.keyboard("{End}");
+  expect(menuItemByText("Delete selected file")).toHaveFocus();
+  await user.keyboard("{ArrowUp}");
+  expect(menuItemByText("Upload text files")).toHaveFocus();
+  await user.keyboard("{Home}u");
+  expect(menuItemByText("Upload text files")).toHaveFocus();
+  await user.keyboard("{Escape}{ArrowDown}d");
+  expect(menuItemByText("Delete selected file")).toHaveFocus();
+  await user.keyboard("{Enter}");
 
   await waitFor(() => {
     expect(updateBodies.at(-1)?.files).toStrictEqual([
@@ -4455,9 +4464,15 @@ test("Delete a supplementary workflow file", async () => {
       },
     ]);
   });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Workflow files")).toHaveTextContent(
+      "instructions",
+    );
+  });
 });
 
-test("Upload a supplementary workflow file", async () => {
+test("Upload after the file menu closes and reselect the same file after an empty selection", async () => {
+  const user = userEvent.setup();
   const updateBodies: WorkflowUpdateRequest[] = [];
   mockWorkflowApis([salesResearch()], (body) => {
     updateBodies.push(body);
@@ -4471,13 +4486,15 @@ test("Upload a supplementary workflow file", async () => {
     ).toBeInTheDocument();
   });
 
-  click(screen.getByLabelText("Workflow files"));
-  const input = screen.getByLabelText("Upload workflow files");
-  fireEvent.change(input, {
-    target: {
-      files: [new File(["new notes"], "notes.md", { type: "text/markdown" })],
-    },
+  await user.click(screen.getByLabelText("Workflow files"));
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
+  const file = new File(["new notes"], "notes.md", {
+    type: "text/markdown",
+  });
+  await user.upload(screen.getByLabelText("Upload workflow files"), file);
 
   await waitFor(() => {
     expect(updateBodies.at(-1)?.files).toContainEqual({
@@ -4488,6 +4505,23 @@ test("Upload a supplementary workflow file", async () => {
   expect(updateBodies.at(-1)?.files).toContainEqual({
     path: "config/settings.json",
     content: '{ "risk": "low", "tone": "direct" }',
+  });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Workflow files")).toHaveTextContent(
+      "notes.md",
+    );
+  });
+
+  await user.upload(screen.getByLabelText("Upload workflow files"), []);
+  expect(screen.getByLabelText("Workflow files")).toHaveTextContent("notes.md");
+
+  click(screen.getByLabelText("Workflow files"));
+  click(workflowFileItemByText("instructions"));
+  await user.upload(screen.getByLabelText("Upload workflow files"), file);
+  await waitFor(() => {
+    expect(screen.getByLabelText("Workflow files")).toHaveTextContent(
+      "notes.md",
+    );
   });
 });
 

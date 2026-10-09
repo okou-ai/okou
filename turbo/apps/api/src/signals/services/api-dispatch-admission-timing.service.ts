@@ -15,8 +15,7 @@ export type AdmissionLockLeaf =
   | "concurrency"
   | "queue_first"
   | "persistence"
-  | "maintenance_binding"
-  | "usage_allowance";
+  | "maintenance_binding";
 
 export type AdmissionAttemptOutcome =
   "pending" | "rejected" | "queue_first_claim_lost" | "rolled_back";

@@ -13,10 +13,6 @@ import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { connectors } from "@okouai/db/schema/connector";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import {
-  orgUsageAllowanceEntitlements,
-  usageAllowanceAllocations,
-} from "@okouai/db/schema/org-usage-allowance";
 import { secrets } from "@okouai/db/schema/secret";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { usageEvent } from "@okouai/db/schema/usage-event";
@@ -162,10 +158,6 @@ async function deleteUsageStateFixtureUsageData(
         eq(usageEventHourlyRollup.userId, fixture.userId),
       ),
     );
-  signal.throwIfAborted();
-  await db
-    .delete(orgUsageAllowanceEntitlements)
-    .where(eq(orgUsageAllowanceEntitlements.orgId, fixture.orgId));
   signal.throwIfAborted();
 }
 
@@ -574,17 +566,10 @@ const materializeHourlyUsage$ = command(
           kind: usageEvent.kind,
           provider: usageEvent.provider,
           category: usageEvent.category,
-          shortWindowId: usageAllowanceAllocations.shortWindowId,
-          weeklyWindowId: usageAllowanceAllocations.weeklyWindowId,
           quantity: usageEvent.quantity,
           creditsCharged: usageEvent.creditsCharged,
-          allowanceUnits: usageAllowanceAllocations.unitsApplied,
         })
         .from(usageEvent)
-        .leftJoin(
-          usageAllowanceAllocations,
-          eq(usageAllowanceAllocations.usageEventId, usageEvent.id),
-        )
         .where(
           and(
             eq(usageEvent.orgId, args.orgId),
@@ -617,11 +602,8 @@ const materializeHourlyUsage$ = command(
             kind: row.kind,
             provider: row.provider,
             category: row.category,
-            shortWindowId: row.shortWindowId,
-            weeklyWindowId: row.weeklyWindowId,
             quantity: row.quantity,
             creditsCharged: row.creditsCharged ?? 0,
-            allowanceUnits: row.allowanceUnits ?? 0,
           };
         }),
       );

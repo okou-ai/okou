@@ -13,8 +13,8 @@ use tracing_subscriber::prelude::*;
 use super::super::DEFAULT_EXEC_TIMEOUT;
 use super::super::session_history_cpu::codex_timestamp_for_test;
 use super::super::session_restore::{
-    MaterializedResumeSession, SessionRestoreDiagnostics,
-    restore_session as restore_session_with_reuse_result,
+    MaterializedResumeSession, SessionRestoreDiagnostics, plan_fresh_session_restore,
+    restore_session as restore_session_shared,
 };
 use super::support::{CapturedEvent, CapturedEvents, minimal_context};
 use runner_types::types::{
@@ -149,7 +149,7 @@ async fn restore_session(
     context: &ExecutionContext,
     session: &MaterializedResumeSession,
 ) -> super::super::RunnerResult<SessionRestoreDiagnostics> {
-    restore_session_with_reuse_result(sandbox, context, session, SandboxReuseResult::Reused).await
+    restore_session_shared(sandbox, context, session).await
 }
 
 async fn restore_session_in_fresh_sandbox(
@@ -157,7 +157,10 @@ async fn restore_session_in_fresh_sandbox(
     context: &ExecutionContext,
     session: &MaterializedResumeSession,
 ) -> super::super::RunnerResult<SessionRestoreDiagnostics> {
-    restore_session_with_reuse_result(sandbox, context, session, SandboxReuseResult::PoolMiss).await
+    plan_fresh_session_restore(context, session, SandboxReuseResult::PoolMiss)?
+        .expect("fresh transfer plan")
+        .write_final(sandbox, context, session)
+        .await
 }
 
 fn assert_codex_cleanup_call(sandbox: &MockSandbox) {

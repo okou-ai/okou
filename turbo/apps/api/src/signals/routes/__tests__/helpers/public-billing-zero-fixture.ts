@@ -9,7 +9,10 @@ import { setupApp } from "../../../../__tests__/test-helpers";
 import { env, mockEnv, mockOptionalEnv } from "../../../../lib/env";
 import { now } from "../../../../lib/time";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
-import { mockStripeClient } from "../../../external/stripe-client";
+import {
+  mockStripeClient,
+  type StripeSubscription,
+} from "../../../external/stripe-client";
 import { settleIncludingAbort } from "../../../utils";
 import { billingStatusRoutes } from "../../billing-status";
 import { createBddApi, type ApiTestUser } from "./api-bdd";
@@ -79,7 +82,21 @@ export function createPublicBillingZeroFixture(
         context.mocks.stripe.subscriptions.retrieve
           .mockReset()
           .mockImplementation((id) => {
-            return Promise.resolve({ id, status: "active", metadata: {} });
+            if (typeof id !== "string") {
+              throw new Error(
+                "Expected a Stripe subscription ID during cleanup",
+              );
+            }
+            const subscription: StripeSubscription = {
+              id,
+              customer: customerId,
+              status: "active",
+              metadata: { orgId },
+              cancel_at_period_end: false,
+              latest_invoice: null,
+              items: { data: [] },
+            };
+            return Promise.resolve(subscription);
           });
         context.mocks.stripe.subscriptions.update
           .mockReset()

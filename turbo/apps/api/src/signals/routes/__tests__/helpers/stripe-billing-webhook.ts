@@ -15,7 +15,6 @@ const TEST_PRICE_TEAM = "price_test_team";
 const TEST_PRICE_CUSTOM = "price_test_custom";
 export const TEST_PRICE_CONCURRENCY = "price_test_concurrency";
 const TEST_PRICE_ATOM_GRANT = "price_test_atom_grant";
-const TEST_PRICE_USAGE_ALLOWANCE = "price_test_usage_allowance";
 
 const STRIPE_WEBHOOK_SECRET = "whsec_billing_state_test";
 const DEFAULT_CREDIT_EXPIRES_MS = 30 * 24 * 60 * 60 * 1000;
@@ -41,19 +40,6 @@ interface ConcurrencyWebhookLine {
   readonly expiresAt: Date;
   readonly invoiceLineId?: string;
   readonly priceId?: string;
-}
-
-interface UsageAllowanceWebhookInput extends BillingWebhookFixture {
-  readonly customerId: string;
-  readonly subscriptionId: string;
-  readonly invoiceId?: string;
-  readonly status?: string;
-  readonly shortWindowSeconds: number;
-  readonly shortWindowUnits: number;
-  readonly weeklyWindowSeconds: number;
-  readonly weeklyWindowUnits: number;
-  readonly effectiveAt: Date;
-  readonly expiresAt: Date;
 }
 
 export function createBillingWebhookFixture(): BillingWebhookFixture {
@@ -485,88 +471,6 @@ export async function postConcurrencyEntitlementsInvoicePaid(
     type: "customer.subscription.updated",
     data: {
       object: subscription,
-    },
-  });
-}
-
-export async function postUsageAllowanceInvoicePaid(
-  signal: AbortSignal,
-  args: UsageAllowanceWebhookInput,
-): Promise<void> {
-  configureBillingWebhookEnv();
-
-  const periodStart = seconds(args.effectiveAt);
-  const periodEnd = seconds(args.expiresAt);
-  const metadata = {
-    type: "usage_allowance",
-    purpose: "usage_allowance",
-    source: "atom_usage_allowance",
-    orgId: args.orgId,
-    shortWindowSeconds: String(args.shortWindowSeconds),
-    shortWindowUnits: String(args.shortWindowUnits),
-    weeklyWindowSeconds: String(args.weeklyWindowSeconds),
-    weeklyWindowUnits: String(args.weeklyWindowUnits),
-  };
-
-  await postStripeEvent(signal, {
-    type: "invoice.paid",
-    data: {
-      object: {
-        id: args.invoiceId ?? `in_usage_${randomUUID().slice(0, 8)}`,
-        customer: args.customerId,
-        metadata,
-        subtotal: 0,
-        parent: {
-          subscription_details: {
-            subscription: args.subscriptionId,
-            metadata: {},
-          },
-        },
-        lines: {
-          has_more: false,
-          data: [
-            {
-              id: `il_usage_${randomUUID().slice(0, 8)}`,
-              price: { id: TEST_PRICE_USAGE_ALLOWANCE },
-              quantity: 1,
-              parent: { type: "subscription_item_details" },
-              period: {
-                start: periodStart,
-                end: periodEnd,
-              },
-            },
-          ],
-        },
-      },
-    },
-  });
-
-  if (args.status === undefined || args.status === "active") {
-    return;
-  }
-
-  await postStripeEvent(signal, {
-    type: "customer.subscription.updated",
-    data: {
-      object: {
-        id: args.subscriptionId,
-        customer: args.customerId,
-        status: args.status,
-        metadata,
-        cancel_at_period_end: false,
-        cancel_at: null,
-        schedule: null,
-        trial_end: null,
-        items: {
-          data: [
-            {
-              price: { id: TEST_PRICE_USAGE_ALLOWANCE },
-              quantity: 1,
-              current_period_end: periodEnd,
-            },
-          ],
-        },
-      },
     },
   });
 }

@@ -1,4 +1,4 @@
-"""Guard the locked test runner against order-dependent conftest fixture loss."""
+"""Guard fixture discovery and bounded test-runner diagnostics."""
 
 import os
 import subprocess
@@ -71,3 +71,15 @@ def test_directory_fixture_is_available_to_all_consumers(
 
     assert result.returncode == pytest.ExitCode.OK, result.stdout + result.stderr
     assert "3 passed" in result.stdout, result.stdout + result.stderr
+
+
+def test_collected_test_node_ids_are_bounded(request: pytest.FixtureRequest) -> None:
+    # Large payloads belong in test inputs, not verbose progress or failure summaries.
+    oversized = [
+        f"{item.nodeid[:160]}... ({len(item.nodeid)} characters)"
+        for item in request.session.items
+        if len(item.nodeid) > 1024
+    ]
+    assert not oversized, "Use short, semantic IDs for large test parameters:\n" + "\n".join(
+        oversized
+    )

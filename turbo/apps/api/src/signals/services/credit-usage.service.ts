@@ -109,7 +109,7 @@ export const completeProcessedOrgUsage$ = command(
 );
 
 /**
- * Atomically settle pending usage, including allowance and member credit packs,
+ * Atomically settle pending usage using member credit packs and shared credits,
  * before running recharge, notification, and usage-event delivery effects.
  * Effects run after COMMIT so callers never retain ledger locks during I/O.
  */

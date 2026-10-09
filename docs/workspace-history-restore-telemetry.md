@@ -42,14 +42,24 @@ only when storage apply starts. It does not touch the framework's canonical
 history path, so storage cleanup or extraction cannot overwrite a partially
 restored history file.
 
-After storage succeeds, Runner publishes the staged file to the canonical
-framework path. Same-device publication is one rename. If the staging and
+After storage and staging succeed, Runner prepares the live destination before
+publishing. Every actual Codex replacement, including a fresh VM with a retained
+writable image, uses the existing requested-session scan, cleanup and validated
+logical target. VM acquisition does not prove an empty framework home. Staging
+never cleans the live target while storage is still running. Verified skips do
+not replace or clean history. Destination failure or cancellation discards owned
+staging, drains owned work, and prevents publication and agent startup.
+
+Runner then publishes the staged file to the canonical framework path. Same-device publication is one rename. If the staging and
 destination directories are on different filesystems, publication copies to a
 unique sibling of the destination and then renames that sibling into place; this
 is correct but may be slower. An existing regular destination's mode is retained;
 an ownership mismatch is proven non-publication and uses the serial path. A
 normally completed helper can report a bounded
 `not_published` result, in which case Runner performs the existing serial restore.
+Codex recovery scans and cleans again, retaining the already validated logical
+transfer target when that scan is empty because the first cleanup removed its
+candidate. It does not derive a new timestamp path after a proven non-publication.
 A timeout, cancellation, transport failure or malformed result leaves publication
 ambiguous, so Runner fails closed and does not retry the write.
 
@@ -83,7 +93,8 @@ speedup or replace native resume, append and checkpoint validation in
 
 `session_history_transfer` describes the same complete restore attempt for local
 sidecars and remote/inline history, including framework validation and any Codex
-cleanup on exact reuse. Its `duration_ms` overlaps the existing `session_restore`
+requested-session cleanup before replacement, independent of VM provenance. Its
+`duration_ms` overlaps the existing `session_restore`
 and local guest-restore events; do not add those durations together.
 
 Every completed attempt records a bounded `session_history_transfer_source`:

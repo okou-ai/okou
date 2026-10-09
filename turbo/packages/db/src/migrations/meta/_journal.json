@@ -1947,6 +1947,13 @@
       "when": 1791503441636,
       "tag": "1355_expand_runtime_billing_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 1356,
+      "version": "7",
+      "when": 1791512015016,
+      "tag": "1356_drop_organization_usage_allowance",
+      "breakpoints": true
     }
   ]
 }

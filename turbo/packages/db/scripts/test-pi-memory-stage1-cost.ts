@@ -94,8 +94,8 @@ export async function validatePiMemoryStage1Cost(
     }
     for (let start = 0; start < 321528; start += 5000) {
       await client.query(
-        `INSERT INTO usage_event_hourly_rollup(processed_hour,org_id,user_id,kind,provider,category,quantity,credits_charged,allowance_units,billing_context,billing_anchor_at)
-        SELECT timestamp '2026-09-01',$1,'user','model',$2,'tokens.input',3,0,0,'runless',timestamp '2026-09-01'+(i%30)*interval '1 day' FROM generate_series($3::int,$4::int) i`,
+        `INSERT INTO usage_event_hourly_rollup(processed_hour,org_id,user_id,kind,provider,category,quantity,credits_charged,billing_context,billing_anchor_at)
+        SELECT timestamp '2026-09-01',$1,'user','model',$2,'tokens.input',3,0,'runless',timestamp '2026-09-01'+(i%30)*interval '1 day' FROM generate_series($3::int,$4::int) i`,
         [org, model, start, Math.min(start + 4999, 321527)],
       );
     }

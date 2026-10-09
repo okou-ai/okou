@@ -35,7 +35,6 @@ import {
   postConcurrencyEntitlementsInvoicePaid,
   postOneTimePurchaseCompleted,
   postSubscriptionInvoicePaid,
-  postUsageAllowanceInvoicePaid,
   TEST_PRICE_CONCURRENCY,
   type BillingWebhookFixture,
 } from "./helpers/stripe-billing-webhook";
@@ -219,21 +218,10 @@ test("immediately cancels and proportionally refunds every org subscription sour
   const ids = {
     plan: "sub_delete_plan",
     usagePack: "sub_delete_usage_pack",
-    allowance: "sub_delete_allowance",
     concurrency: "sub_delete_concurrency",
   };
   const fixture = createOrgDeleteBillingFixture();
   await seedPlanSubscription(fixture, ids.plan, periodEnd);
-  await postUsageAllowanceInvoicePaid(context.signal, {
-    ...fixture,
-    subscriptionId: ids.allowance,
-    shortWindowSeconds: 300,
-    shortWindowUnits: 1000,
-    weeklyWindowSeconds: 604_800,
-    weeklyWindowUnits: 10_000,
-    effectiveAt: new Date(periodStart * 1000),
-    expiresAt: new Date(periodEnd * 1000),
-  });
   context.mocks.stripe.subscriptions.retrieve.mockResolvedValueOnce({
     id: ids.concurrency,
     customer: fixture.customerId,
@@ -274,7 +262,15 @@ test("immediately cancels and proportionally refunds every org subscription sour
       has_more: true,
     })
     .mockResolvedValueOnce({
-      data: [subscription(ids.allowance, fixture.customerId)],
+      data: [
+        subscription(
+          `sub_archived_allowance_${randomUUID()}`,
+          fixture.customerId,
+          {
+            metadata: { purpose: "usage_allowance" },
+          },
+        ),
+      ],
       has_more: false,
     });
   context.mocks.stripe.subscriptions.retrieve.mockResolvedValueOnce(
@@ -306,7 +302,7 @@ test("immediately cancels and proportionally refunds every org subscription sour
     limit: 100,
     starting_after: ids.usagePack,
   });
-  expect(context.mocks.stripe.subscriptions.cancel).toHaveBeenCalledTimes(4);
+  expect(context.mocks.stripe.subscriptions.cancel).toHaveBeenCalledTimes(3);
   for (const subscriptionId of Object.values(ids)) {
     expect(context.mocks.stripe.subscriptions.cancel).toHaveBeenCalledWith(
       subscriptionId,
@@ -316,7 +312,7 @@ test("immediately cancels and proportionally refunds every org subscription sour
       },
     );
   }
-  expect(context.mocks.stripe.creditNotes.create).toHaveBeenCalledTimes(4);
+  expect(context.mocks.stripe.creditNotes.create).toHaveBeenCalledTimes(3);
   expect(
     context.mocks.stripe.creditNotes.create.mock.calls.map((call) => {
       return call[0];
@@ -348,6 +344,215 @@ test("immediately cancels and proportionally refunds every org subscription sour
   }
   expect(lastRefundCall).toBeLessThan(deleteCall);
 });
+
+test.each(["bound price", "expanded Product", "unexpanded Product"])(
+  "does not cancel an archive-only subscription identified by %s on the live Plan customer",
+  async (source) => {
+    const deletionTimestamp = 1_800_000_000;
+    const fixture = createOrgDeleteBillingFixture();
+    const planId = `sub_live_delete_${randomUUID()}`;
+    const archiveId = `sub_archive_delete_${randomUUID()}`;
+    await seedPlanSubscription(fixture, planId, deletionTimestamp + 200);
+    mockNow(deletionTimestamp * 1000);
+    mockOrgDeletion(fixture);
+    const product = {
+      id: "prod_delete_archive",
+      name: "Archived Allowance",
+      metadata: { purpose: "usage_allowance" },
+    };
+    const archived = {
+      ...subscription(archiveId, fixture.customerId, {
+        metadata:
+          source === "bound price"
+            ? { allowancePriceId: "price_delete_archive" }
+            : {},
+      }),
+      items: {
+        data: [
+          {
+            id: "si_delete_archive",
+            quantity: 1,
+            current_period_start: deletionTimestamp - 800,
+            current_period_end: deletionTimestamp + 200,
+            price: {
+              id: "price_delete_archive",
+              active: true,
+              type: "recurring" as const,
+              unit_amount: 2000,
+              recurring: { interval: "month" as const, interval_count: 1 },
+              product: source === "expanded Product" ? product : product.id,
+            },
+          },
+        ],
+      },
+    };
+    context.mocks.stripe.products.retrieve.mockImplementation((id) => {
+      return Promise.resolve({
+        id,
+        name: "Billing product",
+        metadata: id === product.id ? product.metadata : {},
+      });
+    });
+    context.mocks.stripe.subscriptions.list.mockResolvedValue({
+      data: [subscription(planId, fixture.customerId), archived],
+      has_more: false,
+    });
+    context.mocks.stripe.invoices.list.mockResolvedValue({
+      data: [
+        paidInvoice("in_live_delete_only", fixture.customerId, planId, [
+          subscriptionLine(
+            1000,
+            deletionTimestamp - 800,
+            deletionTimestamp + 200,
+          ),
+        ]),
+      ],
+      has_more: false,
+    });
+    context.mocks.stripe.creditNotes.preview.mockResolvedValue(
+      creditNote("preview_live_only", 200),
+    );
+    context.mocks.stripe.creditNotes.create.mockResolvedValue(
+      creditNote("cn_live_only", 200),
+    );
+    const response = await accept(requestOrgDeletion(), [200]);
+    expect(response.body).toStrictEqual({ message: "Organization deleted" });
+    expect(context.mocks.stripe.subscriptions.cancel).toHaveBeenCalledOnce();
+    expect(context.mocks.stripe.subscriptions.cancel).toHaveBeenCalledWith(
+      planId,
+      { invoice_now: false, prorate: false },
+      { idempotencyKey: `org-delete:${fixture.orgId}:${planId}:cancel` },
+    );
+    expect(context.mocks.stripe.subscriptions.update).not.toHaveBeenCalledWith(
+      archiveId,
+      expect.anything(),
+      expect.anything(),
+    );
+    expect(context.mocks.stripe.creditNotes.create).toHaveBeenCalledOnce();
+  },
+);
+
+test.each([
+  "invoice price binding",
+  "parent price binding",
+  "Product metadata",
+  "archived invoice header",
+  "archived parent header",
+  "shared archived concurrency header",
+])(
+  "refunds only ordinary paid portions across paginated %s identities",
+  async (source) => {
+    const deletionTimestamp = 1_800_000_000;
+    const fixture = createOrgDeleteBillingFixture();
+    const subscriptionId = `sub_mixed_delete_${randomUUID()}`;
+    await seedPlanSubscription(
+      fixture,
+      subscriptionId,
+      deletionTimestamp + 200,
+    );
+    mockNow(deletionTimestamp * 1000);
+    mockOrgDeletion(fixture);
+    const product = {
+      id: "prod_refund_archive",
+      name: "Archived Allowance",
+      metadata: { purpose: "usage_allowance" },
+    };
+    const ordinary = {
+      ...subscriptionLine(
+        1000,
+        deletionTimestamp - 800,
+        deletionTimestamp + 200,
+      ),
+      price: {
+        id:
+          source === "shared archived concurrency header"
+            ? TEST_PRICE_CONCURRENCY
+            : "price_test_pro",
+      },
+    };
+    const archived = {
+      ...subscriptionLine(
+        2000,
+        deletionTimestamp - 800,
+        deletionTimestamp + 200,
+      ),
+      price: {
+        id: "price_refund_archive",
+        ...(source === "Product metadata" ? { product } : {}),
+      },
+    };
+    const invoice = {
+      ...paidInvoice(
+        "in_mixed_delete_archive",
+        fixture.customerId,
+        subscriptionId,
+        [ordinary],
+        true,
+      ),
+      metadata:
+        source === "invoice price binding"
+          ? { allowancePriceId: archived.price.id }
+          : source === "archived invoice header" ||
+              source === "shared archived concurrency header"
+            ? { purpose: "usage_allowance" }
+            : {},
+      parent: {
+        subscription_details: {
+          subscription: subscriptionId,
+          metadata:
+            source === "parent price binding"
+              ? { allowancePriceId: archived.price.id }
+              : source === "archived parent header"
+                ? { purpose: "usage_allowance" }
+                : {},
+        },
+      },
+    };
+    const headerOnly =
+      source === "archived invoice header" ||
+      source === "archived parent header";
+    context.mocks.stripe.subscriptions.list.mockResolvedValue({
+      data: [subscription(subscriptionId, fixture.customerId)],
+      has_more: false,
+    });
+    context.mocks.stripe.invoices.list.mockResolvedValue({
+      data: headerOnly
+        ? [
+            paidInvoice(
+              "in_live_delete_portion",
+              fixture.customerId,
+              subscriptionId,
+              [ordinary],
+            ),
+            invoice,
+          ]
+        : [invoice],
+      has_more: false,
+    });
+    context.mocks.stripe.invoices.listLineItems
+      .mockResolvedValueOnce({ data: [ordinary], has_more: true })
+      .mockResolvedValueOnce({ data: [archived], has_more: false });
+    context.mocks.stripe.creditNotes.preview.mockResolvedValue(
+      creditNote("preview_mixed_archive", 200),
+    );
+    context.mocks.stripe.creditNotes.create.mockResolvedValue(
+      creditNote("cn_mixed_archive", 200),
+    );
+    await accept(requestOrgDeletion(), [200]);
+    expect(context.mocks.stripe.invoices.listLineItems).toHaveBeenCalledTimes(
+      2,
+    );
+    expect(context.mocks.stripe.creditNotes.create).toHaveBeenCalledOnce();
+    expect(context.mocks.stripe.creditNotes.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        invoice: headerOnly ? "in_live_delete_portion" : invoice.id,
+        amount: 200,
+        refund_amount: 200,
+      }),
+      expect.objectContaining({ idempotencyKey: expect.any(String) }),
+    );
+  },
+);
 
 test("refunds every paginated invoice line", async () => {
   const deletionTimestamp = 1_800_000_000;

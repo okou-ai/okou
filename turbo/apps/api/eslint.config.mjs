@@ -725,7 +725,6 @@ export default [
       // cancellation can reach a provider body that is still streaming; every
       // other reader contract stays on the Gmail preview endpoint.
       "src/signals/services/__tests__/morning-brief-connector-reader.service.test.ts",
-      "src/signals/services/__tests__/storage-write-phase2-reconciliation.service.test.ts",
       // Morning Brief composition reduces five providers to one bounded
       // request. The preview route can only exercise the sources an owner
       // has actually connected, so these exact byte, deadline, identity,
@@ -856,7 +855,6 @@ export default [
       // policy lookup byte-for-byte; individual provider routes cannot cover
       // every lookup-table row without duplicating the contract under test.
       "src/signals/services/__tests__/workflow-automation-context.test.ts",
-      "src/signals/services/__tests__/storage-write-phase2-reconciliation.service.test.ts",
       // Bounded job ownership needs row locks, expired leases, handler-version
       // skew and transaction rollback that callers cannot construct via HTTP.
       "src/signals/services/__tests__/background-job.service.test.ts",

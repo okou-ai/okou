@@ -124,7 +124,6 @@ import {
   setRunnerJobPiContextAsVersionedWriter,
 } from "./helpers/runtime-state";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
-import { seedUserSecret, seedUserVariable } from "./helpers/user-config-state";
 
 import { connectorAccountRoutes } from "../connector-accounts";
 import { connectorCheckRoutes } from "../connector-check";
@@ -5293,138 +5292,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
   }
   // oxlint-disable-next-line vitest/no-conditional-tests -- The entrypoint selects this group before collection.
   if (group === "connector-injection") {
-    describe("RUN-02: persisted run environment resolution", () => {
-      it("preserves scope precedence and excludes unreferenced secrets", async () => {
-        const bdd = createBddApi(context);
-        const api = createRunsApi(context);
-        const actor = bdd.user();
-        if (!actor.orgId) {
-          throw new Error("Expected persisted environment actor organization");
-        }
-        const orgActor = bdd.user({
-          userId: "__org__",
-          orgId: actor.orgId,
-          orgRole: "org:admin",
-        });
-        bdd.acceptAgentStorageWrites();
-        api.acceptStorageDownloads();
-        api.acceptTelemetryIngest();
-        api.configureRunnerGroup();
-        await api.grantProEntitlement(actor);
-
-        const suffix = randomUUID()
-          .replaceAll("-", "")
-          .slice(0, 8)
-          .toUpperCase();
-        const names = {
-          orgOnlyVariable: `BDD_ORG_ONLY_VARIABLE_${suffix}`,
-          userVariable: `BDD_USER_VARIABLE_${suffix}`,
-          requestVariable: `BDD_REQUEST_VARIABLE_${suffix}`,
-          orgOnlySecret: `BDD_ORG_ONLY_SECRET_${suffix}`,
-          userSecret: `BDD_USER_SECRET_${suffix}`,
-          requestSecret: `BDD_REQUEST_SECRET_${suffix}`,
-          unreferencedSecret: `BDD_UNREFERENCED_SECRET_${suffix}`,
-        };
-
-        const orgScope = { orgId: actor.orgId, userId: orgActor.userId };
-        const userScope = { orgId: actor.orgId, userId: actor.userId };
-
-        await seedUserVariable(context, {
-          ...orgScope,
-          name: names.orgOnlyVariable,
-          value: "org-only-variable-value",
-        });
-        await seedUserVariable(context, {
-          ...orgScope,
-          name: names.userVariable,
-          value: "org-user-variable-value",
-        });
-        await seedUserVariable(context, {
-          ...userScope,
-          name: names.userVariable,
-          value: "user-variable-value",
-        });
-        await seedUserVariable(context, {
-          ...orgScope,
-          name: names.requestVariable,
-          value: "org-request-variable-value",
-        });
-        await seedUserVariable(context, {
-          ...userScope,
-          name: names.requestVariable,
-          value: "user-request-variable-value",
-        });
-
-        await seedUserSecret(context, {
-          ...orgScope,
-          name: names.orgOnlySecret,
-          value: "org-only-secret-value",
-        });
-        await seedUserSecret(context, {
-          ...orgScope,
-          name: names.userSecret,
-          value: "org-user-secret-value",
-        });
-        await seedUserSecret(context, {
-          ...userScope,
-          name: names.userSecret,
-          value: "user-secret-value",
-        });
-        await seedUserSecret(context, {
-          ...orgScope,
-          name: names.requestSecret,
-          value: "org-request-secret-value",
-        });
-        await seedUserSecret(context, {
-          ...userScope,
-          name: names.requestSecret,
-          value: "user-request-secret-value",
-        });
-        await seedUserSecret(context, {
-          ...userScope,
-          name: names.unreferencedSecret,
-          value: "unreferenced-secret-value",
-        });
-
-        // Product Agents reference only platform values, so stored variables
-        // reach the run through its vars and stored secrets stay unreferenced.
-        await api.ensurePersonalSubscriptionModel(actor, NATIVE_RUNNER_ROUTE);
-        const agent = await bdd.createAgent(actor, {
-          displayName: "BDD persisted environment agent",
-          visibility: "private",
-        });
-        const run = await api.createThreadRun(actor, {
-          agentId: agent.agentId,
-          prompt: "resolve persisted environment",
-        });
-        const claim = await api.claimRunnerJob(run.runId);
-
-        expect(claim.vars).toMatchObject({
-          [names.orgOnlyVariable]: "org-only-variable-value",
-          [names.userVariable]: "user-variable-value",
-          [names.requestVariable]: "user-request-variable-value",
-        });
-        for (const storedSecret of [
-          "org-only-secret-value",
-          "org-user-secret-value",
-          "user-secret-value",
-          "org-request-secret-value",
-          "user-request-secret-value",
-          "unreferenced-secret-value",
-        ]) {
-          expect(claim.secretValues).not.toContain(storedSecret);
-          expect(Object.values(claim.environment ?? {})).not.toContain(
-            storedSecret,
-          );
-        }
-        expect(claim.environment).not.toHaveProperty(names.unreferencedSecret);
-
-        await api.requestCancelRun(actor, run.runId, [200]);
-        const cancelled = await api.readRun(actor, run.runId);
-        expect(cancelled.status).toBe("cancelled");
-      });
-    });
-
     describe("RUN-02: stored connector injection into claimed runs", () => {
       it("omits connected stored connectors when the agent run allowlist is empty", async () => {
         const oauth = createOrdinaryOAuthRunApi();
@@ -6227,19 +6094,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(cancelled.status).toBe("cancelled");
       });
 
-      it("ignores plain user secrets named like connector tokens", async () => {
+      it("omits an enabled connector that has no connected account", async () => {
         const api = createRunsApi(context);
         const { actor, agentId, runnerGroup } = await entitledRunActor();
 
-        // openai is enabled on the agent but never connected; a user secret with
-        // the connector's token name must not impersonate the connector.
+        // An enabled connector without an account must not expose credentials.
         await api.enableAgentConnectors(actor, agentId, ["openai"]);
-        await seedUserSecret(context, {
-          orgId: actor.orgId ?? "",
-          userId: actor.userId,
-          name: "OPENAI_TOKEN",
-          value: "sk-plain-user-secret",
-        });
 
         const run = await api.createThreadRun(actor, {
           agentId,
@@ -10193,12 +10053,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           subdomain: "münich",
         });
         await api.enableAgentConnectors(actor, agentId, ["zendesk"]);
-        await seedUserVariable(context, {
-          orgId: actor.orgId ?? "",
-          userId: actor.userId,
-          name: "ZENDESK_SUBDOMAIN",
-          value: "user-subdomain",
-        });
 
         // Built-in connector-owned vars must not leak into custom connector bases.
         const slug = `_bdd-vars-${randomUUID().slice(0, 8)}`;

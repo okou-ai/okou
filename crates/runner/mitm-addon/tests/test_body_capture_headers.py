@@ -120,7 +120,11 @@ class TestSanitizeHeadersForCapture:
             ("Content-Type", "secret-token/secret-token"),
             ("Content-Type", "application/x-secret-token"),
             ("Content-Type", "application/" + ("x" * 300)),
-            ("Content-Type", "application/x-secret-token; boundary=" + ("x" * 10_000)),
+            pytest.param(
+                "Content-Type",
+                "application/x-secret-token; boundary=" + ("x" * 10_000),
+                id="unsupported-type-with-large-parameter",
+            ),
             ("Content-Type", "application/json\r\n"),
             ("Content-Length", "secret-token"),
             ("Content-Length", "1" * 20),

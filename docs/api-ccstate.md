@@ -12,9 +12,10 @@ atoms to three.
 The general ccstate rules live in the [ccstate skill](../.claude/skills/ccstate/SKILL.md)
 and its [command reference](../.claude/skills/ccstate/references/commands.md).
 This document adds API-specific guidance for per-request and per-claim graphs.
-The database ownership and signal-parameter restrictions below are stricter than
-patterns permitted by the general command reference; apply these API rules when
-building API graphs.
+The database ownership, transaction, and signal-parameter restrictions below
+are stricter than patterns permitted by the general command reference and
+[database development guidance](../.claude/skills/database-development/SKILL.md).
+Apply these stricter API rules when building API graphs.
 
 The central rule is:
 
@@ -41,7 +42,8 @@ The target shape is:
    runtime objects, or hidden behind callbacks and escaping closures.
 2. Prefer one atomic SQL statement with a conditional `UPDATE ... WHERE`,
    `INSERT ... ON CONFLICT`, or a CTE, backed by the actual business unique key.
-   Keep only necessary short, lightweight transactions inside their owning
+   Do not add new transactions except for necessary billing-related atomicity.
+   Keep allowed billing transactions short and lightweight inside their owning
    command callbacks, with no `tx` escape.
 3. Each file exposes a small public computed/command surface for business
    operations. Read-only computed dependencies may be passed to a computed
@@ -247,26 +249,49 @@ runtime objects, handles copied into state, and callbacks or returned closures
 that hide access to them. Reads obtain `get(db$)` inside their node; writes obtain
 `set(writeDb$)` inside their command.
 
-A single SQL statement is already atomic. Remove its transaction wrapper. Remove
-read-only transactions unless a consistent multi-statement snapshot or
-transaction-local setting is part of the contract. Prefer conditional writes,
-upserts, business-key uniqueness, and gated CTEs over read-then-write in
-application code. Preserve authorization, idempotency, returned outcomes,
-snapshot and clock boundaries, and material query cost; fewer transaction call
-sites alone do not prove correctness.
+Do not introduce new explicit database transactions except for necessary
+billing-related atomicity. The exception is limited to operations that directly
+protect financial correctness, such as charges, refunds, credit or balance
+accounting, and usage settlement. All new non-billing transactions are
+prohibited, even for short multi-statement writes, consistent read snapshots,
+or transaction-local settings.
 
-When multiple statements must commit together and one statement cannot preserve
-the invariant, keep a short, lightweight transaction inside one owning command.
+This rule covers ORM and driver transactions, handwritten SQL transaction
+boundaries, and new execution paths through transaction-opening helpers.
+Aliases, wrappers, or nested transactions do not create an exemption. Existing
+non-billing transactions are cleanup work, not patterns to copy or extend into
+new operations.
+
+Billing is not a blanket exemption. Document the financial invariant and why a
+simpler atomic SQL operation cannot reasonably preserve it. A billing filename,
+Stripe integration, or paid-entitlement check alone does not justify a
+transaction. Do not include unrelated application writes in a billing
+transaction.
+
+A single SQL statement is already atomic. Remove its transaction wrapper, even
+for billing. Remove read-only transactions unless a demonstrated necessary
+billing snapshot or transaction-local setting requires them. Prefer conditional
+writes, upserts, business-key uniqueness, atomic arithmetic, and gated CTEs over
+read-then-write in application code. Preserve authorization, idempotency,
+returned outcomes, snapshot and clock boundaries, and material query cost;
+fewer transaction call sites alone do not prove correctness.
+
+When a billing invariant requires multiple statements to commit together and
+one statement cannot reasonably preserve it, keep a short, lightweight
+transaction inside one owning command. A necessary billing snapshot or
+transaction-local setting must meet the same documented necessity requirement.
 Use `tx` only in that transaction callback and write its database statements
 inline. Never pass it to a helper or sub-command, capture it in a returned
-closure, or store it. Do not run external I/O such as fetch, KMS, S3, or Ably
-inside the transaction: prepare before it and publish after it. Do not split one
-atomic business operation into independently committing sub-commands merely to
-remove `tx` parameters.
+closure, or store it. Do not run external I/O such as fetch, Stripe, KMS, S3, or
+Ably inside the transaction: prepare before it and publish after it. Do not
+split one atomic business operation into independently committing sub-commands
+merely to remove a transaction or `tx` parameters; use a transaction-free design
+that preserves its required guarantees instead.
 
 Shared transaction logic becomes pure builders that return values, conditions,
-or SQL fragments, never functions that execute queries. Document the invariant
-or transaction-local setting that requires each remaining transaction. Follow
+or SQL fragments, never functions that execute queries. Document the financial
+invariant, billing snapshot, or billing transaction-local setting that requires
+each remaining billing transaction. Follow
 [query contracts](../.claude/skills/database-development/references/query-contracts.md)
 for SQL rewrites; do not add locks, retries, or timeouts to compensate for a
 changed transaction boundary.
@@ -313,8 +338,10 @@ Answer these questions when you add or review an API ccstate node:
    nodes. Read-only computed factory inputs are allowed only when connected
    during owning-graph construction, without hiding handles or rebuilding graphs.
 7. **Can one conditional statement or business-key upsert preserve the write?**
-   Prefer it. Otherwise, name the invariant or local setting requiring a short
-   transaction and keep all its SQL inside one command's transaction callback.
+   Prefer it, including for billing. Do not add a non-billing transaction. For a
+   necessary billing transaction, document its financial invariant, snapshot,
+   or local setting and why a simpler atomic SQL operation is insufficient.
+   Keep all its SQL inside one command's transaction callback.
 8. **Does the public surface expose implementation steps?** Keep them private;
    export only the necessary business queries and commands.
 

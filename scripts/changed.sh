@@ -95,13 +95,15 @@ cd "$REPO_ROOT/turbo"
 # Resolve once, then invoke the same binary with the inherited PATH in both
 # worktrees. npx injects cwd-specific PATH entries, which globalEnv hashes.
 # Skip version inference so a worktree-local install cannot change the tool.
-if TURBO_BIN=$(npx -y turbo@^2.5.6 --skip-infer bin 2>"$TEMP_DIR/current.stderr"); then
+# Pin registry resolution so the dedicated npm cache can serve warm runs.
+TURBO_VERSION=2.11.7
+if TURBO_BIN=$(npx -y "turbo@${TURBO_VERSION}" --skip-infer bin 2>"$TEMP_DIR/current.stderr"); then
   :
 else
   status=$?
   printf '%s' "$TURBO_BIN" >"$TEMP_DIR/current.json"
   report_hash_failure current "$CURRENT_COMMIT" "$status" "Turbo executable resolution failed" \
-    'npx -y turbo@^2.5.6 --skip-infer bin'
+    "npx -y turbo@${TURBO_VERSION} --skip-infer bin"
   exit "$status"
 fi
 CURRENT_HASHES=$(calculate_hashes current "$CURRENT_COMMIT")

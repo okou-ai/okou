@@ -118,7 +118,6 @@ import {
   PI_SESSION_CONSTRUCTION_DIGEST,
 } from "@okouai/pi-agent-runtime";
 import { and, eq, isNull } from "drizzle-orm";
-import { parseRawRows } from "../../lib/db-raw-rows";
 import { env, optionalEnv } from "../../lib/env";
 import { piModelConfigObservation } from "../../lib/pi-model-config-observation";
 import { getDatasetName, ingestToAxiom } from "../external/axiom";
@@ -131,11 +130,6 @@ import {
   loadOrgPlanCapabilities$,
   type OrgPlanCapabilities,
 } from "./org-plan-entitlement-read.service";
-import {
-  allowanceSnapshotSchema,
-  pendingRunAllowancePlan,
-  pendingRunAllowanceWindowsPlan,
-} from "./pending-launch-allowance-plan";
 import { personalSubscriptionAccountIdentity } from "./personal-subscription-recovery.service";
 import {
   PiMemoryPhase2CredentialError,
@@ -165,12 +159,6 @@ import {
   type RunContextAxiomSnapshot,
 } from "./run-context-snapshot.service";
 import { runnerJobQueueTimestamps } from "./runner-job-queue-lifecycle.service";
-import { requireRunAllowanceWindowPair } from "./usage-allowance-run-plan";
-import { entitlementQuery } from "./usage-allowance-settlement-plan";
-import {
-  prepareUsageAllowanceRefresh$,
-  type PreparedUsageAllowanceRefresh,
-} from "./usage-allowance.service";
 
 const log = logger("PiMemoryMaintenanceExecution");
 
@@ -810,7 +798,6 @@ interface MaintenanceCommitInput {
   readonly selectionDigest: string;
   readonly record: MaintenanceRunRecord;
   readonly launch: MaintenanceLaunch;
-  readonly allowanceRefresh: PreparedUsageAllowanceRefresh | undefined;
   readonly planCapabilities: OrgPlanCapabilities | null;
   readonly timing: ApiDispatchTimingCollector;
 }
@@ -828,7 +815,7 @@ const persistMaintenanceRun$ = command(
     signal: AbortSignal,
   ): Promise<Omit<CommittedMaintenanceRun, "transactionReturnedAt">> => {
     const db = set(writeDb$);
-    const { job, record } = args;
+    const { record } = args;
     const admissionTiming = maintenanceAdmissionTiming(args);
     return db.transaction(async (tx) => {
       admissionTiming.transactionStarted();
@@ -924,28 +911,6 @@ const persistMaintenanceRun$ = command(
         throw new Error(
           "Pi memory Phase 2 maintenance run lost its claim fence",
         );
-      }
-      if (isBuiltInModelProviderType(record.modelProvider.type)) {
-        const activation = maintenanceAllowanceInput(args, createdAt);
-        const [owned] = await tx.select().from(entitlementQuery(job.orgId));
-        const planned = pendingRunAllowancePlan(owned, activation, nowDate());
-        const [published] = planned.publication
-          ? parseRawRows(
-              allowanceSnapshotSchema,
-              await tx.execute(planned.publication),
-            )
-          : [];
-        const windows = pendingRunAllowanceWindowsPlan(
-          planned,
-          activation,
-          published,
-        );
-        if (windows) {
-          await tx.execute(windows.insert);
-          requireRunAllowanceWindowPair(
-            await tx.select().from(windows.windows),
-          );
-        }
       }
       // The unique active-run insert stays the final statement.
       await tx
@@ -1144,8 +1109,8 @@ const launchMaintenanceRun$ = command(
       credential: admitted.credential,
       storedImageModel: member.preferences?.selectedImageModel,
     });
-    // Launch preparation and the built-in allowance refresh read run
-    // together outside the transaction; either failure records the failed run.
+    // Launch preparation and plan capability reads run together outside
+    // the transaction; either failure records the failed run.
     const prepared = await settle(
       Promise.all([
         set(
@@ -1166,9 +1131,6 @@ const launchMaintenanceRun$ = command(
           signal,
         ),
         isBuiltInModelProviderType(modelProvider.type)
-          ? set(prepareUsageAllowanceRefresh$, { orgId: job.orgId })
-          : undefined,
-        isBuiltInModelProviderType(modelProvider.type)
           ? set(loadOrgPlanCapabilities$, job.orgId)
           : null,
       ]),
@@ -1181,14 +1143,13 @@ const launchMaintenanceRun$ = command(
         signal,
       );
     }
-    const [launch, allowanceRefresh, planCapabilities] = prepared.value;
+    const [launch, planCapabilities] = prepared.value;
     const commitInput = {
       job,
       credential: admitted.credential,
       selectionDigest,
       record,
       launch,
-      allowanceRefresh,
       planCapabilities,
       timing,
     };
@@ -1659,18 +1620,6 @@ function maintenanceBindingPlan(
       maintenanceBindingInput(args),
       fenceAt,
     ),
-  };
-}
-
-function maintenanceAllowanceInput(
-  args: MaintenanceCommitInput,
-  runCreatedAt: Date,
-) {
-  return {
-    orgId: args.job.orgId,
-    runId: args.record.runId,
-    runCreatedAt,
-    refresh: args.allowanceRefresh,
   };
 }
 

@@ -110,11 +110,25 @@ jobs:
           echo "base-ref=${BASE_REF}" >> "$GITHUB_OUTPUT"
           echo "Base ref: ${BASE_REF}"
 
+      # Cache only the hashing tool, not the CLI's much larger pnpm store.
+      # The script hash rotates the key whenever its pinned Turbo changes.
+      - name: Cache Turbo executable
+        id: turbo-cache
+        if: steps.identity.outputs.release-skip != 'true'
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        with:
+          path: |
+            ${{ runner.temp }}/runner-image-turbo-npm/_cacache
+            ${{ runner.temp }}/runner-image-turbo-npm/_npx
+          key: runner-image-turbo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/changed.sh') }}
+
       - name: Detect Turbo and Playwright runner image consumers
         id: turbo
         if: steps.identity.outputs.release-skip != 'true'
         env:
           BASE_REF: ${{ steps.base.outputs.base-ref }}
+          npm_config_cache: ${{ runner.temp }}/runner-image-turbo-npm
+          npm_config_prefer_offline: "true"
         run: |
           set -euo pipefail
           CHANGES_JSON=$(./scripts/changed.sh "$BASE_REF")

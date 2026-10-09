@@ -74,17 +74,13 @@ import {
   deleteOrphanedWorkflowVolume$,
   deleteWorkflow$,
 } from "../services/workflow-delete.service";
-import {
-  clerk$,
-  clerkRateLimit,
-  clerkReadUnavailable,
-} from "../external/clerk";
-import { loadWorkflowOwnerProfile } from "../services/workflow-owner-profile.service";
+import { clerkRateLimit, clerkReadUnavailable } from "../external/clerk";
+import { loadWorkflowOwnerProfile$ } from "../services/workflow-owner-profile.service";
 import { workflowDetail$ } from "../services/workflow-detail.service";
 import {
   ensureWorkflowUserAutomationThread$,
   prepareWorkflowUserAutomationThread$,
-  loadWorkflowUserAutomationThreadId,
+  loadWorkflowUserAutomationThreadId$,
 } from "../services/workflow-user-automation-thread.service";
 import { updateWorkflow$ } from "../services/workflow-update.service";
 import { createUserMessageDocument } from "../services/chat-user-message.service";
@@ -103,7 +99,8 @@ import { reconcileGoogleCalendarWatchesForUser$ } from "../services/google-calen
 import { reconcileGoogleFormsWatchesForUser$ } from "../services/google-forms-automation-watch.service";
 import { reconcileGoogleMeetSubscriptionsForUser$ } from "../services/google-meet-automation-watch.service";
 import {
-  loadVisibleWorkflowById,
+  loadVisibleWorkflowById$,
+  type VisibleWorkflow,
   visibleWorkflowCondition,
   requireWorkflowPermission,
   workflowSummary,
@@ -637,11 +634,15 @@ const createWorkflowInner$ = command(
     if (inserted.kind === "error") {
       return inserted.response;
     }
-    const visible = await loadVisibleWorkflowById(set(writeDb$), {
-      orgId: auth.orgId,
-      member,
-      workflowId: inserted.workflowId,
-    });
+    const visible = await set(
+      loadVisibleWorkflowById$,
+      {
+        orgId: auth.orgId,
+        member,
+        workflowId: inserted.workflowId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if (!visible) {
       throw new Error(`Created workflow not found: ${inserted.workflowId}`);
@@ -660,24 +661,22 @@ const getWorkflowOwnerProfileInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
     const params = get(pathParamsOf(workflowsDetailContract.ownerProfile));
-    const db = set(writeDb$);
-    const visible = await loadVisibleWorkflowById(db, {
-      orgId: auth.orgId,
-      member: memberFromAuth(auth),
-      workflowId: params.workflowId,
-    });
+    const visible = await set(
+      loadVisibleWorkflowById$,
+      {
+        orgId: auth.orgId,
+        member: memberFromAuth(auth),
+        workflowId: params.workflowId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if (!visible) {
       return workflowNotFound(params.workflowId);
     }
     set(setResHeader$, "Cache-Control", "no-store");
     const result = await settle(
-      loadWorkflowOwnerProfile(
-        db,
-        get(clerk$),
-        visible.workflow.ownerUserId,
-        signal,
-      ),
+      set(loadWorkflowOwnerProfile$, visible.workflow.ownerUserId, signal),
       signal,
     );
     if (!result.ok) {
@@ -744,12 +743,15 @@ const updateWorkflowInner$ = command(
       return bodyResult.response;
     }
 
-    const writeDb = set(writeDb$);
-    const visible = await loadVisibleWorkflowById(writeDb, {
-      orgId: auth.orgId,
-      member,
-      workflowId: params.workflowId,
-    });
+    const visible = await set(
+      loadVisibleWorkflowById$,
+      {
+        orgId: auth.orgId,
+        member,
+        workflowId: params.workflowId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if (!visible) {
       return workflowNotFound(params.workflowId);
@@ -833,12 +835,15 @@ const deleteWorkflowInner$ = command(
     const member = memberFromAuth(auth);
     const params = get(pathParamsOf(workflowsDetailContract.delete));
 
-    const writeDb = set(writeDb$);
-    const visible = await loadVisibleWorkflowById(writeDb, {
-      orgId: auth.orgId,
-      member,
-      workflowId: params.workflowId,
-    });
+    const visible = await set(
+      loadVisibleWorkflowById$,
+      {
+        orgId: auth.orgId,
+        member,
+        workflowId: params.workflowId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if (!visible) {
       return workflowNotFound(params.workflowId);
@@ -1011,7 +1016,7 @@ function copiedWorkflowVolumeInput(
 }
 
 function copiedWorkflowResponse(
-  visible: Awaited<ReturnType<typeof loadVisibleWorkflowById>>,
+  visible: VisibleWorkflow | null,
   member: WorkflowMember,
   workflowId: string,
 ) {
@@ -1315,12 +1320,15 @@ const prepareWorkflowChatThreadInner$ = command(
     const member = memberFromAuth(auth);
     const params = get(pathParamsOf(workflowsDetailContract.chatThread));
 
-    const writeDb = set(writeDb$);
-    const visible = await loadVisibleWorkflowById(writeDb, {
-      orgId: auth.orgId,
-      member,
-      workflowId: params.workflowId,
-    });
+    const visible = await set(
+      loadVisibleWorkflowById$,
+      {
+        orgId: auth.orgId,
+        member,
+        workflowId: params.workflowId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if (!visible) {
       return workflowNotFound(params.workflowId);
@@ -1364,12 +1372,15 @@ const runWorkflowInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const member = memberFromAuth(auth);
   const params = get(pathParamsOf(workflowsDetailContract.run));
 
-  const writeDb = set(writeDb$);
-  const visible = await loadVisibleWorkflowById(writeDb, {
-    orgId: auth.orgId,
-    member,
-    workflowId: params.workflowId,
-  });
+  const visible = await set(
+    loadVisibleWorkflowById$,
+    {
+      orgId: auth.orgId,
+      member,
+      workflowId: params.workflowId,
+    },
+    signal,
+  );
   signal.throwIfAborted();
   if (!visible) {
     return workflowNotFound(params.workflowId);
@@ -1390,11 +1401,15 @@ const runWorkflowInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     "api_dispatch_pre_create_agent_workflow_slash_load_thread_mapping",
     "nested",
     async () => {
-      return await loadWorkflowUserAutomationThreadId(writeDb, {
-        orgId: auth.orgId,
-        userId: auth.userId,
-        workflowId: workflow.id,
-      });
+      return await set(
+        loadWorkflowUserAutomationThreadId$,
+        {
+          orgId: auth.orgId,
+          userId: auth.userId,
+          workflowId: workflow.id,
+        },
+        signal,
+      );
     },
   );
   signal.throwIfAborted();

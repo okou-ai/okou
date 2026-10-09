@@ -16,6 +16,26 @@ use crate::workspace_image_cache::{
 use runner_host::paths::RunnerPaths;
 use runner_types::ids::RunId;
 
+pub fn add_healthy_cache_preparation_matcher(overrides: &sandbox_mock::MockSandboxOverrides) {
+    overrides.add_persistent_exec_matcher(sandbox_mock::ExecMatcher {
+        pattern: "prepare-for-cache".to_string(),
+        exit_code: 0,
+        stdout: serde_json::to_vec(
+            &crate::idle_reuse_preparation::healthy_reuse_preparation_report(),
+        )
+        .unwrap(),
+        stderr: Vec::new(),
+    });
+}
+
+pub fn mock_sandbox_ready_for_cache_preparation(
+    name: impl Into<String>,
+) -> sandbox_mock::MockSandbox {
+    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    add_healthy_cache_preparation_matcher(&overrides);
+    sandbox_mock::MockSandbox::with_overrides(name, overrides)
+}
+
 pub const TEST_COMPLETED_AT: &str = "2026-06-03T00:00:00.000Z";
 const TEST_WORKSPACE_IMAGE: &[u8] = b"workspace image";
 pub const TEST_WORKSPACE_IMAGE_SIZE_BYTES: u64 = TEST_WORKSPACE_IMAGE.len() as u64;
