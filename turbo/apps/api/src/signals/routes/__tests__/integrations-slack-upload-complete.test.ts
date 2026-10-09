@@ -49,6 +49,7 @@ import { integrationsSlackUploadCompleteRoutes } from "../integrations-slack-upl
 import { integrationsSlackUploadInitRoutes } from "../integrations-slack-upload-init";
 import { integrationsSlackUploadMaterializeRoutes } from "../integrations-slack-upload-materialize";
 import { chatThreadsArtifactsSyncRoutes } from "../chat-threads-artifacts-sync";
+import { artifactGoogleDriveContract } from "@okouai/api-contracts/contracts/artifact-google-drive";
 
 type CompletedChatEvent = Extract<ChatEvent, { eventType: "run.completed" }>;
 
@@ -625,9 +626,14 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
     expect(context.mocks.slack.conversations.open).toHaveBeenCalledTimes(1);
   });
 
-  it.each([false, true])(
-    "keeps one canonical output across Slack and Drive after a flag change (private=%s)",
-    async (privateFiles) => {
+  it.each([
+    { privateFiles: false, artifactUpload: false },
+    { privateFiles: true, artifactUpload: false },
+    { privateFiles: false, artifactUpload: true },
+    { privateFiles: true, artifactUpload: true },
+  ])(
+    "keeps one canonical output across Slack and Drive after a flag change (private=$privateFiles, artifactUpload=$artifactUpload)",
+    async ({ privateFiles, artifactUpload }) => {
       const { orgId, userId, runId, threadId, runnerGroup, agentId } =
         await seedRunScoped();
       await updateFeatureSwitchesForUser(
@@ -885,6 +891,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
 
       const driveFolders: DriveFolderFixture[] = [];
       const driveUploadBodies: string[] = [];
+      const driveContentBodies: string[] = [];
       const driveUploadContentTypes: (string | null)[] = [];
       const driveUploadSessionUrl =
         "https://www.googleapis.com/upload/drive/v3/files/resumable-session";
@@ -937,7 +944,8 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
             });
           },
         ),
-        http.put(driveUploadSessionUrl, () => {
+        http.put(driveUploadSessionUrl, async ({ request }) => {
+          driveContentBodies.push(await request.text());
           return HttpResponse.json({
             id: "drive-canonical-asset",
             name: "report.csv",
@@ -1018,39 +1026,207 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
         }),
       ).toBeTruthy();
 
-      const claim = await claimRun(runnerGroup, runId);
-      await completeRun({
-        runId,
-        sandboxToken: claim.sandboxToken,
-        events: [assistantEvent(0, "The canonical report is ready.")],
-        lastEventSequence: 0,
-      });
+      if (!artifactUpload) {
+        const claim = await claimRun(runnerGroup, runId);
+        await completeRun({
+          runId,
+          sandboxToken: claim.sandboxToken,
+          events: [assistantEvent(0, "The canonical report is ready.")],
+          lastEventSequence: 0,
+        });
 
-      const messages = await chatApi.listThreadEvents(
-        actorFor({ orgId, userId }),
+        const messages = await chatApi.listThreadEvents(
+          actorFor({ orgId, userId }),
+          threadId,
+        );
+        const finalReply = messages.events.find((message) => {
+          return (
+            message.eventType === "output.message" &&
+            message.content === "The canonical report is ready."
+          );
+        });
+        expect(finalReply).toBeDefined();
+        expect(finalReply).not.toHaveProperty("attachFiles");
+
+        const lifecycleMarker = messages.events.find(
+          (message): message is CompletedChatEvent => {
+            return (
+              message.eventType === "run.completed" &&
+              message.runId === runId &&
+              message.runLifecycleEvent === "completed"
+            );
+          },
+        );
+        expect(lifecycleMarker).toBeDefined();
+        expect(lifecycleMarker?.content).toBeNull();
+        expect(lifecycleMarker).not.toHaveProperty("attachFiles");
+        return;
+      }
+
+      const actor = actorFor({ orgId, userId });
+      const accounts = await connectorsApi.listBuiltinConnectorAccounts(
+        actor,
+        "google-drive",
+      );
+      const selectedAccount = accounts[0];
+      if (!selectedAccount) {
+        throw new Error("Expected the connected Google Drive account");
+      }
+      const resolvedArtifacts = await chatApi.listThreadArtifacts(
+        actor,
         threadId,
       );
-      const finalReply = messages.events.find((message) => {
-        return (
-          message.eventType === "output.message" &&
-          message.content === "The canonical report is ready."
-        );
-      });
-      expect(finalReply).toBeDefined();
-      expect(finalReply).not.toHaveProperty("attachFiles");
-
-      const lifecycleMarker = messages.events.find(
-        (message): message is CompletedChatEvent => {
-          return (
-            message.eventType === "run.completed" &&
-            message.runId === runId &&
-            message.runLifecycleEvent === "completed"
-          );
-        },
+      expect(
+        resolvedArtifacts.runs.flatMap((group) => group.files),
+      ).toContainEqual(
+        expect.objectContaining({
+          id: canonicalAssetId,
+          artifactId: catalogEntry.id,
+          googleDriveConnectionId: selectedAccount.id,
+        }),
       );
-      expect(lifecycleMarker).toBeDefined();
-      expect(lifecycleMarker?.content).toBeNull();
-      expect(lifecycleMarker).not.toHaveProperty("attachFiles");
+      const uploadClient = setupApp({
+        context,
+        routes: chatThreadsArtifactsSyncRoutes,
+      })(artifactGoogleDriveContract);
+      const destination = await chatApi.sendAndLaunch(actor, {
+        agentId,
+        prompt: "Upload an existing artifact from another conversation",
+        model: "claude-fable-5-1",
+      });
+      expect(destination.threadId).not.toBe(threadId);
+      const uploaded = await accept(
+        uploadClient.upload({
+          headers: {
+            authorization: `Bearer ${okouToken({ userId, orgId, runId: destination.runId, capabilities: ["file:write"] })}`,
+          },
+          params: { artifactId: catalogEntry.id },
+          body: { agentId, connectionId: selectedAccount.id },
+        }),
+        [200],
+      );
+      expect(uploaded.body.name).toBe("report.csv");
+      expect(driveUploadBodies.at(-1)).toContain(
+        `"okouArtifactId":"${catalogEntry.id}"`,
+      );
+      expect(driveContentBodies.at(-1)).toBe("a".repeat(42));
+
+      mocks.clerk.session(userId, orgId);
+      const uploadRequest = {
+        headers: { authorization: "Bearer clerk-session" },
+        params: { artifactId: catalogEntry.id },
+        body: { agentId, connectionId: selectedAccount.id },
+      };
+      context.mocks.clerk.authenticateRequest.mockResolvedValue({
+        isAuthenticated: false,
+      });
+      await accept(
+        uploadClient.upload({ ...uploadRequest, headers: {} }),
+        [401],
+      );
+      mocks.clerk.session(userId, orgId);
+      await accept(
+        uploadClient.upload({
+          ...uploadRequest,
+          params: { artifactId: "not-an-artifact-id" },
+        }),
+        [400],
+      );
+      await accept(
+        uploadClient.upload({
+          ...uploadRequest,
+          params: { artifactId: randomUUID() },
+        }),
+        [404],
+      );
+      await accept(
+        uploadClient.upload({
+          ...uploadRequest,
+          body: { ...uploadRequest.body, agentId: randomUUID() },
+        }),
+        [400],
+      );
+      await accept(
+        uploadClient.upload({
+          ...uploadRequest,
+          body: { ...uploadRequest.body, connectionId: randomUUID() },
+        }),
+        [400],
+      );
+      await accept(
+        uploadClient.upload({
+          ...uploadRequest,
+          headers: {
+            authorization: `Bearer ${okouToken({ userId, orgId, runId: destination.runId, capabilities: [] })}`,
+          },
+        }),
+        [403],
+      );
+      const otherAgent = await bdd.createAgent(actor, {
+        displayName: "Unauthorized upload Agent",
+      });
+      await runsApi.enableAgentConnectors(actor, otherAgent.agentId, [
+        "google-drive",
+      ]);
+      await accept(
+        uploadClient.upload({
+          ...uploadRequest,
+          headers: {
+            authorization: `Bearer ${okouToken({ userId, orgId, runId: destination.runId, capabilities: ["file:write"] })}`,
+          },
+          body: { ...uploadRequest.body, agentId: otherAgent.agentId },
+        }),
+        [400],
+      );
+      const foreignActor = actorFor({
+        orgId,
+        userId: "user_foreign_drive_account",
+      });
+      const foreignOauth = await connectorsApi.startOauth(
+        foreignActor,
+        "google-drive",
+        "oauth",
+      );
+      await connectorsApi.completeOauthCallback("google-drive", {
+        code: "foreign-drive-account",
+        state: authorizationState(foreignOauth.authorizationUrl),
+      });
+      const [foreignAccount] = await connectorsApi.listBuiltinConnectorAccounts(
+        foreignActor,
+        "google-drive",
+      );
+      if (!foreignAccount) {
+        throw new Error("Expected the other user's Drive account");
+      }
+      mocks.clerk.session(userId, orgId);
+      await accept(
+        uploadClient.upload({
+          ...uploadRequest,
+          body: { ...uploadRequest.body, connectionId: foreignAccount.id },
+        }),
+        [400],
+      );
+      expect(driveUploadBodies).toHaveLength(4);
+
+      // Artifact access does not depend on keeping its source conversation.
+      await chatApi.deleteThread(actor, threadId);
+      mocks.clerk.session(userId, orgId);
+      const detachedUpload = await accept(
+        uploadClient.upload(uploadRequest),
+        [200],
+      );
+      expect(detachedUpload.body.name).toBe("report.csv");
+      expect(driveContentBodies.at(-1)).toBe("a".repeat(42));
+      expect(driveUploadBodies.at(-1)).toContain(
+        `"okouArtifactId":"${catalogEntry.id}"`,
+      );
+      expect(driveUploadBodies.at(-1)).not.toContain("vm0ThreadId");
+
+      mocks.clerk.session("user_foreign_artifact_owner", orgId);
+      await accept(uploadClient.upload(uploadRequest), [404]);
+      mocks.clerk.session(userId, "org_foreign_artifact_owner");
+      await accept(uploadClient.upload(uploadRequest), [404]);
+      expect(driveUploadBodies).toHaveLength(5);
     },
     20_000,
   );

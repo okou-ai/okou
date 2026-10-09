@@ -1,4 +1,5 @@
 import { QueryBuilder } from "drizzle-orm/pg-core";
+import { artifacts } from "@okouai/db/schema/artifact";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { command, computed, type Computed } from "ccstate";
 import {
@@ -544,6 +545,7 @@ function chatThreadArtifactRows(args: {
     return await db
       .select({
         assetId: runUploadedFiles.id,
+        artifactId: artifacts.id,
         assetVersion: runUploadedFiles.assetVersion,
         runId: runUploadedFiles.runId,
         externalId: runUploadedFiles.externalId,
@@ -561,6 +563,14 @@ function chatThreadArtifactRows(args: {
         createdAt: runUploadedFiles.createdAt,
       })
       .from(runUploadedFiles)
+      .leftJoin(
+        artifacts,
+        and(
+          eq(artifacts.projectionFileId, runUploadedFiles.id),
+          eq(artifacts.orgId, runUploadedFiles.orgId),
+          eq(artifacts.authorUserId, args.userId),
+        ),
+      )
       .where(
         and(
           eq(runUploadedFiles.userId, args.userId),
@@ -631,6 +641,7 @@ export function chatThreadArtifacts(args: {
           row.accessLevel === "published";
         existing.files.push({
           id: canonical ? row.assetId : row.externalId,
+          ...(row.artifactId ? { artifactId: row.artifactId } : {}),
           filename,
           contentType: row.contentType ?? inferMimetype(filename),
           size: row.sizeBytes ?? 0,

@@ -60,6 +60,10 @@ import { loadConnectorRuntimeAuthSelection } from "./connector-catalog-slug-sour
 import { userFeatureSwitchOverrides } from "./feature-switches.service";
 import { resolveArtifactFileReference$ } from "./private-artifact-storage.service";
 import { uploadedArtifactObject$ } from "./uploaded-artifact.service";
+import {
+  ownedGoogleDriveArtifact$,
+  artifactGoogleDriveAccount$,
+} from "./artifact-google-drive-authorization.service";
 
 const GOOGLE_DRIVE_FILES_URL = "https://www.googleapis.com/drive/v3/files";
 const GOOGLE_DRIVE_UPLOAD_URL =
@@ -74,6 +78,7 @@ const GOOGLE_DRIVE_ARTIFACT_APP_PROPERTY = "vm0Artifact";
 const GOOGLE_DRIVE_THREAD_APP_PROPERTY = "vm0ThreadId";
 const GOOGLE_DRIVE_RUN_APP_PROPERTY = "vm0RunId";
 const GOOGLE_DRIVE_FILE_APP_PROPERTY = "vm0FileId";
+const GOOGLE_DRIVE_CATALOG_ARTIFACT_APP_PROPERTY = "okouArtifactId";
 const GOOGLE_DRIVE_ACCESS_TOKEN_ENVIRONMENT_NAME = "GOOGLE_DRIVE_TOKEN";
 
 const driveFileSchema = z.object({
@@ -93,13 +98,15 @@ interface DriveSyncResult {
 type DriveStatusLookup =
   | {
       readonly type: "ready";
+      readonly connectionId?: string;
       readonly syncedByKey: ReadonlyMap<string, DriveSyncResult>;
     }
   | {
       readonly type: "disconnected";
+      readonly connectionId?: string;
       readonly recovery: ChatThreadArtifactGoogleDriveRecovery;
     }
-  | { readonly type: "unknown" };
+  | { readonly type: "unknown"; readonly connectionId?: string };
 
 interface ConnectorTokens {
   readonly accessToken: string;
@@ -227,16 +234,18 @@ const loadDriveConnection$ = command(
       readonly featureSwitchContext: FeatureSwitchContext;
       readonly orgId: string;
       readonly snapshot: ConnectorRuntimeAuthLookup;
-      readonly threadId: string;
       readonly userId: string;
-    },
+    } & ({ readonly threadId: string } | { readonly connectorId: string }),
     signal: AbortSignal,
   ): Promise<DriveConnectionLoadResult> => {
-    const resolution = await set(resolveDriveConnectorAccount$, {
-      orgId: args.orgId,
-      userId: args.userId,
-      threadId: args.threadId,
-    });
+    const resolution: DriveConnectorAccountResolution =
+      "connectorId" in args
+        ? { type: "resolved", connectorId: args.connectorId }
+        : await set(resolveDriveConnectorAccount$, {
+            orgId: args.orgId,
+            userId: args.userId,
+            threadId: args.threadId,
+          });
     signal.throwIfAborted();
     if (resolution.type !== "resolved") {
       return {
@@ -469,12 +478,18 @@ export function applyGoogleDriveArtifactSyncStatuses(
   runs: readonly ChatThreadArtifactRun[],
   lookup: DriveStatusLookup,
 ): ChatThreadArtifactRun[] {
+  const connectionId =
+    lookup.connectionId ??
+    (lookup.type === "disconnected" && "connectionId" in lookup.recovery
+      ? lookup.recovery.connectionId
+      : undefined);
   return runs.map((run) => {
     return {
       ...run,
       files: run.files.map((file) => {
         return {
           ...file,
+          ...(connectionId ? { googleDriveConnectionId: connectionId } : {}),
           googleDriveSync: resolveGoogleDriveArtifactSyncStatus(
             lookup,
             run.runId,
@@ -542,6 +557,7 @@ export function googleDriveArtifactStatusLookup(args: {
     if (!authorized) {
       return {
         type: "disconnected",
+        connectionId: connection.tokens.connection.connectorId,
         recovery: { action: "authorize" },
       };
     }
@@ -567,11 +583,8 @@ export function googleDriveArtifactStatusLookup(args: {
       ),
     );
     signal.throwIfAborted();
-    if (files === undefined) {
-      return { type: "unknown" };
-    }
-    if (files === "unauthorized") {
-      return { type: "unknown" };
+    if (files === undefined || files === "unauthorized") {
+      return { type: "unknown", connectionId: tokens.connection.connectorId };
     }
     if (files === "reconnect-required") {
       return {
@@ -582,7 +595,11 @@ export function googleDriveArtifactStatusLookup(args: {
         },
       };
     }
-    return { type: "ready", syncedByKey: buildStatusMap(files) };
+    return {
+      type: "ready",
+      connectionId: tokens.connection.connectorId,
+      syncedByKey: buildStatusMap(files),
+    };
   });
 }
 
@@ -620,7 +637,8 @@ function inferMimetype(filename: string): string {
 }
 
 interface ArtifactFileRow {
-  readonly runId: string;
+  readonly runId: string | null;
+  readonly threadId?: string | null;
   readonly source: string;
   readonly externalId: string;
   readonly filename: string | null;
@@ -1098,10 +1116,13 @@ async function ensureDriveFolder(args: {
 
 async function ensureArtifactFolder(args: {
   readonly accessToken: string;
-  readonly threadId: string;
+  readonly threadId: string | null;
 }): Promise<DriveTokenResult<string>> {
   let parentFolderId: string | null = null;
-  for (const name of ["Okou Artifacts", `chat-${args.threadId}`]) {
+  const names = args.threadId
+    ? ["Okou Artifacts", `chat-${args.threadId}`]
+    : ["Okou Artifacts"];
+  for (const name of names) {
     const folder = await ensureDriveFolder({
       accessToken: args.accessToken,
       parentFolderId,
@@ -1133,9 +1154,10 @@ async function uploadDriveFile(args: {
   readonly accessToken: string;
   readonly parentFolderId: string;
   readonly filename: string;
-  readonly threadId: string;
-  readonly runId: string;
+  readonly threadId: string | null;
+  readonly runId: string | null;
   readonly fileId: string;
+  readonly artifactId?: string;
   readonly contentType: string;
   readonly targetMimeType?: string | undefined;
   readonly file: Buffer;
@@ -1148,9 +1170,14 @@ async function uploadDriveFile(args: {
     parents: [args.parentFolderId],
     appProperties: {
       [GOOGLE_DRIVE_ARTIFACT_APP_PROPERTY]: "true",
-      [GOOGLE_DRIVE_THREAD_APP_PROPERTY]: args.threadId,
-      [GOOGLE_DRIVE_RUN_APP_PROPERTY]: args.runId,
+      ...(args.threadId
+        ? { [GOOGLE_DRIVE_THREAD_APP_PROPERTY]: args.threadId }
+        : {}),
+      ...(args.runId ? { [GOOGLE_DRIVE_RUN_APP_PROPERTY]: args.runId } : {}),
       [GOOGLE_DRIVE_FILE_APP_PROPERTY]: args.fileId,
+      ...(args.artifactId
+        ? { [GOOGLE_DRIVE_CATALOG_ARTIFACT_APP_PROPERTY]: args.artifactId }
+        : {}),
     },
   });
 
@@ -1195,9 +1222,10 @@ async function uploadDriveFile(args: {
 
 async function uploadArtifactWithToken(args: {
   readonly accessToken: string;
-  readonly threadId: string;
-  readonly runId: string;
+  readonly threadId: string | null;
+  readonly runId: string | null;
   readonly fileId: string;
+  readonly artifactId?: string;
   readonly filename: string;
   readonly contentType: string;
   readonly targetMimeType?: string | undefined;
@@ -1217,6 +1245,7 @@ async function uploadArtifactWithToken(args: {
     threadId: args.threadId,
     runId: args.runId,
     fileId: args.fileId,
+    ...(args.artifactId ? { artifactId: args.artifactId } : {}),
     contentType: args.contentType,
     targetMimeType: args.targetMimeType,
     file: args.file,
@@ -1378,12 +1407,30 @@ function resolveSlidesTarget(
   return { kind: "target", mimeType: GOOGLE_SLIDES_MIME_TYPE };
 }
 
-interface SyncArtifactArgs {
+interface LegacySyncArtifactArgs {
   readonly orgId: string;
   readonly userId: string;
   readonly threadId: string;
   readonly runId: string;
   readonly fileId: string;
+}
+
+interface CatalogSyncArtifactArgs {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly artifactId: string;
+  readonly agentId: string;
+  readonly connectionId?: string;
+  readonly authorizedRunId?: string;
+}
+
+type SyncArtifactArgs = LegacySyncArtifactArgs | CatalogSyncArtifactArgs;
+
+interface ArtifactUploadSource {
+  readonly threadId: string | null;
+  readonly runId: string | null;
+  readonly fileId: string;
+  readonly artifactId?: string;
 }
 
 interface DriveUploadAttempt {
@@ -1397,6 +1444,7 @@ const uploadArtifactRefreshingToken$ = command(
     { set },
     params: {
       readonly args: SyncArtifactArgs;
+      readonly source: ArtifactUploadSource;
       readonly content: ResolvedArtifactContent;
       readonly featureSwitchContext: FeatureSwitchContext;
       readonly targetMimeType: string | undefined;
@@ -1407,9 +1455,7 @@ const uploadArtifactRefreshingToken$ = command(
     const upload = async (accessToken: string) => {
       return await uploadArtifactWithToken({
         accessToken,
-        threadId: params.args.threadId,
-        runId: params.args.runId,
-        fileId: params.args.fileId,
+        ...params.source,
         filename: params.content.filename,
         contentType: params.content.contentType,
         targetMimeType: params.targetMimeType,
@@ -1479,6 +1525,31 @@ export const syncArtifactToGoogleDrive$ = command(
       userId: args.userId,
       overrides: featureSwitchOverrides,
     };
+    const catalogArtifact =
+      "artifactId" in args
+        ? await set(ownedGoogleDriveArtifact$, args, signal)
+        : null;
+    signal.throwIfAborted();
+    if ("artifactId" in args && !catalogArtifact) {
+      return notFound("Artifact file not found");
+    }
+    const connectorId =
+      "artifactId" in args
+        ? await set(artifactGoogleDriveAccount$, args, signal)
+        : null;
+    signal.throwIfAborted();
+    let accountSelector:
+      { readonly connectorId: string } | { readonly threadId: string };
+    if ("artifactId" in args) {
+      if (!connectorId) {
+        return badRequestMessage(
+          "Connect and authorize Google Drive for this agent before uploading artifacts",
+        );
+      }
+      accountSelector = { connectorId };
+    } else {
+      accountSelector = { threadId: args.threadId };
+    }
     const snapshot = await loadConnectorRuntimeAuthSelection(set(writeDb$), {
       connectorSlugs: ["google-drive"],
     });
@@ -1488,7 +1559,7 @@ export const syncArtifactToGoogleDrive$ = command(
       {
         orgId: args.orgId,
         userId: args.userId,
-        threadId: args.threadId,
+        ...accountSelector,
         featureSwitchContext,
         snapshot,
       },
@@ -1500,22 +1571,23 @@ export const syncArtifactToGoogleDrive$ = command(
     }
     const { tokens } = connection;
 
-    const artifact = await set(loadArtifactFile$, {
-      threadId: args.threadId,
-      runId: args.runId,
-      fileId: args.fileId,
-      userId: args.userId,
-    });
+    const artifact =
+      "artifactId" in args
+        ? catalogArtifact
+        : await set(loadArtifactFile$, args);
     signal.throwIfAborted();
     if (!artifact) {
       return notFound("Artifact file not found");
     }
-
-    const authorized = await set(threadAllowsGoogleDriveArtifactSync$, {
-      orgId: args.orgId,
-      userId: args.userId,
-      threadId: args.threadId,
-    });
+    // Only old App clients use the chat-scoped adapter. The new upload path
+    // has already authorized the resource and Agent/account above.
+    const authorized =
+      "artifactId" in args ||
+      (await set(threadAllowsGoogleDriveArtifactSync$, {
+        orgId: args.orgId,
+        userId: args.userId,
+        threadId: args.threadId,
+      }));
     signal.throwIfAborted();
     if (!authorized) {
       return badRequestMessage("Connect Google Drive before syncing artifacts");
@@ -1555,6 +1627,15 @@ export const syncArtifactToGoogleDrive$ = command(
       uploadArtifactRefreshingToken$,
       {
         args,
+        source:
+          "artifactId" in args
+            ? {
+                artifactId: args.artifactId,
+                threadId: artifact.threadId ?? null,
+                runId: artifact.runId,
+                fileId: artifact.externalId,
+              }
+            : args,
         content,
         featureSwitchContext,
         targetMimeType,

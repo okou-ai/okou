@@ -263,6 +263,8 @@ const chatThreadArtifactGoogleDriveSyncSchema = z.discriminatedUnion("status", [
 ]);
 
 const chatThreadArtifactFileSchema = resolvedAttachFileSchema.extend({
+  artifactId: z.uuid().optional(),
+  googleDriveConnectionId: z.uuid().optional(),
   createdAt: z.string(),
   artifactKind: hostedArtifactKindSchema.optional(),
   previewImageUrl: z.string().optional(),
@@ -1977,6 +1979,7 @@ export const chatThreadArtifactsContract = c.router({
     },
     summary: "List uploaded files associated with every run in a chat thread",
   },
+  /** @deprecated Cached App compatibility; use artifactGoogleDriveContract.upload. */
   syncGoogleDrive: {
     method: "POST",
     path: "/api/chat-threads/:threadId/artifacts",
