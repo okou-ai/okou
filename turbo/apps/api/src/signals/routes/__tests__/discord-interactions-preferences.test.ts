@@ -619,6 +619,62 @@ describe("Discord account preferences through private controls", () => {
     ).toStrictEqual([second.binding.connectionId]);
   });
 
+  it.each([
+    "sender",
+    "channel",
+    "expired",
+    "disconnect",
+    "feature",
+    "membership",
+  ] as const)(
+    "keeps the selected DM workspace when an org control changes %s authority",
+    async (changed) => {
+      const first = await fixture();
+      const second = await fixture(
+        actor(undefined, first.owner.userId),
+        first.binding.discordUserId,
+      );
+      mockDiscordMemberships(context, [first.owner, second.owner]);
+      const sender = {
+        discordUserId: first.binding.discordUserId,
+        channelId: uniqueDiscordSnowflake(),
+      };
+      const discord = discordHttp([first, second], sender);
+      const menu = selectMenu(
+        await discord.send(commandPayload(sender, "org")),
+      );
+      await discord.send(
+        selectPayload(sender, menu.custom_id, first.binding.connectionId),
+      );
+      if (changed === "disconnect") {
+        await disconnect(second.owner);
+      } else if (changed === "feature") {
+        await enableDiscord(second.owner, false);
+      } else if (changed === "membership") {
+        mockDiscordMemberships(context, [first.owner]);
+      } else if (changed === "expired") {
+        mockNow(now() + 15 * 60 * 1000);
+      }
+      const moved = {
+        ...sender,
+        ...(changed === "sender"
+          ? { discordUserId: uniqueDiscordSnowflake() }
+          : {}),
+        ...(changed === "channel"
+          ? { channelId: uniqueDiscordSnowflake() }
+          : {}),
+      };
+      const rejected = await discord.send(
+        selectPayload(moved, menu.custom_id, second.binding.connectionId),
+      );
+
+      expect(rejected.content).toContain("expired or your access has changed");
+      expect((await readStatus(first.owner)).dmSelectionConnectionId).toBe(
+        first.binding.connectionId,
+      );
+    },
+  );
+
   it("preselects the effective model and the selected DM workspace", async () => {
     const first = await fixture();
     const second = await fixture(

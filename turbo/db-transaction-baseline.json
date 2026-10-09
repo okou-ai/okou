@@ -697,11 +697,6 @@
       "owner": "admitCanonicalDiscordChatEvent$"
     },
     {
-      "id": "TX-0151",
-      "file": "turbo/apps/api/src/signals/services/discord-data.service.ts",
-      "owner": "selectDiscordDmBinding"
-    },
-    {
       "id": "TX-0155",
       "file": "turbo/apps/api/src/signals/services/discord-route-admission.service.ts",
       "owner": "persistDiscordAdmissionDestination"
