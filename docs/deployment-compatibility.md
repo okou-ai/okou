@@ -199,3 +199,28 @@ Earlier feature-specific notes remain available in
 [the pre-cleanup Git revision](https://github.com/okou-ai/okou/blob/adbed2f709d35cae7273789ce098569f32421eba/docs/deployment-compatibility.md).
 Removing those notes from this guide does not authorize a deployment, retire an
 active compatibility requirement or remove an enforced rollback floor.
+
+## Debug Morning Brief sample mail
+
+The session-only Debug action adds `POST /api/debug/morning-brief-email` and an
+owner-scoped receipt read. Both `_debug` and default-off `notifyMail` gate the UI
+and API. The request supplies only a stable UUID; the server fixes content,
+recipient and links and does not impersonate an Agent or invoke an automation.
+
+Apply the generated nullable `mail_notifications.source_run_id` migration before
+promoting the API. Old Agent producers still supply that column and old receipt
+readers do not expose it, so existing notifications remain valid. New Debug
+receipts use NULL source and the `debug-morning-brief` identity namespace; no
+existing row is changed or backfilled. The normal owner cleanup and durable
+idempotency lifecycle apply.
+
+Deploy every outbox drainer with the new `debug-morning-brief` template reader
+before exposing the Debug producer. Old drainers reject that template. Old App
+versions do not call the new API; a new App with an old API gets a visible HTTP
+error, preserving the same request UUID for retry. Stop new Debug production and
+drain pending samples with compatible workers before restoring an older drainer.
+Already committed provider requests retain their payload and key.
+
+The Official source check, `resultEmail`, instruction and schedule/readiness
+contracts are unchanged. This PR does not enable switches, publish production
+or establish real inbox delivery.

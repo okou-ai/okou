@@ -130,3 +130,32 @@ and how to derive one stable key per daily occurrence. Morning Brief migration
 and schedule admission currently require result email and must be updated in that
 stage. Drain already-accepted runs under their existing callback snapshots before
 retiring the completion-email mechanism.
+
+## Debug sample email
+
+Settings → Debug exposes **Send test email** only when both `OkouDebug` (`_debug`)
+and `notifyMail` are enabled. The session-only API accepts a request UUID, not a
+recipient, content, template or source URL. It sends the fixed `[Test] Morning
+Brief` sample to the signed-in member's account email. No Agent, Official
+installation or automation is created or run; the schedule and automatic result
+email are unchanged. Open in Okou opens the app rather than a fabricated Run.
+
+The sample uses the same Morning Brief renderer, sender, outbox, provider keys,
+retry/lease/TTL and unsubscribe/suppression policy as production notifications.
+Clicking immediately submits that owned sample to the existing outbox worker.
+Provider failures remain queued for normal retries; Check delivery status reads
+the durable receipt without sending. `sent` means provider acceptance, not inbox
+confirmation. Already in-flight provider requests cannot be recalled.
+
+A request UUID names one durable notification receipt. Retrying after an HTTP
+failure reuses it; **Send another test email** explicitly requests another UUID.
+Receipt replay survives outbox cleanup and retains skipped/failed outcomes.
+The UI scopes retained request state to user and workspace, and Settings dismissal
+cancels its HTTP work. Existing user/org/membership cleanup erases these receipts
+and linked outbox content. No Run identity is invented: the additive migration
+makes `mail_notifications.source_run_id` nullable for session-authored samples;
+Agent producers still require and write an owned, running Run.
+
+This is a product Debug action for template and delivery acceptance. It does
+not establish a genuine Official Run calling `okou notify mail --kind morning-brief`
+or justify the stage-two delivery cutover.

@@ -1,0 +1,1 @@
+ALTER TABLE "mail_notifications" ALTER COLUMN "source_run_id" DROP NOT NULL;
