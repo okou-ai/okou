@@ -16,8 +16,9 @@ import {
 import { readStaticSiteFile, scanStaticSite } from "../../lib/host/static-site";
 
 const execute = promisify(execFile);
-const WIDTH = 1200;
-const HEIGHT = 630;
+// Match the 16:10 Artifacts card and the existing hosted-page viewport.
+const WIDTH = 1280;
+const HEIGHT = 800;
 const CAPTURE_TIMEOUT_MS = 60_000;
 
 // Generated charts may hold this promise/boolean until their first frame is ready.
@@ -205,7 +206,7 @@ export const screenshotHostedSiteCommand = new Command("screenshot")
   .option("--json", "Output the local image path and dimensions as JSON")
   .addHelpText(
     "after",
-    "\nUses a clean local agent-browser session and a read-only bundle server. Writes a 1200x630 PNG plus a bundle receipt, uploads nothing. Inspect the PNG, then publish with --preview <png>. Re-capture after editing. Silently skips capture when artifactPreviews is disabled in Lab. When enabled, requires agent-browser and its browser/fonts in the sandbox.",
+    "\nUses a clean local agent-browser session and a read-only bundle server. Writes a 1280x800 PNG (16:10, matching Artifacts cards) plus a bundle receipt, uploads nothing. Inspect the PNG, then publish with --preview <png>. Re-capture after editing. Silently skips capture when artifactPreviews is disabled in Lab. When enabled, requires agent-browser and its browser/fonts in the sandbox.",
   )
   .action(
     withErrorHandler(

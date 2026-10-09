@@ -307,6 +307,9 @@ const args = process.argv.slice(4);
 (async () => {
   if (!process.env.AGENT_BROWSER_CONFIG || fs.readFileSync(process.env.AGENT_BROWSER_CONFIG, "utf8") !== "{}") throw new Error("Capture must ignore owner browser configuration");
   if (process.env.AGENT_BROWSER_PROFILE || process.env.AGENT_BROWSER_CDP || process.env.AGENT_BROWSER_STATE) throw new Error("Capture inherited browser authentication");
+  if (args[0] === "set" && args[1] === "viewport") {
+    fs.writeFileSync(path.join(process.env.OKOU_TEST_PREVIEW_DIR, "viewport.json"), JSON.stringify(args.slice(2).map(Number)));
+  }
   if (args[0] === "open") {
     const url = new URL(args[1]);
     const html = await (await fetch(url)).text();
@@ -315,7 +318,8 @@ const args = process.argv.slice(4);
   }
   if (args[0] === "eval" && process.env.OKOU_TEST_PREVIEW_FAIL === "1") throw new Error("Image did not become ready");
   if (args[0] === "screenshot") {
-    const image = Buffer.alloc(32); Buffer.from([137,80,78,71,13,10,26,10]).copy(image); image.writeUInt32BE(1200, 16); image.writeUInt32BE(630, 20); fs.writeFileSync(args[1], image);
+    const [width, height] = JSON.parse(fs.readFileSync(path.join(process.env.OKOU_TEST_PREVIEW_DIR, "viewport.json"), "utf8"));
+    const image = Buffer.alloc(32); Buffer.from([137,80,78,71,13,10,26,10]).copy(image); image.writeUInt32BE(width, 16); image.writeUInt32BE(height, 20); fs.writeFileSync(args[1], image);
   }
 })().catch(error => { console.error(error.message); process.exitCode = 1; });
 `,
@@ -352,8 +356,8 @@ const args = process.argv.slice(4);
     expect(existsSync(`${cover}.okou-preview.json`)).toBe(true);
     expect(JSON.parse(logs.mock.calls.flat().join("\n"))).toMatchObject({
       path: cover,
-      width: 1200,
-      height: 630,
+      width: 1280,
+      height: 800,
     });
     writeFileSync(
       join(site, "index.html"),

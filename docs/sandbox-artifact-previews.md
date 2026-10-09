@@ -50,8 +50,11 @@ okou host ./dist --site my-site --spa --preview ./generated/previews/cover.png
 For a presentation, add `--artifact-kind presentation-html` to the publishing
 command. A user-selected PNG/JPEG can be passed directly with `--preview`.
 Keep all covers outside the hosted directory. The capture command writes a
-1200-by-630 PNG and an adjacent `.okou-preview.json` receipt containing the
-bundle and image checksums. It serves a frozen, read-only bundle over loopback
+1280-by-800 PNG (16:10, matching the Artifacts card) and an adjacent
+`.okou-preview.json` receipt containing the bundle and image checksums.
+The viewport also matches the existing backend screenshot producer. PR 2
+handles social-specific OG sizing from this same source image.
+It serves a frozen, read-only bundle over loopback
 so root-relative resources and modules behave as HTTP resources, and uses an
 isolated `agent-browser` session with no owner browser profile. It requires the
 sandbox's existing browser and fonts; it installs nothing.
