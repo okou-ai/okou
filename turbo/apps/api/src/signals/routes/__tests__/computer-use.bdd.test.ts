@@ -996,7 +996,9 @@ describe("FILE-03 desktop computer-use runtime", () => {
         const actor = bdd.user();
         const base = now();
         mockNow(base);
-        const host = await api.startComputerUseHost(actor);
+        const host = await api.startComputerUseHost(actor, {
+          hostName: "BDD Desktop",
+        });
         context.mocks.ably.publish.mockClear();
         const lastSeenAt = async () => {
           const listed = await api.listComputerUseHosts(actor);
@@ -1029,7 +1031,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
         expect(listed.hosts).toMatchObject([
           {
             id: host.hostId,
-            hostName: "Renamed Desktop",
+            displayName: "Renamed Desktop",
             lastSeenAt: new Date(base + 35_000).toISOString(),
           },
         ]);

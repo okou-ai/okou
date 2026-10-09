@@ -1838,6 +1838,11 @@ export function registerFeishuIntegrationTests(
             orgId: requireValue(doomed.orgId, "Expected member workspace"),
           });
         });
+        // Clearing the departing member's overrides also clears org-scoped keys.
+        // Keep the living workspace owner's integration enabled before deletion.
+        await own(() => {
+          return enableFeishuIntegration(platform, survivor);
+        });
         const deletion = {
           type: "user.deleted" as const,
           data: { id: doomed.userId },

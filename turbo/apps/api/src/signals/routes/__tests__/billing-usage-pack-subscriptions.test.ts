@@ -10477,9 +10477,21 @@ describe("usage pack allocation management", () => {
           canceledSubscription,
         );
         await run(flushWaitUntilForTest);
-        expect(
-          (await readManagedUsagePacks(fixture)).allocations,
-        ).not.toContainEqual(expect.objectContaining({ memberId: userId }));
+        authenticateOrg(fixture);
+        const endedPlan = await run(() => {
+          return accept(
+            client.get({
+              headers: { authorization: "Bearer clerk-session" },
+            }),
+            [404],
+          );
+        });
+        expect(endedPlan.body).toStrictEqual({
+          error: {
+            message: "Usage pack subscription not found",
+            code: "NOT_FOUND",
+          },
+        });
         expect(context.mocks.stripe.refunds.create).toHaveBeenCalledTimes(1);
         expect(context.mocks.stripe.creditNotes.create).toHaveBeenCalledTimes(
           1,
