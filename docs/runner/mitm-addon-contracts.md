@@ -649,7 +649,7 @@ inbound and outbound close paths.
 The first limit violation on each connection is stored as content-free
 diagnostic state. At terminal flow cleanup,
 `mitm_addon.py`'s
-[`_release_terminal_flow_state()`](../../crates/runner/mitm-addon/src/mitm_addon.py#L1658-L1684)
+[`_release_terminal_flow_state()`](../../crates/runner/mitm-addon/src/mitm_addon.py)
 calls `log_limit_violation()` to consume that state and write a
 `websocket_framing_limit` warning for each stored direction. Its structured
 fields are `reason`,

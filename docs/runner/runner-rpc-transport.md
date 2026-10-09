@@ -359,18 +359,18 @@ PTY and retained process state belong to the SSH consumer, not this protocol.
 The Runner-owned session task never retains the initiating guest stream or its
 park reservation. A bounded waiting read owns its own stream/reservation until
 that request finishes; it is not attached to the retained session task. No helper
-negotiation, method fallback or automatic replay is added. The SSH reader changed
-its required business parameters before GA without a legacy read payload path;
-the opaque version-1 framing and helper invocation are unchanged. The SSH
-consumer owns its session implementation and business contracts.
+negotiation, method fallback or automatic replay is added. The SSH reader requires
+its business parameters without a legacy read payload path; the opaque version-1
+framing and helper invocation are unchanged. The SSH consumer owns its session
+implementation and business contracts.
 
-#32013 owns explicit `ssh.exec` dispatch, strict business schemas, dynamic JIT
-authorization, credentials, TOFU and execution. Generic events wrap SSH
+The SSH consumer owns explicit `ssh.exec` dispatch, strict business schemas,
+dynamic JIT authorization, credentials, TOFU and execution. Generic events wrap SSH
 accepted/stdout/stderr data; a generic result wraps SSH finished/error data.
 Exec acceptance, remote exit/signal, base64 decoding, independent 1 MiB output
 caps, truncation and execution effects are SSH semantics, not transport types.
 
-#32014 owns the CLI adapter and strict SSH event/result ordering and exit-code
+The CLI adapter owns strict SSH event/result ordering and exit-code
 mapping. Both streams' full output, encoded in bounded chunks, must fit the
 transport budget with terminal capacity; transport exhaustion must not be
 reported as successful complete output.
@@ -383,13 +383,11 @@ guest. Authorized inventory summaries are a separate non-secret data class.
 Cargo/release configuration, the manifest, release SHA/tag projections, canonical
 guest inventory, generated bundle inputs, Runner build options and rootfs
 verification use the generic helper identity. Runner and bundled guest binaries
-ship together. The old SSH-specific helper was unmerged/unexposed when renamed,
-so there is no compatibility alias. API and control-channel contracts are
-unchanged.
+ship together, without an SSH-specific compatibility alias. API and
+control-channel contracts are unchanged.
 
-SSH general availability changes no transport or CLI contract. Runner/rootfs,
-API, UI and selected commit-addressed CLI artifacts retain their independent
-deployment boundaries. Add no negotiation header, fallback routing, plugin
+Runner/rootfs, API, UI and selected commit-addressed CLI artifacts retain their
+independent deployment boundaries. Add no negotiation header, fallback routing, plugin
 registry, batching or pooling. See [deployment compatibility](../deployment-compatibility.md).
 
 Local tests use real sockets, files, the real control handshake and operation
@@ -405,11 +403,9 @@ methods in local/PAT Runners or establish SSH authorization. Unix parser/helper
 and actual Runner dispatcher tests separately protect bounds, corruption handling
 and one execution even when more request frames arrive.
 
-For #32804, Runner and bundled helper remain one artifact; guest binary bytes
-participate in rootfs identity and the snapshot identity includes that rootfs.
-There is no cross-version helper negotiation, fallback or replay. CLI stdin/stdout
-and API contracts are unchanged. PR #32722 records owner-authorized two-host SSH,
-TOFU, live inventory, delivered revoke/invalidation and non-chat acceptance
-through the snapshot restore/reuse path. These results are distinct from generic
-native transport coverage and retain their recorded artifact identities. No
-separate cold-boot business SSH path is required.
+Runner and bundled helper remain one artifact; guest binary bytes participate in
+rootfs identity and the snapshot identity includes that rootfs. There is no
+cross-version helper negotiation, fallback or replay. CLI stdin/stdout and API
+contracts are unchanged. Business SSH acceptance through snapshot restore/reuse
+is distinct from generic native transport coverage and must identify the artifacts
+exercised. No separate cold-boot business SSH path is required.
