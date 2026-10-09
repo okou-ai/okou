@@ -43,15 +43,15 @@ const getDiscordStatus$ = computed(async (get) => {
   };
 });
 
-const uninstallDiscordOrganization$ = command(
+const commitDiscordOrganizationUninstall$ = command(
   async (
     { set },
     auth: { readonly orgId: string; readonly userId: string },
     signal: AbortSignal,
-  ): Promise<boolean> => {
+  ): Promise<readonly string[] | null> => {
     const db = set(writeDb$);
     // Guild removal, pending-attempt cancellation and identity release are atomic.
-    const recipients = await db.transaction(async (tx) => {
+    return await db.transaction(async (tx) => {
       await tx
         .delete(discordOauthStates)
         .where(eq(discordOauthStates.orgId, auth.orgId));
@@ -112,13 +112,6 @@ const uninstallDiscordOrganization$ = command(
       signal.throwIfAborted();
       return userIds;
     });
-    signal.throwIfAborted();
-    if (!recipients) {
-      return false;
-    }
-    await publishDiscordChanged(recipients);
-    signal.throwIfAborted();
-    return true;
   },
 );
 
@@ -142,10 +135,19 @@ const deleteDiscordIntegration$ = command(
           },
         };
       }
-      const removed = await set(uninstallDiscordOrganization$, auth, signal);
-      return removed
-        ? { status: 200 as const, body: { ok: true as const } }
-        : unavailable();
+      const recipients = await set(
+        commitDiscordOrganizationUninstall$,
+        auth,
+        signal,
+      );
+      if (recipients === null) {
+        signal.throwIfAborted();
+        return unavailable();
+      }
+      // Committed changes publish before observing a post-commit cancellation.
+      await publishDiscordChanged(recipients);
+      signal.throwIfAborted();
+      return { status: 200 as const, body: { ok: true as const } };
     }
     const [connection] = await db
       .select({

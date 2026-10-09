@@ -435,19 +435,17 @@ export const selectDiscordDmBinding$ = command(
   },
 );
 
-export const disconnectDiscordBinding$ = command(
-  async (
-    { set },
-    args: {
-      readonly connectionId: string;
-      readonly discordUserId: string;
-      readonly orgId?: string;
-    },
-    signal: AbortSignal,
-  ): Promise<boolean> => {
+interface DiscordBindingDisconnect {
+  readonly connectionId: string;
+  readonly discordUserId: string;
+  readonly orgId?: string;
+}
+
+const commitDiscordBindingDisconnect$ = command(
+  async ({ set }, args: DiscordBindingDisconnect, signal: AbortSignal) => {
     const db = set(writeDb$);
     // Attempt cancellation, child revocation and unused-parent release commit together.
-    const rows = await db.transaction(async (tx) => {
+    return await db.transaction(async (tx) => {
       signal.throwIfAborted();
       const [candidate] = await tx
         .select({
@@ -530,7 +528,13 @@ export const disconnectDiscordBinding$ = command(
       signal.throwIfAborted();
       return removed;
     });
-    signal.throwIfAborted();
+  },
+);
+
+export const disconnectDiscordBinding$ = command(
+  async ({ set }, args: DiscordBindingDisconnect, signal: AbortSignal) => {
+    const rows = await set(commitDiscordBindingDisconnect$, args, signal);
+    // Committed changes publish before observing a post-commit cancellation.
     await publishDiscordChanged(
       rows.map((row) => {
         return row.userId;

@@ -25,18 +25,14 @@ interface DiscordGuildRemoval {
   readonly eventId: string;
 }
 
-export const uninstallDiscordGuild$ = command(
-  async (
-    { set },
-    args: DiscordGuildRemoval,
-    signal: AbortSignal,
-  ): Promise<"accepted" | "duplicate"> => {
+const commitDiscordGuildRemoval$ = command(
+  async ({ set }, args: DiscordGuildRemoval, signal: AbortSignal) => {
     const db = set(writeDb$);
     const eventDigest = createHash("sha256")
       .update(JSON.stringify([args.applicationId, args.eventId]))
       .digest("hex");
     // The replay receipt and guild/identity revocation must commit together.
-    const result = await db.transaction(async (tx) => {
+    return await db.transaction(async (tx) => {
       const [receipt] = await tx
         .insert(discordGatewayReceipts)
         .values({ eventDigest, createdAt: nowDate() })
@@ -111,7 +107,13 @@ export const uninstallDiscordGuild$ = command(
       signal.throwIfAborted();
       return { outcome: "accepted" as const, userIds };
     });
-    signal.throwIfAborted();
+  },
+);
+
+export const uninstallDiscordGuild$ = command(
+  async ({ set }, args: DiscordGuildRemoval, signal: AbortSignal) => {
+    const result = await set(commitDiscordGuildRemoval$, args, signal);
+    // Committed changes publish before observing a post-commit cancellation.
     await publishDiscordChanged(result.userIds);
     signal.throwIfAborted();
     return result.outcome;
