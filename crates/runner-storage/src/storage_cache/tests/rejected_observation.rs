@@ -10,16 +10,53 @@ fn entry_dir(home: &HomePaths, name: &str, rejected: bool) -> PathBuf {
     ))
 }
 
-async fn seed_rejection(home: &HomePaths, cache: &decoded::DecodedCache, name: &str) -> Vec<u8> {
-    let bytes = tarball_with_contents(&vec![
+fn rejection_archive() -> Vec<u8> {
+    tarball_with_contents(&vec![
         b'x';
         guest_contracts::storage_files::MAX_FILE_BYTES + 1
-    ]);
-    write_cached_archive(home, name, VERSION, &bytes);
+    ])
+}
+
+async fn seed_rejection_from_archive(
+    home: &HomePaths,
+    cache: &decoded::DecodedCache,
+    name: &str,
+    bytes: &[u8],
+) {
+    write_cached_archive(home, name, VERSION, bytes);
     write_storage_lock(home, name, VERSION);
     cache.warm_from_archive(name, VERSION).await.unwrap();
     assert!(entry_dir(home, name, true).join("index.json").exists());
+}
+
+async fn seed_rejection(home: &HomePaths, cache: &decoded::DecodedCache, name: &str) -> Vec<u8> {
+    let bytes = rejection_archive();
+    seed_rejection_from_archive(home, cache, name, &bytes).await;
     bytes
+}
+
+#[tokio::test]
+async fn shared_rejection_fixture_preserves_archive_bytes_and_independent_states() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = home_at(&temp);
+    let cache = decoded::DecodedCache::new(home.clone());
+    let bytes = rejection_archive();
+    assert_eq!(
+        bytes,
+        tarball_with_contents(&vec![
+            b'x';
+            guest_contracts::storage_files::MAX_FILE_BYTES + 1
+        ])
+    );
+    for name in ["shared-rejection-a", "shared-rejection-b"] {
+        seed_rejection_from_archive(&home, &cache, name, &bytes).await;
+        assert_eq!(
+            std::fs::read(home.storage_cache_dir(name, VERSION).join("archive.tar.gz")).unwrap(),
+            bytes
+        );
+        assert!(cache.get_ready(name, VERSION).await.unwrap().is_none());
+    }
+    cache.shutdown().await;
 }
 
 async fn prepare(
@@ -84,8 +121,9 @@ async fn rejected_prefix_leaves_room_for_useful_first_warming() {
     let rejected = (0..40)
         .map(|index| format!("rejected-prefix-{index}"))
         .collect::<Vec<_>>();
+    let rejected_archive = rejection_archive();
     for name in &rejected {
-        seed_rejection(&home, &cache, name).await;
+        seed_rejection_from_archive(&home, &cache, name, &rejected_archive).await;
     }
     let api = telemetry_server().await;
     let bytes = tarball_bytes();
