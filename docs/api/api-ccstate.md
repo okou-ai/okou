@@ -75,6 +75,18 @@ does not permit database handles, accessors, commands, mutable state or unrelate
 graph interfaces across boundaries. Read-only computed factory inputs follow
 the separate graph-construction allowance above.
 
+**Picked-event context — `ThreadContext`:**
+`createThreadContext(bootstrap, pickedEvent$)` builds the read-only computed
+collection for one selected event. Bootstrap keeps identity-scoped reads;
+ThreadContext owns thread/session facts, integration contexts, template selection
+and model routing. The picked event carries the thread snapshot already read by
+the request/pick path, so consumers do not issue another thread query. Identity
+reconciliation reuses matching bootstrap groups. Admission, prompt composition
+and Run preparation consume the same computed instances. This collection contains
+no commands, state, database handles or storage materialization. Its constructor
+and nested factories may read bootstrap's plain identity fields and otherwise
+only declare computeds and verified computed bundles.
+
 Build the owning graph before commands execute. Do not call `command()` inside
 another command callback, including indirectly through a factory. Private nodes
 share dependencies through the owning graph's lexical scope or explicitly

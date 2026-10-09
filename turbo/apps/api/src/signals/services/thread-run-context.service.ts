@@ -1,6 +1,9 @@
 import { computed, type Computed } from "ccstate";
 import { and, eq, inArray, isNull, or } from "drizzle-orm";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import {
+  isFeatureEnabled,
+  type FeatureSwitchContext,
+} from "@okouai/core/feature-switch";
 import {
   FEISHU_PLATFORMS,
   type FeishuPlatform,
@@ -30,9 +33,11 @@ import {
   ORG_SENTINEL_USER_ID,
   userFeatureSwitchOverridesFromRows,
 } from "./feature-switch-scope";
-import type { ThreadPromptSource } from "./thread-run-prompt/types";
+import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 
-type ThreadPromptSourceNode = Computed<Promise<ThreadPromptSource | null>>;
+type PickedThreadInputEventNode = Computed<
+  Promise<PickedThreadInputEvent | null>
+>;
 
 type SlackLaunchContextRow = Pick<
   typeof chatSlackContext.$inferSelect,
@@ -294,15 +299,16 @@ function requiredAgentPhoneLaunchContext(
 export type SlackThreadContext = ReturnType<typeof requiredSlackLaunchContext>;
 
 export function createSlackThreadContext(
-  source$: ThreadPromptSourceNode,
+  pickedEvent$: PickedThreadInputEventNode,
+  orgId: string,
 ): Computed<Promise<SlackThreadContext>> {
   const context$ = computed(async (get) => {
     const db = get(db$);
-    const args = await get(source$);
+    const pickedEvent = await get(pickedEvent$);
     if (
-      !args ||
-      args.event.contextType !== "slack" ||
-      args.event.contextId === null
+      !pickedEvent ||
+      pickedEvent.contextType !== "slack" ||
+      pickedEvent.contextId === null
     ) {
       return null;
     }
@@ -341,14 +347,14 @@ export function createSlackThreadContext(
             ),
             eq(slackChatThreadRoutes.threadTs, chatSlackContext.routeThreadTs),
           ),
-          eq(slackChatThreadRoutes.userId, args.event.userId),
+          eq(slackChatThreadRoutes.userId, pickedEvent.userId),
         ),
       )
       .innerJoin(
         slackOrgConnections,
         and(
           eq(slackOrgConnections.id, slackChatThreadRoutes.connectionId),
-          eq(slackOrgConnections.userId, args.event.userId),
+          eq(slackOrgConnections.userId, pickedEvent.userId),
         ),
       )
       .innerJoin(
@@ -358,15 +364,15 @@ export function createSlackThreadContext(
             slackOrgInstallations.slackWorkspaceId,
             slackOrgConnections.slackWorkspaceId,
           ),
-          eq(slackOrgInstallations.orgId, args.orgId),
+          eq(slackOrgInstallations.orgId, orgId),
         ),
       )
       .where(
         and(
-          eq(chatEvents.id, args.event.id),
-          eq(chatEvents.chatThreadId, args.chatThreadId),
+          eq(chatEvents.id, pickedEvent.id),
+          eq(chatEvents.chatThreadId, pickedEvent.chatThreadId),
           eq(chatEvents.contextType, "slack"),
-          eq(chatSlackContext.id, args.event.contextId),
+          eq(chatSlackContext.id, pickedEvent.contextId),
         ),
       )
       .limit(1);
@@ -379,15 +385,16 @@ export type FeishuThreadContext = ReturnType<
   typeof requiredFeishuLaunchContext
 >;
 
-export function createFeishuThreadContext(
-  source$: ThreadPromptSourceNode,
-): Computed<Promise<FeishuThreadContext>> {
-  const rawContext$ = computed(async (get) => {
-    const args = await get(source$);
+function createFeishuStoredContext(
+  pickedEvent$: PickedThreadInputEventNode,
+  orgId: string,
+) {
+  return computed(async (get) => {
+    const pickedEvent = await get(pickedEvent$);
     if (
-      !args ||
-      args.event.contextType !== "feishu" ||
-      args.event.contextId === null
+      !pickedEvent ||
+      pickedEvent.contextType !== "feishu" ||
+      pickedEvent.contextId === null
     ) {
       return undefined;
     }
@@ -429,7 +436,7 @@ export function createFeishuThreadContext(
             chatFeishuContext.connectionId,
           ),
           eq(feishuChatThreadRoutes.chatId, chatFeishuContext.chatId),
-          eq(feishuChatThreadRoutes.userId, args.event.userId),
+          eq(feishuChatThreadRoutes.userId, pickedEvent.userId),
         ),
       )
       .innerJoin(
@@ -440,30 +447,41 @@ export function createFeishuThreadContext(
             feishuOrgConnections.installationId,
             chatFeishuContext.installationId,
           ),
-          eq(feishuOrgConnections.userId, args.event.userId),
+          eq(feishuOrgConnections.userId, pickedEvent.userId),
         ),
       )
       .innerJoin(
         feishuOrgInstallations,
         and(
           eq(feishuOrgInstallations.id, chatFeishuContext.installationId),
-          eq(feishuOrgInstallations.orgId, args.orgId),
+          eq(feishuOrgInstallations.orgId, orgId),
         ),
       )
       .where(
         and(
-          eq(chatEvents.id, args.event.id),
-          eq(chatEvents.chatThreadId, args.chatThreadId),
+          eq(chatEvents.id, pickedEvent.id),
+          eq(chatEvents.chatThreadId, pickedEvent.chatThreadId),
           eq(chatEvents.contextType, "feishu"),
-          eq(chatFeishuContext.id, args.event.contextId),
+          eq(chatFeishuContext.id, pickedEvent.contextId),
         ),
       )
       .limit(1);
     return row;
   });
+}
+
+export function createFeishuThreadContext(
+  pickedEvent$: PickedThreadInputEventNode,
+  orgId: string,
+  featureSwitches$: Computed<Promise<FeatureSwitchContext>>,
+): Computed<Promise<FeishuThreadContext>> {
+  const rawContext$ = createFeishuStoredContext(pickedEvent$, orgId);
   const installationEnabled$ = computed(async (get) => {
-    const [row, args] = await Promise.all([get(rawContext$), get(source$)]);
-    if (!row || !args) {
+    const [row, pickedEvent] = await Promise.all([
+      get(rawContext$),
+      get(pickedEvent$),
+    ]);
+    if (!row || !pickedEvent) {
       return false;
     }
     if (row.platform === "feishu") {
@@ -472,10 +490,10 @@ export function createFeishuThreadContext(
     if (!row.ownerUserId) {
       return false;
     }
-    if (row.ownerUserId === args.event.userId) {
+    if (row.ownerUserId === pickedEvent.userId) {
       return isFeatureEnabled(
         FEISHU_PLATFORMS.lark.featureSwitch,
-        args.featureSwitchContext,
+        await get(featureSwitches$),
       );
     }
     const overrides = await get(db$)
@@ -486,7 +504,7 @@ export function createFeishuThreadContext(
       .from(userFeatureSwitches)
       .where(
         and(
-          eq(userFeatureSwitches.orgId, args.orgId),
+          eq(userFeatureSwitches.orgId, orgId),
           inArray(userFeatureSwitches.userId, [
             row.ownerUserId,
             ORG_SENTINEL_USER_ID,
@@ -494,7 +512,7 @@ export function createFeishuThreadContext(
         ),
       );
     return isFeatureEnabled(FEISHU_PLATFORMS.lark.featureSwitch, {
-      orgId: args.orgId,
+      orgId,
       userId: row.ownerUserId,
       overrides: userFeatureSwitchOverridesFromRows(overrides, row.ownerUserId),
     });
@@ -511,15 +529,16 @@ export function createFeishuThreadContext(
 export type TeamsThreadContext = ReturnType<typeof requiredTeamsLaunchContext>;
 
 export function createTeamsThreadContext(
-  source$: ThreadPromptSourceNode,
+  pickedEvent$: PickedThreadInputEventNode,
+  orgId: string,
 ): Computed<Promise<TeamsThreadContext>> {
   const context$ = computed(async (get) => {
     const db = get(db$);
-    const args = await get(source$);
+    const pickedEvent = await get(pickedEvent$);
     if (
-      !args ||
-      args.event.contextType !== "teams" ||
-      args.event.contextId === null
+      !pickedEvent ||
+      pickedEvent.contextType !== "teams" ||
+      pickedEvent.contextId === null
     ) {
       return null;
     }
@@ -564,7 +583,7 @@ export function createTeamsThreadContext(
             chatTeamsContext.conversationId,
           ),
           eq(teamsChatThreadRoutes.threadId, chatTeamsContext.threadId),
-          eq(teamsChatThreadRoutes.userId, args.event.userId),
+          eq(teamsChatThreadRoutes.userId, pickedEvent.userId),
         ),
       )
       .innerJoin(
@@ -572,22 +591,22 @@ export function createTeamsThreadContext(
         and(
           eq(teamsOrgConnections.id, chatTeamsContext.connectionId),
           eq(teamsOrgConnections.teamsTenantId, chatTeamsContext.tenantId),
-          eq(teamsOrgConnections.userId, args.event.userId),
+          eq(teamsOrgConnections.userId, pickedEvent.userId),
         ),
       )
       .innerJoin(
         teamsOrgInstallations,
         and(
           eq(teamsOrgInstallations.teamsTenantId, chatTeamsContext.tenantId),
-          eq(teamsOrgInstallations.orgId, args.orgId),
+          eq(teamsOrgInstallations.orgId, orgId),
         ),
       )
       .where(
         and(
-          eq(chatEvents.id, args.event.id),
-          eq(chatEvents.chatThreadId, args.chatThreadId),
+          eq(chatEvents.id, pickedEvent.id),
+          eq(chatEvents.chatThreadId, pickedEvent.chatThreadId),
           eq(chatEvents.contextType, "teams"),
-          eq(chatTeamsContext.id, args.event.contextId),
+          eq(chatTeamsContext.id, pickedEvent.contextId),
         ),
       )
       .limit(1);
@@ -601,15 +620,16 @@ export type TelegramThreadContext = ReturnType<
 >;
 
 export function createTelegramThreadContext(
-  source$: ThreadPromptSourceNode,
+  pickedEvent$: PickedThreadInputEventNode,
+  orgId: string,
 ): Computed<Promise<TelegramThreadContext>> {
   const context$ = computed(async (get) => {
     const db = get(db$);
-    const args = await get(source$);
+    const pickedEvent = await get(pickedEvent$);
     if (
-      !args ||
-      args.event.contextType !== "telegram" ||
-      args.event.contextId === null
+      !pickedEvent ||
+      pickedEvent.contextType !== "telegram" ||
+      pickedEvent.contextId === null
     ) {
       return null;
     }
@@ -644,7 +664,7 @@ export function createTelegramThreadContext(
         chatThreads,
         and(
           eq(chatThreads.id, chatEvents.chatThreadId),
-          eq(chatThreads.userId, args.event.userId),
+          eq(chatThreads.userId, pickedEvent.userId),
         ),
       )
       .innerJoin(agents, eq(agents.id, chatThreads.agentId))
@@ -653,16 +673,16 @@ export function createTelegramThreadContext(
         and(
           eq(chatTelegramContext.userLinkKind, "official"),
           eq(telegramOfficialUserLinks.id, chatTelegramContext.userLinkId),
-          eq(telegramOfficialUserLinks.userId, args.event.userId),
-          eq(telegramOfficialUserLinks.orgId, args.orgId),
+          eq(telegramOfficialUserLinks.userId, pickedEvent.userId),
+          eq(telegramOfficialUserLinks.orgId, orgId),
         ),
       )
       .where(
         and(
-          eq(chatEvents.id, args.event.id),
-          eq(chatEvents.chatThreadId, args.chatThreadId),
+          eq(chatEvents.id, pickedEvent.id),
+          eq(chatEvents.chatThreadId, pickedEvent.chatThreadId),
           eq(chatEvents.contextType, "telegram"),
-          eq(chatTelegramContext.id, args.event.contextId),
+          eq(chatTelegramContext.id, pickedEvent.contextId),
         ),
       )
       .limit(1);
@@ -676,15 +696,16 @@ export type AgentPhoneThreadContext = ReturnType<
 >;
 
 export function createAgentPhoneThreadContext(
-  source$: ThreadPromptSourceNode,
+  pickedEvent$: PickedThreadInputEventNode,
+  orgId: string,
 ): Computed<Promise<AgentPhoneThreadContext>> {
   const context$ = computed(async (get) => {
     const db = get(db$);
-    const args = await get(source$);
+    const pickedEvent = await get(pickedEvent$);
     if (
-      !args ||
-      args.event.contextType !== "agentphone" ||
-      args.event.contextId === null
+      !pickedEvent ||
+      pickedEvent.contextType !== "agentphone" ||
+      pickedEvent.contextId === null
     ) {
       return null;
     }
@@ -717,7 +738,7 @@ export function createAgentPhoneThreadContext(
         chatThreads,
         and(
           eq(chatThreads.id, chatEvents.chatThreadId),
-          eq(chatThreads.userId, args.event.userId),
+          eq(chatThreads.userId, pickedEvent.userId),
         ),
       )
       .innerJoin(agents, eq(agents.id, chatThreads.agentId))
@@ -725,16 +746,16 @@ export function createAgentPhoneThreadContext(
         agentphoneUserLinks,
         and(
           eq(agentphoneUserLinks.id, chatAgentphoneContext.userLinkId),
-          eq(agentphoneUserLinks.userId, args.event.userId),
-          eq(agentphoneUserLinks.orgId, args.orgId),
+          eq(agentphoneUserLinks.userId, pickedEvent.userId),
+          eq(agentphoneUserLinks.orgId, orgId),
         ),
       )
       .where(
         and(
-          eq(chatEvents.id, args.event.id),
-          eq(chatEvents.chatThreadId, args.chatThreadId),
+          eq(chatEvents.id, pickedEvent.id),
+          eq(chatEvents.chatThreadId, pickedEvent.chatThreadId),
           eq(chatEvents.contextType, "agentphone"),
-          eq(chatAgentphoneContext.id, args.event.contextId),
+          eq(chatAgentphoneContext.id, pickedEvent.contextId),
         ),
       )
       .limit(1);

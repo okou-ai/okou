@@ -329,7 +329,6 @@ export function replacementSubscriptionRequired(
     ),
   };
 }
-export type ProviderModelSupport = "validate" | "trust-enqueued";
 export function validateCodexServiceTier(params: {
   readonly catalog: ModelCatalog;
   readonly pin: ModelFirstPin;

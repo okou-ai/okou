@@ -1,4 +1,9 @@
 import type { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
+import {
+  DEFAULT_IMAGE_MODEL,
+  type ImageModel,
+} from "@okouai/core/image-model-catalog";
 import { agents } from "@okouai/db/schema/agent";
 import { connectors } from "@okouai/db/schema/connector";
 import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
@@ -34,6 +39,8 @@ import {
   type ConnectorSourceRow,
 } from "./execution-connector-sources.service";
 import type { ExecutionStorageCacheRows } from "./execution-storage-cache-read.service";
+import type { MemberModelRouteContext } from "./effective-model-route.service";
+import type { ModelCatalog } from "./model-catalog.service";
 import {
   modelFactsFromSnapshot,
   type MemberModelBootstrap,
@@ -129,10 +136,13 @@ export interface AgentRunContextSignals {
   readonly concurrencyCapacity$: Computed<Promise<number>>;
   readonly credits$: Computed<Promise<ExecutionCreditBalance | null>>;
   readonly modelFacts$: Computed<Promise<OrgModelBootstrap>>;
+  readonly modelCatalog$: Computed<Promise<ModelCatalog>>;
   readonly memberModels$: Computed<Promise<MemberModelBootstrap>>;
+  readonly memberRoutes$: Computed<Promise<MemberModelRouteContext>>;
   readonly managedModelKeys$: ReturnType<typeof createManagedModelKeys>;
   readonly modelPricing$: ReturnType<typeof createModelPricing>;
   readonly memberMetadata$: Computed<Promise<ExecutionMemberMetadata>>;
+  readonly selectedImageModel$: Computed<Promise<ImageModel>>;
   readonly connectorSelection$: Computed<Promise<AgentConnectorSelection>>;
   readonly authorizedConnectors$: Computed<Promise<AuthorizedConnectors>>;
   readonly permissionGrants$: Computed<
@@ -337,6 +347,11 @@ function createModelSourceGroups(
   }
   return {
     memberModels$: providers.memberModels$,
+    memberRoutes$:
+      sharedMember?.memberRoutes$ ??
+      computed(async (get) => {
+        return (await get(providers.memberModels$)).member;
+      }),
     managedModelKeys$: globalReferences.managedModelKeys$,
     modelPricing$: globalReferences.modelPricing$,
     globalReferences,
@@ -435,8 +450,24 @@ function createOrgContext(
     modelFacts$,
     globalReferences,
     memberModels$,
-    modelSources,
+    modelSources: {
+      ...modelSources,
+      modelCatalog$:
+        sharedOrg?.modelCatalog$ ??
+        computed(async (get) => {
+          return (await get(modelFacts$)).catalog;
+        }),
+    },
   };
+}
+
+function createSelectedImageModel(
+  memberMetadata$: Computed<Promise<ExecutionMemberMetadata>>,
+) {
+  return computed(async (get) => {
+    const stored = (await get(memberMetadata$)).preferences?.selectedImageModel;
+    return isImageModelId(stored) ? stored : DEFAULT_IMAGE_MODEL;
+  });
 }
 
 function createIdentityContext(
@@ -545,6 +576,9 @@ function createIdentityContext(
     memberModels$,
     ...modelSources,
     memberMetadata$,
+    selectedImageModel$:
+      sharedMember?.selectedImageModel$ ??
+      createSelectedImageModel(memberMetadata$),
     connectorSelection$: connectorContext.connectorSelection$,
     authorizedConnectors$: connectorContext.authorizedConnectors$,
     permissionGrants$,
@@ -587,8 +621,11 @@ export const preloadAgentRunContext$ = command(
       signals.concurrencyCapacity$,
       signals.credits$,
       signals.modelFacts$,
+      signals.modelCatalog$,
       signals.memberModels$,
+      signals.memberRoutes$,
       signals.memberMetadata$,
+      signals.selectedImageModel$,
       signals.connectorSelection$,
       signals.permissionGrants$,
       signals.workflows$,

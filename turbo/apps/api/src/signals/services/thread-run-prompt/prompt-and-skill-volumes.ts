@@ -1,12 +1,13 @@
 import { computed, type Computed } from "ccstate";
+import { systemSkillStorageResolution$ } from "../../context/system-skill-storage-resolution";
 import { createConnectorsContext } from "../connectors-context.service";
 import {
   mergeRunPromptAndSkills,
   renderRunPrompts,
-  type RunPromptAndSkills,
   type SkillVolume,
 } from "../run-prompt-and-skills";
-import type { createRunTemplates } from "../run-templates.service";
+import { createSystemSkillsContext } from "../system-skills-context.service";
+import type { ThreadContext } from "../thread-context.signals";
 import { createAgentPrompt } from "./agent";
 import { createAgentPhoneThreadPrompt } from "./agentphone";
 import { createAutomationThreadPrompt } from "./automation";
@@ -18,38 +19,33 @@ import { createRuntimePrompt } from "./runtime";
 import { createSlackThreadPrompt } from "./slack";
 import { createTeamsThreadPrompt } from "./teams";
 import { createTelegramThreadPrompt } from "./telegram";
-import type { ThreadPromptSource } from "./types";
 import { createUserPrompt } from "./user";
 import { createWebThreadPrompt } from "./web";
 
-export interface PromptAndSkillVolumesInputs {
-  readonly source$: Computed<Promise<ThreadPromptSource | null>>;
-  readonly agent$: Parameters<typeof createAgentPrompt>[0];
-  readonly memberMetadata$: Parameters<typeof createUserPrompt>[0];
-  readonly featureSwitches$: Parameters<typeof createAgentPrompt>[1];
-  readonly cloudBrowserEnabled$: Parameters<typeof createAgentPrompt>[2];
-  readonly slackContext$: Parameters<typeof createSlackThreadPrompt>[1];
-  readonly feishuContext$: Parameters<typeof createFeishuThreadPrompt>[1];
-  readonly teamsContext$: Parameters<typeof createTeamsThreadPrompt>[1];
-  readonly telegramContext$: Parameters<typeof createTelegramThreadPrompt>[1];
-  readonly agentPhoneContext$: Parameters<
-    typeof createAgentPhoneThreadPrompt
-  >[1];
-  readonly discordContext$: Parameters<typeof createDiscordThreadPrompt>[1];
-  readonly automationContext$: Parameters<
-    typeof createAutomationThreadPrompt
-  >[1];
-  readonly session$: Parameters<typeof createRotatedPrompt>[1];
-  readonly memberRoutes$: Parameters<typeof createRotatedPrompt>[2];
-  readonly catalog$: Parameters<typeof createRotatedPrompt>[3];
-  // Admission shares this selection; keep one template read per claim.
-  readonly templates$: ReturnType<typeof createRunTemplates>;
-  readonly authorizedConnectors$: Parameters<typeof createConnectorsContext>[0];
-  readonly workflowSkills$: Computed<Promise<RunPromptAndSkills>>;
-  readonly systemSkills$: Computed<Promise<RunPromptAndSkills>>;
-  readonly runtime$: Parameters<typeof createRuntimePrompt>[0];
-  readonly computerUseHostGrant$: Parameters<typeof createComputerUsePrompt>[1];
-}
+export type PromptAndSkillVolumesInputs = Pick<
+  ThreadContext,
+  | "pickedEvent$"
+  | "agent$"
+  | "memberMetadata$"
+  | "featureSwitches$"
+  | "cloudBrowserEnabled$"
+  | "slackContext$"
+  | "feishuContext$"
+  | "teamsContext$"
+  | "telegramContext$"
+  | "agentPhoneContext$"
+  | "discordContext$"
+  | "automationContext$"
+  | "session$"
+  | "memberRoutes$"
+  | "modelCatalog$"
+  | "templates$"
+  | "authorizedConnectors$"
+  | "workflowSkills$"
+  | "selectedImageModel$"
+  | "providerFramework$"
+  | "computerUseHostGrant$"
+>;
 
 export interface PromptAndSkillVolumes {
   readonly appendedSystemPrompt: string;
@@ -67,34 +63,66 @@ export class PromptAndSkillVolumesError extends Error {
   }
 }
 
+function createIntegrationPrompts(inputs: PromptAndSkillVolumesInputs) {
+  const { pickedEvent$, featureSwitches$ } = inputs;
+  const framework$ = computed(async (get) => {
+    const framework = await get(inputs.providerFramework$);
+    if (typeof framework !== "string") {
+      throw new Error("Runtime prompt requires a valid run model route");
+    }
+    return framework;
+  });
+  const webPrompt$ = createWebThreadPrompt(
+    pickedEvent$,
+    featureSwitches$,
+    framework$,
+  );
+  return {
+    web: webPrompt$,
+    agent_run: webPrompt$,
+    slack: createSlackThreadPrompt(
+      pickedEvent$,
+      inputs.slackContext$,
+      featureSwitches$,
+    ),
+    feishu: createFeishuThreadPrompt(
+      pickedEvent$,
+      inputs.feishuContext$,
+      featureSwitches$,
+    ),
+    teams: createTeamsThreadPrompt(
+      pickedEvent$,
+      inputs.teamsContext$,
+      featureSwitches$,
+    ),
+    telegram: createTelegramThreadPrompt(
+      pickedEvent$,
+      inputs.telegramContext$,
+      featureSwitches$,
+    ),
+    agentphone: createAgentPhoneThreadPrompt(
+      pickedEvent$,
+      inputs.agentPhoneContext$,
+      featureSwitches$,
+    ),
+    discord: createDiscordThreadPrompt(
+      pickedEvent$,
+      inputs.discordContext$,
+      featureSwitches$,
+    ),
+    automation: createAutomationThreadPrompt(
+      pickedEvent$,
+      inputs.automationContext$,
+    ),
+  };
+}
+
 /** Render prompt contributions once; storage preparation binds skill paths. */
 export function createPromptAndSkillVolumesSignals(
   inputs: PromptAndSkillVolumesInputs,
 ): Computed<Promise<PromptAndSkillVolumes>> {
-  const pickedEvent$ = computed(async (get) => {
-    return (await get(inputs.source$))?.event ?? null;
-  });
-  const webPrompt$ = createWebThreadPrompt(inputs.source$);
-  const integrationPrompts = {
-    web: webPrompt$,
-    agent_run: webPrompt$,
-    slack: createSlackThreadPrompt(inputs.source$, inputs.slackContext$),
-    feishu: createFeishuThreadPrompt(inputs.source$, inputs.feishuContext$),
-    teams: createTeamsThreadPrompt(inputs.source$, inputs.teamsContext$),
-    telegram: createTelegramThreadPrompt(
-      inputs.source$,
-      inputs.telegramContext$,
-    ),
-    agentphone: createAgentPhoneThreadPrompt(
-      inputs.source$,
-      inputs.agentPhoneContext$,
-    ),
-    discord: createDiscordThreadPrompt(inputs.source$, inputs.discordContext$),
-    automation: createAutomationThreadPrompt(
-      inputs.source$,
-      inputs.automationContext$,
-    ),
-  };
+  const pickedEvent$ = inputs.pickedEvent$;
+  const integrationPrompts = createIntegrationPrompts(inputs);
   const agentPrompt$ = createAgentPrompt(
     inputs.agent$,
     inputs.featureSwitches$,
@@ -109,13 +137,16 @@ export function createPromptAndSkillVolumesSignals(
     pickedEvent$,
     inputs.session$,
     inputs.memberRoutes$,
-    inputs.catalog$,
+    inputs.modelCatalog$,
   );
   const connectors$ = createConnectorsContext(inputs.authorizedConnectors$);
-  const runtimePrompt$ = createRuntimePrompt(inputs.runtime$);
+  const runtimePrompt$ = createRuntimePrompt(inputs.selectedImageModel$);
+  const systemSkills$ = createSystemSkillsContext(
+    systemSkillStorageResolution$,
+  );
 
   return computed(async (get): Promise<PromptAndSkillVolumes> => {
-    const contextType = (await get(inputs.source$))?.event.contextType;
+    const contextType = (await get(pickedEvent$))?.contextType;
     if (!contextType) {
       throw new PromptAndSkillVolumesError(
         "CONFLICT",
@@ -143,7 +174,7 @@ export function createPromptAndSkillVolumesSignals(
       get(computerUsePrompt$),
       get(connectors$),
       get(inputs.workflowSkills$),
-      get(inputs.systemSkills$),
+      get(systemSkills$),
       get(runtimePrompt$),
     ]);
     if (!integration) {

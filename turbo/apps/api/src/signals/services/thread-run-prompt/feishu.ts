@@ -1,18 +1,20 @@
+import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { computed, type Computed } from "ccstate";
 import { FEISHU_PLATFORMS } from "@okouai/core/feishu-platform";
 import { buildFeishuSystemPrompt } from "../feishu-dispatch.service";
 import { resolveIntegrationNotePrompt } from "../integration-note-prompt.service";
 import type { FeishuThreadContext } from "../thread-run-context.service";
 import type { RunPromptAndSkills } from "../run-prompt-and-skills";
-import type { ThreadPromptSource } from "./types";
+import type { PickedThreadInputEvent } from "./types";
 
 export function createFeishuThreadPrompt(
-  source$: Computed<Promise<ThreadPromptSource | null>>,
+  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   context$: Computed<Promise<FeishuThreadContext>>,
+  featureSwitches$: Computed<Promise<FeatureSwitchContext>>,
 ): Computed<Promise<RunPromptAndSkills | null>> {
   return computed(async (get) => {
-    const source = await get(source$);
-    if (source?.event.contextType !== "feishu") {
+    const pickedEvent = await get(pickedEvent$);
+    if (pickedEvent?.contextType !== "feishu") {
       return null;
     }
     const context = await get(context$);
@@ -43,7 +45,7 @@ export function createFeishuThreadPrompt(
           senderOpenId: context.senderOpenId,
           integrationNote: resolveIntegrationNotePrompt({
             triggerSource: context.platform,
-            featureSwitchContext: source.featureSwitchContext,
+            featureSwitchContext: await get(featureSwitches$),
           }),
           history: context.conversationHistory,
         }),
