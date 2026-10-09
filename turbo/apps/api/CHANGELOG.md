@@ -9,6 +9,29 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.717.1](https://github.com/okou-ai/okou/compare/api-v1.717.0...api-v1.717.1) (2026-10-09)
+
+
+### CI
+
+* remove production release catalog sync ([#38230](https://github.com/okou-ai/okou/issues/38230)) ([1a51a67](https://github.com/okou-ai/okou/commit/1a51a6731107a55a1adc4d34160860f186c96758))
+
+
+### Refactoring
+
+* **api:** derive connector prompts from bootstrap authorization ([#38228](https://github.com/okou-ai/okou/issues/38228)) ([4c016da](https://github.com/okou-ai/okou/commit/4c016da6694e286c9a471536b020f0dcd6ace8cd))
+* **api:** retire batch 017 private test fixtures ([#38235](https://github.com/okou-ai/okou/issues/38235)) ([a218941](https://github.com/okou-ai/okou/commit/a2189418b48f7dab6b8d5b9237f7d4c6bfd20d4e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.542.1
+    * @okouai/core bumped to 8.737.1
+    * @okouai/db bumped to 1.326.1
+    * @okouai/pi-agent-runtime bumped to 1.47.1
+
 ## [1.717.0](https://github.com/okou-ai/okou/compare/api-v1.716.0...api-v1.717.0) (2026-10-09)
 
 

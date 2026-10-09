@@ -12,6 +12,21 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1004.1](https://github.com/okou-ai/okou/compare/app-v0.1004.0...app-v0.1004.1) (2026-10-09)
+
+
+### Bug Fixes
+
+* **platform:** keep completed followups opaque on thread entry ([#38231](https://github.com/okou-ai/okou/issues/38231)) ([d1cf638](https://github.com/okou-ai/okou/commit/d1cf638f579bc85348057ceadd8701b08b80c12c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.542.1
+    * @okouai/core bumped to 8.737.1
+
 ## [0.1004.0](https://github.com/okou-ai/okou/compare/app-v0.1003.3...app-v0.1004.0) (2026-10-09)
 
 
