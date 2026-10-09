@@ -50,7 +50,7 @@ describe("authored social image URLs", () => {
     );
     expect(result).toContain('property="og:image:width" content="1200"');
     expect(result).toContain('property="og:image:height" content="630"');
-    expect(result.endsWith(body)).toBe(true);
+    expect(result.slice(result.indexOf("<body>"))).toBe(body);
     expect(normalizeArtifactImageUrls(result, pageUrl)).toBe(result);
   });
 
