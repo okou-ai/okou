@@ -65,7 +65,6 @@ jobs:
     outputs:
       any-changed: ${{ steps.detect.outputs.any-changed }}
       ci-changed: ${{ steps.detect.outputs.ci-changed }}
-      qemu-producer-needed: ${{ steps.detect.outputs.qemu-producer-needed }}
       mitm-addon-test-inputs-changed: ${{ steps.detect.outputs.mitm-addon-test-inputs-changed }}
       mitm-addon-pricing-seed-changed: ${{ steps.detect.outputs.mitm-addon-pricing-seed-changed }}
       runner-firewall-contract-inputs-changed: ${{ steps.detect.outputs.runner-firewall-contract-inputs-changed }}
@@ -154,27 +153,6 @@ jobs:
           done < "$changed_files"
           echo "api-contracts-rust-bindings-changed=$api_contracts_rust_bindings_changed" >> "$GITHUB_OUTPUT"
 
-          # Ordinary Rust PRs test the client directly, not a fresh QEMU build.
-          # Rebuild candidates for their own recipe/runtime inputs; main and
-          # merge queue retain the existing any-crate producer coverage.
-          qemu_producer_needed=false
-          if [ "$EVENT_NAME" != "pull_request" ] && grep -qx "any-changed=true" "$GITHUB_OUTPUT"; then
-            qemu_producer_needed=true
-          fi
-          while IFS= read -r changed_file; do
-            case "$changed_file" in
-              .github/workflows/crates.yml | \
-              .github/scripts/check-full-qemu-producer.sh | \
-              .github/scripts/prepare-qemu-gssapi-fixture.py | \
-              .github/scripts/download-verified.sh | \
-              .github/scripts/tests/test-qemu-gssapi-producer.py | \
-              crates/rfb-client/tests/fixtures/qemu_gssapi*)
-                qemu_producer_needed=true
-                break
-                ;;
-            esac
-          done < "$changed_files"
-          echo "qemu-producer-needed=$qemu_producer_needed" >> "$GITHUB_OUTPUT"
           rm -f "$changed_files"
 
           # Shared contract fixtures are stored under turbo but are read by
@@ -680,35 +658,8 @@ jobs:
         shell: bash
         run: bash .github/scripts/check-packaged-addon-control.sh
 
-  native-full-qemu-producer:
-    name: Signed native full QEMU candidate producer (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 50
-    needs: [detect]
-    if: needs.detect.outputs.qemu-producer-needed == 'true'
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - name: Build two actual source-pinned native candidate binaries
-        run: bash .github/scripts/check-full-qemu-producer.sh
-      - name: Retain public compiler outputs and original producer identity
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: full-qemu-candidate-${{ matrix.os }}
-          path: |
-            crates/target/full-qemu-producer-receipt/
-            crates/target/qemu-full-fixture/signed-noble-*/provision-error.log
-            crates/target/qemu-full-fixture/signed-noble-*/build.log
-            crates/target/qemu-full-fixture/signed-noble-*/public-evidence/
-          if-no-files-found: error
-          retention-days: 1
-
+  # Exercise the client's real native boundary and protocol peers, not a build
+  # of an external VNC server. Optional QEMU tooling is outside routine CI.
   native-kerberos-runtime:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
@@ -1452,7 +1403,6 @@ jobs:
       - runner-rootfs-process-test
       - native-kerberos-runtime
       - native-gssapi-independent-peer
-      - native-full-qemu-producer
     # Always run so the gate reports an explicit result (not "skipped").
     if: always()
     steps:
@@ -1460,7 +1410,6 @@ jobs:
         env:
           IS_RELEASE: ${{ needs.detect-release.outputs.skip }}
           COVERAGE_NEEDED: ${{ needs.detect.outputs.any-changed == 'true' }}
-          QEMU_PRODUCER_NEEDED: ${{ needs.detect.outputs.qemu-producer-needed }}
           FIREWALL_CONTRACT_NEEDED: ${{ needs.detect.outputs.runner-firewall-contract-inputs-changed == 'true' }}
           RUNNER_IMAGE_NEEDED: ${{ needs.detect.outputs.metal-job-ref != '' && needs.detect.outputs.crates-runner-consumer-needed == 'true' }}
           CPU_FAIRNESS_NEEDED: ${{ needs.detect.outputs.metal-job-ref != '' && needs.detect.outputs.crates-runner-consumer-needed == 'true' && (needs.detect.outputs.sandbox-firecracker-changed == 'true' || needs.detect.outputs.ci-changed == 'true') }}
@@ -1513,19 +1462,11 @@ jobs:
             FIREWALL_CONTRACT_ALLOW_SKIP=""
           fi
 
-          QEMU_PRODUCER_ALLOW_SKIP=""
-          case "$QEMU_PRODUCER_NEEDED" in
-            true) ;;
-            false) QEMU_PRODUCER_ALLOW_SKIP=true ;;
-            *) echo '::error::Missing or invalid QEMU producer selection'; FAILED=1 ;;
-          esac
-
           # May-skip only when the corresponding work was not selected.
           check_result "check" "${{ needs.check.result }}" "true"
           check_result "coverage" "${{ needs.coverage.result }}" "$COVERAGE_ALLOW_SKIP"
           check_result "native-kerberos-runtime" "${{ needs.native-kerberos-runtime.result }}" "$COVERAGE_ALLOW_SKIP"
           check_result "native-gssapi-independent-peer" "${{ needs.native-gssapi-independent-peer.result }}" "$COVERAGE_ALLOW_SKIP"
-          check_result "native-full-qemu-producer" "${{ needs.native-full-qemu-producer.result }}" "$QEMU_PRODUCER_ALLOW_SKIP"
           check_result "api-contracts-rust-bindings" "${{ needs.api-contracts-rust-bindings.result }}" "true"
           check_result "runner-firewall-contract-test" "${{ needs.runner-firewall-contract-test.result }}" "$FIREWALL_CONTRACT_ALLOW_SKIP"
           check_result "mitm-addon-test" "${{ needs.mitm-addon-test.result }}" "true"

@@ -60,7 +60,6 @@ def check_gate(root, gate, step, matrix:, needed: "true", cpu_needed: "true", re
   raise "unresolved gate expression" if script.include?("${{")
   env = {"IS_RELEASE" => release, "RUNNER_IMAGE_NEEDED" => needed,
          "COVERAGE_NEEDED" => "true", "FIREWALL_CONTRACT_NEEDED" => "false",
-         "QEMU_PRODUCER_NEEDED" => "true",
          "CPU_FAIRNESS_NEEDED" => cpu_needed, "IMAGE_VALIDATION_MATRIX" => matrix}
   run_step(root, env, script, success: success)
 end

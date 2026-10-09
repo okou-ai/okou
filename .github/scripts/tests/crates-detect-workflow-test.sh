@@ -33,7 +33,6 @@ jq -e '
   {
     "any-changed": "${{ steps.detect.outputs.any-changed }}",
     "ci-changed": "${{ steps.detect.outputs.ci-changed }}",
-    "qemu-producer-needed": "${{ steps.detect.outputs.qemu-producer-needed }}",
     "mitm-addon-test-inputs-changed": "${{ steps.detect.outputs.mitm-addon-test-inputs-changed }}",
     "mitm-addon-pricing-seed-changed": "${{ steps.detect.outputs.mitm-addon-pricing-seed-changed }}",
     "runner-firewall-contract-inputs-changed": "${{ steps.detect.outputs.runner-firewall-contract-inputs-changed }}",

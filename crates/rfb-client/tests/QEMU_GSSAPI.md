@@ -1,8 +1,30 @@
-# QEMU verified-X509263 / GSSAPI engine fixture
+# RFB/GSSAPI protocol tests and optional QEMU interoperability
 
-This is engine/protocol interoperability, not Owner→Agent→Runner product acceptance, compatibility with every QEMU release, merge permission or production activation. #37612 leaves #37613 and `VncAccess.enabled: false` unchanged. SCRAM remains a separate profile; rsasl's ambient GSS backend is not enabled.
+This is engine/protocol interoperability, not Owner→Agent→Runner product acceptance, compatibility with every VNC server, merge permission or production activation. #37612 leaves #37613 and `VncAccess.enabled: false` unchanged. SCRAM remains a separate profile; rsasl's ambient GSS backend is not enabled.
 
-## Independent server and client identity
+## Protocol scope and routine CI
+
+VNC uses RFB; QEMU is an external server implementation, not a runtime dependency
+of this client. Routine PR, main and merge-queue CI test the Rust client and its
+real native MIT worker, independent MIT/KDC acceptor and controlled RFB peer.
+They do not download/build QEMU or prepare its firmware, private server bundle,
+reproducibility candidates or full-frame acceptance artifacts.
+
+This change is a testing-scope decision, not a protocol implementation change.
+The current `authenticate_qemu_gssapi` API explicitly selects the verified-X509
+**263 compatibility profile**. QEMU9.2 assigns X509SASL263/TLSSASL264, unlike the
+published RFB extension's TLSSASL263/X509SASL264 assignment. This API does not
+claim generic standards-X509SASL264 support and does not silently alias264 or
+admit anonymous TLS. The client's other RFB profiles remain unchanged.
+
+QEMU-specific interoperability and screenshot validation below are separate
+checks, not routine CI. Their missing controller/pins or incomplete provenance
+must be reported as unverified QEMU coverage, not used to infer protocol success
+or block the controlled-peer CI scope. This does not waive separately scoped
+full-fixture acceptance: input, identity, resource, lifetime and teardown
+requirements still apply, and Rust CI does not establish a real-server pass.
+
+## Optional QEMU server and independent client identity
 
 The local server is QEMU **9.2.0**, source commit `ae35f033b874c627d81d51070187fbf55f0bf1a7`, archive SHA256 `f859f0bc65e1f533d040bbe8c92bcfecee5af2c921a6687c652fb44d089bd894`, `ui/vnc-auth-sasl.c` SHA256 `3dfd2c4be76597983641fde3d99b64ac5b0d6a56b59e4d6a08edacc95075bc2d`. The audited local fixture binary is SHA256 `cef1a9a4a18daad78f74b4997fafdb3c18aeaead1596732bf6c5bc5bb32eabc8`; the harness refuses a substituted binary. QEMU 8.2.2's GSS token/NUL behavior is not a reason to weaken parsing.
 
@@ -26,21 +48,21 @@ cargo test --manifest-path crates/Cargo.toml --profile local --locked -j 1 \
 The latter two compile the genuine pinned MIT worker when Cargo needs it; this
 is not a system-GSS substitute. Cargo reuses unchanged build inputs normally.
 Real independent-peer/lifecycle tests still need their signed private MIT/KDC
-fixture, but not a QEMU source build. Full QEMU/PNG acceptance additionally needs
-the separately admitted full runtime below; Rust-only results do not satisfy it.
+fixture, but not a QEMU source build. The two native CI matrices and their
+fail-closed gate retain their existing selection on both x86-64 and ARM. A
+selected native test must succeed: failure, cancellation or unexpected skipping
+still fails the gate. These checks verify native containment and independent
+mutual-GSS/RFC4752/TLS/RFB behavior, not a QEMU server implementation.
 
-PR CI rebuilds QEMU candidates only when their recipe, download helper, producer
-tests, runtime/pins, or Crates workflow change. Native Rust containment and
-independent mutual-GSS/RFC4752/TLS checks retain their existing selection. Main
-and merge queue retain candidate builds for Rust/CI changes. A selected producer
-must succeed; missing selection, failure, cancellation, or unexpected skipping
-fails the gate. This PR itself changes fixture inputs and therefore still runs
-the producers. No cache, budget increase, architecture waiver, or acceptance
-shortcut is introduced.
+The Crates workflow has no QEMU candidate job, selector, artifact or gate
+requirement on PR, main or merge-queue events. The optional QEMU producer and
+full fixture remain explicit tools, not a hidden dependency of Rust tests.
+Their runtime/PNG results are not implied by Rust CI. No worker, peer, package,
+profile, resource budget or existing security assertion is weakened.
 
-## Reproduce
+## Optional QEMU reproduction
 
-Use the pinned private QEMU/server-runtime build described above, not a system GSS client or an arbitrary executable override. From the repository root:
+For a separately requested QEMU interoperability check, use the pinned private QEMU/server-runtime build described above, not a system GSS client or an arbitrary executable override. From the repository root:
 
 ```bash
 python3 crates/rfb-client/tests/fixtures/qemu_gssapi.py \
@@ -54,13 +76,13 @@ The full fixture's explicit `pinned-host` independent MIT acceptor remains disti
 
 The harness compiles the current Rust test target and owns only its synthetic loopback listeners/processes/private generated directory. Secrets go through private stdin/files, never CLI arguments or environment values. Public fixture-directory/stopped-KDC indicators select the opt-in test target; default ignored tests are not an acceptance result. Cargo/test descendants run in an owned process group. Its single local owner requires default SIGCHLD and observes leader completion with `waitid(WNOWAIT)`, retaining the leader even after exit until the final destructive group signal. Cleanup masks calling-thread SIGINT and the executable's exception-raising SIGTERM across group termination, bounded leader reap and adopted-child/group checks; it restores the caller's mask afterward and never sends TERM/KILL against that numeric group after reaping the leader. An observed lost child reservation refuses without signalling. The harness is a subreaper and verifies same-group descendant termination/reap, listener closure and exact secret-tree removal even on timeout/failure. Real standard-library child regressions cover completed and active leaders, actual SIGINT at the waitpid boundary, actual SIGTERM before the first group kill and after leader reap with a real adopted same-group sleeper, deadline and nonzero status, ECHILD refusal, ignored SIGCHLD and an actual adopted same-group descendant. Negative controls intercept unsafe old-source signals rather than deliver them to an unowned group. These scoped tests do not admit arbitrary interpreter signal state, concurrent external reapers, constructor interruption or escaped process groups, nor replace the native/full-private fixture. Actual native child reaping is checked by process tests and completed-context/finality controls, not inferred merely from the intentionally unlinked input directory. Do not use external hosts/KDCs, public ingress, global Kerberos/PAM/SSH settings or retained credentials.
 
-## Rebuilt full-private candidate producer
+## Optional full-private candidate producer
 
 ```bash
 bash .github/scripts/check-full-qemu-producer.sh
 ```
 
-The separate native x86_64/aarch64 CI producers download the complete
+The optional native x86_64/aarch64 producer tool downloads the complete
 Depends/Pre-Depends closure from signed Ubuntu snapshot `20260521T000000Z` into
 an empty private APT state. Both architectures select the official explicit
 `https://snapshot.ubuntu.com/ubuntu/20260521T000000Z` origin; no unsupported ports
@@ -263,8 +285,9 @@ failed/partial custody never publishes a completion record and is not replayed
 by failure-stage retention. No archive is downloaded again, installed or executed
 for this step. These originals enable independent all-payload reinspection, not
 signature verification, original-root stat, mutation barriers, loaded-byte closure
-or pin/runtime admission. The existing always-upload evidence directory carries
-them without adding a workflow, cache or time-budget change.
+or pin/runtime admission. The tool's local public-evidence directory retains
+them; routine CI no longer uploads QEMU producer artifacts. This retention does
+not add a workflow, cache or time-budget change.
 Both original first/second native output streams are retained separately and
 rehash-checked as public data after the unchanged native/equality checks. Public
 failure-stage evidence covers provisioning, source/build, post-build inventory and
@@ -344,7 +367,7 @@ The native driver first runs the separate standard-library `qemu_gssapi_runtime_
 
 Seven opt-in tests execute a timed acquisition/expiry regression, two real keytab/password renewal/reacquisition tests and the four existing tests' 25 meaningful controls: independently verified mutual GSS/RFC4752, corrupt AP-REP/MIC, confidentiality/layer/maxbuf/length/sequence refusal, retained completed-GSS expiry, actual verified-TLS RFB finality/padding/SecurityResult, and AP-REP/layer/SecurityResult stalls at acquired expiry. Existing assertions, lifetimes and deadlines are unchanged. The new regression supplies real five-second KDC latency with an eight-second requested ticket: acquisition must not backdate a still-valid ticket to before KDC work, but it must still refuse at the actual native endtime rather than grant a fresh requested lifetime on receipt. It verifies initial AP-REQ eligibility, later `Expired`, actual helper disappearance and empty private resources. It does not complete mutual GSS by itself. The renewal tests use only the independent signed KDC and public native worker APIs, not QEMU; both preserve the original lifetimes/deadlines, refuse distinct expiry/nonrenewable/exhaustion states without KDC traffic or implicit reacquisition, and explicitly verify actual helper disappearance and empty resources for keytab and password sources. All native/acceptor/KDC children, listeners and private material must actually be cleaned. `crates/target/native-gssapi-peer-receipt/` records the exact head/dirty flag, architecture/helper/test/provider digests and results; `runtimeVerified` becomes true only after all seven tests and cleanup succeed. A missing, failed, dirty or older receipt does not establish current-head ARM interoperability.
 
-This is independent mutual-GSS/verified-TLS RFB-control evidence, **not** source-pinned ARM QEMU/Cyrus PNG, complete product acceptance or every hostile completed-context field. The original full QEMU command and its ten tests, including the new timed acquisition regression, remain separately required for that fixture's scope.
+This is independent mutual-GSS/verified-TLS RFB-control evidence, **not** source-pinned ARM QEMU/Cyrus PNG, complete product acceptance or every hostile completed-context field. The original full QEMU command and its ten tests, including the new timed acquisition regression, remain separately required for that fixture's scope; they are outside routine CI and are not claimed complete.
 
 ## Matrix and limits
 

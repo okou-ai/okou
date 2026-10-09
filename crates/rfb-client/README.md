@@ -38,6 +38,11 @@ fall back online. RFC4752 selects no inner security layer over verified TLS, and
 ticket/GSS/Run/session expiry clamps the original stream and two-hour session cap.
 Renewal cannot extend established authentication; the outer owner must close idle
 sessions. Neither this engine nor its fixtures add a saved capability or enable VNC.
+Routine CI exercises Rust protocol tests, native containment and an independent
+MIT/KDC acceptor with a controlled RFB peer on both native targets. It does not
+build QEMU or require VM firmware/screenshots. This entry point retains its
+explicit 263 compatibility profile; it does not claim generic standards
+X509SASL264 support. Optional external-server checks are separate from protocol CI.
 See [`tests/QEMU_GSSAPI.md`](tests/QEMU_GSSAPI.md) for exact evidence and limits.
 
 `authenticate_apple_dh` is a separate entry point for Apple's legacy ARD
