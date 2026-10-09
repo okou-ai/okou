@@ -41,12 +41,6 @@ export const testOfficialWorkflowCatalogStateActionBodySchema =
         action: z.literal("run-reconciliation-worker"),
       })
       .strict(),
-    z
-      .object({
-        action: z.literal("simulate-reconciliation-worker-crash"),
-        definitionName: workflowNameSchema,
-      })
-      .strict(),
   ]);
 export type TestOfficialWorkflowCatalogStateActionBody = z.infer<
   typeof testOfficialWorkflowCatalogStateActionBodySchema

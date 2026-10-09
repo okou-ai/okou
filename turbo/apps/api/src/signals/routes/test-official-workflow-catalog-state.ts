@@ -21,8 +21,6 @@ import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { command } from "ccstate";
 import { and, asc, count, eq, inArray, like, or, sql } from "drizzle-orm";
 
-import { nowDate } from "../../lib/time";
-
 import { bodyResultOf } from "../context/request";
 import { request$ } from "../context/hono";
 import { db$, writeDb$ } from "../external/db";
@@ -356,31 +354,6 @@ const stateResponse$ = command(
   },
 );
 
-const simulateReconciliationWorkerCrash$ = command(
-  async (
-    { set },
-    definitionName: string,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const db = set(writeDb$);
-
-    const currentTime = nowDate();
-    await db
-      .update(officialWorkflowReconciliationWork)
-      .set({
-        state: "running",
-        leaseId: randomUUID(),
-        leaseExpiresAt: new Date(currentTime.getTime() - 1),
-        availableAt: currentTime,
-        updatedAt: currentTime,
-      })
-      .where(
-        eq(officialWorkflowReconciliationWork.definitionName, definitionName),
-      );
-    signal.throwIfAborted();
-  },
-);
-
 const officialWorkflowCatalogTestStateRoute$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     if (!isTestEndpointAllowed(get(request$))) {
@@ -394,15 +367,6 @@ const officialWorkflowCatalogTestStateRoute$ = command(
 
     if (bodyResult.data.action === "seed-previous-schema-release") {
       await set(seedPreviousSchemaRelease$, signal);
-      return await set(stateResponse$, undefined, null, signal);
-    }
-
-    if (bodyResult.data.action === "simulate-reconciliation-worker-crash") {
-      await set(
-        simulateReconciliationWorkerCrash$,
-        bodyResult.data.definitionName,
-        signal,
-      );
       return await set(stateResponse$, undefined, null, signal);
     }
 

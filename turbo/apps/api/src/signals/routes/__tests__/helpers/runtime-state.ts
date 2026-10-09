@@ -282,27 +282,6 @@ export async function readLatestWorkflowAutomationRunFixture(
     : null;
 }
 
-export async function readOfficialWorkflowRunStateFixture(
-  context: TestContext,
-  runId: string,
-): Promise<
-  NonNullable<TestRuntimeStateActionResponse["official_workflow_run_state"]>
-> {
-  const response = await postAction(context, {
-    action: "read-official-workflow-run-state",
-    run_id: runId,
-  });
-  if (!("official_workflow_run_state" in response)) {
-    throw new Error(
-      "readOfficialWorkflowRunStateFixture missing official_workflow_run_state",
-    );
-  }
-  if (!response.official_workflow_run_state) {
-    throw new Error("Official Workflow Run is unavailable");
-  }
-  return response.official_workflow_run_state;
-}
-
 export async function stageOfficialWorkflowAutomationFixture(
   context: TestContext,
   automationId: string,

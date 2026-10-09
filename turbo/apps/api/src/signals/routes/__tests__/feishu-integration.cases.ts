@@ -11,6 +11,8 @@ import {
   randomUUID,
 } from "node:crypto";
 import { Buffer } from "node:buffer";
+import { Readable } from "node:stream";
+import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
@@ -103,7 +105,6 @@ import { customConnectorsUpdateRoutes } from "../custom-connectors-update";
 import { customConnectorsValuesSetRoutes } from "../custom-connectors-values-set";
 import { feishuConnectRoutes } from "../feishu-connect";
 import { logsRoutes } from "../logs";
-import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
 
 const customConnectorByIdTestRoutes = Object.freeze([
   ...customConnectorsDeleteRoutes,
@@ -1155,7 +1156,6 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
 
   async function setupFeishuRunFixture(
     options: {
-      readonly useAlternateInstallationDefault?: boolean;
       readonly useSystemDefaultIdentity?: boolean;
     } = {},
   ): Promise<FeishuRunFixture> {
@@ -1193,26 +1193,10 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
         visibility: "public",
       }),
     ]);
-    const installationDefaultAgent = options.useAlternateInstallationDefault
-      ? alternateAgent
-      : defaultAgent;
-    const otherAgent = options.useAlternateInstallationDefault
-      ? defaultAgent
-      : alternateAgent;
     await runsApi.grantProEntitlement(actor);
     await runsApi.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
-    if (options.useAlternateInstallationDefault) {
-      const orgId = actor.orgId;
-      if (!orgId) {
-        throw new Error("Expected the Feishu actor to belong to an org");
-      }
-      await setOrgDefaultAgentFixture({
-        orgId,
-        agentId: installationDefaultAgent.agentId,
-      });
-    }
     mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
     const { callbackUrl, installationId } = await configureTestInstallation({
       appId,
@@ -1223,8 +1207,8 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
       appId,
       callbackUrl,
       installationId,
-      defaultAgentId: installationDefaultAgent.agentId,
-      alternateAgentId: otherAgent.agentId,
+      defaultAgentId: defaultAgent.agentId,
+      alternateAgentId: alternateAgent.agentId,
     };
   }
 
@@ -1408,17 +1392,57 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
     const headers = {
       authorization: `Bearer ${args.sandboxToken}`,
     };
-    await webhooksApi.requestAgentCheckpointPrepareHistory(
-      {
-        runId: args.runId,
-        hash: historyHash,
-        rawSize: historySize,
-        encodedSize: historySize,
-        encoding: "identity",
+    const presign = context.mocks.s3.getSignedUrl.getMockImplementation();
+    const transport = context.mocks.s3.send.getMockImplementation();
+    if (!presign || !transport) {
+      throw new Error("Expected the configured Feishu S3 transport");
+    }
+    let preparedKey: string | undefined;
+    context.mocks.s3.getSignedUrl.mockImplementation(
+      (client, command, options) => {
+        if (command instanceof PutObjectCommand) {
+          preparedKey = command.input.Key;
+        }
+        return presign(client, command, options);
       },
-      headers,
-      [200],
     );
+    const prepared = await webhooksApi
+      .requestAgentCheckpointPrepareHistory(
+        {
+          runId: args.runId,
+          hash: historyHash,
+          rawSize: historySize,
+          encodedSize: historySize,
+          encoding: "identity",
+        },
+        headers,
+        [200],
+      )
+      .finally(() => {
+        context.mocks.s3.getSignedUrl.mockImplementation(presign);
+      });
+    if (prepared.status !== 200) {
+      throw new Error("Expected the authorized history prepare to succeed");
+    }
+    expect(prepared.body.existing).toBeFalsy();
+    expect(prepared.body.presignedUrl).toBeTruthy();
+    const historyKey = requireValue(
+      preparedKey,
+      "Expected the history key from the authorized prepare",
+    );
+    // The Runner uploads these exact bytes at the key authorized by prepare.
+    context.mocks.s3.send.mockImplementation((command: unknown) => {
+      if (
+        command instanceof GetObjectCommand &&
+        command.input.Key === historyKey
+      ) {
+        return Promise.resolve({
+          Body: Readable.from([Buffer.from(args.history)]),
+          ContentLength: historySize,
+        });
+      }
+      return transport(command);
+    });
     if (args.assistantText !== undefined) {
       const assistantEvent = {
         type: "assistant" as const,
@@ -5638,7 +5662,7 @@ export function registerFeishuIntegrationTests(
 
       it("builds Feishu DM context and canonical response metadata", async () => {
         const fixture = await setupFeishuRunFixture({
-          useAlternateInstallationDefault: true,
+          useSystemDefaultIdentity: true,
         });
         const { actor, runnerGroup, appId, callbackUrl, defaultAgentId } =
           fixture;

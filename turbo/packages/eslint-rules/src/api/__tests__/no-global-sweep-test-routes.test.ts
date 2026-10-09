@@ -53,22 +53,11 @@ ruleTester.run("no-global-sweep-test-routes", noGlobalSweepTestRoutes, {
       `,
     },
     {
-      name: "automation correctness uses the scoped automation-id executor",
+      name: "ordinary automation requests use their production route slice",
       filename: behaviorTest,
       code: `
-        import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
-        const executeAutomation = (scenario) => setupApp({
-          context,
-          routes: testWorkflowAutomationExecutionRoutes,
-        }).request("/api/test/workflow-automation-execution", {
-          method: "POST",
-          body: JSON.stringify({ automation_id: scenario.automationId }),
-        });
-        expect((await executeAutomation(scenario)).body).toStrictEqual({
-          success: true,
-          executed: 1,
-          skipped: 0,
-        });
+        import { workflowAutomationsRoutes } from "../workflow-automations";
+        setupApp({ context, routes: workflowAutomationsRoutes });
       `,
     },
     {
@@ -104,11 +93,11 @@ ruleTester.run("no-global-sweep-test-routes", noGlobalSweepTestRoutes, {
       code: `
         import { ROUTES } from "../../route";
         import { createApp } from "../../../app-factory";
-        import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
+        import { workflowAutomationsRoutes } from "../workflow-automations";
         const aggregateOptions = { signal, routes: ROUTES };
         createApp({
           ...aggregateOptions,
-          routes: testWorkflowAutomationExecutionRoutes,
+          routes: workflowAutomationsRoutes,
         });
       `,
     },
@@ -133,9 +122,9 @@ ruleTester.run("no-global-sweep-test-routes", noGlobalSweepTestRoutes, {
       code: `
         import { ROUTES } from "../../route";
         import { createApp } from "../../../app-factory";
-        import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
+        import { workflowAutomationsRoutes } from "../workflow-automations";
         const options = { routes: ROUTES };
-        const { routes = testWorkflowAutomationExecutionRoutes } = options;
+        const { routes = workflowAutomationsRoutes } = options;
         createApp({ routes });
       `,
       errors: [{ messageId: "globalSweep" }],
@@ -146,9 +135,9 @@ ruleTester.run("no-global-sweep-test-routes", noGlobalSweepTestRoutes, {
       code: `
         import { ROUTES } from "../../route";
         import { setupApp } from "../../../__tests__/test-helpers";
-        import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
+        import { workflowAutomationsRoutes } from "../workflow-automations";
         const options = { routes: ROUTES };
-        const { routes: mountedRoutes = testWorkflowAutomationExecutionRoutes } = options;
+        const { routes: mountedRoutes = workflowAutomationsRoutes } = options;
         setupApp({ routes: mountedRoutes })(contract);
       `,
       errors: [{ messageId: "globalSweep" }],
@@ -172,9 +161,9 @@ ruleTester.run("no-global-sweep-test-routes", noGlobalSweepTestRoutes, {
       code: `
         import { ROUTES } from "../../route";
         import { createApp } from "../../../app-factory";
-        import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
+        import { workflowAutomationsRoutes } from "../workflow-automations";
         function mountWithDefault(
-          { routes } = { routes: testWorkflowAutomationExecutionRoutes },
+          { routes } = { routes: workflowAutomationsRoutes },
         ) {
           return createApp({ routes });
         }

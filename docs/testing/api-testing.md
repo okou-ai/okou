@@ -322,6 +322,18 @@ rows, selected remaining balances or private cleanup. In `weather.test.ts`, the
 five zero-price entries already exist in the production baseline migration;
 normal requests use that catalog directly, without a test-selected pricing alias.
 
+The SEO suites likewise use migration1078's existing DataForSEO price through
+normal requests. Paid actors enter through Stripe invoice/onboarding; the
+insufficient-credit actor activates a subscription without payment. Keep the
+provider retry, cancellation and cost assertions without a private pricing
+namespace. A fabricated Runner token with an empty capability list does not
+establish a real caller's permission combination.
+
+The selected Automation failed/cancelled matrix sends an actual duplicate
+authenticated Runner terminal callback and reads the public thread events and
+charges. It no longer invokes the callback dispatcher privately after settlement.
+That preserves public terminal idempotency, not forced internal redelivery.
+
 A pending reward submission is separate from operator review. The share cases
 in `get-started.test.ts` retain canonical URLs, idempotency and pending claims;
 they do not prove the removed private review's author verdicts, lease recovery

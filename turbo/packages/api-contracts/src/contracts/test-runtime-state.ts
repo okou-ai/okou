@@ -82,10 +82,6 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
     run_id: z.uuid(),
   }),
   z.object({
-    action: z.literal("read-official-workflow-run-state"),
-    run_id: z.uuid(),
-  }),
-  z.object({
     action: z.literal("set-official-workflow-automation-admission-state"),
     automation_id: z.uuid(),
     blueprint_key: z.string().min(1).optional(),
@@ -181,44 +177,6 @@ export const testRuntimeStateActionResponseSchema = z.object({
         ])
         .nullable(),
     })
-    .optional(),
-  official_workflow_run_state: z
-    .object({
-      status: z.string(),
-      model_provider: z.string().nullable(),
-      provenance: z
-        .object({
-          schemaVersion: z.literal(1),
-          definitions: z.array(
-            z.object({
-              name: z.string(),
-              revision: z.string().regex(/^[0-9a-f]{64}$/),
-              artifact: z.object({
-                orgId: z.string(),
-                userId: z.string(),
-                storageName: z.string(),
-                storageId: z.uuid(),
-                storageVersion: z.string().regex(/^[0-9a-f]{64}$/),
-              }),
-            }),
-          ),
-        })
-        .nullable(),
-      storage_mounts: z
-        .array(
-          z.object({
-            org_id: z.string(),
-            user_id: z.string(),
-            name: z.string(),
-            storage_id: z.uuid(),
-            version: z.string().optional(),
-            mount_path: z.string(),
-            writeback: z.boolean().optional(),
-          }),
-        )
-        .nullable(),
-    })
-    .nullable()
     .optional(),
 });
 

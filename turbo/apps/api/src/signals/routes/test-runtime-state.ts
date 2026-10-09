@@ -512,81 +512,10 @@ async function compatibilityFixtureActionResponse(
     }
   }
 }
-
-type ReadOfficialWorkflowRunStateAction = Extract<
-  TestRuntimeStateActionBody,
-  { action: "read-official-workflow-run-state" }
->;
 type SetOfficialWorkflowAutomationAdmissionStateAction = Extract<
   TestRuntimeStateActionBody,
   { action: "set-official-workflow-automation-admission-state" }
 >;
-type OfficialWorkflowRunFixtureAction = Extract<
-  TestRuntimeStateActionBody,
-  {
-    action:
-      | "read-official-workflow-run-state"
-      | "set-official-workflow-automation-admission-state";
-  }
->;
-
-function isOfficialWorkflowRunFixtureAction(
-  body: TestRuntimeStateActionBody,
-): body is OfficialWorkflowRunFixtureAction {
-  return [
-    "read-official-workflow-run-state",
-    "set-official-workflow-automation-admission-state",
-  ].includes(body.action);
-}
-
-async function readOfficialWorkflowRunStateActionResponse(
-  db: Db,
-  body: ReadOfficialWorkflowRunStateAction,
-  signal: AbortSignal,
-) {
-  const [run] = await db
-    .select({
-      status: agentRuns.status,
-      modelProvider: agentRuns.modelProvider,
-      provenance: agentRuns.officialWorkflowProvenance,
-      storageMounts: agentRuns.storageMounts,
-    })
-    .from(agentRuns)
-    .where(eq(agentRuns.id, body.run_id))
-    .limit(1);
-  signal.throwIfAborted();
-  if (!run) {
-    return {
-      status: 200 as const,
-      body: { ok: true as const, official_workflow_run_state: null },
-    };
-  }
-  return {
-    status: 200 as const,
-    body: {
-      ok: true as const,
-      official_workflow_run_state: {
-        status: run.status,
-        model_provider: run.modelProvider,
-        provenance: run.provenance,
-        storage_mounts:
-          run.storageMounts?.map((mount) => {
-            return {
-              org_id: mount.orgId,
-              user_id: mount.userId,
-              name: mount.name,
-              storage_id: mount.storageId,
-              ...(mount.version ? { version: mount.version } : {}),
-              mount_path: mount.mountPath,
-              ...(mount.writeback === undefined
-                ? {}
-                : { writeback: mount.writeback }),
-            };
-          }) ?? null,
-      },
-    },
-  };
-}
 
 async function setOfficialWorkflowAutomationAdmissionStateActionResponse(
   db: Db,
@@ -620,30 +549,15 @@ async function setOfficialWorkflowAutomationAdmissionStateActionResponse(
   return { status: 200 as const, body: { ok: true as const } };
 }
 
-async function officialWorkflowRunFixtureActionResponse(
-  db: Db,
-  body: OfficialWorkflowRunFixtureAction,
-  signal: AbortSignal,
-) {
-  switch (body.action) {
-    case "read-official-workflow-run-state": {
-      return await readOfficialWorkflowRunStateActionResponse(db, body, signal);
-    }
-    case "set-official-workflow-automation-admission-state": {
+const specializedRuntimeFixtureAction$ = command(
+  async ({ set }, body: TestRuntimeStateActionBody, signal: AbortSignal) => {
+    const db = set(writeDb$);
+    if (body.action === "set-official-workflow-automation-admission-state") {
       return await setOfficialWorkflowAutomationAdmissionStateActionResponse(
         db,
         body,
         signal,
       );
-    }
-  }
-}
-
-const specializedRuntimeFixtureAction$ = command(
-  async ({ set }, body: TestRuntimeStateActionBody, signal: AbortSignal) => {
-    const db = set(writeDb$);
-    if (isOfficialWorkflowRunFixtureAction(body)) {
-      return await officialWorkflowRunFixtureActionResponse(db, body, signal);
     }
     if (body.action === "reconcile-socialkit-downloads") {
       const processed = await set(

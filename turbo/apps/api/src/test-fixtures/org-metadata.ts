@@ -5,9 +5,8 @@
  */
 import { orgTierSchema } from "@okouai/api-contracts/contracts/orgs";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { createStore } from "ccstate";
-import { eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 
 import { writeDb$ } from "../signals/external/db";
 import { upsertOrgPlanEntitlement } from "../signals/services/org-plan-entitlements.service";
@@ -38,26 +37,4 @@ export async function upsertOrgMetadataFixture(values: {
         source: "org_metadata_migration",
       });
     });
-}
-
-/**
- * Repoint the org default Agent.
- *
- * The Clerk org-creation bootstrap is the only writer of
- * `org_metadata.default_agent_id`, so a later default-Agent change — which
- * Morning Brief ownership must survive — has no product path to reproduce.
- */
-export async function setOrgDefaultAgentFixture(values: {
-  readonly orgId: string;
-  readonly agentId: string;
-}): Promise<void> {
-  const rows = await createStore()
-    .set(writeDb$)
-    .update(orgMetadata)
-    .set({ defaultAgentId: values.agentId, updatedAt: sql`now()` })
-    .where(eq(orgMetadata.orgId, values.orgId))
-    .returning({ orgId: orgMetadata.orgId });
-  if (rows.length !== 1) {
-    throw new Error("Expected one org metadata row to repoint");
-  }
 }
