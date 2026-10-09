@@ -197,15 +197,19 @@ job-local lifetime. Missing R2 configuration fails cache startup explicitly.
 ### Shared R2 sccache action
 
 Jobs that use the shared compiler cache call
-`.github/actions/setup-r2-sccache` once after checkout. The action installs the
-pinned sccache version, validates the architecture and R2 configuration, starts
-the job-local server, and exports only the compiler settings needed by later
-steps:
+`.github/actions/setup-r2-sccache` once after checkout. The published
+`vm0-toolchain-rust:20261009` and `vm0-dev:20261009` images include sccache 0.18.0
+for both native host architectures. Version pinning and verification belong to
+the image build; the action only checks executable availability before
+credentialed startup and does not download a binary. It validates the architecture
+and R2 configuration, starts the job-local server, and exports only the compiler
+settings needed by later steps:
 
 ```yaml
 - uses: actions/checkout@v7.0.1
 
 - name: Setup R2 sccache
+  id: sccache
   uses: ./.github/actions/setup-r2-sccache
   with:
     architecture: ${{ matrix.id }}
@@ -222,6 +226,22 @@ cache prefix:
 | ------------------ | ---------------------------- | ------------------------ |
 | `arm64`            | `aarch64-unknown-linux-musl` | `runner-sccache/arm64/`  |
 | `x86_64`           | `x86_64-unknown-linux-musl`  | `runner-sccache/x86_64/` |
+
+The action emits `started: true` only after startup and compiler exports succeed.
+After compilation, callers report full human and JSON statistics to logs and the
+job summary, including when compilation fails:
+
+```yaml
+- name: Report sccache statistics
+  if: always() && steps.sccache.outputs.started == 'true'
+  run: .github/scripts/report-sccache-stats.sh
+```
+
+Reporting receives no R2 credentials and is skipped when setup fails or is skipped,
+so it cannot start an unconfigured cache in those paths. A missing executable,
+failed startup, or missing R2 configuration fails selected setup explicitly. All fixed
+base/Rust/development image references and the runner binary's hashed toolchain
+contract use the same published release; a contract change rotates binary inputs.
 
 Callers pass the existing R2 configuration explicitly. They do not pass a raw
 prefix or add job, crate, branch, or commit namespaces. Use the action only once

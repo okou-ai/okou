@@ -7,14 +7,14 @@ import type {
 import type { UsageRecordRange } from "@okouai/api-contracts/contracts/usage-record";
 import { userCache } from "@okouai/db/schema/user-cache";
 import { clerk$, type ClerkUser } from "../external/clerk";
-import { writeDb$ } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { getOrgBillingPeriod$ } from "./org-billing-period.service";
+import { memberUsageQuery } from "./usage-reporting-ledger";
 import {
-  memberUsageBreakdownQuery,
-  memberUsageTotalsQuery,
-} from "./usage-reporting-ledger";
-import { buildUsageBreakdowns } from "./usage-reporting-breakdown";
+  buildUsageBreakdowns,
+  type UsageBreakdownSqlRow,
+} from "./usage-reporting-breakdown";
 import { fixedRangeToPeriod } from "./usage-period";
 
 interface UsageMembersArgs {
@@ -25,7 +25,7 @@ interface UsageMembersArgs {
 
 export const usageMembers$ = command(
   async (
-    { set },
+    { get, set },
     args: UsageMembersArgs,
     signal: AbortSignal,
   ): Promise<UsageMembersResponse> => {
@@ -47,29 +47,48 @@ export const usageMembers$ = command(
       throw new Error("member usage period was not resolved");
     }
 
-    const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0307; new non-billing transactions are prohibited.
-    const { rows, breakdownByUser } = await db.transaction(
-      async (tx) => {
-        const rows = await tx
-          .select()
-          .from(memberUsageTotalsQuery(args.orgId, period));
-        const breakdownQuery = memberUsageBreakdownQuery(args.orgId, period);
-        const breakdown = await tx
-          .select()
-          .from(breakdownQuery)
-          .orderBy(
-            asc(breakdownQuery.key),
-            asc(breakdownQuery.kind),
-            asc(breakdownQuery.provider),
-            asc(breakdownQuery.usageKind),
-          );
-        signal.throwIfAborted();
-        return { rows, breakdownByUser: buildUsageBreakdowns(breakdown) };
-      },
-      { isolationLevel: "repeatable read", accessMode: "read only" },
-    );
+    const db = get(db$);
+    const query = memberUsageQuery(args.orgId, period);
     signal.throwIfAborted();
+    const joinedRows = await db
+      .select()
+      .from(query)
+      .orderBy(
+        asc(query.userId),
+        asc(query.breakdownKind),
+        asc(query.breakdownProvider),
+        asc(query.breakdownUsageKind),
+      );
+    signal.throwIfAborted();
+
+    const totalsByUser = new Map<string, (typeof joinedRows)[number]>();
+    const breakdownRows: UsageBreakdownSqlRow[] = [];
+    for (const row of joinedRows) {
+      // Each aggregate total repeats for its display groups; save it only once.
+      if (!totalsByUser.has(row.userId)) {
+        totalsByUser.set(row.userId, row);
+      }
+      if (row.breakdownKey === null) {
+        continue;
+      }
+      if (
+        row.breakdownKind === null ||
+        row.breakdownUsageKind === null ||
+        row.breakdownProvider === null ||
+        row.breakdownCredits === null
+      ) {
+        throw new Error("member usage breakdown is incomplete");
+      }
+      breakdownRows.push({
+        key: row.breakdownKey,
+        kind: row.breakdownKind,
+        usageKind: row.breakdownUsageKind,
+        provider: row.breakdownProvider,
+        credits: row.breakdownCredits,
+      });
+    }
+    const rows = [...totalsByUser.values()];
+    const breakdownByUser = buildUsageBreakdowns(breakdownRows);
 
     if (rows.length === 0) {
       return {

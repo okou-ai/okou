@@ -8,6 +8,16 @@ import {
   memoryArchive,
 } from "./helpers/public-runner-memory";
 
+import { usageMembersContract } from "@okouai/api-contracts/contracts/usage";
+import { weatherContract } from "@okouai/api-contracts/contracts/weather";
+import { usageMembersRoutes } from "../usage-members";
+import { weatherRoutes } from "../weather";
+import { mockClerkUsers } from "./helpers/clerk-users";
+import {
+  VERTEX_MAPS_URL,
+  vertexMapsResponse,
+} from "./helpers/google-maps-grounding";
+import { VERTEX_VOICE_URL, vertexVoiceResponse } from "./helpers/google-voice";
 import { CLIENT_VERSION_HEADER } from "@okouai/api-contracts/contracts/client-headers";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectorCheckContract } from "@okouai/api-contracts/contracts/connector-check";
@@ -13251,6 +13261,283 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
   // oxlint-disable-next-line vitest/no-conditional-tests -- The entrypoint selects this group before collection.
   if (group === "billing") {
     describe("BILL: public usage member access", () => {
+      it("keeps member totals independent of display groups and retains zero-charge members", async () => {
+        const bdd = createBddApi(context);
+        const runs = createRunsApi(context);
+        const billing = createBillingMediaApi(context);
+        const webhooks = createWebhookCallbackApi(context);
+        const periodStart = Date.UTC(2026, 8, 1, 9, 15);
+        mockNow(periodStart);
+        const {
+          actor: admin,
+          agentId,
+          runnerGroup,
+        } = await entitledRunActor({}, NATIVE_RUNNER_ROUTE);
+        await webhooks.postStripeEvent(
+          {
+            id: `evt_member_usage_${randomUUID()}`,
+            type: "checkout.session.completed",
+            data: {
+              object: {
+                id: `cs_member_usage_${randomUUID()}`,
+                invoice: null,
+                subscription: null,
+                customer: null,
+                metadata: {
+                  purpose: "credit_purchase",
+                  orgId: admin.orgId,
+                  creditsAmount: "10000",
+                },
+                payment_status: "paid",
+              },
+            },
+          },
+          [200],
+        );
+        const member = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
+        const freeMember = bdd.user({
+          orgId: admin.orgId,
+          orgRole: "org:member",
+        });
+        await bdd.completeOnboarding(member);
+        await runs.ensurePersonalSubscriptionModel(member, NATIVE_RUNNER_ROUTE);
+        const memberAgent = await bdd.createAgent(member, {
+          displayName: "Member usage agent",
+          visibility: "private",
+        });
+        // Keep the existing ceil-to-hour billing-period boundary observable.
+        mockNow(periodStart + 3_600_000);
+        billing.configureMapsProvider();
+        server.use(
+          http.post(VERTEX_MAPS_URL, () => {
+            return vertexMapsResponse();
+          }),
+          http.post(VERTEX_VOICE_URL, () => {
+            return vertexVoiceResponse("Image usage");
+          }),
+        );
+        const expectedCredits = new Map<string, number>();
+        for (const owner of [
+          { actor: admin, agentId },
+          { actor: member, agentId: memberAgent.agentId },
+        ]) {
+          const run = await runs.createThreadRun(owner.actor, {
+            agentId: owner.agentId,
+            prompt: "generate images and find a cafe",
+          });
+          await runs.heartbeatRunner(runnerGroup);
+          const claim = await runs.claimRunnerJob(run.runId);
+          await webhooks.requestAgentUsageEvent(
+            {
+              runId: run.runId,
+              events: [
+                {
+                  idempotencyKey: randomUUID(),
+                  kind: "image",
+                  provider: "gpt-image-1",
+                  category: "output_image.low.standard",
+                  quantity: 2,
+                },
+                {
+                  idempotencyKey: randomUUID(),
+                  kind: "image",
+                  provider: "gpt-image-1",
+                  category: "tokens.input.text",
+                  quantity: 1000,
+                },
+                {
+                  idempotencyKey: randomUUID(),
+                  kind: "image",
+                  provider: "fal-ai/nano-banana-2",
+                  category: "output_image",
+                  quantity: 1,
+                },
+              ],
+            },
+            { authorization: `Bearer ${claim.sandboxToken}` },
+            [200],
+          );
+          await webhooks.requestAgentComplete(
+            { runId: run.runId, exitCode: 1 },
+            { authorization: `Bearer ${claim.sandboxToken}` },
+            [200],
+          );
+          // The terminal route owns settlement in waitUntil; drain its normal work.
+          await flushWaitUntilForTest();
+          expect((await runs.readRun(owner.actor, run.runId)).status).toBe(
+            "failed",
+          );
+          const maps = await billing.requestMapsSearch(
+            owner.actor,
+            { query: "a nearby cafe" },
+            [200],
+          );
+          if (maps.status !== 200 || maps.body.creditsCharged === null) {
+            throw new Error("Expected the maps response to report its charge");
+          }
+          expectedCredits.set(
+            owner.actor.userId,
+            128 + maps.body.creditsCharged,
+          );
+        }
+
+        mockEnv("OKOU_WEATHER_GOOGLE_WEATHER_TOKEN", "test-google-weather-key");
+        server.use(
+          http.get(
+            "https://weather.googleapis.com/v1/currentConditions:lookup",
+            () => {
+              return HttpResponse.json({
+                temperature: { degrees: 28, unit: "CELSIUS" },
+              });
+            },
+          ),
+        );
+        createRouteMocks(context).clerk.session(
+          freeMember.userId,
+          freeMember.orgId,
+          freeMember.orgRole,
+        );
+        const weather = await accept(
+          setupApp({ context, routes: weatherRoutes })(weatherContract).current(
+            {
+              headers: { authorization: "Bearer clerk-session" },
+              body: { lat: 39.9042, lng: 116.4074 },
+            },
+          ),
+          [200],
+        );
+        expect(weather.body.creditsCharged).toBe(0);
+
+        // Clerk remains outside the usage snapshot; supply the real directory boundary.
+        createRouteMocks(context).clerk.session(
+          admin.userId,
+          admin.orgId,
+          "org:admin",
+        );
+        mockClerkUsers(
+          context,
+          [admin, member, freeMember].map((actor) => {
+            return {
+              id: actor.userId,
+              primaryEmailAddressId: `email_${actor.userId}`,
+              emailAddresses: [
+                { id: `email_${actor.userId}`, emailAddress: actor.email },
+              ],
+            };
+          }),
+        );
+        const usage = setupApp({ context, routes: usageMembersRoutes })(
+          usageMembersContract,
+        );
+        const report = await accept(
+          usage.get({
+            headers: { authorization: "Bearer clerk-session" },
+            query: { range: "24h", tz: "Asia/Shanghai" },
+          }),
+          [200],
+        );
+        const paidMembers = report.body.members.slice(0, 2);
+        expect(
+          paidMembers.map((row) => {
+            return row.userId;
+          }),
+          JSON.stringify(report.body.members),
+        ).toStrictEqual(
+          [admin.userId, member.userId].sort((a, b) => {
+            return a.localeCompare(b);
+          }),
+        );
+        for (const row of paidMembers) {
+          const credits = expectedCredits.get(row.userId);
+          if (credits === undefined) {
+            throw new Error("Expected a member with publicly recorded charges");
+          }
+          expect(row).toMatchObject({
+            email: row.userId === admin.userId ? admin.email : member.email,
+            creditsCharged: credits,
+            // Image and Maps tokens are not model-token usage quantities.
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheReadInputTokens: 0,
+            cacheCreationInputTokens: 0,
+          });
+          expect(row.breakdown).toStrictEqual([
+            {
+              kind: "image",
+              credits: 128,
+              providers: [
+                {
+                  provider: "fal-ai/nano-banana-2",
+                  credits: 96,
+                  usageKinds: [{ kind: "image", credits: 96 }],
+                },
+                {
+                  provider: "gpt-image-1",
+                  credits: 32,
+                  usageKinds: [{ kind: "image", credits: 32 }],
+                },
+              ],
+            },
+            {
+              kind: "other",
+              credits: credits - 128,
+              providers: [
+                {
+                  provider: "google-maps-grounding",
+                  credits: credits - 128,
+                  usageKinds: [
+                    {
+                      kind: "maps",
+                      credits: credits - 128,
+                    },
+                  ],
+                },
+              ],
+            },
+          ]);
+        }
+        expect(report.body.members[2]).toStrictEqual({
+          userId: freeMember.userId,
+          email: freeMember.email,
+          creditsCharged: 0,
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadInputTokens: 0,
+          cacheCreationInputTokens: 0,
+          breakdown: [],
+        });
+        expect(report.body.members).toHaveLength(3);
+        const billingPeriod = await accept(
+          usage.get({
+            headers: { authorization: "Bearer clerk-session" },
+            query: { range: "billingPeriod" },
+          }),
+          [200],
+        );
+        expect(billingPeriod.body.period?.start).toBe(
+          new Date(periodStart).toISOString(),
+        );
+        expect(billingPeriod.body.members).toStrictEqual(report.body.members);
+        const record = await billing.readUsageRecord(admin);
+        expect(record.body.totalCredits).toBe(
+          expectedCredits.get(admin.userId),
+        );
+        expect(
+          record.body.rows.flatMap((row) => {
+            return row.breakdown;
+          }),
+        ).toContainEqual(
+          paidMembers.find((row) => {
+            return row.userId === admin.userId;
+          })?.breakdown[0],
+        );
+        await bdd.deleteAgent(admin, agentId);
+        const afterDeletion = await billing.readUsageMembers(admin, {
+          range: "24h",
+        });
+        expect(afterDeletion.body.members).toStrictEqual(report.body.members);
+      });
+
       it("validates member usage access and returns an empty public report", async () => {
         const bdd = createBddApi(context);
         const billing = createBillingMediaApi(context);

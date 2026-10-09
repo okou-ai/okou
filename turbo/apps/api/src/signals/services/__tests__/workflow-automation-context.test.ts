@@ -15,17 +15,14 @@ import {
 } from "../workflow-automation-context.service";
 
 const eventPolicy = {
-  activePreviousRunPolicy: "allow",
   recordLastRunId: false,
   recordLastRunAt: true,
 } as const;
 const schedulePolicy = {
-  activePreviousRunPolicy: "block",
   recordLastRunId: true,
   recordLastRunAt: false,
 } as const;
 const manualPolicy = {
-  activePreviousRunPolicy: "block",
   recordLastRunId: true,
   recordLastRunAt: true,
 } as const;

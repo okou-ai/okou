@@ -5,18 +5,9 @@ import {
   pgTable,
   unique,
   uniqueIndex,
+  varchar,
 } from "drizzle-orm/pg-core";
 import { chatThreadColumns } from "../columns/chat-thread";
-/**
- * Server-private origin classification for a whole chat thread.
- *
- * `ordinary` is only written by a successful new ordinary-Chat insert.
- * `morning_brief` marks a thread that has hosted official Morning Brief
- * content; it is sticky for the life of the thread. A NULL value means the
- * origin is unknown, which is the only honest answer for rows created before
- * this column existed or by a creation path that does not classify itself.
- */
-export type ChatThreadProvenance = "ordinary" | "morning_brief";
 
 /**
  * Chat Threads table
@@ -25,7 +16,12 @@ export type ChatThreadProvenance = "ordinary" | "morning_brief";
  */
 export const chatThreads = pgTable(
   "chat_threads",
-  chatThreadColumns(),
+  {
+    ...chatThreadColumns(),
+    // Physical-only until the runtime projection is deployed and outgoing APIs
+    // and incompatible rollback artifacts have drained. Drop in a later release.
+    provenance: varchar("provenance", { length: 32 }),
+  },
   (table) => {
     return [
       unique("uq_chat_threads_id_user").on(table.id, table.userId),

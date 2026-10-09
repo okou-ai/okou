@@ -310,7 +310,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
     needs: [detect]
     if: needs.detect.outputs.any-changed == 'true'
     steps:
@@ -428,13 +428,14 @@ jobs:
     env:
       CARGO_PROFILE_TEST_DEBUG: line-tables-only
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
     needs: [detect]
     if: needs.detect.outputs.any-changed == 'true'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Setup R2 sccache
+        id: sccache
         if: >-
           (github.event_name != 'pull_request' ||
           (github.event.pull_request.user.login != 'dependabot[bot]' &&
@@ -527,6 +528,10 @@ jobs:
           files: crates/lcov.info
           flags: rust
 
+      - name: Report sccache statistics
+        if: always() && steps.sccache.outputs.started == 'true'
+        run: .github/scripts/report-sccache-stats.sh
+
       - name: Report peak memory
         if: always()
         continue-on-error: true
@@ -537,7 +542,7 @@ jobs:
     timeout-minutes: 10
     container:
       # Generation formats Rust output with the same toolchain as native checks.
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
     needs: [detect]
     if: |
       needs.detect.outputs.ci-changed == 'true' ||
@@ -558,7 +563,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
     needs: [detect]
     # Full coverage already runs this assertion; keep only the fixture-only path.
     if: |
@@ -655,7 +660,7 @@ jobs:
   nbd-cow-test:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
     needs: [detect, runner-host-groups]
     if: |
       needs.detect.outputs.metal-job-ref != '' && (
@@ -729,7 +734,7 @@ jobs:
   runner-rootfs-process-test:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
     needs: [detect, runner-host-groups]
     if: |
       needs.detect.outputs.metal-job-ref != '' && (
@@ -750,6 +755,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup R2 sccache
+        id: sccache
         uses: ./.github/actions/setup-r2-sccache
         with:
           architecture: ${{ matrix.id }}
@@ -805,6 +811,10 @@ jobs:
             --propagation private -- "$1" --ignored --exact \
             cmd::build::scripts::process_tests::rootfs_process_ownership --nocapture
           REMOTE_TEST
+
+      - name: Report sccache statistics
+        if: always() && steps.sccache.outputs.started == 'true'
+        run: .github/scripts/report-sccache-stats.sh
 
       - name: Report peak memory
         if: always()
@@ -1096,7 +1106,7 @@ jobs:
   host-cpu-fairness-build:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
     needs:
       - detect
       - runner-host-groups
@@ -1152,7 +1162,7 @@ jobs:
   host-cpu-fairness-test:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
     needs:
       - detect
       - runner-test-prepare
@@ -1210,7 +1220,7 @@ jobs:
   guest-rpc-firecracker-build:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
     needs: [detect, runner-host-groups]
     if: needs.detect.outputs.metal-job-ref != '' && needs.detect.outputs.crates-runner-consumer-needed == 'true'
     timeout-minutes: 15
@@ -1257,7 +1267,7 @@ jobs:
   guest-rpc-firecracker-test:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261008
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
     needs: [runner-test-prepare, guest-rpc-firecracker-build]
     timeout-minutes: 15
     defaults:
