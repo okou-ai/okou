@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.3](https://github.com/okou-ai/okou/compare/ios-v0.7.2...ios-v0.7.3) (2026-10-09)
+
+
+### Refactoring
+
+* **ios:** centralize conversation scroll intent ([#38385](https://github.com/okou-ai/okou/issues/38385)) ([34f6c4c](https://github.com/okou-ai/okou/commit/34f6c4c0e63b72d0f310ba223a0a8c4711bd60f4))
+* **ios:** isolate chat data in a local swift package ([#38409](https://github.com/okou-ai/okou/issues/38409)) ([f66592e](https://github.com/okou-ai/okou/commit/f66592e7aecdb983341d5b8ce9ec25c064dcdb69))
+
 ## [0.7.2](https://github.com/okou-ai/okou/compare/ios-v0.7.1...ios-v0.7.2) (2026-10-09)
 
 
