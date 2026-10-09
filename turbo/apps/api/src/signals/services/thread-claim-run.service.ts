@@ -3,6 +3,7 @@ import { createAgentPrompt } from "./thread-run-prompt/agent";
 import { createUserPrompt } from "./thread-run-prompt/user";
 import { createAgentPhoneThreadPrompt } from "./thread-run-prompt/agentphone";
 import { createAutomationThreadPrompt } from "./thread-run-prompt/automation";
+import { createComputerUsePrompt } from "./thread-run-prompt/computer-use";
 import { createDiscordThreadPrompt } from "./thread-run-prompt/discord";
 import { createFeishuThreadPrompt } from "./thread-run-prompt/feishu";
 import { createRuntimePrompt } from "./thread-run-prompt/runtime";
@@ -157,7 +158,6 @@ import {
   type CreateQueuedChatRunInput,
   deliverQueuedPromptRejection$,
   deliverUnexpectedQueuedPromptRejection$,
-  buildComputerUseSystemPrompt,
   type QueuedChatPromptData,
   queuedChatRunCallbackInputs,
   queuedIntegrationLaunchFields,
@@ -327,7 +327,6 @@ import {
 import { ORG_SENTINEL_USER_ID } from "./feature-switch-scope";
 
 import { recordGetStartedWorkflowSql } from "./get-started-workflow.service";
-import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
 import { formatIntegrationRunError$ } from "./integration-run-errors.service";
 import type { InternalRunCallbackKind } from "./internal-run-callback";
 import {
@@ -720,6 +719,7 @@ function queuedPromptRunInput(args: {
   readonly launch: QueuedLaunchMaterial;
   readonly promptAndSkills: RunPromptAndSkills;
   readonly userPrompt: RunPromptAndSkills;
+  readonly computerUsePrompt: RunPromptAndSkills;
   readonly model: Exclude<
     QueuedMessageModelRouteResolution,
     { readonly error: unknown }
@@ -735,15 +735,7 @@ function queuedPromptRunInput(args: {
     mergeRunPromptAndSkills([
       args.promptAndSkills,
       args.userPrompt,
-      {
-        systemPromptVariables: {
-          computerUseContext: args.host
-            ? buildComputerUseSystemPrompt(args.host.displayName)
-            : "",
-        },
-        userPromptVariables: {},
-        skillVolumes: [],
-      },
+      args.computerUsePrompt,
     ]),
   );
   if (input.queuedMessage.autonomyBudget.kind !== "ok") {
@@ -932,20 +924,6 @@ interface WorkflowAutomationRunInput {
   readonly appendSystemPrompt: string | undefined;
   readonly callbacks: readonly InternalRunCallbackInput[];
   readonly agentRunMetadata: ReturnType<typeof workflowAutomationRunMetadata>;
-}
-
-function appendComputerUseSystemPrompt(
-  prompt: string | undefined,
-  grant: ComputerUseHostGrant,
-): string | undefined {
-  if (!grant) {
-    return prompt;
-  }
-  return [
-    ...(prompt ? [prompt] : []),
-    "# Computer Use",
-    `Computer Use is enabled for this run on ${grant.displayName}.`,
-  ].join("\n\n");
 }
 
 function workflowAutomationRunMetadata(
@@ -2693,6 +2671,10 @@ export function createThreadClaimRunObjects(
       .limit(1);
     return host ?? null;
   });
+  const computerUsePrompt$ = createComputerUsePrompt(
+    pickedEvent$,
+    promptHostHost$,
+  );
   const promptCaptureCapture$ = computed(async (get) => {
     const { head } = await get(promptInputInput$);
     if (requestFacts?.input.id === head.id) {
@@ -2715,6 +2697,7 @@ export function createThreadClaimRunObjects(
         launch,
         context,
         userPrompt,
+        computerUsePrompt,
         model,
         session,
         host,
@@ -2725,6 +2708,7 @@ export function createThreadClaimRunObjects(
         get(promptMaterialMaterial$),
         get(promptAndSkills$),
         get(userPrompt$),
+        get(computerUsePrompt$),
         get(promptModelModel$),
         get(promptSessionSession$),
         get(promptHostHost$),
@@ -2764,6 +2748,7 @@ export function createThreadClaimRunObjects(
         launch,
         promptAndSkills: context,
         userPrompt,
+        computerUsePrompt,
         model,
         session,
         host,
@@ -3281,12 +3266,13 @@ export function createThreadClaimRunObjects(
       return host ?? null;
     },
   );
+  const automationComputerUsePrompt$ = createComputerUsePrompt(
+    pickedEvent$,
+    automationLaunchMaterialsComputerUseHostGrant$,
+  );
   const automationLaunchMaterialsRunInput$ = computed(
     async (get): Promise<WorkflowAutomationRunInput> => {
       const args = await get(automationLaunchMaterialsInput$);
-      const computerUseHostGrant = await get(
-        automationLaunchMaterialsComputerUseHostGrant$,
-      );
       const integration = await get(automationPrompt$);
       if (!integration) {
         throw new Error("Admitted automation is missing its prompt");
@@ -3295,17 +3281,7 @@ export function createThreadClaimRunObjects(
         mergeRunPromptAndSkills([
           integration,
           await get(userPrompt$),
-          {
-            systemPromptVariables: {
-              computerUseContext:
-                appendComputerUseSystemPrompt(
-                  undefined,
-                  computerUseHostGrant,
-                ) ?? "",
-            },
-            userPromptVariables: {},
-            skillVolumes: [],
-          },
+          await get(automationComputerUsePrompt$),
         ]),
       );
       return {
@@ -5499,7 +5475,6 @@ export function createThreadClaimRunObjects(
         requestedFramework,
         modelProvider,
         officialWorkflowRun,
-        bootstrap,
         body,
       ] = await Promise.all([
         get(preCreateInput$),
@@ -5508,7 +5483,6 @@ export function createThreadClaimRunObjects(
         get(runFramework$),
         get(modelRoute$),
         get(officialWorkflow$),
-        get(preCreateBootstrapBootstrap$),
         get(storageBody$),
       ]);
       if (!agent) {
@@ -5540,7 +5514,6 @@ export function createThreadClaimRunObjects(
         modelProvider,
       });
       const metadata = prepareRunOutputMetadata({
-        createArgs: { injectSkillVolumes: { workflows: bootstrap.workflows } },
         promptAndSkills: await get(runtimePromptAndSkills$),
         officialWorkflow: officialWorkflowRun,
         framework,
@@ -6189,7 +6162,6 @@ export function createThreadClaimRunObjects(
       return validation;
     }
     const metadata = prepareRunOutputMetadata({
-      createArgs: args,
       promptAndSkills: await get(runtimePromptAndSkills$),
       officialWorkflow: officialWorkflowRun,
       framework,
@@ -6780,27 +6752,15 @@ export function createThreadClaimRunObjects(
         get(agentPrompt$),
         get(runtimePromptAndSkills$),
       ]);
-      const prompt = renderRunPrompts(
-        {
-          ...runtime,
-          systemPromptVariables: {
-            ...runtime.systemPromptVariables,
-            connectors:
-              args.includeOkouTokenSecret === true
-                ? runtime.systemPromptVariables.connectors
-                : undefined,
-          },
-        },
-        {
-          userPrompt: context.body.prompt,
-          systemPrompt: [
-            renderRunPrompts(agentPrompt).systemPrompt,
-            args.body.appendSystemPrompt,
-          ]
-            .filter(Boolean)
-            .join("\n\n"),
-        },
-      );
+      const prompt = renderRunPrompts(runtime, {
+        userPrompt: context.body.prompt,
+        systemPrompt: [
+          renderRunPrompts(agentPrompt).systemPrompt,
+          args.body.appendSystemPrompt,
+        ]
+          .filter(Boolean)
+          .join("\n\n"),
+      });
       const body = {
         ...context.body,
         prompt: prompt.userPrompt,
@@ -12751,7 +12711,6 @@ function createRunBody(args: {
   readonly permissionPolicies: FirewallPolicies | null | undefined;
   readonly triggerSource: TriggerSource | undefined;
   readonly appendSystemPrompt: string | undefined;
-  readonly standaloneIntegrationNote: string;
 }) {
   const triggerSource = args.triggerSource ?? "web";
   return {
@@ -12766,14 +12725,7 @@ function createRunBody(args: {
     settings: args.body.settings,
     permissionPolicies: args.permissionPolicies ?? undefined,
     triggerSource,
-    appendSystemPrompt: [
-      args.appendSystemPrompt,
-      args.appendSystemPrompt ? "" : args.standaloneIntegrationNote,
-    ]
-      .filter((part): part is string => {
-        return Boolean(part);
-      })
-      .join("\n\n"),
+    appendSystemPrompt: args.appendSystemPrompt,
     disallowedTools: [...DISALLOWED_TOOLS],
     vars: selectedAgentRunVariables(args.agent.id),
   };
@@ -12819,31 +12771,12 @@ interface ProductRunArgsInput {
   readonly authorizedRequestObservation?: AuthorizedAgentRunRequestObservation;
   readonly runPermissionPolicies: FirewallPolicies | null | undefined;
   readonly connectorCatalogSelection: RunConnectorCatalogSelection;
-  readonly workflows: readonly RunWorkflowRef[];
   readonly allowedConnectorSlugs: readonly ConnectorSlug[];
   readonly allowedCustomConnectorIds: readonly string[];
   readonly customConnectorGrants: readonly AgentCustomConnectorGrant[];
   readonly timing: ApiDispatchTimingCollector;
   readonly threadSessionResolution?: ChatThreadSessionResolution;
   readonly cloudBrowserEnabled: boolean;
-  readonly featureSwitchContext: FeatureSwitchContext;
-}
-
-/**
- * A run launched straight through the runs API has no conversational surface,
- * so nothing renders `# Current Integration` for the note to follow. Its
- * delivery rules still apply, so they close the caller-supplied prompt
- * instead. A run whose surface supplied an integration prompt already carries
- * the note inside that block.
- */
-function standaloneIntegrationNote(args: ProductRunArgsInput): string {
-  if (args.command.appendSystemPrompt) {
-    return "";
-  }
-  return resolveIntegrationNotePrompt({
-    triggerSource: args.command.triggerSource ?? "web",
-    featureSwitchContext: args.featureSwitchContext,
-  });
 }
 
 /**
@@ -12875,7 +12808,6 @@ interface ProductRunArgs {
   readonly okouTokenComputerUseHostId?: string;
   readonly okouTokenCloudBrowserEnabled?: boolean;
   readonly enforceBuiltInCredits?: boolean;
-  readonly injectSkillVolumes?: RunSkillVolumeInjection;
   readonly requiredOfficialWorkflowIds?: readonly string[];
   readonly connectorScope: ExplicitConnectorScope;
   readonly validateEnvironmentReferences?: boolean;
@@ -12895,7 +12827,6 @@ function buildProductRunArgs(args: ProductRunArgsInput): ProductRunArgs {
       permissionPolicies: args.runPermissionPolicies,
       triggerSource: command.triggerSource,
       appendSystemPrompt: command.appendSystemPrompt,
-      standaloneIntegrationNote: standaloneIntegrationNote(args),
     }),
     apiStartTime: command.apiStartTime,
     chatThreadId: command.chatThreadId,
@@ -12928,7 +12859,6 @@ function buildProductRunArgs(args: ProductRunArgsInput): ProductRunArgs {
     okouTokenComputerUseHostId: command.computerUseHostId,
     okouTokenCloudBrowserEnabled: args.cloudBrowserEnabled,
     enforceBuiltInCredits: true,
-    injectSkillVolumes: { workflows: args.workflows },
     requiredOfficialWorkflowIds: command.requiredOfficialWorkflowIds,
     connectorScope: {
       allowedConnectorSlugs: args.allowedConnectorSlugs,
@@ -12996,16 +12926,6 @@ function matchingAuthorizedRequestObservation(
   return observation;
 }
 // --- Thread-private implementation: execution context prompts ---
-
-/**
- * When set, system + workflow skill volumes are built and prepended in run
- * context preparation using the run's resolved (model-provider) framework.
- * Each workflow's volume is keyed by its id (storage name), while the skill
- * mounts at its slug. Slugs are not unique, so the id is required.
- */
-interface RunSkillVolumeInjection {
-  readonly workflows: readonly RunWorkflowRef[];
-}
 
 const AUTO_MEMORY_MISSING_ROOT_POLICY: ArtifactMissingRootPolicy =
   "preserveParentVersion";
@@ -13086,9 +13006,6 @@ function validateRunEnvironmentReferences(args: {
 }
 
 function preparedRunAdditionalVolumes(args: {
-  readonly createArgs: {
-    readonly injectSkillVolumes?: RunSkillVolumeInjection;
-  };
   readonly promptAndSkills: RunPromptAndSkills;
   readonly skillsRoot: string;
   readonly body: Pick<CreateRunBody, "additionalVolumes">;
@@ -13096,13 +13013,7 @@ function preparedRunAdditionalVolumes(args: {
 }): PreparedAdditionalVolumes {
   const bodyAdditionalVolumes = args.body.additionalVolumes;
   const rendered = resolveRunSkillVolumes(
-    args.promptAndSkills.skillVolumes.filter((volume) => {
-      return (
-        args.createArgs.injectSkillVolumes !== undefined ||
-        volume.source === "custom_connector_skill" ||
-        volume.source === "request_additional_volume"
-      );
-    }),
+    args.promptAndSkills.skillVolumes,
     args.skillsRoot,
   );
   const additionalVolumes =
@@ -13119,9 +13030,6 @@ function preparedRunAdditionalVolumes(args: {
 }
 
 function prepareRunOutputMetadata(args: {
-  readonly createArgs: {
-    readonly injectSkillVolumes?: RunSkillVolumeInjection;
-  };
   readonly promptAndSkills: RunPromptAndSkills;
   readonly officialWorkflow: OfficialWorkflowObservation | undefined;
   readonly framework: SupportedFramework;
@@ -13137,7 +13045,6 @@ function prepareRunOutputMetadata(args: {
 } {
   const skillsRoot = skillsRootForRun(args.framework, args.piSandbox);
   const additionalVolumes = preparedRunAdditionalVolumes({
-    createArgs: args.createArgs,
     promptAndSkills: args.promptAndSkills,
     skillsRoot,
     body: args.body,

@@ -2098,15 +2098,6 @@ async function runTerminalChatCallbackSideEffects(args: {
   });
 }
 
-export function buildComputerUseSystemPrompt(displayName: string): string {
-  return [
-    "# Computer Use",
-    `Computer Use is enabled for this run on ${displayName}.`,
-    "Use Okou CLI computer-use commands to inspect apps, read app state, and perform desktop actions.",
-    "The computer may go offline while this run is active. If a command reports that the computer is unavailable or offline, ask the user to reconnect Okou Computer Use on that computer, then retry.",
-  ].join("\n");
-}
-
 function truncatePrior(value: string): string {
   if (value.length <= PRIOR_MESSAGE_CHAR_CAP) {
     return value;
