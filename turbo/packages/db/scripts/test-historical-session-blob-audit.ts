@@ -90,18 +90,22 @@ async function readReceipt() {
   return row.historical_session_blob_reference_audit;
 }
 
-async function runSqlFile(sqlFile: string) {
-  // Execute every shipped statement in a fresh connection. CI already has pg,
-  // but its toolchain does not install the separate psql executable.
+async function runSqlFile(sqlFile: string | readonly string[]) {
+  // Own and dispose one connection. A statement list models psql -f: each
+  // session SET must finish before the audit SELECT starts its implicit transaction.
   const connection = new Client({ connectionString: fixtureUrl.toString() });
   await connection.connect();
   try {
-    const results = z
-      .array(z.object({ command: z.string(), rows: z.array(z.unknown()) }))
-      .parse(await connection.query(sqlFile));
-    const selections = results.filter((result) => {
-      return result.command === "SELECT";
-    });
+    const selections: { rows: unknown[] }[] = [];
+    for (const statement of typeof sqlFile === "string" ? [sqlFile] : sqlFile) {
+      const result = await connection.query(statement);
+      const results = z
+        .array(z.object({ command: z.string(), rows: z.array(z.unknown()) }))
+        .parse(Array.isArray(result) ? result : [result]);
+      for (const selection of results) {
+        if (selection.command === "SELECT") selections.push(selection);
+      }
+    }
     assert.equal(selections.length, 1);
     const selection = selections[0];
     assert.ok(selection);
@@ -415,20 +419,87 @@ try {
     "PASS full population, shared owners, missing metadata, undercounts, preparation, ambiguity, strict B cutoff and content-free unchanged state",
   );
 
-  // The unchanged candidate tool remains the semantic comparison boundary.
+  // The candidate tool has one statement snapshot. Its settings are sent as
+  // separate messages, just as the documented disposable psql -f session does.
   const candidateFile = await readFile(
     new URL("./audit-pi-memory-candidate-references.sql", import.meta.url),
     "utf8",
   );
+  const candidateQueryStart = candidateFile.indexOf(
+    "  WITH candidate_owners AS MATERIALIZED",
+  );
+  assert.ok(candidateQueryStart > 0);
+  // This preamble contains only the shipped literal SET statements.
+  const candidateSettings = candidateFile
+    .slice(0, candidateQueryStart)
+    .split(/;\s*\n/)
+    .filter((statement) => {
+      return statement.trim().length > 0;
+    });
+  const candidateStatements = [
+    ...candidateSettings,
+    candidateFile.slice(candidateQueryStart),
+  ];
   const candidateReceipt = z
     .object({
-      pi_candidate_reference_audit: z.object({ reconciliation: counts }),
+      pi_candidate_reference_audit: z.strictObject({
+        receipt_version: z.literal(1),
+        transaction_read_only: z.literal("on"),
+        observed_at: z.string(),
+        server_version: z.string(),
+        candidate_integrity: counts,
+        reconciliation: counts,
+        catalog: counts,
+      }),
     })
-    .parse(await runSqlFile(candidateFile)).pi_candidate_reference_audit;
+    .parse(await runSqlFile(candidateStatements)).pi_candidate_reference_audit;
   for (const [key, value] of Object.entries(candidateReceipt.reconciliation)) {
     assert.equal(receipt.candidate_only[key], value, key);
   }
-  console.log("PASS unchanged candidate-only reconciliation equivalence");
+  assert.deepEqual(await state(), before);
+  console.log("PASS candidate-only receipt and reconciliation equivalence");
+
+  const settingsProbe = `SELECT
+    current_setting('transaction_read_only') AS read_only,
+    current_setting('transaction_isolation') AS isolation,
+    current_setting('statement_timeout') AS statement_timeout,
+    current_setting('lock_timeout') AS lock_timeout,
+    current_setting('search_path') AS search_path,
+    current_setting('timezone') AS timezone,
+    current_setting('row_security') AS row_security,
+    current_setting('work_mem') AS work_mem`;
+  const inherited = z
+    .object({
+      timezone: z.string(),
+      row_security: z.string(),
+      work_mem: z.string(),
+    })
+    .parse((await writer.query(settingsProbe)).rows[0]);
+  assert.deepEqual(await runSqlFile([...candidateSettings, settingsProbe]), {
+    read_only: "on",
+    isolation: "repeatable read",
+    statement_timeout: "30s",
+    lock_timeout: "3s",
+    search_path: "public, pg_catalog",
+    ...inherited,
+  });
+  for (const forbidden of [
+    "UPDATE blobs SET ref_count = 0",
+    "DELETE FROM conversations",
+    "CREATE TABLE forbidden_write (id integer)",
+    "SELECT * FROM blobs FOR UPDATE",
+  ]) {
+    await assert.rejects(runSqlFile([...candidateStatements, forbidden]), {
+      code: "25006",
+    });
+  }
+  await assert.rejects(runSqlFile([...candidateSettings, "SELECT 1 / 0"]), {
+    code: "22012",
+  });
+  assert.deepEqual(await state(), before);
+  console.log(
+    "PASS candidate session settings, PostgreSQL write rejection and error propagation with unchanged state",
+  );
 
   for (const forbidden of [
     "UPDATE blobs SET ref_count = 0",
