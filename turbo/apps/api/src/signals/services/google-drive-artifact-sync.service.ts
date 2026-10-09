@@ -1593,6 +1593,29 @@ export const syncArtifactToGoogleDrive$ = command(
       return badRequestMessage("Connect Google Drive before syncing artifacts");
     }
 
+    return await set(
+      uploadResolvedArtifact$,
+      { args, artifact, tokens, featureSwitchContext },
+      signal,
+    );
+  },
+);
+
+const uploadResolvedArtifact$ = command(
+  async (
+    { get, set },
+    params: {
+      readonly args: SyncArtifactArgs;
+      readonly artifact: ArtifactFileRow;
+      readonly tokens: ConnectorTokens;
+      readonly featureSwitchContext: FeatureSwitchContext;
+    },
+    signal: AbortSignal,
+  ): Promise<
+    | BadRequestResponse
+    | { readonly status: 200; readonly body: DriveSyncResult }
+  > => {
+    const { args, artifact, tokens, featureSwitchContext } = params;
     const hostedContent = await set(
       resolveHostedArtifactContent$,
       artifact,

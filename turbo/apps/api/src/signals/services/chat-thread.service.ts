@@ -641,7 +641,9 @@ export function chatThreadArtifacts(args: {
           row.accessLevel === "published";
         existing.files.push({
           id: canonical ? row.assetId : row.externalId,
-          ...(row.artifactId ? { artifactId: row.artifactId } : {}),
+          // Catalog groups hosted runs and repeated logical outputs. Files
+          // outside its current projection keep their own stored resource ID.
+          artifactId: row.artifactId ?? row.assetId,
           filename,
           contentType: row.contentType ?? inferMimetype(filename),
           size: row.sizeBytes ?? 0,

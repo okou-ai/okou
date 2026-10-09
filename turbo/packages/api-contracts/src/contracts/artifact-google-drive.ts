@@ -4,7 +4,11 @@ import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 
-/** Resource identity is independent of its source chat and run. */
+/**
+ * Resource identity is independent of its source chat and run. Accepts a
+ * catalog artifact UUID (current projection) or an uploaded artifact's UUID
+ * (that exact file), including files intentionally grouped out of the catalog.
+ */
 export const artifactGoogleDriveContract = c.router({
   upload: {
     method: "POST",

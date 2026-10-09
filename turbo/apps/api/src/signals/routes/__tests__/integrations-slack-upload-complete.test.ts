@@ -50,8 +50,22 @@ import { integrationsSlackUploadInitRoutes } from "../integrations-slack-upload-
 import { integrationsSlackUploadMaterializeRoutes } from "../integrations-slack-upload-materialize";
 import { chatThreadsArtifactsSyncRoutes } from "../chat-threads-artifacts-sync";
 import { artifactGoogleDriveContract } from "@okouai/api-contracts/contracts/artifact-google-drive";
+import { hostedTextFile } from "./helpers/api-bdd-host-files";
 
 type CompletedChatEvent = Extract<ChatEvent, { eventType: "run.completed" }>;
+
+function requiredDriveArtifactId(
+  files: readonly { readonly id: string; readonly artifactId?: string }[],
+  fileId: string,
+): string {
+  const artifactId = files.find((file) => {
+    return file.id === fileId;
+  })?.artifactId;
+  if (!artifactId) {
+    throw new Error("Expected a stored resource identity for the grouped file");
+  }
+  return artifactId;
+}
 
 interface DriveFolderFixture {
   readonly id: string;
@@ -1077,7 +1091,9 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
         threadId,
       );
       expect(
-        resolvedArtifacts.runs.flatMap((group) => group.files),
+        resolvedArtifacts.runs.flatMap((group) => {
+          return group.files;
+        }),
       ).toContainEqual(
         expect.objectContaining({
           id: canonicalAssetId,
@@ -1208,25 +1224,121 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
       );
       expect(driveUploadBodies).toHaveLength(4);
 
+      // Public upload writers have no canonical materialization state. They
+      // remain independently uploadable both with and without a catalog row.
+      await updateFeatureSwitchesForUser(
+        context,
+        { userId, orgId },
+        { [FeatureSwitchKey.PrivateArtifacts]: false },
+      );
+      const ordinary = await chatApi.prepareUpload(actor, {
+        filename: "ordinary.csv",
+        contentType: "text/csv",
+        size: 42,
+        purpose: "artifact",
+      });
+      objectStore.addObject({
+        bucket: "test-user-artifacts",
+        key: `artifacts/${new URL(ordinary.url).pathname.replace(/^\/+/u, "")}`,
+        size: 42,
+        body: Buffer.alloc(42, "b"),
+        metadata: {
+          "artifact-id": ordinary.id,
+          filename: "ordinary.csv",
+          "public-brand": "okou",
+          "user-id": encodeURIComponent(userId),
+        },
+      });
+      await chatApi.completeUploadWithBearer(
+        `Bearer ${okouToken({ userId, orgId, runId, capabilities: ["file:write"] })}`,
+        { id: ordinary.id },
+        [200],
+      );
+      const ordinaryCatalog = await chatApi.listArtifactCatalog(actor);
+      const ordinaryEntry = ordinaryCatalog.artifacts.find((entry) => {
+        return entry.title === "ordinary.csv";
+      });
+      if (!ordinaryEntry) {
+        throw new Error("Expected the ordinary upload in the catalog");
+      }
+      await accept(
+        uploadClient.upload({
+          ...uploadRequest,
+          params: { artifactId: ordinaryEntry.id },
+        }),
+        [200],
+      );
+      expect(driveContentBodies.at(-1)).toBe("b".repeat(42));
+
+      const hostBearer = `Bearer ${okouToken({ userId, orgId, runId, capabilities: ["host:write"] })}`;
+      const site = await chatApi.prepareHostedSiteWithBearer(hostBearer, {
+        site: `drive-companion-${randomUUID().slice(0, 8)}`,
+        artifactKind: "hosted-site",
+        spaFallback: false,
+        files: [hostedTextFile("/index.html", "<main>Report companion</main>")],
+      });
+      await chatApi.completeHostedSiteWithBearer(hostBearer, site.deploymentId);
+      const groupedCatalog = await chatApi.listArtifactCatalog(actor);
+      expect(
+        groupedCatalog.artifacts.some((entry) => {
+          return entry.id === catalogEntry.id;
+        }),
+      ).toBeFalsy();
+      const groupedFiles = (
+        await chatApi.listThreadArtifacts(actor, threadId)
+      ).runs.flatMap((group) => {
+        return group.files;
+      });
+      for (const [fileId, bytes] of [
+        [canonicalAssetId, "a"],
+        [ordinary.id, "b"],
+      ] as const) {
+        const artifactId = requiredDriveArtifactId(groupedFiles, fileId);
+        await accept(
+          uploadClient.upload({ ...uploadRequest, params: { artifactId } }),
+          [200],
+        );
+        expect(driveContentBodies.at(-1)).toBe(bytes.repeat(42));
+      }
+      expect(driveUploadBodies).toHaveLength(7);
+
       // Artifact access does not depend on keeping its source conversation.
       await chatApi.deleteThread(actor, threadId);
       mocks.clerk.session(userId, orgId);
+      const groupedCanonical = {
+        artifactId: requiredDriveArtifactId(groupedFiles, canonicalAssetId),
+      };
       const detachedUpload = await accept(
-        uploadClient.upload(uploadRequest),
+        uploadClient.upload({
+          ...uploadRequest,
+          params: { artifactId: groupedCanonical.artifactId },
+        }),
         [200],
       );
       expect(detachedUpload.body.name).toBe("report.csv");
       expect(driveContentBodies.at(-1)).toBe("a".repeat(42));
       expect(driveUploadBodies.at(-1)).toContain(
-        `"okouArtifactId":"${catalogEntry.id}"`,
+        `"okouArtifactId":"${groupedCanonical.artifactId}"`,
       );
       expect(driveUploadBodies.at(-1)).not.toContain("vm0ThreadId");
 
       mocks.clerk.session("user_foreign_artifact_owner", orgId);
-      await accept(uploadClient.upload(uploadRequest), [404]);
+      await accept(
+        uploadClient.upload({
+          ...uploadRequest,
+          params: { artifactId: groupedCanonical.artifactId },
+        }),
+        [404],
+      );
       mocks.clerk.session(userId, "org_foreign_artifact_owner");
-      await accept(uploadClient.upload(uploadRequest), [404]);
-      expect(driveUploadBodies).toHaveLength(5);
+      await accept(
+        uploadClient.upload({
+          ...uploadRequest,
+          params: { artifactId: groupedCanonical.artifactId },
+        }),
+        [404],
+      );
+      expect(driveUploadBodies).toHaveLength(8);
     },
     20_000,
   );

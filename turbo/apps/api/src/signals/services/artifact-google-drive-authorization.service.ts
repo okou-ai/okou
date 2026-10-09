@@ -5,7 +5,7 @@ import { agentSessions } from "@okouai/db/schema/agent-session";
 import { connectors } from "@okouai/db/schema/connector";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, isNotNull, or } from "drizzle-orm";
 import { command } from "ccstate";
 import { writeDb$ } from "../external/db";
 
@@ -31,19 +31,27 @@ export const ownedGoogleDriveArtifact$ = command(
         url: runUploadedFiles.url,
         metadata: runUploadedFiles.metadata,
       })
-      .from(artifacts)
-      .innerJoin(
-        runUploadedFiles,
-        eq(runUploadedFiles.id, artifacts.projectionFileId),
-      )
+      .from(runUploadedFiles)
+      .leftJoin(artifacts, eq(runUploadedFiles.id, artifacts.projectionFileId))
       .where(
         and(
-          eq(artifacts.id, args.artifactId),
-          eq(artifacts.orgId, args.orgId),
-          eq(artifacts.authorUserId, args.userId),
+          or(
+            and(
+              eq(artifacts.id, args.artifactId),
+              eq(artifacts.orgId, args.orgId),
+              eq(artifacts.authorUserId, args.userId),
+            ),
+            eq(runUploadedFiles.id, args.artifactId),
+          ),
           eq(runUploadedFiles.orgId, args.orgId),
           eq(runUploadedFiles.userId, args.userId),
-          eq(runUploadedFiles.materializationStatus, "ready"),
+          isNotNull(runUploadedFiles.url),
+          // Noncanonical upload/host writers legitimately omit assetVersion
+          // and materializationStatus. Only canonical assets have a ready gate.
+          or(
+            isNull(runUploadedFiles.assetVersion),
+            eq(runUploadedFiles.materializationStatus, "ready"),
+          ),
         ),
       )
       .limit(1);
