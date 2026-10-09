@@ -9444,10 +9444,12 @@ Clerk erasure bridge is still unregistered, so this is a local fence rather than
 global deletion finality. Before native state becomes execution authority, that
 lifetime must be replaced with durable membership and erasure ownership.
 
-This slice transfers no execution ownership: it consumes no occurrence and adds
-no Run, Chat event, email, provider request or credit operation. See
-[the migration contract](morning-brief-migration-state.md) for the full
-invariants.
+This historical slice transferred no execution ownership: it consumed no
+occurrence and added no Run, Chat event, email, provider request or credit
+operation. Its full invariants remain in the
+[archived migration contract](https://github.com/okou-ai/okou/blob/9da771dd0928a7a83f81a418ec3a93cc3da17f0d/docs/morning-brief-migration-state.md#the-installed-preference-projection).
+See the [current Official Morning Brief contract](morning-brief.md) for the
+retained functionality.
 
 ## Morning Brief bounded Slack collection (#34727)
 

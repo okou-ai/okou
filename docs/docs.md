@@ -111,9 +111,9 @@ surface; the index does not replace their detailed rules.
   eight-site reader closure, transaction ownership, physical retirement and test mapping.
 - [Dependency override audit](./dependency-overrides.md): retained dependency
   constraints, their origins, and evidence for removing obsolete overrides.
-- [Morning Brief migration state](./morning-brief-migration-state.md): the
-  canonical reader for a member's existing brief, its ownership and thread
-  invariants, and the boundary the `simple-morning-brief` cutover must respect.
+- [Official Workflow Morning Brief](./morning-brief.md): current installation
+  ownership, explicit preferences, claim and settlement lifetime, future-only
+  expiry, and retained email/accounting boundaries.
 - [Morning Brief GitHub collection](./morning-brief-github-collection.md): the
   protected preview entrypoint, live connector authorization, GitHub branch
   semantics, budgets, and coverage/failure classification.
