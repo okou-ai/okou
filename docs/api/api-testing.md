@@ -118,6 +118,18 @@ Avoid `vi.mock()` for internal modules such as services, route files, database
 schemas, fixture helpers, or ccstate signals. That bypasses the behavior the
 route integration test is supposed to cover.
 
+## Time
+
+Keep real timer scheduling. Do not use Vitest fake timers or `vi.setSystemTime`;
+API test files enforce this with `ccstate/no-test-delay`. Await the request or
+an externally observable result instead of sleeping or advancing timers.
+
+For time-dependent behavior, use the API's production clock abstraction in
+`src/lib/time.ts`. Its test override is `mockNow(value: Date | number)`; unlike
+Platform's override, it takes no signal argument. Shared test setup clears the
+override after each test. Clock control does not permit private scenario setup:
+construction and assertions must still follow the external behavior boundary.
+
 ## External Behavior Boundary
 
 First identify the useful behavior and the real caller that can trigger it.

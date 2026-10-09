@@ -58,10 +58,11 @@ remain part of the runtime contract.
 - `testContext()` cleans runtime state and mocks; it does not roll back database
   rows. Use unique identities. For fixed or quota-limited identities, register
   created resources for teardown through production APIs.
-- Avoid fake timers. Platform time overrides use `mockNow(value, context.signal)`.
-  Wait for the observable result, not elapsed time or an internal cache update.
-- `ccstate/no-test-delay` detects real timer imports (including renamed Node
-  timer imports), Vitest fake-timer calls, and elapsed wall-clock assertions.
+- Wait for the observable result, not elapsed time or an internal cache update.
+  Follow the matching surface guide for clock controls and timing rules.
+- In TypeScript packages that enable it, `ccstate/no-test-delay` detects real
+  timer imports (including renamed Node timer imports), Vitest fake-timer calls,
+  and elapsed wall-clock assertions.
   A deliberate exception must name one exact test file, the affected pattern
   kinds, and a reason in that package's ESLint configuration. Keep exceptions
   narrower than a whole test directory and remove them with the owning test.
@@ -93,7 +94,7 @@ without a new change, failure, or unresolved concern.
 
 ## CI Duration Warning
 
-The root and Desktop Vitest CI reporters emit a GitHub warning when one test
+The root Vitest CI reporter emits a GitHub warning when one test
 file spends 30 seconds or more executing tests. The budget measures accumulated test time
 inside the file, separate from environment and transform overhead. Investigate
 fixed sleeps, broad fixtures, and repeated real deadlines when a warning
@@ -370,9 +371,9 @@ afterEach(() => {
   existing reset lifecycle (`vi.unstubAllEnvs()` when no shared owner exists).
   Do not replace the entire `process.env` object or stub unrelated variables.
 - Let centralized setup reset mocks. Avoid redundant test-local reset hooks.
-- Use the application's signal-owned clock override for time-dependent
-  behavior. Wait for a meaningful observable result; do not advance fake timers
-  or insert delays to make an asynchronous assertion pass.
+- Follow the owning surface's clock controls for time-dependent behavior. Wait
+  for a meaningful observable result; do not insert delays to make an
+  asynchronous assertion pass.
 - Await owned work. Leave detached cleanup to shared teardown and fix the
   missing ownership or synchronization if work races a test.
 
@@ -417,21 +418,13 @@ Use real internal services and utilities. Check actual ownership: relative
 be internal. Mock the external provider instead of bypassing the production
 path that uses it. Keep the database real.
 
-### AP-5: Fake Timers
-
-Do not use `vi.useFakeTimers()` or `vi.advanceTimersByTime()` to hide timing and
-ownership problems. Platform uses `mockNow(value, context.signal)` for its
-application clock. Synchronize on expected rendered content, control state, or
-accessible behavior within the normal test timeout, not a delay or internal
-state transition.
-
-### AP-6: Partial Internal Mocks
+### AP-5: Partial Internal Mocks
 
 `vi.importActual()` plus replacement methods still bypasses part of the system.
 Use real internal code and control only the external dependency. Partial mocks
 are not an exception to the ownership boundary.
 
-### AP-7: Testing Implementation Details
+### AP-6: Testing Implementation Details
 
 Do not assert on query caches, component state, CSS classes, DB rows, or internal
 service output when the contract is available through a page or endpoint.
@@ -439,7 +432,7 @@ Construct and observe the scenario through the same surface the real caller
 uses. See [external behavior](testing.md#external-behavior) for states that
 cannot be constructed through a production interface.
 
-### AP-8: Over-Testing
+### AP-7: Over-Testing
 
 Avoid tests that duplicate existing coverage, re-prove a third-party validator,
 or pin static configuration and incidental copy. Test error statuses and
@@ -451,14 +444,14 @@ Do not add artificial close/reopen or remount stories solely to freeze transient
 UI state. Preserve durable persistence, security, payment, cancellation,
 ordering, and recovery scenarios.
 
-### AP-9: Console Mocking Without Assertions
+### AP-8: Console Mocking Without Assertions
 
 Use shared logger mocks for noise and lifecycle control. If logging or CLI
 output is the contract, assert its meaningful content. Otherwise verify the
 actual page, HTTP, or file outcome instead of adding a console spy with no
 purpose.
 
-### AP-10: Direct Component Rendering
+### AP-9: Direct Component Rendering
 
 Platform view tests enter through the production Router using awaited
 `setupPage()`. Configure context-owned mocks first, wait for observable readiness,
@@ -466,7 +459,7 @@ perform the interaction, and assert the result. Do not substitute a direct
 component render, hook call, or store mutation for the user journey.
 See [App testing](app/app-testing.md).
 
-### AP-11: Testing Service Functions When a Route Exists
+### AP-10: Testing Service Functions When a Route Exists
 
 API tests use `setupApp()` with the route contract and production endpoint.
 Helpers may wrap those API calls; they must not seed DB rows, import services,
@@ -474,7 +467,7 @@ or call `initServices()` to skip middleware, auth, parsing, or serialization.
 Verify persistence with a follow-up HTTP request an external caller can make.
 See [API testing](api/api-testing.md).
 
-### AP-12: Pinning Diagnostics
+### AP-11: Pinning Diagnostics
 
 In API tests, do not build a `captureDiagnostics`-style harness that switches on
 the real telemetry transport, intercepts the ingest endpoint with MSW, and
@@ -484,9 +477,9 @@ caller can observe, and a log-noise report gets answered with another classifier
 instead of a deleted record. Assert the HTTP response and the effect visible in
 the next request instead. The logger's own suite and one shared-sanitizer
 redaction check are the only exceptions. Where a log record is a surface's own
-contract, AP-9 applies. See [external behavior](testing.md#external-behavior).
+contract, AP-8 applies. See [external behavior](testing.md#external-behavior).
 
-### AP-13: Requiring Visibility for Content Presence
+### AP-12: Requiring Visibility for Content Presence
 
 A completion message can already be in the DOM while its toast's enter effect
 is still updating opacity. When the contract is that the message rendered, use

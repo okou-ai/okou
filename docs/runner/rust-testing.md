@@ -339,25 +339,23 @@ assert_eq!(config.name, "test-runner");
 When multiple tests need shared setup/teardown:
 
 ```rust
+use tempfile::TempDir;
+
 struct Harness {
-    dir: PathBuf,
     host: Option<GuestControlClient>,
+    dir: TempDir,
 }
 
 impl Harness {
     async fn new() -> Self {
-        let dir = std::env::temp_dir().join(format!("test-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).expect("create temp dir");
-        Self { dir, host: None }
-    }
-}
-
-impl Drop for Harness {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.dir);
+        let dir = tempfile::tempdir().expect("create unique temp dir");
+        Self { host: None, dir }
     }
 }
 ```
+
+Each harness owns a unique directory. Use `harness.dir.path()` to access it;
+`TempDir` removes it when the harness is dropped.
 
 ### Async Tests
 
