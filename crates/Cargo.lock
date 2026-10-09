@@ -3615,7 +3615,6 @@ dependencies = [
  "hex",
  "http-body",
  "httpmock",
- "kerberos-worker",
  "libc",
  "log",
  "nbd-cow",

@@ -361,67 +361,6 @@ Inspect the reported error and host support before retrying. Normal termination
 through an owning runner still uses its owned child lifecycle and does not gain
 this new kernel requirement. `--run` targets do not fall back to orphan killing.
 
-### Native Kerberos redistribution package
-
-The root-only operator commands `runner native-kerberos helper`,
-`runner native-kerberos notices` and `runner native-kerberos identity` export
-this Runner's immutable build-selected helper ELF, complete MIT/musl/Zig notices,
-and target/digest/length identity to stdout. Helper output is binary; redirect it
-to a private file and keep the notices alongside any redistributed helper.
-These commands do not open a VNC/KDC connection, start a native worker, advertise
-a profile/capability or enable a product feature. No backend/library/path
-override is admitted. Existing commands and Runner's root requirement are unchanged.
-
-`.github/scripts/check-runner-native-package.py` consumes the actual verified
-Runner payload and its producer metadata on the matching native CPU. It checks
-complete exported bytes against that Runner, full notice delivery and ELF64
-machine/endianness with no `PT_INTERP` or `DT_NEEDED`. Its optional
-`privileged-synthetic` mode exercises the **exported** helper's secret-free
-Ready, invalid-initialize refusal, bad-profile refusal and close/reap/fixed-file
-cleanup inside an already selected disposable native CI context. It neither
-changes host policy nor elevates privilege. Package-only success is not runtime
-success; unsupported bootstrap fails a required positive run.
-
-Both release-derived thin-LTO `ci` and full-LTO `release` Runner consumers need
-separate producer/target/profile-bound checks. The verifier labels HEAD, dirty
-state, original producer, Runner/helper/notice identities, UID/kernel and its
-limited scope. It does not establish mutual GSS, Rust supervisor cancellation or
-non-root availability, and does not authorize production activation.
-
-Runner Image's pre-merge `native-release-build` producer uses the unchanged pinned
-release toolchain and the same-head verified CLI, then the ordinary two-phase
-`--locked --release` guest/Runner recipe. Its target-specific, one-day conformance
-input is not a production release asset or Runner cache entry. Original compiler
-JSON, clean source/tree and input identities, full-LTO profile, native build-script
-identities and payload hashes are validated before the matching Ubuntu x86/ARM
-consumer executes the actual Runner and exported helper. No target/profile label
-alone establishes that proof. A failed native probe retains available actual
-package evidence with `runtimeVerified: false` and still fails the job. Required
-optimized Rust-supervisor lifecycle evidence remains a separate mandatory gate.
-
-The additional optimized integration producer stays inside that existing pinned
-producer and its 25-minute budget. It compiles the unchanged public worker process,
-parent-death and cleanup-uncertainty suites plus the independent controlled-peer
-suite under both `ci` and `release`, without executing cross-target outputs.
-Compiler receipts must identify an optimized **non-test production library** and
-real optimized integration executables. Matching native x86/ARM consumers bind
-the original source/tree, compiler, same-source CLI context and payload receipts,
-then require their build-selected helper bytes to equal the corresponding actual
-package exports. A difference refuses execution; no helper/environment override
-repairs it. Fixture acceptor code is read from the verifier checkout, not a
-producer-container compile-time path.
-
-The privileged-synthetic namespace executes all 18 existing public process tests
-and seven existing acquisition/renewal/mutual-GSS/RFC4752/TLS finality tests. Fixed
-lifetimes, capacity, CPU and cancellation assertions are unchanged. Original
-compiler/provider records and non-secret results are retained; synthetic fixture
-credentials never leave the disposable child namespace. Missing tests, bootstrap
-refusal, failed cleanup, timeout or unexpected skip cannot satisfy the selected
-conformance gate. These are optimized production-library integration tests, not
-a replacement for distributed Runner package checks, source-pinned full QEMU PNG,
-non-root availability, whole-PR approval or K3 activation. Actual execution and
-fit within the unchanged budget are required evidence, not source-level promises.
-
 ## nbd-cow Benchmark
 
 The `nbd-cow` benchmark compares NBD COW with dm-snapshot using fio workloads. It is an opt-in,

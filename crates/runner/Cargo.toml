@@ -6,7 +6,6 @@ edition.workspace = true
 [dependencies]
 api-contracts.workspace = true
 guest-contracts.workspace = true
-kerberos-worker.workspace = true
 sandbox = { workspace = true }
 nbd-cow = { workspace = true }
 sandbox-firecracker = { workspace = true }

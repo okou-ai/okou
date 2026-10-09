@@ -192,8 +192,7 @@ jq -e '
 
 jq -e '
   .jobs.compile["runs-on"] == "ubuntu-latest-8-cores" and
-  .jobs.compile.container.image == "${{ needs.prepare.outputs.runner-toolchain-image }}" and
-  .jobs.compile.env.RUNNER_BINARY_ACTUAL_TOOLCHAIN_IMAGE == .jobs.compile.container.image and
+  .jobs.compile.container.image == "ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009" and
   (.jobs.compile.if | contains("!cancelled()")) and
   (.jobs.compile.if | contains("needs.prepare.result == '\''success'\''")) and
   (.jobs.compile.if | contains("runner-binary-miss-count != '\''0'\''")) and
@@ -227,24 +226,11 @@ jq -e '
 jq -e '
   ([.jobs | to_entries[] |
     select(any(.value.steps[]?; .uses == "./.github/actions/setup-r2-sccache")) |
-    .key] | sort) == ["compile", "native-release-build", "prewarm-rust-cache"] and
+    .key] == ["compile", "prewarm-rust-cache"]) and
   ([.jobs | to_entries[] |
     select(any(.value.steps[]?; (.uses // "") | startswith("Swatinem/rust-cache@"))) |
-    .key] | sort) == ["compile", "native-release-build", "prewarm-rust-cache"] and
-  .jobs["native-release-build"].needs == ["prepare"] and
-  .jobs["native-release-build"]["timeout-minutes"] == 25 and
-  .jobs["native-release-build"].container.image == .jobs.compile.container.image and
-  .jobs["native-release-build"].env.RUNNER_RELEASE_TOOLCHAIN_IMAGE == .jobs.compile.container.image and
-  (.jobs["native-release-build"] | has("environment") | not) and
-  (.jobs["native-release-build"].if | contains("current-runner-image-needed")) and
-  .jobs["native-release-build"].env.SOURCE_SHA == "${{ needs.prepare.outputs.head-sha }}" and
-  .jobs["native-release-build"].env.SOURCE_SHA == .jobs.compile.env.RUNNER_BINARY_GIT_REVISION and
-  .jobs["native-release-build"].env.TARGET_TRIPLE == "${{ matrix.target }}" and
-  any(.jobs["native-release-build"].steps[];
-    .run == "bash .github/scripts/build-runner-native-release.sh" and
-    (. | has("continue-on-error") | not)
-  )
-' <<<"$workflow_json" >/dev/null || fail "compiler caches must stay in the miss-only ci compiler, main dependency prewarmer and source-bound full-LTO producer, never consumers"
+    .key] == ["compile", "prewarm-rust-cache"])
+' <<<"$workflow_json" >/dev/null || fail "compiler caches must stay in the miss-only compiler and main dependency prewarmer"
 
 jq -e '
   .jobs.build.name == "Build runner image (${{ matrix.label }})" and

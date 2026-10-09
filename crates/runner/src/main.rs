@@ -13,7 +13,6 @@ mod io_limits;
 use runner_executor::pre_spawn_admission;
 use runner_host::live_runner_instances;
 use runner_lifecycle::lifecycle;
-mod native_kerberos;
 use runner_lifecycle::prefetch;
 mod profile;
 use runner_lifecycle::resource_budget;
@@ -135,8 +134,6 @@ enum Command {
     HomeImageCache(cmd::HomeImageCacheArgs),
     /// Runtime health diagnostics for all runners on the host
     Doctor(cmd::DoctorArgs),
-    /// Inspect/export this Runner's sealed helper and redistribution notices, offline
-    NativeKerberos(native_kerberos::Args),
     /// Local file-queue provider commands
     Local(cmd::LocalArgs),
 }
@@ -312,7 +309,6 @@ async fn main() -> ExitCode {
             .await
             .map(|()| ExitCode::SUCCESS),
         Command::Doctor(args) => cmd::run_doctor(args).await,
-        Command::NativeKerberos(args) => native_kerberos::run(args).map(|()| ExitCode::SUCCESS),
         Command::Local(args) => cmd::run_local(args).await,
     };
 

@@ -60,7 +60,6 @@ jobs:
       job-ref: ${{ steps.identity.outputs.job-ref }}
       head-sha: ${{ steps.identity.outputs.head-sha }}
       producer-head-sha: ${{ steps.identity.outputs.producer-head-sha }}
-      runner-toolchain-image: ${{ steps.toolchain.outputs.image }}
       pr-number: ${{ steps.identity.outputs.pr-number }}
       pr-head-ref: ${{ steps.identity.outputs.pr-head-ref }}
       turbo-runner-consumer-needed: ${{ steps.needed.outputs.turbo-runner-consumer-needed }}
@@ -98,25 +97,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           CHECK_PR_OPEN: "true"
         run: .github/scripts/runner-image-context.sh resolve
-
-      # Both compiler jobs use the captured event source's canonical recipe,
-      # never an independent conformance pin or an unrelated checkout recipe.
-      - name: Resolve selected Runner toolchain
-        id: toolchain
-        if: steps.identity.outputs.release-skip != 'true'
-        shell: bash
-        env:
-          SOURCE_SHA: ${{ steps.identity.outputs.head-sha }}
-        run: |
-          set -euo pipefail
-          contract_dir=$(mktemp -d "${RUNNER_TEMP:?missing Runner input directory}/runner-toolchain.XXXXXXXX")
-          trap 'rm -f "$contract_dir/contract.env"; rmdir "$contract_dir"' EXIT
-          git show "${SOURCE_SHA}:.github/scripts/runner-binary-build/contract.env" > "$contract_dir/contract.env"
-          (
-            cd "$contract_dir"
-            . ./contract.env
-            printf 'image=%s\n' "${RUNNER_BINARY_TOOLCHAIN_IMAGE:?missing canonical toolchain}" >> "$GITHUB_OUTPUT"
-          )
 
       - name: Determine base ref
         id: base
@@ -347,7 +327,6 @@ jobs:
           path: |
             runner-cli-intermediate/package.tgz
             runner-cli-intermediate/manifest.json
-            runner-cli-intermediate/ready.json
           overwrite: true
           if-no-files-found: error
           retention-days: 1
@@ -376,7 +355,7 @@ jobs:
     name: Compile runner binary (${{ matrix.label }})
     runs-on: ubuntu-latest-8-cores
     container:
-      image: ${{ needs.prepare.outputs.runner-toolchain-image }}
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
     permissions:
       actions: read
       contents: read
@@ -395,7 +374,7 @@ jobs:
         include: ${{ fromJSON(needs.prepare.outputs.runner-binary-compile-matrix) }}
     env:
       TARGET_TRIPLE: ${{ matrix.target }}
-      RUNNER_BINARY_ACTUAL_TOOLCHAIN_IMAGE: ${{ needs.prepare.outputs.runner-toolchain-image }}
+      RUNNER_BINARY_ACTUAL_TOOLCHAIN_IMAGE: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
       RUNNER_BINARY_GIT_REVISION: ${{ needs.prepare.outputs.head-sha }}
       GUEST_CLI_PATH: runner-cli-intermediate/package.tgz
       GUEST_CLI_MANIFEST_PATH: runner-cli-intermediate/manifest.json
@@ -487,7 +466,7 @@ jobs:
     name: Prewarm runner dependency cache (${{ matrix.label }})
     runs-on: ubuntu-latest-8-cores
     container:
-      image: ${{ needs.prepare.outputs.runner-toolchain-image }}
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
     permissions:
       actions: read
       contents: read
@@ -510,7 +489,7 @@ jobs:
         include: ${{ fromJSON(needs.prepare.outputs.runner-binary-hit-matrix) }}
     env:
       TARGET_TRIPLE: ${{ matrix.target }}
-      RUNNER_BINARY_ACTUAL_TOOLCHAIN_IMAGE: ${{ needs.prepare.outputs.runner-toolchain-image }}
+      RUNNER_BINARY_ACTUAL_TOOLCHAIN_IMAGE: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
       RUNNER_BINARY_GIT_REVISION: ${{ needs.prepare.outputs.head-sha }}
       GUEST_CLI_PATH: runner-cli-intermediate/package.tgz
       GUEST_CLI_MANIFEST_PATH: runner-cli-intermediate/manifest.json
@@ -595,320 +574,6 @@ jobs:
         if: always()
         continue-on-error: true
         uses: ./.github/actions/report-memory-peak
-
-  native-package:
-    name: Actual native Kerberos Runner package (${{ matrix.label }})
-    runs-on: ${{ matrix.id == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
-    permissions:
-      actions: read
-      contents: read
-    needs: [prepare, compile]
-    if: >-
-      ${{
-        !cancelled() &&
-        needs.prepare.result == 'success' &&
-        needs.prepare.outputs.current-runner-image-needed == 'true' &&
-        (
-          (needs.prepare.outputs.runner-binary-miss-count == '0' && needs.compile.result == 'skipped') ||
-          (needs.prepare.outputs.runner-binary-miss-count != '0' && needs.compile.result == 'success')
-        )
-      }}
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJSON(needs.prepare.outputs.runner-host-groups-matrix) }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ needs.prepare.outputs.head-sha }}
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          name: runner-cli-${{ github.run_id }}
-          path: runner-cli-intermediate
-      - name: Resolve exact Runner input identity
-        id: binary-input
-        env:
-          GUEST_CLI_PATH: runner-cli-intermediate/package.tgz
-          GUEST_CLI_MANIFEST_PATH: runner-cli-intermediate/manifest.json
-          RUNNER_BINARY_GIT_REVISION: ${{ needs.prepare.outputs.head-sha }}
-        run: .github/scripts/runner-binary-build/digest.sh "${{ matrix.target }}"
-      # Native Ubuntu workers already provide a native AWS CLI. The shared
-      # installer is x86-only and fails on preinstalled hosted-worker installs.
-      # Missing/broken native CLI fails; there is no install/architecture fallback.
-      - name: Require preinstalled native AWS CLI
-        run: aws --version
-      - name: Consume existing validated Runner transport
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: auto
-          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
-          R2_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
-          EXPECTED_TARGET: ${{ matrix.target }}
-          EXPECTED_BINARY_INPUT_DIGEST: ${{ steps.binary-input.outputs.binary-input-digest }}
-          CACHE_REFERENCE: ${{ toJSON(fromJSON(needs.prepare.outputs.runner-binary-hit-references)[matrix.target]) }}
-          REPO: ${{ github.repository }}
-          CURRENT_RUN_ID: ${{ github.run_id }}
-          OUTPUT_DIR: crates/target/f5-transport
-          RESOLVE_OUTPUT_DIR: crates/target/f5-transport
-          IS_CACHE_HIT: ${{ contains(fromJSON(needs.prepare.outputs.runner-binary-hit-targets), matrix.target) }}
-        run: |
-          set -euo pipefail
-          if [ "$IS_CACHE_HIT" = true ]; then
-            bash .github/scripts/runner-binary-cache.sh download-reference
-          else
-            bash .github/scripts/runner-binary-transport.sh download
-          fi
-      - name: Bind original producer and verify actual native exports
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          bash .github/scripts/resolve-runner-native-provenance.sh "${{ matrix.target }}" "${{ steps.binary-input.outputs.binary-input-digest }}" crates/target/f5-transport
-          bash .github/scripts/check-runner-native-package.sh crates/target/f5-transport/runner crates/target/f5-transport/metadata.json crates/target/f5-transport/manifest.json "${{ matrix.target }}" crates/target/f5-native-package
-      - name: Retain actual exported helper, notices and native receipts
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: native-runner-package-ci-${{ matrix.target }}
-          path: crates/target/f5-native-package/
-          if-no-files-found: error
-          retention-days: 1
-
-  # Fresh pre-merge release-profile conformance, NOT production release assets
-  # or Runner cache publication. Compilation stays on the existing pinned x86
-  # toolchain; only its matching native consumer may execute the output.
-  native-release-build:
-    name: Compile full-LTO native package consumer (${{ matrix.label }})
-    outputs:
-      producer-attempt-x86_64-unknown-linux-musl: ${{ steps.optimized-producer.outputs.attempt-x86_64-unknown-linux-musl }}
-      producer-attempt-aarch64-unknown-linux-musl: ${{ steps.optimized-producer.outputs.attempt-aarch64-unknown-linux-musl }}
-    runs-on: ubuntu-latest-8-cores
-    container:
-      image: ${{ needs.prepare.outputs.runner-toolchain-image }}
-    defaults:
-      run:
-        shell: bash
-    permissions:
-      actions: read
-      contents: read
-    needs: [prepare]
-    if: >-
-      ${{
-        !cancelled() &&
-        needs.prepare.result == 'success' &&
-        needs.prepare.outputs.current-runner-image-needed == 'true'
-      }}
-    timeout-minutes: 25
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJSON(needs.prepare.outputs.runner-host-groups-matrix) }}
-    env:
-      TARGET_TRIPLE: ${{ matrix.target }}
-      SOURCE_SHA: ${{ needs.prepare.outputs.head-sha }}
-      RUNNER_RELEASE_TOOLCHAIN_IMAGE: ${{ needs.prepare.outputs.runner-toolchain-image }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ needs.prepare.outputs.head-sha }}
-      - name: Download same-source verified CLI build input
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          name: runner-cli-${{ github.run_id }}
-          path: runner-cli-intermediate
-      - name: Setup R2 sccache
-        id: sccache
-        uses: ./.github/actions/setup-r2-sccache
-        with:
-          architecture: ${{ matrix.id }}
-          r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
-          r2-secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          r2-account-id: ${{ vars.R2_ACCOUNT_ID }}
-          r2-bucket-name: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          workspaces: crates -> target
-          shared-key: ${{ matrix.cacheSuffix }}-release
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - name: Build and bind actual full-LTO guest and Runner consumers
-        run: bash .github/scripts/build-runner-native-release.sh
-      # Still inside the existing pinned producer and its unchanged 25m budget.
-      # These are optimized integration executables, NOT relabeled Runner assets.
-      - name: Compile real optimized supervisor and independent-peer consumers
-        id: optimized-producer
-        run: |
-          set -euo pipefail
-          bash .github/scripts/build-runner-native-supervisor.sh
-          case "$TARGET_TRIPLE" in
-            x86_64-unknown-linux-musl|aarch64-unknown-linux-musl) ;;
-            *) exit 1 ;;
-          esac
-          [[ "$GITHUB_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]] || exit 1
-          printf 'attempt-%s=%s\n' "$TARGET_TRIPLE" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
-      - name: Report sccache statistics
-        if: always() && steps.sccache.outputs.started == 'true'
-        run: .github/scripts/report-sccache-stats.sh
-      - name: Transfer checked ci supervisor inputs
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: native-supervisor-input-ci-${{ matrix.target }}
-          path: crates/target/f5-supervisor-ci/
-          if-no-files-found: error
-          retention-days: 1
-      - name: Transfer checked full-LTO supervisor inputs
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: native-supervisor-input-release-${{ matrix.target }}
-          path: crates/target/f5-supervisor-release/
-          if-no-files-found: error
-          retention-days: 1
-      - name: Transfer this target's new conformance input to its native consumer
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: native-runner-release-input-${{ matrix.target }}
-          path: crates/target/f5-release-input/
-          if-no-files-found: error
-          retention-days: 1
-          overwrite: true
-
-  native-release-package:
-    name: Actual full-LTO native Kerberos Runner package (${{ matrix.label }})
-    runs-on: ${{ matrix.id == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
-    permissions:
-      actions: read
-      contents: read
-    needs: [prepare, native-release-build]
-    if: >-
-      ${{
-        !cancelled() &&
-        needs.prepare.result == 'success' &&
-        needs.prepare.outputs.current-runner-image-needed == 'true' &&
-        needs.native-release-build.result == 'success'
-      }}
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJSON(needs.prepare.outputs.runner-host-groups-matrix) }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ needs.prepare.outputs.head-sha }}
-      - name: Download this target's actual pre-merge release build
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          name: native-runner-release-input-${{ matrix.target }}
-          path: crates/target/f5-release-input
-      - name: Validate original release compiler/source/profile/target before execution
-        run: |
-          set -euo pipefail
-          python3 -B .github/scripts/runner-native-release.py validate crates/target/f5-release-input --source-sha "${{ needs.prepare.outputs.head-sha }}" --target "${{ matrix.target }}"
-          chmod 755 crates/target/f5-release-input/runner
-      - name: Verify actual full-LTO package and strict native protocol
-        run: |
-          bash .github/scripts/check-runner-native-package.sh crates/target/f5-release-input/runner crates/target/f5-release-input/metadata.json crates/target/f5-release-input/manifest.json "${{ matrix.target }}" crates/target/f5-release-package --profile release --compiler-receipt crates/target/f5-release-input/compiler.json
-      - name: Retain actual release exports and original compiler/source receipts
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: native-runner-package-release-${{ matrix.target }}
-          path: |
-            crates/target/f5-release-package/
-            crates/target/f5-release-input/metadata.json
-            crates/target/f5-release-input/manifest.json
-            crates/target/f5-release-input/context.json
-            crates/target/f5-release-input/compiler.json
-            crates/target/f5-release-input/guest-compiler.json
-          if-no-files-found: error
-          retention-days: 1
-
-  native-supervisor-runtime:
-    name: Optimized native supervisor and mutual-GSS (${{ matrix.profile }}, ${{ matrix.target }})
-    runs-on: ${{ matrix.target == 'aarch64-unknown-linux-musl' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
-    permissions:
-      actions: read
-      contents: read
-    needs:
-      [prepare, native-release-build, native-package, native-release-package]
-    if: >-
-      ${{
-        !cancelled() &&
-        needs.prepare.result == 'success' &&
-        needs.prepare.outputs.current-runner-image-needed == 'true' &&
-        needs.native-release-build.result == 'success' &&
-        needs.native-package.result == 'success' &&
-        needs.native-release-package.result == 'success'
-      }}
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        profile: [ci, release]
-        target: [x86_64-unknown-linux-musl, aarch64-unknown-linux-musl]
-    env:
-      SOURCE_SHA: ${{ needs.prepare.outputs.head-sha }}
-      OPTIMIZED_PRODUCER_ATTEMPT: ${{ needs.native-release-build.outputs[format('producer-attempt-{0}', matrix.target)] }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          ref: ${{ needs.prepare.outputs.head-sha }}
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          name: native-supervisor-input-${{ matrix.profile }}-${{ matrix.target }}
-          path: crates/target/f5-supervisor-input
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          name: native-runner-package-${{ matrix.profile }}-${{ matrix.target }}
-          path: crates/target/f5-actual-package
-      - name: Execute only checked original optimized consumers on matching native CPU
-        run: |
-          set -euo pipefail
-          package=crates/target/f5-actual-package
-          if [[ "${{ matrix.profile }}" == release ]]; then package+=/f5-release-package; fi
-          bash .github/scripts/check-runner-native-supervisor.sh crates/target/f5-supervisor-input "$package" "${{ matrix.profile }}" "${{ matrix.target }}"
-      - name: Retain original optimized receipts, never fixture credentials
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: native-supervisor-runtime-${{ matrix.profile }}-${{ matrix.target }}
-          path: crates/target/f5-supervisor-receipt-${{ matrix.profile }}/
-          if-no-files-found: error
-          retention-days: 1
-
-  native-supervisor-gate:
-    name: Optimized native conformance gate
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    needs:
-      [
-        prepare,
-        native-package,
-        native-release-build,
-        native-release-package,
-        native-supervisor-runtime,
-      ]
-    if: ${{ always() }}
-    timeout-minutes: 5
-    steps:
-      - name: Require all selected package, compiler and optimized runtime legs
-        env:
-          SELECTED: ${{ needs.prepare.outputs.current-runner-image-needed }}
-          PREPARE: ${{ needs.prepare.result }}
-          CI_PACKAGE: ${{ needs.native-package.result }}
-          RELEASE_BUILD: ${{ needs.native-release-build.result }}
-          RELEASE_PACKAGE: ${{ needs.native-release-package.result }}
-          OPTIMIZED: ${{ needs.native-supervisor-runtime.result }}
-        run: |
-          set -euo pipefail
-          [[ "$PREPARE" == success ]] || exit 1
-          if [[ "$SELECTED" == false ]]; then exit 0; fi
-          [[ "$SELECTED" == true ]] || exit 1
-          for result in "$CI_PACKAGE" "$RELEASE_BUILD" "$RELEASE_PACKAGE" "$OPTIMIZED"; do
-            [[ "$result" == success ]] || { echo 'required native conformance failed, cancelled or unexpectedly skipped' >&2; exit 1; }
-          done
 
   build:
     name: Build runner image (${{ matrix.label }})

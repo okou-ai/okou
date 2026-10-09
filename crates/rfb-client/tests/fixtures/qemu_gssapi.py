@@ -586,19 +586,15 @@ def main():
                       help="bounded public staging-tree measurement; not admission or native execution")
     parser.add_argument("--contract-root", type=pathlib.Path)
     parser.add_argument("--test-executable", type=pathlib.Path)
-    parser.add_argument("--optimized-manifest", type=pathlib.Path,
-                        help="original checked ci/release integration compiler manifest, never a helper override")
     args = parser.parse_args()
     if args.inventory_only:
-        if any(value is not None for value in (args.contract_root, args.test_executable, args.optimized_manifest)):
+        if any(value is not None for value in (args.contract_root, args.test_executable)):
             parser.error("inventory-only does not accept runtime/program overrides")
         tree = measure_immutable_tree(args.runtime_dir)
         print(json.dumps({"tree": tree, "treeSha256": immutable_tree_digest(tree),
                           "measurementOnly": True, "runtimeVerified": False, "attributionVerified": False},
                          sort_keys=True, ensure_ascii=True))
         return
-    if args.optimized_manifest is not None:
-        assert args.controlled_peer_only and args.test_executable is not None
 
     runtime = args.runtime_dir.resolve(strict=True)
     multiarch = {"x86_64": "x86_64-linux-gnu", "aarch64": "aarch64-linux-gnu"}[platform.machine()]
@@ -632,19 +628,7 @@ def main():
     if args.test_executable:
         assert (args.controlled_peer_only or args.source_built_full_private) and not args.test_executable.is_symlink()
         executable = args.test_executable.resolve(strict=True)
-        if args.optimized_manifest is None:
-            assert executable.parent == REPO / "crates/target/local/deps" and executable.name.startswith("qemu_gssapi-")
-        else:
-            manifest = json.loads(args.optimized_manifest.read_bytes())
-            profile, target = manifest["profile"], manifest["target"]
-            assert profile in ("ci", "release") and target == platform.machine() + "-unknown-linux-musl"
-            assert executable.parent == REPO / "crates/target" / target / profile / "deps"
-            item = manifest["executables"]["qemu_gssapi"]
-            assert executable.name == item["file"] and executable.name.startswith("qemu_gssapi-")
-            payload = executable.read_bytes()
-            assert len(payload) == item["sizeBytes"] and hashlib.sha256(payload).hexdigest() == item["sha256"]
-            # Admission only: caller already checked original compiler/native/package
-            # identities; this flag never changes the sealed helper in that executable.
+        assert executable.parent == REPO / "crates/target/local/deps" and executable.name.startswith("qemu_gssapi-")
         cargo, separator = [str(executable)], []
     else:
         run_tests(cargo + ["--no-run"], timeout=500)

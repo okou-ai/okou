@@ -59,7 +59,7 @@ for mode in ["valid", "human-failure", "json-failure"]:
         if mode == "json-failure":
             assert "Cache hits: 7" in result.stdout
 
-# Inspect the actual six consumers and evaluate their real Actions conditions below.
+# Inspect the actual five consumers and evaluate their real Actions conditions below.
 consumers = []
 for name in ["crates", "runner-image", "release-please"]:
     workflow = json.loads((root / (name + ".json")).read_text())
@@ -74,19 +74,13 @@ for name in ["crates", "runner-image", "release-please"]:
         forbidden = {"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "R2_ACCOUNT_ID", "SCCACHE_BUCKET", "SCCACHE_ENDPOINT"}
         assert not forbidden.intersection(report.get("env", {}))
         assert not forbidden.intersection(job.get("env", {}))
-        compiler_commands = {
-            ".github/scripts/runner-binary-build/build.sh build",
-            "bash .github/scripts/build-runner-native-release.sh",
-            "bash .github/scripts/build-runner-native-supervisor.sh",
-        }
         compilers = [i for i, s in enumerate(job["steps"]) if "cargo " in s.get("run", "") or
-                     compiler_commands.intersection(s.get("run", "").splitlines())]
+                     s.get("run") == ".github/scripts/runner-binary-build/build.sh build"]
         assert compilers and max(compilers) < job["steps"].index(report)
         consumers.append({"workflow": name, "job": job_id, "if": report["if"], "setupIf": setups[0].get("if")})
 assert {(x["workflow"], x["job"]) for x in consumers} == {
     ("crates", "coverage"), ("crates", "runner-rootfs-process-test"),
     ("runner-image", "compile"), ("runner-image", "prewarm-rust-cache"),
-    ("runner-image", "native-release-build"),
     ("release-please", "build-runner-release-assets"),
 }
 (root / "consumers.json").write_text(json.dumps(consumers))
