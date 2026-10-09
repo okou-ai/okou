@@ -92,6 +92,36 @@ function connectionValues(args: DiscordOauthCommitArgs, createdAt: Date) {
   };
 }
 
+function installationAuthorityWhere(args: DiscordOauthBindingArgs) {
+  return and(
+    eq(discordOrgInstallations.orgId, args.attempt.orgId),
+    eq(discordOrgInstallations.botUserId, args.evidence.botUserId),
+  );
+}
+
+function existingInstallationWhere(args: DiscordOauthBindingArgs) {
+  return and(
+    eq(discordOrgInstallations.guildId, args.evidence.guildId),
+    installationAuthorityWhere(args),
+  );
+}
+
+function installationConsentEvidenceWhere(args: DiscordOauthBindingArgs) {
+  return and(
+    eq(discordOrgGrants.orgId, args.attempt.orgId),
+    eq(discordOrgGrants.initiatedByUserId, args.attempt.userId),
+    eq(discordOrgGrants.verifiedGuildId, args.evidence.guildId),
+    eq(discordOrgGrants.verifiedBotUserId, args.evidence.botUserId),
+  );
+}
+
+function installationAdminsWhere(orgId: string) {
+  return and(
+    eq(orgMembersCache.orgId, orgId),
+    eq(orgMembersCache.role, "admin"),
+  );
+}
+
 function isBindingConflict(error: unknown): boolean {
   if (
     isUniqueViolation(error, "uq_discord_org_installations_org") ||
@@ -129,7 +159,7 @@ const consumeConflictedAttempt$ = command(
 const commitDiscordOauthBinding$ = command(
   async ({ set }, args: DiscordOauthCommitArgs, signal: AbortSignal) => {
     signal.throwIfAborted();
-    const { attempt, evidence } = args;
+    const { attempt } = args;
     const createdAt = nowDate();
     const db = set(writeDb$);
     const claimed = db.$with("claimed_discord_oauth").as(
@@ -162,10 +192,7 @@ const commitDiscordOauthBinding$ = command(
                   .from(claimed)
                   .where(eq(claimed.flow, "install")),
               ),
-              eq(discordOrgGrants.orgId, attempt.orgId),
-              eq(discordOrgGrants.initiatedByUserId, attempt.userId),
-              eq(discordOrgGrants.verifiedGuildId, evidence.guildId),
-              eq(discordOrgGrants.verifiedBotUserId, evidence.botUserId),
+              installationConsentEvidenceWhere(args),
             ),
           ),
       );
@@ -182,10 +209,7 @@ const commitDiscordOauthBinding$ = command(
           // RETURNING owns both a new parent and a same-owner incumbent; a base
           // table SELECT cannot see sibling CTE inserts or a waited-on winner.
           set: { guildName: discordOrgInstallations.guildName },
-          setWhere: and(
-            eq(discordOrgInstallations.orgId, attempt.orgId),
-            eq(discordOrgInstallations.botUserId, evidence.botUserId),
-          ),
+          setWhere: installationAuthorityWhere(args),
         })
         .returning({
           guildId: discordOrgInstallations.guildId,
@@ -209,20 +233,16 @@ const commitDiscordOauthBinding$ = command(
         )
         .returning({ id: discordOrgGrants.id }),
     );
-    const existing = db.$with("connected_discord_guild").as(
-      db
-        .select({ guildId: discordOrgInstallations.guildId })
-        .from(discordOrgInstallations)
-        .innerJoin(claimed, eq(claimed.flow, "connect"))
-        .where(
-          and(
-            eq(discordOrgInstallations.guildId, evidence.guildId),
-            eq(discordOrgInstallations.orgId, attempt.orgId),
-            eq(discordOrgInstallations.botUserId, evidence.botUserId),
-          ),
-        )
-        .for("share", { of: discordOrgInstallations }),
-    );
+    const existing = db
+      .$with("connected_discord_guild")
+      .as(
+        db
+          .select({ guildId: discordOrgInstallations.guildId })
+          .from(discordOrgInstallations)
+          .innerJoin(claimed, eq(claimed.flow, "connect"))
+          .where(existingInstallationWhere(args))
+          .for("share", { of: discordOrgInstallations }),
+      );
     const installation = db.$with("authorized_discord_guild").as(
       db
         .select({ guildId: installed.guildId })
@@ -267,13 +287,7 @@ const commitDiscordOauthBinding$ = command(
         })
         .from(claimed)
         .leftJoin(connection, sql`true`)
-        .leftJoin(
-          orgMembersCache,
-          and(
-            eq(orgMembersCache.orgId, attempt.orgId),
-            eq(orgMembersCache.role, "admin"),
-          ),
-        ),
+        .leftJoin(orgMembersCache, installationAdminsWhere(attempt.orgId)),
     );
   },
 );

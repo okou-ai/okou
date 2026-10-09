@@ -145,6 +145,70 @@ const ownerAuthorized$ = command(
   },
 );
 
+function installationConsentValues(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly guildId: string | null;
+  readonly createdAt: Date;
+  readonly expiresAt: Date;
+}) {
+  return {
+    orgId: sql`${args.orgId}`.mapWith(discordOrgGrants.orgId).as("org_id"),
+    initiatedByUserId: sql`${args.userId}`
+      .mapWith(discordOrgGrants.initiatedByUserId)
+      .as("initiated_by_user_id"),
+    requestedGuildId: sql`${args.guildId}`
+      .mapWith(discordOrgGrants.requestedGuildId)
+      .as("requested_guild_id"),
+    verifiedGuildId: sql`NULL`
+      .mapWith(nullableDriverValueDecoder(discordOrgGrants.verifiedGuildId))
+      .as("verified_guild_id"),
+    verifiedBotUserId: sql`NULL`
+      .mapWith(nullableDriverValueDecoder(discordOrgGrants.verifiedBotUserId))
+      .as("verified_bot_user_id"),
+    approvedAt: sql`NULL`
+      .mapWith(nullableDriverValueDecoder(discordOrgGrants.approvedAt))
+      .as("approved_at"),
+    createdAt: sql`${sql.param(args.createdAt, discordOrgGrants.createdAt)}`
+      .mapWith(discordOrgGrants.createdAt)
+      .as("created_at"),
+    expiresAt: sql`${sql.param(args.expiresAt, discordOrgGrants.expiresAt)}`
+      .mapWith(discordOrgGrants.expiresAt)
+      .as("expires_at"),
+  };
+}
+
+function discordAuthorizationUrl(args: {
+  readonly applicationId: string;
+  readonly redirectUri: string;
+  readonly state: string;
+  readonly flow: "install" | "connect";
+  readonly guildId: string | null;
+}): string {
+  const url = new URL("https://discord.com/oauth2/authorize");
+  url.searchParams.set("client_id", args.applicationId);
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("redirect_uri", args.redirectUri);
+  url.searchParams.set("state", args.state);
+  url.searchParams.set(
+    "scope",
+    (args.flow === "install"
+      ? DISCORD_INSTALL_SCOPES
+      : DISCORD_CONNECT_SCOPES
+    ).join(" "),
+  );
+  url.searchParams.set("prompt", "consent");
+  if (args.guildId) {
+    url.searchParams.set("guild_id", args.guildId);
+    url.searchParams.set("disable_guild_select", "true");
+  }
+  if (args.flow === "install") {
+    url.searchParams.set("integration_type", "0");
+    url.searchParams.set("permissions", BOT_PERMISSIONS);
+  }
+  return url.toString();
+}
+
 const startDiscordOauth$ = command(
   async ({ get, set }, rootSignal: AbortSignal) => {
     const signal = AbortSignal.any([rootSignal, get(requestSignal$)]);
@@ -241,64 +305,30 @@ const startDiscordOauth$ = command(
         db
           .select({
             id: started.id,
-            orgId: sql`${auth.orgId}`
-              .mapWith(discordOrgGrants.orgId)
-              .as("org_id"),
-            initiatedByUserId: sql`${auth.userId}`
-              .mapWith(discordOrgGrants.initiatedByUserId)
-              .as("initiated_by_user_id"),
-            requestedGuildId: sql`${guildId}`
-              .mapWith(discordOrgGrants.requestedGuildId)
-              .as("requested_guild_id"),
-            verifiedGuildId: sql`NULL`
-              .mapWith(
-                nullableDriverValueDecoder(discordOrgGrants.verifiedGuildId),
-              )
-              .as("verified_guild_id"),
-            verifiedBotUserId: sql`NULL`
-              .mapWith(
-                nullableDriverValueDecoder(discordOrgGrants.verifiedBotUserId),
-              )
-              .as("verified_bot_user_id"),
-            approvedAt: sql`NULL`
-              .mapWith(nullableDriverValueDecoder(discordOrgGrants.approvedAt))
-              .as("approved_at"),
-            createdAt: sql`${sql.param(createdAt, discordOrgGrants.createdAt)}`
-              .mapWith(discordOrgGrants.createdAt)
-              .as("created_at"),
-            expiresAt: sql`${sql.param(expiresAt, discordOrgGrants.expiresAt)}`
-              .mapWith(discordOrgGrants.expiresAt)
-              .as("expires_at"),
+            ...installationConsentValues({
+              ...auth,
+              guildId,
+              createdAt,
+              expiresAt,
+            }),
           })
           .from(started)
           .where(eq(started.flow, "install")),
       );
     signal.throwIfAborted();
     set(setResHeader$, "Cache-Control", "no-store");
-    const url = new URL("https://discord.com/oauth2/authorize");
-    url.searchParams.set("client_id", config.applicationId);
-    url.searchParams.set("response_type", "code");
-    url.searchParams.set("redirect_uri", redirectUri);
-    url.searchParams.set("state", state);
-    url.searchParams.set(
-      "scope",
-      (body.data.flow === "install"
-        ? DISCORD_INSTALL_SCOPES
-        : DISCORD_CONNECT_SCOPES
-      ).join(" "),
-    );
-    url.searchParams.set("prompt", "consent");
-    if (guildId) {
-      url.searchParams.set("guild_id", guildId);
-      url.searchParams.set("disable_guild_select", "true");
-    }
-    if (body.data.flow === "install") {
-      url.searchParams.set("integration_type", "0");
-      url.searchParams.set("permissions", BOT_PERMISSIONS);
-    }
     return {
       status: 200 as const,
-      body: { authorizationUrl: url.toString(), completionToken },
+      body: {
+        authorizationUrl: discordAuthorizationUrl({
+          applicationId: config.applicationId,
+          redirectUri,
+          state,
+          flow: body.data.flow,
+          guildId,
+        }),
+        completionToken,
+      },
     };
   },
 );

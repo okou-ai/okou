@@ -1,5 +1,5 @@
 import { command, computed, type Computed } from "ccstate";
-import { and, asc, count, eq, gte, isNotNull, or, type SQL } from "drizzle-orm";
+import { and, count, eq, gte, isNotNull, or, type SQL } from "drizzle-orm";
 import type { DiscordOrgStatus } from "@okouai/api-contracts/contracts/integrations-discord";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";

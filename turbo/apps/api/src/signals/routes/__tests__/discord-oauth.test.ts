@@ -512,13 +512,13 @@ describe("Discord product OAuth", () => {
     const installed = await start(actor, "install", f.guildId);
     expect((await finish(f, installed)).status).toBe("installed");
     const before = await status(actor);
-    expect(before.isConnected).toBe(true);
+    expect(before.isConnected).toBeTruthy();
     expect(before.dmBindings).toHaveLength(1);
     mockNow(initial + 601_000);
     const pending = await start(actor, "connect", f.guildId);
     const after = await status(actor);
-    expect(after.isConnected).toBe(true);
-    expect(after.dmBindings).toEqual(before.dmBindings);
+    expect(after.isConnected).toBeTruthy();
+    expect(after.dmBindings).toStrictEqual(before.dmBindings);
     expect(after.discordUserId).toBe(f.discordUserId);
     expect((await complete(installed)).status).toBe(400);
     authenticate(actor);
