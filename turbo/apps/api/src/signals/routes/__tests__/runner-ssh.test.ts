@@ -483,45 +483,54 @@ beforeEach(() => {
 });
 
 function createPublicHostApi() {
-const selectedRuns = createPublicRemoteAccessRunApi(context);
-const selectedOwners = new Map<string, Owner>();
-async function cleanupSelectedRuns() {
-  await selectedRuns.cleanup();
-  for (const owner of selectedOwners.values()) {
-    await deletePublicWorkspace(context, createBddApi(context).user(owner));
+  const selectedRuns = createPublicRemoteAccessRunApi(context);
+  const selectedOwners = new Map<string, Owner>();
+  async function cleanupSelectedRuns() {
+    await selectedRuns.cleanup();
+    for (const owner of selectedOwners.values()) {
+      await deletePublicWorkspace(context, createBddApi(context).user(owner));
+    }
+    selectedOwners.clear();
   }
-  selectedOwners.clear();
-}
-async function publicHostRun(defaultEnabled = true) {
-  const owner = {
-    orgId: `org_ssh_public_${randomUUID()}`,
-    userId: `user_ssh_public_${randomUUID()}`,
-  };
-  selectedOwners.set(owner.orgId, owner);
-  const run = await selectedRuns.start(owner);
-  const claimed = await selectedRuns.claim(run, runnerHeaders);
-  authenticate(owner);
-  const connection = await accept(
-    config().create({
-      headers: sessionHeaders,
-      body: {
-        id: randomUUID(),
-        displayName: "SSH owner host",
-        host: "ssh.example.com",
-        credential: inlineSshKey("deploy", privateKey, passphrase),
-      },
-    }),
-    [201],
-  );
-  if (defaultEnabled) {await enableHostDefault(owner, connection.body.id);}
-  return {
-    ...claimed,
-    connectionId: connection.body.id,
-    credentialId: connection.body.credentialId,
-  };
-}
+  async function publicHostRun(defaultEnabled = true) {
+    const owner = {
+      orgId: `org_ssh_public_${randomUUID()}`,
+      userId: `user_ssh_public_${randomUUID()}`,
+    };
+    selectedOwners.set(owner.orgId, owner);
+    const run = await selectedRuns.start(owner);
+    const claimed = await selectedRuns.claim(run, runnerHeaders);
+    authenticate(owner);
+    const connection = await accept(
+      config().create({
+        headers: sessionHeaders,
+        body: {
+          id: randomUUID(),
+          displayName: "SSH owner host",
+          host: "ssh.example.com",
+          credential: inlineSshKey("deploy", privateKey, passphrase),
+        },
+      }),
+      [201],
+    );
+    if (defaultEnabled) {
+      await enableHostDefault(owner, connection.body.id);
+    }
+    return {
+      ...claimed,
+      connectionId: connection.body.id,
+      credentialId: connection.body.credentialId,
+    };
+  }
 
-  return {runtime: publicHostRun, cleanup: cleanupSelectedRuns, runs: selectedRuns, trackOwner(owner: Owner) {selectedOwners.set(owner.orgId, owner);}};
+  return {
+    runtime: publicHostRun,
+    cleanup: cleanupSelectedRuns,
+    runs: selectedRuns,
+    trackOwner(owner: Owner) {
+      selectedOwners.set(owner.orgId, owner);
+    },
+  };
 }
 const selected = createPublicHostApi();
 
@@ -1118,7 +1127,10 @@ describe("SSH connection observations", () => {
 describe("official Runner SSH authority", () => {
   const claimedFixture = useClaimedFixture();
   const publicRuns = createPublicRemoteAccessRunApi(context);
-  afterEach(async () => {await publicRuns.cleanup(); await selected.cleanup();});
+  afterEach(async () => {
+    await publicRuns.cleanup();
+    await selected.cleanup();
+  });
 
   it("allows an ordinary owner and preserves a pinned connection", async () => {
     const f = await claimedFixture();

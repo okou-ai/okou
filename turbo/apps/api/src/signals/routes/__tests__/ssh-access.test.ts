@@ -71,8 +71,9 @@ describe("live chat SSH Run inventory", () => {
   afterEach(async () => {
     await publicRuns.cleanup();
     await ordinary.cleanup();
-    for (const owner of selectedOwners.values())
-      {await deletePublicWorkspace(context, createBddApi(context).user(owner));}
+    for (const owner of selectedOwners.values()) {
+      await deletePublicWorkspace(context, createBddApi(context).user(owner));
+    }
     selectedOwners.clear();
     for (const cleanup of claimedRunCleanups.splice(0)) {
       await cleanup();
@@ -95,7 +96,9 @@ describe("live chat SSH Run inventory", () => {
     authenticate(owner);
     return {
       ...claimed,
-      token: () => {return { authorization: `Bearer ${claimed.agentToken}` }},
+      token: () => {
+        return { authorization: `Bearer ${claimed.agentToken}` };
+      },
     };
   }
 

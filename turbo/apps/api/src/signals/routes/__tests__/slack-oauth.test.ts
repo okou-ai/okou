@@ -194,9 +194,9 @@ describe("Slack OAuth API routes", () => {
    */
   async function installPublicOrg(options: PublicSlackOrgOptions = {}) {
     const fixture = await slackOrgs.installOrg(options);
-    onTestFinished(() =>
-      {return slackOrgs.uninstallWorkspace(fixture.slackWorkspaceId)},
-    );
+    onTestFinished(() => {
+      return slackOrgs.uninstallWorkspace(fixture.slackWorkspaceId);
+    });
     await flushWaitUntilForTest();
     applyOAuthTestEnv();
     context.mocks.slack.chat.postMessage.mockClear();
@@ -962,9 +962,11 @@ describe("Slack OAuth API routes", () => {
         scopeMismatch: true,
       });
       await flushWaitUntilForTest();
-      expect(context.mocks.slack.createClient.mock.calls.map(([token]) => {return token})).toContain(
-        "xoxb-refreshed-token",
-      );
+      expect(
+        context.mocks.slack.createClient.mock.calls.map(([token]) => {
+          return token;
+        }),
+      ).toContain("xoxb-refreshed-token");
       expect(
         JSON.stringify(context.mocks.slack.chat.postMessage.mock.calls),
       ).toContain("<@B_REFRESHED>");
@@ -972,9 +974,9 @@ describe("Slack OAuth API routes", () => {
 
     it("keeps duplicate platform installs connected and rewards them once", async () => {
       const fixture = unseededIdentity();
-      onTestFinished(() =>
-        {return slackOrgs.uninstallWorkspace(fixture.slackWorkspaceId)},
-      );
+      onTestFinished(() => {
+        return slackOrgs.uninstallWorkspace(fixture.slackWorkspaceId);
+      });
       await seedMembership(fixture.orgId, fixture.userId, "admin");
       const state = await installStateFor({
         orgId: fixture.orgId,

@@ -20,7 +20,9 @@ describe("GET /api/integrations/slack", () => {
   const track = createFixtureTracker<{
     readonly orgId: string;
     readonly slackWorkspaceId: string;
-  }>((fixture) => {return slackOrgs.uninstallWorkspace(fixture.slackWorkspaceId)});
+  }>((fixture) => {
+    return slackOrgs.uninstallWorkspace(fixture.slackWorkspaceId);
+  });
 
   async function installSlackViaOAuth(args: {
     readonly apiOrigin: string;

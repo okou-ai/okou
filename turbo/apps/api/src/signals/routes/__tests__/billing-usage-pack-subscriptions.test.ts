@@ -410,9 +410,12 @@ describe("legacy subscription usage pack migration", () => {
           : [],
       },
     );
-    onTestFinished(() =>
-      {return deletePublicWorkspace(context, createBddApi(context).user(fixture))},
-    );
+    onTestFinished(() => {
+      return deletePublicWorkspace(
+        context,
+        createBddApi(context).user(fixture),
+      );
+    });
     const result: LegacyMigrationFixture = {
       ...fixture,
       customerId,
@@ -493,13 +496,17 @@ describe("legacy subscription usage pack migration", () => {
       [200],
     );
     return (response.body.memberCredits ?? [])
-      .flatMap((member) =>
-        {return member.creditGrants.map((grant) => {return {
-          ...grant,
-          memberId: member.memberId,
-        }})},
-      )
-      .sort((a, b) => {return a.id.localeCompare(b.id)});
+      .flatMap((member) => {
+        return member.creditGrants.map((grant) => {
+          return {
+            ...grant,
+            memberId: member.memberId,
+          };
+        });
+      })
+      .sort((a, b) => {
+        return a.id.localeCompare(b.id);
+      });
   }
 
   async function readMigrationAllocations(fixture: BillingOrgFixture) {
@@ -1806,7 +1813,9 @@ describe("legacy subscription usage pack migration", () => {
       ]),
     );
     const acceptedCredits = (await readMigrationCredits(fixture)).filter(
-      (grant) => {return grant.memberId === acceptedUserId},
+      (grant) => {
+        return grant.memberId === acceptedUserId;
+      },
     );
     expect(acceptedCredits).toHaveLength(2);
     expect(acceptedCredits).toStrictEqual(
@@ -1887,7 +1896,9 @@ describe("legacy subscription usage pack migration", () => {
       const afterAcceptance = await readMigrationCredits(fixture);
       expect(afterAcceptance).toHaveLength(4);
       expect(
-        afterAcceptance.filter((grant) => {return grant.memberId === acceptedUserId}),
+        afterAcceptance.filter((grant) => {
+          return grant.memberId === acceptedUserId;
+        }),
       ).toStrictEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -2318,9 +2329,12 @@ describe("usage pack allocation management", () => {
         end: currentSecond() + 15 * 86_400,
       },
     };
-    onTestFinished(() =>
-      {return deletePublicWorkspace(context, createBddApi(context).user(fixture))},
-    );
+    onTestFinished(() => {
+      return deletePublicWorkspace(
+        context,
+        createBddApi(context).user(fixture),
+      );
+    });
     const quantities = new Map<string, number>();
     for (const allocation of allocations) {
       const priceId = priceIdForManagedUsagePack(allocation.usagePackUsd);
@@ -8394,12 +8408,16 @@ describe("usage pack allocation management", () => {
     const credits = await readDeferredReplayCredits(fixture);
     return (credits.memberCredits ?? [])
       .flatMap((member) => {
-        return member.creditGrants.map((grant) => {return {
-          ...grant,
-          memberId: member.memberId,
-        }});
+        return member.creditGrants.map((grant) => {
+          return {
+            ...grant,
+            memberId: member.memberId,
+          };
+        });
       })
-      .sort((a, b) => {return a.id.localeCompare(b.id)});
+      .sort((a, b) => {
+        return a.id.localeCompare(b.id);
+      });
   }
 
   async function confirmPendingUsagePackUpgrade() {
@@ -9690,9 +9708,9 @@ describe("usage pack allocation management", () => {
       context.mocks.stripe.subscriptionSchedules.create,
     ).not.toHaveBeenCalled();
     expect(
-      (await readPurchasedCreditGrants(fixture)).filter(
-        (grant) => {return grant.memberId === targetUserId},
-      ),
+      (await readPurchasedCreditGrants(fixture)).filter((grant) => {
+        return grant.memberId === targetUserId;
+      }),
     ).toStrictEqual([]);
     expect(context.mocks.stripe.creditNotes.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -9778,9 +9796,9 @@ describe("usage pack allocation management", () => {
     );
 
     expect(
-      (await readPurchasedCreditGrants(fixture)).filter(
-        (grant) => {return grant.memberId === targetUserId},
-      ),
+      (await readPurchasedCreditGrants(fixture)).filter((grant) => {
+        return grant.memberId === targetUserId;
+      }),
     ).toStrictEqual([]);
     expect(context.mocks.stripe.creditNotes.create).not.toHaveBeenCalled();
     expect(context.mocks.stripe.refunds.retrieve).not.toHaveBeenCalled();
@@ -10111,9 +10129,9 @@ describe("usage pack allocation management", () => {
     ).not.toHaveBeenCalled();
 
     expect(
-      (await readPurchasedCreditGrants(fixture)).filter(
-        (grant) => {return grant.memberId === acceptedUserId},
-      ),
+      (await readPurchasedCreditGrants(fixture)).filter((grant) => {
+        return grant.memberId === acceptedUserId;
+      }),
     ).toStrictEqual([]);
 
     context.mocks.stripe.subscriptions.update.mockResolvedValue({});
@@ -10131,7 +10149,9 @@ describe("usage pack allocation management", () => {
     });
 
     const accepted = (await readPurchasedCreditGrants(fixture)).filter(
-      (grant) => {return grant.memberId === acceptedUserId},
+      (grant) => {
+        return grant.memberId === acceptedUserId;
+      },
     );
     expect(accepted).toHaveLength(2);
     expect(accepted).toStrictEqual(
@@ -10180,9 +10200,9 @@ describe("usage pack allocation management", () => {
     await flushWaitUntilForTest();
 
     expect(
-      (await readPurchasedCreditGrants(fixture)).filter(
-        (grant) => {return grant.memberId === acceptedUserId},
-      ),
+      (await readPurchasedCreditGrants(fixture)).filter((grant) => {
+        return grant.memberId === acceptedUserId;
+      }),
     ).toStrictEqual([]);
     expect(
       (await readManagedUsagePacks(fixture)).allocations,
@@ -12038,9 +12058,9 @@ describe("usage pack allocation management", () => {
     await chargePublicSeoUsage(context, member, 5200);
     authenticateOrg(purchase.fixture);
     expect(
-      (await readPurchasedCreditGrants(purchase.fixture)).filter(
-        (grant) => {return grant.memberId === acceptedUserId},
-      ),
+      (await readPurchasedCreditGrants(purchase.fixture)).filter((grant) => {
+        return grant.memberId === acceptedUserId;
+      }),
     ).toStrictEqual([
       expect.objectContaining({
         grantType: "purchased",
@@ -12085,9 +12105,9 @@ describe("usage pack allocation management", () => {
     }
 
     expect(
-      (await readPurchasedCreditGrants(purchase.fixture)).filter(
-        (grant) => {return grant.memberId === acceptedUserId},
-      ),
+      (await readPurchasedCreditGrants(purchase.fixture)).filter((grant) => {
+        return grant.memberId === acceptedUserId;
+      }),
     ).toStrictEqual([]);
     expect(
       (await readManagedUsagePacks(purchase.fixture)).allocations,

@@ -197,7 +197,9 @@ export interface ApiTestMocks {
     readonly delay: SignalTimerDelayMock;
   };
   readonly slack: {
-    readonly createClient: Mock<(...args: SlackWebClientConstructorArguments) => void>;
+    readonly createClient: Mock<
+      (...args: SlackWebClientConstructorArguments) => void
+    >;
     readonly assistant: {
       readonly threads: {
         readonly setStatus: AsyncMock;
@@ -342,7 +344,10 @@ interface ResendClientMock {
     readonly send: ApiTestMocks["resend"]["send"];
   };
 }
-type SlackWebClientMock = Omit<ApiTestMocks["slack"], "fetchFile" | "createClient">;
+type SlackWebClientMock = Omit<
+  ApiTestMocks["slack"],
+  "fetchFile" | "createClient"
+>;
 type AxiomLoggerMock = Omit<ApiTestMocks["axiomLogging"], "useRealTransport">;
 type AxiomJSTransportMock = Readonly<Record<string, never>>;
 
@@ -417,7 +422,8 @@ const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
   };
 
   const slack = {
-    createClient: vi.fn<(...args: SlackWebClientConstructorArguments) => void>(),
+    createClient:
+      vi.fn<(...args: SlackWebClientConstructorArguments) => void>(),
     assistant: {
       threads: {
         setStatus: vi.fn<(...args: unknown[]) => Promise<unknown>>(),

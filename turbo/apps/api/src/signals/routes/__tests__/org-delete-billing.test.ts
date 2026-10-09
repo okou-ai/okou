@@ -886,9 +886,9 @@ test("does not delete the org when its proportional refund fails", async () => {
     actor,
     withConnection: true,
   });
-  onTestFinished(() =>
-    {return slackOrgs.uninstallWorkspace(slackFixture.slackWorkspaceId)},
-  );
+  onTestFinished(() => {
+    return slackOrgs.uninstallWorkspace(slackFixture.slackWorkspaceId);
+  });
   mockOrgDeletion(fixture);
   context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
     { data: [{ publicUserData: { userId: fixture.userId } }] },

@@ -18,7 +18,8 @@ paths, including the SSH operation's two nested actions. This is **not a merge
 receipt**. No balance changes before actual protected merge. Partial, upstream
 and withdrawn candidates receive zero credit.
 
-Current ledger: <https://github.com/okou-ai/okou/issues/37440#issuecomment-6079232738>.
+Decision ledger: <https://github.com/okou-ai/okou/issues/37440#issuecomment-6079232738>.
+Current review/CI continuation: <https://github.com/okou-ai/okou/issues/37440#issuecomment-6080302023>.
 The previous page012 is preserved with a forward link; no prior decision, failure
 or count was truncated.
 
@@ -250,7 +251,7 @@ expiry and orphan CLI helpers. Final committed-HEAD review and GitHub behavior C
 remain required. No local Vitest or dev server was run.
 
 Observed local validation so far: API full type checks passed after dependency
-builds; scoped lint and Knip are being finalized before commit. Retain failures:
+builds; final scoped oxlint, type-aware oxlint, ESLint and Knip passed. Final API full types also passed after the last substantive code edits. Initial final-tree formatting failed on ten files and was corrected with Prettier; no behavior changes. The checkout has no installed commit hooks; equivalent applicable checks were explicitly executed without any bypass flag. Retain failures:
 initial TS6305 dependency declarations (fixed by proper build), Slack return/Discord
 nullable type errors (fixed), wrong @okouai/api filter matching zero projects
 (not a pass), initial lint/style/duplicate-hook and unused exports (fixed), and one

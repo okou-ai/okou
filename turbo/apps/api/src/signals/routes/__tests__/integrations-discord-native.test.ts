@@ -15,7 +15,9 @@ const context = testContext();
 describe("Discord native access before OAuth is available", () => {
   it("enforces default-off and token capabilities for reads and writes", async () => {
     const user = createBddApi(context).user();
-    if (!user.orgId) {throw new Error("Expected a Discord workspace");}
+    if (!user.orgId) {
+      throw new Error("Expected a Discord workspace");
+    }
     const actor = { ...user, orgId: user.orgId };
     configureDiscordApp();
     await publicPlanLifecycle(context, actor).update("active");

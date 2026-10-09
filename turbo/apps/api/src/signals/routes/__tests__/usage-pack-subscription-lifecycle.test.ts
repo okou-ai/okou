@@ -364,12 +364,12 @@ async function checkoutUsagePackLifecycle(
     (input) => {
       checkoutSubscriptionId(input);
       if (!existing) {
-        onTestFinished(() =>
-          {return deletePublicWorkspace(
+        onTestFinished(() => {
+          return deletePublicWorkspace(
             context,
             createBddApi(context).user({ orgId, userId }),
-          )},
-        );
+          );
+        });
       }
       return Promise.resolve({
         id: checkoutSessionId,
@@ -479,7 +479,9 @@ async function checkoutUsagePackLifecycle(
       }),
       withConnection: true,
     });
-    onTestFinished(() => {return slack.uninstallWorkspace(installed.slackWorkspaceId)});
+    onTestFinished(() => {
+      return slack.uninstallWorkspace(installed.slackWorkspaceId);
+    });
   }
   if (credits !== undefined) {
     await expect(readBillingStatus(fixture)).resolves.toMatchObject({
@@ -545,20 +547,23 @@ async function grantRows(fixture: UsagePackLifecycleFixture) {
     [200],
   );
   return (response.body.memberCredits ?? [])
-    .flatMap((member) =>
-      {return member.creditGrants.map((grant) => {return {
-        userId: member.memberId,
-        grantType: grant.grantType,
-        originalAmount: grant.amount,
-        expiresAt: grant.expiresAt,
-      }})},
-    )
-    .sort(
-      (a, b) =>
-        {return a.userId.localeCompare(b.userId) ||
+    .flatMap((member) => {
+      return member.creditGrants.map((grant) => {
+        return {
+          userId: member.memberId,
+          grantType: grant.grantType,
+          originalAmount: grant.amount,
+          expiresAt: grant.expiresAt,
+        };
+      });
+    })
+    .sort((a, b) => {
+      return (
+        a.userId.localeCompare(b.userId) ||
         a.grantType.localeCompare(b.grantType) ||
-        a.expiresAt.localeCompare(b.expiresAt)},
-    );
+        a.expiresAt.localeCompare(b.expiresAt)
+      );
+    });
 }
 
 async function readLifecycleSnapshot(fixture: UsagePackLifecycleFixture) {
@@ -1106,12 +1111,12 @@ describe("usage pack subscription Stripe lifecycle", () => {
       invitationId: null,
     };
     routeMocks.clerk.session(grantedUserId, orgId, "org:admin");
-    onTestFinished(() =>
-      {return deletePublicWorkspace(
+    onTestFinished(() => {
+      return deletePublicWorkspace(
         context,
         createBddApi(context).user({ orgId, userId: grantedUserId }),
-      )},
-    );
+      );
+    });
     const planInvoiceId = `in_atom_usage_pack_plan_${randomUUID()}`;
     const metadata = {
       type: "atom_grant",
