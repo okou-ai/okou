@@ -30,7 +30,7 @@ import { and, eq, inArray, or } from "drizzle-orm";
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { optionalEnv } from "../../lib/env";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import { onRejection, settle, throwIfAbort } from "../utils";
 import {
   decryptPersistentSecretValue,
@@ -286,40 +286,6 @@ async function markPendingSessionsSuperseded(
         ]),
       ),
     );
-}
-
-async function loadOwnedSession(
-  args: {
-    readonly writeDb: Db;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connectorSlug: ConnectorSlug;
-    readonly sessionId: string;
-    readonly sessionToken: string;
-  },
-  signal: AbortSignal,
-): Promise<BuiltinConnectorExternalCodeSessionRow | null> {
-  const [session] = await args.writeDb
-    .select(externalCodeSessionSelection)
-    .from(builtinConnectorExternalCodeSessions)
-    .where(
-      and(
-        eq(builtinConnectorExternalCodeSessions.id, args.sessionId),
-        eq(builtinConnectorExternalCodeSessions.orgId, args.orgId),
-        eq(builtinConnectorExternalCodeSessions.userId, args.userId),
-        eq(
-          builtinConnectorExternalCodeSessions.connectorSlug,
-          args.connectorSlug,
-        ),
-        eq(
-          builtinConnectorExternalCodeSessions.sessionTokenHash,
-          sessionTokenHash(args.sessionToken),
-        ),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  return session ?? null;
 }
 
 async function parseEncryptedProviderState(args: {
@@ -1057,17 +1023,24 @@ export const completeBuiltinConnectorExternalCodeSession$ = command(
     signal: AbortSignal,
   ) => {
     const writeDb = set(writeDb$);
-    const session = await loadOwnedSession(
-      {
-        writeDb,
-        orgId: args.orgId,
-        userId: args.userId,
-        connectorSlug: args.connectorSlug,
-        sessionId: args.sessionId,
-        sessionToken: args.sessionToken,
-      },
-      signal,
-    );
+    const { orgId, userId, connectorSlug, sessionId, sessionToken } = args;
+    const [session] = await get(db$)
+      .select(externalCodeSessionSelection)
+      .from(builtinConnectorExternalCodeSessions)
+      .where(
+        and(
+          eq(builtinConnectorExternalCodeSessions.id, sessionId),
+          eq(builtinConnectorExternalCodeSessions.orgId, orgId),
+          eq(builtinConnectorExternalCodeSessions.userId, userId),
+          eq(builtinConnectorExternalCodeSessions.connectorSlug, connectorSlug),
+          eq(
+            builtinConnectorExternalCodeSessions.sessionTokenHash,
+            sessionTokenHash(sessionToken),
+          ),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
     if (!session) {
       return notFound("External-code authorization session not found");
     }
