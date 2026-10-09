@@ -60,25 +60,6 @@ async function postAction(
   return await readJson<TestRuntimeStateActionResponse>(response);
 }
 
-export async function reconcileSocialKitDownloadsForTest(
-  context: TestContext,
-  downloadIds: readonly string[],
-  usagePricingResolution: UsagePricingResolution,
-): Promise<number> {
-  const response = await postAction(
-    context,
-    {
-      action: "reconcile-socialkit-downloads",
-      download_ids: [...downloadIds],
-    },
-    usagePricingResolution,
-  );
-  if (response.processed === undefined) {
-    throw new Error("SocialKit reconciliation fixture returned no count");
-  }
-  return response.processed;
-}
-
 interface BuiltInModelKeyFixture {
   readonly selectedModel: string;
   release(): Promise<void>;

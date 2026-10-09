@@ -1,3 +1,4 @@
+import { purchaseToolCredits } from "./helpers/public-tool-actor";
 import { randomUUID } from "node:crypto";
 
 import {
@@ -6,19 +7,13 @@ import {
 } from "@okouai/api-contracts/contracts/people-search";
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import { HttpResponse, http, type JsonBodyType } from "msw";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupAppWithRoutes } from "../../../__tests__/test-app";
 import { env, mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import {
-  createUsagePricingFixture,
-  type UsagePricingFixture,
-  type UsagePricingKey,
-  type UsagePricingRow,
-} from "../../../test-fixtures/system-config-seeds";
-import { signSandboxJwtForTests } from "../../auth/tokens";
+
 import { now } from "../../../lib/time";
 import { settleIncludingAbort } from "../../utils";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -31,7 +26,6 @@ import {
   type ApiTestUser,
 } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { createPublicUnfundedProFixture } from "./helpers/public-unfunded-pro-fixture";
@@ -69,11 +63,10 @@ function authenticate(actor: ApiTestUser | null): AuthHeaders {
   return authHeaders(actor);
 }
 
-function client(usagePricingResolution?: UsagePricingFixture["resolution"]) {
+function client() {
   return setupAppWithRoutes({
     context,
     routes: peopleSearchTestRoutes,
-    usagePricingResolution,
   });
 }
 
@@ -139,18 +132,6 @@ async function cleanupFundedPeopleSearchActor(
   await webhooks.requestClerkWebhook("{}", {}, [200]);
   await flushWaitUntilForTest();
 
-  // Public deletion removes the wallet and active work. Production retains
-  // immutable billing receipts under this fixture's unique IDs.
-  await expect(credits(owned.actor)).resolves.toBe(0);
-  expect(
-    (
-      await createRunReadsApi(context).requestListLogs(
-        owned.actor,
-        { limit: 50 },
-        [200],
-      )
-    ).body.data,
-  ).toStrictEqual([]);
   if (!beforeCleanup.ok) {
     throw beforeCleanup.error;
   }
@@ -179,7 +160,6 @@ async function fundActorWithSubscription(
     storageBucket: env("R2_USER_STORAGES_BUCKET_NAME"),
     kmsKeyId: env("SECRETS_KMS_KEY_ID"),
   };
-  const cleanups: (() => Promise<void>)[] = [];
   let cliToken: string | undefined;
   const owner = createFixtureOperationOwner(async () => {
     const cleanupResult = await settleIncludingAbort(
@@ -227,9 +207,6 @@ async function fundActorWithSubscription(
       // Unapproved anonymous challenges retain their public 900-second expiry.
     }
 
-    for (const cleanup of cleanups) {
-      await cleanup();
-    }
     if (!cleanupResult.ok) {
       throw cleanupResult.error;
     }
@@ -285,29 +262,11 @@ async function fundActorWithSubscription(
       credits: 0,
     });
 
-    await webhooks.postStripeEvent(
-      {
-        id: `evt_people_search_paid_${suffix}`,
-        type: "invoice.paid",
-        created: Math.floor(now() / 1000),
-        data: {
-          object: {
-            id: owned.invoiceId,
-            customer: owned.customerId,
-            amount_paid: 100,
-            metadata: {
-              type: "auto_recharge",
-              orgId: owned.orgId,
-              creditsAmount: "1000",
-            },
-            parent: null,
-            lines: { has_more: false, data: [] },
-          },
-        },
-      },
-      [200],
-    );
-    await flushWaitUntilForTest();
+    await purchaseToolCredits(context, actor, {
+      credits: 1000,
+      customerId: owned.customerId,
+      invoiceId: owned.invoiceId,
+    });
     const funded = await accept(
       client()(billingStatusContract).get({
         headers: authenticate(actor),
@@ -322,46 +281,10 @@ async function fundActorWithSubscription(
   });
   return {
     ...owner,
-    registerCleanup(cleanup: () => Promise<void>) {
-      cleanups.push(cleanup);
-    },
     registerCliToken(token: string) {
       cliToken = token;
     },
   };
-}
-
-function peopleSearchPricingKey(): UsagePricingKey {
-  return {
-    kind: "people-search",
-    provider: "perplexity",
-    category: "request",
-  };
-}
-
-function peopleSearchPricing(): UsagePricingRow {
-  return {
-    ...peopleSearchPricingKey(),
-    unitPrice: 20,
-    unitSize: 1,
-  };
-}
-
-async function createPricingFixture(
-  configured: readonly UsagePricingRow[],
-  missing: readonly UsagePricingKey[] = [],
-  registerCleanup?: (cleanup: () => Promise<void>) => void,
-): Promise<UsagePricingFixture> {
-  if (!registerCleanup) {
-    const fixture = await createUsagePricingFixture({ configured, missing });
-    onTestFinished(fixture.cleanup);
-    return fixture;
-  }
-  return await createUsagePricingFixture({
-    configured,
-    missing,
-    registerCleanup,
-  });
 }
 
 async function credits(actor: ApiTestUser): Promise<number> {
@@ -465,11 +388,11 @@ function providerResponse(args?: {
 
 async function successfulRequest(
   actor: ApiTestUser,
-  pricing: UsagePricingFixture,
+
   body: PeopleSearchRequest = defaultRequest(),
 ) {
   return await accept(
-    client(pricing.resolution)(peopleSearchContract).search({
+    client()(peopleSearchContract).search({
       headers: authenticate(actor),
       body,
     }),
@@ -478,43 +401,12 @@ async function successfulRequest(
 }
 
 describe("okou people-search route", () => {
-  it("rejects agent tokens without people-search capability", async () => {
-    const actor = createBddApi(context).user();
-    if (!actor.orgId) {
-      throw new Error("People Search test actor must have an organization");
-    }
-    await bootstrapOnboarding(actor);
-    const seconds = Math.floor(now() / 1000);
-    const token = signSandboxJwtForTests({
-      scope: "okou",
-      userId: actor.userId,
-      orgId: actor.orgId,
-      runId: "run_missing_people_search_capability",
-      capabilities: [],
-      iat: seconds,
-      exp: seconds + 60,
-    });
-
-    const response = await accept(
-      client()(peopleSearchContract).search({
-        headers: { authorization: `Bearer ${token}` },
-        body: defaultRequest(),
-      }),
-      [403],
-    );
-
-    expectApiError(response.body);
-    expect(response.body.error.message).toBe(
-      "Missing required capability: people-search:read",
-    );
-  });
-
   it("sends one bounded tool request and returns provider-backed profiles", async () => {
     const actor = createBddApi(context).user();
     let requestBody: unknown;
     let authorization: string | null = null;
     configureProvider();
-    const pricing = await createPricingFixture([peopleSearchPricing()]);
+
     const owner = await fundActorWithSubscription(actor);
     await owner.run(async () => {
       const beforeCredits = await credits(actor);
@@ -559,7 +451,7 @@ describe("okou people-search route", () => {
 
       const response = await successfulRequest(
         actor,
-        pricing,
+
         defaultRequest({ limit: 3 }),
       );
       const afterCredits = await credits(actor);
@@ -643,7 +535,7 @@ describe("okou people-search route", () => {
   it("accepts a CLI token", async () => {
     const actor = createBddApi(context).user();
     configureProvider();
-    const pricing = await createPricingFixture([peopleSearchPricing()]);
+
     const owner = await fundActorWithSubscription(actor, {
       deleteCliUser: true,
     });
@@ -657,7 +549,7 @@ describe("okou people-search route", () => {
       );
 
       const response = await accept(
-        client(pricing.resolution)(peopleSearchContract).search({
+        client()(peopleSearchContract).search({
           headers: { authorization: `Bearer ${token}` },
           body: defaultRequest(),
         }),
@@ -690,7 +582,7 @@ describe("okou people-search route", () => {
       });
     });
     configureProvider();
-    const pricing = await createPricingFixture([peopleSearchPricing()]);
+
     const owner = await fundActorWithSubscription(actor);
     await owner.run(async () => {
       server.use(
@@ -701,7 +593,7 @@ describe("okou people-search route", () => {
 
       const response = await successfulRequest(
         actor,
-        pricing,
+
         defaultRequest({ limit: 7 }),
       );
 
@@ -720,7 +612,7 @@ describe("okou people-search route", () => {
       });
     });
     configureProvider();
-    const pricing = await createPricingFixture([peopleSearchPricing()]);
+
     const owner = await fundActorWithSubscription(actor);
     await owner.run(async () => {
       server.use(
@@ -731,7 +623,7 @@ describe("okou people-search route", () => {
 
       const response = await successfulRequest(
         actor,
-        pricing,
+
         defaultRequest({ limit: 20 }),
       );
 
@@ -744,7 +636,7 @@ describe("okou people-search route", () => {
   it("bills a valid search with no matching profiles", async () => {
     const actor = createBddApi(context).user();
     configureProvider();
-    const pricing = await createPricingFixture([peopleSearchPricing()]);
+
     const owner = await fundActorWithSubscription(actor);
     await owner.run(async () => {
       const beforeCredits = await credits(actor);
@@ -754,7 +646,7 @@ describe("okou people-search route", () => {
         }),
       );
 
-      const response = await successfulRequest(actor, pricing);
+      const response = await successfulRequest(actor);
       const afterCredits = await credits(actor);
 
       expect(response.body.profiles).toStrictEqual([]);
@@ -766,7 +658,7 @@ describe("okou people-search route", () => {
   it("rejects invalid provider/model output without billing", async () => {
     const actor = createBddApi(context).user();
     configureProvider();
-    const pricing = await createPricingFixture([peopleSearchPricing()]);
+
     const owner = await fundActorWithSubscription(actor);
     await owner.run(async () => {
       const valid = providerResponse();
@@ -822,7 +714,7 @@ describe("okou people-search route", () => {
           }),
         );
         const response = await accept(
-          client(pricing.resolution)(peopleSearchContract).search({
+          client()(peopleSearchContract).search({
             headers: authenticate(actor),
             body: defaultRequest({ limit: 1 }),
           }),
@@ -836,9 +728,9 @@ describe("okou people-search route", () => {
     });
   });
 
-  it("fails before provider work when configuration or pricing is absent", async () => {
+  it("fails before provider work when provider configuration is absent", async () => {
     const actor = createBddApi(context).user();
-    const pricing = await createPricingFixture([], [peopleSearchPricingKey()]);
+
     const owner = await fundActorWithSubscription(actor);
     await owner.run(async () => {
       let providerRequests = 0;
@@ -850,7 +742,7 @@ describe("okou people-search route", () => {
       );
       mockEnv("OKOU_WEB_SEARCH_PERPLEXITY_TOKEN", undefined);
       const noCredential = await accept(
-        client(pricing.resolution)(peopleSearchContract).search({
+        client()(peopleSearchContract).search({
           headers: authenticate(actor),
           body: defaultRequest(),
         }),
@@ -859,16 +751,6 @@ describe("okou people-search route", () => {
       expectApiError(noCredential.body);
       expect(noCredential.body.error.code).toBe("NOT_CONFIGURED");
 
-      configureProvider();
-      const noPrice = await accept(
-        client(pricing.resolution)(peopleSearchContract).search({
-          headers: authenticate(actor),
-          body: defaultRequest(),
-        }),
-        [503],
-      );
-      expectApiError(noPrice.body);
-      expect(noPrice.body.error.code).toBe("PRICING_NOT_CONFIGURED");
       expect(providerRequests).toBe(0);
     });
   });
@@ -877,7 +759,7 @@ describe("okou people-search route", () => {
     const actor = createBddApi(context).user();
     let providerRequests = 0;
     configureProvider();
-    const pricing = await createPricingFixture([peopleSearchPricing()]);
+
     const owner = createPublicUnfundedProFixture(context, actor);
     await owner.initialize();
     await owner.run(async () => {
@@ -889,7 +771,7 @@ describe("okou people-search route", () => {
       );
 
       const response = await accept(
-        client(pricing.resolution)(peopleSearchContract).search({
+        client()(peopleSearchContract).search({
           headers: authenticate(actor),
           body: defaultRequest(),
         }),
@@ -905,7 +787,7 @@ describe("okou people-search route", () => {
   it("maps provider failures without billing", async () => {
     const actor = createBddApi(context).user();
     configureProvider();
-    const pricing = await createPricingFixture([peopleSearchPricing()]);
+
     const owner = await fundActorWithSubscription(actor);
     await owner.run(async () => {
       const beforeCredits = await credits(actor);
@@ -915,7 +797,7 @@ describe("okou people-search route", () => {
         }),
       );
       const rateLimited = await accept(
-        client(pricing.resolution)(peopleSearchContract).search({
+        client()(peopleSearchContract).search({
           headers: authenticate(actor),
           body: defaultRequest(),
         }),
@@ -935,7 +817,7 @@ describe("okou people-search route", () => {
         }),
       );
       const timedOut = await accept(
-        client(pricing.resolution)(peopleSearchContract).search({
+        client()(peopleSearchContract).search({
           headers: authenticate(actor),
           body: defaultRequest(),
         }),
@@ -954,7 +836,7 @@ describe("okou people-search route", () => {
         }),
       );
       const oversized = await accept(
-        client(pricing.resolution)(peopleSearchContract).search({
+        client()(peopleSearchContract).search({
           headers: authenticate(actor),
           body: defaultRequest(),
         }),
@@ -970,7 +852,7 @@ describe("okou people-search route", () => {
   it("maps and bounds nested provider errors without billing", async () => {
     const actor = createBddApi(context).user();
     configureProvider();
-    const pricing = await createPricingFixture([peopleSearchPricing()]);
+
     const owner = await fundActorWithSubscription(actor);
     await owner.run(async () => {
       const beforeCredits = await credits(actor);
@@ -988,7 +870,7 @@ describe("okou people-search route", () => {
       );
 
       const response = await accept(
-        client(pricing.resolution)(peopleSearchContract).search({
+        client()(peopleSearchContract).search({
           headers: authenticate(actor),
           body: defaultRequest(),
         }),

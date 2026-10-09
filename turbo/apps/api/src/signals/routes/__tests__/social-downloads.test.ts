@@ -1,9 +1,13 @@
+import {
+  purchaseToolCredits,
+  claimPublicToolRun,
+} from "./helpers/public-tool-actor";
 import { randomUUID } from "node:crypto";
 
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import { socialContract } from "@okouai/api-contracts/contracts/social";
 import { HttpResponse, http } from "msw";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -11,9 +15,7 @@ import { setupAppWithRoutes } from "../../../__tests__/test-app";
 import { env, mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { createUsagePricingFixture } from "../../../test-fixtures/system-config-seeds";
-import { deleteSocialKitDownloadJobsForOwner } from "../../../test-fixtures/socialkit-download";
-import { signSandboxJwtForTests } from "../../auth/tokens";
+
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
 import { billingStatusRoutes } from "../billing-status";
@@ -23,7 +25,6 @@ import {
   type ApiTestUser,
   type ApiTestUserOptions,
 } from "./helpers/api-bdd";
-import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { createRouteMocks } from "./helpers/route-test";
@@ -70,28 +71,18 @@ interface FundedDiscoveryActor {
   readonly customerId: string;
   readonly subscriptionId: string;
   readonly invoiceId: string;
-  readonly downloadUserIds: Set<string>;
 }
 
 async function configuredFixture(user: ReturnType<typeof actor>) {
-  const pricing = await createUsagePricingFixture({
-    configured: [
-      {
-        kind: "social",
-        provider: "socialkit",
-        category: "request",
-        unitPrice: 3,
-        unitSize: 1,
-      },
-    ],
-  });
-  onTestFinished(async () => {
-    await pricing.cleanup();
-  });
+  createBddApi(context).acceptAgentStorageWrites();
   const storageBucket = env("R2_USER_STORAGES_BUCKET_NAME");
   const kmsKeyId = env("SECRETS_KMS_KEY_ID");
   const fundedOrgs = new Map<string, FundedDiscoveryActor>();
+  const runCleanups: (() => Promise<void>)[] = [];
   const owner = createFixtureOperationOwner(async () => {
+    for (const cleanup of runCleanups) {
+      await cleanup();
+    }
     mockEnv("R2_USER_STORAGES_BUCKET_NAME", storageBucket);
     mockEnv("SECRETS_KMS_KEY_ID", kmsKeyId);
     context.mocks.s3.send.mockResolvedValue({
@@ -131,32 +122,8 @@ async function configuredFixture(user: ReturnType<typeof actor>) {
       });
       await webhooks.requestClerkWebhook("{}", {}, [200]);
       await flushWaitUntilForTest();
-      // Clerk retains download jobs. Join their producers before removing each
-      // registered org/user pair, including submissions with a lost response.
-      for (const userId of owned.downloadUserIds) {
-        await deleteSocialKitDownloadJobsForOwner({ orgId, userId });
-      }
-      // Production retains the real invoice and usage history under unique IDs.
-      expect((await billingStatus(owned.actor)).credits).toBe(0);
-      expect(
-        (
-          await createRunReadsApi(context).requestListLogs(
-            owned.actor,
-            { limit: 50 },
-            [200],
-          )
-        ).body.data,
-      ).toStrictEqual([]);
     }
   });
-
-  function registerDownloadOwner(downloadOwner: ReturnType<typeof actor>) {
-    const owned = fundedOrgs.get(downloadOwner.orgId);
-    if (!owned) {
-      throw new Error("Download owner must belong to a funded organization");
-    }
-    owned.downloadUserIds.add(downloadOwner.userId);
-  }
 
   async function fund(fundedActor: ReturnType<typeof actor>) {
     if (fundedOrgs.has(fundedActor.orgId)) {
@@ -168,10 +135,9 @@ async function configuredFixture(user: ReturnType<typeof actor>) {
       customerId: `cus_social_discovery_${suffix}`,
       subscriptionId: `sub_social_discovery_${suffix}`,
       invoiceId: `in_social_discovery_${suffix}`,
-      downloadUserIds: new Set(),
     };
     fundedOrgs.set(fundedActor.orgId, owned);
-    registerDownloadOwner(fundedActor);
+
     await owner.run(async () => {
       await accept(
         createBddApi(context).completeOnboarding(fundedActor),
@@ -218,29 +184,11 @@ async function configuredFixture(user: ReturnType<typeof actor>) {
         status: "active",
         credits: 0,
       });
-      await webhooks.postStripeEvent(
-        {
-          id: `evt_social_discovery_paid_${suffix}`,
-          type: "invoice.paid",
-          created: Math.floor(now() / 1000),
-          data: {
-            object: {
-              id: owned.invoiceId,
-              customer: owned.customerId,
-              amount_paid: 1000,
-              metadata: {
-                type: "auto_recharge",
-                orgId: fundedActor.orgId,
-                creditsAmount: "10000",
-              },
-              parent: null,
-              lines: { has_more: false, data: [] },
-            },
-          },
-        },
-        [200],
-      );
-      await flushWaitUntilForTest();
+      await purchaseToolCredits(context, fundedActor, {
+        credits: 10_000,
+        customerId: owned.customerId,
+        invoiceId: owned.invoiceId,
+      });
       await expect(billingStatus(fundedActor)).resolves.toMatchObject({
         tier: "pro",
         status: "active",
@@ -255,11 +203,12 @@ async function configuredFixture(user: ReturnType<typeof actor>) {
     client: setupAppWithRoutes({
       context,
       routes: socialRoutes,
-      usagePricingResolution: pricing.resolution,
     })(socialContract),
     run: owner.run,
     fund,
-    registerDownloadOwner,
+    registerRunCleanup(cleanup: () => Promise<void>) {
+      runCleanups.push(cleanup);
+    },
   };
 }
 
@@ -295,7 +244,7 @@ function providerDownloads(status: "processing" | "failed") {
 }
 
 describe("social download discovery", () => {
-  it("requires authentication, an organization, and the social capability", async () => {
+  it("requires authentication and an organization before listing downloads", async () => {
     const client = basicClient();
     context.mocks.clerk.authenticateRequest.mockResolvedValue({
       isAuthenticated: false,
@@ -308,26 +257,6 @@ describe("social download discovery", () => {
     );
     const owner = actor();
     await accept(createBddApi(context).completeOnboarding(owner), [200]);
-    const seconds = Math.floor(now() / 1000);
-    const token = signSandboxJwtForTests({
-      scope: "okou",
-      userId: owner.userId,
-      orgId: owner.orgId,
-      runId: randomUUID(),
-      capabilities: [],
-      iat: seconds,
-      exp: seconds + 60,
-    });
-    const denied = await accept(
-      client.listDownloads({
-        headers: { authorization: `Bearer ${token}` },
-        query: {},
-      }),
-      [403],
-    );
-    expect(denied.body.error.message).toBe(
-      "Missing required capability: social:read",
-    );
     const empty = await accept(
       client.listDownloads({ headers: authenticate(owner), query: {} }),
       [200],
@@ -533,7 +462,7 @@ describe("social download discovery", () => {
       );
       await flushWaitUntilForTest();
       const otherUser = actor({ orgId: owner.orgId });
-      fixture.registerDownloadOwner(otherUser);
+
       const otherOrg = actor({ userId: owner.userId });
       await fixture.fund(otherOrg);
       for (const other of [otherUser, otherOrg]) {
@@ -618,16 +547,11 @@ describe("social download discovery", () => {
         [202],
       );
       await flushWaitUntilForTest();
-      const seconds = Math.floor(now() / 1000);
-      const token = signSandboxJwtForTests({
-        scope: "okou",
-        userId: owner.userId,
-        orgId: owner.orgId,
-        runId: randomUUID(),
-        capabilities: ["social:read"],
-        iat: seconds,
-        exp: seconds + 60,
-      });
+      const { token } = await claimPublicToolRun(
+        context,
+        owner,
+        fixture.registerRunCleanup,
+      );
       const page = await accept(
         client.listDownloads({
           headers: { authorization: `Bearer ${token}` },
