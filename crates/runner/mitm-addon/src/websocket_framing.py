@@ -1,6 +1,6 @@
 """Bound decoded WebSocket messages before mitmproxy's addon hooks.
 
-See the [WebSocket framing contract](../../../../docs/testing/mitm-addon-testing.md)
+See the [WebSocket framing contract](../../../../docs/runner/mitm-addon-testing.md)
 for the limits, lifecycle invariants, and version-re-audit boundary for this
 private adaptation.
 """

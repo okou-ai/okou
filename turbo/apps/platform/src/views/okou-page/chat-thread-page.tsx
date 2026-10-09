@@ -4953,7 +4953,7 @@ function InsufficientCreditsCard() {
 
   // Credits arriving while the card is on screen replaces this copy and the
   // action inside the element below, rather than swapping the element itself:
-  // `docs/chat-cards.md` keeps the mounted card's box in layout through every
+  // `docs/chat.md#chat-cards` keeps the mounted card's box in layout through every
   // asynchronous state change.
   const { headline, helper } = hasAvailableCredits
     ? creditsAvailableCopy()
@@ -5289,7 +5289,7 @@ function AssistantRecoveryActions({
 
 /**
  * The contents of one error card, chosen by the caller and handed to the single
- * `AssistantErrorCard` element it keeps mounted. `docs/chat-cards.md` requires
+ * `AssistantErrorCard` element it keeps mounted. `docs/chat.md#chat-cards` requires
  * the sized element itself to survive every asynchronous state change: the
  * failure-recovery classification lands after the transcript has already
  * scrolled, and replacing the card component at that moment removes its box

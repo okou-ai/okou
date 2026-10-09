@@ -673,7 +673,7 @@ ON "table" ("created_at");
 ## Permanent triggers and functions
 
 New database triggers are rejected by
-[`api/no-database-trigger`](../../../docs/eslint/no-database-trigger.md) in SQL
+[`api/no-database-trigger`](../../../docs/api/database.md#database-triggers) in SQL
 migrations and production TypeScript. Existing shipped trigger migrations have
 explicit ESLint exceptions; do not extend those exceptions for new behavior.
 Keep write orchestration in application transactions and invariants in database

@@ -672,7 +672,7 @@ export function checkStylePolicy({
 function printIssues(issues) {
   for (const issue of issues) {
     console.error(
-      `${issue.file}:${issue.line}:1 error ${issue.message} Read docs/styles.md for the style guide. [style-policy/${issue.type}]`,
+      `${issue.file}:${issue.line}:1 error ${issue.message} Read docs/app/styles.md for the style guide. [style-policy/${issue.type}]`,
     );
   }
 }

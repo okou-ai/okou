@@ -33,6 +33,7 @@ Building something:
 | Choosing a page layout or covering the viewport           | [Page layouts](#page-layouts)                                                                                                                                                   |
 | Adding a token or a variant                               | [Token and variant governance](#token-and-variant-governance)                                                                                                                   |
 | Adapting third-party or generated DOM                     | [Exception boundary](#exception-boundary), [Third-party attribution of borrowed class names](#third-party-attribution-of-borrowed-class-names)                                  |
+| Styling hosted Clerk authentication                       | [Clerk customization](#clerk-customization)                                                                                                                                     |
 | A style check failed                                      | [Enforcement and feedback](#enforcement-and-feedback)                                                                                                                           |
 
 Changing one of these surfaces — read its note first, because each one records a
@@ -51,7 +52,6 @@ cascade or environment constraint that is not obvious from the markup:
 | Workspace pane background                                 | [The workspace canvas](#the-workspace-canvas)                                                                               |
 | Any card radius or shadow token                           | [Card geometry at the document root](#card-geometry-at-the-document-root)                                                   |
 | Mobile drawer, scrim or a fixed cover in a standalone PWA | [The standalone PWA fixed cover](#the-standalone-pwa-fixed-cover)                                                           |
-| Onboarding workflow diagram                               | [The onboarding workflow diagram canvas](#the-onboarding-workflow-diagram-canvas)                                           |
 | Color-theme preview swatch                                | [App palette previews](#app-palette-previews)                                                                               |
 
 ## Final state
@@ -888,23 +888,10 @@ stacking context just as `isolate` does; transforms and opacity below 1 can
 also create one. Review those boundaries before adding isolation to a layout
 wrapper, especially when descendants need to cover other app regions.
 
-The artifact bug recorded in
-[#35387](https://github.com/okou-ai/okou/issues/35387) illustrates the failure:
-`WorkspaceInset` had `relative z-0`, trapping the artifact detail's
-`fixed z-[100]` inside that context. The sidebar header's `relative z-10`
-buttons participated outside it and painted above the fullscreen surface.
-Lowering 100 below 50 or removing only `#root`'s isolation cannot repair that
-boundary. The artifact catalog's portal to `#root` escaped it, so removing that
-portal before correcting the host would expose the same bug on that path.
-
-The remaining layer-ownership audit and lint work are tracked in #35387.
-Existing z-index declarations are migration debt to audit under these ownership
-rules, including zero, negative values and values below 50; passing today's
-lint does not establish correct stacking.
-
-The routine Playwright gate covers chat send-and-reply rather than layout or
-pointer hit targets. Class names and computed z-index values alone cannot verify
-those relationships.
+Static lint cannot prove the runtime ancestor chain or paint order. The routine
+Playwright gate covers chat send-and-reply rather than layout or pointer hit
+targets. Class names and computed z-index values alone cannot verify those
+relationships.
 Fullscreen state preservation also needs the shared primitive's state and
 scroll regression coverage. Standalone behavior still needs installed-PWA
 acceptance; desktop browser coverage does not establish iOS keyboard behavior.
@@ -982,13 +969,6 @@ starts animating immediately. Both layers use the registered
 Changing the prop updates the phase relative to the existing timeline origin,
 not the mount or re-render time.
 
-With `chatRunningIndicatorWave` enabled, the chat sidebar supplies its complete
-filtered-list row index divided by 12: the existing 2.4-second cycle reaches
-each lower row 200ms later and repeats spatially every 12 rows. Virtual scrolling
-must not substitute the window-local offset. Reordering adopts the new row
-position immediately; unread dots remain static, and search/command results
-keep the default zero offset. With the switch off, sidebar dots remain in phase.
-
 A `@media (prefers-reduced-motion: reduce)` override that resets a value back to
 its initial belongs on `motion-safe:` on the rule it would override, rather than
 as a second `motion-reduce:` utility. Both utilities land in the same layer at
@@ -1052,8 +1032,8 @@ beside `border-solid`, the same shape `Card` uses for `--border-width-surface`.
 Their scope is artwork, and nothing else. A control, surface, card, input,
 divider or any other piece of product chrome takes the shared hairline; reach
 for these only for a drawing whose strokes are part of the picture. They live in
-the App token layer because the onboarding diagram is their only consumer today,
-and they promote to `@okouai/ui` when a second product surface draws with them.
+the App token layer until multiple product surfaces need them, then promote to
+`@okouai/ui`.
 Adding a third weight is a token change, not a call-site decision.
 
 `--border-width-annotation-box` (2.5px) sits in the same App layer for the same
@@ -1064,13 +1044,6 @@ runtime value — the component composes the colour, the system still owns the
 weight. The numbered pin beside it is chrome laid over artwork, not a drawing,
 so it takes the shared `--border-width-emphasis`. Do not collapse the two: a
 drawing tool's weights must be free to move without touching product chrome.
-
-The first consumers are the onboarding diagram's tiles: the icon box, the
-connector stack items, the overflow badge and the two action cards take
-`--border-width-illustration`, and the six waypoint dots take the marker weight.
-Those tiles otherwise use the semantic `bg-card` fill and `border-border`
-stroke, `rounded-surface` for the action cards and the artwork's own
-`shadow-[0_12px_30px_-18px_rgba(0,0,0,0.5)]` lift.
 
 `white` is not white here. `--color-white` is `hsl(var(--white))`, a
 theme-flipped token that resolves to a near-black in Dark, so a drawing that
@@ -1528,34 +1501,6 @@ and outside the PWA navigation path. Sheet owns the portal, backdrop, modal
 focus boundary, and trigger/close relationship. Closed drawers unmount; existing
 sidebar signals retain section state and restore the chat-list scroll position.
 
-### The onboarding workflow diagram canvas
-
-The diagram is a fixed 614x470 illustration scaled to 0.6. Its geometry, motion,
-typography and coordinates are Tailwind utilities on the component.
-
-The beam registers `--animate-owf-beam-flow` as an `--animate-*` theme entry,
-the same form the thinking states use, and its keyframes stay in the stylesheet.
-Its reduced-motion behaviour — cancel the animation and dim the beam from 0.92
-to 0.35 — belongs to `motion-safe:`: the element carries `opacity-[0.35]` with
-`motion-safe:opacity-[0.92] motion-safe:animate-owf-beam-flow`. A
-`motion-reduce:` utility would have depended on emission order to win.
-
-The beam gradient, both of its drop shadows and the two literal brand strokes
-keep their exact values in arbitrary utilities, because Tailwind's gradient
-utilities interpolate in oklab and this gradient has five stops with literal
-`rgba()` colors. The grid's radial gradient likewise spells
-`hsl(var(--gray-500)/0.55)` rather than a ramp utility, because that alpha is
-part of the artwork.
-
-Type maps onto the shared scale exactly: the node labels' 12px/16px is
-`text-xs`, the action title's 16px/24px is `text-base`, and its description's
-14px/20px is `text-sm`, so no arbitrary font size survives. The description
-keeps `text-ellipsis` beside `line-clamp-2`, which the utility does not imply.
-
-Page tests select the source node and source dot through
-`data-slot="onboarding-diagram-source-node"` and
-`data-slot="onboarding-diagram-source-dot"`, which carry no styles.
-
 ## Exception boundary
 
 Only two exception kinds exist:
@@ -1573,7 +1518,7 @@ by hash.
 
 Hosted Clerk authentication does not use a third-party DOM adapter. It stays on
 Clerk's public appearance API under the narrower rules in
-[Clerk customization](./clerk-customize.md).
+[Clerk customization](#clerk-customization).
 
 Every exception identifies the exact file and selector or injected-style
 fingerprint, its owner, rationale, and removal condition. Third-party adapters
@@ -1624,6 +1569,170 @@ new dependency rather than a free one. A class a first-party element invents for
 itself is not this kind of exception, however vendor-like the name reads — the
 borrowed-name rule above is what separates the two.
 
+## Clerk Customization
+
+This section defines the styling boundary for the hosted Clerk authentication UI
+under `turbo/apps/platform/src/views/auth-v1`. The goal is a branded, legible,
+accessible auth surface that continues to use Clerk's public customization
+contract.
+
+### Clerk ownership
+
+The code that owns the DOM also owns its control styling and states.
+
+| Surface           | Owner       | Application responsibility                                                                                    |
+| ----------------- | ----------- | ------------------------------------------------------------------------------------------------------------- |
+| Auth page canvas  | Application | Background, safe areas, centering, theme toggle, and brand navigation through `AuthShell`                     |
+| Hosted Clerk card | Clerk       | Internal DOM, controls, spacing, validation, focus behavior, and authentication states                        |
+| Clerk adaptation  | Application | Semantic variables, official Clerk options, card frame, wordmark, and narrowly justified public element slots |
+
+### Clerk sources of truth
+
+| Concern                                                   | Source                                                                 |
+| --------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Provider-level semantic variables and Clerk cascade layer | `turbo/apps/platform/src/views/auth-v1/provider-appearance.ts`         |
+| Shared auth options and public element slots              | `turbo/apps/platform/src/views/auth-v1/clerk-auth-appearance.ts`       |
+| Shared page canvas and brand shell                        | `turbo/apps/platform/src/views/auth/auth-shell.tsx`                    |
+| Clerk layer order and card geometry                       | `turbo/apps/platform/src/views/css/index.css`                          |
+| Exact browser artifact versions                           | `turbo/apps/platform/src/lib/clerk-versions.ts` and its `package.json` |
+| Hosted sign-up and sign-in smoke                          | `e2e/tests/02-browser/brw-t01-platform-e2e.bats`                       |
+| Application auth behavior                                 | `turbo/apps/platform/src/views/auth-v1/__tests__`                      |
+
+The current contract has two appearance levels. Provider appearance maps
+application semantics into Clerk and assigns Clerk's stylesheet to its own
+cascade layer:
+
+```ts
+return {
+  cssLayerName: "clerk",
+  variables: {
+    colorBackground: "hsl(var(--card))",
+    colorForeground: "hsl(var(--foreground))",
+    colorPrimary: "hsl(var(--brand-text))",
+    colorNeutral: "hsl(var(--foreground))",
+    colorRing: "hsl(var(--ring))",
+    colorDanger: "hsl(var(--destructive))",
+  },
+};
+```
+
+Clerk derives its border scale from `colorNeutral`. Do not map the application's
+`--border` token through Clerk's `colorBorder`: hosted controls also use a local
+`--border` variable, so the deferred value can resolve against the wrong owner.
+
+Provider appearance must not contain `elements`. Authentication-specific
+element overrides belong on `SignIn`, `SignUp`, and imperative SignIn dialogs,
+so unrelated Clerk surfaces cannot inherit them.
+
+Shared auth appearance selects an official Clerk theme and options, then adapts
+only public slots. Page-mounted `SignIn` / `SignUp` and imperative
+`clerk.openSignIn()` dialogs must use the same appearance builder:
+
+```ts
+return {
+  theme: "simple",
+  options: {
+    elevation: "raised",
+    logoLinkUrl: authBrand.homeUrl,
+    socialButtonsPlacement: "top",
+    socialButtonsVariant: "blockButton",
+  },
+  elements: {
+    rootBox: "...",
+    cardBox: "...",
+    card: "...",
+    logoImage: "...",
+  },
+};
+```
+
+This abbreviated example describes the shape, not a permanent element-key
+allowlist. A public slot such as `otpCodeFieldInput` may be added for an
+observed legibility or interaction defect. That does not authorize styling all
+Clerk controls for visual parity with an application-owned form.
+
+Clerk's styles sit between base styles and application components/utilities:
+
+```css
+@layer theme, base, clerk, components, utilities;
+```
+
+This layer order lets Tailwind classes supplied through public Clerk slots win
+through the normal cascade. It removes any need for specificity escalation.
+
+### Allowed Clerk customization
+
+Use the smallest public contract that resolves the observed problem:
+
+1. Fix page background, scrolling, safe-area, or brand navigation in
+   `AuthShell` or the auth page wrapper, because the application owns that DOM.
+2. Change a provider variable when a semantic color, font, or radius mapping is
+   wrong for every hosted auth state.
+3. Prefer an official Clerk `theme` or `options` setting when it expresses the
+   requirement.
+4. Add one component-level `appearance.elements` slot when the real Clerk UI
+   has a concrete contrast, focus, overflow, visibility, or accessibility
+   defect. Use Tailwind classes and existing semantic tokens.
+5. Keep the override on the public slot itself. Do not reach into descendants
+   that Clerk owns.
+
+The stopping condition is that every required flow is usable, readable,
+keyboard-focusable, and free of overflow, while the page shell, brand, and card
+frame remain coherent with the application. Differences in Clerk's internal
+spacing or control treatment are acceptable after that condition is met.
+
+### Prohibited Clerk customization
+
+In production auth code:
+
+- Do not inject `<style>`, import a route-owned stylesheet, use inline styles,
+  or add CSS-in-JS element objects.
+- Do not use `!important`.
+- Do not target `.cl-*`, generated `cl-internal-*` classes, `[class*=...]`,
+  `data-localization-key`, element structure, or `:has()`.
+- Do not query or mutate Clerk's rendered DOM to apply styling.
+- Do not add overrides only to force Clerk's controls to imitate an
+  application-owned implementation.
+
+If a product requirement needs broad control over Clerk's internal layout or
+states and its public slots cannot express it, revisit the product requirement
+or explicitly choose an application-owned surface. Do not turn the hosted UI
+into an internal-DOM adapter.
+
+### Clerk lint
+
+Run the focused check from `turbo/apps/platform`:
+
+```bash
+pnpm lint:clerk-customize
+```
+
+The check scans production TypeScript under `src/views/auth-v1` and rejects the
+unsafe patterns above. It intentionally excludes tests: deployed E2E may locate
+`.cl-*` elements to observe the real third-party UI, but production styling
+must not depend on those selectors.
+
+Passing lint proves only that the known unsafe mechanisms are absent. A new
+public element override still needs a concrete defect, the narrowest affected
+slot, semantic tokens, and relevant UI verification.
+
+### Clerk verification and upgrades
+
+Platform Vitest replaces `@clerk/react` at the external package boundary. Those
+tests verify application routing, props, loading, redirects, and lifecycle;
+they are not visual evidence for hosted Clerk markup.
+
+The dedicated Bats browser smoke completes hosted Clerk sign-up and sign-in on
+the deployed app. Platform Vitest covers app-owned auth behavior, including
+routing, theme bindings, resource failures, and redirect handling. The routine
+Playwright gate covers chat send-and-reply rather than auth presentation.
+
+Clerk browser artifacts are exact-version contracts. The package versions and
+the constants in `turbo/apps/platform/src/lib/clerk-versions.ts` must stay
+aligned; runtime loading rejects a mismatched UI version. An upgrade must pass
+the hosted Clerk Bats smoke and the Platform auth tests. Visual presentation is
+not an automated Playwright gate.
+
 ## Enforcement and feedback
 
 Run the complete check from `turbo`:
@@ -1652,19 +1761,9 @@ merge queue, and on a contributor's machine. An unreadable or malformed
 CI runs this as the independent required `lint-style` job. The pre-commit hook
 runs the fast repository policy so the most actionable boundary failures are
 returned before push. Both policy diagnostics and the full lint command's
-failure output direct contributors to `docs/styles.md` for the style guide. The
+failure output direct contributors to `docs/app/styles.md` for the style guide. The
 full command keeps a failing exit status for policy, CSS, Tailwind, or test
 failures.
-
-Z-index ownership enforcement is planned in
-[#35387](https://github.com/vm0-ai/okou/issues/35387) and is not yet part of these
-checks. It must cover numeric, negative, arbitrary and variable-backed z-index
-utilities (including variants), arbitrary `z-index` properties and inline
-`zIndex`, rather than only values at or above 50. Each permitted declaration
-must identify its exact file, owner, rationale and stacking host; a local
-exception must name its `isolate` boundary. Static lint cannot prove the runtime
-ancestor chain or paint order, so it complements the fullscreen regression
-coverage described above. Do not assemble class names dynamically to evade it.
 
 When a style check fails, read this guide and replace business styling with the
 appropriate Tailwind utilities and registered tokens. When a change removes CSS

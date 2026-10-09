@@ -118,6 +118,18 @@ Avoid `vi.mock()` for internal modules such as services, route files, database
 schemas, fixture helpers, or ccstate signals. That bypasses the behavior the
 route integration test is supposed to cover.
 
+## Time
+
+Keep real timer scheduling. Do not use Vitest fake timers or `vi.setSystemTime`;
+API test files enforce this with `ccstate/no-test-delay`. Await the request or
+an externally observable result instead of sleeping or advancing timers.
+
+For time-dependent behavior, use the API's production clock abstraction in
+`src/lib/time.ts`. Its test override is `mockNow(value: Date | number)`; unlike
+Platform's override, it takes no signal argument. Shared test setup clears the
+override after each test. Clock control does not permit private scenario setup:
+construction and assertions must still follow the external behavior boundary.
+
 ## External Behavior Boundary
 
 First identify the useful behavior and the real caller that can trigger it.
@@ -126,7 +138,7 @@ internal state or race. Delete unjustified coverage together with unused support
 rewrite valuable behavior through an existing normal API or genuine provider
 webhook. If those interfaces cannot construct the case, reconsider its value
 instead of treating an existing test as permission to keep private setup. See
-the [scenario decision procedure](./testing-external-behavior.md#cases-without-public-construction).
+the [scenario decision procedure](../testing.md#cases-without-public-construction).
 
 API route tests must construct, drive, and observe a case through production
 interfaces available to the real caller. Follow the complete chain, including
@@ -268,7 +280,7 @@ DELETE 404 while its owner still exists. These outcomes do not prove the exact
 physical history-blob reference counts removed with batch 010.
 
 For the full reasoning, see
-[Testing External Behavior](./testing-external-behavior.md).
+[Testing External Behavior](../testing.md#external-behavior).
 
 For storage URL reuse, see `workflow-skill-storage-presigned-url-cache.suite.ts`:
 create a workflow or custom connector through its normal API, associate it with

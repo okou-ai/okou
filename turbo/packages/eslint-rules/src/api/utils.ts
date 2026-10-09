@@ -7,5 +7,14 @@ export interface RuleDocs {
 }
 
 export const createRule = ESLintUtils.RuleCreator<RuleDocs>((name) => {
-  return `https://github.com/okou-ai/okou/blob/main/docs/eslint/${name}.md`;
+  switch (name) {
+    case "no-db-transaction":
+      return "https://github.com/okou-ai/okou/blob/main/docs/api/database.md#transaction-lint";
+    case "no-database-trigger":
+      return "https://github.com/okou-ai/okou/blob/main/docs/api/database.md#database-triggers";
+    case "max-signal-owner-lines":
+      return "https://github.com/okou-ai/okou/blob/main/turbo/packages/eslint-rules/src/api/rules/max-signal-owner-lines.ts";
+    default:
+      return `https://github.com/okou-ai/okou/blob/main/docs/eslint/${name}.md`;
+  }
 });
