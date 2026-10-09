@@ -1,9 +1,7 @@
 import { command } from "ccstate";
 import { discordOauthStates } from "@okouai/db/schema/discord-oauth-state";
 import { discordOrgGrants } from "@okouai/db/schema/discord-org-grant";
-import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
-import { discordOrgInstallations } from "@okouai/db/schema/discord-org-installation";
-import { and, count, eq, gte, inArray, isNull } from "drizzle-orm";
+import { and, count, eq, gte } from "drizzle-orm";
 import { writeDb$ } from "../external/db";
 
 /** Personal grants revoke children by FK; shared installation consent survives. */
@@ -14,33 +12,12 @@ export const deleteDiscordOrgMemberData$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     signal.throwIfAborted();
-    const db = set(writeDb$);
-    const revoked = db.$with("revoked_discord_member_grants").as(
-      db
-        .delete(discordOauthStates)
-        .where(
-          and(
-            eq(discordOauthStates.userId, args.userId),
-            eq(discordOauthStates.orgId, args.orgId),
-          ),
-        )
-        .returning({ id: discordOauthStates.id }),
-    );
-    await db
-      .with(revoked)
-      .delete(discordOrgConnections)
+    await set(writeDb$)
+      .delete(discordOauthStates)
       .where(
         and(
-          eq(discordOrgConnections.userId, args.userId),
-          isNull(discordOrgConnections.oauthGrantId),
-          inArray(
-            discordOrgConnections.guildId,
-            db
-              .select({ guildId: discordOrgInstallations.guildId })
-              .from(discordOrgInstallations)
-              .where(eq(discordOrgInstallations.orgId, args.orgId)),
-          ),
-          gte(db.select({ count: count() }).from(revoked), 0),
+          eq(discordOauthStates.userId, args.userId),
+          eq(discordOauthStates.orgId, args.orgId),
         ),
       );
     signal.throwIfAborted();
@@ -59,25 +36,13 @@ export const deleteDiscordOrgData$ = command(
           .where(eq(discordOauthStates.orgId, orgId))
           .returning({ id: discordOauthStates.id }),
       );
-    const uninstalled = db.$with("revoked_discord_org_installation_grants").as(
-      db
-        .delete(discordOrgGrants)
-        .where(
-          and(
-            eq(discordOrgGrants.orgId, orgId),
-            gte(db.select({ count: count() }).from(revoked), 0),
-          ),
-        )
-        .returning({ id: discordOrgGrants.id }),
-    );
     await db
-      .with(revoked, uninstalled)
-      .delete(discordOrgInstallations)
+      .with(revoked)
+      .delete(discordOrgGrants)
       .where(
         and(
-          eq(discordOrgInstallations.orgId, orgId),
-          isNull(discordOrgInstallations.orgGrantId),
-          gte(db.select({ count: count() }).from(uninstalled), 0),
+          eq(discordOrgGrants.orgId, orgId),
+          gte(db.select({ count: count() }).from(revoked), 0),
         ),
       );
     signal.throwIfAborted();
@@ -96,42 +61,17 @@ export const deleteDiscordUserData$ = command(
           .where(eq(discordOauthStates.userId, userId))
           .returning({ id: discordOauthStates.id }),
       );
-    const anonymized = db.$with("anonymized_discord_installation_consent").as(
-      db
-        .update(discordOrgGrants)
-        .set({ initiatedByUserId: null })
-        .where(
-          and(
-            eq(discordOrgGrants.initiatedByUserId, userId),
-            gte(db.select({ count: count() }).from(revoked), 0),
-          ),
-        )
-        .returning({ id: discordOrgGrants.id }),
-    );
-    const legacyConnections = db
-      .$with("revoked_legacy_discord_account_connections")
-      .as(
-        db
-          .delete(discordOrgConnections)
-          .where(
-            and(
-              eq(discordOrgConnections.userId, userId),
-              isNull(discordOrgConnections.oauthGrantId),
-            ),
-          )
-          .returning({ id: discordOrgConnections.id }),
-      );
-    // The grant-installer FK clears even an installation committed while the
-    // first DELETE waited. Only genuinely historical rows need a direct UPDATE.
+    // Every installation has genuine organization-owned consent. Native RI
+    // clears installer metadata, including children committed while we waited,
+    // without revoking the shared guild or surviving members' personal grants.
     await db
-      .with(revoked, anonymized, legacyConnections)
-      .update(discordOrgInstallations)
-      .set({ installedByUserId: null })
+      .with(revoked)
+      .update(discordOrgGrants)
+      .set({ initiatedByUserId: null })
       .where(
         and(
-          eq(discordOrgInstallations.installedByUserId, userId),
-          isNull(discordOrgInstallations.orgGrantId),
-          gte(db.select({ count: count() }).from(anonymized), 0),
+          eq(discordOrgGrants.initiatedByUserId, userId),
+          gte(db.select({ count: count() }).from(revoked), 0),
         ),
       );
     signal.throwIfAborted();

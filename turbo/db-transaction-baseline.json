@@ -1882,21 +1882,6 @@
       "owner": "<module>"
     },
     {
-      "id": "TX-0383",
-      "file": "turbo/packages/db/scripts/test-discord-chat-permanent.ts",
-      "owner": "validatePermanentDiscordChat"
-    },
-    {
-      "id": "TX-0384",
-      "file": "turbo/packages/db/scripts/test-discord-foundation-permanent.ts",
-      "owner": "validatePermanentDiscordFoundation/rejectWrite"
-    },
-    {
-      "id": "TX-0385",
-      "file": "turbo/packages/db/scripts/test-discord-foundation-permanent.ts",
-      "owner": "validatePermanentDiscordFoundation"
-    },
-    {
       "id": "TX-0386",
       "file": "turbo/packages/db/scripts/test-file-run-provenance.ts",
       "owner": "<module>"

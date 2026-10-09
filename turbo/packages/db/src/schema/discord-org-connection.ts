@@ -27,8 +27,8 @@ export const discordOrgConnections = pgTable(
       ),
     discordUserId: varchar("discord_user_id", { length: 255 }).notNull(),
     userId: text("user_id").notNull(),
-    // Historical verified connections predate OAuth; new bindings record the real grant.
-    oauthGrantId: uuid("oauth_grant_id"),
+    // Every binding references its genuine completed personal authorization.
+    oauthGrantId: uuid("oauth_grant_id").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => {

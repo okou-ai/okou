@@ -15,7 +15,6 @@ import {
 import { discordOauthStates } from "@okouai/db/schema/discord-oauth-state";
 import { discordOrgGrants } from "@okouai/db/schema/discord-org-grant";
 import { discordGatewayReceipts } from "@okouai/db/schema/discord-gateway-receipt";
-import { discordOrgInstallations } from "@okouai/db/schema/discord-org-installation";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { writeDb$ } from "../external/db";
@@ -83,29 +82,14 @@ const commitDiscordGuildRemoval$ = command(
           approvedAt: discordOrgGrants.approvedAt,
         }),
     );
-    const legacy = db.$with("revoked_legacy_discord_guild").as(
-      db
-        .delete(discordOrgInstallations)
-        .where(
-          and(
-            eq(discordOrgInstallations.guildId, args.guildId),
-            isNull(discordOrgInstallations.orgGrantId),
-            exists(db.select({ id: receipt.eventDigest }).from(receipt)),
-            gte(db.select({ count: count() }).from(consents), 0),
-          ),
-        )
-        .returning({
-          guildId: discordOrgInstallations.guildId,
-          orgId: discordOrgInstallations.orgId,
-        }),
-    );
-    const removed = db.$with("removed_discord_gateway_guild").as(
-      db
-        .select({ orgId: consents.orgId })
-        .from(consents)
-        .where(isNotNull(consents.approvedAt))
-        .unionAll(db.select({ orgId: legacy.orgId }).from(legacy)),
-    );
+    const removed = db
+      .$with("removed_discord_gateway_guild")
+      .as(
+        db
+          .select({ orgId: consents.orgId })
+          .from(consents)
+          .where(isNotNull(consents.approvedAt)),
+      );
     const hasRemoval = exists(
       db.select({ orgId: removed.orgId }).from(removed),
     );
@@ -140,7 +124,7 @@ const commitDiscordGuildRemoval$ = command(
         .unionAll(grantOwners),
     );
     return await db
-      .with(receipt, revoked, consents, legacy, removed, recipients)
+      .with(receipt, revoked, consents, removed, recipients)
       .select({ removed: recipients.removed, userId: recipients.userId })
       .from(recipients);
   },

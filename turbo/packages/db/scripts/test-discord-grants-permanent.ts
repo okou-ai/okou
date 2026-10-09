@@ -30,6 +30,13 @@ export async function validatePermanentDiscordGrants(
       ).rows,
       [{ contype: "x" }],
     );
+    await assert.rejects(
+      client.query(
+        `INSERT INTO discord_org_installations (guild_id, org_id, bot_user_id) VALUES ($1, $2, $3)`,
+        [guild, org, bot],
+      ),
+      { code: "23502", column: "org_grant_id" },
+    );
     await client.query(
       `INSERT INTO discord_org_grants (id, org_id, initiated_by_user_id, verified_guild_id, verified_bot_user_id, expires_at) VALUES ($1, $2, $3, $4, $5, now() + interval '10 minutes')`,
       [id, org, actor, guild, bot],
@@ -49,6 +56,13 @@ export async function validatePermanentDiscordGrants(
     ) INSERT INTO discord_org_connections (guild_id, discord_user_id, user_id, oauth_grant_id)
       SELECT $1, $7, $4, id FROM approved`,
       [guild, org, bot, actor, id, createdAt, sender],
+    );
+    await assert.rejects(
+      client.query(
+        `INSERT INTO discord_org_connections (guild_id, discord_user_id, user_id) VALUES ($1, $2, $3)`,
+        [guild, peerSender, peer],
+      ),
+      { code: "23502", column: "oauth_grant_id" },
     );
     await assert.rejects(
       client.query(

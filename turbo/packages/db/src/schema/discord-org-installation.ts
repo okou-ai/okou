@@ -20,7 +20,7 @@ export const discordOrgInstallations = pgTable(
     orgId: text("org_id").notNull(),
     botUserId: varchar("bot_user_id", { length: 255 }).notNull(),
     installedByUserId: text("installed_by_user_id"),
-    orgGrantId: uuid("org_grant_id"),
+    orgGrantId: uuid("org_grant_id").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

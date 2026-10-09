@@ -41,10 +41,9 @@ CREATE TABLE "discord_user_identities" (
 --> statement-breakpoint
 CREATE INDEX "idx_discord_oauth_states_expiry" ON "discord_oauth_states" USING btree ("expires_at");--> statement-breakpoint
 CREATE INDEX "idx_discord_oauth_states_owner" ON "discord_oauth_states" USING btree ("user_id","org_id");--> statement-breakpoint
--- Preserve verified owners; ambiguous cross-account senders fail closed rather than choosing an owner.
-INSERT INTO "discord_user_identities" ("discord_user_id", "user_id")
-SELECT DISTINCT "discord_user_id", "user_id" FROM "discord_org_connections";
---> statement-breakpoint
+-- Non-GA Discord does not backfill staff-only identities or fabricate consent.
+-- Existing staff bindings must be removed through their owner-facing lifecycle
+-- before this migration. FK validation below fails closed without deleting data.
 ALTER TABLE "discord_org_connections" ADD CONSTRAINT "fk_discord_connection_identity_owner" FOREIGN KEY ("discord_user_id","user_id") REFERENCES "public"."discord_user_identities"("discord_user_id","user_id") ON DELETE restrict ON UPDATE no action NOT VALID;
 --> statement-breakpoint
 ALTER TABLE "discord_org_connections" VALIDATE CONSTRAINT "fk_discord_connection_identity_owner";

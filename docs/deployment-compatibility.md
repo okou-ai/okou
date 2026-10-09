@@ -6,8 +6,14 @@ PR #37968 supersedes the earlier OAuth-deferred implementation boundary. The
 integration and Gateway remain default-off; code/schema delivery does not authorize
 production configuration, deployment, command registration or activation.
 
-The additive OAuth attempt/Discord identity schema requires the normal generated
-migrations before the new API. Attempt state and independent opener/consent-browser
+The OAuth/consent schema requires the normal generated migrations 1358–1360
+before the new API. Required personal and organization consent FKs reject
+unlineaged records. This default-off, non-GA feature has no staff-data backfill,
+NULL-lineage compatibility reader, or automatic data retirement. Existing staff
+bindings fail migration validation without data deletion or fabricated consent;
+any actual owner-facing cleanup/re-onboarding requires separate authorization
+before promotion. Production MaskDB metadata did not expose Discord tables in
+the 2026-10-09 read-only inspection; that is not evidence of an empty population. Attempt state and independent opener/consent-browser
 proof hashes expire after ten minutes. No provider OAuth token or authorization
 code is persisted. Global verified Discord ownership must participate in account
 export/deletion through its owning catalogue; disconnect/uninstall remain distinct.

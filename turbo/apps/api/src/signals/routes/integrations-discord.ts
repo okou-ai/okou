@@ -83,25 +83,14 @@ const commitDiscordOrganizationUninstall$ = command(
             guildId: discordOrgGrants.verifiedGuildId,
           }),
       );
-    const legacy = db.$with("revoked_legacy_discord_workspace").as(
-      db
-        .delete(discordOrgInstallations)
-        .where(
-          and(
-            eq(discordOrgInstallations.orgId, auth.orgId),
-            isNull(discordOrgInstallations.orgGrantId),
-            gte(db.select({ count: count() }).from(consents), 0),
-          ),
-        )
-        .returning({ guildId: discordOrgInstallations.guildId }),
-    );
-    const removed = db.$with("removed_discord_workspace_guild").as(
-      db
-        .select({ guildId: consents.guildId })
-        .from(consents)
-        .where(isNotNull(consents.approvedAt))
-        .unionAll(db.select({ guildId: legacy.guildId }).from(legacy)),
-    );
+    const removed = db
+      .$with("removed_discord_workspace_guild")
+      .as(
+        db
+          .select({ guildId: consents.guildId })
+          .from(consents)
+          .where(isNotNull(consents.approvedAt)),
+      );
     const hasRemoval = exists(
       db.select({ guildId: removed.guildId }).from(removed),
     );
@@ -143,7 +132,7 @@ const commitDiscordOrganizationUninstall$ = command(
         .unionAll(grantOwners),
     );
     return await db
-      .with(revoked, consents, legacy, removed, recipients)
+      .with(revoked, consents, removed, recipients)
       .select({ removed: recipients.removed, userId: recipients.userId })
       .from(recipients);
   },

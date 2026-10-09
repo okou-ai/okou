@@ -1975,6 +1975,13 @@
       "when": 1791533673062,
       "tag": "1359_discord_native_grant_lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 1360,
+      "version": "7",
+      "when": 1791538493471,
+      "tag": "1360_discord_required_consent",
+      "breakpoints": true
     }
   ]
 }
