@@ -102,26 +102,6 @@
       "owner": "seedPreviousSchemaRelease$"
     },
     {
-      "id": "TX-0038",
-      "file": "turbo/apps/api/src/signals/routes/test-usage-state.ts",
-      "owner": "seedUsageStateFixture"
-    },
-    {
-      "id": "TX-0039",
-      "file": "turbo/apps/api/src/signals/routes/test-usage-state.ts",
-      "owner": "seedRun$"
-    },
-    {
-      "id": "TX-0040",
-      "file": "turbo/apps/api/src/signals/routes/test-usage-state.ts",
-      "owner": "insertFixtureUsage$"
-    },
-    {
-      "id": "TX-0041",
-      "file": "turbo/apps/api/src/signals/routes/test-usage-state.ts",
-      "owner": "materializeHourlyUsage$"
-    },
-    {
       "id": "TX-0042",
       "file": "turbo/apps/api/src/signals/routes/user-templates.ts",
       "owner": "updateInner$"
@@ -1160,11 +1140,6 @@
       "id": "TX-0264",
       "file": "turbo/apps/api/src/signals/services/threadless-run-cleanup.service.ts",
       "owner": "deleteIfStillEligible"
-    },
-    {
-      "id": "TX-0265",
-      "file": "turbo/apps/api/src/signals/services/usage-event-cleanup.service.ts",
-      "owner": "deleteUsageData$"
     },
     {
       "id": "TX-0266",

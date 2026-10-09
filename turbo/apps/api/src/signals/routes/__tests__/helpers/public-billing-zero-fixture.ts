@@ -35,6 +35,7 @@ export function createPublicBillingZeroFixture(
       readonly webhookSecret: string;
     };
     readonly retainExternalState?: () => () => void;
+    readonly continueAcceptedOperations?: boolean;
     readonly beforeOrganizationCleanup?: () => Promise<void>;
     readonly afterOrganizationCleanup?: () => Promise<void>;
   } = {},
@@ -152,6 +153,7 @@ export function createPublicBillingZeroFixture(
       }
     },
     {
+      continueAcceptedOperations: options.continueAcceptedOperations,
       beforeDrain() {
         previous ??= options.retainExternalState?.();
         accepted?.();

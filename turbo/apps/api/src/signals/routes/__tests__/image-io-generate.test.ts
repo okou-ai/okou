@@ -6,10 +6,10 @@ import {
   PutObjectCommand,
   type PutObjectCommandInput,
 } from "@aws-sdk/client-s3";
-import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
+
 import { imageModelIdSchema } from "@okouai/api-contracts/contracts/image-models";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
-import { createStore } from "ccstate";
+
 import { HttpResponse, http } from "msw";
 import { onTestFinished } from "vitest";
 
@@ -34,28 +34,14 @@ import { builtInGenerationRoutes } from "../built-in-generation";
 import { imageIoGenerateRoutes } from "../image-io-generate";
 import { usageRecordRoutes } from "../usage-record";
 import { userModelPreferenceRoutes } from "../user-model-preference";
-import {
-  createUsagePricingFixture,
-  seedOrgMetadata,
-  type UsagePricingFixture,
-  type UsagePricingKey,
-  type UsagePricingRow,
-} from "../../../test-fixtures/system-config-seeds";
-import {
-  deleteFeatureSwitchesForUser,
-  updateFeatureSwitchesForUser,
-} from "./helpers/feature-switches";
-import { seedOrgMembership$ } from "./helpers/org-membership";
-import { seedCompose$, seedRun$ } from "./helpers/usage-state";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+
 import { createRouteMocks } from "./helpers/route-test";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { setRunImageModelFixture } from "../../../test-fixtures/run-image-model";
-import { seedRetiredMemberImageModelFixture } from "../../../test-fixtures/retired-member-image-model";
-import { createBddApi } from "./helpers/api-bdd";
+
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
+
+import { createPublicImageMember } from "./helpers/public-image-member";
 import {
   createChatEventsFixture,
   okouTokenFromClaim,
@@ -66,7 +52,7 @@ import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
 import { purchaseToolCredits } from "./helpers/public-tool-actor";
 
 const context = testContext();
-const store = createStore();
+
 const mocks = createRouteMocks(context);
 const TEST_BUCKET = "test-user-artifacts";
 const IMAGE_BYTES = Buffer.from("fake image bytes");
@@ -76,7 +62,7 @@ const FAL_GPT_IMAGE_1_URL =
 const FAL_GPT_IMAGE_2_URL = "https://queue.fal.run/openai/gpt-image-2";
 const OPENAI_IMAGE_GENERATIONS_URL =
   "https://api.openai.com/v1/images/generations";
-const OPENAI_IMAGE_EDITS_URL = "https://api.openai.com/v1/images/edits";
+
 const FAL_GPT_MEDIA_URL = "https://fal.media/files/test/gpt-image-1.webp";
 const FAL_OUTPUT_SAFETY_FILTER_MESSAGE =
   "The generated image was blocked by the safety filter.";
@@ -90,9 +76,7 @@ const FAL_INVALID_REQUEST_MESSAGE =
   "Could not generate images with the given prompts and images. Please try again with different inputs.";
 const FAL_INVALID_ASPECT_RATIO_MESSAGE =
   "Input should be 'auto', '21:9', '16:9', '3:2', '4:3', '5:4', '1:1', '4:5', '3:4', '2:3', '9:16', '4:1', '1:4', '8:1' or '1:8'";
-const OPENAI_PRIVATE_PROVIDER_REQUEST_ID =
-  "req_private0openai0request0identifier";
-const OPENAI_PRIVATE_PROVIDER_MESSAGE = `Invalid image file or mode for image 1, please check your image file. If you believe this is an error, contact us at help.openai.com and include the request ID ${OPENAI_PRIVATE_PROVIDER_REQUEST_ID}.`;
+
 const FAL_FLUX_PRO_11_URL = "https://queue.fal.run/fal-ai/flux-pro/v1.1";
 const FAL_FLUX_PRO_11_MEDIA_URL =
   "https://fal.media/files/test/flux-pro-1-1.jpg";
@@ -124,10 +108,7 @@ const MOCKUP_IMAGE_URL = "https://example.com/mockup.png";
 const SECOND_MOCKUP_IMAGE_URL = "https://example.com/mockup-2.png";
 const THIRD_MOCKUP_IMAGE_URL = "https://example.com/mockup-3.png";
 const IMAGE_PRICING_MARKUP_MULTIPLIER = 1.2;
-const FAL_FLUX_PROVIDER_CREDITS_PER_MEGAPIXEL = 40;
-const FAL_FLUX_MARKED_UP_CREDITS_PER_MEGAPIXEL = Math.ceil(
-  FAL_FLUX_PROVIDER_CREDITS_PER_MEGAPIXEL * IMAGE_PRICING_MARKUP_MULTIPLIER,
-);
+
 const FAL_NANO_BANANA_2_PROVIDER_CREDITS_PER_IMAGE = 80;
 const FAL_NANO_BANANA_2_MARKED_UP_CREDITS_PER_IMAGE = Math.ceil(
   FAL_NANO_BANANA_2_PROVIDER_CREDITS_PER_IMAGE *
@@ -147,32 +128,14 @@ const FAL_QWEN_IMAGE_3_HIGH_TIER_CREDITS = Math.round(
 const FAL_FLUX_2_PRO_FIRST_MEGAPIXEL_CREDITS = 36;
 const FAL_FLUX_2_PRO_ADDITIONAL_MEGAPIXEL_CREDITS = 18;
 const FAL_IDEOGRAM_4_TURBO_MEGAPIXEL_CREDITS = 9;
-const FAL_IDEOGRAM_4_BALANCED_MEGAPIXEL_CREDITS = 18;
+
 const FAL_IDEOGRAM_4_QUALITY_MEGAPIXEL_CREDITS = 30;
 const API_ORIGIN = "https://api.okou.test";
 const WEB_ORIGIN = "https://www.okou.test";
-const MISSING_PRICING_IMAGE_MODEL = "gpt-image-2";
-const IMAGE_PRICING_CATEGORIES = [
-  "output_image.low.standard",
-  "output_image.low.large",
-  "output_image.medium.standard",
-  "output_image.medium.large",
-  "output_image.high.standard",
-  "output_image.high.large",
-] as const;
 const GPT_IMAGE_2_5_MODELS = [
   "gpt-image-2.5-flare",
   "gpt-image-2.5-sunburst",
 ] as const;
-const GPT_IMAGE_2_5_PRICING = GPT_IMAGE_2_5_MODELS.flatMap((provider) => {
-  return [
-    { category: "tokens.input.text", unitPrice: 6000 },
-    { category: "tokens.input.image", unitPrice: 9600 },
-    { category: "tokens.output.image", unitPrice: 36_000 },
-  ].map((row) => {
-    return { ...row, kind: "image", provider, unitSize: 1_000_000 };
-  });
-}) satisfies readonly UsagePricingRow[];
 
 const tokenRequest = Object.freeze({
   keyName: "test-key",
@@ -210,10 +173,10 @@ function authHeaders() {
   return { authorization: "Bearer clerk-session" };
 }
 
-function createImageIoTestApp(
-  usagePricingResolution?: UsagePricingFixture["resolution"],
-) {
-  return createAppWithRoutes({
+function createImageIoTestApp(owner?: {
+  readonly run: <T>(operation: () => Promise<T>) => Promise<T>;
+}) {
+  const app = createAppWithRoutes({
     signal: context.signal,
     routes: [
       ...builtInGenerationRoutes,
@@ -222,8 +185,31 @@ function createImageIoTestApp(
       ...billingStatusRoutes,
       ...usageRecordRoutes,
     ],
-    usagePricingResolution,
   });
+  return {
+    request(...args: Parameters<typeof app.request>) {
+      const request = async () => {
+        return await app.request(...args);
+      };
+      return owner ? owner.run(request) : request();
+    },
+  };
+}
+
+async function publicFundedImageFixture({
+  credits = 10_000,
+}: {
+  readonly credits?: number;
+}) {
+  const fixture = await createPublicImageMember(context, { credits });
+  // Only generation requests belong to this suite's object-upload assertions.
+  context.mocks.s3.send.mockReset();
+  context.mocks.s3.send.mockResolvedValue({});
+  fixture.captureExternalState();
+  return fixture;
+}
+async function publicUnfundedImageFixture() {
+  return await createPublicImageMember(context, { credits: 0 });
 }
 
 function currentSecond(): number {
@@ -367,448 +353,11 @@ function okouToken(args: {
   });
 }
 
-const GPT_IMAGE_1_PRICING = [
-  {
-    kind: "image",
-    provider: IMAGE_IO_MODEL,
-    category: "output_image.low.standard",
-    unitPrice: 13,
-    unitSize: 1,
-  },
-  {
-    kind: "image",
-    provider: IMAGE_IO_MODEL,
-    category: "output_image.low.large",
-    unitPrice: 19,
-    unitSize: 1,
-  },
-  {
-    kind: "image",
-    provider: IMAGE_IO_MODEL,
-    category: "output_image.medium.standard",
-    unitPrice: 50,
-    unitSize: 1,
-  },
-  {
-    kind: "image",
-    provider: IMAGE_IO_MODEL,
-    category: "output_image.medium.large",
-    unitPrice: 76,
-    unitSize: 1,
-  },
-  {
-    kind: "image",
-    provider: IMAGE_IO_MODEL,
-    category: "output_image.high.standard",
-    unitPrice: 200,
-    unitSize: 1,
-  },
-  {
-    kind: "image",
-    provider: IMAGE_IO_MODEL,
-    category: "output_image.high.large",
-    unitPrice: 300,
-    unitSize: 1,
-  },
-] satisfies readonly UsagePricingRow[];
-
-const FLUX_IMAGE_PRICING = [
-  {
-    kind: "image",
-    provider: "fal-ai/flux-pro/v1.1",
-    category: "output_megapixel",
-    unitPrice: FAL_FLUX_MARKED_UP_CREDITS_PER_MEGAPIXEL,
-    unitSize: 1,
-  },
-] satisfies readonly UsagePricingRow[];
-
-const FLUX_2_PRO_IMAGE_PRICING = [
-  {
-    kind: "image",
-    provider: "fal-ai/flux-2-pro",
-    category: "processed_megapixel.first",
-    unitPrice: FAL_FLUX_2_PRO_FIRST_MEGAPIXEL_CREDITS,
-    unitSize: 1,
-  },
-  {
-    kind: "image",
-    provider: "fal-ai/flux-2-pro",
-    category: "processed_megapixel.additional",
-    unitPrice: FAL_FLUX_2_PRO_ADDITIONAL_MEGAPIXEL_CREDITS,
-    unitSize: 1,
-  },
-] satisfies readonly UsagePricingRow[];
-
-const IDEOGRAM_4_IMAGE_PRICING = [
-  {
-    kind: "image",
-    provider: "ideogram/v4",
-    category: "output_megapixel.turbo",
-    unitPrice: FAL_IDEOGRAM_4_TURBO_MEGAPIXEL_CREDITS,
-    unitSize: 1,
-  },
-  {
-    kind: "image",
-    provider: "ideogram/v4",
-    category: "output_megapixel.balanced",
-    unitPrice: FAL_IDEOGRAM_4_BALANCED_MEGAPIXEL_CREDITS,
-    unitSize: 1,
-  },
-  {
-    kind: "image",
-    provider: "ideogram/v4",
-    category: "output_megapixel.quality",
-    unitPrice: FAL_IDEOGRAM_4_QUALITY_MEGAPIXEL_CREDITS,
-    unitSize: 1,
-  },
-] satisfies readonly UsagePricingRow[];
-
-const NANO_BANANA_2_IMAGE_PRICING = [
-  {
-    kind: "image",
-    provider: "fal-ai/nano-banana-2",
-    category: "output_image",
-    unitPrice: FAL_NANO_BANANA_2_MARKED_UP_CREDITS_PER_IMAGE,
-    unitSize: 1,
-  },
-] satisfies readonly UsagePricingRow[];
-
-const NANO_BANANA_2_LITE_IMAGE_PRICING = [
-  {
-    kind: "image",
-    provider: "google/nano-banana-2-lite",
-    category: "output_image",
-    unitPrice: FAL_NANO_BANANA_2_LITE_CREDITS_PER_IMAGE,
-    unitSize: 1,
-  },
-] satisfies readonly UsagePricingRow[];
-
-const QWEN_IMAGE_3_PRICING = [
-  {
-    kind: "image",
-    provider: "alibaba/qwen-image-3/text-to-image",
-    category: "output_image.1k",
-    unitPrice: FAL_QWEN_IMAGE_3_STANDARD_TIER_CREDITS,
-    unitSize: 1,
-  },
-  {
-    kind: "image",
-    provider: "alibaba/qwen-image-3/text-to-image",
-    category: "output_image.2k",
-    unitPrice: FAL_QWEN_IMAGE_3_HIGH_TIER_CREDITS,
-    unitSize: 1,
-  },
-] satisfies readonly UsagePricingRow[];
-
-const MISSING_GPT_IMAGE_2_PRICING: readonly UsagePricingKey[] =
-  IMAGE_PRICING_CATEGORIES.map((category) => {
-    return {
-      kind: "image",
-      provider: MISSING_PRICING_IMAGE_MODEL,
-      category,
-    };
-  });
-
-async function createScopedImagePricing(
-  options: {
-    readonly configured?: readonly UsagePricingRow[];
-    readonly missing?: readonly UsagePricingKey[];
-  },
-  registerCleanup?: (cleanup: () => Promise<void>) => void,
-): Promise<UsagePricingFixture> {
-  if (!registerCleanup) {
-    const fixture = await createUsagePricingFixture(options);
-    onTestFinished(fixture.cleanup);
-    return fixture;
-  }
-  return await createUsagePricingFixture({ ...options, registerCleanup });
-}
-
-// Isolation comes from random org/user IDs; no teardown is needed.
-async function seedImageFixture(options: {
-  readonly credits?: number;
-}): Promise<ImageFixture> {
-  const fixture = {
-    orgId: `org_${randomUUID()}`,
-    userId: `user_${randomUUID()}`,
-  };
-
-  await seedOrgMetadata({
-    orgId: fixture.orgId,
-    tier: "limited-free-1",
-    credits: options.credits ?? 10_000,
-  });
-  await store.set(
-    seedOrgMembership$,
-    { orgId: fixture.orgId, userId: fixture.userId, role: "admin" },
-    context.signal,
-  );
-
-  return fixture;
-}
-
-async function publicFundedImageFixture({
-  credits = 10_000,
-  cleanupFeatures = false,
-}: {
-  readonly credits?: number;
-  readonly cleanupFeatures?: boolean;
-}) {
-  const actor = createBddApi(context).user();
-  if (!actor.orgId) {
-    throw new Error("Image fixture requires an owned organization");
-  }
-  const suffix = randomUUID();
-  const fixture = { orgId: actor.orgId, userId: actor.userId };
-  const owned = {
-    ...fixture,
-    customerId: `cus_image_${suffix}`,
-    subscriptionId: `sub_image_${suffix}`,
-    invoiceId: `in_image_${suffix}`,
-    storageBucket: env("R2_USER_STORAGES_BUCKET_NAME"),
-    kmsKeyId: env("SECRETS_KMS_KEY_ID"),
-  };
-  const pricingCleanups: (() => Promise<void>)[] = [];
-  const owner = createFixtureOperationOwner(async () => {
-    // The suite afterEach drains provider work before external mocks reset.
-    // Join any remaining owned work before restoring the cleanup dependencies.
-    const drainResult = await settleIncludingAbort(flushWaitUntilForTest());
-
-    const cleanupResult = await settleIncludingAbort(
-      (async () => {
-        mockEnv("R2_USER_STORAGES_BUCKET_NAME", owned.storageBucket);
-        mockEnv("SECRETS_KMS_KEY_ID", owned.kmsKeyId);
-        context.mocks.s3.send.mockResolvedValue({
-          Contents: [],
-          IsTruncated: false,
-        });
-        context.mocks.ably.publish.mockResolvedValue(undefined);
-        if (cleanupFeatures) {
-          await deleteFeatureSwitchesForUser(context, fixture);
-        }
-        const webhooks = createWebhookCallbackApi(context);
-        webhooks.configureStripeBillingEnv();
-        context.mocks.stripe.subscriptions.list.mockResolvedValue({
-          data: [],
-          has_more: false,
-        });
-        context.mocks.stripe.invoices.list.mockResolvedValue({
-          data: [],
-          has_more: false,
-        });
-        context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
-          id: owned.subscriptionId,
-          status: "canceled",
-          metadata: {},
-          items: { data: [{ price: { id: "price_bdd_pro" } }] },
-        });
-        context.mocks.stripe.subscriptions.update.mockResolvedValue({
-          id: owned.subscriptionId,
-        });
-        context.mocks.stripe.subscriptions.cancel.mockResolvedValue({
-          id: owned.subscriptionId,
-          status: "canceled",
-        });
-        webhooks.configureClerkWebhookSecret();
-        webhooks.verifyNextClerkWebhook({
-          type: "organization.deleted",
-          data: { id: owned.orgId },
-        });
-        await webhooks.requestClerkWebhook("{}", {}, [200]);
-        await flushWaitUntilForTest();
-        await expect(orgCredits(fixture)).resolves.toBe(0);
-        expect(
-          (
-            await createRunReadsApi(context).requestListLogs(
-              actor,
-              { limit: 50 },
-              [200],
-            )
-          ).body.data,
-        ).toStrictEqual([]);
-        // Production retains UUID-owned generation and immutable financial history.
-      })(),
-    );
-
-    for (const cleanup of pricingCleanups) {
-      await cleanup();
-    }
-
-    if (!cleanupResult.ok) {
-      throw cleanupResult.error;
-    }
-
-    if (!drainResult.ok) {
-      throw drainResult.error;
-    }
-  });
-  await owner.run(async () => {
-    // Clerk directory is an external mock; business state comes from real routes.
-    await store.set(
-      seedOrgMembership$,
-      { ...fixture, role: "admin" },
-      context.signal,
-    );
-    await createBddApi(context).completeOnboarding(actor);
-    await expect(orgCredits(fixture)).resolves.toBe(0);
-    const webhooks = createWebhookCallbackApi(context);
-    webhooks.configureStripeBillingEnv();
-    context.mocks.stripe.customers.retrieve.mockResolvedValue({
-      id: owned.customerId,
-      metadata: { orgId: owned.orgId },
-    });
-    const subscription = {
-      id: owned.subscriptionId,
-      customer: owned.customerId,
-      status: "active",
-      metadata: {},
-      cancel_at_period_end: false,
-      cancel_at: null,
-      schedule: null,
-      trial_end: null,
-      items: { data: [{ price: { id: "price_bdd_pro" } }] },
-    };
-    for (const type of [
-      "customer.subscription.created",
-      "customer.subscription.updated",
-    ] as const) {
-      await webhooks.postStripeEvent(
-        {
-          id: `evt_image_${type}_${suffix}`,
-          type,
-          created: Math.floor(now() / 1000),
-          data: { object: subscription },
-        },
-        [200],
-      );
-    }
-    const billing = setupApp({ context, routes: billingStatusRoutes })(
-      billingStatusContract,
-    );
-    expect(
-      (await accept(billing.get({ headers: authHeaders() }), [200])).body,
-    ).toMatchObject({ tier: "pro", status: "active", credits: 0 });
-    await webhooks.postStripeEvent(
-      {
-        id: `evt_image_paid_${suffix}`,
-        type: "invoice.paid",
-        created: Math.floor(now() / 1000),
-        data: {
-          object: {
-            id: owned.invoiceId,
-            customer: owned.customerId,
-            amount_paid: credits / 10,
-            metadata: {
-              type: "auto_recharge",
-              orgId: owned.orgId,
-              creditsAmount: String(credits),
-            },
-            parent: null,
-            lines: { has_more: false, data: [] },
-          },
-        },
-      },
-      [200],
-    );
-    await flushWaitUntilForTest();
-    expect(
-      (await accept(billing.get({ headers: authHeaders() }), [200])).body,
-    ).toMatchObject({ tier: "pro", status: "active", credits });
-    // Real subscription deletion restores the original free entitlement, keeping cash.
-    await webhooks.postStripeEvent(
-      {
-        id: `evt_image_deleted_${suffix}`,
-        type: "customer.subscription.deleted",
-        created: Math.floor(now() / 1000),
-        data: { object: { ...subscription, status: "canceled" } },
-      },
-      [200],
-    );
-    await flushWaitUntilForTest();
-    expect(
-      (await accept(billing.get({ headers: authHeaders() }), [200])).body,
-    ).toMatchObject({ tier: "limited-free-1", status: "active", credits });
-    // Generation upload assertions start after the public onboarding storage work.
-    context.mocks.s3.send.mockReset();
-    context.mocks.s3.send.mockResolvedValue({});
-  });
-  return {
-    ...fixture,
-    run: owner.run,
-    createPricing(options: Parameters<typeof createScopedImagePricing>[0]) {
-      return createScopedImagePricing(options, (cleanup) => {
-        pricingCleanups.push(cleanup);
-      });
-    },
-  };
-}
-
-async function publicUnfundedImageFixture() {
-  const bdd = createBddApi(context);
-  const actor = bdd.user();
-  const orgId = actor.orgId;
-  if (!orgId) {
-    throw new Error("Image fixture requires an owned organization");
-  }
-  const fixture = { orgId, userId: actor.userId };
-  const storageBucket = env("R2_USER_STORAGES_BUCKET_NAME");
-  const kmsKeyId = env("SECRETS_KMS_KEY_ID");
-  const owner = createFixtureOperationOwner(async () => {
-    mockEnv("R2_USER_STORAGES_BUCKET_NAME", storageBucket);
-    mockEnv("SECRETS_KMS_KEY_ID", kmsKeyId);
-    context.mocks.s3.send.mockResolvedValue({
-      Contents: [],
-      IsTruncated: false,
-    });
-    context.mocks.ably.publish.mockResolvedValue(undefined);
-    await flushWaitUntilForTest();
-
-    const webhooks = createWebhookCallbackApi(context);
-    webhooks.configureClerkWebhookSecret();
-    webhooks.verifyNextClerkWebhook({
-      type: "organization.deleted",
-      data: { id: orgId },
-    });
-    await webhooks.requestClerkWebhook("{}", {}, [200]);
-    await flushWaitUntilForTest();
-    await expect(orgCredits(fixture)).resolves.toBe(0);
-    expect(
-      (
-        await createRunReadsApi(context).requestListLogs(
-          actor,
-          { limit: 50 },
-          [200],
-        )
-      ).body.data,
-    ).toStrictEqual([]);
-  });
-  await owner.run(async () => {
-    // This helper supplies only the external Clerk directory response.
-    await store.set(
-      seedOrgMembership$,
-      { ...fixture, role: "admin" },
-      context.signal,
-    );
-    await bdd.completeOnboarding(actor);
-    await flushWaitUntilForTest();
-    mocks.clerk.session(actor.userId, orgId, "org:admin");
-    const billing = await accept(
-      setupApp({ context, routes: billingStatusRoutes })(
-        billingStatusContract,
-      ).get({ headers: authHeaders() }),
-      [200],
-    );
-    expect(billing.body).toMatchObject({
-      tier: "limited-free-1",
-      status: "active",
-      credits: 0,
-    });
-  });
-  return { ...fixture, run: owner.run };
-}
-
 // These selected callers use real personal-model Runs and the existing image tariffs.
-async function createClaimedImageRun(imageModel: string, credits = 1000) {
+async function createClaimedImageRun(
+  imageModel: string | null,
+  credits = 1000,
+) {
   const chat = createChatEventsFixture(context);
   const actor = chat.bdd.user();
   if (!actor.orgId) {
@@ -1035,6 +584,7 @@ async function createClaimedImageRun(imageModel: string, credits = 1000) {
     actor,
     initialCredits,
     runId: claimed.runId,
+    claim: claimed.claim,
     run,
     token: okouTokenFromClaim(claimed.claim),
     request(
@@ -1061,37 +611,12 @@ async function createFundedImageRun(imageModel: string, credits: number) {
   return fixture;
 }
 
-async function seedImageRun(
-  fixture: ImageFixture,
-  options: {
-    readonly selectedImageModel: string | null;
-  },
-): Promise<{ readonly runId: string }> {
-  const { composeId } = await store.set(
-    seedCompose$,
-    { orgId: fixture.orgId, userId: fixture.userId },
-    context.signal,
-  );
-  const { runId } = await store.set(
-    seedRun$,
-    {
-      orgId: fixture.orgId,
-      userId: fixture.userId,
-      composeId,
-      triggerSource: "web",
-    },
-    context.signal,
-  );
-  await setRunImageModelFixture(runId, options.selectedImageModel);
-  return { runId };
-}
-
 // Callers select the model through the member's image model setting, as the
 // product does. Echoing the stored run preference leaves everything but the
 // image model unchanged.
 async function useImageModel(
   fixture: ImageFixture,
-  model: string,
+  model: string | null,
 ): Promise<void> {
   mocks.clerk.session(fixture.userId, fixture.orgId);
   const preferences = setupApp({ context, routes: userModelPreferenceRoutes })(
@@ -1107,7 +632,8 @@ async function useImageModel(
       body: {
         selectedModel: stored.body.selectedModel,
         serviceTier: stored.body.serviceTier,
-        selectedImageModel: imageModelIdSchema.parse(model),
+        selectedImageModel:
+          model === null ? null : imageModelIdSchema.parse(model),
       },
     }),
     [200],
@@ -1179,9 +705,6 @@ describe("POST /api/image-io/generate", () => {
     const fixture = await publicFundedImageFixture({});
     await fixture.run(async () => {
       await useImageModel(fixture, "gpt-image-1");
-      const pricingFixture = await fixture.createPricing({
-        configured: GPT_IMAGE_1_PRICING,
-      });
       mocks.clerk.session(fixture.userId, fixture.orgId);
       let falCalls = 0;
       server.use(
@@ -1191,7 +714,7 @@ describe("POST /api/image-io/generate", () => {
         }),
       );
 
-      const app = createImageIoTestApp(pricingFixture.resolution);
+      const app = createImageIoTestApp(fixture);
       const response = await app.request("/api/image-io/generate", {
         method: "POST",
         headers: authHeaders(),
@@ -1242,141 +765,12 @@ describe("POST /api/image-io/generate", () => {
     });
   });
 
-  it.each([
-    { model: "gpt-image-2.5-flare", quality: "xhigh", editing: false },
-    { model: "gpt-image-2.5-sunburst", quality: "max", editing: true },
-  ])(
-    "generates $model images through OpenAI and bills actual tokens",
-    async ({ model, quality, editing }) => {
-      const fixture = await publicFundedImageFixture({ credits: 1000 });
-      await fixture.run(async () => {
-        await useImageModel(fixture, model);
-        const pricingFixture = await fixture.createPricing({
-          configured: GPT_IMAGE_2_5_PRICING,
-        });
-        mocks.clerk.session(fixture.userId, fixture.orgId);
-        let observedBody: unknown;
-        let observedAuthorization: string | null = null;
-        server.use(
-          http.post(
-            editing ? OPENAI_IMAGE_EDITS_URL : OPENAI_IMAGE_GENERATIONS_URL,
-            async ({ request }) => {
-              observedBody = await request.json();
-              observedAuthorization = request.headers.get("authorization");
-              return HttpResponse.json({
-                created: currentSecond(),
-                data: [{ b64_json: IMAGE_BYTES.toString("base64") }],
-                size: "1536x1024",
-                quality,
-                background: "transparent",
-                output_format: "webp",
-                usage: {
-                  input_tokens: editing ? 1700 : 200,
-                  input_tokens_details: {
-                    text_tokens: 200,
-                    image_tokens: editing ? 1500 : 0,
-                  },
-                  output_tokens: editing ? 2501 : 2500,
-                  ...(editing
-                    ? {
-                        output_tokens_details: {
-                          image_tokens: 2500,
-                          text_tokens: 1,
-                        },
-                      }
-                    : {}),
-                  total_tokens: editing ? 4201 : 2700,
-                },
-              });
-            },
-          ),
-        );
-        const app = createImageIoTestApp(pricingFixture.resolution);
-        const response = await app.request("/api/image-io/generate", {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify({
-            prompt: "a product illustration",
-            size: "1536x1024",
-            quality,
-            background: "transparent",
-            outputFormat: "webp",
-            outputCompression: 80,
-            ...(editing
-              ? {
-                  imageUrls: [MOCKUP_IMAGE_URL, SECOND_MOCKUP_IMAGE_URL],
-                  maskImageUrl: THIRD_MOCKUP_IMAGE_URL,
-                }
-              : {}),
-          }),
-        });
-        expect(response.status).toBe(202);
-        const generationId = readAcceptedGenerationId(
-          await response.json(),
-          "image",
-          fixture.userId,
-        );
-        await flushWaitUntilForTest();
-
-        const status = await app.request(
-          `/api/built-in-generations/${generationId}`,
-          { headers: authHeaders() },
-        );
-        expect(status.status).toBe(200);
-        const creditsCharged = editing ? 107 : 92;
-        await expect(status.json()).resolves.toMatchObject({
-          status: "completed",
-          result: {
-            model,
-            provider: "openai",
-            imageSize: "1536x1024",
-            quality,
-            background: "transparent",
-            outputFormat: "webp",
-            outputCompression: 80,
-            contentType: "image/webp",
-            size: IMAGE_BYTES.byteLength,
-            creditsCharged,
-            url: expect.any(String),
-          },
-        });
-        expect(observedAuthorization).toBe("Bearer test-openai-key");
-        expect(observedBody).toStrictEqual({
-          model,
-          prompt: "a product illustration",
-          n: 1,
-          size: "1536x1024",
-          quality,
-          background: "transparent",
-          output_format: "webp",
-          output_compression: 80,
-          moderation: "auto",
-          ...(editing
-            ? {
-                images: [
-                  { image_url: MOCKUP_IMAGE_URL },
-                  { image_url: SECOND_MOCKUP_IMAGE_URL },
-                ],
-                mask: { image_url: THIRD_MOCKUP_IMAGE_URL },
-              }
-            : {}),
-        });
-        await expect(orgCredits(fixture)).resolves.toBe(1000 - creditsCharged);
-      });
-    },
-  );
-
   it.each(GPT_IMAGE_2_5_MODELS)(
     "rejects %s before generation when pricing is missing",
     async (model) => {
       const fixture = await publicFundedImageFixture({ credits: 1000 });
       await fixture.run(async () => {
         await useImageModel(fixture, model);
-        const pricingFixture = await fixture.createPricing({
-          missing: GPT_IMAGE_2_5_PRICING.filter((row) => {
-            return row.provider === model;
-          }),
-        });
         mocks.clerk.session(fixture.userId, fixture.orgId);
         let providerCalls = 0;
         server.use(
@@ -1385,7 +779,7 @@ describe("POST /api/image-io/generate", () => {
             return HttpResponse.json({});
           }),
         );
-        const app = createImageIoTestApp(pricingFixture.resolution);
+        const app = createImageIoTestApp(fixture);
         const response = await app.request("/api/image-io/generate", {
           method: "POST",
           headers: authHeaders(),
@@ -1400,319 +794,6 @@ describe("POST /api/image-io/generate", () => {
         });
         expect(providerCalls).toBe(0);
         await expect(orgCredits(fixture)).resolves.toBe(1000);
-      });
-    },
-  );
-
-  it.each([
-    {
-      upstreamStatus: 200,
-      responseBody: { data: [{ b64_json: IMAGE_BYTES.toString("base64") }] },
-      code: "OPENAI_IMAGE_BAD_RESPONSE",
-    },
-    {
-      upstreamStatus: 429,
-      responseBody: { error: { message: "Rate limit exceeded" } },
-      code: "OPENAI_IMAGE_REQUEST_FAILED",
-    },
-  ])(
-    "fails OpenAI jobs without charging for $code",
-    async ({ upstreamStatus, responseBody, code }) => {
-      const fixture = await publicFundedImageFixture({ credits: 1000 });
-      await fixture.run(async () => {
-        await useImageModel(fixture, "gpt-image-2.5-flare");
-        const pricingFixture = await fixture.createPricing({
-          configured: GPT_IMAGE_2_5_PRICING,
-        });
-        mocks.clerk.session(fixture.userId, fixture.orgId);
-        server.use(
-          http.post(OPENAI_IMAGE_GENERATIONS_URL, () => {
-            return HttpResponse.json(responseBody, { status: upstreamStatus });
-          }),
-        );
-        const app = createImageIoTestApp(pricingFixture.resolution);
-        const response = await app.request("/api/image-io/generate", {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify({
-            prompt: "a product illustration",
-          }),
-        });
-        expect(response.status).toBe(202);
-        const generationId = readAcceptedGenerationId(
-          await response.json(),
-          "image",
-          fixture.userId,
-        );
-        await flushWaitUntilForTest();
-        const status = await app.request(
-          `/api/built-in-generations/${generationId}`,
-          { headers: authHeaders() },
-        );
-        expect(status.status).toBe(200);
-        await expect(status.json()).resolves.toMatchObject({
-          status: "failed",
-          error: { code },
-        });
-        await expect(orgCredits(fixture)).resolves.toBe(1000);
-      });
-    },
-  );
-
-  it.each([
-    {
-      caseName: "invalid input media",
-      model: "gpt-image-2.5-sunburst",
-      editing: true,
-      providerErrorCode: "invalid_image_file",
-      moderationDetails: undefined,
-      publicError: {
-        message: "An input image could not be read by the generation provider.",
-        code: "GENERATION_INPUT_MEDIA_INVALID",
-      },
-    },
-    {
-      caseName: "invalid input media without references",
-      model: "gpt-image-2.5-flare",
-      editing: false,
-      providerErrorCode: "invalid_image_file",
-      moderationDetails: undefined,
-      publicError: {
-        message: "An input image could not be read by the generation provider.",
-        code: "GENERATION_INPUT_MEDIA_INVALID",
-      },
-    },
-    {
-      caseName: "input moderation block",
-      model: "gpt-image-2.5-sunburst",
-      editing: true,
-      providerErrorCode: "moderation_blocked",
-      moderationDetails: {
-        moderation_stage: "input",
-        categories: ["violence"],
-      },
-      publicError: {
-        message:
-          "The prompt or reference image was blocked by the safety filter.",
-        code: "GENERATION_INPUT_SAFETY_REJECTED",
-      },
-    },
-    {
-      caseName: "output moderation block",
-      model: "gpt-image-2.5-flare",
-      editing: false,
-      providerErrorCode: "moderation_blocked",
-      moderationDetails: { moderation_stage: "output", categories: ["sexual"] },
-      publicError: {
-        message: "The generated image was blocked by the safety filter.",
-        code: "GENERATION_OUTPUT_SAFETY_BLOCKED",
-      },
-    },
-    {
-      caseName: "moderation block without a stage",
-      model: "gpt-image-2.5-flare",
-      editing: false,
-      providerErrorCode: "moderation_blocked",
-      moderationDetails: {},
-      publicError: {
-        message:
-          "The prompt or reference image was blocked by the safety filter.",
-        code: "GENERATION_INPUT_SAFETY_REJECTED",
-      },
-    },
-  ])(
-    "reports OpenAI $caseName as an expected input failure without charging",
-    async ({
-      model,
-      editing,
-      providerErrorCode,
-      moderationDetails,
-      publicError,
-    }) => {
-      const fixture = await publicFundedImageFixture({ credits: 1000 });
-      await fixture.run(async () => {
-        await useImageModel(fixture, model);
-        const pricingFixture = await fixture.createPricing({
-          configured: GPT_IMAGE_2_5_PRICING,
-        });
-        mocks.clerk.session(fixture.userId, fixture.orgId);
-        server.use(
-          http.post(
-            editing ? OPENAI_IMAGE_EDITS_URL : OPENAI_IMAGE_GENERATIONS_URL,
-            () => {
-              return HttpResponse.json(
-                {
-                  error: {
-                    message: OPENAI_PRIVATE_PROVIDER_MESSAGE,
-                    type: "image_generation_user_error",
-                    param: null,
-                    code: providerErrorCode,
-                    ...(moderationDetails
-                      ? { moderation_details: moderationDetails }
-                      : {}),
-                  },
-                },
-                { status: 400 },
-              );
-            },
-          ),
-        );
-
-        const app = createImageIoTestApp(pricingFixture.resolution);
-        const response = await app.request("/api/image-io/generate", {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify({
-            prompt: "a product illustration",
-            ...(editing ? { imageUrls: [MOCKUP_IMAGE_URL] } : {}),
-          }),
-        });
-        expect(response.status).toBe(202);
-        const generationId = readAcceptedGenerationId(
-          await response.json(),
-          "image",
-          fixture.userId,
-        );
-        await flushWaitUntilForTest();
-
-        const status = await app.request(
-          `/api/built-in-generations/${generationId}`,
-          { headers: authHeaders() },
-        );
-        expect(status.status).toBe(200);
-        const statusBody: unknown = await status.json();
-        expect(statusBody).toMatchObject({
-          status: "failed",
-          error: publicError,
-        });
-        await expect(orgCredits(fixture)).resolves.toBe(1000);
-
-        const publicSurfaces = JSON.stringify(statusBody);
-        for (const privateValue of [
-          OPENAI_PRIVATE_PROVIDER_MESSAGE,
-          OPENAI_PRIVATE_PROVIDER_REQUEST_ID,
-          "a product illustration",
-          MOCKUP_IMAGE_URL,
-        ]) {
-          expect(publicSurfaces).not.toContain(privateValue);
-        }
-      });
-    },
-  );
-
-  it.each([
-    {
-      caseName: "rate limiting",
-      upstreamStatus: 429,
-      responseBody: {
-        error: {
-          message: OPENAI_PRIVATE_PROVIDER_MESSAGE,
-          type: "rate_limit_error",
-          code: "rate_limit_exceeded",
-        },
-      },
-    },
-    {
-      caseName: "provider faults",
-      upstreamStatus: 500,
-      responseBody: {
-        error: {
-          message: OPENAI_PRIVATE_PROVIDER_MESSAGE,
-          type: "server_error",
-          code: "internal_error",
-        },
-      },
-    },
-    {
-      caseName: "authentication failures",
-      upstreamStatus: 401,
-      responseBody: {
-        error: {
-          message: OPENAI_PRIVATE_PROVIDER_MESSAGE,
-          type: "invalid_request_error",
-          code: "invalid_api_key",
-        },
-      },
-    },
-    {
-      caseName: "non-user request errors",
-      upstreamStatus: 400,
-      responseBody: {
-        error: {
-          message: OPENAI_PRIVATE_PROVIDER_MESSAGE,
-          type: "invalid_request_error",
-          code: "unknown_parameter",
-        },
-      },
-    },
-    {
-      caseName: "unrecognized user error codes",
-      upstreamStatus: 400,
-      responseBody: {
-        error: {
-          message: OPENAI_PRIVATE_PROVIDER_MESSAGE,
-          type: "image_generation_user_error",
-          code: "some_future_code",
-        },
-      },
-    },
-    {
-      caseName: "unparseable error bodies",
-      upstreamStatus: 400,
-      responseBody: "not json at all",
-    },
-  ])(
-    "keeps OpenAI $caseName an unexpected provider failure",
-    async ({ upstreamStatus, responseBody }) => {
-      const fixture = await publicFundedImageFixture({ credits: 1000 });
-      await fixture.run(async () => {
-        await useImageModel(fixture, "gpt-image-2.5-sunburst");
-        const pricingFixture = await fixture.createPricing({
-          configured: GPT_IMAGE_2_5_PRICING,
-        });
-        mocks.clerk.session(fixture.userId, fixture.orgId);
-        server.use(
-          http.post(OPENAI_IMAGE_EDITS_URL, () => {
-            return typeof responseBody === "string"
-              ? new HttpResponse(responseBody, { status: upstreamStatus })
-              : HttpResponse.json(responseBody, { status: upstreamStatus });
-          }),
-        );
-
-        const app = createImageIoTestApp(pricingFixture.resolution);
-        const response = await app.request("/api/image-io/generate", {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify({
-            prompt: "a product illustration",
-            imageUrls: [MOCKUP_IMAGE_URL],
-          }),
-        });
-        expect(response.status).toBe(202);
-        const generationId = readAcceptedGenerationId(
-          await response.json(),
-          "image",
-          fixture.userId,
-        );
-        await flushWaitUntilForTest();
-
-        const status = await app.request(
-          `/api/built-in-generations/${generationId}`,
-          { headers: authHeaders() },
-        );
-        expect(status.status).toBe(200);
-        const statusBody: unknown = await status.json();
-        expect(statusBody).toMatchObject({
-          status: "failed",
-          error: {
-            message: "Image generation failed",
-            code: "OPENAI_IMAGE_REQUEST_FAILED",
-          },
-        });
-        await expect(orgCredits(fixture)).resolves.toBe(1000);
-        expect(JSON.stringify(statusBody)).not.toContain(
-          OPENAI_PRIVATE_PROVIDER_MESSAGE,
-        );
       });
     },
   );
@@ -1788,127 +869,29 @@ describe("POST /api/image-io/generate", () => {
       expect(fluxCalls).toBe(1);
     });
   });
-
-  it("uses the catalog default for unset, retired, and run-less requests", async () => {
-    const pricingFixture = await createScopedImagePricing({
-      configured: GPT_IMAGE_2_5_PRICING,
-    });
-    const observedBodies: unknown[] = [];
-    server.use(
-      http.post(OPENAI_IMAGE_GENERATIONS_URL, async ({ request }) => {
-        observedBodies.push(await request.json());
-        return HttpResponse.json({
-          created: currentSecond(),
-          data: [{ b64_json: IMAGE_BYTES.toString("base64") }],
-          usage: {
-            input_tokens: 200,
-            input_tokens_details: { text_tokens: 200, image_tokens: 0 },
-            output_tokens: 2500,
-            total_tokens: 2700,
-          },
-        });
-      }),
-    );
-    const app = createImageIoTestApp(pricingFixture.resolution);
-    const generations: {
-      readonly generationId: string;
-      readonly headers: Record<string, string>;
-    }[] = [];
-
-    const runCases = [
-      { selectedImageModel: null, prompt: "null snapshot" },
-      {
-        selectedImageModel: "fal-ai/retired-image-model",
-        prompt: "old snapshot",
-      },
-    ] as const;
-    for (const runCase of runCases) {
-      const fixture = await seedImageFixture({});
-      const { runId } = await seedImageRun(fixture, runCase);
-      const headers = {
-        authorization: `Bearer ${okouToken({
-          userId: fixture.userId,
-          orgId: fixture.orgId,
-          runId,
-        })}`,
-      };
-      const response = await app.request("/api/image-io/generate", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ prompt: runCase.prompt }),
-      });
-      expect(response.status).toBe(202);
-      generations.push({
-        generationId: readAcceptedGenerationId(
-          await response.json(),
-          "image",
-          fixture.userId,
-        ),
-        headers,
-      });
-    }
-
-    const sessionFixture = await seedImageFixture({});
-    await seedRetiredMemberImageModelFixture(
-      sessionFixture.orgId,
-      sessionFixture.userId,
-    );
-    mocks.clerk.session(sessionFixture.userId, sessionFixture.orgId);
-    const preferences = setupApp({
-      context,
-      routes: userModelPreferenceRoutes,
-    })(userModelPreferenceContract);
-    const normalized = await accept(
-      preferences.get({ headers: authHeaders() }),
-      [200],
-    );
-    expect(normalized.body.selectedImageModel).toBeNull();
-    const sessionResponse = await app.request("/api/image-io/generate", {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({ prompt: "session request without a run" }),
-    });
-    expect(sessionResponse.status).toBe(202);
-    generations.push({
-      generationId: readAcceptedGenerationId(
-        await sessionResponse.json(),
-        "image",
-        sessionFixture.userId,
-      ),
-      headers: authHeaders(),
-    });
-    await flushWaitUntilForTest();
-
-    for (const { generationId, headers } of generations) {
-      const status = await app.request(
-        `/api/built-in-generations/${generationId}`,
-        { headers },
+  it("uses the catalog default in a real Run with an unset member preference", async () => {
+    const fixture = await createClaimedImageRun(null);
+    await fixture.run(async () => {
+      const preferences = setupApp({
+        context,
+        routes: userModelPreferenceRoutes,
+      })(userModelPreferenceContract);
+      mocks.clerk.session(fixture.userId, fixture.orgId);
+      const selected = await accept(
+        preferences.get({ headers: authHeaders() }),
+        [200],
       );
-      expect(status.status).toBe(200);
-      expect(readGenerationResult(await status.json())).toMatchObject({
-        model: "gpt-image-2.5-flare",
-        provider: "openai",
-      });
-    }
-    expect(observedBodies).toStrictEqual(
-      ["null snapshot", "old snapshot", "session request without a run"].map(
-        (prompt) => {
-          return expect.objectContaining({
-            model: "gpt-image-2.5-flare",
-            prompt,
-          });
-        },
-      ),
-    );
+      expect(selected.body.selectedImageModel).toBeNull();
+      expect(fixture.claim.appendSystemPrompt).toContain(
+        "Built-in image generation uses \u0060gpt-image-2.5-flare\u0060",
+      );
+    });
   });
 
   it("returns 402 when the org has no spendable credits", async () => {
     const fixture = await publicUnfundedImageFixture();
     await fixture.run(async () => {
       await useImageModel(fixture, "gpt-image-1");
-      const pricingFixture = await createScopedImagePricing({
-        configured: GPT_IMAGE_1_PRICING,
-      });
       mocks.clerk.session(fixture.userId, fixture.orgId);
       let falCalls = 0;
       server.use(
@@ -1918,7 +901,7 @@ describe("POST /api/image-io/generate", () => {
         }),
       );
 
-      const app = createImageIoTestApp(pricingFixture.resolution);
+      const app = createImageIoTestApp(fixture);
       const response = await app.request("/api/image-io/generate", {
         method: "POST",
         headers: authHeaders(),
@@ -2001,43 +984,6 @@ describe("POST /api/image-io/generate", () => {
       await expect(orgCredits(fixture)).resolves.toBe(
         fixture.initialCredits - 50,
       );
-    });
-  });
-
-  it("returns 503 when image pricing is not configured", async () => {
-    const fixture = await publicFundedImageFixture({ credits: 1000 });
-    await fixture.run(async () => {
-      await useImageModel(fixture, MISSING_PRICING_IMAGE_MODEL);
-      const pricingFixture = await fixture.createPricing({
-        missing: MISSING_GPT_IMAGE_2_PRICING,
-      });
-      mocks.clerk.session(fixture.userId, fixture.orgId);
-      let falCalls = 0;
-      server.use(
-        http.post(FAL_GPT_IMAGE_2_URL, () => {
-          falCalls += 1;
-          return HttpResponse.json({});
-        }),
-      );
-
-      const app = createImageIoTestApp(pricingFixture.resolution);
-      const response = await app.request("/api/image-io/generate", {
-        method: "POST",
-        headers: authHeaders(),
-        body: JSON.stringify({
-          prompt: "a cat",
-        }),
-      });
-
-      expect(response.status).toBe(503);
-      await expect(response.json()).resolves.toStrictEqual({
-        error: {
-          message: "Image generation pricing is not configured",
-          code: "NOT_CONFIGURED",
-        },
-      });
-      expect(falCalls).toBe(0);
-      await expect(orgCredits(fixture)).resolves.toBe(1000);
     });
   });
 
@@ -2990,9 +1936,6 @@ describe("POST /api/image-io/generate", () => {
       const fixture = await publicFundedImageFixture({ credits: 1000 });
       await fixture.run(async () => {
         await useImageModel(fixture, "gpt-image-1");
-        const pricingFixture = await fixture.createPricing({
-          configured: GPT_IMAGE_1_PRICING,
-        });
         mocks.clerk.session(fixture.userId, fixture.orgId);
         let observedRequestUrl: string | null = null;
         server.use(
@@ -3002,7 +1945,7 @@ describe("POST /api/image-io/generate", () => {
           }),
         );
 
-        const app = createImageIoTestApp(pricingFixture.resolution);
+        const app = createImageIoTestApp(fixture);
         const response = await app.request("/api/image-io/generate", {
           method: "POST",
           headers: authHeaders(),
@@ -3096,9 +2039,6 @@ describe("POST /api/image-io/generate", () => {
     const fixture = await publicFundedImageFixture({ credits: 1000 });
     await fixture.run(async () => {
       await useImageModel(fixture, "gpt-image-1");
-      const pricingFixture = await fixture.createPricing({
-        configured: GPT_IMAGE_1_PRICING,
-      });
       mocks.clerk.session(fixture.userId, fixture.orgId);
 
       const falStarted = createDeferredPromise<void>(context.signal);
@@ -3132,7 +2072,7 @@ describe("POST /api/image-io/generate", () => {
       const timeoutTime = new Date(staleTime.getTime() + 16 * 60 * 1000);
       mockNow(staleTime);
 
-      const app = createImageIoTestApp(pricingFixture.resolution);
+      const app = createImageIoTestApp(fixture);
       const response = await app.request("/api/image-io/generate", {
         method: "POST",
         headers: authHeaders(),
@@ -3370,9 +2310,6 @@ describe("POST /api/image-io/generate", () => {
     const fixture = await publicFundedImageFixture({ credits: 1000 });
     await fixture.run(async () => {
       await useImageModel(fixture, "fal-ai/flux-pro/v1.1");
-      const pricingFixture = await fixture.createPricing({
-        configured: FLUX_IMAGE_PRICING,
-      });
       mocks.clerk.session(fixture.userId, fixture.orgId);
 
       let falCalls = 0;
@@ -3394,7 +2331,7 @@ describe("POST /api/image-io/generate", () => {
         }),
       );
 
-      const app = createImageIoTestApp(pricingFixture.resolution);
+      const app = createImageIoTestApp(fixture);
       const response = await app.request("/api/image-io/generate", {
         method: "POST",
         headers: authHeaders(),
@@ -3476,9 +2413,6 @@ describe("POST /api/image-io/generate", () => {
     const fixture = await publicFundedImageFixture({ credits: 1000 });
     await fixture.run(async () => {
       await useImageModel(fixture, "fal-ai/flux-2-pro");
-      const pricingFixture = await fixture.createPricing({
-        configured: FLUX_2_PRO_IMAGE_PRICING,
-      });
       mocks.clerk.session(fixture.userId, fixture.orgId);
 
       let observedBody: Record<string, unknown> | null = null;
@@ -3503,7 +2437,7 @@ describe("POST /api/image-io/generate", () => {
         }),
       );
 
-      const app = createImageIoTestApp(pricingFixture.resolution);
+      const app = createImageIoTestApp(fixture);
       const response = await app.request("/api/image-io/generate", {
         method: "POST",
         headers: authHeaders(),
@@ -3572,9 +2506,6 @@ describe("POST /api/image-io/generate", () => {
     const fixture = await publicFundedImageFixture({ credits: 1000 });
     await fixture.run(async () => {
       await useImageModel(fixture, "fal-ai/flux-2-pro");
-      const pricingFixture = await fixture.createPricing({
-        configured: FLUX_2_PRO_IMAGE_PRICING,
-      });
       mocks.clerk.session(fixture.userId, fixture.orgId);
 
       let falCalls = 0;
@@ -3601,7 +2532,7 @@ describe("POST /api/image-io/generate", () => {
         }),
       );
 
-      const app = createImageIoTestApp(pricingFixture.resolution);
+      const app = createImageIoTestApp(fixture);
       const rejected = await app.request("/api/image-io/generate", {
         method: "POST",
         headers: authHeaders(),
@@ -3678,9 +2609,6 @@ describe("POST /api/image-io/generate", () => {
     const fixture = await publicFundedImageFixture({ credits: 1000 });
     await fixture.run(async () => {
       await useImageModel(fixture, "ideogram/v4");
-      const pricingFixture = await fixture.createPricing({
-        configured: IDEOGRAM_4_IMAGE_PRICING,
-      });
       mocks.clerk.session(fixture.userId, fixture.orgId);
 
       let observedBody: Record<string, unknown> | null = null;
@@ -3698,7 +2626,7 @@ describe("POST /api/image-io/generate", () => {
         }),
       );
 
-      const app = createImageIoTestApp(pricingFixture.resolution);
+      const app = createImageIoTestApp(fixture);
       const response = await app.request("/api/image-io/generate", {
         method: "POST",
         headers: authHeaders(),
@@ -3757,9 +2685,6 @@ describe("POST /api/image-io/generate", () => {
     const fixture = await publicFundedImageFixture({ credits: 1000 });
     await fixture.run(async () => {
       await useImageModel(fixture, "ideogram/v4");
-      const pricingFixture = await fixture.createPricing({
-        configured: IDEOGRAM_4_IMAGE_PRICING,
-      });
       mocks.clerk.session(fixture.userId, fixture.orgId);
 
       let falCalls = 0;
@@ -3779,7 +2704,7 @@ describe("POST /api/image-io/generate", () => {
         }),
       );
 
-      const app = createImageIoTestApp(pricingFixture.resolution);
+      const app = createImageIoTestApp(fixture);
       const rejected = await app.request("/api/image-io/generate", {
         method: "POST",
         headers: authHeaders(),
@@ -3847,9 +2772,6 @@ describe("POST /api/image-io/generate", () => {
     const fixture = await publicFundedImageFixture({ credits: 1000 });
     await fixture.run(async () => {
       await useImageModel(fixture, "ideogram/v4");
-      const pricingFixture = await fixture.createPricing({
-        configured: IDEOGRAM_4_IMAGE_PRICING,
-      });
       mocks.clerk.session(fixture.userId, fixture.orgId);
 
       let mediaCalls = 0;
@@ -3869,7 +2791,7 @@ describe("POST /api/image-io/generate", () => {
         }),
       );
 
-      const app = createImageIoTestApp(pricingFixture.resolution);
+      const app = createImageIoTestApp(fixture);
       const response = await app.request("/api/image-io/generate", {
         method: "POST",
         headers: authHeaders(),
@@ -3920,9 +2842,6 @@ describe("POST /api/image-io/generate", () => {
     const fixture = await publicFundedImageFixture({ credits: 1000 });
     await fixture.run(async () => {
       await useImageModel(fixture, "alibaba/qwen-image-3/text-to-image");
-      const pricingFixture = await fixture.createPricing({
-        configured: QWEN_IMAGE_3_PRICING,
-      });
       mocks.clerk.session(fixture.userId, fixture.orgId);
 
       let observedBody: Record<string, unknown> | null = null;
@@ -3940,7 +2859,7 @@ describe("POST /api/image-io/generate", () => {
         }),
       );
 
-      const app = createImageIoTestApp(pricingFixture.resolution);
+      const app = createImageIoTestApp(fixture);
       const response = await app.request("/api/image-io/generate", {
         method: "POST",
         headers: authHeaders(),
@@ -4009,9 +2928,6 @@ describe("POST /api/image-io/generate", () => {
     const fixture = await publicFundedImageFixture({ credits: 1000 });
     await fixture.run(async () => {
       await useImageModel(fixture, "alibaba/qwen-image-3/text-to-image");
-      const pricingFixture = await fixture.createPricing({
-        configured: QWEN_IMAGE_3_PRICING,
-      });
       mocks.clerk.session(fixture.userId, fixture.orgId);
 
       let observedRequestUrl: string | null = null;
@@ -4027,7 +2943,7 @@ describe("POST /api/image-io/generate", () => {
         }),
       );
 
-      const app = createImageIoTestApp(pricingFixture.resolution);
+      const app = createImageIoTestApp(fixture);
       const response = await app.request("/api/image-io/generate", {
         method: "POST",
         headers: authHeaders(),
@@ -4077,9 +2993,6 @@ describe("POST /api/image-io/generate", () => {
     const fixture = await publicFundedImageFixture({ credits: 1000 });
     await fixture.run(async () => {
       await useImageModel(fixture, "alibaba/qwen-image-3/text-to-image");
-      const pricingFixture = await fixture.createPricing({
-        configured: QWEN_IMAGE_3_PRICING,
-      });
       mocks.clerk.session(fixture.userId, fixture.orgId);
 
       let falCalls = 0;
@@ -4099,7 +3012,7 @@ describe("POST /api/image-io/generate", () => {
         }),
       );
 
-      const app = createImageIoTestApp(pricingFixture.resolution);
+      const app = createImageIoTestApp(fixture);
       const rejected = await app.request("/api/image-io/generate", {
         method: "POST",
         headers: authHeaders(),
@@ -4243,9 +3156,6 @@ describe("POST /api/image-io/generate", () => {
     const fixture = await publicFundedImageFixture({ credits: 1000 });
     await fixture.run(async () => {
       await useImageModel(fixture, "google/nano-banana-2-lite");
-      const pricingFixture = await fixture.createPricing({
-        configured: NANO_BANANA_2_LITE_IMAGE_PRICING,
-      });
       mocks.clerk.session(fixture.userId, fixture.orgId);
 
       let observedBody: Record<string, unknown> | null = null;
@@ -4265,7 +3175,7 @@ describe("POST /api/image-io/generate", () => {
         }),
       );
 
-      const app = createImageIoTestApp(pricingFixture.resolution);
+      const app = createImageIoTestApp(fixture);
       const response = await app.request("/api/image-io/generate", {
         method: "POST",
         headers: authHeaders(),
@@ -4332,9 +3242,6 @@ describe("POST /api/image-io/generate", () => {
     const fixture = await publicFundedImageFixture({ credits: 1000 });
     await fixture.run(async () => {
       await useImageModel(fixture, "fal-ai/nano-banana-2");
-      const pricingFixture = await fixture.createPricing({
-        configured: NANO_BANANA_2_IMAGE_PRICING,
-      });
       mocks.clerk.session(fixture.userId, fixture.orgId);
 
       let falCalls = 0;
@@ -4356,7 +3263,7 @@ describe("POST /api/image-io/generate", () => {
         }),
       );
 
-      const app = createImageIoTestApp(pricingFixture.resolution);
+      const app = createImageIoTestApp(fixture);
       const response = await app.request("/api/image-io/generate", {
         method: "POST",
         headers: authHeaders(),
@@ -4439,9 +3346,6 @@ describe("POST /api/image-io/generate", () => {
     const fixture = await publicFundedImageFixture({ credits: 1000 });
     await fixture.run(async () => {
       await useImageModel(fixture, "fal-ai/nano-banana-2");
-      const pricingFixture = await fixture.createPricing({
-        configured: NANO_BANANA_2_IMAGE_PRICING,
-      });
       mocks.clerk.session(fixture.userId, fixture.orgId);
 
       let falCalls = 0;
@@ -4466,7 +3370,7 @@ describe("POST /api/image-io/generate", () => {
       );
 
       const sourceImageUrls = [MOCKUP_IMAGE_URL, SECOND_MOCKUP_IMAGE_URL];
-      const app = createImageIoTestApp(pricingFixture.resolution);
+      const app = createImageIoTestApp(fixture);
       const response = await app.request("/api/image-io/generate", {
         method: "POST",
         headers: authHeaders(),
@@ -4541,9 +3445,6 @@ describe("POST /api/image-io/generate", () => {
     const fixture = await publicFundedImageFixture({ credits: 1000 });
     await fixture.run(async () => {
       await useImageModel(fixture, "gpt-image-1");
-      const pricingFixture = await fixture.createPricing({
-        configured: GPT_IMAGE_1_PRICING,
-      });
       mocks.clerk.session(fixture.userId, fixture.orgId);
       let falCalls = 0;
       let observedAuthorization: string | null = null;
@@ -4560,7 +3461,7 @@ describe("POST /api/image-io/generate", () => {
         }),
       );
 
-      const app = createImageIoTestApp(pricingFixture.resolution);
+      const app = createImageIoTestApp(fixture);
       const response = await app.request("/api/image-io/generate", {
         method: "POST",
         headers: authHeaders(),
