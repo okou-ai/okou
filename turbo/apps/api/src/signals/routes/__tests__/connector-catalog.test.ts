@@ -138,6 +138,7 @@ describe("GET /api/connector-catalog", () => {
     ["posthog", "oauth", "auth-code"],
     ["calendly", "oauth", "auth-code"],
     ["monday-mcp", "automatic", "automatic"],
+    ["plaud-mcp", "automatic", "automatic"],
   ] as const)(
     "returns public catalog metadata including %s auth methods",
     async (connectorSlug, authMethodId, grantKind) => {
