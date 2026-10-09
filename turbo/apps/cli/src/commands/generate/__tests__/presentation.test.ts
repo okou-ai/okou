@@ -3,7 +3,7 @@
  *
  * Tests command-level behavior via parseAsync() following CLI testing principles:
  * - Entry point: command.parseAsync()
- * - Mock (external): none for the source-selection path
+ * - Mock (external): API feature availability via MSW
  * - Real (internal): prompt parsing and authoring packet generation
  */
 
@@ -72,7 +72,7 @@ describe("okou generate presentation command", () => {
       "Check that shapes, charts, images, or decorative graphics do not cover readable text",
     );
     expect(stdout).toContain(
-      "Host the finished deck: okou host <output-dir> --site <slug> --artifact-kind presentation-html --preview ./generated/previews/cover.png\n",
+      "Host the finished deck: okou host <output-dir> --site <slug> --artifact-kind presentation-html\n",
     );
     expect(stdout).toContain(
       "With privateArtifacts enabled, new artifacts default to only-me.",
@@ -104,7 +104,7 @@ describe("okou generate presentation command", () => {
       return line.startsWith("- Host the finished deck:");
     });
     expect(hostInstructions).toEqual([
-      "- Host the finished deck: okou host <output-dir> --site team-plan --artifact-kind presentation-html --visibility org --preview ./generated/previews/cover.png",
+      "- Host the finished deck: okou host <output-dir> --site team-plan --artifact-kind presentation-html --visibility org",
     ]);
     expect(stdout).toContain("okou web upload-file -f <file> --visibility org");
     expect(stdout).toContain(
@@ -211,7 +211,7 @@ describe("okou generate presentation command", () => {
     );
     expect(stdout).toContain("User request: create a 15-slide launch deck");
     expect(stdout).toContain(
-      "Host the finished deck: okou host <output-dir> --site <slug> --artifact-kind presentation-html --preview ./generated/previews/cover.png\n",
+      "Host the finished deck: okou host <output-dir> --site <slug> --artifact-kind presentation-html\n",
     );
     const imageWorkflowLines = stdout.split("\n").filter((line) => {
       return line.startsWith("- Image workflow:");

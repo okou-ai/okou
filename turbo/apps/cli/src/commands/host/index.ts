@@ -5,6 +5,7 @@ import {
   type HostedArtifactKind,
 } from "@okouai/api-contracts/contracts/host";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
+import { requireArtifactPreviews } from "../../lib/api/domains/artifact-previews";
 import { publishStaticSite } from "../../lib/host/publish-static-site";
 import { createArtifactPresentation } from "../shared/artifact-return";
 import { cloneHostedSiteCommand } from "./clone";
@@ -75,7 +76,8 @@ Examples:
 Notes:
   - Publishes a static directory containing index.html. It does not deploy a long-running backend, database, worker, or framework runtime; use the project's deployment workflow for those
   - For an HTML presentation, add --artifact-kind presentation-html
-  - Use a user-selected cover or run host screenshot on the final bundle, inspect the image, and pass --preview; re-capture after editing
+  - Covers require the artifactPreviews feature switch (enable it in Lab)
+  - When enabled, use a user-selected cover or run host screenshot on the final bundle, inspect the image, and pass --preview; re-capture after editing
   - Preview images upload separately to private artifact storage and feed Artifacts cards; they do not become public files inside your site
   - The returned hosted URL is the user-facing artifact view; a local index.html or localhost server is not
   - Return the exact hosted URL printed by the command
@@ -95,6 +97,7 @@ Notes:
       if (!options.site) {
         throw new Error("--site is required when publishing a hosted site");
       }
+      if (options.preview) await requireArtifactPreviews();
       const result = await publishStaticSite({
         dir,
         site: options.site,

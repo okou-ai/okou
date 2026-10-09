@@ -3,7 +3,7 @@
  *
  * Tests command-level behavior via parseAsync() following CLI testing principles:
  * - Entry point: command.parseAsync()
- * - Mock (external): none for the source-selection path
+ * - Mock (external): API feature availability via MSW
  * - Real (internal): prompt parsing and authoring packet generation
  */
 
@@ -102,7 +102,7 @@ describe("okou generate website command", () => {
       "Write the artifact under `./generated/mockups/clearpath-demo/`.",
     );
     expect(stdout).toContain(
-      "okou host ./generated/mockups/clearpath-demo --site clearpath-demo --spa --preview ./generated/previews/clearpath-demo.png\n",
+      "okou host ./generated/mockups/clearpath-demo --site clearpath-demo --spa\n",
     );
     expect(stdout).not.toContain("Hosted websites are public:");
     expect(stdout).not.toContain("--visibility");
@@ -125,7 +125,7 @@ describe("okou generate website command", () => {
 
     const stdout = mockConsoleLog.mock.calls.flat().join("\n");
     expect(stdout).toContain(
-      "okou host ./generated/mockups/launch-site --site launch-site --spa --preview ./generated/previews/launch-site.png\n",
+      "okou host ./generated/mockups/launch-site --site launch-site --spa\n",
     );
     expect(stdout).not.toContain("okou web upload-file -f <file>");
     expect(stdout).not.toContain("File upload is a separate delivery channel");

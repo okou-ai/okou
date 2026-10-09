@@ -1,3 +1,6 @@
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { command } from "ccstate";
 import {
   hostedSiteAssetNameError,
@@ -230,11 +233,13 @@ type PrepareDeploymentResult =
       };
     }
   | { readonly status: "forbidden" }
+  | { readonly status: "preview_unavailable" }
   | { readonly status: "bad_request"; readonly message: string }
   | { readonly status: "conflict"; readonly message: string }
   | { readonly status: "config_error"; readonly message: string };
 
 type CompleteDeploymentResult =
+  | { readonly status: "preview_unavailable" }
   | {
       readonly status: "ok";
       readonly body: {
@@ -728,6 +733,16 @@ export const prepareHostedSiteDeployment$ = command(
       return { status: "forbidden" };
     }
     if (args.body.preview) {
+      const features = await set(
+        loadUserFeatureSwitchContext$,
+        args.orgId,
+        args.userId,
+        signal,
+      );
+      signal.throwIfAborted();
+      if (!isFeatureEnabled(FeatureSwitchKey.ArtifactPreviews, features)) {
+        return { status: "preview_unavailable" };
+      }
       // Fail before creating a deployment if private preview storage is absent.
       privateArtifactsBucket();
     }
@@ -1216,7 +1231,8 @@ export const completeHostedSiteDeployment$ = command(
           signal,
         )
       : undefined;
-    if (preview?.status === "bad_request") {
+    signal.throwIfAborted();
+    if (preview && preview.status !== "ok") {
       return preview;
     }
 

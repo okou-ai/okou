@@ -123,16 +123,21 @@ export function createRunTemplates(
     });
   });
   return computed(async (get): Promise<RunTemplatesResult> => {
-    const [selection, presentations, mounted] = await Promise.all([
+    const [selection, presentations, mounted, features] = await Promise.all([
       get(selection$),
       get(presentations$),
       get(mounted$),
+      get(features$),
     ]);
     const guidance = buildGenerationTemplatesPrompt(
       selection?.templates ?? [],
       {
         mountedUserPresentationTemplateIds: presentations,
         mountedUserTemplates: mounted,
+        artifactPreviewsEnabled: isFeatureEnabled(
+          FeatureSwitchKey.ArtifactPreviews,
+          features,
+        ),
       },
     );
     if (guidance.status === "invalid") {

@@ -1,4 +1,7 @@
 import { createHash } from "node:crypto";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { command } from "ccstate";
 import sharp from "sharp";
 import { v5 as uuidv5 } from "uuid";
@@ -19,7 +22,7 @@ import { settle } from "../utils";
 import {
   allocatePrivateArtifact$,
   completePrivateArtifact$,
-  privateArtifactRecord,
+  privateArtifactRecord$,
   privateArtifactUrl,
   privateArtifactsBucket,
 } from "./private-artifact-storage.service";
@@ -104,9 +107,20 @@ export const completeHostedPreview$ = command(
   ): Promise<
     | { readonly status: "ok"; readonly url: string }
     | { readonly status: "bad_request"; readonly message: string }
+    | { readonly status: "preview_unavailable" }
   > => {
+    const features = await set(
+      loadUserFeatureSwitchContext$,
+      args.orgId,
+      args.userId,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!isFeatureEnabled(FeatureSwitchKey.ArtifactPreviews, features)) {
+      return { status: "preview_unavailable" };
+    }
     const id = previewId(args.deploymentId, args.preview);
-    const existing = await get(privateArtifactRecord(id));
+    const existing = await set(privateArtifactRecord$, id, signal);
     signal.throwIfAborted();
     if (existing?.materializationStatus === "ready") {
       if (existing.userId !== args.userId || existing.orgId !== args.orgId) {

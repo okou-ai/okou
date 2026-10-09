@@ -1,4 +1,4 @@
-import { command, computed } from "ccstate";
+import { command } from "ccstate";
 import {
   featureSwitchesContract,
   type FeatureSwitchesResponse,
@@ -7,12 +7,13 @@ import { getAllFeatureStates } from "@okouai/core/feature-switch";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
+import { setResHeader$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import {
   deleteUserFeatureSwitches$,
   updateUserFeatureSwitches$,
-  userFeatureSwitchOverrides,
+  loadUserFeatureSwitchContext$,
 } from "../services/feature-switches.service";
 
 const featureSwitchesAuthOptions = {
@@ -36,17 +37,23 @@ function featureSwitchResponseBody(params: {
   };
 }
 
-const featureSwitchesResponse$ = computed(
+const featureSwitchesResponse$ = command(
   async (
-    get,
+    { get, set },
+    signal: AbortSignal,
   ): Promise<{
     readonly status: 200;
     readonly body: FeatureSwitchesResponse;
   }> => {
+    set(setResHeader$, "Cache-Control", "private, no-store");
     const auth = get(organizationAuthContext$);
-    const switches = await get(
-      userFeatureSwitchOverrides(auth.orgId, auth.userId),
+    const { overrides: switches } = await set(
+      loadUserFeatureSwitchContext$,
+      auth.orgId,
+      auth.userId,
+      signal,
     );
+    signal.throwIfAborted();
     return {
       status: 200 as const,
       body: featureSwitchResponseBody({
@@ -118,7 +125,10 @@ const deleteFeatureSwitchesInner$ = command(
 export const featureSwitchesRoutes: readonly RouteEntry[] = [
   {
     route: featureSwitchesContract.get,
-    handler: authRoute(featureSwitchesAuthOptions, featureSwitchesResponse$),
+    handler: authRoute(
+      { ...featureSwitchesAuthOptions, acceptAnySandboxCapability: true },
+      featureSwitchesResponse$,
+    ),
   },
   {
     route: featureSwitchesContract.update,

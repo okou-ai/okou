@@ -73,7 +73,10 @@ fallback is required. This change does not deploy or verify production recovery.
 
 ## Sandbox-hosted artifact covers (#36205)
 
-Hosted deployment requests may include a separately uploaded private preview.
+Hosted deployment requests may include a separately uploaded private preview
+when the default-off `artifactPreviews` switch is enabled. The same switch gates
+CLI capture, generation guidance and server prepare/complete admission.
+Published covers remain readable after disabling the switch.
 Deploy and drain API readers before the new CLI/generation instructions; a
 mixed completion fleet must not ignore the preview requirement. Old requests
 retain backend screenshots until the separately planned retirement. The

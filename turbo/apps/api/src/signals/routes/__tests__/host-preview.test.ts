@@ -7,6 +7,8 @@ import {
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
 import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
+import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { HostedSitePrepareResponse } from "@okouai/api-contracts/contracts/host";
 import { http, HttpResponse } from "msw";
 import sharp from "sharp";
@@ -16,6 +18,8 @@ import { setupAppWithRoutes } from "../../../__tests__/test-app";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { env } from "../../../lib/env";
 import { server } from "../../../mocks/server";
+import { featureSwitchesRoutes } from "../feature-switches";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { artifactReferenceRoutes } from "../artifact-references";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -146,10 +150,75 @@ async function upload(prepared: HostedSitePrepareResponse, bytes: Buffer) {
 }
 
 describe("sandbox hosted previews", () => {
+  it("keeps ordinary hosting available and suspends cover completion until re-enabled", async () => {
+    const owner = createBddApi(context).user();
+    if (!owner.orgId) {
+      throw new Error("Expected an organization");
+    }
+    const actor = { ...owner, orgId: owner.orgId };
+    previewStorage();
+    const bytes = await image();
+    const body = {
+      site: `preview-switch-${randomUUID().slice(0, 8)}`,
+      artifactKind: "hosted-site" as const,
+      spaFallback: false,
+      files: [hostedTextFile("/index.html", "<main>Website</main>")],
+    };
+    const denied = await host.requestPrepareHostedSite(
+      actor,
+      { ...body, preview: preview(bytes) },
+      [403],
+    );
+    expect(denied.body).toMatchObject({
+      error: { message: expect.stringContaining("artifactPreviews") },
+    });
+    const original = await host.prepareHostedSite(actor, body);
+    await host.completeHostedSite(actor, original.deploymentId);
+    await updateFeatureSwitchesForUser(context, actor, {
+      artifactPreviews: true,
+    });
+    const prepared = await host.prepareHostedSite(actor, {
+      ...body,
+      preview: preview(bytes),
+    });
+    await upload(prepared, bytes);
+    await updateFeatureSwitchesForUser(context, actor, {
+      artifactPreviews: false,
+    });
+    await host.requestCompleteHostedSite(actor, prepared.deploymentId, [403]);
+    const pending = await host.readHostedSiteDeployments(actor, body.site);
+    expect(pending.activeDeploymentId).toBe(original.deploymentId);
+    expect(
+      pending.deployments.find((entry) => {
+        return entry.deploymentId === prepared.deploymentId;
+      })?.status,
+    ).toBe("uploading");
+    await updateFeatureSwitchesForUser(context, actor, {
+      artifactPreviews: true,
+    });
+    const completed = await host.completeHostedSite(
+      actor,
+      prepared.deploymentId,
+    );
+    expect(completed.previewImageUrl).toBeDefined();
+    await updateFeatureSwitchesForUser(context, actor, {
+      artifactPreviews: false,
+    });
+    expect(
+      (await host.readHostedSiteDeployments(actor, body.site))
+        .activeDeploymentId,
+    ).toBe(prepared.deploymentId);
+  });
   it("keeps the active HTML cover in the catalog across late completions and retries", async () => {
     const fixture = createChatEventsFixture(context);
     const entitled = await fixture.entitledNativeChatActor();
-    const actor = entitled.actor;
+    if (!entitled.actor.orgId) {
+      throw new Error("Expected an organization");
+    }
+    const actor = { ...entitled.actor, orgId: entitled.actor.orgId };
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.ArtifactPreviews]: true,
+    });
     const run = await fixture.sendChatRun(actor, {
       agentId: entitled.agentId,
       prompt: "Publish a site with a preview",
@@ -159,6 +228,22 @@ describe("sandbox hosted previews", () => {
       run.runId,
     );
     const runner = { bearerToken: okouTokenFromClaim(claim) };
+    const features = setupAppWithRoutes({
+      context,
+      routes: featureSwitchesRoutes,
+    })(featureSwitchesContract);
+    const headers = { authorization: `Bearer ${runner.bearerToken}` };
+    const available = await accept(features.get({ headers }), [200]);
+    expect(available.body.effectiveSwitches.artifactPreviews).toBeTruthy();
+    expect(available.headers.get("cache-control")).toBe("private, no-store");
+    await accept(
+      features.update({
+        headers,
+        body: { switches: { artifactPreviews: false } },
+      }),
+      [403],
+    );
+    await accept(features.delete({ headers }), [403]);
     previewStorage();
     const firstImage = await image();
     const secondImage = await image("#ee3355");
@@ -229,7 +314,14 @@ describe("sandbox hosted previews", () => {
   });
 
   it("does not activate missing, corrupt, or checksum-mismatched previews and permits repair", async () => {
-    const actor = createBddApi(context).user();
+    const owner = createBddApi(context).user();
+    if (!owner.orgId) {
+      throw new Error("Expected an organization");
+    }
+    const actor = { ...owner, orgId: owner.orgId };
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.ArtifactPreviews]: true,
+    });
     const objects = previewStorage();
     const bytes = await image();
     const body = {

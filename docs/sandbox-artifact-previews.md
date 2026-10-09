@@ -6,6 +6,35 @@ publication, and use it for the HTML artifact's card in Artifacts. OG metadata
 and anonymous image delivery are a separate delivery; this change does not
 make preview storage public.
 
+## Feature switch
+
+`artifactPreviews` is off by default for every account, including staff. Enable
+it for the testing user in Lab only after the compatible API fleet and CLI
+have shipped. It is independent of `privateArtifacts`; enabling covers never
+changes a site's visibility or grants permission to read an image. Later OG
+work uses this same switch.
+
+The switch gates the CLI's HTML/presentation authoring packets, selected
+presentation/website prompts in new runs and steered messages, local
+`host screenshot`, `host --preview`, and API preview prepare/complete admission.
+The CLI reads the authenticated caller's effective state from
+`GET /api/feature-switches`. Agent/sandbox credentials may read their own state,
+but cannot use that endpoint to update or delete overrides. Unauthenticated
+source-selection packets contain the existing publishing instructions.
+
+With the switch off, ordinary hosting without `--preview` keeps the existing
+backend screenshot path. Explicit previews fail visibly; they are never
+silently discarded. Switching off after prepare rejects completion before
+activating the new deployment, preserving the old active version. Already
+issued upload URLs expire normally and grant access only to staged bytes;
+re-enable the switch and retry `host complete` to finish the original deployment.
+The check happens at request admission; it does not cancel an already admitted
+completion or an already running local capture.
+
+Disabling the switch retains published sites and their saved covers. Existing
+Artifacts cards and authorized image reads continue to work; no objects are
+deleted or permissions changed. This makes rollback preserve user data.
+
 ## Author and publish
 
 ```bash
@@ -80,8 +109,9 @@ okou host complete <deployment-id> --json
 - Old Platform / new API: the existing private `previewImageUrl` and catalog
   thumbnail shapes are reused. No client or database migration is required.
 
-Deploy and drain the API readers before releasing the new CLI and generation
-instructions. A new CLI must not prepare against a new API and complete against
+Deploy and drain the API readers (including authenticated feature-state reads)
+before releasing the new CLI and generation instructions, then opt in through
+`artifactPreviews`. Keep the switch off during the deployment. A new CLI must not prepare against a new API and complete against
 an older API that ignores `manifest.preview`. Keep API rollback targets capable
 of enforcing this requirement once new writers are active. Disabling new
 writers does not remove the obligation to read already-prepared deployments.

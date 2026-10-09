@@ -67,6 +67,14 @@ describe("hosted artifact previews", () => {
     }
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
+    server.use(
+      http.get("*/api/feature-switches", () => {
+        return HttpResponse.json({
+          switches: {},
+          effectiveSwitches: { artifactPreviews: true },
+        });
+      }),
+    );
   });
 
   afterEach(() => {
@@ -88,6 +96,33 @@ describe("hosted artifact previews", () => {
       "--json",
     ]);
   }
+
+  it("rejects capture and publication before touching files when previews are disabled", async () => {
+    server.use(
+      http.get("*/api/feature-switches", () => {
+        return HttpResponse.json({
+          switches: {},
+          effectiveSwitches: { artifactPreviews: false },
+        });
+      }),
+    );
+    const original = readFileSync(cover);
+    await expect(
+      screenshotHostedSiteCommand.parseAsync([
+        "node",
+        "okou",
+        join(root, "missing-site"),
+        "--out",
+        cover,
+      ]),
+    ).rejects.toThrow("process.exit");
+    expect(errors.mock.calls.flat().join("\n")).toContain(
+      "Artifact previews are disabled",
+    );
+    expect(readFileSync(cover)).toEqual(original);
+    await expect(publish()).rejects.toThrow("process.exit");
+    expect(existsSync(`${cover}.okou-preview.json`)).toBe(false);
+  });
 
   it("uploads a cover separately from public files and exposes the registered image", async () => {
     let uploadedPreview = false;

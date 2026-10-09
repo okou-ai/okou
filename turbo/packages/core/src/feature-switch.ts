@@ -44,6 +44,11 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.ArtifactPreviews]: {
+    maintainer: "bingjie@okou.ai",
+    description: "Capture and publish sandbox covers for HTML artifacts.",
+    enabled: false,
+  },
   [FeatureSwitchKey.NotifyMail]: {
     maintainer: "lancy@okou.ai",
     description: "Allow agents to send Okou email notifications to their user",
