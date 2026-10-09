@@ -761,22 +761,25 @@ async def test_catalog_wait_revalidates_only_provider_continuation(
             if entry_point == "requestheaders":
                 await mitm_addon.request(follower)
 
-            assert follower.response is not None
             if owner_result != "local-response":
-                assert follower.response.status_code == 403
-                assert (
-                    follower.metadata[metadata_keys.FIREWALL_ERROR]
-                    == "upstream_destination_unbound"
-                )
-                assert metadata_keys.REQUEST_STREAM_BUFFER not in follower.metadata
-                assert metadata_keys.REQUEST_STREAM_BUFFER_STATE not in follower.metadata
+                assert follower.response is None
+                assert follower.request.host == "chatgpt.com"
+                assert follower.request.headers["Authorization"] == "Bearer resolved-token"
+                assert not follower.server_conn.connected
+                assert follower.metadata.get(metadata_keys.FIREWALL_ERROR) is None
+                # Normal transport owns provider continuation; finish its synthetic
+                # response to exercise the production terminal cleanup hooks.
+                follower.response = catalog_response()
             else:
+                assert follower.response is not None
                 assert follower.response.status_code == 200
                 assert follower.response.content == CATALOG_BODY
                 assert follower.metadata.get(metadata_keys.FIREWALL_ERROR) is None
 
             mitm_addon.responseheaders(follower)
-            mitm_addon.response(follower)
+            completion = mitm_addon.response(follower)
+            if completion is not None:
+                await completion
     finally:
         if follower_task is not None:
             if not follower_task.done():

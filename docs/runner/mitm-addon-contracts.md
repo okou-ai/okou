@@ -77,6 +77,32 @@ credential-free `api_allow` behavior and therefore may receive the MCP service's
 OAuth challenge until replaced. Production-entrypoint coverage is in
 `tests/test_request_handler_api_admission.py`.
 
+## Credential preparation and connection lifetime
+
+Async credential resolution and catalog waits do not require the original
+upstream socket to stay open. Before applying credentials or continuing to the
+provider, HTTP hooks revalidate trusted authority, method/scheme, current run,
+firewall owner, permission, route and host policy. A connected destination still
+passes ordinary endpoint admission; a live socket alone is not authorization.
+
+For an authorized, non-streamed HTTPS request without a live upstream, secure
+TLS must remain enabled. The addon selects the validated hostname through the
+public `request.host` field and preserves wire Host/`:authority` and body. Normal
+mitmproxy acquisition/pooling and upstream certificate-chain/hostname validation
+own the next connection and first send. The addon does not replace a Server,
+intercept a private before-send event or retry/replay a request. Errored or
+already-streamed/ambiguously-forwarded requests do not use this preparation path.
+
+TLS identity is separate from public routability. `publicDestination` retains
+its concrete endpoint policy and still-valid pending-binding path. A lost binding
+without replacement endpoint evidence stays fail closed; fresh DNS or valid TLS
+is not public-IP proof. `auth.base` retains its owned forwarder. Global eager
+connections, server-first TCP and existing auth deadlines are unchanged.
+Reclassification preserves the pre-injection network-log target, including after
+catalog waits, so managed query credentials are not logged. The addon is embedded
+in Runner; enforcement requires normal replacement/drain of older instances,
+without an API, CLI, registry or database migration.
+
 ## Ordinary connector firewall owner selection
 
 Outside the platform API admission path, the addon first gathers active firewall
@@ -129,47 +155,6 @@ For a shared base with a unique inactive route owner, a request that already
 carries that route's authentication material receives HTTP 409
 `connector_auth_owner_conflict` before the active base-only owner's credentials
 are injected. This guard does not consult intent.
-
-## Upstream disconnect during credential resolution
-
-Managed credential resolution does not extend an admitted upstream socket's
-lifetime. If the same originally connected server fully closes during that wait,
-disconnect cleanup removes its binding. Before applying resolved credentials,
-the addon may re-admit one fresh connection-selection target for the unchanged
-trusted authority and request method. Current run, firewall owner, permission,
-route and destination policy must still match. The wire Host/:authority and body
-are preserved. Replaced, half-closed or errored connections, changed authority,
-revoked authorization, and already-streamed or ambiguous requests fail closed.
-
-Recovery is available only before upstream request headers/body are sent:
-header-phase auth before stream setup, or the buffered request hook without
-streaming evidence. It selects a fresh target; it never replays a forwarded POST
-or body. `auth.base` keeps its existing forwarder ownership. Global eager
-connection behavior and auth deadlines are unchanged, preserving server-first
-TCP protocols.
-
-The exact-version compatibility owner wraps mitmproxy 12.2.3's
-`HttpStream.make_server_connection()`. Only recovered flows dispatch the private
-`okou_upstream_ready` hook after the actual TCP/TLS connection is acquired and
-before the first credential-bearing `SendHttp`. The bridge also conservatively
-marks every upstream request as started before permitting its first headers, so
-changing streaming flags cannot make a forwarded request recoverable. The hook
-revalidates the current authorization and requires verified upstream TLS/SNI/certificate and
-concrete endpoint evidence even when a pooled connection already has a binding.
-Public-destination checks use the actual replacement endpoint, never fresh DNS
-as proof of a connected destination. A pending recovered DNS target may defer
-its unresolved-IP check across an intervening catalog wait, but the before-send
-hook may not. The bridge requires an explicit successful admission result;
-missing or throwing handlers cannot silently forward. Local failures follow the
-existing response/error lifecycle. Consuming or abandoning recovery also removes
-unopened placeholder bindings that have no transport disconnect event.
-
-The addon ships embedded in Runner. Existing instances must be replaced/drained
-through the normal Runner rollout to receive this behavior; there is no API,
-CLI, database or registry migration. The independent auth-fetch 502 and its
-original disconnect initiator are not resolved by this lifecycle contract.
-Coverage is in `tests/test_request_handler_auth_wait_disconnect.py` and
-`tests/test_mitmproxy_auth_wait_disconnect.py`.
 
 ## Gmail send restriction
 
