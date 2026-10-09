@@ -371,6 +371,9 @@ jobs:
           # sh default used by container jobs.
           .github/scripts/check-workflow-shell-compatibility.sh
 
+      - name: Test owned Runner memory calibration collector
+        run: python3 .github/scripts/tests/runner-memory-calibrate-test.py
+
       - name: Run actionlint
         run: ./actionlint
 

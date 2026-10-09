@@ -12,6 +12,11 @@ download dependencies, contact APIs, or silently skip the integration. Crates
 coverage prepares the same environment before running tests. The status/log-only
 control tests retain their standard-library Python boundary.
 
+Passive host observation and owned native measurement have a separate
+[host-memory calibration guide](runner-host-memory-calibration.md). Its collector
+and procfs smoke do not establish calibrated controller bounds or Guest/profile
+continuation evidence.
+
 ## Running Tests
 
 Use the `local` profile for routine local validation. It retains source locations in

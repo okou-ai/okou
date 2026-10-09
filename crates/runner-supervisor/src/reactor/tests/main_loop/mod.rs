@@ -2,6 +2,7 @@ mod admission;
 mod drain_resume;
 mod exact_reuse_speculation;
 mod heartbeat;
+mod host_memory;
 mod job_flow;
 mod shared_resource_progress;
 mod shutdown;

@@ -41,7 +41,7 @@ use clap::Args;
 use sandbox::{RuntimeProvider, SandboxRuntime};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
 #[cfg(test)]
@@ -68,7 +68,7 @@ use runner_provider::{
     JobProvider, LocalProvider, RunCancellationRegistry,
 };
 use runner_supervisor::reactor::{
-    self, CapacityPolicy, OrphanReapState, ProviderState, ProxyState, RunConfig, RunPaths,
+    self, CapacityPolicy, EarlySignals, OrphanReapState, ProviderState, ProxyState, RunConfig, RunPaths,
     RunnerInfo, RunnerSharedState, RuntimeProfile, SandboxRuntimeConfig, ShutdownHandles,
     SignalSource, SignalState,
 };
@@ -286,6 +286,39 @@ async fn run_start_with_home(
     let signals = signals::register_early_signals()
         .map_err(|e| RunnerError::Internal(format!("register signal handlers: {e}")))?;
 
+    run_with_host_memory_observer(run_start_observed(
+        args,
+        runtime_provider,
+        load_home,
+        signals,
+    ))
+    .await
+}
+
+async fn run_with_host_memory_observer(
+    work: impl std::future::Future<Output = RunnerResult<()>>,
+) -> RunnerResult<()> {
+    // This passive owner surrounds every fallible startup/reactor return. It starts
+    // before optional warming and never depends on heartbeat, pool or status locks.
+    let observer = runner_supervisor::host_memory::HostMemoryObserver::spawn();
+    let result = work.await;
+    if let Err(error) = observer.shutdown().await {
+        if result.is_ok() {
+            return Err(RunnerError::Internal(format!(
+                "join host memory observer: {error}"
+            )));
+        }
+        error!(%error, "host memory observer join failed during startup/runtime failure");
+    }
+    result
+}
+
+async fn run_start_observed(
+    args: StartArgs,
+    runtime_provider: &dyn RuntimeProvider,
+    load_home: impl FnOnce() -> RunnerResult<HomePaths>,
+    signals: EarlySignals,
+) -> RunnerResult<()> {
     let mut runner_config = config::load_for_start(&args.config, args.api_url.as_deref()).await?;
     let registry_config_path = tokio::fs::canonicalize(&args.config).await.map_err(|e| {
         RunnerError::Config(format!(

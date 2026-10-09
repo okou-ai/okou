@@ -59,3 +59,18 @@ control delivery/high output, checkpoint/finalization, cancellation, cleanup and
 reuse under pressure, including the minimum supported profile. Static hierarchy
 checks alone do not demonstrate adequate working-set protection. This policy does
 not establish the cause of independent upstream TLS failures.
+
+## Host observation is separate from Guest policy
+
+Runner owns one passive, bounded `MemAvailable` observer independently of
+heartbeat, status and pool work, starting before optional warming and joining on
+startup failure and shutdown. Zero is valid; missing, malformed, failed, stale or
+stopped observations are Unknown. Positive samples remain uncalibrated, not a
+healthy-headroom assertion. Cached diagnostics do not grant capacity or change
+full-profile CPU/MiB/count accounting, reuse, refill or warming.
+
+Pure current-bound validation supplies no numerical production defaults or
+actuation. Fixture-only RSS/PSS and positive owned child waits are measurement
+surfaces, not a production residency registry or proof of VM relief. Follow the
+[host-memory calibration guide](testing/runner-host-memory-calibration.md) for
+current-artifact/phase/continuation evidence and remaining activation gates.
