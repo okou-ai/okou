@@ -13,6 +13,8 @@ export async function publicChatActor(
   context: TestContext,
   options: {
     readonly restoreEnvironment?: () => void;
+    readonly clockTime?: number | (() => number);
+    readonly beforeWorkspaceCleanup?: () => Promise<void>;
     readonly optionalEnvironmentNames?: readonly string[];
   } = {},
 ) {
@@ -34,6 +36,7 @@ export async function publicChatActor(
     previous?.();
   });
   const owner = publicRunOwner(context, actor, {
+    clockTime: options.clockTime,
     restoreEnvironment: () => {
       previous ??= captureConnectorExternalState(
         context,
@@ -51,10 +54,13 @@ export async function publicChatActor(
           ? deleteFeatureSwitchesForUser(context, { ...actor, orgId })
           : Promise.resolve();
       });
+      const external = await settleIncludingAbort(() => {
+        return options.beforeWorkspaceCleanup?.() ?? Promise.resolve();
+      });
       const workspace = await settleIncludingAbort(() => {
         return deletePublicWorkspace(context, actor);
       });
-      const errors = [features, workspace].flatMap((result) => {
+      const errors = [features, external, workspace].flatMap((result) => {
         return result.ok ? [] : [result.error];
       });
       if (errors.length === 1) {

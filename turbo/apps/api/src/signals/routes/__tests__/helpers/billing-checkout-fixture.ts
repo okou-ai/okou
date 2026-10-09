@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import type { Mock } from "vitest";
+import { captureConnectorExternalState } from "./public-connector-actor";
 import {
   billingCheckoutContract,
   billingStatusContract,
@@ -9,7 +11,7 @@ import { webhookStripeContract } from "@okouai/api-contracts/contracts/webhooks"
 import { createStore } from "ccstate";
 import { accept, testContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
-import { mockEnv, mockOptionalEnv } from "../../../../lib/env";
+import { env, mockEnv, mockOptionalEnv } from "../../../../lib/env";
 import { now } from "../../../../lib/time";
 import { signSandboxJwtForTests } from "../../../auth/tokens";
 import { billingCheckoutRoutes } from "../../billing-checkout";
@@ -365,27 +367,6 @@ export function createBillingCheckoutFixture() {
     );
   }
 
-  async function prepareUsagePackCheckoutOrg(
-    fixture: BillingOrgFixture,
-    customerId: string,
-  ): Promise<void> {
-    await createStripeCustomerOrgForFixture(fixture, customerId);
-    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
-      {
-        data: [
-          {
-            role: "org:admin",
-            publicUserData: { userId: fixture.userId },
-            createdAt: now(),
-          },
-        ],
-      },
-    );
-    context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
-      { data: [] },
-    );
-  }
-
   async function createSubscriptionOrg(args: {
     readonly tier: "pro" | "team" | "custom";
     readonly customerId?: string;
@@ -483,10 +464,61 @@ export function createBillingCheckoutFixture() {
     return { ...fixture, customerId, subscriptionId };
   }
 
+  function captureCheckoutExternalState() {
+    const restoreBase = captureConnectorExternalState(context, [
+      "STRIPE_SECRET_KEY",
+    ]);
+    const prices = (
+      [
+        "OKOU_PRICE_USAGE_PACK_PLAN_PRO",
+        "OKOU_PRICE_USAGE_PACK_PLAN_TEAM",
+        "OKOU_PRICE_USAGE_PACK_20",
+        "OKOU_PRICE_USAGE_PACK_50",
+        "OKOU_PRICE_USAGE_PACK_100",
+        "OKOU_PRICE_USAGE_PACK_200",
+        "OKOU_PRICE_CUSTOM",
+      ] as const
+    ).map((name) => {
+      return [name, env(name)] as const;
+    });
+    function retain<T extends (...args: never[]) => unknown>(mock: Mock<T>) {
+      const implementation = mock.getMockImplementation();
+      return () => {
+        mock.mockReset();
+        if (implementation) {
+          mock.mockImplementation(implementation);
+        }
+      };
+    }
+    const restoreProviders = [
+      retain(context.mocks.stripe.customers.create),
+      retain(context.mocks.stripe.customers.update),
+      retain(context.mocks.stripe.prices.retrieve),
+      retain(context.mocks.stripe.checkout.sessions.create),
+      retain(context.mocks.stripe.checkout.sessions.retrieve),
+      retain(context.mocks.stripe.checkout.sessions.expire),
+      retain(context.mocks.stripe.subscriptions.create),
+      retain(context.mocks.stripe.invoices.createPreview),
+      retain(context.mocks.stripe.invoices.pay),
+      retain(context.mocks.stripe.subscriptions.update),
+      retain(context.mocks.stripe.subscriptions.cancel),
+      retain(context.mocks.clerk.organizations.getOrganizationInvitationList),
+    ];
+    return () => {
+      restoreBase();
+      for (const [name, value] of prices) {
+        mockEnv(name, value?.join(","));
+      }
+      for (const restore of restoreProviders) {
+        restore();
+      }
+    };
+  }
+
   function createOwnedBillingOrg(
     options: {
       readonly tier?: "pro" | "team" | "custom";
-      readonly cleanupUsagePacks?: boolean;
+      readonly retainCheckoutState?: boolean;
       readonly foreverCustom?: boolean;
     } = {},
   ) {
@@ -517,14 +549,8 @@ export function createBillingCheckoutFixture() {
               webhookSecret: STRIPE_WEBHOOK_SECRET,
             }
           : undefined,
-        beforeOrganizationCleanup: options.cleanupUsagePacks
-          ? async () => {
-              // Covers owned inserts that committed before their response was received.
-              await usagePackStateAction({
-                action: "cleanup-migration",
-                orgId: fixture.orgId,
-              });
-            }
+        retainExternalState: options.retainCheckoutState
+          ? captureCheckoutExternalState
           : undefined,
       },
     );
@@ -541,7 +567,7 @@ export function createBillingCheckoutFixture() {
   }
 
   async function createUsagePackAtomGrantOrg(tier: "pro" | "team") {
-    const fixture = createOwnedBillingOrg({ cleanupUsagePacks: true });
+    const fixture = createOwnedBillingOrg({ retainCheckoutState: true });
     await fixture.run(async () => {
       await fixture.initialize();
       const customerId = `cus_${randomUUID().slice(0, 8)}`;
@@ -550,7 +576,7 @@ export function createBillingCheckoutFixture() {
       mockClerkOrganization(fixture);
       mockEnv("ATOM_GRANT_PRICE", TEST_PRICE_ATOM_GRANT);
       mockOptionalEnv("STRIPE_WEBHOOK_SECRET", STRIPE_WEBHOOK_SECRET);
-      context.mocks.stripe.subscriptions.list.mockResolvedValueOnce({
+      context.mocks.stripe.subscriptions.list.mockResolvedValue({
         data: [],
       });
       const event = {
@@ -592,18 +618,30 @@ export function createBillingCheckoutFixture() {
           },
         },
       };
-      context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
-      await accept(
-        setupApp({ context, routes: webhooksStripeRoutes })(
-          webhookStripeContract,
-        ).post({
-          body: JSON.stringify(event),
-          extraHeaders: { "stripe-signature": "t=1,v1=checkout-test" },
-        }),
-        [200],
+      const payload = JSON.stringify(event);
+      context.mocks.stripe.webhooks.constructEvent.mockImplementation(
+        (body) => {
+          if (body !== payload) {
+            throw new Error("Unexpected Atom invoice webhook payload");
+          }
+          return event;
+        },
       );
+      await fixture.run(() => {
+        return accept(
+          setupApp({ context, routes: webhooksStripeRoutes })(
+            webhookStripeContract,
+          ).post({
+            body: payload,
+            extraHeaders: { "stripe-signature": "t=1,v1=checkout-test" },
+          }),
+          [200],
+        );
+      });
 
-      const status = await readBillingStatus(fixture);
+      const status = await fixture.run(() => {
+        return readBillingStatus(fixture);
+      });
       expect(status).toMatchObject({
         tier,
         credits: 0,
@@ -838,7 +876,6 @@ export function createBillingCheckoutFixture() {
     mockClerkOrganization,
     readBillingStatus,
     createStripeCustomerOrgForFixture,
-    prepareUsagePackCheckoutOrg,
     createSubscriptionOrg,
     createOwnedBillingOrg,
     createPublicBillingOrg,

@@ -869,20 +869,22 @@ describe("POST /api/billing/usage-pack-checkout", () => {
         const client = setupApp({ context, routes: billingCheckoutRoutes })(
           billingUsagePackCheckoutContract,
         );
-        const response = await accept(
-          client.create({
-            body: {
-              tier,
-              memberUsagePacks: [
-                { memberId: fixture.userId, usagePackUsd: 20 },
-              ],
-              successUrl: `${APP_ORIGIN}/billing?billing=success`,
-              cancelUrl: `${APP_ORIGIN}/billing?billing=canceled`,
-            },
-            headers: { authorization: "Bearer clerk-session" },
-          }),
-          [200],
-        );
+        const response = await fixture.run(() => {
+          return accept(
+            client.create({
+              body: {
+                tier,
+                memberUsagePacks: [
+                  { memberId: fixture.userId, usagePackUsd: 20 },
+                ],
+                successUrl: `${APP_ORIGIN}/billing?billing=success`,
+                cancelUrl: `${APP_ORIGIN}/billing?billing=canceled`,
+              },
+              headers: { authorization: "Bearer clerk-session" },
+            }),
+            [200],
+          );
+        });
 
         if (!("url" in response.body)) {
           throw new Error("Expected hosted usage pack checkout response");
@@ -912,29 +914,43 @@ describe("POST /api/billing/usage-pack-checkout", () => {
             idempotencyKey: expect.stringContaining("usage-pack-checkout:"),
           }),
         );
-        context.mocks.stripe.checkout.sessions.retrieve.mockResolvedValueOnce({
-          id: checkoutSessions[0].id,
-          status: "open",
-          url: checkoutSessions[0].url,
-          customer: null,
-          subscription: null,
-          metadata: null,
-        });
-
-        const retried = await accept(
-          client.create({
-            body: {
-              tier,
-              memberUsagePacks: [
-                { memberId: fixture.userId, usagePackUsd: 20 },
-              ],
-              successUrl: `${APP_ORIGIN}/billing?billing=success`,
-              cancelUrl: `${APP_ORIGIN}/billing?billing=canceled`,
-            },
-            headers: { authorization: "Bearer clerk-session" },
-          }),
-          [200],
+        let retrievedSessions = 0;
+        context.mocks.stripe.checkout.sessions.retrieve.mockImplementation(
+          (id) => {
+            expect(id).toBe(checkoutSessions[0].id);
+            retrievedSessions += 1;
+            if (retrievedSessions > 2) {
+              throw new Error(
+                "Unexpected extra Atom checkout session retrieval",
+              );
+            }
+            return Promise.resolve({
+              id: checkoutSessions[0].id,
+              status: "open",
+              url: checkoutSessions[0].url,
+              customer: null,
+              subscription: null,
+              metadata: null,
+            });
+          },
         );
+
+        const retried = await fixture.run(() => {
+          return accept(
+            client.create({
+              body: {
+                tier,
+                memberUsagePacks: [
+                  { memberId: fixture.userId, usagePackUsd: 20 },
+                ],
+                successUrl: `${APP_ORIGIN}/billing?billing=success`,
+                cancelUrl: `${APP_ORIGIN}/billing?billing=canceled`,
+              },
+              headers: { authorization: "Bearer clerk-session" },
+            }),
+            [200],
+          );
+        });
 
         if (!("url" in retried.body)) {
           throw new Error("Expected hosted usage pack checkout response");
@@ -947,33 +963,39 @@ describe("POST /api/billing/usage-pack-checkout", () => {
           context.mocks.stripe.checkout.sessions.create,
         ).toHaveBeenCalledTimes(1);
 
-        context.mocks.stripe.checkout.sessions.retrieve.mockResolvedValueOnce({
-          id: checkoutSessions[0].id,
-          status: "open",
-          url: checkoutSessions[0].url,
-          customer: null,
-          subscription: null,
-          metadata: null,
-        });
-        context.mocks.stripe.checkout.sessions.expire.mockResolvedValueOnce({
-          id: checkoutSessions[0].id,
-          status: "expired",
-        });
-
-        const replaced = await accept(
-          client.create({
-            body: {
-              tier,
-              memberUsagePacks: [
-                { memberId: fixture.userId, usagePackUsd: 50 },
-              ],
-              successUrl: `${APP_ORIGIN}/billing?billing=success`,
-              cancelUrl: `${APP_ORIGIN}/billing?billing=canceled`,
-            },
-            headers: { authorization: "Bearer clerk-session" },
-          }),
-          [200],
+        let expiredSession = false;
+        context.mocks.stripe.checkout.sessions.expire.mockImplementation(
+          (id) => {
+            expect(id).toBe(checkoutSessions[0].id);
+            if (expiredSession) {
+              throw new Error(
+                "Unexpected extra Atom checkout session expiration",
+              );
+            }
+            expiredSession = true;
+            return Promise.resolve({
+              id: checkoutSessions[0].id,
+              status: "expired",
+            });
+          },
         );
+
+        const replaced = await fixture.run(() => {
+          return accept(
+            client.create({
+              body: {
+                tier,
+                memberUsagePacks: [
+                  { memberId: fixture.userId, usagePackUsd: 50 },
+                ],
+                successUrl: `${APP_ORIGIN}/billing?billing=success`,
+                cancelUrl: `${APP_ORIGIN}/billing?billing=canceled`,
+              },
+              headers: { authorization: "Bearer clerk-session" },
+            }),
+            [200],
+          );
+        });
 
         if (!("url" in replaced.body)) {
           throw new Error("Expected hosted usage pack checkout response");
@@ -1007,20 +1029,6 @@ describe("POST /api/billing/usage-pack-checkout", () => {
         if (!firstUsagePackSubscriptionId || !replacementSubscriptionId) {
           throw new Error("Checkout did not create usage pack subscriptions");
         }
-        await usagePackStateAction({
-          action: "cleanup",
-          orgId: fixture.orgId,
-          usagePackSubscriptionId: firstUsagePackSubscriptionId,
-          deleteGrants: true,
-          deleteOrgMetadata: false,
-        });
-        await usagePackStateAction({
-          action: "cleanup",
-          orgId: fixture.orgId,
-          usagePackSubscriptionId: replacementSubscriptionId,
-          deleteGrants: true,
-          deleteOrgMetadata: true,
-        });
       });
     },
   );

@@ -1,3 +1,4 @@
+import { withMockNowForTest } from "../../../../lib/time";
 import { createRouteMocks } from "./route-test";
 import { createFixtureOperationOwner } from "./fixture-operation-owner";
 import { onTestFinished } from "vitest";
@@ -21,10 +22,25 @@ export function publicRunOwner(
   actor: ApiTestUser,
   options: {
     readonly restoreEnvironment?: () => void;
+    readonly clockTime?: number | (() => number);
     readonly beforeRuns?: () => Promise<void>;
     readonly afterRuns?: () => Promise<void>;
   } = {},
 ) {
+  let acceptedClockTime: number | undefined;
+  function scoped<T>(operation: () => Promise<T>, cleanup = false): Promise<T> {
+    const clockTime = cleanup
+      ? acceptedClockTime
+      : typeof options.clockTime === "function"
+        ? options.clockTime()
+        : options.clockTime;
+    if (!cleanup) {
+      acceptedClockTime = clockTime;
+    }
+    return clockTime === undefined
+      ? operation()
+      : withMockNowForTest(clockTime, operation);
+  }
   const tokens = new Map<string, string>();
   const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
   const kmsKey = env("SECRETS_KMS_KEY_ID");
@@ -112,7 +128,9 @@ export function publicRunOwner(
   }
   let previousCleanupRunnerGroup: string | undefined;
   const operations = createFixtureOperationOwner(async () => {
-    const result = await settleIncludingAbort(cleanup);
+    const result = await settleIncludingAbort(() => {
+      return scoped(cleanup, true);
+    });
     mockOptionalEnv("RUNNER_DEFAULT_GROUP", previousCleanupRunnerGroup);
     if (!result.ok) {
       throw result.error;
@@ -125,7 +143,11 @@ export function publicRunOwner(
     restoreEnvironment();
   });
   return {
-    run: operations.run,
+    run<T>(operation: () => Promise<T>) {
+      return operations.run(() => {
+        return scoped(operation);
+      });
+    },
     cleanup,
     async claim(runId: string) {
       const claim = await createRunsApi(context).claimRunnerJob(runId);
