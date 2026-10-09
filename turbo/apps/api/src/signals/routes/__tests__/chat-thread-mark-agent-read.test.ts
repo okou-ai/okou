@@ -92,19 +92,10 @@ function unreadPhaseProfile(threadCount: number, signal: AbortSignal) {
       },
       { once: true },
     );
-    onTestFinished(async (test) => {
-      enter("finished");
-      await test.annotate(`Unread foreground abort: ${foreground}`);
-      await test.annotate(
-        `Unread completed phases: ${JSON.stringify({
-          threadCount,
-          elapsedMs: Object.fromEntries(
-            [...elapsed].map(([name, ms]) => {
-              return [name, Math.round(ms)];
-            }),
-          ),
-        })}`,
-      );
+    onTestFinished(() => {
+      if (foreground) {
+        throw new Error(`Unread foreground phase diagnosis: ${foreground}`);
+      }
     });
   }
   return enter;
