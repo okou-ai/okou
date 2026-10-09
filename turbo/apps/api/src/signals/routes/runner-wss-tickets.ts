@@ -10,6 +10,7 @@ import { bodyResultOf, pathParamsOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import {
   consumeRunnerWssTicket$,
+  checkRunnerWssAuthorizations$,
   issueRunnerWssTicket$,
   revokeRunnerWssTickets$,
 } from "../services/runner-wss-ticket.service";
@@ -86,8 +87,39 @@ const consume$ = command(async ({ get, set }, signal: AbortSignal) => {
   return result ? { status: 200 as const, body: result } : unavailable;
 });
 
+const check$ = command(async ({ get, set }, signal: AbortSignal) => {
+  set(setResHeader$, "Cache-Control", "no-store");
+  const auth = await set(runnerAuth$, get(authorization$), signal);
+  signal.throwIfAborted();
+  if (!auth) {
+    return {
+      status: 401 as const,
+      body: {
+        error: { code: "UNAUTHORIZED", message: "Authentication required" },
+      },
+    };
+  }
+  if (auth.type !== "official-runner") {
+    return {
+      status: 403 as const,
+      body: {
+        error: { code: "FORBIDDEN", message: "Official Runner required" },
+      },
+    };
+  }
+  const body = await get(bodyResultOf(runnerWssTicketsContract.check));
+  signal.throwIfAborted();
+  if (!body.ok) {
+    return body.response;
+  }
+  const authorized = await set(checkRunnerWssAuthorizations$, body.data);
+  signal.throwIfAborted();
+  return { status: 200 as const, body: { authorized } };
+});
+
 export const runnerWssTicketRoutes: readonly RouteEntry[] = [
   { route: runnerWssTicketsContract.bootstrap, handler: sessionBootstrap$ },
   { route: runnerWssTicketsContract.consume, handler: consume$ },
+  { route: runnerWssTicketsContract.check, handler: check$ },
   { route: runnerWssTicketsContract.revoke, handler: sessionRevoke$ },
 ];

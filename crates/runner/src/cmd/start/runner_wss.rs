@@ -7,7 +7,9 @@ use std::io;
 use std::sync::Arc;
 use std::time::Duration;
 
-use api_contracts::{Method, Route};
+use api_contracts::generated::{
+    routes::runners::wss as routes, types::runners::wss::ConsumeResponse,
+};
 use async_trait::async_trait;
 use futures_util::{SinkExt, StreamExt};
 use runner_lifecycle::active_runs::{ActiveRunReuseState, ActiveRuns};
@@ -31,7 +33,8 @@ const PRE_AUTH_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_FRAME: usize = 64 * 1024;
 const MAX_CONNECTIONS: usize = 32;
 const MAX_HANDSHAKES: usize = 16;
-const CONSUME_ROUTE: Route = Route::new(Method::Post, "/api/runners/wss/tickets/consume");
+mod authorization;
+use authorization::{Authorizations, Key, LEASE_WINDOW, RefreshTask};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -49,19 +52,35 @@ struct ConsumeRequest<'a> {
     ticket: &'a str,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ConsumeResponse {
-    run_id: RunId,
+struct CheckRequest<'a> {
     runner_id: Uuid,
-    origin: String,
-    org_id: String,
-    user_id: String,
+    origin: &'a str,
+    authorizations: &'a [Key],
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CheckResponse {
+    authorized: Vec<Key>,
 }
 
 #[async_trait]
 pub(super) trait TicketConsumer: Send + Sync {
-    async fn consume(&self, run_id: RunId, runner_id: Uuid, origin: &str, ticket: &str) -> bool;
+    async fn consume(
+        &self,
+        run_id: RunId,
+        runner_id: Uuid,
+        origin: &str,
+        ticket: &str,
+    ) -> Option<Uuid>;
+    async fn authorized(
+        &self,
+        runner_id: Uuid,
+        origin: &str,
+        requested: &[Key],
+    ) -> Option<Vec<Key>>;
 }
 
 pub(super) struct ApiTicketConsumer {
@@ -77,7 +96,13 @@ impl ApiTicketConsumer {
 
 #[async_trait]
 impl TicketConsumer for ApiTicketConsumer {
-    async fn consume(&self, run_id: RunId, runner_id: Uuid, origin: &str, ticket: &str) -> bool {
+    async fn consume(
+        &self,
+        run_id: RunId,
+        runner_id: Uuid,
+        origin: &str,
+        ticket: &str,
+    ) -> Option<Uuid> {
         let payload = ConsumeRequest {
             run_id,
             runner_id,
@@ -86,37 +111,66 @@ impl TicketConsumer for ApiTicketConsumer {
         };
         let response = self
             .http
-            .request_route(CONSUME_ROUTE, &self.token)
+            .request_route(routes::CONSUME, &self.token)
             .json(&payload)
             .timeout(PRE_AUTH_TIMEOUT)
             .send("runner_wss_ticket_consume")
-            .await;
-        let Ok(mut response) = response else {
-            return false;
-        };
-        if !response.status().is_success() {
-            return false;
-        }
-        let mut bytes = Vec::new();
-        loop {
-            let Ok(chunk) = response.chunk().await else {
-                return false;
-            };
-            let Some(chunk) = chunk else { break };
-            if chunk.len() > 4096 - bytes.len() {
-                return false;
-            }
-            bytes.extend_from_slice(&chunk);
-        }
-        let Ok(body) = serde_json::from_slice::<ConsumeResponse>(&bytes) else {
-            return false;
-        };
-        body.run_id == run_id
-            && body.runner_id == runner_id
+            .await
+            .ok()?;
+        let body: ConsumeResponse = read_authority_result(response).await?;
+        let epoch = Uuid::parse_str(&body.authorization_epoch).ok()?;
+        (body.run_id.parse::<RunId>().ok() == Some(run_id)
+            && body.runner_id.parse::<Uuid>().ok() == Some(runner_id)
             && body.origin == origin
             && !body.org_id.is_empty()
             && !body.user_id.is_empty()
+            && !epoch.is_nil())
+        .then_some(epoch)
     }
+
+    async fn authorized(
+        &self,
+        runner_id: Uuid,
+        origin: &str,
+        requested: &[Key],
+    ) -> Option<Vec<Key>> {
+        if requested.is_empty() || requested.len() > MAX_CONNECTIONS {
+            return None;
+        }
+        let response = self
+            .http
+            .request_route(routes::CHECK, &self.token)
+            .json(&CheckRequest {
+                runner_id,
+                origin,
+                authorizations: requested,
+            })
+            .timeout(authorization::REQUEST_TIMEOUT)
+            .send("runner_wss_authorizations_check")
+            .await
+            .ok()?;
+        let body: CheckResponse = read_authority_result(response).await?;
+        let unique: std::collections::HashSet<_> = body.authorized.iter().copied().collect();
+        (unique.len() == body.authorized.len()
+            && body.authorized.iter().all(|key| requested.contains(key)))
+        .then_some(body.authorized)
+    }
+}
+
+async fn read_authority_result<T: serde::de::DeserializeOwned>(
+    mut response: reqwest::Response,
+) -> Option<T> {
+    if response.status() != reqwest::StatusCode::OK {
+        return None;
+    }
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await.ok()? {
+        if chunk.len() > 4096 - bytes.len() {
+            return None;
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    serde_json::from_slice(&bytes).ok()
 }
 
 pub(super) struct Admission {
@@ -129,6 +183,8 @@ pub(super) struct Admission {
     connections: Arc<Semaphore>,
     handshakes: Arc<Semaphore>,
     tasks: JoinSet<()>,
+    authorizations: Authorizations,
+    refresh: Option<RefreshTask>,
 }
 
 impl Admission {
@@ -140,9 +196,12 @@ impl Admission {
         active_runs: ActiveRuns,
         status: Arc<StatusTracker>,
     ) -> Self {
+        let origin = hostname.and_then(canonical_origin);
+        let authorizations = Authorizations::default();
+        let refresh = authorizations.start(runner_id, origin.clone(), Arc::clone(&consumer));
         Self {
             runner_id,
-            origin: hostname.and_then(canonical_origin),
+            origin,
             consumer,
             guest,
             active_runs,
@@ -150,6 +209,8 @@ impl Admission {
             connections: Arc::new(Semaphore::new(MAX_CONNECTIONS)),
             handshakes: Arc::new(Semaphore::new(MAX_HANDSHAKES)),
             tasks: JoinSet::new(),
+            authorizations,
+            refresh: Some(refresh),
         }
     }
 
@@ -171,6 +232,7 @@ impl Admission {
             guest: self.guest.clone(),
             active_runs: self.active_runs.clone(),
             status: Arc::clone(&self.status),
+            authorizations: self.authorizations.clone(),
         };
         self.tasks.spawn(async move {
             let _connection = connection;
@@ -190,6 +252,9 @@ impl Admission {
 
     pub async fn stop(&mut self) {
         self.tasks.shutdown().await;
+        if let Some(refresh) = self.refresh.take() {
+            refresh.stop().await;
+        }
     }
 }
 
@@ -257,6 +322,7 @@ struct ConnectionContext {
     guest: RunGuestChannels,
     active_runs: ActiveRuns,
     status: Arc<StatusTracker>,
+    authorizations: Authorizations,
 }
 
 fn canonical_origin(hostname: &str) -> Option<String> {
@@ -336,45 +402,60 @@ async fn handle(
             return None;
         }
         let origin = ctx.origin.as_deref()?;
-        if !ctx
+        let started = tokio::time::Instant::now();
+        let authorization_epoch = ctx
             .consumer
             .consume(first.run_id, ctx.runner_id, origin, &first.ticket)
-            .await
-        {
-            return None;
-        }
-        if *live.borrow() == ActiveRunReuseState::Released
-            || ctx.status.running_sandbox(first.run_id).await != Some(sandbox_id)
-        {
-            return None;
-        }
-        let guest = ctx
-            .guest
-            .open_for_sandbox(first.run_id, &sandbox_key)
-            .await
-            .ok()?;
-        let guest_cancelled = guest.cancellation();
-        if *live.borrow() == ActiveRunReuseState::Released
-            || ctx.status.running_sandbox(first.run_id).await != Some(sandbox_id)
-        {
-            return None;
-        }
-        tokio::select! {
+            .await?;
+        let lease = ctx.authorizations.track(
+            Key {
+                run_id: first.run_id,
+                authorization_epoch,
+            },
+            started + LEASE_WINDOW,
+        )?;
+        // Lease expiry remains observable even through Guest activation and a
+        // status-lock await; a delayed consume never starts a new five seconds.
+        let guest = tokio::select! {
             biased;
-            () = guest_cancelled.cancelled() => return None,
-            result = ws.send(Message::Text(r#"{"type":"auth.ok"}"#.into())) => {
-                if result.is_err() { return None; }
-            }
-        }
-        Some((ws, first.run_id, sandbox_id, live, guest))
+            () = lease.closed() => return None,
+            result = async {
+                if *live.borrow() == ActiveRunReuseState::Released
+                    || ctx.status.running_sandbox(first.run_id).await != Some(sandbox_id) {
+                    return None;
+                }
+                let guest = ctx.guest.open_for_sandbox(first.run_id, &sandbox_key).await.ok()?;
+                let observer = guest.cancellation();
+                tokio::select! {
+                    biased;
+                    () = observer.cancelled() => return None,
+                    result = async {
+                        if *live.borrow() == ActiveRunReuseState::Released
+                            || ctx.status.running_sandbox(first.run_id).await != Some(sandbox_id) {
+                            return None;
+                        }
+                        ws.send(Message::Text(r#"{"type":"auth.ok"}"#.into())).await.ok()?;
+                        Some(())
+                    } => result?,
+                }
+                Some(guest)
+            } => result?,
+        };
+        Some((ws, first.run_id, sandbox_id, live, guest, lease))
     })
     .await;
-    let Ok(Some((mut ws, run_id, sandbox_id, mut live, guest))) = admitted else {
+    let Ok(Some((mut ws, run_id, sandbox_id, mut live, guest, lease))) = admitted else {
         return;
     };
     drop(handshake);
     let observer = guest.cancellation();
-    let mut guest_cancelled = Box::pin(observer.cancelled());
+    let mut guest_cancelled = Box::pin(async {
+        tokio::select! {
+            biased;
+            () = lease.closed() => (),
+            () = observer.cancelled() => (),
+        }
+    });
     let (mut incoming, outgoing) = guest.split();
     // Native frame reads are not cancellation-safe partway through a header.
     // Unfold owns the in-flight receive across next() cancellations caused by
@@ -392,12 +473,18 @@ async fn handle(
     let mut run_check = tokio::time::interval(Duration::from_millis(250));
     let peer_closed = 'connection: loop {
         tokio::select! {
+            biased;
             () = &mut guest_cancelled => break false,
             changed = live.changed() => {
                 if changed.is_err() || *live.borrow() == ActiveRunReuseState::Released { break false }
             }
             _ = run_check.tick() => {
-                if ctx.status.running_sandbox(run_id).await != Some(sandbox_id) { break false }
+                if !tokio::select! {
+                    biased;
+                    () = &mut guest_cancelled => false,
+                    _ = live.changed() => false,
+                    result = ctx.status.running_sandbox(run_id) => result == Some(sandbox_id),
+                } { break false }
             }
             inbound = ws.next() => match inbound {
                 Some(Ok(Message::Binary(bytes))) if bytes.len() <= MAX_FRAME => {
@@ -427,7 +514,11 @@ async fn handle(
     if peer_closed {
         // Tungstenite already queued the peer's close reply. Sending another
         // Close is rejected in this state; flush only that queued control reply.
-        let _ = tokio::time::timeout(Duration::from_secs(1), ws.flush()).await;
+        tokio::select! {
+            biased;
+            () = &mut guest_cancelled => (),
+            _ = tokio::time::timeout(Duration::from_secs(1), ws.flush()) => (),
+        }
     }
     drop(ws);
 }
@@ -460,9 +551,13 @@ where
             _ = live.changed() => return false,
             _ = &mut deadline => return false,
             _ = run_check.tick() => {
-                if ctx.status.running_sandbox(run_id).await != Some(sandbox_id) {
-                    return false;
-                }
+                if !tokio::select! {
+                    biased;
+                    () = &mut *guest_cancelled => false,
+                    _ = live.changed() => false,
+                    _ = &mut deadline => false,
+                    result = ctx.status.running_sandbox(run_id) => result == Some(sandbox_id),
+                } { return false; }
             }
             result = &mut forward => return result.is_ok(),
         }

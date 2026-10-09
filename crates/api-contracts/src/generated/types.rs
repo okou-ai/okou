@@ -2493,6 +2493,27 @@ pub mod runners {
             }
         }
     }
+
+    /// Official Runner ticket redemption and current WSS access authority.
+    pub mod wss {
+        /// Exact redeemed audience/owner and current WSS access epoch; not Run cancellation.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct ConsumeResponse {
+            /// Exact redeemed Run.
+            pub run_id: String,
+            /// Exact destination Runner.
+            pub runner_id: String,
+            /// Verified owning organization.
+            pub org_id: String,
+            /// Verified owning user.
+            pub user_id: String,
+            /// Exact canonical WSS origin.
+            pub origin: String,
+            /// Current WSS-only access revision, invalidated by owner revoke.
+            pub authorization_epoch: String,
+        }
+    }
 }
 
 /// Webhook DTOs generated from TypeScript API contracts.

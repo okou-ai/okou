@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
@@ -11,6 +11,7 @@ import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import {
   buildRunnerWssTargetQuery,
+  buildRunnerWssAuthorizationQuery,
   runnerWssTargetFromRow,
 } from "./runner-wss-target.service";
 
@@ -149,7 +150,13 @@ export const consumeRunnerWssTicket$ = command(
       readonly ticket: string;
     },
   ): Promise<
-    (RunOwner & { runId: string; runnerId: string; origin: string }) | null
+    | (RunOwner & {
+        runId: string;
+        runnerId: string;
+        origin: string;
+        authorizationEpoch: string;
+      })
+    | null
   > => {
     const digest = digestOf(args.ticket);
     // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0241; new non-billing transactions are prohibited.
@@ -227,12 +234,45 @@ export const consumeRunnerWssTicket$ = command(
           ),
         )
         .returning({ digest: runnerWssTickets.digest });
-      return consumed ? stored : null;
+      return consumed && targetRow
+        ? { ...stored, authorizationEpoch: targetRow.authorizationEpoch }
+        : null;
     });
   },
 );
 
-/** Invalidates pending tickets; active streams are closed by the Runner (#37027). */
+/** One bounded current-state read; no historical ticket polling or new attachment. */
+export const checkRunnerWssAuthorizations$ = command(
+  async (
+    { set },
+    args: {
+      readonly runnerId: string;
+      readonly origin: string;
+      readonly authorizations: readonly {
+        readonly runId: string;
+        readonly authorizationEpoch: string;
+      }[];
+    },
+  ) => {
+    const query = buildRunnerWssAuthorizationQuery({ ...args, now: nowDate() });
+    // Read the writer, not a potentially stale replica: an old epoch must not
+    // renew after a committed revoke. Initial consume is still required locally.
+    const rows = await set(writeDb$)
+      .select(query.selection)
+      .from(agentRuns)
+      .innerJoin(activeAgentRuns, query.activeRunJoin)
+      .innerJoin(runnerState, query.runnerStateJoin)
+      .where(query.where);
+    return rows.flatMap((row) => {
+      const target = runnerWssTargetFromRow(row);
+      return target?.publicOrigin === args.origin
+        ? [{ runId: row.runId, authorizationEpoch: row.authorizationEpoch }]
+        : [];
+    });
+  },
+);
+
+/** Rotate current access and invalidate pending tickets in one committed result. */
 export const revokeRunnerWssTickets$ = command(
   async (
     { set },
@@ -249,7 +289,25 @@ export const revokeRunnerWssTickets$ = command(
             eq(agentRuns.orgId, args.owner.orgId),
             eq(agentRuns.userId, args.owner.userId),
           ),
-        ),
+        )
+        // Retain the same Run-row authority as issuance, consume and termination.
+        .for("update"),
+    );
+    const rotatedRun = db.$with("rotated_run").as(
+      db
+        .update(activeAgentRuns)
+        .set({ wssAuthorizationEpoch: randomUUID() })
+        .where(
+          and(
+            inArray(
+              activeAgentRuns.runId,
+              db.select({ id: ownedRun.id }).from(ownedRun),
+            ),
+            eq(activeAgentRuns.orgId, args.owner.orgId),
+            eq(activeAgentRuns.userId, args.owner.userId),
+          ),
+        )
+        .returning({ runId: activeAgentRuns.runId }),
     );
     const revokedTickets = db.$with("revoked_tickets").as(
       db
@@ -267,12 +325,13 @@ export const revokeRunnerWssTickets$ = command(
         )
         .returning({ runId: runnerWssTickets.runId }),
     );
-    // Ownership and pending-ticket revocation share one statement snapshot.
-    // Keep success independent of how many pending tickets were revoked.
+    // Epoch rotation and pending-ticket revocation commit in one statement.
+    // Keep success independent of active assignment or pending-ticket counts.
     const [run] = await db
-      .with(ownedRun, revokedTickets)
+      .with(ownedRun, rotatedRun, revokedTickets)
       .select({ id: ownedRun.id })
       .from(ownedRun)
+      .leftJoin(rotatedRun, eq(rotatedRun.runId, ownedRun.id))
       .leftJoin(revokedTickets, eq(revokedTickets.runId, ownedRun.id))
       .limit(1);
     return Boolean(run);

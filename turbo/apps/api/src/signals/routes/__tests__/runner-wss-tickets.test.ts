@@ -181,6 +181,9 @@ describe("direct Runner WSS ticket boundary", () => {
       origin,
       orgId: f.actor.orgId,
       userId: f.actor.userId,
+      authorizationEpoch: expect.stringMatching(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+      ),
     });
     await f.api.requestCancelRun(f.actor, f.runId, [200]);
   });
@@ -249,6 +252,9 @@ describe("direct Runner WSS ticket boundary", () => {
       origin,
       orgId: f.actor.orgId,
       userId: f.actor.userId,
+      authorizationEpoch: expect.stringMatching(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+      ),
     });
     await accept(consume(f, issued.body.ticket), [404]);
     await f.api.requestCancelRun(f.actor, f.runId, [200]);
@@ -414,7 +420,7 @@ describe("direct Runner WSS ticket boundary", () => {
     const first = await accept(bootstrap(f), [200]);
     const second = await accept(bootstrap(f), [200]);
     await f.bdd.readMe(f.actor);
-    await Promise.all([
+    const [raced] = await Promise.all([
       accept(consume(f, first.body.ticket), [200, 404]),
       accept(
         client().revoke({
@@ -427,6 +433,25 @@ describe("direct Runner WSS ticket boundary", () => {
     ]);
     await accept(consume(f, first.body.ticket), [404]);
     await accept(consume(f, second.body.ticket), [404]);
+    if (raced.status === 200) {
+      const checked = await accept(
+        client().check({
+          headers: officialHeaders,
+          body: {
+            runnerId: f.runnerId,
+            origin,
+            authorizations: [
+              {
+                runId: f.runId,
+                authorizationEpoch: raced.body.authorizationEpoch,
+              },
+            ],
+          },
+        }),
+        [200],
+      );
+      expect(checked.body).toStrictEqual({ authorized: [] });
+    }
     const fresh = await accept(bootstrap(f), [200]);
     const accepted = await accept(consume(f, fresh.body.ticket), [200]);
     expect(accepted.body).toStrictEqual({
@@ -435,7 +460,150 @@ describe("direct Runner WSS ticket boundary", () => {
       origin,
       orgId: f.actor.orgId,
       userId: f.actor.userId,
+      authorizationEpoch: expect.stringMatching(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+      ),
     });
+    await f.api.requestCancelRun(f.actor, f.runId, [200]);
+  });
+
+  it("revokes consumed access without cancelling the Run and permits a fresh bootstrap", async () => {
+    const f = await setup();
+    const issued = await accept(bootstrap(f), [200]);
+    const admitted = await accept(consume(f, issued.body.ticket), [200]);
+    const old = {
+      runId: f.runId,
+      authorizationEpoch: admitted.body.authorizationEpoch,
+    };
+    const check = (authorizations: (typeof old)[]) => {
+      return client().check({
+        headers: officialHeaders,
+        body: { runnerId: f.runnerId, origin, authorizations },
+      });
+    };
+    const current = await accept(check([old]), [200]);
+    expect(current.body).toStrictEqual({ authorized: [old] });
+    expect(current.headers.get("Cache-Control")).toBe("no-store");
+    // Wrong owner cannot rotate a consumed stream's epoch.
+    await f.bdd.readMe(f.bdd.user({ orgId: f.actor.orgId }));
+    await accept(
+      client().revoke({
+        params: { runId: f.runId },
+        headers: { authorization: "Bearer clerk-session" },
+        body: undefined,
+      }),
+      [404],
+    );
+    expect((await accept(check([old]), [200])).body).toStrictEqual({
+      authorized: [old],
+    });
+    await f.bdd.readMe(f.actor);
+    await accept(
+      client().revoke({
+        params: { runId: f.runId },
+        headers: { authorization: "Bearer clerk-session" },
+        body: undefined,
+      }),
+      [204],
+    );
+    expect((await accept(check([old]), [200])).body).toStrictEqual({
+      authorized: [],
+    });
+    // Same live Run remains eligible; only its WSS access changed.
+    const fresh = await accept(bootstrap(f), [200]);
+    const next = await accept(consume(f, fresh.body.ticket), [200]);
+    expect(next.body.authorizationEpoch).not.toBe(old.authorizationEpoch);
+    const newer = {
+      runId: f.runId,
+      authorizationEpoch: next.body.authorizationEpoch,
+    };
+    expect((await accept(check([old, newer]), [200])).body).toStrictEqual({
+      authorized: [newer],
+    });
+    await f.api.requestCancelRun(f.actor, f.runId, [200]);
+    expect((await accept(check([newer]), [200])).body).toStrictEqual({
+      authorized: [],
+    });
+  });
+
+  it("checks only the exact official audience and bounds current-state reads", async () => {
+    const f = await setup();
+    const issued = await accept(bootstrap(f), [200]);
+    const admitted = await accept(consume(f, issued.body.ticket), [200]);
+    const key = {
+      runId: f.runId,
+      authorizationEpoch: admitted.body.authorizationEpoch,
+    };
+    const body = { runnerId: f.runnerId, origin, authorizations: [key] };
+    const missing = await accept(client().check({ headers: {}, body }), [401]);
+    expect(missing.headers.get("Cache-Control")).toBe("no-store");
+    const pat = await f.api.createCliToken(f.actor);
+    await accept(
+      client().check({
+        headers: { authorization: `Bearer ${pat.token}` },
+        body,
+      }),
+      [403],
+    );
+    for (const wrong of [
+      { ...body, runnerId: randomUUID() },
+      { ...body, origin: "wss://wrong.example.com:443" },
+      { ...body, authorizations: [{ ...key, runId: randomUUID() }] },
+      {
+        ...body,
+        authorizations: [{ ...key, authorizationEpoch: randomUUID() }],
+      },
+    ]) {
+      expect(
+        (
+          await accept(
+            client().check({ headers: officialHeaders, body: wrong }),
+            [200],
+          )
+        ).body,
+      ).toStrictEqual({ authorized: [] });
+    }
+    await accept(
+      client().check({
+        headers: officialHeaders,
+        body: { ...body, authorizations: [] },
+      }),
+      [400],
+    );
+    await accept(
+      client().check({
+        headers: officialHeaders,
+        body: {
+          ...body,
+          authorizations: Array.from({ length: 33 }, () => {
+            return key;
+          }),
+        },
+      }),
+      [400],
+    );
+    await accept(
+      client().check({
+        headers: officialHeaders,
+        body: {
+          ...body,
+          authorizations: [{ ...key, authorizationEpoch: "invalid" }],
+        },
+      }),
+      [400],
+    );
+    // Ingress down suppresses issuance, not live authorization or ordinary work.
+    await f.api.requestHeartbeatRunner(true, [200], {
+      runnerId: f.runnerId,
+      group: f.group,
+      mode: "draining",
+      snapshotSequence: 2,
+      wssIngressServiceActive: false,
+    });
+    expect(
+      (await accept(client().check({ headers: officialHeaders, body }), [200]))
+        .body,
+    ).toStrictEqual({ authorized: [key] });
     await f.api.requestCancelRun(f.actor, f.runId, [200]);
   });
 

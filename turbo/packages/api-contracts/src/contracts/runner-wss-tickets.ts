@@ -8,6 +8,12 @@ const c = initContract();
 // A 256-bit base64url credential. A run/runner/hostname alone is never a ticket.
 const ticketSchema = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
 const runIdSchema = z.uuid("Run ID must be a valid UUID").toLowerCase();
+const authorizationSchema = z
+  .object({
+    runId: runIdSchema,
+    authorizationEpoch: z.uuid().toLowerCase(),
+  })
+  .strict();
 
 export const runnerWssTicketsContract = c.router({
   bootstrap: {
@@ -48,6 +54,7 @@ export const runnerWssTicketsContract = c.router({
         orgId: z.string(),
         userId: z.string(),
         origin: z.string(),
+        authorizationEpoch: z.uuid(),
       }),
       400: apiErrorSchema,
       401: apiErrorSchema,
@@ -55,6 +62,25 @@ export const runnerWssTicketsContract = c.router({
       404: apiErrorSchema,
     },
     summary: "Atomically redeem a WSS ticket from an official Runner",
+  },
+  check: {
+    method: "POST",
+    path: "/api/runners/wss/authorizations/check",
+    headers: authHeadersSchema,
+    body: z
+      .object({
+        runnerId: z.uuid().toLowerCase(),
+        origin: z.string().max(300),
+        authorizations: z.array(authorizationSchema).min(1).max(32),
+      })
+      .strict(),
+    responses: {
+      200: z.object({ authorized: z.array(authorizationSchema).max(32) }),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+    },
+    summary: "Check current WSS authorization epochs from an official Runner",
   },
   revoke: {
     method: "POST",
@@ -69,6 +95,7 @@ export const runnerWssTicketsContract = c.router({
       403: apiErrorSchema,
       404: apiErrorSchema,
     },
-    summary: "Revoke all outstanding WSS tickets for an owned run",
+    summary:
+      "Revoke pending tickets and established WSS access for an owned run",
   },
 });

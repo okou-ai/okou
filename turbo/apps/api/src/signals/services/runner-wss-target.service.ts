@@ -1,7 +1,8 @@
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { runnerState } from "@okouai/db/schema/runner-state";
-import { and, eq, gt, inArray, like, lte } from "drizzle-orm";
+import { command } from "ccstate";
+import { and, eq, gt, inArray, like, lte, or } from "drizzle-orm";
 
 import { wssOriginFromRunnerHostname } from "../../lib/runner-wss-target-config";
 
@@ -30,6 +31,64 @@ interface RunnerWssTargetQueryArgs {
   readonly purpose: "issue" | "consume";
 }
 
+function liveWssConditions(now: Date) {
+  return and(
+    eq(agentRuns.status, "running"),
+    like(agentRuns.runnerGroup, "vm0/%"),
+    inArray(runnerState.mode, ["running", "draining"]),
+    gt(runnerState.lastSeenAt, new Date(now.getTime() - WSS_RUNNER_FRESH_MS)),
+    lte(runnerState.lastSeenAt, new Date(now.getTime() + MAX_CLOCK_LEAD_MS)),
+  );
+}
+
+function targetSelection() {
+  return {
+    runId: agentRuns.id,
+    runnerId: agentRuns.runnerId,
+    runnerHostname: agentRuns.runnerHostname,
+    mode: runnerState.mode,
+    lastSeenAt: runnerState.lastSeenAt,
+    authorizationEpoch: activeAgentRuns.wssAuthorizationEpoch,
+  };
+}
+const activeRunJoin = and(
+  eq(activeAgentRuns.runId, agentRuns.id),
+  eq(activeAgentRuns.userId, agentRuns.userId),
+  eq(activeAgentRuns.orgId, agentRuns.orgId),
+);
+const runnerStateJoin = and(
+  eq(runnerState.runnerId, agentRuns.runnerId),
+  eq(runnerState.runnerGroup, agentRuns.runnerGroup),
+);
+
+/** Bounded exact current-epoch lookup; the command reads its writer connection. */
+export function buildRunnerWssAuthorizationQuery(args: {
+  readonly runnerId: string;
+  readonly now: Date;
+  readonly authorizations: readonly {
+    readonly runId: string;
+    readonly authorizationEpoch: string;
+  }[];
+}) {
+  return {
+    selection: targetSelection(),
+    activeRunJoin,
+    runnerStateJoin,
+    where: and(
+      liveWssConditions(args.now),
+      eq(agentRuns.runnerId, args.runnerId),
+      or(
+        ...args.authorizations.map((entry) => {
+          return and(
+            eq(agentRuns.id, entry.runId),
+            eq(activeAgentRuns.wssAuthorizationEpoch, entry.authorizationEpoch),
+          );
+        }),
+      ),
+    ),
+  };
+}
+
 /** Pure query pieces; the owning command executes the SELECT on its connection. */
 export function buildRunnerWssTargetQuery(args: RunnerWssTargetQueryArgs) {
   // The sole writer stores status and lastSeenAt in the same ordered heartbeat
@@ -40,38 +99,15 @@ export function buildRunnerWssTargetQuery(args: RunnerWssTargetQueryArgs) {
       ? eq(runnerState.wssIngressServiceActive, true)
       : undefined;
   return {
-    selection: {
-      runId: agentRuns.id,
-      runnerId: agentRuns.runnerId,
-      runnerHostname: agentRuns.runnerHostname,
-      mode: runnerState.mode,
-      lastSeenAt: runnerState.lastSeenAt,
-    },
-    activeRunJoin: and(
-      eq(activeAgentRuns.runId, agentRuns.id),
-      eq(activeAgentRuns.userId, agentRuns.userId),
-      eq(activeAgentRuns.orgId, agentRuns.orgId),
-    ),
-    runnerStateJoin: and(
-      eq(runnerState.runnerId, agentRuns.runnerId),
-      eq(runnerState.runnerGroup, agentRuns.runnerGroup),
-    ),
+    selection: targetSelection(),
+    activeRunJoin,
+    runnerStateJoin,
     where: and(
       eq(agentRuns.id, args.runId),
       eq(agentRuns.orgId, args.owner.orgId),
       eq(agentRuns.userId, args.owner.userId),
-      eq(agentRuns.status, "running"),
-      like(agentRuns.runnerGroup, "vm0/%"),
-      inArray(runnerState.mode, ["running", "draining"]),
+      liveWssConditions(args.now),
       ingressServiceAvailability,
-      gt(
-        runnerState.lastSeenAt,
-        new Date(args.now.getTime() - WSS_RUNNER_FRESH_MS),
-      ),
-      lte(
-        runnerState.lastSeenAt,
-        new Date(args.now.getTime() + MAX_CLOCK_LEAD_MS),
-      ),
     ),
   };
 }
