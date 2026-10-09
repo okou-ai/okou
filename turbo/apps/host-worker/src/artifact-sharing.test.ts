@@ -199,7 +199,7 @@ test("preserves HTML attachment bytes on fresh and cached reads when OG is enabl
   }
   f.policy.target.contentType = "text/html";
   const html =
-    "<!doctype html><html><head><title>Original report</title></head><body>Downloaded report</body></html>";
+    '<!doctype html><html><head><title>Original report</title><meta property="og:image" content="cover.png"></head><body>Downloaded report</body></html>';
   f.objects.set(policyKey, JSON.stringify(f.policy));
   f.objects.set(f.policy.target.key, html);
   server.use(
@@ -275,6 +275,46 @@ test("rechecks OG metadata on cached HTML and denies revoked shares before readi
   f.objects.set(policyKey, JSON.stringify(f.policy));
   expect((await fetchWorker(new Request(siteOrigin), env)).status).toBe(404);
   expect(lookups).toBe(2);
+});
+
+test("rechecks the preview switch for relative images on cached HTML and denies revoked shares", async () => {
+  const f = fixture(true);
+  const original =
+    '<head><meta property="og:image" content="image.png"></head><body>Report</body>';
+  f.objects.set(
+    `shared-artifacts/okou/${snapshotId}/${fileId}/index.html`,
+    original,
+  );
+  let enabled = true;
+  server.use(
+    http.get("https://authority.test/api/artifact-og/metadata", () => {
+      return HttpResponse.json(
+        enabled
+          ? {
+              available: true,
+              title: "Report",
+              description: "Summary",
+              url: siteOrigin,
+              imageUrl: "https://authority.test/platform-cover.png",
+            }
+          : { available: false },
+      );
+    }),
+  );
+  const env = { ...f.env, ARTIFACT_OG_API_ORIGIN: "https://authority.test" };
+  for (let read = 0; read < 2; read += 1) {
+    const response = await fetchWorker(new Request(siteOrigin), env);
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain(
+      `content="${siteOrigin}/image.png"`,
+    );
+  }
+  enabled = false;
+  const disabled = await fetchWorker(new Request(siteOrigin), env);
+  expect(await disabled.text()).toBe(original);
+  f.policy.status = "revoked";
+  f.objects.set(policyKey, JSON.stringify(f.policy));
+  expect((await fetchWorker(new Request(siteOrigin), env)).status).toBe(404);
 });
 
 function imageFixture(token = publicToken) {

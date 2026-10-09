@@ -12,9 +12,19 @@ export const GENERIC_ARTIFACT_TITLE = "Shared artifact";
 export const GENERIC_ARTIFACT_DESCRIPTION =
   "Open in Okou to view this artifact.";
 
+interface HtmlRange {
+  readonly start: number;
+  readonly end: number;
+}
+
 function inspectHtml(html: string) {
-  const tags: { start: number; end: number; name: string; content: string }[] =
-    [];
+  const tags: (HtmlRange & {
+    name: string;
+    content: string;
+    contentAttribute?: HtmlRange;
+  })[] = [];
+  let contentAttribute: HtmlRange | undefined;
+  let baseHref: string | undefined;
   let title = "";
   let titleStart: number | undefined;
   let readingTitle = false;
@@ -29,12 +39,26 @@ function inspectHtml(html: string) {
       if (name.toLowerCase() === "!doctype")
         documentStart = parser.endIndex + 1;
     },
+    onopentagname() {
+      contentAttribute = undefined;
+    },
+    onattribute(name) {
+      if (name === "content") {
+        contentAttribute ??= {
+          start: parser.startIndex,
+          end: parser.endIndex,
+        };
+      }
+    },
     onopentag(name, attributes) {
       if (ignoredTags.has(name)) ignoredDepth += 1;
       if (ignoredDepth > 0) return;
       if (name === "body") bodyStarted = true;
       if (bodyStarted || headEnd !== undefined) return;
       if (name === "html") documentStart = parser.endIndex + 1;
+      if (name === "base" && attributes.href !== undefined) {
+        baseHref ??= attributes.href;
+      }
       if (name === "title") {
         readingTitle = true;
         titleText = "";
@@ -46,6 +70,7 @@ function inspectHtml(html: string) {
           end: parser.endIndex + 1,
           name: (attributes.property ?? attributes.name ?? "").toLowerCase(),
           content: attributes.content ?? "",
+          contentAttribute,
         });
       }
       if (name === "link" && attributes.rel?.toLowerCase() === "canonical") {
@@ -82,7 +107,13 @@ function inspectHtml(html: string) {
     },
   });
   parser.end(html);
-  return { tags, title: title.trim().slice(0, 300), headEnd, documentStart };
+  return {
+    tags,
+    title: title.trim().slice(0, 300),
+    headEnd,
+    documentStart,
+    baseHref,
+  };
 }
 
 export function artifactHtmlMetadata(html: string) {
@@ -115,6 +146,57 @@ function validTag(name: string, value: string): boolean {
     !url.password &&
     !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
   );
+}
+
+function applyHtmlEdits(
+  html: string,
+  edits: (HtmlRange & { readonly text: string })[],
+): string {
+  edits.sort((left, right) => {
+    return left.start - right.start || left.end - right.end;
+  });
+  const parts: string[] = [];
+  let offset = 0;
+  for (const edit of edits) {
+    parts.push(html.slice(offset, edit.start), edit.text);
+    offset = edit.end;
+  }
+  parts.push(html.slice(offset));
+  return parts.join("");
+}
+
+/** Resolve only authored head image attributes; never fetch or replace an image. */
+export function normalizeArtifactImageUrls(
+  html: string,
+  documentUrl: string,
+): string {
+  const parsed = inspectHtml(html);
+  const base =
+    parsed.baseHref !== undefined && URL.canParse(parsed.baseHref, documentUrl)
+      ? new URL(parsed.baseHref, documentUrl).href
+      : documentUrl;
+  const edits: (HtmlRange & { readonly text: string })[] = [];
+  for (const tag of parsed.tags) {
+    if (
+      !["og:image", "og:image:secure_url", "twitter:image"].includes(tag.name)
+    )
+      continue;
+    const value = tag.content.trim();
+    if (
+      !tag.contentAttribute ||
+      !value ||
+      URL.canParse(value) ||
+      !URL.canParse(value, base)
+    )
+      continue;
+    const absolute = new URL(value, base).href;
+    if (!validTag("og:image", absolute)) continue;
+    edits.push({
+      ...tag.contentAttribute,
+      text: `content="${escapeUTF8(absolute)}"`,
+    });
+  }
+  return edits.length ? applyHtmlEdits(html, edits) : html;
 }
 
 /** Edit only metadata ranges; script, style and authored body bytes stay intact. */
@@ -188,15 +270,5 @@ export function artifactOgHtml(
         ? `<head>${extra}${tags}</head>`
         : `${extra}${tags}`,
   });
-  edits.sort((left, right) => {
-    return left.start - right.start || left.end - right.end;
-  });
-  const parts: string[] = [];
-  let offset = 0;
-  for (const edit of edits) {
-    parts.push(html.slice(offset, edit.start), edit.text);
-    offset = edit.end;
-  }
-  parts.push(html.slice(offset));
-  return parts.join("");
+  return applyHtmlEdits(html, edits);
 }
