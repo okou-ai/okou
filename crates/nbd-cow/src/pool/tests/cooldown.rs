@@ -20,29 +20,35 @@ async fn cooldown_timer_releases_expired_claim_without_waiter() {
     let dir = tempfile::tempdir().expect("tempdir");
     let handle = DevicePoolHandle::from_pool(test_pool_with_in_flight(3, dir.path()));
 
-    handle.release_clean(lease(3, dir.path())).await;
-    assert!(
-        device_lock::try_acquire_device_claim_in(3, dir.path())
-            .expect("lock probe")
-            .is_none()
-    );
+    let claim_released = tokio::time::timeout(Duration::from_secs(1), async {
+        handle.release_clean(lease(3, dir.path())).await;
+        if device_lock::try_acquire_device_claim_in(3, dir.path())?.is_some() {
+            return Err(std::io::Error::other(
+                "device claim was not held after clean release",
+            ));
+        }
 
-    tokio::time::timeout(Duration::from_secs(1), async {
+        // Snapshot/acquire commands would wake the actor and could release the
+        // claim even if its cooldown timer were broken. Probe only the OS lock.
         loop {
-            let snapshot = handle.snapshot().await;
-            if snapshot.cooldown.is_empty()
-                && device_lock::try_acquire_device_claim_in(3, dir.path())
-                    .expect("lock probe")
-                    .is_some()
-            {
-                break;
+            match device_lock::try_acquire_device_claim_in(3, dir.path()) {
+                Ok(Some(claim)) => {
+                    drop(claim);
+                    return Ok(());
+                }
+                Ok(None) => tokio::time::sleep(Duration::from_millis(10)).await,
+                Err(e) => return Err(e),
             }
-            tokio::task::yield_now().await;
         }
     })
-    .await
-    .expect("cooldown timer did not release claim");
-    handle.cleanup().await;
+    .await;
+
+    tokio::time::timeout(Duration::from_secs(1), handle.cleanup())
+        .await
+        .expect("cooldown timer cleanup timed out");
+    claim_released
+        .expect("cooldown timer did not release claim")
+        .expect("probe device claim release");
 }
 
 #[tokio::test]
