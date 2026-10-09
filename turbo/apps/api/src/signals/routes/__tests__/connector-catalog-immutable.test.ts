@@ -1,6 +1,4 @@
-import { publicRunOwner } from "./helpers/public-run-owner";
-import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
-import { env, mockEnv, mockOptionalEnv, optionalEnv } from "../../../lib/env";
+import { createPublicConnectorActor } from "./helpers/public-connector-actor";
 import { HttpResponse, http } from "msw";
 import { server } from "../../../mocks/server";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
@@ -41,7 +39,7 @@ import { cronConnectorCatalogRoutes } from "../cron-connector-catalog";
 import { builtinConnectorsRoutes } from "../connectors";
 import { createRouteMocks } from "./helpers/route-test";
 
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 
 const context = testContext();
@@ -438,29 +436,14 @@ describe("current-publication account readers", () => {
 
   describe("connector account lifecycle routes", () => {
     it("reviews requested scopes for one exact account across default changes", async () => {
-      const actor = createBddApi(context).user();
       const currentScopes = ["repo", "project", "workflow"] as const;
       const connectors = createConnectorBddApi(context);
-      let restoreOAuthEnvironment = () => {};
-      let restorePreviousEnvironment: (() => void) | undefined;
-      onTestFinished(() => {
-        restorePreviousEnvironment?.();
-      });
-      const { run: own } = publicRunOwner(context, actor, {
-        restoreEnvironment: () => {
-          if (!restorePreviousEnvironment) {
-            const webUrl = env("OKOU_WEB_URL");
-            const clientId = optionalEnv("GH_OAUTH_CLIENT_ID");
-            const clientSecret = optionalEnv("GH_OAUTH_CLIENT_SECRET");
-            restorePreviousEnvironment = () => {
-              mockEnv("OKOU_WEB_URL", webUrl);
-              mockOptionalEnv("GH_OAUTH_CLIENT_ID", clientId);
-              mockOptionalEnv("GH_OAUTH_CLIENT_SECRET", clientSecret);
-            };
-          }
-          restoreOAuthEnvironment();
-        },
-        afterRuns: async () => {
+      const owner = createPublicConnectorActor(context, {
+        optionalEnvironmentNames: [
+          "GH_OAUTH_CLIENT_ID",
+          "GH_OAUTH_CLIENT_SECRET",
+        ],
+        beforeWorkspaceCleanup: async (): Promise<void> => {
           const accounts = await connectors.listBuiltinConnectorAccounts(
             actor,
             "github",
@@ -472,19 +455,11 @@ describe("current-publication account readers", () => {
               account.id,
             );
           }
-          await deletePublicWorkspace(context, actor);
         },
       });
+      const { actor, run: own } = owner;
       const connectAccount = async (userId: number) => {
         mockGitHubConnectorOAuth({ userId, login: `scope-review-${userId}` });
-        const webUrl = env("OKOU_WEB_URL");
-        const clientId = optionalEnv("GH_OAUTH_CLIENT_ID");
-        const clientSecret = optionalEnv("GH_OAUTH_CLIENT_SECRET");
-        restoreOAuthEnvironment = () => {
-          mockEnv("OKOU_WEB_URL", webUrl);
-          mockOptionalEnv("GH_OAUTH_CLIENT_ID", clientId);
-          mockOptionalEnv("GH_OAUTH_CLIENT_SECRET", clientSecret);
-        };
         // Grants can be narrower than the selected catalog's requested scopes.
         server.use(
           http.post("https://github.com/login/oauth/access_token", () => {

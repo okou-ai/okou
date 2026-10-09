@@ -183,11 +183,19 @@ export function createPublicConnectorActor(
   return {
     actor,
     run<T>(operation: () => Promise<T>) {
-      accepted = captureConnectorExternalState(
-        context,
-        options.optionalEnvironmentNames,
-      );
-      return owner.run(operation);
+      return owner.run(() => {
+        const pending = settleIncludingAbort(operation);
+        accepted = captureConnectorExternalState(
+          context,
+          options.optionalEnvironmentNames,
+        );
+        return pending.then((result) => {
+          if (!result.ok) {
+            throw result.error;
+          }
+          return result.value;
+        });
+      });
     },
     ownsFeatureSwitches() {
       ownsFeatures = true;

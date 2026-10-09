@@ -89,24 +89,53 @@ async function visibleUploadedFiles(args: {
 
 async function seedSendableContext() {
   const runnerGroup = runsApi.configureRunnerGroup();
-  const fixture = createPublicTelegramActor(context);
-  const sent = await fixture.run(async () => {
-    await runsApi.grantProEntitlement(fixture.actor);
-    await runsApi.ensurePersonalSubscriptionModel(fixture.actor);
-    await runsApi.updateUserModelPreference(fixture.actor, "claude-fable-5-1");
-    const agent = await bdd.createAgent(fixture.actor, {
-      displayName: "Telegram upload",
+  let restoreInvoice: (() => void) | undefined;
+  const fixture = createPublicTelegramActor(
+    context,
+    {},
+    {
+      restoreEnvironment: () => {
+        restoreInvoice?.();
+      },
+    },
+  );
+  await fixture.run(() => {
+    return runsApi.grantProEntitlement(fixture.actor, {
+      onExternalStateReady: (restore) => {
+        restoreInvoice = restore;
+      },
     });
-    const sent = await chatApi.sendAndLaunch(fixture.actor, {
+  });
+  restoreInvoice = undefined;
+  await fixture.run(() => {
+    return runsApi.ensurePersonalSubscriptionModel(fixture.actor);
+  });
+  await fixture.run(() => {
+    return runsApi.updateUserModelPreference(fixture.actor, "claude-fable-5-1");
+  });
+  const agent = await fixture.run(() => {
+    return bdd.createAgent(fixture.actor, { displayName: "Telegram upload" });
+  });
+  const sent = await fixture.run(() => {
+    return chatApi.sendAndLaunch(fixture.actor, {
       agentId: agent.agentId,
       prompt: "Create a run for Telegram upload completion",
     });
-    await runsApi.heartbeatRunner(runnerGroup);
-    const claim = await runsApi.claimRunnerJob(sent.runId);
-    fixture.rememberClaim(sent.runId, claim.sandboxToken);
-    return { ...sent, token: okouTokenFromClaim(claim) };
   });
-  return { ...fixture, ...sent, telegramBotId: OFFICIAL_TELEGRAM_BOT_ID };
+  await fixture.run(() => {
+    return runsApi.heartbeatRunner(runnerGroup);
+  });
+  const claim = await fixture.run(async () => {
+    const accepted = await runsApi.claimRunnerJob(sent.runId);
+    fixture.rememberClaim(sent.runId, accepted.sandboxToken);
+    return accepted;
+  });
+  return {
+    ...fixture,
+    ...sent,
+    token: okouTokenFromClaim(claim),
+    telegramBotId: OFFICIAL_TELEGRAM_BOT_ID,
+  };
 }
 
 describe("POST /api/integrations/telegram/upload-file/complete", () => {

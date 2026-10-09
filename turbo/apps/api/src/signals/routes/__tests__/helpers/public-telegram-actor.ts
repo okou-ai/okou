@@ -1,3 +1,5 @@
+import { captureConnectorExternalState } from "./public-connector-actor";
+import { settleIncludingAbort } from "../../../utils";
 import { createHash, createHmac } from "node:crypto";
 import { onTestFinished } from "vitest";
 import {
@@ -20,6 +22,7 @@ import { createRouteMocks } from "./route-test";
 export function createPublicTelegramActor(
   context: TestContext,
   options: ApiTestUserOptions = {},
+  lifecycle: { readonly restoreEnvironment?: () => void } = {},
 ) {
   const bdd = createBddApi(context);
   const actor = bdd.user(options);
@@ -36,6 +39,7 @@ export function createPublicTelegramActor(
     "SECRETS_KMS_KEY_ID",
   ] as const;
   function captureExternalState() {
+    const restoreCommon = captureConnectorExternalState(context);
     const values = names.map((name) => {
       return [name, env(name)] as const;
     });
@@ -58,6 +62,7 @@ export function createPublicTelegramActor(
     const send = context.mocks.s3.send.getMockImplementation();
     const sign = context.mocks.s3.getSignedUrl.getMockImplementation();
     return () => {
+      restoreCommon();
       for (const [name, value] of values) {
         mockEnv(name, value);
       }
@@ -83,35 +88,52 @@ export function createPublicTelegramActor(
     restoreEnvironment: () => {
       previousState ??= captureExternalState();
       acceptedState();
+      lifecycle.restoreEnvironment?.();
     },
     afterRuns: async () => {
-      session();
-      const client = setupApp({ context, routes: integrationsTelegramRoutes })(
-        integrationsTelegramContract,
-      );
-      const status = await accept(
-        client.getLinkStatus({
-          headers: { authorization: "Bearer clerk-session" },
-          query: { botId: OFFICIAL_TELEGRAM_BOT_ID },
-        }),
-        [200],
-      );
-      if (status.body.linked) {
-        await accept(
-          client.unlink({
+      const link = await settleIncludingAbort(async () => {
+        session();
+        const client = setupApp({
+          context,
+          routes: integrationsTelegramRoutes,
+        })(integrationsTelegramContract);
+        const status = await accept(
+          client.getLinkStatus({
             headers: { authorization: "Bearer clerk-session" },
             query: { botId: OFFICIAL_TELEGRAM_BOT_ID },
           }),
-          [204],
+          [200],
         );
+        if (status.body.linked) {
+          await accept(
+            client.unlink({
+              headers: { authorization: "Bearer clerk-session" },
+              query: { botId: OFFICIAL_TELEGRAM_BOT_ID },
+            }),
+            [204],
+          );
+        }
+      });
+      const features = await settleIncludingAbort(async () => {
+        if (cleanupFeatures) {
+          await deleteFeatureSwitchesForUser(context, {
+            userId: actor.userId,
+            orgId,
+          });
+        }
+      });
+      const workspace = await settleIncludingAbort(() => {
+        return deletePublicWorkspace(context, actor);
+      });
+      const errors = [link, features, workspace].flatMap((result) => {
+        return result.ok ? [] : [result.error];
+      });
+      if (errors.length === 1) {
+        throw errors[0];
       }
-      if (cleanupFeatures) {
-        await deleteFeatureSwitchesForUser(context, {
-          userId: actor.userId,
-          orgId,
-        });
+      if (errors.length > 1) {
+        throw new AggregateError(errors, "Telegram cleanup failed");
       }
-      await deletePublicWorkspace(context, actor);
     },
   });
   function session() {
@@ -122,8 +144,16 @@ export function createPublicTelegramActor(
     );
   }
   function run<T>(operation: () => Promise<T>): Promise<T> {
-    acceptedState = captureExternalState();
-    return owner.run(operation);
+    return owner.run(() => {
+      const pending = settleIncludingAbort(operation);
+      acceptedState = captureExternalState();
+      return pending.then((result) => {
+        if (!result.ok) {
+          throw result.error;
+        }
+        return result.value;
+      });
+    });
   }
   session();
   return {
