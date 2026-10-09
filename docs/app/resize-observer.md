@@ -4,9 +4,9 @@ Keep layout in CSS and drive application changes through explicit commands.
 Do not use `ResizeObserver` to discover the effects of changes the application
 already owns, or as a generic loop that repairs layout and scrolling afterward.
 
-This guide complements [effects and commands](effect.md),
+This guide complements [effects and commands](../react.md#effects-and-ownership),
 [ccstate lifecycle ownership](../../.claude/skills/ccstate/SKILL.md),
-[styles](styles.md), and [stable chat cards](chat-cards.md#fixed-height-and-stable-layout).
+[styles](styles.md), and [stable chat cards](../chat.md#fixed-height-and-stable-layout).
 
 ## Recognize the Anti-Pattern
 
@@ -99,7 +99,7 @@ Reserve the space needed by asynchronous media and action slots. Matching the
 height before and after a replacement is insufficient if removing the old
 element temporarily shrinks the transcript. Fix the card structure instead of
 adding scroll compensation. Follow the detailed contract in
-[Fixed Height and Stable Layout](chat-cards.md#fixed-height-and-stable-layout).
+[Fixed Height and Stable Layout](../chat.md#fixed-height-and-stable-layout).
 
 ## Derive the UI from State
 

@@ -8,7 +8,7 @@ import ts from "typescript";
 const scriptPath = fileURLToPath(import.meta.url);
 const defaultAppRoot = path.resolve(path.dirname(scriptPath), "..");
 const authV1Directory = "src/views/auth-v1";
-const guidePath = "docs/app/clerk-customize.md";
+const guidePath = "docs/app/styles.md#clerk-customization";
 
 function getForbiddenTextPatterns() {
   return [

@@ -3,7 +3,7 @@
 This guide defines Platform-specific request, asynchronous ownership, module
 state, and runtime import boundaries. Read the shared
 [ccstate references](../../.claude/skills/ccstate/SKILL.md) for reactive values,
-commands, lifecycle, HTTP, and React/DOM patterns; use [effects](effect.md),
+commands, lifecycle, HTTP, and React/DOM patterns; use [effects](../react.md#effects-and-ownership),
 [cache](cache.md), and [Platform testing](app-testing.md) when relevant.
 It complements [API ccstate](../api/api-ccstate.md), which owns server-side graph and
 database rules, rather than applying those API rules to browser code.

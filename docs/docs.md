@@ -21,7 +21,7 @@ this index does not replace its detailed rules.
 
 ## Directory Ownership
 
-- `docs/`: cross-surface standards and the unified shared testing guide.
+- `docs/`: cross-surface standards, Chat design, React development, and shared testing.
 - `docs/app/`: browser application behavior, React/ccstate, styling,
   and application testing.
 - `docs/desktop/`: native Desktop application behavior, testing, and release contracts.
@@ -46,6 +46,10 @@ owning surface.
 - [Testing](testing.md): strategy, [external behavior](testing.md#external-behavior),
   [shared patterns](testing.md#shared-patterns), [anti-patterns](testing.md#anti-patterns),
   and routes to each affected surface.
+- [Chat design](chat.md): event history, optimistic streaming, action links,
+  card registration, lifecycle ownership, and stable transcript layout.
+- [React development](react.md): render purity, effects and commands, signal
+  ownership, subscription design, and performance measurement.
 
 ## CLI
 
@@ -58,18 +62,10 @@ owning surface.
 - [Platform ccstate](app/platform-ccstate.md): transport, lifecycle, module state,
   and import boundaries. Read the matching shared
   [ccstate references](../.claude/skills/ccstate/SKILL.md) as needed.
-- [Effects](app/effect.md): derived values, semantic commands, DOM lifecycles,
-  and render purity.
 - [Cache and lifecycle](app/cache.md): ownership, retention, refs, and teardown.
-- [Event sourcing](app/event-sourcing.md): persistent and optimistic event
-  reconciliation in frontend projections.
-- [Styles](app/styles.md): shared tokens, semantic HTML, and component composition.
+- [Styles](app/styles.md): shared tokens, semantic HTML, component composition,
+  and [Clerk customization](app/styles.md#clerk-customization).
 - [ResizeObserver](app/resize-observer.md): CSS layout and measurement ownership.
-- [Chat-card UI contracts](app/chat-cards.md): stable frames, portable action
-  links, signal registration, and lifecycle ownership.
-- [React measurements](app/react-commit.md): reproducible commit attribution
-  and behavior verification.
-- [Clerk customization](app/clerk-customize.md): public styling ownership and enforcement.
 - [Platform testing](app/app-testing.md): real page setup and user-visible assertions.
 
 ## Desktop
