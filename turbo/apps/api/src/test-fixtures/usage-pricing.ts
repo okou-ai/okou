@@ -13,6 +13,7 @@ import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
+import { z } from "zod";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import { env } from "../lib/env";
@@ -168,24 +169,37 @@ export async function seedIsolatedModelPricingForTests<
 
 export async function seedDevelopmentModelPricingForTests(): Promise<void> {
   const client = new Client({ connectionString: env("DATABASE_URL") });
-  await client.connect();
-  const seeded = drizzle(client)
-    .insert(usagePricing)
-    .values([
-      ...USAGE_PRICING.filter((row) => {
-        return [
-          "model",
-          "web-search",
-          "scrape",
-          "social",
-          "people-search",
-        ].includes(row.kind);
-      }),
-      ...TEST_ONLY_MODEL_PRICING,
-    ])
-    .onConflictDoNothing({
-      target: [usagePricing.kind, usagePricing.provider, usagePricing.category],
-    });
+  const seeded = (async () => {
+    await client.connect();
+    const timezone = await client.query("SHOW TimeZone");
+    if (
+      !z.object({ TimeZone: z.literal("UTC") }).safeParse(timezone.rows[0])
+        .success
+    ) {
+      throw new Error("Native API test database must use UTC before seeding");
+    }
+    await drizzle(client)
+      .insert(usagePricing)
+      .values([
+        ...USAGE_PRICING.filter((row) => {
+          return [
+            "model",
+            "web-search",
+            "scrape",
+            "social",
+            "people-search",
+          ].includes(row.kind);
+        }),
+        ...TEST_ONLY_MODEL_PRICING,
+      ])
+      .onConflictDoNothing({
+        target: [
+          usagePricing.kind,
+          usagePricing.provider,
+          usagePricing.category,
+        ],
+      });
+  })();
   await onRejection(seeded, () => {
     return client.end();
   });

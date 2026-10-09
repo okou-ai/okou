@@ -23,7 +23,7 @@ export async function validatePermanentModelCatalogConstraints(
     params: readonly unknown[],
     expected: { code: string; constraint: string },
   ) {
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0404; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0402; new non-billing transactions are prohibited.
     await client.query("SAVEPOINT invalid_write");
     await assert.rejects(client.query(query, [...params]), expected);
     await client.query("ROLLBACK TO SAVEPOINT invalid_write");
@@ -69,7 +69,7 @@ export async function validatePermanentModelCatalogConstraints(
   };
 
   try {
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0405; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0403; new non-billing transactions are prohibited.
     await client.query("BEGIN");
     await insertModel("a");
     await insertModel("c");

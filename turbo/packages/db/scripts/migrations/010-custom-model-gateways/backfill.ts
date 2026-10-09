@@ -370,7 +370,7 @@ async function main(): Promise<void> {
       return;
     }
 
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0361; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0359; new non-billing transactions are prohibited.
     await sql.begin(async (transaction) => {
       await ensureGeoConnection(transaction);
       if (CLEANUP_RETIRED_PROVIDERS) {

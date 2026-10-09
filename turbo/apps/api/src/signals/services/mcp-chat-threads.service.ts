@@ -156,7 +156,7 @@ const threadQuery$ = command(
         ? undefined
         : sql`(${chatThreads.lastMessageAt}, ${chatThreads.id}) < (${cursor.lastMessageAt}::timestamp, ${cursor.threadId}::uuid)`,
     ];
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0184; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0182; new non-billing transactions are prohibited.
     const rows = await db.transaction(
       async (tx) => {
         await tx.execute(sql`SET LOCAL statement_timeout = '3s'`);

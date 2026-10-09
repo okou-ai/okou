@@ -108,7 +108,7 @@ try {
   };
 
   await blocker.query(
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0433; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0431; new non-billing transactions are prohibited.
     "BEGIN; LOCK TABLE usage_event_hourly_rollup IN ACCESS SHARE MODE",
   );
   await assert.rejects(apply(), { code: "55P03" });

@@ -452,7 +452,7 @@ const persistReconfigurationPatch$ = command(
   ): Promise<PersistedReconfiguration | null> => {
     const db = set(writeDb$);
 
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0199; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0197; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       // SHARE fences the accepted pointer against the publisher's non-key UPDATE.
       await tx.execute(acceptedCatalogLockStatement());
@@ -638,7 +638,7 @@ const restoreFailedReconfiguration$ = command(
   ): Promise<void> => {
     const db = set(writeDb$);
     const cleanupSignal = new AbortController().signal;
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0200; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0198; new non-billing transactions are prohibited.
     const restored = await db.transaction(async (tx) => {
       // SHARE fences the accepted pointer against the publisher's non-key UPDATE.
       await tx.execute(acceptedCatalogLockStatement());
@@ -754,7 +754,7 @@ const finalizeReconfiguration$ = command(
   ): Promise<boolean> => {
     const db = set(writeDb$);
 
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0201; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0199; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       // SHARE fences the accepted pointer against the publisher's non-key UPDATE.
       await tx.execute(acceptedCatalogLockStatement());
@@ -860,7 +860,7 @@ interface PauseForReconfigurationArgs {
 const persistPausedReconfiguration$ = command(
   async ({ set }, args: PauseForReconfigurationArgs, signal: AbortSignal) => {
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0202; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0200; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       // SHARE fences the accepted pointer against the publisher's non-key UPDATE.
       await tx.execute(acceptedCatalogLockStatement());
@@ -1120,7 +1120,7 @@ const stageAutomationStructureTransition$ = command(
   ): Promise<PersistedReconfiguration | null> => {
     const db = set(writeDb$);
 
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0203; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0201; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       // SHARE fences the accepted pointer against the publisher's non-key UPDATE.
       await tx.execute(acceptedCatalogLockStatement());
@@ -1431,7 +1431,7 @@ const finalizeAutomationStructureTransition$ = command(
     const { source, authority, accountPlan, installation } =
       structureTransitionReadPlan(args);
 
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0204; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0202; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       // SHARE fences the accepted pointer against the publisher's non-key UPDATE.
       await tx.execute(acceptedCatalogLockStatement());
@@ -1904,7 +1904,7 @@ const markActiveAutomationFailed$ = command(
   ): Promise<boolean> => {
     const db = set(writeDb$);
 
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0205; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0203; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       // SHARE fences the accepted pointer against the publisher's non-key UPDATE.
       await tx.execute(acceptedCatalogLockStatement());
@@ -2027,7 +2027,7 @@ const reserveDormantIdentity$ = command(
   ): Promise<DormantIdentityReservation | null> => {
     const db = set(writeDb$);
 
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0206; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0204; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       // SHARE fences the accepted pointer against the publisher's non-key UPDATE.
       await tx.execute(acceptedCatalogLockStatement());
@@ -2157,7 +2157,7 @@ const retainDormantIdentity$ = command(
   ): Promise<boolean> => {
     const db = set(writeDb$);
 
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0207; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0205; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       // SHARE fences the accepted pointer against the publisher's non-key UPDATE.
       await tx.execute(acceptedCatalogLockStatement());
@@ -2272,7 +2272,7 @@ const deleteReservedCreationOrphan$ = command(
     signal: AbortSignal,
   ) => {
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0208; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0206; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       // SHARE fences the accepted pointer against the publisher's non-key UPDATE.
       await tx.execute(acceptedCatalogLockStatement());
@@ -2447,7 +2447,7 @@ const validateDormantMaterialization$ = command(
   ): Promise<OfficialAutomationRow | null> => {
     const db = set(writeDb$);
 
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0209; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0207; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       // SHARE fences the accepted pointer against the publisher's non-key UPDATE.
       await tx.execute(acceptedCatalogLockStatement());
@@ -2536,7 +2536,7 @@ const finalizeDormantMaterialization$ = command(
   ): Promise<boolean> => {
     const db = set(writeDb$);
 
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0210; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0208; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       // SHARE fences the accepted pointer against the publisher's non-key UPDATE.
       await tx.execute(acceptedCatalogLockStatement());
@@ -2661,7 +2661,7 @@ const persistDiscardedMaterialization$ = command(
     _signal: AbortSignal,
   ) => {
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0211; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0209; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       // SHARE fences the accepted pointer against the publisher's non-key UPDATE.
       await tx.execute(acceptedCatalogLockStatement());
@@ -2767,7 +2767,7 @@ const discardDormantMaterialization$ = command(
     if (!watch.ok || !watch.value) {
       return false;
     }
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0212; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0210; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       // SHARE fences the accepted pointer against the publisher's non-key UPDATE.
       await tx.execute(acceptedCatalogLockStatement());
@@ -3139,7 +3139,7 @@ const pauseRemovedAutomationConfiguration$ = command(
   > => {
     const db = set(writeDb$);
 
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0213; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0211; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       // SHARE fences the accepted pointer against the publisher's non-key UPDATE.
       await tx.execute(acceptedCatalogLockStatement());
@@ -3217,7 +3217,7 @@ const deleteRemovedAutomationConfiguration$ = command(
   ): Promise<boolean> => {
     const db = set(writeDb$);
 
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0214; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0212; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       // SHARE fences the accepted pointer against the publisher's non-key UPDATE.
       await tx.execute(acceptedCatalogLockStatement());

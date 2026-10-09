@@ -64,7 +64,7 @@ export const expireOrgCreditsAt$ = command(
     args: { readonly orgId: string; readonly at: Date },
     signal: AbortSignal,
   ): Promise<void> => {
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0216; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0214; new non-billing transactions are prohibited.
     await set(writeDb$).transaction(async (tx) => {
       await expireOrgCreditsInTransaction(tx, args.orgId, args.at);
       signal.throwIfAborted();

@@ -251,7 +251,7 @@ export const updateUserBuiltinConnectors$ = command(
     );
     const operation = args.operation ?? "replace";
 
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0310; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0308; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       const [agent] = await tx
         .select({ id: agents.id })

@@ -31,7 +31,7 @@ export async function disableIneligibleWorkflowWebhookAutomationsForOrg(
   },
   signal: AbortSignal,
 ): Promise<number> {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0350; new non-billing transactions are prohibited.
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0348; new non-billing transactions are prohibited.
   return await db.transaction(async (tx) => {
     const tierEligible = await lockWorkflowWebhookAutomationTierEligibleForOrg(
       tx,

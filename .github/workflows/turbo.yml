@@ -563,7 +563,7 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$TRANSACTION_BASE_SHA" =~ ^[a-f0-9]{40}$ ]] || { echo 'Missing base/main SHA' >&2; exit 1; }
-          git fetch --no-tags --depth=1 origin "$TRANSACTION_BASE_SHA" 5712d9550317d811e0e2e66f2611f835a619ec7b
+          git fetch --no-tags --depth=1 origin "$TRANSACTION_BASE_SHA" b73d44a9a9e52185c50f968ced4f5cfb12584093
           pnpm lint:transactions "$TRANSACTION_BASE_SHA"
       - name: Validate oxlintrc.json react allowImportNames
         working-directory: turbo

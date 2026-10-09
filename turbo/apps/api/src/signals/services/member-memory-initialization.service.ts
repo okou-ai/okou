@@ -22,7 +22,7 @@ export const initializeMemberMemory$ = command(
   ): Promise<void> => {
     signal.throwIfAborted();
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0185; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0183; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       const location = newStorageS3Location(identity.orgId);
       await tx

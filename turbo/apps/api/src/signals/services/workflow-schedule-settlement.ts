@@ -51,7 +51,7 @@ export async function advanceInFlightSchedule(
   args: InFlightScheduleAdvance,
 ): Promise<"advanced" | "superseded"> {
   const result = await settle(
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0347; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0345; new non-billing transactions are prohibited.
     tx.transaction(async (sp) => {
       const ordinary = args.ordinaryFailure;
       const nextCount = ordinary?.reset

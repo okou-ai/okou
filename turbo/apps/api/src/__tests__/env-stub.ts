@@ -1,5 +1,6 @@
 import { vi } from "vitest";
 import { apiTestEnvironment } from "./test-environment";
+import { apiTestDatabaseUrl } from "./test-database-url";
 
 for (const [name, value] of Object.entries(apiTestEnvironment)) {
   vi.stubEnv(name, value);
@@ -25,9 +26,9 @@ function stubTestDatabaseUrl(): void {
   if (!vitestWorkerId) {
     throw new Error("Expected VITEST_WORKER_ID in the API test environment");
   }
-  const databaseUrl = new URL(
-    process.env.DATABASE_URL ??
-      "postgresql://postgres:postgres@localhost:5432/vm0_test",
+  const databaseUrl = apiTestDatabaseUrl(
+    process.env.DATABASE_URL,
+    process.env.PGOPTIONS,
   );
   databaseUrl.searchParams.set(
     "application_name",

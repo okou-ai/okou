@@ -46,7 +46,6 @@ response() {
     --argjson number "$mock_pr_number" '
     [range($count) | {
       number: (. + 42),
-      createdAt: ((1704067200 + .) | todateiso8601),
       author: {login: (if . < $author_count then $author else "other-author" end)}
     }] as $nodes |
     [range(0; ([1, $count] | max); 100) as $start |
@@ -100,7 +99,7 @@ run_admission
 assert_contains "$output" 'CI_CAPACITY_LIMIT'
 assert_contains "$output" '41 open PRs'
 assert_contains "$output" 'at most 40'
-[[ "$output" != *CI_AUTHOR_PR_LIMIT* ]] || fail "repository capacity must still apply to an author's oldest PR"
+[[ "$output" != *CI_AUTHOR_PR_LIMIT* ]] || fail "repository capacity must still apply to an author's lowest-numbered PR"
 assert_contains "$output" 'gh run rerun 123 --repo test/repo'
 assert_contains "$summary" '**41 open PRs**'
 assert_contains "$summary" 'not in the merge queue'
@@ -113,25 +112,25 @@ response 39
 run_admission
 [[ "$status" == 0 ]] || fail "a retry after capacity recovers should pass: $output"
 
-# Admit the author's oldest PRs even while their total exceeds the limit.
+# Fixtures omit timestamps; admission uses the author's lowest PR numbers.
 response 30 null 21
 run_admission
-[[ "$status" == 0 ]] || fail "an author's oldest PR should pass above the author count limit: $output"
-assert_contains "$output" 'author position (oldest first): 1'
+[[ "$status" == 0 ]] || fail "an author's lowest-numbered PR should pass above the author count limit: $output"
+assert_contains "$output" 'author position (lowest PR number first): 1'
 response 30 null 21 developer 61
 run_admission
-[[ "$status" == 0 ]] || fail "the author's 20th oldest PR should be admitted: $output"
-assert_contains "$output" 'author position (oldest first): 20'
+[[ "$status" == 0 ]] || fail "the author's 20th lowest-numbered PR should be admitted: $output"
+assert_contains "$output" 'author position (lowest PR number first): 20'
 response 30 null 21 developer 62
 run_admission
-[[ "$status" == 1 ]] || fail "the author's 21st oldest PR should fail"
+[[ "$status" == 1 ]] || fail "the author's 21st lowest-numbered PR should fail"
 assert_contains "$output" 'CI_AUTHOR_PR_LIMIT'
-assert_contains "$output" 'position 21 by creation time among 21 open PRs by developer'
+assert_contains "$output" 'position 21 by PR number among 21 open PRs by developer'
 assert_contains "$summary" 'Author **developer**: **21 open PRs**'
-assert_contains "$summary" 'creation-order position **21**'
-assert_contains "$summary" "among the author's oldest 20 open PRs"
+assert_contains "$summary" 'PR-number position **21**'
+assert_contains "$summary" "among the author's 20 lowest-numbered open PRs"
 assert_contains "$summary" 'repos/test/repo/pulls?state=open&per_page=100'
-assert_contains "$summary" 'sort_by(.created_at, .number)'
+assert_contains "$summary" 'sort_by(.number)'
 [[ "$output" != *CI_CAPACITY_LIMIT* ]] || fail "author limit must apply below the repository limit"
 
 # Re-running all 11 unqueued PRs admits the first 10, not none of them.
@@ -139,62 +138,64 @@ for number in {42..52}; do
   response 11 null 11 developer "$number"
   run_admission pull_request 0 40 10
   if ((number < 52)); then
-    [[ "$status" == 0 ]] || fail "PR #$number should be among the author's oldest 10: $output"
+    [[ "$status" == 0 ]] || fail "PR #$number should be among the author's 10 lowest numbers: $output"
   else
     [[ "$status" == 1 ]] || fail "only the 11th PR should exceed the author limit"
-    assert_contains "$output" 'position 11 by creation time among 11 open PRs'
+    assert_contains "$output" 'position 11 by PR number among 11 open PRs'
   fi
 done
 
-# Closing an earlier PR promotes the same blocked PR on a later retry.
+# Closing a lower-numbered PR promotes the same blocked PR on a later retry.
 jq '
   .[0].data.repository.pullRequests.nodes |= map(select(.number != 42)) |
   .[0].data.repository.pullRequests.totalCount = 10
 ' "${test_root}/response.json" >"${test_root}/closed.json"
 mv "${test_root}/closed.json" "${test_root}/response.json"
 run_admission pull_request 0 40 10
-[[ "$status" == 0 ]] || fail "closing an earlier PR should free an author slot: $output"
-assert_contains "$output" 'PR #52 author position (oldest first): 10'
+[[ "$status" == 0 ]] || fail "closing a lower-numbered PR should free an author slot: $output"
+assert_contains "$output" 'PR #52 author position (lowest PR number first): 10'
 
-# Creation time, not PR number or response order, determines priority.
-response 11 null 11
-jq '.[0].data.repository.pullRequests.nodes[0].createdAt = "2024-02-01T00:00:00Z"' \
-  "${test_root}/response.json" >"${test_root}/reordered.json"
-mv "${test_root}/reordered.json" "${test_root}/response.json"
-run_admission pull_request 0 40 10
-[[ "$status" == 1 ]] || fail "a newer low-numbered PR must not displace older PRs"
-assert_contains "$output" 'PR #42 is at position 11'
-response 11 null 11 developer 52
-jq '.[0].data.repository.pullRequests.nodes[10].createdAt = "2023-12-31T00:00:00Z"' \
-  "${test_root}/response.json" >"${test_root}/reordered.json"
-mv "${test_root}/reordered.json" "${test_root}/response.json"
-run_admission pull_request 0 40 10
-[[ "$status" == 0 ]] || fail "an older high-numbered PR should be admitted: $output"
-assert_contains "$output" 'PR #52 author position (oldest first): 1'
-
-# Equal timestamps use PR numbers as a deterministic tie-breaker.
+# PR-number priority is independent of the order of returned nodes.
 for number in 51 52; do
   response 11 null 11 developer "$number"
-  jq '.[0].data.repository.pullRequests.nodes |= (map(.createdAt = "2024-01-01T00:00:00Z") | reverse)' \
-    "${test_root}/response.json" >"${test_root}/ties.json"
-  mv "${test_root}/ties.json" "${test_root}/response.json"
+  jq '.[0].data.repository.pullRequests.nodes |= reverse' \
+    "${test_root}/response.json" >"${test_root}/reordered.json"
+  mv "${test_root}/reordered.json" "${test_root}/response.json"
   run_admission pull_request 0 40 10
   if [[ "$number" == 51 ]]; then
-    [[ "$status" == 0 ]] || fail "the lower-numbered PR at the boundary should pass: $output"
+    [[ "$status" == 0 ]] || fail "the 10th lowest number should pass with reversed nodes: $output"
   else
-    [[ "$status" == 1 ]] || fail "the higher-numbered PR outside the boundary should fail"
+    [[ "$status" == 1 ]] || fail "the 11th lowest number should fail with reversed nodes"
   fi
 done
 
-# Other authors do not consume this author's slots, even if their PRs are older.
+# Numbers have gaps and cross digit boundaries; rank is not the number itself.
+for number in 2 100 101; do
+  response 11 null 11 developer "$number"
+  jq '
+    [2, 10, 11, 12, 13, 14, 15, 16, 17, 100, 101] as $numbers |
+    .[0].data.repository.pullRequests.nodes |=
+      (to_entries | map(.value.number = $numbers[.key] | .value) | reverse)
+  ' "${test_root}/response.json" >"${test_root}/gapped.json"
+  mv "${test_root}/gapped.json" "${test_root}/response.json"
+  run_admission pull_request 0 40 10
+  if [[ "$number" == 101 ]]; then
+    [[ "$status" == 1 ]] || fail "the 11th gapped number should fail"
+    assert_contains "$output" 'position 11 by PR number'
+  else
+    [[ "$status" == 0 ]] || fail "a low-ranked PR should pass despite its gapped number: $output"
+  fi
+done
+
+# Other authors do not consume slots, even if their PR numbers are lower.
 response 35 null 11 developer 51
 jq '.[0].data.repository.pullRequests.nodes |= map(
-  if .author.login == "other-author" then .createdAt = "2023-12-31T00:00:00Z" else . end
+  if .author.login == "other-author" then .number -= 52 else . end
 )' "${test_root}/response.json" >"${test_root}/other-author.json"
 mv "${test_root}/other-author.json" "${test_root}/response.json"
 run_admission pull_request 0 40 10
-[[ "$status" == 0 ]] || fail "other authors' older PRs must not consume author slots: $output"
-assert_contains "$output" 'PR #51 author position (oldest first): 10'
+[[ "$status" == 0 ]] || fail "other authors' lower PR numbers must not consume author slots: $output"
+assert_contains "$output" 'PR #51 author position (lowest PR number first): 10'
 
 # Bot and draft PRs are counted by the same open-PR query, without exemptions.
 response 30 null 21 'dependabot[bot]' 62
@@ -206,7 +207,7 @@ jq '.[0].data.repository.pullRequests.nodes[0].isDraft = true' \
   "${test_root}/response.json" >"${test_root}/draft.json"
 mv "${test_root}/draft.json" "${test_root}/response.json"
 run_admission pull_request 0 40 10
-[[ "$status" == 1 ]] || fail "older drafts must still consume author slots"
+[[ "$status" == 1 ]] || fail "lower-numbered drafts must still consume author slots"
 
 response 39 null 20 developer 61
 run_admission
@@ -222,7 +223,7 @@ run_admission pull_request 0 50 50
 assert_contains "$output" 'CI_CAPACITY_LIMIT'
 assert_contains "$output" 'CI_AUTHOR_PR_LIMIT'
 assert_contains "$summary" 'at most 50 open PRs'
-assert_contains "$summary" "among the author's oldest 50 open PRs"
+assert_contains "$summary" "among the author's 50 lowest-numbered open PRs"
 
 response 12 null 6 developer 47
 run_admission pull_request 0 12 6
@@ -231,9 +232,9 @@ response 13 null 7 developer 48
 run_admission pull_request 0 12 6
 [[ "$status" == 1 ]] || fail "both configured limits should reject excess PRs"
 assert_contains "$output" '13 open PRs (limit: 12)'
-assert_contains "$output" 'position 7 by creation time among 7 open PRs'
+assert_contains "$output" 'position 7 by PR number among 7 open PRs'
 assert_contains "$summary" 'at most 12 open PRs'
-assert_contains "$summary" "among the author's oldest 6 open PRs"
+assert_contains "$summary" "among the author's 6 lowest-numbered open PRs"
 response 11 null 6 developer 47
 run_admission pull_request 0 12 6
 [[ "$status" == 0 ]] || fail "a retry below configured limits should recover: $output"
@@ -299,7 +300,7 @@ run_admission pull_request 3 40 20 '62'
 [[ "$status" == 1 ]] || fail "bypass must not hide a GitHub query failure"
 assert_contains "$output" 'CI_ADMISSION_QUERY_FAILED'
 
-# Creation-order ranking spans every page, not the current page or array order.
+# Numeric ranking spans every page, not the current page or array order.
 response 101 null 21
 jq '
   .[0].data.repository.pullRequests.nodes[0] as $author_pr |
@@ -309,8 +310,8 @@ jq '
 ' "${test_root}/response.json" >"${test_root}/paginated.json"
 mv "${test_root}/paginated.json" "${test_root}/response.json"
 run_admission pull_request 0 101 20
-[[ "$status" == 0 ]] || fail "an oldest PR on the last page should be admitted: $output"
-assert_contains "$output" 'PR #42 author position (oldest first): 1'
+[[ "$status" == 0 ]] || fail "the lowest PR number on the last page should be admitted: $output"
+assert_contains "$output" 'PR #42 author position (lowest PR number first): 1'
 
 response 101 null 21 developer 62
 run_admission pull_request 0 101 20
@@ -359,8 +360,6 @@ for invalid in \
   '.[0].data.repository.pullRequest.mergeQueueEntry = {}' \
   '.[0].data.repository.pullRequest.author = null' \
   '.[0].data.repository.pullRequests.nodes = []' \
-  'del(.[0].data.repository.pullRequests.nodes[0].createdAt)' \
-  '.[0].data.repository.pullRequests.nodes[0].createdAt = ""' \
   '.[0].data.repository.pullRequests.nodes[0].number = "42"' \
   '.[0].data.repository.pullRequests.nodes[1].number = 42' \
   '.[0].data.repository.pullRequests.nodes[0].number = 500' \

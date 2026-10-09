@@ -169,7 +169,7 @@ const readHistorySnapshot$ = command(
     signal: AbortSignal,
   ) => {
     const selected = await awaitWithSignal(
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0182; new non-billing transactions are prohibited.
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0180; new non-billing transactions are prohibited.
       set(writeDb$).transaction(
         async (tx) => {
           budget.check();

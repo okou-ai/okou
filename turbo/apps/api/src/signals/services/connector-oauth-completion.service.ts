@@ -1,11 +1,10 @@
-import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/connector-accounts";
+import { computed, type Computed } from "ccstate";
 import { connectorOauthCompletions } from "@okouai/db/schema/connector-oauth-state";
 import { and, eq, gt } from "drizzle-orm";
 
 import { connectorOAuthStateExpiresAt } from "../../lib/connector-oauth-state";
 import { nowDate } from "../../lib/time";
-import type { Db } from "../external/db";
-import { getConnectorAccount } from "./connector-account-lifecycle.service";
+import { db$, type Db } from "../external/db";
 
 export async function recordConnectorOAuthCompletion(
   db: Db,
@@ -27,38 +26,29 @@ export async function recordConnectorOAuthCompletion(
   signal.throwIfAborted();
 }
 
-export async function readConnectorOAuthCompletion(
-  db: Db,
-  args: {
+export function connectorOAuthCompletionReceipt(
+  scope$: Computed<{
     readonly attemptId: string;
-    readonly target: ConnectorAccountTarget;
     readonly orgId: string;
     readonly userId: string;
-  },
-  signal: AbortSignal,
-): Promise<{ readonly connectionId: string } | null> {
-  const [receipt] = await db
-    .select({ connectionId: connectorOauthCompletions.connectionId })
-    .from(connectorOauthCompletions)
-    .where(
-      and(
-        eq(connectorOauthCompletions.id, args.attemptId),
-        eq(connectorOauthCompletions.orgId, args.orgId),
-        eq(connectorOauthCompletions.userId, args.userId),
-        gt(connectorOauthCompletions.expiresAt, nowDate()),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  if (!receipt) {
-    return null;
-  }
-  const account = await getConnectorAccount(db, {
-    orgId: args.orgId,
-    userId: args.userId,
-    target: args.target,
-    connectionId: receipt.connectionId,
-  });
-  signal.throwIfAborted();
-  return account ? receipt : null;
+  }>,
+) {
+  return computed(
+    async (get): Promise<{ readonly connectionId: string } | null> => {
+      const { attemptId, orgId, userId } = get(scope$);
+      const [receipt] = await get(db$)
+        .select({ connectionId: connectorOauthCompletions.connectionId })
+        .from(connectorOauthCompletions)
+        .where(
+          and(
+            eq(connectorOauthCompletions.id, attemptId),
+            eq(connectorOauthCompletions.orgId, orgId),
+            eq(connectorOauthCompletions.userId, userId),
+            gt(connectorOauthCompletions.expiresAt, nowDate()),
+          ),
+        )
+        .limit(1);
+      return receipt ?? null;
+    },
+  );
 }

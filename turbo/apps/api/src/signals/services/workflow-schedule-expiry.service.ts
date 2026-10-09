@@ -98,7 +98,7 @@ export const skipExpiredWorkflowSchedule$ = command(
   ): Promise<"skipped" | "moved" | "held"> => {
     const db = set(writeDb$);
     signal.throwIfAborted();
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0345; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0343; new non-billing transactions are prohibited.
     const result = await db.transaction(async (tx) => {
       const [initial] = await tx
         .select({

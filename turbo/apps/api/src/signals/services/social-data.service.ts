@@ -414,7 +414,7 @@ export const createSocialDataJob$ = command(
         const estimate = await inspectSocialDataProviderPlan(plan, signal);
         signal.throwIfAborted();
         const resolution = get(usagePricingResolution$);
-        // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0251; new non-billing transactions are prohibited.
+        // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0249; new non-billing transactions are prohibited.
         return await db.transaction((tx) => {
           return admitJob(tx, { ...args, plan, estimate, resolution }, signal);
         });

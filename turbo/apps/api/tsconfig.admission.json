@@ -64,7 +64,6 @@
     "src/signals/services/chat-thread-defaults.service.ts",
     "src/signals/services/chat-thread-metadata-update.service.ts",
     "src/signals/services/chat-title.service.ts",
-    "src/signals/services/chat-trigger-source.service.ts",
     "src/signals/services/chat-user-message.service.ts",
     "src/signals/services/connector-account-resolution.service.ts",
     "src/signals/services/connector-runtime-preparation.service.ts",

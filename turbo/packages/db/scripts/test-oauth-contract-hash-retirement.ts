@@ -30,7 +30,7 @@ const schema = `oauth_hash_retirement_${randomUUID().replaceAll("-", "")}`;
 const client = new Client({ connectionString: databaseUrl });
 await client.connect();
 try {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0409; new non-billing transactions are prohibited.
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0407; new non-billing transactions are prohibited.
   await client.query("BEGIN");
   await client.query(`CREATE SCHEMA "${schema}"`);
   await client.query(`SET LOCAL search_path TO "${schema}", public`);
@@ -166,7 +166,7 @@ try {
     beforeAccounts.rows,
     "Do not rewrite accounts or require reconnect",
   );
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0410; new non-billing transactions are prohibited.
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0408; new non-billing transactions are prohibited.
   await client.query("SAVEPOINT invalid_redirect_uri");
   await assert.rejects(
     client.query(

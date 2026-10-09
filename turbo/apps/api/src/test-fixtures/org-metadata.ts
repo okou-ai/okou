@@ -19,7 +19,7 @@ export async function upsertOrgMetadataFixture(values: {
   const tier = orgTierSchema.parse(values.tier);
   await createStore()
     .set(writeDb$)
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0353; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0351; new non-billing transactions are prohibited.
     .transaction(async (tx) => {
       await tx
         .insert(orgMetadataCanonicalWrites)

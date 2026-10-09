@@ -44,11 +44,6 @@ export interface CustomConnectorRuntimeContext {
   readonly customConnectorSourceIdByFirewallName: Readonly<
     Record<string, string>
   >;
-  readonly skills: readonly {
-    readonly connectorId: string;
-    readonly connectorSlug: string;
-    readonly versionId: string;
-  }[];
 }
 
 export function compactRecord<T>(
@@ -264,39 +259,18 @@ type BuiltCustomConnectorRuntimeRow =
         ConnectorRuntimeTargetRegistration,
         { readonly kind: "custom" }
       >;
-      readonly skill:
-        CustomConnectorRuntimeContext["skills"][number] | undefined;
       readonly firewall: ExpandedFirewallConfig;
       readonly permissionPolicy: FirewallPolicy | undefined;
     }
   | {
       readonly registration: undefined;
-      readonly skill:
-        CustomConnectorRuntimeContext["skills"][number] | undefined;
       readonly firewall: undefined;
       readonly permissionPolicy: undefined;
     };
 
-export function customConnectorRuntimeSkill(
-  row: CustomConnectorRuntimeDataRows[number],
-): CustomConnectorRuntimeContext["skills"][number] | undefined {
-  const { skillStorageVersionId } = row.connector;
-  if (skillStorageVersionId === null) {
-    return undefined;
-  }
-  return {
-    connectorId: row.connector.id,
-    connectorSlug: row.connector.slug,
-    versionId: skillStorageVersionId,
-  };
-}
-
-function unavailableCustomConnectorRuntimeRow(
-  skill: BuiltCustomConnectorRuntimeRow["skill"],
-): BuiltCustomConnectorRuntimeRow {
+function unavailableCustomConnectorRuntimeRow(): BuiltCustomConnectorRuntimeRow {
   return {
     registration: undefined,
-    skill,
     firewall: undefined,
     permissionPolicy: undefined,
   };
@@ -357,7 +331,6 @@ async function buildCustomConnectorRuntimeRow(args: {
     provided: args.context.baseUrlVarsByConnectorId?.get(args.row.connector.id),
     hasProvided: hasProvidedBaseUrlVars,
   });
-  const skill = customConnectorRuntimeSkill(args.row);
   const { headers, query } = customConnectorRuntimeAuth({
     row: args.row,
   });
@@ -371,11 +344,11 @@ async function buildCustomConnectorRuntimeRow(args: {
         args.row.credentialAccess.resolvedAuthMethod === "none"
       )
     ) {
-      return unavailableCustomConnectorRuntimeRow(skill);
+      return unavailableCustomConnectorRuntimeRow();
     }
   }
   if (baseUrlVars === undefined) {
-    return unavailableCustomConnectorRuntimeRow(skill);
+    return unavailableCustomConnectorRuntimeRow();
   }
   const permissionBundle = args.context.permissionBundlesByConnectorId
     ? args.context.permissionBundlesByConnectorId.get(args.row.connector.id)
@@ -384,7 +357,7 @@ async function buildCustomConnectorRuntimeRow(args: {
         snapshot: args.context.connectorCatalogSnapshot,
       });
   if (permissionBundle === undefined) {
-    return unavailableCustomConnectorRuntimeRow(skill);
+    return unavailableCustomConnectorRuntimeRow();
   }
   const apisResult = safeSync(() => {
     return buildCustomConnectorRuntimeApis({
@@ -399,11 +372,11 @@ async function buildCustomConnectorRuntimeRow(args: {
     if (!(apisResult.error instanceof CustomConnectorRuntimePrefixError)) {
       throw apisResult.error;
     }
-    return unavailableCustomConnectorRuntimeRow(skill);
+    return unavailableCustomConnectorRuntimeRow();
   }
   const apis = apisResult.ok;
   if (apis.length === 0) {
-    return unavailableCustomConnectorRuntimeRow(skill);
+    return unavailableCustomConnectorRuntimeRow();
   }
   return {
     registration: {
@@ -414,7 +387,6 @@ async function buildCustomConnectorRuntimeRow(args: {
         ? {}
         : { sourceId: args.row.credentialAccess.memberConnectorId }),
     },
-    skill,
     firewall: {
       name: customConnectorInternalName(args.row.connector.id),
       description: args.row.connector.displayName,
@@ -446,11 +418,6 @@ export async function buildCustomConnectorRuntimeContext(
   const targets: ConnectorRuntimeTargetRegistration[] = [];
   const customConnectorIdByFirewallName: Record<string, string> = {};
   const customConnectorSourceIdByFirewallName: Record<string, string> = {};
-  const skills: {
-    connectorId: string;
-    connectorSlug: string;
-    versionId: string;
-  }[] = [];
   const grantByConnectorId = new Map(
     (args.grants ?? []).map((grant) => {
       return [grant.customConnectorId, grant.permissionNames] as const;
@@ -462,9 +429,6 @@ export async function buildCustomConnectorRuntimeContext(
       context: args,
       selectedPermissionNames: grantByConnectorId.get(row.connector.id) ?? [],
     });
-    if (built.skill) {
-      skills.push(built.skill);
-    }
     if (!built.registration) {
       continue;
     }
@@ -490,7 +454,6 @@ export async function buildCustomConnectorRuntimeContext(
     targets,
     customConnectorIdByFirewallName,
     customConnectorSourceIdByFirewallName,
-    skills,
   };
 }
 

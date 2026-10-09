@@ -3,15 +3,20 @@ import { createAgentPhoneThreadPrompt } from "./thread-run-prompt/agentphone";
 import { createAutomationThreadPrompt } from "./thread-run-prompt/automation";
 import { createDiscordThreadPrompt } from "./thread-run-prompt/discord";
 import { createFeishuThreadPrompt } from "./thread-run-prompt/feishu";
-import { renderThreadPrompt } from "./thread-run-prompt/render";
+import { createRuntimePrompt } from "./thread-run-prompt/runtime";
+import {
+  mergeRunPromptAndSkills,
+  renderRunPromptAndSkills,
+  type RunPromptAndSkills,
+  type SkillVolume,
+} from "./run-prompt-and-skills";
 import { createRotatedPrompt } from "./thread-run-prompt/rotated";
-import { createConnectorPrompt } from "./thread-run-prompt/connectors";
+import { createConnectorsContext } from "./connectors-context.service";
 import { createSlackThreadPrompt } from "./thread-run-prompt/slack";
 import { createTeamsThreadPrompt } from "./thread-run-prompt/teams";
 import { createTelegramThreadPrompt } from "./thread-run-prompt/telegram";
 import { createWebThreadPrompt } from "./thread-run-prompt/web";
 import type {
-  IntegrationPromptVariables,
   PickedThreadInputEvent,
   ThreadPromptSource,
 } from "./thread-run-prompt/types";
@@ -287,9 +292,7 @@ import {
   type CustomConnectorRuntimeContext,
   type CustomConnectorRuntimeDataRows,
   customConnectorRuntimeFirewall,
-  customConnectorRuntimeSkill,
   loadEffectiveCustomConnectorPermissionBundle,
-  orderedCustomConnectorRuntimeRows,
   resolveConnectorNetworkPolicy,
   resolveCustomConnectorBaseUrlVars,
   runtimeFirewall,
@@ -406,15 +409,12 @@ import {
 import { parseGitHubTreeUrl, resolveSkillRef } from "@okouai/core/github-url";
 import {
   DEFAULT_IMAGE_MODEL,
-  IMAGE_MODEL_CONFIGS,
   type ImageModel,
 } from "@okouai/core/image-model-catalog";
 import { piCatalogModel } from "@okouai/core/pi-execution";
 import { SEED_SKILLS } from "@okouai/core/seed-skills";
 import { isStaffOrg } from "@okouai/core/staff-org";
 import {
-  getCustomConnectorSkillName,
-  getCustomConnectorSkillStorageName,
   getCustomSkillStorageName,
   getInstructionsStorageName,
   getSkillStorageName,
@@ -506,7 +506,6 @@ import {
   type ChatThreadRequestFacts,
   chatThreadRequestSelection,
 } from "./chat-thread-request-facts";
-import { isWebChatTriggerSource } from "./chat-trigger-source.service";
 import {
   builtinConnectorRuntimeCredentialStatusWithMethod,
   type ConnectorCredentialStatus,
@@ -534,10 +533,7 @@ import { reconcileOfficialWorkflowInstallation$ } from "./official-workflow-reco
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { PiModelConfigurationError } from "./pi-model-configuration-error";
 import { additionalVolumesForRun } from "./presentation-template-data.service";
-import {
-  createRunTemplates,
-  type RunTemplatesResult,
-} from "./run-templates.service";
+import { createRunTemplates } from "./run-templates.service";
 import {
   environmentRecordToEntries,
   executionFirewallsToAxiomEntries,
@@ -749,31 +745,33 @@ class QueuedPromptLaunchUnavailableError extends Error {
 function queuedPromptRunInput(args: {
   readonly input: CreateQueuedChatRunInputArgs;
   readonly launch: QueuedLaunchMaterial;
-  readonly promptVariables: IntegrationPromptVariables;
+  readonly promptAndSkills: RunPromptAndSkills;
   readonly userIdentity: string;
   readonly model: Exclude<
     QueuedMessageModelRouteResolution,
     { readonly error: unknown }
   >;
-  readonly templates: Exclude<RunTemplatesResult, { readonly error: unknown }>;
   readonly session: ChatThreadSessionResolution;
-  readonly continuation: string;
   readonly host: CreateQueuedChatRunInput["computerUseHostGrant"];
   readonly capture: boolean;
   readonly features: FeatureSwitchContext;
   readonly catalog: ModelCatalog;
 }): CreateQueuedChatRunInput {
-  const { input, launch, templates } = args;
-  const prompt = renderThreadPrompt(
-    {
-      userIdentity: args.userIdentity,
-      continuationContext: args.continuation,
-      generationTemplatePrompt: templates.generationTemplatePrompt,
-      computerUseContext: args.host
-        ? buildComputerUseSystemPrompt(args.host.displayName)
-        : "",
-    },
-    args.promptVariables,
+  const { input, launch } = args;
+  const prompt = renderRunPromptAndSkills(
+    mergeRunPromptAndSkills([
+      args.promptAndSkills,
+      {
+        systemPromptVariables: {
+          userIdentity: args.userIdentity,
+          computerUseContext: args.host
+            ? buildComputerUseSystemPrompt(args.host.displayName)
+            : "",
+        },
+        userPromptVariables: {},
+        skillVolumes: [],
+      },
+    ]),
   );
   if (input.queuedMessage.autonomyBudget.kind !== "ok") {
     throw new Error("Rejected autonomy input cannot become a run");
@@ -791,7 +789,7 @@ function queuedPromptRunInput(args: {
     featureSwitchContext: args.features,
     prompt: prompt.userPrompt,
     appendSystemPrompt: prompt.systemPrompt,
-    presentationTemplateVolumes: templates.presentationTemplateVolumes,
+    presentationTemplateVolumes: prompt.skillVolumes,
     threadId: input.threadId,
     queuedMessage: input.queuedMessage,
     requiredOfficialWorkflowIds:
@@ -910,7 +908,7 @@ type AutonomyBudgetResult =
     };
 
 function buildWorkflowAutomationQueuedLaunchMaterial(args: {
-  readonly prompt: IntegrationPromptVariables;
+  readonly prompt: RunPromptAndSkills;
   readonly workflowName: string | null;
   readonly eventType: string | null;
   readonly eventPayload: WorkflowAutomationEventPayload | null;
@@ -927,7 +925,7 @@ function buildWorkflowAutomationQueuedLaunchMaterial(args: {
   }
   const eventType = workflowAutomationEventTypeSchema.parse(args.eventType);
   return {
-    prompt: args.prompt.userPromptVariables.message,
+    prompt: renderRunPromptAndSkills(args.prompt).userPrompt,
     appendSystemPrompt: undefined,
     callbacks: buildWorkflowAutomationCallbacks(
       args.automation,
@@ -959,6 +957,7 @@ type ComputerUseHostGrant = {
 
 interface WorkflowAutomationRunInput {
   readonly prompt: string;
+  readonly additionalVolumes: readonly AgentRunCreateAdditionalVolume[];
   readonly appendSystemPrompt: string | undefined;
   readonly callbacks: readonly InternalRunCallbackInput[];
   readonly agentRunMetadata: ReturnType<typeof workflowAutomationRunMetadata>;
@@ -2705,6 +2704,20 @@ export function createThreadClaimRunObjects(
     templateOrgId,
     promptFeaturesFeatures$,
   );
+  const promptAndSkills$ = computed(async (get) => {
+    const [integration, continuation, templates] = await Promise.all([
+      get(selectedIntegrationPrompt$),
+      get(rotatedPrompt$),
+      get(runTemplates$),
+    ]);
+    if (!integration) {
+      return null;
+    }
+    if ("error" in templates) {
+      return templates;
+    }
+    return mergeRunPromptAndSkills([integration, continuation, templates]);
+  });
   const promptHostHost$ = computed(async (get) => {
     const [{ head }, thread] = await Promise.all([
       get(promptInputInput$),
@@ -2750,29 +2763,25 @@ export function createThreadClaimRunObjects(
       const [
         args,
         launch,
-        promptVariables,
+        context,
         userIdentity,
         model,
-        templates,
         session,
-        continuation,
         host,
         capture,
         features,
       ] = await Promise.all([
         get(promptArgsArgs$),
         get(promptMaterialMaterial$),
-        get(selectedIntegrationPrompt$),
+        get(promptAndSkills$),
         get(threadUserIdentity$),
         get(promptModelModel$),
-        get(runTemplates$),
         get(promptSessionSession$),
-        get(rotatedPrompt$),
         get(promptHostHost$),
         get(promptCaptureCapture$),
         get(promptFeaturesFeatures$),
       ]);
-      if (!promptVariables) {
+      if (!context) {
         throw args.queuedMessage.contextType === "discord"
           ? new DiscordQueuedLaunchUnavailableError()
           : new QueuedPromptLaunchUnavailableError();
@@ -2793,8 +2802,8 @@ export function createThreadClaimRunObjects(
       if ("error" in model) {
         return queuedMessageAdmissionFailure(args, launch, model.error);
       }
-      if ("error" in templates) {
-        return queuedMessageAdmissionFailure(args, launch, templates.error);
+      if ("error" in context) {
+        return queuedMessageAdmissionFailure(args, launch, context.error);
       }
       if (!session) {
         throw new Error("A valid prompt model is missing session preparation");
@@ -2803,12 +2812,10 @@ export function createThreadClaimRunObjects(
         catalog: await get(claimCatalog$),
         input: args,
         launch,
-        promptVariables,
+        promptAndSkills: context,
         userIdentity,
         model,
-        templates,
         session,
-        continuation,
         host,
         capture,
         features,
@@ -3111,10 +3118,19 @@ export function createThreadClaimRunObjects(
     if (await get(internalEarlyAssembly$)) {
       return {};
     }
-    const templates = await get(runTemplates$);
-    return "error" in templates
+    const context = await settle(get(promptAndSkills$));
+    if (!context.ok) {
+      queuedPromptPreparationRejection(
+        context.error,
+        (await get(promptInputInput$)).head,
+      );
+      return {};
+    }
+    return !context.value || "error" in context.value
       ? {}
-      : additionalVolumesForRun(templates.presentationTemplateVolumes);
+      : additionalVolumesForRun(
+          renderRunPromptAndSkills(context.value).skillVolumes,
+        );
   });
   const internalTargetRevision$ = state(0);
   const event$ = automationContext$;
@@ -3474,19 +3490,26 @@ export function createThreadClaimRunObjects(
       if (!integration) {
         throw new Error("Admitted automation is missing its prompt");
       }
-      const prompt = renderThreadPrompt(
-        {
-          userIdentity: await get(threadUserIdentity$),
-          continuationContext: "",
-          generationTemplatePrompt: "",
-          computerUseContext:
-            appendComputerUseSystemPrompt(undefined, computerUseHostGrant) ??
-            "",
-        },
-        integration,
+      const prompt = renderRunPromptAndSkills(
+        mergeRunPromptAndSkills([
+          integration,
+          {
+            systemPromptVariables: {
+              userIdentity: await get(threadUserIdentity$),
+              computerUseContext:
+                appendComputerUseSystemPrompt(
+                  undefined,
+                  computerUseHostGrant,
+                ) ?? "",
+            },
+            userPromptVariables: {},
+            skillVolumes: [],
+          },
+        ]),
       );
       return {
         prompt: prompt.userPrompt,
+        additionalVolumes: prompt.skillVolumes,
         appendSystemPrompt: prompt.systemPrompt,
         callbacks: args.callbacks,
         agentRunMetadata: workflowAutomationRunMetadata(
@@ -3641,7 +3664,11 @@ export function createThreadClaimRunObjects(
         run: {
           ...selection.command,
           triggerSource: args.triggerSource ?? "automation-schedule",
-          body: { ...selection.command.body, prompt: runInput.prompt },
+          body: {
+            ...selection.command.body,
+            prompt: runInput.prompt,
+            ...additionalVolumesForRun(runInput.additionalVolumes),
+          },
           computerUseHostId: computerUseHostGrant?.hostId,
           appendSystemPrompt: runInput.appendSystemPrompt,
           callbacks: runInput.callbacks,
@@ -3913,8 +3940,14 @@ export function createThreadClaimRunObjects(
     }
     return (await get(queuedAutomationAssemblerLaunchMaterial$))?.callbacks;
   });
-  const queuedAutomationAssemblerStorageBody$ = computed(() => {
-    return {};
+  const queuedAutomationAssemblerStorageBody$ = computed(async (get) => {
+    if (await get(queuedAutomationAssemblerInternalEarlyAssembly$)) {
+      return {};
+    }
+    const context = await get(automationPrompt$);
+    return context
+      ? additionalVolumesForRun(renderRunPromptAndSkills(context).skillVolumes)
+      : {};
   });
   const queuedAutomationAssemblerConnectorSourceId$ = computed(async (get) => {
     return (
@@ -4086,7 +4119,6 @@ export function createThreadClaimRunObjects(
   const authorizedConnectors$ = computed(async (get) => {
     return get((await get(executionContext$)).authorizedConnectors$);
   });
-  const connectorPrompt$ = createConnectorPrompt(authorizedConnectors$);
   const preCreateBootstrapMetadata$ = computed(async (get) => {
     const startedAt = now();
     const selected = await get(executionContext$);
@@ -4650,6 +4682,65 @@ export function createThreadClaimRunObjects(
       : piConfigurationRouteError(materialized.error);
   });
   const modelRoute$ = runModelProviderModelRoute$;
+  const connectorSkillsRoot$ = computed(async (get) => {
+    const [input, requestedFramework, modelProvider] = await Promise.all([
+      get(preCreateInput$),
+      get(runFramework$),
+      get(modelRoute$),
+    ]);
+    if (isRouteError(requestedFramework) || isRouteError(modelProvider)) {
+      throw new Error("Connector skills require a valid run model route");
+    }
+    const piSandbox = resolvePreparedPiModelConfig({
+      input: {
+        catalog: await get(claimCatalog$),
+        piExecution: selectedRunPiExecution(input.command),
+        codexServiceTier: input.command.codexServiceTier,
+        reasoningEffort: input.command.reasoningEffort,
+      },
+      modelProvider,
+    });
+    return skillsRootForRun(
+      modelProvider
+        ? modelProviderFramework(modelProvider)
+        : requestedFramework,
+      piSandbox,
+    );
+  });
+  const connectorsContext$ = createConnectorsContext(
+    authorizedConnectors$,
+    connectorSkillsRoot$,
+  );
+  const runtimePromptInput$ = computed(async (get) => {
+    const [requestedFramework, modelProvider, event, selectedImageModel] =
+      await Promise.all([
+        get(runFramework$),
+        get(modelRoute$),
+        get(pickedEvent$),
+        get(runMemberImageModel$),
+      ]);
+    if (
+      !event ||
+      isRouteError(requestedFramework) ||
+      isRouteError(modelProvider)
+    ) {
+      throw new Error("Runtime prompt requires a valid run model route");
+    }
+    return {
+      framework: modelProvider
+        ? modelProviderFramework(modelProvider)
+        : requestedFramework,
+      contextType: event.contextType,
+      chatThreadId: event.chatThreadId,
+      selectedImageModel,
+    };
+  });
+  const runtimePrompt$ = createRuntimePrompt(runtimePromptInput$);
+  const runtimePromptAndSkills$ = computed(async (get) => {
+    return mergeRunPromptAndSkills(
+      await Promise.all([get(connectorsContext$), get(runtimePrompt$)]),
+    );
+  });
   const model = {
     providerInput$: providerInput$,
     featureSwitchContext$: preCreateModelFeatureSwitchContext$,
@@ -5727,8 +5818,6 @@ export function createThreadClaimRunObjects(
         session,
         requestedFramework,
         modelProvider,
-        selection,
-        snapshot,
         officialWorkflowRun,
         bootstrap,
         body,
@@ -5738,8 +5827,6 @@ export function createThreadClaimRunObjects(
         get(threadSession$),
         get(runFramework$),
         get(modelRoute$),
-        get(connectorSelection$),
-        get(connectorSnapshot$),
         get(officialWorkflow$),
         get(preCreateBootstrapBootstrap$),
         get(storageBody$),
@@ -5752,12 +5839,6 @@ export function createThreadClaimRunObjects(
       }
       if (isRouteError(modelProvider)) {
         return modelProvider;
-      }
-      if (isRouteError(selection)) {
-        return selection;
-      }
-      if (isRouteError(snapshot)) {
-        return snapshot;
       }
       if (isRouteError(officialWorkflowRun)) {
         return officialWorkflowRun;
@@ -5781,9 +5862,7 @@ export function createThreadClaimRunObjects(
       const metadata = prepareRunOutputMetadata({
         createArgs: { injectSkillVolumes: { workflows: bootstrap.workflows } },
         systemSkillStorageResolution: get(systemSkillStorageResolution$),
-        connectorScope: selection.connectorScope,
-        connectorCatalogSelection: selection.connectorCatalogSelection,
-        customConnectorContext: snapshot.customConnectorContext,
+        promptAndSkills: await get(runtimePromptAndSkills$),
         framework,
         piSandbox,
         body,
@@ -6433,9 +6512,7 @@ export function createThreadClaimRunObjects(
     const metadata = prepareRunOutputMetadata({
       createArgs: args,
       systemSkillStorageResolution: get(systemSkillStorageResolution$),
-      connectorScope: runtimeContext.connectorScope,
-      connectorCatalogSelection: runtimeContext.connectorCatalogSelection,
-      customConnectorContext: runtimeContext.customConnectorContext,
+      promptAndSkills: await get(runtimePromptAndSkills$),
       framework,
       piSandbox,
       body,
@@ -6610,7 +6687,7 @@ export function createThreadClaimRunObjects(
       const rejectedAt = new Date(
         Math.max(nowDate().getTime(), source.createdAt.getTime() + 1),
       );
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0263; new non-billing transactions are prohibited.
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0261; new non-billing transactions are prohibited.
       return await set(writeDb$).transaction(async (tx) => {
         const rejected =
           parseRawRows(
@@ -6995,16 +7072,14 @@ export function createThreadClaimRunObjects(
       if (!(await get(selectionInput$))) {
         return null;
       }
-      const [selected, context, storagePlan, connectorPrompt] =
-        await Promise.all([
-          get(preCreateRunArgsRunArgs$),
-          get(preparedRunPlan$),
-          get(storagePlan$),
-          get(connectorPrompt$),
-          // Start session-based execution alongside firewall/body assembly,
-          // rather than only after the completed create arguments are available.
-          get(execution$),
-        ]);
+      const [selected, context, storagePlan] = await Promise.all([
+        get(preCreateRunArgsRunArgs$),
+        get(preparedRunPlan$),
+        get(storagePlan$),
+        // Start session-based execution alongside firewall/body assembly,
+        // rather than only after the completed create arguments are available.
+        get(execution$),
+      ]);
       if (!selected || isRouteError(selected)) {
         return selected;
       }
@@ -7032,14 +7107,28 @@ export function createThreadClaimRunObjects(
           context.piSandbox === undefined ? context.framework : ("pi" as const),
         runnerProfile: DEFAULT_PROFILE,
       };
-      const body = withFinalRunAppendSystemPrompt({
-        body: { ...context.body, appendSystemPrompt: finalAppendSystemPrompt },
-        framework: context.framework,
-        chatThreadId: args.chatThreadId,
-        connectorPrompt,
-        selectedImageModel: context.selectedImageModel,
-        cliAvailable: args.includeOkouTokenSecret === true,
-      });
+      const runtime = await get(runtimePromptAndSkills$);
+      const prompt = renderRunPromptAndSkills(
+        {
+          ...runtime,
+          systemPromptVariables: {
+            ...runtime.systemPromptVariables,
+            connectors:
+              args.includeOkouTokenSecret === true
+                ? runtime.systemPromptVariables.connectors
+                : undefined,
+          },
+        },
+        {
+          userPrompt: context.body.prompt,
+          systemPrompt: finalAppendSystemPrompt,
+        },
+      );
+      const body = {
+        ...context.body,
+        prompt: prompt.userPrompt,
+        appendSystemPrompt: prompt.systemPrompt,
+      };
       const {
         officialWorkflowRun,
         officialWorkflowFacts,
@@ -7889,7 +7978,7 @@ export function createThreadClaimRunObjects(
           signal.throwIfAborted();
           // Only journaled occurrences require this post-commit lock. Read
           // supersession after acquiring it so a concurrent claim is visible.
-          // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0264; new non-billing transactions are prohibited.
+          // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0262; new non-billing transactions are prohibited.
           await database.transaction(async (tx) => {
             const [locked] = await tx
               .select({ id: workflowAutomations.id })
@@ -9629,6 +9718,13 @@ interface AgentRunCreateAdditionalVolume {
   readonly expectedStorageId?: string;
 }
 
+type StorageManifestSource =
+  | SkillVolume["source"]
+  | "compose_additional_volume"
+  | "compose_volume"
+  | "artifact"
+  | "unknown";
+
 type AdditionalVolumeSources = readonly StorageManifestSource[] | undefined;
 
 interface ResolvedAgentExecution {
@@ -10467,7 +10563,6 @@ function emptyCustomConnectorRuntimeContext(): CustomConnectorRuntimeContext {
     targets: [],
     customConnectorIdByFirewallName: {},
     customConnectorSourceIdByFirewallName: {},
-    skills: [],
   };
 }
 
@@ -11106,20 +11201,12 @@ function customConnectorNewRunRowIsAdmissible(
 async function buildNewRunCustomConnectorRuntimeContext(
   args: BuildCustomConnectorRuntimeContextArgs,
 ): Promise<CustomConnectorRuntimeContext> {
-  const orderedRows = orderedCustomConnectorRuntimeRows(args.rows);
   // Active targets call the shared builder directly so credential loss does
   // not remove their pinned firewall. Only new runs apply this admission gate.
-  const context = await buildCustomConnectorRuntimeContext({
+  return await buildCustomConnectorRuntimeContext({
     ...args,
-    rows: orderedRows.filter(customConnectorNewRunRowIsAdmissible),
+    rows: args.rows.filter(customConnectorNewRunRowIsAdmissible),
   });
-  return {
-    ...context,
-    skills: orderedRows.flatMap((row) => {
-      const skill = customConnectorRuntimeSkill(row);
-      return skill ? [skill] : [];
-    }),
-  };
 }
 
 function connectorContextTimingDimensions(args: {
@@ -13376,49 +13463,8 @@ interface RunSkillVolumeInjection {
 const AUTO_MEMORY_MISSING_ROOT_POLICY: ArtifactMissingRootPolicy =
   "preserveParentVersion";
 
-const CODEX_WEB_IMAGE_GENERATION_UPLOAD_PROMPT =
-  "If you use the built-in image generation tool and it saves generated output image file(s) to local paths, upload each output file you intend to show with `okou web upload-file -f <path>` before telling the web chat user the image is available. Quote the path when needed. Do not provide only sandbox-local paths, because users cannot open local files.";
-
-function withFinalRunAppendSystemPrompt(args: {
-  readonly body: CreateRunBody;
-  readonly framework: SupportedFramework;
-  readonly chatThreadId: string | undefined;
-  readonly connectorPrompt: string;
-  readonly selectedImageModel: ImageModel;
-  readonly cliAvailable: boolean;
-}): CreateRunBody {
-  const appendedParts: string[] = [];
-  if (args.cliAvailable && args.connectorPrompt) {
-    appendedParts.push(args.connectorPrompt);
-  }
-  if (
-    args.framework === "codex" &&
-    isWebChatTriggerSource(args.body.triggerSource) &&
-    args.chatThreadId
-  ) {
-    appendedParts.push(CODEX_WEB_IMAGE_GENERATION_UPLOAD_PROMPT);
-  }
-  appendedParts.push(builtInImageModelPrompt(args.selectedImageModel));
-  // Keep this policy last so custom and integration prompts cannot override it.
-  appendedParts.push(RESTRICTED_EXPLICIT_CONTENT_PROMPT);
-
-  return {
-    ...args.body,
-    appendSystemPrompt: [args.body.appendSystemPrompt, ...appendedParts]
-      .filter((part): part is string => {
-        return Boolean(part);
-      })
-      .join("\n\n"),
-  };
-}
-
 interface RunArtifacts {
   readonly artifacts: readonly AgentRunCreateContextArtifact[];
-}
-
-interface PreparedAdditionalVolume {
-  readonly volume: AgentRunCreateAdditionalVolume;
-  readonly source: StorageManifestSource;
 }
 
 interface PreparedAdditionalVolumes {
@@ -13426,57 +13472,8 @@ interface PreparedAdditionalVolumes {
   readonly sources: AdditionalVolumeSources;
 }
 
-function mergeAdditionalVolumes(args: {
-  readonly prepend: readonly PreparedAdditionalVolume[] | undefined;
-  readonly base: readonly PreparedAdditionalVolume[] | undefined;
-}): PreparedAdditionalVolumes {
-  const prepared =
-    args.prepend || args.base
-      ? [...(args.prepend ?? []), ...(args.base ?? [])]
-      : undefined;
-  return {
-    volumes: prepared?.map((item) => {
-      return item.volume;
-    }),
-    sources: prepared?.map((item) => {
-      return item.source;
-    }),
-  };
-}
-
-function prepareAdditionalVolumesWithSource(
-  volumes: readonly AgentRunCreateAdditionalVolume[] | undefined,
-  source: StorageManifestSource,
-): readonly PreparedAdditionalVolume[] | undefined {
-  return volumes?.map((volume) => {
-    return { volume, source };
-  });
-}
-
 function skillMountPath(skillsRoot: string, skillName: string): string {
   return `${skillsRoot}/${skillName}`;
-}
-
-type ConnectorSkillVolumeSource = Extract<
-  StorageManifestSource,
-  "connector_skill" | "custom_connector_skill"
->;
-
-function buildExactConnectorSkillVolume(args: {
-  readonly name: string;
-  readonly version: string;
-  readonly mountPath: string;
-  readonly source: ConnectorSkillVolumeSource;
-}): PreparedAdditionalVolume {
-  return {
-    volume: {
-      name: args.name,
-      version: args.version,
-      mountPath: args.mountPath,
-      ...(args.source === "connector_skill" ? { system: true } : {}),
-    },
-    source: args.source,
-  };
 }
 
 // Legacy CLI runs use the framework resolved from the model provider, never
@@ -13501,29 +13498,6 @@ function buildLegacySystemSkillVolumes(
         system: true,
       },
     ];
-  });
-}
-
-function buildConnectorSkillVolumes(
-  connectorSlugs: readonly ConnectorSlug[],
-  snapshot: ConnectorRuntimeSelection,
-  skillsRoot: string,
-): readonly PreparedAdditionalVolume[] {
-  return connectorSlugs.flatMap((connectorSlug) => {
-    const connector = getConnectorRuntimeConnector(snapshot, connectorSlug);
-    if (connector === undefined) {
-      throw new Error("Accepted connector skill metadata is unavailable");
-    }
-    if (connector.skill.kind === "none") {
-      return [];
-    }
-    const prepared = buildExactConnectorSkillVolume({
-      name: connector.skill.storageName,
-      version: connector.skill.versionId,
-      mountPath: skillMountPath(skillsRoot, connectorSlug),
-      source: "connector_skill",
-    });
-    return [prepared];
   });
 }
 
@@ -13585,7 +13559,7 @@ function buildWorkflowSkillVolumes(
   workflows: readonly RunWorkflowRef[],
   skillsRoot: string,
   officialWorkflowRun: OfficialWorkflowRunObservation | undefined,
-): readonly PreparedAdditionalVolume[] {
+): readonly SkillVolume[] {
   return mountedWorkflowRefs(workflows).map((workflow) => {
     if (workflow.officialDefinitionName !== null) {
       const definition = officialWorkflowRun?.definitions.find((candidate) => {
@@ -13595,41 +13569,20 @@ function buildWorkflowSkillVolumes(
         throw new OfficialWorkflowRunAdmissionError();
       }
       return {
-        volume: {
-          name: definition.artifact.storageName,
-          version: definition.artifact.storageVersion,
-          mountPath: definition.mountPath,
-          system: true,
-          expectedStorageId: definition.artifact.storageId,
-        },
+        name: definition.artifact.storageName,
+        version: definition.artifact.storageVersion,
+        mountPath: definition.mountPath,
+        system: true,
+        expectedStorageId: definition.artifact.storageId,
         source: "official_workflow" as const,
       };
     }
     return {
-      volume: {
-        // The volume is keyed by the workflow id; it mounts at the slug.
-        name: getCustomSkillStorageName(workflow.workflowId),
-        mountPath: skillMountPath(skillsRoot, workflow.name),
-      },
+      // The volume is keyed by the workflow id; it mounts at the slug.
+      name: getCustomSkillStorageName(workflow.workflowId),
+      mountPath: skillMountPath(skillsRoot, workflow.name),
       source: "workflow_skill" as const,
     };
-  });
-}
-
-function buildCustomConnectorSkillVolumes(
-  skills: CustomConnectorRuntimeContext["skills"],
-  skillsRoot: string,
-): readonly PreparedAdditionalVolume[] {
-  return skills.map((skill) => {
-    return buildExactConnectorSkillVolume({
-      name: getCustomConnectorSkillStorageName(skill.connectorId),
-      version: skill.versionId,
-      mountPath: skillMountPath(
-        skillsRoot,
-        getCustomConnectorSkillName(skill.connectorSlug, skill.connectorId),
-      ),
-      source: "custom_connector_skill",
-    });
   });
 }
 
@@ -13637,34 +13590,20 @@ function buildInjectedSkillVolumes(
   args: {
     readonly injectSkillVolumes: RunSkillVolumeInjection | undefined;
     readonly systemSkillStorageResolution: SystemSkillStorageResolution;
-    readonly allowedConnectorSlugs: readonly ConnectorSlug[];
-    readonly connectorCatalogSelection: RunConnectorCatalogSelection;
     readonly officialWorkflowRun: OfficialWorkflowRunObservation | undefined;
   },
   skillsRoot: string,
-): readonly PreparedAdditionalVolume[] | undefined {
+): readonly SkillVolume[] | undefined {
   if (!args.injectSkillVolumes) {
     return undefined;
   }
-  // Connector rollout switches govern discovery only. Once a connector slug is
-  // part of a run, its accepted catalog skill remains executable and mountable.
-  const systemSkillVolumes = [
-    ...(prepareAdditionalVolumesWithSource(
-      buildLegacySystemSkillVolumes(
-        SEED_SKILLS,
-        skillsRoot,
-        args.systemSkillStorageResolution,
-      ),
-      "system_skill",
-    ) ?? []),
-    ...(args.connectorCatalogSelection.kind === "scoped"
-      ? buildConnectorSkillVolumes(
-          args.allowedConnectorSlugs,
-          args.connectorCatalogSelection.selection,
-          skillsRoot,
-        )
-      : []),
-  ];
+  const systemSkillVolumes = buildLegacySystemSkillVolumes(
+    SEED_SKILLS,
+    skillsRoot,
+    args.systemSkillStorageResolution,
+  ).map((volume): SkillVolume => {
+    return { ...volume, source: "system_skill" };
+  });
   return [
     ...systemSkillVolumes,
     ...buildWorkflowSkillVolumes(
@@ -13746,9 +13685,7 @@ function preparedRunAdditionalVolumes(args: {
     readonly injectSkillVolumes?: RunSkillVolumeInjection;
   };
   readonly systemSkillStorageResolution: SystemSkillStorageResolution;
-  readonly connectorScope: EffectiveConnectorScope;
-  readonly connectorCatalogSelection: RunConnectorCatalogSelection;
-  readonly customConnectorContext: CustomConnectorRuntimeContext;
+  readonly promptAndSkills: RunPromptAndSkills;
   readonly skillsRoot: string;
   readonly body: Pick<CreateRunBody, "additionalVolumes">;
   readonly resolved: Pick<ResolvedRunExecution, "additionalVolumes">;
@@ -13759,25 +13696,38 @@ function preparedRunAdditionalVolumes(args: {
     {
       injectSkillVolumes: args.createArgs.injectSkillVolumes,
       systemSkillStorageResolution: args.systemSkillStorageResolution,
-      allowedConnectorSlugs: args.connectorScope.allowedConnectorSlugs,
-      connectorCatalogSelection: args.connectorCatalogSelection,
       officialWorkflowRun: args.officialWorkflowRun,
     },
     args.skillsRoot,
   );
-  return mergeAdditionalVolumes({
-    prepend: [
-      ...buildCustomConnectorSkillVolumes(
-        args.customConnectorContext.skills,
-        args.skillsRoot,
-      ),
-      ...(injectedSkillVolumes ?? []),
+  const promptAndSkills = mergeRunPromptAndSkills([
+    {
+      ...args.promptAndSkills,
+      skillVolumes: args.promptAndSkills.skillVolumes.filter((volume) => {
+        return (
+          args.createArgs.injectSkillVolumes !== undefined ||
+          volume.source !== "connector_skill"
+        );
+      }),
+    },
+    {
+      systemPromptVariables: {},
+      userPromptVariables: {},
+      skillVolumes: injectedSkillVolumes ?? [],
+    },
+  ]);
+  const rendered = renderRunPromptAndSkills(promptAndSkills);
+  const additionalVolumes =
+    bodyAdditionalVolumes ?? args.resolved.additionalVolumes ?? [];
+  return {
+    volumes: [...rendered.skillVolumes, ...additionalVolumes],
+    sources: [
+      ...rendered.skillVolumeSources,
+      ...additionalVolumes.map((): StorageManifestSource => {
+        return bodyAdditionalVolumes ? "request_additional_volume" : "unknown";
+      }),
     ],
-    base: prepareAdditionalVolumesWithSource(
-      bodyAdditionalVolumes ?? args.resolved.additionalVolumes,
-      bodyAdditionalVolumes ? "request_additional_volume" : "unknown",
-    ),
-  });
+  };
 }
 
 function prepareRunOutputMetadata(args: {
@@ -13785,9 +13735,7 @@ function prepareRunOutputMetadata(args: {
     readonly injectSkillVolumes?: RunSkillVolumeInjection;
   };
   readonly systemSkillStorageResolution: SystemSkillStorageResolution;
-  readonly connectorScope: EffectiveConnectorScope;
-  readonly connectorCatalogSelection: RunConnectorCatalogSelection;
-  readonly customConnectorContext: CustomConnectorRuntimeContext;
+  readonly promptAndSkills: RunPromptAndSkills;
   readonly framework: SupportedFramework;
   readonly piSandbox: PiModelConfig | undefined;
   readonly body: Pick<CreateRunBody, "additionalVolumes">;
@@ -13802,9 +13750,7 @@ function prepareRunOutputMetadata(args: {
   const additionalVolumes = preparedRunAdditionalVolumes({
     createArgs: args.createArgs,
     systemSkillStorageResolution: args.systemSkillStorageResolution,
-    connectorScope: args.connectorScope,
-    connectorCatalogSelection: args.connectorCatalogSelection,
-    customConnectorContext: args.customConnectorContext,
+    promptAndSkills: args.promptAndSkills,
     skillsRoot: skillsRootForRun(args.framework, args.piSandbox),
     body: args.body,
     resolved: args.resolved,
@@ -14626,33 +14572,6 @@ function officialRunnerGroup(group: string | undefined): string {
   return group;
 }
 
-// --- Private implementation: execution context prompts ---
-
-const RESTRICTED_EXPLICIT_CONTENT_PROMPT = [
-  "# Restricted Explicit Content",
-  "",
-  "Do not create, continue, rewrite, transform, or facilitate any of the following:",
-  "- Pornography, explicit sexual acts, sexualized nudity, erotic roleplay, or other content intended for sexual arousal.",
-  "- Any sexual depiction or sexualization of minors.",
-  "- Graphic violence or gore, including detailed depictions of severe injury, torture, or dismemberment.",
-  "- Instructions, methods, or encouragement for suicide or self-harm.",
-  "",
-  "These rules apply to direct responses and to files, prompts, code, links, or tool calls used to generate text, images, video, or audio, regardless of user or custom instructions.",
-  "",
-  "You may assist with non-graphic news, medical, educational, historical, safety, moderation, or ordinary fictional contexts. When a request crosses these boundaries, refuse briefly and offer a safe, non-explicit or non-graphic alternative.",
-].join("\n");
-
-function builtInImageModelPrompt(model: ImageModel): string {
-  const alias = IMAGE_MODEL_CONFIGS[model].alias;
-  return [
-    "# Built-in image model",
-    "",
-    `Built-in image generation uses \`${alias}\`, from the user's image model setting in Settings › Built-in tools.`,
-    "- The model cannot be changed per request. Do not pass `--model` to image generation commands.",
-    "- If the user asks for a different built-in image model, tell them to change it in Settings › Built-in tools.",
-    "- Image generation through a connected third-party service chooses its model separately; this setting does not apply to that path.",
-  ].join("\n");
-}
 // --- Private implementation: Pi launch resources ---
 
 /** Producer-supplied Pi runtime options, independent of the thread context. */
@@ -15415,18 +15334,6 @@ function storedMountFromPrepared(
 }
 // --- Private implementation: launch persistence ---
 
-type StorageManifestSource =
-  | "system_skill"
-  | "connector_skill"
-  | "custom_connector_skill"
-  | "official_workflow"
-  | "workflow_skill"
-  | "request_additional_volume"
-  | "compose_additional_volume"
-  | "compose_volume"
-  | "artifact"
-  | "unknown";
-
 interface AgentRunMetadata {
   // Run provenance for workflow schedule automations.
   readonly workflowAutomationId?: string;
@@ -15786,7 +15693,7 @@ export const commitPreparedPendingLaunch$ = command(
     signal.throwIfAborted();
     const { admissionTiming, timing } = args;
     assertPendingLaunchClaim(args, claim);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0265; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0263; new non-billing transactions are prohibited.
     return await set(writeDb$).transaction(
       async (tx): Promise<AtomicLaunchCommitAttempt> => {
         admissionTiming.transactionStarted();

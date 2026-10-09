@@ -242,7 +242,7 @@ export const ensureWorkflowUserAutomationThread$ = command(
       signal,
     );
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0349; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0347; new non-billing transactions are prohibited.
     const result = await db.transaction(async (tx) => {
       // The binding, created thread and created event are one publication.
       await tx

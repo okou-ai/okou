@@ -205,9 +205,9 @@ export async function recoverGoalArchiveSearch(
 ): Promise<RecoveryOutcome> {
   await client.query(
     migrate
-      ? // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0364; new non-billing transactions are prohibited.
+      ? // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0362; new non-billing transactions are prohibited.
         "BEGIN ISOLATION LEVEL REPEATABLE READ"
-      : // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0365; new non-billing transactions are prohibited.
+      : // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0363; new non-billing transactions are prohibited.
         "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY",
   );
   try {

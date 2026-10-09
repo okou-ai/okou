@@ -533,7 +533,7 @@ export const ensureFeishuCustomConnector$ = command(
       );
       signal.throwIfAborted();
       const prepared = { connectorId, volume };
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0164; new non-billing transactions are prohibited.
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0162; new non-billing transactions are prohibited.
       const reconciliation = db.transaction(async (tx) => {
         return await reconcileFeishuCustomConnector(tx, args, prepared, signal);
       });
@@ -596,7 +596,7 @@ export const deleteFeishuInstallationAndCustomConnector$ = command(
     signal: AbortSignal,
   ): Promise<boolean> => {
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0165; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0163; new non-billing transactions are prohibited.
     const deletion = db.transaction(async (tx) => {
       const [installation] = await tx
         .select({

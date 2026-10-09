@@ -94,7 +94,7 @@ const commitSlackWorkspaceConnection$ = command(
     signal: AbortSignal,
   ): Promise<SlackWorkspaceConnectionResult> => {
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0250; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0248; new non-billing transactions are prohibited.
     const result = await db.transaction(
       async (tx): Promise<SlackWorkspaceConnectionResult> => {
         const [inserted] = await tx

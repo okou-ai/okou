@@ -67,7 +67,7 @@ export const seedPreviewConnectorCatalog$ = command(
       signal,
     );
     signal.throwIfAborted();
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0234; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0232; new non-billing transactions are prohibited.
     await set(writeDb$).transaction(async (tx) => {
       await publishImmutableCatalogPointer(tx, {
         schemaVersion: candidate.artifact.artifactSchemaVersion,

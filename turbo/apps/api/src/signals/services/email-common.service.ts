@@ -565,7 +565,7 @@ async function prepareNextOutboxItem(
   db: Db,
   currentTimeMs: number,
 ): Promise<PrepareOutcome> {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0158; new non-billing transactions are prohibited.
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0156; new non-billing transactions are prohibited.
   return await db.transaction(async (tx) => {
     const [selectedRow] = await tx
       .select(outboxRowSelection())
@@ -752,7 +752,7 @@ async function completeOutboxItem(
               nextRetryAt: null,
             };
 
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0159; new non-billing transactions are prohibited.
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0157; new non-billing transactions are prohibited.
   const completed = await db.transaction(async (tx) => {
     const [updated] = await tx
       .update(emailOutbox)
@@ -877,7 +877,7 @@ async function cleanupExpiredEmailOutbox(
   signal: AbortSignal,
 ): Promise<number> {
   const cutoff = new Date(context.currentTimeMs - OUTBOX_TTL_MS);
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0160; new non-billing transactions are prohibited.
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0158; new non-billing transactions are prohibited.
   const deleted = await db.transaction(async (tx) => {
     const removed = await tx
       .delete(emailOutbox)

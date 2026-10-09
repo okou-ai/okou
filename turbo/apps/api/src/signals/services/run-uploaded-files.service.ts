@@ -122,7 +122,7 @@ const recordRunUploadedFile$ = command(
     // The file identity, captured thread ownership and durable catalog handoff
     // must commit together so a failed projection can be recovered.
     const result = await settle(
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0239; new non-billing transactions are prohibited.
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0237; new non-billing transactions are prohibited.
       db.transaction(async (tx) => {
         const [row] = await tx
           .insert(runUploadedFiles)

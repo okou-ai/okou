@@ -754,7 +754,7 @@ const recordStripeInvoiceFanout$ = command(
     // Invoice arrays have no size bound; normalize them before opening the transaction.
     const snapshot = invoiceSnapshot(event);
     // Candidate locks, delivery receipts and their health writes commit together.
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0257; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0255; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       const accountId = snapshot.event.connectedAccountId;
       const mappedPlan = stripeMappedConnectorsReadPlan(accountId);
@@ -915,7 +915,7 @@ const dispatchStripeDeauthorization$ = command(
       return { kind: "bad_request" };
     }
     // Keep rollback when cancellation arrives during the UPDATE, before commit.
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0258; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0256; new non-billing transactions are prohibited.
     const updated = await db.transaction(async (tx) => {
       const rows = await tx
         .update(connectors)
@@ -1366,7 +1366,7 @@ const finishDelivery$ = command(
   ): Promise<boolean> => {
     signal.throwIfAborted();
     // Fence the terminal outcome and commit its health together, delivery first.
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0259; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0257; new non-billing transactions are prohibited.
     const finished = await set(writeDb$).transaction(async (tx) => {
       const currentTime = nowDate();
       const [updated] = await tx

@@ -76,7 +76,7 @@ export async function applyPendingMigrations(
       continue;
     }
 
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0359; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0357; new non-billing transactions are prohibited.
     await sql.begin(async (transaction) => {
       await transaction`SET LOCAL lock_timeout = '1s'`;
       await transaction`SET LOCAL statement_timeout = '10s'`;

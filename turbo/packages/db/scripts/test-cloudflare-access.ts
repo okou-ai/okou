@@ -19,13 +19,13 @@ async function rejects(
   query: string,
   expected: { code: string | RegExp; constraint?: string },
 ) {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0375; new non-billing transactions are prohibited.
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0373; new non-billing transactions are prohibited.
   await client.query("SAVEPOINT invalid_write");
   await assert.rejects(client.query(query), expected);
   await client.query("ROLLBACK TO SAVEPOINT invalid_write");
 }
 try {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0376; new non-billing transactions are prohibited.
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0374; new non-billing transactions are prohibited.
   await client.query("BEGIN");
   await client.query(`CREATE SCHEMA "${schema}"`);
   await client.query(`SET LOCAL search_path TO "${schema}"`);
@@ -406,7 +406,7 @@ try {
   );
   // The trigger-specific rejections above belong to their historical stages.
   // A catalog mismatch must fail before either trigger can be removed.
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0377; new non-billing transactions are prohibited.
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0375; new non-billing transactions are prohibited.
   await client.query("SAVEPOINT mismatched_catalog");
   await client.query(
     "ALTER TABLE cloudflare_access_configs DISABLE TRIGGER cloudflare_access_scope_change_guard",

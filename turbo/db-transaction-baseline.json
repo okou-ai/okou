@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "frozenAt": "5712d9550317d811e0e2e66f2611f835a619ec7b",
+  "frozenAt": "b73d44a9a9e52185c50f968ced4f5cfb12584093",
   "sites": [
     {
       "id": "TX-0001",
@@ -120,7 +120,7 @@
       "id": "TX-0020",
       "file": "turbo/apps/api/src/signals/routes/integrations-discord.ts",
       "owner": "uninstallDiscordOrganization",
-      "fingerprint": "3d39359135d4bdd0957d5db3f551bcb694606a9528912a851692b7a256aedc87"
+      "fingerprint": "9011ad7ea2a300fdb5b28addda4225234cf2c5e189d7fcb6c1d4b9449a291007"
     },
     {
       "id": "TX-0021",
@@ -917,1484 +917,1484 @@
     {
       "id": "TX-0153",
       "file": "turbo/apps/api/src/signals/services/discord-gateway-lifecycle.service.ts",
-      "owner": "uninstallDiscordGuild",
-      "fingerprint": "f6af288b9e2e072e847bdea2eba9d9edfad7cce77c5f2b7ea7a936e4d0549497"
+      "owner": "commitDiscordGuildRemoval$",
+      "fingerprint": "568d7b5971d64686bb155bd30ace3cdc28debb1d62d1221b3380a8fd94c57963"
     },
     {
       "id": "TX-0154",
       "file": "turbo/apps/api/src/signals/services/discord-owner-cleanup.service.ts",
-      "owner": "deleteDiscordOrgMemberData",
-      "fingerprint": "431e0357aa1ec2e424f2838d0c535bc2db0618d3b7f87b08ff1207a7726dbc81"
+      "owner": "deleteDiscordUserData$",
+      "fingerprint": "73306a4b4752f42d43356ef8a8ffb0e5d063c35d1461cde7baa4899b16af5edb"
     },
     {
       "id": "TX-0155",
-      "file": "turbo/apps/api/src/signals/services/discord-owner-cleanup.service.ts",
-      "owner": "deleteDiscordOrgData",
-      "fingerprint": "a3ac4d26d57cac662e795f8b6c707b88e0779bcf12045f51ca0b2af1ced2b569"
-    },
-    {
-      "id": "TX-0156",
-      "file": "turbo/apps/api/src/signals/services/discord-owner-cleanup.service.ts",
-      "owner": "deleteDiscordUserData",
-      "fingerprint": "c47a4762330043d72f38d52ea4a4c812981bb88a0a1cf6f6ba7521ab4a25f7e7"
-    },
-    {
-      "id": "TX-0157",
       "file": "turbo/apps/api/src/signals/services/discord-route-admission.service.ts",
       "owner": "persistDiscordAdmissionDestination",
       "fingerprint": "9ae5261951b670cf2b518264740a5e8070ac4f3a046f8d813dadf622a24d2129"
     },
     {
-      "id": "TX-0158",
+      "id": "TX-0156",
       "file": "turbo/apps/api/src/signals/services/email-common.service.ts",
       "owner": "prepareNextOutboxItem",
       "fingerprint": "76fb65d7f54a5320580837a2b9f771289fc08d1b6ab0eaaa6de0d6fbf055a5b8"
     },
     {
-      "id": "TX-0159",
+      "id": "TX-0157",
       "file": "turbo/apps/api/src/signals/services/email-common.service.ts",
       "owner": "completeOutboxItem",
       "fingerprint": "5e8be43d803a93eb16f11d3ec960260350b07b7a1d21d1cc6f86b3b4ad1a1ccd"
     },
     {
-      "id": "TX-0160",
+      "id": "TX-0158",
       "file": "turbo/apps/api/src/signals/services/email-common.service.ts",
       "owner": "cleanupExpiredEmailOutbox",
       "fingerprint": "ae7a69d7070ccba396447df6ac8ba71e5fbbfdc60eb85c04b00b18e98a91c853"
     },
     {
-      "id": "TX-0161",
+      "id": "TX-0159",
       "file": "turbo/apps/api/src/signals/services/feishu-chat-ingress.service.ts",
       "owner": "ensureFeishuChatThreadRoute$",
       "fingerprint": "cf1b47c2a8c8118424fb88b7a3dc5937159653042f6ee41cd1312412533e6b66"
     },
     {
-      "id": "TX-0162",
+      "id": "TX-0160",
       "file": "turbo/apps/api/src/signals/services/feishu-chat-ingress.service.ts",
       "owner": "admitFeishuChatEvent$",
       "fingerprint": "b99505d2ec10e8a703100cd9b2ed8e03eb8183751c9e98cca128a8d10b995c78"
     },
     {
-      "id": "TX-0163",
+      "id": "TX-0161",
       "file": "turbo/apps/api/src/signals/services/feishu-connect.service.ts",
       "owner": "disconnectFeishuConnection$",
       "fingerprint": "e6f7d6dda0931513647a1c459dd8794007707813147394feec2181754099ba39"
     },
     {
-      "id": "TX-0164",
+      "id": "TX-0162",
       "file": "turbo/apps/api/src/signals/services/feishu-custom-connector.service.ts",
       "owner": "ensureFeishuCustomConnector$",
       "fingerprint": "699a62b27b032b14258050fe77e83d47e2257d53dc75a869ad10e6a886dcd62c"
     },
     {
-      "id": "TX-0165",
+      "id": "TX-0163",
       "file": "turbo/apps/api/src/signals/services/feishu-custom-connector.service.ts",
       "owner": "deleteFeishuInstallationAndCustomConnector$",
       "fingerprint": "3ccb3161e698de5af2ad84b9ffc9d8d7c44c52febba2a992857898079d641398"
     },
     {
-      "id": "TX-0166",
+      "id": "TX-0164",
       "file": "turbo/apps/api/src/signals/services/feishu-dispatch.service.ts",
       "owner": "handleDisconnectCommand",
       "fingerprint": "09619ed69120f3b8bc5d61ba613dc030171da62eb735dbfad0236dd653273a02"
     },
     {
-      "id": "TX-0167",
+      "id": "TX-0165",
       "file": "turbo/apps/api/src/signals/services/gmail-automation-watch.service.ts",
       "owner": "publishGmailWatch$",
       "fingerprint": "aa40ec3e4beecf5fef02032c96a4eb5f5d7e4234b690741854c49a174c26e2c1"
     },
     {
-      "id": "TX-0168",
+      "id": "TX-0166",
       "file": "turbo/apps/api/src/signals/services/google-calendar-automation-watch.service.ts",
       "owner": "publishGoogleCalendarWatch$",
       "fingerprint": "d978bc49255befc63c5b92b8dd79de819e51f4b797677ed34b70442d6cfea989"
     },
     {
-      "id": "TX-0169",
+      "id": "TX-0167",
       "file": "turbo/apps/api/src/signals/services/google-calendar-automation-watch.service.ts",
       "owner": "persistLegacyPrimaryCalendarMigration$",
       "fingerprint": "ec3152e1a312055ed6878229a89f025c8a92d77230f8d5476df8299f137ee0c6"
     },
     {
-      "id": "TX-0170",
+      "id": "TX-0168",
       "file": "turbo/apps/api/src/signals/services/google-forms-automation-watch.service.ts",
       "owner": "publishGoogleFormsActivation$",
       "fingerprint": "c2adf43542385d309800a4e1d08923c8b52dc05d070e555342e77961dd278a5c"
     },
     {
-      "id": "TX-0171",
+      "id": "TX-0169",
       "file": "turbo/apps/api/src/signals/services/host.service.ts",
       "owner": "createHostedSiteDeployment$",
       "fingerprint": "75d8540daf08914cbd7e6c868fbbc7587d1a3bdf24da6a3bee5cdfe0d5d6927e"
     },
     {
-      "id": "TX-0172",
+      "id": "TX-0170",
       "file": "turbo/apps/api/src/signals/services/host.service.ts",
       "owner": "bindHostedSiteDeployment$",
       "fingerprint": "f04a8a12e5295009ba29615f41c9baf5de262eb2990e446a34481b0b74bbf226"
     },
     {
-      "id": "TX-0173",
+      "id": "TX-0171",
       "file": "turbo/apps/api/src/signals/services/host.service.ts",
       "owner": "deleteHostedSite$",
       "fingerprint": "02114c63c0aa4c142e0e2fec70f4242b79acf38181c721070c3d8742823203c1"
     },
     {
-      "id": "TX-0174",
+      "id": "TX-0172",
       "file": "turbo/apps/api/src/signals/services/integration-chat-queue.service.ts",
       "owner": "enqueueIntegrationChatInput$",
       "fingerprint": "ac97a9bbf7f5c9919cd2aed59aefa3ab73dedbd5bb1151e5b69c939258ba0016"
     },
     {
-      "id": "TX-0175",
+      "id": "TX-0173",
       "file": "turbo/apps/api/src/signals/services/internal-workflow-automation-result-email-callback.service.ts",
       "owner": "enqueueResultEmail$",
       "fingerprint": "9c44be2532257e7f3a6281e1803fd22258847e29e16d30ee0959bfda47b9b201"
     },
     {
-      "id": "TX-0176",
+      "id": "TX-0174",
       "file": "turbo/apps/api/src/signals/services/legacy-plan-invoice.service.ts",
       "owner": "commitLegacyPlanInvoice$",
       "fingerprint": "1c8f30febb19053f076eb361cb24a4272372ca198f2330ce9a73c3fa7b30b694"
     },
     {
-      "id": "TX-0177",
+      "id": "TX-0175",
       "file": "turbo/apps/api/src/signals/services/mail-draft.service.ts",
       "owner": "persistLinkedDraft$",
       "fingerprint": "86927960c30fe1f4ee2be719e595d95053e2f0685cec3d58700c5eb6c7688942"
     },
     {
-      "id": "TX-0178",
+      "id": "TX-0176",
       "file": "turbo/apps/api/src/signals/services/mail-notification.service.ts",
       "owner": "commitMailNotification$",
       "fingerprint": "420ecc0c7d3b370e5071df41a52fb2443df7961d27e7441cedd473f4c8411537"
     },
     {
-      "id": "TX-0179",
+      "id": "TX-0177",
       "file": "turbo/apps/api/src/signals/services/mail-notification.service.ts",
       "owner": "eraseMailNotifications$",
       "fingerprint": "833aa9fd978dbbe3623181dd54f29017ad3136cce05424961c8b720d0e4e32fc"
     },
     {
-      "id": "TX-0180",
+      "id": "TX-0178",
       "file": "turbo/apps/api/src/signals/services/managed-usage.service.ts",
       "owner": "recordManagedUsage$",
       "fingerprint": "6835d2d99ca51b205c4098294e4c342cf7be80e0955c7e7a95253af411cc6609"
     },
     {
-      "id": "TX-0181",
+      "id": "TX-0179",
       "file": "turbo/apps/api/src/signals/services/mcp-chat-discovery.service.ts",
       "owner": "listMcpAgents$",
       "fingerprint": "1de6de0ad5cad700a6436b06d5a7294584df0ad483846a1acea60e1ad0181648"
     },
     {
-      "id": "TX-0182",
+      "id": "TX-0180",
       "file": "turbo/apps/api/src/signals/services/mcp-chat-message-history.service.ts",
       "owner": "readHistorySnapshot$",
       "fingerprint": "093ea1c3b61ce704d0d028a7818c378defeeb4c84719d1c0cae9340cbffaf7c6"
     },
     {
-      "id": "TX-0183",
+      "id": "TX-0181",
       "file": "turbo/apps/api/src/signals/services/mcp-chat-search-query.ts",
       "owner": "mcpChatSearchCandidates$",
       "fingerprint": "5426de36e64eae63a8dbf3e62d933587c303dd6d67be600d84e2a1802e412c5e"
     },
     {
-      "id": "TX-0184",
+      "id": "TX-0182",
       "file": "turbo/apps/api/src/signals/services/mcp-chat-threads.service.ts",
       "owner": "threadQuery$",
       "fingerprint": "59c9363188bb47c0aac9e8dc089731ea56a80ba68ff7a5d7801c5a7c5610f160"
     },
     {
-      "id": "TX-0185",
+      "id": "TX-0183",
       "file": "turbo/apps/api/src/signals/services/member-memory-initialization.service.ts",
       "owner": "initializeMemberMemory$",
       "fingerprint": "02ae61fef521e4ba78b4ea983d00149015b3e13db6f79f94c63891a6a52a1324"
     },
     {
-      "id": "TX-0186",
+      "id": "TX-0184",
       "file": "turbo/apps/api/src/signals/services/memory-summary-projection.service.ts",
       "owner": "claimProjectionWork$",
       "fingerprint": "a8a8c5ffda36fe5db0110b6eb2c933d717b9f40842b0d68af6d9ca6198257cd2"
     },
     {
-      "id": "TX-0187",
+      "id": "TX-0185",
       "file": "turbo/apps/api/src/signals/services/model-provider-account.service.ts",
       "owner": "writePersonalAccount",
       "fingerprint": "a0ec27172995cacd57a79716027f68e945caa2443ab78853ae54e1ea01f34a1e"
     },
     {
-      "id": "TX-0188",
+      "id": "TX-0186",
       "file": "turbo/apps/api/src/signals/services/model-provider-account.service.ts",
       "owner": "activatePersonalModelProviderAccount$",
       "fingerprint": "5b39607cda6748f87853959ba69a8c4f0f79181cb4f59db025a32779ac234984"
     },
     {
-      "id": "TX-0189",
+      "id": "TX-0187",
       "file": "turbo/apps/api/src/signals/services/model-provider-account.service.ts",
       "owner": "disconnectPersonalModelProviderAccounts$",
       "fingerprint": "4e9aa0d0cf65a4e31064c25528780b5d058b0c2fe20d19b40d6d3d34b7489345"
     },
     {
-      "id": "TX-0190",
+      "id": "TX-0188",
       "file": "turbo/apps/api/src/signals/services/morning-brief-automation-toggle.service.ts",
       "owner": "persistMorningBriefAutomationToggle$",
       "fingerprint": "01c47443a9a83e6b99ce18369ab402dea7d5f603faf46308ed3698407a9dc30d"
     },
     {
-      "id": "TX-0191",
+      "id": "TX-0189",
       "file": "turbo/apps/api/src/signals/services/morning-brief-schedule-claim.service.ts",
       "owner": "commitMorningBriefScheduleSettlement$",
       "fingerprint": "a3e68a2b8f990cf4f63887ab853dd32ea49d75ce51d1e2faf07fdc81d89106a0"
     },
     {
-      "id": "TX-0192",
+      "id": "TX-0190",
       "file": "turbo/apps/api/src/signals/services/morning-brief-timezone.service.ts",
       "owner": "synchronizeMorningBriefTimezone$",
       "fingerprint": "ac237353d18c070025587c65477330281c6a77bcd4932688b5c4416d2c4fbc8a"
     },
     {
-      "id": "TX-0193",
+      "id": "TX-0191",
       "file": "turbo/apps/api/src/signals/services/notion-automation-event.service.ts",
       "owner": "storeVerificationToken$",
       "fingerprint": "937e5a2e8164e775a4b36a30467a0e0a8d167fd730a3fa845357bc6a07650fe0"
     },
     {
-      "id": "TX-0194",
+      "id": "TX-0192",
       "file": "turbo/apps/api/src/signals/services/notion-automation-event.service.ts",
       "owner": "repairNotionAutomationProjection$",
       "fingerprint": "f6c7b4731519d4dfdcbbda589f1adb3c106d2d538cc069f945e46ab93e4c25d8"
     },
     {
-      "id": "TX-0195",
+      "id": "TX-0193",
       "file": "turbo/apps/api/src/signals/services/notion-automation-event.service.ts",
       "owner": "publishNotionPendingEvent$",
       "fingerprint": "f16e3fdd9bea104170e70493f80159e66610225b71f2d421616680fac655813b"
     },
     {
-      "id": "TX-0196",
+      "id": "TX-0194",
       "file": "turbo/apps/api/src/signals/services/official-google-forms-reconfiguration.service.ts",
       "owner": "commitOfficialFormsReconfiguration$",
       "fingerprint": "0404d3e3facf75bfa38c698374431a16c7d013381ccfb65cb148fb7cdc6bd0f0"
     },
     {
-      "id": "TX-0197",
+      "id": "TX-0195",
       "file": "turbo/apps/api/src/signals/services/official-workflow-catalog-sync.service.ts",
       "owner": "activateCandidate$",
       "fingerprint": "747c1832b9a5dee1cb04b25aa6780d73cb24bddc2330ec907066d4cba267fcda"
     },
     {
-      "id": "TX-0198",
+      "id": "TX-0196",
       "file": "turbo/apps/api/src/signals/services/official-workflow-installation.service.ts",
       "owner": "activateInstallation$",
       "fingerprint": "2b275f202f7385e666b8c92af75ef67f19f59383a1b71f277994cd36d01bd5ea"
     },
     {
-      "id": "TX-0199",
+      "id": "TX-0197",
       "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
       "owner": "persistReconfigurationPatch$",
       "fingerprint": "e4f808d5aab9f45d7cd6c4fc26e34a74a3cb892a946913586c83763c2e8bb32e"
     },
     {
-      "id": "TX-0200",
+      "id": "TX-0198",
       "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
       "owner": "restoreFailedReconfiguration$",
       "fingerprint": "a1dcf339d404471abb4e11010bb8c9e532b1263a2edf9006a46486429cc0f7f9"
     },
     {
-      "id": "TX-0201",
+      "id": "TX-0199",
       "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
       "owner": "finalizeReconfiguration$",
       "fingerprint": "3b3d29e2f523eb4637e1e86a13380d7c6040cc05bbda5e74d62cefc8387315fb"
     },
     {
-      "id": "TX-0202",
+      "id": "TX-0200",
       "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
       "owner": "persistPausedReconfiguration$",
       "fingerprint": "4e5959511402b3470bbaf07092a9ef8937e662c961373d5fb58d642b47632108"
     },
     {
-      "id": "TX-0203",
+      "id": "TX-0201",
       "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
       "owner": "stageAutomationStructureTransition$",
       "fingerprint": "36eb53eaf9d3c552b69a9cfe98f26983b0e4167ace531e92a88cea290e28d7d3"
     },
     {
-      "id": "TX-0204",
+      "id": "TX-0202",
       "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
       "owner": "finalizeAutomationStructureTransition$",
       "fingerprint": "07be1f422d4c0b808e95b3a9ab549214dd8b2f45e8bd651eb887350340c8fa29"
     },
     {
-      "id": "TX-0205",
+      "id": "TX-0203",
       "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
       "owner": "markActiveAutomationFailed$",
       "fingerprint": "bff662352ef6751b7daa164a46b91f393bd64cd17f1a2498095ee19f1584712d"
     },
     {
-      "id": "TX-0206",
+      "id": "TX-0204",
       "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
       "owner": "reserveDormantIdentity$",
       "fingerprint": "cdf8bf523d0727c8f2c721d6cae484806cc7137d6f626f10b482584403c843c8"
     },
     {
-      "id": "TX-0207",
+      "id": "TX-0205",
       "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
       "owner": "retainDormantIdentity$",
       "fingerprint": "4e52577ba303a67a401971f0d7d9e1378b64d8f6f1dd01e8b36d3d6e0f8e07ae"
     },
     {
-      "id": "TX-0208",
+      "id": "TX-0206",
       "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
       "owner": "deleteReservedCreationOrphan$",
       "fingerprint": "40c23d901664052649758d1ae3ca47a1a876cc6773ff103cc41348174ccdde6c"
     },
     {
-      "id": "TX-0209",
+      "id": "TX-0207",
       "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
       "owner": "validateDormantMaterialization$",
       "fingerprint": "df0b9fadbef60d7fb40e408dcf98dffbff7e63a4a20fc71fcb6ec01d142fdd7b"
     },
     {
-      "id": "TX-0210",
+      "id": "TX-0208",
       "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
       "owner": "finalizeDormantMaterialization$",
       "fingerprint": "d06656dd7b4a9113907d0ce37a2ca36c3c76a09524d24412867ea76347e7f865"
     },
     {
-      "id": "TX-0211",
+      "id": "TX-0209",
       "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
       "owner": "persistDiscardedMaterialization$",
       "fingerprint": "72685c4fd36a8a78805f60bf18d96258f2f5e488ea4236f9ee68270f188b4ce2"
     },
     {
-      "id": "TX-0212",
+      "id": "TX-0210",
       "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
       "owner": "discardDormantMaterialization$",
       "fingerprint": "e15b1b9f3cd18ec1ddd6c747592dab25ca84630c3128e8f944bfbb8ee234b8ff"
     },
     {
-      "id": "TX-0213",
+      "id": "TX-0211",
       "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
       "owner": "pauseRemovedAutomationConfiguration$",
       "fingerprint": "5f8329f9cebee54dd9dcdcbe85571dc329aff4a94dc10b5a219a18050eb9c8c1"
     },
     {
-      "id": "TX-0214",
+      "id": "TX-0212",
       "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
       "owner": "deleteRemovedAutomationConfiguration$",
       "fingerprint": "2adb0fe5c684c43570c396ac8c0822913d4e25dd8bf2cdc08b09b5b4c0f968dd"
     },
     {
-      "id": "TX-0215",
+      "id": "TX-0213",
       "file": "turbo/apps/api/src/signals/services/onboarding-completion.command.ts",
       "owner": "markOrgOnboardingComplete$",
       "fingerprint": "9e67fffe9d2831e56eddcc126ad69f33fc728bcf09c7d61812c117100c543fa2"
     },
     {
-      "id": "TX-0216",
+      "id": "TX-0214",
       "file": "turbo/apps/api/src/signals/services/org-credit-expiration.service.ts",
       "owner": "expireOrgCreditsAt$",
       "fingerprint": "f584018ead78b8782d54a75f1e384e3a14e4900d0554e21b0a10ee95e4c07960"
     },
     {
-      "id": "TX-0217",
+      "id": "TX-0215",
       "file": "turbo/apps/api/src/signals/services/org-credit-grant.service.ts",
       "owner": "grantPurchasedOrgCredits$",
       "fingerprint": "cac7eda06b85c426313f811de9a8e2b448c27e15e880610bc84e2385c436e592"
     },
     {
-      "id": "TX-0218",
+      "id": "TX-0216",
       "file": "turbo/apps/api/src/signals/services/org-limited-free-bootstrap.service.ts",
       "owner": "cleanupBootstrapCandidate$",
       "fingerprint": "7e9d4cc4bf45fb621b102ba4e92006e1cc9f991371d7192abd94d1cb535563cb"
     },
     {
-      "id": "TX-0219",
+      "id": "TX-0217",
       "file": "turbo/apps/api/src/signals/services/org-limited-free-bootstrap.service.ts",
       "owner": "ensureOrgLimitedFreeBootstrap$",
       "fingerprint": "dfb79f13c73e70fa3d4d6d3b7caed6f7800bc0e3eef877d2ddf808635f38cc8e"
     },
     {
-      "id": "TX-0220",
+      "id": "TX-0218",
       "file": "turbo/apps/api/src/signals/services/org-limited-free-bootstrap.service.ts",
       "owner": "ensureOrgLimitedFreeBootstrap$/bootstrap",
       "fingerprint": "6d360fbc1b5e0547234fbe72db5db5f4e12959971cfb52796a1f593f8e993174"
     },
     {
-      "id": "TX-0221",
+      "id": "TX-0219",
       "file": "turbo/apps/api/src/signals/services/org-member-cleanup.service.ts",
       "owner": "disableDepartedMemberAutomations$",
       "fingerprint": "b8f2030271e0af24759cf4c83589e834fcae88de81b4870b6633854934e1c122"
     },
     {
-      "id": "TX-0222",
+      "id": "TX-0220",
       "file": "turbo/apps/api/src/signals/services/org-member-cleanup.service.ts",
       "owner": "revokeOrgMemberRunAuthority",
       "fingerprint": "72643e4b90c2960a9bf9b1c28b256821e97c7e5676e80d9d32939a0afe885de0"
     },
     {
-      "id": "TX-0223",
+      "id": "TX-0221",
       "file": "turbo/apps/api/src/signals/services/pi-memory-maintenance-execution.service.ts",
       "owner": "failMaintenanceLaunch$",
       "fingerprint": "f581f4cad29f16b5d72e949306b8b2049bd3a9fb9418b8d2c05f65c5dc25db29"
     },
     {
-      "id": "TX-0224",
+      "id": "TX-0222",
       "file": "turbo/apps/api/src/signals/services/pi-memory-maintenance-execution.service.ts",
       "owner": "persistMaintenanceRun$",
       "fingerprint": "e5d931eddd3a187516877373789425dd3878aba6eb3505bda2df1795621dbf0c"
     },
     {
-      "id": "TX-0225",
+      "id": "TX-0223",
       "file": "turbo/apps/api/src/signals/services/pi-memory-phase2-job.service.ts",
       "owner": "claimPiMemoryPhase2Job$",
       "fingerprint": "3626c94619a78ca028a308734bc39df0f7905c2dabb37c15f3334f7021e0d7e0"
     },
     {
-      "id": "TX-0226",
+      "id": "TX-0224",
       "file": "turbo/apps/api/src/signals/services/pi-memory-phase2-maintenance.service.ts",
       "owner": "observeTerminalMaintenance$",
       "fingerprint": "6931be014db6b2679f3c0f039c79a67f93e10b5327299ff77841b0790f4f4d88"
     },
     {
-      "id": "TX-0227",
+      "id": "TX-0225",
       "file": "turbo/apps/api/src/signals/services/pi-memory-stage1-candidate.service.ts",
       "owner": "commitPiMemoryStage1Candidate$",
       "fingerprint": "21dd485bc490337b80ddffcb1f5eecbf2ef1ee65b1e19afb9815b95b3995fcfd"
     },
     {
-      "id": "TX-0228",
+      "id": "TX-0226",
       "file": "turbo/apps/api/src/signals/services/pi-memory-stage1-cost.service.ts",
       "owner": "observePiMemoryStage1Cost$",
       "fingerprint": "9dbb9ffe34cac0ae38e33df446f6cd9c8d97e97101036b95f338926e30372feb"
     },
     {
-      "id": "TX-0229",
+      "id": "TX-0227",
       "file": "turbo/apps/api/src/signals/services/pi-memory-stage1-schedule.service.ts",
       "owner": "commitSelectedPiMemoryStage1Day$",
       "fingerprint": "049374d8a8a1e995e07f6b46fb11ca903970e31490e79c16693cd0380f76c032"
     },
     {
-      "id": "TX-0230",
+      "id": "TX-0228",
       "file": "turbo/apps/api/src/signals/services/pi-memory-stage1-usage.service.ts",
       "owner": "recordPiMemoryStage1Usage$",
       "fingerprint": "2cecdb30ea598058de4561eb89bee17593d4a01f77de4228d1af95e0e6d2e913"
     },
     {
-      "id": "TX-0231",
+      "id": "TX-0229",
       "file": "turbo/apps/api/src/signals/services/pi-memory-stage1-worker.service.ts",
       "owner": "claimPiMemoryStage1Selection$",
       "fingerprint": "96da12d996a4bd4573bc555718bb53ab471e95e0e2eb28992471bd0a82ce3595"
     },
     {
-      "id": "TX-0232",
+      "id": "TX-0230",
       "file": "turbo/apps/api/src/signals/services/pi-memory-stage1-worker.service.ts",
       "owner": "validatePreparedWork$",
       "fingerprint": "33d1d8947750192ec0eedbf40f359161cd32cda9a27d8100deb813251f3ae3a9"
     },
     {
-      "id": "TX-0233",
+      "id": "TX-0231",
       "file": "turbo/apps/api/src/signals/services/pi-resource-version-index.service.ts",
       "owner": "claimWork$",
       "fingerprint": "2448af56321141c7a4f48acccaaca5e79c509385a67fd9c077525a5f6d3dafe3"
     },
     {
-      "id": "TX-0234",
+      "id": "TX-0232",
       "file": "turbo/apps/api/src/signals/services/preview-connector-catalog.service.ts",
       "owner": "seedPreviewConnectorCatalog$",
       "fingerprint": "47713b3b58b72f4bcf29d04b530422ebc0adac72794f5dbf42b03ef769a8d9a9"
     },
     {
-      "id": "TX-0235",
+      "id": "TX-0233",
       "file": "turbo/apps/api/src/signals/services/private-artifact-storage.service.ts",
       "owner": "completePrivateArtifact$",
       "fingerprint": "8580aab55882deec54d73ab0e344ae13988c59e34692933e92c085a336e24c11"
     },
     {
-      "id": "TX-0236",
+      "id": "TX-0234",
       "file": "turbo/apps/api/src/signals/services/provider-usage-publication.service.ts",
       "owner": "recordRunnerUsageBatch$",
       "fingerprint": "af678a4baa387e501516e007fbe6e2458310bcbc60763a7489ecdc3b9496e0ca"
     },
     {
-      "id": "TX-0237",
+      "id": "TX-0235",
       "file": "turbo/apps/api/src/signals/services/provider-usage-publication.service.ts",
       "owner": "recordProviderUsageBatch$",
       "fingerprint": "da495d989dd877699d016a1a62a6fe6d7648821b4c17f95be06a2d722a037f55"
     },
     {
-      "id": "TX-0238",
+      "id": "TX-0236",
       "file": "turbo/apps/api/src/signals/services/run-built-in-admission.service.ts",
       "owner": "startRunBuiltInAdmission$",
       "fingerprint": "142e0c258cba403d8db9414277e7f5c1b71cc6d2ab81433c0f9f2bc75237ade8"
     },
     {
-      "id": "TX-0239",
+      "id": "TX-0237",
       "file": "turbo/apps/api/src/signals/services/run-uploaded-files.service.ts",
       "owner": "recordRunUploadedFile$",
       "fingerprint": "893a1badc35d5f8738d31e789799df1ff0c122ceacd395b00a47f1a034140648"
     },
     {
-      "id": "TX-0240",
+      "id": "TX-0238",
       "file": "turbo/apps/api/src/signals/services/runner-ssh.service.ts",
       "owner": "pinRunnerSsh",
       "fingerprint": "61720f8cce75789a3257eff2443a47d8b31d92b13a98901416b0a5bee7062435"
     },
     {
-      "id": "TX-0241",
+      "id": "TX-0239",
       "file": "turbo/apps/api/src/signals/services/runner-ssh.service.ts",
       "owner": "recordRunnerSshObservation",
       "fingerprint": "18a1d4c6e4650298b8e4bb1b2fdd5480b37d945d5a1adb0c02cd3da30b3d200c"
     },
     {
-      "id": "TX-0242",
+      "id": "TX-0240",
       "file": "turbo/apps/api/src/signals/services/runner-wss-ticket.service.ts",
       "owner": "issueRunnerWssTicket$",
       "fingerprint": "a08e2b5e126757f220a98061b250801338639f5e342c37dac386c808cacac7b3"
     },
     {
-      "id": "TX-0243",
+      "id": "TX-0241",
       "file": "turbo/apps/api/src/signals/services/runner-wss-ticket.service.ts",
       "owner": "consumeRunnerWssTicket$",
       "fingerprint": "d6b9d9851b3e707b4f73fc7695d35b4cbd3600f473f30bda1406de7dee9b8ff3"
     },
     {
-      "id": "TX-0244",
+      "id": "TX-0242",
       "file": "turbo/apps/api/src/signals/services/runner-wss-ticket.service.ts",
       "owner": "revokeRunnerWssTickets$",
       "fingerprint": "ce4feb8323546ea7771f674699dfbaf7b3a51562d10baa31cd3520de2b945bb2"
     },
     {
-      "id": "TX-0245",
+      "id": "TX-0243",
       "file": "turbo/apps/api/src/signals/services/slack-chat-ingress.service.ts",
       "owner": "findSlackChatThreadRoute$",
       "fingerprint": "dbe42ee205d1af5583bde9c8226d6af97ea95065eafa1ac7aab0454a513ab548"
     },
     {
-      "id": "TX-0246",
+      "id": "TX-0244",
       "file": "turbo/apps/api/src/signals/services/slack-chat-ingress.service.ts",
       "owner": "ensureCanonicalSlackChatThreadRoute$",
       "fingerprint": "67c7a9fcf7ba0157db1f4e9dadb7f758a1456b4662658225e1ad2499488d6104"
     },
     {
-      "id": "TX-0247",
+      "id": "TX-0245",
       "file": "turbo/apps/api/src/signals/services/slack-chat-ingress.service.ts",
       "owner": "admitCanonicalSlackChatEvent$",
       "fingerprint": "e371b3d552197ade091a888d72c529463e916d7aa2dc3a73e341ac3f7b4d92f6"
     },
     {
-      "id": "TX-0248",
+      "id": "TX-0246",
       "file": "turbo/apps/api/src/signals/services/slack-installation-reward.ts",
       "owner": "settleSlackRewardClaim",
       "fingerprint": "aa35323d1cebf3f1b2032c79252f513dfa073bec4814e140f58c66db23c97370"
     },
     {
-      "id": "TX-0249",
+      "id": "TX-0247",
       "file": "turbo/apps/api/src/signals/services/slack-installation-write.service.ts",
       "owner": "commitSlackInstallation$",
       "fingerprint": "941ab5c127dfea190cb042cf7be216830a172fa05a80a79eaf8f76c08551304a"
     },
     {
-      "id": "TX-0250",
+      "id": "TX-0248",
       "file": "turbo/apps/api/src/signals/services/slack-workspace-write.service.ts",
       "owner": "commitSlackWorkspaceConnection$",
       "fingerprint": "2dc929d1688271b9273158a48a2eb8657068a03d5a84a1eddcf316e8e4db6d1d"
     },
     {
-      "id": "TX-0251",
+      "id": "TX-0249",
       "file": "turbo/apps/api/src/signals/services/social-data.service.ts",
       "owner": "createSocialDataJob$/result",
       "fingerprint": "bfc1398faa63b953213f14baeca32a64af0f593bee8b9c0db05dfd7beba9cf46"
     },
     {
-      "id": "TX-0252",
+      "id": "TX-0250",
       "file": "turbo/apps/api/src/signals/services/ssh-connection.service.ts",
       "owner": "commitSshConnectionCreation$",
       "fingerprint": "25edbf516096f7fbe99eb0928a190e330386b9e9f9492539b1e8a1c8809da804"
     },
     {
-      "id": "TX-0253",
+      "id": "TX-0251",
       "file": "turbo/apps/api/src/signals/services/ssh-connection.service.ts",
       "owner": "commitSshConnectionUpdate$",
       "fingerprint": "3e95577abbf7175419c63cf2e624d339a441cf457154bd6ec82604b34b78ddb8"
     },
     {
-      "id": "TX-0254",
+      "id": "TX-0252",
       "file": "turbo/apps/api/src/signals/services/ssh-credential.service.ts",
       "owner": "updateSshCredential$",
       "fingerprint": "6bc81a838c842a67dfceb0e684722f807b9f237fdc2e1a3df74ab191b53f7b53"
     },
     {
-      "id": "TX-0255",
+      "id": "TX-0253",
       "file": "turbo/apps/api/src/signals/services/storage-volume-upload.service.ts",
       "owner": "commitPreparedVolumeUpload$",
       "fingerprint": "772bf8a72baba218c56a9d4223834eb8e36db166927e8ebe844019b1ee6406c4"
     },
     {
-      "id": "TX-0256",
+      "id": "TX-0254",
       "file": "turbo/apps/api/src/signals/services/storage-write.service.ts",
       "owner": "commitVerifiedStorageVersion$",
       "fingerprint": "9d55571eeff6a308ff7545fa67a3957fbc9e6cca94ef4ff343715adaeb9d247d"
     },
     {
-      "id": "TX-0257",
+      "id": "TX-0255",
       "file": "turbo/apps/api/src/signals/services/stripe-automation-event.service.ts",
       "owner": "recordStripeInvoiceFanout$",
       "fingerprint": "bd7b2f9bba1c87a2741e93379f67d9827e9c197ccfe5934a7a4e87c986fe16fe"
     },
     {
-      "id": "TX-0258",
+      "id": "TX-0256",
       "file": "turbo/apps/api/src/signals/services/stripe-automation-event.service.ts",
       "owner": "dispatchStripeDeauthorization$",
       "fingerprint": "047710debe9131d35e22e8062b525554bac0297e327df78611562ff8cbf8917c"
     },
     {
-      "id": "TX-0259",
+      "id": "TX-0257",
       "file": "turbo/apps/api/src/signals/services/stripe-automation-event.service.ts",
       "owner": "finishDelivery$",
       "fingerprint": "88ce708f5a593d45bc9ed0bafe4e6416f781733636aba520cf9b9d3eac39adee"
     },
     {
-      "id": "TX-0260",
+      "id": "TX-0258",
       "file": "turbo/apps/api/src/signals/services/teams-chat-ingress.service.ts",
       "owner": "ensureTeamsChatThreadRoute$",
       "fingerprint": "db931f9c75a35707fc88b074858ffb8d99a69d1aa9a3eb8ea932ec7c663beab6"
     },
     {
-      "id": "TX-0261",
+      "id": "TX-0259",
       "file": "turbo/apps/api/src/signals/services/telegram-chat-ingress.service.ts",
       "owner": "ensureTelegramChatThreadRoute$",
       "fingerprint": "cf0d5c08f547df437e9bd7b5bdb3b96fa061e249459e7b162750cb52cdd903b5"
     },
     {
-      "id": "TX-0262",
+      "id": "TX-0260",
       "file": "turbo/apps/api/src/signals/services/telegram-chat-ingress.service.ts",
       "owner": "createTelegramChatThread$",
       "fingerprint": "7642df453e4e796b0a6acbb7d8d7fb10b60f7689918853131f56b7201eb95a8c"
     },
     {
-      "id": "TX-0263",
+      "id": "TX-0261",
       "file": "turbo/apps/api/src/signals/services/thread-claim-run.service.ts",
       "owner": "createThreadClaimRunObjects/commitQueueHeadRejection$",
       "fingerprint": "32605eb0ca0e13e21ecd6dfe1895739c958b964247431364a3b325ef11d3d980"
     },
     {
-      "id": "TX-0264",
+      "id": "TX-0262",
       "file": "turbo/apps/api/src/signals/services/thread-claim-run.service.ts",
       "owner": "createThreadClaimRunObjects/activatePendingRun$",
       "fingerprint": "0a151a969df8e995c5ca8f08147f329d2d64eef85cee3c03dcc5573e40ed17f3"
     },
     {
-      "id": "TX-0265",
+      "id": "TX-0263",
       "file": "turbo/apps/api/src/signals/services/thread-claim-run.service.ts",
       "owner": "commitPreparedPendingLaunch$",
       "fingerprint": "40f9fd9eb9d2033974d0c404e7f82ae2ba53c175e39429f70055b293ea103f16"
     },
     {
-      "id": "TX-0266",
+      "id": "TX-0264",
       "file": "turbo/apps/api/src/signals/services/threadless-run-cleanup.service.ts",
       "owner": "deleteIfStillEligible",
       "fingerprint": "8f56540ff4c34d931dc8ebe37c754098268ace655792c42cecc01c95371230bb"
     },
     {
-      "id": "TX-0267",
+      "id": "TX-0265",
       "file": "turbo/apps/api/src/signals/services/usage-event-cleanup.service.ts",
       "owner": "deleteUsageData$",
       "fingerprint": "b9010b7ce7aac4c9319eeefbebff8df0ed0552bcefa7fe6b86eee4f2d9091ce6"
     },
     {
-      "id": "TX-0268",
+      "id": "TX-0266",
       "file": "turbo/apps/api/src/signals/services/usage-pack-allocation-change.service.ts",
       "owner": "persistUsagePackChangePreview$",
       "fingerprint": "c18b15172f1a39afc941a7f946d805f51b575124b29da76455e895431dae1303"
     },
     {
-      "id": "TX-0269",
+      "id": "TX-0267",
       "file": "turbo/apps/api/src/signals/services/usage-pack-allocation-change.service.ts",
       "owner": "reserveUsagePackMemberRemoval",
       "fingerprint": "38d7a07351c04c4bfebb7cf1b1bf89669ece25c62a75e4da75bd93e4635943de"
     },
     {
-      "id": "TX-0270",
+      "id": "TX-0268",
       "file": "turbo/apps/api/src/signals/services/usage-pack-allocation-change.service.ts",
       "owner": "prepareUsagePackMemberRemoval",
       "fingerprint": "be286ccac2414c63623675b24151632a36d147e466411989b03d334683746557"
     },
     {
-      "id": "TX-0271",
+      "id": "TX-0269",
       "file": "turbo/apps/api/src/signals/services/usage-pack-allocation-change.service.ts",
       "owner": "commitReflectedUsagePackChanges",
       "fingerprint": "dd312c49d1f2548f02f7b5e028b1709fdd8f36e20912df9cabd7b91f3d006ae9"
     },
     {
-      "id": "TX-0272",
+      "id": "TX-0270",
       "file": "turbo/apps/api/src/signals/services/usage-pack-allocation-change.service.ts",
       "owner": "finalizeCanceledUsagePackChanges",
       "fingerprint": "00fdc1c4c3a967e81016e6df414e0417dbda0428c218fffdb535907bf65f6ab0"
     },
     {
-      "id": "TX-0273",
+      "id": "TX-0271",
       "file": "turbo/apps/api/src/signals/services/usage-pack-allocation-change.service.ts",
       "owner": "commitUsagePackUpgradeInvoice",
       "fingerprint": "01c7612c7f6b24a98303148c5e49dcbed1ee0cf4e33dc2e4ad55b3fe9f5dcb68"
     },
     {
-      "id": "TX-0274",
+      "id": "TX-0272",
       "file": "turbo/apps/api/src/signals/services/usage-pack-allocation-change.service.ts",
       "owner": "fulfillUsagePackSubscriptionChangeInvoice",
       "fingerprint": "4696616c8fd9f46fdb837bf9aea8cc0321aee8c8fc8531a252bf3751864c5df3"
     },
     {
-      "id": "TX-0275",
+      "id": "TX-0273",
       "file": "turbo/apps/api/src/signals/services/usage-pack-allocation-change.service.ts",
       "owner": "prepareUsagePackChangeConfirmation$",
       "fingerprint": "8904a94e1fe709a7948582777b20b2866df549fd186c0f9c15d5c4b56974804d"
     },
     {
-      "id": "TX-0276",
+      "id": "TX-0274",
       "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
       "owner": "insertPendingInvitationPurchase$",
       "fingerprint": "e7ba243125e7244776d543b74554ed47353bf153658c78dd8c9f56af0e8056d3"
     },
     {
-      "id": "TX-0277",
+      "id": "TX-0275",
       "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
       "owner": "persistSuccessfulPayment$",
       "fingerprint": "88a7c82738e358222e4151cd9486256d9d21e736f20d9a11f5225a627bbd1650"
     },
     {
-      "id": "TX-0278",
+      "id": "TX-0276",
       "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
       "owner": "claimInvitationCreation$",
       "fingerprint": "da87b8fae4ad231a3352c3428909f902122d05d2a0b7294a9ad1941234d6ab54"
     },
     {
-      "id": "TX-0279",
+      "id": "TX-0277",
       "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
       "owner": "persistInvitation$",
       "fingerprint": "ac0dd74747a282dc83648bd9a1f75c3a548298ca5e1d954e4a2156f0b6972c49"
     },
     {
-      "id": "TX-0280",
+      "id": "TX-0278",
       "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
       "owner": "finalizeRefund$",
       "fingerprint": "f7f0f78ff3b60f68566be875f945a0c82a08cdf58654e1ca6ddacbdbb7c5327e"
     },
     {
-      "id": "TX-0281",
+      "id": "TX-0279",
       "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
       "owner": "refundPurchase$",
       "fingerprint": "e0c6f0387015ab193d842e5c56d24192953e371de02bc678ab2c50e81baea10c"
     },
     {
-      "id": "TX-0282",
+      "id": "TX-0280",
       "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
       "owner": "claimAcceptedPurchaseActivation$",
       "fingerprint": "a5fb4482c4197836d7e62070fb3fbb8ae10ae5ec6f8615c4300b414861fe22fe"
     },
     {
-      "id": "TX-0283",
+      "id": "TX-0281",
       "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
       "owner": "activateAcceptedPurchase$",
       "fingerprint": "b2700616aba567c36be8caaff126457dbf809d60879b8456f4e81c13eff28fa3"
     },
     {
-      "id": "TX-0284",
+      "id": "TX-0282",
       "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
       "owner": "markLateAcceptanceForRefund$",
       "fingerprint": "aca4d9d554b59bcd5b1511aed8c1efe440d1f8287c5213b8666d3b2d498eeace"
     },
     {
-      "id": "TX-0285",
+      "id": "TX-0283",
       "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
       "owner": "recordInvitationAcceptance$",
       "fingerprint": "307bd8a4f6fe390c8c61a14c28758482ff17027c1661bb11d1588dc8426b8f41"
     },
     {
-      "id": "TX-0286",
+      "id": "TX-0284",
       "file": "turbo/apps/api/src/signals/services/usage-pack-pending-snapshot.service.ts",
       "owner": "writeUsagePackPendingSnapshots",
       "fingerprint": "97c05cb33b552d6658b2561751d7105bccdc5d7eb9bbc316bad2d1ac18a13aec"
     },
     {
-      "id": "TX-0287",
+      "id": "TX-0285",
       "file": "turbo/apps/api/src/signals/services/usage-pack-pending-snapshot.service.ts",
       "owner": "repairUsagePackPendingSnapshotGuards",
       "fingerprint": "2a33d175245132b27ea05437f71c4184a6fbd20fe171c8bda512730a325d7cc1"
     },
     {
-      "id": "TX-0288",
+      "id": "TX-0286",
       "file": "turbo/apps/api/src/signals/services/usage-pack-plan-change.service.ts",
       "owner": "persistSubscriptionChangePreview$",
       "fingerprint": "eb491e6f63b55789875c5b9a79c95595adb03f250da3dd70ae253e3e063b0c92"
     },
     {
-      "id": "TX-0289",
+      "id": "TX-0287",
       "file": "turbo/apps/api/src/signals/services/usage-pack-plan-change.service.ts",
       "owner": "persistDeferredSubscriptionChangeSchedule",
       "fingerprint": "cf42f7d43e5e0aa480936d40b3609c98cd6091d86991713c482c70fb5f9c06f9"
     },
     {
-      "id": "TX-0290",
+      "id": "TX-0288",
       "file": "turbo/apps/api/src/signals/services/usage-pack-plan-change.service.ts",
       "owner": "storeDeferredScheduleRequest",
       "fingerprint": "4fe54c68d0cf890239e416e1c540c10ea10986e1c131dda450cfe9f8cf7ae619"
     },
     {
-      "id": "TX-0291",
+      "id": "TX-0289",
       "file": "turbo/apps/api/src/signals/services/usage-pack-plan-change.service.ts",
       "owner": "markPreparedChangeApplying$",
       "fingerprint": "19ce4feb23224ab3ba798f0dc225d052da1858e437509c5477020a5108eaa8ea"
     },
     {
-      "id": "TX-0292",
+      "id": "TX-0290",
       "file": "turbo/apps/api/src/signals/services/usage-pack-plan-change.service.ts",
       "owner": "failApplyingSubscriptionChange",
       "fingerprint": "ea00c0720eac45dd233f91e924fee9c363abb5944bf30a7e090a94c7e1394631"
     },
     {
-      "id": "TX-0293",
+      "id": "TX-0291",
       "file": "turbo/apps/api/src/signals/services/usage-pack-plan-change.service.ts",
       "owner": "recordImmediateSubscriptionChangeInvoice",
       "fingerprint": "dae3ed83146582d3148b158219b45babd14b5a01a5cae044a776a9517fa6abb4"
     },
     {
-      "id": "TX-0294",
+      "id": "TX-0292",
       "file": "turbo/apps/api/src/signals/services/usage-pack-plan-change.service.ts",
       "owner": "restoreScheduledSubscriptionChange",
       "fingerprint": "a67519986ea57a05632bb44679d06d578a968015e99e304db1d7e1d1490836f1"
     },
     {
-      "id": "TX-0295",
+      "id": "TX-0293",
       "file": "turbo/apps/api/src/signals/services/usage-pack-plan-change.service.ts",
       "owner": "failExpiredPendingSubscriptionChange",
       "fingerprint": "c72aee2b0d2b43e012ea224b3b1ad6157d58413228a2a4b3e1a83dfc6ca9722c"
     },
     {
-      "id": "TX-0296",
+      "id": "TX-0294",
       "file": "turbo/apps/api/src/signals/services/usage-pack-subscription-migration.service.ts",
       "owner": "getUsagePackMigrationState$",
       "fingerprint": "daa0b59deeced0b9111fac3a34d791b1a1998e5459ac7b09ab22147e1f124c99"
     },
     {
-      "id": "TX-0297",
+      "id": "TX-0295",
       "file": "turbo/apps/api/src/signals/services/usage-pack-subscription-migration.service.ts",
       "owner": "persistMigrationPreview$",
       "fingerprint": "02c084d181fb894f91b83c421f26c5fe9bd1145ddd2370400820727e03cf49f3"
     },
     {
-      "id": "TX-0298",
+      "id": "TX-0296",
       "file": "turbo/apps/api/src/signals/services/usage-pack-subscription-migration.service.ts",
       "owner": "loadMigrationForRevision$",
       "fingerprint": "9c3dc6310a7a56b3f0b55d411ad4516620626cdc812f952693e7d96dbe17fd55"
     },
     {
-      "id": "TX-0299",
+      "id": "TX-0297",
       "file": "turbo/apps/api/src/signals/services/usage-pack-subscription-migration.service.ts",
       "owner": "persistMigrationRevisionIntent$",
       "fingerprint": "f596ecabc579d92c6f95d2fffa397e967a3ba9bb65330e79affac9002677c2f7"
     },
     {
-      "id": "TX-0300",
+      "id": "TX-0298",
       "file": "turbo/apps/api/src/signals/services/usage-pack-subscription-migration.service.ts",
       "owner": "materializeUsagePackSnapshot$",
       "fingerprint": "15f7e44682a93859ced60c4d249a70e36624cbdd41c595b43cbebff870c739cc"
     },
     {
-      "id": "TX-0301",
+      "id": "TX-0299",
       "file": "turbo/apps/api/src/signals/services/usage-pack-subscription-migration.service.ts",
       "owner": "completeMigrationInvitations$",
       "fingerprint": "93235a32720ae7cc8139d99a3080afd1998a817a9047d1aa547010d159000161"
     },
     {
-      "id": "TX-0302",
+      "id": "TX-0300",
       "file": "turbo/apps/api/src/signals/services/usage-pack-subscription-migration.service.ts",
       "owner": "claimMigrationConfirmation$",
       "fingerprint": "df858560d387788e6f2d020114d6685adc58935b4b2b6faa4cdd2d47589a1af6"
     },
     {
-      "id": "TX-0303",
+      "id": "TX-0301",
       "file": "turbo/apps/api/src/signals/services/usage-pack-subscription.service.ts",
       "owner": "correlateUsagePackCheckout",
       "fingerprint": "3d5cb364421bfed9074144ebf201cb854e568f1197358b21ab146a9eebe91cb3"
     },
     {
-      "id": "TX-0304",
+      "id": "TX-0302",
       "file": "turbo/apps/api/src/signals/services/usage-pack-subscription.service.ts",
       "owner": "retireUsagePackPurchaseClaim",
       "fingerprint": "0313e0381c721a812c4c382f73bc4042f62d58dd5f7d90dfeb4763558d24f1de"
     },
     {
-      "id": "TX-0305",
+      "id": "TX-0303",
       "file": "turbo/apps/api/src/signals/services/usage-pack-subscription.service.ts",
       "owner": "publishUsagePackCheckoutState$",
       "fingerprint": "1a9f2dc68ac6bea9dd5548e13df93e3e044170d3ac7a7ffe0b3eadf8fe4bfceb"
     },
     {
-      "id": "TX-0306",
+      "id": "TX-0304",
       "file": "turbo/apps/api/src/signals/services/usage-pack-subscription.service.ts",
       "owner": "commitUsagePackPlanActivation$",
       "fingerprint": "8129fd77d07cc2b0d5204a2a9a53cea66d63b198939c67c364947fdf6d0fed2c"
     },
     {
-      "id": "TX-0307",
+      "id": "TX-0305",
       "file": "turbo/apps/api/src/signals/services/usage-pack-subscription.service.ts",
       "owner": "commitUsagePackFulfillment$",
       "fingerprint": "bd5e7f1ada5f1eb96caf3729ec4a8c1a69f6cedac936d041cc035d76fbe4de00"
     },
     {
-      "id": "TX-0308",
+      "id": "TX-0306",
       "file": "turbo/apps/api/src/signals/services/usage-pack-subscription.service.ts",
       "owner": "retireReconciledUsagePackSnapshot$",
       "fingerprint": "3b18bd268bb6c2419442ffe09087b701d025e5b41d9ee4b2a74d430f00e81a89"
     },
     {
-      "id": "TX-0309",
+      "id": "TX-0307",
       "file": "turbo/apps/api/src/signals/services/usage.service.ts",
       "owner": "usageMembers$",
       "fingerprint": "363edb00ad0425f69d109294fbe55f1ffea32de60d8a236adaf95479aca7643c"
     },
     {
-      "id": "TX-0310",
+      "id": "TX-0308",
       "file": "turbo/apps/api/src/signals/services/user-connectors.service.ts",
       "owner": "updateUserBuiltinConnectors$",
       "fingerprint": "8d1e209e41f1e805664d45df8e61b74b9f5396f44ce90bbe887ed1a793ed3fe6"
     },
     {
-      "id": "TX-0311",
+      "id": "TX-0309",
       "file": "turbo/apps/api/src/signals/services/user-export-durable.service.ts",
       "owner": "commitCollectedEntries$",
       "fingerprint": "e2f3582b2b5540bc65370dc8e88015f43d285f2097c37eae240449d5dc2559a6"
     },
     {
-      "id": "TX-0312",
+      "id": "TX-0310",
       "file": "turbo/apps/api/src/signals/services/user-export-durable.service.ts",
       "owner": "publishStep$",
       "fingerprint": "d6063900e2668af73f4403b198dd7c55341c5d8fe8eb194ab04f357dafc01e37"
     },
     {
-      "id": "TX-0313",
+      "id": "TX-0311",
       "file": "turbo/apps/api/src/signals/services/user-export-source.service.ts",
       "owner": "collectThread$",
       "fingerprint": "74e1389850df7f2d986d0ec4ddd3d03eb523ea1cfd28dcc1ddc5869a534d2096"
     },
     {
-      "id": "TX-0314",
+      "id": "TX-0312",
       "file": "turbo/apps/api/src/signals/services/user-export-source.service.ts",
       "owner": "collectMessages$",
       "fingerprint": "6f5c59fe077722212e474fe5b4f6cf4340b9eb0b1859292e9b11a1dd023e37bf"
     },
     {
-      "id": "TX-0315",
+      "id": "TX-0313",
       "file": "turbo/apps/api/src/signals/services/user-export.service.ts",
       "owner": "startUserExport$",
       "fingerprint": "62a990d994aa2e5121d8d19ac5a69f697c5076aa61ce6d9e0b555656d7fec2f1"
     },
     {
-      "id": "TX-0316",
+      "id": "TX-0314",
       "file": "turbo/apps/api/src/signals/services/user-permission-grants.service.ts",
       "owner": "applyVisibleAgentGrantRows",
       "fingerprint": "5f2dd935bd514ecce31f68031b3dc7b0e4a07a96bed7a9a434c54f4972acf97b"
     },
     {
-      "id": "TX-0317",
+      "id": "TX-0315",
       "file": "turbo/apps/api/src/signals/services/vnc-connection.service.ts",
       "owner": "createVncConnection$",
       "fingerprint": "11265c5c15345dfd1462a150d3ce2eb69e0d5f9dda9032146954a8c95a4b3eb6"
     },
     {
-      "id": "TX-0318",
+      "id": "TX-0316",
       "file": "turbo/apps/api/src/signals/services/vnc-connection.service.ts",
       "owner": "updateVncConnection$",
       "fingerprint": "0d1733e7fb6be175950c7f023247e485316e44cffcad4fa4fcf0272e997ea7b0"
     },
     {
-      "id": "TX-0319",
+      "id": "TX-0317",
       "file": "turbo/apps/api/src/signals/services/vnc-credential.service.ts",
       "owner": "updateVncCredential$",
       "fingerprint": "8e4ab30c9a8463a5cda0f39cdd61f8f23eefe795c68c31d9c3072365e1c8ab3b"
     },
     {
-      "id": "TX-0320",
+      "id": "TX-0318",
       "file": "turbo/apps/api/src/signals/services/vnc-owner-lifecycle.service.ts",
       "owner": "eraseVncOwnerData$",
       "fingerprint": "57a726ca5fb04ba06bb835642beb32759ebab4ce886e8d3a561c721c8f1d3b7e"
     },
     {
-      "id": "TX-0321",
+      "id": "TX-0319",
       "file": "turbo/apps/api/src/signals/services/webhooks-clerk-cleanup.service.ts",
       "owner": "cancelOrgRuns",
       "fingerprint": "a75c94cf9ebfe984106b91e6d7de0bba04353e160c4de71cf38ac6126b7b9a4c"
     },
     {
-      "id": "TX-0322",
+      "id": "TX-0320",
       "file": "turbo/apps/api/src/signals/services/webhooks-clerk-cleanup.service.ts",
       "owner": "cancelUserRuns",
       "fingerprint": "168aba2dadcc462e21791f0a79629b58857baf2d0d3998c495f4b2f09968c32f"
     },
     {
-      "id": "TX-0323",
+      "id": "TX-0321",
       "file": "turbo/apps/api/src/signals/services/webhooks-clerk-cleanup.service.ts",
       "owner": "deleteClerkStorageReferences",
       "fingerprint": "0a8726e1d38b212103b8793f2e5a881e7676a3993cb5fd74599ff4c32de0a09c"
     },
     {
-      "id": "TX-0324",
+      "id": "TX-0322",
       "file": "turbo/apps/api/src/signals/services/webhooks-clerk-cleanup.service.ts",
       "owner": "deleteClerkExportReferences",
       "fingerprint": "65d595d64eab044675a25c8bda31efe1dfc9deaef63db45dcd7d6ddaa0c8b79e"
     },
     {
-      "id": "TX-0325",
+      "id": "TX-0323",
       "file": "turbo/apps/api/src/signals/services/webhooks-clerk-cleanup.service.ts",
       "owner": "deleteClerkSshResources",
       "fingerprint": "b81b9d15eca00fe2d7e2ccbc144c42c857939b47dc5d0ea4c4b9866a841a5ac2"
     },
     {
-      "id": "TX-0326",
+      "id": "TX-0324",
       "file": "turbo/apps/api/src/signals/services/webhooks-stripe.service.ts",
       "owner": "grantAtomMemberCredits$",
       "fingerprint": "39a344a87cb0f43eacee121441761a2525e750a78cbc1a6c77220734be4d5dc4"
     },
     {
-      "id": "TX-0327",
+      "id": "TX-0325",
       "file": "turbo/apps/api/src/signals/services/webhooks-stripe.service.ts",
       "owner": "publishAtomPlanInvoice$",
       "fingerprint": "a87fe344a1bca2b8406c13557e7b975af079367d832433370d3e9c8568b8b1e6"
     },
     {
-      "id": "TX-0328",
+      "id": "TX-0326",
       "file": "turbo/apps/api/src/signals/services/webhooks-stripe.service.ts",
       "owner": "bindStripeCustomerFromMetadata",
       "fingerprint": "daaea47c0f331be364243e1c3ba615e0fa4bafd124655dcd85332df5735a60c4"
     },
     {
-      "id": "TX-0329",
+      "id": "TX-0327",
       "file": "turbo/apps/api/src/signals/services/webhooks-stripe.service.ts",
       "owner": "publishConcurrencyInvoice$",
       "fingerprint": "b1657f00cfc066d3465435caa9605e54cc6617bf082f7ff9534ce863375b156b"
     },
     {
-      "id": "TX-0330",
+      "id": "TX-0328",
       "file": "turbo/apps/api/src/signals/services/webhooks-stripe.service.ts",
       "owner": "publishConcurrencySubscription$",
       "fingerprint": "97f2e8ee13a8cda964920a34dae0e254aa60b1af69c395a0076c48b31c8bc967"
     },
     {
-      "id": "TX-0331",
+      "id": "TX-0329",
       "file": "turbo/apps/api/src/signals/services/webhooks-stripe.service.ts",
       "owner": "publishLegacyPlanSubscription$",
       "fingerprint": "5f51c0ff112b8a90f4ee698995e6c0311885120d7679da31c60de9e14c2794f6"
     },
     {
-      "id": "TX-0332",
+      "id": "TX-0330",
       "file": "turbo/apps/api/src/signals/services/webhooks-stripe.service.ts",
       "owner": "handleSubscriptionScheduleReleased",
       "fingerprint": "cc2f9b2ada326b4c4e910f63cb2533b598f214306ac0d3ef753a05e20296460d"
     },
     {
-      "id": "TX-0333",
+      "id": "TX-0331",
       "file": "turbo/apps/api/src/signals/services/webhooks-stripe.service.ts",
       "owner": "handleSubscriptionDeletedLegacy",
       "fingerprint": "db9524490c185e50ae7c7afaff16cd3a860b45e590b8376eb8e6cdba911af133"
     },
     {
-      "id": "TX-0334",
+      "id": "TX-0332",
       "file": "turbo/apps/api/src/signals/services/workflow-automation-run-callback.service.ts",
       "owner": "attemptUnjournaledWorkflowAutomationCallbackSettlement$",
       "fingerprint": "63b8c80093c04615a5250cd65424cdc45d5ce8c2bde27d1de3f309f7037325a9"
     },
     {
-      "id": "TX-0335",
+      "id": "TX-0333",
       "file": "turbo/apps/api/src/signals/services/workflow-automation-run.service.ts",
       "owner": "commitWorkflowInput$",
       "fingerprint": "2ad47aec587cc43e59b72cbd4cd480ad7d55834e792cbc61320e3b60ef8da4c2"
     },
     {
-      "id": "TX-0336",
+      "id": "TX-0334",
       "file": "turbo/apps/api/src/signals/services/workflow-automation.service.ts",
       "owner": "insertEventAutomation$",
       "fingerprint": "0dccb3a15b68cb9b6d605e7bc72fd6d4856fcc15dc47e0aae583e544e9e193d6"
     },
     {
-      "id": "TX-0337",
+      "id": "TX-0335",
       "file": "turbo/apps/api/src/signals/services/workflow-automation.service.ts",
       "owner": "commitWebhookEventAutomation$",
       "fingerprint": "8f81a5cf53dfa19ac8375d7d41f85b35291b14251d85908a2d9e54c66f09eacb"
     },
     {
-      "id": "TX-0338",
+      "id": "TX-0336",
       "file": "turbo/apps/api/src/signals/services/workflow-automation.service.ts",
       "owner": "createStripeInvoicePaidEventAutomationForWorkflow$",
       "fingerprint": "94f7871c0351a6384ab9d818bc6bb2e197dcccc7c8248a35b590b088eed11d2a"
     },
     {
-      "id": "TX-0339",
+      "id": "TX-0337",
       "file": "turbo/apps/api/src/signals/services/workflow-automation.service.ts",
       "owner": "persistOfficialAutomationMetadata$",
       "fingerprint": "f2667a4193a598810251849dfe68b84c18406bea8a3774973a50e27eb304e40e"
     },
     {
-      "id": "TX-0340",
+      "id": "TX-0338",
       "file": "turbo/apps/api/src/signals/services/workflow-automation.service.ts",
       "owner": "restoreDisabledWorkflowAutomation$",
       "fingerprint": "ce4ca5c98cec1db5b33ab0031ce3ec52460f8a8ba8282bdfb18bd30b23844c08"
     },
     {
-      "id": "TX-0341",
+      "id": "TX-0339",
       "file": "turbo/apps/api/src/signals/services/workflow-automation.service.ts",
       "owner": "persistEnabledWorkflowAutomation$",
       "fingerprint": "25c176755b460e5393f840a6ae0be3dbf7b41b1ff80b54cc4e4341476a57b36d"
     },
     {
-      "id": "TX-0342",
+      "id": "TX-0340",
       "file": "turbo/apps/api/src/signals/services/workflow-automation.service.ts",
       "owner": "persistDisabledWorkflowAutomation$",
       "fingerprint": "dc351060aaba78aa3e75b3f171288aec12685377a5dce13116a754563dd204c4"
     },
     {
-      "id": "TX-0343",
+      "id": "TX-0341",
       "file": "turbo/apps/api/src/signals/services/workflow-delete.service.ts",
       "owner": "deleteOrphanedWorkflowVolume$",
       "fingerprint": "fbbb6cb5ffb109604cb625f43087b24f8f27cbdf5b58f61dee6cafdc7c8d8ddc"
     },
     {
-      "id": "TX-0344",
+      "id": "TX-0342",
       "file": "turbo/apps/api/src/signals/services/workflow-delete.service.ts",
       "owner": "deleteWorkflowRows$",
       "fingerprint": "429d24eb92f8d18ce9147847a2dc2ab225a8e0ea43f61e0f49047acd78ddeacf"
     },
     {
-      "id": "TX-0345",
+      "id": "TX-0343",
       "file": "turbo/apps/api/src/signals/services/workflow-schedule-expiry.service.ts",
       "owner": "skipExpiredWorkflowSchedule$",
       "fingerprint": "3853a0c275783c3bdb45157f579d931c042e601c72b0c9b03133b783381c0d43"
     },
     {
-      "id": "TX-0346",
+      "id": "TX-0344",
       "file": "turbo/apps/api/src/signals/services/workflow-schedule-failure.service.ts",
       "owner": "recordSelectedMorningBriefPreRunFailure$",
       "fingerprint": "31453d385ff8021fdd68af571421309c360320265b0c55d66d646525085cefd3"
     },
     {
-      "id": "TX-0347",
+      "id": "TX-0345",
       "file": "turbo/apps/api/src/signals/services/workflow-schedule-settlement.ts",
       "owner": "advanceInFlightSchedule",
       "fingerprint": "0a8007df05b5de6834e723527059f4ce35d526e505054cee31040ec21655a24f"
     },
     {
-      "id": "TX-0348",
+      "id": "TX-0346",
       "file": "turbo/apps/api/src/signals/services/workflow-update.service.ts",
       "owner": "commitWorkflowMetadata$",
       "fingerprint": "51a91d56c71447aa36196914ff713c107c491e7b4a6b8a35555b8f669b123e55"
     },
     {
-      "id": "TX-0349",
+      "id": "TX-0347",
       "file": "turbo/apps/api/src/signals/services/workflow-user-automation-thread.service.ts",
       "owner": "ensureWorkflowUserAutomationThread$",
       "fingerprint": "f90b59b6cc357dca866b305e5e90ae4ed45842c8a76b164087db235f9f92d43d"
     },
     {
-      "id": "TX-0350",
+      "id": "TX-0348",
       "file": "turbo/apps/api/src/signals/services/workflow-webhook-automation-entitlement.service.ts",
       "owner": "disableIneligibleWorkflowWebhookAutomationsForOrg",
       "fingerprint": "c322f2e460b5d9b8f410ef975f0bc1aad0a78b3d44af99cccaafd5fc9d103664"
     },
     {
-      "id": "TX-0351",
+      "id": "TX-0349",
       "file": "turbo/apps/api/src/signals/services/x-resource-usage.service.ts",
       "owner": "ingestXResourceUsage$",
       "fingerprint": "173a933f04d334fadb5f36a4e9a2d0047e6c4b95f720b1ce2d86762527d1564f"
     },
     {
-      "id": "TX-0352",
+      "id": "TX-0350",
       "file": "turbo/apps/api/src/test-fixtures/connector-catalog.ts",
       "owner": "publishFixtureGeneration",
       "fingerprint": "f3c49f5f88715a03101458221bbed89b9d06b88f5d2fd497f84f56783fd9333d"
     },
     {
-      "id": "TX-0353",
+      "id": "TX-0351",
       "file": "turbo/apps/api/src/test-fixtures/org-metadata.ts",
       "owner": "upsertOrgMetadataFixture",
       "fingerprint": "19898e2eeb7f69723834de9d18a362ba0677d2ea0cf8edd2110bb051820c0450"
     },
     {
-      "id": "TX-0354",
+      "id": "TX-0352",
       "file": "turbo/packages/db/scripts/audit-historical-session-blob-references.sql",
       "owner": "<module>",
       "fingerprint": "73e1ce50930fd6d8a1cc777669006f5ef661e1a064df239556a7a321022da4ab"
     },
     {
-      "id": "TX-0355",
+      "id": "TX-0353",
       "file": "turbo/packages/db/scripts/audit-hosted-publication-history.sql",
       "owner": "<module>",
       "fingerprint": "2e22faea9c100f50ac919027d81b066c2408596ea46ba657c072bc5ba8bda6fa"
     },
     {
-      "id": "TX-0356",
+      "id": "TX-0354",
       "file": "turbo/packages/db/scripts/audit-pi-memory-candidate-references.sql",
       "owner": "<module>",
       "fingerprint": "ca765b0ff35bb25ee10b6a9582cd7fcb16333455c4f66d83bfe4e7a5bb6856a5"
     },
     {
-      "id": "TX-0357",
+      "id": "TX-0355",
       "file": "turbo/packages/db/scripts/billing-attribution.ts",
       "owner": "<module>",
       "fingerprint": "38b2b82429110c2802a9afd7eb15d9d7db1447127ff8270410c1d02b1a1e76cd"
     },
     {
-      "id": "TX-0358",
+      "id": "TX-0356",
       "file": "turbo/packages/db/scripts/billing-attribution.ts",
       "owner": "<module>",
       "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
     },
     {
-      "id": "TX-0359",
+      "id": "TX-0357",
       "file": "turbo/packages/db/scripts/migration-runner.ts",
       "owner": "applyPendingMigrations",
       "fingerprint": "9a14fd1ad1f6808819df233239852e36f97dd124325db7dbc2ecba921af062a5"
     },
     {
-      "id": "TX-0360",
+      "id": "TX-0358",
       "file": "turbo/packages/db/scripts/migrations/008-automation-to-workflow-preseed/preseed.ts",
       "owner": "preseedAutomationVolume",
       "fingerprint": "08a13fcbee2106226e783199b4202ca5473e6e5617163aa1ec747d0a3296d165"
     },
     {
-      "id": "TX-0361",
+      "id": "TX-0359",
       "file": "turbo/packages/db/scripts/migrations/010-custom-model-gateways/backfill.ts",
       "owner": "main",
       "fingerprint": "ed051236d7a8039e3144f3db71d77413068d40b5bdf1d2e6dcb87f45cd21e6a5"
     },
     {
-      "id": "TX-0362",
+      "id": "TX-0360",
       "file": "turbo/packages/db/scripts/migrations/012-custom-connector-credentials/backfill.ts",
       "owner": "migrateCandidate",
       "fingerprint": "7bdf1a23db92b12786cb194352f39e22bae996b2ad6ea0e73e54dbda1e6f72e1"
     },
     {
-      "id": "TX-0363",
+      "id": "TX-0361",
       "file": "turbo/packages/db/scripts/migrations/013-kms-account-rotation/business-canary.ts",
       "owner": "verifyBusinessCanary/installFixture",
       "fingerprint": "9c401d1d75abc98a71ca3a83681c67705007d5f3923a56f3db7a99404bcf24c8"
     },
     {
-      "id": "TX-0364",
+      "id": "TX-0362",
       "file": "turbo/packages/db/scripts/migrations/014-goal-archive-search/recover.ts",
       "owner": "recoverGoalArchiveSearch",
       "fingerprint": "f20692625092f29c9ff90135fae9a4c0b2df3c44dac920f34f9ceb00e6816622"
     },
     {
-      "id": "TX-0365",
+      "id": "TX-0363",
       "file": "turbo/packages/db/scripts/migrations/014-goal-archive-search/recover.ts",
       "owner": "recoverGoalArchiveSearch",
       "fingerprint": "7e3b46708608874e153947002976a515e546e47251afc0eda95926334d56e925"
     },
     {
-      "id": "TX-0366",
+      "id": "TX-0364",
       "file": "turbo/packages/db/scripts/migrations/016-okou-attribution/database.ts",
       "owner": "scanDatabase",
       "fingerprint": "2b8ac7064fe4e26155a680629d8035a6fae81ec486ae5ea3b8c54fb07b829c79"
     },
     {
-      "id": "TX-0367",
+      "id": "TX-0365",
       "file": "turbo/packages/db/scripts/migrations/018-hosted-publication-pointers/backfill.ts",
       "owner": "transaction",
       "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
     },
     {
-      "id": "TX-0368",
+      "id": "TX-0366",
       "file": "turbo/packages/db/scripts/migrations/019-member-memory-initialization/backfill.ts",
       "owner": "initializeMemory",
       "fingerprint": "b1bb998ecc1e5eebcbca8c0d5d18bbb3b721303aa4567728f8ce999f53f96d0c"
     },
     {
-      "id": "TX-0369",
+      "id": "TX-0367",
       "file": "turbo/packages/db/scripts/pi-memory-stage1-cost.ts",
       "owner": "<module>",
       "fingerprint": "7e3b46708608874e153947002976a515e546e47251afc0eda95926334d56e925"
     },
     {
-      "id": "TX-0370",
+      "id": "TX-0368",
       "file": "turbo/packages/db/scripts/test-agent-grant-table-retirement.ts",
       "owner": "<module>",
       "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
     },
     {
-      "id": "TX-0371",
+      "id": "TX-0369",
       "file": "turbo/packages/db/scripts/test-agent-run-official-workflow-provenance.ts",
       "owner": "validateAgentRunOfficialWorkflowProvenanceSchema",
       "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
     },
     {
-      "id": "TX-0372",
+      "id": "TX-0370",
       "file": "turbo/packages/db/scripts/test-auto-model-selection-null.ts",
       "owner": "<module>",
       "fingerprint": "aadfc1084d3991cd869f1dc5b28120596df8965a50ac9d83e285a32767c12bff"
     },
     {
+      "id": "TX-0371",
+      "file": "turbo/packages/db/scripts/test-built-in-model-keys-permanent.ts",
+      "owner": "validateCanonicalRowLock",
+      "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
+    },
+    {
+      "id": "TX-0372",
+      "file": "turbo/packages/db/scripts/test-built-in-model-keys-permanent.ts",
+      "owner": "validateCanonicalRowLock",
+      "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
+    },
+    {
       "id": "TX-0373",
-      "file": "turbo/packages/db/scripts/test-built-in-model-keys-permanent.ts",
-      "owner": "validateCanonicalRowLock",
-      "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
-    },
-    {
-      "id": "TX-0374",
-      "file": "turbo/packages/db/scripts/test-built-in-model-keys-permanent.ts",
-      "owner": "validateCanonicalRowLock",
-      "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
-    },
-    {
-      "id": "TX-0375",
       "file": "turbo/packages/db/scripts/test-cloudflare-access.ts",
       "owner": "rejects",
       "fingerprint": "a88f484f570737caf20d60954839cbfd93887a10fa510542a4af697b3afc85a0"
     },
     {
-      "id": "TX-0376",
+      "id": "TX-0374",
       "file": "turbo/packages/db/scripts/test-cloudflare-access.ts",
       "owner": "<module>",
       "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
     },
     {
-      "id": "TX-0377",
+      "id": "TX-0375",
       "file": "turbo/packages/db/scripts/test-cloudflare-access.ts",
       "owner": "<module>",
       "fingerprint": "65794beb27f2803119c6aa798138b2f753bdf9f4a7d0e7f5a55ec0cbaee2ed97"
     },
     {
-      "id": "TX-0378",
+      "id": "TX-0376",
       "file": "turbo/packages/db/scripts/test-connector-catalog-columns-permanent.ts",
       "owner": "validateConnectorCatalogColumnContract",
       "fingerprint": "107b2709502f6b459d017789472c4543ff2790f503fd3c69d6ccfe2483e39e5e"
     },
     {
-      "id": "TX-0379",
+      "id": "TX-0377",
       "file": "turbo/packages/db/scripts/test-connector-catalog-columns-permanent.ts",
       "owner": "validatePermanentConnectorCatalogColumns",
       "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
     },
     {
-      "id": "TX-0380",
+      "id": "TX-0378",
       "file": "turbo/packages/db/scripts/test-connector-catalog-entry-columns.ts",
       "owner": "<module>",
       "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
     },
     {
-      "id": "TX-0381",
+      "id": "TX-0379",
       "file": "turbo/packages/db/scripts/test-connector-catalog-entry-columns.ts",
       "owner": "<module>",
       "fingerprint": "1959c84bfa0f59359f18ea74feeb6d3c01d0f6474d033a37c20915998bca957a"
     },
     {
-      "id": "TX-0382",
+      "id": "TX-0380",
       "file": "turbo/packages/db/scripts/test-connector-catalog-entry-columns.ts",
       "owner": "<module>",
       "fingerprint": "6003cb22bbe4999db09c40740fc7c54f82bd5584ec8dd9b9d739e7c667aaa5ea"
     },
     {
-      "id": "TX-0383",
+      "id": "TX-0381",
       "file": "turbo/packages/db/scripts/test-connector-catalog-entry-columns.ts",
       "owner": "<module>",
       "fingerprint": "2fcda5c8f3f402a57a98a671efdafd37c3607d80a908e82b0b71ca169ac64d00"
     },
     {
-      "id": "TX-0384",
+      "id": "TX-0382",
       "file": "turbo/packages/db/scripts/test-connector-permission-baseline-retirement.ts",
       "owner": "<module>",
       "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
     },
     {
-      "id": "TX-0385",
+      "id": "TX-0383",
       "file": "turbo/packages/db/scripts/test-discord-chat-permanent.ts",
       "owner": "validatePermanentDiscordChat",
       "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
     },
     {
-      "id": "TX-0386",
+      "id": "TX-0384",
       "file": "turbo/packages/db/scripts/test-discord-foundation-permanent.ts",
       "owner": "validatePermanentDiscordFoundation/rejectWrite",
       "fingerprint": "3344c35a16d3147a2ba682045c3ad5dddd6f40e6e5ea21efeb32bbf4f421fb6b"
     },
     {
-      "id": "TX-0387",
+      "id": "TX-0385",
       "file": "turbo/packages/db/scripts/test-discord-foundation-permanent.ts",
       "owner": "validatePermanentDiscordFoundation",
       "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
     },
     {
-      "id": "TX-0388",
+      "id": "TX-0386",
       "file": "turbo/packages/db/scripts/test-file-run-provenance.ts",
       "owner": "<module>",
       "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
     },
     {
-      "id": "TX-0389",
+      "id": "TX-0387",
       "file": "turbo/packages/db/scripts/test-file-run-provenance.ts",
       "owner": "<module>",
       "fingerprint": "8208f5eaeab0b3292eb7b00d9e26c95e1b05dba3faa8ccfff67cf7ffd265ce33"
     },
     {
-      "id": "TX-0390",
+      "id": "TX-0388",
       "file": "turbo/packages/db/scripts/test-file-thread-associations.ts",
       "owner": "<module>",
       "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
     },
     {
-      "id": "TX-0391",
+      "id": "TX-0389",
       "file": "turbo/packages/db/scripts/test-historical-session-blob-audit.ts",
       "owner": "<module>",
       "fingerprint": "230c03f4015a33d4282c8b8e79091b1c45ba7087b3ab45bc59ea2a9c0e2e8f29"
     },
     {
-      "id": "TX-0392",
+      "id": "TX-0390",
       "file": "turbo/packages/db/scripts/test-historical-session-blob-audit.ts",
       "owner": "<module>",
       "fingerprint": "8da85bff101571da0eb556634f22e560079b16249ab1329d06aad86bd50cedfc"
     },
     {
-      "id": "TX-0393",
+      "id": "TX-0391",
       "file": "turbo/packages/db/scripts/test-historical-session-blob-audit.ts",
       "owner": "<module>",
       "fingerprint": "0f391d972128ad5ff1dc859f5ca8a0cdf9b1d9b96fb8581606c7cff16b4b96d6"
     },
     {
-      "id": "TX-0394",
+      "id": "TX-0392",
       "file": "turbo/packages/db/scripts/test-hosted-publication-contraction.ts",
       "owner": "<module>",
       "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
     },
     {
-      "id": "TX-0395",
+      "id": "TX-0393",
       "file": "turbo/packages/db/scripts/test-hosted-publication-runtime.ts",
       "owner": "<module>",
       "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
     },
     {
-      "id": "TX-0396",
+      "id": "TX-0394",
       "file": "turbo/packages/db/scripts/test-legacy-free-retirement.ts",
       "owner": "<module>",
       "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
     },
     {
-      "id": "TX-0397",
+      "id": "TX-0395",
       "file": "turbo/packages/db/scripts/test-legacy-free-retirement.ts",
       "owner": "<module>",
       "fingerprint": "2de3a117ae5dff54147cff5812d8e2403a15bd92a96db36f0fd7459644af8ac1"
     },
     {
-      "id": "TX-0398",
+      "id": "TX-0396",
       "file": "turbo/packages/db/scripts/test-migration-consistency-schema.ts",
       "owner": "validateCustomConnectorOauthModeConstraints",
       "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
     },
     {
-      "id": "TX-0399",
+      "id": "TX-0397",
       "file": "turbo/packages/db/scripts/test-migration-consistency-schema.ts",
       "owner": "validatePermanentUsagePackPendingSnapshotState",
       "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
+    },
+    {
+      "id": "TX-0398",
+      "file": "turbo/packages/db/scripts/test-migration-consistency-schema.ts",
+      "owner": "validatePermanentUsagePackPendingSnapshotState",
+      "fingerprint": "9c119d00b405dde40bb30c0d1c60d6358b67e50f5418d6fbeb667c61f1157376"
+    },
+    {
+      "id": "TX-0399",
+      "file": "turbo/packages/db/scripts/test-migration-consistency-schema.ts",
+      "owner": "validatePermanentUsagePackPendingSnapshotState",
+      "fingerprint": "9c119d00b405dde40bb30c0d1c60d6358b67e50f5418d6fbeb667c61f1157376"
     },
     {
       "id": "TX-0400",
@@ -2404,85 +2404,85 @@
     },
     {
       "id": "TX-0401",
-      "file": "turbo/packages/db/scripts/test-migration-consistency-schema.ts",
-      "owner": "validatePermanentUsagePackPendingSnapshotState",
-      "fingerprint": "9c119d00b405dde40bb30c0d1c60d6358b67e50f5418d6fbeb667c61f1157376"
-    },
-    {
-      "id": "TX-0402",
-      "file": "turbo/packages/db/scripts/test-migration-consistency-schema.ts",
-      "owner": "validatePermanentUsagePackPendingSnapshotState",
-      "fingerprint": "9c119d00b405dde40bb30c0d1c60d6358b67e50f5418d6fbeb667c61f1157376"
-    },
-    {
-      "id": "TX-0403",
       "file": "turbo/packages/db/scripts/test-migration-runner-timeouts.ts",
       "owner": "validateMigrationRunnerTimeouts",
       "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
     },
     {
-      "id": "TX-0404",
+      "id": "TX-0402",
       "file": "turbo/packages/db/scripts/test-model-catalog-permanent.ts",
       "owner": "validatePermanentModelCatalogConstraints/rejects",
       "fingerprint": "a88f484f570737caf20d60954839cbfd93887a10fa510542a4af697b3afc85a0"
     },
     {
-      "id": "TX-0405",
+      "id": "TX-0403",
       "file": "turbo/packages/db/scripts/test-model-catalog-permanent.ts",
       "owner": "validatePermanentModelCatalogConstraints",
       "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
     },
     {
-      "id": "TX-0406",
+      "id": "TX-0404",
       "file": "turbo/packages/db/scripts/test-morning-brief-enrollment-installation.ts",
       "owner": "<module>",
       "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
     },
     {
-      "id": "TX-0407",
+      "id": "TX-0405",
       "file": "turbo/packages/db/scripts/test-native-morning-brief-storage-retirement.ts",
       "owner": "<module>",
       "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
     },
     {
-      "id": "TX-0408",
+      "id": "TX-0406",
       "file": "turbo/packages/db/scripts/test-native-morning-brief-storage-retirement.ts",
       "owner": "<module>",
       "fingerprint": "9b0a4dd5e251be816f8f43cda4e08ba7b920e4b7312507dce09010e01f555a25"
     },
     {
-      "id": "TX-0409",
+      "id": "TX-0407",
       "file": "turbo/packages/db/scripts/test-oauth-contract-hash-retirement.ts",
       "owner": "<module>",
       "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
     },
     {
-      "id": "TX-0410",
+      "id": "TX-0408",
       "file": "turbo/packages/db/scripts/test-oauth-contract-hash-retirement.ts",
       "owner": "<module>",
       "fingerprint": "58ffaa0c4a2e679834dc5c6b91afa6273d8a25f0c4c3043fc57a77598e4080eb"
     },
     {
-      "id": "TX-0411",
+      "id": "TX-0409",
       "file": "turbo/packages/db/scripts/test-official-automation-result-email-schema.ts",
       "owner": "validateOfficialAutomationResultEmailSchema",
       "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
     },
     {
-      "id": "TX-0412",
+      "id": "TX-0410",
       "file": "turbo/packages/db/scripts/test-org-plan-entitlement-permanent.ts",
       "owner": "validatePermanentOrgPlanEntitlementState",
       "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
     },
     {
-      "id": "TX-0413",
+      "id": "TX-0411",
       "file": "turbo/packages/db/scripts/test-pi-candidate-trigger-retirement.ts",
       "owner": "<module>",
       "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
     },
     {
-      "id": "TX-0414",
+      "id": "TX-0412",
       "file": "turbo/packages/db/scripts/test-pi-candidate-trigger-retirement.ts",
+      "owner": "<module>",
+      "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
+    },
+    {
+      "id": "TX-0413",
+      "file": "turbo/packages/db/scripts/test-pi-inference-lifecycle.ts",
+      "owner": "<module>",
+      "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
+    },
+    {
+      "id": "TX-0414",
+      "file": "turbo/packages/db/scripts/test-pi-inference-lifecycle.ts",
       "owner": "<module>",
       "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
     },
@@ -2494,162 +2494,150 @@
     },
     {
       "id": "TX-0416",
-      "file": "turbo/packages/db/scripts/test-pi-inference-lifecycle.ts",
-      "owner": "<module>",
-      "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
+      "file": "turbo/packages/db/scripts/test-pi-memory-stage1-cost.ts",
+      "owner": "validatePiMemoryStage1Cost",
+      "fingerprint": "4b966907c0038336c59ce9f05d7429ae39f88f45d96ea4fb241d7acbcd1b0557"
     },
     {
       "id": "TX-0417",
-      "file": "turbo/packages/db/scripts/test-pi-inference-lifecycle.ts",
-      "owner": "<module>",
-      "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
+      "file": "turbo/packages/db/scripts/test-pi-memory-stage1-cost.ts",
+      "owner": "validatePiMemoryStage1Cost",
+      "fingerprint": "4b966907c0038336c59ce9f05d7429ae39f88f45d96ea4fb241d7acbcd1b0557"
     },
     {
       "id": "TX-0418",
       "file": "turbo/packages/db/scripts/test-pi-memory-stage1-cost.ts",
       "owner": "validatePiMemoryStage1Cost",
-      "fingerprint": "4b966907c0038336c59ce9f05d7429ae39f88f45d96ea4fb241d7acbcd1b0557"
-    },
-    {
-      "id": "TX-0419",
-      "file": "turbo/packages/db/scripts/test-pi-memory-stage1-cost.ts",
-      "owner": "validatePiMemoryStage1Cost",
-      "fingerprint": "4b966907c0038336c59ce9f05d7429ae39f88f45d96ea4fb241d7acbcd1b0557"
-    },
-    {
-      "id": "TX-0420",
-      "file": "turbo/packages/db/scripts/test-pi-memory-stage1-cost.ts",
-      "owner": "validatePiMemoryStage1Cost",
       "fingerprint": "93ca5f1d41eaea33775b774ec42aea7a9372f6f7a2ef4365fe37402050bd94a0"
     },
     {
-      "id": "TX-0421",
+      "id": "TX-0419",
       "file": "turbo/packages/db/scripts/test-plan-entitlement-capability-migration.ts",
       "owner": "<module>",
       "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
     },
     {
-      "id": "TX-0422",
+      "id": "TX-0420",
       "file": "turbo/packages/db/scripts/test-prepared-domain-trigger-retirement.ts",
       "owner": "<module>",
       "fingerprint": "816596bed61755a50492d27be5f687433c4bfacdc794ad4622172fef8efed635"
     },
     {
-      "id": "TX-0423",
+      "id": "TX-0421",
       "file": "turbo/packages/db/scripts/test-prepared-domain-trigger-retirement.ts",
       "owner": "<module>",
       "fingerprint": "b36ca059c9c2c74c93e76e3114dc790f2252d9554244b04aae501bfb5f1ece54"
     },
     {
-      "id": "TX-0424",
+      "id": "TX-0422",
       "file": "turbo/packages/db/scripts/test-private-artifact-absolute-urls.ts",
       "owner": "<module>",
       "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
     },
     {
-      "id": "TX-0425",
+      "id": "TX-0423",
       "file": "turbo/packages/db/scripts/test-pro-suspend-retirement.ts",
       "owner": "expectCheckViolation",
       "fingerprint": "082882058ad3de4a0ff4941d6e3482a0c480e37449852c8941f49cf220b26572"
     },
     {
-      "id": "TX-0426",
+      "id": "TX-0424",
       "file": "turbo/packages/db/scripts/test-pro-suspend-retirement.ts",
+      "owner": "<module>",
+      "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
+    },
+    {
+      "id": "TX-0425",
+      "file": "turbo/packages/db/scripts/test-reusable-ssh-credentials.ts",
+      "owner": "rejects",
+      "fingerprint": "a88f484f570737caf20d60954839cbfd93887a10fa510542a4af697b3afc85a0"
+    },
+    {
+      "id": "TX-0426",
+      "file": "turbo/packages/db/scripts/test-reusable-ssh-credentials.ts",
       "owner": "<module>",
       "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
     },
     {
       "id": "TX-0427",
-      "file": "turbo/packages/db/scripts/test-reusable-ssh-credentials.ts",
-      "owner": "rejects",
-      "fingerprint": "a88f484f570737caf20d60954839cbfd93887a10fa510542a4af697b3afc85a0"
-    },
-    {
-      "id": "TX-0428",
-      "file": "turbo/packages/db/scripts/test-reusable-ssh-credentials.ts",
-      "owner": "<module>",
-      "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
-    },
-    {
-      "id": "TX-0429",
       "file": "turbo/packages/db/scripts/test-show-usage-pack-migration.ts",
       "owner": "<module>",
       "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
     },
     {
-      "id": "TX-0430",
+      "id": "TX-0428",
       "file": "turbo/packages/db/scripts/test-slack-ingress-failed-status-retirement.ts",
       "owner": "expectCheckViolation",
       "fingerprint": "082882058ad3de4a0ff4941d6e3482a0c480e37449852c8941f49cf220b26572"
     },
     {
-      "id": "TX-0431",
+      "id": "TX-0429",
       "file": "turbo/packages/db/scripts/test-slack-ingress-failed-status-retirement.ts",
       "owner": "<module>",
       "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
     },
     {
-      "id": "TX-0432",
+      "id": "TX-0430",
       "file": "turbo/packages/db/scripts/test-unselectable-thread-model-cleanup.ts",
       "owner": "<module>",
       "fingerprint": "aadfc1084d3991cd869f1dc5b28120596df8965a50ac9d83e285a32767c12bff"
     },
     {
-      "id": "TX-0433",
+      "id": "TX-0431",
       "file": "turbo/packages/db/scripts/test-usage-allowance-retirement.ts",
       "owner": "<module>",
       "fingerprint": "b698ef5d7c14e5add41ea76ff52360dd095644481462babb372037774d325cef"
     },
     {
-      "id": "TX-0434",
+      "id": "TX-0432",
       "file": "turbo/packages/db/scripts/test-usage-pack-overdraft-transfer.ts",
       "owner": "<module>",
       "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
     },
     {
-      "id": "TX-0435",
+      "id": "TX-0433",
       "file": "turbo/packages/db/scripts/test-usage-pack-overdraft-transfer.ts",
       "owner": "<module>",
       "fingerprint": "bc2764f4f0a12f004556be017f458f36db9aef2bdb9dd18825e3950d336ebbe8"
     },
     {
-      "id": "TX-0436",
+      "id": "TX-0434",
       "file": "turbo/packages/db/scripts/test-vnc-configuration.ts",
+      "owner": "rejects",
+      "fingerprint": "a88f484f570737caf20d60954839cbfd93887a10fa510542a4af697b3afc85a0"
+    },
+    {
+      "id": "TX-0435",
+      "file": "turbo/packages/db/scripts/test-vnc-configuration.ts",
+      "owner": "<module>",
+      "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
+    },
+    {
+      "id": "TX-0436",
+      "file": "turbo/packages/db/scripts/test-vnc-runner-authority.ts",
       "owner": "rejects",
       "fingerprint": "a88f484f570737caf20d60954839cbfd93887a10fa510542a4af697b3afc85a0"
     },
     {
       "id": "TX-0437",
-      "file": "turbo/packages/db/scripts/test-vnc-configuration.ts",
+      "file": "turbo/packages/db/scripts/test-vnc-runner-authority.ts",
       "owner": "<module>",
       "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
     },
     {
       "id": "TX-0438",
-      "file": "turbo/packages/db/scripts/test-vnc-runner-authority.ts",
-      "owner": "rejects",
-      "fingerprint": "a88f484f570737caf20d60954839cbfd93887a10fa510542a4af697b3afc85a0"
-    },
-    {
-      "id": "TX-0439",
-      "file": "turbo/packages/db/scripts/test-vnc-runner-authority.ts",
-      "owner": "<module>",
-      "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
-    },
-    {
-      "id": "TX-0440",
       "file": "turbo/packages/db/scripts/test-x-resource-usage.ts",
       "owner": "validateXResourceUsageSchema",
       "fingerprint": "9bb68a7efe0008bc6bd2c30d535709b512087a90d6e36e67dec09def967d8e74"
     },
     {
-      "id": "TX-0441",
+      "id": "TX-0439",
       "file": "turbo/packages/db/scripts/test-x-resource-usage.ts",
       "owner": "validateXResourceUsageSchema/rejects",
       "fingerprint": "ed96df13ea578281ad4ef7430f0a570473b6ab57eb1e95857b06914fc6d0176d"
     },
     {
-      "id": "TX-0442",
+      "id": "TX-0440",
       "file": "turbo/packages/db/scripts/test-x-resource-usage.ts",
       "owner": "validateXResourceUsageSchema",
       "fingerprint": "924bce670415812d0cc996979e2dc02a88a5643fd79a57a88c19e40ffe360964"

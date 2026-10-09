@@ -296,7 +296,7 @@ const claimPiMemoryStage1Selection$ = command(
   ): Promise<SelectionClaim> => {
     // Frozen selection/source authority and lease publication commit together,
     // taking Thread -> Storage -> day -> candidate locks in order.
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0231; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0229; new non-billing transactions are prohibited.
     return await set(writeDb$).transaction(
       async (tx): Promise<SelectionClaim> => {
         const selection = row.selection;
@@ -835,7 +835,7 @@ const validatePreparedWork$ = command(
   ): Promise<void> => {
     const currentTime = nowDate();
     const selection = work.selection;
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0232; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0230; new non-billing transactions are prohibited.
     const valid = await set(writeDb$).transaction(async (tx) => {
       if (selection.day !== piMemoryStage1UtcDay(currentTime)) {
         return false;

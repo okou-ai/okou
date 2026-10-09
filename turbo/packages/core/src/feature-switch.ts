@@ -85,6 +85,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.ChatComposerLayout]: {
+    maintainer: "bingjie@okou.ai",
+    description:
+      "Keep the chat header and input anchored, with a single bottom safe-area reserve.",
+    enabled: false,
+    enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
+    enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
+  },
   [FeatureSwitchKey.BrowserNativeInput]: {
     maintainer: "liangyou@okou.ai",
     description:
@@ -101,12 +109,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "yuma@okou.ai",
     description: "Enable the Ahrefs SEO connector",
     enabled: false,
-  },
-  [FeatureSwitchKey.MondayConnector]: {
-    maintainer: "liangyou@okou.ai",
-    description: "Enable the Monday.com MCP connector",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.PlaudConnector]: {
     maintainer: "liangyou@okou.ai",
@@ -217,7 +219,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.OkouDebug]: {
     maintainer: "ethan@okou.ai",
     description:
-      "Reveal activity debug surfaces, activity log navigation, appended system prompts, realtime connection diagnostics, and Debug preferences",
+      "Reveal activity debug surfaces, activity log navigation, appended system prompts, and Debug preferences",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -340,6 +342,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "ethan@okou.ai",
     description:
       "Let users archive chats and hide archived chats from the sidebar unless they are unread or explicitly shown.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.ChatRunningIndicatorWave]: {
+    maintainer: "liangyou@okou.ai",
+    description:
+      "Make running chat indicators breathe in a top-to-bottom wave through the sidebar.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

@@ -1089,7 +1089,7 @@ const publishGoogleCalendarWatch$ = command(
       actionRequiredAt: null,
       updatedAt: currentTime,
     };
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0168; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0166; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       const [state] = await tx
         .insert(googleCalendarWatchStates)
@@ -1371,7 +1371,7 @@ const persistLegacyPrimaryCalendarMigration$ = command(
       connectorId: args.access.connectorId,
       calendarId: args.legacyCalendarId,
     });
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0169; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0167; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       const states = await tx
         .select()

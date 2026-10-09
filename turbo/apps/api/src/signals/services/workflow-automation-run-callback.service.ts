@@ -179,7 +179,7 @@ const attemptUnjournaledWorkflowAutomationCallbackSettlement$ = command(
     signal?: AbortSignal,
   ): Promise<UnjournaledCallbackSettlementAttempt> => {
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0334; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0332; new non-billing transactions are prohibited.
     const result = await db.transaction(async (tx) => {
       const [snapshot] = await tx
         .select(workflowAutomationColumns())

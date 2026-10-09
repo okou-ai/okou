@@ -113,7 +113,7 @@ try {
     )
   ).rows;
   await frontier(validate.idx);
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0415; new non-billing transactions are prohibited.
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0413; new non-billing transactions are prohibited.
   await client.query("BEGIN");
   await client.query("LOCK TABLE agent_runs IN ACCESS SHARE MODE");
   try {
@@ -173,7 +173,7 @@ try {
     ]),
     /agent_runs_launch_snapshot_check/,
   );
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0416; new non-billing transactions are prohibited.
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0414; new non-billing transactions are prohibited.
   await client.query("BEGIN");
   await client.query(
     "UPDATE agent_runs SET launch_snapshot = $1 WHERE id = $2",
@@ -244,7 +244,7 @@ try {
     "PASS mixed capacity count retains indexed legacy admission at census scale",
   );
 
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0417; new non-billing transactions are prohibited.
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0415; new non-billing transactions are prohibited.
   await client.query("BEGIN");
   try {
     await client.query(`INSERT INTO agent_run_inference

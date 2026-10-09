@@ -96,7 +96,7 @@ const recordSelectedMorningBriefPreRunFailure$ = command(
     }
     const db = set(writeDb$);
     const settled = await settle(
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0346; new non-billing transactions are prohibited.
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0344; new non-billing transactions are prohibited.
       db.transaction(async (tx) => {
         const [current] = await tx
           .select({

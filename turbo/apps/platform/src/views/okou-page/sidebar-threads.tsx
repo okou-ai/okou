@@ -116,6 +116,8 @@ import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 // would otherwise clamp to 16px. Dimming stays on the individual glyphs so the
 // state indicators keep their own contrast.
 const CHAT_THREAD_ROW_ICON_CLASS = "[&_svg]:size-[17px]";
+// One spatial cycle spans 12 rows: 200ms per row at the existing 2.4s cadence.
+const RUNNING_INDICATOR_WAVE_ROWS = 12;
 const CHAT_THREADS_CONTENT_ID = "sidebar-chat-threads-content";
 
 function ChatThreadMenuShortcut({ shortcut }: { readonly shortcut: string }) {
@@ -144,15 +146,23 @@ function equalSidebarChatThreadWindows(
 
 function SessionStateIndicator({
   signals,
+  rowIndex,
 }: {
   signals: SidebarChatThreadItemSignals;
+  rowIndex: number;
 }) {
+  const waveEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ChatRunningIndicatorWave] === true;
   const state = useLastResolved(signals.indicatorState$) ?? null;
   if (state === null) {
     return null;
   }
   if (state === "running") {
-    return <RunningIndicator />;
+    return (
+      <RunningIndicator
+        phaseOffset={waveEnabled ? rowIndex / RUNNING_INDICATOR_WAVE_ROWS : 0}
+      />
+    );
   }
   if (state === "muted") {
     return <BellOff size={16} className="opacity-35" />;
@@ -349,13 +359,17 @@ function ChatThreadPinMenuItems({
   );
 }
 
+type ChatThreadMenuProps = {
+  signals: SidebarChatThreadItemSignals;
+  rowIndex: number;
+  touch?: boolean;
+};
+
 function ChatThreadMenu({
   signals,
+  rowIndex,
   touch = false,
-}: {
-  signals: SidebarChatThreadItemSignals;
-  touch?: boolean;
-}) {
+}: ChatThreadMenuProps) {
   const { t } = useTranslation();
   const isPinned = useGet(signals.pinned$);
   const indicatorState = useLastResolved(signals.indicatorState$) ?? null;
@@ -415,7 +429,10 @@ function ChatThreadMenu({
                         className="flex items-center justify-center md:group-hover:hidden group-focus-visible/thread-menu:hidden md:group-data-[popup-open]/thread-menu:hidden"
                       >
                         {showStateIndicator ? (
-                          <SessionStateIndicator signals={signals} />
+                          <SessionStateIndicator
+                            signals={signals}
+                            rowIndex={rowIndex}
+                          />
                         ) : (
                           <Pin size={17} className="opacity-70" />
                         )}
@@ -597,10 +614,12 @@ function ChatThreadItemLink({
 export function ChatThreadItem({
   signals,
   shortcutNumber,
+  rowIndex,
   touch = false,
 }: {
   signals: SidebarChatThreadItemSignals;
   shortcutNumber: number | undefined;
+  rowIndex: number;
   touch?: boolean;
 }) {
   return (
@@ -616,7 +635,7 @@ export function ChatThreadItem({
           touch ? "h-14 w-12" : "h-8 w-8",
         )}
       >
-        <ChatThreadMenu signals={signals} touch={touch} />
+        <ChatThreadMenu signals={signals} rowIndex={rowIndex} touch={touch} />
       </div>
     </div>
   );
@@ -878,6 +897,7 @@ function VirtualizedChatThreads({
           >
             <ChatThreadItem
               signals={signals}
+              rowIndex={index}
               shortcutNumber={!searchOpen && index < 9 ? index + 1 : undefined}
             />
           </div>
@@ -1391,6 +1411,7 @@ function UnreadChatThreadsContent({
           <div key={signals.threadId} className="pb-1">
             <ChatThreadItem
               signals={signals}
+              rowIndex={index}
               shortcutNumber={!searchOpen && index < 9 ? index + 1 : undefined}
             />
           </div>

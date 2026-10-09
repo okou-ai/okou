@@ -1005,7 +1005,7 @@ async function correlateUsagePackCheckout(
     readonly tier: CreateUsagePackCheckoutSessionArgs["tier"];
   },
 ): Promise<UsagePackCheckoutCorrelation> {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0303; new non-billing transactions are prohibited.
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0301; new non-billing transactions are prohibited.
   return await db.transaction(async (tx) => {
     const correlated = await tx
       .update(usagePackSubscriptions)
@@ -1690,7 +1690,7 @@ async function retireUsagePackPurchaseClaim(
   orgId: string,
   usagePackSubscriptionId: string,
 ): Promise<void> {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0304; new non-billing transactions are prohibited.
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0302; new non-billing transactions are prohibited.
   await db.transaction(async (tx) => {
     const updatedAt = nowDate();
     const [retired] = await tx
@@ -2789,7 +2789,7 @@ const publishUsagePackCheckoutState$ = command(
   ): Promise<void> => {
     const db = set(writeDb$);
     const { subscription } = args;
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0305; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0303; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       // Conditioned on the root state this decision was made from.
       const roots = await tx
@@ -3572,7 +3572,7 @@ const commitUsagePackPlanActivation$ = command(
   ): Promise<void> => {
     const db = set(writeDb$);
     const orgId = args.context.subscription.orgId;
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0306; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0304; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       // The subscription write below is conditional on the root status and
       // prepared allocation set it was decided from, and the pending count is
@@ -3787,7 +3787,7 @@ const commitUsagePackFulfillment$ = command(
     const prepared = fulfillmentPreparedWrites(args);
     const orgId = args.context.subscription.orgId;
     await set(expireFirstPaidUpgradeDebt$, orgId, signal);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0307; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0305; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       // Duplicate invoice deliveries queue on the root rows below and then see
       // the committed receipt; the receipt primary key and the grant
@@ -4078,7 +4078,7 @@ const retireReconciledUsagePackSnapshot$ = command(
   ): Promise<void> => {
     signal.throwIfAborted();
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0308; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0306; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       // The retirement below is a conditional status transition.
       const roots = await tx

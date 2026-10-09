@@ -48,7 +48,7 @@ export const deleteOrphanedWorkflowVolume$ = command(
     signal: AbortSignal,
   ): Promise<boolean> => {
     const writeDb = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0343; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0341; new non-billing transactions are prohibited.
     const result = await writeDb.transaction(async (tx) => {
       const [storage] = await tx
         .select({ id: storages.id, s3Prefix: storages.s3Prefix })
@@ -122,7 +122,7 @@ function workflowDeletionColumns() {
 const deleteWorkflowRows$ = command(
   async ({ set }, args: DeleteWorkflowInput, signal: AbortSignal) => {
     const writeDb = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0344; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0342; new non-billing transactions are prohibited.
     const result = await writeDb.transaction(async (tx) => {
       const [observed] = await tx
         .select({ agentId: workflows.agentId })

@@ -75,8 +75,8 @@ import {
 } from "./connector-data.service";
 import { deleteConnectorOwnerState } from "./connector-owner-cleanup.service";
 import {
-  deleteDiscordOrgData,
-  deleteDiscordUserData,
+  deleteDiscordOrgData$,
+  deleteDiscordUserData$,
 } from "./discord-owner-cleanup.service";
 import { revokeMorningBriefScheduleOwnership } from "./morning-brief-schedule-claim.service";
 import { cancelAndRefundOrgBillingForDeletion } from "./org-deletion-billing.service";
@@ -153,7 +153,7 @@ async function cancelOrgRuns(
   onSlotsReleased: SlotsReleased,
   scope: OrgRunCancellationScope = {},
 ): Promise<void> {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0321; new non-billing transactions are prohibited.
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0319; new non-billing transactions are prohibited.
   const { cancelled, releasedSlots } = await db.transaction(async (tx) => {
     const rows = await transitionAgentRunsToTerminal(tx, {
       values: {
@@ -229,7 +229,7 @@ async function cancelUserRuns(
   userId: string,
   onSlotsReleased: SlotsReleased,
 ): Promise<void> {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0322; new non-billing transactions are prohibited.
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0320; new non-billing transactions are prohibited.
   const { cancelled, releasedSlots } = await db.transaction(async (tx) => {
     const rows = await transitionAgentRunsToTerminal(tx, {
       values: {
@@ -589,7 +589,7 @@ async function deleteClerkStorageReferences(
   scope: ClerkStorageCleanupScope,
   signal: AbortSignal,
 ): Promise<string[]> {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0323; new non-billing transactions are prohibited.
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0321; new non-billing transactions are prohibited.
   return await db.transaction(async (tx) => {
     const rows = await tx
       .select({
@@ -648,7 +648,7 @@ async function deleteClerkExportReferences(
   scope: ClerkStorageCleanupScope,
   signal: AbortSignal,
 ): Promise<string[]> {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0324; new non-billing transactions are prohibited.
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0322; new non-billing transactions are prohibited.
   return await db.transaction(async (tx) => {
     const rows = await tx
       .select({
@@ -703,7 +703,7 @@ async function deleteClerkSshResources(
   db: Db,
   scope: ClerkStorageCleanupScope,
 ) {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0325; new non-billing transactions are prohibited.
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0323; new non-billing transactions are prohibited.
   await db.transaction(async (tx) => {
     await tx
       .delete(sshConnections)
@@ -744,7 +744,7 @@ const deleteOrgData$ = command(
     signal.throwIfAborted();
     await set(eraseMailNotifications$, { orgId }, signal);
     signal.throwIfAborted();
-    await deleteDiscordOrgData(db, orgId);
+    await set(deleteDiscordOrgData$, orgId, signal);
     signal.throwIfAborted();
 
     const installations = await db
@@ -878,7 +878,7 @@ const deleteUserData$ = command(
     signal.throwIfAborted();
     await set(eraseMailNotifications$, { userId }, signal);
     signal.throwIfAborted();
-    await deleteDiscordUserData(db, userId);
+    await set(deleteDiscordUserData$, userId, signal);
     signal.throwIfAborted();
 
     await db

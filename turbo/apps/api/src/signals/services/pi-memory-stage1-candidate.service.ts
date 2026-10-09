@@ -284,7 +284,7 @@ export const commitPiMemoryStage1Candidate$ = command(
     selectionToValidate?: PiMemoryStage1Selection,
   ): Promise<boolean> => {
     const plan = candidateCommitPlan(args);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0227; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0225; new non-billing transactions are prohibited.
     return await set(writeDb$).transaction(async (tx) => {
       if (selectionToValidate) {
         const selection = selectionToValidate;

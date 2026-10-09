@@ -2,6 +2,7 @@ import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
 import { and, eq, gt, notExists, sql } from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 import { nowDate } from "../../lib/time";
 import {
   activePiMemoryPhase2MaintenanceRunCondition,
@@ -21,17 +22,17 @@ import type { ThreadlessRunProtection } from "./threadless-run-protection.servic
  */
 export const piMemoryPhase2ThreadlessRunProtection: Readonly<ThreadlessRunProtection> =
   {
-    sweepEligibility: (db, { currentTime }) => {
+    sweepEligibility: ({ currentTime }) => {
       const usageQuietBefore = new Date(
         currentTime.getTime() - PI_MEMORY_PHASE2_USAGE_DRAIN_MS,
       );
       return [
         notExists(
-          db
+          new QueryBuilder()
             .select({ memoryStorageId: piMemoryPhase2Jobs.memoryStorageId })
             .from(piMemoryPhase2Jobs)
             .where(
-              activePiMemoryPhase2MaintenanceRunCondition(db, {
+              activePiMemoryPhase2MaintenanceRunCondition({
                 runId: agentRuns.id,
                 orgId: agentRuns.orgId,
                 userId: agentRuns.userId,
@@ -42,7 +43,7 @@ export const piMemoryPhase2ThreadlessRunProtection: Readonly<ThreadlessRunProtec
         // Do not let retained private billing contexts occupy the bounded
         // sweep and starve ordinary threadless cleanup. Revalidate under lock.
         notExists(
-          db
+          new QueryBuilder()
             .select({ id: agentRunCallbacks.id })
             .from(agentRunCallbacks)
             .where(

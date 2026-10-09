@@ -132,7 +132,7 @@ async function loadThreadlessRunCandidates(
           ...TERMINAL_RUN_STATUSES,
         ]),
         ...THREADLESS_RUN_PROTECTIONS.flatMap((protection) => {
-          return protection.sweepEligibility(db, { currentTime });
+          return protection.sweepEligibility({ currentTime });
         }),
         or(
           gte(agentRuns.createdAt, forwardCutoff),
@@ -214,7 +214,7 @@ async function deleteIfStillEligible(
   candidate: ThreadlessRunCandidate,
   quietBefore: Date,
 ): Promise<boolean> {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0266; new non-billing transactions are prohibited.
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0264; new non-billing transactions are prohibited.
   const receipt = await db.transaction(async (tx) => {
     const [current] = await tx
       .select({

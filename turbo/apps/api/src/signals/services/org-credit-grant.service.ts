@@ -33,7 +33,7 @@ export const grantPurchasedOrgCredits$ = command(
     grant: OrgCreditGrant,
     signal: AbortSignal,
   ): Promise<void> => {
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0217; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0215; new non-billing transactions are prohibited.
     await set(writeDb$).transaction(async (tx) => {
       const [inserted] = await tx
         .insert(orgMetadataCanonicalWrites)

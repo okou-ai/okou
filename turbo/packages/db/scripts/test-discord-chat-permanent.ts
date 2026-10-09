@@ -19,7 +19,7 @@ export async function validatePermanentDiscordChat(
   const receiptDigest = suffix.replaceAll("-", "").repeat(2);
 
   try {
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0385; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0383; new non-billing transactions are prohibited.
     await client.query("BEGIN");
     await client.query(
       `INSERT INTO discord_org_installations (guild_id, org_id, bot_user_id)

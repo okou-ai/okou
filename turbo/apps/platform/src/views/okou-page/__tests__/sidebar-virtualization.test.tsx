@@ -1,8 +1,10 @@
 import {
   chatThreadByIdContract,
+  chatThreadPinContract,
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { computerUseHostsContract } from "@okouai/api-contracts/contracts/computer-use";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
@@ -239,6 +241,116 @@ test("Show every unread conversation beyond the current history window", async (
   expect(within(sidebar).queryByText("History 1")).not.toBeInTheDocument();
   expect(within(sidebar).queryByText("History 101")).not.toBeInTheDocument();
 });
+
+function runningIndicatorPhase(row: HTMLElement): number {
+  const indicator = within(row).getByTestId(
+    "chat-thread-state-indicator",
+  ).firstElementChild;
+  if (!(indicator instanceof HTMLElement)) {
+    throw new Error("Running indicator is missing");
+  }
+  const phase = indicator.style.getPropertyValue("--running-indicator-phase");
+  expect(phase).not.toBe("");
+  return Number(phase);
+}
+
+test.each([true, false])(
+  "Follow full-list positions across scrolling and pinning (wave: %s)",
+  async (waveEnabled) => {
+    mockThreads(120);
+    mockViewportHeight(() => {
+      return 5 * ROW_HEIGHT;
+    });
+    context.mocks.api(chatThreadPinContract.pin, ({ respond }) => {
+      return respond(204);
+    });
+    context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
+      return respond(200, {
+        agents: { [AGENT_ID]: "active" },
+        threads: Object.fromEntries(
+          Array.from({ length: 120 }, (_, index) => {
+            return [
+              threadId(index),
+              index === 1 ? "unread" : "active",
+            ] as const;
+          }),
+        ),
+        unreadAt: { [threadId(1)]: "2026-03-10T00:05:00Z" },
+      });
+    });
+    await setupPage({
+      context,
+      path: `/agents/${AGENT_ID}/chat`,
+      featureSwitches: {
+        [FeatureSwitchKey.ChatRunningIndicatorWave]: waveEnabled,
+      },
+    });
+    const sidebar = screen.getByTestId("chat-list-column");
+    const rows = () => {
+      return within(sidebar).getAllByTestId("sidebar-chat-thread-virtual-row");
+    };
+    await waitFor(() => {
+      expect(rows()).toHaveLength(13);
+      expect(runningIndicatorPhase(rows()[2])).toBeCloseTo(
+        waveEnabled ? -10 / 12 : 0,
+        10,
+      );
+    });
+    await within(rows()[1]).findByText("Unread");
+    expect(within(rows()[2]).getByText("Running")).toBeInTheDocument();
+
+    const scrollArea = within(sidebar).getByTestId("sidebar-scroll-area");
+    scrollArea.scrollTop = 40 * ROW_HEIGHT;
+    fireEvent.scroll(scrollArea);
+    await within(sidebar).findByText("History 41");
+    expect(within(sidebar).queryByText("History 1")).not.toBeInTheDocument();
+    expect(Number(rows()[0].dataset.index)).toBeGreaterThan(0);
+    await waitFor(() => {
+      for (const row of rows()) {
+        const index = Number(row.dataset.index);
+        const expectedPhase = index % 12 === 0 ? 0 : (index % 12) / 12 - 1;
+        expect(runningIndicatorPhase(row)).toBeCloseTo(
+          waveEnabled ? expectedPhase : 0,
+          10,
+        );
+      }
+    });
+
+    scrollArea.scrollTop = 0;
+    fireEvent.scroll(scrollArea);
+    await within(sidebar).findByText("History 1");
+    await waitFor(() => {
+      expect(runningIndicatorPhase(rows()[0])).toBe(0);
+      expect(runningIndicatorPhase(rows()[2])).toBeCloseTo(
+        waveEnabled ? -10 / 12 : 0,
+        10,
+      );
+    });
+
+    click(within(rows()[2]).getByLabelText("Open chat menu"));
+    await screen.findByRole("menu");
+    const pin = queryAllByRoleFast("menuitem").find((item) => {
+      return item.getAttribute("aria-label") === "Pin chat";
+    });
+    if (!pin) {
+      throw new Error("Pin menu item is missing");
+    }
+    click(pin);
+    await waitFor(() => {
+      expect(within(rows()[0]).getByText("History 3")).toBeInTheDocument();
+      expect(runningIndicatorPhase(rows()[0])).toBe(0);
+      expect(runningIndicatorPhase(rows()[1])).toBeCloseTo(
+        waveEnabled ? -11 / 12 : 0,
+        10,
+      );
+    });
+    expect(within(rows()[0]).getByText("Running")).toBeInTheDocument();
+    expect(queryAllByRoleFast("link", rows()[0])[0]).toHaveAttribute(
+      "href",
+      `/chats/${threadId(2)}`,
+    );
+  },
+);
 
 function mockPinnedGrid(): string {
   const agents = Array.from({ length: 5 }, (_, index) => {

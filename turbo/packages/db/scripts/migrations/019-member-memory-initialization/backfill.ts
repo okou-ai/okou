@@ -18,7 +18,7 @@ const emptyProjectionHash = createHash("sha256")
 type Database = ReturnType<typeof drizzle>;
 
 async function initializeMemory(db: Database, orgId: string, userId: string) {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0368; new non-billing transactions are prohibited.
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0366; new non-billing transactions are prohibited.
   await db.transaction(async (tx) => {
     const storageId = randomUUID();
     await tx

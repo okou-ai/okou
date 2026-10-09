@@ -79,7 +79,7 @@ const commitLegacyPlanInvoice$ = command(
   ): Promise<LegacyPlanInvoiceResult> => {
     const db = set(writeDb$);
     const args = input.invoice;
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0176; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0174; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       const [wallet] = await tx
         .select()

@@ -6,6 +6,12 @@
  */
 export { initContract } from "./base";
 export {
+  ORG_OPENROUTER_PRESETS,
+  orgOpenrouterPresetSchema,
+  orgOpenrouterPresetContract,
+  type OrgOpenrouterPreset,
+} from "./org-openrouter-preset";
+export {
   buildCommitShaSchema,
   buildInfoContract,
   buildInfoResponseSchema,

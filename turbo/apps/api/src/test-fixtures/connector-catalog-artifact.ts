@@ -2410,6 +2410,9 @@ const connectors = [
 
 function automaticMcpConnector(
   firewallAuth: "none" | "oauth",
+  tokenPrefix = firewallAuth === "oauth"
+    ? "AUTOMATIC"
+    : `AUTOMATIC_${firewallAuth.toUpperCase()}`,
 ): ConnectorCatalogArtifactConnector {
   const template = connectors.find((entry) => {
     return entry.slug === "public-mcp";
@@ -2418,14 +2421,8 @@ function automaticMcpConnector(
     throw new Error("Expected the fixed public MCP connector");
   }
   const endpoint = "https://automatic-mcp.example.test/server";
-  const accessToken =
-    firewallAuth === "oauth"
-      ? "AUTOMATIC_ACCESS_TOKEN"
-      : `AUTOMATIC_${firewallAuth.toUpperCase()}_ACCESS_TOKEN`;
-  const refreshToken =
-    firewallAuth === "oauth"
-      ? "AUTOMATIC_REFRESH_TOKEN"
-      : `AUTOMATIC_${firewallAuth.toUpperCase()}_REFRESH_TOKEN`;
+  const accessToken = `${tokenPrefix}_ACCESS_TOKEN`;
+  const refreshToken = `${tokenPrefix}_REFRESH_TOKEN`;
   const outputs = {
     accessToken: secret(accessToken),
     refreshToken: secret(refreshToken),
@@ -2478,6 +2475,18 @@ function automaticMcpConnector(
   };
 }
 
+function mondayMcpConnector(): ConnectorCatalogArtifactConnector {
+  const connector = automaticMcpConnector("oauth", "MONDAY_MCP");
+  return {
+    ...connector,
+    slug: "monday-mcp",
+    label: "Monday.com",
+    authMethods: connector.authMethods.map((method) => {
+      return { ...method, id: "automatic" };
+    }),
+  };
+}
+
 export const API_TEST_CONNECTOR_CATALOG_ARTIFACT = {
   artifactSchemaVersion: 4,
   catalogVersion: "api-test-v4",
@@ -2496,5 +2505,6 @@ export const API_TEST_CONNECTOR_CATALOG_ARTIFACT = {
     ...connectors,
     automaticMcpConnector("none"),
     automaticMcpConnector("oauth"),
+    mondayMcpConnector(),
   ],
 } satisfies ConnectorCatalogArtifact;

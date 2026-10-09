@@ -56,7 +56,7 @@ export const persistMorningBriefAutomationToggle$ = command(
     const db = set(writeDb$);
     signal.throwIfAborted();
     const result = await settle(
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0190; new non-billing transactions are prohibited.
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0188; new non-billing transactions are prohibited.
       db.transaction(async (tx) => {
         const enabled = args.enabled;
         const [row] = await tx

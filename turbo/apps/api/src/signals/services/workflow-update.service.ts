@@ -43,7 +43,7 @@ const commitWorkflowMetadata$ = command(
   ) => {
     const db = set(writeDb$);
     const { workflow, body } = args;
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0348; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0346; new non-billing transactions are prohibited.
     const result = await db.transaction(async (tx) => {
       // Metadata and its pending generation must commit atomically so a later
       // upload can publish only the generation belonging to this source update.

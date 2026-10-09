@@ -96,7 +96,7 @@ export async function validateConnectorCatalogColumnContract(client: Client) {
   );
 
   for (const column of requiredColumns) {
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0378; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0376; new non-billing transactions are prohibited.
     await client.query("SAVEPOINT required_column");
     await assert.rejects(
       client.query(
@@ -127,7 +127,7 @@ export async function validatePermanentConnectorCatalogColumns(
   const client = new Client({ connectionString: databaseUrl });
   await client.connect();
   try {
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0379; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0377; new non-billing transactions are prohibited.
     await client.query("BEGIN");
     const payload = await client.query(
       `SELECT column_name FROM information_schema.columns

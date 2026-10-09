@@ -22,7 +22,7 @@ import {
 } from "./agent-run-terminal-transition.service";
 import { revokeMorningBriefScheduleOwnership } from "./morning-brief-schedule-claim.service";
 import { eraseVncOwnerData$ } from "./vnc-owner-lifecycle.service";
-import { deleteDiscordOrgMemberData } from "./discord-owner-cleanup.service";
+import { deleteDiscordOrgMemberData$ } from "./discord-owner-cleanup.service";
 import { purgeRetiredMorningBriefEmailSql } from "./retired-morning-brief-email";
 import { eraseMailNotifications$ } from "./mail-notification.service";
 
@@ -46,7 +46,7 @@ const disableDepartedMemberAutomations$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0221; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0219; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       // Disabled Forms may be preparing a re-enable outside the database.
       // Touch their observation too so departure rejects that stale publication.
@@ -102,7 +102,7 @@ export const cleanupOrgMemberResources$ = command(
     signal.throwIfAborted();
     await set(eraseMailNotifications$, args, signal);
     signal.throwIfAborted();
-    await deleteDiscordOrgMemberData(db, args);
+    await set(deleteDiscordOrgMemberData$, args, signal);
     signal.throwIfAborted();
     const currentTime = nowDate();
     // Automations execute as their owner. Only the schedule poller gates on
@@ -240,7 +240,7 @@ async function revokeOrgMemberRunAuthority(
   // Membership revocation is a hard authority boundary, including credentials
   // retained by ordinary personal-settings disconnect. Commit revocation before
   // best-effort runner notification or the remaining member resource cleanup.
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0222; new non-billing transactions are prohibited.
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0220; new non-billing transactions are prohibited.
   const { cancelled, releasedSlots } = await db.transaction(async (tx) => {
     const rows = await transitionAgentRunsToTerminal(tx, {
       values: {

@@ -373,7 +373,7 @@ const commitSelectedPiMemoryStage1Day$ = command(
     const { request, currentTime, chosen, skips } = input;
     // Day consumption, candidate/reference replacement, legacy watermarks and
     // frozen slots form one atomic decision under the original lock order.
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0229; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0227; new non-billing transactions are prohibited.
     await set(writeDb$).transaction(async (tx) => {
       // Sorted source Threads -> Storage -> user/day -> candidates -> blobs.
       if (chosen.length) {

@@ -19,13 +19,13 @@ async function rejects(
   query: string,
   expected: { code: string | RegExp; constraint?: string },
 ) {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0427; new non-billing transactions are prohibited.
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0425; new non-billing transactions are prohibited.
   await client.query("SAVEPOINT invalid_write");
   await assert.rejects(client.query(query), expected);
   await client.query("ROLLBACK TO SAVEPOINT invalid_write");
 }
 try {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0428; new non-billing transactions are prohibited.
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0426; new non-billing transactions are prohibited.
   await client.query("BEGIN");
   await client.query(`CREATE SCHEMA "${schema}"`);
   await client.query(`SET LOCAL search_path TO "${schema}"`);

@@ -802,7 +802,7 @@ async function migrateCandidate(
   discovered: Candidate,
   plaintext: string | undefined,
 ): Promise<"already_current" | "inserted" | "updated" | "source_changed"> {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0362; new non-billing transactions are prohibited.
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0360; new non-billing transactions are prohibited.
   return await db.transaction(async (tx) => {
     const [definition] = await tx
       .select({

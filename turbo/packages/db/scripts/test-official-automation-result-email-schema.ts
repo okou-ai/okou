@@ -24,7 +24,7 @@ export async function validateOfficialAutomationResultEmailSchema(
   console.log("=== Validate Official Automation result-email schema ===\n");
   const client = new Client({ connectionString: databaseUrl });
   await client.connect();
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0411; new non-billing transactions are prohibited.
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0409; new non-billing transactions are prohibited.
   await client.query("BEGIN");
 
   try {
