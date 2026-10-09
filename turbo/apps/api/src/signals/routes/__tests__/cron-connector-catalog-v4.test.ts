@@ -513,53 +513,47 @@ describe("connector catalog v4 preparation", () => {
     });
   });
 
-  it.each([
-    ["Plaud", "plaud-mcp", FeatureSwitchKey.PlaudConnector],
-    ["Monday.com", "monday-mcp", FeatureSwitchKey.MondayConnector],
-  ] as const)(
-    "uses the %s auth-method switch for discovery while accepting its catalog",
-    async (_label, connectorSlug, featureSwitch) => {
-      serveObjects(release({ mcpSlug: connectorSlug }).objects);
-      expect((await sync()).body).toMatchObject({ outcome: "accepted" });
-      expect(
-        (await publicCatalog()).body.connectors.map((connector) => {
-          return connector.slug;
-        }),
-      ).toStrictEqual(["catalog-service"]);
-      const featuresApp = await setupApp({
-        context,
-        routes: featureSwitchesRoutes,
-        isolatePg: true,
-      });
-      const features = featuresApp(featureSwitchesContract);
-      await accept(
-        features.update({
-          headers: sessionHeaders,
-          body: { switches: { [featureSwitch]: true } },
-        }),
-        [200],
-      );
-      expect((await publicCatalog()).body.connectors).toMatchObject([
-        { slug: "catalog-service" },
-        {
-          slug: connectorSlug,
-          authMethods: [{ id: "automatic", grantKind: "automatic" }],
-        },
-      ]);
-      await accept(
-        features.update({
-          headers: sessionHeaders,
-          body: { switches: { [featureSwitch]: false } },
-        }),
-        [200],
-      );
-      expect(
-        (await publicCatalog()).body.connectors.map((connector) => {
-          return connector.slug;
-        }),
-      ).toStrictEqual(["catalog-service"]);
-    },
-  );
+  it("uses the Plaud auth-method switch for discovery while accepting its catalog", async () => {
+    serveObjects(release({}).objects);
+    expect((await sync()).body).toMatchObject({ outcome: "accepted" });
+    expect(
+      (await publicCatalog()).body.connectors.map((connector) => {
+        return connector.slug;
+      }),
+    ).toStrictEqual(["catalog-service"]);
+    const featuresApp = await setupApp({
+      context,
+      routes: featureSwitchesRoutes,
+      isolatePg: true,
+    });
+    const features = featuresApp(featureSwitchesContract);
+    await accept(
+      features.update({
+        headers: sessionHeaders,
+        body: { switches: { [FeatureSwitchKey.PlaudConnector]: true } },
+      }),
+      [200],
+    );
+    expect((await publicCatalog()).body.connectors).toMatchObject([
+      { slug: "catalog-service" },
+      {
+        slug: "plaud-mcp",
+        authMethods: [{ id: "automatic", grantKind: "automatic" }],
+      },
+    ]);
+    await accept(
+      features.update({
+        headers: sessionHeaders,
+        body: { switches: { [FeatureSwitchKey.PlaudConnector]: false } },
+      }),
+      [200],
+    );
+    expect(
+      (await publicCatalog()).body.connectors.map((connector) => {
+        return connector.slug;
+      }),
+    ).toStrictEqual(["catalog-service"]);
+  });
 
   it("keeps serving the current pointer across a rejected-source sync", async () => {
     const serving = release({ label: "Serving" });

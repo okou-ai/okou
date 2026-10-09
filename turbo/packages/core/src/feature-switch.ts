@@ -102,12 +102,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Ahrefs SEO connector",
     enabled: false,
   },
-  [FeatureSwitchKey.MondayConnector]: {
-    maintainer: "liangyou@okou.ai",
-    description: "Enable the Monday.com MCP connector",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.PlaudConnector]: {
     maintainer: "liangyou@okou.ai",
     description: "Enable the Plaud MCP connector",

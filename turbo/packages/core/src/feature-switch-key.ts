@@ -15,7 +15,6 @@ export enum FeatureSwitchKey {
   DeelConnector = "deelConnector",
   DocuSignConnector = "docusignConnector",
   ExpensifyConnector = "expensifyConnector",
-  MondayConnector = "mondayConnector",
   MercuryConnector = "mercuryConnector",
   NeonConnector = "neonConnector",
   NetSuiteConnector = "netSuiteConnector",

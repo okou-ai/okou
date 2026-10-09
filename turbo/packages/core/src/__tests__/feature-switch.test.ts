@@ -187,37 +187,6 @@ describe("isFeatureEnabled", () => {
     ).toBe(false);
   });
 
-  it("enables the Monday MCP connector for staff and honors explicit overrides", () => {
-    expect(FeatureSwitchKey.MondayConnector).toBe("mondayConnector");
-    for (const context of [{}, { orgId: "org_nonexistent" }]) {
-      expect(isFeatureEnabled(FeatureSwitchKey.MondayConnector, context)).toBe(
-        false,
-      );
-    }
-    const staffContext = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.MondayConnector, staffContext),
-    ).toBe(true);
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.MondayConnector, {
-        ...staffContext,
-        overrides: { [FeatureSwitchKey.MondayConnector]: false },
-      }),
-    ).toBe(false);
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.MondayConnector, {
-        overrides: { [FeatureSwitchKey.MondayConnector]: true },
-      }),
-    ).toBe(true);
-    expect(
-      getFeatureSwitchMetadata()[FeatureSwitchKey.MondayConnector],
-    ).toEqual({
-      maintainer: "liangyou@okou.ai",
-      description: "Enable the Monday.com MCP connector",
-      rolloutStage: "beta",
-    });
-  });
-
   it("enables the Plaud MCP connector for staff and honors explicit overrides", () => {
     expect(FeatureSwitchKey.PlaudConnector).toBe("plaudConnector");
     for (const context of [{}, { orgId: "org_nonexistent" }]) {
