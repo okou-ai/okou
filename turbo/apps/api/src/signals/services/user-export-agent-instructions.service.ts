@@ -16,7 +16,6 @@ import { z } from "zod";
 import { extractBinaryFilesFromTarGz } from "../../lib/tar";
 import { db$ } from "../external/db";
 import { downloadS3BufferWithMaxBytes } from "../external/s3";
-import { APPLICATION_OWNED_AGENT_EXECUTION_PLAN } from "./agent-execution-plan";
 import { piResourceVersionIndexes } from "@okouai/db/schema/pi-resource-version-index";
 import {
   PI_RESOURCE_EXTRACTOR_VERSION,
@@ -104,9 +103,7 @@ export const readUserExportAgentInstructions$ = command(
     signal: AbortSignal,
   ): Promise<string> => {
     const source = await set(instructionSource$, args, signal);
-    const filename = getInstructionsFilename(
-      APPLICATION_OWNED_AGENT_EXECUTION_PLAN.framework.fallback,
-    );
+    const filename = getInstructionsFilename();
     const manifestBytes = await get(
       downloadS3BufferWithMaxBytes(
         args.bucket,

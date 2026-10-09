@@ -4,12 +4,10 @@ import { command } from "ccstate";
 import { delay } from "signal-timers";
 import { v5 as uuidv5 } from "uuid";
 import { eq } from "drizzle-orm";
-import type { LinkLayout } from "@okouai/api-contracts/contracts/link-layout";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import { z } from "zod";
 
 import { env } from "../../lib/env";
-import { publicArtifactsBaseUrl } from "../../lib/file-url";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
@@ -19,17 +17,15 @@ import { safeJsonParse, tapError } from "../utils";
 import { allocateArtifactObject$ } from "./artifact-storage.service";
 import {
   allocatePrivateArtifact$,
-  resolveArtifactFileReference,
   completePrivateArtifact$,
-  privateArtifactCreationEnabled,
-  privateArtifactRecord,
+  privateArtifactCreationEnabled$,
+  privateArtifactRecord$,
 } from "./private-artifact-storage.service";
 import {
-  queueArtifactCatalogFile,
+  queueArtifactCatalogFileSql,
   syncArtifactCatalogForFile$,
 } from "./artifact-catalog.service";
-import { publishArtifactsChangedForRun } from "./artifact-realtime.service";
-import { extractPrivateVideoPoster$ } from "./private-video-preview.service";
+import { publishArtifactsChangedForRun$ } from "./artifact-realtime.service";
 
 const log = logger("artifacts:preview");
 
@@ -127,12 +123,6 @@ const browserSnapshotErrorSchema = z.object({
   ),
 });
 
-// Poster versions are write-once. Renderer changes must use a new filename
-// instead of replacing bytes behind an immutable CDN URL. The Cloudflare Media
-// Transformations frame endpoint only outputs jpg/png.
-const VIDEO_POSTER_FILENAME = "poster-v2.jpg";
-const VIDEO_POSTER_CONTENT_TYPE = "image/jpeg";
-
 export interface RenderArtifactPreviewArgs {
   // The run_uploaded_files row id; also namespaces the R2 object key.
   readonly id: string;
@@ -140,11 +130,6 @@ export interface RenderArtifactPreviewArgs {
   readonly userId: string;
   readonly orgId: string;
   readonly url: string;
-  // Discriminates the renderer: `video/*` extracts a poster frame, otherwise a
-  // Browser Rendering page screenshot.
-  readonly contentType: string | null;
-  // Layout of the source URL; the poster transform runs on its CDN origin.
-  readonly layout: LinkLayout;
   // Versions the preview key so each deployment gets a fresh, CDN-cache-busting
   // URL instead of overwriting a stale object at a fixed key.
   readonly deploymentId?: string;
@@ -158,73 +143,6 @@ function previewImageFilename(deploymentId?: string): string {
     : PREVIEW_IMAGE_BASENAME;
   return `${base}.${PREVIEW_IMAGE_EXTENSION}`;
 }
-
-function isVideoContentType(contentType: string | null): boolean {
-  return contentType?.startsWith("video/") ?? false;
-}
-
-// Cloudflare Media Transformations rejects input at or above this size with
-// `9402`, so a larger artifact can never yield a poster frame either.
-export const VIDEO_POSTER_MAX_INPUT_BYTES = 104_857_600;
-
-// Cloudflare Media Transformations only decodes MP4 input, so a WebM artifact
-// can never yield a poster frame. Recognizing that up front avoids a request
-// that always fails and a warning nobody can act on.
-function canExtractVideoPoster(contentType: string | null): boolean {
-  return !(contentType?.startsWith("video/webm") ?? false);
-}
-
-// Extract a poster frame from a video via Cloudflare Media Transformations.
-// This is a public transform URL on the artifacts CDN (no auth), the video
-// sibling of the `/cdn-cgi/image/` resizing already used for images.
-async function extractVideoPoster(
-  videoUrl: string,
-  layout: LinkLayout,
-  signal: AbortSignal,
-): Promise<Buffer> {
-  const base = publicArtifactsBaseUrl(layout);
-  const transformUrl = `${base}/cdn-cgi/media/mode=frame,time=1s,width=640,format=jpg/${videoUrl}`;
-  const response = await fetch(transformUrl, { signal });
-  if (!response.ok) {
-    throw new Error(
-      `media frame extraction failed (${response.status}): ${await response.text()}`,
-    );
-  }
-  return Buffer.from(await response.arrayBuffer());
-}
-
-const renderVideoPoster$ = command(
-  async (
-    { get, set },
-    args: RenderArtifactPreviewArgs,
-    signal: AbortSignal,
-  ) => {
-    if (!canExtractVideoPoster(args.contentType)) {
-      return null;
-    }
-    const reference = await get(resolveArtifactFileReference(args.url, signal));
-    signal.throwIfAborted();
-    if (reference) {
-      if (!reference.id) {
-        return null;
-      }
-      const image = await set(
-        extractPrivateVideoPoster$,
-        {
-          id: reference.id,
-          userId: args.userId,
-          orgId: args.orgId,
-        },
-        signal,
-      );
-      return image ? { image, isPrivate: true } : null;
-    }
-    return {
-      image: await extractVideoPoster(args.url, args.layout, signal),
-      isPrivate: false,
-    };
-  },
-);
 
 function isCloudflareChallenge(content: string, title?: string): boolean {
   const page = `${title ?? ""}\n${content}`.toLowerCase();
@@ -296,8 +214,7 @@ function isActionTimeoutResponse(
 }
 
 type SnapshotNavigationOptions =
-  | typeof PRIMARY_NAVIGATION_OPTIONS
-  | typeof NAVIGATION_TIMEOUT_RETRY_OPTIONS;
+  typeof PRIMARY_NAVIGATION_OPTIONS | typeof NAVIGATION_TIMEOUT_RETRY_OPTIONS;
 
 interface FetchArtifactSnapshotArgs {
   readonly token: string;
@@ -678,9 +595,8 @@ async function renderArtifactSnapshot(
  * Render a static preview image for a single hosted-site/HTML artifact row,
  * upload it according to the artifact storage policy, and persist its stable
  * URL on the row. Returns false (no-op) when the browser-rendering
- * token is unset, or when the video container has no poster frame we can
- * extract. Keyed by the row id so it always targets the exact artifact of that
- * run.
+ * token is unset. Keyed by the row id so it always targets the exact artifact
+ * of that run.
  */
 const renderAndStoreArtifactPreview$ = command(
   async (
@@ -688,45 +604,38 @@ const renderAndStoreArtifactPreview$ = command(
     args: RenderArtifactPreviewArgs,
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const isVideo = isVideoContentType(args.contentType);
-    let privateSource = false;
-    let image: Buffer;
-    let filename: string;
-    let contentType: string;
-    if (isVideo) {
-      const poster = await set(renderVideoPoster$, args, signal);
-      if (!poster) {
-        return false;
-      }
-      image = poster.image;
-      privateSource ||= poster.isPrivate;
-      filename = VIDEO_POSTER_FILENAME;
-      contentType = VIDEO_POSTER_CONTENT_TYPE;
-    } else {
-      const token = env("CLOUDFLARE_BROWSER_RENDERING_API_TOKEN");
-      if (!token) {
-        return false;
-      }
-      const wafSecret = env("ARTIFACT_PREVIEW_WAF_SECRET");
-      if (!wafSecret) {
-        throw new Error(
-          "ARTIFACT_PREVIEW_WAF_SECRET is required when browser rendering is configured",
-        );
-      }
-      // Hosted sites render from their own public URL.
-      image = await renderArtifactSnapshot(token, wafSecret, args.url, signal);
-      filename = previewImageFilename(args.deploymentId);
-      contentType = PREVIEW_IMAGE_CONTENT_TYPE;
+    const token = env("CLOUDFLARE_BROWSER_RENDERING_API_TOKEN");
+    if (!token) {
+      return false;
     }
+    const wafSecret = env("ARTIFACT_PREVIEW_WAF_SECRET");
+    if (!wafSecret) {
+      throw new Error(
+        "ARTIFACT_PREVIEW_WAF_SECRET is required when browser rendering is configured",
+      );
+    }
+    // Hosted sites render from their own public URL.
+    const image = await renderArtifactSnapshot(
+      token,
+      wafSecret,
+      args.url,
+      signal,
+    );
+    const filename = previewImageFilename(args.deploymentId);
+    const contentType = PREVIEW_IMAGE_CONTENT_TYPE;
     signal.throwIfAborted();
 
     const privateId = uuidv5(`${args.id}:${filename}`, uuidv5.URL);
-    const existing = await get(privateArtifactRecord(privateId));
+    const existing = await set(privateArtifactRecord$, privateId, signal);
     signal.throwIfAborted();
     const privatePreview =
-      privateSource ||
       existing !== null ||
-      (await get(privateArtifactCreationEnabled(args.orgId, args.userId)));
+      (await set(
+        privateArtifactCreationEnabled$,
+        args.orgId,
+        args.userId,
+        signal,
+      ));
     signal.throwIfAborted();
     const artifact = privatePreview
       ? await set(
@@ -775,6 +684,7 @@ const renderAndStoreArtifactPreview$ = command(
       );
     }
     const db = set(writeDb$);
+    // Publish the preview reference and its recoverable catalog handoff together.
     await db.transaction(async (tx) => {
       const [row] = await tx
         .update(runUploadedFiles)
@@ -785,13 +695,14 @@ const renderAndStoreArtifactPreview$ = command(
         .where(eq(runUploadedFiles.id, args.id))
         .returning({ id: runUploadedFiles.id });
       if (row) {
-        await queueArtifactCatalogFile(tx, row.id, signal);
+        await tx.execute(queueArtifactCatalogFileSql(row.id));
+        signal.throwIfAborted();
       }
     });
     signal.throwIfAborted();
 
     await set(syncArtifactCatalogForFile$, args.id, signal);
-    await publishArtifactsChangedForRun(db, args.runId, signal);
+    await set(publishArtifactsChangedForRun$, args.runId, signal);
     return true;
   },
 );
@@ -813,7 +724,6 @@ export const scheduleArtifactPreviewRender$ = command(
           log.warn("Failed to render artifact preview", {
             artifactId: args.id,
             url: args.url,
-            contentType: args.contentType,
             error: (error instanceof Error
               ? error.message
               : String(error)

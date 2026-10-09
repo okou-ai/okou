@@ -18,10 +18,6 @@ import { requireUserMessageForDraftAttachments } from "./draft-user-message";
 import { hostedArtifactKindSchema } from "./host";
 import { runFailureReasonTokenSchema } from "./run-failure-reasons";
 import { runModelIdSchema } from "./model-providers";
-import {
-  avatarVideoAspectRatioSchema,
-  avatarVideoVoiceIdSchema,
-} from "./avatar-video";
 
 const c = initContract();
 const chatEventCursorSchema = z.union([
@@ -267,6 +263,8 @@ const chatThreadArtifactGoogleDriveSyncSchema = z.discriminatedUnion("status", [
 ]);
 
 const chatThreadArtifactFileSchema = resolvedAttachFileSchema.extend({
+  artifactId: z.uuid().optional(),
+  googleDriveConnectionId: z.uuid().optional(),
   createdAt: z.string(),
   artifactKind: hostedArtifactKindSchema.optional(),
   previewImageUrl: z.string().optional(),
@@ -430,6 +428,18 @@ const presentationGenerationTemplateRequestSchema = z.object({
     })
     .strict(),
 });
+
+const avatarVideoAspectRatioSchema = z.enum([
+  "portrait",
+  "landscape",
+  "square",
+]);
+const avatarVideoVoiceIdSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(200)
+  .regex(/^[A-Za-z0-9._:-]+$/);
 
 /**
  * Talking-avatar parameters. Unrelated to text-to-video despite sharing the
@@ -1969,6 +1979,7 @@ export const chatThreadArtifactsContract = c.router({
     },
     summary: "List uploaded files associated with every run in a chat thread",
   },
+  /** @deprecated Cached App compatibility; use artifactGoogleDriveContract.upload. */
   syncGoogleDrive: {
     method: "POST",
     path: "/api/chat-threads/:threadId/artifacts",
@@ -2122,10 +2133,7 @@ export type ChatInputEvent = Extract<
   ChatEvent,
   {
     eventType:
-      | "input.prompt"
-      | "input.automation"
-      | "input.budget"
-      | "input.rejected";
+      "input.prompt" | "input.automation" | "input.budget" | "input.rejected";
   }
 >;
 export type ChatUserMessageEvent = Extract<

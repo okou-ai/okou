@@ -16,7 +16,7 @@ import { command } from "ccstate";
 import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { settle } from "../utils";
 import {
-  loadAgentConnectorScope,
+  readAgentConnectorScope$,
   type AgentConnectorScope,
 } from "./agent-connector-scope.service";
 import { listConnectorAccountsByIds } from "./connector-account-lifecycle.service";
@@ -59,8 +59,7 @@ type UpdateChatThreadConnectorSelectionResult =
   | { readonly kind: "invalid"; readonly message: string };
 
 type ClearChatThreadConnectorSelectionResult =
-  | { readonly kind: "cleared" }
-  | { readonly kind: "not_found" };
+  { readonly kind: "cleared" } | { readonly kind: "not_found" };
 
 function targetFromRow(row: ConnectorSelectionRow): ConnectorAccountTarget {
   if (row.connectorSlug !== null && row.customConnectorId === null) {
@@ -238,7 +237,7 @@ export async function listChatThreadConnectorSelections(
 
 export const prepareChatThreadConnectorSelections$ = command(
   async (
-    { get },
+    { get, set },
     args: {
       readonly orgId: string;
       readonly userId: string;
@@ -270,7 +269,11 @@ export const prepareChatThreadConnectorSelections$ = command(
     // thread and account arbitrate a concurrent deletion: the loser of that race
     // receives a deterministic invalid/omitted result (see
     // selectionParentMissing), never a stale selection.
-    const scope = await loadAgentConnectorScope(db, args);
+    const scope = await set(readAgentConnectorScope$, {
+      orgId: args.orgId,
+      userId: args.userId,
+      agentId: args.agentId,
+    });
     signal.throwIfAborted();
     const catalogSlugs = await loadCatalogSlugsForBuiltinTargets(
       db,

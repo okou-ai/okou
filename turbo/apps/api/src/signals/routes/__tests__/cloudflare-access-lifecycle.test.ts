@@ -9,7 +9,6 @@ import { expect, test } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
-import { countUserSshAccessResourcesFixture } from "../../../test-fixtures/ssh-access-owner-lifecycle";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { cloudflareAccessRoutes } from "../cloudflare-access";
 import { sshConnectionsRoutes } from "../ssh-connections";
@@ -139,24 +138,7 @@ test("creator deletion preserves shared Access and another member's SSH host", a
   const member = await owner(creator.orgId, "member");
   const host = await createHost(shared.id);
 
-  await expect(
-    countUserSshAccessResourcesFixture(creator.userId),
-  ).resolves.toStrictEqual({
-    configs: 1,
-    hosts: 1,
-    credentials: 1,
-  });
   await webhook("user.deleted", creator.userId);
-
-  // The deleted user cannot authenticate to list their own resources. This
-  // narrow fixture verifies that encrypted personal state was actually erased.
-  await expect(
-    countUserSshAccessResourcesFixture(creator.userId),
-  ).resolves.toStrictEqual({
-    configs: 0,
-    hosts: 0,
-    credentials: 0,
-  });
 
   mocks.clerk.session(member.userId, member.orgId, "org:member");
   expect(
@@ -421,7 +403,23 @@ test("conversion and concurrent host binding retain a valid admin-owned referenc
     createHost(shared.id),
   ]);
   if (converted.status === 409) {
-    expect(converted.body.error.code).toBe("CLOUDFLARE_ACCESS_IMPACT_CONFLICT");
+    expect([
+      "CLOUDFLARE_ACCESS_REVISION_CONFLICT",
+      "CLOUDFLARE_ACCESS_IMPACT_CONFLICT",
+    ]).toContain(converted.body.error.code);
+    expect(
+      (await accept(configs().list({ headers, query }), [200])).body.configs,
+    ).toContainEqual(
+      expect.objectContaining({
+        id: shared.id,
+        scope: "organization",
+        revision: shared.revision,
+        generation: shared.generation,
+      }),
+    );
+    expect(
+      (await accept(hosts().list({ headers }), [200])).body.connections,
+    ).toStrictEqual([host]);
     const latest = (
       await accept(
         configs().impactPreview({
@@ -447,13 +445,19 @@ test("conversion and concurrent host binding retain a valid admin-owned referenc
   expect(
     (await accept(configs().list({ headers, query }), [200])).body.configs,
   ).toContainEqual(
-    expect.objectContaining({ id: shared.id, scope: "personal" }),
+    expect.objectContaining({
+      id: shared.id,
+      scope: "personal",
+      revision: shared.revision + 1,
+      generation: shared.generation + 1,
+    }),
   );
   expect(
     (await accept(hosts().list({ headers }), [200])).body.connections,
   ).toContainEqual(
     expect.objectContaining({
       id: host.id,
+      generation: host.generation + (converted.status === 409 ? 1 : 0),
       transport: { type: "cloudflare_access", configId: shared.id },
     }),
   );

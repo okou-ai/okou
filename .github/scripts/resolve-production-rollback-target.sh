@@ -43,6 +43,9 @@ readonly RUNNER_STEER_ENDPOINTS_COMMIT=fd5104417a0cf41116ce9cb9c1aeb2fa3b5e14da
 # the completion paths for jobs accepted before it, so an earlier API would
 # accept video jobs that can no longer complete after rolling forward.
 readonly VIDEO_GENERATION_RETIREMENT_COMMIT=45b537a596a153a91b76c3bc7223187840f52775
+# #38129 moved both memory stages to Luna. DeepSeek route retirement makes
+# earlier APIs unsafe: they would admit work with a deleted execution binding.
+readonly PI_MEMORY_LUNA_ROUTING_COMMIT=77357abdb29ce96b2caf9ee679299602757844dc
 readonly PUBLIC_BRAND_RETIREMENT_PATH=turbo/packages/db/src/migrations/1255_retire_public_brand.sql
 readonly AGENT_RUN_HEARTBEAT_DROP_PATH=turbo/packages/db/src/migrations/1259_drop_agent_runs_last_heartbeat_at.sql
 readonly PERSONAL_SUBSCRIPTION_ACCOUNT_ONLY_PATH=turbo/packages/db/src/migrations/1260_personal_subscription_account_only.sql
@@ -62,6 +65,9 @@ readonly DEAD_MODEL_PROVIDER_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/
 readonly CONNECTOR_CATALOG_RELEASE_2_PATH=turbo/packages/db/src/migrations/1334_connector_catalog_release_2_contraction.sql
 readonly MODEL_ROUTE_STATE_RETIREMENT_PATH=turbo/packages/db/src/migrations/1338_retire_model_route_state.sql
 readonly PI_STABLE_CONTEXT_RETIREMENT_PATH=turbo/packages/db/src/migrations/1343_retire_pi_stable_context.sql
+readonly PI_DEBUG_TRACE_RETIREMENT_PATH=turbo/packages/db/src/migrations/1345_outstanding_the_hood.sql
+readonly CONNECTOR_CATALOG_PAYLOAD_INDEPENDENT_PATH=turbo/packages/db/src/migrations/1348_connector_catalog_payload_independent_api.sql
+readonly USAGE_ALLOWANCE_RETIREMENT_PATH=turbo/packages/db/src/migrations/1356_drop_organization_usage_allowance.sql
 
 fail() {
   echo "::error::$*" >&2
@@ -130,6 +136,22 @@ if ! git merge-base --is-ancestor "$RUNNER_STEER_ENDPOINTS_COMMIT" "$TARGET_COMM
 fi
 if ! git merge-base --is-ancestor "$VIDEO_GENERATION_RETIREMENT_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the video generation retirement: ${VIDEO_GENERATION_RETIREMENT_COMMIT}."
+fi
+if ! git merge-base --is-ancestor "$PI_MEMORY_LUNA_ROUTING_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates Pi memory Luna routing: ${PI_MEMORY_LUNA_ROUTING_COMMIT}."
+fi
+
+# The preparatory catalog release stops writing/reading payload and removes it
+# from the runtime ORM. Resolve its merged commit, not a branch SHA. Once new
+# entries have NULL payload, payload-dependent APIs are no longer supported
+# rollback targets; the later physical DROP requires this same floor.
+connector_catalog_payload_independent_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$CONNECTOR_CATALOG_PAYLOAD_INDEPENDENT_PATH" | sed -n '1p')
+if [[ ! "$connector_catalog_payload_independent_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged connector catalog payload-independent API on main."
+fi
+if ! git merge-base --is-ancestor "$connector_catalog_payload_independent_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the connector catalog payload-independent API: ${connector_catalog_payload_independent_commit}."
 fi
 
 # Migration 1255 drops the remaining non-link public_brand columns and renames
@@ -343,6 +365,30 @@ if [[ ! "$pi_stable_context_retirement_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$pi_stable_context_retirement_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Pi stable-context retirement: ${pi_stable_context_retirement_commit}."
+fi
+
+# Earlier APIs name the retired per-run trace column in launch, detail and
+# completion queries (including implicit Drizzle projections).
+pi_debug_trace_retirement_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$PI_DEBUG_TRACE_RETIREMENT_PATH" | sed -n '1p')
+if [[ ! "$pi_debug_trace_retirement_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Pi debug trace retirement on main."
+fi
+if ! git merge-base --is-ancestor "$pi_debug_trace_retirement_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Pi debug trace retirement: ${pi_debug_trace_retirement_commit}."
+fi
+
+# Migration 1356 drops Allowance history and its hourly columns. Earlier APIs
+# still read the allocation table and write the retired hourly shape, so none
+# can serve after the contraction. Resolve the canonical first-parent main
+# commit, never a branch-only implementation SHA.
+usage_allowance_retirement_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$USAGE_ALLOWANCE_RETIREMENT_PATH" | sed -n '1p')
+if [[ ! "$usage_allowance_retirement_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Usage Allowance retirement on main."
+fi
+if ! git merge-base --is-ancestor "$usage_allowance_retirement_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Usage Allowance retirement: ${usage_allowance_retirement_commit}."
 fi
 
 # Chat Event V8 removes eight event types and two context types. Earlier APIs

@@ -418,8 +418,7 @@
         "invite": "邀請",
         "openArtifacts": "開啟成果面板",
         "openAutomations": "開啟自動化面板",
-        "openMenu": "開啟選單",
-        "overlay": "側邊欄遮罩"
+        "openMenu": "開啟選單"
       },
       "navigation": {
         "agents": "智能體",
@@ -1289,17 +1288,6 @@
       "subscriptionChangeConfirmed": "訂閱變更已確認。"
     },
     "usage": {
-      "allowance": {
-        "day": "{{value}}天",
-        "hour": "{{value}}小時",
-        "left": "剩餘 {{value}}",
-        "minute": "{{value}}分鐘",
-        "remainingAria": "用量額度剩餘 {{label}}",
-        "resets": "{{date}} 重置",
-        "resetsRaw": "{{value}} 重置",
-        "title": "用量額度",
-        "week": "{{value}}周"
-      },
       "autoRechargeOn": "已開啟自動充值",
       "breakdown": {
         "currentPlanDescription": "套餐每月積分，每個帳單週期重置",
@@ -2108,7 +2096,6 @@
         "default": "思考中…"
       },
       "viewActivityLogs": "檢視活動日誌",
-      "viewLangfuseTrace": "檢視Langfuse追蹤",
       "viewLogs": "檢視執行日誌",
       "waitingIn": "正在等待",
       "workedFor": "共工作 {{duration}}",
@@ -2546,7 +2533,6 @@
         "visualMethods": "視覺化方式"
       },
       "workflows": {
-        "back": "瀏覽工作流",
         "browse": "瀏覽工作流",
         "close": "關閉",
         "contextPrefix": "我在意的是：{{preference}}",
@@ -2555,14 +2541,7 @@
             "cadence": "每天或每週",
             "description": "追蹤定價、產品和對外表述的變化，並附上來源連結。",
             "name": "競品動態",
-            "next": "選擇要追蹤的頁面、檢查頻率，以及什麼算值得關注的變化。",
             "prompt": "幫我追蹤競爭對手在定價、功能和對外表述上的重要變化。把清晰的前後對比報告連同來源連結儲存到 Notion。幫我選擇要追蹤的頁面、檢查頻率，以及是否接收 Slack 提醒。",
-            "results": {
-              "one": "前後變化對比",
-              "three": "變化內容的簡要說明",
-              "two": "每條發現都附來源連結"
-            },
-            "scope": "用內建網頁調研檢查頁面，用 Notion 儲存發現；Slack 提醒可選。",
             "steps": {
               "one": "按設定的頻率檢查你選擇的競品頁面",
               "three": "把發現和來源儲存到 Notion，也可提醒到 Slack",
@@ -2574,14 +2553,7 @@
             "cadence": "有新郵件時",
             "description": "給收到的郵件分類，並準備好回覆草稿供你確認。",
             "name": "收件箱整理與回覆草稿",
-            "next": "選擇一個收件箱，以及哪些郵件需要回復。",
             "prompt": "幫我按緊急程度整理 Gmail 裡收到的郵件，併為需要回復的郵件準備草稿。回覆由我自己確認後傳送。開啟之前，幫我確定收件箱範圍和分類規則。",
-            "results": {
-              "one": "按緊急程度分好的郵件",
-              "three": "Gmail 裡的回覆草稿",
-              "two": "重要請求被挑出來"
-            },
-            "scope": "Gmail。回覆只生成草稿，由你確認後傳送。",
             "steps": {
               "one": "讀取你指定範圍內收到的郵件",
               "three": "把建議回覆存為 Gmail 草稿供你確認",
@@ -2593,14 +2565,7 @@
             "cadence": "你給發票打標籤時",
             "description": "把打了標籤的發票郵件歸檔到 Drive，並留下清晰記錄。",
             "name": "發票歸檔",
-            "next": "選擇一個 Gmail 標籤、一個 Drive 資料夾，以及是否保留表格臺賬。",
             "prompt": "當我給 Gmail 郵件打上發票標籤時，幫我把發票歸檔到 Google Drive，並可選在 Google Sheets 裡記錄。開啟之前，幫我確定標籤、目標資料夾和檔案命名規則。",
-            "results": {
-              "one": "發票檔案進入正確的資料夾",
-              "three": "可選的 Sheets 發票臺賬",
-              "two": "一致的歸檔記錄"
-            },
-            "scope": "Gmail 和 Google Drive；Google Sheets 臺賬可選。",
             "steps": {
               "one": "用你選擇的 Gmail 標籤識別發票",
               "three": "可選在 Google Sheets 中記錄發票資訊",
@@ -2612,14 +2577,7 @@
             "cadence": "日程新增會議時",
             "description": "提前瞭解你要見的人、他們的背景，以及該問什麼。",
             "name": "會議準備",
-            "next": "選擇你的日曆，以及要包含哪些型別的會議。",
             "prompt": "幫我為接下來的外部會議做準備。調研我要見的人和公司，附上來源連結，並給出有價值的交流話題。幫我選擇要包含的日曆和會議，以及每份簡報的傳送時間。",
-            "results": {
-              "one": "參會人和公司背景",
-              "three": "建議的交流話題",
-              "two": "相關背景資訊與來源"
-            },
-            "scope": "Google Calendar；公開的職業背景調研和 Slack 推送可選。",
             "steps": {
               "one": "讀取新日程中的參會人和會議資訊",
               "three": "整理一份帶來源和話題的簡報",
@@ -2631,14 +2589,7 @@
             "cadence": "每天早上",
             "description": "訪客、註冊和啟用，匯成每天一份好讀的快照。",
             "name": "每日資料簡報",
-            "next": "選擇站點、可用指標、對比周期和 Slack 接收位置。",
             "prompt": "用我已有的 PostHog 資料，幫我每天在 Slack 收到一份訪客、註冊和啟用的快照。清楚標註統計週期。幫我選擇可用指標、傳送時間和 Slack 接收位置。",
-            "results": {
-              "one": "每日訪客數",
-              "three": "清晰的統計週期",
-              "two": "有資料時給出註冊和啟用數"
-            },
-            "scope": "PostHog 和 Slack。",
             "steps": {
               "one": "讀取約定的網站和註冊指標",
               "three": "把快照發到你選擇的 Slack 位置",
@@ -2650,14 +2601,7 @@
             "cadence": "每天早上",
             "description": "重要郵件、會議和優先事項，匯成一份早間簡報。",
             "name": "早間簡報",
-            "next": "選擇你的收件箱、日曆、傳送時間和接收位置。",
             "prompt": "幫我建立一份早間簡報，包含重要郵件、今天的會議、優先事項和待跟進的事。我希望在 Slack 收到一份簡短的當日計劃。開啟之前，幫我確定資料來源和早上的傳送時間。",
-            "results": {
-              "one": "今天的優先事項",
-              "three": "需要跟進的回覆和決定",
-              "two": "會議安排和專注時間"
-            },
-            "scope": "Gmail 和 Google Calendar；Notion 可補充專案背景。",
             "steps": {
               "one": "讀取重要郵件和今天的會議",
               "three": "把簡潔的早間計劃發到 Slack",
@@ -2669,14 +2613,7 @@
             "cadence": "檢查是否有新的會議記錄",
             "description": "一份清晰的紀要，包含決定、待辦和負責人。",
             "name": "會議紀要",
-            "next": "選擇檢查新記錄的頻率，以及紀要傳送到哪裡。",
             "prompt": "幫我把新的 Google Meet 轉錄整理成簡潔紀要，包含決定、待辦、負責人和截止日期。會上沒有明確說到的資訊要標註出來。幫我選擇檢查新記錄的頻率，以及紀要的傳送位置。",
-            "results": {
-              "one": "會上做出的決定",
-              "three": "缺失的資訊會明確標出",
-              "two": "待辦事項和明確的負責人"
-            },
-            "scope": "按設定的頻率檢查 Google Meet 是否有新轉錄。Gmail 或 Slack 推送可選。",
             "steps": {
               "one": "讀取新的會議轉錄",
               "three": "把簡潔紀要發到你選擇的位置",
@@ -2688,14 +2625,7 @@
             "cadence": "收到符合條件的回覆時",
             "description": "盯住一個會話，回覆一到就告訴你要點和下一步。",
             "name": "郵件回覆監控",
-            "next": "選擇郵件會話、預期的發件人，以及提醒發到哪裡。",
             "prompt": "幫我盯住一個 Gmail 會話，等我在等的那個人回覆。每有一封新回覆就提醒我一次，總結要點和下一步，必要時準備一封跟進草稿。回覆由我自己傳送。幫我選擇要盯的會話，以及提醒的接收位置。",
-            "results": {
-              "one": "收到的回覆和要點",
-              "three": "需要時附上跟進草稿",
-              "two": "對方提出的要求或截止時間"
-            },
-            "scope": "Gmail。一個會話，每有一封新來郵件提醒一次；回覆只停留在草稿。",
             "steps": {
               "one": "盯住一個郵件會話和約定的發件人範圍",
               "three": "提醒你一次，必要時準備回覆草稿",
@@ -2707,14 +2637,7 @@
             "cadence": "每週",
             "description": "已完成的工作、待定的決定，以及下週的優先事項。",
             "name": "每週工作小結",
-            "next": "選擇要納入的資料來源，以及小結的傳送日期和時間。",
             "prompt": "幫我生成每週工作小結，包含完成的成果、待定的決定、跟進事項和接下來的承諾。使用我選擇的工作資料來源，整理成簡潔的 Slack 更新。幫我選擇資料來源、每週傳送時間和接收位置。",
-            "results": {
-              "one": "本週完成的成果",
-              "three": "接下來的承諾事項",
-              "two": "待定的決定和跟進事項"
-            },
-            "scope": "傳送到 Slack，可選接入 Gmail、Calendar 或 GitHub 的背景資訊。",
             "steps": {
               "one": "從你選擇的資料來源收集動態",
               "three": "把每週小結髮到你選擇的 Slack 位置",
@@ -2723,9 +2646,6 @@
             "title": "清清爽爽收尾一週"
           }
         },
-        "next": "下一個工作流",
-        "ownSources": "工作流會使用你自己的資料來源和內容。",
-        "placeholder": "選填 — 告訴我你在意什麼",
         "preview": {
           "competitors": {
             "changed": "有變化",
@@ -2819,13 +2739,10 @@
             "two": "完成了新手引導指南"
           }
         },
-        "previous": "上一個工作流",
         "sample": "示例",
         "tailor": "有什麼想調整的嗎？",
         "use": "使用這個工作流",
-        "whatHappens": "每次會做什麼",
-        "whatYouGet": "你會得到什麼",
-        "worksWith": "配合使用"
+        "whatHappens": "每次會做什麼"
       }
     },
     "templates": {
@@ -5245,6 +5162,8 @@
     "mermaid": {
       "diagramLabel": "圖表",
       "expand": "放大圖表",
+      "fillView": "鋪滿視圖",
+      "restoreView": "還原視圖",
       "viewSource": "圖表原始碼"
     },
     "notFound": {

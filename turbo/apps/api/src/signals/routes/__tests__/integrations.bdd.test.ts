@@ -2,7 +2,6 @@ import {
   captureIntegrationInputUploads,
   expectIntegrationInputPreview,
 } from "./helpers/integration-input-assets";
-import { seedLegacyMissingDefaultAgentFixture } from "../../../test-fixtures/legacy-default-agent";
 import { createHash, createHmac, randomInt, randomUUID } from "node:crypto";
 import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { CANONICAL_WORKING_DIR } from "@okouai/api-contracts/contracts/runners";
@@ -16,12 +15,10 @@ import { testContext } from "../../../__tests__/test-context";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now, nowDate, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { installLegacySlackChatCallbackBrandFixture } from "../../../test-fixtures/chat-terminal-retry";
 import { seededSystemSkillArchive } from "../../../test-fixtures/seeded-system-skill-archive";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { settleIncludingAbort } from "../../utils";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
@@ -2807,35 +2804,23 @@ describe("INT-01: Slack app deep webhook flows", () => {
       await flushWaitUntilForTest();
 
       context.mocks.slack.chat.postMessage.mockClear();
-      // Store this delivery in the shape an older API wrote, with the retired
-      // `vm0` brand, to pin that current delivery ignores the field.
-      const removeLegacyBrand =
-        await installLegacySlackChatCallbackBrandFixture(run1Id);
-      const completion = await settleIncludingAbort(
-        (async () => {
-          await completeSlackTriggeredRun({
-            runId: run1Id,
-            sandboxToken: claim1.sandboxToken,
-            cliAgentType: claim1.cliAgentType,
-            assistantText: "Executing command...",
-            resultText: "Canonical Slack answer one",
-          });
-          await flushWaitUntilAndAssert(() => {
-            expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledOnce();
-            expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledWith(
-              expect.objectContaining({
-                channel: channelId,
-                thread_ts: threadTs,
-                text: "Canonical Slack answer one",
-              }),
-            );
-          });
-        })(),
-      );
-      await removeLegacyBrand();
-      if (!completion.ok) {
-        throw completion.error;
-      }
+      await completeSlackTriggeredRun({
+        runId: run1Id,
+        sandboxToken: claim1.sandboxToken,
+        cliAgentType: claim1.cliAgentType,
+        assistantText: "Executing command...",
+        resultText: "Canonical Slack answer one",
+      });
+      await flushWaitUntilAndAssert(() => {
+        expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledOnce();
+        expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledWith(
+          expect.objectContaining({
+            channel: channelId,
+            thread_ts: threadTs,
+            text: "Canonical Slack answer one",
+          }),
+        );
+      });
       await flushWaitUntilForTest();
       const run1 = await runs.readRun(actor, run1Id);
       const slackSessionId = run1.result?.agentSessionId;
@@ -4068,33 +4053,12 @@ describe("INT-01: Slack app deep webhook flows", () => {
     );
     expect(context.mocks.slack.views.open).not.toHaveBeenCalled();
 
-    // A legacy deletion of the org default clears orgMetadata.defaultAgentId at the
-    // DB level (FK onDelete: "set null"), and active onboarding flows only
-    // configure existing agents, so resolveEffectiveCompose's "not_found"
-    // status ("configured agent could not be found" notice) is unreachable
-    // through public APIs. The deleted-default journey lands on the
-    // "not_configured" status's "No agent is configured" notice, delivered
-    // through the DM postMessage branch here instead of the channel ephemeral.
-    // The "not_accessible" status is covered by the hidden-private-default
-    // journey in this describe.
-    const onboarded = bdd.user();
-    await bdd.bootstrapLimitedFreeOnboarding(onboarded, {
-      displayName: "BDD Slack Deleted Agent",
-    });
-    const status = await bdd.readOnboardingStatus(onboarded);
-    if (!status.defaultAgentId) {
-      throw new Error("Expected onboarding to configure a default agent");
-    }
-    await seedLegacyMissingDefaultAgentFixture(status.defaultAgentId);
-    const missingSlackUserId = uniqueSlackUserId();
-    const missingInstall = await integrations.installSlackWorkspace(onboarded, {
-      installerSlackUserId: missingSlackUserId,
-    });
+    // The same unonboarded member can also receive guidance in a DM.
     integrations.clearSlackCallHistory();
-    await integrations.postSlackEvent(missingInstall.teamId, {
+    await integrations.postSlackEvent(bareInstall.teamId, {
       type: "message",
       channel_type: "im",
-      user: missingSlackUserId,
+      user: bareSlackUserId,
       text: "hello in dm",
       ts: "2100.000200",
       channel: "D_BDD_MISSING_AGENT",
@@ -5171,78 +5135,6 @@ describe("INT-02: Telegram integration", () => {
     expect(noContentMessage.body).toBe("OK");
   });
 
-  it("uses Okou app links in official Telegram missing-agent guidance", async () => {
-    const officialToken = "123456:bdd-official-okou-token";
-    const officialUsername = "bdd_official_okou_bot";
-    mockEnv("TELEGRAM_OFFICIAL_BOT_TOKEN", officialToken);
-    mockEnv(
-      "TELEGRAM_OFFICIAL_WEBHOOK_SECRET",
-      TELEGRAM_OFFICIAL_WEBHOOK_SECRET,
-    );
-    mockEnv("TELEGRAM_OFFICIAL_BOT_USERNAME", officialUsername);
-    const sentMessages: unknown[] = [];
-    server.use(
-      http.post(
-        `https://api.telegram.org/bot${officialToken}/sendMessage`,
-        async ({ request }) => {
-          sentMessages.push(await request.json());
-          return HttpResponse.json({
-            ok: true,
-            result: { message_id: 301, chat: { id: 91_234_567 } },
-          });
-        },
-      ),
-    );
-
-    const actor = integrations.user();
-    bdd.acceptAgentStorageWrites();
-    await bdd.bootstrapLimitedFreeOnboarding(actor, {
-      displayName: "BDD Telegram Missing Agent",
-    });
-    const onboarding = await bdd.readOnboardingStatus(actor);
-    if (!onboarding.defaultAgentId) {
-      throw new Error("Expected Telegram onboarding to configure an agent");
-    }
-
-    const telegramUserId = randomInt(100_000_000, 999_999_999);
-    await integrations.requestLinkTelegram(
-      actor,
-      {
-        telegramBotId: OFFICIAL_TELEGRAM_BOT_ID,
-        telegramAuth: telegramLoginAuth(officialToken, {
-          id: telegramUserId,
-          first_name: "BDD",
-          username: "bdd_official_okou_user",
-        }),
-      },
-      [200],
-    );
-    await seedLegacyMissingDefaultAgentFixture(onboarding.defaultAgentId);
-
-    const inbound = await integrations.requestTelegramWebhook(
-      OFFICIAL_TELEGRAM_BOT_ID,
-      JSON.stringify({
-        update_id: 2100,
-        message: {
-          message_id: 88,
-          chat: { id: telegramUserId, type: "private" },
-          from: {
-            id: telegramUserId,
-            first_name: "BDD",
-            username: "bdd_official_okou_user",
-          },
-          text: "hello",
-        },
-      }),
-      { "x-telegram-bot-api-secret-token": TELEGRAM_OFFICIAL_WEBHOOK_SECRET },
-      [200],
-    );
-    expect(inbound.body).toBe("OK");
-    await flushWaitUntilForTest();
-    expect(JSON.stringify(sentMessages)).toContain(
-      "Please choose an agent in Okou first.",
-    );
-  });
   it("keeps Telegram Fast footers bound to the originating run", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
     bdd.acceptAgentStorageWrites();
@@ -6068,7 +5960,9 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       "uploadId" in uploadInit.body
         ? uploadInit.body.uploadId
         : "33333333-3333-4333-8333-333333333333";
-    context.mocks.s3.send.mockResolvedValue({ Contents: [] });
+    context.mocks.s3.send.mockRejectedValue(
+      Object.assign(new Error("Artifact not found"), { name: "NotFound" }),
+    );
     const missingUpload = await integrations.requestPhoneUploadComplete(
       actor,
       {

@@ -15,9 +15,7 @@ import { orgCustomConnectorDcrRegistrations } from "./org-custom-connector-dcr-r
 
 export type CustomConnectorAccountOAuthRegistrationMethod = "cimd" | "dcr";
 export type CustomConnectorAccountOAuthTokenEndpointAuthMethod =
-  | "none"
-  | "client_secret_basic"
-  | "client_secret_post";
+  "none" | "client_secret_basic" | "client_secret_post";
 
 /**
  * Normalized Automatic OAuth authority and client binding for one custom

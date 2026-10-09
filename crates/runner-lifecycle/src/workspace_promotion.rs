@@ -2,8 +2,11 @@ use std::panic::AssertUnwindSafe;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use api_contracts::generated::constants::runners::RESUME_SESSION_HISTORY_MAX_BYTES;
+use api_contracts::generated::constants::runners::{
+    RESUME_SESSION_HISTORY_MAX_BYTES, paths::CANONICAL_GUEST_HOME_DIR,
+};
 use futures_util::FutureExt;
+use guest_contracts::reuse_preparation::{ReusePreparationReport, ReusePreparationRequest};
 use guest_contracts::session_history_identity::{
     SESSION_HISTORY_IDENTITY_VERIFY_EXIT_HISTORY_READ,
     SESSION_HISTORY_SIDECAR_EXPORT_EXIT_WRITE_FAILURE, SessionHistorySidecarExportFailure,
@@ -23,6 +26,7 @@ use crate::workspace_image_cache::{
 use crate::workspace_mount::freeze_workspace_drive;
 use guest_contracts::guest_binary::AGENT_PATH;
 
+const TERMINAL_CACHE_PREPARATION_TIMEOUT: Duration = Duration::from_secs(10);
 const SESSION_HISTORY_SIDECAR_EXPORT_TIMEOUT: Duration = Duration::from_secs(30);
 const SESSION_HISTORY_SIDECAR_COPY_TIMEOUT: Duration = Duration::from_secs(30);
 const SESSION_HISTORY_SIDECAR_SLOW_EXPORT: Duration = Duration::from_secs(5);
@@ -110,7 +114,7 @@ pub async fn prepare_workspace_image_from_active_sandbox(
                 &promotion,
                 reason,
                 &e,
-                "workspace image cache promotion skipped because guest freeze failed",
+                "workspace image cache promotion skipped because guest preparation failed",
             );
             abandon_unpublished_workspace_promotion(Some(promotion), reason).await;
             None
@@ -175,7 +179,15 @@ async fn prepare_workspace_image_from_active_sandbox_inner(
     reason: &'static str,
 ) -> crate::error::LifecycleResult<Option<SessionHistorySidecarSourceGuard>> {
     let mut sidecar_source = export_session_history_sidecar(sandbox, promotion, reason).await;
-    if let Err(error) = freeze_workspace_drive(sandbox, promotion.run_id()).await {
+    // Sidecar metadata/body readers must finish before private runtime state is removed. Both
+    // direct and parked terminal callers own the sandbox exclusively here; idle/handoff must not
+    // invoke this destructive gate or receive the sandbox after preparation.
+    let preparation = async {
+        prepare_terminal_cache_runtime(sandbox, promotion).await?;
+        freeze_workspace_drive(sandbox, promotion.run_id()).await
+    }
+    .await;
+    if let Err(error) = preparation {
         if let Some(source) = sidecar_source.take() {
             source.discard().await;
         }
@@ -183,6 +195,55 @@ async fn prepare_workspace_image_from_active_sandbox_inner(
     }
 
     Ok(sidecar_source)
+}
+
+async fn prepare_terminal_cache_runtime(
+    sandbox: &dyn Sandbox,
+    promotion: &WorkspaceImagePromotionContext,
+) -> crate::error::LifecycleResult<()> {
+    let current_runtime_dir = guest_contracts::runtime_paths::run_dir_for_home(
+        CANONICAL_GUEST_HOME_DIR,
+        &promotion.run_id().to_string(),
+    )
+    .map_err(|error| LifecycleError::Internal(format!("resolve terminal runtime scope: {error}")))?
+    .to_string_lossy()
+    .into_owned();
+    let retained_runtime_dir = promotion
+        .restored_session_identity()
+        .and_then(|identity| identity.final_metadata_verification())
+        .map(|verification| verification.runtime_dir.to_owned());
+    let request_bytes = serde_json::to_vec(&ReusePreparationRequest {
+        current_runtime_dir,
+        retained_runtime_dir,
+    })
+    .map_err(|error| LifecycleError::Internal(format!("serialize terminal cleanup: {error}")))?;
+    let command = format!("{AGENT_PATH} prepare-for-cache");
+    let result = sandbox
+        .exec_with_diagnostic_label(
+            &ExecRequest {
+                cmd: &command,
+                timeout: TERMINAL_CACHE_PREPARATION_TIMEOUT,
+                env: &[],
+                sudo: true,
+                expected_exit_codes: &[],
+                stdin_bytes: Some(&request_bytes),
+                output_limits: EXEC_OUTPUT_LIMIT_64_KIB,
+            },
+            "terminal-cache-preparation",
+        )
+        .await?;
+    if !helper_exec_succeeded(&result) || result.stdout_truncated {
+        return Err(LifecycleError::Internal(format_helper_exec_failure(
+            "terminal cache preparation",
+            &result,
+        )));
+    }
+    // This is a cleanup proof, not idle rootfs capacity admission. Unsupported helpers and
+    // malformed/empty reports reject optional publication instead of falling back to idle cleanup.
+    let _: ReusePreparationReport = serde_json::from_slice(&result.stdout).map_err(|error| {
+        LifecycleError::Internal(format!("invalid terminal cleanup report: {error}"))
+    })?;
+    Ok(())
 }
 
 impl PreparedWorkspaceImagePromotion {

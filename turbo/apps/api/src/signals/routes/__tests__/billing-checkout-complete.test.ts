@@ -40,7 +40,6 @@ const {
   authenticateOrg,
   mockClerkOrganization,
   readBillingStatus,
-  createOnboardingPaymentPendingOrg,
   createStripeCustomerOrgForFixture,
   createSubscriptionOrg,
 } = createBillingCheckoutFixture();
@@ -298,7 +297,6 @@ describe("POST /api/billing/checkout/complete", () => {
   );
 
   async function trackedSeed(values?: {
-    readonly onboardingPaymentPending?: boolean;
     readonly stripeCustomerId?: string;
     readonly stripeSubscriptionId?: string;
     readonly subscriptionStatus?: string;
@@ -313,17 +311,10 @@ describe("POST /api/billing/checkout/complete", () => {
       });
     }
     if (values?.stripeCustomerId) {
-      const fixture = values.onboardingPaymentPending
-        ? await createOnboardingPaymentPendingOrg()
-        : createOrgFixture();
-      if (!values.onboardingPaymentPending) {
-        authenticateOrg(fixture);
-      }
+      const fixture = createOrgFixture();
+      authenticateOrg(fixture);
       await createStripeCustomerOrgForFixture(fixture, values.stripeCustomerId);
       return fixture;
-    }
-    if (values?.onboardingPaymentPending) {
-      return createOnboardingPaymentPendingOrg();
     }
     return createOrgFixture();
   }
@@ -333,7 +324,6 @@ describe("POST /api/billing/checkout/complete", () => {
     const customerId = `cus_${randomUUID().slice(0, 8)}`;
     const subscriptionId = `sub_${randomUUID().slice(0, 8)}`;
     const fixture = await trackedSeed({
-      onboardingPaymentPending: true,
       stripeCustomerId: customerId,
     });
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
@@ -381,7 +371,6 @@ describe("POST /api/billing/checkout/complete", () => {
     expect(status.tier).toBe("limited-free-1");
     expect(status.hasSubscription).toBeTruthy();
     expect(status.subscriptionStatus).toBe("trialing");
-    expect(status.onboardingPaymentPending).toBeTruthy();
     expect(status.currentPeriodEnd).toBeNull();
   });
 
@@ -389,7 +378,6 @@ describe("POST /api/billing/checkout/complete", () => {
     const customerId = `cus_${randomUUID().slice(0, 8)}`;
     const subscriptionId = `sub_${randomUUID().slice(0, 8)}`;
     const fixture = await trackedSeed({
-      onboardingPaymentPending: true,
       stripeCustomerId: customerId,
     });
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
@@ -433,7 +421,6 @@ describe("POST /api/billing/checkout/complete", () => {
     expect(status.tier).toBe("limited-free-1");
     expect(status.hasSubscription).toBeTruthy();
     expect(status.subscriptionStatus).toBe("incomplete");
-    expect(status.onboardingPaymentPending).toBeTruthy();
     expect(status.currentPeriodEnd).toBeNull();
   });
 
@@ -499,7 +486,6 @@ describe("POST /api/billing/checkout/complete", () => {
   it("returns completed false while Stripe has not completed the session", async () => {
     const customerId = `cus_${randomUUID().slice(0, 8)}`;
     const fixture = await trackedSeed({
-      onboardingPaymentPending: true,
       stripeCustomerId: customerId,
     });
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");

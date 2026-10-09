@@ -944,33 +944,6 @@ describe("sandbox Pi agent loop", () => {
     ).resolves.toEqual(CONFIG);
   });
 
-  it("uses run authentication and the first-party relay without Langfuse keys", async () => {
-    const env = piEnv({ OKOU_RUN_ID: RUN_ID });
-    Object.assign(env, {
-      OKOU_PI_LANGFUSE_DEBUG_ENABLED: "true",
-      OKOU_API_BACKEND_URL: "https://api.okou.test",
-      OKOU_TOKEN: "run-scoped-token",
-      LANGFUSE_BASE_URL: "https://user-langfuse.example",
-      LANGFUSE_PUBLIC_KEY: "user-project",
-      LANGFUSE_SECRET_KEY: "user-secret",
-      LANGFUSE_USER_ID: "anonymous-user",
-      LANGFUSE_TRACING_ENVIRONMENT: "internal-debug",
-    });
-    const resolved = await piSandboxAgentConfigFromEnv(env);
-    expect(resolved.langfuseConfig).toStrictEqual({
-      relay: {
-        endpoint: `https://api.okou.test/api/webhooks/agent/${RUN_ID}/langfuse/traces`,
-        token: "run-scoped-token",
-      },
-      userId: "anonymous-user",
-      environment: "internal-debug",
-    });
-    env.OKOU_PI_LANGFUSE_DEBUG_ENABLED = "false";
-    expect(
-      (await piSandboxAgentConfigFromEnv(env)).langfuseConfig,
-    ).toBeUndefined();
-  });
-
   it("carries the frozen memory epoch through the private launch file", async () => {
     const memoryRecall = {
       status: "no-content" as const,
@@ -1015,6 +988,93 @@ describe("sandbox Pi agent loop", () => {
       serviceTier: "priority",
       apiKey: "test-api-key",
     });
+  });
+
+  it("pins generation 5 Chat Completions affinity to the owning thread", async () => {
+    const config = {
+      schemaVersion: 5,
+      dialect: "openai-completions",
+      transport: "sse",
+      provider: "openrouter",
+      baseUrl: "https://openrouter.ai/api/v1",
+      model: "@preset/okou-1-0",
+      catalogModel: "okou-1.0",
+      credentialBindings: [
+        {
+          kind: "api-key",
+          environment: "OPENAI_API_KEY",
+          secretName: "OPENROUTER_API_KEY",
+        },
+      ],
+    };
+    const env = piEnv({
+      OKOU_RUN_ID: RUN_ID,
+      OKOU_CHAT_THREAD_ID: "thread-affinity",
+    });
+    env.OKOU_PI_MODEL_CONFIG = JSON.stringify(config);
+    await expect(piSandboxAgentConfigFromEnv(env)).resolves.toMatchObject({
+      model: {
+        provider: "openrouter",
+        model: "@preset/okou-1-0",
+        catalogModel: "okou-1.0",
+        dialect: "openai-completions",
+        transport: "sse",
+        apiKey: "test-api-key",
+        sessionAffinityKey: "thread-affinity",
+      },
+    });
+
+    const responses = piEnv({
+      OKOU_RUN_ID: RUN_ID,
+      OKOU_CHAT_THREAD_ID: "thread-affinity",
+    });
+    responses.OKOU_PI_MODEL_CONFIG = JSON.stringify({
+      provider: "openrouter",
+      baseUrl: "https://openrouter.ai/api/v1",
+      model: "openai/gpt-6-luna",
+      apiKeyEnv: "OPENAI_API_KEY",
+      credentialSecretName: "OPENROUTER_API_KEY",
+    });
+    const resolved = await piSandboxAgentConfigFromEnv(responses);
+    expect(resolved.model).not.toHaveProperty("sessionAffinityKey");
+  });
+
+  it("keeps memory owner affinity independent of run and thread IDs", async () => {
+    const config = {
+      schemaVersion: 5,
+      dialect: "openai-completions",
+      transport: "sse",
+      provider: "openrouter",
+      baseUrl: "https://openrouter.ai/api/v1",
+      model: "@preset/memory",
+      catalogModel: "okou-memory",
+      credentialBindings: [
+        {
+          kind: "api-key",
+          environment: "OPENAI_API_KEY",
+          secretName: "OPENROUTER_API_KEY",
+        },
+      ],
+    };
+    for (const thread of ["thread-a", "thread-b"]) {
+      const env = piEnv({
+        OKOU_RUN_ID: RUN_ID,
+        OKOU_CHAT_THREAD_ID: thread,
+        OKOU_MEMORY_SESSION_ID: "MEMORY-user-1-org-1",
+      });
+      env.OKOU_PI_MODEL_CONFIG = JSON.stringify(config);
+      await expect(piSandboxAgentConfigFromEnv(env)).resolves.toMatchObject({
+        model: {
+          model: "@preset/memory",
+          sessionAffinityKey: "MEMORY-user-1-org-1",
+        },
+      });
+    }
+    const missing = piEnv({ OKOU_RUN_ID: RUN_ID });
+    missing.OKOU_PI_MODEL_CONFIG = JSON.stringify(config);
+    await expect(piSandboxAgentConfigFromEnv(missing)).rejects.toThrow(
+      "OKOU_MEMORY_SESSION_ID",
+    );
   });
 
   it.each([2, 3] as const)(

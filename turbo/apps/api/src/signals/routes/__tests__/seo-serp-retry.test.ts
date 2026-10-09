@@ -1,13 +1,12 @@
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import { seoContract } from "@okouai/api-contracts/contracts/seo";
 import { HttpResponse, http } from "msw";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import { createUsagePricingFixture } from "../../../test-fixtures/system-config-seeds";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
@@ -29,18 +28,6 @@ async function setupSerpTest() {
     ...actor,
     orgId: actor.orgId,
   });
-  const pricing = await createUsagePricingFixture({
-    configured: [
-      {
-        kind: "seo",
-        provider: "dataforseo",
-        category: "provider_cost_usd_micros",
-        unitPrice: 1250,
-        unitSize: 1_000_000,
-      },
-    ],
-  });
-  onTestFinished(pricing.cleanup);
   mockEnv("OKOU_SEO_DATAFORSEO_LOGIN", "test-dataforseo-login");
   mockEnv("OKOU_SEO_DATAFORSEO_PASSWORD", "test-dataforseo-password");
   createRouteMocks(context).clerk.session(
@@ -53,7 +40,6 @@ async function setupSerpTest() {
     context,
     routes: [...seoRoutes, ...billingStatusRoutes],
     rethrowErrors: true,
-    usagePricingResolution: pricing.resolution,
   });
   return {
     client: app(seoContract),

@@ -80,11 +80,13 @@ precondition and fail closed instead of inferring success from inaccessible data
 
 The [combined preparation evidence](https://github.com/vm0-ai/vm0/issues/33747#issuecomment-5666495664)
 records direct persisted-state comparisons on main `3c8b18e`, all-eight-absent
-route checks, and retained/outgoing controls. Current private API suites load
-legacy function definitions from immutable 1078/1098 SQL into their owned
-schemas; they remain valid after public functions disappear. Current route
-suites use the fully contracted database. Retired outgoing-only route fixtures
-are removed; retained private controls stay through the 1132 transition.
+route checks, and retained/outgoing controls. During that preparation, private
+API suites loaded legacy function definitions from immutable 1078/1098 SQL into
+owned schemas. This is historical rollout evidence, not permission to retain
+private construction in current API tests. The #37440 batches retire the hosting
+and OAuth schema controls and the now-unused SQL installer; their retained
+public scenarios use current production routes. Shipped migrations, production
+writers and the recorded rollback floor remain unchanged.
 The 1132 verification based on main `de87aa7c0e75df187eecfdf8c14b90b0bde5fe0f`
 passed the same 795 cases across 26 current API route files on each schema,
 with none skipped, plus 230 private compatibility cases. Post-route counts and
@@ -169,10 +171,17 @@ complete their metadata writes. `upsertOrgMetadataFixture` already writes the
 managed entitlement. Deliberately divergent entitlement fixtures use the same
 canonical runtime mapping and explicit status.
 
-The #32575 cleanup removes the entitlement suite's outgoing private-schema
-variants after its production gate. Its current-schema infrastructure cases
-retain historical corruption, constraint-failure rollback and lock-contention
-coverage. Shared private fixtures remain for the other #33747 domains.
+Those remaining private setup routes are unprocessed inventory, not an exception
+to the current public-construction rule. Their existence in this writer
+inventory is historical/implementation evidence, not testing guidance.
+
+The #32575 cleanup removed the entitlement suite's outgoing private-schema
+variants after its production gate.
+[#37440 batch 006](implementation/issue-37440-batches/batch-006.md) now retires
+the five remaining private service cases and their three local helpers. Their
+manual/legacy entitlement, missing-row corruption and injected rollback
+guarantees are no longer asserted by API tests. Production writers and schema
+validators remain unchanged; other private fixtures require separate review.
 
 ### Repair and backfill writes
 
@@ -200,10 +209,11 @@ trigger served outgoing API statements; current API writers do not depend on it.
 The prepared compatibility matrix covered retained triggers, absent entitlement
 triggers and contracted columns. After the #32575 cleanup gate, the permanent
 entitlement schema validator exercises canonical writes on both historical
-migration replay and a regenerated schema. Current API infrastructure cases
-inject constraints, historical corrupt state and a verified blocked writer in
-private current-schema tables. Routine billing and invitation behavior is
-verified through production HTTP routes and App pages.
+migration replay and a regenerated schema. That historical preparation evidence
+does not authorize current API cases to inject constraints or corrupt rows.
+Batch 006 records the retired entitlement guarantees explicitly. Normal billing
+and invitation behavior belongs at its production HTTP/UI boundary; this
+retirement does not certify unrelated fixtures in those suites.
 
 The 1132 release boundary above records the prepared artifact and enforced
 rollback floor. #34317 adds migration 1137 to remove the two physical invitation
@@ -222,12 +232,13 @@ change resumes the withdrawn privacy feature.
 
 ## Custom connector OAuth preparation
 
-`custom-connector-oauth-write.service.ts` owns
-`writeCustomConnectorOAuthState(tx, identities, write)`. Production creation,
-update and repair complete mode/config writes inside this operation and the
-caller's transaction. The operation
-locks existing parent connectors in ascending `(id, org_id)` order before the
-callback writes either table. Newly created parents are protected by their
+The preparation introduced `writeCustomConnectorOAuthState(tx, identities,
+write)` in `custom-connector-oauth-write.service.ts`. Current Feishu/Lark
+creation and repair still use this operation. Generic create/update now own
+atomic definition/config writes and final validation in
+`custom-connector.service.ts`; the writer inventory distinguishes these paths.
+The shared operation locks existing parent connectors in ascending
+`(id, org_id)` order before its callback writes either table. Newly created parents are protected by their
 insert and ordinary primary/foreign keys.
 
 After the callback completes, it reads each surviving parent's final mode and
@@ -243,14 +254,14 @@ removing its config.
 
 Paths below are relative to `turbo/apps/api/src/signals/`.
 
-| Writer                                                                                      | Transaction and behavior                                                                                                                                                                                                                                                                                              |
-| ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `services/custom-connector.service.ts`                                                      | Create and update complete skill storage, definition and OAuth config writes in the existing transaction. Update retains its optimistic version/timestamp check and parent row lock before the shared operation. Existing automatic OAuth registration cleanup and post-commit runtime publication keep their owners. |
-| `services/feishu-custom-connector.service.ts`                                               | Both Feishu and Lark creation/repair use the shared operation. Lock order remains installation advisory lock, installation row, then parent connector; the final installation association stays in the same transaction.                                                                                              |
-| Generic deletion, Feishu/Lark removal, `services/connector-owner-cleanup.service.ts`        | Parent deletion atomically removes its OAuth config through the ordinary composite foreign key's `ON DELETE CASCADE`. This remains a database constraint; there is no business-trigger cleanup effect to replace.                                                                                                     |
-| `routes/test-connector-credential-storage-state.ts`                                         | The automatic OAuth and runtime batch fixtures insert new `automatic` or `manual` parents without an organization OAuth config. These are consistent by construction and do not rely on either trigger.                                                                                                               |
-| `routes/test-runtime-state.ts`, `routes/test-custom-connector-skill-version-association.ts` | Existing fixtures change only injection templates or skill references, preserving mode and config ownership.                                                                                                                                                                                                          |
-| Numbered `013-kms-account-rotation` script                                                  | Re-encrypts an existing config secret without changing its mode, connector key or organization key. It preserves the relationship and is a historical migration, not a mode/config repair entry point.                                                                                                                |
+| Writer                                                                               | Transaction and behavior                                                                                                                                                                                                                                                                           |
+| ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `services/custom-connector.service.ts`                                               | Create and update own atomic skill storage, definition and OAuth config writes, with final mode/config validation. Update retains its optimistic version/timestamp check and parent row lock. Existing automatic OAuth registration cleanup and post-commit runtime publication keep their owners. |
+| `services/feishu-custom-connector.service.ts`                                        | Both Feishu and Lark creation/repair use the shared operation. Lock order remains installation advisory lock, installation row, then parent connector; the final installation association stays in the same transaction.                                                                           |
+| Generic deletion, Feishu/Lark removal, `services/connector-owner-cleanup.service.ts` | Parent deletion atomically removes its OAuth config through the ordinary composite foreign key's `ON DELETE CASCADE`. This remains a database constraint; there is no business-trigger cleanup effect to replace.                                                                                  |
+| `routes/test-connector-credential-storage-state.ts`                                  | The automatic OAuth and runtime batch fixtures insert new `automatic` or `manual` parents without an organization OAuth config. These are consistent by construction and do not rely on either trigger.                                                                                            |
+| `routes/test-runtime-state.ts`                                                       | Remaining fixture changes injection templates, preserving mode and config ownership. The former skill-reference corruption route was retired by #37440 batch013; its historical presence did not authorize private construction.                                                                   |
+| Numbered `013-kms-account-rotation` script                                           | Re-encrypts an existing config secret without changing its mode, connector key or organization key. It preserves the relationship and is a historical migration, not a mode/config repair entry point.                                                                                             |
 
 Member OAuth tokens, connector accounts, and automatic OAuth DCR registrations
 are distinct from the organization OAuth application config. Their existing
@@ -271,13 +282,21 @@ are removed by 1132. They only validated, so they coexisted with the explicit
 API operation without duplicate side effects. Outgoing generic and Feishu/Lark
 writers already lock the parent before config changes and can coexist with the prepared writer.
 
-The compatibility suite uses private schemas with the shipped checks, unique
-keys, composite config foreign key, and either retained or absent OAuth
-triggers. It covers all modes, replacement/retry, invalid final states, caller
-rollback, old/new config keys, cascaded deletion, ownership constraints, and
-actual blocked concurrent prepared/outgoing writers. It never disables shared
-triggers. Product behavior remains covered by generic connector, Feishu and
-Lark API route suites.
+The historical compatibility suite selected retained/absent OAuth triggers,
+mutated mode/config rows, injected transaction failures and inspected SQL state.
+[#37440 batch 003](implementation/issue-37440-batches/batch-003.md) retires its
+private repair, corruption, config-movement and constraint cases. Those precise
+internal guarantees are no longer asserted by the API test suite; historical
+release evidence and production constraints are preserved.
+
+The replacement `custom-connector-auth-modes.test.ts` constructs all four modes
+through an authenticated admin POST, changes modes through PUT and observes
+GET/list responses. It retains OAuth round trips and repeated definition saves;
+DELETE 204 followed by GET 404/list absence covers user-visible deletion without
+claiming a physical config-row count. These cases do not select a historical
+schema. Existing provider authorization and integration routes remain separate
+production boundaries; this change does not certify every unrelated fixture in
+those suites.
 
 The 1132 contraction uses the recorded prepared serving/background artifact
 and enforced rollback floor above. New writers and repairs must retain this
@@ -400,7 +419,7 @@ same behavior. Production reconciliation remains a product responsibility.
 | `signals/services/org-deletion-billing.service.ts`                                                                 | Reads billing correlations to cancel Stripe objects. It does not delete local roots; cancellation callbacks/reconciliation use the explicit lifecycle writer. Roots have no organization foreign key and do not disappear through an organization cascade. Preserve existing billing retention.                                                                           |
 | `signals/routes/test-usage-pack-subscription-state.ts`                                                             | Current seed and both root cleanup operations use the explicit boundary. Timestamp/legacy Checkout correlation actions change neither status nor organization. The explicitly named pre-serialization fixture deliberately reconstructs historical competing roots and calls the explicit repair operation. It is fixture-owned setup, not a current admission path.      |
 | `signals/routes/test-billing-reconciliation-state.ts`                                                              | Setup and cleanup lock their complete, uniquely owned organization set before writing any root, allocation or organization metadata. Guard release is part of cleanup.                                                                                                                                                                                                    |
-| `turbo/packages/db/scripts/test-migration-consistency-schema.ts`                                                   | Checks contracted inventory and permanent guard uniqueness/range. Private API suites own pending behavior and historical writer controls. No current numbered external-data migration writes these roots. Shipped migrations and historical numbered scripts remain unchanged.                                                                                            |
+| `turbo/packages/db/scripts/test-migration-consistency-schema.ts`                                                   | Checks contracted inventory and permanent guard uniqueness/range. Batch 006 retires the private pending-snapshot service suite; it does not alter these permanent schema checks. No current numbered external-data migration writes these roots. Shipped migrations and historical numbered scripts remain unchanged.                                                     |
 
 There is no current product/admin endpoint for moving a root to another
 organization or physically deleting it. A new administrative writer must use
@@ -477,15 +496,24 @@ bounded batches without pre-acquiring subordinate locks. Never reset a live
 guard to zero to force a purchase through. Keep raw historical fixtures and
 permanent migrations as evidence, not executable current repair instructions.
 
-The private PostgreSQL suite exercises retained/absent triggers, guard/index
-prerequisites, admission, duplicate requests, all terminal releases, deletion,
-rollback, grandfathered rows, repair, organization movement and deterministic
-blocked prepared/outgoing transactions. API route coverage exercises Checkout,
-saved-card confirmation, webhook/invoice processing, migration, scoped billing
-cron and cleanup. A cron-expired snapshot must permit a subsequent real
-Checkout request. Run the same routes in isolated UTC databases with the
-trigger retained and with only this trigger/function absent; never drop shared
-suite triggers to select a test mode.
+Preparation-era verification selected retained/absent triggers and exercised
+guard/index prerequisites and prepared/outgoing transactions. Preserve those
+historical receipts; they are not instructions to recreate private test modes.
+Batch 006 retires the remaining 12 private pending-snapshot declarations
+(18 expanded executions), including exact row/count admission, forced SQL
+interleaving, six raw status releases, deletion/rollback, grandfathered rows,
+organization movement and corrupt-count repair. These precise internal
+guarantees have no claimed public replacement.
+
+Existing public Plan preview/confirmation concurrency remains covered by
+`billing-checkout.test.ts`, using Clerk/Stripe boundary mocks and HTTP 200/409
+observations. The usage-pack Checkout concurrency/replacement scenario also
+retains its one-payable-Stripe-Session and unchanged public billing assertions;
+its separate private teardown remains unprocessed. Neither proves raw guard
+counts or the removed six-status matrix. Other billing/cron/fixture consumers
+require their own scenario review; a protected cron is not a user-accessible
+construction path. Production writers, repair semantics, locks and constraints
+remain unchanged.
 
 Migration 1132 removes the shipped trigger/function and retains the guard
 table, unique index and count constraint. Its release record must include the

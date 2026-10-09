@@ -15,22 +15,12 @@ export type ApiDispatchTimingDimensions = Readonly<Record<string, string>>;
 // Bounded string dimensions and numeric observation metrics share the ingest fields.
 type ApiDispatchTimingFields = Readonly<Record<string, string | number>>;
 export type ApiDispatchTimingDimensionsInput =
-  | ApiDispatchTimingFields
-  | (() => ApiDispatchTimingFields | undefined);
+  ApiDispatchTimingFields | (() => ApiDispatchTimingFields | undefined);
 
 type ApiProcessAgeBucket =
-  | "0_1s"
-  | "1_10s"
-  | "10_60s"
-  | "1_5m"
-  | "5_15m"
-  | "15m_plus";
+  "0_1s" | "1_10s" | "10_60s" | "1_5m" | "5_15m" | "15m_plus";
 type ApiProcessDispatchOrdinalBucket =
-  | "first"
-  | "2_4"
-  | "5_16"
-  | "17_64"
-  | "65_plus";
+  "first" | "2_4" | "5_16" | "17_64" | "65_plus";
 
 interface ApiProcessDispatchState {
   ordinal: number;
@@ -252,7 +242,6 @@ export type ApiDispatchTimingActionType =
   | "api_dispatch_queue_first_thread_lock_wait"
   | "api_dispatch_validate_thread_session_snapshot_thread"
   | "api_dispatch_validate_thread_session_snapshot_session"
-  | "api_dispatch_activate_usage_allowance_windows"
   | "api_dispatch_load_thread_session_binding"
   | "api_dispatch_update_thread_session_binding"
   | "api_dispatch_prepare_storage_manifest"
@@ -359,8 +348,7 @@ export class ApiDispatchTimingCollector {
   private readonly records: ApiDispatchTimingRecord[] = [];
   private readonly processAgeBucket = apiProcessAgeBucket(performance.now());
   private processDispatchOrdinalBucket:
-    | ApiProcessDispatchOrdinalBucket
-    | undefined;
+    ApiProcessDispatchOrdinalBucket | undefined;
 
   recordDuration(
     actionType: ApiDispatchTimingActionType,

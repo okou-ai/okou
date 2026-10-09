@@ -8,6 +8,12 @@ import { and, asc, eq, gt, inArray, like, lt, or } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
+import { usagePackOverdraftTransferSql } from "@okouai/db/operations/usage-pack-overdraft-transfer";
+import {
+  requireUsagePackOverdraftTransfer,
+  usagePackOverdraftTransferOutcomeRow,
+} from "./usage-pack-overdraft-transfer.service";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import type { Db } from "../external/db";
 import {
   getStripeClient,
@@ -28,7 +34,7 @@ const L = logger("UsagePackCreditRefund");
 type UsagePackCreditRefundRow = typeof usagePackCreditRefunds.$inferSelect;
 type UsagePackCreditGrantRow = typeof usagePackCreditGrants.$inferSelect;
 type CreditRefundSourceStore = Pick<Db, "insert" | "select">;
-type CreditRefundStore = Pick<Db, "insert" | "select" | "update">;
+type CreditRefundStore = Pick<Db, "insert" | "select" | "update" | "execute">;
 
 export type UsagePackCreditRefundSource =
   | {
@@ -247,6 +253,12 @@ export async function prepareUsagePackMemberCreditRefunds(
   args: { readonly orgId: string; readonly userId: string },
 ): Promise<number> {
   const at = nowDate();
+  requireUsagePackOverdraftTransfer(
+    parseRawRows(
+      usagePackOverdraftTransferOutcomeRow,
+      await db.execute(usagePackOverdraftTransferSql(args, at)),
+    ),
+  );
   const grants = await db
     .select()
     .from(usagePackCreditGrants)

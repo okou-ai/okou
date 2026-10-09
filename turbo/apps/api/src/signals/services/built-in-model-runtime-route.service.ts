@@ -1,5 +1,5 @@
 import {
-  AUTO_RUN_MODEL,
+  isAutoSelectedModel,
   AUTO_RUN_PROVIDER,
   isAutoRunPreset,
 } from "@okouai/core/auto-run-model";
@@ -64,7 +64,7 @@ export function isBuiltInModelRuntimeRoutePermitted(
   route: BuiltInModelRuntimeRoute,
 ): boolean {
   return (
-    route.selectedModel === AUTO_RUN_MODEL &&
+    isAutoSelectedModel(route.selectedModel) &&
     route.providerType === AUTO_RUN_PROVIDER &&
     isAutoRunPreset(route.upstreamModel)
   );
@@ -87,7 +87,7 @@ export function builtInModelRuntimeRouteFromSnapshot(args: {
     return null;
   }
   return {
-    selectedModel: AUTO_RUN_MODEL,
+    selectedModel: args.selectedModel,
     providerType: AUTO_RUN_PROVIDER,
     upstreamModel,
     modelKeyId: args.modelKeyId,

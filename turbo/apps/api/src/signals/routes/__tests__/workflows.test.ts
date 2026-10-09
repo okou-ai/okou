@@ -1,15 +1,11 @@
-import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
-import { createPublicAutomationResultEmailApi } from "./helpers/public-automation-result-email";
 import { createHash, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { gunzipSync } from "node:zlib";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import {
-  scopedReviewContract,
-  scopedReviewRoutes,
-} from "../test-get-started-rewards";
+import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { readGetStartedStatus } from "./helpers/get-started";
+import { createPublicAutomationResultEmailApi } from "./helpers/public-automation-result-email";
 
 import {
   GetObjectCommand,
@@ -34,6 +30,7 @@ import { onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
+import { extractFilesFromTarGz } from "../../../lib/tar";
 import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { createDeferredPromise } from "../../utils";
@@ -57,7 +54,6 @@ import {
   createRunsApi,
   expectCanonicalStorageManifest,
 } from "./helpers/api-bdd-runs";
-import { extractFilesFromTarGz } from "../../../lib/tar";
 import {
   mockGoogleCalendarConnectorOAuth,
   mockNotionConnectorOAuth,
@@ -207,8 +203,7 @@ function installVolumeS3Fixture() {
   const objects = new Map<string, Buffer>();
   const writes: { readonly key: string; readonly body: Buffer }[] = [];
   let beforeNextArchiveWrite:
-    | ((key: string, body: Buffer) => void | Promise<void>)
-    | undefined;
+    ((key: string, body: Buffer) => void | Promise<void>) | undefined;
 
   context.mocks.s3.send.mockImplementation(async (command: unknown) => {
     if (command instanceof PutObjectCommand) {
@@ -2067,145 +2062,206 @@ describe("workflows", () => {
     );
   });
 
-  it("rebinds copied Stripe automations to the target thread default account", async () => {
-    const actor = user();
-    if (!actor.orgId) {
-      throw new Error(
-        "Expected Stripe workflow copy actor to belong to an org",
+  it.each([true, false])(
+    "copies Stripe automations with default Live mode %s and preserves the source selection",
+    async (defaultLiveMode) => {
+      const actor = user();
+      if (!actor.orgId) {
+        throw new Error(
+          "Expected Stripe workflow copy actor to belong to an org",
+        );
+      }
+      await api.grantProEntitlement(actor, { tier: "team" });
+      await updateFeatureSwitchesForUser(
+        context,
+        { ...actor, orgId: actor.orgId },
+        {
+          [FeatureSwitchKey.StripeInvoicePaidWorkflowAutomations]: true,
+        },
       );
-    }
-    await api.grantProEntitlement(actor, { tier: "team" });
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: actor.orgId },
-      {
-        [FeatureSwitchKey.StripeInvoicePaidWorkflowAutomations]: true,
-      },
-    );
-    const sourceAgent = await createAgent(actor, {
-      displayName: "Stripe Copy Source Agent",
-      visibility: "private",
-    });
-    const targetAgent = await createAgent(actor, {
-      displayName: "Stripe Copy Target Agent",
-      visibility: "private",
-    });
-    const workflow = await createWorkflow(actor, {
-      agentId: sourceAgent.agentId,
-      name: `stripe-copy-${randomUUID().slice(0, 8)}`,
-      instruction: "# Stripe copy source",
-    });
+      const sourceAgent = await createAgent(actor, {
+        displayName: "Stripe Copy Source Agent",
+        visibility: "private",
+      });
+      const targetAgent = await createAgent(actor, {
+        displayName: "Stripe Copy Target Agent",
+        visibility: "private",
+      });
+      const workflow = await createWorkflow(actor, {
+        agentId: sourceAgent.agentId,
+        name: `stripe-copy-${randomUUID().slice(0, 8)}`,
+        instruction: "# Stripe copy source",
+      });
 
-    const defaultAccountId = `acct_stripe_copy_default_${randomUUID()}`;
-    mockStripeConnectorOAuth({ accountId: defaultAccountId, livemode: true });
-    const defaultStart = await connectorApi.startOauth(
-      actor,
-      "stripe",
-      "oauth",
-      sourceAgent.agentId,
-    );
-    const defaultState = new URL(
-      defaultStart.authorizationUrl,
-    ).searchParams.get("state");
-    if (!defaultState) {
-      throw new Error("Expected default Stripe OAuth state");
-    }
-    await connectorApi.completeOauthCallback("stripe", {
-      code: "stripe-copy-default-code",
-      state: defaultState,
-    });
-    const defaultAccount = await connectorApi.readConnectorBySlug(
-      actor,
-      "stripe",
-    );
+      const defaultAccountId = `acct_stripe_copy_default_${randomUUID()}`;
+      mockStripeConnectorOAuth({ accountId: defaultAccountId, livemode: true });
+      const defaultStart = await connectorApi.startOauth(
+        actor,
+        "stripe",
+        "oauth",
+        sourceAgent.agentId,
+      );
+      const defaultState = new URL(
+        defaultStart.authorizationUrl,
+      ).searchParams.get("state");
+      if (!defaultState) {
+        throw new Error("Expected default Stripe OAuth state");
+      }
+      await connectorApi.completeOauthCallback("stripe", {
+        code: "stripe-copy-default-code",
+        state: defaultState,
+      });
+      const defaultAccount = await connectorApi.readConnectorBySlug(
+        actor,
+        "stripe",
+      );
 
-    const selectedAccountId = `acct_stripe_copy_selected_${randomUUID()}`;
-    mockStripeConnectorOAuth({ accountId: selectedAccountId, livemode: true });
-    const selectedStart = await connectorApi.startOauth(
-      actor,
-      "stripe",
-      "oauth",
-      sourceAgent.agentId,
-      { intent: "add", displayName: "Stripe Copy Selected" },
-    );
-    const selectedState = new URL(
-      selectedStart.authorizationUrl,
-    ).searchParams.get("state");
-    if (!selectedState) {
-      throw new Error("Expected selected Stripe OAuth state");
-    }
-    await connectorApi.completeOauthCallback("stripe", {
-      code: "stripe-copy-selected-code",
-      state: selectedState,
-    });
-    const accounts = await connectorApi.listBuiltinConnectorAccounts(
-      actor,
-      "stripe",
-    );
-    const selectedAccount = accounts.find((account) => {
-      return account.externalId === selectedAccountId;
-    });
-    if (!selectedAccount) {
-      throw new Error("Expected selected Stripe account");
-    }
+      const selectedAccountId = `acct_stripe_copy_selected_${randomUUID()}`;
+      mockStripeConnectorOAuth({
+        accountId: selectedAccountId,
+        livemode: true,
+      });
+      const selectedStart = await connectorApi.startOauth(
+        actor,
+        "stripe",
+        "oauth",
+        sourceAgent.agentId,
+        { intent: "add", displayName: "Stripe Copy Selected" },
+      );
+      const selectedState = new URL(
+        selectedStart.authorizationUrl,
+      ).searchParams.get("state");
+      if (!selectedState) {
+        throw new Error("Expected selected Stripe OAuth state");
+      }
+      await connectorApi.completeOauthCallback("stripe", {
+        code: "stripe-copy-selected-code",
+        state: selectedState,
+      });
+      const accounts = await connectorApi.listBuiltinConnectorAccounts(
+        actor,
+        "stripe",
+      );
+      const selectedAccount = accounts.find((account) => {
+        return account.externalId === selectedAccountId;
+      });
+      if (!selectedAccount) {
+        throw new Error("Expected selected Stripe account");
+      }
 
-    const sourceAutomation = await accept(
-      automationsClient().create({
-        headers: authHeaders(actor),
-        params: { workflowId: workflow.body.id },
-        body: {
-          kind: "event",
-          eventType: "stripe-invoice-paid",
-          eventConfig: { provider: "stripe", event: "invoice_paid" },
-        },
-      }),
-      [201],
-    );
-    if (
-      sourceAutomation.body.kind !== "event" ||
-      sourceAutomation.body.eventType !== "stripe-invoice-paid" ||
-      !sourceAutomation.body.chatThreadId
-    ) {
-      throw new Error("Expected source Stripe automation thread");
-    }
-    await accept(
-      chatThreadConnectorSelectionsClient().update({
-        headers: authHeaders(actor),
-        params: { id: sourceAutomation.body.chatThreadId },
-        body: {
-          connectionId: selectedAccount.id,
-          target: { kind: "builtin", connectorSlug: "stripe" },
-        },
-      }),
-      [200],
-    );
-
-    const copied = await accept(
-      detailClient().copy({
-        headers: authHeaders(actor),
-        params: { workflowId: workflow.body.id },
-        body: { toAgentId: targetAgent.agentId },
-      }),
-      [201],
-    );
-    const copiedAutomations = await accept(
-      automationsClient().list({
-        headers: authHeaders(actor),
-        params: { workflowId: copied.body.id },
-      }),
-      [200],
-    );
-    expect(copiedAutomations.body).toContainEqual(
-      expect.objectContaining({
-        eventType: "stripe-invoice-paid",
-        eventConfig: expect.objectContaining({
-          connectorId: defaultAccount.id,
-          stripeAccountId: defaultAccountId,
-          mode: "live",
+      const sourceAutomation = await accept(
+        automationsClient().create({
+          headers: authHeaders(actor),
+          params: { workflowId: workflow.body.id },
+          body: {
+            kind: "event",
+            eventType: "stripe-invoice-paid",
+            eventConfig: { provider: "stripe", event: "invoice_paid" },
+          },
         }),
-      }),
-    );
-  });
+        [201],
+      );
+      if (
+        sourceAutomation.body.kind !== "event" ||
+        sourceAutomation.body.eventType !== "stripe-invoice-paid" ||
+        !sourceAutomation.body.chatThreadId
+      ) {
+        throw new Error("Expected source Stripe automation thread");
+      }
+      await accept(
+        chatThreadConnectorSelectionsClient().update({
+          headers: authHeaders(actor),
+          params: { id: sourceAutomation.body.chatThreadId },
+          body: {
+            connectionId: selectedAccount.id,
+            target: { kind: "builtin", connectorSlug: "stripe" },
+          },
+        }),
+        [200],
+      );
+
+      if (!defaultLiveMode) {
+        mockStripeConnectorOAuth({
+          accountId: defaultAccountId,
+          livemode: false,
+        });
+        const reconnect = await connectorApi.startOauth(
+          actor,
+          "stripe",
+          "oauth",
+          sourceAgent.agentId,
+          { intent: "reconnect", connectionId: defaultAccount.id },
+        );
+        const reconnectState = new URL(
+          reconnect.authorizationUrl,
+        ).searchParams.get("state");
+        if (!reconnectState) {
+          throw new Error("Expected Stripe reconnect state");
+        }
+        await connectorApi.completeOauthCallback("stripe", {
+          code: "stripe-copy-test-mode-code",
+          state: reconnectState,
+        });
+      }
+      const copied = await accept(
+        detailClient().copy({
+          headers: authHeaders(actor),
+          params: { workflowId: workflow.body.id },
+          body: { toAgentId: targetAgent.agentId },
+        }),
+        [201],
+      );
+      const copiedAutomations = await accept(
+        automationsClient().list({
+          headers: authHeaders(actor),
+          params: { workflowId: copied.body.id },
+        }),
+        [200],
+      );
+      expect(copiedAutomations.body).toContainEqual(
+        expect.objectContaining({
+          eventType: "stripe-invoice-paid",
+          eventConfig: expect.objectContaining({
+            connectorId: defaultLiveMode
+              ? defaultAccount.id
+              : selectedAccount.id,
+            stripeAccountId: defaultLiveMode
+              ? defaultAccountId
+              : selectedAccountId,
+            mode: "live",
+          }),
+        }),
+      );
+      const sourceSelection = await accept(
+        chatThreadConnectorSelectionsClient().get({
+          headers: authHeaders(actor),
+          params: { id: sourceAutomation.body.chatThreadId },
+        }),
+        [200],
+      );
+      expect(sourceSelection.body.selections).toContainEqual({
+        target: { kind: "builtin", connectorSlug: "stripe" },
+        connectionId: selectedAccount.id,
+      });
+      if (!defaultLiveMode) {
+        const automation = copiedAutomations.body[0];
+        if (!automation) {
+          throw new Error("Expected copied Stripe automation");
+        }
+        const rejected = await accept(
+          automationsClient().enable({
+            headers: authHeaders(actor),
+            params: { id: automation.id },
+            body: undefined,
+          }),
+          [400],
+        );
+        expect(rejected.body.error.message).toBe(
+          "Stripe invoice-paid automations require Live mode; reconnect Stripe in Live mode",
+        );
+      }
+    },
+  );
 
   it("rebinds copied Google Forms automations to the target thread default account", async () => {
     const actor = user();
@@ -3152,9 +3208,10 @@ describe("workflow owner profile cancellation", () => {
   });
 });
 
-test("awards the workflow creator only after a queued user workflow really succeeds", async () => {
+test("promotes a queued workflow after failure and completes it with a real Runner claim", async () => {
   const actor = user({ orgRole: "org:admin" });
   await enableWorkflowRuns(actor);
+  const runnerGroup = api.configureRunnerGroup();
   const agent = await createAgent(actor, {
     displayName: "Reward Workflow Agent",
     visibility: "private",
@@ -3167,14 +3224,6 @@ test("awards the workflow creator only after a queued user workflow really succe
   if (!actor.orgId) {
     throw new Error("Expected workflow org");
   }
-  const review = () => {
-    return accept(
-      setupApp({ context, routes: scopedReviewRoutes })(
-        scopedReviewContract,
-      ).process({ body: { orgId: actor.orgId ?? "" } }),
-      [200],
-    );
-  };
   const rewards = async () => {
     return (await readGetStartedStatus(context, actor)).quests.find((q) => {
       return q.key === "workflow";
@@ -3191,10 +3240,12 @@ test("awards the workflow creator only after a queued user workflow really succe
   );
   expect(queued.body.runId).toBeNull();
   const webhooks = createWebhookCallbackApi(context);
+  await api.heartbeatRunner(runnerGroup);
+  const firstClaim = await api.claimRunnerJob(first.runId);
   await webhooks.requestAgentComplete(
     { runId: first.runId, exitCode: 1, error: "Synthetic failure" },
     {
-      authorization: `Bearer ${api.sandboxTokenForRun(actor, first.runId)}`,
+      authorization: `Bearer ${firstClaim.sandboxToken}`,
     },
     [200],
   );
@@ -3206,35 +3257,91 @@ test("awards the workflow creator only after a queued user workflow really succe
   if (!next?.runId) {
     throw new Error("Expected the queued workflow to start after failure");
   }
-  await review();
   await expect(rewards()).resolves.toMatchObject({ claimedCount: 0 });
+  await api.heartbeatRunner(runnerGroup);
+  const nextClaim = await api.claimRunnerJob(next.runId);
+  const sessionId = `workflow-session-${next.runId}`;
+  const history = Buffer.from(
+    JSON.stringify({
+      type: "assistant",
+      sessionId,
+      uuid: randomUUID(),
+      timestamp: new Date(now()).toISOString(),
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "Workflow completed" }],
+      },
+    }) + "\n",
+  );
+  const historyHash = createHash("sha256").update(history).digest("hex");
+  const presign = context.mocks.s3.getSignedUrl.getMockImplementation();
+  const transport = context.mocks.s3.send.getMockImplementation();
+  if (!presign || !transport) {
+    throw new Error("Expected the configured S3 transport");
+  }
+  let preparedKey: string | undefined;
+  context.mocks.s3.getSignedUrl.mockImplementation(
+    (client, command, options) => {
+      if (command instanceof PutObjectCommand) {
+        preparedKey = command.input.Key;
+      }
+      return presign(client, command, options);
+    },
+  );
+  const prepared = await webhooks.requestAgentCheckpointPrepareHistory(
+    {
+      runId: next.runId,
+      hash: historyHash,
+      rawSize: history.length,
+      encodedSize: history.length,
+      encoding: "identity",
+    },
+    { authorization: `Bearer ${nextClaim.sandboxToken}` },
+    [200],
+  );
+  if (prepared.status !== 200) {
+    throw new Error("Expected the authorized history prepare to succeed");
+  }
+  expect(prepared.body.existing).toBeFalsy();
+  expect(prepared.body.presignedUrl).toBeTruthy();
+  context.mocks.s3.getSignedUrl.mockImplementation(presign);
+  const historyKey = preparedKey;
+  if (!historyKey) {
+    throw new Error("Expected the history key from the authorized prepare");
+  }
+  // The Runner uploads these bytes to the key authorized by prepare.
+  context.mocks.s3.send.mockImplementation((command: unknown) => {
+    if (
+      command instanceof GetObjectCommand &&
+      command.input.Key === historyKey
+    ) {
+      return Promise.resolve({
+        Body: Readable.from([history]),
+        ContentLength: history.length,
+      });
+    }
+    return transport(command);
+  });
+
   await webhooks.requestAgentComplete(
     {
       runId: next.runId,
       exitCode: 0,
       checkpoint: {
         cliAgentType: "claude-code",
-        cliAgentSessionId: next.runId,
-        cliAgentSessionHistoryHash: createHash("sha256")
-          .update(`workflow reward ${next.runId}`)
-          .digest("hex"),
+        cliAgentSessionId: sessionId,
+        cliAgentSessionHistoryHash: historyHash,
       },
     },
-    { authorization: `Bearer ${api.sandboxTokenForRun(actor, next.runId)}` },
+    { authorization: `Bearer ${nextClaim.sandboxToken}` },
     [200],
   );
-  // The next worker attempt is due later; use the test-owned clock, not a sleep.
-  mockNow(now() + 60_001);
-  await review();
-  await expect(rewards()).resolves.toMatchObject({
-    claimedCount: 1,
-    earnedCredits: 1000,
-    canEarnMore: false,
+  await flushWaitUntilForTest();
+  await expect(api.readRun(actor, first.runId)).resolves.toMatchObject({
+    status: "failed",
+  });
+  await expect(api.readRun(actor, next.runId)).resolves.toMatchObject({
+    status: "completed",
   });
   await miscApi.deleteWorkflow(actor, workflow.body.id, [204]);
-  await review();
-  await expect(rewards()).resolves.toMatchObject({
-    claimedCount: 1,
-    earnedCredits: 1000,
-  });
 });

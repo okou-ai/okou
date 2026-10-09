@@ -16,8 +16,7 @@ import { orgCustomConnectors } from "./org-custom-connector";
 export type OrgCustomConnectorOAuthProviderAdapter = "standard" | "feishu";
 export type OrgCustomConnectorOAuthPkceMethod = "none" | "S256";
 export type OrgCustomConnectorOAuthTokenEndpointAuthMethod =
-  | "client_secret_basic"
-  | "client_secret_post";
+  "client_secret_basic" | "client_secret_post";
 
 /**
  * Organization-owned OAuth application configuration for a custom connector.

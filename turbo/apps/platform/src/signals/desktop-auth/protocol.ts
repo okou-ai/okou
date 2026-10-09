@@ -24,11 +24,7 @@ declare global {
 }
 
 export type DesktopAuthRoute =
-  | "start"
-  | "callback"
-  | "consume"
-  | "token"
-  | "select-org";
+  "start" | "callback" | "consume" | "token" | "select-org";
 
 export function desktopAuthUrl(
   route: DesktopAuthRoute,

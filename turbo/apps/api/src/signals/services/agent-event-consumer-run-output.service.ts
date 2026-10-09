@@ -268,9 +268,7 @@ function createRunOutputAuxiliaryWriter(
 ) {
   return async <T>(
     phase:
-      | "run_materialization"
-      | "memory_citations"
-      | "first_assistant_metric",
+      "run_materialization" | "memory_citations" | "first_assistant_metric",
     write: () => Promise<T>,
   ): Promise<T | undefined> => {
     args.diagnostics.enter(phase);

@@ -6,7 +6,6 @@ import { z } from "zod";
 import {
   AGENT_EXECUTION_TIMEOUT_SECONDS,
   CANCELLATION_RECOVERY_STALE_AFTER_MS,
-  compatibleStoredExecutionContextSchema,
   CONNECTOR_RUNTIME_SYNC_TARGETS_MAX,
   connectorRuntimeSyncResultSchema,
   elapsedSinceApiStartMs,
@@ -18,12 +17,12 @@ import {
   PI_MEMORY_SUMMARY_MAX_BYTES,
   PI_MEMORY_SUMMARY_MAX_TOKENS,
   PI_MEMORY_SUMMARY_SOURCE_MAX_TOKENS,
-  piLangfuseParentSchema,
   piMemoryRecallSelectionSchema,
   piModelConfigLegacySchema,
   piModelConfigSchema,
   piModelConfigV2Schema,
   piModelConfigV3Schema,
+  piModelConfigV5Schema,
   RUNNER_CANCELLATION_RECOVERY_GRACE_MS,
   RUNNER_BUILTIN_FIREWALL_RESOLVE_NAMES_MAX,
   RUNNER_POLL_EXCLUDED_RUN_IDS_MAX,
@@ -37,7 +36,6 @@ import {
   sandboxReuseResultSchema as runnersSandboxReuseResultSchema,
   storageMountEntrySchema,
   storageManifestSchema,
-  storedConnectorPermissionBaselineSchema,
   storedExecutionContextSchema,
   storedResumeSessionSchema,
   workspaceReuseResultSchema as runnersWorkspaceReuseResultSchema,
@@ -161,35 +159,6 @@ function loadRunnerClaimResponseFixture(): unknown {
   );
 }
 
-function connectorPermissionBaselineFixture() {
-  return {
-    version: 1 as const,
-    catalogIdentity: {
-      sourceId: "connector-catalog",
-      schemaVersion: 1,
-      catalogVersion: "2026-07-28",
-      catalogDigest: `sha256:${"a".repeat(64)}`,
-      capabilityDigest: `sha256:${"b".repeat(64)}`,
-    },
-    validationAuthority: {
-      backendVersion: "1.337.1",
-      buildCommitSha: "c".repeat(40),
-    },
-    connectors: {
-      slack: {
-        permissionNames: ["conversations:read", "chat:write"],
-        defaultPolicy: {
-          permissionDefault: "allow" as const,
-          permissionOverrides: {
-            deny: ["chat:write"],
-          },
-          unknownPolicy: "deny" as const,
-        },
-      },
-    },
-  };
-}
-
 describe("runner claim response contract", () => {
   it("accepts the shared current response fixture", () => {
     const context = executionContextSchema.parse(
@@ -207,18 +176,6 @@ describe("runner claim response contract", () => {
     expect(context).not.toHaveProperty("experimentalProfile");
   });
 
-  it("does not expose the API-only connector permission baseline", () => {
-    const fixture = executionContextSchema.parse(
-      loadRunnerClaimResponseFixture(),
-    );
-    const context = executionContextSchema.parse({
-      ...fixture,
-      connectorPermissionBaseline: connectorPermissionBaselineFixture(),
-    });
-
-    expect(context).not.toHaveProperty("connectorPermissionBaseline");
-  });
-
   it("round-trips canonical trusted environments through stored contexts", () => {
     const storedContext = storedExecutionContextSchema.parse({
       storageMounts: [],
@@ -232,7 +189,7 @@ describe("runner claim response contract", () => {
       encryptedSecrets: null,
       cliAgentType: "claude-code",
     });
-    const roundTripped = compatibleStoredExecutionContextSchema.parse(
+    const roundTripped = storedExecutionContextSchema.parse(
       JSON.parse(JSON.stringify(storedContext)),
     );
 
@@ -243,7 +200,7 @@ describe("runner claim response contract", () => {
       USER_VALUE: "user-value",
     });
 
-    const emptyTrustedContext = compatibleStoredExecutionContextSchema.parse({
+    const emptyTrustedContext = storedExecutionContextSchema.parse({
       ...storedContext,
       platformEnvironment: {},
     });
@@ -345,6 +302,55 @@ describe("Pi sandbox execution contract", () => {
       ).toBe(false);
     },
   );
+
+  it("accepts only the exact generation 5 Chat Completions route", () => {
+    const chatCompletions = {
+      schemaVersion: 5,
+      dialect: "openai-completions",
+      transport: "sse",
+      provider: "openrouter",
+      baseUrl: "https://openrouter.ai/api/v1",
+      model: "@preset/okou-1-0",
+      catalogModel: "okou-1.0",
+      credentialBindings: [
+        {
+          kind: "api-key",
+          environment: "OPENAI_API_KEY",
+          secretName: "OPENROUTER_API_KEY",
+        },
+      ],
+    } as const;
+    expect(piModelConfigV5Schema.parse(chatCompletions)).toEqual(
+      chatCompletions,
+    );
+    expect(piModelConfigSchema.parse(chatCompletions)).toEqual(chatCompletions);
+    for (const candidate of [
+      { ...chatCompletions, serviceTier: "priority" },
+      { ...chatCompletions, provider: "openai-codex" },
+      { ...chatCompletions, dialect: "openai-responses" },
+      { ...chatCompletions, schemaVersion: 3 },
+      { ...chatCompletions, schemaVersion: 4 },
+      { ...chatCompletions, credentialBindings: [] },
+      {
+        ...chatCompletions,
+        credentialBindings: [
+          {
+            kind: "access-token",
+            environment: "CHATGPT_ACCESS_TOKEN",
+            secretName: "CHATGPT_ACCESS_TOKEN",
+          },
+        ],
+      },
+    ]) {
+      expect(piModelConfigSchema.safeParse(candidate).success).toBe(false);
+    }
+    for (const schemaVersion of [2, 3] as const) {
+      expect(
+        piModelConfigSchema.safeParse({ ...chatCompletions, schemaVersion })
+          .success,
+      ).toBe(false);
+    }
+  });
 
   it.each([2, 3] as const)(
     "accepts only exact generation %s dialect-aware credential binding sets",
@@ -498,41 +504,8 @@ describe("Pi sandbox execution contract", () => {
     },
   );
 
-  it("accepts one strict sampled Langfuse parent", () => {
-    const langfuseParent = {
-      traceId: "1".repeat(32),
-      spanId: "2".repeat(16),
-      traceFlags: 1,
-      sessionId: piSessionId,
-      sandboxWaitStartedAt: 1_000,
-    } as const;
-
-    expect(piLangfuseParentSchema.parse(langfuseParent)).toStrictEqual(
-      langfuseParent,
-    );
-    for (const invalidParent of [
-      { ...langfuseParent, traceId: "0".repeat(32) },
-      { ...langfuseParent, traceId: "1".repeat(31) },
-      { ...langfuseParent, spanId: "0".repeat(16) },
-      { ...langfuseParent, spanId: "2".repeat(15) },
-      { ...langfuseParent, traceFlags: 0 },
-      { ...langfuseParent, sandboxWaitStartedAt: undefined },
-      { ...langfuseParent, sandboxWaitStartedAt: -1 },
-      { ...langfuseParent, sandboxWaitStartedAt: 1.5 },
-      { ...langfuseParent, extra: true },
-    ]) {
-      expect(piLangfuseParentSchema.safeParse(invalidParent).success).toBe(
-        false,
-      );
-    }
-  });
-
   it("preserves the Chat Thread session across stored and Runner-facing contexts", () => {
     const stored = storedExecutionContextSchema.parse({
-      ...storedContext,
-      ...piStoredContext,
-    });
-    const compatible = compatibleStoredExecutionContextSchema.parse({
       ...storedContext,
       ...piStoredContext,
     });
@@ -543,7 +516,6 @@ describe("Pi sandbox execution contract", () => {
     });
 
     expect(stored.piSessionId).toBe(piStoredContext.piSessionId);
-    expect(compatible.piSessionId).toBe(piStoredContext.piSessionId);
     expect(claimed.piSessionId).toBe(piStoredContext.piSessionId);
     expect(jobSchema.parse(pollJob)).not.toHaveProperty("piExecutionMode");
   });
@@ -582,9 +554,6 @@ describe("Pi sandbox execution contract", () => {
     expect(storedExecutionContextSchema.safeParse(storedContext).success).toBe(
       false,
     );
-    expect(
-      compatibleStoredExecutionContextSchema.safeParse(storedContext).success,
-    ).toBe(false);
   });
 
   it.each(["piLaunchConfig", "piModelConfig"] as const)(
@@ -598,10 +567,6 @@ describe("Pi sandbox execution contract", () => {
 
       expect(
         storedExecutionContextSchema.safeParse(invalidStoredContext).success,
-      ).toBe(false);
-      expect(
-        compatibleStoredExecutionContextSchema.safeParse(invalidStoredContext)
-          .success,
       ).toBe(false);
     },
   );
@@ -900,103 +865,6 @@ describe("connector runtime synchronization contract", () => {
   });
 });
 
-describe("stored connector permission baseline contract", () => {
-  const storedContext = {
-    storageMounts: [],
-    connectorRuntimeTargets: [],
-    environment: null,
-    platformEnvironment: {},
-    secretValueEnvironmentKeys: null,
-    resumeSession: null,
-    encryptedSecrets: null,
-    cliAgentType: "codex",
-  };
-
-  it("accepts compact versioned defaults", () => {
-    expect(
-      storedConnectorPermissionBaselineSchema.parse(
-        connectorPermissionBaselineFixture(),
-      ),
-    ).toEqual(connectorPermissionBaselineFixture());
-  });
-
-  it("rejects unsupported, overlapping, and unknown permission metadata", () => {
-    const baseline = connectorPermissionBaselineFixture();
-    expect(
-      storedConnectorPermissionBaselineSchema.safeParse({
-        ...baseline,
-        version: 2,
-      }).success,
-    ).toBe(false);
-    expect(
-      storedConnectorPermissionBaselineSchema.safeParse({
-        ...baseline,
-        connectors: {
-          slack: {
-            ...baseline.connectors.slack,
-            defaultPolicy: {
-              ...baseline.connectors.slack.defaultPolicy,
-              permissionOverrides: {
-                allow: ["chat:write"],
-                deny: ["chat:write"],
-              },
-            },
-          },
-        },
-      }).success,
-    ).toBe(false);
-    expect(
-      storedConnectorPermissionBaselineSchema.safeParse({
-        ...baseline,
-        connectors: {
-          slack: {
-            ...baseline.connectors.slack,
-            defaultPolicy: {
-              ...baseline.connectors.slack.defaultPolicy,
-              permissionOverrides: {
-                deny: ["files:write"],
-              },
-            },
-          },
-        },
-      }).success,
-    ).toBe(false);
-  });
-
-  it("isolates future metadata to the compatible persisted reader", () => {
-    const futureBaseline = { version: 2, payload: "future" };
-    const context = {
-      ...storedContext,
-      connectorPermissionBaseline: futureBaseline,
-    };
-
-    expect(storedExecutionContextSchema.safeParse(context).success).toBe(false);
-
-    const parsed = compatibleStoredExecutionContextSchema.parse(context);
-
-    expect(parsed.connectorPermissionBaseline).toEqual(futureBaseline);
-    expect(
-      storedConnectorPermissionBaselineSchema.safeParse(
-        parsed.connectorPermissionBaseline,
-      ).success,
-    ).toBe(false);
-  });
-
-  it("allows a previous reader to ignore the new optional field", () => {
-    const previousStoredExecutionContextSchema = z
-      .object(storedExecutionContextSchema.shape)
-      .omit({
-        connectorPermissionBaseline: true,
-      });
-    const parsed = previousStoredExecutionContextSchema.parse({
-      ...storedContext,
-      connectorPermissionBaseline: connectorPermissionBaselineFixture(),
-    });
-
-    expect(parsed).not.toHaveProperty("connectorPermissionBaseline");
-  });
-});
-
 describe("runner poll response contract", () => {
   const job = {
     runId: "22222222-2222-4222-8222-222222222222",
@@ -1074,13 +942,13 @@ describe("runner storage manifest contract", () => {
 
   it("requires canonical mounts while ignoring previous stored fields", () => {
     expect(
-      compatibleStoredExecutionContextSchema.parse({
+      storedExecutionContextSchema.parse({
         ...storedContext,
         storageManifest: null,
       }),
     ).toEqual(storedContext);
     expect(
-      compatibleStoredExecutionContextSchema.parse({
+      storedExecutionContextSchema.parse({
         ...storedContext,
         storageManifest: {
           storages: [{ futureLegacyField: true }],
@@ -1089,7 +957,7 @@ describe("runner storage manifest contract", () => {
       }),
     ).toEqual(storedContext);
     expect(
-      compatibleStoredExecutionContextSchema.safeParse({
+      storedExecutionContextSchema.safeParse({
         ...storedContext,
         storageMounts: undefined,
       }).success,
@@ -1104,14 +972,12 @@ describe("runner storage manifest contract", () => {
         versionId: "version-1",
         mountPath: "/workspace",
         archiveUrl: "https://storage.example/workspace.tar.gz",
-        baselineCandidate: true,
       }),
     ).toMatchObject({
       name: "workspace",
       storageId: "storage-id-1",
       versionId: "version-1",
       mountPath: "/workspace",
-      baselineCandidate: true,
     });
 
     expect(
@@ -1151,21 +1017,6 @@ describe("runner storage manifest contract", () => {
         ...base,
         archiveUrl: "https://storage.example/workspace.tar.gz",
         missingRootPolicy: "fail",
-      }).success,
-    ).toBe(false);
-    expect(
-      storageMountEntrySchema.safeParse({
-        ...base,
-        archiveUrl: "https://storage.example/workspace.tar.gz",
-        baselineCandidate: false,
-      }).success,
-    ).toBe(false);
-    expect(
-      storageMountEntrySchema.safeParse({
-        ...base,
-        empty: true,
-        writeback: true,
-        baselineCandidate: true,
       }).success,
     ).toBe(false);
     expect(

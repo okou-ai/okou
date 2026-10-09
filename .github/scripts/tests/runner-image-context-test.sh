@@ -52,11 +52,11 @@ assert_needed_case() {
   printf '%s\n' "$out"
 }
 
-out=$(run_clean EVENT_NAME=pull_request PR_NUMBER=123 HEAD_REF=feature HEAD_SHA=merge SOURCE_HEAD_SHA=head "$CONTEXT" resolve)
+out=$(run_clean EVENT_NAME=pull_request PR_NUMBER=123 HEAD_REF=feature HEAD_SHA=merge PRODUCER_HEAD_SHA=head "$CONTEXT" resolve)
 assert_contains "$out" "release-skip=false"
 assert_contains "$out" "job-ref=pr-123"
 assert_contains "$out" "head-sha=merge"
-assert_contains "$out" "source-head-sha=head"
+assert_contains "$out" "producer-head-sha=head"
 assert_contains "$out" "pr-number=123"
 assert_contains "$out" "pr-head-ref=feature"
 
@@ -72,7 +72,8 @@ assert_contains "$out" "release-skip=false"
 assert_contains "$out" "job-ref=pr-456"
 assert_contains "$out" "pr-number=456"
 assert_contains "$out" "pr-head-ref=feature"
-assert_contains "$out" "source-head-sha=def"
+assert_contains "$out" "head-sha=def"
+assert_contains "$out" "producer-head-sha=def"
 
 out=$(run_clean EVENT_NAME=merge_group MQ_HEAD_REF=refs/heads/gh-readonly-queue/main/pr-456-abc MOCK_PR_BRANCH=release-please--branches--main HEAD_SHA=def "$CONTEXT" resolve)
 assert_contains "$out" "release-skip=true"
@@ -86,7 +87,8 @@ assert_contains "$out" "release-skip=false"
 assert_contains "$out" "job-ref=staging-ghi"
 assert_contains "$out" "pr-number="
 assert_contains "$out" "pr-head-ref="
-assert_contains "$out" "source-head-sha=ghi"
+assert_contains "$out" "head-sha=ghi"
+assert_contains "$out" "producer-head-sha=ghi"
 
 out=$(run_clean EVENT_NAME=push COMMIT_MSG='chore: release 1.2.3' HEAD_SHA=ghi "$CONTEXT" resolve)
 assert_contains "$out" "release-skip=true"
@@ -334,11 +336,14 @@ assert_contains "$out" "artifact-name=runner-image-manifest-aarch64-unknown-linu
 out=$(run_clean HEAD_SHA=abc JOB_REF=pr-123 TARGET=x86_64-unknown-linux-musl "$CONTEXT" artifact-name)
 assert_contains "$out" "artifact-name=runner-image-manifest-x86_64-unknown-linux-musl-abc-pr-123"
 
-grep -qF "SOURCE_HEAD_SHA: \${{ github.event.pull_request.head.sha || github.sha }}" \
+grep -qF "HEAD_SHA: \${{ github.sha }}" \
   "${REPO_ROOT}/.github/workflows/runner-image.yml" \
-  || fail "workflow must distinguish the PR source head from the checkout merge SHA"
-grep -qF "PRODUCER_HEAD_SHA: \${{ needs.prepare.outputs.source-head-sha }}" \
+  || fail "build identity must use the captured event revision"
+grep -qF "PRODUCER_HEAD_SHA: \${{ github.event.pull_request.head.sha || github.sha }}" \
   "${REPO_ROOT}/.github/workflows/runner-image.yml" \
-  || fail "reusable provenance must use the Actions run source head SHA"
+  || fail "workflow must distinguish the Actions API head from the build merge SHA"
+grep -qF "PRODUCER_HEAD_SHA: \${{ needs.prepare.outputs.producer-head-sha }}" \
+  "${REPO_ROOT}/.github/workflows/runner-image.yml" \
+  || fail "reusable provenance must use the Actions API head SHA"
 
 echo "runner-image-context-test: ok"

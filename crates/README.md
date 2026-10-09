@@ -9,12 +9,12 @@ control and RPC services, shared contracts, and developer/test support.
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | runner                   | Process-wide composition, `start` orchestration, operational CLI and build packaging                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | runner-executor          | Claimed-run sandbox execution, session history, results, diagnostics and per-run telemetry                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| runner-host              | Runner host filesystem and persisted process identity, live process registry, local control IPC, locks, paths and logging primitives                                                                                                                                                                                                                                                                                                                                                                             |
+| runner-host              | Runner host filesystem and persisted process identity, live process registry, local control IPC, systemd identity/query/selected-config primitives, GC filesystem accounting and identity-aware lock cleanup, shared byte formatting, locks, paths and logging                                                                                                                                                                                                                                                   |
 | runner-lifecycle         | Active-run handoff, idle sandbox, memory prefetch, status, workspace image and cache snapshot lifecycle                                                                                                                                                                                                                                                                                                                                                                                                          |
 | runner-network           | Runner proxy process/recovery, DNS, CA, network log capture and bounded upload                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | runner-provider          | API/local job discovery, claiming, completion, active input, cancellation and queue coordination                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | runner-remote            | Guest RPC, remote usage, SSH authority/sessions/files, and VNC sessions                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| runner-storage           | Storage planning, archive delivery, host archive cache and R2 template cache                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| runner-storage           | Storage planning, archive delivery, host archive/decoded-cache GC and R2 template cache                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | runner-supervisor        | Start-loop idle replenishment and exact operator reclamation, pre-claim preference/admission/claim rollback and pending finalizing-candidate state, claimed-idle reservation/rollback, finalizing-successor arbitration, claimed resource selection/activation and status/failure recovery, post-executor finalizing and sandbox finalization, provider report ordering, active-run completion settlement, panic disposition recovery, heartbeat, ownership transitions, and orphan recovery above domain owners |
 | runner-types             | Shared Runner identifiers, API payloads, storage manifest types and validation                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | sandbox                  | Provider-neutral sandbox interfaces and shared lifecycle/control types                                                                                                                                                                                                                                                                                                                                                                                                                                           |
@@ -80,6 +80,40 @@ Separating the 52002 protocol does not create a new daemon, binary or crate.
 A `guest-` package prefix is not an artifact inventory. The authoritative
 [guest binary inventory](runner/guest-binaries.json) separately records each
 package, binary, build environment key and installed path.
+
+### Systemd service ownership
+
+`runner-host::service` owns validated runner service identities, bounded
+systemctl/journalctl primitives, selected unit configuration parsing, and their
+private tests. Runner retains service command policy, active-job decisions,
+reload coordination, drain/signal/stop behavior, and unit generation/private
+atomic publication. Existing service names, lock/unit paths, selected-config
+semantics, error categories and machine-readable state fields are unchanged.
+
+The three cross-owner state fixtures are available only through host's
+non-default `test-support` feature, which Runner requests as a dev-dependency;
+production state fields and normalization remain private. Moved tracing targets
+use `runner_host::service` rather than `runner::cmd::service`; no old-target
+aliases or duplicate logs are emitted.
+
+### Storage-cache GC ownership
+
+`runner-storage::cache_gc` owns archive/decoded-cache collection, staging cleanup,
+and their filesystem/flock tests. Its concrete limits carry caller-supplied byte,
+entry and minimum-age policy; its result carries only cleanup activity and freed
+bytes. Runner retains the 1 GiB / 5,000-entry / 600-second defaults, CLI policy,
+GC lock and phase ordering, error presentation, and phase/total report composition.
+
+`runner-host::gc` owns the single shared filesystem-accounting and identity-aware
+lock-cleanup implementations and their private tests. Completeness-aware scans,
+symlink handling, scan/drop/reacquire, directory identity/mtime revalidation,
+staging final-version locks, and decoded-cache reader pinning remain unchanged.
+Shared byte formatting lives in `runner-host::byte_size` for both cache diagnostics
+and command consumers. Directory-iteration faults and GC fixtures are available
+only through the non-default Host `test-support` feature; fault state stays private.
+Moved tracing targets follow their Host/Storage owners without old-target aliases
+or duplicate records. This boundary alone does not establish whole-workload
+memory improvement or complete the parent cold-build acceptance gate.
 
 ### Source, executable and release identities
 

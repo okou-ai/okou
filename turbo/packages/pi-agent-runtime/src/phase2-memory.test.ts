@@ -8,6 +8,7 @@ import {
 } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { zstdDecompressSync } from "node:zlib";
 
 import { encode } from "gpt-tokenizer/encoding/o200k_base";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -362,17 +363,66 @@ async function startProvider(steps: readonly ProviderStep[]): Promise<{
         chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       }
       const index = requests.length;
+      const bytes = Buffer.concat(chunks);
       requests.push({
         url: request.url,
         headers: request.headers,
-        body: JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<
-          string,
-          unknown
-        >,
+        body: JSON.parse(
+          (request.headers["content-encoding"] === "zstd"
+            ? zstdDecompressSync(bytes)
+            : bytes
+          ).toString("utf8"),
+        ) as Record<string, unknown>,
       });
       const step = steps[index];
       if (!step) {
         response.writeHead(500).end();
+        return;
+      }
+      if (
+        request.url === "/v1/chat/completions" &&
+        (step.type === "tool" || step.type === "text")
+      ) {
+        const base = {
+          id: `chat_phase2_${index}`,
+          object: "chat.completion.chunk",
+          model: "@preset/memory",
+        };
+        const delta =
+          step.type === "tool"
+            ? {
+                role: "assistant",
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: `call_${index}`,
+                    type: "function",
+                    function: {
+                      name: step.name,
+                      arguments: JSON.stringify(step.arguments),
+                    },
+                  },
+                ],
+              }
+            : { role: "assistant", content: step.text };
+        writeSse(response, [
+          { ...base, choices: [{ index: 0, delta, finish_reason: null }] },
+          {
+            ...base,
+            choices: [
+              {
+                index: 0,
+                delta: {},
+                finish_reason: step.type === "tool" ? "tool_calls" : "stop",
+              },
+            ],
+            usage: {
+              prompt_tokens: 11,
+              completion_tokens: 7,
+              prompt_tokens_details: { cached_tokens: 2 },
+            },
+          },
+        ]);
         return;
       }
       switch (step.type) {
@@ -626,16 +676,81 @@ describe("Pi memory Phase 2 consolidation engine", () => {
     });
   });
 
-  it("raises maintenance effort for a model that publishes no medium step", async () => {
-    // DeepSeek V4.1 Flash maps `medium` to nothing, so the built-in binding
-    // must consolidate at that model's documented default instead.
+  it.each([
+    { model: "openai/gpt-6-luna", effort: "medium" },
+    { model: "gpt-6-luna", effort: "medium" },
+  ] as const)(
+    "keeps captured $model maintenance effort at $effort",
+    async (route) => {
+      const { model, effort } = route;
+      const provider = await startProvider([
+        {
+          type: "tool",
+          name: "phase2_write",
+          arguments: {
+            path: "memory/MEMORY.md",
+            content: "# Task Group: updated by maintenance\n",
+          },
+        },
+        {
+          type: "tool",
+          name: "phase2_write",
+          arguments: {
+            path: "memory/memory_summary.md",
+            content: "v1\n## User Profile\n- updated by maintenance\n",
+          },
+        },
+        { type: "text", text: "MODEL_TEXT_SECRET_31243 completed" },
+      ]);
+      const sessions: PiMemoryPhase2SessionSnapshot[] = [];
+      const result = await runPiMemoryPhase2LocalConsolidation(
+        args(provider.baseUrl, {
+          model:
+            model === "gpt-6-luna"
+              ? {
+                  provider: "openai-codex",
+                  baseUrl: provider.baseUrl,
+                  apiKey: "PROVIDER_KEY_SECRET_31243",
+                  accountId: "test-codex-account",
+                  model,
+                  dialect: "openai-codex-responses",
+                  transport: "sse",
+                }
+              : {
+                  provider: "openrouter",
+                  baseUrl: provider.baseUrl,
+                  apiKey: "PROVIDER_KEY_SECRET_31243",
+                  model,
+                  dialect: "openai-responses",
+                  transport: "sse",
+                },
+        }),
+        new AbortController().signal,
+        {
+          onSessionCreated(snapshot) {
+            sessions.push(snapshot);
+          },
+        },
+      );
+
+      expect(result.status).toBe("prepared");
+      expect(sessions[0]?.thinkingLevel).toBe(effort);
+      expect(provider.requests).not.toHaveLength(0);
+      for (const request of provider.requests) {
+        expect(request.body).toMatchObject({ model });
+        expect(request.body).toMatchObject({ reasoning: { effort } });
+      }
+    },
+  );
+
+  it("consolidates with the memory preset, owner affinity and no client tuning", async () => {
     const provider = await startProvider([
       {
         type: "tool",
         name: "phase2_write",
         arguments: {
           path: "memory/MEMORY.md",
-          content: "# Task Group: updated by maintenance\n",
+          content: "# Task Group: preset maintenance\n",
         },
       },
       {
@@ -643,40 +758,56 @@ describe("Pi memory Phase 2 consolidation engine", () => {
         name: "phase2_write",
         arguments: {
           path: "memory/memory_summary.md",
-          content: "v1\n## User Profile\n- updated by maintenance\n",
+          content: "v1\n## User Profile\n- preset maintenance\n",
         },
       },
-      { type: "text", text: "MODEL_TEXT_SECRET_31243 completed" },
+      { type: "text", text: "completed" },
     ]);
-    const sessions: PiMemoryPhase2SessionSnapshot[] = [];
     const result = await runPiMemoryPhase2LocalConsolidation(
       args(provider.baseUrl, {
         model: {
           provider: "openrouter",
           baseUrl: provider.baseUrl,
-          apiKey: "PROVIDER_KEY_SECRET_31243",
-          model: "deepseek/deepseek-v4.1-flash",
-          dialect: "openai-responses",
+          apiKey: "preset-key",
+          model: "@preset/memory",
+          catalogModel: "okou-memory",
+          dialect: "openai-completions",
           transport: "sse",
+          sessionAffinityKey: "MEMORY-user-1-org-1",
         },
       }),
       new AbortController().signal,
-      {
-        onSessionCreated(snapshot) {
-          sessions.push(snapshot);
-        },
-      },
     );
-
     expect(result.status).toBe("prepared");
-    expect(sessions[0]?.thinkingLevel).toBe("high");
-    expect(provider.requests).not.toHaveLength(0);
+    expect(result.usage).toMatchObject({ input: 27, output: 21, cacheRead: 6 });
+    expect(provider.requests).toHaveLength(3);
     for (const request of provider.requests) {
-      expect(request.body).toMatchObject({
-        model: "deepseek/deepseek-v4.1-flash",
-        reasoning: { effort: "high" },
-      });
+      expect(request.url).toBe("/v1/chat/completions");
+      expect(request.headers["x-session-id"]).toBe("MEMORY-user-1-org-1");
+      expect(Object.keys(request.body).sort()).toStrictEqual([
+        "messages",
+        "model",
+        "stream",
+        "stream_options",
+        "tools",
+      ]);
+      expect(request.body.model).toBe("@preset/memory");
+      expect(request.body.messages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            role: "system",
+            content: expect.arrayContaining([
+              expect.objectContaining({ cache_control: { type: "ephemeral" } }),
+            ]),
+          }),
+        ]),
+      );
     }
+    expect(
+      result.files.some((file) => {
+        return file.path === "MEMORY.md";
+      }),
+    ).toBe(true);
   });
 
   it("uses one restricted official AgentSession and returns exact prepared usage", async () => {

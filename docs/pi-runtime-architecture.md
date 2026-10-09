@@ -7,8 +7,8 @@ route policy, wire format, or release gate. The linked source owns executable
 behavior; the detailed contracts below own their respective implementation and
 rollout rules.
 
-> **API-first retired.** The API no longer executes Pi model turns. Every Pi
-> run, including the first turn of a new thread, executes in the Sandbox. The
+> **API-first retired.** The API no longer executes foreground Pi model turns.
+> Every Pi run, including the first turn of a new thread, executes in the Sandbox. The
 > Sandbox CLI starts a fresh session on a first turn or opens the session the
 > Runner restored from `resumeSession`; no handoff manifest or startup record
 > exists any more. The API-first executor, compaction preflight, usage observer,
@@ -71,6 +71,31 @@ reselect a provider or infer a different account from a model name. Explicit
 headers, firewall placeholders, subscription account binding, and
 dialect-specific tier policy remain at their existing trust boundaries.
 
+## Stage 1 provider preparation and admission
+
+The API's background Stage 1 extractor is separate from foreground Sandbox
+turns. [Pure request preparation](../turbo/packages/pi-agent-runtime/src/stage1-native-request.ts)
+uses the pinned SDK's additive request projectors, then selects evidence and
+measures the complete JSON body before SQL admission or HTTP. SDK builders
+remain authoritative for all three dialects; the runtime does not copy a
+serializer or transport.
+
+The [worker's fixed command](../turbo/apps/api/src/signals/services/pi-memory-stage1-worker.service.ts)
+owns exact captured credential and frozen selection/lease validation. New
+memory work is free and has no credit or subscription quota admission. Preset
+field filtering runs before measurement and is shared with the final stream
+boundary, so admission and execution use the same body. The worker passes only
+the prepared model, request ID and body to runtime execution. No command accessor or admission callback enters
+the SDK. The runtime's fixed payload callback supplies the measured data and
+retains the pre-HTTP abort check.
+
+The worker joins provider outcomes and finite usage/result settlement before
+propagating parent cancellation. HTTP status, response identity and actual
+usage survive unsuccessful terminal results; usage-free failures do not
+fabricate consumption. The ordinary runtime extraction operation still
+prepares and executes through the same path. These are in-process interfaces;
+Runner launch, history and persisted memory formats do not change.
+
 ## Retired stable-context projection
 
 The Pi stable-context projection (an owner-bound, generation-fenced cache of
@@ -91,7 +116,7 @@ reservation. See
 ## Launch through settlement
 
 1. The API freezes the admitted route, source, session, resources and CLI artifact.
-   Every Pi provider request runs in the Sandbox. Ordinary Runner capacity and
+   Every foreground Pi provider request runs in the Sandbox. Ordinary Runner capacity and
    the existing run/session transaction own admission.
 2. Runner restores the selected native session when `resumeSession` exists.
    Otherwise the CLI creates empty canonical history. The CLI validates the
@@ -150,6 +175,11 @@ an earlier retry budget. Aborted messages and tool results cannot supply model
 HTTP evidence. Historical messages without this diagnostic remain supported.
 
 Structured provider codes precede recognized terminal text and HTTP status.
+At owned Guest terminal sources, a diagnosed provider refusal also precedes
+native Codex credential-keyword heuristics: an opaque policy link containing
+`invalid_api_key` does not change the cause. Actual structured credential codes
+retain priority, and stderr keeps its existing native rules rather than gaining
+refusal inference.
 The original body distinguishes ordinary HTTP 429 rate limits from provider
 account balance failures (`provider_insufficient_credits`) and subscription
 usage limits (`usage_limit`), even when the SDK renders all three as a usage
@@ -171,6 +201,16 @@ from `modelRequest`, whose shape is unchanged. Older Guests ignore the additive
 runtime field; newer Guests still accept messages without it. The open reason
 token contract accepts additive API/Runner taxonomy entries without a database
 migration.
+
+A diagnosed `safety_policy_refusal` vetoes native assistant and summary retries
+before generic text matching, even when the preserved provider link contains
+HTTP-looking digits. It also stays out of automatic overflow/threshold compaction:
+context-looking link text must not trigger summarization or replay. The
+[pinned patch contract](../turbo/patches/pi-pending-tools.md#provider-declared-queue-expiry)
+owns these narrow SDK guards; genuine context-overflow recovery is unchanged,
+and no answer/tool/stderr classifier is added. Only the matching patched CLI
+gains those guards. A newer Guest can classify an older CLI's terminal text,
+but cannot undo retries or recovery the old SDK already performed.
 
 A settled final Pi `length` response follows Pi's completed outcome: partial
 assistant text stays in its event and becomes the public result, without a
@@ -272,6 +312,19 @@ projects/redacts/truncates within its existing bounds, runs
 commits a candidate under its claim fence. Its work unit and usage owner are
 separate from a foreground response and a Phase 2 storage consolidation.
 
+Both stages use the platform-managed OpenRouter Chat Completions preset
+`@preset/memory`, recorded under the private `okou-memory` identity. They never
+select a member's Codex account. Cache breakpoints follow Auto's Anthropic-style
+OpenRouter compatibility; `x-session-id` is `MEMORY-${userId}-${orgId}` for both
+stages and all attempts. The preset owns reasoning, output ceilings and sampling:
+only model, messages, tools (Phase 2), stream and stream usage options are sent.
+Stage 1 retains local evidence budgets and JSON output validation without sending
+a response-format override. Private metadata uses Auto's local model budgets;
+the operator must configure a preset that supports those input/tool contracts.
+An admitted attempt keeps its credential snapshot and existing errors/retries;
+historical maintenance snapshots still drain unchanged. See
+[deployment compatibility](deployment-compatibility.md#free-memory-preset-routing-2026-10-09).
+
 The Phase 2 API worker claims a storage revision/base/selection and dispatches a
 private maintenance run. It renews the **real database lease** against the
 maintenance run/token. The local engine has no fabricated user/org identity,
@@ -297,9 +350,12 @@ reader/producer contract is in deployment compatibility. Memory tools retain
 the frozen epoch and explicit ad-hoc-note request boundary. Local note staging
 is not a durable checkpoint.
 
-Stage 1 retains its own usage writer. Sandbox foreground and
-Phase 2 inference use Runner/proxy accounting; runtime Phase 2 usage in a result
-is evidence, not a second journal. [Phase 2 usage binding](../turbo/apps/api/src/signals/services/pi-memory-phase2-usage.service.ts)
+New preset memory is free: it neither checks nor consumes organization credits,
+allowance windows or personal subscription quotas. Stage 1 retains token/cost
+observations but creates no charge events; new Phase 2 contexts have no billable
+firewalls or model pricing identity. Runtime Phase 2 usage remains evidence.
+Stage 1's legacy usage writer and Runner/proxy accounting remain intact for
+previously captured paid attempts; no historical prices or charges are rewritten. [Phase 2 usage binding](../turbo/apps/api/src/signals/services/pi-memory-phase2-usage.service.ts)
 survives the existing execution/finalization drain for late proxy usage, including
 failed/revoked attempts. The shared [model usage thresholds](../turbo/packages/api-contracts/src/contracts/model-price-tiers.ts)
 and their [Python generation](../turbo/packages/api-contracts/src/python-bindings/generate.ts)
@@ -312,16 +368,16 @@ raw usage, or compacted rollup reconciliation.
 Versions below name different dimensions. A higher model generation does not
 retire an older launch, resource, manifest, session, or persisted reader.
 
-| Surface and actual consumers                                                                                                                                                                                                                              | Why retained                                                                                                                                    | Decisive gate and authority                                                                                                                                                                                                                                                                                                                                                            |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Model carriers Gen1–Gen3: [runners.ts](../turbo/packages/api-contracts/src/contracts/runners.ts), route normalizer, [claim capability](../turbo/apps/api/src/signals/services/pi-model-config-claim-capability.ts), CLI and Runner readers                | Gen1 remains the canonical field-absent public Responses carrier. Gen2/3 dialect/tier are active contracts; Gen4 native was removed.            | [#33966](https://github.com/vm0-ai/vm0/issues/33966) removes only the optional Gen1 wire `api` after the [September 14 readiness acceptance](https://github.com/vm0-ai/vm0/issues/31085#issuecomment-5660026283). Strict TypeScript readers reject the key; generated Rust DTOs no longer represent or retain it. Gen1, the active Codex dialect and SDK `Model.api` remain supported. |
-| Launch snapshot V3, Pi launch config V2, private payload V1, maintenance input V1; API creation, Runner serialization and CLI parsing                                                                                                                     | Run identity and private inputs have their own strict schemas and captured lifetimes.                                                           | Audit each writer/reader and all supported old/new pairs before changing its shape; [deployment compatibility](./deployment-compatibility.md) governs release, queue, process and rollback evidence. D changes none.                                                                                                                                                                   |
-| Resource snapshots V1/V2; [runners.ts](../turbo/packages/api-contracts/src/contracts/runners.ts) schema, [resources.ts](../turbo/packages/pi-agent-runtime/src/resources.ts), shared session construction                                                 | V2 adds frozen recall; both snapshots still describe admitted immutable resources. B derives runtime types from these contracts.                | Retire only with proof all captured contexts and supported readers/rollback paths use the replacement; schema numbering or absent sampled traffic is insufficient.                                                                                                                                                                                                                     |
-| Retired API-first handoff and producer contracts                                                                                                                                                                                                          | Removed in Release 7; no current runtime reader.                                                                                                | Historical rollout receipts and the explicit Release 7 rollback floor remain in [deployment compatibility](./deployment-compatibility.md).                                                                                                                                                                                                                                             |
-| Commit-addressed CLI and queued/active contexts; API context writer, Runner launcher, CLI package                                                                                                                                                         | A current Runner can launch an older package frozen when a context was created. Semantic package version alone is not an artifact floor.        | Maximum queue plus claimed execution/finalization lifetime, complete old-context drain and supported external-caller audit, separately from Runner/Sandbox and rollback-target retirement. No blanket elapsed-time gate.                                                                                                                                                               |
-| Session v3; byte-backed API adapter, SDK file reader, checkpoint/Stage 1/export readers                                                                                                                                                                   | Branches, compaction and pending tools must retain native meaning and source identity.                                                          | [0.84.1/0.85.1 session fixtures](../turbo/packages/pi-agent-runtime/src/session-version-compatibility.test.ts) prove representative compatibility, not fleet drain or historical replay. Any replacement needs supported-reader and retained-history evidence, not just a newer SDK.                                                                                                   |
-| Old-Guest raw citation bridge in [pi-memory-citation-events.ts](../turbo/apps/api/src/signals/services/pi-memory-citation-events.ts), called by [agent-webhook-events.service.ts](../turbo/apps/api/src/signals/services/agent-webhook-events.service.ts) | Older Guest events can need raw-envelope projection before structured provenance persistence.                                                   | [#31964](https://github.com/vm0-ai/vm0/issues/31964) alone owns bridge removal: successful #31959 API/Runner release, pre-release process drain through the two-hour budget plus bounded finalization, and sanitized structured output from retained rollback Runners.                                                                                                                 |
-| Historical citation/text defenses and private provenance; API chat/Snapshot/search/callback reads, browser cache, raw-history export derivatives, [user-export.service.ts](../turbo/apps/api/src/signals/services/user-export.service.ts)                 | Immutable historical rows/blobs remain supported reads. User export still reads `piMemoryPublicationProvenance`; source JSONL is not rewritten. | These are separate from the rollout-only old-Guest bridge. #31964 does not authorize removal. A later explicit historical-data/export contract would be required; [provenance note](../turbo/packages/pi-agent-runtime/src/memory-recall-upstream.md) and delimiter contract remain authoritative.                                                                                     |
+| Surface and actual consumers                                                                                                                                                                                                                              | Why retained                                                                                                                                                                                                           | Decisive gate and authority                                                                                                                                                                                                                                                                                                                                                            |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Model carriers Gen1–Gen3 and Gen5: [runners.ts](../turbo/packages/api-contracts/src/contracts/runners.ts), route normalizer, [claim capability](../turbo/apps/api/src/signals/services/pi-model-config-claim-capability.ts), CLI and Runner readers       | Gen1 remains the canonical field-absent public Responses carrier. Gen2/3 dialect/tier are active contracts; Gen4 native was removed; Gen5 is the OpenRouter Chat Completions route that new OpenRouter launches write. | [#33966](https://github.com/vm0-ai/vm0/issues/33966) removes only the optional Gen1 wire `api` after the [September 14 readiness acceptance](https://github.com/vm0-ai/vm0/issues/31085#issuecomment-5660026283). Strict TypeScript readers reject the key; generated Rust DTOs no longer represent or retain it. Gen1, the active Codex dialect and SDK `Model.api` remain supported. |
+| Launch snapshot V3, Pi launch config V2, private payload V1, maintenance input V1; API creation, Runner serialization and CLI parsing                                                                                                                     | Run identity and private inputs have their own strict schemas and captured lifetimes.                                                                                                                                  | Audit each writer/reader and all supported old/new pairs before changing its shape; [deployment compatibility](./deployment-compatibility.md) governs release, queue, process and rollback evidence. D changes none.                                                                                                                                                                   |
+| Resource snapshots V1/V2; [runners.ts](../turbo/packages/api-contracts/src/contracts/runners.ts) schema, [resources.ts](../turbo/packages/pi-agent-runtime/src/resources.ts), shared session construction                                                 | V2 adds frozen recall; both snapshots still describe admitted immutable resources. B derives runtime types from these contracts.                                                                                       | Retire only with proof all captured contexts and supported readers/rollback paths use the replacement; schema numbering or absent sampled traffic is insufficient.                                                                                                                                                                                                                     |
+| Retired API-first handoff and producer contracts                                                                                                                                                                                                          | Removed in Release 7; no current runtime reader.                                                                                                                                                                       | Historical rollout receipts and the explicit Release 7 rollback floor remain in [deployment compatibility](./deployment-compatibility.md).                                                                                                                                                                                                                                             |
+| Commit-addressed CLI and queued/active contexts; API context writer, Runner launcher, CLI package                                                                                                                                                         | A current Runner can launch an older package frozen when a context was created. Semantic package version alone is not an artifact floor.                                                                               | Maximum queue plus claimed execution/finalization lifetime, complete old-context drain and supported external-caller audit, separately from Runner/Sandbox and rollback-target retirement. No blanket elapsed-time gate.                                                                                                                                                               |
+| Session v3; byte-backed API adapter, SDK file reader, checkpoint/Stage 1/export readers                                                                                                                                                                   | Branches, compaction and pending tools must retain native meaning and source identity.                                                                                                                                 | [0.84.1/0.85.1 session fixtures](../turbo/packages/pi-agent-runtime/src/session-version-compatibility.test.ts) prove representative compatibility, not fleet drain or historical replay. Any replacement needs supported-reader and retained-history evidence, not just a newer SDK.                                                                                                   |
+| Old-Guest raw citation bridge in [pi-memory-citation-events.ts](../turbo/apps/api/src/signals/services/pi-memory-citation-events.ts), called by [agent-webhook-events.service.ts](../turbo/apps/api/src/signals/services/agent-webhook-events.service.ts) | Older Guest events can need raw-envelope projection before structured provenance persistence.                                                                                                                          | [#31964](https://github.com/vm0-ai/vm0/issues/31964) alone owns bridge removal: successful #31959 API/Runner release, pre-release process drain through the two-hour budget plus bounded finalization, and sanitized structured output from retained rollback Runners.                                                                                                                 |
+| Historical citation/text defenses and private provenance; API chat/Snapshot/search/callback reads, browser cache, raw-history export derivatives, [user-export.service.ts](../turbo/apps/api/src/signals/services/user-export.service.ts)                 | Immutable historical rows/blobs remain supported reads. User export still reads `piMemoryPublicationProvenance`; source JSONL is not rewritten.                                                                        | These are separate from the rollout-only old-Guest bridge. #31964 does not authorize removal. A later explicit historical-data/export contract would be required; [provenance note](../turbo/packages/pi-agent-runtime/src/memory-recall-upstream.md) and delimiter contract remain authoritative.                                                                                     |
 
 At D's source review on 2026-09-12, #31085 and #31964 were OPEN with their
 respective removal gates unresolved. That is historical evidence. The later

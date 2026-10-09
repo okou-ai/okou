@@ -87,6 +87,18 @@ finally:
     os.close(slave)
 PY
 
+# Exercise /dev/fd through the ordinary guest tool user's Bash, including the
+# NUL-delimited mapfile pattern used by Runner build-context enumeration.
+diff <(printf 'fd-input\n') <(printf 'fd-input\n')
+mapfile -d '' -t fd_records < <(printf 'first\0second\0')
+test "${#fd_records[@]}" -eq 2
+test "${fd_records[0]}" = first
+test "${fd_records[1]}" = second
+printf 'fd-output\n' > >(cat > "$marker/fd-output")
+fd_output_pid=$!
+wait "$fd_output_pid"
+test "$(cat "$marker/fd-output")" = fd-output
+
 expected_path="/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games:$HOME/go/bin:$HOME/.cargo/bin:$HOME/.local/bin:$HOME/bin"
 if [ "$PATH" != "$expected_path" ]; then
   echo "Guest Agent CLI child PATH changed: expected=$expected_path actual=$PATH" >&2

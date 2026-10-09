@@ -4,7 +4,7 @@
 //! auto-mounts devtmpfs on `/dev` (`CONFIG_DEVTMPFS_MOUNT=y`).
 //!
 //! This module completes the ordered boot setup:
-//! 1. Mount `/proc`.
+//! 1. Mount `/proc` and expose open file descriptors at `/dev/fd`.
 //! 2. Configure TCP keepalive.
 //! 3. Mount `/sys` and initialize cgroup v2 exec process containment.
 //! 4. Mount `/dev/pts` for pseudo-terminals.
@@ -15,6 +15,7 @@
 use nix::mount::{MsFlags, mount};
 use std::fs;
 use std::io;
+use std::os::unix::fs::symlink;
 use std::path::Path;
 
 use guest_contracts::process_containment::{
@@ -39,7 +40,7 @@ const PIDS_MAX_FILE: &str = "pids.max";
 pub fn init_filesystem() -> Result<(), InitError> {
     eprintln!("[guest-init] Starting filesystem initialization");
 
-    // 1. Mount /proc.
+    // 1. Mount /proc and expose the calling process's file descriptors.
     mount(
         Some("proc"),
         "/proc",
@@ -51,6 +52,9 @@ pub fn init_filesystem() -> Result<(), InitError> {
         target: "/proc".into(),
         source: e,
     })?;
+    // devtmpfs creates device nodes, not the /dev/fd link needed by Bash
+    // process substitution. /proc/self resolves to the process opening the path.
+    create_file_descriptor_link(Path::new("/dev"))?;
 
     // 2. Configure aggressive TCP keepalive for faster dead connection detection.
     // Default values (7200s/75s/9 probes = ~2h11m) exceed JOB_TIMEOUT (2h),
@@ -262,6 +266,15 @@ fn verify_required_controllers(content: &str, state: &str) -> Result<(), InitErr
     )))
 }
 
+fn create_file_descriptor_link(dev_dir: &Path) -> Result<(), InitError> {
+    let path = dev_dir.join("fd");
+    symlink("/proc/self/fd", &path).map_err(|source| InitError::Filesystem {
+        operation: "create file descriptor symlink",
+        path: path.display().to_string(),
+        source,
+    })
+}
+
 fn create_dir_all(path: &Path) -> Result<(), InitError> {
     fs::create_dir_all(path).map_err(|source| InitError::Filesystem {
         operation: "create directory",
@@ -372,6 +385,41 @@ unsafe fn load_etc_environment() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::fd::AsRawFd;
+
+    #[test]
+    fn file_descriptor_link_exposes_current_process_descriptors() {
+        let dev_dir = tempfile::tempdir().unwrap();
+        let file = tempfile::NamedTempFile::new().unwrap();
+        fs::write(file.path(), "descriptor contents\n").unwrap();
+
+        create_file_descriptor_link(dev_dir.path()).unwrap();
+
+        let link = dev_dir.path().join("fd");
+        assert_eq!(fs::read_link(&link).unwrap(), Path::new("/proc/self/fd"));
+        let descriptor = link.join(file.as_file().as_raw_fd().to_string());
+        assert_eq!(
+            fs::read_to_string(descriptor).unwrap(),
+            "descriptor contents\n"
+        );
+    }
+
+    #[test]
+    fn file_descriptor_link_rejects_existing_entries() {
+        let dev_dir = tempfile::tempdir().unwrap();
+        let path = dev_dir.path().join("fd");
+        fs::write(&path, "existing entry").unwrap();
+
+        let error = create_file_descriptor_link(dev_dir.path()).unwrap_err();
+
+        assert!(matches!(
+            error,
+            InitError::Filesystem { path: error_path, source, .. }
+                if error_path == path.display().to_string()
+                    && source.kind() == io::ErrorKind::AlreadyExists
+        ));
+        assert_eq!(fs::read_to_string(path).unwrap(), "existing entry");
+    }
 
     fn write_cgroup_core_files(base: &Path, subtree_control: &str) {
         fs::create_dir_all(base).unwrap();

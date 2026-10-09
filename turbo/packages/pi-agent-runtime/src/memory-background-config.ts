@@ -1,50 +1,49 @@
 import type { PiAgentThinkingLevel } from "./types";
 
-/**
- * Background memory pipeline model and reasoning policy, defined once here and
- * imported by every consumer. It mirrors upstream Codex
- * (`DEFAULT_MEMORY_EXTRACTION_PREFERRED_MODEL` / `stage_one::REASONING_EFFORT`
- * and `DEFAULT_MEMORY_CONSOLIDATION_PREFERRED_MODEL` /
- * `stage_two::REASONING_EFFORT`). Phase 2 keeps its models where the API
- * dispatches the maintenance run (`PI_MEMORY_PHASE2_MODELS`).
- *
- * Both stages pin to the source run's own credential owner and have no
- * fallback. The independent built-in binding runs the cheaper DeepSeek Flash
- * pair on OpenRouter; personal Codex credentials use the supported GPT pair.
- *
- * These values are deliberately independent from the foreground chat reasoning
- * defaults in `@okouai/api-contracts` (`model-reasoning-effort`): tuning the
- * foreground effort of a model must never change background extraction or
- * consolidation cost.
- *
- * Built-in extraction names V4.1 Flash, also used by consolidation. Its fixed
- * OpenRouter maintenance binding publishes the pinned `low` effort; it is not
- * a selectable foreground chat route and has no alternate vendor.
- */
-export const PI_MEMORY_STAGE1_BUILT_IN_MODEL = "deepseek-v4.1-flash";
-export const PI_MEMORY_STAGE1_PERSONAL_MODEL = "gpt-6-luna";
+/** Private, platform-funded memory identity; never a foreground model choice. */
+export const PI_MEMORY_STAGE1_BUILT_IN_MODEL = "okou-memory";
+export const PI_MEMORY_PRESET = "@preset/memory";
+export const PI_MEMORY_PRESET_REQUEST_FIELDS = [
+  "model",
+  "messages",
+  "tools",
+  "stream",
+  "stream_options",
+] as const;
 
+/** Share the final wire policy with preparation so its measured body is exact. */
+export function memoryPresetPayload(payload: unknown): unknown {
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    Array.isArray(payload)
+  ) {
+    throw new Error("Invalid memory Chat Completions payload");
+  }
+  const allowed: ReadonlySet<string> = new Set(PI_MEMORY_PRESET_REQUEST_FIELDS);
+  return Object.fromEntries(
+    Object.entries(payload).filter(([key]) => {
+      return allowed.has(key);
+    }),
+  );
+}
+
+/** Retained historical subscription identity, not a new credential candidate. */
+export const PI_MEMORY_STAGE1_PERSONAL_MODEL = "gpt-6-luna";
 export type PiMemoryStage1Model =
   | typeof PI_MEMORY_STAGE1_BUILT_IN_MODEL
   | typeof PI_MEMORY_STAGE1_PERSONAL_MODEL;
 
-/**
- * Both the fixed built-in maintenance binding and personal Codex extraction
- * publish `low`, so one stateless request keeps it.
- */
+// Legacy extraction still recognizes its captured request policy. New preset
+// requests omit reasoning and sampling parameters at the transport boundary.
 export const PI_MEMORY_STAGE1_REASONING = "low" satisfies PiAgentThinkingLevel;
-
-/** Personal Codex consolidation keeps `medium`, which its GPT model publishes. */
 export const PI_MEMORY_PHASE2_MAINTENANCE_REASONING =
   "medium" satisfies PiAgentThinkingLevel;
 
-/**
- * Consolidation effort for a maintenance model that does not publish `medium`.
- *
- * Only the built-in binding resolves such a model: DeepSeek V4.1 Flash maps
- * `medium` to nothing, so the request cannot carry that effort. `high` is that
- * model's documented default reasoning level, and Phase 2 owns durable memory
- * state, so it takes the stronger published neighbour rather than a weaker one.
- */
-export const PI_MEMORY_PHASE2_BUILT_IN_MAINTENANCE_REASONING =
-  "high" satisfies PiAgentThinkingLevel;
+/** Both stages and all attempts share one owner-scoped OpenRouter cache route. */
+export function piMemorySessionAffinityKey(
+  userId: string,
+  orgId: string,
+): string {
+  return `MEMORY-${userId}-${orgId}`;
+}

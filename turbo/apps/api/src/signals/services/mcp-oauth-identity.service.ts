@@ -88,7 +88,6 @@ export interface StoredOAuthIdentity {
 
 export type RefreshedOAuthIdentity =
   | { readonly kind: "preserve" }
-  | { readonly kind: "mismatch" }
   | {
       readonly kind: "update";
       readonly externalId: string;
@@ -102,9 +101,6 @@ export function resolveRefreshedOAuthIdentity(
 ): RefreshedOAuthIdentity {
   if (!refreshed) {
     return { kind: "preserve" };
-  }
-  if (stored.externalId !== null && stored.externalId !== refreshed.id) {
-    return { kind: "mismatch" };
   }
   return {
     kind: "update",

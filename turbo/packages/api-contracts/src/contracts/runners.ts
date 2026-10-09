@@ -5,7 +5,6 @@ import {
   executionFirewallInlineEntrySchema,
   executionFirewallsSchema,
   firewallApiSchema,
-  firewallPolicyValueSchema,
   firewallSchema,
   networkPolicySchema,
   networkPoliciesSchema,
@@ -81,6 +80,9 @@ export const PI_MODEL_CONFIG_LEGACY_GENERATION = 1;
 // Existing versioned writers stay on generation 2 until their activation slice.
 export const PI_MODEL_CONFIG_CURRENT_GENERATION = 2;
 export const PI_MODEL_CONFIG_DIALECT_TIER_GENERATION = 3;
+// Generation 4 was the retired native carrier; Runners built before its
+// removal may still advertise it, so OpenRouter Chat Completions skips to 5.
+export const PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION = 5;
 export const RUNNER_CLAIM_PI_MODEL_CONFIG_GENERATIONS_MAX = 8;
 /**
  * Minimum `@okouai/cli` version boundary for `__agent-loop` launch-payload
@@ -185,19 +187,6 @@ export const runnerInstalledVersionsSchema = z
   })
   .strict()
   .readonly();
-
-export const builtInModelProviderConnectionSourceSchema = z.enum([
-  "provider_response",
-  "upstream_transport",
-]);
-
-const BUILT_IN_MODEL_PROVIDER_RETRY_AFTER_MAX_SECONDS = 300;
-const builtInModelProviderRetryAfterSecondsSchema = z
-  .number()
-  .int()
-  .positive()
-  .max(BUILT_IN_MODEL_PROVIDER_RETRY_AFTER_MAX_SECONDS)
-  .optional();
 
 /**
  * Atomic advisory decision for cross-runner reuse coordination. A preferred
@@ -435,90 +424,6 @@ export const connectorRuntimeSyncResultSchema = z.union([
   connectorRuntimeCustomUnresolvedResultSchema,
   connectorRuntimeCustomAbsentResultSchema,
 ]);
-const connectorPermissionNameListSchema = z
-  .array(z.string().min(1))
-  .superRefine((names, context) => {
-    if (new Set(names).size !== names.length) {
-      context.addIssue({
-        code: "custom",
-        message: "Connector permission names must be unique",
-      });
-    }
-  });
-const connectorPermissionDefaultOverridesSchema = z
-  .object({
-    allow: connectorPermissionNameListSchema.optional(),
-    deny: connectorPermissionNameListSchema.optional(),
-    ask: connectorPermissionNameListSchema.optional(),
-  })
-  .strict();
-const connectorPermissionBaselineEntrySchema = z
-  .object({
-    permissionNames: connectorPermissionNameListSchema,
-    defaultPolicy: z
-      .object({
-        permissionDefault: firewallPolicyValueSchema,
-        permissionOverrides:
-          connectorPermissionDefaultOverridesSchema.optional(),
-        unknownPolicy: firewallPolicyValueSchema,
-      })
-      .strict(),
-  })
-  .strict()
-  .superRefine((entry, context) => {
-    const permissionNames = new Set(entry.permissionNames);
-    const overrideNames = Object.values(
-      entry.defaultPolicy.permissionOverrides ?? {},
-    ).flat();
-    if (new Set(overrideNames).size !== overrideNames.length) {
-      context.addIssue({
-        code: "custom",
-        path: ["defaultPolicy", "permissionOverrides"],
-        message: "Connector permission overrides must not overlap",
-      });
-    }
-    for (const permissionName of overrideNames) {
-      if (!permissionNames.has(permissionName)) {
-        context.addIssue({
-          code: "custom",
-          path: ["defaultPolicy", "permissionOverrides"],
-          message: "Connector permission override must name a permission",
-        });
-      }
-    }
-  });
-const connectorCatalogDigestSchema = z.string().regex(/^sha256:[a-f0-9]{64}$/u);
-const connectorCatalogBackendVersionSchema = z
-  .string()
-  .regex(/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/u);
-const connectorCatalogBuildCommitShaSchema = z
-  .string()
-  .regex(/^[a-f0-9]{40}$/u);
-
-export const storedConnectorPermissionBaselineSchema = z
-  .object({
-    version: z.literal(1),
-    catalogIdentity: z
-      .object({
-        sourceId: z.string().min(1),
-        schemaVersion: z.number().int().positive(),
-        catalogVersion: z.string().min(1),
-        catalogDigest: connectorCatalogDigestSchema,
-        capabilityDigest: connectorCatalogDigestSchema,
-      })
-      .strict(),
-    validationAuthority: z
-      .object({
-        backendVersion: connectorCatalogBackendVersionSchema,
-        buildCommitSha: connectorCatalogBuildCommitShaSchema.nullable(),
-      })
-      .strict(),
-    connectors: z.record(
-      connectorSlugSchema,
-      connectorPermissionBaselineEntrySchema,
-    ),
-  })
-  .strict();
 const runnerBuiltinFirewallNameSchema = z
   .string()
   .min(1)
@@ -643,7 +548,6 @@ export const storageMountEntrySchema = z
     archiveUrl: z.string().optional(),
     archiveSize: archiveSizeSchema.optional(),
     empty: z.boolean().optional(),
-    baselineCandidate: z.literal(true).optional(),
     instructionsTargetFilename: z.string().optional(),
     missingRootPolicy: artifactMissingRootPolicySchema.optional(),
     writeback: z.boolean().optional(),
@@ -673,13 +577,6 @@ export const storageMountEntrySchema = z
         code: z.ZodIssueCode.custom,
         path: ["instructionsTargetFilename"],
         message: "instructionsTargetFilename is not valid for writeback mounts",
-      });
-    }
-    if (writeback && mount.baselineCandidate === true) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["baselineCandidate"],
-        message: "baselineCandidate is not valid for writeback mounts",
       });
     }
     if (!writeback && mount.missingRootPolicy !== undefined) {
@@ -922,27 +819,6 @@ export const piResourceSnapshotSchema = z.discriminatedUnion("schemaVersion", [
   piResourceSnapshotV2Schema,
 ]);
 
-export const piLangfuseParentSchema = z
-  .object({
-    traceId: z
-      .string()
-      .regex(/^[a-f0-9]{32}$/)
-      .refine((value) => {
-        return !/^0+$/.test(value);
-      }, "Trace ID must be non-zero"),
-    spanId: z
-      .string()
-      .regex(/^[a-f0-9]{16}$/)
-      .refine((value) => {
-        return !/^0+$/.test(value);
-      }, "Span ID must be non-zero"),
-    traceFlags: z.literal(1),
-    sessionId: z.uuid(),
-    sandboxWaitStartedAt: z.number().int().nonnegative(),
-  })
-  .strict()
-  .readonly();
-
 /**
  * Installed-CLI launch requirements the API captured for a Pi run. The guest
  * execs the rootfs-installed CLI only when it matches the session
@@ -1130,10 +1006,37 @@ export const piModelConfigV3Schema = z
   ])
   .readonly();
 
+/**
+ * OpenRouter Chat Completions route. It has one public API-key binding and no
+ * request service tier; an OpenRouter Preset owns reasoning and routing policy.
+ */
+export const piModelConfigV5Schema = z
+  .object({
+    schemaVersion: z.literal(PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION),
+    dialect: z.literal("openai-completions"),
+    transport: z.literal("sse"),
+    provider: z.literal("openrouter"),
+    baseUrl: z.url(),
+    model: z.string().min(1).max(512),
+    catalogModel: z.string().min(1).max(512).optional(),
+    thinkingLevel: z
+      .enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"])
+      .optional(),
+    credentialBindings: z
+      .array(piModelCredentialBindingSchema)
+      .length(1)
+      .refine((bindings) => {
+        return bindings[0]?.kind === "api-key";
+      }, "Chat Completions requires exactly one API-key binding"),
+  })
+  .strict()
+  .readonly();
+
 export const piModelConfigSchema = z.union([
   piModelConfigLegacySchema,
   piModelConfigV2Schema,
   piModelConfigV3Schema,
+  piModelConfigV5Schema,
 ]);
 
 const lowercaseSha256Schema = z.string().regex(/^[a-f0-9]{64}$/u);
@@ -1312,9 +1215,6 @@ const storedExecutionContextObjectSchema = z.object({
   // Stable connector targets pinned for this run. The runner owns this list
   // after claim independently of whether each target is currently available.
   connectorRuntimeTargets: connectorRuntimeTargetsSchema,
-  // API-only catalog-derived permission defaults for claim-time grant refresh.
-  connectorPermissionBaseline:
-    storedConnectorPermissionBaselineSchema.optional(),
   // Tools to disable in Claude CLI (passed as --disallowed-tools)
   disallowedTools: z.array(z.string()).optional(),
   // Tools to make available in Claude CLI (passed as --tools)
@@ -1331,10 +1231,11 @@ const storedExecutionContextObjectSchema = z.object({
   // Total-input threshold (input + cache read + cache creation) at which
   // `modelUsageProvider` usage bills the `.long_context` categories, captured
   // by the API from the run's Built-in route
-  // (`model_routes.long_context_min_total_input_tokens`). `0` is explicit:
-  // the route bills a single tier and the proxy must not consult its generated
-  // map. Absent: an API without catalog thresholds; only then does the proxy
-  // fall back to its generated map keyed by `modelUsageProvider`.
+  // (`model_routes.long_context_min_total_input_tokens`). `0` explicitly marks
+  // a single-tier route. Without a usable positive captured threshold, the
+  // addon selects the base tier; it does not reconstruct a threshold. This
+  // is not supported pre-catalog pricing compatibility; see
+  // docs/deployment-compatibility.md for deployment order and rollback limits.
   modelUsageLongContextMinTotalInputTokens: z
     .number()
     .int()
@@ -1351,21 +1252,9 @@ const storedExecutionContextObjectSchema = z.object({
   piInstalledCliRequirement: piInstalledCliRequirementSchema.optional(),
 });
 
+/** Reads persisted execution contexts while stripping unknown writer metadata. */
 export const storedExecutionContextSchema =
   storedExecutionContextObjectSchema.superRefine(requireCompletePiFields);
-
-/**
- * Tolerant reader for execution contexts already persisted in a database or
- * encrypted queue payload. The optional baseline is derived performance data,
- * so malformed or future versions must remain an independent cache miss rather
- * than invalidating the complete queued execution context.
- */
-export const compatibleStoredExecutionContextSchema =
-  storedExecutionContextObjectSchema
-    .extend({
-      connectorPermissionBaseline: z.unknown().optional(),
-    })
-    .superRefine(requireCompletePiFields);
 
 /**
  * Claim-time reader that inspects Pi generation support before decoding the
@@ -1374,7 +1263,6 @@ export const compatibleStoredExecutionContextSchema =
 export const claimCompatibleStoredExecutionContextSchema =
   storedExecutionContextObjectSchema
     .extend({
-      connectorPermissionBaseline: z.unknown().optional(),
       piModelConfig: z.unknown().optional(),
     })
     .superRefine(requireCompletePiFields);
@@ -1451,10 +1339,11 @@ const executionContextObjectSchema = z.object({
   // Total-input threshold (input + cache read + cache creation) at which
   // `modelUsageProvider` usage bills the `.long_context` categories, captured
   // by the API from the run's Built-in route
-  // (`model_routes.long_context_min_total_input_tokens`). `0` is explicit:
-  // the route bills a single tier and the proxy must not consult its generated
-  // map. Absent: an API without catalog thresholds; only then does the proxy
-  // fall back to its generated map keyed by `modelUsageProvider`.
+  // (`model_routes.long_context_min_total_input_tokens`). `0` explicitly marks
+  // a single-tier route. Without a usable positive captured threshold, the
+  // addon selects the base tier; it does not reconstruct a threshold. This
+  // is not supported pre-catalog pricing compatibility; see
+  // docs/deployment-compatibility.md for deployment order and rollback limits.
   modelUsageLongContextMinTotalInputTokens: z
     .number()
     .int()
@@ -1581,68 +1470,6 @@ export const runnersCancellationContract = c.router({
       500: apiErrorSchema,
     },
     summary: "Read the stop intent or confirmed absence of a claimed Run",
-  },
-});
-
-export const runnersModelProviderFailuresContract = c.router({
-  report: {
-    method: "POST",
-    path: "/api/runners/runs/:runId/model-provider-failures",
-    headers: authHeadersSchema,
-    pathParams: z.object({
-      runId: z.uuid(),
-    }),
-    body: z.discriminatedUnion("failureKind", [
-      z
-        .object({
-          failureKind: z.literal("authentication"),
-          retryAfterSeconds: builtInModelProviderRetryAfterSecondsSchema,
-        })
-        .strict(),
-      z
-        .object({
-          failureKind: z.literal("billing"),
-          retryAfterSeconds: builtInModelProviderRetryAfterSecondsSchema,
-        })
-        .strict(),
-      z
-        .object({
-          failureKind: z.literal("rate_limit"),
-          retryAfterSeconds: builtInModelProviderRetryAfterSecondsSchema,
-        })
-        .strict(),
-      z
-        .object({
-          failureKind: z.literal("provider_unavailable"),
-          retryAfterSeconds: builtInModelProviderRetryAfterSecondsSchema,
-        })
-        .strict(),
-      z
-        .object({
-          failureKind: z.literal("timeout"),
-          retryAfterSeconds: builtInModelProviderRetryAfterSecondsSchema,
-        })
-        .strict(),
-      z
-        .object({
-          failureKind: z.literal("connection"),
-          connectionSource: builtInModelProviderConnectionSourceSchema,
-          retryAfterSeconds: builtInModelProviderRetryAfterSecondsSchema,
-        })
-        .strict(),
-    ]),
-    responses: {
-      200: z
-        .object({
-          outcome: z.enum(["recorded", "observed", "ignored"]),
-        })
-        .strict(),
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      500: apiErrorSchema,
-    },
-    summary: "Report a built-in model provider failure for a run",
   },
 });
 
@@ -1825,8 +1652,6 @@ export const runnersHeartbeatContract = c.router({
 
 export type RunnersPollContract = typeof runnersPollContract;
 export type RunnersJobClaimContract = typeof runnersJobClaimContract;
-export type RunnersModelProviderFailuresContract =
-  typeof runnersModelProviderFailuresContract;
 export type RunnersSteerContract = typeof runnersSteerContract;
 export type RunnersConnectorRuntimeSyncContract =
   typeof runnersConnectorRuntimeSyncContract;
@@ -1849,6 +1674,7 @@ export type PiModelConfig = z.infer<typeof piModelConfigSchema>;
 export type PiModelConfigLegacy = z.infer<typeof piModelConfigLegacySchema>;
 export type PiModelConfigV2 = z.infer<typeof piModelConfigV2Schema>;
 export type PiModelConfigV3 = z.infer<typeof piModelConfigV3Schema>;
+export type PiModelConfigV5 = z.infer<typeof piModelConfigV5Schema>;
 export type PiModelCredentialBinding = z.infer<
   typeof piModelCredentialBindingSchema
 >;
@@ -1868,17 +1694,10 @@ export type PiMemoryRecallSelection = z.infer<
 export type PiInstalledCliRequirement = z.infer<
   typeof piInstalledCliRequirementSchema
 >;
-export type PiLangfuseParent = z.infer<typeof piLangfuseParentSchema>;
 export type PiResourceSnapshot = z.infer<typeof piResourceSnapshotSchema>;
 export type PiLaunchPayload = z.infer<typeof piLaunchPayloadSchema>;
-export type CompatibleStoredExecutionContext = z.infer<
-  typeof compatibleStoredExecutionContextSchema
->;
 export type ClaimCompatibleStoredExecutionContext = z.infer<
   typeof claimCompatibleStoredExecutionContextSchema
->;
-export type StoredConnectorPermissionBaseline = z.infer<
-  typeof storedConnectorPermissionBaselineSchema
 >;
 export type NetworkPolicyRefresh = z.infer<typeof networkPolicyRefreshSchema>;
 export type ConnectorRuntimeTarget = z.infer<

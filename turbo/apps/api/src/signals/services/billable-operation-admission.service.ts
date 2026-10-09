@@ -5,7 +5,6 @@ import {
   resolveActiveRunCreditAdmission,
   resolveOrgCreditAvailability,
 } from "./run-admission.service";
-import { resolveUsageAllowanceAvailability$ } from "./usage-allowance-availability.service";
 
 export const checkBillableOperationCredits$ = command(
   async (
@@ -37,19 +36,8 @@ export const checkBillableOperationCredits$ = command(
     if (activeRunAdmission) {
       return true;
     }
-    if (
-      availability.usagePackCredits > 0 ||
-      availability.spendableCredits > 0
-    ) {
-      return true;
-    }
-
-    const allowance = await set(
-      resolveUsageAllowanceAvailability$,
-      args.orgId,
-      signal,
+    return (
+      availability.usagePackCredits > 0 || availability.spendableCredits > 0
     );
-    signal.throwIfAborted();
-    return (allowance?.remainingUnits ?? 0) > 0;
   },
 );

@@ -180,7 +180,7 @@ function setupPermissionEditor(
 }
 
 function roleElementByText(
-  role: "button" | "menuitem",
+  role: "button" | "menuitemradio",
   text: string,
   container: ParentNode = document.body,
 ): HTMLElement {
@@ -197,7 +197,7 @@ function roleElementByText(
 }
 
 async function waitForRoleElementByText(
-  role: "button" | "menuitem",
+  role: "button" | "menuitemradio",
   text: string,
   container: ParentNode = document.body,
 ): Promise<HTMLElement> {
@@ -288,7 +288,7 @@ async function chooseDuration(
   option: "Allow always" | "Allow for 1h" | "Allow for 7d" | "Allow for 24h",
 ): Promise<void> {
   click(within(drawer).getByLabelText(`${permission} allow options`));
-  const menuItem = await waitForRoleElementByText("menuitem", option);
+  const menuItem = await waitForRoleElementByText("menuitemradio", option);
   click(menuItem);
 }
 

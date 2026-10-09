@@ -11,7 +11,8 @@ import {
   or,
 } from "drizzle-orm";
 
-import type { Db } from "../external/db";
+import { QueryBuilder } from "drizzle-orm/pg-core";
+
 import { BILLING_PURCHASE_PREVIEW_TTL_MS } from "./billing-purchase-preview-token.service";
 
 /**
@@ -45,15 +46,12 @@ const TERMINAL_USAGE_PACK_SUBSCRIPTION_STATUSES = [
  * snapshot whose subscription is being created, or a live usage-pack
  * subscription other than the purchase's own source subscription.
  */
-export function inFlightUsagePackPurchaseQuery(
-  db: Pick<Db, "select">,
-  args: {
-    readonly orgId: string;
-    readonly sourceSubscriptionId: string | null;
-    readonly excludeUsagePackSubscriptionId: string | null;
-  },
-) {
-  return db
+export function inFlightUsagePackPurchaseQuery(args: {
+  readonly orgId: string;
+  readonly sourceSubscriptionId: string | null;
+  readonly excludeUsagePackSubscriptionId: string | null;
+}) {
+  return new QueryBuilder()
     .select({ id: usagePackSubscriptions.id })
     .from(usagePackSubscriptions)
     .where(
@@ -89,12 +87,8 @@ export function inFlightUsagePackPurchaseQuery(
 }
 
 /** A fresh, unpublished Plan purchase claim on the organization row. */
-export function inFlightPlanPurchaseQuery(
-  db: Pick<Db, "select">,
-  orgId: string,
-  staleBefore: Date,
-) {
-  return db
+export function inFlightPlanPurchaseQuery(orgId: string, staleBefore: Date) {
+  return new QueryBuilder()
     .select({ orgId: orgMetadata.orgId })
     .from(orgMetadata)
     .where(

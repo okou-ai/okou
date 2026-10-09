@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.11](https://github.com/okou-ai/okou/compare/runner-network-v0.2.10...runner-network-v0.2.11) (2026-10-09)
+
+## [0.2.10](https://github.com/okou-ai/okou/compare/runner-network-v0.2.9...runner-network-v0.2.10) (2026-10-08)
+
+## [0.2.9](https://github.com/okou-ai/okou/compare/runner-network-v0.2.8...runner-network-v0.2.9) (2026-10-08)
+
+## [0.2.8](https://github.com/okou-ai/okou/compare/runner-network-v0.2.7...runner-network-v0.2.8) (2026-10-08)
+
+
+### Refactoring
+
+* assemble current run inputs without agent configuration ([#38004](https://github.com/okou-ai/okou/issues/38004)) ([22efd4b](https://github.com/okou-ai/okou/commit/22efd4b6b34872c0585a0d4c3778cb3b59d9d100))
+
 ## [0.2.7](https://github.com/okou-ai/okou/compare/runner-network-v0.2.6...runner-network-v0.2.7) (2026-10-08)
 
 ## [0.2.6](https://github.com/okou-ai/okou/compare/runner-network-v0.2.5...runner-network-v0.2.6) (2026-10-07)

@@ -58,6 +58,10 @@ import { db$ } from "../external/db";
 
 import { createConnectorRuntimeSelection } from "./connector-catalog-entries.service";
 import { agentConnectorScopeFromRows } from "./agent-connector-scope.service";
+import {
+  createAuthorizedConnectors,
+  type AuthorizedConnectors,
+} from "./authorized-connectors.service";
 import type { ConnectorRuntimeSelection } from "./connector-catalog-runtime.service";
 import type { CustomConnectorExecutionDefinition } from "./custom-connector-definition-selection";
 import { customConnectorPermissionBundleDependencySlug } from "./custom-connector-permission-bundle.service";
@@ -81,10 +85,6 @@ import {
   executionOrgSlots,
 } from "./execution-org-context.service";
 import { ORG_SENTINEL_USER_ID } from "./feature-switch-scope";
-import {
-  createUsageAllowanceContext,
-  type UsageAllowanceContext,
-} from "./usage-allowance-context.service";
 
 import { now } from "../../lib/time";
 import {
@@ -123,7 +123,6 @@ export interface AgentRunContextSignals {
   readonly orgMetadata$: Computed<Promise<RunOrgMetadata | null>>;
   readonly plan$: Computed<Promise<OrgPlanCapabilities | null>>;
   readonly concurrencyCapacity$: Computed<Promise<number>>;
-  readonly allowance$: Computed<Promise<UsageAllowanceContext>>;
   readonly credits$: Computed<Promise<ExecutionCreditBalance | null>>;
   readonly modelFacts$: Computed<Promise<OrgModelBootstrap>>;
   readonly memberModels$: Computed<Promise<MemberModelBootstrap>>;
@@ -131,6 +130,7 @@ export interface AgentRunContextSignals {
   readonly modelPricing$: ReturnType<typeof createModelPricing>;
   readonly memberMetadata$: Computed<Promise<ExecutionMemberMetadata>>;
   readonly connectorSelection$: Computed<Promise<AgentConnectorSelection>>;
+  readonly authorizedConnectors$: Computed<Promise<AuthorizedConnectors>>;
   readonly permissionGrants$: Computed<
     Promise<readonly ConnectorPermissionGrant[]>
   >;
@@ -408,8 +408,6 @@ function createOrgContext(
       return Number.isFinite(limit) ? limit : 0;
     });
   const modelCatalog$ = globalReferences.catalog$;
-  const allowance$ =
-    sharedOrg?.allowance$ ?? createUsageAllowanceContext(orgId);
   const modelFacts$ =
     sharedOrg?.modelFacts$ ??
     computed(async (get) => {
@@ -426,7 +424,6 @@ function createOrgContext(
     orgMetadata$,
     plan$,
     concurrencyCapacity$,
-    allowance$,
     modelFacts$,
     globalReferences,
     memberModels$,
@@ -448,7 +445,6 @@ function createIdentityContext(
     orgMetadata$,
     plan$,
     concurrencyCapacity$,
-    allowance$,
     modelFacts$,
     globalReferences,
     memberModels$,
@@ -528,13 +524,13 @@ function createIdentityContext(
     orgMetadata$,
     plan$,
     concurrencyCapacity$,
-    allowance$,
     credits$,
     modelFacts$,
     memberModels$,
     ...modelSources,
     memberMetadata$,
     connectorSelection$: connectorContext.connectorSelection$,
+    authorizedConnectors$: connectorContext.authorizedConnectors$,
     permissionGrants$,
     workflows$,
     officialCatalog$,
@@ -563,6 +559,7 @@ export const preloadAgentRunContext$ = command(
     // All nodes start in this turn; the starter awaits none of them.
     const nodes: readonly Computed<Promise<unknown>>[] = [
       signals.catalog$,
+      signals.authorizedConnectors$,
       signals.connectors$,
       signals.storage$,
       signals.agent$,
@@ -570,7 +567,6 @@ export const preloadAgentRunContext$ = command(
       signals.orgMetadata$,
       signals.plan$,
       signals.concurrencyCapacity$,
-      signals.allowance$,
       signals.credits$,
       signals.modelFacts$,
       signals.memberModels$,
@@ -1011,6 +1007,10 @@ function createConnectorContextGroups(
     };
   });
   const catalog$ = createConnectorRuntimeSelection(requested$);
+  const authorizedConnectors$ = createAuthorizedConnectors(
+    connectorSelection$,
+    catalog$,
+  );
   const connectors$ = computed(async (get): Promise<BootstrapConnectorData> => {
     const snapshot = await get(connectorSnapshot$);
     return {
@@ -1021,6 +1021,7 @@ function createConnectorContextGroups(
   });
   return {
     connectorSelection$,
+    authorizedConnectors$,
     permissionGrants$,
     workflows$,
     environmentSnapshot$,

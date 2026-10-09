@@ -2,7 +2,7 @@ import {
   artifactVisibilityUnavailable,
   type badRequestMessage,
 } from "../../lib/error";
-import { privateArtifactCreationEnabled } from "../services/private-artifact-storage.service";
+import { privateArtifactCreationEnabled$ } from "../services/private-artifact-storage.service";
 import { randomUUID } from "node:crypto";
 
 import { command } from "ccstate";
@@ -398,7 +398,11 @@ const startImageProviderJob$ = command(
 );
 
 const prepareImageRequest$ = command(
-  async ({ get }, requirePrivateArtifact: boolean, signal: AbortSignal) => {
+  async (
+    { get, set },
+    requirePrivateArtifact: boolean,
+    signal: AbortSignal,
+  ) => {
     const auth = get(organizationAuthContext$);
     const db = get(db$);
     const bodyResult = await get(imageBody$);
@@ -410,7 +414,12 @@ const prepareImageRequest$ = command(
     const privacyRequired =
       requirePrivateArtifact || bodyResult.data.requirePrivateArtifact === true;
     const requiredPrivateArtifacts = privacyRequired
-      ? await get(privateArtifactCreationEnabled(auth.orgId, auth.userId))
+      ? await set(
+          privateArtifactCreationEnabled$,
+          auth.orgId,
+          auth.userId,
+          signal,
+        )
       : undefined;
     signal.throwIfAborted();
     if (privacyRequired && !requiredPrivateArtifacts) {

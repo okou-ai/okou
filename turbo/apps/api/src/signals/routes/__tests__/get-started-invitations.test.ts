@@ -1,12 +1,11 @@
-import { randomUUID } from "node:crypto";
 import { billingUsagePackCreditsContract } from "@okouai/api-contracts/contracts/billing";
 import { getStartedContract } from "@okouai/api-contracts/contracts/get-started";
 import { orgInviteContract } from "@okouai/api-contracts/contracts/org-member-routes";
-import { testUsageSettlementContract } from "@okouai/api-contracts/contracts/test-usage-settlement";
 import { webhookClerkContract } from "@okouai/api-contracts/contracts/webhooks";
+import { randomUUID } from "node:crypto";
+import { Webhook } from "svix";
 import { beforeEach, expect, test, vi } from "vitest";
 import { z } from "zod";
-import { Webhook } from "svix";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
@@ -14,8 +13,8 @@ import { nowDate } from "../../../lib/time";
 import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
 import { getStartedRoutes } from "../get-started";
 import { orgInviteRoutes } from "../org-invite";
-import { testUsageSettlementRoutes } from "../test-usage-settlement";
 import { webhooksClerkRoutes } from "../webhooks-clerk";
+import { createBddApi } from "./helpers/api-bdd";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -60,12 +59,8 @@ beforeEach(async () => {
 
 async function org(userId = `user_${randomUUID()}`) {
   const orgId = `org_${randomUUID()}`;
-  await accept(
-    setupApp({ context, routes: testUsageSettlementRoutes })(
-      testUsageSettlementContract,
-    ).setup({ body: { org_id: orgId, credits: 0 } }),
-    [200],
-  );
+  const api = createBddApi(context);
+  await api.completeOnboarding(api.user({ userId, orgId }));
   mocks.clerk.session(userId, orgId);
   return { userId, orgId };
 }

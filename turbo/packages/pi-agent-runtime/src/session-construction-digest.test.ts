@@ -24,7 +24,7 @@ describe("Pi session construction digest", () => {
 
   it("covers verified limit corrections as well as prompt and tool profiles", async () => {
     const document = await computePiSessionConstructionDocument();
-    expect(document.version).toBe(2);
+    expect(document.version).toBe(3);
     expect(document.modelLimitOverrides).toStrictEqual(
       PI_MODEL_LIMIT_OVERRIDES,
     );
@@ -32,12 +32,13 @@ describe("Pi session construction digest", () => {
 
   it("isolates returned limit snapshots from live models and later digests", async () => {
     const config = {
-      provider: "openrouter",
-      model: "deepseek/deepseek-v4.1-flash",
+      provider: "openai-codex",
+      model: "gpt-6.1-sol",
       baseUrl: "https://snapshot.example.test",
       apiKey: "snapshot-isolation-test",
-      dialect: "openai-responses",
+      dialect: "openai-codex-responses",
       transport: "sse",
+      accountId: "snapshot-isolation-account",
     } as const;
     const original = resolvePiAgentModel(config);
     if (!original) throw new Error("Missing snapshot test model");
@@ -49,18 +50,15 @@ describe("Pi session construction digest", () => {
     const document = await computePiSessionConstructionDocument();
 
     // JavaScript tooling may transform the returned document despite readonly types.
-    Object.assign(
-      document.modelLimitOverrides.openrouter["deepseek/deepseek-v4.1-flash"],
-      {
-        contextWindow: 4_096,
-        maxTokens: 2_048,
-      },
-    );
+    Object.assign(document.modelLimitOverrides["openai-codex"]["gpt-6.1-sol"], {
+      contextWindow: 4_096,
+      maxTokens: 2_048,
+    });
 
     expect(resolvePiAgentModel(config)).toMatchObject(limits);
     const next = await computePiSessionConstructionDocument();
     expect(
-      next.modelLimitOverrides.openrouter["deepseek/deepseek-v4.1-flash"],
+      next.modelLimitOverrides["openai-codex"]["gpt-6.1-sol"],
     ).toStrictEqual(limits);
     expect(await computePiSessionConstructionDigest()).toBe(digest);
   });

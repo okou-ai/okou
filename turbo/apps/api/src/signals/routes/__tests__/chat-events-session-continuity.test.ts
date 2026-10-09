@@ -36,6 +36,7 @@ const {
   waitForThreadMessages,
   waitForRunStatus,
   completeChatRunOk,
+  failChatRun,
   cancelChatRun,
 } = createChatEventsFixture(context);
 
@@ -439,7 +440,44 @@ describe("CHAT-02: run-level model overrides", () => {
     await cancelChatRun(actor, second.runId);
   }, 90_000);
 
-  it("keeps the application session when oversized native history is discarded", async () => {
+  it("keeps incomplete context without rotating after a failure before the first native checkpoint", async () => {
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+
+    const firstPrompt = "complete the migration without losing this request";
+    const first = await sendChatRun(actor, {
+      agentId,
+      prompt: firstPrompt,
+      model: "claude-fable-5-1",
+    });
+    const firstClaim = await claimChatRun(runnerGroup, first.runId);
+    await failChatRun(
+      first.runId,
+      firstClaim.sandboxHeaders,
+      "Runtime failed before its first checkpoint",
+    );
+    await waitForRunStatus(actor, first.runId, "failed");
+
+    const second = await sendChatRun(actor, {
+      agentId,
+      threadId: first.threadId,
+      prompt: "retry with the same model",
+      model: "claude-fable-5-1",
+    });
+    const secondRun = await api.readRun(actor, second.runId);
+    const appended = secondRun.appendSystemPrompt ?? "";
+    expect(appended).not.toContain("# Web Chat Run Context");
+    expect(appended).toContain("# Incomplete Rounds Context");
+    expect(appended).toContain(`User: ${firstPrompt}`);
+
+    const secondClaim = await claimChatRun(runnerGroup, second.runId);
+    expect(secondClaim.claim.cliAgentType).toBe(firstClaim.claim.cliAgentType);
+    expect(secondClaim.claim.resumeSession).toBeNull();
+    chatCallbacks.mockChatOutputEvents([]);
+    await completeChatRunOk(second.runId, secondClaim.sandboxHeaders);
+  }, 90_000);
+
+  it("keeps the application session without rotating when oversized native history is discarded", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
@@ -473,6 +511,11 @@ describe("CHAT-02: run-level model overrides", () => {
     );
     await flushWaitUntilForTest();
     await waitForRunStatus(actor, first.runId, "completed");
+    const originalSession = await readCompletedRunSessionId(
+      context,
+      actor,
+      first.runId,
+    );
 
     const second = await sendChatRun(actor, {
       agentId,
@@ -481,13 +524,17 @@ describe("CHAT-02: run-level model overrides", () => {
     });
     const secondRun = await api.readRun(actor, second.runId);
     const appended = secondRun.appendSystemPrompt ?? "";
-    expect(appended).toContain("# Web Chat Run Context");
-    expect(appended).toContain(firstPrompt);
-    expect(appended).toContain(firstAnswer);
+    expect(appended).not.toContain("# Web Chat Run Context");
+    expect(appended).not.toContain(firstPrompt);
+    expect(appended).not.toContain(firstAnswer);
 
     const secondClaim = await claimChatRun(runnerGroup, second.runId);
     expect(secondClaim.claim.resumeSession).toBeNull();
-    await cancelChatRun(actor, second.runId, secondClaim.sandboxHeaders);
+    chatCallbacks.mockChatOutputEvents([]);
+    await completeChatRunOk(second.runId, secondClaim.sandboxHeaders);
+    await expect(
+      readCompletedRunSessionId(context, actor, second.runId),
+    ).resolves.toBe(originalSession);
   }, 90_000);
 
   it("resumes a sticky model through personal credential replacement and reconnect", async () => {

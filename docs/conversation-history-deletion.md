@@ -75,8 +75,11 @@ database transaction.
   hostname allowlist. `DEV_BENCH_SEED_ALLOW_NON_LOCAL=1` explicitly overrides that
   gate; it is not unconditionally production-safe and is not a production
   deletion entry point.
-- Direct deletes in test suites belong to isolated fixtures. The candidate
-  accounting suite uses per-test schemas with the real relevant FK definitions.
+- Test isolation does not authorize direct application-row construction or
+  observation. [#37440 batch 004](implementation/issue-37440-batches/batch-004.md)
+  retires the candidate accounting suite's private schemas, fabricated ledger
+  states and internal cascade drivers. Remaining test routes/fixtures above are
+  historical caller inventory, not approved public test boundaries.
 
 ## Lock composition and overlap
 
@@ -109,15 +112,19 @@ a checkpoint on a _different_ run can already hold a shared blob and then wait
 for a surviving session locked by deletion's `SET NULL`. Waiting for that blob
 would reverse the session/blob order. NOWAIT aborts deletion with SQLSTATE 55P03
 and preserves the existing conflict/retry boundary instead of enlarging a
-timeout. Deterministic tests exercise this exact checkpoint operation with
-transaction gates and observed database blocking, then verify a successful retry.
+timeout. The original implementation validation exercised this checkpoint
+operation with
+transaction gates and observed database blocking, then a successful retry.
+That historical evidence is not permission to introduce private lock controls
+into API tests under the current #37440 construction rule.
 
 In-flight old deletion code can still leak until it drains. It cannot make the
 new helper decrement twice: run locks and actual removed rows arbitrate ownership.
 Candidate cleanup remains independent of source-run deletion. The census found
-no production blob-deleting GC implementation; tests cover transaction visibility
-with a zero-count GC delete and the existing candidate FK protection, not a
-claimed production GC job execution.
+no production blob-deleting GC implementation; the original tests checked
+transaction visibility
+with a zero-count GC delete and the existing candidate FK protection. This was
+not evidence of a production GC job execution.
 
 ## Query bounds and measured cost
 
@@ -153,8 +160,8 @@ these numbers compare statement shapes, not complete production transactions.
 
 Those temporary tables reproduce production columns, defaults and indexes but
 omit FK triggers and check constraints. Migrated-schema deletion and accounting
-tests separately verify integrity, rollback and reference release. These local
-plans are cost evidence, not production latency estimates. The measurements
+tests separately checked integrity, rollback and reference release at that time.
+These local plans are cost evidence, not production latency estimates. The measurements
 below predate this array rewrite and retain the old batched query shape.
 
 ### Historical batched-helper measurements, 2026-09-15
@@ -208,12 +215,21 @@ behavior. Existing candidate retirement rollback floors still apply.
 
 ## Verification and ownership handoff
 
-Targeted ledger tests cover 2 -> 1 -> 0 independent ownership, run/session/agent
-cascades, shared hashes across batches, survivors, inline/null history, no-op,
-missing/insufficient ledger rollback, late failure, candidate contention and GC
-visibility. API tests use actual Agent deletion, verified Clerk webhooks,
-checkpoint/combined-completion and threadless sweep. Existing Agent interlock,
-Clerk, browser and cron regressions cover neighboring lifecycle behavior.
+The original targeted ledger tests checked 2 -> 1 -> 0 independent ownership,
+run/session/agent cascades, shared hashes across batches, survivors, inline/null
+history, no-op, missing/insufficient ledger rollback, late failure, candidate
+contention and GC visibility. Batch 004 removes the privately constructed
+candidate-accounting declarations and their exact SQL/internal assertions;
+its manifest records each lost guarantee. Production reference accounting,
+parent locks, constraints, migrations and operator SQL remain unchanged.
+
+Retained tests must establish their whole scenario through normal user APIs,
+genuine Clerk webhooks or authenticated Runner flows and observe public
+responses or external effects. A private seed followed by a real deletion route,
+or a protected cron, does not qualify. The remaining Agent interlock, Clerk,
+browser and cron tests are not collectively certified by this batch. The
+following limitations remain historical implementation receipts, not claims
+that the removed ledger suite is still executed:
 
 Local validation limitations: four expanded browser/Clerk/storage regressions
 fail before deletion with `Job not found in queue`, identically on the unchanged

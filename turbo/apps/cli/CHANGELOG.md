@@ -1,5 +1,101 @@
 # Changelog
 
+## [9.380.1](https://github.com/okou-ai/okou/compare/cli-v9.380.0...cli-v9.380.1) (2026-10-09)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.542.1
+    * @okouai/core bumped to 8.737.1
+    * @okouai/pi-agent-runtime bumped to 1.47.1
+
+## [9.380.0](https://github.com/okou-ai/okou/compare/cli-v9.379.0...cli-v9.380.0) (2026-10-09)
+
+
+### Features
+
+* prepare model identity compatibility without switching writes ([#38092](https://github.com/okou-ai/okou/issues/38092)) ([21177df](https://github.com/okou-ai/okou/commit/21177dfd37bc19114098a628a094adb67fb60db0))
+
+
+### Refactoring
+
+* **runner:** bind cli identity to package bytes for rootfs hashing ([#37967](https://github.com/okou-ai/okou/issues/37967)) ([3698acc](https://github.com/okou-ai/okou/commit/3698acc28545e383a9357ea354ac1db8c51523dc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.542.0
+    * @okouai/core bumped to 8.737.0
+    * @okouai/pi-agent-runtime bumped to 1.47.0
+
+## [9.379.0](https://github.com/okou-ai/okou/compare/cli-v9.378.26...cli-v9.379.0) (2026-10-08)
+
+
+### Features
+
+* **notify:** add agent-controlled mail notifications ([#38093](https://github.com/okou-ai/okou/issues/38093)) ([702c270](https://github.com/okou-ai/okou/commit/702c270169c8de738aa9f47ed5480ed377edcfda))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.541.0
+    * @okouai/core bumped to 8.736.0
+    * @okouai/pi-agent-runtime bumped to 1.46.27
+
+## [9.378.26](https://github.com/okou-ai/okou/compare/cli-v9.378.25...cli-v9.378.26) (2026-10-08)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.540.0
+    * @okouai/core bumped to 8.735.2
+    * @okouai/pi-agent-runtime bumped to 1.46.26
+
+## [9.378.25](https://github.com/okou-ai/okou/compare/cli-v9.378.24...cli-v9.378.25) (2026-10-08)
+
+
+### Bug Fixes
+
+* **maps:** explain oversized grounding responses ([#38046](https://github.com/okou-ai/okou/issues/38046)) ([9ea9cde](https://github.com/okou-ai/okou/commit/9ea9cde34b01d89bb258b44250ce4b17260cf37c)), closes [#36791](https://github.com/okou-ai/okou/issues/36791)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.539.1
+    * @okouai/core bumped to 8.735.1
+    * @okouai/pi-agent-runtime bumped to 1.46.25
+
+## [9.378.24](https://github.com/okou-ai/okou/compare/cli-v9.378.23...cli-v9.378.24) (2026-10-08)
+
+
+### Bug Fixes
+
+* **seo:** preserve dataforseo partial serp results ([#37961](https://github.com/okou-ai/okou/issues/37961)) ([b5d9654](https://github.com/okou-ai/okou/commit/b5d96542a902d7cad11325c86966f49746e41172))
+
+
+### Refactoring
+
+* **computer-use:** remove retired desktop plugins ([#37980](https://github.com/okou-ai/okou/issues/37980)) ([8b8928c](https://github.com/okou-ai/okou/commit/8b8928cdf85d4fb2243a9326194d7cfb3936d53c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.539.0
+    * @okouai/core bumped to 8.735.0
+    * @okouai/pi-agent-runtime bumped to 1.46.24
+
 ## [9.378.23](https://github.com/okou-ai/okou/compare/cli-v9.378.22...cli-v9.378.23) (2026-10-08)
 
 

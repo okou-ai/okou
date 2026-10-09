@@ -4,6 +4,8 @@ import { useTranslation } from "react-i18next";
 import { Check, ChevronDown, Coins, PlusCircle } from "lucide-react";
 import {
   Button,
+  buttonVariants,
+  cn,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -14,7 +16,8 @@ import { detach, Reason } from "../../signals/utils.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { isOrgAdmin$ } from "../../signals/org.ts";
 import { assistantName$ } from "../../signals/branding.ts";
-import { detachedNavigateTo$ } from "../../signals/route.ts";
+import { ROUTES } from "../../signals/route-paths.ts";
+import { Link } from "../router/link.tsx";
 import { openSettingsDialogAt$ } from "../../signals/okou-page/settings/settings-dialog.ts";
 import { slackOrgData$ } from "../../signals/okou-page/slack.ts";
 import {
@@ -50,7 +53,7 @@ function useCombinedCreditLabel(): string | null {
   if (orgCredits === null || packCredits === null) {
     return null;
   }
-  return formatLocalizedNumber(orgCredits + packCredits);
+  return formatLocalizedNumber(Math.max(orgCredits, 0) + packCredits);
 }
 
 function GrowthCreditMenuItem({ openCredits }: { openCredits: () => void }) {
@@ -84,11 +87,7 @@ function GrowthCreditMenuItem({ openCredits }: { openCredits: () => void }) {
 function useGrowthActions() {
   const pageSignal = useGet(pageSignal$);
   const openSettings = useSet(openSettingsDialogAt$);
-  const navigate = useSet(detachedNavigateTo$);
   return {
-    openWorks: () => {
-      navigate("/works");
-    },
     openInvite: () => {
       detach(openSettings("people", pageSignal), Reason.DomCallback);
     },
@@ -109,7 +108,7 @@ function useGrowthActions() {
 function GrowthEntry({ slackInstalled }: { slackInstalled: boolean }) {
   const { t } = useTranslation();
   const assistantName = useGet(assistantName$);
-  const { openWorks, openInvite, openCredits } = useGrowthActions();
+  const { openInvite, openCredits } = useGrowthActions();
 
   const leadIsSlack = !slackInstalled;
 
@@ -123,32 +122,42 @@ function GrowthEntry({ slackInstalled }: { slackInstalled: boolean }) {
         // decisions, so the two controls cannot drift apart.
         className="inline-flex h-8 items-stretch rounded-surface-compact border border-surface-border bg-card shadow-surface"
       >
-        <Button
-          type="button"
-          variant="quiet"
-          size="sm"
-          className="h-full gap-[9px] rounded-l-[11px] rounded-r-none px-[11px] pr-[9px] text-foreground"
-          onClick={leadIsSlack ? openWorks : openInvite}
-          data-testid="growth-entry"
-        >
-          {leadIsSlack ? (
+        {leadIsSlack ? (
+          <Link
+            pathname={ROUTES.works}
+            className={cn(
+              buttonVariants({ variant: "quiet", size: "sm" }),
+              "h-full gap-[9px] rounded-l-[11px] rounded-r-none px-[11px] pr-[9px] text-foreground",
+            )}
+            data-testid="growth-entry"
+          >
             <SlackMark size={16} />
-          ) : (
+            <span className="text-[13px] font-medium">
+              {t(
+                ($) => {
+                  return $.chat.agentPage.growth.addInSlack;
+                },
+                { assistantName },
+              )}
+            </span>
+          </Link>
+        ) : (
+          <Button
+            type="button"
+            variant="quiet"
+            size="sm"
+            className="h-full gap-[9px] rounded-l-[11px] rounded-r-none px-[11px] pr-[9px] text-foreground"
+            onClick={openInvite}
+            data-testid="growth-entry"
+          >
             <PlusCircle className="text-brand-text" />
-          )}
-          <span className="text-[13px] font-medium">
-            {leadIsSlack
-              ? t(
-                  ($) => {
-                    return $.chat.agentPage.growth.addInSlack;
-                  },
-                  { assistantName },
-                )
-              : t(($) => {
-                  return $.chat.agentPage.growth.inviteMember;
-                })}
-          </span>
-        </Button>
+            <span className="text-[13px] font-medium">
+              {t(($) => {
+                return $.chat.agentPage.growth.inviteMember;
+              })}
+            </span>
+          </Button>
+        )}
 
         <DropdownMenuTrigger
           render={
@@ -172,7 +181,7 @@ function GrowthEntry({ slackInstalled }: { slackInstalled: boolean }) {
       <DropdownMenuContent align="end" className="w-[268px]">
         <DropdownMenuItem
           className="gap-3 px-3"
-          onClick={openWorks}
+          render={<Link pathname={ROUTES.works} />}
           data-testid="growth-slack"
         >
           <SlackMark size={16} />
@@ -202,7 +211,10 @@ function GrowthEntry({ slackInstalled }: { slackInstalled: boolean }) {
           )}
         </DropdownMenuItem>
 
-        <DropdownMenuItem className="gap-3 px-3" onClick={openWorks}>
+        <DropdownMenuItem
+          className="gap-3 px-3"
+          render={<Link pathname={ROUTES.works} />}
+        >
           <img src={telegramIconImg} alt="" className="h-4 w-4 shrink-0" />
           <span className="min-w-0 flex-1 truncate">
             {t(($) => {

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
@@ -15,23 +15,19 @@ use sandbox::{
 use sandbox_mock::{MockSandbox, MockSandboxFactory, MockSandboxOverrides};
 
 use super::super::env::guest_connector_account_context_file_path;
-use super::super::storage_baseline_observation::{
-    BaselineObservationTestEvent, StorageBaselineObserver,
-};
 use super::super::telemetry::{
     RunnerPreSpawnPhase, RunnerSpawnTiming, elapsed_since_api_start_ms,
     record_api_startup_boundaries, record_reuse_result,
 };
 use super::super::{
     BlankPoolSelection, BlankPoolSelectionReason, ExactReuseSpeculationTiming, ExecutionHooks,
-    ExecutorConfig, FinalizingHandoffOutcome, FinalizingHandoffReason, JobParams,
-    NewSandboxDispatch, RunnerPreSpawnConcurrency, RunnerPreSpawnOperationTiming,
-    RunnerPreSpawnTiming, SandboxReuseDisposition, SandboxReuseRejection,
-    SessionHistoryRestorePlan, execute_job, execute_job_reuse, execute_job_reuse_with_hooks,
-    execute_job_with_prepared_notifier,
+    FinalizingHandoffOutcome, FinalizingHandoffReason, NewSandboxDispatch,
+    RunnerPreSpawnConcurrency, RunnerPreSpawnOperationTiming, RunnerPreSpawnTiming,
+    SandboxReuseDisposition, SandboxReuseRejection, SessionHistoryRestorePlan, execute_job,
+    execute_job_reuse, execute_job_reuse_with_hooks, execute_job_with_prepared_notifier,
 };
 use super::support::{
-    api_storage, context_with_env, default_params, make_reusable_idle_sandbox, minimal_context,
+    context_with_env, default_params, make_reusable_idle_sandbox, minimal_context,
     test_budget_lease, test_executor_config,
 };
 use crate::guest_timezone::GuestTimezoneAssumption;
@@ -49,8 +45,7 @@ use runner_provider::RunCancellationSignals;
 use runner_provider::http::{HttpClient, HttpClientConfig};
 use runner_provider::{ApiClaimTiming, ClaimResponseAttribution};
 use runner_types::ids::RunId;
-use runner_types::storage_manifest::{StorageEntry, StorageManifest};
-use runner_types::types::{ExecutionContext, SandboxReuseResult, WorkspaceReuseResult};
+use runner_types::types::{SandboxReuseResult, WorkspaceReuseResult};
 
 #[test]
 fn elapsed_since_api_start_ms_returns_elapsed_duration() {
@@ -318,67 +313,6 @@ fn assert_action_bounded_outcome(telemetry: &JobTelemetry, action: &str, expecte
     assert_eq!(operation.2.as_deref(), Some(expected_outcome));
     assert_eq!(operation.3, None, "{action} reason");
     assert_action_outcome(telemetry, action, false, None);
-}
-
-fn successful_bounded_outcome(telemetry: &JobTelemetry, action: &str) -> String {
-    let operations = telemetry.pending_ops_with_outcome_snapshot();
-    let mut matching = operations.iter().filter(|operation| operation.0 == action);
-    let operation = matching
-        .next()
-        .unwrap_or_else(|| panic!("expected telemetry action {action}, got: {operations:?}"));
-    assert!(
-        matching.next().is_none(),
-        "expected one telemetry action {action}, got: {operations:?}"
-    );
-    assert!(operation.1, "{action} success flag");
-    assert_eq!(operation.3, None, "{action} reason");
-    operation
-        .2
-        .clone()
-        .unwrap_or_else(|| panic!("expected {action} outcome"))
-}
-
-fn baseline_storage(name: &str, mount_path: &str, version: &str) -> StorageEntry {
-    let mut storage = api_storage(
-        name,
-        mount_path,
-        version,
-        "https://private-storage.invalid/archive.tar.gz",
-    );
-    storage.baseline_candidate = true;
-    storage
-}
-
-fn context_with_baseline(cli_agent_type: &str, storages: Vec<StorageEntry>) -> ExecutionContext {
-    let mut context = minimal_context();
-    context.cli_agent_type = cli_agent_type.to_string();
-    context.storage_manifest = Some(StorageManifest {
-        storages,
-        artifacts: Vec::new(),
-    });
-    context
-}
-
-async fn execute_cancelled_observation(
-    config: &ExecutorConfig,
-    context: ExecutionContext,
-    params: &JobParams,
-) -> JobTelemetry {
-    let cancel = tokio_util::sync::CancellationToken::new();
-    cancel.cancel();
-    execute_job(
-        &MockSandboxFactory::new(),
-        context,
-        NewSandboxDispatch {
-            id: SandboxId::new_v4(),
-            reuse_result: SandboxReuseResult::PoolMiss,
-        },
-        config,
-        params,
-        cancel,
-    )
-    .await
-    .1
 }
 
 fn assert_action_duration(telemetry: &JobTelemetry, action: &str, duration_ms: u64) {
@@ -1087,10 +1021,7 @@ async fn execute_job_reuse_records_sandbox_reuse_hit_in_telemetry() {
         make_reusable_idle_sandbox(sandbox, outcome.source_ip, "test-session").await;
     let (_outcome, telemetry) = execute_job_reuse(
         idle_sandbox,
-        context_with_baseline(
-            "claude-code",
-            vec![baseline_storage("seed", "/seed", "version")],
-        ),
+        minimal_context(),
         &config,
         &default_params(),
         cancel,
@@ -1104,325 +1035,6 @@ async fn execute_job_reuse_records_sandbox_reuse_hit_in_telemetry() {
         .collect();
     assert_eq!(reuse_events.len(), 1);
     assert_eq!(reuse_events[0].0, "sandbox_reuse_hit");
-    assert_eq!(
-        successful_bounded_outcome(&telemetry, "runner_storage_baseline_candidate_stability"),
-        "first"
-    );
-}
-
-#[tokio::test]
-async fn execute_job_observes_exact_baseline_stability_per_profile_and_framework() {
-    const STABILITY: &str = "runner_storage_baseline_candidate_stability";
-    const CANDIDATES: &str = "runner_storage_baseline_candidate_count";
-    const ADDED: &str = "runner_storage_baseline_added_count";
-    const REMOVED: &str = "runner_storage_baseline_removed_count";
-    const CHANGED_AT_PATH: &str = "runner_storage_baseline_changed_at_path_count";
-
-    let dir = tempfile::tempdir().unwrap();
-    let config = test_executor_config(dir.path()).await;
-    let default_profile = default_params();
-
-    let first = execute_cancelled_observation(
-        &config,
-        context_with_baseline(
-            "claude-code",
-            vec![baseline_storage(
-                "private-seed-name",
-                "/private/seed-path",
-                "private-version-1",
-            )],
-        ),
-        &default_profile,
-    )
-    .await;
-    assert_eq!(successful_bounded_outcome(&first, STABILITY), "first");
-    assert_eq!(successful_bounded_outcome(&first, CANDIDATES), "1");
-    assert_eq!(successful_bounded_outcome(&first, ADDED), "0");
-    assert_eq!(successful_bounded_outcome(&first, REMOVED), "0");
-    assert_eq!(successful_bounded_outcome(&first, CHANGED_AT_PATH), "0");
-
-    let same = execute_cancelled_observation(
-        &config,
-        context_with_baseline(
-            "claude-code",
-            vec![baseline_storage(
-                "private-seed-name",
-                "/private/seed-path",
-                "private-version-1",
-            )],
-        ),
-        &default_profile,
-    )
-    .await;
-    assert_eq!(successful_bounded_outcome(&same, STABILITY), "same");
-
-    let changed_version = execute_cancelled_observation(
-        &config,
-        context_with_baseline(
-            "claude-code",
-            vec![baseline_storage(
-                "private-seed-name",
-                "/private/seed-path",
-                "private-version-2",
-            )],
-        ),
-        &default_profile,
-    )
-    .await;
-    assert_eq!(
-        successful_bounded_outcome(&changed_version, STABILITY),
-        "changed"
-    );
-    assert_eq!(
-        successful_bounded_outcome(&changed_version, CHANGED_AT_PATH),
-        "1"
-    );
-
-    let added = execute_cancelled_observation(
-        &config,
-        context_with_baseline(
-            "claude-code",
-            vec![
-                baseline_storage(
-                    "private-seed-name",
-                    "/private/seed-path",
-                    "private-version-2",
-                ),
-                baseline_storage(
-                    "second-private-seed",
-                    "/private/second-path",
-                    "second-private-version",
-                ),
-            ],
-        ),
-        &default_profile,
-    )
-    .await;
-    assert_eq!(successful_bounded_outcome(&added, STABILITY), "changed");
-    assert_eq!(successful_bounded_outcome(&added, CANDIDATES), "2");
-    assert_eq!(successful_bounded_outcome(&added, ADDED), "1");
-
-    let removed = execute_cancelled_observation(
-        &config,
-        context_with_baseline(
-            "claude-code",
-            vec![baseline_storage(
-                "private-seed-name",
-                "/private/seed-path",
-                "private-version-2",
-            )],
-        ),
-        &default_profile,
-    )
-    .await;
-    assert_eq!(successful_bounded_outcome(&removed, STABILITY), "changed");
-    assert_eq!(successful_bounded_outcome(&removed, REMOVED), "1");
-
-    let changed_mount = execute_cancelled_observation(
-        &config,
-        context_with_baseline(
-            "claude-code",
-            vec![baseline_storage(
-                "private-seed-name",
-                "/private/renamed-seed-path",
-                "private-version-2",
-            )],
-        ),
-        &default_profile,
-    )
-    .await;
-    assert_eq!(
-        successful_bounded_outcome(&changed_mount, STABILITY),
-        "changed"
-    );
-    assert_eq!(successful_bounded_outcome(&changed_mount, ADDED), "1");
-    assert_eq!(successful_bounded_outcome(&changed_mount, REMOVED), "1");
-    assert_eq!(
-        successful_bounded_outcome(&changed_mount, CHANGED_AT_PATH),
-        "0"
-    );
-
-    let none = execute_cancelled_observation(
-        &config,
-        context_with_baseline("claude-code", Vec::new()),
-        &default_profile,
-    )
-    .await;
-    assert_eq!(successful_bounded_outcome(&none, STABILITY), "none");
-    let after_none = execute_cancelled_observation(
-        &config,
-        context_with_baseline(
-            "claude-code",
-            vec![baseline_storage(
-                "private-seed-name",
-                "/private/renamed-seed-path",
-                "private-version-2",
-            )],
-        ),
-        &default_profile,
-    )
-    .await;
-    assert_eq!(successful_bounded_outcome(&after_none, STABILITY), "same");
-
-    let codex = execute_cancelled_observation(
-        &config,
-        context_with_baseline(
-            "codex",
-            vec![baseline_storage(
-                "private-seed-name",
-                "/private/renamed-seed-path",
-                "private-version-2",
-            )],
-        ),
-        &default_profile,
-    )
-    .await;
-    assert_eq!(successful_bounded_outcome(&codex, STABILITY), "first");
-
-    let other_profile = JobParams {
-        profile_name: "vm0/other".into(),
-        ..default_params()
-    };
-    let profile = execute_cancelled_observation(
-        &config,
-        context_with_baseline(
-            "claude-code",
-            vec![baseline_storage(
-                "private-seed-name",
-                "/private/renamed-seed-path",
-                "private-version-2",
-            )],
-        ),
-        &other_profile,
-    )
-    .await;
-    assert_eq!(successful_bounded_outcome(&profile, STABILITY), "first");
-
-    let observation_snapshot = same.pending_ops_with_outcome_snapshot();
-    let serialized = format!("{observation_snapshot:?}");
-    for private_value in [
-        "private-seed-name",
-        "/private/seed-path",
-        "private-version-1",
-        "private-storage.invalid",
-    ] {
-        assert!(
-            !serialized.contains(private_value),
-            "leaked {private_value}"
-        );
-    }
-}
-
-#[tokio::test]
-async fn execute_job_shares_baseline_observations_across_sequential_jobs() {
-    const STABILITY: &str = "runner_storage_baseline_candidate_stability";
-
-    let dir = tempfile::tempdir().unwrap();
-    let config = test_executor_config(dir.path()).await;
-    let first_params = default_params();
-    let second_params = default_params();
-    let first_context = context_with_baseline(
-        "claude-code",
-        vec![baseline_storage("seed", "/seed", "version")],
-    );
-    let second_context = context_with_baseline(
-        "claude-code",
-        vec![baseline_storage("seed", "/seed", "version")],
-    );
-
-    let first = execute_cancelled_observation(&config, first_context, &first_params).await;
-    let second = execute_cancelled_observation(&config, second_context, &second_params).await;
-    assert_eq!(successful_bounded_outcome(&first, STABILITY), "first");
-    assert_eq!(successful_bounded_outcome(&second, STABILITY), "same");
-}
-
-#[test]
-fn baseline_observation_serializes_parallel_callers() {
-    const WAIT: Duration = Duration::from_secs(5);
-    const STABILITY: &str = "runner_storage_baseline_candidate_stability";
-
-    let (events, observations) = mpsc::channel();
-    let (release_first, first_release) = mpsc::channel();
-    let first_release = Mutex::new(Some(first_release));
-    let observer = StorageBaselineObserver::with_test_probe(move |event| match event {
-        BaselineObservationTestEvent::BeforeLock { .. } => events.send(event).unwrap(),
-        BaselineObservationTestEvent::BeforeFirstInsert => {
-            // Pause only the first caller, even if a split-lock regression lets
-            // another caller also observe a missing key.
-            let release = first_release.lock().unwrap().take();
-            if let Some(release) = release {
-                events.send(event).unwrap();
-                assert_ne!(
-                    release.recv_timeout(WAIT),
-                    Err(mpsc::RecvTimeoutError::Timeout)
-                );
-            }
-        }
-    });
-    let context = context_with_baseline(
-        "claude-code",
-        vec![baseline_storage("seed", "/seed", "version")],
-    );
-    let params = default_params();
-    let record = |mut telemetry: JobTelemetry| {
-        observer.record(&context, &params, &mut telemetry);
-        telemetry
-    };
-    // Keep HTTP-client construction outside the coordinated contention window.
-    let first_telemetry = new_telemetry();
-    let second_telemetry = new_telemetry();
-
-    let (first, second) = std::thread::scope(|scope| {
-        // Own the sender inside the scope callback: unwinding disconnects the
-        // paused worker before scope cleanup joins it.
-        let release_first = release_first;
-        let first = scope.spawn(|| record(first_telemetry));
-        assert_eq!(
-            observations.recv_timeout(WAIT).unwrap(),
-            BaselineObservationTestEvent::BeforeLock { contended: false }
-        );
-        assert_eq!(
-            observations.recv_timeout(WAIT).unwrap(),
-            BaselineObservationTestEvent::BeforeFirstInsert
-        );
-
-        // The first caller has read the absent key but has not inserted it.
-        // A separate OS thread now enters the same production observer.
-        let second = scope.spawn(|| record(second_telemetry));
-        let second_entry = observations.recv_timeout(WAIT);
-        let released = release_first.send(());
-        drop(release_first);
-        let first = first.join();
-        let second = second.join();
-
-        assert_eq!(
-            second_entry.unwrap(),
-            BaselineObservationTestEvent::BeforeLock { contended: true },
-            "the first observation must hold the state lock between lookup and insertion"
-        );
-        released.unwrap();
-        (first.unwrap(), second.unwrap())
-    });
-
-    let mut outcomes = [
-        successful_bounded_outcome(&first, STABILITY),
-        successful_bounded_outcome(&second, STABILITY),
-    ];
-    outcomes.sort();
-    assert_eq!(outcomes, ["first", "same"]);
-
-    let subsequent = record(new_telemetry());
-    assert_eq!(successful_bounded_outcome(&subsequent, STABILITY), "same");
-    for telemetry in [&first, &second, &subsequent] {
-        for (action, expected) in [
-            ("runner_storage_baseline_candidate_count", "1"),
-            ("runner_storage_baseline_added_count", "0"),
-            ("runner_storage_baseline_removed_count", "0"),
-            ("runner_storage_baseline_changed_at_path_count", "0"),
-        ] {
-            assert_eq!(successful_bounded_outcome(telemetry, action), expected);
-        }
-    }
 }
 
 #[tokio::test]

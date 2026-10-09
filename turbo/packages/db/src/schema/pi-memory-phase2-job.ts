@@ -196,7 +196,6 @@ export const piMemoryPhase2Jobs = pgTable(
           ${table.lastMaintenanceRevision} IS NULL AND
           ${table.lastMaintenanceBaseVersionId} IS NULL AND
           ${table.lastMaintenanceSelectionDigest} IS NULL AND
-          ${table.lastMaintenanceCheckpointId} IS NULL AND
           ${table.lastMaintenanceCheckpointVersionId} IS NULL AND
           ${table.lastMaintenanceOutcome} IS NULL
         ) OR (
@@ -209,7 +208,6 @@ export const piMemoryPhase2Jobs = pgTable(
           (
             (
               ${table.lastMaintenanceOutcome} = 'failed' AND
-              ${table.lastMaintenanceCheckpointId} IS NULL AND
               ${table.lastMaintenanceCheckpointVersionId} IS NULL
             ) OR (
               ${table.lastMaintenanceOutcome} IN ('published', 'no_diff') AND

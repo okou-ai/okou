@@ -6,11 +6,7 @@ import { parseBuffer } from "music-metadata";
 import { db$, writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { tapError } from "../utils";
-import {
-  AUDIO_INPUT_BEHAVIOR_KEY,
-  sttDailyDurationKey,
-  sttDailyRateKey,
-} from "./voice-io-limits";
+import { sttDailyDurationKey, sttDailyRateKey } from "./voice-io-limits";
 import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 
 export const MAX_STT_FILE_SIZE = 25 * 1024 * 1024;
@@ -40,7 +36,6 @@ type ErrorResponse = {
 };
 
 interface SttDailyPolicy {
-  readonly recordLifetimeUsage: boolean;
   readonly rateKey: string;
   readonly durationKey: string;
   readonly durationSeconds: number;
@@ -429,7 +424,6 @@ export const sttDailyPolicy$ = command(
     const durationKey = sttDailyDurationKey(currentDate);
     const capabilities = await loadOrgPlanCapabilities(db, orgId);
     signal.throwIfAborted();
-    const lifetimeLimit = capabilities ? capabilities.audioLifetimeLimit : 0;
     const rateLimit = capabilities?.audioDailyRateLimit ?? 0;
     const durationLimit = capabilities?.audioDailyDurationSeconds ?? 0;
     const behaviorRows = await db
@@ -475,7 +469,6 @@ export const sttDailyPolicy$ = command(
     }
 
     return {
-      recordLifetimeUsage: lifetimeLimit !== null,
       rateKey,
       durationKey,
       durationSeconds,
@@ -532,27 +525,6 @@ export const recordSttUsage$ = command(
             lastAt: sql`now()`,
           },
         }),
-      params.recordLifetimeUsage
-        ? writeDb
-            .insert(userBehaviorCount)
-            .values({
-              orgId: params.orgId,
-              userId: params.userId,
-              behaviorKey: AUDIO_INPUT_BEHAVIOR_KEY,
-              count: 1,
-            })
-            .onConflictDoUpdate({
-              target: [
-                userBehaviorCount.orgId,
-                userBehaviorCount.userId,
-                userBehaviorCount.behaviorKey,
-              ],
-              set: {
-                count: sql`${userBehaviorCount.count} + 1`,
-                lastAt: sql`now()`,
-              },
-            })
-        : Promise.resolve(),
     ]);
     signal.throwIfAborted();
   },

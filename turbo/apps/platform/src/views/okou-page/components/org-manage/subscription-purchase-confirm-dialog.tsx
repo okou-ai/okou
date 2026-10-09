@@ -16,8 +16,7 @@ import {
 } from "./purchase-confirm-dialog-shell.tsx";
 
 type SubscriptionPurchasePreview =
-  | PlanPurchasePreviewResponse
-  | UsagePackPurchasePreviewResponse;
+  PlanPurchasePreviewResponse | UsagePackPurchasePreviewResponse;
 
 function SubscriptionPurchaseSummary({
   preview,

@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../../../app-factory";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { mockEnv } from "../../../lib/env";
 import { mockNow, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { desktopUpdateRoutes } from "../desktop-updates";
@@ -105,6 +106,55 @@ function okouZipUrl(version: string): string {
 describe("desktop update routes", () => {
   beforeEach(async () => {
     await accept(manifestStateClient().reset({ body: {} }), [200]);
+  });
+
+  it("exposes the deployment floor without authentication and leaves enforcement disabled by default", async () => {
+    const disabled = await appRequest("/api/desktop/compatibility");
+    expect(disabled.status).toBe(200);
+    expect(disabled.headers.get("cache-control")).toBe("no-store");
+    await expect(disabled.json()).resolves.toStrictEqual({
+      minimumSupportedVersion: null,
+    });
+    mockEnv("OKOU_DESKTOP_MINIMUM_SUPPORTED_VERSION", "0.51.0");
+    const enabled = await appRequest("/api/desktop/compatibility");
+    await expect(enabled.json()).resolves.toStrictEqual({
+      minimumSupportedVersion: "0.51.0",
+    });
+  });
+
+  it("marks only supported Sparkle replacements critical and keeps the Electron feed accessible", async () => {
+    mockEnv("OKOU_DESKTOP_MINIMUM_SUPPORTED_VERSION", "0.51.0");
+    mockDesktopUpdateManifest(
+      stableManifest("0.51.0", {
+        "0.50.1": darwinArm64Release("0.50.1", okouZipUrl("0.50.1")),
+        "0.51.0": darwinArm64Release("0.51.0", okouZipUrl("0.51.0")),
+      }),
+    );
+    const path = "/api/desktop/updates/ai-okou-desktop/stable/darwin/arm64/";
+    const native = await appRequest(`${path}appcast.xml`);
+    expect(native.status).toBe(200);
+    const items = (await native.text()).split("<item>").slice(1);
+    const supported = items.find((item) => {
+      return item.includes("<sparkle:version>0.51.0</sparkle:version>");
+    });
+    expect(supported).toContain(
+      '<sparkle:criticalUpdate sparkle:version="0.51.0"/>',
+    );
+    for (const item of items.filter((item) => {
+      return item.includes("<sparkle:version>0.50.1</sparkle:version>");
+    })) {
+      expect(item).not.toContain("criticalUpdate");
+    }
+    const legacy = await appRequest(`${path}RELEASES.json`);
+    expect(legacy.status).toBe(200);
+    await expect(legacy.json()).resolves.toMatchObject({
+      currentRelease: "0.51.0",
+    });
+    const manual = await appRequest(`${path}dmg`);
+    expect(manual.status).toBe(302);
+    expect(manual.headers.get("location")).toBe(
+      okouZipUrl("0.51.0").replace(".zip", ".dmg"),
+    );
   });
 
   it("serves the same blocked-version selection to Sparkle and installed Electron clients", async () => {

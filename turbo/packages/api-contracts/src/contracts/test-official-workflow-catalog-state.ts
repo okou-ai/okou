@@ -41,33 +41,6 @@ export const testOfficialWorkflowCatalogStateActionBodySchema =
         action: z.literal("run-reconciliation-worker"),
       })
       .strict(),
-    z
-      .object({
-        action: z.literal("simulate-reconciliation-worker-crash"),
-        definitionName: workflowNameSchema,
-      })
-      .strict(),
-    z
-      .object({
-        action: z.literal("pause-next-structure-transition-promotion"),
-      })
-      .strict(),
-    z
-      .object({
-        action: z.literal("wait-for-structure-transition-promotion-pause"),
-      })
-      .strict(),
-    z
-      .object({
-        action: z.literal("resume-structure-transition-promotion"),
-      })
-      .strict(),
-    z
-      .object({
-        action: z.literal("make-reconciliation-work-due"),
-        definitionName: workflowNameSchema,
-      })
-      .strict(),
   ]);
 export type TestOfficialWorkflowCatalogStateActionBody = z.infer<
   typeof testOfficialWorkflowCatalogStateActionBodySchema

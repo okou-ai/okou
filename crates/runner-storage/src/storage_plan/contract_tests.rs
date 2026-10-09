@@ -20,7 +20,6 @@ fn storage(
         mount_path: mount_path.to_string_lossy().into_owned(),
         vas_storage_name: name.into(),
         vas_version_id: version.into(),
-        baseline_candidate: false,
         instructions_target_filename: instructions_target_filename.map(str::to_string),
         archive_url,
         archive_size: None,

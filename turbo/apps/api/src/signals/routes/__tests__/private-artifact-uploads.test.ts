@@ -167,6 +167,7 @@ describe("private artifact uploads", () => {
 
   it("keeps old public uploads readable after private creation is enabled", async () => {
     installSharedThreadStorage(context);
+    await setPrivateArtifacts(false);
     const prepared = await accept(
       api()(uploadsContract).prepare({ headers, body }),
       [200],
@@ -230,23 +231,14 @@ describe("private artifact uploads", () => {
     });
   });
 
-  it("keeps uploads public by default and makes both attachments and outputs private when enabled", async () => {
+  it("makes attachments and outputs private by default and supports explicit opt-outs", async () => {
     const flags = await accept(
       api()(featureSwitchesContract).get({ headers }),
       [200],
     );
     expect(
       flags.body.effectiveSwitches[FeatureSwitchKey.PrivateArtifacts],
-    ).toBeFalsy();
-    const legacy = await accept(
-      api()(uploadsContract).prepare({ headers, body }),
-      [200],
-    );
-    expect(legacy.body.url).toMatch(
-      /^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.html$/u,
-    );
-
-    await setPrivateArtifacts(true);
+    ).toBeTruthy();
     const input = await accept(
       api()(uploadsContract).prepare({
         headers,
@@ -267,6 +259,15 @@ describe("private artifact uploads", () => {
     );
     expect(artifact.body.url).toMatch(
       /^http:\/\/localhost:3002\/artifacts\/[a-z0-9]{10}\.html$/u,
+    );
+
+    await setPrivateArtifacts(false);
+    const legacy = await accept(
+      api()(uploadsContract).prepare({ headers, body }),
+      [200],
+    );
+    expect(legacy.body.url).toMatch(
+      /^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.html$/u,
     );
   });
 

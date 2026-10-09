@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { initContract } from "./base";
-import { runFailureReasonTokenSchema } from "./run-failure-reasons";
 
 const c = initContract();
 
@@ -30,10 +29,6 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
   }),
   z.object({
     action: z.literal("read-run-autonomy-budget"),
-    run_id: z.uuid(),
-  }),
-  z.object({
-    action: z.literal("read-run-failure-reason"),
     run_id: z.uuid(),
   }),
   // Test-only read boundary for the internal WSS target resolver. The public
@@ -83,16 +78,7 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
     run_id: z.uuid(),
   }),
   z.object({
-    action: z.literal("steer-run-time-budget"),
-    run_id: z.uuid(),
-    elapsed_ms: z.int().nonnegative(),
-  }),
-  z.object({
     action: z.literal("read-run-launch-snapshot"),
-    run_id: z.uuid(),
-  }),
-  z.object({
-    action: z.literal("read-official-workflow-run-state"),
     run_id: z.uuid(),
   }),
   z.object({
@@ -121,18 +107,12 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
     ),
     automation_id: z.uuid(),
   }),
-  z.object({
-    action: z.literal("reconcile-socialkit-downloads"),
-    download_ids: z.array(z.uuid()).min(1).max(2),
-  }),
 ]);
 
 export const testRuntimeStateActionResponseSchema = z.object({
   ok: z.literal(true),
-  processed: z.int().nonnegative().optional(),
   selected_model: z.string().optional(),
   autonomy_budget: z.int().min(0).max(32).nullable().optional(),
-  failure_reason: runFailureReasonTokenSchema.nullable().optional(),
   wss_target: z
     .object({
       runId: z.uuid(),
@@ -161,12 +141,6 @@ export const testRuntimeStateActionResponseSchema = z.object({
       autonomy_budget: z.int().min(0).max(32),
     })
     .nullable()
-    .optional(),
-  run_time_budget: z
-    .object({
-      scanned: z.int().nonnegative(),
-      steered: z.int().nonnegative(),
-    })
     .optional(),
   run_launch_snapshot: z
     .object({
@@ -198,44 +172,6 @@ export const testRuntimeStateActionResponseSchema = z.object({
         ])
         .nullable(),
     })
-    .optional(),
-  official_workflow_run_state: z
-    .object({
-      status: z.string(),
-      model_provider: z.string().nullable(),
-      provenance: z
-        .object({
-          schemaVersion: z.literal(1),
-          definitions: z.array(
-            z.object({
-              name: z.string(),
-              revision: z.string().regex(/^[0-9a-f]{64}$/),
-              artifact: z.object({
-                orgId: z.string(),
-                userId: z.string(),
-                storageName: z.string(),
-                storageId: z.uuid(),
-                storageVersion: z.string().regex(/^[0-9a-f]{64}$/),
-              }),
-            }),
-          ),
-        })
-        .nullable(),
-      storage_mounts: z
-        .array(
-          z.object({
-            org_id: z.string(),
-            user_id: z.string(),
-            name: z.string(),
-            storage_id: z.uuid(),
-            version: z.string().optional(),
-            mount_path: z.string(),
-            writeback: z.boolean().optional(),
-          }),
-        )
-        .nullable(),
-    })
-    .nullable()
     .optional(),
 });
 

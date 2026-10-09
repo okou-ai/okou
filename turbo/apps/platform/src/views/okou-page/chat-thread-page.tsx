@@ -99,7 +99,6 @@ import {
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-  BrandLangfuse,
   BrandSlack,
   ElapsedTime,
   LazySpinner,
@@ -269,10 +268,9 @@ import type {
   ChatEvent,
 } from "../../signals/chat-page/chat-event-types.ts";
 import { optimisticEventIds$ } from "../../signals/chat-page/optimistic-chat-events.ts";
-import { AUTO_RUN_MODEL } from "@okouai/core/auto-run-model";
+import { AUTO_RUN_MODEL, sameSelectedModel } from "@okouai/core/auto-run-model";
 import type { ChatRunModelSelection } from "../../signals/chat-page/chat-event-state.ts";
 import type { AgentReferenceSignals } from "../../signals/chat-page/agent-reference-signals.ts";
-import type { RunDetailSignals } from "../../signals/chat-page/run-detail.ts";
 import type { AssistantErrorRecovery } from "../../signals/chat-page/assistant-error-recovery.ts";
 import { localizedRunError } from "../../lib/run-error.ts";
 import { PlainTextWithLinks } from "../components/plain-text-with-links.tsx";
@@ -494,7 +492,12 @@ function modelChangesByEventId(
         previousSelection !== undefined &&
         selection !== undefined
       ) {
-        if (selection.selectedModel !== previousSelection.selectedModel) {
+        if (
+          !sameSelectedModel(
+            selection.selectedModel,
+            previousSelection.selectedModel,
+          )
+        ) {
           changes.set(event.id, { kind: "model", selection });
         } else if (
           fastModeEnabled(selection) !== fastModeEnabled(previousSelection)
@@ -3334,7 +3337,12 @@ function ChatThreadNextRunModelNotice({
       : {}),
   };
   let label: string;
-  if (selectedRunSelection.selectedModel !== runningSelection.selectedModel) {
+  if (
+    !sameSelectedModel(
+      selectedRunSelection.selectedModel,
+      runningSelection.selectedModel,
+    )
+  ) {
     label = t(
       ($) => {
         return $.chat.run.selectedModelAppliesAfterCurrentRun;
@@ -4495,7 +4503,9 @@ function FinishedStatusRow({ thread }: { thread: ChatPanelSignals }) {
       equalityFn: equalRecommendedFollowupSources,
     }) ?? null;
   return (
-    <div data-role="assistant-thinking" className="animate-thinking-in min-w-0">
+    // Completed content also mounts when reopening a historical thread. Keep it
+    // opaque so the PWA page-transition snapshot and the live page agree.
+    <div data-role="assistant-thinking" className="min-w-0">
       <FinishedRunRow thread={thread} source={recommendedFollowupSource} />
     </div>
   );
@@ -8425,61 +8435,6 @@ function RelatedArtifactsDialog({
   );
 }
 
-function RunLangfuseLink({ signals }: { readonly signals: RunDetailSignals }) {
-  const { t } = useTranslation();
-  const detail = useLoadable(signals.detail$);
-  const url =
-    detail.state === "hasData" ? detail.data?.langfuseTraceUrl : undefined;
-  if (!url) {
-    return null;
-  }
-  return (
-    <TooltipProvider delay={300}>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <a
-              href={url}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label={t(($) => {
-                return $.chat.run.viewLangfuseTrace;
-              })}
-              className={cn(
-                buttonVariants({
-                  variant: "quiet",
-                  size: "icon-xs",
-                  iconSize: "sm",
-                }),
-                "text-muted-foreground/60",
-              )}
-            >
-              <BrandLangfuse aria-hidden />
-            </a>
-          }
-        />
-        <TooltipContent side="bottom">
-          {t(($) => {
-            return $.chat.run.viewLangfuseTrace;
-          })}
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  );
-}
-
-function RunLangfuseAction({
-  thread,
-  runId,
-}: {
-  readonly thread: ChatPanelSignals;
-  readonly runId: string;
-}) {
-  const runDetails = useGet(thread.runDetails$);
-  const signals = runDetails.get(runId);
-  return signals ? <RunLangfuseLink signals={signals} /> : null;
-}
-
 function MessageShareAction({
   onShare,
 }: {
@@ -8548,7 +8503,6 @@ function MessageShareAction({
 
 function PagedGroupPrimaryActions({
   firstRunId,
-  thread,
   hasContent,
   usage,
   onCopy,
@@ -8556,7 +8510,6 @@ function PagedGroupPrimaryActions({
   relatedArtifacts,
 }: {
   firstRunId: string | undefined;
-  thread: ChatPanelSignals;
   hasContent: boolean;
   usage: ChatEventUsagePayload | undefined;
   onCopy: () => Promise<boolean>;
@@ -8564,11 +8517,6 @@ function PagedGroupPrimaryActions({
   relatedArtifacts?: RunWorkSectionControl["remainingArtifactCards"];
 }) {
   const { t } = useTranslation();
-  const switches = useGet(featureSwitch$);
-  const showDebugActions = switches[FeatureSwitchKey.OkouDebug];
-  const hasLeadingIconAction = Boolean(
-    (showDebugActions && firstRunId) || hasContent,
-  );
   return (
     <div
       className={cn(
@@ -8576,13 +8524,10 @@ function PagedGroupPrimaryActions({
         // Icon buttons keep their 28px hit target centered around the 16px
         // glyph. Let the target overhang so the visible glyph, not its box,
         // starts on the response column.
-        hasLeadingIconAction && "-ml-1.5",
+        hasContent && "-ml-1.5",
       )}
       data-testid="chat-event-actions"
     >
-      {showDebugActions && firstRunId && (
-        <RunLangfuseAction thread={thread} runId={firstRunId} />
-      )}
       {hasContent && (
         <CopyButton
           copyAction={onCopy}
@@ -8693,7 +8638,6 @@ function PagedGroupActions({
     <div className={CHAT_THREAD_ASSISTANT_MESSAGE_ACTIONS_CLASS}>
       <PagedGroupPrimaryActions
         firstRunId={firstRunId}
-        thread={thread}
         hasContent={hasContent}
         usage={usage}
         onCopy={handleCopy}

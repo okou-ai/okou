@@ -89,7 +89,12 @@ jobs:
   build-macos:
     name: build-macos-arm64
     needs: detect-desktop-version
-    if: ${{ github.event_name != 'merge_group' || needs.detect-desktop-version.outputs.changed != 'true' }}
+    # Release PRs only update versions/changelogs; merge groups still build artifacts.
+    if: >-
+      ${{
+        !(github.event_name == 'pull_request' && startsWith(github.head_ref, 'release-please--branches--')) &&
+        (github.event_name != 'merge_group' || needs.detect-desktop-version.outputs.changed != 'true')
+      }}
     runs-on: macos-latest
     timeout-minutes: 30
     steps:

@@ -1,6 +1,8 @@
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
+import { buttonVariants } from "@okouai/ui/components/ui/button";
+import { cn } from "@okouai/ui/lib/utils";
 import { Plus } from "lucide-react";
 import {
   Button,
@@ -196,38 +198,31 @@ function PrivateKeyFields() {
               return $.ssh.privateKey;
             })}
           </label>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={(event) => {
-              const input = event.currentTarget
-                .closest("form")
-                ?.elements.namedItem("ssh-private-key-file");
-              if (!(input instanceof HTMLInputElement)) {
-                throw new Error(
-                  "SSH credential form is missing its file input",
-                );
-              }
-              input.click();
-            }}
+          <label
+            className={cn(
+              buttonVariants({ variant: "outline", size: "sm" }),
+              "has-[:disabled]:pointer-events-none has-[:disabled]:opacity-50 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring has-[:focus-visible]:ring-offset-2",
+            )}
           >
             {t(($) => {
               return $.ssh.chooseFile;
             })}
-          </Button>
+            <input
+              id="ssh-private-key-file"
+              type="file"
+              className="sr-only"
+              aria-label={t(($) => {
+                return $.ssh.choosePrivateKeyFile;
+              })}
+              onChange={(event) => {
+                detach(
+                  importFile(event.currentTarget, signal),
+                  Reason.DomCallback,
+                );
+              }}
+            />
+          </label>
         </div>
-        <input
-          id="ssh-private-key-file"
-          type="file"
-          className="hidden"
-          aria-label={t(($) => {
-            return $.ssh.choosePrivateKeyFile;
-          })}
-          onChange={(event) => {
-            detach(importFile(event.currentTarget, signal), Reason.DomCallback);
-          }}
-        />
         <Textarea
           id="ssh-private-key"
           ref={mountPrivateKey}

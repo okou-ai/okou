@@ -1,4 +1,4 @@
-import { computed, type Computed } from "ccstate";
+import { command, computed, type Computed } from "ccstate";
 import type {
   WorkflowImportSource,
   WorkflowSummary,
@@ -7,9 +7,16 @@ import { agents } from "@okouai/db/schema/agent";
 import { workflows } from "@okouai/db/schema/workflow";
 import { and, asc, desc, eq, isNull, or, type SQL } from "drizzle-orm";
 
-import { db$, type ReadonlyDb } from "../external/db";
+import { db$ } from "../external/db";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
-import { readAcceptedOfficialWorkflowCatalog } from "./official-workflow-catalog-read.service";
+import {
+  acceptedOfficialWorkflowCatalogReadPlan,
+  acceptedCatalogFromRow,
+} from "./official-workflow-catalog-read.service";
+import {
+  officialWorkflowCatalogState,
+  officialWorkflowCatalogReleases,
+} from "@okouai/db/schema/official-workflow-catalog";
 
 export interface WorkflowMember {
   readonly userId: string;
@@ -164,51 +171,61 @@ export function visibleWorkflowCondition(member: WorkflowMember): SQL {
   ) as SQL;
 }
 
-export async function loadVisibleWorkflowById(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly member: WorkflowMember;
-    readonly workflowId: string;
-    readonly includeInstallingOfficial?: boolean;
-  },
-): Promise<{ workflow: WorkflowRow; agent: VisibleWorkflowAgentInfo } | null> {
-  const [row] = await db
-    .select({
-      workflow: workflows,
-      agent: {
-        id: agents.id,
-        orgId: agents.orgId,
-        owner: agents.owner,
-        visibility: agents.visibility,
-        name: agents.name,
-        displayName: agents.displayName,
-      },
-    })
-    .from(workflows)
-    .innerJoin(agents, eq(workflows.agentId, agents.id))
-    .where(
-      and(
-        eq(workflows.orgId, args.orgId),
-        eq(workflows.id, args.workflowId),
-        args.includeInstallingOfficial
-          ? or(
-              visibleWorkflowCondition(args.member),
-              and(
-                eq(workflows.ownerUserId, args.member.userId),
-                eq(workflows.officialInstallationState, "installing"),
-              ),
-            )
-          : visibleWorkflowCondition(args.member),
-      ),
-    )
-    .limit(1);
-
-  if (!row) {
-    return null;
-  }
-  return { workflow: row.workflow, agent: row.agent };
+export interface VisibleWorkflow {
+  readonly workflow: WorkflowRow;
+  readonly agent: VisibleWorkflowAgentInfo;
 }
+
+export const loadVisibleWorkflowById$ = command(
+  async (
+    { get },
+    args: {
+      readonly orgId: string;
+      readonly member: WorkflowMember;
+      readonly workflowId: string;
+      readonly includeInstallingOfficial?: boolean;
+    },
+    signal: AbortSignal,
+  ): Promise<VisibleWorkflow | null> => {
+    const [row] = await get(db$)
+      .select({
+        workflow: workflows,
+        agent: {
+          id: agents.id,
+          orgId: agents.orgId,
+          owner: agents.owner,
+          visibility: agents.visibility,
+          name: agents.name,
+          displayName: agents.displayName,
+        },
+      })
+      .from(workflows)
+      .innerJoin(agents, eq(workflows.agentId, agents.id))
+      .where(
+        and(
+          eq(workflows.orgId, args.orgId),
+          eq(workflows.id, args.workflowId),
+          args.includeInstallingOfficial
+            ? or(
+                visibleWorkflowCondition(args.member),
+                and(
+                  eq(workflows.ownerUserId, args.member.userId),
+                  eq(workflows.officialInstallationState, "installing"),
+                ),
+              )
+            : visibleWorkflowCondition(args.member),
+        ),
+      )
+      .limit(1);
+
+    signal.throwIfAborted();
+
+    if (!row) {
+      return null;
+    }
+    return { workflow: row.workflow, agent: row.agent };
+  },
+);
 
 export function workflowSummary(args: {
   readonly workflow: WorkflowSummaryRow;
@@ -307,37 +324,42 @@ function shadowWinnerFromRows(
   return winners;
 }
 
-export async function loadWorkflowShadowWinner(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly member: WorkflowMember;
-    readonly workflow: WorkflowRow;
-  },
-): Promise<WorkflowShadow | null> {
-  const [winner] = await db
-    .select({
-      id: workflows.id,
-      name: workflows.name,
-      displayName: workflows.displayName,
-    })
-    .from(workflows)
-    .where(
-      and(
-        eq(workflows.orgId, args.orgId),
-        eq(workflows.agentId, args.workflow.agentId),
-        eq(workflows.name, args.workflow.name),
-        injectableWorkflowCondition(args.member.userId),
-      ),
-    )
-    .orderBy(...workflowRunPrioritySort(args.member.userId))
-    .limit(1);
+export const readWorkflowShadowWinner$ = command(
+  async (
+    { get },
+    args: {
+      readonly orgId: string;
+      readonly member: WorkflowMember;
+      readonly workflow: WorkflowRow;
+    },
+    signal: AbortSignal,
+  ): Promise<WorkflowShadow | null> => {
+    const db = get(db$);
+    const [winner] = await db
+      .select({
+        id: workflows.id,
+        name: workflows.name,
+        displayName: workflows.displayName,
+      })
+      .from(workflows)
+      .where(
+        and(
+          eq(workflows.orgId, args.orgId),
+          eq(workflows.agentId, args.workflow.agentId),
+          eq(workflows.name, args.workflow.name),
+          injectableWorkflowCondition(args.member.userId),
+        ),
+      )
+      .orderBy(...workflowRunPrioritySort(args.member.userId))
+      .limit(1);
 
-  if (!winner || winner.id === args.workflow.id) {
-    return null;
-  }
-  return winner;
-}
+    signal.throwIfAborted();
+    if (!winner || winner.id === args.workflow.id) {
+      return null;
+    }
+    return winner;
+  },
+);
 
 export function workflowList(args: {
   readonly orgId: string;
@@ -383,9 +405,16 @@ export function workflowList(args: {
     const hasOfficialWorkflow = rows.some((row) => {
       return row.workflow.officialDefinitionName !== null;
     });
-    const acceptedCatalog = hasOfficialWorkflow
-      ? await readAcceptedOfficialWorkflowCatalog(db)
-      : null;
+    const catalogPlan = acceptedOfficialWorkflowCatalogReadPlan();
+    const [catalogRow] = hasOfficialWorkflow
+      ? await db
+          .select(catalogPlan.columns)
+          .from(officialWorkflowCatalogState)
+          .innerJoin(officialWorkflowCatalogReleases, catalogPlan.join)
+          .where(catalogPlan.condition)
+          .limit(1)
+      : [];
+    const acceptedCatalog = acceptedCatalogFromRow(catalogRow);
     const officialLifecycleByName = new Map(
       acceptedCatalog?.payload.definitions.map((definition) => {
         return [definition.name, definition.lifecycle] as const;

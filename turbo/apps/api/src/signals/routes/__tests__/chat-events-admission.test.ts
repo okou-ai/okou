@@ -595,8 +595,8 @@ describe("CHAT-02: interrupting active chat runs", () => {
       }),
     ).toStrictEqual([]);
 
-    // Neither cancelled round saved native history, so the next run replays
-    // both rounds in a fresh session.
+    // With the same model and runtime, both cancelled rounds are carried
+    // forward as incomplete context even without a native checkpoint.
     const third = await sendChatRun(actor, {
       agentId,
       threadId: first.threadId,
@@ -604,11 +604,11 @@ describe("CHAT-02: interrupting active chat runs", () => {
     });
     const thirdRun = await api.readRun(actor, third.runId);
     const appended = thirdRun.appendSystemPrompt ?? "";
-    expect(appended).toContain("# Web Chat Run Context");
+    expect(appended).toContain("# Incomplete Rounds Context");
     expect(appended).toContain("RUN_STATUS: cancelled");
     expect(appended).toContain("User: long task to interrupt");
     expect(appended).toContain("User: cancelled through the cancel api");
-    expect(appended).not.toContain("# Incomplete Rounds Context");
+    expect(appended).not.toContain("# Web Chat Run Context");
     const thirdClaim = await claimChatRun(runnerGroup, third.runId);
     expect(thirdClaim.claim.resumeSession).toBeNull();
     await cancelChatRun(actor, third.runId);

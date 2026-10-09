@@ -101,7 +101,7 @@ export async function releaseDeletedConversationReferences(
     offset += DELETION_BATCH_SIZE
   ) {
     const batch = references.slice(offset, offset + DELETION_BATCH_SIZE);
-    // A checkpoint on another Run can hold this blob before promoting a
+    // Completion of another Run can hold this blob before promoting a
     // surviving Session that our SET NULL locked. NOWAIT breaks that cycle;
     // the caller rolls back and uses its existing conflict/retry boundary.
     // Lock hashes in one global order before UPDATE's unspecified row order.

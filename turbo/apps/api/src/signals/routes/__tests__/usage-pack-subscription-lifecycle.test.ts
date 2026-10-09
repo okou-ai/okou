@@ -505,6 +505,28 @@ function mockUsagePackPriceCatalog(
     if (typeof priceId !== "string") {
       throw new Error("Expected a Stripe Price ID");
     }
+    const fixedAmounts = new Map<string, number>([
+      [TEST_PRICE_PRO, 2000],
+      [TEST_PRICE_TEAM, 10_000],
+      [TEST_PRICE_PLAN_PRO, 0],
+      [TEST_PRICE_PLAN_TEAM, 0],
+      [TEST_PRICE_ATOM_GRANT, 0],
+    ]);
+    for (const customPriceId of env("OKOU_PRICE_CUSTOM") ?? []) {
+      fixedAmounts.set(customPriceId, 0);
+    }
+    const fixedAmount = fixedAmounts.get(priceId);
+    if (fixedAmount !== undefined) {
+      return Promise.resolve({
+        id: priceId,
+        active: true,
+        currency: "usd",
+        type: "recurring",
+        recurring: { interval: "month", interval_count: 1 },
+        unit_amount: fixedAmount,
+        product: { id: `prod_${priceId}`, metadata: {} },
+      });
+    }
     const configuration = usagePackForPriceId(priceId);
     return Promise.resolve({
       id: priceId,
@@ -731,11 +753,14 @@ describe("usage pack subscription Stripe lifecycle", () => {
           purchasedCredits: 16_670,
           bonusCredits: 866,
           totalCredits: 17_536,
-          creditGrants: credits.body.creditGrants,
+          // Equal creation timestamps do not define an order between grants.
+          // Require the same complete grants and cardinality in both balances.
+          creditGrants: expect.arrayContaining(credits.body.creditGrants),
         },
       ],
     });
     expect(credits.body.creditGrants).toHaveLength(2);
+    expect(credits.body.memberCredits?.[0]?.creditGrants).toHaveLength(2);
   });
 
   it("grants fully discounted renewal credits without a refundable amount", async () => {
@@ -1652,12 +1677,11 @@ describe("usage pack subscription Stripe lifecycle", () => {
     );
   });
 
-  it("clears debt for a new organization that only received free onboarding credits", async () => {
+  it("preserves personal onboarding credits through the first usage pack purchase", async () => {
     const fixture = await checkoutUsagePackLifecycle(
       `user_${randomUUID()}`,
       20,
       "pro",
-      0,
     );
     const authOrgApi = createAuthOrgAgentsBddApi(context);
     const actor = authOrgApi.user({
@@ -1670,22 +1694,63 @@ describe("usage pack subscription Stripe lifecycle", () => {
       displayName: "First purchase agent",
       sound: "calm",
     });
-    expect((await readUsagePackState(fixture)).legacyCredits).toContainEqual(
+    const creditsClient = setupApp({
+      context,
+      routes: billingUsagePackCreditsRoutes,
+    })(billingUsagePackCreditsContract);
+    const headers = { authorization: "Bearer clerk-session" };
+    const before = await accept(creditsClient.get({ headers }), [200]);
+    expect(before.body).toMatchObject({
+      totalCredits: 1000,
+      purchasedCredits: 0,
+      bonusCredits: 1000,
+      hasUsagePack: false,
+    });
+    expect(before.body.creditGrants).toStrictEqual([
       expect.objectContaining({
-        stripeInvoiceId: "limited-free-onboarding",
+        grantType: "bonus",
         amount: 1000,
+        remaining: 1000,
       }),
-    );
-    await seedOrgMetadata({
-      orgId: fixture.orgId,
+    ]);
+    await expect(readBillingStatus(fixture)).resolves.toMatchObject({
       tier: "limited-free-1",
-      credits: -5000,
+      credits: 0,
+      creditGrants: [],
     });
 
-    const state = await fulfillFirstUsagePackInvoice(fixture);
+    const paidPeriod = period(0);
+    const quantities = new Map([[TEST_PRICE_PACK_20, 1]]);
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+      stripeSubscription(fixture, paidPeriod, quantities),
+    );
+    const invoice = paidInvoice(fixture, {
+      invoiceId: `in_${randomUUID()}`,
+      paidPeriod,
+      quantities,
+    });
+    await postStripeEvent(stripeEvent("invoice.paid", invoice), 200);
 
-    expect(state.org).toMatchObject({ tier: "pro", credits: 0 });
-    expect(state.grants).toHaveLength(2);
+    await expect(readBillingStatus(fixture)).resolves.toMatchObject({
+      tier: "pro",
+      credits: 0,
+      creditGrants: [],
+    });
+    const after = await accept(creditsClient.get({ headers }), [200]);
+    expect(after.body).toMatchObject({
+      totalCredits: 21_400,
+      purchasedCredits: 20_000,
+      bonusCredits: 1400,
+      hasUsagePack: true,
+    });
+    expect(after.body.creditGrants).toHaveLength(3);
+    expect(after.body.creditGrants).toStrictEqual(
+      expect.arrayContaining(before.body.creditGrants),
+    );
+
+    await postStripeEvent(stripeEvent("invoice.paid", invoice), 200);
+    const replayed = await accept(creditsClient.get({ headers }), [200]);
+    expect(replayed.body).toStrictEqual(after.body);
   });
 
   it.each([0, 5000])(

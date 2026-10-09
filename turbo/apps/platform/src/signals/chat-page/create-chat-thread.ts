@@ -1,4 +1,8 @@
 import {
+  isAutoSelectedModel,
+  sameSelectedModel,
+} from "@okouai/core/auto-run-model";
+import {
   chatEventCompatibilityRole,
   isChatEventContentTextType,
   isChatRunTerminalEventType,
@@ -214,10 +218,6 @@ import {
 import { createPermissionCardSignalsRegistry } from "./permission-card-signals.ts";
 import { createSubscriptionResetCardSignalsRegistry } from "./subscription-reset-block.ts";
 import { createPlanUpgradeCardSignalsRegistry } from "./plan-upgrade-block.ts";
-import {
-  createRunDetailSignalsRegistry,
-  type RunDetailSignals,
-} from "./run-detail.ts";
 import { serverUnreadAt$ } from "./sidebar-unread-threads.ts";
 import {
   createThreadActivitySummarySignals,
@@ -404,7 +404,11 @@ function createModelSelection(
         get(availableRunModels$),
         get(modelCatalog$),
       ]);
-      const resolvedModel = catalog.resolve(get(selectedModel$));
+      const storedModel = get(selectedModel$);
+      if (storedModel === null || isAutoSelectedModel(storedModel)) {
+        return null;
+      }
+      const resolvedModel = catalog.resolve(storedModel);
       return resolvedModel !== undefined &&
         models.models.some((runModel) => {
           return runModel.model === resolvedModel;
@@ -477,7 +481,10 @@ function createModelSelectionForSend({
       // A pin without an offered route is shown as Auto. Switch the thread to
       // Auto the way the picker does, so the send runs what the composer shows
       // without changing the member's default model.
-      if (selectedModel === null && get(selectedModel$) !== null) {
+      if (
+        selectedModel === null &&
+        !sameSelectedModel(selectedModel, get(selectedModel$))
+      ) {
         await set(setModelSelection$, { selectedModel: null }, signal);
         signal.throwIfAborted();
       }
@@ -975,7 +982,6 @@ function createRenderedChatGroups(
 
 interface RegisteredChatEvent {
   readonly event: ChatEvent;
-  readonly runDetail: RunDetailSignals | undefined;
   readonly userMessageRenderDocument: UserMessageRenderDocument | undefined;
 }
 
@@ -1133,8 +1139,7 @@ interface OptimisticChatEventProjectionEntry {
 }
 
 type ChatEventProjectionEntry =
-  | ServerChatEventProjectionEntry
-  | OptimisticChatEventProjectionEntry;
+  ServerChatEventProjectionEntry | OptimisticChatEventProjectionEntry;
 
 function isPersistedChatEvent(event: ChatEvent): event is PersistedChatEvent {
   return event.seqId !== undefined;
@@ -1981,7 +1986,6 @@ function createPagedEventResources({
     previewCatalogReady$,
   );
   const agentReferenceSignals = createAgentReferenceSignalsRegistry();
-  const runDetailSignals = createRunDetailSignalsRegistry();
   const subscriptionResetCardSignals =
     createSubscriptionResetCardSignalsRegistry();
   const connectorCardSignals = createConnectorCardSignalsRegistry();
@@ -2001,9 +2005,6 @@ function createPagedEventResources({
     ({ set }, event: ChatEvent): RegisteredChatEvent => {
       return {
         event,
-        runDetail: event.runId
-          ? set(runDetailSignals.register$, event.runId)
-          : undefined,
         userMessageRenderDocument: set(
           registerUserMessageRenderDocument$,
           event,
@@ -2040,13 +2041,6 @@ function createPagedEventResources({
   });
 
   const registeredEvents$ = state<RegisteredChatEvent[]>([]);
-  const runDetails$ = computed((get) => {
-    return new Map(
-      get(registeredEvents$).flatMap(({ runDetail }) => {
-        return runDetail ? [[runDetail.runId, runDetail] as const] : [];
-      }),
-    );
-  });
   // Tree parsing is not part of the sync: the render window decides which
   // events need trees, so the ensure step runs at the window's write points.
   const syncRegisteredEvents$ = command(
@@ -2076,7 +2070,6 @@ function createPagedEventResources({
     diagramCodesForEvents$,
     mermaidDiagrams,
     publicSignals: {
-      runDetails$,
       browserSessionSignals,
       subscribeBrowserSessions$: browserSessionSignals.subscribe$,
       retryRichEventTree$,
@@ -3540,7 +3533,6 @@ function createThinkingIndicatorSignals() {
 
 function publicChatThreadEventSignals(events: MessageListSignals) {
   return {
-    runDetails$: events.runDetails$,
     latestRunFinishCreatedAt$: events.latestRunFinishCreatedAt$,
     latestAssistantTextCreatedAt$: events.latestAssistantTextCreatedAt$,
     visibleRenderedChatGroups$: events.visibleRenderedChatGroups$,

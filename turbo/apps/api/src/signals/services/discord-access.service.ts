@@ -1,10 +1,9 @@
-import { command, computed } from "ccstate";
+import { command, computed, type Computed } from "ccstate";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { getDiscordAppConfig } from "./discord-config";
 import {
-  discordIntegrationEnabledForOwner,
-  getDiscordAppConfig,
-} from "./discord-config";
-import {
-  discordUserBinding,
+  createDiscordUserBinding,
   type DiscordVerifiedBinding,
 } from "./discord-data.service";
 import type { DiscordChannel } from "../external/discord-client";
@@ -18,6 +17,14 @@ import {
   type DiscordAccessMode,
 } from "./discord-provider-access";
 
+import { createUserFeatureSwitchContext } from "./feature-switches.service";
+
+interface DiscordBindingIdentity {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly guildId?: string;
+}
+
 export type DiscordBindingAccess =
   | {
       kind: "allowed";
@@ -28,16 +35,35 @@ export type DiscordBindingAccess =
   | { kind: "denied"; response: DiscordFailureResponse };
 
 /** A read snapshot for one authorization boundary, keyed only by identities. */
-export function discordBindingAccess(args: {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly guildId?: string;
-}) {
+export function discordBindingAccess(args: DiscordBindingIdentity) {
+  const identity$ = computed(() => {
+    return Promise.resolve(args);
+  });
+  const access$ = createDiscordBindingAccess(identity$);
   return computed(async (get): Promise<DiscordBindingAccess> => {
-    const enabled = await get(
-      discordIntegrationEnabledForOwner(args.orgId, args.userId),
-    );
-    if (!enabled) {
+    const access = await get(access$);
+    if (!access) {
+      throw new Error("Discord binding access is missing its identity");
+    }
+    return access;
+  });
+}
+
+function createDiscordBindingAccess(
+  identity$: Computed<Promise<DiscordBindingIdentity | null>>,
+): Computed<Promise<DiscordBindingAccess | null>> {
+  const features$ = createUserFeatureSwitchContext(identity$);
+  const binding$ = createDiscordUserBinding(identity$);
+  return computed(async (get): Promise<DiscordBindingAccess | null> => {
+    const identity = await get(identity$);
+    if (!identity) {
+      return null;
+    }
+    const features = await get(features$);
+    if (
+      !features ||
+      !isFeatureEnabled(FeatureSwitchKey.DiscordIntegration, features)
+    ) {
       return {
         kind: "denied",
         response: {
@@ -66,10 +92,10 @@ export function discordBindingAccess(args: {
         },
       };
     }
-    const binding = await get(discordUserBinding(args));
+    const binding = await get(binding$);
     if (
       !binding ||
-      (args.guildId !== undefined && binding.guildId !== args.guildId)
+      (identity.guildId !== undefined && binding.guildId !== identity.guildId)
     ) {
       return { kind: "denied", response: discordUnavailable() };
     }
@@ -105,24 +131,33 @@ export type DiscordConversationAccess =
     }
   | { kind: "denied"; response: DiscordFailureResponse };
 
-/** A finite, memoized permission read; no request signal is captured by its graph. */
-export function discordConversationAccess(args: {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly guildId?: string;
-  readonly channelId: string;
-  readonly mode: DiscordAccessMode;
-}) {
-  return computed(async (get): Promise<DiscordConversationAccess> => {
-    const current = await get(discordBindingAccess(args));
-    if (current.kind === "denied") {
+/** Each node is a fresh authority boundary, connected during graph construction. */
+export function discordConversationAccess(
+  input$: Computed<
+    Promise<
+      | (DiscordBindingIdentity & {
+          readonly channelId: string;
+          readonly mode: DiscordAccessMode;
+        })
+      | null
+    >
+  >,
+): Computed<Promise<DiscordConversationAccess | null>> {
+  const binding$ = createDiscordBindingAccess(input$);
+  return computed(async (get): Promise<DiscordConversationAccess | null> => {
+    const input = await get(input$);
+    if (!input) {
+      return null;
+    }
+    const current = await get(binding$);
+    if (!current || current.kind === "denied") {
       return current;
     }
     const access = await resolveDiscordProviderAccess({
       ...current.binding,
       botToken: current.botToken,
-      channelId: args.channelId,
-      mode: args.mode,
+      channelId: input.channelId,
+      mode: input.mode,
     });
     return access.kind === "denied"
       ? access

@@ -6,10 +6,10 @@
 #[macro_use]
 pub(crate) mod support;
 
-mod checkpoint;
 mod codex_session_cleanup;
 mod complete;
 mod events;
+mod finalization;
 mod guest_config;
 mod heartbeat;
 mod http_client;

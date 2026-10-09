@@ -12,7 +12,6 @@ import {
 import { createApp } from "../../../../app-factory";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
-import { listAgentRunsFixture } from "../../../../test-fixtures/agent-runs";
 import type { ApiTestUser } from "./api-bdd";
 import { createRouteMocks } from "./route-test";
 import { logsRoutes } from "../../logs";
@@ -23,13 +22,6 @@ const TEST_APP_ROUTES = Object.freeze([...logsRoutes, ...runDetailRoutes]);
 type AuthHeaders = {
   readonly authorization?: string;
 };
-interface RunsListQuery {
-  readonly status?: string;
-  readonly agent?: string;
-  readonly since?: string;
-  readonly until?: string;
-  readonly limit?: number;
-}
 type AgentEventsQuery = z.input<
   (typeof runAgentEventsContract.getAgentEvents)["query"]
 >;
@@ -82,38 +74,6 @@ function authenticate(
 
 export function createRunReadsApi(context: TestContext) {
   return {
-    async requestListAgentRuns<TStatus extends 200 | 400>(
-      actor: ApiTestUser,
-      query: RunsListQuery,
-      statuses: readonly TStatus[],
-    ) {
-      if (!actor.orgId) {
-        throw new Error("Agent run list service requires an organization");
-      }
-      const result = await listAgentRunsFixture({
-        userId: actor.userId,
-        orgId: actor.orgId,
-        status: query.status,
-        agent: query.agent,
-        since: query.since,
-        until: query.until,
-        limit: query.limit,
-      });
-      const response =
-        result.kind === "bad-request"
-          ? {
-              status: 400 as const,
-              body: {
-                error: {
-                  message: result.message,
-                  code: "BAD_REQUEST" as const,
-                },
-              },
-            }
-          : { status: 200 as const, body: result.body };
-      return await accept(Promise.resolve(response), statuses);
-    },
-
     async requestAgentRunAgentEvents<
       TStatus extends 200 | 400 | 401 | 403 | 404,
     >(

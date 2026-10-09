@@ -6,18 +6,22 @@ import {
   agentInstructionsContract,
   agentsMainContract,
 } from "@okouai/api-contracts/contracts/agents";
-import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
+import {
+  billingStatusContract,
+  billingUsagePackCreditsContract,
+} from "@okouai/api-contracts/contracts/billing";
 import { onboardingStatusContract } from "@okouai/api-contracts/contracts/onboarding";
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import { SEED_INSTRUCTIONS } from "@okouai/core/seed-instructions";
 import { getInstructionsStorageName } from "@okouai/core/storage-names";
-import { testStorageObjectCleanupContract } from "@okouai/api-contracts/contracts/test-storage-object-cleanup";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { agentInstructionsRoutes } from "../agent-instructions";
 import { agentsRoutes } from "../agents";
 import { billingStatusRoutes } from "../billing-status";
+import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
+import { mockNow, now } from "../../../lib/time";
 import { onboardingStatusRoutes } from "../onboarding-status";
 import { runModelsRoutes } from "../run-models";
 import { installDurableUserExportStorage } from "./helpers/durable-user-export-storage";
@@ -29,7 +33,6 @@ import { storageTextFile } from "./helpers/api-bdd-storage-files";
 import { tarGz } from "./helpers/template-publish-fixture";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
-import { testStorageObjectCleanupRoutes } from "../test-storage-object-cleanup";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -49,6 +52,7 @@ function clients(
       ...agentsRoutes,
       ...agentInstructionsRoutes,
       ...billingStatusRoutes,
+      ...billingUsagePackCreditsRoutes,
       ...runModelsRoutes,
     ],
   });
@@ -57,6 +61,7 @@ function clients(
     agents: app(agentsMainContract),
     instructions: app(agentInstructionsContract),
     billing: app(billingStatusContract),
+    usagePack: app(billingUsagePackCreditsContract),
     models: app(runModelsMainContract),
   };
 }
@@ -129,25 +134,22 @@ async function expectSingleOnboardingGrant(
   api: ReturnType<typeof clients>,
 ): Promise<void> {
   const billing = await accept(api.billing.get({ headers }), [200]);
-  expect(billing.body.credits).toBe(1000);
-  expect(billing.body.creditGrants).toStrictEqual([
+  expect(billing.body.credits).toBe(0);
+  expect(billing.body.creditGrants).toStrictEqual([]);
+  const usagePack = await accept(api.usagePack.get({ headers }), [200]);
+  expect(usagePack.body).toMatchObject({
+    totalCredits: 1000,
+    purchasedCredits: 0,
+    bonusCredits: 1000,
+    hasUsagePack: false,
+  });
+  expect(usagePack.body.creditGrants).toStrictEqual([
     expect.objectContaining({
-      source: "onboarding",
+      grantType: "bonus",
       amount: 1000,
       remaining: 1000,
     }),
   ]);
-}
-
-async function retryOwnedCleanup(orgId: string): Promise<void> {
-  // Only the infrastructure retry clock is unavailable through production APIs.
-  // This route advances backoff for this uniquely owned organization's jobs.
-  await accept(
-    setupApp({ context, routes: testStorageObjectCleanupRoutes })(
-      testStorageObjectCleanupContract,
-    ).retry({ body: { kind: "organization", orgId } }),
-    [200],
-  );
 }
 
 async function deleteOrganization(orgId: string): Promise<void> {
@@ -232,15 +234,116 @@ describe("default Agent bootstrap", () => {
       [200],
     );
     expect(after.body.content).toBe(edited);
-    const billing = await accept(api.billing.get({ headers }), [200]);
-    expect(billing.body.credits).toBe(1000);
-    expect(billing.body.creditGrants).toStrictEqual([
+    await expectSingleOnboardingGrant(api);
+  });
+
+  it("keeps the onboarding bonus personal to the workspace creator", async () => {
+    const creator = createBddApi(context).user();
+    if (!creator.orgId) {
+      throw new Error("Expected a workspace creator");
+    }
+    mocks.clerk.session(creator.userId, creator.orgId, "org:admin");
+    installDurableUserExportStorage(context, {
+      prefixes: [`${creator.orgId}/`],
+    });
+    const api = clients();
+    await readDefaultId(api);
+    await expectSingleOnboardingGrant(api);
+    const creatorCredits = await accept(api.usagePack.get({ headers }), [200]);
+    expect(creatorCredits.body.memberCredits).toStrictEqual([
       expect.objectContaining({
-        source: "onboarding",
-        amount: 1000,
-        remaining: 1000,
+        memberId: creator.userId,
+        totalCredits: 1000,
+        bonusCredits: 1000,
       }),
     ]);
+
+    mocks.clerk.session(`user_${randomUUID()}`, creator.orgId, "org:member");
+    await accept(api.status.getStatus({ headers }), [200]);
+    const memberCredits = await accept(api.usagePack.get({ headers }), [200]);
+    expect(memberCredits.body).toMatchObject({
+      totalCredits: 0,
+      purchasedCredits: 0,
+      bonusCredits: 0,
+      creditGrants: [],
+    });
+    expect(memberCredits.body.memberCredits).toBeUndefined();
+    mocks.clerk.session(creator.userId, creator.orgId, "org:admin");
+    const unchanged = await accept(api.usagePack.get({ headers }), [200]);
+    expect(unchanged.body).toStrictEqual(creatorCredits.body);
+  });
+
+  it("expires the personal onboarding grant after 30 days without restarting on replay", async () => {
+    const grantedAt = new Date("2027-01-01T12:34:56.789Z");
+    const expiresAt = new Date("2027-01-31T12:34:56.789Z");
+    mockNow(grantedAt);
+    const orgId = authenticateAdmin();
+    installDurableUserExportStorage(context, { prefixes: [`${orgId}/`] });
+    const api = clients();
+    const agentId = await readDefaultId(api);
+    await expectSingleOnboardingGrant(api);
+    const granted = await accept(api.usagePack.get({ headers }), [200]);
+    expect(granted.body.creditGrants).toStrictEqual([
+      expect.objectContaining({
+        grantType: "bonus",
+        amount: 1000,
+        remaining: 1000,
+        expiresAt: expiresAt.toISOString(),
+      }),
+    ]);
+
+    mockNow(expiresAt.getTime() - 1);
+    await expect(readDefaultId(api)).resolves.toBe(agentId);
+    const beforeExpiry = await accept(api.usagePack.get({ headers }), [200]);
+    expect(beforeExpiry.body).toStrictEqual(granted.body);
+    mockNow(expiresAt);
+    await expect(readDefaultId(api)).resolves.toBe(agentId);
+    const expired = await accept(api.usagePack.get({ headers }), [200]);
+    expect(expired.body).toMatchObject({
+      totalCredits: 0,
+      bonusCredits: 0,
+      creditGrants: [],
+    });
+    const billing = await accept(api.billing.get({ headers }), [200]);
+    expect(billing.body.credits).toBe(0);
+    expect(billing.body.creditGrants).toStrictEqual([]);
+  });
+
+  it("issues one personal bonus through the Clerk organization webhook and status replay", async () => {
+    const creator = createBddApi(context).user();
+    if (!creator.orgId) {
+      throw new Error("Expected a workspace creator");
+    }
+    mocks.clerk.session(creator.userId, creator.orgId, "org:admin");
+    installDurableUserExportStorage(context, {
+      prefixes: [`${creator.orgId}/`],
+    });
+    const webhooks = createWebhookCallbackApi(context);
+    webhooks.configureClerkWebhookSecret();
+    const event = {
+      type: "organization.created",
+      data: {
+        id: creator.orgId,
+        created_by: creator.userId,
+        created_at: now(),
+      },
+    };
+    webhooks.verifyNextClerkWebhook(event);
+    await webhooks.requestClerkWebhook("{}", {}, [200]);
+    await flushWaitUntilForTest();
+    const api = clients();
+    await expectSingleOnboardingGrant(api);
+    const initial = await accept(api.usagePack.get({ headers }), [200]);
+
+    webhooks.verifyNextClerkWebhook(event);
+    await Promise.all([
+      webhooks.requestClerkWebhook("{}", {}, [200]),
+      accept(api.status.getStatus({ headers }), [200]),
+    ]);
+    await flushWaitUntilForTest();
+    await expectSingleOnboardingGrant(api);
+    const replayed = await accept(api.usagePack.get({ headers }), [200]);
+    expect(replayed.body).toStrictEqual(initial.body);
   });
 
   it.each(["archive.tar.gz", "manifest.json"])(
@@ -274,6 +377,12 @@ describe("default Agent bootstrap", () => {
       });
       const beforeRetry = await accept(api.agents.list({ headers }), [200]);
       expect(beforeRetry.body).toStrictEqual([]);
+      const creditsBeforeRetry = await accept(
+        api.usagePack.get({ headers }),
+        [200],
+      );
+      expect(creditsBeforeRetry.body.totalCredits).toBe(0);
+      expect(creditsBeforeRetry.body.creditGrants).toStrictEqual([]);
 
       const retries = await Promise.all([
         accept(api.status.getStatus({ headers }), [200]),
@@ -291,9 +400,7 @@ describe("default Agent bootstrap", () => {
         [200],
       );
       expect(instructions.body.content).toBe(SEED_INSTRUCTIONS);
-      const billing = await accept(api.billing.get({ headers }), [200]);
-      expect(billing.body.credits).toBe(1000);
-      expect(billing.body.creditGrants).toHaveLength(1);
+      await expectSingleOnboardingGrant(api);
     },
   );
 
@@ -519,6 +626,12 @@ describe("default Agent bootstrap", () => {
       expect(before.body.creditGrants).not.toContainEqual(
         expect.objectContaining({ source: "onboarding" }),
       );
+      const personalBefore = await accept(
+        api.usagePack.get({ headers }),
+        [200],
+      );
+      expect(personalBefore.body.totalCredits).toBe(0);
+      expect(personalBefore.body.creditGrants).toStrictEqual([]);
       upload.release("success");
       const late = await accept(pending, [200]);
       expect(late.body.defaultAgentId).toBe(agentId);
@@ -526,6 +639,8 @@ describe("default Agent bootstrap", () => {
       expect(after.body.tier).toBe(tier);
       expect(after.body.credits).toBe(before.body.credits);
       expect(after.body.creditGrants).toStrictEqual(before.body.creditGrants);
+      const personalAfter = await accept(api.usagePack.get({ headers }), [200]);
+      expect(personalAfter.body).toStrictEqual(personalBefore.body);
       const listed = await accept(api.agents.list({ headers }), [200]);
       expect(listed.body).toStrictEqual([
         expect.objectContaining({
@@ -539,7 +654,7 @@ describe("default Agent bootstrap", () => {
     },
   );
 
-  it("retains a failed candidate cleanup for retry without damaging the winner", async () => {
+  it("preserves the onboarding winner when candidate cleanup fails at R2", async () => {
     const orgId = authenticateAdmin();
     const upload = pausedSeedUpload(orgId);
     const api = clients();
@@ -572,8 +687,6 @@ describe("default Agent bootstrap", () => {
     expect((await pending).status).toBe(200);
     expect(upload.storage.hasObject(losingArchiveKey)).toBeTruthy();
     await expectInstructions(api, agentId, SEED_INSTRUCTIONS);
-    await retryOwnedCleanup(orgId);
-    expect(upload.storage.hasObject(losingArchiveKey)).toBeFalsy();
     await expect(readDefaultId(api)).resolves.toBe(agentId);
     await expectInstructions(api, agentId, SEED_INSTRUCTIONS);
     await expectSingleOnboardingGrant(api);
@@ -610,10 +723,15 @@ describe("default Agent bootstrap", () => {
       api.billing.get({ headers }),
       [200],
     );
-    // Organization deletion removes the balance, not its grant idempotency
-    // receipt. Recreating the same external org identity cannot earn it again.
+    // The durable onboarding receipt prevents a recreated external org identity
+    // from earning a second personal grant or refilling the first one.
     expect(billingBeforeLateFailure.body.credits).toBe(0);
-    expect(billingBeforeLateFailure.body.creditGrants).toHaveLength(1);
+    expect(billingBeforeLateFailure.body.creditGrants).toStrictEqual([]);
+    await expectSingleOnboardingGrant(api);
+    const personalBeforeLateFailure = await accept(
+      api.usagePack.get({ headers }),
+      [200],
+    );
     upload.release("failure");
     expect((await pending).status).toBe(200);
     expect(upload.storage.hasObject(losingArchiveKey)).toBeFalsy();
@@ -626,6 +744,13 @@ describe("default Agent bootstrap", () => {
     expect(billingAfterLateFailure.body.credits).toBe(0);
     expect(billingAfterLateFailure.body.creditGrants).toStrictEqual(
       billingBeforeLateFailure.body.creditGrants,
+    );
+    const personalAfterLateFailure = await accept(
+      api.usagePack.get({ headers }),
+      [200],
+    );
+    expect(personalAfterLateFailure.body).toStrictEqual(
+      personalBeforeLateFailure.body,
     );
   });
 });

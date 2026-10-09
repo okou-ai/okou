@@ -280,10 +280,7 @@ const uploadFileToStorage$ = command(
 );
 
 export type AttachmentAnnotationUploadStatus =
-  | "idle"
-  | "pending"
-  | "uploaded"
-  | "failed";
+  "idle" | "pending" | "uploaded" | "failed";
 
 type AttachmentAnnotationUploadState =
   | { readonly status: "idle" }

@@ -120,12 +120,10 @@ async function fixture() {
 
   context.mocks.s3.getSignedUrl.mockImplementation(
     (client: unknown, command: unknown) => {
-      if (
-        !(
-          command instanceof PutObjectCommand ||
-          command instanceof GetObjectCommand
-        )
-      ) {
+      if (!(
+        command instanceof PutObjectCommand ||
+        command instanceof GetObjectCommand
+      )) {
         throw new Error("Unexpected presign operation");
       }
       const url = new URL(
@@ -604,38 +602,9 @@ test("resolves a public snapshot to copied bytes without exposing its private so
   expect(revokedDownload.body).not.toHaveProperty("url");
 });
 
-// Hosted sites are public publications and are no longer copied into a
-// snapshot, so only an uploaded file carries a copied cover.
-test("copies a generated video cover with a stable reference, independent bytes, and the parent revocation", async () => {
+test("copies an uploaded video with independent bytes and the parent revocation", async () => {
   const f = await fixture();
-  const generatedImage = Buffer.from("Generated preview image");
-  mockEnv("CLOUDFLARE_BROWSER_RENDERING_API_TOKEN", "preview-token");
-  mockEnv(
-    "ARTIFACT_PREVIEW_WAF_SECRET",
-    "test-artifact-preview-waf-secret-value",
-  );
-  server.use(
-    http.post("https://files.okou.app/__artifact-video-poster", () => {
-      return new HttpResponse(new Uint8Array(generatedImage), {
-        headers: { "Content-Type": "image/jpeg" },
-      });
-    }),
-    http.post(
-      "https://api.cloudflare.com/client/v4/accounts/test-account/browser-rendering/snapshot",
-      () => {
-        return HttpResponse.json({
-          success: true,
-          errors: [],
-          meta: { status: 200, title: "Snapshot preview" },
-          result: {
-            content: "<main>Snapshot preview</main>",
-            screenshot: generatedImage.toString("base64"),
-          },
-        });
-      },
-    ),
-  );
-  const sourceRun = await f.selection("Generate an artifact with a cover");
+  const sourceRun = await f.selection("Upload a video");
   await runs.heartbeatRunner(f.runnerGroup);
   const claim = await runs.claimRunnerJob(sourceRun.runId);
   const bearerToken = okouTokenFromClaim(claim);
@@ -644,25 +613,18 @@ test("copies a generated video cover with a stable reference, independent bytes,
     contentType: "video/mp4",
     bearerToken,
   });
-  await flushWaitUntilForTest();
   const sourceArtifacts = await chat.listThreadArtifacts(
     f.actor,
     sourceRun.threadId,
   );
-  const sourcePreviewUrl = sourceArtifacts.runs
-    .flatMap((run) => {
+  expect(
+    sourceArtifacts.runs.flatMap((run) => {
       return run.files;
-    })
-    .find((file) => {
-      return file.url === source.url;
-    })?.previewImageUrl;
-  expect(sourcePreviewUrl).toBeDefined();
-  const originalPreview = await accept(
-    api()(artifactReferencesContract).resolve({
-      headers: headers(f.actor),
-      params: { reference: referenceName(sourcePreviewUrl!) },
     }),
-    [200],
+  ).toStrictEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ url: source.url, contentType: "video/mp4" }),
+    ]),
   );
   const selection = await f.selection(source.url);
   const created = await accept(share(f.actor, selection), [201]);
@@ -675,7 +637,6 @@ test("copies a generated video cover with a stable reference, independent bytes,
     api()(artifactReferencesContract).resolve({ params: { reference } }),
     [200],
   );
-  const previewImageUrl = resolved.body.previewImageUrl;
   expect(resolved.body.downloadUrl).toBeDefined();
   const download = new URL(resolved.body.downloadUrl!);
   expect(download.searchParams.get("X-Amz-Credential")).toBe(
@@ -691,45 +652,30 @@ test("copies a generated video cover with a stable reference, independent bytes,
     'attachment; filename="video.mp4"',
   );
   await expect(downloaded.text()).resolves.toBe("Private video bytes");
-  expect(previewImageUrl).toMatch(
-    /^https:\/\/app\.okou\.ai\/artifacts\/[a-z0-9]{10}\.(jpg|webp)$/u,
-  );
-  expect(previewImageUrl).not.toBe(
-    new URL(sourcePreviewUrl!, "https://app.okou.ai").href,
-  );
   const published = await accept(
     api()(artifactReferencesContract).publicUrl({ params: { reference } }),
     [200],
   );
-  expect(published.body.preview.previewImageUrl).toBe(previewImageUrl);
+  expect(published.body.preview).toMatchObject({
+    filename: "video.mp4",
+    contentType: "video/mp4",
+  });
   expect(published.body.downloadUrl).toBe(resolved.body.downloadUrl);
-  const previewReference = referenceName(previewImageUrl!);
-  const sourceKey = decodeURIComponent(
-    new URL(originalPreview.body.url).pathname.slice(1),
+  f.objects.set(source.key, Buffer.from("Changed source video"));
+  await expect((await fetch(published.body.url)).text()).resolves.toBe(
+    "Private video bytes",
   );
-  f.objects.set(sourceKey, Buffer.from("Changed source preview"));
-  const copiedPreview = await accept(
-    api()(artifactReferencesContract).resolve({
-      params: { reference: previewReference },
-    }),
+  f.objects.delete(source.key);
+  const retained = await accept(
+    api()(artifactReferencesContract).publicUrl({ params: { reference } }),
     [200],
   );
-  await expect((await fetch(copiedPreview.body.url)).text()).resolves.toBe(
-    generatedImage.toString(),
-  );
-  f.objects.delete(sourceKey);
-  const retainedPreview = await accept(
-    api()(artifactReferencesContract).publicUrl({
-      params: { reference: previewReference },
-    }),
-    [200],
-  );
-  await expect((await fetch(retainedPreview.body.url)).text()).resolves.toBe(
-    generatedImage.toString(),
+  await expect((await fetch(retained.body.url)).text()).resolves.toBe(
+    "Private video bytes",
   );
   await accept(
     api()(artifactReferencesContract).publicUrl({
-      params: { reference: referenceName(sourcePreviewUrl!) },
+      params: { reference: referenceName(source.url) },
     }),
     [404],
   );
@@ -740,20 +686,14 @@ test("copies a generated video cover with a stable reference, independent bytes,
     }),
     [204],
   );
-  for (const revoked of [reference, previewReference]) {
-    await accept(
-      api()(artifactReferencesContract).resolve({
-        params: { reference: revoked },
-      }),
-      [404],
-    );
-    await accept(
-      api()(artifactReferencesContract).publicUrl({
-        params: { reference: revoked },
-      }),
-      [404],
-    );
-  }
+  await accept(
+    api()(artifactReferencesContract).resolve({ params: { reference } }),
+    [404],
+  );
+  await accept(
+    api()(artifactReferencesContract).publicUrl({ params: { reference } }),
+    [404],
+  );
 });
 
 test.each(["missing", "unavailable"] as const)(

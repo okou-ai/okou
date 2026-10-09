@@ -1,3 +1,4 @@
+import { isAutoSelectedModel } from "@okouai/core/auto-run-model";
 import { normalizeRunModelId } from "@okouai/api-contracts/contracts/model-providers";
 
 export interface SessionExecutionIdentity {
@@ -7,6 +8,10 @@ export interface SessionExecutionIdentity {
 
 function modelFamily(model: string): string {
   const normalized = normalizeRunModelId(model.trim()).toLowerCase();
+  // PR1/PR2 selected Auto aliases share the existing family, not a new runtime.
+  if (isAutoSelectedModel(normalized)) {
+    return "okou";
+  }
   const modelName = normalized.slice(normalized.lastIndexOf("/") + 1);
   return modelName.replace(/[-_.].*$/, "");
 }

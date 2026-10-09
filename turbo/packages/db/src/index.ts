@@ -1,4 +1,5 @@
 import * as getStartedClaimSchema from "./schema/get-started-claim";
+import * as mailNotificationSchema from "./schema/mail-notification";
 import * as billingRunAttributionSchema from "./schema/billing-run-attribution";
 import * as activeAgentRunSchema from "./schema/active-agent-run";
 import * as homeTaskRecommendationSchema from "./schema/home-task-recommendation";
@@ -51,6 +52,7 @@ import * as usageEventSchema from "./schema/usage-event";
 import * as xResourceUsageSchema from "./schema/x-resource-usage";
 import * as usageEventHourlyRollupSchema from "./schema/usage-event-hourly-rollup";
 import * as usagePackCreditGrantSchema from "./schema/usage-pack-credit-grant";
+import * as usagePackOverdraftTransferSchema from "./schema/usage-pack-overdraft-transfer";
 import * as usagePackCreditRefundSchema from "./schema/usage-pack-credit-refund";
 import * as usagePackSubscriptionSchema from "./schema/usage-pack-subscription";
 import * as runBuiltInAdmissionSchema from "./schema/run-built-in-admission";
@@ -86,7 +88,6 @@ import * as orgSchema from "./schema/org-metadata";
 import * as orgPlanEntitlementSchema from "./runtime/org-plan-entitlement";
 import * as orgConcurrencyEntitlementSchema from "./schema/org-concurrency-entitlement";
 import * as orgConcurrencySubscriptionSchema from "./schema/org-concurrency-subscription";
-import * as orgUsageAllowanceSchema from "./schema/org-usage-allowance";
 import * as orgCacheSchema from "./schema/org-cache";
 import * as orgMembersSchema from "./schema/org-members-metadata";
 import * as orgMembersCacheSchema from "./schema/org-members-cache";
@@ -140,7 +141,7 @@ import * as stripeAutomationEventSchema from "./schema/stripe-automation-event";
 import * as googleCalendarEventSchema from "./schema/google-calendar-event";
 import * as googleFormsEventSchema from "./schema/google-forms-event";
 import * as googleWorkspaceEventSchema from "./schema/google-workspace-event";
-import * as connectorCatalogSchema from "./schema/connector-catalog";
+import * as connectorCatalogSchema from "./runtime/connector-catalog";
 import * as officialWorkflowCatalogSchema from "./schema/official-workflow-catalog";
 import * as mailDraftSchema from "./schema/mail-draft";
 import * as browserSessionSchema from "./schema/browser-session";
@@ -159,6 +160,7 @@ import * as vncConnectionSchema from "./schema/vnc-connection";
 import * as cloudflareAccessConfigSchema from "./schema/cloudflare-access-config";
 
 export const schema = {
+  ...mailNotificationSchema,
   ...getStartedClaimSchema,
   ...activeAgentRunSchema,
   ...homeTaskRecommendationSchema,
@@ -229,6 +231,7 @@ export const schema = {
   ...xResourceUsageSchema,
   ...usageEventHourlyRollupSchema,
   ...usagePackCreditGrantSchema,
+  ...usagePackOverdraftTransferSchema,
   ...usagePackCreditRefundSchema,
   ...usagePackSubscriptionSchema,
   ...runBuiltInAdmissionSchema,
@@ -247,7 +250,6 @@ export const schema = {
   ...orgPlanEntitlementSchema,
   ...orgConcurrencyEntitlementSchema,
   ...orgConcurrencySubscriptionSchema,
-  ...orgUsageAllowanceSchema,
   ...orgCacheSchema,
   ...orgMembersSchema,
   ...orgMembersCacheSchema,

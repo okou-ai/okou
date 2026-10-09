@@ -1,5 +1,9 @@
-import { command, computed } from "ccstate";
+import { command } from "ccstate";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { agents } from "@okouai/db/schema/agent";
+import { workflows } from "@okouai/db/schema/workflow";
+import { and, eq, isNotNull } from "drizzle-orm";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -12,12 +16,9 @@ import {
   notFound,
   teamRequired,
 } from "../../lib/error";
+import { childAutonomyBudget } from "../services/autonomy-budget.service";
 import {
-  childAutonomyBudget,
-  loadOwnedRunAutonomyBudget,
-} from "../services/autonomy-budget.service";
-import {
-  loadVisibleWorkflowById,
+  visibleWorkflowCondition,
   type WorkflowMember,
 } from "../services/workflow-data.service";
 import {
@@ -25,15 +26,15 @@ import {
   deleteWorkflowAutomation$,
   disableWorkflowAutomation$,
   enableWorkflowAutomation$,
-  getWorkflowAutomation,
-  listThreadBoundWorkflowAutomations,
-  listWorkspaceWorkflowAutomations,
-  loadWorkflowAutomations,
-  revealWorkflowWebhookSecret,
-  runOwnedWorkflowAutomationNow$,
+  getWorkflowAutomation$,
+  listThreadBoundWorkflowAutomations$,
+  listWorkspaceWorkflowAutomations$,
+  loadWorkflowAutomations$,
+  revealWorkflowWebhookSecret$,
   updateWorkflowAutomation$,
   type AutomationResult,
 } from "../services/workflow-automation.service";
+import { runOwnedWorkflowAutomationNow$ } from "../services/workflow-automation-manual-run.service";
 import type { RouteEntry, SignalRouteHandler } from "../route-entry";
 
 const workflowAutomationReadAuth = {
@@ -91,56 +92,87 @@ function automationErrorResponse(
 const createAutomationBody$ = bodyResultOf(workflowAutomationsContract.create);
 const updateAutomationBody$ = bodyResultOf(workflowAutomationsContract.update);
 
-const workspaceWorkflowAutomationEntries$ = computed(async (get) => {
-  const auth = get(organizationAuthContext$);
-  const db = get(db$);
-  return await listWorkspaceWorkflowAutomations(db, {
-    orgId: auth.orgId,
-    member: memberFromAuth(auth),
-  });
-});
+const workspaceWorkflowAutomationEntries$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const auth = get(organizationAuthContext$);
 
-const listWorkspaceAutomationsInner$ = computed(async (get) => {
-  const entries = await get(workspaceWorkflowAutomationEntries$);
-  return {
-    status: 200 as const,
-    body: [...entries],
-  };
-});
+    return await set(
+      listWorkspaceWorkflowAutomations$,
+      {
+        orgId: auth.orgId,
+        member: memberFromAuth(auth),
+      },
+      signal,
+    );
+  },
+);
 
-const listChatThreadAutomationsInner$ = computed(async (get) => {
-  const auth = get(organizationAuthContext$);
-  const params = get(
-    pathParamsOf(workflowAutomationsContract.listForChatThread),
-  );
-  const db = get(db$);
-  const automations = await listThreadBoundWorkflowAutomations(db, {
-    orgId: auth.orgId,
-    userId: auth.userId,
-    threadId: params.threadId,
-  });
-  return { status: 200 as const, body: [...automations] };
-});
+const listWorkspaceAutomationsInner$ = command(
+  async ({ set }, signal: AbortSignal) => {
+    const entries = await set(workspaceWorkflowAutomationEntries$, signal);
+    signal.throwIfAborted();
+    return {
+      status: 200 as const,
+      body: [...entries],
+    };
+  },
+);
 
-const listAutomationsInner$ = computed(async (get) => {
-  const auth = get(organizationAuthContext$);
-  const params = get(pathParamsOf(workflowAutomationsContract.list));
-  const db = get(db$);
-  const visible = await loadVisibleWorkflowById(db, {
-    orgId: auth.orgId,
-    member: memberFromAuth(auth),
-    workflowId: params.workflowId,
-  });
-  if (!visible) {
-    return notFound(`Workflow not found: ${params.workflowId}`);
-  }
-  const automations = await loadWorkflowAutomations(db, {
-    orgId: auth.orgId,
-    workflowId: visible.workflow.id,
-    userId: auth.userId,
-  });
-  return { status: 200 as const, body: [...automations] };
-});
+const listChatThreadAutomationsInner$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const auth = get(organizationAuthContext$);
+    const params = get(
+      pathParamsOf(workflowAutomationsContract.listForChatThread),
+    );
+
+    const automations = await set(
+      listThreadBoundWorkflowAutomations$,
+      {
+        orgId: auth.orgId,
+        userId: auth.userId,
+        threadId: params.threadId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    return { status: 200 as const, body: [...automations] };
+  },
+);
+
+const listAutomationsInner$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const auth = get(organizationAuthContext$);
+    const params = get(pathParamsOf(workflowAutomationsContract.list));
+    const db = get(db$);
+    const [visible] = await db
+      .select({ id: workflows.id })
+      .from(workflows)
+      .innerJoin(agents, eq(workflows.agentId, agents.id))
+      .where(
+        and(
+          eq(workflows.orgId, auth.orgId),
+          eq(workflows.id, params.workflowId),
+          visibleWorkflowCondition(memberFromAuth(auth)),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!visible) {
+      return notFound(`Workflow not found: ${params.workflowId}`);
+    }
+    const automations = await set(
+      loadWorkflowAutomations$,
+      {
+        orgId: auth.orgId,
+        workflowId: visible.id,
+        userId: auth.userId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    return { status: 200 as const, body: [...automations] };
+  },
+);
 
 const createAutomationInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -155,12 +187,20 @@ const createAutomationInner$ = command(
     let autonomyBudget: number | undefined;
     const db = get(db$);
     if (auth.tokenType === "agent") {
-      const sourceAutonomyBudget = await loadOwnedRunAutonomyBudget(db, {
-        runId: auth.runId,
-        orgId: auth.orgId,
-        userId: auth.userId,
-      });
+      const [sourceRun] = await db
+        .select({ autonomyBudget: agentRuns.autonomyBudget })
+        .from(agentRuns)
+        .where(
+          and(
+            eq(agentRuns.id, auth.runId),
+            eq(agentRuns.orgId, auth.orgId),
+            eq(agentRuns.userId, auth.userId),
+            isNotNull(agentRuns.triggerSource),
+          ),
+        )
+        .limit(1);
       signal.throwIfAborted();
+      const sourceAutonomyBudget = sourceRun?.autonomyBudget ?? null;
       if (sourceAutonomyBudget === null) {
         return notFound("Source run not found");
       }
@@ -194,37 +234,51 @@ const createAutomationInner$ = command(
   },
 );
 
-const getAutomationInner$ = computed(async (get) => {
-  const auth = get(organizationAuthContext$);
-  const params = get(pathParamsOf(workflowAutomationsContract.get));
-  const db = get(db$);
-  const automation = await getWorkflowAutomation(db, {
-    orgId: auth.orgId,
-    member: memberFromAuth(auth),
-    automationId: params.id,
-  });
-  if (!automation) {
-    return notFound("Workflow automation not found");
-  }
-  return { status: 200 as const, body: automation };
-});
+const getAutomationInner$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const auth = get(organizationAuthContext$);
+    const params = get(pathParamsOf(workflowAutomationsContract.get));
 
-const revealWebhookSecretInner$ = computed(async (get) => {
-  const auth = get(organizationAuthContext$);
-  const params = get(
-    pathParamsOf(workflowAutomationsContract.revealWebhookSecret),
-  );
-  const db = get(db$);
-  const secret = await revealWorkflowWebhookSecret(db, {
-    orgId: auth.orgId,
-    member: memberFromAuth(auth),
-    automationId: params.id,
-  });
-  if (!secret) {
-    return notFound("Workflow webhook automation not found");
-  }
-  return { status: 200 as const, body: secret };
-});
+    const automation = await set(
+      getWorkflowAutomation$,
+      {
+        orgId: auth.orgId,
+        member: memberFromAuth(auth),
+        automationId: params.id,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!automation) {
+      return notFound("Workflow automation not found");
+    }
+    return { status: 200 as const, body: automation };
+  },
+);
+
+const revealWebhookSecretInner$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const auth = get(organizationAuthContext$);
+    const params = get(
+      pathParamsOf(workflowAutomationsContract.revealWebhookSecret),
+    );
+
+    const secret = await set(
+      revealWorkflowWebhookSecret$,
+      {
+        orgId: auth.orgId,
+        member: memberFromAuth(auth),
+        automationId: params.id,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!secret) {
+      return notFound("Workflow webhook automation not found");
+    }
+    return { status: 200 as const, body: secret };
+  },
+);
 
 const updateAutomationInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -289,12 +343,20 @@ const enableAutomationInner$ = command(
     let inheritedAutonomyBudget: number | undefined;
     const db = get(db$);
     if (auth.tokenType === "agent") {
-      const sourceAutonomyBudget = await loadOwnedRunAutonomyBudget(db, {
-        runId: auth.runId,
-        orgId: auth.orgId,
-        userId: auth.userId,
-      });
+      const [sourceRun] = await db
+        .select({ autonomyBudget: agentRuns.autonomyBudget })
+        .from(agentRuns)
+        .where(
+          and(
+            eq(agentRuns.id, auth.runId),
+            eq(agentRuns.orgId, auth.orgId),
+            eq(agentRuns.userId, auth.userId),
+            isNotNull(agentRuns.triggerSource),
+          ),
+        )
+        .limit(1);
       signal.throwIfAborted();
+      const sourceAutonomyBudget = sourceRun?.autonomyBudget ?? null;
       if (sourceAutonomyBudget === null) {
         return notFound("Source run not found");
       }

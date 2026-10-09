@@ -62,6 +62,26 @@ uv run --no-sync python -m pytest \
 uv run --no-sync python -m pytest -v tests/
 ```
 
+### Directory-fixture collection smoke check
+
+Pytest is temporarily constrained to `>=9.0.3,<9.1` for
+[#38047](https://github.com/okou-ai/okou/issues/38047): pytest 9.1 loses
+`conftest.py` fixtures when targeted file arguments revisit a directory after a
+parent-directory test. The 9.0.3 minimum retains its temporary-directory security
+fix. Keep directory-owned fixtures local; callers should not reorder file lists
+to work around this defect.
+
+```bash
+uv run --no-sync python -m pytest tests/test_pytest_collection.py
+```
+
+This smoke check starts isolated pytest processes for interleaved targeted files
+and whole-directory collection. Lift the upper bound only when a released fixed
+pytest passes both shapes, the original issue reproduction, all static checks,
+and the complete addon suite in the resulting locked environment.
+
+### Focused contract suites
+
 Run auth.base forwarder contracts independently when working on one ownership
 area:
 

@@ -150,6 +150,7 @@ private struct WorkspaceRootView: View {
           .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(width: geometry.size.width, height: geometry.size.height)
+        .accessibilityHidden(isSidebarOpen)
         .background(alignment: .top) {
           RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous)
             .fill(Color(uiColor: .systemBackground))
@@ -157,16 +158,18 @@ private struct WorkspaceRootView: View {
             .offset(y: -topInset)
         }
         .overlay(alignment: .top) {
-          Color(uiColor: .secondarySystemBackground)
-            .frame(width: geometry.size.width, height: screenHeight)
-            .clipShape(RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous))
-            .opacity(0.82 * sidebarProgress)
-            .offset(y: -topInset)
-            .allowsHitTesting(isSidebarOpen)
-            .onTapGesture(perform: closeSidebar)
-            .accessibilityLabel("Close sidebar")
-            .accessibilityAddTraits(.isButton)
-            .accessibilityHidden(!isSidebarOpen)
+          Button(action: closeSidebar) {
+            Color(uiColor: .secondarySystemBackground)
+              .frame(width: geometry.size.width, height: screenHeight)
+              .clipShape(RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous))
+              .opacity(0.82 * sidebarProgress)
+              .offset(y: -topInset)
+          }
+          .buttonStyle(.plain)
+          .allowsHitTesting(isSidebarOpen)
+          .accessibilityLabel("Close sidebar")
+          .accessibilityIdentifier("close-sidebar")
+          .accessibilityHidden(!isSidebarOpen)
         }
         .mask(alignment: .top) {
           RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous)
@@ -176,7 +179,6 @@ private struct WorkspaceRootView: View {
         .compositingGroup()
         .shadow(color: .black.opacity(0.3 * sidebarProgress), radius: 18, x: -5)
         .offset(x: sidebarOffset)
-        .accessibilityHidden(isSidebarOpen)
       }
       .frame(width: geometry.size.width, height: geometry.size.height, alignment: .leading)
       .gesture(

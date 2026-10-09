@@ -75,12 +75,20 @@ async fn codex_app_server_reduces_oversized_events_before_delivery()
         collaboration_item("aggregate-collaboration", 8, 80_000),
         collaboration_item("fallback-collaboration", 40, 24_000),
     ];
+    let collaboration_start = delivery_items
+        .as_array()
+        .ok_or("delivery items must be an array")?
+        .len();
     delivery_items
         .as_array_mut()
         .ok_or("delivery items must be an array")?
-        .extend(collaboration_items.iter().cloned());
+        .extend(collaboration_items);
+    // Retain canonical bytes on disk, not a second large allocation throughout
+    // execution. The mock receives its own file so mutations remain observable.
+    let original_items_path = tmp.path().join("original-delivery-items.json");
+    std::fs::write(&original_items_path, serde_json::to_vec(&delivery_items)?)?;
     let items_path = tmp.path().join("delivery-items.json");
-    std::fs::write(&items_path, serde_json::to_vec(&delivery_items)?)?;
+    std::fs::copy(&original_items_path, &items_path)?;
     runtime.config.user_env.insert(
         "MOCK_CODEX_DELIVERY_ITEMS_PATH".into(),
         items_path.to_string_lossy().into_owned(),
@@ -102,13 +110,18 @@ async fn codex_app_server_reduces_oversized_events_before_delivery()
     assert!(result.event_delivery.is_none());
     assert_eq!(result.last_event_sequence, Some(19));
 
-    server
-        .wait_for_quiet(Duration::from_millis(50), Duration::from_secs(5))
-        .await?;
     let requests = server
-        .requests()?
+        .wait_for_quiet(Duration::from_millis(50), Duration::from_secs(5))
+        .await?
         .into_iter()
-        .filter(|request| request.path == "/api/webhooks/agent/events")
+        .filter_map(|event| match event {
+            common::RecordedHttpEvent::Request(request)
+                if request.path == "/api/webhooks/agent/events" =>
+            {
+                Some(request)
+            }
+            _ => None,
+        })
         .collect::<Vec<_>>();
     assert!(!requests.is_empty());
     assert!(
@@ -117,19 +130,16 @@ async fn codex_app_server_reduces_oversized_events_before_delivery()
             .all(|request| request.body.len() <= MAX_REQUEST_BYTES)
     );
 
-    let delivered = requests
-        .iter()
-        .map(|request| serde_json::from_str::<Value>(&request.body))
-        .collect::<Result<Vec<_>, _>>()?
-        .into_iter()
-        .flat_map(|payload| {
+    let mut delivered = Vec::new();
+    for request in &requests {
+        let mut payload: Value = serde_json::from_str(&request.body)?;
+        delivered.append(
             payload
-                .get("events")
-                .and_then(Value::as_array)
-                .cloned()
-                .unwrap_or_default()
-        })
-        .collect::<Vec<_>>();
+                .get_mut("events")
+                .and_then(Value::as_array_mut)
+                .ok_or("event request omitted events array")?,
+        );
+    }
     assert_eq!(delivered.len(), 20);
     assert_eq!(
         delivered
@@ -307,7 +317,7 @@ async fn codex_app_server_reduces_oversized_events_before_delivery()
     );
     assert_eq!(
         std::fs::read(&items_path)?,
-        serde_json::to_vec(&delivery_items)?
+        std::fs::read(&original_items_path)?
     );
     let history = common::read_codex_session_history_events_for_runtime(&runtime)?;
     let inputs = history
@@ -316,9 +326,16 @@ async fn codex_app_server_reduces_oversized_events_before_delivery()
         .collect::<Vec<_>>();
     assert_eq!(inputs.len(), 1);
     assert_eq!(inputs[0]["text"], runtime.config.prompt);
-    assert!(!serde_json::to_string(&history)?.contains("for delivery"));
+    assert!(
+        !history
+            .iter()
+            .any(|event| common::contains_json_text(event, "for delivery"))
+    );
     let local_events = read_jsonl(runtime.paths.agent_log_file())?;
-    for original in &collaboration_items {
+    for original in &delivery_items
+        .as_array()
+        .ok_or("delivery items must be an array")?[collaboration_start..]
+    {
         let item_id = original["id"]
             .as_str()
             .ok_or("collaboration item omitted id")?;
@@ -377,7 +394,7 @@ async fn codex_app_server_reduces_oversized_events_before_delivery()
         .find(|event| event["type"] == "turn.plan.updated")
         .ok_or("local oversized plan update was not recorded")?;
     assert_eq!(local_plan["plan"].as_array().map(Vec::len), Some(75_000));
-    assert!(!serde_json::to_string(local_plan)?.contains(FALLBACK_MARKER));
+    assert!(!common::contains_json_text(local_plan, FALLBACK_MARKER));
     let local_multi_change = delivered_item(&local_events, "oversized-multi-change")?;
     assert_eq!(
         local_multi_change["item"]["changes"]

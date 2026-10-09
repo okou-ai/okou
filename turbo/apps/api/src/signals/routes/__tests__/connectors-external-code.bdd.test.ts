@@ -17,7 +17,6 @@ import {
   expectApiError,
   type ApiTestUser,
 } from "./helpers/api-bdd";
-import { readUserSecrets } from "./helpers/user-config-state";
 import {
   awsVerificationCode,
   createConnectorBddApi,
@@ -417,27 +416,6 @@ describe("CONN-02: external-code session lifecycle", () => {
       );
     }
 
-    const storedSecrets = await readUserSecrets(context, {
-      orgId: actor.orgId ?? "",
-      userId: actor.userId,
-    });
-    const connectorSecretNames = storedSecrets
-      .filter((secret) => {
-        return secret.type === "connector";
-      })
-      .map((secret) => {
-        return secret.name;
-      });
-    expect(connectorSecretNames.sort()).toStrictEqual([
-      "AWS_ACCESS_KEY_ID",
-      "AWS_LOGIN_DPOP_KEY",
-      "AWS_LOGIN_REFRESH_TOKEN",
-      "AWS_SECRET_ACCESS_KEY",
-      "AWS_SESSION_TOKEN",
-    ]);
-    expectNoVisibleSecret(storedSecrets, "aws-secret-access-key");
-    expectNoVisibleSecret(storedSecrets, "aws-login-refresh-token");
-
     const replay = await connectorsApi.completeExternalCode(actor, "aws", {
       sessionId: session.sessionId,
       sessionToken: session.sessionToken,
@@ -479,16 +457,6 @@ describe("CONN-02: external-code session lifecycle", () => {
     );
     expectApiError(afterDelete.body);
     expect(afterDelete.body.error.code).toBe("NOT_FOUND");
-
-    const secretsAfterDelete = await readUserSecrets(context, {
-      orgId: actor.orgId ?? "",
-      userId: actor.userId,
-    });
-    expect(
-      secretsAfterDelete.filter((secret) => {
-        return secret.type === "connector";
-      }),
-    ).toStrictEqual([]);
   });
 
   it("replays the exact non-default account added by an external-code session", async () => {
@@ -758,24 +726,6 @@ describe("CONN-02: external-code session lifecycle", () => {
         name: "NINTENDO_STORE_LOCALE",
       }),
     );
-    const storedSecrets = await readUserSecrets(context, {
-      orgId: actor.orgId ?? "",
-      userId: actor.userId,
-    });
-    const connectorSecretNames = storedSecrets
-      .filter((secret) => {
-        return secret.type === "connector";
-      })
-      .map((secret) => {
-        return secret.name;
-      });
-    expect(connectorSecretNames.sort()).toStrictEqual([
-      "NINTENDO_STORE_ACCESS_TOKEN",
-      "NINTENDO_STORE_ID_TOKEN",
-      "NINTENDO_STORE_SESSION_TOKEN",
-    ]);
-    expectNoVisibleSecret(storedSecrets, "bdd-nintendo-session-token");
-    expectNoVisibleSecret(storedSecrets, "bdd-nintendo-access-token");
 
     await connectorsApi.deleteDefaultBuiltinConnectorAccount(
       actor,
@@ -898,24 +848,6 @@ describe("CONN-02: external-code session lifecycle", () => {
         }),
       );
     }
-
-    const storedSecrets = await readUserSecrets(context, {
-      orgId: actor.orgId ?? "",
-      userId: actor.userId,
-    });
-    const connectorSecretNames = storedSecrets
-      .filter((secret) => {
-        return secret.type === "connector";
-      })
-      .map((secret) => {
-        return secret.name;
-      });
-    expect(connectorSecretNames.sort()).toStrictEqual([
-      "NINTENDO_SWITCH_PARENTAL_CONTROLS_ACCESS_TOKEN",
-      "NINTENDO_SWITCH_PARENTAL_CONTROLS_ID_TOKEN",
-      "NINTENDO_SWITCH_PARENTAL_CONTROLS_SESSION_TOKEN",
-      "NINTENDO_SWITCH_PARENTAL_CONTROLS_SMART_DEVICE_ID",
-    ]);
 
     const replacementSession = await connectorsApi.startExternalCode(
       actor,

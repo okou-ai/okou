@@ -32,6 +32,8 @@ surface; the index does not replace their detailed rules.
 - [Testing](./testing.md): testing strategy, patterns, and anti-patterns.
 - [Deployment compatibility](./deployment-compatibility.md): compatibility
   requirements for independently deployed components and persisted state.
+- [Agent mail notifications](./agent-mail-notifications.md): CLI notification
+  receipts, idempotency, opt-out handling, and the staged Morning Brief rollout.
 - [Run models and subscription metadata](./model-catalog.md): fixed Auto,
   personal subscription metadata, selection and billing.
 - [Run models API](./run-models-api.md): the `GET /api/run-models` response
@@ -94,6 +96,14 @@ surface; the index does not replace their detailed rules.
   scope, canonical chat history, checksum semantics, and download compatibility.
 - [Storage version publication](./storage-version-publication.md): R2-first
   version registration, DB-only reuse, and durable reference-first Clerk cleanup.
+- [Artifact share publication](./artifact-share-publication.md): initial
+  revocation, conditional R2 authority and the transaction-removal deployment gate.
+- [Hosted-site transaction boundary](./database/hosted-site-transaction-boundary.md):
+  deletion/publication ownership preparation, concurrent effects, and unresolved
+  prerequisites for SQL-only transactions.
+- [Hosted-site status reader candidate](./database/hosted-site-status-reader-candidate.md):
+  inactive API/Worker ownership enforcement, preserved mutations, activation
+  prerequisites, delivery windows, query cost and the compatibility matrix.
 - [Connector catalog rejections](./connector-catalog-rejections.md): safe
   validation reasons, rejection log records, retained serving generations and
   recovered publication-order evidence.
@@ -101,9 +111,9 @@ surface; the index does not replace their detailed rules.
   eight-site reader closure, transaction ownership, physical retirement and test mapping.
 - [Dependency override audit](./dependency-overrides.md): retained dependency
   constraints, their origins, and evidence for removing obsolete overrides.
-- [Morning Brief migration state](./morning-brief-migration-state.md): the
-  canonical reader for a member's existing brief, its ownership and thread
-  invariants, and the boundary the `simple-morning-brief` cutover must respect.
+- [Official Workflow Morning Brief](./morning-brief.md): current installation
+  ownership, explicit preferences, claim and settlement lifetime, future-only
+  expiry, and retained email/accounting boundaries.
 - [Morning Brief GitHub collection](./morning-brief-github-collection.md): the
   protected preview entrypoint, live connector authorization, GitHub branch
   semantics, budgets, and coverage/failure classification.
@@ -147,6 +157,8 @@ surface; the index does not replace their detailed rules.
   streaming terminal records, partial failures, accounting, and continuation hints.
 - [Platform lint boundaries](./platform-lint.md): current transport and lifecycle
   exceptions, polling policy, and retired configuration history.
+- [Desktop minimum version policy](./desktop-version-policy.md): admission, required
+  upgrades, staged activation, and rollback.
 - [Native Desktop session authentication](./desktop-session-auth.md): single
   Clerk credential, host binding, provider freshness and migration acceptance.
 - [Clerk customization](./clerk-customize.md): hosted Clerk styling ownership,

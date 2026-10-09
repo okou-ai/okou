@@ -2,6 +2,10 @@ import type { ChatThreadMetadata } from "@okouai/api-contracts/contracts/chat-th
 import { isMemberRunModelAvailable } from "@okouai/api-contracts/contracts/member-run-model";
 import type { ModelCatalogResponse } from "@okouai/api-contracts/contracts/model-catalog";
 import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
+import {
+  isAutoSelectedModel,
+  sameSelectedModel,
+} from "@okouai/core/auto-run-model";
 import chalk from "chalk";
 import { Command } from "commander";
 import {
@@ -87,7 +91,9 @@ function printSwitchableModels(
 
   for (const runModel of switchable) {
     const defaultMarker =
-      runModel.model === null ? chalk.dim(" (default)") : "";
+      runModel.model === null || isAutoSelectedModel(runModel.model)
+        ? chalk.dim(" (default)")
+        : "";
     const efforts = getCatalogModelEfforts(
       catalog,
       resolveCatalogModel(catalog, runModel.model),
@@ -175,7 +181,7 @@ async function switchModel(
     }
   }
   const runModel = result.models.find((candidate) => {
-    return candidate.model === model;
+    return sameSelectedModel(candidate.model, model);
   });
 
   const argument = formatModelSelectionArgument(model);
@@ -224,7 +230,7 @@ async function updateCurrentEffort(
   ]);
   // A retired selection runs as its replacement, so the effort applies there.
   const model =
-    thread.selectedModel === null
+    thread.selectedModel === null || isAutoSelectedModel(thread.selectedModel)
       ? null
       : resolveCatalogModel(catalog, thread.selectedModel);
   const reasoningEffort = parseChatEffort(effort, { catalog, model });

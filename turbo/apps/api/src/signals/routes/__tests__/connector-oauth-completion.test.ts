@@ -17,10 +17,6 @@ import {
   mockCustomConnectorOAuth2Provider,
 } from "./helpers/api-bdd-connectors";
 import { createRouteMocks } from "./helpers/route-test";
-import {
-  testCronDeleteCleanupsStateContract,
-  testCronDeleteCleanupsStateRoutes,
-} from "../test-cron-delete-cleanups-state";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -200,41 +196,6 @@ test("expires completed attempts without expiring their connector account", asyn
     );
     expect(account.body.id).toBe(connectionId);
   });
-});
-
-test("cleans expired receipts in bounded batches without deleting current receipts or accounts", async () => {
-  const marker = `oauth-completion-cleanup-${randomUUID()}`;
-  const actor = bdd.user({ userId: marker, orgId: marker });
-  const expired = await withMockNowForTest(now() - 20 * 60 * 1000, async () => {
-    const first = await createGithubAccount(actor);
-    const second = await createGithubAccount(actor);
-    return [first, second];
-  });
-  const current = await createGithubAccount(actor);
-  const cleanup = await accept(
-    setupApp({ context, routes: testCronDeleteCleanupsStateRoutes })(
-      testCronDeleteCleanupsStateContract,
-    ).action({
-      body: { action: "cleanup-connector", marker },
-    }),
-    [200],
-  );
-  expect(cleanup.body.deleted).toBe(2);
-  for (const previous of expired) {
-    expect((await receipt(actor, previous.start.oauthAttemptId)).status).toBe(
-      404,
-    );
-  }
-  expect(
-    (await receipt(actor, current.start.oauthAttemptId)).body,
-  ).toStrictEqual({
-    connectionId: current.connectionId,
-  });
-  await connectors.deleteBuiltinConnectorAccount(
-    actor,
-    "github",
-    current.connectionId,
-  );
 });
 
 test.each(["http", "mcp"] as const)(

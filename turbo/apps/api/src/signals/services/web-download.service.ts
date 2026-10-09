@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
-import { computed, type Computed } from "ccstate";
+import { command } from "ccstate";
 
 import { recordWebDownloadFailure$, request$ } from "../context/hono";
 import { downloadS3Buffer } from "../external/s3";
-import { uploadedArtifactObject } from "./uploaded-artifact.service";
+import { uploadedArtifactObject$ } from "./uploaded-artifact.service";
 
 interface DownloadFileResult {
   readonly buffer: Buffer;
@@ -16,14 +16,18 @@ interface DownloadFileResult {
  * Locate and download a user-owned file by its file ID and owning user.
  * Returns null when no matching S3 object exists.
  */
-export function webDownloadFile(
-  fileId: string,
-  userId: string,
-  orgId?: string,
-): Computed<Promise<DownloadFileResult | null>> {
-  return computed(async (get): Promise<DownloadFileResult | null> => {
-    const object = await get(
-      uploadedArtifactObject({ userId, orgId, id: fileId }),
+export const webDownloadFile$ = command(
+  async (
+    { get, set },
+    fileId: string,
+    userId: string,
+    orgId: string | undefined,
+    signal: AbortSignal,
+  ): Promise<DownloadFileResult | null> => {
+    const object = await set(
+      uploadedArtifactObject$,
+      { userId, orgId, id: fileId },
+      signal,
     );
     if (!object) {
       return null;
@@ -51,11 +55,12 @@ export function webDownloadFile(
       }),
     );
 
+    signal.throwIfAborted();
     return {
       buffer,
       contentType: object.contentType,
       filename: object.filename,
       isPrivate: object.isPrivate,
     };
-  });
-}
+  },
+);

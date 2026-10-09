@@ -1,4 +1,3 @@
-import { command } from "ccstate";
 import {
   testRuntimeStateContract,
   type TestRuntimeStateActionBody,
@@ -6,34 +5,34 @@ import {
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { runnerWssTickets } from "@okouai/db/schema/runner-wss-ticket";
+import { command } from "ccstate";
 
+import { AUTO_RUN_KEY_VENDOR } from "@okouai/core/auto-run-model";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
-import { AUTO_RUN_KEY_VENDOR } from "@okouai/core/auto-run-model";
-import { bodyResultOf } from "../context/request";
-import { request$ } from "../context/hono";
-import { writeDb$, type Db } from "../external/db";
 import { nowDate } from "../../lib/time";
+import { request$ } from "../context/hono";
+import { bodyResultOf } from "../context/request";
+import { writeDb$, type Db } from "../external/db";
 import type { RouteEntry } from "../route-entry";
+import { writeRunMetadata$ } from "../services/agent-run-metadata-write.service";
 import {
   acquireBuiltInModelKeyFixture,
   releaseBuiltInModelKeyFixture,
 } from "../services/built-in-model-key-fixture";
 import { catalogBuiltInModelRouteUpstream } from "../services/built-in-model-runtime-route.service";
-import { writeRunMetadata$ } from "../services/agent-run-metadata-write.service";
+import {
+  catalogBuiltInRoute,
+  modelCatalog$,
+  type ModelCatalog,
+} from "../services/model-catalog.service";
 import { saveRunSummary$ } from "../services/run-summary.service";
 import { resolveRunnerWssTarget$ } from "../services/runner-wss-target.service";
-import { reconcileSocialKitDownloads$ } from "../services/socialkit-download.service";
-import { steerRunNearTimeBudgetForTest$ } from "../services/cron-steer-run-time-budget.service";
+
 import {
   isTestEndpointAllowed,
   testEndpointNotFoundResponse,
 } from "./test-endpoint-helpers";
-import {
-  modelCatalog$,
-  catalogBuiltInRoute,
-  type ModelCatalog,
-} from "../services/model-catalog.service";
 
 import { PI_MEMORY_BUILTIN_BINDING } from "../services/pi-memory-builtin-config";
 
@@ -233,28 +232,6 @@ const runMetadataFixtureAction$ = command(
     return { status: 200 as const, body: { ok: true as const } };
   },
 );
-
-/**
- * A running run cannot reach the time-budget boundary during an integration
- * test, so the test-only route moves exactly its owned run into that state.
- */
-async function setRunTimeBudgetElapsed(
-  db: Db,
-  runId: string,
-  elapsedMs: number,
-  signal: AbortSignal,
-): Promise<void> {
-  const startedAt = new Date(nowDate().getTime() - elapsedMs);
-  const [updated] = await db
-    .update(agentRuns)
-    .set({ startedAt })
-    .where(and(eq(agentRuns.id, runId), eq(agentRuns.status, "running")))
-    .returning({ id: agentRuns.id });
-  signal.throwIfAborted();
-  if (!updated) {
-    throw new Error("Expected one running time-budget run fixture");
-  }
-}
 
 type AutonomyBudgetFixtureAction = Extract<
   TestRuntimeStateActionBody,
@@ -535,81 +512,10 @@ async function compatibilityFixtureActionResponse(
     }
   }
 }
-
-type ReadOfficialWorkflowRunStateAction = Extract<
-  TestRuntimeStateActionBody,
-  { action: "read-official-workflow-run-state" }
->;
 type SetOfficialWorkflowAutomationAdmissionStateAction = Extract<
   TestRuntimeStateActionBody,
   { action: "set-official-workflow-automation-admission-state" }
 >;
-type OfficialWorkflowRunFixtureAction = Extract<
-  TestRuntimeStateActionBody,
-  {
-    action:
-      | "read-official-workflow-run-state"
-      | "set-official-workflow-automation-admission-state";
-  }
->;
-
-function isOfficialWorkflowRunFixtureAction(
-  body: TestRuntimeStateActionBody,
-): body is OfficialWorkflowRunFixtureAction {
-  return [
-    "read-official-workflow-run-state",
-    "set-official-workflow-automation-admission-state",
-  ].includes(body.action);
-}
-
-async function readOfficialWorkflowRunStateActionResponse(
-  db: Db,
-  body: ReadOfficialWorkflowRunStateAction,
-  signal: AbortSignal,
-) {
-  const [run] = await db
-    .select({
-      status: agentRuns.status,
-      modelProvider: agentRuns.modelProvider,
-      provenance: agentRuns.officialWorkflowProvenance,
-      storageMounts: agentRuns.storageMounts,
-    })
-    .from(agentRuns)
-    .where(eq(agentRuns.id, body.run_id))
-    .limit(1);
-  signal.throwIfAborted();
-  if (!run) {
-    return {
-      status: 200 as const,
-      body: { ok: true as const, official_workflow_run_state: null },
-    };
-  }
-  return {
-    status: 200 as const,
-    body: {
-      ok: true as const,
-      official_workflow_run_state: {
-        status: run.status,
-        model_provider: run.modelProvider,
-        provenance: run.provenance,
-        storage_mounts:
-          run.storageMounts?.map((mount) => {
-            return {
-              org_id: mount.orgId,
-              user_id: mount.userId,
-              name: mount.name,
-              storage_id: mount.storageId,
-              ...(mount.version ? { version: mount.version } : {}),
-              mount_path: mount.mountPath,
-              ...(mount.writeback === undefined
-                ? {}
-                : { writeback: mount.writeback }),
-            };
-          }) ?? null,
-      },
-    },
-  };
-}
 
 async function setOfficialWorkflowAutomationAdmissionStateActionResponse(
   db: Db,
@@ -643,41 +549,15 @@ async function setOfficialWorkflowAutomationAdmissionStateActionResponse(
   return { status: 200 as const, body: { ok: true as const } };
 }
 
-async function officialWorkflowRunFixtureActionResponse(
-  db: Db,
-  body: OfficialWorkflowRunFixtureAction,
-  signal: AbortSignal,
-) {
-  switch (body.action) {
-    case "read-official-workflow-run-state": {
-      return await readOfficialWorkflowRunStateActionResponse(db, body, signal);
-    }
-    case "set-official-workflow-automation-admission-state": {
+const specializedRuntimeFixtureAction$ = command(
+  async ({ set }, body: TestRuntimeStateActionBody, signal: AbortSignal) => {
+    const db = set(writeDb$);
+    if (body.action === "set-official-workflow-automation-admission-state") {
       return await setOfficialWorkflowAutomationAdmissionStateActionResponse(
         db,
         body,
         signal,
       );
-    }
-  }
-}
-
-const specializedRuntimeFixtureAction$ = command(
-  async ({ set }, body: TestRuntimeStateActionBody, signal: AbortSignal) => {
-    const db = set(writeDb$);
-    if (isOfficialWorkflowRunFixtureAction(body)) {
-      return await officialWorkflowRunFixtureActionResponse(db, body, signal);
-    }
-    if (body.action === "reconcile-socialkit-downloads") {
-      const processed = await set(
-        reconcileSocialKitDownloads$,
-        { candidateIds: body.download_ids },
-        signal,
-      );
-      return {
-        status: 200 as const,
-        body: { ok: true as const, processed },
-      };
     }
     if (body.action === "resolve-runner-wss-target") {
       const target = await set(
@@ -711,21 +591,6 @@ const specializedRuntimeFixtureAction$ = command(
       signal.throwIfAborted();
       return { status: 200 as const, body: { ok: true as const } };
     }
-    if (body.action === "read-run-failure-reason") {
-      const [run] = await db
-        .select({ failureReason: agentRuns.failureReason })
-        .from(agentRuns)
-        .where(eq(agentRuns.id, body.run_id))
-        .limit(1);
-      signal.throwIfAborted();
-      return {
-        status: 200 as const,
-        body: {
-          ok: true as const,
-          failure_reason: run?.failureReason ?? null,
-        },
-      };
-    }
     return null;
   },
 );
@@ -752,20 +617,6 @@ const postRuntimeStateAction$ = command(
     const db = set(writeDb$);
     if (isReadRunLaunchSnapshotAction(body)) {
       return await readRunLaunchSnapshotActionResponse(db, body, signal);
-    }
-    if (body.action === "steer-run-time-budget") {
-      await setRunTimeBudgetElapsed(db, body.run_id, body.elapsed_ms, signal);
-      return {
-        status: 200 as const,
-        body: {
-          ok: true as const,
-          run_time_budget: await set(
-            steerRunNearTimeBudgetForTest$,
-            body.run_id,
-            signal,
-          ),
-        },
-      };
     }
     if (isRunSummaryFixtureAction(body)) {
       return await set(runSummaryFixtureActionResponse$, body, signal);

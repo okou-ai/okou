@@ -6,8 +6,11 @@ import { and, eq, isNull } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
-import { enqueueMemorySummaryProjection } from "./memory-summary-projection.service";
-import { publishPiResourceVersionIndex } from "./pi-resource-version-index.service";
+import { memorySummaryProjectionValues } from "./memory-summary-projection.service";
+import { piResourceProjectionValues } from "./pi-resource-version-index.service";
+import { memorySummaryProjections } from "@okouai/db/schema/memory-summary-projection";
+import { piResourceVersionIndexes } from "@okouai/db/schema/pi-resource-version-index";
+import { PI_RESOURCE_EXTRACTOR_VERSION } from "../../lib/pi-resource-index";
 import { newStorageS3Location } from "./storage-s3-prefix.utils";
 
 /** Establish the member's memory before any run can require its mount. */
@@ -76,23 +79,38 @@ export const initializeMemberMemory$ = command(
         })
         .onConflictDoNothing();
       signal.throwIfAborted();
-      await publishPiResourceVersionIndex(
-        {
-          db: tx,
-          versionId,
-          projection: { schemaVersion: 1, files: [] },
-          archiveSize: 0,
-        },
-        signal,
+      const projection = piResourceProjectionValues(
+        { schemaVersion: 1, files: [] },
+        0,
+        nowDate(),
       );
-      await enqueueMemorySummaryProjection(
-        {
-          db: tx,
-          storage: { id: storage.id, ...identity, name: MEMORY_ARTIFACT_NAME },
+      await tx
+        .insert(piResourceVersionIndexes)
+        .values({
           storageVersionId: versionId,
-        },
-        signal,
-      );
+          extractorVersion: PI_RESOURCE_EXTRACTOR_VERSION,
+          ...projection,
+        })
+        .onConflictDoUpdate({
+          target: [
+            piResourceVersionIndexes.storageVersionId,
+            piResourceVersionIndexes.extractorVersion,
+          ],
+          set: projection,
+        });
+      signal.throwIfAborted();
+      const summary = memorySummaryProjectionValues({
+        storage: { id: storage.id, ...identity, name: MEMORY_ARTIFACT_NAME },
+        storageVersionId: versionId,
+      });
+      if (!summary) {
+        throw new Error("Member memory has no summary projection identity");
+      }
+      await tx
+        .insert(memorySummaryProjections)
+        .values(summary)
+        .onConflictDoNothing();
+      signal.throwIfAborted();
       await tx
         .update(storages)
         .set({

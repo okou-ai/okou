@@ -4,7 +4,9 @@
 mod common;
 
 use guest_agent::masker::SecretMasker;
-use guest_contracts::diagnostics::{AgentFramework, FailureDetailSource, FailureReason};
+use guest_contracts::diagnostics::{
+    AgentFramework, FailureClass, FailureDetailSource, FailureReason,
+};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::ffi::OsStr;
@@ -174,6 +176,44 @@ fi
             terminal_failure.diagnostic.failure_reason,
             expected_failure_reason
         );
+        if expected_failure_reason == Some(FailureReason::InvalidCredentials) {
+            assert_eq!(
+                terminal_failure.diagnostic.failure_class,
+                FailureClass::CliNonzero
+            );
+            assert_eq!(terminal_failure.diagnostic.cli_exit_code, Some(1));
+            let reason: api_contracts::generated::types::webhooks::agent::complete::RequestFailureReason =
+                terminal_failure.diagnostic.failure_reason.ok_or_else(|| std::io::Error::other("missing completion reason"))?.into();
+            assert_eq!(serde_json::to_value(reason)?, "invalid_credentials");
+        }
+        if expected_failure_reason == Some(FailureReason::SafetyPolicyRefusal) {
+            assert_eq!(
+                terminal_failure.diagnostic.failure_class,
+                FailureClass::CliNonzero
+            );
+            assert_eq!(terminal_failure.diagnostic.cli_exit_code, Some(1));
+            assert_eq!(
+                terminal_failure
+                    .diagnostic
+                    .cli_observed_exit
+                    .as_ref()
+                    .and_then(|exit| exit.exit_code),
+                Some(0)
+            );
+            assert_eq!(
+                terminal_failure.diagnostic.model_request,
+                Some(guest_contracts::diagnostics::ModelRequestDiagnostic {
+                    http_status: Some(200),
+                    transport_attempts: 1,
+                    retry_attempts: 0,
+                    retry_limit: None,
+                    transport_failure: None,
+                })
+            );
+            let reason: api_contracts::generated::types::webhooks::agent::complete::RequestFailureReason =
+                terminal_failure.diagnostic.failure_reason.ok_or_else(|| std::io::Error::other("missing completion reason"))?.into();
+            assert_eq!(serde_json::to_value(reason)?, "safety_policy_refusal");
+        }
         if expected_failure_reason == Some(FailureReason::ProviderQueueTimeout) {
             assert_eq!(
                 result
@@ -288,6 +328,18 @@ fi
         assert!(terminal.get("failureReason").is_none());
         assert!(terminal.get("modelRequest").is_none());
     }
+    if expected_failure_reason == Some(FailureReason::SafetyPolicyRefusal) {
+        assert_eq!(
+            terminal["modelRequest"],
+            serde_json::json!({"httpStatus": 200, "transportAttempts": 1, "retryAttempts": 0})
+        );
+        assert_eq!(
+            terminal.get("failureReason"),
+            assistant_messages
+                .last()
+                .and_then(|message| message.pointer("/diagnostics/0/details/failureReason"))
+        );
+    }
     let result = terminal["result"]
         .as_str()
         .ok_or_else(|| std::io::Error::other("terminal result text was not a string"))?;
@@ -360,6 +412,36 @@ async fn guest_preserves_pi_completed_length_error_and_aborted_settlement_result
             ExpectedTerminalResult::Completed(result),
             None,
             assistant_text,
+            &base_path,
+            &original_directory,
+        )
+        .await?;
+    }
+    for (index, text, reason) in [
+        (
+            0,
+            "Your authentication token has expired. Please try refreshing it.",
+            Some(FailureReason::InvalidCredentials),
+        ),
+        (
+            1,
+            "Provided authentication token is expired.",
+            Some(FailureReason::InvalidCredentials),
+        ),
+        (2, "401 Unauthorized", None),
+    ] {
+        run_settlement_case(
+            &format!("00000000-0000-4000-8000-{:012}", 180 + index),
+            &[serde_json::json!({
+                "role": "assistant", "stopReason": "error", "api": "openai-codex-responses",
+                "content": [], "errorMessage": text,
+                "diagnostics": [{"type": "okou_model_request", "details": {
+                    "httpStatus": 401, "transportAttempts": 1
+                }}]
+            })],
+            ExpectedTerminalResult::Exact(text),
+            reason,
+            None,
             &base_path,
             &original_directory,
         )
@@ -458,6 +540,35 @@ async fn guest_preserves_pi_completed_length_error_and_aborted_settlement_result
             ExpectedTerminalResult::Exact(result),
             Some(reason),
             assistant_text,
+            &base_path,
+            &original_directory,
+        )
+        .await?;
+    }
+    let cyber_refusal: Value = serde_json::from_str(include_str!(
+        "../../../turbo/packages/pi-agent-runtime/src/test/fixtures/codex-cyber-safety-refusal.json"
+    ))?;
+    let cyber_refusal_text = cyber_refusal["errorMessage"]
+        .as_str()
+        .ok_or_else(|| std::io::Error::other("missing cybersecurity refusal text"))?;
+    for (run_id, structured_reason) in [
+        ("00000000-0000-4000-8000-000000000170", true),
+        ("00000000-0000-4000-8000-000000000171", false),
+    ] {
+        let mut message = cyber_refusal.clone();
+        if !structured_reason {
+            message
+                .pointer_mut("/diagnostics/0/details")
+                .and_then(Value::as_object_mut)
+                .ok_or_else(|| std::io::Error::other("missing model request details"))?
+                .remove("failureReason");
+        }
+        run_settlement_case(
+            run_id,
+            &[message],
+            ExpectedTerminalResult::Exact(cyber_refusal_text),
+            Some(FailureReason::SafetyPolicyRefusal),
+            None,
             &base_path,
             &original_directory,
         )

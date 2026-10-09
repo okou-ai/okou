@@ -11,7 +11,7 @@ import {
   builtinConnectorOauthStartContract,
   builtinConnectorsMainContract,
 } from "@okouai/api-contracts/contracts/connectors";
-import { chatThreadArtifactsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { artifactGoogleDriveContract } from "@okouai/api-contracts/contracts/artifact-google-drive";
 import {
   userBuiltinConnectorsContract,
   type UserBuiltinConnectorUpdate,
@@ -59,8 +59,7 @@ const DRIVE_FILE_URL = publicArtifactUrl("drive-report.pdf");
 const AUTHORIZATION_URL = "https://accounts.google.test/authorize-drive";
 
 type DriveConnectionState =
-  | "not-connected"
-  | BuiltinConnectorResponse["connectionStatus"];
+  "not-connected" | BuiltinConnectorResponse["connectionStatus"];
 
 interface OauthRequest {
   readonly account: ConnectorAccountMutationIntent;
@@ -75,8 +74,9 @@ interface DriveMockControl {
   readonly completeAuthorization: () => void;
   readonly oauthRequests: readonly OauthRequest[];
   readonly syncRequests: readonly {
-    readonly fileId: string;
-    readonly runId: string;
+    readonly artifactId: string;
+    readonly agentId: string;
+    readonly connectionId?: string;
   }[];
 }
 
@@ -99,7 +99,11 @@ function installDriveMocks(
   let artifactSynced = false;
   const authorizationUpdates: UserBuiltinConnectorUpdate[] = [];
   const oauthRequests: OauthRequest[] = [];
-  const syncRequests: { fileId: string; runId: string }[] = [];
+  const syncRequests: {
+    artifactId: string;
+    agentId: string;
+    connectionId?: string;
+  }[] = [];
   targetContext.mocks.http.get(DRIVE_FILE_URL, () => {
     return HttpResponse.text("PDF preview", {
       headers: { "Content-Type": "application/pdf" },
@@ -139,6 +143,8 @@ function installDriveMocks(
     artifactRuns: () => {
       return [
         artifactRun({
+          artifactId: DRIVE_ARTIFACT_ID,
+          googleDriveConnectionId: SELECTED_DRIVE_CONNECTION_ID,
           contentType: "application/pdf",
           fileId: DRIVE_FILE_ID,
           filename: "drive-report.pdf",
@@ -152,7 +158,10 @@ function installDriveMocks(
                 webViewLink: "https://drive.google.test/file/drive-file-1",
               }
             : options.selectedAccountReady
-              ? { status: "not_synced", accountReady: true }
+              ? {
+                  status: "not_synced",
+                  accountReady: true,
+                }
               : {
                   status: "disconnected",
                   recovery:
@@ -292,9 +301,9 @@ function installDriveMocks(
     },
   );
   targetContext.mocks.api(
-    chatThreadArtifactsContract.syncGoogleDrive,
-    async ({ body, respond }) => {
-      syncRequests.push(body);
+    artifactGoogleDriveContract.upload,
+    async ({ params, body, respond }) => {
+      syncRequests.push({ artifactId: params.artifactId, ...body });
       await options.waitForSync?.();
       artifactSynced = true;
       return respond(200, {
@@ -428,7 +437,11 @@ describe("with a Drive artifact menu", () => {
         },
       ]);
       expect(drive.syncRequests).toStrictEqual([
-        { runId: NAVIGATION_ARTIFACT_RUN_ID, fileId: DRIVE_FILE_ID },
+        {
+          artifactId: DRIVE_ARTIFACT_ID,
+          agentId: NAVIGATION_ARTIFACT_AGENT_ID,
+          connectionId: SELECTED_DRIVE_CONNECTION_ID,
+        },
       ]);
       expect(drive.oauthRequests).toHaveLength(0);
     });
@@ -471,7 +484,11 @@ test("Connect Google Drive and sync an artifact", async () => {
   drive.completeAuthorization();
   await waitFor(() => {
     expect(drive.syncRequests).toStrictEqual([
-      { runId: NAVIGATION_ARTIFACT_RUN_ID, fileId: DRIVE_FILE_ID },
+      {
+        artifactId: DRIVE_ARTIFACT_ID,
+        agentId: NAVIGATION_ARTIFACT_AGENT_ID,
+        connectionId: NEW_DRIVE_CONNECTION_ID,
+      },
     ]);
   });
   await expectSyncedPreview();
@@ -515,7 +532,11 @@ test("Reconnect the Google Drive account selected for the artifact", async () =>
   drive.completeAuthorization();
   await waitFor(() => {
     expect(drive.syncRequests).toStrictEqual([
-      { runId: NAVIGATION_ARTIFACT_RUN_ID, fileId: DRIVE_FILE_ID },
+      {
+        artifactId: DRIVE_ARTIFACT_ID,
+        agentId: NAVIGATION_ARTIFACT_AGENT_ID,
+        connectionId: SELECTED_DRIVE_CONNECTION_ID,
+      },
     ]);
   });
   await expectSyncedPreview();
@@ -539,7 +560,11 @@ test("Sync with the artifact's ready Drive account when the default needs attent
 
   await waitFor(() => {
     expect(drive.syncRequests).toStrictEqual([
-      { runId: NAVIGATION_ARTIFACT_RUN_ID, fileId: DRIVE_FILE_ID },
+      {
+        artifactId: DRIVE_ARTIFACT_ID,
+        agentId: NAVIGATION_ARTIFACT_AGENT_ID,
+        connectionId: SELECTED_DRIVE_CONNECTION_ID,
+      },
     ]);
   });
   expect(drive.oauthRequests).toHaveLength(0);

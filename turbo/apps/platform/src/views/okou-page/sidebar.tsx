@@ -16,6 +16,8 @@ import {
 } from "lucide-react";
 import {
   Button,
+  SheetClose,
+  SheetContent,
   ShortcutTooltipGroup,
   Tooltip,
   TooltipContent,
@@ -226,38 +228,46 @@ function ExpandedSidebar() {
   const expanded = useGet(sidebarExpanded$);
   const { t } = useTranslation();
   return (
-    <aside
-      data-slot="sidebar-expanded"
-      data-sidebar-expanded={expanded || undefined}
+    <SheetContent
+      side="left"
+      showCloseButton={false}
       aria-label={t(($) => {
         return $.appShell.sidebar.ariaLabel;
       })}
+      overlayClassName="bg-black/40 dark:bg-black/40 [@media(display-mode:standalone)]:-bottom-safe"
       className={cn(
         // The `before` layer exists for one case: in a standalone PWA it extends
         // the sidebar fill past the bottom of the viewport, into the home
         // indicator, while the drawer's own content keeps its safe-area padding.
         // `isolate` keeps that `-z-1` layer inside this element rather than
-        // letting it fall behind the page. The drawer's own scrim spells the
-        // same standalone extension inline in `sidebar-layout.tsx`.
+        // letting it fall behind the page. The sheet backdrop carries the
+        // same standalone extension.
         "isolate before:pointer-events-none before:absolute before:inset-0 before:-z-1 before:bg-sidebar before:content-[''] before:[@media(display-mode:standalone)]:-bottom-safe",
         // A fixed mobile drawer escapes the page shell, so its content owns an
         // immutable safe-area boundary.
-        "max-md:box-border max-md:p-safe",
-        "h-full w-[300px] shrink-0 flex-col border-r border-nav-border bg-sidebar transition-all duration-300 max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-40 max-md:h-auto max-md:shadow-xl",
-        "hidden data-[sidebar-expanded]:max-md:flex md:hidden",
+        "box-border w-[300px] max-w-full gap-0 overflow-visible border-r border-nav-border bg-sidebar p-safe shadow-xl dark:shadow-xl",
       )}
     >
-      <ExpandedHeader />
-      <ExpandedMainNav />
-      <InstatusStatusNotice placement="sidebar" />
-      <ExpandedUpgradeSection />
-      <ExpandedFooter />
-    </aside>
+      <aside
+        data-slot="sidebar-expanded"
+        data-sidebar-expanded={expanded || undefined}
+        aria-label={t(($) => {
+          return $.appShell.sidebar.ariaLabel;
+        })}
+        className="flex min-h-0 flex-1 flex-col"
+      >
+        <ExpandedHeader />
+        <ExpandedMainNav />
+        <InstatusStatusNotice placement="sidebar" />
+        <ExpandedUpgradeSection />
+        <ExpandedFooter />
+      </aside>
+    </SheetContent>
   );
 }
 
 function ExpandedHeader() {
-  const onCollapse = useSidebarCollapseToggle();
+  const toggleOff = useSet(toggleSidebarOff$);
   const { t } = useTranslation();
   const collapseLabel = t(($) => {
     return $.appShell.sidebar.collapse;
@@ -272,17 +282,21 @@ function ExpandedHeader() {
           <Tooltip>
             <TooltipTrigger
               render={
-                <Button
-                  type="button"
-                  variant="quiet"
-                  size="icon-sm"
-                  iconSize="md"
-                  className="shrink-0"
-                  onClick={onCollapse}
-                  aria-label={collapseLabel}
+                <SheetClose
+                  render={
+                    <Button
+                      type="button"
+                      variant="quiet"
+                      size="icon-sm"
+                      iconSize="md"
+                      className="shrink-0"
+                      onClick={toggleOff}
+                      aria-label={collapseLabel}
+                    />
+                  }
                 >
                   <PanelLeftClose className="opacity-50" size={18} />
-                </Button>
+                </SheetClose>
               }
             />
             <TooltipContent side="bottom">
@@ -829,6 +843,7 @@ function ChatListColumn() {
         <ChatThreadsSection
           scrollSignals={threeColumnSidebarChatThreadScrollSignals}
           contentClassName={CHAT_LIST_INSET}
+          collapsible={false}
           showMarkAllRead
         />
       </div>

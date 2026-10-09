@@ -1,19 +1,25 @@
 import { OrgCreditExpirationConflict } from "./org-credit-expiration";
+import {
+  usageCashQueries,
+  usageCashExpiryLotsQuery,
+  requireUsageCashWallet,
+  usageCashWork,
+} from "./usage-credit-deduction.service";
+import { usagePackOverdraftTransferSql as packDebtSql } from "@okouai/db/operations/usage-pack-overdraft-transfer";
+import {
+  requireUsagePackOverdraftTransfer as requirePackDebt,
+  usagePackOverdraftTransferOutcomeRow as debtRow,
+} from "./usage-pack-overdraft-transfer.service";
+import { parseRawRows as parseRows } from "../../lib/db-raw-rows";
 import { expireOrgCreditsInTransaction } from "./org-credit-expiration.service";
 import {
-  prepareUsageFinancialPlan$,
   usageFinancialPlan,
   type PreparedUsageFinancialPlan,
 } from "./credit-usage-financial-plan.service";
-import {
-  allowanceSettlementWrites,
-  issuedAllowanceWindowsQuery,
-} from "./usage-allowance-settlement-writes";
 import { settle } from "../utils";
 import { prepareUsageSettlementBatch$ } from "./credit-usage-batch-prepare.service";
 import {
   requireCompleteUsageClaim,
-  usageAllowanceRefreshArgs,
   UsageSettlementSnapshotConflict,
   requiredSettlementDebit,
   type PreparedUsageBatch,
@@ -24,9 +30,9 @@ import { socialDataJobs } from "@okouai/db/schema/social-data-job";
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
 import { receiptQuery } from "./managed-usage-record";
 import {
-  managedAttributionQuery,
+  managedAttributionQuery as attributionQuery,
   managedAttributionWrite,
-  managedBillingRunQuery,
+  managedBillingRunQuery as runQuery,
 } from "./managed-usage-attribution";
 import {
   capturedManagedAttribution,
@@ -56,6 +62,8 @@ import {
   hasNoStandaloneUsage,
   settledEventsSql,
   memberGrantDeductionsSql,
+  planMemberGrantDeductions,
+  planExpiryLotDeductions,
   expiryLotDeductionsSql,
   requireConditionalDeductions,
   orgDebitPlan,
@@ -63,20 +71,6 @@ import {
   settlementDefaultPlan,
   settlementReceipt,
 } from "./credit-usage-settlement-plan";
-import {
-  entitlementQuery,
-  allocationQuery,
-  anchorQuery,
-  planAllowanceCandidates,
-  windowQuery,
-  planAllowanceWrites,
-  requireAllowanceWrite,
-  insertWindowsSql,
-} from "./usage-allowance-settlement-plan";
-import {
-  prepareUsageAllowanceRefresh$,
-  type PreparedUsageAllowanceRefresh,
-} from "./usage-allowance.service";
 
 const L = logger("CreditUsageSettlement");
 
@@ -100,7 +94,6 @@ interface UsageSettlementArgs {
 }
 
 interface SettlementBatchArgs extends UsageSettlementArgs {
-  readonly refresh?: PreparedUsageAllowanceRefresh;
   readonly batch: PreparedUsageBatch;
   readonly financial?: PreparedUsageFinancialPlan;
   readonly at: Date;
@@ -108,13 +101,14 @@ interface SettlementBatchArgs extends UsageSettlementArgs {
 
 /**
  * All financial rows commit together; only plain values leave this command.
- * The pending claim prevents duplicate charging. Prepared allowance and credit
- * splits use atomic arithmetic without old-version or balance checks; concurrent
- * overuse is accepted. No external I/O runs inside this transaction.
+ * The pending claim prevents duplicate charging. Prices stay prepared,
+ * but cash is re-read and locked before allocation.
+ * Member grants cannot overdraw; all remaining charges debit the organization.
+ * No external I/O runs inside this transaction.
  */
 const commitUsageBatch$ = command(
   async ({ set }, args: SettlementBatchArgs, signal: AbortSignal) => {
-    const { orgId, refresh, batch } = args;
+    const { orgId, batch, at } = args;
     const { startedAt, work } = settlementObservation(batch.prices.length);
     const result = await set(writeDb$).transaction(async (tx) => {
       work.lockWaitMs = 0;
@@ -126,12 +120,9 @@ const commitUsageBatch$ = command(
       }
       const { usage: managed, processPending } = socialPlan(batch.social, job);
       if (managed) {
-        const [run] = await tx
-          .select()
-          .from(managedBillingRunQuery(managed.actor.runId));
-        let [attribution] = await tx
-          .select()
-          .from(managedAttributionQuery(managed.actor.runId));
+        const runId = managed.actor.runId;
+        const [run] = await tx.select().from(runQuery(runId));
+        let [attribution] = await tx.select().from(attributionQuery(runId));
         if (run && !attribution) {
           const capture = managedAttributionWrite(managed, run);
           const [captured] = await tx
@@ -144,7 +135,6 @@ const commitUsageBatch$ = command(
         await tx.execute(managedUsagePublicationSql(managed, run, attribution));
       }
       const key = managed?.idempotencyKey;
-      const at = args.at;
       const events = processPending
         ? await tx
             .update(usageEvent)
@@ -159,53 +149,37 @@ const commitUsageBatch$ = command(
       }
       let financial = args.financial;
       if (!financial) {
-        // Background Social jobs publish their usage in this transaction. Their
-        // newly created event identity is required for allowance allocations.
+        // Background Social jobs publish and claim their usage atomically.
+        // Their newly created event identity receives the prepared price.
         const priced = preparedSettlementPrices(args, batch, events);
-        const [entitlement] = await tx.select().from(entitlementQuery(orgId));
-        const allocations = await tx.select().from(allocationQuery(priced));
-        const anchors = await tx.select().from(anchorQuery(orgId, priced));
-        const plan = planAllowanceCandidates(priced, allocations, anchors);
-        const windows = await tx.select().from(windowQuery(orgId, plan));
-        const allowance = planAllowanceWrites(
-          { orgId, refresh, at },
-          plan,
-          windows,
-          entitlement,
-        );
-        financial = usageFinancialPlan(batch, priced, allowance, at);
+        financial = usageFinancialPlan(priced, at);
       }
-      const { priced, allowance, charges, deduction, expiry } = financial;
-      if (allowance.refresh) {
-        await tx.execute(allowance.refresh);
+      const { priced, charges } = financial;
+      const cash = usageCashQueries(orgId, charges.byUser, at);
+      const [wallet] = await tx.select().from(cash.wallet);
+      requireUsageCashWallet(wallet);
+      const grants = await tx.select().from(cash.grants);
+      const deduction = planMemberGrantDeductions(charges.byUser, grants);
+      if (deduction.sharedCredits > 0) {
+        await expireOrgCreditsInTransaction(tx, orgId, at);
       }
-      await tx.execute(insertWindowsSql(allowance.inserted));
-      const canonicalWindows = allowance.inserted.length
-        ? await tx.select().from(issuedAllowanceWindowsQuery(allowance))
-        : [];
-      for (const write of allowanceSettlementWrites(
-        allowance,
-        canonicalWindows,
-      )) {
-        const { rowCount } = await tx.execute(write.sql);
-        requireAllowanceWrite(write.kind, write.planned, rowCount);
-      }
+      requirePackDebt(
+        parseRows(debtRow, await tx.execute(packDebtSql({ orgId }, at))),
+      );
+      const lots =
+        deduction.sharedCredits > 0
+          ? await tx.select().from(usageCashExpiryLotsQuery(orgId, at))
+          : [];
+      const expiry = planExpiryLotDeductions(lots, deduction.sharedCredits, at);
       await tx.execute(settledEventsSql(charges, at));
       const grantSql = memberGrantDeductionsSql(deduction.updates);
       const granted = (await tx.execute(grantSql)).rowCount;
       requireConditionalDeductions("grant", deduction.updates, granted);
       const amount = deduction.sharedCredits;
-      if (amount > 0) {
-        // Main's order: expire before the new deduction, in one statement.
-        await expireOrgCreditsInTransaction(tx, orgId, at);
-      }
       const lotSql = expiryLotDeductionsSql(expiry.updates);
       const lotted = (await tx.execute(lotSql)).rowCount;
       requireConditionalDeductions("expiry lot", expiry.updates, lotted);
-      Object.assign(work, deduction.work, {
-        expiredRows: expiry.expiredRows,
-        expiryRows: expiry.expiryRows,
-      });
+      Object.assign(work, usageCashWork(deduction, expiry));
       let afterCredits = 0;
       if (amount > 0) {
         const debit = orgDebitPlan(orgId, amount, expiry.expired, at);
@@ -251,21 +225,13 @@ const commitUsageBatch$ = command(
 export const settleOrgUsage$ = command(
   async ({ get, set }, args: UsageSettlementArgs, signal: AbortSignal) => {
     const batch = await set(prepareUsageSettlementBatch$, args, signal);
-    const refreshArgs = usageAllowanceRefreshArgs(args, batch);
-    const refresh = refreshArgs
-      ? await set(prepareUsageAllowanceRefresh$, refreshArgs, signal)
-      : undefined;
     const financial = args.social
       ? undefined
-      : await set(
-          prepareUsageFinancialPlan$,
-          { orgId: args.orgId, batch, refresh },
-          signal,
-        );
+      : usageFinancialPlan(batch.priced, nowDate());
     const outcome = await settle(
       set(
         commitUsageBatch$,
-        { ...args, batch, refresh, financial, at: financial?.at ?? nowDate() },
+        { ...args, batch, financial, at: financial?.at ?? nowDate() },
         signal,
       ),
     );

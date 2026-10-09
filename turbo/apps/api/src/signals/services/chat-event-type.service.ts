@@ -38,28 +38,6 @@ export function chatEventTextCondition(): SQL {
 }
 
 /**
- * Match the input event that owns an ingress dispatch. Keeping the event-type
- * guard in this shared predicate prevents a control.interrupt row whose
- * canonical run_id points at the same run from being treated as the ingress
- * input by Feishu, AgentPhone, Teams, or Telegram dispatch readers.
- */
-export function chatInputPromptDispatchCondition(args: {
-  readonly eventId: string;
-  readonly chatThreadId?: string;
-}): SQL {
-  return and(
-    args.chatThreadId === undefined
-      ? undefined
-      : eq(chatEvents.chatThreadId, args.chatThreadId),
-    chatEventTypeIn(["input.prompt"]),
-    or(
-      eq(chatEvents.id, args.eventId),
-      eq(chatEvents.revokesEventId, args.eventId),
-    ),
-  ) as SQL;
-}
-
-/**
  * Canonical run_id is event-type-sensitive: on control.interrupt it is the
  * target, while every other run-scoped event uses it as ownership.
  */

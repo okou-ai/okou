@@ -16,7 +16,7 @@ release_json=$(yq -o=json '.' "$RELEASE_WORKFLOW")
 jq -e '
   .jobs["build-runner-release-assets"] as $job |
   $job["runs-on"] == "ubuntu-latest-8-cores" and
-  $job.container.image == "ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825" and
+  $job.container.image == "ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261008" and
   ($job | has("environment") | not) and
   $job.needs == ["release-please", "publish-cli-versioned-artifact"] and
   any($job.steps[];
@@ -44,7 +44,7 @@ jq -e '
     .with["r2-bucket-name"] == "${{ vars.R2_USER_STORAGES_BUCKET_NAME }}"
   ) and
   any($job.steps[];
-    .uses == "Swatinem/rust-cache@v2" and
+    ((.uses // "") | startswith("Swatinem/rust-cache@")) and
     .with.workspaces == "crates -> target" and
     .with["shared-key"] == "${{ steps.target-metadata.outputs.cache_suffix }}-release" and
     (.with["save-if"] | contains("github.ref == ")) and

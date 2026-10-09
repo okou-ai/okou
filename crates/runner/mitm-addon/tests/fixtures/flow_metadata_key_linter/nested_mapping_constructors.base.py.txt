@@ -1,0 +1,62 @@
+def nested_dict(flow):
+    flow.metadata.update(list(dict(dict({("sandbox_run_id", "run-1"): None}))))
+
+
+def wrapped_entries(flow):
+    flow.metadata.update(list(dict(list([(("sandbox_run_id", "run-1"), None)]))))
+
+
+def fromkeys(flow):
+    flow.metadata.update(list(dict(dict.fromkeys([("sandbox_run_id", "run-1")]))))
+
+
+def mapping_copy(flow):
+    flow.metadata.update(list(dict({("sandbox_run_id", "run-1"): None}.copy())))
+
+
+def deep_dict(flow):
+    flow.metadata.update(list(dict(dict(dict({("sandbox_run_id", "run-1"): None})))))
+
+
+def copied_fromkeys(flow):
+    flow.metadata.update(list(dict(dict.fromkeys([("sandbox_run_id", "run-1")]).copy())))
+
+
+def iterated_mapping_entries(flow):
+    flow.metadata.update(list(dict(list({(("sandbox_run_id", "run-1"), None): 0}))))
+
+
+def keys_view_entries(flow):
+    flow.metadata.update(list(dict(dict.fromkeys([(("sandbox_run_id", "run-1"), None)]).keys())))
+
+
+def starred_constructor(flow):
+    flow.metadata.update(list(dict(*[], dict(*[dict({("sandbox_run_id", "run-1"): None})]))))
+
+
+def conditional_constructor(flow, condition=True):
+    flow.metadata.update(list(dict(dict({("sandbox_run_id", "run-1"): None} if condition else {("sandbox_run_id", "run-1"): 0}))))
+
+
+def unpacked_mapping(flow):
+    flow.metadata.update(list(dict(dict({**dict.fromkeys([("sandbox_run_id", "run-1")])}))))
+
+
+def named_constructor(flow):
+    flow.metadata.update(list(dict(dict((source := {("sandbox_run_id", "run-1"): None})))))
+
+
+def boolean_constructor(flow):
+    flow.metadata.update(list(dict(dict({} or {("sandbox_run_id", "run-1"): None}))))
+
+
+def conditional_starred_constructor(flow, condition=True):
+    flow.metadata.update(list(dict(dict(*([dict.fromkeys([("sandbox_run_id", "run-1")])] if condition else [{("sandbox_run_id", "run-1"): 0}])))))
+
+
+def direct_mapping_control(flow):
+    flow.metadata.update(list(dict({("sandbox_run_id", "run-1"): None})))
+
+
+def direct_entries_control(flow):
+    flow.metadata.update(list(dict([(("sandbox_run_id", "run-1"), None)])))

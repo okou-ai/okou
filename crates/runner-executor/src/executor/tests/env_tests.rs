@@ -106,6 +106,23 @@ fn pi_model_config_v2_for_test(dialect: &str) -> serde_json::Value {
     })
 }
 
+fn pi_model_config_v5_for_test() -> serde_json::Value {
+    json!({
+        "schemaVersion": 5,
+        "dialect": "openai-completions",
+        "transport": "sse",
+        "provider": "openrouter",
+        "baseUrl": "https://openrouter.ai/api/v1",
+        "model": "moonshotai/kimi-k2",
+        "thinkingLevel": "low",
+        "credentialBindings": [{
+            "kind": "api-key",
+            "environment": "OPENAI_API_KEY",
+            "secretName": "OPENROUTER_API_KEY"
+        }]
+    })
+}
+
 fn pi_context_for_test() -> ExecutionContext {
     let mut context = minimal_context();
     context.cli_agent_type = "pi".to_string();
@@ -1099,6 +1116,30 @@ fn pi_execution_context_preserves_additive_fields_in_run_payload() {
 }
 
 #[test]
+fn pi_auto_runtime_payload_preserves_captured_identity() {
+    for catalog_model in [Some("okou-1.0"), Some("auto"), None] {
+        let mut ctx = pi_context_for_test();
+        let config = ctx.pi_model_config.as_mut().unwrap();
+        config["model"] = json!("@preset/okou-experimental");
+        if let Some(selected) = catalog_model {
+            config["catalogModel"] = json!(selected);
+        } else {
+            config.as_object_mut().unwrap().remove("catalogModel");
+        }
+        assert!(validate_context_for_test(&ctx).is_ok());
+        let payload = build_run_payload_for_run(&ctx).unwrap();
+        let model: serde_json::Value = serde_json::from_str(&payload.pi_model_config).unwrap();
+        assert_eq!(model["model"], "@preset/okou-experimental");
+        assert_eq!(
+            model
+                .get("catalogModel")
+                .and_then(serde_json::Value::as_str),
+            catalog_model
+        );
+    }
+}
+
+#[test]
 fn pi_maintenance_candidates_use_only_the_private_run_payload() {
     let mut context = pi_context_for_test();
     let candidate_secret = "PRIVATE_MAINTENANCE_CANDIDATE_31891";
@@ -1424,7 +1465,7 @@ fn pi_execution_context_rejects_invalid_or_future_v2_routes() {
         (
             {
                 let mut config = pi_model_config_v2_for_test("openai-responses");
-                config["schemaVersion"] = json!(5);
+                config["schemaVersion"] = json!(6);
                 config
             },
             "Pi model config generation is unsupported",
@@ -1454,6 +1495,145 @@ fn pi_execution_context_rejects_invalid_or_future_v2_routes() {
                 "expected {expected:?}, got unexpected error: {error}"
             );
         }
+    }
+}
+
+#[test]
+fn pi_execution_context_accepts_and_preserves_chat_completions_route() {
+    let mut minimal = pi_model_config_v5_for_test();
+    minimal.as_object_mut().unwrap().remove("thinkingLevel");
+    let mut cataloged = pi_model_config_v5_for_test();
+    cataloged["catalogModel"] = json!("moonshotai/kimi-k2");
+    for config in [pi_model_config_v5_for_test(), minimal, cataloged] {
+        let mut context = pi_context_for_test();
+        context.pi_model_config = Some(config.clone());
+        validate_context_for_test(&context).unwrap();
+        let payload = build_run_payload_for_run(&context).unwrap();
+        let forwarded: serde_json::Value = serde_json::from_str(&payload.pi_model_config).unwrap();
+        assert_eq!(forwarded, config);
+    }
+}
+
+#[test]
+fn pi_execution_context_rejects_invalid_chat_completions_routes() {
+    let codex_bindings =
+        pi_model_config_v2_for_test("openai-codex-responses")["credentialBindings"].clone();
+    let invalid_configs = [
+        (
+            "serviceTier",
+            json!("priority"),
+            "Pi model config v5 fields are invalid",
+        ),
+        (
+            "serviceTier",
+            json!(null),
+            "Pi model config v5 fields are invalid",
+        ),
+        (
+            "thinkingLevel",
+            json!(null),
+            "Pi model config thinkingLevel is invalid",
+        ),
+        (
+            "futureRouteField",
+            json!(true),
+            "Pi model config v5 fields are invalid",
+        ),
+        (
+            "transport",
+            json!("auto"),
+            "Pi model config transport must be sse",
+        ),
+        (
+            "provider",
+            json!("openai-codex"),
+            "Pi Chat Completions provider is invalid",
+        ),
+        (
+            "provider",
+            json!("openai"),
+            "Pi Chat Completions provider is invalid",
+        ),
+        (
+            "dialect",
+            json!("openai-responses"),
+            "Pi model config dialect is unsupported",
+        ),
+        (
+            "dialect",
+            json!("openai-codex-responses"),
+            "Pi model config dialect is unsupported",
+        ),
+        (
+            "credentialBindings",
+            codex_bindings,
+            "Pi credential bindings do not match the route dialect",
+        ),
+        (
+            "credentialBindings",
+            json!([]),
+            "Pi model config credentialBindings count is invalid",
+        ),
+        (
+            "credentialBindings",
+            json!([{
+                "kind": "api-key",
+                "environment": "OPENAI_API_KEY",
+                "secretName": "CHATGPT_ACCESS_TOKEN"
+            }]),
+            "Pi API-key binding is invalid",
+        ),
+        ("model", json!(""), "Pi model config model is invalid"),
+        (
+            "catalogModel",
+            json!(""),
+            "Pi model config catalogModel is invalid",
+        ),
+    ];
+
+    for (field, value, expected) in invalid_configs {
+        let mut config = pi_model_config_v5_for_test();
+        config[field] = value;
+        let mut context = pi_context_for_test();
+        context.pi_model_config = Some(config.clone());
+        let error = validate_context_for_test(&context).unwrap_err();
+        assert!(
+            error.contains(expected),
+            "{config}: expected {expected:?}, got unexpected error: {error}"
+        );
+    }
+}
+
+#[test]
+fn pi_execution_context_confines_chat_completions_to_its_generation() {
+    // Older generations never carry the Chat Completions dialect.
+    for generation in [2, 3] {
+        let mut config = pi_model_config_v5_for_test();
+        config["schemaVersion"] = json!(generation);
+        let mut context = pi_context_for_test();
+        context.pi_model_config = Some(config.clone());
+        let error = validate_context_for_test(&context).unwrap_err();
+        assert!(
+            error.contains(&format!("Pi model config v{generation} is invalid")),
+            "{config}: {error}"
+        );
+    }
+
+    // Generation 4 was the retired native carrier and stays unsupported.
+    for config in [
+        pi_model_config_v5_for_test(),
+        pi_model_config_v2_for_test("openai-responses"),
+        pi_model_config_v2_for_test("openai-codex-responses"),
+    ] {
+        let mut config = config;
+        config["schemaVersion"] = json!(4);
+        let mut context = pi_context_for_test();
+        context.pi_model_config = Some(config.clone());
+        assert_eq!(
+            validate_context_for_test(&context).unwrap_err(),
+            "Pi model config generation is unsupported",
+            "{config}"
+        );
     }
 }
 

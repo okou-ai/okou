@@ -25,11 +25,7 @@ import {
 
 const L = logger("Composer:VoiceDraft");
 export type ComposerVoiceInputStatus =
-  | "idle"
-  | "recording"
-  | "transcribing"
-  | "failed"
-  | "discarding";
+  "idle" | "recording" | "transcribing" | "failed" | "discarding";
 type ComposerVoiceAction = "toggle" | "retry" | "discard";
 type DeliverVoiceTextCommand = Command<Promise<void>, [string, AbortSignal]>;
 interface ComposerVoiceInputState {

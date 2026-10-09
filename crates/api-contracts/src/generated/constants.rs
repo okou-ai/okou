@@ -122,6 +122,9 @@ pub mod runners {
     /// Official token kind; the API still authenticates the secret and winning claim.
     pub const OFFICIAL_RUNNER_TOKEN_PREFIX: &str = "vm0_official_";
 
+    /// Additive Pi generation for OpenRouter Chat Completions routes.
+    pub const PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION: u32 = 5;
+
     /// Current dialect-aware Pi model configuration generation.
     pub const PI_MODEL_CONFIG_CURRENT_GENERATION: u32 = 2;
 

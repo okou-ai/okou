@@ -14,7 +14,9 @@ test = [
     "cryptography==48.0.1",
     "h11==0.16.0",
     "h2>=4.3.0",
-    "pytest>=7.0",
+    # pytest 9.1 loses directory fixtures for interleaved file arguments (#38047).
+    # Lift the bound after a released fix passes the collection smoke and full addon suite.
+    "pytest>=9.0.3,<9.1",
     "pytest-asyncio>=0.23",
     # Keep tests on the exact standalone runtime and its release-locked wsproto.
     "mitmproxy==12.2.3",

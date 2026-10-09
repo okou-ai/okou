@@ -10,6 +10,7 @@ import {
   type ReasoningEffort,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import {
+  PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION,
   PI_MODEL_CONFIG_CURRENT_GENERATION,
   PI_MODEL_CONFIG_DIALECT_TIER_GENERATION,
   type PiModelConfig,
@@ -25,7 +26,7 @@ import { isPiAgentModelSupported } from "@okouai/pi-agent-runtime";
 import { PI_MEMORY_STAGE1_BUILT_IN_MODEL } from "@okouai/pi-agent-runtime/api";
 
 import {
-  AUTO_RUN_MODEL,
+  isAutoSelectedModel,
   AUTO_RUN_PROVIDER,
   isAutoRunPreset,
 } from "@okouai/core/auto-run-model";
@@ -175,7 +176,7 @@ function resolvePiRouteModelConfig(
   }
   if (
     !isBuiltInModelProviderType(provider.type) ||
-    provider.selectedModel !== AUTO_RUN_MODEL ||
+    !isAutoSelectedModel(provider.selectedModel) ||
     provider.concreteType !== AUTO_RUN_PROVIDER ||
     !isAutoRunPreset(provider.upstreamModel)
   ) {
@@ -183,13 +184,13 @@ function resolvePiRouteModelConfig(
   }
   // An OpenRouter preset upstream configures reasoning and service tier
   // itself, so the client sends neither.
-  return resolveResponsesPiModelConfig({
+  return resolveOpenRouterPiModelConfig({
     ...provider,
     selectedModel: provider.selectedModel,
   });
 }
 
-function resolveResponsesPiModelConfig(
+function resolveOpenRouterPiModelConfig(
   provider: PiModelProviderConfigInput & { readonly selectedModel: string },
 ): PiModelConfig | null {
   const concreteType = modelProviderTypeSchema.safeParse(
@@ -215,7 +216,7 @@ function resolveResponsesPiModelConfig(
   }
   const endpoint = getModelProviderPiEndpoint(
     concreteType.data,
-    "openai-responses",
+    "openai-completions",
   );
   if (!endpoint) {
     return null;
@@ -228,27 +229,36 @@ function resolveResponsesPiModelConfig(
     return null;
   }
 
-  const apiKeyEnv = "OPENAI_API_KEY";
-  const config = {
+  if (credentialSecretName !== "OPENROUTER_API_KEY") {
+    return null;
+  }
+  const route = {
     provider: providerId,
     baseUrl: endpoint.baseUrl,
     model,
-    apiKeyEnv,
-    credentialSecretName,
     ...(isPresetUpstreamModel(provider.upstreamModel)
       ? { catalogModel: provider.selectedModel }
       : {}),
   } as const;
   return isPiAgentModelSupported({
-    provider: config.provider,
-    baseUrl: config.baseUrl,
-    model: config.model,
-    ...(config.catalogModel ? { catalogModel: config.catalogModel } : {}),
+    ...route,
     apiKey: "sandbox-secret",
-    dialect: "openai-responses",
+    dialect: "openai-completions",
     transport: "sse",
   })
-    ? config
+    ? {
+        schemaVersion: PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION,
+        dialect: "openai-completions",
+        transport: "sse",
+        ...route,
+        credentialBindings: [
+          {
+            kind: "api-key",
+            environment: "OPENAI_API_KEY",
+            secretName: credentialSecretName,
+          },
+        ],
+      }
     : null;
 }
 
@@ -347,7 +357,7 @@ export function resolvePlatformMemoryPiModelConfig(
     );
   }
   assertCurrentPiCliArtifact();
-  const config = resolveResponsesPiModelConfig({
+  const config = resolveOpenRouterPiModelConfig({
     ...provider,
     selectedModel: provider.selectedModel,
   });

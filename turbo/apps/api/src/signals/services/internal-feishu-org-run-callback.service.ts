@@ -25,7 +25,7 @@ import type {
   InternalRunCallbackEnvelope,
 } from "./internal-run-callback";
 import { formatRunErrorForRunOwner$ } from "./run-error-format.service";
-import { getRunOutputText } from "./run-output.service";
+import { getRunOutputText$ } from "./run-output.service";
 import { saveRunSummary$ } from "./run-summary.service";
 import { resolveIntegrationAgentResponsePresentation } from "./integration-agent-response-presentation.service";
 
@@ -37,21 +37,6 @@ interface RunContext {
   readonly prompt: string;
   readonly agentId: string;
   readonly chatThreadId: string | null;
-}
-
-interface HandleFeishuCallbackInput {
-  readonly db: Db;
-  readonly callback: InternalRunCallbackEnvelope;
-  readonly formatRunError: (params: {
-    readonly runId: string;
-    readonly chatThreadId: string | null | undefined;
-    readonly errorMessage: string;
-  }) => Promise<string>;
-  readonly saveRunSummary: (
-    runId: string,
-    prompt: string,
-    resultText: string,
-  ) => Promise<void>;
 }
 
 async function loadRun(db: Db, runId: string): Promise<RunContext | undefined> {
@@ -71,34 +56,34 @@ async function loadRun(db: Db, runId: string): Promise<RunContext | undefined> {
   return run;
 }
 
-async function clearThinkingReaction(
-  args: {
-    readonly db: Db;
-    readonly payload: FeishuOrgCallbackPayload;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  if (!args.payload.reactionId) {
-    return;
-  }
-  await tapError(
-    removeFeishuMessageReaction(
-      {
-        db: args.db,
-        installationId: args.payload.installationId,
-        messageId: args.payload.messageId,
-        reactionId: args.payload.reactionId,
+const clearThinkingReaction$ = command(
+  async (
+    { set },
+    payload: FeishuOrgCallbackPayload,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    if (!payload.reactionId) {
+      return;
+    }
+    await tapError(
+      removeFeishuMessageReaction(
+        {
+          db: set(writeDb$),
+          installationId: payload.installationId,
+          messageId: payload.messageId,
+          reactionId: payload.reactionId,
+        },
+        signal,
+      ),
+      (error) => {
+        L.warn("Failed to clear Feishu thinking indicator", {
+          error,
+          messageId: payload.messageId,
+        });
       },
-      signal,
-    ),
-    (error) => {
-      L.warn("Failed to clear Feishu thinking indicator", {
-        error,
-        messageId: args.payload.messageId,
-      });
-    },
-  );
-}
+    );
+  },
+);
 
 async function sendFeishuCallbackResponse(
   args: {
@@ -153,145 +138,116 @@ async function loadFeishuCallbackConnection(
   return connection;
 }
 
-async function handleFeishuCallback(
-  args: HandleFeishuCallbackInput,
-  signal: AbortSignal,
-): Promise<InternalRunCallbackDispatchResult> {
-  if (args.callback.status === "progress") {
-    return { success: true, skipped: true };
-  }
-  const parsed = callbackPayloadSchema.safeParse(args.callback.payload);
-  if (!parsed.success) {
-    return { success: false, error: "Invalid Feishu callback payload" };
-  }
-  const payload = parsed.data;
-  if (payload.canonicalChatDelivery) {
-    return { success: true, skipped: true };
-  }
-  const run = await loadRun(args.db, args.callback.runId);
-  signal.throwIfAborted();
-  if (!run) {
-    await clearThinkingReaction(
-      {
-        db: args.db,
-        payload,
-      },
-      signal,
-    );
-    return { success: false, error: "Agent run not found" };
-  }
-  const [installation] = await args.db
-    .select({
-      orgId: feishuOrgInstallations.orgId,
-      defaultAgentId: orgMetadata.defaultAgentId,
-    })
-    .from(feishuOrgInstallations)
-    .leftJoin(orgMetadata, eq(orgMetadata.orgId, feishuOrgInstallations.orgId))
-    .where(
-      and(
-        eq(feishuOrgInstallations.id, payload.installationId),
-        eq(feishuOrgInstallations.orgId, run.orgId),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  if (!installation) {
-    return { success: false, error: "Feishu installation not found" };
-  }
-  const connection = await loadFeishuCallbackConnection(args.db, payload);
-  signal.throwIfAborted();
-  if (!connection) {
-    await clearThinkingReaction(
-      {
-        db: args.db,
-        payload,
-      },
-      signal,
-    );
-    return { success: true, skipped: true };
-  }
-  const output =
-    args.callback.status === "failed"
-      ? undefined
-      : await getRunOutputText(args.db, args.callback.runId, signal);
-  signal.throwIfAborted();
-  const errorText =
-    args.callback.status === "failed"
-      ? await args.formatRunError({
-          runId: args.callback.runId,
-          chatThreadId: run.chatThreadId,
-          errorMessage: args.callback.error ?? "Agent execution failed.",
-        })
-      : undefined;
-  signal.throwIfAborted();
-  const presentation = await resolveIntegrationAgentResponsePresentation(
-    {
-      db: args.db,
-      orgId: run.orgId,
-      runId: args.callback.runId,
-      agentId: payload.agentId ?? run.agentId,
-      defaultAgentId: installation.defaultAgentId ?? undefined,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  const responseText =
-    args.callback.status === "failed"
-      ? (errorText ?? "Agent execution failed.")
-      : (output ?? "Task completed successfully.");
-  const responseMessage = buildFeishuAgentResponseMessage({
-    text: responseText,
-    footerText: presentation.footerText,
-  });
-  await sendFeishuCallbackResponse(
-    {
-      db: args.db,
-      payload,
-      runId: args.callback.runId,
-      message: responseMessage,
-    },
-    signal,
-  );
-  await clearThinkingReaction(
-    {
-      db: args.db,
-      payload,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  await args.saveRunSummary(args.callback.runId, run.prompt, output ?? "");
-  signal.throwIfAborted();
-  return { success: true };
-}
-
 export const handleFeishuOrgInternalCallback$ = command(
   async (
     { set },
     callback: InternalRunCallbackEnvelope,
     signal: AbortSignal,
   ): Promise<InternalRunCallbackDispatchResult> => {
-    return await handleFeishuCallback(
-      {
-        db: set(writeDb$),
-        callback,
-        formatRunError: (params) => {
-          return set(formatRunErrorForRunOwner$, params, signal);
-        },
-        saveRunSummary: (runId, prompt, resultText) => {
-          return set(
-            saveRunSummary$,
+    const db = set(writeDb$);
+    if (callback.status === "progress") {
+      return { success: true, skipped: true };
+    }
+    const parsed = callbackPayloadSchema.safeParse(callback.payload);
+    if (!parsed.success) {
+      return { success: false, error: "Invalid Feishu callback payload" };
+    }
+    const payload = parsed.data;
+    if (payload.canonicalChatDelivery) {
+      return { success: true, skipped: true };
+    }
+    const run = await loadRun(db, callback.runId);
+    signal.throwIfAborted();
+    if (!run) {
+      await set(clearThinkingReaction$, payload, signal);
+      return { success: false, error: "Agent run not found" };
+    }
+    const [installation] = await db
+      .select({
+        orgId: feishuOrgInstallations.orgId,
+        defaultAgentId: orgMetadata.defaultAgentId,
+      })
+      .from(feishuOrgInstallations)
+      .leftJoin(
+        orgMetadata,
+        eq(orgMetadata.orgId, feishuOrgInstallations.orgId),
+      )
+      .where(
+        and(
+          eq(feishuOrgInstallations.id, payload.installationId),
+          eq(feishuOrgInstallations.orgId, run.orgId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!installation) {
+      return { success: false, error: "Feishu installation not found" };
+    }
+    const connection = await loadFeishuCallbackConnection(db, payload);
+    signal.throwIfAborted();
+    if (!connection) {
+      await set(clearThinkingReaction$, payload, signal);
+      return { success: true, skipped: true };
+    }
+    const output =
+      callback.status === "failed"
+        ? undefined
+        : await set(getRunOutputText$, callback.runId, signal);
+    signal.throwIfAborted();
+    const errorText =
+      callback.status === "failed"
+        ? await set(
+            formatRunErrorForRunOwner$,
             {
-              runId,
-              triggerSource: "feishu",
-              prompt,
-              resultText,
+              runId: callback.runId,
+              chatThreadId: run.chatThreadId,
+              errorMessage: callback.error ?? "Agent execution failed.",
             },
             signal,
-          );
-        },
+          )
+        : undefined;
+    signal.throwIfAborted();
+    const presentation = await resolveIntegrationAgentResponsePresentation(
+      {
+        db: db,
+        orgId: run.orgId,
+        runId: callback.runId,
+        agentId: payload.agentId ?? run.agentId,
+        defaultAgentId: installation.defaultAgentId ?? undefined,
       },
       signal,
     );
+    signal.throwIfAborted();
+    const responseText =
+      callback.status === "failed"
+        ? (errorText ?? "Agent execution failed.")
+        : (output ?? "Task completed successfully.");
+    const responseMessage = buildFeishuAgentResponseMessage({
+      text: responseText,
+      footerText: presentation.footerText,
+    });
+    await sendFeishuCallbackResponse(
+      {
+        db: db,
+        payload,
+        runId: callback.runId,
+        message: responseMessage,
+      },
+      signal,
+    );
+    await set(clearThinkingReaction$, payload, signal);
+    signal.throwIfAborted();
+    await set(
+      saveRunSummary$,
+      {
+        runId: callback.runId,
+        triggerSource: "feishu",
+        prompt: run.prompt,
+        resultText: output ?? "",
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    return { success: true };
   },
 );

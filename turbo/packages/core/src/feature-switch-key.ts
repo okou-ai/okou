@@ -4,6 +4,7 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
+  NotifyMail = "notifyMail",
   Dummy = "_dummy",
   AhrefsConnector = "ahrefsConnector",
   BillConnector = "billConnector",
@@ -48,7 +49,6 @@ export enum FeatureSwitchKey {
   DiscordIntegration = "discordIntegration",
   VncAccess = "vncAccess",
   PiMemory = "piMemory",
-  LangfuseTrace = "_langfuseTrace",
   ComposerTaskChips = "composerTaskChips",
   ChatThreadArchiving = "chatThreadArchiving",
   ChatThreadMuting = "chatThreadMuting",
@@ -59,5 +59,4 @@ export enum FeatureSwitchKey {
   GoogleSlidesConversion = "googleSlidesConversion",
   BrowserNativeInput = "browserNativeInput",
   HomeTaskRecommendations = "homeTaskRecommendations",
-  AgentResponsibilitySetup = "agentResponsibilitySetup",
 }

@@ -25,8 +25,7 @@ import { MercuryDisclosure } from "./mercury-disclosure.tsx";
 
 export type ConnectorAccountSummaryStatus = "loading" | "unavailable" | "ready";
 export type ConnectorAccountDisplaySummary =
-  | ConnectorAccountSummary
-  | ConnectorAccountBriefSummary;
+  ConnectorAccountSummary | ConnectorAccountBriefSummary;
 
 export function connectorAccountSummaryStatus(
   state: LoadableState,

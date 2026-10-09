@@ -1,22 +1,12 @@
 /**
- * In-process test fixture for `org_metadata` tier and credit balance.
- *
- * The tier/credit combinations the generation tests exercise cannot be
- * constructed through product APIs: the Stripe webhook path only produces
- * "pro"/"team" orgs with fixed subscription credit grants, "limited-free-1"
- * is set by organization bootstrap paths that also provision an Agent and
- * onboarding credits. Exact credit balances (e.g. 0 or 1000) are equally
- * unreachable because product grants come in fixed subscription amounts.
- * The legacy onboarding-payment-pending state also has no write path after
- * removing the retired onboarding setup endpoint, but billing must continue
- * reading existing rows. This module is the narrow test-boundary exception
- * for those persisted states.
+ * Remaining private org-metadata fixtures tracked under #37440.
+ * Their consumers still require scenario-by-scenario deletion or a complete
+ * public rewrite; test ownership and public final reads are not exceptions.
  */
 import { orgTierSchema } from "@okouai/api-contracts/contracts/orgs";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { createStore } from "ccstate";
-import { eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 
 import { writeDb$ } from "../signals/external/db";
 import { upsertOrgPlanEntitlement } from "../signals/services/org-plan-entitlements.service";
@@ -47,63 +37,4 @@ export async function upsertOrgMetadataFixture(values: {
         source: "org_metadata_migration",
       });
     });
-}
-
-/**
- * Repoint the org default Agent.
- *
- * The Clerk org-creation bootstrap is the only writer of
- * `org_metadata.default_agent_id`, so a later default-Agent change — which
- * Morning Brief ownership must survive — has no product path to reproduce.
- */
-export async function setOrgDefaultAgentFixture(values: {
-  readonly orgId: string;
-  readonly agentId: string;
-}): Promise<void> {
-  const rows = await createStore()
-    .set(writeDb$)
-    .update(orgMetadata)
-    .set({ defaultAgentId: values.agentId, updatedAt: sql`now()` })
-    .where(eq(orgMetadata.orgId, values.orgId))
-    .returning({ orgId: orgMetadata.orgId });
-  if (rows.length !== 1) {
-    throw new Error("Expected one org metadata row to repoint");
-  }
-}
-
-/**
- * Operator-only OpenRouter preset configuration has no product write API.
- * This narrow exception configures only a test-owned org; route tests still
- * observe the selected model through the Runner claim endpoint.
- */
-export async function setOrgOpenrouterPresetFixture(values: {
-  readonly orgId: string;
-  readonly openrouterPreset: string | null;
-}): Promise<void> {
-  const rows = await createStore()
-    .set(writeDb$)
-    .update(orgMetadata)
-    .set({
-      openrouterPreset: values.openrouterPreset,
-      updatedAt: sql`now()`,
-    })
-    .where(eq(orgMetadata.orgId, values.orgId))
-    .returning({ orgId: orgMetadata.orgId });
-  if (rows.length !== 1) {
-    throw new Error("Expected one org metadata row to configure");
-  }
-}
-
-export async function setOnboardingPaymentPendingFixture(values: {
-  readonly orgId: string;
-  readonly onboardingPaymentPending: boolean;
-}): Promise<void> {
-  await createStore()
-    .set(writeDb$)
-    .update(orgMetadata)
-    .set({
-      onboardingPaymentPending: values.onboardingPaymentPending,
-      updatedAt: sql`now()`,
-    })
-    .where(eq(orgMetadata.orgId, values.orgId));
 }

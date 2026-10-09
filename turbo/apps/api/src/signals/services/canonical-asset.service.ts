@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { command, type Command } from "ccstate";
+import { command } from "ccstate";
 import {
   linkLayoutFromSegment,
   linkLayoutSegment,
@@ -28,7 +28,7 @@ import { buildFileUrlFromKey, isArtifactKeyV2 } from "../../lib/file-url";
 import { inferMimetype } from "../../lib/mimetype";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { isAllowedUploadType } from "../../lib/uploads-constants";
-import { type Db, writeDb$ } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { DiscordFileFetchError } from "../external/discord-file-fetcher";
 import { FeishuApiError } from "../external/feishu-client";
 import { isTelegramApiError } from "../external/telegram-client";
@@ -50,14 +50,14 @@ import {
   type ArtifactObjectLocation,
 } from "./artifact-storage.service";
 import {
-  queueArtifactCatalogFile,
+  queueArtifactCatalogFileSql,
   syncArtifactCatalogForFile$,
 } from "./artifact-catalog.service";
-import { publishArtifactsChangedForRun } from "./artifact-realtime.service";
-import { sourceForRun } from "./run-uploaded-files.service";
+import { publishArtifactsChangedForRun$ } from "./artifact-realtime.service";
+import { sourceForRun$ } from "./run-uploaded-files.service";
 import {
   artifactStorageBucket,
-  privateArtifactCreationEnabled,
+  privateArtifactCreationEnabled$,
   allocatePrivateArtifactLocation$,
   privateArtifactUrl,
 } from "./private-artifact-storage.service";
@@ -71,7 +71,7 @@ type CanonicalArtifactLocation = ArtifactObjectLocation & {
 
 const allocateCanonicalArtifact$ = command(
   async (
-    { get, set },
+    { set },
     args: {
       readonly userId: string;
       readonly orgId: string;
@@ -79,8 +79,11 @@ const allocateCanonicalArtifact$ = command(
     },
     signal: AbortSignal,
   ): Promise<CanonicalArtifactLocation> => {
-    const enabled = await get(
-      privateArtifactCreationEnabled(args.orgId, args.userId),
+    const enabled = await set(
+      privateArtifactCreationEnabled$,
+      args.orgId,
+      args.userId,
+      signal,
     );
     signal.throwIfAborted();
     if (enabled) {
@@ -343,28 +346,33 @@ function canonicalAssetSelection() {
   } as const;
 }
 
-async function canonicalAssetByIdentity(
-  db: Pick<Db, "select">,
-  args: {
-    readonly userId: string;
-    readonly scope: string;
-    readonly key: string;
+const canonicalAssetByIdentity$ = command(
+  async (
+    { get },
+    args: {
+      readonly userId: string;
+      readonly scope: string;
+      readonly key: string;
+    },
+    signal: AbortSignal,
+  ): Promise<CanonicalAssetRow | undefined> => {
+    const db = get(db$);
+    const [asset] = await db
+      .select(canonicalAssetSelection())
+      .from(runUploadedFiles)
+      .where(
+        and(
+          eq(runUploadedFiles.userId, args.userId),
+          eq(runUploadedFiles.assetVersion, CANONICAL_ASSET_VERSION),
+          eq(runUploadedFiles.idempotencyScope, args.scope),
+          eq(runUploadedFiles.idempotencyKey, args.key),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return asset;
   },
-): Promise<CanonicalAssetRow | undefined> {
-  const [asset] = await db
-    .select(canonicalAssetSelection())
-    .from(runUploadedFiles)
-    .where(
-      and(
-        eq(runUploadedFiles.userId, args.userId),
-        eq(runUploadedFiles.assetVersion, CANONICAL_ASSET_VERSION),
-        eq(runUploadedFiles.idempotencyScope, args.scope),
-        eq(runUploadedFiles.idempotencyKey, args.key),
-      ),
-    )
-    .limit(1);
-  return asset;
-}
+);
 
 function canonicalInputAssetIdentityCondition(assetId: string, userId: string) {
   return and(
@@ -392,91 +400,91 @@ function canonicalInputTransitionCondition(
   );
 }
 
-async function canonicalInputAssetById(
-  db: Db,
-  args: {
-    readonly assetId: string;
-    readonly userId: string;
+const canonicalInputAssetAfterTransitionConflict$ = command(
+  async (
+    { get },
+    asset: CanonicalAssetRow,
+    userId: string,
+    signal: AbortSignal,
+  ): Promise<CanonicalAssetRow> => {
+    const db = get(db$);
+    const [current] = await db
+      .select(canonicalAssetSelection())
+      .from(runUploadedFiles)
+      .where(canonicalInputAssetIdentityCondition(asset.id, userId))
+      .limit(1);
+    signal.throwIfAborted();
+    if (!current) {
+      throw new Error("Canonical Slack input asset no longer exists");
+    }
+    return current;
   },
-): Promise<CanonicalAssetRow | undefined> {
-  const [asset] = await db
-    .select(canonicalAssetSelection())
-    .from(runUploadedFiles)
-    .where(canonicalInputAssetIdentityCondition(args.assetId, args.userId))
-    .limit(1);
-  return asset;
-}
+);
 
-async function canonicalInputAssetAfterTransitionConflict(
-  db: Db,
-  asset: CanonicalAssetRow,
-  userId: string,
-): Promise<CanonicalAssetRow> {
-  const current = await canonicalInputAssetById(db, {
-    assetId: asset.id,
-    userId,
-  });
-  if (!current) {
-    throw new Error("Canonical Slack input asset no longer exists");
-  }
-  return current;
-}
-
-async function ensureCanonicalInputAsset(
-  db: Db,
-  args: CanonicalInputFileArgs & {
-    readonly artifact: CanonicalArtifactLocation;
+const ensureCanonicalInputAsset$ = command(
+  async (
+    { set },
+    args: CanonicalInputFileArgs & {
+      readonly artifact: CanonicalArtifactLocation;
+    },
+    signal: AbortSignal,
+  ): Promise<CanonicalAssetRow> => {
+    const db = set(writeDb$);
+    const scope = args.scope;
+    const [inserted] = await db
+      .insert(runUploadedFiles)
+      .values({
+        id: args.artifact.id,
+        runId: null,
+        chatThreadId: args.chatThreadId,
+        source: args.source,
+        externalId: args.externalId,
+        userId: args.userId,
+        orgId: args.orgId,
+        filename: args.filename,
+        contentType: args.contentType,
+        sizeBytes: args.size ?? null,
+        url: null,
+        metadata: args.artifact.storageMetadata,
+        assetVersion: CANONICAL_ASSET_VERSION,
+        classification: "input",
+        accessLevel: "private",
+        materializationStatus: "pending",
+        checksumSha256: null,
+        storageKey: args.artifact.key,
+        provenance: args.provenance,
+        materializationError: null,
+        idempotencyScope: scope,
+        idempotencyKey: args.key,
+      })
+      .onConflictDoNothing({
+        target: [
+          runUploadedFiles.userId,
+          runUploadedFiles.idempotencyScope,
+          runUploadedFiles.idempotencyKey,
+        ],
+        where: eq(runUploadedFiles.assetVersion, CANONICAL_ASSET_VERSION),
+      })
+      .returning(canonicalAssetSelection());
+    signal.throwIfAborted();
+    if (inserted) {
+      return inserted;
+    }
+    const existing = await set(
+      canonicalAssetByIdentity$,
+      {
+        userId: args.userId,
+        scope,
+        key: args.key,
+      },
+      signal,
+    );
+    if (!existing) {
+      throw new Error("Canonical input asset conflict is missing");
+    }
+    return existing;
   },
-): Promise<CanonicalAssetRow> {
-  const scope = args.scope;
-  const [inserted] = await db
-    .insert(runUploadedFiles)
-    .values({
-      id: args.artifact.id,
-      runId: null,
-      chatThreadId: args.chatThreadId,
-      source: args.source,
-      externalId: args.externalId,
-      userId: args.userId,
-      orgId: args.orgId,
-      filename: args.filename,
-      contentType: args.contentType,
-      sizeBytes: args.size ?? null,
-      url: null,
-      metadata: args.artifact.storageMetadata,
-      assetVersion: CANONICAL_ASSET_VERSION,
-      classification: "input",
-      accessLevel: "private",
-      materializationStatus: "pending",
-      checksumSha256: null,
-      storageKey: args.artifact.key,
-      provenance: args.provenance,
-      materializationError: null,
-      idempotencyScope: scope,
-      idempotencyKey: args.key,
-    })
-    .onConflictDoNothing({
-      target: [
-        runUploadedFiles.userId,
-        runUploadedFiles.idempotencyScope,
-        runUploadedFiles.idempotencyKey,
-      ],
-      where: eq(runUploadedFiles.assetVersion, CANONICAL_ASSET_VERSION),
-    })
-    .returning(canonicalAssetSelection());
-  if (inserted) {
-    return inserted;
-  }
-  const existing = await canonicalAssetByIdentity(db, {
-    userId: args.userId,
-    scope,
-    key: args.key,
-  });
-  if (!existing) {
-    throw new Error("Canonical input asset conflict is missing");
-  }
-  return existing;
-}
+);
 
 function canonicalSlackInputResult(
   asset: CanonicalAssetRow,
@@ -557,111 +565,129 @@ function immediateSlackInputError(
   return undefined;
 }
 
-async function markCanonicalInputFailed(
-  db: Db,
-  args: {
-    readonly asset: CanonicalAssetRow;
-    readonly userId: string;
-    readonly error: CanonicalMaterializationError;
-  },
-): Promise<CanonicalAssetRow> {
-  if (args.asset.materializationStatus === "ready") {
-    return args.asset;
-  }
-  const [failed] = await db
-    .update(runUploadedFiles)
-    .set({
-      materializationStatus: "failed",
-      materializationError: args.error,
-      updatedAt: sql`now()`,
-    })
-    .where(canonicalInputTransitionCondition(args.asset, args.userId))
-    .returning(canonicalAssetSelection());
-  return (
-    failed ??
-    (await canonicalInputAssetAfterTransitionConflict(
-      db,
-      args.asset,
-      args.userId,
-    ))
-  );
-}
-
-async function markCanonicalInputReady(
-  db: Db,
-  args: {
-    readonly asset: CanonicalAssetRow;
-    readonly userId: string;
-    readonly sizeBytes: number;
-    readonly checksumSha256: string;
-    readonly contentType: string;
-  },
-): Promise<CanonicalAssetRow> {
-  let observed = args.asset;
-  while (observed.materializationStatus !== "ready") {
-    const [ready] = await db
+const markCanonicalInputFailed$ = command(
+  async (
+    { set },
+    args: {
+      readonly asset: CanonicalAssetRow;
+      readonly userId: string;
+      readonly error: CanonicalMaterializationError;
+    },
+    signal: AbortSignal,
+  ): Promise<CanonicalAssetRow> => {
+    const db = set(writeDb$);
+    if (args.asset.materializationStatus === "ready") {
+      return args.asset;
+    }
+    const [failed] = await db
       .update(runUploadedFiles)
       .set({
-        ...(args.asset.metadata.storage === undefined
-          ? {}
-          : { url: canonicalAssetUrl(args.asset) }),
-        sizeBytes: args.sizeBytes,
-        checksumSha256: args.checksumSha256,
-        contentType: args.contentType,
-        materializationStatus: "ready",
-        materializationError: null,
+        materializationStatus: "failed",
+        materializationError: args.error,
         updatedAt: sql`now()`,
       })
-      .where(canonicalInputTransitionCondition(observed, args.userId))
+      .where(canonicalInputTransitionCondition(args.asset, args.userId))
       .returning(canonicalAssetSelection());
-    if (ready) {
-      return ready;
-    }
-    observed = await canonicalInputAssetAfterTransitionConflict(
-      db,
-      observed,
-      args.userId,
+    signal.throwIfAborted();
+    return (
+      failed ??
+      (await set(
+        canonicalInputAssetAfterTransitionConflict$,
+        args.asset,
+        args.userId,
+        signal,
+      ))
     );
-  }
-  return observed;
-}
-
-async function resetCanonicalInputPending(
-  db: Db,
-  args: {
-    readonly asset: CanonicalAssetRow;
-    readonly userId: string;
   },
-): Promise<CanonicalAssetRow> {
-  let observed = args.asset;
-  while (
-    observed.materializationStatus !== "ready" &&
-    observed.materializationStatus !== "pending" &&
-    !(
-      observed.materializationStatus === "failed" &&
-      observed.materializationError?.retryable === false
-    )
-  ) {
-    const [pending] = await db
-      .update(runUploadedFiles)
-      .set({
-        materializationStatus: "pending",
-        materializationError: null,
-        updatedAt: sql`now()`,
-      })
-      .where(canonicalInputTransitionCondition(observed, args.userId))
-      .returning(canonicalAssetSelection());
-    if (pending) {
-      return pending;
+);
+
+const markCanonicalInputReady$ = command(
+  async (
+    { set },
+    args: {
+      readonly asset: CanonicalAssetRow;
+      readonly userId: string;
+      readonly sizeBytes: number;
+      readonly checksumSha256: string;
+      readonly contentType: string;
+    },
+    signal: AbortSignal,
+  ): Promise<CanonicalAssetRow> => {
+    const db = set(writeDb$);
+    let observed = args.asset;
+    while (observed.materializationStatus !== "ready") {
+      const [ready] = await db
+        .update(runUploadedFiles)
+        .set({
+          ...(args.asset.metadata.storage === undefined
+            ? {}
+            : { url: canonicalAssetUrl(args.asset) }),
+          sizeBytes: args.sizeBytes,
+          checksumSha256: args.checksumSha256,
+          contentType: args.contentType,
+          materializationStatus: "ready",
+          materializationError: null,
+          updatedAt: sql`now()`,
+        })
+        .where(canonicalInputTransitionCondition(observed, args.userId))
+        .returning(canonicalAssetSelection());
+      signal.throwIfAborted();
+      if (ready) {
+        return ready;
+      }
+      observed = await set(
+        canonicalInputAssetAfterTransitionConflict$,
+        observed,
+        args.userId,
+        signal,
+      );
     }
-    observed = await canonicalInputAssetAfterTransitionConflict(
-      db,
-      observed,
-      args.userId,
-    );
-  }
-  return observed;
-}
+    return observed;
+  },
+);
+
+const resetCanonicalInputPending$ = command(
+  async (
+    { set },
+    args: {
+      readonly asset: CanonicalAssetRow;
+      readonly userId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<CanonicalAssetRow> => {
+    const db = set(writeDb$);
+    let observed = args.asset;
+    while (
+      observed.materializationStatus !== "ready" &&
+      observed.materializationStatus !== "pending" &&
+      !(
+        observed.materializationStatus === "failed" &&
+        observed.materializationError?.retryable === false
+      )
+    ) {
+      const [pending] = await db
+        .update(runUploadedFiles)
+        .set({
+          materializationStatus: "pending",
+          materializationError: null,
+          updatedAt: sql`now()`,
+        })
+        .where(canonicalInputTransitionCondition(observed, args.userId))
+        .returning(canonicalAssetSelection());
+      signal.throwIfAborted();
+      if (pending) {
+        return pending;
+      }
+      observed = await set(
+        canonicalInputAssetAfterTransitionConflict$,
+        observed,
+        args.userId,
+        signal,
+      );
+    }
+    return observed;
+  },
+);
 
 function canonicalInputResponseContentType(
   response: Response,
@@ -698,231 +724,230 @@ function canonicalInputResponseContentType(
   return contentType;
 }
 
-function createCanonicalInputFileImportCommand<DownloadArgs>(
-  download$: Command<Promise<Response>, [DownloadArgs, AbortSignal]>,
-) {
-  return command(
-    async (
-      { get, set },
-      args: {
-        readonly asset: CanonicalAssetRow;
-        readonly userId: string;
-        readonly download: DownloadArgs;
-        readonly contentType: string;
-        readonly maxBytes: number;
-      },
-      signal: AbortSignal,
-    ): Promise<CanonicalInputAsset> => {
-      const importController = new AbortController();
-      const importSignal = AbortSignal.any([
-        signal,
-        importController.signal,
-        AbortSignal.timeout(INPUT_IMPORT_TIMEOUT_MS),
-      ]);
-      const imported = await settleIncludingAbort(
-        (async (): Promise<{
-          readonly buffer: Buffer;
-          readonly checksumSha256: string;
-          readonly contentType: string;
-        }> => {
-          const response = await set(download$, args.download, importSignal);
-          const contentType = canonicalInputResponseContentType(
-            response,
-            args.contentType,
-          );
-          if (Number(response.headers.get("content-length")) > args.maxBytes) {
-            throw new InputFileImportError(
-              "too-large",
-              "File exceeds maximum size",
-            );
-          }
-          const buffer = await readInputFileBuffer(response, args.maxBytes);
-          importSignal.throwIfAborted();
-          if (buffer.length === 0) {
-            throw new InputFileImportError("download-failed", "File is empty");
-          }
-          const checksumSha256 = createHash("sha256")
-            .update(buffer)
-            .digest("hex");
-          if (!args.asset.storageKey) {
-            throw new Error("Canonical input asset storage key is missing");
-          }
-          await get(
-            putS3Object(
-              artifactStorageBucket(args.asset.metadata),
-              args.asset.storageKey,
-              buffer,
-              contentType,
-              {
-                signal: importSignal,
-                metadata:
-                  args.asset.metadata.storage !== undefined
-                    ? { "artifact-id": args.asset.id }
-                    : artifactObjectMetadata(
-                        args.userId,
-                        args.asset.id,
-                        args.asset.filename ?? args.asset.id,
-                        canonicalAssetLinkLayout(args.asset.metadata),
-                      ),
-              },
-            ),
-          );
-          return { buffer, checksumSha256, contentType };
-        })(),
-      );
-      signal.throwIfAborted();
+export interface CanonicalInputImportPlan {
+  readonly asset: CanonicalAssetRow;
+  readonly userId: string;
+  readonly contentType: string;
+  readonly maxBytes: number;
+}
+export interface CanonicalInputImportReady {
+  readonly sizeBytes: number;
+  readonly checksumSha256: string;
+  readonly contentType: string;
+}
+type CanonicalInputImportOutcome =
+  | { readonly ok: true; readonly value: CanonicalInputImportReady }
+  | { readonly ok: false; readonly error: CanonicalMaterializationError };
+type PreparedCanonicalInputFile =
+  | { readonly kind: "complete"; readonly asset: CanonicalInputAsset }
+  | { readonly kind: "import"; readonly plan: CanonicalInputImportPlan };
 
-      const db = set(writeDb$);
-      if (!imported.ok) {
-        const error = importSignal.aborted
-          ? importSignal.reason
-          : imported.error;
-        // Abort the fetch instead of awaiting stream cancellation: a tee'd
-        // response can hold cancellation open until its other reader finishes.
-        importController.abort();
-        const failed = await markCanonicalInputFailed(db, {
-          asset: args.asset,
-          userId: args.userId,
-          error: inputMaterializationError(error),
-        });
-        signal.throwIfAborted();
-        return canonicalInputResult(failed);
-      }
-      const ready = await markCanonicalInputReady(db, {
-        asset: args.asset,
-        userId: args.userId,
-        sizeBytes: imported.value.buffer.length,
-        checksumSha256: imported.value.checksumSha256,
-        contentType: imported.value.contentType,
-      });
-      signal.throwIfAborted();
-      return canonicalInputResult(ready);
-    },
-  );
+/** One deadline covers provider download, bounded reading and object upload. */
+export function canonicalInputImportSignals(signal: AbortSignal) {
+  const importController = new AbortController();
+  const importSignal = AbortSignal.any([
+    signal,
+    importController.signal,
+    AbortSignal.timeout(INPUT_IMPORT_TIMEOUT_MS),
+  ]);
+  return { importController, importSignal };
 }
 
-/** Build one static importer graph around a provider's download command. */
-export function createCanonicalInputFileCommands<DownloadArgs>(
-  download$: Command<Promise<Response>, [DownloadArgs, AbortSignal]>,
-) {
-  const importCanonicalInputFile$ =
-    createCanonicalInputFileImportCommand(download$);
-
-  /** Import an integration attachment under its upstream, installation-scoped identity. */
-  const materializeCanonicalInputFile$ = command(
-    async (
-      { set },
-      args: CanonicalInputFileArgs & {
-        readonly download: DownloadArgs;
-        readonly maxBytes?: number;
-      },
-      signal: AbortSignal,
-    ): Promise<CanonicalInputAsset> => {
-      const db = set(writeDb$);
-      let asset = await canonicalAssetByIdentity(db, args);
-      signal.throwIfAborted();
-      if (!asset) {
-        const artifact = await set(allocateCanonicalArtifact$, args, signal);
-        asset = await ensureCanonicalInputAsset(db, { ...args, artifact });
-        signal.throwIfAborted();
-      }
-      if (
-        asset.materializationStatus === "ready" ||
-        (asset.materializationStatus === "failed" &&
-          asset.materializationError?.retryable === false)
-      ) {
-        return canonicalInputResult(asset);
-      }
-      const maxBytes = args.maxBytes ?? MAX_INPUT_FILE_SIZE_BYTES;
-      const immediateError = immediateInputError(
-        args.contentType,
-        args.size,
-        maxBytes,
-      );
-      if (immediateError) {
-        const failed = await markCanonicalInputFailed(db, {
-          asset,
-          userId: args.userId,
-          error: immediateError,
-        });
-        signal.throwIfAborted();
-        return canonicalInputResult(failed);
-      }
-      asset = await resetCanonicalInputPending(db, {
-        asset,
-        userId: args.userId,
-      });
-      signal.throwIfAborted();
-      if (
-        asset.materializationStatus === "ready" ||
-        (asset.materializationStatus === "failed" &&
-          asset.materializationError?.retryable === false)
-      ) {
-        return canonicalInputResult(asset);
-      }
-      return set(
-        importCanonicalInputFile$,
-        {
-          asset,
-          userId: args.userId,
-          download: args.download,
-          contentType: args.contentType,
-          maxBytes,
-        },
-        signal,
-      );
-    },
-  );
-
-  return { importCanonicalInputFile$, materializeCanonicalInputFile$ };
+export function canonicalInputImportOutcome(
+  imported:
+    | { readonly ok: true; readonly value: CanonicalInputImportReady }
+    | { readonly ok: false; readonly error: unknown },
+  importSignal: AbortSignal,
+): CanonicalInputImportOutcome {
+  return imported.ok
+    ? imported
+    : {
+        ok: false,
+        error: inputMaterializationError(
+          importSignal.aborted ? importSignal.reason : imported.error,
+        ),
+      };
 }
 
-const downloadCanonicalInputFile$ = command(
-  (
-    _context,
-    download: (signal: AbortSignal) => Promise<Response>,
+/** Read and upload the provider response; no database mutation occurs here. */
+export const storeCanonicalInputFile$ = command(
+  async (
+    { get },
+    plan: CanonicalInputImportPlan,
+    response: Response,
     signal: AbortSignal,
-  ) => {
-    return download(signal);
+  ): Promise<CanonicalInputImportReady> => {
+    const contentType = canonicalInputResponseContentType(
+      response,
+      plan.contentType,
+    );
+    if (Number(response.headers.get("content-length")) > plan.maxBytes) {
+      throw new InputFileImportError("too-large", "File exceeds maximum size");
+    }
+    const buffer = await readInputFileBuffer(response, plan.maxBytes);
+    signal.throwIfAborted();
+    if (buffer.length === 0) {
+      throw new InputFileImportError("download-failed", "File is empty");
+    }
+    const checksumSha256 = createHash("sha256").update(buffer).digest("hex");
+    if (!plan.asset.storageKey) {
+      throw new Error("Canonical input asset storage key is missing");
+    }
+    await get(
+      putS3Object(
+        artifactStorageBucket(plan.asset.metadata),
+        plan.asset.storageKey,
+        buffer,
+        contentType,
+        {
+          signal: signal,
+          metadata:
+            plan.asset.metadata.storage !== undefined
+              ? { "artifact-id": plan.asset.id }
+              : artifactObjectMetadata(
+                  plan.userId,
+                  plan.asset.id,
+                  plan.asset.filename ?? plan.asset.id,
+                  canonicalAssetLinkLayout(plan.asset.metadata),
+                ),
+        },
+      ),
+    );
+    signal.throwIfAborted();
+    return { sizeBytes: buffer.length, checksumSha256, contentType };
   },
 );
 
-const canonicalInputFileCommands = createCanonicalInputFileCommands(
-  downloadCanonicalInputFile$,
+/** Persist the settled import using the caller's still-live cancellation scope. */
+export const completeCanonicalInputFile$ = command(
+  async (
+    { set },
+    plan: CanonicalInputImportPlan,
+    outcome: CanonicalInputImportOutcome,
+    signal: AbortSignal,
+  ): Promise<CanonicalInputAsset> => {
+    const asset = outcome.ok
+      ? await set(
+          markCanonicalInputReady$,
+          { asset: plan.asset, userId: plan.userId, ...outcome.value },
+          signal,
+        )
+      : await set(
+          markCanonicalInputFailed$,
+          { asset: plan.asset, userId: plan.userId, error: outcome.error },
+          signal,
+        );
+    signal.throwIfAborted();
+    return canonicalInputResult(asset);
+  },
 );
-const { importCanonicalInputFile$ } = canonicalInputFileCommands;
-export const { materializeCanonicalInputFile$ } = canonicalInputFileCommands;
 
-const materializeCanonicalSlackInputFile$ = command(
+const resolveCanonicalInputIdentity$ = command(
+  async (
+    { set },
+    args: CanonicalInputFileArgs,
+    signal: AbortSignal,
+  ): Promise<CanonicalAssetRow> => {
+    let asset = await set(canonicalAssetByIdentity$, args, signal);
+    signal.throwIfAborted();
+    if (!asset) {
+      const artifact = await set(allocateCanonicalArtifact$, args, signal);
+      asset = await set(
+        ensureCanonicalInputAsset$,
+        { ...args, artifact },
+        signal,
+      );
+      signal.throwIfAborted();
+    }
+    return asset;
+  },
+);
+
+/** Resolve durable identity before the provider starts any external work. */
+export const prepareCanonicalInputFile$ = command(
+  async (
+    { set },
+    args: CanonicalInputFileArgs & { readonly maxBytes?: number },
+    signal: AbortSignal,
+  ): Promise<PreparedCanonicalInputFile> => {
+    let asset = await set(resolveCanonicalInputIdentity$, args, signal);
+    if (
+      asset.materializationStatus === "ready" ||
+      (asset.materializationStatus === "failed" &&
+        asset.materializationError?.retryable === false)
+    ) {
+      return { kind: "complete", asset: canonicalInputResult(asset) };
+    }
+    const maxBytes = args.maxBytes ?? MAX_INPUT_FILE_SIZE_BYTES;
+    const immediateError = immediateInputError(
+      args.contentType,
+      args.size,
+      maxBytes,
+    );
+    if (immediateError) {
+      const failed = await set(
+        markCanonicalInputFailed$,
+        {
+          asset,
+          userId: args.userId,
+          error: immediateError,
+        },
+        signal,
+      );
+      signal.throwIfAborted();
+      return { kind: "complete", asset: canonicalInputResult(failed) };
+    }
+    asset = await set(
+      resetCanonicalInputPending$,
+      {
+        asset,
+        userId: args.userId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (
+      asset.materializationStatus === "ready" ||
+      (asset.materializationStatus === "failed" &&
+        asset.materializationError?.retryable === false)
+    ) {
+      return { kind: "complete", asset: canonicalInputResult(asset) };
+    }
+    return {
+      kind: "import",
+      plan: {
+        asset,
+        userId: args.userId,
+        contentType: args.contentType,
+        maxBytes,
+      },
+    };
+  },
+);
+
+type PreparedSlackInput =
+  | { readonly kind: "complete"; readonly asset: CanonicalSlackInputAsset }
+  | {
+      readonly kind: "import";
+      readonly slackFileId: string;
+      readonly plan: CanonicalInputImportPlan;
+      readonly download: { readonly url: string; readonly botToken: string };
+    };
+const prepareCanonicalSlackInputFile$ = command(
   async (
     { set },
     args: CanonicalSlackInputFileArgs,
     signal: AbortSignal,
-  ): Promise<CanonicalSlackInputAsset | null> => {
+  ): Promise<PreparedSlackInput | null> => {
     const fileId = args.file.id;
     if (!fileId) {
       return null;
     }
     const filename = slackFileFilename(args.file);
     const contentType = canonicalInputContentType(filename, args.file.mimetype);
-    const db = set(writeDb$);
-    let asset = await canonicalAssetByIdentity(db, {
-      userId: args.userId,
-      scope: "slack-input",
-      key: fileId,
-    });
-    signal.throwIfAborted();
-    if (!asset) {
-      const artifact = await set(
-        allocateCanonicalArtifact$,
-        {
-          userId: args.userId,
-          orgId: args.orgId,
-          filename,
-        },
-        signal,
-      );
-      asset = await ensureCanonicalInputAsset(db, {
+    let asset = await set(
+      resolveCanonicalInputIdentity$,
+      {
         ...args,
         source: "slack",
         scope: "slack-input",
@@ -938,74 +963,142 @@ const materializeCanonicalSlackInputFile$ = command(
         },
         filename,
         contentType,
-        artifact,
-      });
-    }
-    signal.throwIfAborted();
-    if (asset.materializationStatus === "ready") {
-      return canonicalSlackInputResult(asset, fileId);
-    }
-    if (
-      asset.materializationStatus === "failed" &&
-      asset.materializationError?.retryable === false
-    ) {
-      return canonicalSlackInputResult(asset, fileId);
-    }
-
-    const immediateError = immediateSlackInputError(args.file, contentType);
-    if (immediateError) {
-      asset = await markCanonicalInputFailed(db, {
-        asset,
-        userId: args.userId,
-        error: immediateError,
-      });
-      return canonicalSlackInputResult(asset, fileId);
-    }
-    if (!args.botToken) {
-      asset = await markCanonicalInputFailed(db, {
-        asset,
-        userId: args.userId,
-        error: {
-          code: "slack-auth-unavailable",
-          message: "Slack is not connected, so this file cannot be imported",
-          retryable: true,
-        },
-      });
-      return canonicalSlackInputResult(asset, fileId);
-    }
-    const downloadUrl = args.file.url_private_download;
-    if (!downloadUrl) {
-      throw new Error("Canonical Slack input download URL is missing");
-    }
-
-    asset = await resetCanonicalInputPending(db, {
-      asset,
-      userId: args.userId,
-    });
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if (
       asset.materializationStatus === "ready" ||
       (asset.materializationStatus === "failed" &&
         asset.materializationError?.retryable === false)
     ) {
-      return canonicalSlackInputResult(asset, fileId);
+      return {
+        kind: "complete",
+        asset: canonicalSlackInputResult(asset, fileId),
+      };
     }
 
-    const botToken = args.botToken;
-    const imported = await set(
-      importCanonicalInputFile$,
+    const immediateError = immediateSlackInputError(args.file, contentType);
+    if (immediateError) {
+      asset = await set(
+        markCanonicalInputFailed$,
+        {
+          asset,
+          userId: args.userId,
+          error: immediateError,
+        },
+        signal,
+      );
+      return {
+        kind: "complete",
+        asset: canonicalSlackInputResult(asset, fileId),
+      };
+    }
+    if (!args.botToken) {
+      asset = await set(
+        markCanonicalInputFailed$,
+        {
+          asset,
+          userId: args.userId,
+          error: {
+            code: "slack-auth-unavailable",
+            message: "Slack is not connected, so this file cannot be imported",
+            retryable: true,
+          },
+        },
+        signal,
+      );
+      return {
+        kind: "complete",
+        asset: canonicalSlackInputResult(asset, fileId),
+      };
+    }
+    const downloadUrl = args.file.url_private_download;
+    if (!downloadUrl) {
+      throw new Error("Canonical Slack input download URL is missing");
+    }
+
+    asset = await set(
+      resetCanonicalInputPending$,
       {
         asset,
         userId: args.userId,
-        download: (downloadSignal) => {
-          return fetchSlackFile(downloadUrl, botToken, downloadSignal);
-        },
-        contentType,
-        maxBytes: MAX_SLACK_FILE_SIZE_BYTES,
       },
       signal,
     );
-    return { ...imported, slackFileId: fileId };
+    signal.throwIfAborted();
+    if (
+      asset.materializationStatus === "ready" ||
+      (asset.materializationStatus === "failed" &&
+        asset.materializationError?.retryable === false)
+    ) {
+      return {
+        kind: "complete",
+        asset: canonicalSlackInputResult(asset, fileId),
+      };
+    }
+
+    return {
+      kind: "import",
+      slackFileId: fileId,
+      plan: {
+        asset,
+        userId: args.userId,
+        contentType,
+        maxBytes: MAX_SLACK_FILE_SIZE_BYTES,
+      },
+      download: { url: downloadUrl, botToken: args.botToken },
+    };
+  },
+);
+const importCanonicalSlackInputFile$ = command(
+  async (
+    { set },
+    prepared: Extract<PreparedSlackInput, { kind: "import" }>,
+    signal: AbortSignal,
+  ): Promise<CanonicalInputImportReady> => {
+    const response = await fetchSlackFile(
+      prepared.download.url,
+      prepared.download.botToken,
+      signal,
+    );
+    signal.throwIfAborted();
+    return await set(storeCanonicalInputFile$, prepared.plan, response, signal);
+  },
+);
+const materializeCanonicalSlackInputFile$ = command(
+  async (
+    { set },
+    args: CanonicalSlackInputFileArgs,
+    signal: AbortSignal,
+  ): Promise<CanonicalSlackInputAsset | null> => {
+    const prepared = await set(prepareCanonicalSlackInputFile$, args, signal);
+    signal.throwIfAborted();
+    if (!prepared) {
+      return null;
+    }
+    if (prepared.kind === "complete") {
+      return prepared.asset;
+    }
+    const { importController, importSignal } =
+      canonicalInputImportSignals(signal);
+    const imported = await settleIncludingAbort(
+      set(importCanonicalSlackInputFile$, prepared, importSignal),
+    );
+    signal.throwIfAborted();
+    const outcome = canonicalInputImportOutcome(imported, importSignal);
+    if (!imported.ok) {
+      // Abort the fetch without awaiting cancellation of a tee'd response stream.
+      importController.abort();
+    }
+    const asset = await set(
+      completeCanonicalInputFile$,
+      prepared.plan,
+      outcome,
+      signal,
+    );
+    signal.throwIfAborted();
+    return { ...asset, slackFileId: prepared.slackFileId };
   },
 );
 
@@ -1041,98 +1134,93 @@ export const materializeCanonicalSlackInputAssets$ = command(
  * filename, and content type), so this path only needs the canonical asset
  * rows.
  */
-export async function registerCanonicalWebInputAssets(
-  db: Db,
-  args: {
-    readonly chatThreadId: string;
-    readonly userId: string;
-    readonly orgId: string;
-    readonly files: readonly ChatEventAttachFileMetadata[];
+interface CanonicalWebInputOwner {
+  readonly chatThreadId: string;
+  readonly userId: string;
+  readonly orgId: string;
+}
+
+/** Validate the existing private ownership record without changing its identity. */
+export function canonicalPrivateWebInputPlan(
+  args: CanonicalWebInputOwner & {
+    readonly file: ChatEventAttachFileMetadata;
+    readonly owned:
+      | Pick<
+          typeof runUploadedFiles.$inferSelect,
+          "userId" | "orgId" | "storageKey" | "metadata"
+        >
+      | undefined;
   },
-): Promise<void> {
-  for (const file of args.files) {
-    // A private upload already has an ownership record. Attach that same
-    // record without discarding its storage marker or creating a public alias.
-    if (file.objectKey.startsWith("private-artifacts/")) {
-      const [owned] = await db
-        .select()
-        .from(runUploadedFiles)
-        .where(eq(runUploadedFiles.id, file.id))
-        .limit(1);
-      if (!owned || owned.metadata.storage === undefined) {
-        throw new Error("Private attachment storage record is missing");
-      }
-      artifactStorageBucket(owned.metadata);
-      if (
-        owned.userId !== args.userId ||
-        owned.orgId !== args.orgId ||
-        owned.storageKey !== file.objectKey
-      ) {
-        throw new Error("Private attachment belongs to another owner");
-      }
-      await db
-        .update(runUploadedFiles)
-        .set({
-          chatThreadId: args.chatThreadId,
-          assetVersion: CANONICAL_ASSET_VERSION,
-          classification: "input",
-          materializationStatus: "ready",
-          contentType: file.contentType,
-          sizeBytes: file.size,
-          url: privateArtifactUrl(file.id, file.filename, owned.metadata),
-          idempotencyScope: "web-input",
-          idempotencyKey: file.id,
-        })
-        // Reusing a generated or canonical integration file as an input must
-        // retain its original run, classification, and idempotency identity.
-        .where(
-          and(
-            eq(runUploadedFiles.id, file.id),
-            isNull(runUploadedFiles.assetVersion),
-            isNull(runUploadedFiles.runId),
-            isNull(runUploadedFiles.chatThreadId),
-          ),
-        );
-      continue;
-    }
-    const [inserted] = await db
-      .insert(runUploadedFiles)
-      .values({
-        runId: null,
-        chatThreadId: args.chatThreadId,
-        source: "web",
-        externalId: file.id,
-        userId: args.userId,
-        orgId: args.orgId,
-        filename: file.filename,
-        contentType: file.contentType,
-        sizeBytes: file.size,
-        url: buildFileUrlFromKey(
-          file.objectKey,
-          linkLayoutFromSegment(file.publicBrand),
-        ),
-        metadata: { publicBrand: file.publicBrand },
-        assetVersion: CANONICAL_ASSET_VERSION,
-        classification: "input",
-        accessLevel: "private",
-        materializationStatus: "ready",
-        storageKey: file.objectKey,
-        idempotencyScope: "web-input",
-        idempotencyKey: file.id,
-      })
-      .onConflictDoNothing()
-      .returning({ id: runUploadedFiles.id });
-    const asset =
-      inserted ??
-      (await canonicalAssetByIdentity(db, {
-        userId: args.userId,
-        scope: "web-input",
-        key: file.id,
-      }));
-    if (!asset) {
-      throw new Error("Canonical web input asset conflict is missing");
-    }
+) {
+  const { file, owned } = args;
+  if (!owned || owned.metadata.storage === undefined) {
+    throw new Error("Private attachment storage record is missing");
   }
+  artifactStorageBucket(owned.metadata);
+  if (
+    owned.userId !== args.userId ||
+    owned.orgId !== args.orgId ||
+    owned.storageKey !== file.objectKey
+  ) {
+    throw new Error("Private attachment belongs to another owner");
+  }
+  return {
+    values: {
+      chatThreadId: args.chatThreadId,
+      assetVersion: CANONICAL_ASSET_VERSION,
+      classification: "input",
+      materializationStatus: "ready",
+      contentType: file.contentType,
+      sizeBytes: file.size,
+      url: privateArtifactUrl(file.id, file.filename, owned.metadata),
+      idempotencyScope: "web-input",
+      idempotencyKey: file.id,
+    } satisfies Partial<typeof runUploadedFiles.$inferInsert>,
+    where: and(
+      eq(runUploadedFiles.id, file.id),
+      isNull(runUploadedFiles.assetVersion),
+      isNull(runUploadedFiles.runId),
+      isNull(runUploadedFiles.chatThreadId),
+    ),
+  };
+}
+
+/** Canonical registration values and conflict lookup for an ordered web input. */
+export function canonicalWebInputPlan(
+  args: CanonicalWebInputOwner & { readonly file: ChatEventAttachFileMetadata },
+) {
+  const { file } = args;
+  return {
+    values: {
+      runId: null,
+      chatThreadId: args.chatThreadId,
+      source: "web",
+      externalId: file.id,
+      userId: args.userId,
+      orgId: args.orgId,
+      filename: file.filename,
+      contentType: file.contentType,
+      sizeBytes: file.size,
+      url: buildFileUrlFromKey(
+        file.objectKey,
+        linkLayoutFromSegment(file.publicBrand),
+      ),
+      metadata: { publicBrand: file.publicBrand },
+      assetVersion: CANONICAL_ASSET_VERSION,
+      classification: "input",
+      accessLevel: "private",
+      materializationStatus: "ready",
+      storageKey: file.objectKey,
+      idempotencyScope: "web-input",
+      idempotencyKey: file.id,
+    } satisfies typeof runUploadedFiles.$inferInsert,
+    identity: and(
+      eq(runUploadedFiles.userId, args.userId),
+      eq(runUploadedFiles.assetVersion, CANONICAL_ASSET_VERSION),
+      eq(runUploadedFiles.idempotencyScope, "web-input"),
+      eq(runUploadedFiles.idempotencyKey, file.id),
+    ),
+  };
 }
 
 interface CanonicalPublicationFileArgs {
@@ -1174,66 +1262,75 @@ export class CanonicalPublicationConflictError extends Error {
   }
 }
 
-async function ensureCanonicalPublishedAsset(
-  db: Db,
-  args: PrepareCanonicalPublishedAssetArgs,
-  artifact: CanonicalArtifactLocation,
-  context: {
-    readonly scope: string;
-    readonly source: RunUploadedFileSource;
-    readonly chatThreadId: string | null;
+const ensureCanonicalPublishedAsset$ = command(
+  async (
+    { set },
+    args: PrepareCanonicalPublishedAssetArgs,
+    artifact: CanonicalArtifactLocation,
+    context: {
+      readonly scope: string;
+      readonly source: RunUploadedFileSource;
+      readonly chatThreadId: string | null;
+    },
+    signal: AbortSignal,
+  ): Promise<CanonicalAssetRow> => {
+    const db = set(writeDb$);
+    const [inserted] = await db
+      .insert(runUploadedFiles)
+      .values({
+        id: artifact.id,
+        runId: args.runId,
+        chatThreadId: context.chatThreadId,
+        source: context.source,
+        externalId: args.operationId,
+        userId: args.userId,
+        orgId: args.orgId,
+        filename: args.filename,
+        contentType: args.contentType,
+        sizeBytes: args.size,
+        url: null,
+        metadata:
+          args.runId === null
+            ? { ...artifact.storageMetadata, purpose: "artifact" }
+            : artifact.storageMetadata,
+        assetVersion: CANONICAL_ASSET_VERSION,
+        classification: "published-output",
+        accessLevel: "published",
+        materializationStatus: "pending",
+        checksumSha256: args.checksumSha256,
+        storageKey: artifact.key,
+        provenance: { provider: "agent" },
+        materializationError: null,
+        idempotencyScope: context.scope,
+        idempotencyKey: args.operationId,
+      })
+      .onConflictDoNothing({
+        target: [
+          runUploadedFiles.userId,
+          runUploadedFiles.idempotencyScope,
+          runUploadedFiles.idempotencyKey,
+        ],
+        where: eq(runUploadedFiles.assetVersion, CANONICAL_ASSET_VERSION),
+      })
+      .returning(canonicalAssetSelection());
+    signal.throwIfAborted();
+    const asset =
+      inserted ??
+      (await set(
+        canonicalAssetByIdentity$,
+        {
+          userId: args.userId,
+          scope: context.scope,
+          key: args.operationId,
+        },
+        signal,
+      ));
+    if (!asset) {
+      throw new Error("Canonical publication asset conflict is missing");
+    }
+    return asset;
   },
-): Promise<CanonicalAssetRow> {
-  const [inserted] = await db
-    .insert(runUploadedFiles)
-    .values({
-      id: artifact.id,
-      runId: args.runId,
-      chatThreadId: context.chatThreadId,
-      source: context.source,
-      externalId: args.operationId,
-      userId: args.userId,
-      orgId: args.orgId,
-      filename: args.filename,
-      contentType: args.contentType,
-      sizeBytes: args.size,
-      url: null,
-      metadata:
-        args.runId === null
-          ? { ...artifact.storageMetadata, purpose: "artifact" }
-          : artifact.storageMetadata,
-      assetVersion: CANONICAL_ASSET_VERSION,
-      classification: "published-output",
-      accessLevel: "published",
-      materializationStatus: "pending",
-      checksumSha256: args.checksumSha256,
-      storageKey: artifact.key,
-      provenance: { provider: "agent" },
-      materializationError: null,
-      idempotencyScope: context.scope,
-      idempotencyKey: args.operationId,
-    })
-    .onConflictDoNothing({
-      target: [
-        runUploadedFiles.userId,
-        runUploadedFiles.idempotencyScope,
-        runUploadedFiles.idempotencyKey,
-      ],
-      where: eq(runUploadedFiles.assetVersion, CANONICAL_ASSET_VERSION),
-    })
-    .returning(canonicalAssetSelection());
-  const asset =
-    inserted ??
-    (await canonicalAssetByIdentity(db, {
-      userId: args.userId,
-      scope: context.scope,
-      key: args.operationId,
-    }));
-  if (!asset) {
-    throw new Error("Canonical publication asset conflict is missing");
-  }
-  return asset;
-}
+);
 
 function sameCanonicalDeliveryDestination(
   stored: CanonicalAssetDeliveryDestination,
@@ -1257,62 +1354,69 @@ function sameCanonicalDeliveryDestination(
   );
 }
 
-async function ensureCanonicalDelivery(
-  db: Db,
-  assetId: string,
-  args: PrepareCanonicalPublishedAssetArgs,
-): Promise<boolean> {
-  return await db.transaction(async (tx) => {
-    const [asset] = await tx
-      .select({ id: runUploadedFiles.id })
-      .from(runUploadedFiles)
-      .where(eq(runUploadedFiles.id, assetId))
-      .for("update");
-    if (!asset) {
-      return false;
-    }
-    const [delivery] = await tx
-      .select({
-        provider: canonicalAssetDeliveries.provider,
-        destination: canonicalAssetDeliveries.destination,
-      })
-      .from(canonicalAssetDeliveries)
-      .where(
-        and(
-          eq(canonicalAssetDeliveries.assetId, assetId),
-          eq(canonicalAssetDeliveries.operationId, args.operationId),
-        ),
-      )
-      .limit(1);
-    if (delivery) {
-      if (
-        delivery.provider !== args.provider ||
-        !sameCanonicalDeliveryDestination(
-          delivery.destination,
-          args.destination,
-        )
-      ) {
-        throw new CanonicalPublicationConflictError(
-          "Upload operation identity was reused for another delivery destination",
-        );
+const ensureCanonicalDelivery$ = command(
+  async (
+    { set },
+    assetId: string,
+    args: PrepareCanonicalPublishedAssetArgs,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+    return await db.transaction(async (tx) => {
+      const [asset] = await tx
+        .select({ id: runUploadedFiles.id })
+        .from(runUploadedFiles)
+        .where(eq(runUploadedFiles.id, assetId))
+        .for("update");
+      signal.throwIfAborted();
+      if (!asset) {
+        return false;
       }
+      const [delivery] = await tx
+        .select({
+          provider: canonicalAssetDeliveries.provider,
+          destination: canonicalAssetDeliveries.destination,
+        })
+        .from(canonicalAssetDeliveries)
+        .where(
+          and(
+            eq(canonicalAssetDeliveries.assetId, assetId),
+            eq(canonicalAssetDeliveries.operationId, args.operationId),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      if (delivery) {
+        if (
+          delivery.provider !== args.provider ||
+          !sameCanonicalDeliveryDestination(
+            delivery.destination,
+            args.destination,
+          )
+        ) {
+          throw new CanonicalPublicationConflictError(
+            "Upload operation identity was reused for another delivery destination",
+          );
+        }
+        return true;
+      }
+      await tx.insert(canonicalAssetDeliveries).values({
+        assetId,
+        provider: args.provider,
+        operationId: args.operationId,
+        status: "pending",
+        destination: args.destination,
+        ...(args.provider === "discord"
+          ? {
+              providerState: { provider: "discord" as const, attempt: null },
+            }
+          : {}),
+      });
+      signal.throwIfAborted();
       return true;
-    }
-    await tx.insert(canonicalAssetDeliveries).values({
-      assetId,
-      provider: args.provider,
-      operationId: args.operationId,
-      status: "pending",
-      destination: args.destination,
-      ...(args.provider === "discord"
-        ? {
-            providerState: { provider: "discord" as const, attempt: null },
-          }
-        : {}),
     });
-    return true;
-  });
-}
+  },
+);
 
 function canonicalPublicationScope(args: PrepareCanonicalPublishedAssetArgs) {
   return args.provider === "discord" && args.runId === null
@@ -1370,11 +1474,15 @@ const prepareCanonicalUpload$ = command(
       .returning({ id: runUploadedFiles.id });
     signal.throwIfAborted();
     if (!pending) {
-      const current = await canonicalAssetByIdentity(db, {
-        userId: args.userId,
-        scope: canonicalPublicationScope(args),
-        key: args.operationId,
-      });
+      const current = await set(
+        canonicalAssetByIdentity$,
+        {
+          userId: args.userId,
+          scope: canonicalPublicationScope(args),
+          key: args.operationId,
+        },
+        signal,
+      );
       signal.throwIfAborted();
       if (!current) {
         return null;
@@ -1418,7 +1526,7 @@ export const prepareCanonicalPublishedAsset$ = command(
     const source =
       args.runId === null
         ? "discord"
-        : await sourceForRun(db, args.runId, args.provider, signal);
+        : await set(sourceForRun$, args.runId, args.provider, signal);
     let chatThreadId: string | null = null;
     if (args.runId !== null) {
       const [run] = await db
@@ -1440,11 +1548,15 @@ export const prepareCanonicalPublishedAsset$ = command(
       chatThreadId = run.chatThreadId;
     }
 
-    let asset = await canonicalAssetByIdentity(db, {
-      userId: args.userId,
-      scope,
-      key: args.operationId,
-    });
+    let asset = await set(
+      canonicalAssetByIdentity$,
+      {
+        userId: args.userId,
+        scope,
+        key: args.operationId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if (!asset) {
       const artifact = await set(
@@ -1457,11 +1569,17 @@ export const prepareCanonicalPublishedAsset$ = command(
         signal,
       );
       const assetResult = await settle(
-        ensureCanonicalPublishedAsset(db, args, artifact, {
-          scope,
-          source,
-          chatThreadId,
-        }),
+        set(
+          ensureCanonicalPublishedAsset$,
+          args,
+          artifact,
+          {
+            scope,
+            source,
+            chatThreadId,
+          },
+          signal,
+        ),
         signal,
       );
       if (!assetResult.ok) {
@@ -1487,7 +1605,7 @@ export const prepareCanonicalPublishedAsset$ = command(
       );
     }
     const deliveryResult = await settle(
-      ensureCanonicalDelivery(db, asset.id, args),
+      set(ensureCanonicalDelivery$, asset.id, args, signal),
       signal,
     );
     if (!deliveryResult.ok) {
@@ -1589,6 +1707,7 @@ export const materializeCanonicalPublishedAsset$ = command(
       return { ok: false, code: error.code, message: error.message };
     }
 
+    // Materialization and the durable catalog handoff must commit together.
     await db.transaction(async (tx) => {
       await tx
         .update(runUploadedFiles)
@@ -1600,12 +1719,13 @@ export const materializeCanonicalPublishedAsset$ = command(
           updatedAt: sql`now()`,
         })
         .where(eq(runUploadedFiles.id, asset.id));
-      await queueArtifactCatalogFile(tx, asset.id, signal);
+      await tx.execute(queueArtifactCatalogFileSql(asset.id));
+      signal.throwIfAborted();
     });
     signal.throwIfAborted();
     await set(syncArtifactCatalogForFile$, asset.id, signal);
     if (args.runId !== null) {
-      await publishArtifactsChangedForRun(db, args.runId, signal);
+      await set(publishArtifactsChangedForRun$, args.runId, signal);
     }
     return { ok: true, assetId: asset.id, url };
   },

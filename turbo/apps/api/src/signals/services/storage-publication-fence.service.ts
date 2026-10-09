@@ -5,9 +5,7 @@ import {
   storagePublicationGenerations,
   storagePublicationTokens,
 } from "@okouai/db/schema/storage-publication-fence";
-import { and, eq, sql, type SQL } from "drizzle-orm";
-
-import type { Tx } from "../../lib/db-types";
+import { eq, sql, type SQL } from "drizzle-orm";
 
 /**
  * Reserve-before-IO ordering for Agent instructions and workflow volume
@@ -115,7 +113,9 @@ export function retirePublicationSql(
   return sql`DELETE FROM ${storagePublicationTokens} WHERE ${publicationKeyCondition(scope, key)} AND EXISTS (SELECT 1 FROM ${storagePublicationGenerations} WHERE ${generationScopeCondition(scope)})`;
 }
 
-function publicationGenerationValues(scopes: readonly PublicationFenceScope[]) {
+export function publicationGenerationValues(
+  scopes: readonly PublicationFenceScope[],
+) {
   return [
     ...new Map(
       scopes.map((scope) => {
@@ -132,81 +132,4 @@ function publicationGenerationValues(scopes: readonly PublicationFenceScope[]) {
       subject: subjectForScope(scope),
     };
   });
-}
-
-/** Create missing scope generation rows without advancing existing ones. */
-export async function ensurePublicationGenerations(
-  tx: Tx,
-  scopes: readonly PublicationFenceScope[],
-): Promise<void> {
-  await tx
-    .insert(storagePublicationGenerations)
-    .values(publicationGenerationValues(scopes))
-    .onConflictDoNothing();
-}
-
-/** Whether this exact reservation still owns its publication key. */
-export async function publicationFenceIsCurrent(
-  tx: Tx,
-  fence: StoragePublicationFence,
-): Promise<boolean> {
-  const [publication] = await tx
-    .select({ token: storagePublicationTokens.token })
-    .from(storagePublicationTokens)
-    .where(publicationScopeCondition(fence))
-    .limit(1);
-  return publication !== undefined;
-}
-
-/** Whether any reservation of this key is still in flight for its scope. */
-export async function publicationIsPending(
-  tx: Tx,
-  scope: PublicationFenceScope,
-  publicationKey: string,
-): Promise<boolean> {
-  const [publication] = await tx
-    .select({ token: storagePublicationTokens.token })
-    .from(storagePublicationTokens)
-    .innerJoin(
-      storagePublicationGenerations,
-      and(
-        eq(storagePublicationGenerations.orgId, storagePublicationTokens.orgId),
-        eq(
-          storagePublicationGenerations.agentId,
-          storagePublicationTokens.agentId,
-        ),
-        eq(
-          storagePublicationGenerations.subject,
-          storagePublicationTokens.subject,
-        ),
-      ),
-    )
-    .where(publicationKeyCondition(scope, publicationKey))
-    .limit(1);
-  return publication !== undefined;
-}
-
-/**
- * Consume this exact reservation after owning its scope generation row.
- * Returns false when a newer reservation superseded it.
- */
-export async function consumePublicationFence(
-  tx: Tx,
-  fence: StoragePublicationFence,
-  at: Date,
-): Promise<boolean> {
-  // Generation before publication, matching beginPublicationSql. Both are
-  // ordinary writes; zero rows means this fence was superseded.
-  const [generation] = await tx
-    .update(storagePublicationGenerations)
-    .set({ updatedAt: at })
-    .where(generationScopeCondition(fence.scope))
-    .returning({ generation: storagePublicationGenerations.generation });
-  const [publication] = generation
-    ? await tx
-        .delete(storagePublicationTokens)
-        .where(publicationScopeCondition(fence))
-        .returning({ token: storagePublicationTokens.token })
-    : [];
-  return publication !== undefined;
 }

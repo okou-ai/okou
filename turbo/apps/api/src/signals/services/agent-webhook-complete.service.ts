@@ -11,12 +11,9 @@ import { webhookCompleteContract } from "@okouai/api-contracts/contracts/webhook
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentSessions } from "@okouai/db/schema/agent-session";
-import { checkpoints } from "@okouai/db/schema/checkpoint";
 import type { Tx } from "../../lib/db-types";
 import { notFound } from "../../lib/error";
 import { logger } from "../../lib/log";
-import { piLangfuseDebugUserId } from "../../lib/pi-langfuse-debug";
-import { recordPiLangfuseRunEndToEnd } from "../../lib/pi-langfuse-tracing";
 import { now, nowDate } from "../../lib/time";
 import type { SandboxAuth } from "../../types/auth";
 import { db$, writeDb$, type Db } from "../external/db";
@@ -25,19 +22,18 @@ import {
   publishChatThreadDetailChangedSafely,
   publishChatThreadMessageCreatedSafely,
 } from "../external/realtime";
-import { safeSync, tapError } from "../utils";
+import { tapError } from "../utils";
 import { dispatchRunCallbacks$ } from "./agent-run-callback.service";
 import { expireRunTimeBudgetInput } from "./active-input-delivery.service";
-import { projectLegacyCheckpointStorage } from "./storage-legacy-projection.service";
 import { maybeEmitRunUsageEvent$ } from "./chat-usage-event.service";
 import { processOrgUsageEvents$ } from "./credit-usage.service";
 import {
-  type AgentCheckpointErrorResponse,
-  type AgentCheckpointInput,
-  type PreparedAgentCheckpoint,
-  persistAgentCheckpointInTransaction,
-  createAgentCheckpointOperations,
-} from "./agent-webhook-checkpoints.service";
+  type AgentRunOutputErrorResponse,
+  type AgentRunOutputInput,
+  type PreparedAgentRunOutput,
+  persistAgentRunOutputsInTransaction,
+  createAgentRunOutputOperations,
+} from "./agent-run-output.service";
 import { lockPiMemoryPhase2CompletionStorage } from "./pi-memory-phase2-maintenance.service";
 import {
   releaseRunSlots,
@@ -57,7 +53,6 @@ type TerminalStatus = "completed" | "failed";
 interface CompleteAgentRunInput {
   readonly auth: SandboxAuth;
   readonly body: WebhookCompleteBody;
-  readonly allowCheckpointlessSuccess?: boolean;
 }
 
 export interface TerminalSideEffectsInput {
@@ -113,12 +108,10 @@ interface CompletionSuccessResponse {
 }
 
 type CompletionResponse =
-  | CompletionSuccessResponse
-  | AgentCheckpointErrorResponse;
+  CompletionSuccessResponse | AgentRunOutputErrorResponse;
 
 interface RunRecord extends AgentRunFailureLogSnapshot {
   readonly id: string;
-  readonly apiStartedAt: Date | null;
   readonly cancellationRecoveryCompleted: boolean | null;
   readonly error: string | null;
   readonly orgId: string;
@@ -128,7 +121,6 @@ interface RunRecord extends AgentRunFailureLogSnapshot {
   readonly chatThreadId: string | null;
   readonly triggerSource: string | null;
   readonly launchSnapshot: (typeof agentRuns.$inferSelect)["launchSnapshot"];
-  readonly langfuseTraceEnabled: boolean;
 }
 
 interface PreparedCompletion {
@@ -136,7 +128,7 @@ interface PreparedCompletion {
   readonly result?: RunResult;
   readonly error?: string;
   readonly failureReason?: RunFailureReasonToken;
-  readonly failureKind?: "missing-checkpoint" | "reported";
+  readonly failureKind?: "missing-outputs" | "reported";
 }
 
 /** Whether completion appended active-input events the thread must hear of. */
@@ -160,7 +152,7 @@ type CompletionTransactionResult =
   | { readonly kind: "retry"; readonly chatThreadId: string | null }
   | {
       readonly kind: "response";
-      readonly response: AgentCheckpointErrorResponse;
+      readonly response: AgentRunOutputErrorResponse;
     }
   | { readonly kind: "committed"; readonly commit: CompletionCommit };
 
@@ -178,8 +170,8 @@ function logAgentRunCompletionOutcome(
     L.debug("Run completed successfully", { runId: input.body.runId });
     return;
   }
-  if (commit.transitionFailureKind === "missing-checkpoint") {
-    L.warn("Run failed because checkpoint was not found", {
+  if (commit.transitionFailureKind === "missing-outputs") {
+    L.warn("Run failed because completion outputs were not provided", {
       runId: input.body.runId,
       error: commit.transitionError,
     });
@@ -194,46 +186,19 @@ function logAgentRunCompletionOutcome(
   });
 }
 
-function checkpointInputForCompletion(
+function runOutputInputForCompletion(
   input: CompleteAgentRunInput,
-): AgentCheckpointInput | null {
-  if (!input.body.checkpoint) {
+): AgentRunOutputInput | null {
+  const completion = input.body.completion ?? input.body.checkpoint;
+  if (!completion) {
     return null;
   }
   return {
     auth: input.auth,
     body: {
-      ...input.body.checkpoint,
+      ...completion,
       runId: input.body.runId,
     },
-  };
-}
-
-function buildRunResult(
-  checkpoint: Pick<
-    typeof checkpoints.$inferSelect,
-    "id" | "conversationId" | "storageMounts"
-  >,
-  sessionId: string | undefined,
-): RunResult {
-  if (checkpoint.storageMounts === null) {
-    throw new Error(
-      `Checkpoint "${checkpoint.id}" is missing canonical Storage mounts`,
-    );
-  }
-  const canonicalProjection = projectLegacyCheckpointStorage(
-    checkpoint.storageMounts,
-  );
-  const artifact = canonicalProjection.artifactVersions ?? undefined;
-  const volumeVersions =
-    canonicalProjection.volumeVersionsSnapshot?.versions ?? undefined;
-
-  return {
-    checkpointId: checkpoint.id,
-    agentSessionId: sessionId ?? checkpoint.conversationId,
-    conversationId: checkpoint.conversationId,
-    ...(artifact ? { artifact } : {}),
-    ...(volumeVersions ? { volumes: volumeVersions } : {}),
   };
 }
 
@@ -257,7 +222,6 @@ function createInitialCompletionRun(runId: string, userId: string) {
     const [run] = await db
       .select({
         id: agentRuns.id,
-        apiStartedAt: agentRuns.apiStartedAt,
         error: agentRuns.error,
         orgId: agentRuns.orgId,
         sessionId: agentRuns.sessionId,
@@ -267,7 +231,6 @@ function createInitialCompletionRun(runId: string, userId: string) {
         chatThreadId: agentRuns.chatThreadId,
         triggerSource: agentRuns.triggerSource,
         launchSnapshot: agentRuns.launchSnapshot,
-        langfuseTraceEnabled: agentRuns.langfuseTraceEnabled,
         modelProvider: agentRuns.modelProvider,
         modelProviderCredentialScope: agentRuns.modelProviderCredentialScope,
         selectedModel: agentRuns.selectedModel,
@@ -284,46 +247,27 @@ function createInitialCompletionRun(runId: string, userId: string) {
   });
 }
 
-async function prepareCompletion(
-  db: Tx,
+function prepareCompletion(
   input: CompleteAgentRunInput,
-  sessionId: string,
-  signal: AbortSignal,
-): Promise<PreparedCompletion> {
+  result: RunResult | undefined,
+): PreparedCompletion {
   if (input.body.exitCode !== 0) {
-    const error =
-      input.body.error?.trim() || "Run failed without error message";
     return {
       status: "failed",
-      error,
+      result,
+      error: input.body.error?.trim() || "Run failed without error message",
       failureReason: input.body.failureReason,
       failureKind: "reported",
     };
   }
-  const [checkpoint] = await db
-    .select({
-      id: checkpoints.id,
-      conversationId: checkpoints.conversationId,
-      storageMounts: checkpoints.storageMounts,
-    })
-    .from(checkpoints)
-    .where(eq(checkpoints.runId, input.body.runId))
-    .limit(1);
-  signal.throwIfAborted();
-  if (!checkpoint) {
-    if (input.allowCheckpointlessSuccess) {
-      return { status: "completed" };
-    }
+  if (!result) {
     return {
       status: "failed",
-      error: "Checkpoint for run not found",
-      failureKind: "missing-checkpoint",
+      error: "Run completion outputs were not provided",
+      failureKind: "missing-outputs",
     };
   }
-  return {
-    status: "completed",
-    result: buildRunResult(checkpoint, sessionId),
-  };
+  return { status: "completed", result };
 }
 
 async function lockCompletionRun(
@@ -333,7 +277,6 @@ async function lockCompletionRun(
   const [run] = await tx
     .select({
       id: agentRuns.id,
-      apiStartedAt: agentRuns.apiStartedAt,
       error: agentRuns.error,
       orgId: agentRuns.orgId,
       sessionId: agentRuns.sessionId,
@@ -343,7 +286,6 @@ async function lockCompletionRun(
       chatThreadId: agentRuns.chatThreadId,
       triggerSource: agentRuns.triggerSource,
       launchSnapshot: agentRuns.launchSnapshot,
-      langfuseTraceEnabled: agentRuns.langfuseTraceEnabled,
       modelProvider: agentRuns.modelProvider,
       modelProviderCredentialScope: agentRuns.modelProviderCredentialScope,
       selectedModel: agentRuns.selectedModel,
@@ -461,8 +403,8 @@ function noActiveInputFinalization(): ActiveInputFinalization {
 }
 
 interface CompletionTransitionContext {
-  readonly checkpointInput: AgentCheckpointInput | null;
-  readonly checkpointPreparation: PreparedAgentCheckpoint | null;
+  readonly outputInput: AgentRunOutputInput | null;
+  readonly outputPreparation: PreparedAgentRunOutput | null;
   readonly expectedChatThreadId: string | null;
 }
 
@@ -514,8 +456,7 @@ async function completeAgentRunTransition(
   context: CompletionTransitionContext,
   signal: AbortSignal,
 ): Promise<CompletionTransactionResult> {
-  const { checkpointInput, checkpointPreparation, expectedChatThreadId } =
-    context;
+  const { outputInput, outputPreparation, expectedChatThreadId } = context;
   // Thread admission is the active run row, which the terminal transition
   // releases; the run row lock serializes completion against other writers.
   const run = await lockCompletionRun(tx, input);
@@ -538,25 +479,32 @@ async function completeAgentRunTransition(
   }
   await lockCompletionPiMemoryStorage(tx, run);
   signal.throwIfAborted();
-  if (checkpointInput) {
-    if (!checkpointPreparation) {
-      throw new Error("Included agent checkpoint was not prepared");
+  let runResult: RunResult | undefined;
+  if (outputInput) {
+    if (!outputPreparation) {
+      throw new Error("Included Run output was not prepared");
     }
-    const checkpointResult = await persistAgentCheckpointInTransaction(
+    const outputResult = await persistAgentRunOutputsInTransaction(
       tx,
-      checkpointInput,
-      checkpointPreparation,
+      outputInput,
+      outputPreparation,
       signal,
-      { source: "combined-completion" },
     );
-    if (checkpointResult.status !== 200) {
-      return { kind: "response", response: checkpointResult };
+    if (outputResult.status !== 200) {
+      return { kind: "response", response: outputResult };
     }
+    runResult = outputResult.result;
   }
   const canTransition = run.status === "pending" || run.status === "running";
-  const prepared = canTransition
-    ? await prepareCompletion(tx, input, run.sessionId, signal)
-    : null;
+  const prepared = canTransition ? prepareCompletion(input, runResult) : null;
+  // A terminal failure/cancellation may receive its first recovery outputs
+  // after the Runner fallback. Preserve that exact evidence on the owning Run.
+  if (!canTransition && runResult) {
+    await tx
+      .update(agentRuns)
+      .set({ result: runResult })
+      .where(eq(agentRuns.id, run.id));
+  }
   signal.throwIfAborted();
   if (input.body.lastEventSequence !== undefined) {
     await persistLastEventSequence(
@@ -665,7 +613,6 @@ const dispatchTerminalCompleteSideEffects$ = command(
     },
     signal: AbortSignal,
   ): Promise<void> => {
-    const db = set(writeDb$);
     if (input.deliveryNotification?.chatEventsAppended) {
       await publishChatThreadMessageCreatedSafely({
         userId: input.deliveryNotification.userId,
@@ -680,7 +627,6 @@ const dispatchTerminalCompleteSideEffects$ = command(
       set(
         dispatchRunCallbacks$,
         {
-          db,
           runId: input.runId,
           status: callbackStatus,
           error: input.error,
@@ -780,7 +726,7 @@ async function expireCommittedRunTimeBudget<T extends CompletionCommit>(
 
 /**
  * Record telemetry for the committed completion: terminal-transition metrics
- * for the first commit, a debug trace for a duplicate terminal completion.
+ * for the first commit, a debug log for a duplicate terminal completion.
  */
 function recordCompletionCommitOutcome(
   input: CompleteAgentRunInput,
@@ -789,22 +735,6 @@ function recordCompletionCommitOutcome(
   if (commit.transitioned) {
     const terminalCommittedAt = now();
     const terminalCommittedAtIso = new Date(terminalCommittedAt).toISOString();
-    if (
-      commit.run.launchSnapshot?.framework === "pi" &&
-      commit.run.langfuseTraceEnabled
-    ) {
-      safeSync(() => {
-        recordPiLangfuseRunEndToEnd({
-          enabled: true,
-          runId: input.body.runId,
-          sessionId: commit.run.sessionId,
-          userId: piLangfuseDebugUserId(commit.run.userId),
-          apiStartedAt: commit.run.apiStartedAt?.getTime(),
-          terminalCommittedAt,
-          terminalStatus: commit.responseStatus,
-        });
-      });
-    }
     recordSandboxOperation({
       sandboxType: "runner",
       actionType: "run_terminal_transition_committed",
@@ -847,7 +777,7 @@ function createCompletionTerminalRedrive(runId: string) {
 /** One validated completion request owns this graph and its lazy post-commit read. */
 export function createAgentRunCompletion(runId: string, userId: string) {
   const initialRun$ = createInitialCompletionRun(runId, userId);
-  const checkpointOperations = createAgentCheckpointOperations(runId, userId);
+  const outputOperations = createAgentRunOutputOperations(runId, userId);
   const undeliveredTerminalChatCallback$ =
     createCompletionTerminalRedrive(runId);
   const complete$ = command(
@@ -865,19 +795,18 @@ export function createAgentRunCompletion(runId: string, userId: string) {
       if (initialRun.status === "timeout") {
         return settledRunCompletionResponse(initialRun);
       }
-      const checkpointInput = checkpointInputForCompletion(input);
-      let checkpointPreparation: PreparedAgentCheckpoint | null = null;
-      if (checkpointInput) {
+      const outputInput = runOutputInputForCompletion(input);
+      let outputPreparation: PreparedAgentRunOutput | null = null;
+      if (outputInput) {
         const preparation = await set(
-          checkpointOperations.prepare$,
-          checkpointInput,
-          { source: "combined-completion" },
+          outputOperations.prepare$,
+          outputInput,
           signal,
         );
         if (!preparation.ok) {
           return preparation.response;
         }
-        checkpointPreparation = preparation.prepared;
+        outputPreparation = preparation.prepared;
       }
       let expectedChatThreadId = initialRun.chatThreadId;
       let commit: ReleasedCompletionCommit;
@@ -887,8 +816,8 @@ export function createAgentRunCompletion(runId: string, userId: string) {
             tx,
             input,
             {
-              checkpointInput,
-              checkpointPreparation,
+              outputInput,
+              outputPreparation,
               expectedChatThreadId,
             },
             signal,

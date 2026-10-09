@@ -24,7 +24,7 @@ import {
   OKOU_CDN_ARTIFACTS_ORIGIN,
   OKOU_SHORT_ARTIFACTS_ORIGIN,
 } from "../../../lib/file-url";
-import { clearMockNow, mockNow, now, nowDate } from "../../../lib/time";
+import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
@@ -41,13 +41,12 @@ import {
   type UsagePricingKey,
   type UsagePricingRow,
 } from "../../../test-fixtures/system-config-seeds";
-import { deleteFeatureSwitchesForUser } from "./helpers/feature-switches";
+import {
+  deleteFeatureSwitchesForUser,
+  updateFeatureSwitchesForUser,
+} from "./helpers/feature-switches";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { seedCompose$, seedRun$ } from "./helpers/usage-state";
-import {
-  generatedStripeCustomerId,
-  postUsageAllowanceInvoicePaid,
-} from "./helpers/stripe-billing-webhook";
 import { createRouteMocks } from "./helpers/route-test";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { setRunImageModelFixture } from "../../../test-fixtures/run-image-model";
@@ -599,6 +598,7 @@ async function publicFundedImageFixture({
           id: owned.subscriptionId,
           status: "canceled",
           metadata: {},
+          items: { data: [{ price: { id: "price_bdd_pro" } }] },
         });
         context.mocks.stripe.subscriptions.update.mockResolvedValue({
           id: owned.subscriptionId,
@@ -1808,112 +1808,6 @@ describe("POST /api/image-io/generate", () => {
     await expect(orgCredits(fixture)).resolves.toBe(-50);
   });
 
-  it("uses allowance for a legacy runless generation under shared debt", async () => {
-    const fixture = await seedImageFixture({ credits: -100 });
-    await useImageModel(fixture, "gpt-image-1");
-    const pricingFixture = await createScopedImagePricing({
-      configured: GPT_IMAGE_1_PRICING,
-    });
-    const effectiveAt = nowDate();
-    await postUsageAllowanceInvoicePaid(context.signal, {
-      orgId: fixture.orgId,
-      userId: fixture.userId,
-      customerId: generatedStripeCustomerId(),
-      subscriptionId: `sub_image_debt_allowance_${randomUUID()}`,
-      effectiveAt,
-      expiresAt: new Date(effectiveAt.getTime() + 365 * 24 * 60 * 60 * 1000),
-      shortWindowSeconds: 5 * 60 * 60,
-      shortWindowUnits: 100,
-      weeklyWindowSeconds: 7 * 24 * 60 * 60,
-      weeklyWindowUnits: 200,
-    });
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-    let falCalls = 0;
-    let observedAuthorization: string | null = null;
-    let observedBody: unknown = null;
-    let observedRequestUrl: string | null = null;
-    server.use(
-      http.post(FAL_GPT_IMAGE_1_URL, async ({ request }) => {
-        falCalls += 1;
-        observedAuthorization = request.headers.get("authorization");
-        observedBody = await request.json();
-        observedRequestUrl = request.url;
-        return HttpResponse.json(falQueueHandle("allowance-image-request"));
-      }),
-      http.get(FAL_GPT_MEDIA_URL, () => {
-        return new HttpResponse(IMAGE_BYTES, {
-          headers: { "Content-Type": "image/png" },
-        });
-      }),
-    );
-
-    const app = createImageIoTestApp(pricingFixture.resolution);
-    const response = await app.request("/api/image-io/generate", {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({ prompt: "a cat covered by allowance" }),
-    });
-
-    expect(response.status).toBe(202);
-    expect(falCalls).toBe(1);
-    expect(observedAuthorization).toBe("Key test-fal-key");
-    expect(observedBody).toStrictEqual({
-      prompt: "a cat covered by allowance",
-      image_size: "1024x1024",
-      num_images: 1,
-      output_format: "png",
-      quality: "medium",
-      background: "auto",
-      openai_api_key: "test-openai-key",
-    });
-
-    const generationId = readAcceptedGenerationId(
-      await response.json(),
-      "image",
-      fixture.userId,
-    );
-    await postFalWebhook(app, observedRequestUrl, {
-      images: [
-        {
-          url: FAL_GPT_MEDIA_URL,
-          width: 1024,
-          height: 1024,
-          content_type: "image/png",
-        },
-      ],
-      prompt: "A cat covered by allowance.",
-    });
-    await flushWaitUntilForTest();
-
-    const statusResponse = await app.request(
-      `/api/built-in-generations/${generationId}`,
-      { headers: authHeaders() },
-    );
-    expect(statusResponse.status).toBe(200);
-    const result = readGenerationResult(await statusResponse.json());
-    expect(result).toMatchObject({
-      creditsCharged: 50,
-      billingCategory: "output_image.medium.standard",
-      billingQuantity: 1,
-      url: expect.stringMatching(/^https:\/\/a\.okou\.io\//u),
-    });
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-    const billingStatus = await accept(
-      setupApp({ context, routes: billingStatusRoutes })(
-        billingStatusContract,
-      ).get({ headers: authHeaders() }),
-      [200],
-    );
-    expect(billingStatus.body.credits).toBe(-100);
-    expect(
-      Object.fromEntries(
-        billingStatus.body.usageAllowance?.windows.map((window) => {
-          return [window.kind, window.consumedUnits];
-        }) ?? [],
-      ),
-    ).toStrictEqual({ short: 50, weekly: 50 });
-  });
-
   it("returns 503 when image pricing is not configured", async () => {
     const fixture = await publicFundedImageFixture({ credits: 1000 });
     await fixture.run(async () => {
@@ -2026,6 +1920,9 @@ describe("POST /api/image-io/generate", () => {
   it("generates image files on the Okou CDN for Okou run-scoped agent tokens", async () => {
     mockEnv("OKOU_API_BACKEND_URL", API_ORIGIN);
     const fixture = await seedRunScopedImageRun("gpt-image-1", 10_000);
+    await updateFeatureSwitchesForUser(context, fixture, {
+      privateArtifacts: false,
+    });
     const { runId } = fixture;
     const pricingFixture = await createScopedImagePricing({
       configured: GPT_IMAGE_1_PRICING,
@@ -2161,15 +2058,13 @@ describe("POST /api/image-io/generate", () => {
       openai_api_key: "test-openai-key",
     });
 
-    if (
-      !(
-        typeof body === "object" &&
-        body !== null &&
-        "id" in body &&
-        "filename" in body &&
-        "url" in body
-      )
-    ) {
+    if (!(
+      typeof body === "object" &&
+      body !== null &&
+      "id" in body &&
+      "filename" in body &&
+      "url" in body
+    )) {
       throw new Error("Expected image response id, filename, and url");
     }
     const fileId = String(body.id);
@@ -3248,9 +3143,14 @@ describe("POST /api/image-io/generate", () => {
       outputFormat: "jpeg",
       billingCategory: "output_megapixel",
       billingQuantity: 2,
-      sourceUrl: FAL_FLUX_PRO_11_MEDIA_URL,
+      privateArtifacts: true,
+      url: expect.stringMatching(
+        /^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.jpg$/u,
+      ),
       seed: 99,
     });
+    expect(body).not.toHaveProperty("sourceUrl");
+    expect(body).not.toHaveProperty("embedUrl");
     expect(body).not.toHaveProperty("usage");
     expect(falCalls).toBe(1);
     expect(observedAuthorization).toBe("Key test-fal-key");
@@ -3264,26 +3164,20 @@ describe("POST /api/image-io/generate", () => {
       enhance_prompt: false,
     });
 
-    if (
-      !(
-        typeof body === "object" &&
-        body !== null &&
-        "id" in body &&
-        "filename" in body
-      )
-    ) {
+    if (!(
+      typeof body === "object" &&
+      body !== null &&
+      "id" in body &&
+      "filename" in body
+    )) {
       throw new Error("Expected image response id and filename");
     }
     const fileId = String(body.id);
     const filename = String(body.filename);
     const putInput = putObjectInput();
-    expect(putInput.Key).toMatch(/^artifacts\/[0-9a-z]{10}\.jpg$/u);
-    expect(putInput.Metadata).toStrictEqual({
-      "artifact-id": fileId,
-      filename: encodeURIComponent(filename),
-      "public-brand": "okou",
-      "user-id": encodeURIComponent(fixture.userId),
-    });
+    expect(putInput.Bucket).toBe("test-private-artifacts");
+    expect(putInput.Key).toBe(`private-artifacts/${fileId}/${filename}`);
+    expect(putInput.Metadata).toStrictEqual({ "artifact-id": fileId });
     expect(putInput.ContentType).toBe("image/jpeg");
 
     // The megapixel category/quantity are asserted in the result body above;
@@ -3368,10 +3262,14 @@ describe("POST /api/image-io/generate", () => {
         outputFormat: "jpeg",
         billingCategory: "output_megapixel",
         billingQuantity: 2,
-        sourceUrl: FAL_FLUX_MEDIA_URL,
+        privateArtifacts: true,
+        url: expect.stringMatching(
+          /^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.jpg$/u,
+        ),
         sourceImageUrls: [MOCKUP_IMAGE_URL],
         seed: 42,
       });
+      expect(body).not.toHaveProperty("sourceUrl");
       expect(body).not.toHaveProperty("imagePromptStrength");
       expect(falCalls).toBe(1);
       expect(observedAuthorization).toBe("Key test-fal-key");
@@ -3907,7 +3805,10 @@ describe("POST /api/image-io/generate", () => {
         outputFormat: "png",
         billingCategory: "output_image.1k",
         billingQuantity: 1,
-        sourceUrl: FAL_QWEN_IMAGE_3_MEDIA_URL,
+        privateArtifacts: true,
+        url: expect.stringMatching(
+          /^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.png$/u,
+        ),
         seed: 7,
       });
       expect(observedBody).toStrictEqual({
@@ -4111,7 +4012,10 @@ describe("POST /api/image-io/generate", () => {
         creditsCharged: FAL_QWEN_IMAGE_3_STANDARD_TIER_CREDITS,
         model: "alibaba/qwen-image-3/text-to-image",
         billingCategory: "output_image.1k",
-        sourceUrl: FAL_QWEN_IMAGE_3_MEDIA_URL,
+        privateArtifacts: true,
+        url: expect.stringMatching(
+          /^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.png$/u,
+        ),
         sourceImageUrls,
       });
       expect(falCalls).toBe(1);
@@ -4224,7 +4128,10 @@ describe("POST /api/image-io/generate", () => {
         outputFormat: "png",
         billingCategory: "output_image",
         billingQuantity: 1,
-        sourceUrl: FAL_NANO_BANANA_2_LITE_MEDIA_URL,
+        privateArtifacts: true,
+        url: expect.stringMatching(
+          /^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.png$/u,
+        ),
       });
       // Lite always renders 1K, so it takes no resolution parameter.
       expect(observedBody).toStrictEqual({
@@ -4320,9 +4227,13 @@ describe("POST /api/image-io/generate", () => {
         outputFormat: "webp",
         billingCategory: "output_image",
         billingQuantity: 1,
-        sourceUrl: FAL_NANO_BANANA_2_MEDIA_URL,
+        privateArtifacts: true,
+        url: expect.stringMatching(
+          /^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.webp$/u,
+        ),
         seed: 123,
       });
+      expect(body).not.toHaveProperty("sourceUrl");
       expect(falCalls).toBe(1);
       expect(observedAuthorization).toBe("Key test-fal-key");
       expect(observedBody).toStrictEqual({
@@ -4421,9 +4332,13 @@ describe("POST /api/image-io/generate", () => {
         outputFormat: "png",
         billingCategory: "output_image",
         billingQuantity: 1,
-        sourceUrl: FAL_NANO_BANANA_2_MEDIA_URL,
+        privateArtifacts: true,
+        url: expect.stringMatching(
+          /^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.png$/u,
+        ),
         sourceImageUrls,
       });
+      expect(body).not.toHaveProperty("sourceUrl");
       expect(falCalls).toBe(1);
       expect(observedAuthorization).toBe("Key test-fal-key");
       expect(observedBody).toStrictEqual({

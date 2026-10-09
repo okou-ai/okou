@@ -12,14 +12,19 @@ import {
 import { expectApiError } from "./helpers/api-bdd";
 import { createUserConfigBddApi } from "./helpers/api-bdd-user-config";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { env, mockEnv } from "../../../lib/env";
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 /*
 Round-5 cluster auth-03 (AUTH-01/AUTH-03): user-owned configuration plus the
-auth probe matrix. State is constructed only through public APIs (onboarding,
+public identity matrix. Selected identity cases use normal APIs (onboarding,
 CLI auth, and agents); the only mocks are the Clerk SDK boundary and the S3
-accept for agent creation. Sandbox, Okou run, and forged-PAT bearers are minted
-with the exported test token signers.
+accept for agent creation. The selected identity case uses actual Runner claims; adjacent capability
+cases still use test signers and remain outside this batch.
 */
 
 const context = testContext();
@@ -313,7 +318,8 @@ describe("AUTH-03 user model preference", () => {
       updatedAt: null,
     });
 
-    // Auto is only the null selection; its internal run model is not selectable.
+    // Nullable and explicit Auto are request intents; the legacy capture ID is
+    // readable history metadata, not a selectable public model.
     const rejected = await cfg.requestUpdateModelPreference(
       admin,
       { selectedModel: SEEDED_SYSTEM_DEFAULT_MODEL, serviceTier: null },
@@ -434,80 +440,75 @@ describe("AUTH-03 user model preference", () => {
   });
 });
 
-describe("AUTH-01 auth probe sessions", () => {
+describe("AUTH-01 public session identity", () => {
   it("resolves clerk sessions and rejects missing or non-bearer credentials", async () => {
     const admin = api.user();
     const member = api.user({ orgRole: "org:member" });
     const solo = api.user({ orgId: null });
+    cfg.mockClerkUsers([admin, member, solo]);
     const cookie = "__session=opaque";
 
     cfg.mockSession(admin);
-    const adminProbe = await cfg.probeAuth({ cookie }, {}, [200]);
+    const adminProbe = await cfg.requestMe({ cookie }, [200]);
     expect(adminProbe.body).toStrictEqual({
-      tokenType: "session",
       userId: admin.userId,
+      email: admin.email,
       orgId: admin.orgId,
-      orgRole: "admin",
     });
 
     cfg.mockSession(member);
-    const memberProbe = await cfg.probeAuth({ cookie }, {}, [200]);
+    const memberProbe = await cfg.requestMe({ cookie }, [200]);
     expect(memberProbe.body).toStrictEqual({
-      tokenType: "session",
       userId: member.userId,
+      email: member.email,
       orgId: member.orgId,
-      orgRole: "member",
     });
 
     cfg.mockSession(solo);
-    const soloProbe = await cfg.probeAuth({ cookie }, {}, [200]);
+    const soloProbe = await cfg.requestMe({ cookie }, [200]);
     expect(soloProbe.body).toStrictEqual({
-      tokenType: "session",
       userId: solo.userId,
+      email: solo.email,
+      orgId: null,
     });
 
     cfg.mockSession(null);
-    const unauthenticated = await cfg.probeAuth({ cookie }, {}, [401]);
+    const unauthenticated = await cfg.requestMe({ cookie }, [401]);
     expectApiError(unauthenticated.body);
     expect(unauthenticated.body.error.code).toBe("UNAUTHORIZED");
 
-    const noCredentials = await cfg.probeAuth({}, {}, [401]);
+    const noCredentials = await cfg.requestMe({}, [401]);
     expectApiError(noCredentials.body);
     expect(noCredentials.body.error.code).toBe("UNAUTHORIZED");
 
-    const basicHeader = await cfg.probeAuth(
+    const basicHeader = await cfg.requestMe(
       { authorization: "Basic dXNlcjpwYXNz" },
-      {},
       [401],
     );
     expectApiError(basicHeader.body);
     expect(basicHeader.body.error.code).toBe("UNAUTHORIZED");
 
-    const emptyBearer = await cfg.probeAuth(
+    const emptyBearer = await cfg.requestMe(
       { authorization: "Bearer " },
-      {},
       [401],
     );
     expectApiError(emptyBearer.body);
     expect(emptyBearer.body.error.code).toBe("UNAUTHORIZED");
 
     cfg.mockSession(member);
-    const unknownShapeWithCookie = await cfg.probeAuth(
+    const unknownShapeWithCookie = await cfg.requestMe(
       { authorization: "Bearer some-unknown-token-format", cookie },
-      {},
       [200],
     );
     expect(unknownShapeWithCookie.body).toStrictEqual({
-      tokenType: "session",
       userId: member.userId,
+      email: member.email,
       orgId: member.orgId,
-      orgRole: "member",
     });
 
     cfg.mockSession(null);
-    const unknownShapeNoCookie = await cfg.probeAuth(
+    const unknownShapeNoCookie = await cfg.requestMe(
       { authorization: "Bearer some-unknown-token-format" },
-      {},
       [401],
     );
     expectApiError(unknownShapeNoCookie.body);
@@ -515,103 +516,99 @@ describe("AUTH-01 auth probe sessions", () => {
   });
 });
 
-describe("AUTH-02 auth probe CLI PAT bearers", () => {
-  it("resolves CLI PAT bearers with membership roles from clerk", async () => {
+describe("AUTH-02 public CLI PAT identity", () => {
+  it("resolves CLI PAT bearers with organization membership from clerk", async () => {
     const admin = api.user();
     const memberUser = api.user({ orgRole: "org:member" });
     const orphan = api.user();
+    cfg.mockClerkUsers([admin, memberUser, orphan]);
 
     const adminKey = await api.createCliToken(admin);
     cfg.mockMembership(admin, "org:admin");
-    const adminProbe = await cfg.probeAuth(
+    const adminProbe = await cfg.requestMe(
       { authorization: `Bearer ${adminKey.token}` },
-      {},
       [200],
     );
     expect(adminProbe.body).toStrictEqual({
-      tokenType: "pat",
       userId: admin.userId,
+      email: admin.email,
       orgId: admin.orgId,
-      orgRole: "admin",
     });
 
     const memberKey = await api.createCliToken(memberUser);
     cfg.mockMembership(memberUser, "org:member");
-    const memberProbe = await cfg.probeAuth(
+    const memberProbe = await cfg.requestMe(
       { authorization: `Bearer ${memberKey.token}` },
-      {},
       [200],
     );
     expect(memberProbe.body).toStrictEqual({
-      tokenType: "pat",
       userId: memberUser.userId,
+      email: memberUser.email,
       orgId: memberUser.orgId,
-      orgRole: "member",
     });
 
     const orphanKey = await api.createCliToken(orphan);
     cfg.mockMembership(orphan, null);
-    const orphanProbe = await cfg.probeAuth(
+    const orphanProbe = await cfg.requestMe(
       { authorization: `Bearer ${orphanKey.token}` },
-      {},
       [200],
     );
     expect(orphanProbe.body).toStrictEqual({
-      tokenType: "pat",
       userId: orphan.userId,
+      email: orphan.email,
+      orgId: null,
     });
   });
 
   it("serves cached membership inside the ttl and drops stale rows through the api", async () => {
     const admin = api.user();
+    cfg.mockClerkUsers([admin]);
     const base = now();
     mockNow(base);
     const key = await api.createCliToken(admin);
     const bearer = { authorization: `Bearer ${key.token}` };
 
     cfg.mockMembership(admin, "org:admin");
-    const first = await cfg.probeAuth(bearer, {}, [200]);
+    const first = await cfg.requestMe(bearer, [200]);
     expect(first.body).toStrictEqual({
-      tokenType: "pat",
       userId: admin.userId,
+      email: admin.email,
       orgId: admin.orgId,
-      orgRole: "admin",
     });
 
     cfg.mockMembership(admin, null);
     mockNow(base + 30_000);
-    const cached = await cfg.probeAuth(bearer, {}, [200]);
+    const cached = await cfg.requestMe(bearer, [200]);
     expect(cached.body).toStrictEqual(first.body);
 
     mockNow(base + 120_000);
-    const stale = await cfg.probeAuth(bearer, {}, [200]);
+    const stale = await cfg.requestMe(bearer, [200]);
     expect(stale.body).toStrictEqual({
-      tokenType: "pat",
       userId: admin.userId,
+      email: admin.email,
+      orgId: null,
     });
 
     cfg.mockMembership(admin, "org:admin");
     mockNow(base + 125_000);
-    const refreshed = await cfg.probeAuth(bearer, {}, [200]);
+    const refreshed = await cfg.requestMe(bearer, [200]);
     expect(refreshed.body).toStrictEqual(first.body);
   });
 
   it("rejects forged and malformed pat bearers", async () => {
     cfg.mockSession(null);
 
-    const forged = await cfg.probeAuth(
+    const forged = await cfg.requestMe(
       {
         authorization: `Bearer ${cfg.forgedPatBearer(`user_${randomUUID()}`)}`,
       },
-      {},
       [401],
     );
     expectApiError(forged.body);
     expect(forged.body.error.code).toBe("UNAUTHORIZED");
 
-    const garbage = await cfg.probeAuth(
+    const garbage = await cfg.requestMe(
       { authorization: "Bearer vm0_pat_garbage" },
-      {},
       [401],
     );
     expectApiError(garbage.body);
@@ -620,21 +617,23 @@ describe("AUTH-02 auth probe CLI PAT bearers", () => {
 
   it("expires CLI PATs by their db expiry under mocked time", async () => {
     const admin = api.user();
+    cfg.mockClerkUsers([admin]);
     const base = now();
     mockNow(base);
     const key = await api.createCliToken(admin);
     cfg.mockMembership(admin, "org:admin");
-    const fresh = await cfg.probeAuth(
+    const fresh = await cfg.requestMe(
       { authorization: `Bearer ${key.token}` },
-      {},
       [200],
     );
-    expect(fresh.body).toMatchObject({ tokenType: "pat" });
+    expect(fresh.body).toMatchObject({
+      userId: admin.userId,
+      orgId: admin.orgId,
+    });
 
     mockNow(base + 91 * 24 * 60 * 60 * 1000);
-    const expired = await cfg.probeAuth(
+    const expired = await cfg.requestMe(
       { authorization: `Bearer ${key.token}` },
-      {},
       [401],
     );
     expectApiError(expired.body);
@@ -643,91 +642,96 @@ describe("AUTH-02 auth probe CLI PAT bearers", () => {
 });
 
 describe("AUTH-01 sandbox and agent bearers", () => {
-  it("resolves sandbox and agent bearers on the auth probe by capability opt-in", async () => {
-    const sandboxActor = api.user();
-    const okouMember = api.user();
-    const okouAdmin = api.user();
-    const okouOrphan = api.user();
-    cfg.mockSession(null);
-
-    const sandbox = cfg.sandboxBearer(sandboxActor);
-    const rejected = await cfg.probeAuth(
-      { authorization: `Bearer ${sandbox.token}` },
-      {},
-      [403],
-    );
-    expectApiError(rejected.body);
-    expect(rejected.body).toStrictEqual({
-      error: {
-        message: "This endpoint is not available for sandbox tokens",
-        code: "FORBIDDEN",
-      },
+  it("reads identity with actual Runner-issued sandbox and agent credentials", async () => {
+    const fixture = createChatEventsFixture(context);
+    const runs = createRunsApi(context);
+    let carrier:
+      | {
+          actor: ApiTestUser;
+          agentId: string;
+          kmsKeyId: string | undefined;
+          storageBucket: string;
+          runId?: string;
+          sandboxToken?: string;
+        }
+      | undefined;
+    const owner = createFixtureOperationOwner(async () => {
+      if (!carrier) {
+        return;
+      }
+      mockEnv("SECRETS_KMS_KEY_ID", carrier.kmsKeyId);
+      mockEnv("R2_USER_STORAGES_BUCKET_NAME", carrier.storageBucket);
+      runs.acceptStorageDownloads();
+      runs.acceptTelemetryIngest();
+      if (carrier.runId) {
+        const current = await runs.readRun(carrier.actor, carrier.runId);
+        if (current.status === "pending" || current.status === "running") {
+          await runs.requestCancelRun(carrier.actor, carrier.runId, [200]);
+        }
+        if (
+          carrier.sandboxToken &&
+          ["pending", "running", "cancelled"].includes(current.status)
+        ) {
+          await createWebhookCallbackApi(context).requestAgentComplete(
+            {
+              runId: carrier.runId,
+              exitCode: 1,
+              error: "Identity carrier cancelled",
+            },
+            { authorization: `Bearer ${carrier.sandboxToken}` },
+            [200],
+          );
+        }
+      }
+      await flushWaitUntilForTest();
+      await api.deleteAgent(carrier.actor, carrier.agentId);
+      await flushWaitUntilForTest();
     });
-
-    const accepted = await cfg.probeAuth(
-      { authorization: `Bearer ${sandbox.token}` },
-      { acceptAnySandboxCapability: "true" },
-      [200],
-    );
-    expect(accepted.body).toStrictEqual({
-      tokenType: "sandbox",
-      userId: sandboxActor.userId,
-      orgId: sandboxActor.orgId,
-      runId: sandbox.runId,
+    await owner.run(async () => {
+      const owned = await fixture.entitledNativeChatActor();
+      const activeCarrier: NonNullable<typeof carrier> = {
+        actor: owned.actor,
+        agentId: owned.agentId,
+        kmsKeyId: env("SECRETS_KMS_KEY_ID"),
+        storageBucket: env("R2_USER_STORAGES_BUCKET_NAME"),
+      };
+      carrier = activeCarrier;
+      const run = await fixture.sendChatRun(owned.actor, {
+        agentId: owned.agentId,
+        prompt: "read the identity issued to this Run",
+        model: "claude-fable-5-1",
+      });
+      activeCarrier.runId = run.runId;
+      const { claim } = await fixture.claimChatRun(
+        owned.runnerGroup,
+        run.runId,
+      );
+      activeCarrier.sandboxToken = claim.sandboxToken;
+      cfg.mockSession(null);
+      cfg.mockClerkUsers([owned.actor]);
+      cfg.mockMembership(owned.actor, "org:admin");
+      const agentToken = claim.platformEnvironment?.OKOU_TOKEN;
+      if (!agentToken) {
+        throw new Error("Expected the actual claim's Okou token");
+      }
+      for (const token of [claim.sandboxToken, agentToken]) {
+        const identity = await cfg.requestMe(
+          { authorization: `Bearer ${token}` },
+          [200],
+        );
+        expect(identity.body).toStrictEqual({
+          userId: owned.actor.userId,
+          orgId: owned.actor.orgId,
+          email: owned.actor.email,
+        });
+      }
+      const badSignature = await cfg.requestMe(
+        { authorization: "Bearer vm0_sandbox_not-a-real-token" },
+        [401],
+      );
+      expectApiError(badSignature.body);
+      expect(badSignature.body.error.code).toBe("UNAUTHORIZED");
     });
-
-    const memberOkou = cfg.okouBearer(okouMember, ["file:read"]);
-    cfg.mockMembership(okouMember, "org:member");
-    const memberProbe = await cfg.probeAuth(
-      { authorization: `Bearer ${memberOkou.token}` },
-      { acceptAnySandboxCapability: "true" },
-      [200],
-    );
-    expect(memberProbe.body).toStrictEqual({
-      tokenType: "agent",
-      userId: okouMember.userId,
-      orgId: okouMember.orgId,
-      orgRole: "member",
-      runId: memberOkou.runId,
-      capabilities: ["file:read"],
-    });
-
-    const adminOkou = cfg.okouBearer(okouAdmin, ["file:read", "file:write"]);
-    cfg.mockMembership(okouAdmin, "org:admin");
-    const adminProbe = await cfg.probeAuth(
-      { authorization: `Bearer ${adminOkou.token}` },
-      { acceptAnySandboxCapability: "true" },
-      [200],
-    );
-    expect(adminProbe.body).toStrictEqual({
-      tokenType: "agent",
-      userId: okouAdmin.userId,
-      orgId: okouAdmin.orgId,
-      orgRole: "admin",
-      runId: adminOkou.runId,
-      capabilities: ["file:read", "file:write"],
-    });
-
-    const orphanOkou = cfg.okouBearer(okouOrphan, ["file:read"]);
-    cfg.mockMembership(okouOrphan, null);
-    const orphanProbe = await cfg.probeAuth(
-      { authorization: `Bearer ${orphanOkou.token}` },
-      { acceptAnySandboxCapability: "true" },
-      [200],
-    );
-    expect(orphanProbe.body).toStrictEqual({
-      tokenType: "agent",
-      userId: okouOrphan.userId,
-      runId: orphanOkou.runId,
-    });
-
-    const badSignature = await cfg.probeAuth(
-      { authorization: "Bearer vm0_sandbox_not-a-real-token" },
-      {},
-      [401],
-    );
-    expectApiError(badSignature.body);
-    expect(badSignature.body.error.code).toBe("UNAUTHORIZED");
   });
 
   it("enforces agent capabilities on real user-config routes", async () => {

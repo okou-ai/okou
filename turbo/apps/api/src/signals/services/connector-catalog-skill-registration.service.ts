@@ -9,7 +9,7 @@ import type {
   ConnectorCatalogArtifact,
   ConnectorCatalogArtifactConnector,
 } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
-import { enqueuePiResourceVersionIndexes } from "./pi-resource-version-index.service";
+import { enqueuePiResourceVersionIndexes$ } from "./pi-resource-version-index.service";
 
 const SYSTEM_STORAGE_CREATOR = "system";
 
@@ -342,8 +342,8 @@ export const registerPreparedConnectorCatalogSkills$ = command(
     }
     const db = set(writeDb$);
     await registerConnectorCatalogSkills(db, registrations, signal);
-    await enqueuePiResourceVersionIndexes(
-      db,
+    await set(
+      enqueuePiResourceVersionIndexes$,
       registrations.map((registration) => {
         return registration.versionId;
       }),

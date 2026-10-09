@@ -8,7 +8,7 @@ import { env, optionalEnv } from "../../lib/env";
 import { computeHmacSignature } from "../../lib/event-consumer/hmac";
 import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
 import { decryptPersistentSecretValue } from "./crypto.utils";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
@@ -21,7 +21,7 @@ import {
   type InternalRunCallbackKind,
 } from "./internal-run-callback";
 import { handleWorkflowAutomationResultEmailInternalCallback$ } from "./internal-workflow-automation-result-email-callback.service";
-import { handlePiMemoryPhase2MaintenanceCallback } from "./pi-memory-phase2-maintenance.service";
+import { handlePiMemoryPhase2MaintenanceCallback$ } from "./pi-memory-phase2-maintenance.service";
 import { handleWorkflowAutomationInternalCallback$ } from "./workflow-automation-run-callback.service";
 
 const L = logger("AgentRunCallback");
@@ -33,6 +33,7 @@ const INLINE_ONLY_INTEGRATION_DELIVERY_CALLBACK_KINDS = [
   "feishu:chat",
   "teams:chat",
   "telegram:chat",
+  "agentphone:chat",
   "github:chat",
   "slack:org",
 ] as const;
@@ -56,7 +57,6 @@ interface DispatchResult {
 type TerminalCallbackStatus = "completed" | "failed";
 
 interface DispatchRunCallbacksInput {
-  readonly db: Db;
   readonly runId: string;
   readonly status: TerminalCallbackStatus;
   readonly result?: Record<string, unknown>;
@@ -174,9 +174,10 @@ const dispatchInternalCallback$ = command(
         );
       }
       case "pi-memory:phase2": {
-        return await handlePiMemoryPhase2MaintenanceCallback(
-          set(writeDb$),
+        return await set(
+          handlePiMemoryPhase2MaintenanceCallback$,
           input.envelope,
+          signal,
         );
       }
     }
@@ -333,12 +334,11 @@ export const failPendingInlineOnlyDeliveryCallbacksForDeletedThread$ = command(
 
 export const dispatchRunCallbacks$ = command(
   async (
-    { set },
+    { get, set },
     input: DispatchRunCallbacksInput,
     signal: AbortSignal,
   ): Promise<DispatchResult[]> => {
     const {
-      db,
       runId,
       status,
       result,
@@ -346,6 +346,7 @@ export const dispatchRunCallbacks$ = command(
       redriveChatCallbackId,
       skipChatCallback,
     } = input;
+    const db = get(db$);
     const [run] = await db
       .select({
         orgId: agentRuns.orgId,

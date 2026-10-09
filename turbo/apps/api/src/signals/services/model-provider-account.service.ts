@@ -52,8 +52,7 @@ const ACCOUNT_CONFLICT_MESSAGE =
   "The subscription account changed concurrently. Refresh and try again.";
 
 export type PersonalSubscriptionProviderType =
-  | typeof CODEX_TYPE
-  | typeof CLAUDE_CODE_TYPE;
+  typeof CODEX_TYPE | typeof CLAUDE_CODE_TYPE;
 
 /** Connected Claude/Codex member accounts read together for one queued model route. */
 export interface MemberModelAccountSnapshot {
@@ -757,35 +756,6 @@ function exactConnectedPersonalAccountCondition(args: {
   );
 }
 
-async function accountWithProvider(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly id: string;
-  },
-): Promise<{
-  readonly account: AccountRow;
-  readonly provider: ProviderRow;
-} | null> {
-  const [row] = await db
-    .select({ account: modelProviderAccounts, provider: providerColumns })
-    .from(modelProviderAccounts)
-    .innerJoin(
-      modelProviders,
-      eq(modelProviderAccounts.modelProviderId, modelProviders.id),
-    )
-    .where(
-      exactConnectedPersonalAccountCondition({
-        id: args.id,
-        orgId: args.orgId,
-        userId: args.userId,
-      }),
-    )
-    .limit(1);
-  return row ?? null;
-}
-
 export const activatePersonalModelProviderAccount$ = command(
   async (
     { set },
@@ -975,16 +945,35 @@ export async function personalModelProviderAccountById(args: {
 }
 
 /** Exact management reads never enumerate, seed, or substitute a sibling. */
-export async function personalModelProviderAccountResponseById(args: {
-  readonly db: Db;
-  readonly id: string;
-  readonly orgId: string;
-  readonly userId: string;
-}): Promise<ModelProviderResponse | null> {
-  const row = await accountWithProvider(args.db, args);
-  return row && isPersonalSubscriptionProviderType(row.account.type)
-    ? accountResponse(row)
-    : null;
+export function personalModelProviderAccountResponseById(
+  scope$: Computed<{
+    readonly orgId: string;
+    readonly userId: string;
+    readonly id: string;
+  }>,
+) {
+  return computed(async (get): Promise<ModelProviderResponse | null> => {
+    const args = get(scope$);
+    const [row] = await get(db$)
+      .select({ account: modelProviderAccounts, provider: providerColumns })
+      .from(modelProviderAccounts)
+      .innerJoin(
+        modelProviders,
+        eq(modelProviderAccounts.modelProviderId, modelProviders.id),
+      )
+      .where(
+        exactConnectedPersonalAccountCondition({
+          id: args.id,
+          orgId: args.orgId,
+          userId: args.userId,
+        }),
+      )
+      .limit(1);
+    const current = row ?? null;
+    return current && isPersonalSubscriptionProviderType(current.account.type)
+      ? accountResponse(current)
+      : null;
+  });
 }
 
 /** Settings never receive retired credentials. Runtime retention requires the

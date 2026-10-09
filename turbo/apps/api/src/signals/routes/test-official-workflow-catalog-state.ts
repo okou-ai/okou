@@ -21,23 +21,16 @@ import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { command } from "ccstate";
 import { and, asc, count, eq, inArray, like, or, sql } from "drizzle-orm";
 
-import { nowDate } from "../../lib/time";
-import { testOverride } from "../../lib/singleton";
 import { bodyResultOf } from "../context/request";
 import { request$ } from "../context/hono";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import {
-  readAcceptedOfficialWorkflowCatalog,
-  readAcceptedOfficialWorkflowDefinition,
-  readAcceptedOfficialWorkflowRevision,
+  readAcceptedOfficialWorkflowCatalog$,
+  readAcceptedOfficialWorkflowRevision$,
 } from "../services/official-workflow-catalog-read.service";
 import { executeOfficialWorkflowReconciliationWork$ } from "../services/official-workflow-reconciliation-worker.service";
-import {
-  clearAutomationStructureTransitionPreparedHookForTest,
-  setAutomationStructureTransitionPreparedHookForTest,
-} from "../services/official-workflow-reconciliation.service";
-import { createDeferredPromise } from "../utils";
+
 import {
   isTestEndpointAllowed,
   testEndpointNotFoundResponse,
@@ -57,140 +50,103 @@ const PREVIOUS_SCHEMA_REVISION = "e".repeat(64);
 const PREVIOUS_SCHEMA_STORAGE_VERSION = "d".repeat(64);
 const PREVIOUS_SCHEMA_BLUEPRINT_FINGERPRINT = "c".repeat(64);
 
-interface StructureTransitionPromotionPause {
-  readonly reached: ReturnType<typeof createDeferredPromise<void>>;
-  readonly resume: ReturnType<typeof createDeferredPromise<void>>;
-}
-
-const structureTransitionPromotionPause = testOverride<
-  StructureTransitionPromotionPause | undefined
->(() => {
-  return undefined;
-});
-
-function releaseStructureTransitionPromotionPause(): void {
-  const pause = structureTransitionPromotionPause.get();
-  if (pause && !pause.resume.settled()) {
-    pause.resume.resolve(undefined);
-  }
-  structureTransitionPromotionPause.clear();
-  clearAutomationStructureTransitionPreparedHookForTest();
-}
-
-function pauseNextStructureTransitionPromotion(signal: AbortSignal): void {
-  releaseStructureTransitionPromotionPause();
-  const pause = {
-    reached: createDeferredPromise<void>(signal),
-    resume: createDeferredPromise<void>(signal),
-  };
-  structureTransitionPromotionPause.set(pause);
-  setAutomationStructureTransitionPreparedHookForTest(async () => {
-    const current = structureTransitionPromotionPause.get();
-    if (!current) {
-      return;
-    }
-    if (!current.reached.settled()) {
-      current.reached.resolve(undefined);
-    }
-    await current.resume.promise;
-  });
-}
-
 type ReadAction = Extract<
   TestOfficialWorkflowCatalogStateActionBody,
   { readonly action: "read" }
 >;
 
-async function seedPreviousSchemaRelease(
-  db: Db,
-  signal: AbortSignal,
-): Promise<void> {
-  const previousSchemaVersion = OFFICIAL_WORKFLOW_CATALOG_SCHEMA_VERSION - 1;
-  if (previousSchemaVersion < 1) {
-    throw new Error("Official Workflow catalog has no previous schema version");
-  }
-  const storageName = getOfficialWorkflowDefinitionStorageName(
-    PREVIOUS_SCHEMA_DEFINITION_NAME,
-  );
-  const storageId = randomUUID();
-  const storagePrefix = `api-test/${storageId}`;
-  const blueprint = {
-    key: "daily-delivery",
-    parameters: [
-      {
-        key: "timezone",
-        type: "string",
-        format: "timezone",
-        required: true,
-        derivation: { kind: "user-timezone" },
-      },
-    ],
-    desiredState: {
-      kind: "schedule",
-      schedule: {
-        type: "cron",
-        cronExpression: "0 7 * * *",
-        timezone: { parameter: "timezone" },
-      },
-    },
-    runtime: { resultEmail: true },
-    fingerprint: PREVIOUS_SCHEMA_BLUEPRINT_FINGERPRINT,
-  };
-  const revisionPayload = JSON.stringify({
-    schemaVersion: previousSchemaVersion,
-    name: PREVIOUS_SCHEMA_DEFINITION_NAME,
-    revision: PREVIOUS_SCHEMA_REVISION,
-    workflow: {
-      displayName: "Legacy test workflow",
-      description: "Exercises a previous-schema catalog revision.",
-      instruction: "Use the legacy test workflow.",
-      files: [],
-    },
-    blueprints: [blueprint],
-  });
-  const releasePayload = JSON.stringify({
-    schemaVersion: previousSchemaVersion,
-    definitions: [
-      {
-        name: PREVIOUS_SCHEMA_DEFINITION_NAME,
-        lifecycle: "active",
-        revision: PREVIOUS_SCHEMA_REVISION,
-        artifact: {
-          storageName,
-          storageId,
-          storageVersion: PREVIOUS_SCHEMA_STORAGE_VERSION,
+const seedPreviousSchemaRelease$ = command(
+  async ({ set }, signal: AbortSignal): Promise<void> => {
+    const db = set(writeDb$);
+
+    const previousSchemaVersion = OFFICIAL_WORKFLOW_CATALOG_SCHEMA_VERSION - 1;
+    if (previousSchemaVersion < 1) {
+      throw new Error(
+        "Official Workflow catalog has no previous schema version",
+      );
+    }
+    const storageName = getOfficialWorkflowDefinitionStorageName(
+      PREVIOUS_SCHEMA_DEFINITION_NAME,
+    );
+    const storageId = randomUUID();
+    const storagePrefix = `api-test/${storageId}`;
+    const blueprint = {
+      key: "daily-delivery",
+      parameters: [
+        {
+          key: "timezone",
+          type: "string",
+          format: "timezone",
+          required: true,
+          derivation: { kind: "user-timezone" },
         },
-        blueprints: [blueprint],
-        releasedBlueprintKeys: [blueprint.key],
-        presentation: { category: "productivity" },
+      ],
+      desiredState: {
+        kind: "schedule",
+        schedule: {
+          type: "cron",
+          cronExpression: "0 7 * * *",
+          timezone: { parameter: "timezone" },
+        },
       },
-    ],
-  });
-  await db.transaction(async (tx) => {
-    await tx.insert(storages).values({
-      id: storageId,
-      orgId: SYSTEM_ORG_ID,
-      userId: VOLUME_ORG_USER_ID,
-      name: storageName,
-      s3Prefix: storagePrefix,
-      size: 0,
-      fileCount: 0,
+      runtime: { resultEmail: true },
+      fingerprint: PREVIOUS_SCHEMA_BLUEPRINT_FINGERPRINT,
+    };
+    const revisionPayload = JSON.stringify({
+      schemaVersion: previousSchemaVersion,
+      name: PREVIOUS_SCHEMA_DEFINITION_NAME,
+      revision: PREVIOUS_SCHEMA_REVISION,
+      workflow: {
+        displayName: "Legacy test workflow",
+        description: "Exercises a previous-schema catalog revision.",
+        instruction: "Use the legacy test workflow.",
+        files: [],
+      },
+      blueprints: [blueprint],
     });
-    await tx.insert(storageVersions).values({
-      id: PREVIOUS_SCHEMA_STORAGE_VERSION,
-      storageId,
-      s3Key: `${storagePrefix}/${PREVIOUS_SCHEMA_STORAGE_VERSION}`,
-      size: 0,
-      archiveSize: 0,
-      fileCount: 0,
-      message: "Previous-schema Official Workflow test revision",
-      createdBy: "system",
+    const releasePayload = JSON.stringify({
+      schemaVersion: previousSchemaVersion,
+      definitions: [
+        {
+          name: PREVIOUS_SCHEMA_DEFINITION_NAME,
+          lifecycle: "active",
+          revision: PREVIOUS_SCHEMA_REVISION,
+          artifact: {
+            storageName,
+            storageId,
+            storageVersion: PREVIOUS_SCHEMA_STORAGE_VERSION,
+          },
+          blueprints: [blueprint],
+          releasedBlueprintKeys: [blueprint.key],
+          presentation: { category: "productivity" },
+        },
+      ],
     });
-    await tx
-      .update(storages)
-      .set({ headVersionId: PREVIOUS_SCHEMA_STORAGE_VERSION })
-      .where(eq(storages.id, storageId));
-    await tx.execute(sql`
+    await db.transaction(async (tx) => {
+      await tx.insert(storages).values({
+        id: storageId,
+        orgId: SYSTEM_ORG_ID,
+        userId: VOLUME_ORG_USER_ID,
+        name: storageName,
+        s3Prefix: storagePrefix,
+        size: 0,
+        fileCount: 0,
+      });
+      await tx.insert(storageVersions).values({
+        id: PREVIOUS_SCHEMA_STORAGE_VERSION,
+        storageId,
+        s3Key: `${storagePrefix}/${PREVIOUS_SCHEMA_STORAGE_VERSION}`,
+        size: 0,
+        archiveSize: 0,
+        fileCount: 0,
+        message: "Previous-schema Official Workflow test revision",
+        createdBy: "system",
+      });
+      await tx
+        .update(storages)
+        .set({ headVersionId: PREVIOUS_SCHEMA_STORAGE_VERSION })
+        .where(eq(storages.id, storageId));
+      await tx.execute(sql`
       INSERT INTO ${officialWorkflowDefinitionRevisions} (
         definition_name,
         revision,
@@ -207,19 +163,22 @@ async function seedPreviousSchemaRelease(
         ${PREVIOUS_SCHEMA_STORAGE_VERSION}
       )
     `);
-    await tx.execute(sql`
+      await tx.execute(sql`
       INSERT INTO ${officialWorkflowCatalogReleases} (id, payload)
       VALUES (${PREVIOUS_SCHEMA_RELEASE_ID}, ${releasePayload}::jsonb)
     `);
-    await tx.insert(officialWorkflowCatalogState).values({
-      authority: "official",
-      acceptedReleaseId: PREVIOUS_SCHEMA_RELEASE_ID,
+      await tx.insert(officialWorkflowCatalogState).values({
+        authority: "official",
+        acceptedReleaseId: PREVIOUS_SCHEMA_RELEASE_ID,
+      });
     });
-  });
-  signal.throwIfAborted();
-}
+    signal.throwIfAborted();
+  },
+);
 
-async function catalogCounts(db: Db, signal: AbortSignal) {
+const catalogCounts$ = command(async ({ get }, signal: AbortSignal) => {
+  const db = get(db$);
+
   const [[releaseCount], [revisionCount], [storageCount], [versionCount]] =
     await Promise.all([
       db.select({ value: count() }).from(officialWorkflowCatalogReleases),
@@ -262,214 +221,138 @@ async function catalogCounts(db: Db, signal: AbortSignal) {
     storages: storageCount.value,
     storageVersions: versionCount.value,
   };
-}
+});
 
-async function readStorageState(
-  db: Db,
-  definitionName: string | undefined,
-  signal: AbortSignal,
-) {
-  if (definitionName === undefined) {
-    return null;
-  }
-  const [row] = await db
-    .select({
-      storageName: storages.name,
-      storageId: storages.id,
-      orgId: storages.orgId,
-      userId: storages.userId,
-      headVersionId: storages.headVersionId,
-    })
-    .from(storages)
-    .where(
-      and(
-        eq(storages.orgId, SYSTEM_ORG_ID),
-        eq(storages.userId, VOLUME_ORG_USER_ID),
-        eq(storages.name, `official-workflow@${definitionName}`),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  if (!row) {
-    return null;
-  }
-  const [versionCount] = await db
-    .select({ value: count() })
-    .from(storageVersions)
-    .where(eq(storageVersions.storageId, row.storageId));
-  signal.throwIfAborted();
-  if (!versionCount) {
-    throw new Error("Official Workflow catalog storage count is incomplete");
-  }
-  return {
-    ...row,
-    versionCount: versionCount.value,
-  };
-}
+const readStorageState$ = command(
+  async ({ get }, definitionName: string | undefined, signal: AbortSignal) => {
+    const db = get(db$);
 
-async function stateResponse(
-  db: Db,
-  body:
-    | Pick<ReadAction, "definitionName" | "revision" | "workflowId">
-    | undefined,
-  worker: {
-    readonly claimed: number;
-    readonly completed: number;
-    readonly advanced: number;
-    readonly retried: number;
-    readonly installations: number;
-  } | null,
-  signal: AbortSignal,
-) {
-  const catalog = await readAcceptedOfficialWorkflowCatalog(db, signal);
-  const definition = body?.definitionName
-    ? await readAcceptedOfficialWorkflowDefinition(
-        db,
-        body.definitionName,
-        signal,
-      )
-    : null;
-  const revision =
-    body?.definitionName && body.revision
-      ? await readAcceptedOfficialWorkflowRevision(
-          db,
-          { name: body.definitionName, revision: body.revision },
-          signal,
-        )
-      : null;
-  const [reconciliationWork, identities] = await Promise.all([
-    db
-      .select({
-        definitionName: officialWorkflowReconciliationWork.definitionName,
-        requestedReleaseId:
-          officialWorkflowReconciliationWork.requestedReleaseId,
-        cursorWorkflowId: officialWorkflowReconciliationWork.cursorWorkflowId,
-        state: officialWorkflowReconciliationWork.state,
-        leaseId: officialWorkflowReconciliationWork.leaseId,
-        attemptCount: officialWorkflowReconciliationWork.attemptCount,
-        lastError: officialWorkflowReconciliationWork.lastError,
-      })
-      .from(officialWorkflowReconciliationWork)
-      .orderBy(asc(officialWorkflowReconciliationWork.definitionName)),
-    body?.workflowId === undefined
-      ? Promise.resolve([])
-      : db
-          .select({
-            id: officialWorkflowAutomationIdentities.id,
-            workflowId: officialWorkflowAutomationIdentities.workflowId,
-            automationId: officialWorkflowAutomationIdentities.automationId,
-            blueprintKey: officialWorkflowAutomationIdentities.blueprintKey,
-            state: officialWorkflowAutomationIdentities.state,
-            retainedParameterBindings:
-              officialWorkflowAutomationIdentities.retainedParameterBindings,
-            retainedIntendedEnabled:
-              officialWorkflowAutomationIdentities.retainedIntendedEnabled,
-            retainedAppliedFingerprint:
-              officialWorkflowAutomationIdentities.retainedAppliedFingerprint,
-          })
-          .from(officialWorkflowAutomationIdentities)
-          .where(
-            eq(
-              officialWorkflowAutomationIdentities.workflowId,
-              body.workflowId,
-            ),
-          )
-          .orderBy(asc(officialWorkflowAutomationIdentities.blueprintKey)),
-  ]);
-  signal.throwIfAborted();
-  return {
-    status: 200 as const,
-    body: {
-      ok: true as const,
-      catalog,
-      definition,
-      revision,
-      storage: await readStorageState(db, body?.definitionName, signal),
-      counts: await catalogCounts(db, signal),
-      reconciliationWork,
-      identities,
-      worker,
-    },
-  };
-}
-
-async function simulateReconciliationWorkerCrash(
-  db: Db,
-  definitionName: string,
-  signal: AbortSignal,
-): Promise<void> {
-  const currentTime = nowDate();
-  await db
-    .update(officialWorkflowReconciliationWork)
-    .set({
-      state: "running",
-      leaseId: randomUUID(),
-      leaseExpiresAt: new Date(currentTime.getTime() - 1),
-      availableAt: currentTime,
-      updatedAt: currentTime,
-    })
-    .where(
-      eq(officialWorkflowReconciliationWork.definitionName, definitionName),
-    );
-  signal.throwIfAborted();
-}
-
-async function handleLifecycleSimulationAction(
-  db: Db,
-  body: TestOfficialWorkflowCatalogStateActionBody,
-  signal: AbortSignal,
-): Promise<boolean> {
-  if (body.action === "simulate-reconciliation-worker-crash") {
-    await simulateReconciliationWorkerCrash(db, body.definitionName, signal);
-    return true;
-  }
-  return false;
-}
-
-async function handleLifecycleControlAction(
-  body: TestOfficialWorkflowCatalogStateActionBody,
-  signal: AbortSignal,
-): Promise<boolean> {
-  if (body.action === "pause-next-structure-transition-promotion") {
-    pauseNextStructureTransitionPromotion(signal);
-    return true;
-  }
-  if (body.action === "wait-for-structure-transition-promotion-pause") {
-    const pause = structureTransitionPromotionPause.get();
-    if (!pause) {
-      throw new Error("Structure-transition pause is not configured");
+    if (definitionName === undefined) {
+      return null;
     }
-    await pause.reached.promise;
+    const [row] = await db
+      .select({
+        storageName: storages.name,
+        storageId: storages.id,
+        orgId: storages.orgId,
+        userId: storages.userId,
+        headVersionId: storages.headVersionId,
+      })
+      .from(storages)
+      .where(
+        and(
+          eq(storages.orgId, SYSTEM_ORG_ID),
+          eq(storages.userId, VOLUME_ORG_USER_ID),
+          eq(storages.name, `official-workflow@${definitionName}`),
+        ),
+      )
+      .limit(1);
     signal.throwIfAborted();
-    return true;
-  }
-  if (body.action === "resume-structure-transition-promotion") {
-    releaseStructureTransitionPromotionPause();
-    return true;
-  }
-  return false;
-}
+    if (!row) {
+      return null;
+    }
+    const [versionCount] = await db
+      .select({ value: count() })
+      .from(storageVersions)
+      .where(eq(storageVersions.storageId, row.storageId));
+    signal.throwIfAborted();
+    if (!versionCount) {
+      throw new Error("Official Workflow catalog storage count is incomplete");
+    }
+    return {
+      ...row,
+      versionCount: versionCount.value,
+    };
+  },
+);
 
-async function makeReconciliationWorkDue(
-  db: Db,
-  definitionName: string,
-  signal: AbortSignal,
-): Promise<void> {
-  const currentTime = nowDate();
-  await db
-    .update(officialWorkflowReconciliationWork)
-    .set({
-      state: "pending",
-      leaseId: null,
-      leaseExpiresAt: null,
-      availableAt: currentTime,
-      updatedAt: currentTime,
-    })
-    .where(
-      eq(officialWorkflowReconciliationWork.definitionName, definitionName),
-    );
-  signal.throwIfAborted();
-}
+const stateResponse$ = command(
+  async (
+    { get, set },
+    body:
+      | Pick<ReadAction, "definitionName" | "revision" | "workflowId">
+      | undefined,
+    worker: {
+      readonly claimed: number;
+      readonly completed: number;
+      readonly advanced: number;
+      readonly retried: number;
+      readonly installations: number;
+    } | null,
+    signal: AbortSignal,
+  ) => {
+    const db = get(db$);
+
+    const catalog = await set(readAcceptedOfficialWorkflowCatalog$, signal);
+    const definition = body?.definitionName
+      ? (catalog?.payload.definitions.find((candidate) => {
+          return candidate.name === body?.definitionName;
+        }) ?? null)
+      : null;
+    const revision =
+      body?.definitionName && body.revision
+        ? await set(
+            readAcceptedOfficialWorkflowRevision$,
+            { name: body.definitionName, revision: body.revision },
+            signal,
+          )
+        : null;
+    const [reconciliationWork, identities] = await Promise.all([
+      db
+        .select({
+          definitionName: officialWorkflowReconciliationWork.definitionName,
+          requestedReleaseId:
+            officialWorkflowReconciliationWork.requestedReleaseId,
+          cursorWorkflowId: officialWorkflowReconciliationWork.cursorWorkflowId,
+          state: officialWorkflowReconciliationWork.state,
+          leaseId: officialWorkflowReconciliationWork.leaseId,
+          attemptCount: officialWorkflowReconciliationWork.attemptCount,
+          lastError: officialWorkflowReconciliationWork.lastError,
+        })
+        .from(officialWorkflowReconciliationWork)
+        .orderBy(asc(officialWorkflowReconciliationWork.definitionName)),
+      body?.workflowId === undefined
+        ? Promise.resolve([])
+        : db
+            .select({
+              id: officialWorkflowAutomationIdentities.id,
+              workflowId: officialWorkflowAutomationIdentities.workflowId,
+              automationId: officialWorkflowAutomationIdentities.automationId,
+              blueprintKey: officialWorkflowAutomationIdentities.blueprintKey,
+              state: officialWorkflowAutomationIdentities.state,
+              retainedParameterBindings:
+                officialWorkflowAutomationIdentities.retainedParameterBindings,
+              retainedIntendedEnabled:
+                officialWorkflowAutomationIdentities.retainedIntendedEnabled,
+              retainedAppliedFingerprint:
+                officialWorkflowAutomationIdentities.retainedAppliedFingerprint,
+            })
+            .from(officialWorkflowAutomationIdentities)
+            .where(
+              eq(
+                officialWorkflowAutomationIdentities.workflowId,
+                body.workflowId,
+              ),
+            )
+            .orderBy(asc(officialWorkflowAutomationIdentities.blueprintKey)),
+    ]);
+    signal.throwIfAborted();
+    return {
+      status: 200 as const,
+      body: {
+        ok: true as const,
+        catalog,
+        definition,
+        revision,
+        storage: await set(readStorageState$, body?.definitionName, signal),
+        counts: await set(catalogCounts$, signal),
+        reconciliationWork,
+        identities,
+        worker,
+      },
+    };
+  },
+);
 
 const officialWorkflowCatalogTestStateRoute$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -481,34 +364,21 @@ const officialWorkflowCatalogTestStateRoute$ = command(
     if (!bodyResult.ok) {
       return bodyResult.response;
     }
-    const db = set(writeDb$);
+
     if (bodyResult.data.action === "seed-previous-schema-release") {
-      await seedPreviousSchemaRelease(db, signal);
-      return await stateResponse(db, undefined, null, signal);
+      await set(seedPreviousSchemaRelease$, signal);
+      return await set(stateResponse$, undefined, null, signal);
     }
-    if (
-      (await handleLifecycleSimulationAction(db, bodyResult.data, signal)) ||
-      (await handleLifecycleControlAction(bodyResult.data, signal))
-    ) {
-      return await stateResponse(db, undefined, null, signal);
-    }
-    if (bodyResult.data.action === "make-reconciliation-work-due") {
-      await makeReconciliationWorkDue(
-        db,
-        bodyResult.data.definitionName,
-        signal,
-      );
-      return await stateResponse(db, undefined, null, signal);
-    }
+
     if (bodyResult.data.action === "run-reconciliation-worker") {
       const worker = await set(
         executeOfficialWorkflowReconciliationWork$,
         signal,
       );
-      return await stateResponse(db, undefined, worker, signal);
+      return await set(stateResponse$, undefined, worker, signal);
     }
     if (bodyResult.data.action === "read") {
-      return await stateResponse(db, bodyResult.data, null, signal);
+      return await set(stateResponse$, bodyResult.data, null, signal);
     }
     throw new Error("Unsupported Official Workflow catalog test action");
   },

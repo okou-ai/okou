@@ -61,28 +61,6 @@ export const cliAuthTestConnectorContract = c.router({
   },
 });
 
-export const cliAuthTestEnableConnectorContract = c.router({
-  create: {
-    method: "POST",
-    path: "/api/cli/auth/test-enable-connector",
-    query: testEmailQuerySchema,
-    body: z.object({
-      composeId: z.string().uuid(),
-      connectorSlugs: z.array(z.string()).min(1),
-    }),
-    responses: {
-      200: z.object({
-        ok: z.literal(true),
-        composeId: z.string(),
-        connectorSlugs: z.array(z.string()),
-      }),
-      400: stringErrorResponseSchema,
-      404: notFoundTextSchema.or(stringErrorResponseSchema),
-    },
-    summary: "Enable connector rows for a test compose",
-  },
-});
-
 const codexLegacyBodySchema = z.object({
   accessToken: z.string().min(1),
   refreshToken: z.string().min(1),
@@ -119,7 +97,5 @@ export const cliAuthTestCodexOauthContract = c.router({
 
 export type CliAuthTestTokenContract = typeof cliAuthTestTokenContract;
 export type CliAuthTestConnectorContract = typeof cliAuthTestConnectorContract;
-export type CliAuthTestEnableConnectorContract =
-  typeof cliAuthTestEnableConnectorContract;
 export type CliAuthTestCodexOauthContract =
   typeof cliAuthTestCodexOauthContract;

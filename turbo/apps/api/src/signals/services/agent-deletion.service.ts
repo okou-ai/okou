@@ -1,372 +1,327 @@
-import { command, computed, type Computed } from "ccstate";
+import { command } from "ccstate";
 import { agents } from "@okouai/db/schema/agent";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { agentDeletionError } from "@okouai/core/agent-protection";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentSessions } from "@okouai/db/schema/agent-session";
+import { blobs } from "@okouai/db/schema/blob";
+import { conversations } from "@okouai/db/schema/conversation";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
-import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
+import { and, asc, count, eq, gt, sql } from "drizzle-orm";
 import { purgeRetiredMorningBriefEmailSql } from "./retired-morning-brief-email";
 
-import { db$, writeDb$, type Db } from "../external/db";
-import type { Tx } from "../../lib/db-types";
+import { db$, writeDb$ } from "../external/db";
+import { storages } from "@okouai/db/schema/storage";
+import { parseRawRows } from "../../lib/db-raw-rows";
+import {
+  agentDeletionAdmissionPlan,
+  agentDeletionIdentityCondition,
+  agentDeletionAutomationCondition,
+  agentDeletionThreadSequencesSql,
+  agentInstructionDeletionCondition,
+  agentConversationDeletionCondition,
+  agentInstructionStoragesSql,
+  deletedInstructionStorageSchema,
+  deletedConversationReferences,
+  conversationReferenceBatches,
+  conversationBlobLockCondition,
+  conversationBlobReleaseValues,
+  conversationDeletionDatabaseError,
+  type DeleteAgentArgs,
+} from "./agent-deletion-queries";
 import { env } from "../../lib/env";
 import { conflict } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { isLockNotAvailable } from "../../lib/pg-errors";
-import { requireAgentPermission } from "../../lib/require-agent-permission";
 import { settle } from "../utils";
-import { deleteAgentPublicationFences } from "./agent-lifecycle.service";
-import {
-  lockAgentInstructionsStoragesInTransaction,
-  removeLockedAgentInstructionsStoragesInTransaction,
-} from "./agent-instructions-storage-transaction.service";
+import { agentPublicationFenceDeletionSql } from "./agent-lifecycle.service";
 import { reconcileAutomationEventWatches$ } from "./automation-event-watch-lifecycle.service";
 import { purgeDeletedStoragePrefix$ } from "./storage-prefix-purge.service";
-import {
-  deleteRunConversations,
-  logCommittedConversationDeletion,
-  releaseDeletedConversationReferences,
-} from "./conversation-history-deletion.service";
+import { logCommittedConversationDeletion } from "./conversation-history-deletion.service";
 import { chatThreadEventInsertSql } from "./chat-thread-event.service";
 
 const log = logger("api:agent-deletion");
 const THREAD_DELETION_READ_PAGE_SIZE = 500;
 const THREAD_DELETION_EVENT_BATCH_SIZE = 16;
 
-export function agentExistsInOrg(args: {
-  readonly orgId: string;
-  readonly agentId: string;
-}): Computed<Promise<boolean>> {
-  return computed(async (get): Promise<boolean> => {
+export const agentExistsInOrg$ = command(
+  async (
+    { get },
+    args: { readonly orgId: string; readonly agentId: string },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
     const [row] = await get(db$)
       .select({ id: agents.id })
       .from(agents)
-      .where(and(eq(agents.orgId, args.orgId), eq(agents.id, args.agentId)))
+      .where(agentDeletionIdentityCondition(args))
       .limit(1);
-
+    signal.throwIfAborted();
     return Boolean(row);
-  });
-}
+  },
+);
 
 const DELETE_AGENT_LOCK_TIMEOUT = "100ms";
-interface DeleteAgentArgs {
-  readonly agentId: string;
-  readonly orgId: string;
-  readonly member: {
-    readonly userId: string;
-    readonly role: string;
-  };
-}
+const agentWatchColumns = Object.freeze({
+  orgId: workflowAutomations.orgId,
+  ownerUserId: workflowAutomations.ownerUserId,
+  eventType: workflowAutomations.eventType,
+  eventConfig: workflowAutomations.eventConfig,
+  eventConnectorId: workflowAutomations.eventConnectorId,
+});
 
-async function lockAgentLifecycleForDeletion(tx: Tx, args: DeleteAgentArgs) {
-  const [agent] = await tx
-    .select({
-      id: agents.id,
-      name: agents.name,
-      owner: agents.owner,
-      visibility: agents.visibility,
-    })
-    .from(agents)
-    .where(and(eq(agents.id, args.agentId), eq(agents.orgId, args.orgId)))
-    .for("update", { noWait: true })
-    .limit(1);
-
-  if (!agent) {
-    return { kind: "missing" as const };
-  }
-
-  const permissionError = requireAgentPermission(
-    agent.owner,
-    args.member,
-    "delete agent",
-    { visibility: agent.visibility },
-  );
-  if (permissionError) {
-    return { kind: "forbidden" as const, response: permissionError };
-  }
-
-  const [org] = await tx
-    .select({ defaultAgentId: orgMetadata.defaultAgentId })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.orgId, args.orgId));
-  const identityError = agentDeletionError(agent.id === org?.defaultAgentId);
-  if (identityError) {
-    return {
-      kind: "forbidden" as const,
-      response: { status: 400 as const, body: { error: identityError } },
-    };
-  }
-
-  const sessions = await tx
-    .select({ id: agentSessions.id, orgId: agentSessions.orgId })
-    .from(agentSessions)
-    .where(eq(agentSessions.agentId, args.agentId))
-    .orderBy(asc(agentSessions.id))
-    .for("update", { noWait: true });
-
-  if (
-    sessions.some((session) => {
-      return session.orgId !== args.orgId;
-    })
-  ) {
-    return { kind: "ownership-conflict" as const };
-  }
-
-  const runs =
-    sessions.length === 0
-      ? []
-      : await tx
-          .select({
-            id: agentRuns.id,
-            orgId: agentRuns.orgId,
-            status: agentRuns.status,
-          })
-          .from(agentRuns)
-          .where(
-            inArray(
-              agentRuns.sessionId,
-              tx
-                .select({ id: agentSessions.id })
-                .from(agentSessions)
-                .where(eq(agentSessions.agentId, args.agentId)),
-            ),
-          )
-          .orderBy(asc(agentRuns.id))
-          .for("update", { noWait: true });
-
-  if (
-    runs.some((run) => {
-      return run.orgId !== args.orgId;
-    })
-  ) {
-    return { kind: "ownership-conflict" as const };
-  }
-
-  if (
-    runs.some((run) => {
-      return run.status === "pending" || run.status === "running";
-    })
-  ) {
-    return { kind: "active-run" as const };
-  }
-
-  return {
-    kind: "ready" as const,
-    agentName: agent.name,
-    runIds: runs.map((run) => {
-      return run.id;
-    }),
-  };
-}
-
-async function preflightAgentDeletion(tx: Tx, args: DeleteAgentArgs) {
-  const [agent] = await tx
-    .select({
-      id: agents.id,
-      owner: agents.owner,
-      visibility: agents.visibility,
-    })
-    .from(agents)
-    .where(and(eq(agents.id, args.agentId), eq(agents.orgId, args.orgId)))
-    .limit(1);
-  if (!agent) {
-    return { kind: "missing" as const };
-  }
-  const permissionError = requireAgentPermission(
-    agent.owner,
-    args.member,
-    "delete agent",
-    { visibility: agent.visibility },
-  );
-  if (permissionError) {
-    return { kind: "forbidden" as const, response: permissionError };
-  }
-  const [org] = await tx
-    .select({ defaultAgentId: orgMetadata.defaultAgentId })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.orgId, args.orgId));
-  const identityError = agentDeletionError(agent.id === org?.defaultAgentId);
-  return identityError
-    ? {
-        kind: "forbidden" as const,
-        response: { status: 400 as const, body: { error: identityError } },
-      }
-    : { kind: "ready" as const };
-}
-export async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
-  await tx.execute(
-    sql`SELECT set_config('lock_timeout', ${DELETE_AGENT_LOCK_TIMEOUT}, true)`,
-  );
-  // Revalidate permission and identity under the lifecycle lock before deletion commits.
-  const preflight = await preflightAgentDeletion(tx, args);
-  if (preflight.kind !== "ready") {
-    return preflight;
-  }
-  const lifecycle = await lockAgentLifecycleForDeletion(tx, args);
-  if (lifecycle.kind !== "ready") {
-    return lifecycle;
-  }
-  // The Agent cascade strongly locks its threads before deleting sequence
-  // children. A direct append already owns a sequence before its thread FK
-  // check, so take existing sequences first. A busy sequence surfaces through
-  // this transaction's existing lock timeout and conflict response.
-  await tx
-    .select({ id: chatEventSequences.chatThreadId })
-    .from(chatEventSequences)
-    .innerJoin(chatThreads, eq(chatThreads.id, chatEventSequences.chatThreadId))
-    .where(eq(chatThreads.agentId, args.agentId))
-    .orderBy(asc(chatEventSequences.chatThreadId))
-    .for("update", { of: chatEventSequences });
-  const automations = await tx
-    .select({
-      orgId: workflowAutomations.orgId,
-      ownerUserId: workflowAutomations.ownerUserId,
-      eventType: workflowAutomations.eventType,
-      eventConfig: workflowAutomations.eventConfig,
-      eventConnectorId: workflowAutomations.eventConnectorId,
-    })
-    .from(workflowAutomations)
-    .innerJoin(workflows, eq(workflowAutomations.workflowId, workflows.id))
-    .where(
-      and(eq(workflows.orgId, args.orgId), eq(workflows.agentId, args.agentId)),
-    );
-  const removed = await deleteRunConversations(tx, lifecycle.runIds);
-  // Prelock instruction Storages in UUID order before lifecycle cleanup, not
-  // after Agent deletion.
-  const lockedInstructionsStorages =
-    await lockAgentInstructionsStoragesInTransaction(tx, [
-      { orgId: args.orgId, agentName: lifecycle.agentName },
-    ]);
-  // Remove current non-FK lifecycle rows before the Agent cascade.
-  await deleteAgentPublicationFences(tx, args.agentId);
-  await tx.execute(purgeRetiredMorningBriefEmailSql());
-  await tx
-    .delete(agents)
-    .where(and(eq(agents.id, args.agentId), eq(agents.orgId, args.orgId)));
-  // The cascade drains transactions that already owned a child Workflow row.
-  // Sweep again afterward so any generation/publication they initialized
-  // after the first scan cannot outlive the deleted Agent.
-  await deleteAgentPublicationFences(tx, args.agentId);
-  await removeLockedAgentInstructionsStoragesInTransaction(
-    tx,
-    lockedInstructionsStorages,
-  );
-  const s3Prefix = lockedInstructionsStorages[0]?.s3Prefix ?? null;
-  return {
-    kind: "deleted" as const,
-    s3Prefix,
-    automations,
-    conversationDeletion: await releaseDeletedConversationReferences(
-      tx,
-      removed,
-    ),
-  };
-}
-async function readAgentThreadEventOwners(
-  db: Pick<Db, "select">,
-  agentId: string,
-  orgId: string,
-): Promise<
-  readonly {
-    id: string;
-    userId: string;
-    orgId: string;
-  }[]
-> {
-  const owners: {
-    id: string;
-    userId: string;
-    orgId: string;
-  }[] = [];
-  let afterId: string | null = null;
-  for (;;) {
-    const page = await db
-      .select({ id: chatThreads.id, userId: chatThreads.userId })
-      .from(chatThreads)
-      .where(
-        and(
-          eq(chatThreads.agentId, agentId),
-          afterId === null ? undefined : gt(chatThreads.id, afterId),
-        ),
-      )
-      .orderBy(asc(chatThreads.id))
-      .limit(THREAD_DELETION_READ_PAGE_SIZE);
-    owners.push(
-      ...page.map((thread) => {
-        return { ...thread, orgId };
-      }),
-    );
-    const last = page.at(-1);
-    if (!last || page.length < THREAD_DELETION_READ_PAGE_SIZE) {
-      break;
-    }
-    afterId = last.id;
-  }
-  return owners;
-}
-/** Best-effort lifecycle notifications, never part of the Agent's deletion transaction. */
-async function appendDeletedAgentThreadEvents(
-  db: Db,
-  agentId: string,
-  owners: readonly {
-    id: string;
-    userId: string;
-    orgId: string;
-  }[],
-): Promise<void> {
-  for (
-    let offset = 0;
-    offset < owners.length;
-    offset += THREAD_DELETION_EVENT_BATCH_SIZE
-  ) {
-    const batch = owners.slice(
-      offset,
-      offset + THREAD_DELETION_EVENT_BATCH_SIZE,
-    );
-    const results = await Promise.allSettled(
-      batch.map(async (thread) => {
-        await db.execute(
-          chatThreadEventInsertSql({
-            kind: "deleted",
-            userId: thread.userId,
-            orgId: thread.orgId,
-            chatThreadId: thread.id,
-            agentId,
-          }),
+const deleteAgentRows$ = command(
+  async ({ set }, args: DeleteAgentArgs, signal: AbortSignal) => {
+    return await set(writeDb$).transaction(async (tx) => {
+      await tx.execute(
+        sql`SELECT set_config('lock_timeout', ${DELETE_AGENT_LOCK_TIMEOUT}, true)`,
+      );
+      signal.throwIfAborted();
+      const admission = agentDeletionAdmissionPlan(args);
+      let step = admission.next();
+      while (!step.done) {
+        const statement = step.value;
+        const rows = parseRawRows(
+          statement.rowSchema,
+          await tx.execute(statement.sql),
         );
+        signal.throwIfAborted();
+        step = admission.next(rows);
+      }
+      const lifecycle = step.value;
+      if (lifecycle.kind !== "ready") {
+        return lifecycle;
+      }
+      // Direct append owns sequence before its thread FK check. Take sequences
+      // before the Agent cascade under the existing lock timeout.
+      await tx.execute(agentDeletionThreadSequencesSql(args.agentId));
+      signal.throwIfAborted();
+      const automations = await tx
+        .select(agentWatchColumns)
+        .from(workflowAutomations)
+        .innerJoin(workflows, eq(workflowAutomations.workflowId, workflows.id))
+        .where(agentDeletionAutomationCondition(args));
+      signal.throwIfAborted();
+      let removed = deletedConversationReferences([]);
+      if (lifecycle.runIds.length > 0) {
+        const deleted = tx
+          .$with("removed_conversations")
+          .as(
+            tx
+              .delete(conversations)
+              .where(agentConversationDeletionCondition(lifecycle.runIds))
+              .returning({ hash: conversations.cliAgentSessionHistoryHash }),
+          );
+        const deletion = await settle(
+          tx
+            .with(deleted)
+            .select({ hash: deleted.hash, references: count() })
+            .from(deleted)
+            .groupBy(deleted.hash),
+        );
+        signal.throwIfAborted();
+        if (!deletion.ok) {
+          throw conversationDeletionDatabaseError(deletion.error);
+        }
+        removed = deletedConversationReferences(deletion.value);
+      }
+      // Storage publication and lifecycle deletion prelock parents in UUID order.
+      const instructions = parseRawRows(
+        deletedInstructionStorageSchema,
+        await tx.execute(
+          agentInstructionStoragesSql(args.orgId, lifecycle.agentName),
+        ),
+      );
+      signal.throwIfAborted();
+      for (const statement of agentPublicationFenceDeletionSql(args.agentId)) {
+        await tx.execute(statement);
+        signal.throwIfAborted();
+      }
+      await tx.execute(purgeRetiredMorningBriefEmailSql());
+      signal.throwIfAborted();
+      await tx.delete(agents).where(agentDeletionIdentityCondition(args));
+      signal.throwIfAborted();
+      // The cascade drains already-owned Workflow rows. Sweep their late fence
+      // initialization after the cascade, preserving generation-before-token order.
+      for (const statement of agentPublicationFenceDeletionSql(args.agentId)) {
+        await tx.execute(statement);
+        signal.throwIfAborted();
+      }
+      if (instructions.length > 0) {
+        await tx
+          .delete(storages)
+          .where(agentInstructionDeletionCondition(instructions));
+        signal.throwIfAborted();
+      }
+      // Blob locks and reference release remain LAST, after all parent mutations.
+      const release = conversationReferenceBatches(removed);
+      for (const batch of release.batches) {
+        const locked = await settle(
+          tx
+            .select({ hash: blobs.hash })
+            .from(blobs)
+            .where(conversationBlobLockCondition(batch))
+            .orderBy(asc(blobs.hash))
+            .for("update", { noWait: true }),
+        );
+        signal.throwIfAborted();
+        if (!locked.ok) {
+          throw conversationDeletionDatabaseError(locked.error);
+        }
+        if (locked.value.length !== batch.length) {
+          throw new Error(
+            "Conversation history reference accounting failed: missing blob references",
+          );
+        }
+        const releaseValues = conversationBlobReleaseValues(batch);
+        const released = await settle(
+          tx
+            .update(blobs)
+            .set(releaseValues.values)
+            .from(releaseValues.from)
+            .where(releaseValues.where),
+        );
+        signal.throwIfAborted();
+        if (!released.ok) {
+          throw conversationDeletionDatabaseError(released.error);
+        }
+        if (released.value.rowCount !== batch.length) {
+          throw new Error(
+            "Conversation history reference accounting failed: missing or insufficient blob references",
+          );
+        }
+      }
+      return {
+        kind: "deleted" as const,
+        s3Prefix: instructions[0]?.s3Prefix ?? null,
+        automations,
+        conversationDeletion: release.receipt,
+      };
+    });
+  },
+);
+
+const readAgentThreadEventOwners$ = command(
+  async (
+    { get },
+    args: { readonly agentId: string; readonly orgId: string },
+    signal: AbortSignal,
+  ) => {
+    const owners: {
+      id: string;
+      userId: string;
+      orgId: string;
+    }[] = [];
+    let afterId: string | null = null;
+    for (;;) {
+      const page = await get(db$)
+        .select({ id: chatThreads.id, userId: chatThreads.userId })
+        .from(chatThreads)
+        .where(
+          and(
+            eq(chatThreads.agentId, args.agentId),
+            afterId === null ? undefined : gt(chatThreads.id, afterId),
+          ),
+        )
+        .orderBy(asc(chatThreads.id))
+        .limit(THREAD_DELETION_READ_PAGE_SIZE);
+      signal.throwIfAborted();
+      owners.push(
+        ...page.map((thread) => {
+          return { ...thread, orgId: args.orgId };
+        }),
+      );
+      const last = page.at(-1);
+      if (!last || page.length < THREAD_DELETION_READ_PAGE_SIZE) {
+        break;
+      }
+      afterId = last.id;
+    }
+    return owners;
+  },
+);
+
+/** Best-effort lifecycle notifications, never part of the Agent's deletion transaction. */
+const appendDeletedAgentThreadEvent$ = command(
+  async (
+    { set },
+    thread: {
+      readonly id: string;
+      readonly userId: string;
+      readonly orgId: string;
+      readonly agentId: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    await set(writeDb$).execute(
+      chatThreadEventInsertSql({
+        kind: "deleted",
+        userId: thread.userId,
+        orgId: thread.orgId,
+        chatThreadId: thread.id,
+        agentId: thread.agentId,
       }),
     );
-    const failed = results.filter((result) => {
-      return result.status === "rejected";
-    });
-    if (failed.length > 0) {
-      log.error("Failed to append deleted Agent thread events", {
-        agentId,
+    signal.throwIfAborted();
+  },
+);
+const appendDeletedAgentThreadEvents$ = command(
+  async (
+    { set },
+    args: {
+      readonly agentId: string;
+      readonly owners: readonly {
+        readonly id: string;
+        readonly userId: string;
+        readonly orgId: string;
+      }[];
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    for (
+      let offset = 0;
+      offset < args.owners.length;
+      offset += THREAD_DELETION_EVENT_BATCH_SIZE
+    ) {
+      const batch = args.owners.slice(
         offset,
-        failed: failed.length,
-        error: failed[0]?.reason,
+        offset + THREAD_DELETION_EVENT_BATCH_SIZE,
+      );
+      const results = await Promise.allSettled(
+        batch.map((thread) => {
+          return set(
+            appendDeletedAgentThreadEvent$,
+            { ...thread, agentId: args.agentId },
+            signal,
+          );
+        }),
+      );
+      signal.throwIfAborted();
+      const failed = results.filter((result) => {
+        return result.status === "rejected";
       });
+      if (failed.length > 0) {
+        log.error("Failed to append deleted Agent thread events", {
+          agentId: args.agentId,
+          offset,
+          failed: failed.length,
+          error: failed[0]?.reason,
+        });
+      }
     }
-  }
-}
+  },
+);
+
 export const deleteAgentById$ = command(
   async ({ set }, args: DeleteAgentArgs, signal: AbortSignal) => {
-    const writeDb = set(writeDb$);
     // The cascade destroys these rows. Read them in bounded keyset pages
     // before it starts; a concurrent creation missed by this read is tolerated.
-    const threadEventOwners = await readAgentThreadEventOwners(
-      writeDb,
-      args.agentId,
-      args.orgId,
+    const threadEventOwners = await set(
+      readAgentThreadEventOwners$,
+      args,
+      signal,
     );
     signal.throwIfAborted();
     const transaction = await settle(
-      writeDb.transaction(async (tx) => {
-        return await deleteAgentInTransaction(tx, args);
-      }),
+      // The previous delete transaction did not cancel midway through its
+      // lifecycle writes. Keep that boundary and check request abort afterward.
+      set(deleteAgentRows$, args, new AbortController().signal),
       signal,
     );
     if (!transaction.ok) {
@@ -380,10 +335,10 @@ export const deleteAgentById$ = command(
       logCommittedConversationDeletion("agent", result.conversationDeletion);
       // Single-statement appends run only after the delete commits. An event
       // failure must not retry or roll back the already committed deletion.
-      await appendDeletedAgentThreadEvents(
-        writeDb,
-        args.agentId,
-        threadEventOwners,
+      await set(
+        appendDeletedAgentThreadEvents$,
+        { agentId: args.agentId, owners: threadEventOwners },
+        new AbortController().signal,
       );
     }
     signal.throwIfAborted();

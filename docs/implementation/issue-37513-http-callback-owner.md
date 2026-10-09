@@ -22,6 +22,11 @@ Pi (`pi-memory-phase2-worker.service.ts`) and existing workflow execution
 (`routes/test-workflow-automation-execution.ts`). The real `writeDb$` command
 in `signals/external/db.ts` calls the existing `lib/db` connection provider.
 
+This is the original D3 caller snapshot. [#37440 batch017](issue-37440-batches/batch-017.md)
+subsequently removes the test-only workflow callback dispatcher. Its retained
+terminal-failure matrix uses real Runner completion/cancellation callbacks;
+the production dispatch callers and this D3 ownership implementation remain.
+
 ## HTTP protocol and cancellation
 
 Missing URL or encrypted secret still writes failed once and returns failure,

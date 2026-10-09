@@ -77,9 +77,19 @@ def test_json_preserves_occurrences_expansions_exact_ids_and_unidentified_remain
 @pytest.mark.parametrize(
     ("body", "reason", "quantity"),
     [
-        (b'{"data":[{"id":"1"}],"text":"' + b"a" * (256 * 1024) + b'"}', "identity_limit", 1),
-        (b'{"data":[{"id":"1"}]} trailing', "parse_fallback", 2),
-        (json.dumps({"data": [{"id": str(i)} for i in range(1001)]}).encode(), "identity_limit", 1),
+        pytest.param(
+            b'{"data":[{"id":"1"}],"text":"' + b"a" * (256 * 1024) + b'"}',
+            "identity_limit",
+            1,
+            id="oversized-body",
+        ),
+        pytest.param(b'{"data":[{"id":"1"}]} trailing', "parse_fallback", 2, id="trailing-json"),
+        pytest.param(
+            json.dumps({"data": [{"id": str(i)} for i in range(1001)]}).encode(),
+            "identity_limit",
+            1,
+            id="too-many-identities",
+        ),
     ],
 )
 def test_bounded_or_malformed_identity_inspection_preserves_original_count(

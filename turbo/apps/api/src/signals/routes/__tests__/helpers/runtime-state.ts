@@ -1,7 +1,5 @@
 import { randomUUID } from "node:crypto";
 
-import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
-
 import {
   testRuntimeStateContract,
   type TestRuntimeStateActionBody,
@@ -9,9 +7,9 @@ import {
 } from "@okouai/api-contracts/contracts/test-runtime-state";
 import { onTestFinished } from "vitest";
 
-import { createAppWithRoutes } from "../../../../app-factory-core";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
+import { createAppWithRoutes } from "../../../../app-factory-core";
 import type { UsagePricingResolution } from "../../../context/usage-pricing-resolution";
 
 import { testRuntimeStateRoutes } from "../../test-runtime-state";
@@ -60,25 +58,6 @@ async function postAction(
   );
   await expectOk(response, `runtime state action ${body.action}`);
   return await readJson<TestRuntimeStateActionResponse>(response);
-}
-
-export async function reconcileSocialKitDownloadsForTest(
-  context: TestContext,
-  downloadIds: readonly string[],
-  usagePricingResolution: UsagePricingResolution,
-): Promise<number> {
-  const response = await postAction(
-    context,
-    {
-      action: "reconcile-socialkit-downloads",
-      download_ids: [...downloadIds],
-    },
-    usagePricingResolution,
-  );
-  if (response.processed === undefined) {
-    throw new Error("SocialKit reconciliation fixture returned no count");
-  }
-  return response.processed;
 }
 
 interface BuiltInModelKeyFixture {
@@ -186,20 +165,6 @@ export async function readRunAutonomyBudgetFixture(
   return response.autonomy_budget ?? null;
 }
 
-export async function readRunFailureReasonFixture(
-  context: TestContext,
-  runId: string,
-): Promise<RunFailureReasonToken | null> {
-  const response = await postAction(context, {
-    action: "read-run-failure-reason",
-    run_id: runId,
-  });
-  if (!("failure_reason" in response)) {
-    throw new Error("readRunFailureReasonFixture missing failure_reason");
-  }
-  return response.failure_reason ?? null;
-}
-
 /**
  * Launch snapshots are intentionally writer-only in Stage 2, so persistence
  * cannot be observed through a production API. Keep this test-only exception
@@ -298,27 +263,6 @@ export async function readLatestWorkflowAutomationRunFixture(
     : null;
 }
 
-export async function readOfficialWorkflowRunStateFixture(
-  context: TestContext,
-  runId: string,
-): Promise<
-  NonNullable<TestRuntimeStateActionResponse["official_workflow_run_state"]>
-> {
-  const response = await postAction(context, {
-    action: "read-official-workflow-run-state",
-    run_id: runId,
-  });
-  if (!("official_workflow_run_state" in response)) {
-    throw new Error(
-      "readOfficialWorkflowRunStateFixture missing official_workflow_run_state",
-    );
-  }
-  if (!response.official_workflow_run_state) {
-    throw new Error("Official Workflow Run is unavailable");
-  }
-  return response.official_workflow_run_state;
-}
-
 export async function stageOfficialWorkflowAutomationFixture(
   context: TestContext,
   automationId: string,
@@ -340,26 +284,6 @@ export async function clearRunApiStart(
     action: "clear-run-api-start",
     run_id: runId,
   });
-}
-
-/**
- * Move one owned running run to an elapsed-time boundary and execute the
- * production steering flow without scanning rows owned by other test files.
- */
-export async function steerRunTimeBudgetFixture(
-  context: TestContext,
-  runId: string,
-  elapsedMs: number,
-): Promise<NonNullable<TestRuntimeStateActionResponse["run_time_budget"]>> {
-  const response = await postAction(context, {
-    action: "steer-run-time-budget",
-    run_id: runId,
-    elapsed_ms: elapsedMs,
-  });
-  if (!response.run_time_budget) {
-    throw new Error("steerRunTimeBudgetFixture missing run_time_budget");
-  }
-  return response.run_time_budget;
 }
 
 export async function clearWorkflowAutomationEventConnectorAsPreviousApi(

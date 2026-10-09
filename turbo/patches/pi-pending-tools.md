@@ -32,6 +32,24 @@ tools without emitting or appending that assistant or its original user again.
 It retains argument preparation, hooks, sequential/parallel execution, partial
 updates, result metadata, persistence, turn preparation, and the length guard.
 
+## Stage 1 request projectors
+
+The pi-ai patch adds `preparePayload` to the Responses, Completions and Codex
+Responses modules, with matching declarations. Each function resolves the
+transcript exactly as its stream does and calls that stream's existing body
+builder. Codex also retains its existing cache-key normalization. These pure
+functions perform no credential lookup or HTTP and do not modify the ordinary
+stream paths.
+
+Stage 1 uses them to measure the complete provider body before API-owned
+admission. Its prepared execution supplies that measured body to the existing
+stream adapter, preserving transport, cancellation, status observation and
+usage handling. The [HTTP contract suite](../packages/pi-agent-runtime/src/stage1-provider-request.test.ts)
+covers all three dialects, exact serialized bodies, affinity/account headers,
+pre-HTTP cancellation and usage-bearing versus usage-free failures. Frozen
+installation and runtime/API/CLI consumers must be checked after patch changes;
+the queue-timeout and diagnostic-retry patches remain independent.
+
 ## Cancellation convergence on 0.86.1
 
 Through 0.85.1 this integration threaded an explicit signal through the shared
@@ -187,8 +205,28 @@ both retry owners then keep retrying an expired queue; the regression covers
 that case directly.
 
 The same patch carries the structured retry classification merged for #35819
-(`OKOU_RETRYABLE_MODEL_REQUEST_REASONS` / `isOkouRetryableModelRequest`),
-ported from the 0.85.1 patch during this upgrade.
+(`OKOU_RETRYABLE_MODEL_REQUEST_REASONS` / `okouModelRequestRetryDecision`),
+ported from the 0.85.1 patch during this upgrade. For #37937, the latest owned
+`okou_model_request` diagnostic explicitly vetoes native assistant and summary
+retries when its reason is `safety_policy_refusal`. A provider link containing
+`503` or `500` must not let the generic text matcher retry that refusal. The
+existing transient allowlist, retry budgets and terminal text guards are
+unchanged; absent or unclassified diagnostics retain native text matching.
+`model-structured-retry.test.ts` exercises enabled-budget sessions over HTTP 200
+and code-less HTTP 503 with canonical, numeric and redacted links, plus a real
+unclassified HTTP-200 transient. Original error text remains intact.
+
+The existing `pi-coding-agent@0.87.1` patch also keeps a failed assistant message
+whose latest owned diagnostic is `safety_policy_refusal` out of `_checkCompaction`.
+This applies before automatic overflow recovery and threshold summarization:
+opaque link text such as `context_length_exceeded` must not cause another model
+request or omit the refused attempt from history. The same real-session regression
+uses prior history and enabled compaction over HTTP 200 / 503, and verifies that
+the refusal creates no `context_edit` or `compaction` entry. A genuine structured
+context overflow still produces one compaction and a successful continuation.
+Manual compaction, ordinary recovery settings and failed/nonzero semantics are
+unchanged. Remove this narrow guard only when pinned upstream honors the same
+owned terminal reason at automatic recovery and these regressions stay green.
 
 Remove these hunks and their helper together only when the pinned upstream SDK
 implements the same terminal behavior at both retry owners and these boundary

@@ -1,4 +1,18 @@
 import {
+  dueCondition,
+  piMemoryStage1ClaimCandidatePlan,
+  piMemoryStage1ClaimTerminalPlan,
+  piMemoryStage1ClaimLeasePlan,
+} from "./pi-memory-stage1-claim-plan";
+import {
+  piMemoryStage1SelectionLockPlans,
+  piMemoryStage1SelectionSourcePlans,
+  piMemoryStage1SelectionThreadEligible,
+  piMemoryStage1SelectionRunEligible,
+  piMemoryStage1SelectionConversationPlan,
+  piMemoryStage1SelectionSourceMatches,
+} from "./pi-memory-stage1-selection-plan";
+import {
   featureSwitchContextFromRows,
   userFeatureSwitchRowCondition,
 } from "./feature-switch-scope";
@@ -8,34 +22,29 @@ import {
   type UsagePricingResolution,
 } from "../context/usage-pricing-resolution";
 import {
-  observePiMemoryStage1Cost,
+  observePiMemoryStage1Cost$,
   observePiMemoryStage1MissingUsage,
 } from "./pi-memory-stage1-cost.service";
-import {
-  checkPiMemoryQuota,
-  PiMemoryQuotaError,
-} from "./pi-memory-quota.service";
-import { checkOrgCreditsForRunAdmission$ } from "./run-admission.service";
-import { loadModelCatalog$, type ModelCatalog } from "./model-catalog.service";
+
 import {
   PiMemoryStage1ProviderError,
   PiMemoryStage1BudgetError,
   type PiMemoryStage1Evidence,
   projectPiMemoryStage1Evidence,
   redactPiMemoryStage1Secrets,
-  runPiMemoryStage1Extraction,
+  preparePiMemoryStage1Extraction,
+  runPiMemoryStage1PreparedExtraction,
   type PiMemoryStage1ProviderResult,
 } from "@okouai/pi-agent-runtime/api";
 import {
-  resolvePiMemoryStage1Credential,
+  resolvePiMemoryStage1Credential$,
+  validatePiMemoryStage1Credential$,
   PiMemoryStage1CredentialError,
-  PiMemoryStage1CredentialRefreshError,
   type PiMemoryStage1CredentialResult,
 } from "./pi-memory-stage1-credential.service";
 import { piMemoryStage1Selections } from "@okouai/db/schema/pi-memory-stage1-schedule";
 import {
-  consumePiMemoryStage1Days,
-  validatePiMemoryStage1Selection,
+  consumePiMemoryStage1Days$,
   piMemoryStage1UtcDay,
   type PiMemoryStage1Selection,
 } from "./pi-memory-stage1-schedule.service";
@@ -53,25 +62,16 @@ import { blobs } from "@okouai/db/schema/blob";
 import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-candidate";
 import { storages } from "@okouai/db/schema/storage";
 import { command } from "ccstate";
-import {
-  and,
-  asc,
-  eq,
-  getTableColumns,
-  gt,
-  inArray,
-  lte,
-  or,
-} from "drizzle-orm";
+import { and, asc, eq, getTableColumns, gt } from "drizzle-orm";
 import { z } from "zod";
 
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 
 import {
-  downloadS3BufferWithMaxBytes,
+  downloadS3BufferWithMaxBytes$,
   S3ObjectSizeLimitError,
 } from "../external/s3";
 import {
@@ -80,8 +80,8 @@ import {
   settle,
   settleIncludingAbort,
 } from "../utils";
-import { commitPiMemoryStage1Candidate } from "./pi-memory-stage1-candidate.service";
-import { recordPiMemoryStage1Usage } from "./pi-memory-stage1-usage.service";
+import { commitPiMemoryStage1Candidate$ } from "./pi-memory-stage1-candidate.service";
+import { recordPiMemoryStage1Usage$ } from "./pi-memory-stage1-usage.service";
 import {
   gunzipSessionHistoryBufferWithMaxBytes,
   unzstdSessionHistoryBufferWithMaxBytes,
@@ -114,13 +114,7 @@ const stage1OutputSchema = z
   })
   .strict();
 
-interface PiMemoryStage1Scope {
-  readonly memoryStorageIds: readonly string[];
-  readonly piSessionId?: string;
-}
-
 interface PiMemoryStage1WorkerInput {
-  readonly scope: PiMemoryStage1Scope | undefined;
   readonly currentTime: Date;
 }
 
@@ -213,253 +207,252 @@ class DisabledWorkError extends Error {
   }
 }
 
-function scopeCondition(scope: PiMemoryStage1Scope | undefined) {
-  return scope
-    ? and(
-        inArray(
-          piMemoryStage1Candidates.memoryStorageId,
-          scope.memoryStorageIds,
+const selectDueCandidateRows$ = command(
+  async ({ get }, input: PiMemoryStage1WorkerInput) => {
+    const db = get(db$);
+    return await db
+      .select({
+        selection: getTableColumns(piMemoryStage1Selections),
+        memoryStorageId: piMemoryStage1Candidates.memoryStorageId,
+        piSessionId: piMemoryStage1Candidates.piSessionId,
+        orgId: piMemoryStage1Candidates.orgId,
+        userId: piMemoryStage1Candidates.userId,
+        sourceHistoryHash: piMemoryStage1Candidates.sourceHistoryHash,
+        sourceCompletedAt: piMemoryStage1Candidates.sourceCompletedAt,
+        status: piMemoryStage1Candidates.status,
+        retryCount: piMemoryStage1Candidates.retryCount,
+        blobEncoding: blobs.encoding,
+        blobRawSize: blobs.rawSize,
+        blobEncodedSize: blobs.encodedSize,
+      })
+      .from(piMemoryStage1Candidates)
+      .innerJoin(
+        piMemoryStage1Selections,
+        and(
+          eq(
+            piMemoryStage1Selections.memoryStorageId,
+            piMemoryStage1Candidates.memoryStorageId,
+          ),
+          eq(
+            piMemoryStage1Selections.piSessionId,
+            piMemoryStage1Candidates.piSessionId,
+          ),
+          eq(piMemoryStage1Selections.orgId, piMemoryStage1Candidates.orgId),
+          eq(piMemoryStage1Selections.userId, piMemoryStage1Candidates.userId),
+          eq(
+            piMemoryStage1Selections.sourceRunId,
+            piMemoryStage1Candidates.sourceRunId,
+          ),
+          eq(
+            piMemoryStage1Selections.sourceHistoryHash,
+            piMemoryStage1Candidates.sourceHistoryHash,
+          ),
+          eq(
+            piMemoryStage1Selections.sourceCompletedAt,
+            piMemoryStage1Candidates.sourceCompletedAt,
+          ),
+          eq(
+            piMemoryStage1Selections.day,
+            piMemoryStage1UtcDay(input.currentTime),
+          ),
         ),
-        scope.piSessionId
-          ? eq(piMemoryStage1Candidates.piSessionId, scope.piSessionId)
-          : undefined,
       )
-    : undefined;
-}
+      .innerJoin(
+        storages,
+        and(
+          eq(storages.id, piMemoryStage1Candidates.memoryStorageId),
+          eq(storages.orgId, piMemoryStage1Candidates.orgId),
+          eq(storages.userId, piMemoryStage1Candidates.userId),
+          eq(storages.name, MEMORY_ARTIFACT_NAME),
+        ),
+      )
+      .innerJoin(
+        blobs,
+        eq(blobs.hash, piMemoryStage1Candidates.sourceHistoryHash),
+      )
+      .where(dueCondition(input.currentTime))
+      .orderBy(
+        asc(piMemoryStage1Candidates.eligibleAt),
+        asc(piMemoryStage1Candidates.memoryStorageId),
+        asc(piMemoryStage1Candidates.piSessionId),
+      )
+      .limit(PI_MEMORY_STAGE1_SCAN_LIMIT);
+  },
+);
 
-function dueCondition(currentTime: Date) {
-  return or(
-    and(
-      eq(piMemoryStage1Candidates.status, "pending"),
-      lte(piMemoryStage1Candidates.eligibleAt, currentTime),
-    ),
-    and(
-      eq(piMemoryStage1Candidates.status, "retryable_failure"),
-      lte(piMemoryStage1Candidates.retryAt, currentTime),
-    ),
-    and(
-      eq(piMemoryStage1Candidates.status, "leased"),
-      lte(piMemoryStage1Candidates.leaseExpiresAt, currentTime),
-    ),
-  );
-}
+type DueCandidate = Omit<
+  ClaimedPiMemoryStage1Work,
+  "leaseToken" | "attemptCount"
+>;
+type SelectionClaim =
+  | { readonly kind: "stale" | "unavailable" }
+  | { readonly kind: "terminal"; readonly updated: boolean }
+  | { readonly kind: "claimed"; readonly work: ClaimedPiMemoryStage1Work };
+const claimPiMemoryStage1Selection$ = command(
+  async (
+    { set },
+    row: DueCandidate,
+    currentTime: Date,
+  ): Promise<SelectionClaim> => {
+    // Frozen selection/source authority and lease publication commit together,
+    // taking Thread -> Storage -> day -> candidate locks in order.
+    return await set(writeDb$).transaction(
+      async (tx): Promise<SelectionClaim> => {
+        const selection = row.selection;
+        let selectionValid = false;
+        selectionValidation: {
+          if (selection.day !== piMemoryStage1UtcDay(currentTime)) {
+            break selectionValidation;
+          }
+          const locks = piMemoryStage1SelectionLockPlans(selection);
+          const [lockedThread] = await tx.select().from(locks.thread);
+          if (!lockedThread) {
+            break selectionValidation;
+          }
+          await tx.select().from(locks.storage);
+          const [day] = await tx.select().from(locks.day);
+          if (
+            !day?.consumedAt ||
+            day.triggerThreadId === selection.chatThreadId
+          ) {
+            break selectionValidation;
+          }
+          const [frozen] = await tx.select().from(locks.frozen);
+          // A blocked lock acquisition may cross midnight after the initial check.
+          if (!frozen || selection.day !== piMemoryStage1UtcDay(nowDate())) {
+            break selectionValidation;
+          }
+          const features = await tx.select().from(locks.features);
+          const context = featureSwitchContextFromRows(
+            selection.orgId,
+            selection.userId,
+            features,
+          );
+          if (!isFeatureEnabled(FeatureSwitchKey.PiMemory, context)) {
+            break selectionValidation;
+          }
+          const sourcePlans = piMemoryStage1SelectionSourcePlans(selection);
+          const [thread] = await tx.select().from(sourcePlans.thread);
+          if (!thread) {
+            break selectionValidation;
+          }
+          const [active] = await tx.select().from(sourcePlans.active);
+          if (
+            !piMemoryStage1SelectionThreadEligible(
+              thread,
+              !!active,
+              currentTime,
+            )
+          ) {
+            break selectionValidation;
+          }
+          const [latest] = await tx.select().from(sourcePlans.latest);
+          if (
+            !piMemoryStage1SelectionRunEligible(latest, selection, currentTime)
+          ) {
+            break selectionValidation;
+          }
+          const [source] = await tx
+            .select()
+            .from(piMemoryStage1SelectionConversationPlan(selection, latest));
+          if (
+            !piMemoryStage1SelectionSourceMatches(
+              selection,
+              latest,
+              thread,
+              source,
+            )
+          ) {
+            break selectionValidation;
+          }
 
-async function markLockedTerminal(
-  db: Db,
-  row: Pick<
-    ClaimedPiMemoryStage1Work,
-    "memoryStorageId" | "piSessionId" | "sourceHistoryHash"
-  >,
-  currentTime: Date,
-  errorClass: string,
-): Promise<boolean> {
-  const [updated] = await db
-    .update(piMemoryStage1Candidates)
-    .set({
-      status: "terminal_failure",
-      leaseToken: null,
-      leaseExpiresAt: null,
-      retryAt: null,
-      lastErrorClass: errorClass,
-      rawMemory: null,
-      rolloutSummary: null,
-      rolloutSlug: null,
-      generatedAt: null,
-      lastSelectedSourceHistoryHash: null,
-      updatedAt: currentTime,
-    })
-    .where(
-      and(
-        eq(piMemoryStage1Candidates.memoryStorageId, row.memoryStorageId),
-        eq(piMemoryStage1Candidates.piSessionId, row.piSessionId),
-        eq(piMemoryStage1Candidates.sourceHistoryHash, row.sourceHistoryHash),
-      ),
-    )
-    .returning({ memoryStorageId: piMemoryStage1Candidates.memoryStorageId });
-  return updated !== undefined;
-}
-
-async function selectDueCandidateRows(
-  db: Db,
-  input: PiMemoryStage1WorkerInput,
-) {
-  return await db
-    .select({
-      selection: getTableColumns(piMemoryStage1Selections),
-      memoryStorageId: piMemoryStage1Candidates.memoryStorageId,
-      piSessionId: piMemoryStage1Candidates.piSessionId,
-      orgId: piMemoryStage1Candidates.orgId,
-      userId: piMemoryStage1Candidates.userId,
-      sourceHistoryHash: piMemoryStage1Candidates.sourceHistoryHash,
-      sourceCompletedAt: piMemoryStage1Candidates.sourceCompletedAt,
-      status: piMemoryStage1Candidates.status,
-      retryCount: piMemoryStage1Candidates.retryCount,
-      blobEncoding: blobs.encoding,
-      blobRawSize: blobs.rawSize,
-      blobEncodedSize: blobs.encodedSize,
-    })
-    .from(piMemoryStage1Candidates)
-    .innerJoin(
-      piMemoryStage1Selections,
-      and(
-        eq(
-          piMemoryStage1Selections.memoryStorageId,
-          piMemoryStage1Candidates.memoryStorageId,
-        ),
-        eq(
-          piMemoryStage1Selections.piSessionId,
-          piMemoryStage1Candidates.piSessionId,
-        ),
-        eq(piMemoryStage1Selections.orgId, piMemoryStage1Candidates.orgId),
-        eq(piMemoryStage1Selections.userId, piMemoryStage1Candidates.userId),
-        eq(
-          piMemoryStage1Selections.sourceRunId,
-          piMemoryStage1Candidates.sourceRunId,
-        ),
-        eq(
-          piMemoryStage1Selections.sourceHistoryHash,
-          piMemoryStage1Candidates.sourceHistoryHash,
-        ),
-        eq(
-          piMemoryStage1Selections.sourceCompletedAt,
-          piMemoryStage1Candidates.sourceCompletedAt,
-        ),
-        eq(
-          piMemoryStage1Selections.day,
-          piMemoryStage1UtcDay(input.currentTime),
-        ),
-      ),
-    )
-    .innerJoin(
-      storages,
-      and(
-        eq(storages.id, piMemoryStage1Candidates.memoryStorageId),
-        eq(storages.orgId, piMemoryStage1Candidates.orgId),
-        eq(storages.userId, piMemoryStage1Candidates.userId),
-        eq(storages.name, MEMORY_ARTIFACT_NAME),
-      ),
-    )
-    .innerJoin(
-      blobs,
-      eq(blobs.hash, piMemoryStage1Candidates.sourceHistoryHash),
-    )
-    .where(and(dueCondition(input.currentTime), scopeCondition(input.scope)))
-    .orderBy(
-      asc(piMemoryStage1Candidates.eligibleAt),
-      asc(piMemoryStage1Candidates.memoryStorageId),
-      asc(piMemoryStage1Candidates.piSessionId),
-    )
-    .limit(input.scope?.piSessionId ? 1 : PI_MEMORY_STAGE1_SCAN_LIMIT);
-}
-
-export async function claimPiMemoryStage1Work(
-  db: Db,
-  input: PiMemoryStage1WorkerInput,
-): Promise<ClaimResult> {
-  await consumePiMemoryStage1Days(
-    db,
-    input.currentTime,
-    input.scope?.memoryStorageIds,
-  );
-  const rows = await selectDueCandidateRows(db, input);
-  let staleDiscarded = 0;
-  let terminalFailure = 0;
-  const claimed: ClaimedPiMemoryStage1Work[] = [];
-  for (const row of rows) {
-    if (claimed.length >= PI_MEMORY_STAGE1_CLAIM_LIMIT) {
-      break;
-    }
-    await db.transaction(async (tx) => {
-      if (
-        !(await validatePiMemoryStage1Selection(
-          tx,
-          row.selection,
-          input.currentTime,
-        ))
-      ) {
-        staleDiscarded += 1;
-        log.debug("Pi memory Stage 1 claim skipped", {
-          userId: row.userId,
-          day: row.selection.day,
-          chatThreadId: row.selection.chatThreadId,
-          outcome: "stale_selection",
-        });
-        return;
-      }
-      const [current] = await tx
-        .select()
-        .from(piMemoryStage1Candidates)
-        .where(
-          and(
-            eq(piMemoryStage1Candidates.memoryStorageId, row.memoryStorageId),
-            eq(piMemoryStage1Candidates.piSessionId, row.piSessionId),
-            eq(piMemoryStage1Candidates.sourceRunId, row.selection.sourceRunId),
-            eq(
-              piMemoryStage1Candidates.sourceHistoryHash,
-              row.sourceHistoryHash,
-            ),
-            eq(
-              piMemoryStage1Candidates.sourceCompletedAt,
-              row.selection.sourceCompletedAt,
-            ),
-            dueCondition(input.currentTime),
-          ),
-        )
-        .for("update", { skipLocked: true });
-      if (!current) {
-        return;
-      }
-      const reclaimedFailureCount =
-        current.retryCount + (current.status === "leased" ? 1 : 0);
-      if (reclaimedFailureCount >= PI_MEMORY_STAGE1_MAX_ATTEMPTS) {
-        if (
-          await markLockedTerminal(
-            tx,
-            row,
-            input.currentTime,
-            "attempts_exhausted",
-          )
-        ) {
-          terminalFailure += 1;
+          selectionValid = true;
         }
-        return;
-      }
-      const leaseToken = randomUUID();
-      await tx
-        .update(piMemoryStage1Candidates)
-        .set({
-          status: "leased",
+        if (!selectionValid) {
+          log.debug("Pi memory Stage 1 claim skipped", {
+            userId: row.userId,
+            day: row.selection.day,
+            chatThreadId: row.selection.chatThreadId,
+            outcome: "stale_selection",
+          });
+          return { kind: "stale" };
+        }
+        const [current] = await tx
+          .select()
+          .from(piMemoryStage1ClaimCandidatePlan(row, currentTime));
+        if (!current) {
+          return { kind: "unavailable" };
+        }
+        const reclaimedFailureCount =
+          current.retryCount + (current.status === "leased" ? 1 : 0);
+        if (reclaimedFailureCount >= PI_MEMORY_STAGE1_MAX_ATTEMPTS) {
+          const terminal = piMemoryStage1ClaimTerminalPlan(row, currentTime);
+          const [updated] = await tx
+            .update(piMemoryStage1Candidates)
+            .set(terminal.values)
+            .where(terminal.condition)
+            .returning(terminal.returning);
+          return { kind: "terminal", updated: !!updated };
+        }
+        const leaseToken = randomUUID();
+        const lease = piMemoryStage1ClaimLeasePlan(
+          row,
+          currentTime,
           leaseToken,
-          leaseExpiresAt: new Date(
-            input.currentTime.getTime() + PI_MEMORY_STAGE1_LEASE_MS,
-          ),
-          retryAt: null,
-          retryCount: reclaimedFailureCount,
-          lastErrorClass: null,
-          updatedAt: input.currentTime,
-        })
-        .where(
-          and(
-            eq(piMemoryStage1Candidates.memoryStorageId, row.memoryStorageId),
-            eq(piMemoryStage1Candidates.piSessionId, row.piSessionId),
-          ),
+          reclaimedFailureCount,
+          PI_MEMORY_STAGE1_LEASE_MS,
         );
-      claimed.push({
-        ...row,
-        leaseToken,
-        attemptCount: reclaimedFailureCount + 1,
-      });
-    });
-  }
-  return {
-    scanned: rows.length,
-    sourceActive: 0,
-    staleDiscarded,
-    sourceExpired: 0,
-    terminalFailure,
-    claimed,
-  };
-}
+        await tx
+          .update(piMemoryStage1Candidates)
+          .set(lease.values)
+          .where(lease.condition);
+        return {
+          kind: "claimed",
+          work: { ...row, leaseToken, attemptCount: reclaimedFailureCount + 1 },
+        };
+      },
+    );
+  },
+);
+const claimPiMemoryStage1Work$ = command(
+  async ({ set }, input: PiMemoryStage1WorkerInput): Promise<ClaimResult> => {
+    // Preserve DB initialization before scheduling and the original whole-claim
+    // cancellation boundary owned by executePiMemoryStage1Work$.
+    set(writeDb$);
+    await set(consumePiMemoryStage1Days$, input.currentTime);
+    const rows = await set(selectDueCandidateRows$, input);
+    let staleDiscarded = 0,
+      terminalFailure = 0;
+    const claimed: ClaimedPiMemoryStage1Work[] = [];
+    for (const row of rows) {
+      if (claimed.length >= PI_MEMORY_STAGE1_CLAIM_LIMIT) {
+        break;
+      }
+      const result = await set(
+        claimPiMemoryStage1Selection$,
+        row,
+        input.currentTime,
+      );
+      if (result.kind === "stale") {
+        staleDiscarded += 1;
+      }
+      if (result.kind === "terminal" && result.updated) {
+        terminalFailure += 1;
+      }
+      if (result.kind === "claimed") {
+        claimed.push(result.work);
+      }
+    }
+    return {
+      scanned: rows.length,
+      sourceActive: 0,
+      staleDiscarded,
+      sourceExpired: 0,
+      terminalFailure,
+      claimed,
+    };
+  },
+);
 
 function validatedBlobEncoding(
   work: ClaimedPiMemoryStage1Work,
@@ -509,7 +502,7 @@ async function decodeHistory(
 
 const loadAndProjectHistory$ = command(
   async (
-    { get },
+    { set },
     args: {
       readonly work: ClaimedPiMemoryStage1Work;
     },
@@ -521,13 +514,14 @@ const loadAndProjectHistory$ = command(
       encoding,
     );
     const downloaded = await settle(
-      get(
-        downloadS3BufferWithMaxBytes(
-          env("R2_USER_STORAGES_BUCKET_NAME"),
+      set(
+        downloadS3BufferWithMaxBytes$,
+        {
+          bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
           key,
-          args.work.blobEncodedSize,
-          signal,
-        ),
+          maxBytes: args.work.blobEncodedSize,
+        },
+        signal,
       ),
       signal,
     );
@@ -572,57 +566,55 @@ const loadAndProjectHistory$ = command(
   },
 );
 
-async function commitWorkResult(
-  db: Db,
-  work: ClaimedPiMemoryStage1Work,
-  result:
-    | {
-        readonly kind: "succeeded";
-        readonly rawMemory: string;
-        readonly rolloutSummary: string;
-        readonly rolloutSlug?: string;
-      }
-    | { readonly kind: "succeeded_no_output" }
-    | { readonly kind: "retryable_failure"; readonly errorClass: string }
-    | { readonly kind: "terminal_failure"; readonly errorClass: string },
-  options?: { readonly revalidateSelection: boolean },
-): Promise<boolean> {
-  const committedAt = nowDate();
-  const candidateResult =
-    result.kind === "retryable_failure"
-      ? work.attemptCount >= PI_MEMORY_STAGE1_MAX_ATTEMPTS
-        ? {
-            kind: "terminal_failure" as const,
-            errorClass: "attempts_exhausted",
-          }
-        : {
-            kind: result.kind,
-            errorClass: result.errorClass,
-            retryAt: new Date(
-              committedAt.getTime() + PI_MEMORY_STAGE1_RETRY_DELAY_MS,
-            ),
-          }
-      : result;
-  return await db.transaction(async (tx) => {
-    if (
-      options?.revalidateSelection &&
-      !(await validatePiMemoryStage1Selection(tx, work.selection, committedAt))
-    ) {
-      return false;
-    }
-    return await commitPiMemoryStage1Candidate(tx, {
-      memoryStorageId: work.memoryStorageId,
-      orgId: work.orgId,
-      userId: work.userId,
-      piSessionId: work.piSessionId,
-      sourceHistoryHash: work.sourceHistoryHash,
-      leaseToken: work.leaseToken,
-      committedAt,
-      result: candidateResult,
-      selectedSource: work.selection,
-    });
-  });
-}
+const commitWorkResult$ = command(
+  async (
+    { set },
+    work: ClaimedPiMemoryStage1Work,
+    result:
+      | {
+          readonly kind: "succeeded";
+          readonly rawMemory: string;
+          readonly rolloutSummary: string;
+          readonly rolloutSlug?: string;
+        }
+      | { readonly kind: "succeeded_no_output" }
+      | { readonly kind: "retryable_failure"; readonly errorClass: string }
+      | { readonly kind: "terminal_failure"; readonly errorClass: string },
+    options?: { readonly revalidateSelection: boolean },
+  ): Promise<boolean> => {
+    const committedAt = nowDate();
+    const candidateResult =
+      result.kind === "retryable_failure"
+        ? work.attemptCount >= PI_MEMORY_STAGE1_MAX_ATTEMPTS
+          ? {
+              kind: "terminal_failure" as const,
+              errorClass: "attempts_exhausted",
+            }
+          : {
+              kind: result.kind,
+              errorClass: result.errorClass,
+              retryAt: new Date(
+                committedAt.getTime() + PI_MEMORY_STAGE1_RETRY_DELAY_MS,
+              ),
+            }
+        : result;
+    return await set(
+      commitPiMemoryStage1Candidate$,
+      {
+        memoryStorageId: work.memoryStorageId,
+        orgId: work.orgId,
+        userId: work.userId,
+        piSessionId: work.piSessionId,
+        sourceHistoryHash: work.sourceHistoryHash,
+        leaseToken: work.leaseToken,
+        committedAt,
+        result: candidateResult,
+        selectedSource: work.selection,
+      },
+      options?.revalidateSelection ? work.selection : undefined,
+    );
+  },
+);
 
 function byteLength(value: string): number {
   return Buffer.byteLength(value, "utf8");
@@ -697,19 +689,13 @@ function logOutcome(args: {
 
 function isCredentialFailure(
   error: unknown,
-): error is
-  | PiMemoryStage1CredentialError
-  | PiMemoryStage1CredentialRefreshError {
-  return (
-    error instanceof PiMemoryStage1CredentialError ||
-    error instanceof PiMemoryStage1CredentialRefreshError
-  );
+): error is PiMemoryStage1CredentialError {
+  return error instanceof PiMemoryStage1CredentialError;
 }
 
 function workErrorClass(error: unknown): string {
   return error instanceof PermanentSourceError ||
     error instanceof RetryableWorkError ||
-    error instanceof PiMemoryQuotaError ||
     isCredentialFailure(error) ||
     error instanceof PiMemoryStage1BudgetError ||
     error instanceof DisabledWorkError
@@ -719,96 +705,101 @@ function workErrorClass(error: unknown): string {
       : "worker_failure";
 }
 
-async function failWork(
-  db: Db,
-  work: ClaimedPiMemoryStage1Work,
-  error: unknown,
-  startedAt: number,
-): Promise<WorkOutcome> {
-  const permanent =
-    error instanceof PermanentSourceError ||
-    error instanceof DisabledWorkError ||
-    error instanceof PiMemoryStage1CredentialError ||
-    error instanceof PiMemoryStage1BudgetError;
-  const errorClass = workErrorClass(error);
-  const committedResult = await settleIncludingAbort(
-    commitWorkResult(
-      db,
-      work,
-      permanent
-        ? { kind: "terminal_failure", errorClass }
-        : { kind: "retryable_failure", errorClass },
-      {
-        revalidateSelection:
-          isCredentialFailure(error) || error instanceof PiMemoryQuotaError,
-      },
-    ),
-  );
-  if (!committedResult.ok || !committedResult.value) {
+const failWork$ = command(
+  async (
+    { set },
+    work: ClaimedPiMemoryStage1Work,
+    error: unknown,
+    startedAt: number,
+  ): Promise<WorkOutcome> => {
+    const permanent =
+      error instanceof PermanentSourceError ||
+      error instanceof DisabledWorkError ||
+      error instanceof PiMemoryStage1CredentialError ||
+      error instanceof PiMemoryStage1BudgetError;
+    const errorClass = workErrorClass(error);
+    const committedResult = await settleIncludingAbort(
+      set(
+        commitWorkResult$,
+        work,
+        permanent
+          ? { kind: "terminal_failure", errorClass }
+          : { kind: "retryable_failure", errorClass },
+        {
+          revalidateSelection: isCredentialFailure(error),
+        },
+      ),
+    );
+    if (!committedResult.ok || !committedResult.value) {
+      logOutcome({
+        work,
+        outcome: "stale_discarded",
+        durationMs: performance.now() - startedAt,
+        errorClass: committedResult.ok ? errorClass : "commit_failed",
+      });
+      return { kind: "stale_discarded" };
+    }
+    const terminal =
+      permanent || work.attemptCount >= PI_MEMORY_STAGE1_MAX_ATTEMPTS;
+    const kind = terminal ? "terminal_failure" : "retryable_failure";
     logOutcome({
       work,
-      outcome: "stale_discarded",
+      outcome: kind,
       durationMs: performance.now() - startedAt,
-      errorClass: committedResult.ok ? errorClass : "commit_failed",
+      errorClass: terminal && !permanent ? "attempts_exhausted" : errorClass,
     });
-    return { kind: "stale_discarded" };
-  }
-  const terminal =
-    permanent || work.attemptCount >= PI_MEMORY_STAGE1_MAX_ATTEMPTS;
-  const kind = terminal ? "terminal_failure" : "retryable_failure";
-  logOutcome({
-    work,
-    outcome: kind,
-    durationMs: performance.now() - startedAt,
-    errorClass: terminal && !permanent ? "attempts_exhausted" : errorClass,
-  });
-  return { kind };
-}
+    return { kind };
+  },
+);
 
-async function retryOwnedWorkAfterAbort(
-  db: Db,
-  owned: ReadonlySet<ClaimedPiMemoryStage1Work>,
-  reason: unknown,
-): Promise<void> {
-  await Promise.all(
-    [...owned].map(async (work) => {
-      await failWork(db, work, reason, performance.now());
-    }),
-  );
-}
-
-async function partitionWorkByPiMemorySwitch(
-  db: Db,
-  claimed: readonly ClaimedPiMemoryStage1Work[],
-  signal: AbortSignal,
-): Promise<{
-  readonly enabled: readonly ClaimedPiMemoryStage1Work[];
-  readonly disabled: readonly ClaimedPiMemoryStage1Work[];
-}> {
-  const enabled: ClaimedPiMemoryStage1Work[] = [];
-  const disabled: ClaimedPiMemoryStage1Work[] = [];
-  for (const work of claimed) {
-    // Each candidate's own owner decides, never the cron caller.
-    const featureSwitchContextRows0 = await db
-      .select({
-        userId: userFeatureSwitches.userId,
-        switches: userFeatureSwitches.switches,
-      })
-      .from(userFeatureSwitches)
-      .where(userFeatureSwitchRowCondition(work.orgId, work.userId));
-    const context = featureSwitchContextFromRows(
-      work.orgId,
-      work.userId,
-      featureSwitchContextRows0,
+const retryOwnedWorkAfterAbort$ = command(
+  async (
+    { set },
+    owned: ReadonlySet<ClaimedPiMemoryStage1Work>,
+    reason: unknown,
+  ): Promise<void> => {
+    await Promise.all(
+      [...owned].map(async (work) => {
+        await set(failWork$, work, reason, performance.now());
+      }),
     );
-    signal.throwIfAborted();
-    (isFeatureEnabled(FeatureSwitchKey.PiMemory, context)
-      ? enabled
-      : disabled
-    ).push(work);
-  }
-  return { enabled, disabled };
-}
+  },
+);
+
+const partitionWorkByPiMemorySwitch$ = command(
+  async (
+    { get },
+    claimed: readonly ClaimedPiMemoryStage1Work[],
+    signal: AbortSignal,
+  ): Promise<{
+    readonly enabled: readonly ClaimedPiMemoryStage1Work[];
+    readonly disabled: readonly ClaimedPiMemoryStage1Work[];
+  }> => {
+    const db = get(db$);
+    const enabled: ClaimedPiMemoryStage1Work[] = [];
+    const disabled: ClaimedPiMemoryStage1Work[] = [];
+    for (const work of claimed) {
+      // Each candidate's own owner decides, never the cron caller.
+      const context = featureSwitchContextFromRows(
+        work.orgId,
+        work.userId,
+        await db
+          .select({
+            userId: userFeatureSwitches.userId,
+            switches: userFeatureSwitches.switches,
+          })
+          .from(userFeatureSwitches)
+          .where(userFeatureSwitchRowCondition(work.orgId, work.userId)),
+      );
+      signal.throwIfAborted();
+      (isFeatureEnabled(FeatureSwitchKey.PiMemory, context)
+        ? enabled
+        : disabled
+      ).push(work);
+    }
+    return { enabled, disabled };
+  },
+);
 
 const prepareSourceWork$ = command(
   async (
@@ -818,9 +809,8 @@ const prepareSourceWork$ = command(
   ): Promise<RoutedWork> => {
     const history = await set(loadAndProjectHistory$, { work }, signal);
     signal.throwIfAborted();
-    const credential = await resolvePiMemoryStage1Credential(
-      await set(loadModelCatalog$, signal),
-      set(writeDb$),
+    const credential = await set(
+      resolvePiMemoryStage1Credential$,
       {
         sourceRunId: work.selection.sourceRunId,
         orgId: work.orgId,
@@ -836,42 +826,93 @@ const prepareSourceWork$ = command(
   },
 );
 
-async function validatePreparedWork(
-  db: Db,
-  work: ClaimedPiMemoryStage1Work,
-  signal: AbortSignal,
-): Promise<void> {
-  const currentTime = nowDate();
-  const valid = await db.transaction(async (tx) => {
-    if (
-      !(await validatePiMemoryStage1Selection(tx, work.selection, currentTime))
-    ) {
-      return false;
-    }
-    const [fenced] = await tx
-      .select({ token: piMemoryStage1Candidates.leaseToken })
-      .from(piMemoryStage1Candidates)
-      .where(
-        and(
-          eq(piMemoryStage1Candidates.memoryStorageId, work.memoryStorageId),
-          eq(piMemoryStage1Candidates.piSessionId, work.piSessionId),
-          eq(
-            piMemoryStage1Candidates.sourceHistoryHash,
-            work.sourceHistoryHash,
-          ),
-          eq(piMemoryStage1Candidates.sourceRunId, work.selection.sourceRunId),
-          eq(piMemoryStage1Candidates.status, "leased"),
-          eq(piMemoryStage1Candidates.leaseToken, work.leaseToken),
-          gt(piMemoryStage1Candidates.leaseExpiresAt, nowDate()),
-        ),
+const validatePreparedWork$ = command(
+  async (
+    { set },
+    work: ClaimedPiMemoryStage1Work,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const currentTime = nowDate();
+    const selection = work.selection;
+    const valid = await set(writeDb$).transaction(async (tx) => {
+      if (selection.day !== piMemoryStage1UtcDay(currentTime)) {
+        return false;
+      }
+      const locks = piMemoryStage1SelectionLockPlans(selection);
+      const [lockedThread] = await tx.select().from(locks.thread);
+      if (!lockedThread) {
+        return false;
+      }
+      await tx.select().from(locks.storage);
+      const [day] = await tx.select().from(locks.day);
+      if (!day?.consumedAt || day.triggerThreadId === selection.chatThreadId) {
+        return false;
+      }
+      const [frozen] = await tx.select().from(locks.frozen);
+      // A blocked lock acquisition may cross midnight after the initial check.
+      if (!frozen || selection.day !== piMemoryStage1UtcDay(nowDate())) {
+        return false;
+      }
+      const features = await tx.select().from(locks.features);
+      const context = featureSwitchContextFromRows(
+        selection.orgId,
+        selection.userId,
+        features,
       );
-    return !!fenced;
-  });
-  signal.throwIfAborted();
-  if (!valid || work.selection.day !== piMemoryStage1UtcDay(nowDate())) {
-    throw new StaleWorkError();
-  }
-}
+      if (!isFeatureEnabled(FeatureSwitchKey.PiMemory, context)) {
+        return false;
+      }
+      const sourcePlans = piMemoryStage1SelectionSourcePlans(selection);
+      const [thread] = await tx.select().from(sourcePlans.thread);
+      if (!thread) {
+        return false;
+      }
+      const [active] = await tx.select().from(sourcePlans.active);
+      if (
+        !piMemoryStage1SelectionThreadEligible(thread, !!active, currentTime)
+      ) {
+        return false;
+      }
+      const [latest] = await tx.select().from(sourcePlans.latest);
+      if (!piMemoryStage1SelectionRunEligible(latest, selection, currentTime)) {
+        return false;
+      }
+      const [source] = await tx
+        .select()
+        .from(piMemoryStage1SelectionConversationPlan(selection, latest));
+      if (
+        !piMemoryStage1SelectionSourceMatches(selection, latest, thread, source)
+      ) {
+        return false;
+      }
+      const [fenced] = await tx
+        .select({ token: piMemoryStage1Candidates.leaseToken })
+        .from(piMemoryStage1Candidates)
+        .where(
+          and(
+            eq(piMemoryStage1Candidates.memoryStorageId, work.memoryStorageId),
+            eq(piMemoryStage1Candidates.piSessionId, work.piSessionId),
+            eq(
+              piMemoryStage1Candidates.sourceHistoryHash,
+              work.sourceHistoryHash,
+            ),
+            eq(
+              piMemoryStage1Candidates.sourceRunId,
+              work.selection.sourceRunId,
+            ),
+            eq(piMemoryStage1Candidates.status, "leased"),
+            eq(piMemoryStage1Candidates.leaseToken, work.leaseToken),
+            gt(piMemoryStage1Candidates.leaseExpiresAt, nowDate()),
+          ),
+        );
+      return !!fenced;
+    });
+    signal.throwIfAborted();
+    if (!valid || work.selection.day !== piMemoryStage1UtcDay(nowDate())) {
+      throw new StaleWorkError();
+    }
+  },
+);
 
 function classifyProviderFailure(error: unknown): unknown {
   if (!(error instanceof PiMemoryStage1ProviderError)) {
@@ -882,35 +923,37 @@ function classifyProviderFailure(error: unknown): unknown {
     : new RetryableWorkError("provider_failure");
 }
 
-async function recordObservedUsage(
-  db: Db,
-  prepared: RoutedWork,
-  observedResult: PiMemoryStage1ProviderResult,
-  requestId: string,
-  pricingResolution: UsagePricingResolution,
-) {
-  const usageArgs = {
-    memoryStorageId: prepared.work.memoryStorageId,
-    piSessionId: prepared.work.piSessionId,
-    sourceHistoryHash: prepared.work.sourceHistoryHash,
-    model: prepared.credential.selectedModel,
-    billing: prepared.credential.billing,
-    longContextMinTotalInputTokens:
-      prepared.credential.longContextMinTotalInputTokens,
-    responseSourceId: observedResult.responseId ?? `request:${requestId}`,
-    usage: observedResult.usage,
-  };
-  const recordedUsage = await settleIncludingAbort(
-    recordPiMemoryStage1Usage(db, usageArgs),
-  );
-  await observePiMemoryStage1Cost(
-    db,
-    usageArgs,
-    recordedUsage.ok ? recordedUsage.value : null,
-    pricingResolution,
-  );
-  return recordedUsage;
-}
+const recordObservedUsage$ = command(
+  async (
+    { set },
+    prepared: RoutedWork,
+    observedResult: PiMemoryStage1ProviderResult,
+    requestId: string,
+    pricingResolution: UsagePricingResolution,
+  ) => {
+    const usageArgs = {
+      memoryStorageId: prepared.work.memoryStorageId,
+      piSessionId: prepared.work.piSessionId,
+      sourceHistoryHash: prepared.work.sourceHistoryHash,
+      model: prepared.credential.selectedModel,
+      billing: prepared.credential.billing,
+      longContextMinTotalInputTokens:
+        prepared.credential.longContextMinTotalInputTokens,
+      responseSourceId: observedResult.responseId ?? `request:${requestId}`,
+      usage: observedResult.usage,
+    };
+    const recordedUsage = await settleIncludingAbort(
+      set(recordPiMemoryStage1Usage$, usageArgs),
+    );
+    await set(
+      observePiMemoryStage1Cost$,
+      usageArgs,
+      recordedUsage.ok ? recordedUsage.value : null,
+      pricingResolution,
+    );
+    return recordedUsage;
+  },
+);
 
 interface ProcessPreparedWorkArgs {
   readonly prepared: RoutedWork;
@@ -918,86 +961,89 @@ interface ProcessPreparedWorkArgs {
 }
 
 const checkPreparedStage1Request$ = command(
+  async ({ set }, prepared: RoutedWork, signal: AbortSignal) => {
+    // Memory is free: no organization credits or personal quota admission.
+    set(writeDb$);
+    await set(
+      validatePiMemoryStage1Credential$,
+      prepared.credential.proof,
+      signal,
+    );
+    await set(validatePreparedWork$, prepared.work, signal);
+  },
+);
+
+type Stage1ProviderOutcome =
+  | { readonly ok: true; readonly value: PiMemoryStage1ProviderResult }
+  | { readonly ok: false; readonly error: unknown };
+
+interface Stage1ProviderObservation {
+  readonly provider: Stage1ProviderOutcome;
+  readonly requestPrepared: boolean;
+}
+
+/** Preparation/admission failures never reached an admitted provider request. */
+function stage1ProviderObservation(
+  extraction:
+    | { readonly ok: true; readonly value: Stage1ProviderObservation }
+    | { readonly ok: false; readonly error: unknown },
+): Stage1ProviderObservation {
+  return extraction.ok
+    ? extraction.value
+    : { provider: extraction, requestPrepared: false };
+}
+
+/** Measure the complete SDK body, then own admission before provider execution. */
+const extractPreparedStage1Provider$ = command(
   async (
     { set },
-    catalog: ModelCatalog,
-    prepared: RoutedWork,
+    args: { readonly prepared: RoutedWork; readonly requestId: string },
     signal: AbortSignal,
-  ) => {
-    const admission = await set(
-      checkOrgCreditsForRunAdmission$,
-      {
-        catalog,
-        ...prepared.credential.billing,
-        modelProviderType: prepared.credential.modelProviderType,
-        selectedModel: prepared.credential.selectedModel,
-      },
-      signal,
-    );
-    if (admission) {
-      throw new RetryableWorkError("source_admission_denied");
-    }
-    const db = set(writeDb$);
-    await checkPiMemoryQuota(
-      db,
-      {
-        ...prepared.credential.billing,
-        stage: "stage1",
-        source: prepared.credential.quota,
-      },
-      signal,
-    );
-    await prepared.credential.validate(signal);
-    await validatePreparedWork(db, prepared.work, signal);
+  ): Promise<Stage1ProviderObservation> => {
+    // This async command returns preparation/admission failures to its finite
+    // parent guard, including abort. It forwards no caller operation callback.
+    const planned = preparePiMemoryStage1Extraction({
+      model: args.prepared.credential.model,
+      evidence: args.prepared.evidence,
+      requestId: args.requestId,
+    });
+    await set(checkPreparedStage1Request$, args.prepared, signal);
+    // The SDK retains the original abort check immediately before HTTP. Join the
+    // provider outcome so the parent can complete finite usage/result settlement.
+    return {
+      provider: await settleIncludingAbort(
+        runPiMemoryStage1PreparedExtraction(planned, signal),
+      ),
+      requestPrepared: true,
+    };
   },
 );
 
 const processPreparedWork$ = command(
   async (
     { set },
-    catalogSnapshot: ModelCatalog,
     args: ProcessPreparedWorkArgs,
     signal: AbortSignal,
   ): Promise<WorkOutcome> => {
     const startedAt = performance.now();
     const requestId = randomUUID();
-    let requestPrepared = false;
-    // Return the complete irreversible-result reconciliation. The batch owner
-    // joins every provider branch before propagating cancellation, so one
-    // aborted request cannot abandon a sibling's observed usage receipt.
+    // Join every provider branch before propagating cancellation so one aborted
+    // request cannot abandon a sibling's observed usage receipt.
     return await set(settlePreparedWork$, args, {
-      provider: await settleIncludingAbort(
-        runPiMemoryStage1Extraction(
-          {
-            model: args.prepared.credential.model,
-            evidence: args.prepared.evidence,
-            requestId,
-            beforeRequest: async (requestSignal) => {
-              await set(
-                checkPreparedStage1Request$,
-                catalogSnapshot,
-                args.prepared,
-                requestSignal,
-              );
-              requestPrepared = true;
-            },
-          },
-          signal,
+      ...stage1ProviderObservation(
+        await settleIncludingAbort(
+          set(
+            extractPreparedStage1Provider$,
+            { prepared: args.prepared, requestId },
+            signal,
+          ),
         ),
       ),
       requestId,
-      requestPrepared,
       startedAt,
     });
   },
 );
-
-type Stage1ProviderOutcome =
-  | {
-      readonly ok: true;
-      readonly value: Awaited<ReturnType<typeof runPiMemoryStage1Extraction>>;
-    }
-  | { readonly ok: false; readonly error: unknown };
 
 /** Finite reconciliation of an irreversible provider result, even after abort. */
 const settlePreparedWork$ = command(
@@ -1011,7 +1057,6 @@ const settlePreparedWork$ = command(
       readonly startedAt: number;
     },
   ): Promise<WorkOutcome> => {
-    const db = set(writeDb$);
     const { provider, requestId, requestPrepared, startedAt } = observation;
     const observedResult = provider.ok
       ? provider.value
@@ -1019,16 +1064,16 @@ const settlePreparedWork$ = command(
         ? provider.error.result
         : undefined;
     if (observedResult) {
-      const recordedUsage = await recordObservedUsage(
-        db,
+      const recordedUsage = await set(
+        recordObservedUsage$,
         args.prepared,
         observedResult,
         requestId,
         args.pricingResolution,
       );
       if (!recordedUsage.ok) {
-        return await failWork(
-          db,
+        return await set(
+          failWork$,
           args.prepared.work,
           new RetryableWorkError(
             recordedUsage.error instanceof Error &&
@@ -1056,8 +1101,8 @@ const settlePreparedWork$ = command(
         });
         return { kind: "stale_discarded" };
       }
-      return await failWork(
-        db,
+      return await set(
+        failWork$,
         args.prepared.work,
         classifyProviderFailure(provider.error),
         startedAt,
@@ -1069,11 +1114,11 @@ const settlePreparedWork$ = command(
       return parseProviderOutput(providerResult.responseText);
     });
     if (!("ok" in parsed)) {
-      return await failWork(db, args.prepared.work, parsed.error, startedAt);
+      return await set(failWork$, args.prepared.work, parsed.error, startedAt);
     }
     const result = parsed.ok;
     const committed = await settleIncludingAbort(
-      commitWorkResult(db, args.prepared.work, result),
+      set(commitWorkResult$, args.prepared.work, result),
     );
     if (!committed.ok || !committed.value) {
       logOutcome({
@@ -1148,10 +1193,13 @@ export const executePiMemoryStage1Work$ = command(
     signal: AbortSignal,
   ): Promise<PiMemoryStage1WorkerResult> => {
     const startedAt = performance.now();
-    const db = set(writeDb$);
-    const claim = await claimPiMemoryStage1Work(db, input);
+    const claim = await set(claimPiMemoryStage1Work$, input);
     if (signal.aborted) {
-      await retryOwnedWorkAfterAbort(db, new Set(claim.claimed), signal.reason);
+      await set(
+        retryOwnedWorkAfterAbort$,
+        new Set(claim.claimed),
+        signal.reason,
+      );
       signal.throwIfAborted();
     }
     const owned = new Set(claim.claimed);
@@ -1172,16 +1220,16 @@ export const executePiMemoryStage1Work$ = command(
     // Switch-off work settles terminal before any provider route, download,
     // or provider call, so it consumes no attempt and is never re-leased.
     const gated = await settleIncludingAbort(
-      partitionWorkByPiMemorySwitch(db, claim.claimed, signal),
+      set(partitionWorkByPiMemorySwitch$, claim.claimed, signal),
     );
     if (signal.aborted) {
-      await retryOwnedWorkAfterAbort(db, owned, signal.reason);
+      await set(retryOwnedWorkAfterAbort$, owned, signal.reason);
       signal.throwIfAborted();
     }
     if (!gated.ok) {
       const outcomes = await Promise.all(
         claim.claimed.map(async (work) => {
-          return await failWork(db, work, gated.error, performance.now());
+          return await set(failWork$, work, gated.error, performance.now());
         }),
       );
       signal.throwIfAborted();
@@ -1194,7 +1242,7 @@ export const executePiMemoryStage1Work$ = command(
     const outcomes: WorkOutcome[] = [];
     for (const work of gated.value.disabled) {
       outcomes.push(
-        await failWork(db, work, new DisabledWorkError(), performance.now()),
+        await set(failWork$, work, new DisabledWorkError(), performance.now()),
       );
       owned.delete(work);
     }
@@ -1216,13 +1264,13 @@ export const executePiMemoryStage1Work$ = command(
         set(prepareSourceWork$, { work }, signal),
       );
       if (signal.aborted) {
-        await retryOwnedWorkAfterAbort(db, owned, signal.reason);
+        await set(retryOwnedWorkAfterAbort$, owned, signal.reason);
         signal.throwIfAborted();
       }
       if (loaded.ok) {
         prepared.push(loaded.value);
       } else {
-        outcomes.push(await failWork(db, work, loaded.error, workStartedAt));
+        outcomes.push(await set(failWork$, work, loaded.error, workStartedAt));
         owned.delete(work);
       }
     }
@@ -1233,7 +1281,6 @@ export const executePiMemoryStage1Work$ = command(
         .map(async (item) => {
           return await set(
             processPreparedWork$,
-            await set(loadModelCatalog$, signal),
             {
               prepared: item,
               pricingResolution: get(usagePricingResolution$),

@@ -6,7 +6,6 @@ import { describe, expect, it } from "vitest";
 import { mockNow, now } from "../../../lib/time";
 import { testContext } from "../../../__tests__/test-context";
 import { server } from "../../../mocks/server";
-import { createDeferredPromise } from "../../utils";
 import {
   createBddApi,
   expectApiError,
@@ -374,22 +373,28 @@ describe("AUTH-02: platform realtime token", () => {
       [`user:${actor.userId}`]: ["subscribe"],
       [`org:${actor.orgId}`]: ["subscribe"],
       [`user-org:${actor.userId}:${actor.orgId}`]: ["subscribe"],
+      [`user-org-foreground:${actor.userId}:${actor.orgId}`]: ["presence"],
       [`run-output:${actor.userId}:${actor.orgId}:*`]: ["subscribe"],
     };
   }
 
-  function tokenRequestFor(clientId: string, capability: string) {
+  function tokenRequestFor(
+    clientId: string,
+    capability: string,
+    nonce = "nonce",
+  ) {
     return {
       keyName: "ably-key",
       timestamp: now(),
+      ttl: 60 * 60 * 1000,
       capability,
       clientId,
-      nonce: "nonce",
+      nonce,
       mac: "mac",
     };
   }
 
-  it("issues exchanged user and active-org realtime tokens only for authenticated users", async () => {
+  it("issues signed user and active-org token requests only for authenticated users", async () => {
     const unauthenticated = await authDevice.requestPlatformRealtimeToken(
       null,
       [401],
@@ -399,30 +404,19 @@ describe("AUTH-02: platform realtime token", () => {
 
     const actor = bdd.user();
     const capability = JSON.stringify(orgCapability(actor));
-    context.mocks.ably.requestToken.mockResolvedValueOnce({
-      token: "exchanged-token",
-      issued: now(),
-      expires: now() + 60 * 60 * 1000,
-      capability,
-      clientId: actor.userId,
-    });
+    const signedRequest = tokenRequestFor(actor.userId, capability);
+    context.mocks.ably.createTokenRequest.mockResolvedValueOnce(signedRequest);
 
     const token = await authDevice.requestPlatformRealtimeToken(actor, [200]);
     if (token.status !== 200) {
       throw new Error("Expected platform realtime token request to succeed");
     }
-    expect(token.body).toMatchObject({
-      token: "exchanged-token",
-      capability,
-      clientId: actor.userId,
-    });
-    expect(context.mocks.ably.requestToken).toHaveBeenCalledTimes(1);
-    expect(context.mocks.ably.requestToken).toHaveBeenCalledWith({
+    expect(token.body).toStrictEqual(signedRequest);
+    expect(context.mocks.ably.createTokenRequest).toHaveBeenCalledWith({
       capability: orgCapability(actor),
       ttl: 60 * 60 * 1000,
       clientId: actor.userId,
     });
-    expect(context.mocks.ably.createTokenRequest).not.toHaveBeenCalled();
   });
 
   it("keeps user realtime available without an active organization", async () => {
@@ -430,20 +424,15 @@ describe("AUTH-02: platform realtime token", () => {
     const capability = JSON.stringify({
       [`user:${actor.userId}`]: ["subscribe"],
     });
-    context.mocks.ably.requestToken.mockResolvedValueOnce({
-      token: "exchanged-token",
-      issued: now(),
-      expires: now() + 60 * 60 * 1000,
-      capability,
-      clientId: actor.userId,
-    });
+    const signedRequest = tokenRequestFor(actor.userId, capability);
+    context.mocks.ably.createTokenRequest.mockResolvedValueOnce(signedRequest);
 
     const token = await authDevice.requestPlatformRealtimeToken(actor, [200]);
     if (token.status !== 200) {
       throw new Error("Expected platform realtime token request to succeed");
     }
-    expect(token.body.capability).toBe(capability);
-    expect(context.mocks.ably.requestToken).toHaveBeenCalledWith({
+    expect(token.body).toStrictEqual(signedRequest);
+    expect(context.mocks.ably.createTokenRequest).toHaveBeenCalledWith({
       capability: {
         [`user:${actor.userId}`]: ["subscribe"],
       },
@@ -452,56 +441,38 @@ describe("AUTH-02: platform realtime token", () => {
     });
   });
 
-  it("falls back to a token request when the Ably exchange fails", async () => {
+  it("issues a fresh signed request when the client renews its token", async () => {
     const actor = bdd.user();
     const capability = JSON.stringify(orgCapability(actor));
-    context.mocks.ably.requestToken.mockRejectedValueOnce(
-      new Error("Ably unavailable"),
-    );
-    context.mocks.ably.createTokenRequest.mockResolvedValueOnce(
-      tokenRequestFor(actor.userId, capability),
-    );
-
-    const token = await authDevice.requestPlatformRealtimeToken(actor, [200]);
-    if (token.status !== 200) {
-      throw new Error("Expected platform realtime token request to succeed");
-    }
-    expect(token.body).toMatchObject({
-      keyName: "ably-key",
+    const firstRequest = tokenRequestFor(
+      actor.userId,
       capability,
-      clientId: actor.userId,
-    });
-    expect(context.mocks.ably.createTokenRequest).toHaveBeenCalledWith({
-      capability: orgCapability(actor),
-      ttl: 60 * 60 * 1000,
-      clientId: actor.userId,
-    });
+      "first-nonce",
+    );
+    const renewedRequest = tokenRequestFor(
+      actor.userId,
+      capability,
+      "renewed-nonce",
+    );
+    context.mocks.ably.createTokenRequest
+      .mockResolvedValueOnce(firstRequest)
+      .mockResolvedValueOnce(renewedRequest);
+
+    const first = await authDevice.requestPlatformRealtimeToken(actor, [200]);
+    const renewed = await authDevice.requestPlatformRealtimeToken(actor, [200]);
+    expect(first.body).toStrictEqual(firstRequest);
+    expect(renewed.body).toStrictEqual(renewedRequest);
   });
 
-  it("falls back to a token request when the Ably exchange exceeds its budget", async () => {
+  it("returns an error when a signed request cannot be created", async () => {
     const actor = bdd.user();
-    const capability = JSON.stringify(orgCapability(actor));
-    const budgets: number[] = [];
-    context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
-      budgets.push(milliseconds);
-      return milliseconds === 1000
-        ? AbortSignal.abort(new DOMException("timed out", "TimeoutError"))
-        : undefined;
-    });
-    const exchange = createDeferredPromise<unknown>(context.signal);
-    context.mocks.ably.requestToken.mockReturnValueOnce(exchange.promise);
-    context.mocks.ably.createTokenRequest.mockResolvedValueOnce(
-      tokenRequestFor(actor.userId, capability),
+    context.mocks.ably.createTokenRequest.mockRejectedValueOnce(
+      new Error("Token signing unavailable"),
     );
 
-    const token = await authDevice.requestPlatformRealtimeToken(actor, [200]);
-    context.mocks.abortSignal.timeout.mockReset();
-    exchange.resolve({ token: "late-token" });
-    if (token.status !== 200) {
-      throw new Error("Expected platform realtime token request to succeed");
-    }
-    expect(budgets).toContain(1000);
-    expect(token.body).toMatchObject({ keyName: "ably-key", capability });
+    const token = await authDevice.requestPlatformRealtimeToken(actor, [500]);
+    expect(token.status).toBe(500);
+    expect(token.body).toStrictEqual({ error: "Internal server error" });
   });
 });
 

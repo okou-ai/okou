@@ -66,7 +66,7 @@ fn text_failure_reason(message: &str) -> Option<FailureReason> {
         "invalid prompt: your prompt was flagged as potentially violating our usage policy. please try again with a different prompt: ",
     ) || semantic_message.starts_with(
         "this content was flagged for possible biological risk. if this seems wrong, try rephrasing your request. we are continuously refining our work in detecting biological risk, and you can read more about our approach in our blog post: ",
-    ) {
+    ) || is_daybreak_cyber_safety_refusal(semantic_message) {
         return Some(FailureReason::SafetyPolicyRefusal);
     }
     if normalized
@@ -91,6 +91,11 @@ fn text_failure_reason(message: &str) -> Option<FailureReason> {
         })
     {
         return Some(FailureReason::UsageLimit);
+    }
+    if normalized == "your authentication token has expired. please try refreshing it."
+        || normalized == "provided authentication token is expired."
+    {
+        return Some(FailureReason::InvalidCredentials);
     }
     if normalized == "terminated" {
         return Some(FailureReason::ResponseConnectionLost);
@@ -132,6 +137,18 @@ fn text_failure_reason(message: &str) -> Option<FailureReason> {
         return Some(FailureReason::ContextWindowExceeded);
     }
     None
+}
+
+fn is_daybreak_cyber_safety_refusal(message: &str) -> bool {
+    // The link is incidental; require the full provider prose on both sides.
+    message
+        .strip_prefix(concat!(
+            "this content was flagged for possible cybersecurity risk. ",
+            "if this seems wrong, try rephrasing your request. ",
+            "if you’re doing authorized security work that requires more cyber permissive safeguards, apply for daybreak access via ",
+        ))
+        .and_then(|detail| detail.strip_suffix(" before retrying."))
+        .is_some_and(|link| !link.is_empty() && !link.chars().any(char::is_whitespace))
 }
 
 fn envelope_failure_reason(message: &str) -> Option<FailureReason> {

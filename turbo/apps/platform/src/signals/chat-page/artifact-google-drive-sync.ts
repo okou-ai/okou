@@ -1,5 +1,5 @@
 import { toast } from "@okouai/ui/components/ui/sonner";
-import { chatThreadArtifactsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { artifactGoogleDriveContract } from "@okouai/api-contracts/contracts/artifact-google-drive";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { accept } from "../../lib/accept.ts";
 import { i18n } from "../../i18n/index.ts";
@@ -7,19 +7,18 @@ import type { ApiClientFactory } from "../api-client.ts";
 import { settle, withCleanup } from "../utils.ts";
 
 type ArtifactGoogleDriveSyncParams = {
-  readonly agentId?: string;
-  readonly threadId: string;
+  readonly agentId: string;
+  readonly connectionId?: string;
 } & ArtifactGoogleDriveSyncFile;
 
 type ArtifactGoogleDriveSyncFile = {
-  readonly runId: string;
-  readonly fileId: string;
+  readonly artifactId: string;
   readonly filename?: string | undefined;
 };
 
 type ArtifactGoogleDriveSyncFilesParams = {
-  readonly agentId?: string;
-  readonly threadId: string;
+  readonly agentId: string;
+  readonly connectionId?: string;
   readonly files: readonly ArtifactGoogleDriveSyncFile[];
 };
 
@@ -69,8 +68,7 @@ function googleDriveSyncSuccessMessage(fileCount: number): string {
 }
 
 type ArtifactGoogleDriveSyncResult =
-  | { readonly ok: true }
-  | { readonly ok: false; readonly message: string };
+  { readonly ok: true } | { readonly ok: false; readonly message: string };
 
 function isArtifactGoogleDriveSyncFailure(
   result: ArtifactGoogleDriveSyncResult,
@@ -96,17 +94,19 @@ async function syncArtifactFilesToGoogleDrive(
 
   const toastId = toast.loading(googleDriveSyncLoadingMessage(params.files));
   const sync = async (): Promise<boolean> => {
-    const client = params.createClient(chatThreadArtifactsContract);
+    const client = params.createClient(artifactGoogleDriveContract);
     const results: ArtifactGoogleDriveSyncResult[] = [];
     for (const file of params.files) {
       signal?.throwIfAborted();
       const settled = await settle(
         accept(
-          client.syncGoogleDrive({
-            params: { threadId: params.threadId },
+          client.upload({
+            params: { artifactId: file.artifactId },
             body: {
-              runId: file.runId,
-              fileId: file.fileId,
+              agentId: params.agentId,
+              ...(params.connectionId
+                ? { connectionId: params.connectionId }
+                : {}),
             },
             fetchOptions: signal ? { signal } : undefined,
           }),
@@ -173,11 +173,11 @@ export async function syncArtifactFileToGoogleDrive(
   return await syncArtifactFilesToGoogleDrive(
     {
       createClient: params.createClient,
-      threadId: params.threadId,
+      agentId: params.agentId,
+      ...(params.connectionId ? { connectionId: params.connectionId } : {}),
       files: [
         {
-          runId: params.runId,
-          fileId: params.fileId,
+          artifactId: params.artifactId,
           filename: params.filename,
         },
       ],

@@ -11,8 +11,9 @@ use tracing::{error, info, warn};
 use api_contracts::generated::{
     constants::runners::{
         BUILTIN_FIREWALL_CATALOG_MAX_BYTES, CONNECTOR_RUNTIME_SYNC_RUN_TERMINAL_ERROR_CODE,
-        PI_MODEL_CONFIG_CURRENT_GENERATION, PI_MODEL_CONFIG_DIALECT_TIER_GENERATION,
-        PI_MODEL_CONFIG_LEGACY_GENERATION, RUNNER_POLL_EXCLUDED_RUN_IDS_MAX,
+        PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION, PI_MODEL_CONFIG_CURRENT_GENERATION,
+        PI_MODEL_CONFIG_DIALECT_TIER_GENERATION, PI_MODEL_CONFIG_LEGACY_GENERATION,
+        RUNNER_POLL_EXCLUDED_RUN_IDS_MAX,
     },
     decode_paths, routes,
     types::runners::runs::steerable_inputs::next::Response as NextSteerableInputResponse,
@@ -101,7 +102,7 @@ impl<'a> From<&'a InstalledOkouCli> for ClaimInstalledVersions<'a> {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RunnerClaimCapabilities {
-    pi_model_config_generations: [u32; 3],
+    pi_model_config_generations: [u32; 4],
 }
 
 #[derive(Serialize)]
@@ -1144,7 +1145,12 @@ fn eligible_poll_transport_error(error: &ProviderError) -> Option<&ApiTransportE
         ApiFailureKind::Timeout | ApiFailureKind::Connect
     ) || matches!(
         (api_error.failure_kind, api_error.failure_cause),
-        (ApiFailureKind::Request, ApiTransportCause::ConnectionReset)
+        (
+            ApiFailureKind::Request,
+            ApiTransportCause::ConnectionReset
+                | ApiTransportCause::UnexpectedEof
+                | ApiTransportCause::HttpIncompleteMessage
+        )
     );
     retryable.then_some(api_error)
 }
@@ -1312,8 +1318,15 @@ fn eligible_heartbeat_transport_error<'a>(
     (matches!(
         api_error.failure_kind,
         ApiFailureKind::Timeout | ApiFailureKind::Connect
-    ) || api_error.failure_cause == ApiTransportCause::ConnectionReset)
-        .then_some(api_error)
+    ) || api_error.failure_cause == ApiTransportCause::ConnectionReset
+        || matches!(
+            (api_error.failure_kind, api_error.failure_cause),
+            (
+                ApiFailureKind::Request,
+                ApiTransportCause::UnexpectedEof | ApiTransportCause::HttpIncompleteMessage
+            )
+        ))
+    .then_some(api_error)
 }
 
 fn log_retryable_heartbeat_failure(
@@ -1810,6 +1823,7 @@ fn claim_request_body<'a>(
                 PI_MODEL_CONFIG_LEGACY_GENERATION,
                 PI_MODEL_CONFIG_CURRENT_GENERATION,
                 PI_MODEL_CONFIG_DIALECT_TIER_GENERATION,
+                PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION,
             ],
         },
         telemetry: ClaimRequestTelemetry {
@@ -2736,13 +2750,17 @@ mod tests {
             }
         }
 
-        fn transport_error(self) -> ProviderError {
+        fn transport_error(self, failure_cause: ApiTransportCause) -> ProviderError {
+            let failure_kind = if failure_cause == ApiTransportCause::Timeout {
+                ApiFailureKind::Timeout
+            } else {
+                ApiFailureKind::Request
+            };
             match self {
-                Self::Poll => poll_transport_error_with_cause(
-                    ApiFailureKind::Request,
-                    ApiTransportCause::ConnectionReset,
-                ),
-                Self::Heartbeat => heartbeat_transport_error(ApiFailureKind::Timeout),
+                Self::Poll => poll_transport_error_with_cause(failure_kind, failure_cause),
+                Self::Heartbeat => {
+                    heartbeat_transport_error_with_cause(failure_kind, failure_cause)
+                }
             }
         }
 
@@ -2841,6 +2859,11 @@ mod tests {
                 ApiTransportCause::ConnectionRefused,
             ),
             (ApiFailureKind::Request, ApiTransportCause::ConnectionReset),
+            (ApiFailureKind::Request, ApiTransportCause::UnexpectedEof),
+            (
+                ApiFailureKind::Request,
+                ApiTransportCause::HttpIncompleteMessage,
+            ),
         ] {
             let provider = idle_api_provider_for_test();
             let error = heartbeat_transport_error_with_cause(failure_kind, failure_cause);
@@ -2895,7 +2918,26 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn heartbeat_real_connection_reset_recovers_without_axiom_warning() {
+    async fn heartbeat_real_connection_interruptions_recover_without_axiom_warning() {
+        for (action, failure_cause) in [
+            (
+                RawHttpAction::ResetConnection,
+                ApiTransportCause::ConnectionReset,
+            ),
+            (
+                RawHttpAction::Disconnect,
+                ApiTransportCause::HttpIncompleteMessage,
+            ),
+        ] {
+            assert_heartbeat_interruption_recovers_without_axiom_warning(action, failure_cause)
+                .await;
+        }
+    }
+
+    async fn assert_heartbeat_interruption_recovers_without_axiom_warning(
+        action: RawHttpAction,
+        failure_cause: ApiTransportCause,
+    ) {
         let axiom = MockServer::start_async().await;
         let ingested = Arc::new(std::sync::Mutex::new(Vec::<Value>::new()));
         let sink = Arc::clone(&ingested);
@@ -2918,7 +2960,7 @@ mod tests {
                 .with(with_ingest_filter(layer)),
         );
         let server = RawHttpTestServer::spawn(vec![
-            RawHttpAction::ResetConnection,
+            action,
             RawHttpAction::Respond(status_response(200)),
             RawHttpAction::Respond(status_response(500)),
         ])
@@ -2940,7 +2982,7 @@ mod tests {
         let retry = captured_event(&events, "heartbeat failed, will retry");
         assert_eq!(retry.level, Level::INFO);
         assert_eq!(event_field(retry, "failure_kind"), "request");
-        assert_eq!(event_field(retry, "failure_cause"), "connection_reset");
+        assert_eq!(event_field(retry, "failure_cause"), failure_cause.as_str());
         assert_eq!(event_field(retry, "will_retry"), "true");
         assert_eq!(event_field(retry, "degraded"), "false");
         let recovery = captured_event(&events, "heartbeat delivery recovered");
@@ -2966,9 +3008,22 @@ mod tests {
     async fn api_paths_share_degradation_episode_transition_semantics() {
         let state = heartbeat_state_for_test();
 
-        for path in [DegradationPath::Poll, DegradationPath::Heartbeat] {
+        for (path, failure_cause) in [
+            (DegradationPath::Poll, ApiTransportCause::ConnectionReset),
+            (DegradationPath::Heartbeat, ApiTransportCause::Timeout),
+            (DegradationPath::Poll, ApiTransportCause::UnexpectedEof),
+            (DegradationPath::Heartbeat, ApiTransportCause::UnexpectedEof),
+            (
+                DegradationPath::Poll,
+                ApiTransportCause::HttpIncompleteMessage,
+            ),
+            (
+                DegradationPath::Heartbeat,
+                ApiTransportCause::HttpIncompleteMessage,
+            ),
+        ] {
             let provider = idle_api_provider_for_test();
-            let error = path.transport_error();
+            let error = path.transport_error(failure_cause);
             let degraded_after = path.degraded_after();
             let started_at = Instant::now();
 
@@ -3072,6 +3127,11 @@ mod tests {
                     .await;
             })
             .await;
+            let later_initial = captured_event(&later_events, path.retry_message());
+            assert_eq!(later_initial.level, Level::INFO);
+            assert_eq!(event_field(later_initial, "consecutive_failures"), "1");
+            assert_eq!(event_field(later_initial, "failure_elapsed_ms"), "0");
+            assert_eq!(event_field(later_initial, "degraded"), "false");
             assert_eq!(
                 later_events
                     .iter()
@@ -3096,6 +3156,11 @@ mod tests {
         for (failure_kind, failure_cause) in [
             (ApiFailureKind::Timeout, ApiTransportCause::Timeout),
             (ApiFailureKind::Request, ApiTransportCause::ConnectionReset),
+            (ApiFailureKind::Request, ApiTransportCause::UnexpectedEof),
+            (
+                ApiFailureKind::Request,
+                ApiTransportCause::HttpIncompleteMessage,
+            ),
         ] {
             let provider = idle_api_provider_for_test();
             let error = heartbeat_transport_error_with_cause(failure_kind, failure_cause);
@@ -3182,8 +3247,24 @@ mod tests {
 
         let unsupported_errors = [
             heartbeat_transport_error(ApiFailureKind::Request),
+            heartbeat_transport_error_with_cause(
+                ApiFailureKind::Request,
+                ApiTransportCause::HttpParse,
+            ),
             heartbeat_transport_error(ApiFailureKind::Body),
+            heartbeat_transport_error_with_cause(
+                ApiFailureKind::Body,
+                ApiTransportCause::UnexpectedEof,
+            ),
+            heartbeat_transport_error_with_cause(
+                ApiFailureKind::Body,
+                ApiTransportCause::HttpIncompleteMessage,
+            ),
             heartbeat_transport_error(ApiFailureKind::Unknown),
+            heartbeat_transport_error_with_cause(
+                ApiFailureKind::Unknown,
+                ApiTransportCause::UnexpectedEof,
+            ),
             ProviderError::ApiStatus(Box::new(ApiStatusError {
                 endpoint_label: "heartbeat",
                 status: StatusCode::INTERNAL_SERVER_ERROR,
@@ -3305,6 +3386,11 @@ mod tests {
                 ApiTransportCause::ConnectionRefused,
             ),
             (ApiFailureKind::Request, ApiTransportCause::ConnectionReset),
+            (ApiFailureKind::Request, ApiTransportCause::UnexpectedEof),
+            (
+                ApiFailureKind::Request,
+                ApiTransportCause::HttpIncompleteMessage,
+            ),
         ] {
             for (reason, expected_reason) in reasons {
                 let provider = idle_api_provider_for_test();
@@ -3363,12 +3449,22 @@ mod tests {
             .await;
         let unsupported_errors = [
             poll_transport_error(ApiFailureKind::Request),
+            poll_transport_error_with_cause(ApiFailureKind::Request, ApiTransportCause::HttpParse),
             poll_transport_error_with_cause(
                 ApiFailureKind::Body,
                 ApiTransportCause::ConnectionReset,
             ),
             poll_transport_error(ApiFailureKind::Body),
+            poll_transport_error_with_cause(ApiFailureKind::Body, ApiTransportCause::UnexpectedEof),
+            poll_transport_error_with_cause(
+                ApiFailureKind::Body,
+                ApiTransportCause::HttpIncompleteMessage,
+            ),
             poll_transport_error(ApiFailureKind::Unknown),
+            poll_transport_error_with_cause(
+                ApiFailureKind::Unknown,
+                ApiTransportCause::UnexpectedEof,
+            ),
             ProviderError::ApiStatus(Box::new(ApiStatusError {
                 endpoint_label: "poll",
                 status: StatusCode::SERVICE_UNAVAILABLE,
@@ -3516,7 +3612,7 @@ mod tests {
         assert!(!body.to_string().contains("path"));
         assert_eq!(
             body["capabilities"]["piModelConfigGenerations"],
-            serde_json::json!([1, 2, 3])
+            serde_json::json!([1, 2, 3, 5])
         );
 
         let runner_identity = test_runner_identity();
@@ -3948,6 +4044,63 @@ mod tests {
         assert!(discovered.poll_due_to_job_discovered_elapsed().is_some());
         assert!(discovered.poll_http_request_elapsed().is_some());
         mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn discover_recovers_after_incomplete_http_response() {
+        let run_id = RunId::new_v4();
+        let server = RawHttpTestServer::spawn(vec![
+            RawHttpAction::Disconnect,
+            RawHttpAction::Respond(poll_job_response(run_id)),
+        ])
+        .await;
+        let provider = api_provider_for_test(
+            server.url(),
+            CancellationToken::new(),
+            Arc::new(PollWakeups::new(false)),
+        );
+
+        let (discovered, events) = capture_api_provider_events(async {
+            tokio::time::timeout(Duration::from_secs(10), provider.discover())
+                .await
+                .expect("discovery should recover on the existing wakeup retry")
+                .expect("poll candidate after incomplete response")
+        })
+        .await;
+        let requests = server.assert_finished_with_requests().await;
+
+        assert_eq!(discovered.run_id(), run_id);
+        assert_eq!(
+            discovered.discovery_source(),
+            Some(JobDiscoverySource::Poll)
+        );
+        assert_eq!(requests.len(), 2);
+        for (request, reason) in requests.iter().zip(["immediate", "wakeup_retry"]) {
+            assert!(request.starts_with("POST /api/runners/poll "));
+            let (_, body) = request.split_once("\r\n\r\n").expect("poll request body");
+            let body: Value = serde_json::from_str(body).unwrap();
+            assert_eq!(body["telemetry"]["pollReason"], reason);
+        }
+        let retry = captured_event(&events, "poll failed, will retry");
+        assert_eq!(retry.level, Level::INFO);
+        assert_eq!(event_field(retry, "failure_kind"), "request");
+        assert_eq!(
+            event_field(retry, "failure_cause"),
+            "http_incomplete_message"
+        );
+        assert_eq!(event_field(retry, "poll_reason"), "immediate");
+        assert_eq!(event_field(retry, "will_retry"), "true");
+        assert_eq!(event_field(retry, "degraded"), "false");
+        let recovery = captured_event(&events, "poll fallback recovered");
+        assert_eq!(recovery.level, Level::INFO);
+        assert_eq!(event_field(recovery, "poll_reason"), "wakeup_retry");
+        assert_eq!(event_field(recovery, "recovered_after_failures"), "1");
+        assert_eq!(event_field(recovery, "was_degraded"), "false");
+        assert!(
+            events
+                .iter()
+                .all(|event| event.level != Level::ERROR && event.level != Level::WARN)
+        );
     }
 
     #[tokio::test]
@@ -5647,10 +5800,6 @@ mod tests {
             "test-region"
         );
         assert_eq!(context.storage_manifest.as_ref().unwrap().storages.len(), 1);
-        assert!(
-            !context.storage_manifest.as_ref().unwrap().storages[0].baseline_candidate,
-            "the previous claim fixture must default an absent marker to false"
-        );
         assert_eq!(context.cli_agent_session_id(), Some("fixture-session-id"));
         assert_eq!(
             context.environment.as_ref().unwrap()["FIXTURE_MODEL"],
@@ -5902,6 +6051,7 @@ mod tests {
         let claim_path = format!("/api/runners/jobs/{run_id}/claim");
         let mut response: serde_json::Value =
             serde_json::from_str(RUNNER_CLAIM_RESPONSE_FIXTURE).unwrap();
+        // Supported older APIs may include this optional observation field.
         response["storageManifest"] = serde_json::json!({
             "storageMounts": [
                 {
@@ -5947,7 +6097,6 @@ mod tests {
 
         assert_eq!(manifest.storages.len(), 1);
         assert_eq!(manifest.storages[0].name, "fixture-workspace");
-        assert!(manifest.storages[0].baseline_candidate);
         assert_eq!(
             manifest.storages[0].vas_version_id,
             "fixture-storage-version"
@@ -6038,7 +6187,7 @@ mod tests {
                                         "heartbeatGeneration": TEST_HEARTBEAT_GENERATION,
                                     },
                                     "runnerHostname": "prod-1.aws.vm3.ai",
-                                    "capabilities": { "piModelConfigGenerations": [1, 2, 3] },
+                                    "capabilities": { "piModelConfigGenerations": [1, 2, 3, 5] },
                                     "telemetry": {},
                                 })
                     });

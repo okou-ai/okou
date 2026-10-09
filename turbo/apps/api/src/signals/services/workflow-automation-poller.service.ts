@@ -429,7 +429,12 @@ const retireDepartedOwner$ = command(
   },
 );
 
-type PollCounters = { executed: number; skipped: number; expired: number };
+type PollCounters = {
+  executed: number;
+  skipped: number;
+  expired: number;
+  oldestExpiredAnchorAgeMs: number;
+};
 
 const loadDueWorkflowRows$ = command(
   async (
@@ -643,6 +648,10 @@ const skipExpiredDueRow$ = command(
     signal.throwIfAborted();
     if (outcome === "skipped") {
       counters.expired++;
+      counters.oldestExpiredAnchorAgeMs = Math.max(
+        counters.oldestExpiredAnchorAgeMs,
+        at.getTime() - anchor.getTime(),
+      );
     }
     counters.skipped++;
     return true;
@@ -661,7 +670,12 @@ export const executeDueWorkflowAutomations$ = command(
       },
       signal,
     );
-    const counters: PollCounters = { executed: 0, skipped: 0, expired: 0 };
+    const counters: PollCounters = {
+      executed: 0,
+      skipped: 0,
+      expired: 0,
+      oldestExpiredAnchorAgeMs: 0,
+    };
 
     const expiryContext = { currentTime, expiryEnabled };
     for (const row of rows) {
@@ -741,11 +755,6 @@ export const executeDueWorkflowAutomations$ = command(
       dueCount: rows.length,
       ...counters,
     });
-    if (counters.expired > 0) {
-      log.warn("Expired unclaimed workflow schedule anchors", {
-        expired: counters.expired,
-      });
-    }
     return { executed: counters.executed, skipped: counters.skipped };
   },
 );

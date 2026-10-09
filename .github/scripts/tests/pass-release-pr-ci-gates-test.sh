@@ -4,6 +4,7 @@ set -euo pipefail
 SOURCE_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 PASS_GATES="${SOURCE_REPO_ROOT}/.github/scripts/pass-release-pr-ci-gates.sh"
 CHECK_COVERAGE="${SOURCE_REPO_ROOT}/.github/scripts/check-release-please-workspace-coverage.sh"
+CHECK_ACTION_PINS="${SOURCE_REPO_ROOT}/.github/scripts/tests/action-pins-test.py"
 SECURITY_WORKFLOW="${SOURCE_REPO_ROOT}/.github/workflows/security.yml"
 TEST_ROOT="$(mktemp -d)"
 trap 'rm -rf "$TEST_ROOT"' EXIT
@@ -31,12 +32,21 @@ git init -q -b main "$SEED"
 git -C "$SEED" config user.email test@example.com
 git -C "$SEED" config user.name Test
 mkdir -p \
-  "${SEED}/.github/scripts" \
+  "${SEED}/.github/scripts/tests" \
+  "${SEED}/.github/workflows" \
   "${SEED}/native/helper/src" \
   "${SEED}/native/guest-control-tests/src" \
   "${SEED}/turbo/apps/app/src" \
   "${SEED}/turbo/packages/tool"
 cp "$CHECK_COVERAGE" "${SEED}/.github/scripts/check-release-please-workspace-coverage.sh"
+cp "$CHECK_ACTION_PINS" "${SEED}/.github/scripts/tests/action-pins-test.py"
+cat > "${SEED}/.github/workflows/pins.yml" <<'YAML'
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo fixture
+YAML
 printf '%s\n' \
   '{"native/guest-control-tests":"Integration-test harness","turbo/packages/tool":"Development tool"}' \
   >"${SEED}/.github/release-please-workspace-exclusions.json"
@@ -117,6 +127,22 @@ git -C "$SEED" commit -qm "chore: release valid"
 VALID_HEAD=$(git -C "$SEED" rev-parse HEAD)
 git -C "$SEED" push -q origin release-valid
 
+git -C "$SEED" switch -q -c release-invalid-pins release-valid
+cat > "${SEED}/.github/workflows/pins.yml" <<'YAML'
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@0000000000000000000000000000000000000000
+YAML
+# The release head cannot approve its own bad references with a replaced checker.
+printf '%s\n' 'print("untrusted release-head checker")' \
+  >"${SEED}/.github/scripts/tests/action-pins-test.py"
+git -C "$SEED" add --all
+git -C "$SEED" commit -qm "chore: release invalid action pins"
+INVALID_PINS_HEAD=$(git -C "$SEED" rev-parse HEAD)
+git -C "$SEED" push -q origin release-invalid-pins
+
 git clone -q "$REMOTE" "$CALLER"
 
 cat >"${FAKE_BIN}/gh" <<'SH'
@@ -180,7 +206,7 @@ assert_contains \
   "Release Please manifest contains unconfigured packages: native/guest-control-tests"
 assert_contains \
   "$invalid_output" \
-  "workspace coverage failed for exact head $INVALID_HEAD"
+  "validation failed for exact head $INVALID_HEAD"
 grep -Eq 'name=ci-gate-security .*conclusion=failure' "$GH_LOG" ||
   fail "the inconsistent release head should receive a failing security gate"
 [ "$(git -C "$CALLER" rev-parse HEAD)" = "$MAIN_HEAD" ] ||
@@ -188,6 +214,21 @@ grep -Eq 'name=ci-gate-security .*conclusion=failure' "$GH_LOG" ||
 jq -e 'has("native/guest-control-tests") | not' \
   "${CALLER}/.release-please-manifest.json" >/dev/null ||
   fail "the caller main manifest should remain consistent"
+
+python3 "$CHECK_ACTION_PINS" "$CALLER" >/dev/null
+: >"$GH_LOG"
+if invalid_pins_output=$(run_gates "$INVALID_PINS_HEAD" 2>&1); then
+  fail "invalid action pins on the exact release head should fail"
+fi
+assert_contains "$invalid_pins_output" "actions/checkout must use"
+assert_contains "$invalid_pins_output" "validation failed for exact head $INVALID_PINS_HEAD"
+grep -Eq "name=ci-gate-security .*head_sha=${INVALID_PINS_HEAD} .*conclusion=failure" "$GH_LOG" ||
+  fail "invalid action pins should receive a failing security gate on their exact head"
+if grep -Eq 'name=ci-gate-security .*conclusion=success' "$GH_LOG"; then
+  fail "invalid action pins received an unearned successful security gate"
+fi
+[ "$(git -C "$CALLER" rev-parse HEAD)" = "$MAIN_HEAD" ] ||
+  fail "action pin validation changed the caller checkout"
 
 : >"$GH_LOG"
 valid_output=$(run_gates "$VALID_HEAD" 2>&1) || {
@@ -246,7 +287,20 @@ command -v yq >/dev/null || fail "yq is required"
 security_json=$(yq -o=json '.' "$SECURITY_WORKFLOW")
 jq -e '
   .jobs["release-workspace-coverage"] as $validation |
+  .jobs["action-pins"] as $pins |
   .jobs["ci-gate-security"] as $gate |
+  ($pins | has("if") | not) and
+  ($pins | has("needs") | not) and
+  $pins.permissions == {"contents": "read"} and
+  any($pins.steps[];
+    ((.uses // "") | startswith("actions/checkout@")) and
+    .with.ref == "${{ github.event_name == '\''pull_request'\'' && github.event.pull_request.head.sha || github.sha }}"
+  ) and
+  any($pins.steps[];
+    .run == "python3 .github/scripts/tests/action-pins-test.py ."
+  ) and
+  ($gate.needs | index("action-pins") != null) and
+  $gate.steps[0].env.ACTION_PINS_RESULT == "${{ needs.action-pins.result }}" and
   $validation.needs == ["detect-release"] and
   ($validation.if | contains("needs.detect-release.outputs.skip == '\''true'\''")) and
   ($validation.if | contains("github.event_name != '\''push'\''")) and
@@ -264,6 +318,6 @@ jq -e '
   ($gate.steps[0].run | contains("$EVENT_NAME")) and
   ($gate.steps[0].run | contains("$RELEASE_WORKSPACE_COVERAGE_RESULT"))
 ' <<<"$security_json" >/dev/null ||
-  fail "Security must validate release PR and merge-group workspace coverage before its fast path"
+  fail "Security must validate action pins and release workspace coverage before its fast path"
 
 echo "pass-release-pr-ci-gates-test: ok"

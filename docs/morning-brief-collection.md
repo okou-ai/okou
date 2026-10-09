@@ -10,9 +10,9 @@ Run with a server-side pipeline. This document owns the first real piece of that
 execution: an explicitly invoked, bounded Slack collection and the occurrence,
 attempt and lease state it consumes.
 
-[The migration contract](morning-brief-migration-state.md) still owns which
-installation a member holds and what it is doing. Nothing here changes that
-authority, and nothing here schedules, delivers or generates anything.
+The current [Official Morning Brief contract](morning-brief.md#installation-ownership)
+owns installation selection and user preferences. The retired collector described
+here did not change that authority or schedule, deliver or generate anything.
 
 ## What this slice is
 

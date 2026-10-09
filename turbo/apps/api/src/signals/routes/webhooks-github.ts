@@ -76,9 +76,6 @@ const postGithubWorkflowRunWebhook$ = command(
   ): Response => {
     const parsed = gitHubWorkflowRunEventSchema.safeParse(args.payload);
     if (!parsed.success) {
-      L.error("Invalid workflow_run event payload", {
-        error: parsed.error,
-      });
       return jsonError("Invalid payload structure", 400);
     }
 

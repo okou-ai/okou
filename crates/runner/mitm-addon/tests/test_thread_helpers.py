@@ -66,17 +66,17 @@ def test_wait_for_event_raises_worker_failure_before_timeout_message():
 
     thread = ThreadUnderTest(target=fail_without_signaling)
     thread.start()
+    thread.join(timeout=1)
+    assert not thread.is_alive()
 
+    # Publish the worker failure before exercising the unset-event timeout branch.
     with pytest.raises(RuntimeError, match="worker failed before event"):
         wait_for_event(
             event,
-            timeout=1,
+            timeout=0,
             threads=(thread,),
             message="event was not signaled",
         )
-
-    thread.join(timeout=1)
-    assert not thread.is_alive()
 
 
 def test_wait_for_event_raises_worker_failure_even_when_event_is_set():

@@ -12,7 +12,7 @@ import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatEventSnapshots } from "@okouai/db/schema/chat-event-snapshot";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { command } from "ccstate";
-import { and, asc, eq, gt, sql } from "drizzle-orm";
+import { and, asc, eq, gt, sql, type SQLWrapper } from "drizzle-orm";
 import { pgInt8ToSafeIntegerDecoder } from "../../lib/db-structured-result";
 import { safeSqlStateCode } from "../../lib/pg-errors";
 import { env } from "../../lib/env";
@@ -25,8 +25,8 @@ import { awaitWithSignal, safeJsonParse, settleIncludingAbort } from "../utils";
 import { chatEventRowFromDbRow } from "./cron-snapshot-chat-events.service";
 
 const MAX_COMPRESSED_BYTES = 8 * 1024 * 1024;
-const MAX_HISTORY_BYTES = 32 * 1024 * 1024;
-const MAX_HISTORY_ROWS = 50_000;
+export const MAX_HISTORY_BYTES = 32 * 1024 * 1024;
+export const MAX_HISTORY_ROWS = 50_000;
 const HISTORY_TIMEOUT_MS = 15_000;
 const gunzipAsync = promisify(gunzip);
 
@@ -144,10 +144,16 @@ export function historyReadFailure(error: unknown): McpMessageHistoryError {
 }
 
 /** Preflight payloads before transferring them, shared by targeted input reads. */
-export const chatEventHistoryBytes =
-  sql`(COALESCE(octet_length(${chatEvents.payload}::text), 0)::bigint + 1024 + 6 * (COALESCE(octet_length(${chatEvents.contextType}), 0)::bigint + COALESCE(octet_length(${chatEvents.runEventId}), 0)::bigint + COALESCE(octet_length(${chatEvents.failureReason}), 0)::bigint))`.mapWith(
+export function chatEventHistoryBytes(columns: {
+  readonly payload: SQLWrapper;
+  readonly contextType: SQLWrapper;
+  readonly runEventId: SQLWrapper;
+  readonly failureReason: SQLWrapper;
+}) {
+  return sql`(COALESCE(octet_length(${columns.payload}::text), 0)::bigint + 1024 + 6 * (COALESCE(octet_length(${columns.contextType}), 0)::bigint + COALESCE(octet_length(${columns.runEventId}), 0)::bigint + COALESCE(octet_length(${columns.failureReason}), 0)::bigint))`.mapWith(
     pgInt8ToSafeIntegerDecoder,
   );
+}
 
 interface HistoryQueryFacts {
   readonly principal: { readonly userId: string; readonly orgId: string };
@@ -207,7 +213,7 @@ const readHistorySnapshot$ = command(
           const metadata = await tx
             .select({
               seqId: chatEvents.seqId,
-              bytes: chatEventHistoryBytes,
+              bytes: chatEventHistoryBytes(chatEvents),
             })
             .from(chatEvents)
             .where(

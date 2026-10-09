@@ -25,7 +25,6 @@ import {
   type StripeSubscriptionSchedule,
 } from "../external/stripe-client";
 import {
-  canceledUsageAllowanceScheduleMetadata,
   subscriptionScheduleFinalEnd,
   subscriptionScheduleId,
   subscriptionSchedulePhasesEndingAt,
@@ -329,7 +328,6 @@ async function scheduleCancellationOnExistingSchedule(
       ...subscriptionSchedulePhasesEndingAt(
         schedule,
         dateUnixSeconds(effectiveDate),
-        canceledUsageAllowanceScheduleMetadata(subscription),
       ),
     ],
   });

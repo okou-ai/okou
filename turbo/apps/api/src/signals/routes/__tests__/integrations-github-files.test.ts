@@ -293,21 +293,25 @@ describe("GitHub file integration routes", () => {
       filename: "daily_report.pdf",
       contentType: "application/pdf",
       size: 1234,
+      uploadHeaders: { "x-amz-meta-artifact-id": response.body.uploadId },
     });
     expect(response.body.uploadId).toMatch(/^[0-9a-f-]{36}$/u);
     expect(response.body.fileUrl).toMatch(
-      /^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.pdf$/u,
+      /^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.pdf$/u,
     );
     expect(response.body.fileUrl).not.toContain(fixture.userId);
 
     const calls = context.mocks.s3.getSignedUrl.mock.calls;
     expect(calls.length).toBeGreaterThan(0);
     const command = calls[0]?.[1];
-    expect(command).toHaveProperty("input.Bucket", "test-user-artifacts");
+    expect(command).toHaveProperty("input.Bucket", "test-private-artifacts");
     expect(command).toHaveProperty(
       "input.Key",
-      `artifacts${new URL(response.body.fileUrl).pathname}`,
+      `private-artifacts/${response.body.uploadId}/daily_report.pdf`,
     );
+    expect(command).toHaveProperty("input.Metadata", {
+      "artifact-id": response.body.uploadId,
+    });
   });
 
   it("posts an uploaded file URL to GitHub and records the run artifact", async () => {

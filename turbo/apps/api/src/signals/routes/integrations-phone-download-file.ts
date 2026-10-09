@@ -12,6 +12,11 @@ import { authRoute } from "../auth/auth-route";
 import { queryOf } from "../context/request";
 import { db$ } from "../external/db";
 import { agentPhoneFilenameFromMediaUrl } from "../services/agentphone.service";
+import { resolveArtifactFileReference$ } from "../services/private-artifact-storage.service";
+import {
+  uploadedArtifactObject$,
+  uploadedArtifactFetchUrl$,
+} from "../services/uploaded-artifact.service";
 import type { RouteEntry } from "../route-entry";
 import { tapError } from "../utils";
 
@@ -33,7 +38,7 @@ function parseContentLength(value: string | null): number | undefined {
   return size;
 }
 
-const download$ = command(async ({ get }, signal: AbortSignal) => {
+const download$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const query = get(queryOf(integrationsPhoneDownloadFileContract.download));
   const db = get(db$);
@@ -75,12 +80,37 @@ const download$ = command(async ({ get }, signal: AbortSignal) => {
     return jsonResponse(404, "Phone file not found", "NOT_FOUND");
   }
   const mediaUrl = message.mediaUrl;
-
-  const fileName = agentPhoneFilenameFromMediaUrl(mediaUrl, query.file_id);
+  const reference = await set(resolveArtifactFileReference$, mediaUrl, signal);
+  signal.throwIfAborted();
+  if (reference && !reference.id) {
+    return jsonResponse(404, "Phone file not found", "NOT_FOUND");
+  }
+  const artifact = reference
+    ? await set(
+        uploadedArtifactObject$,
+        {
+          userId: auth.userId,
+          orgId: auth.orgId,
+          id: reference.id,
+        },
+        signal,
+      )
+    : null;
+  signal.throwIfAborted();
+  if (reference && !artifact) {
+    return jsonResponse(404, "Phone file not found", "NOT_FOUND");
+  }
+  const downloadUrl = artifact
+    ? await set(uploadedArtifactFetchUrl$, artifact, signal)
+    : mediaUrl;
+  signal.throwIfAborted();
+  const fileName = artifact
+    ? artifact.filename
+    : agentPhoneFilenameFromMediaUrl(mediaUrl, query.file_id);
   const fallbackMimetype = inferMimetype(fileName);
 
   const downloadResponse = await tapError(
-    fetch(mediaUrl, { signal }),
+    fetch(downloadUrl, { signal }),
     (error) => {
       log.warn("AgentPhone file download failed", {
         fileId: query.file_id,

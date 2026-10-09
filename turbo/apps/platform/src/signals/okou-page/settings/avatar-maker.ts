@@ -12,12 +12,7 @@ import { resolveAvatarSvgConfig } from "../../../views/okou-page/avatar-utils.ts
 import { resetSignal } from "../../utils.ts";
 
 export type Step =
-  | "face"
-  | "hair"
-  | "expression"
-  | "skin"
-  | "hairColor"
-  | "sweater";
+  "face" | "hair" | "expression" | "skin" | "hairColor" | "sweater";
 
 export const AVATAR_MAKER_STEPS: readonly Step[] = [
   "face",

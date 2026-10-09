@@ -88,6 +88,21 @@ Jobs that need one representative host use the deterministic selector:
 Runner image production resolves architecture groups, builds one runner image per
 configured group, and validates the manifest under that group's target triple.
 
+Image builds and native behavior tests use the immutable revision captured in the
+workflow event's `github.sha`. For pull requests, CLI, Runner, and Guest builds
+therefore use the synthetic merge commit, and previews represent main plus the
+PR rather than the bare PR branch. Push and merge-group builds use their captured
+event revision as well. CLI bundling, binary input planning, compilation, image
+preparation, asset publication, and dependency-cache prewarming share this build
+revision; they do not resolve a newer mutable merge ref mid-run.
+
+Actions producer provenance is a separate identity. A pull-request run's API
+`head_sha` is the PR head, not its checkout merge commit. The image workflow keeps
+that value as `producer-head-sha` for reusable-binary producer metadata, and image
+waiters retain PR-head run lookup. Image manifests use the event build revision
+as `headSha`. Do not replace producer provenance with the merge SHA: cache trust
+still compares producer metadata with the Actions API response.
+
 Runner binary cache reuse is target-specific. Prepare resolves small references
 for the current build-input digest; each image-build job downloads its own
 binary directly from the trusted R2 cache. GitHub cache metadata is a lookup
@@ -96,7 +111,7 @@ binaries are not re-uploaded as a combined GitHub artifact.
 
 The binary input key hashes the committed source/build inventory, target and
 embedded CLI content, not the source commit identity. The CLI contribution is
-its actual package SHA-256 plus a canonical projection of the independent
+its actual package SHA-256 plus a canonical projection of the validated
 manifest fields consumed by `crates/runner/build.rs`: CLI/Pi versions and
 session-construction digest. Fixed manifest schema/path and package SHA/size
 agreement remain validated before lookup, but are not hashed again. Commit
@@ -110,6 +125,49 @@ build of each input combination misses once without migrating old references.
 The digest helper is itself part of the committed build inventory; changing its
 hash recipe also rotates keys without changing the cache artifact schema.
 
+### Package-bound CLI identity and local rootfs keys
+
+The CLI postbuild step writes `okouBuildIdentity` into the existing packed
+`package.json`. Its mandatory schema version 1 contains `piAgentRuntime`, `piSdk`
+(the upstream version plus first-party patch-set digest), and
+`sessionConstruction.digest`; the existing package `version` remains the CLI
+version. The record contains neither commit provenance nor its own final SHA or
+size. Artifact preparation reads identity from the actual packed file, rather
+than independently rereading workspace metadata after packing.
+
+Native verification and Rust compilation require one regular packed
+`package/package.json`, at most 16 KiB, with valid consumed fields and no duplicate
+consumed keys or metadata entries. The compressed package remains bounded at
+64 MiB; both readers cap the complete decompressed stream at 256 MiB and never
+extract or execute package code. Missing identity or disagreement with the
+external identity fails directly; there is no legacy-format fallback.
+Commit provenance, actual package SHA/size, ready checksums, canonical asset
+checks, captured package URLs and immutable versioned publication remain
+mandatory. New package bytes require a new CLI version through the normal
+CLI-to-Runner release dependency, not overwriting an existing versioned object.
+
+The build-only native module `crates/runner/cli_package.rs` validates external
+inputs inside the existing Runner package. Compilation snapshots the exact
+verified package buffer and generates `installed.json` through `guest-contracts`
+from that same buffer's identity, SHA and size. Both are embedded resources;
+rustc does not reread the mutable external package after validation. Runtime
+staging only writes those trusted compiled bytes, without archive parsing,
+identity comparison, SHA/size self-checks or installed-manifest regeneration.
+External disk state still needs installation verification and exact cached-sidecar
+comparison. No separate CLI package crate or runtime decoder is needed.
+
+The **local rootfs** CLI contribution is only the build-time SHA-256 computed from
+the verified package. Packed identity uniquely determines the installed versions and
+session metadata; package size follows from bytes and installation paths follow
+from the CLI version and fixed rules. Installed metadata and exact sidecar
+checks remain, but they are not independent hash inputs. Changes to installed
+schema, serialization or fixed installation paths must rotate the local rootfs
+recipe version. Local rootfs cache version 3 starts a new namespace without old-cache fallback. Shared R2 template
+cache version 1, snapshot cache version 3, guest binaries, customization, disk,
+CA and DNS inputs are unchanged. The CI binary-key recipe above is unchanged.
+This makes the authority and hash contract simpler; it does not establish a
+higher cache-hit rate or measured build acceleration.
+
 Targets without an available cache reference use the normal compile job, which
 uploads the binary directly to the existing content-addressed R2 cache. Only
 after verifying that object does it publish a small R2 manifest scoped to the
@@ -120,9 +178,10 @@ existing shadow comparison and optional small GitHub manifest publication.
 
 Fresh publication and download are required: missing configuration, storage
 failures, invalid manifests, or binary hash/size mismatches fail the job. Cache-hit
-downloads remain required as well. Compilation stays in the existing compile
-job. Its transfer step and compiler-cache startup step receive R2 credentials;
-credentials are not exported through `GITHUB_ENV` or added to the build step.
+downloads remain required as well. Required runner-binary compilation stays in
+the existing compile job. Its transfer step and compiler-cache startup step
+receive R2 credentials; credentials are not exported through `GITHUB_ENV` or
+added to the build step.
 
 The compile job uses sccache's S3 backend against the existing R2 bucket, under
 `runner-sccache/arm64/` or `runner-sccache/x86_64/`. Within each prefix, sccache
@@ -194,12 +253,44 @@ The production release job retains its separate guest and embedded Runner
 compilation phases together with the existing release creation, asset upload,
 Slack notification, and deployment behavior.
 
-This avoids GitHub's branch-scoped compiler cache and shared storage quota.
-The additional Cargo dependency cache still uses GitHub and saves only on main;
-main often reuses the complete runner binary and skips compilation, so that
-cache alone cannot reliably warm later builds. The first build of new compiler
-inputs remains cold. Cache backend statistics in the compile job report actual
-hits, misses, and write errors; binary and image validation remain required.
+The shared R2 compiler cache avoids GitHub's branch-scoped storage and quota.
+Cache backend statistics in the compile job report actual hits, misses, and
+write errors; binary and image validation remain required.
+
+### Runner dependency-cache prewarming
+
+The additional Cargo dependency cache uses GitHub and saves only on main. PR
+and merge-group compilations restore it without saving. Ordinary main compiler
+misses still populate their own architecture-specific dependency cache.
+
+Main often reuses an R2 runner binary and skips the compiler. To keep a trusted
+writer in that case, Runner Image starts an independent `prewarm-rust-cache`
+job for binary-hit targets on non-release main pushes that need a runner image.
+The planner partitions the configured targets into hit and compile matrices,
+so a target already requiring main compilation is not also prewarmed.
+
+The producer uses the same pinned Rust Cache action, toolchain container,
+sccache/compiler environment, `crates/target` directory, canonical `ci` build,
+and `aarch64-musl-ci` or `x86_64-musl-ci` shared key as consumers. It first checks
+the exact key with `lookup-only` and saving disabled. An exact hit skips cache
+restore, CLI-input download, and compilation. Otherwise it restores compatible
+dependency artifacts and builds only if restore does not report an exact hit;
+an exact hit appearing between lookup and restore also skips the build. The
+normal successful-job post action saves dependencies with workspace crates excluded.
+
+Prewarming is a best-effort optimization, not an image, release-asset, or
+deployment prerequisite. It never publishes its runner outputs. A prewarm
+failure does not relax any required compilation, transfer, binary validation,
+or image gate. Its summary reports actual step outcomes and the cache-hit
+outputs emitted by the action; an empty output is not fabricated as a skipped
+step or a cache hit. A successful prewarm build alone does not prove that the
+subsequent cache-save post action succeeded.
+
+The first use of a new or evicted dependency key can still be cold, and an
+initial prewarm can extend its main workflow's concurrency slot. Before claiming
+a speedup, verify main saves and subsequent PR exact restores for both targets,
+then measure cache archive costs and compiler duration. This does not replace
+R2 sccache statistics or the existing runner-binary reuse policy.
 
 Required consumer GETs use `runner-binary-download.sh`: at most three complete
 download attempts, with 1s/2s backoff and a new partial file each time. Cached
