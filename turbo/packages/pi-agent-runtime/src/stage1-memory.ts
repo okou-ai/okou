@@ -1,34 +1,27 @@
+import {
+  piMemoryStage1TerminalResult,
+  type PiMemoryStage1PreparedRequest,
+  type PiMemoryStage1ProviderResult,
+} from "./stage1-provider";
+import {
+  preparePiMemoryStage1NativeRequest,
+  preparePiMemoryStage1NativePayload,
+} from "./stage1-native-request";
 import type {
   AssistantMessage,
-  Context,
   Message,
   ToolCall,
 } from "@earendil-works/pi-ai";
-import { normalizeContext } from "@earendil-works/pi-ai";
 
 import { projectPiMemoryCitationSegments } from "@okouai/api-contracts/contracts/pi-memory-citations";
 
-import {
-  PI_MEMORY_PRESET,
-  PI_MEMORY_STAGE1_REASONING,
-} from "./memory-background-config";
-import { piAgentStreamForConfig, resolvePiAgentModel } from "./model";
+import { piAgentStreamForConfig } from "./model";
 import { MemoryPiSession } from "./session-memory";
-import {
-  PI_MEMORY_STAGE1_SYSTEM_PROMPT,
-  renderPiMemoryStage1Input,
-} from "./stage1-prompts";
 import type { PiAgentModelConfig } from "./types";
 
 import {
   boundStage1Evidence,
   isRecord,
-  PiMemoryStage1BudgetError,
-  PI_MEMORY_STAGE1_OUTPUT_TOKENS,
-  selectStage1Evidence,
-  serializeStage1Payload,
-  stage1InputBudgets,
-  stage1TokenCount,
   type PiMemoryStage1Evidence,
 } from "./stage1-input";
 import {
@@ -45,40 +38,6 @@ const EXCLUDED_USER_MARKERS = [
   "<environment_context>",
   "<permissions instructions>",
 ] as const;
-
-export const PI_MEMORY_STAGE1_RESPONSE_SCHEMA = {
-  type: "object",
-  properties: {
-    raw_memory: { type: "string" },
-    rollout_summary: { type: "string" },
-    rollout_slug: { type: ["string", "null"] },
-  },
-  required: ["raw_memory", "rollout_summary", "rollout_slug"],
-  additionalProperties: false,
-} as const;
-
-export interface PiMemoryStage1ProviderUsage {
-  readonly input: number;
-  readonly output: number;
-  readonly cacheRead: number;
-  readonly cacheWrite: number;
-}
-
-export interface PiMemoryStage1ProviderResult {
-  readonly responseText: string;
-  readonly responseId: string | undefined;
-  readonly usage: PiMemoryStage1ProviderUsage;
-}
-
-export class PiMemoryStage1ProviderError extends Error {
-  constructor(
-    readonly status?: number,
-    readonly result?: PiMemoryStage1ProviderResult,
-  ) {
-    super("Pi memory Stage 1 provider request failed");
-    this.name = "PiMemoryStage1ProviderError";
-  }
-}
 
 function textFromContent(content: Message["content"]): string {
   if (typeof content === "string") return content;
@@ -272,178 +231,6 @@ export function projectPiMemoryStage1Evidence(args: {
   return boundStage1Evidence(rows);
 }
 
-function stage1PayloadInput(
-  normalized: Record<string, unknown>,
-  input: readonly unknown[],
-  native: boolean,
-): Record<string, unknown> {
-  const format = {
-    type: "json_schema",
-    name: "pi_memory_stage1",
-    strict: true,
-    schema: PI_MEMORY_STAGE1_RESPONSE_SCHEMA,
-  };
-  if (native) {
-    if (
-      normalized.instructions !== PI_MEMORY_STAGE1_SYSTEM_PROMPT ||
-      normalized.max_output_tokens !== undefined ||
-      !isRecord(normalized.text)
-    ) {
-      throw new PiMemoryStage1BudgetError("input_payload_unmeasurable");
-    }
-    // pi-ai 0.86.1's native adapter omits samplingParams. Upstream Codex
-    // phase1.rs/common.rs supplies strict text.format, but no output-token cap.
-    normalized.text.format = format;
-  } else {
-    const system: unknown = input[0];
-    if (
-      normalized.max_output_tokens !== PI_MEMORY_STAGE1_OUTPUT_TOKENS ||
-      !isRecord(system) ||
-      !["system", "developer"].includes(String(system.role)) ||
-      system.content !== PI_MEMORY_STAGE1_SYSTEM_PROMPT ||
-      !isRecord(normalized.text) ||
-      JSON.stringify(normalized.text.format) !== JSON.stringify(format)
-    ) {
-      throw new PiMemoryStage1BudgetError("input_payload_unmeasurable");
-    }
-  }
-  const user: unknown = input[native ? 0 : 1];
-  if (
-    !isRecord(user) ||
-    user.role !== "user" ||
-    !Array.isArray(user.content) ||
-    user.content.length !== 1
-  ) {
-    throw new PiMemoryStage1BudgetError("input_payload_unmeasurable");
-  }
-  const part: unknown = user.content[0];
-  if (
-    !isRecord(part) ||
-    part.type !== "input_text" ||
-    part.text !== renderPiMemoryStage1Input("")
-  ) {
-    throw new PiMemoryStage1BudgetError("input_payload_unmeasurable");
-  }
-  return part;
-}
-
-const PI_MEMORY_STAGE1_CHAT_RESPONSE_FORMAT = {
-  type: "json_schema",
-  json_schema: {
-    name: "pi_memory_stage1",
-    strict: true,
-    schema: PI_MEMORY_STAGE1_RESPONSE_SCHEMA,
-  },
-};
-
-/** Return the single text part, normalizing string content to one part. */
-function singleChatTextPart(
-  message: Record<string, unknown>,
-): Record<string, unknown> | undefined {
-  if (typeof message.content === "string") {
-    const part = { type: "text", text: message.content };
-    message.content = [part];
-    return part;
-  }
-  if (!Array.isArray(message.content) || message.content.length !== 1) {
-    return undefined;
-  }
-  const part: unknown = message.content[0];
-  return isRecord(part) && part.type === "text" ? part : undefined;
-}
-
-/** Locate the Chat Completions evidence slot; cache breakpoints may wrap text. */
-function stage1ChatPayloadInput(
-  normalized: Record<string, unknown>,
-): Record<string, unknown> {
-  const messages = normalized.messages;
-  if (
-    !Array.isArray(messages) ||
-    messages.length !== 2 ||
-    (normalized.model !== PI_MEMORY_PRESET &&
-      (normalized.max_tokens !== PI_MEMORY_STAGE1_OUTPUT_TOKENS ||
-        normalized.max_completion_tokens !== undefined ||
-        JSON.stringify(normalized.response_format) !==
-          JSON.stringify(PI_MEMORY_STAGE1_CHAT_RESPONSE_FORMAT)))
-  ) {
-    throw new PiMemoryStage1BudgetError("input_payload_unmeasurable");
-  }
-  const [system, user]: unknown[] = messages;
-  const systemPart =
-    isRecord(system) && ["system", "developer"].includes(String(system.role))
-      ? singleChatTextPart(system)
-      : undefined;
-  const userPart =
-    isRecord(user) && user.role === "user"
-      ? singleChatTextPart(user)
-      : undefined;
-  if (
-    systemPart?.text !== PI_MEMORY_STAGE1_SYSTEM_PROMPT ||
-    userPart?.text !== renderPiMemoryStage1Input("")
-  ) {
-    throw new PiMemoryStage1BudgetError("input_payload_unmeasurable");
-  }
-  return userPart;
-}
-
-function shapeProviderPayload(
-  payload: unknown,
-  evidence: readonly PiMemoryStage1Evidence[],
-  model: NonNullable<ReturnType<typeof resolvePiAgentModel>>,
-): unknown {
-  // Normalize once so the exact object returned to the SDK is plain JSON.
-  const normalized: unknown = JSON.parse(serializeStage1Payload(payload));
-  const native = model.api === "openai-codex-responses";
-  if (
-    !isRecord(normalized) ||
-    normalized.tools !== undefined ||
-    normalized.model !== model.id ||
-    normalized.service_tier !== undefined
-  )
-    throw new PiMemoryStage1BudgetError("input_payload_unmeasurable");
-  let part: Record<string, unknown>;
-  if (model.api === "openai-completions") {
-    part = stage1ChatPayloadInput(normalized);
-  } else {
-    if (
-      !Array.isArray(normalized.input) ||
-      normalized.input.length !== (native ? 1 : 2)
-    )
-      throw new PiMemoryStage1BudgetError("input_payload_unmeasurable");
-    part = stage1PayloadInput(normalized, normalized.input, native);
-  }
-  const budget = stage1InputBudgets(
-    model.contextWindow,
-    native ? { maxTokens: model.maxTokens } : undefined,
-  );
-  const overhead = stage1TokenCount(serializeStage1Payload(normalized));
-  let allowance = budget.request - overhead - 32;
-  let historyAllowance = budget.history;
-  if (allowance <= 0)
-    throw new PiMemoryStage1BudgetError("input_budget_exceeded");
-  if (
-    model.id !== PI_MEMORY_PRESET &&
-    (!isRecord(normalized.reasoning) ||
-      normalized.reasoning.effort !== PI_MEMORY_STAGE1_REASONING)
-  ) {
-    throw new PiMemoryStage1BudgetError("input_payload_unmeasurable");
-  }
-  // Boundary merges in BPE can change additive row counts. Re-select by tier
-  // with a smaller budget; never apply a whole-history head/tail truncation.
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const history = selectStage1Evidence(evidence, historyAllowance, allowance);
-    part.text = renderPiMemoryStage1Input(history);
-    const serialized = serializeStage1Payload(normalized);
-    const tokens = stage1TokenCount(serialized);
-    const historyTokens = stage1TokenCount(history);
-    if (tokens <= budget.request && historyTokens <= budget.history)
-      return normalized;
-    allowance -= Math.max(128, tokens - budget.request);
-    historyAllowance -= Math.max(128, historyTokens - budget.history);
-  }
-  throw new PiMemoryStage1BudgetError("input_budget_exceeded");
-}
-
 async function consumeAssistantMessage(
   stream: ReturnType<ReturnType<typeof piAgentStreamForConfig>>,
 ): Promise<AssistantMessage> {
@@ -453,132 +240,85 @@ async function consumeAssistantMessage(
   return await stream.result();
 }
 
-export async function runPiMemoryStage1Extraction(
-  args: {
-    readonly model: PiAgentModelConfig;
-    readonly evidence: readonly PiMemoryStage1Evidence[];
-    readonly requestId: string;
-    readonly beforeRequest?: (signal: AbortSignal) => Promise<void>;
-  },
+/** Pure complete preparation; API admission receives only the resulting data. */
+export function preparePiMemoryStage1Extraction(args: {
+  readonly model: PiAgentModelConfig;
+  readonly evidence: readonly PiMemoryStage1Evidence[];
+  readonly requestId: string;
+}): PiMemoryStage1PreparedRequest {
+  return {
+    model: args.model,
+    requestId: args.requestId,
+    payload: preparePiMemoryStage1NativePayload(args),
+  };
+}
+
+export async function runPiMemoryStage1PreparedExtraction(
+  prepared: PiMemoryStage1PreparedRequest,
   signal?: AbortSignal,
 ): Promise<PiMemoryStage1ProviderResult> {
-  const model = resolvePiAgentModel(args.model);
-  if (
-    !model ||
-    (model.api !== "openai-responses" &&
-      model.api !== "openai-completions" &&
-      model.api !== "openai-codex-responses") ||
-    args.model.serviceTier !== undefined ||
-    !args.model.apiKey.trim()
-  ) {
-    throw new PiMemoryStage1ProviderError();
-  }
-  const context = normalizeContext({
-    systemPrompt: PI_MEMORY_STAGE1_SYSTEM_PROMPT,
-    messages: [
-      {
-        role: "user",
-        content: renderPiMemoryStage1Input(""),
-        timestamp: 0,
-      },
-    ],
-    tools: [],
-  } satisfies Context);
-  let budgetError: PiMemoryStage1BudgetError | undefined;
+  const plan = preparePiMemoryStage1NativeRequest(prepared.model);
   let preparationError: { readonly error: unknown } | undefined;
   let responseStatus: number | undefined;
   const message = await consumeAssistantMessage(
-    piAgentStreamForConfig(args.model)(model, context, {
-      apiKey: args.model.apiKey,
-      reasoning:
-        model.id === PI_MEMORY_PRESET ? undefined : PI_MEMORY_STAGE1_REASONING,
-      samplingParams:
-        model.id === PI_MEMORY_PRESET
-          ? undefined
-          : model.api === "openai-completions"
-            ? {
-                // Replace the adapter's catalog-ceiling default with the fixed
-                // Stage 1 cap; undefined is dropped from the serialized request.
-                max_completion_tokens: undefined,
-                max_tokens: PI_MEMORY_STAGE1_OUTPUT_TOKENS,
-                response_format: PI_MEMORY_STAGE1_CHAT_RESPONSE_FORMAT,
-              }
-            : {
-                max_output_tokens: PI_MEMORY_STAGE1_OUTPUT_TOKENS,
-                text: {
-                  format: {
-                    type: "json_schema",
-                    name: "pi_memory_stage1",
-                    strict: true,
-                    schema: PI_MEMORY_STAGE1_RESPONSE_SCHEMA,
-                  },
-                },
-              },
+    piAgentStreamForConfig(prepared.model)(plan.model, plan.context, {
+      ...plan.options,
       onObservedResponseStatus: (status) => {
         responseStatus = status;
       },
-      onPayload: async (payload) => {
-        let shaped: unknown;
+      // This fixed SDK callback supplies measured data and the existing transport
+      // abort check. It receives no caller callback or API graph capability.
+      onPayload: () => {
         try {
-          shaped = shapeProviderPayload(payload, args.evidence, model);
-        } catch (error) {
-          budgetError =
-            error instanceof PiMemoryStage1BudgetError
-              ? error
-              : new PiMemoryStage1BudgetError("input_payload_unmeasurable");
-          throw budgetError;
-        }
-        try {
-          if (args.beforeRequest) {
-            if (!signal)
-              throw new Error(
-                "Stage 1 credential validation requires cancellation ownership",
-              );
-            await args.beforeRequest(signal);
-          }
           signal?.throwIfAborted();
         } catch (error) {
           preparationError = { error };
           throw error;
         }
-        return shaped;
+        return prepared.payload;
       },
-      sessionId: args.requestId,
+      sessionId: prepared.requestId,
       signal,
     }),
   );
-  // The SDK folds onPayload exceptions into terminal stream messages.
-  if (budgetError) throw budgetError;
+  // Preserve the original abort reason after the SDK folds onPayload failures.
   if (preparationError) throw preparationError.error;
-  const result: PiMemoryStage1ProviderResult = {
-    responseText: message.content
-      .flatMap((item) => {
-        return item.type === "text" ? [item.text] : [];
-      })
-      .join(""),
-    responseId: message.responseId,
-    usage: {
-      input: message.usage.input,
-      output: message.usage.output,
-      cacheRead: message.usage.cacheRead,
-      cacheWrite: message.usage.cacheWrite,
+  return piMemoryStage1TerminalResult(
+    {
+      responseText: message.content
+        .flatMap((item) => {
+          return item.type === "text" ? [item.text] : [];
+        })
+        .join(""),
+      responseId: message.responseId,
+      usage: {
+        input: message.usage.input,
+        output: message.usage.output,
+        cacheRead: message.usage.cacheRead,
+        cacheWrite: message.usage.cacheWrite,
+      },
     },
-  };
-  if (
-    message.stopReason !== "stop" ||
-    message.content.some((item) => {
-      return item.type === "toolCall";
-    })
-  ) {
-    // SDK-generated admission/error sentinels have zero usage. Only an actual
-    // usage-bearing terminal response can carry consumption through failure.
-    const hasUsage = Object.values(result.usage).some((value) => {
-      return value !== 0;
-    });
-    throw new PiMemoryStage1ProviderError(
+    {
+      stopReason: message.stopReason,
+      hasToolCall: message.content.some((item) => {
+        return item.type === "toolCall";
+      }),
       responseStatus,
-      hasUsage ? result : undefined,
-    );
-  }
-  return result;
+    },
+  );
+}
+
+/** Ordinary runtime callers retain the existing prepare-and-execute operation. */
+export async function runPiMemoryStage1Extraction(
+  args: {
+    readonly model: PiAgentModelConfig;
+    readonly evidence: readonly PiMemoryStage1Evidence[];
+    readonly requestId: string;
+  },
+  signal?: AbortSignal,
+): Promise<PiMemoryStage1ProviderResult> {
+  return await runPiMemoryStage1PreparedExtraction(
+    preparePiMemoryStage1Extraction(args),
+    signal,
+  );
 }

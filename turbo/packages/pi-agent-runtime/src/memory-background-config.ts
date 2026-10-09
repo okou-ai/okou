@@ -11,6 +11,23 @@ export const PI_MEMORY_PRESET_REQUEST_FIELDS = [
   "stream_options",
 ] as const;
 
+/** Share the final wire policy with preparation so its measured body is exact. */
+export function memoryPresetPayload(payload: unknown): unknown {
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    Array.isArray(payload)
+  ) {
+    throw new Error("Invalid memory Chat Completions payload");
+  }
+  const allowed: ReadonlySet<string> = new Set(PI_MEMORY_PRESET_REQUEST_FIELDS);
+  return Object.fromEntries(
+    Object.entries(payload).filter(([key]) => {
+      return allowed.has(key);
+    }),
+  );
+}
+
 /** Retained historical subscription identity, not a new credential candidate. */
 export const PI_MEMORY_STAGE1_PERSONAL_MODEL = "gpt-6-luna";
 export type PiMemoryStage1Model =

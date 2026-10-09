@@ -28,15 +28,20 @@ import {
 import type { PiMemoryStage1Model } from "./memory-background-config";
 import { piMemoryPhase2SelectionDigest } from "./phase2-memory-selection";
 import {
-  PI_MEMORY_STAGE1_RESPONSE_SCHEMA,
-  PiMemoryStage1ProviderError,
   projectPiMemoryStage1Evidence,
   runPiMemoryStage1Extraction,
+  preparePiMemoryStage1Extraction,
+  runPiMemoryStage1PreparedExtraction,
 } from "./stage1-memory";
+import {
+  PI_MEMORY_STAGE1_RESPONSE_SCHEMA,
+  PiMemoryStage1ProviderError,
+} from "./stage1-provider";
 import type {
+  PiMemoryStage1PreparedRequest,
   PiMemoryStage1ProviderResult,
   PiMemoryStage1ProviderUsage,
-} from "./stage1-memory";
+} from "./stage1-provider";
 import {
   PiMemoryStage1BudgetError,
   type PiMemoryStage1Evidence,
@@ -46,14 +51,16 @@ export {
   piMemoryPhase2SelectionDigest,
   PI_MEMORY_PRESET,
   piMemorySessionAffinityKey,
-  PI_MEMORY_STAGE1_BUILT_IN_MODEL,
-  PI_MEMORY_STAGE1_PERSONAL_MODEL,
   PI_MEMORY_STAGE1_RESPONSE_SCHEMA,
   PiMemoryStage1ProviderError,
+  PI_MEMORY_STAGE1_BUILT_IN_MODEL,
+  PI_MEMORY_STAGE1_PERSONAL_MODEL,
   PiMemoryStage1BudgetError,
   projectPiMemoryStage1Evidence,
   redactPiMemoryStage1Secrets,
   runPiMemoryStage1Extraction,
+  preparePiMemoryStage1Extraction,
+  runPiMemoryStage1PreparedExtraction,
   UnsupportedPiSessionVersionError,
 };
 export {
@@ -72,6 +79,7 @@ export type {
   PiPreheatedSkill,
   PiSessionInspection,
   PiMemoryStage1Model,
+  PiMemoryStage1PreparedRequest,
   PiMemoryStage1ProviderResult,
   PiMemoryStage1Evidence,
   PiMemoryStage1ProviderUsage,

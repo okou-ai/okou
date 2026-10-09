@@ -29,8 +29,8 @@ import type { PiAgentModelConfig, PiAgentStreamConfig } from "./types";
 import { piModelLimitOverride } from "./model-limits";
 import {
   PI_MEMORY_PRESET,
-  PI_MEMORY_PRESET_REQUEST_FIELDS,
   PI_MEMORY_STAGE1_BUILT_IN_MODEL,
+  memoryPresetPayload,
 } from "./memory-background-config";
 import { streamWithModelRequestDiagnostics } from "./model-request-diagnostics";
 import {
@@ -355,23 +355,6 @@ export function piAgentStreamForConfig(
       configuredOptions.signal,
     );
   };
-}
-
-/** A preset owns all tuning. Retain only conversation, tool and stream protocol. */
-function memoryPresetPayload(payload: unknown): unknown {
-  if (
-    typeof payload !== "object" ||
-    payload === null ||
-    Array.isArray(payload)
-  ) {
-    throw new Error("Invalid memory Chat Completions payload");
-  }
-  const allowed: ReadonlySet<string> = new Set(PI_MEMORY_PRESET_REQUEST_FIELDS);
-  return Object.fromEntries(
-    Object.entries(payload).filter(([key]) => {
-      return allowed.has(key);
-    }),
-  );
 }
 
 function capturedAutoCatalogIdentity(config: PiAgentModelConfig): string {

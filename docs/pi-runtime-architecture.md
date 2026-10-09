@@ -7,8 +7,8 @@ route policy, wire format, or release gate. The linked source owns executable
 behavior; the detailed contracts below own their respective implementation and
 rollout rules.
 
-> **API-first retired.** The API no longer executes Pi model turns. Every Pi
-> run, including the first turn of a new thread, executes in the Sandbox. The
+> **API-first retired.** The API no longer executes foreground Pi model turns.
+> Every Pi run, including the first turn of a new thread, executes in the Sandbox. The
 > Sandbox CLI starts a fresh session on a first turn or opens the session the
 > Runner restored from `resumeSession`; no handoff manifest or startup record
 > exists any more. The API-first executor, compaction preflight, usage observer,
@@ -71,6 +71,31 @@ reselect a provider or infer a different account from a model name. Explicit
 headers, firewall placeholders, subscription account binding, and
 dialect-specific tier policy remain at their existing trust boundaries.
 
+## Stage 1 provider preparation and admission
+
+The API's background Stage 1 extractor is separate from foreground Sandbox
+turns. [Pure request preparation](../turbo/packages/pi-agent-runtime/src/stage1-native-request.ts)
+uses the pinned SDK's additive request projectors, then selects evidence and
+measures the complete JSON body before SQL admission or HTTP. SDK builders
+remain authoritative for all three dialects; the runtime does not copy a
+serializer or transport.
+
+The [worker's fixed command](../turbo/apps/api/src/signals/services/pi-memory-stage1-worker.service.ts)
+owns exact captured credential and frozen selection/lease validation. New
+memory work is free and has no credit or subscription quota admission. Preset
+field filtering runs before measurement and is shared with the final stream
+boundary, so admission and execution use the same body. The worker passes only
+the prepared model, request ID and body to runtime execution. No command accessor or admission callback enters
+the SDK. The runtime's fixed payload callback supplies the measured data and
+retains the pre-HTTP abort check.
+
+The worker joins provider outcomes and finite usage/result settlement before
+propagating parent cancellation. HTTP status, response identity and actual
+usage survive unsuccessful terminal results; usage-free failures do not
+fabricate consumption. The ordinary runtime extraction operation still
+prepares and executes through the same path. These are in-process interfaces;
+Runner launch, history and persisted memory formats do not change.
+
 ## Retired stable-context projection
 
 The Pi stable-context projection (an owner-bound, generation-fenced cache of
@@ -91,7 +116,7 @@ reservation. See
 ## Launch through settlement
 
 1. The API freezes the admitted route, source, session, resources and CLI artifact.
-   Every Pi provider request runs in the Sandbox. Ordinary Runner capacity and
+   Every foreground Pi provider request runs in the Sandbox. Ordinary Runner capacity and
    the existing run/session transaction own admission.
 2. Runner restores the selected native session when `resumeSession` exists.
    Otherwise the CLI creates empty canonical history. The CLI validates the
