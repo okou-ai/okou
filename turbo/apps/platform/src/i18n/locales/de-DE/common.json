@@ -4926,6 +4926,27 @@
           "title": "IndexedDB-Speicher",
           "unavailable": "IndexedDB-Speicher ist nicht verfügbar."
         },
+        "morningBriefEmail": {
+          "checkStatus": "Zustellstatus prüfen",
+          "description": "Sende ein festes Beispiel mit der Morning Brief-Vorlage an deine Konto-E-Mail-Adresse. Dabei wird kein Agent ausgeführt und dein Zeitplan bleibt unverändert.",
+          "reasons": {
+            "delivery-failed": "Die Zustellung ist fehlgeschlagen. Ein früherer Versuch wurde möglicherweise vom Anbieter angenommen.",
+            "expired": "Die Zustellfrist ist abgelaufen. Ein früherer Versuch wurde möglicherweise vom Anbieter angenommen.",
+            "no-email": "Übersprungen: Dein Konto hat keine E-Mail-Adresse.",
+            "suppressed": "Übersprungen: Die Zustellung an deine Konto-E-Mail-Adresse ist gesperrt.",
+            "unsubscribed": "Übersprungen: Dein Konto hat E-Mail-Updates abbestellt."
+          },
+          "requestFailed": "Die Anfrage wurde nicht abgeschlossen. Beim erneuten Versuch wird dieselbe Anfrage verwendet, um eine doppelte E-Mail zu vermeiden.",
+          "retry": "Test-E-Mail erneut versuchen",
+          "send": "Test-E-Mail senden",
+          "sendAnother": "Weitere Test-E-Mail senden",
+          "sending": "Wird gesendet…",
+          "status": {
+            "queued": "Zur Zustellung eingereiht. Prüfe den Status, bevor du ein weiteres Beispiel sendest.",
+            "sent": "Vom E-Mail-Anbieter angenommen. Prüfe Posteingang und Spamordner; die Ankunft im Posteingang ist nicht bestätigt."
+          },
+          "title": "Morning Brief-Test-E-Mail"
+        },
         "openrouterPreset": {
           "description": "Gilt für neue Auto- und integrierte Okou 1.0-Ausführungen in der gesamten Organisation. Bestehende Ausführungen bleiben unverändert.",
           "loading": "Wird geladen…",

@@ -4,7 +4,7 @@ import type {
   ChatEventUserMessage,
   chatEvents,
 } from "@okouai/db/schema/chat-event";
-import type { chatThreads } from "@okouai/db/schema/chat-thread";
+import type { chatThreads } from "@okouai/db/runtime/chat-thread";
 
 /** The complete picked input projection, including canonical payload leaves. */
 export type PickedThreadInputEvent = Readonly<

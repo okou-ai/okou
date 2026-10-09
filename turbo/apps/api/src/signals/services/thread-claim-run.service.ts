@@ -439,7 +439,6 @@ import type {
 } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { agents } from "@okouai/db/schema/agent";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
 import { agentSessions } from "@okouai/db/schema/agent-session";
@@ -457,7 +456,6 @@ import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-con
 import { computerUseHosts } from "@okouai/db/schema/computer-use-host";
 
 import { memorySummaryProjections } from "@okouai/db/schema/memory-summary-projection";
-import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 
 import { storages, storageVersions } from "@okouai/db/schema/storage";
@@ -528,8 +526,6 @@ import {
   resolveQueuedModelSelectionPinFromSnapshot,
 } from "./model-selection.service";
 import type { OfficialWorkflowContextFacts } from "./official-workflow-context.signals";
-import type { OfficialWorkflowReconciliationResult } from "./official-workflow-reconciliation.types";
-import { reconcileOfficialWorkflowInstallation$ } from "./official-workflow-reconciliation.service";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { PiModelConfigurationError } from "./pi-model-configuration-error";
 import { additionalVolumesForRun } from "./presentation-template-data.service";
@@ -586,10 +582,7 @@ import {
   DueWorkflowAutomation,
 } from "./workflow-automation-enqueue.service";
 import { manualTriggerSource } from "./workflow-automation-trigger-source";
-import {
-  type RunWorkflowRef,
-  visibleWorkflowCondition,
-} from "./workflow-data.service";
+import type { RunWorkflowRef } from "./workflow-data.service";
 import { recordWorkflowAdmissionDuration } from "./workflow-queue-admission-timing.service";
 import { settleRejectedAutomationInput$ } from "./workflow-schedule-failure.service";
 
@@ -935,10 +928,6 @@ type RunFailure =
   | { readonly kind: "conflict"; readonly message: string }
   | { readonly kind: "run_error"; readonly response: RunErrorResponse };
 
-function isActivePreviousRunStatus(status: string): boolean {
-  return status === "pending" || status === "running";
-}
-
 type ComputerUseHostGrant = {
   readonly hostId: string;
   readonly displayName: string;
@@ -1154,18 +1143,6 @@ function workflowAutomationTiming(
   return timing;
 }
 
-function reconciliationConflictMessage(
-  reconciled: OfficialWorkflowReconciliationResult,
-): string {
-  // A `retry` result (a superseded reconciliation, or an event preparation or
-  // watch registration failure) rejects the head like any other failure; the
-  // next trigger reconciles again.
-  return reconciled.kind === "needs-reconfiguration" ||
-    reconciled.kind === "retry"
-    ? reconciled.message
-    : "Official Workflow automation no longer exists";
-}
-
 type RejectedQueueRunAssembly = Extract<
   ChatQueueRunAssembly,
   { readonly kind: "rejected" }
@@ -1215,7 +1192,6 @@ function queuedAutomationLaunchArguments(args: {
     appendSystemPrompt: material.appendSystemPrompt,
     callbacks: material.callbacks,
     autonomyBudget,
-    activePreviousRunPolicy: material.activePreviousRunPolicy,
     recordLastRunId: material.recordLastRunId,
     recordLastRunAt: material.recordLastRunAt,
   };
@@ -1406,7 +1382,6 @@ interface WorkflowAutomationQueuedLaunchMaterial {
   readonly prompt: string;
   readonly appendSystemPrompt: string | undefined;
   readonly callbacks: ReturnType<typeof buildWorkflowAutomationCallbacks>;
-  readonly activePreviousRunPolicy: "block" | "allow";
   readonly recordLastRunId: boolean;
   readonly recordLastRunAt: boolean;
   readonly allowClaimedOnceScheduleAutomation: boolean;
@@ -1465,7 +1440,6 @@ interface WorkflowAutomationLaunchArgs {
   readonly connectorSourceId?: string;
   readonly appendSystemPrompt: string | undefined;
   readonly callbacks: readonly InternalRunCallbackInput[];
-  readonly activePreviousRunPolicy: ActivePreviousRunPolicy;
   readonly autonomyBudget: number;
   readonly recordLastRunId: boolean;
   readonly recordLastRunAt: boolean;
@@ -1535,8 +1509,6 @@ function workflowThreadSessionRoute(
     cliAgentType: modelContext.cliAgentType,
   };
 }
-
-type ActivePreviousRunPolicy = "block" | "allow";
 
 function claimCommitInput(input: RunPlan): ThreadRunContext["input"] {
   return {
@@ -3121,7 +3093,6 @@ export function createThreadClaimRunObjects(
           renderRunPromptAndSkills(context.value).skillVolumes,
         );
   });
-  const internalTargetRevision$ = state(0);
   const event$ = automationContext$;
   const capturedAutomationTarget$ = computed(
     async (get): Promise<LaunchTarget | null> => {
@@ -3141,27 +3112,8 @@ export function createThreadClaimRunObjects(
       return row ?? null;
     },
   );
-  const target$ = computed(async (get): Promise<LaunchTarget | null> => {
-    if (get(internalTargetRevision$) === 0) {
-      return get(capturedAutomationTarget$);
-    }
-    const event = await get(event$);
-    if (!event) {
-      return null;
-    }
-    const [row] = await get(db$)
-      .select({
-        automation: workflowAutomationColumns(),
-        agentId: workflows.agentId,
-      })
-      .from(workflowAutomations)
-      .innerJoin(workflows, eq(workflows.id, workflowAutomations.workflowId))
-      .where(eq(workflowAutomations.id, event.automationId))
-      .limit(1);
-    return row ?? null;
-  });
+  const target$ = capturedAutomationTarget$;
   const queuedAutomationRunSources = {
-    internalTargetRevision$: internalTargetRevision$,
     event$: event$,
     target$: target$,
   };
@@ -3276,33 +3228,7 @@ export function createThreadClaimRunObjects(
     });
   });
   const material = { launchMaterial$: launchMaterial$ };
-  const {
-    internalTargetRevision$:
-      queuedAutomationReconciliationInternalTargetRevision$,
-  } = queuedAutomationRunSources;
-  const reconcileOfficialWorkflow$ = command(
-    async ({ set }, target: LaunchTarget, signal: AbortSignal) => {
-      const reconciled = await set(
-        reconcileOfficialWorkflowInstallation$,
-        {
-          orgId: target.automation.orgId,
-          member: { userId: target.automation.ownerUserId, role: "member" },
-          workflowId: target.automation.workflowId,
-          targetAutomationId: target.automation.id,
-        },
-        signal,
-      );
-      set(queuedAutomationReconciliationInternalTargetRevision$, (revision) => {
-        return revision + 1;
-      });
-      return reconciled;
-    },
-  );
-  const reconciliation = {
-    reconcileOfficialWorkflow$: reconcileOfficialWorkflow$,
-  };
-  // The admitted automation's launch arguments, derived from the same reads
-  // (after any reconciliation revision) that initializeQueuedAutomation used.
+  // The admitted automation's launch arguments use its captured target.
   const automationLaunchReadinessInput$ = computed(
     async (get): Promise<AssembleWorkflowAutomationRunArgs> => {
       const [head, event, target, launchMaterial, autonomyBudget] =
@@ -3331,114 +3257,11 @@ export function createThreadClaimRunObjects(
       });
     },
   );
-  const previousRunFailure$ = computed(
-    async (get): Promise<RunFailure | null> => {
-      const args = await get(automationLaunchReadinessInput$);
-      const { automation } = args.due;
-      if (args.activePreviousRunPolicy === "allow" || !automation.lastRunId) {
-        return null;
-      }
-      const [run] = await get(db$)
-        .select({ status: agentRuns.status })
-        .from(agentRuns)
-        .where(eq(agentRuns.id, automation.lastRunId))
-        .limit(1);
-      return run && isActivePreviousRunStatus(run.status)
-        ? { kind: "conflict", message: "Previous run is still active" }
-        : null;
-    },
-  );
-  const ownerMember$ = computed(async (get) => {
-    const { automation } = (await get(automationLaunchReadinessInput$)).due;
-    const [member] = await get(db$)
-      .select({ role: orgMembersCache.role })
-      .from(orgMembersCache)
-      .where(
-        and(
-          eq(orgMembersCache.orgId, automation.orgId),
-          eq(orgMembersCache.userId, automation.ownerUserId),
-        ),
-      )
-      .limit(1);
-    return member ?? null;
-  });
-  const visibleTarget$ = computed(async (get) => {
-    const { automation } = (await get(automationLaunchReadinessInput$)).due;
-    const [target] = await get(db$)
-      .select({
-        agentId: workflows.agentId,
-        owner: agents.owner,
-        visibility: agents.visibility,
-      })
-      .from(workflows)
-      .innerJoin(agents, eq(workflows.agentId, agents.id))
-      .where(
-        and(
-          eq(workflows.orgId, automation.orgId),
-          eq(workflows.id, automation.workflowId),
-          visibleWorkflowCondition({
-            userId: automation.ownerUserId,
-            role: "member",
-          }),
-        ),
-      )
-      .limit(1);
-    return target ?? null;
-  });
-  const targetReadable$ = computed(async (get) => {
-    const { automation, agentId, allowClaimedOnceScheduleAutomation } = (
-      await get(automationLaunchReadinessInput$)
-    ).due;
-    const claimedOnceSchedule =
-      allowClaimedOnceScheduleAutomation === true &&
-      automation.kind === "schedule" &&
-      automation.scheduleType === "once" &&
-      automation.nextRunAt === null &&
-      automation.lastRunAt !== null;
-    if (
-      (!automation.enabled && !claimedOnceSchedule) ||
-      (automation.officialBlueprintKey !== null &&
-        automation.officialReconciliationStatus !== "current")
-    ) {
-      return false;
-    }
-    const [member, target] = await Promise.all([
-      get(ownerMember$),
-      get(visibleTarget$),
-    ]);
-    return (
-      member !== null &&
-      target !== null &&
-      target.agentId === agentId &&
-      (target.visibility === "public" ||
-        target.owner === automation.ownerUserId)
-    );
-  });
-  const automationLaunchReadinessReadiness$ = computed(
-    async (get): Promise<RunFailure | null> => {
-      const [previousFailure, readable] = await Promise.all([
-        get(previousRunFailure$),
-        get(targetReadable$),
-      ]);
-      return (
-        previousFailure ??
-        (readable
-          ? null
-          : {
-              kind: "conflict",
-              message: "Workflow automation is paused or no longer readable",
-            })
-      );
-    },
-  );
   const workflowAutomationLaunchReadGraphSources = {
     input$: automationLaunchReadinessInput$,
-    readiness$: automationLaunchReadinessReadiness$,
   };
-  const {
-    input$: workflowAutomationLaunchReadGraphInput$,
-    readiness$: workflowAutomationLaunchReadGraphReadiness$,
-  } = workflowAutomationLaunchReadGraphSources;
+  const { input$: workflowAutomationLaunchReadGraphInput$ } =
+    workflowAutomationLaunchReadGraphSources;
   const { input$: automationLaunchMaterialsInput$ } =
     workflowAutomationLaunchReadGraphSources;
   const automationLaunchMaterialsComputerUseHostGrant$ = computed(
@@ -3612,7 +3435,6 @@ export function createThreadClaimRunObjects(
   );
   const workflowAutomationLaunchInput$ =
     workflowAutomationLaunchReadGraphInput$;
-  const readiness$ = workflowAutomationLaunchReadGraphReadiness$;
   const computerUseHostGrant$ =
     workflowAutomationLaunchReadGraphComputerUseHostGrant$;
   const workflowAutomationLaunchRunInput$ =
@@ -3629,17 +3451,13 @@ export function createThreadClaimRunObjects(
   const assembleWorkflowAutomationRun$ = computed(
     async (get): Promise<AssembledWorkflowAutomationRun | RunFailure> => {
       const args = await get(workflowAutomationLaunchInput$);
-      const [selection, model, computerUseHostGrant, runInput, readiness] =
+      const [selection, model, computerUseHostGrant, runInput] =
         await Promise.all([
           get(workflowAutomationLaunchSelectionInput$),
           get(workflowAutomationLaunchModel$),
           get(computerUseHostGrant$),
           get(workflowAutomationLaunchRunInput$),
-          get(readiness$),
         ]);
-      if (readiness) {
-        return readiness;
-      }
       if (!model.ok) {
         return model.failure;
       }
@@ -3709,8 +3527,7 @@ export function createThreadClaimRunObjects(
   const { launchMaterial$: queuedAutomationAssemblerLaunchMaterial$ } =
     material;
   // A head whose automation input can no longer be read is rejected from its
-  // reads; rejections that depend on reconciliation are returned by the
-  // initialization command instead.
+  // captured reads.
   const queuedAutomationAssemblerInternalEarlyAssembly$ = computed(
     async (get): Promise<ChatQueueRunAssembly | null> => {
       if (await get(automationExecutionInput$)) {
@@ -3742,10 +3559,6 @@ export function createThreadClaimRunObjects(
   } = budget;
   const { launchMaterial$: initializeQueuedAutomationLaunchMaterial$ } =
     material;
-  const {
-    reconcileOfficialWorkflow$:
-      initializeQueuedAutomationReconcileOfficialWorkflow$,
-  } = reconciliation;
   const initializeAutomationExecution$ = command(
     (
       _store,
@@ -3761,7 +3574,7 @@ export function createThreadClaimRunObjects(
   );
   const initializeQueuedAutomationInitializeQueuedAutomation$ = command(
     async (
-      { get, set },
+      { get },
       head: ChatQueueHeadContext,
       signal: AbortSignal,
     ): Promise<QueuedAutomationLaunch> => {
@@ -3789,43 +3602,12 @@ export function createThreadClaimRunObjects(
           ),
         );
       }
-      if (loadedTarget.automation.officialBlueprintKey !== null) {
-        const reconciled = await set(
-          initializeQueuedAutomationReconcileOfficialWorkflow$,
-          loadedTarget,
-          signal,
-        );
-        if (reconciled.kind !== "current") {
-          return rejectedAutomationLaunch({
-            kind: "rejected",
-            rejection: {
-              error: {
-                code: "CONFLICT",
-                message: reconciliationConflictMessage(reconciled),
-              },
-              userId: loadedTarget.automation.ownerUserId,
-            },
-          });
-        }
-      }
-      const [target, material, autonomyBudget] = await Promise.all([
-        get(initializeQueuedAutomationTarget$),
+      const target = loadedTarget;
+      const [material, autonomyBudget] = await Promise.all([
         get(initializeQueuedAutomationLaunchMaterial$),
         get(initializeQueuedAutomationAutonomyBudget$),
       ]);
       signal.throwIfAborted();
-      if (!target) {
-        return rejectedAutomationLaunch({
-          kind: "rejected",
-          rejection: {
-            userId: loadedTarget.automation.ownerUserId,
-            error: {
-              code: "CONFLICT",
-              message: "Official Workflow automation no longer exists",
-            },
-          },
-        });
-      }
       if (!material) {
         return rejectedAutomationLaunch({
           kind: "rejected",
@@ -3890,7 +3672,7 @@ export function createThreadClaimRunObjects(
       ]);
       if (!target) {
         throw new Error(
-          "Automation target disappeared within its captured revision",
+          "Automation target disappeared within its captured reads",
         );
       }
       if (assembled.kind !== "assembled") {
@@ -7540,8 +7322,8 @@ export function createThreadClaimRunObjects(
         );
         signal.throwIfAborted();
         if (launch.kind === "rejected") {
-          // The automation input was rejected from its reads or its
-          // reconciliation; no launch read can change that, so none starts.
+          // The automation input was rejected from its captured reads;
+          // no launch read can change that, so none starts.
           return { kind: "rejected" as const, assembly: launch.assembly };
         }
         rewardArgs = await set(
@@ -7579,8 +7361,8 @@ export function createThreadClaimRunObjects(
         await set(resolveAutomationModelSnapshot$, signal);
         signal.throwIfAborted();
       }
-      // Storage mounts and runtime-secret KMS do not read reconciled
-      // automation configuration, so they start before launch preparation.
+      // Storage mounts and runtime-secret KMS are independent of automation
+      // launch material, so they start before launch preparation.
       const [encrypted, admission, launch] = await Promise.all([
         set(prepareEncryptedSecrets$, signal),
         set(checkClaimAdmission$, signal),

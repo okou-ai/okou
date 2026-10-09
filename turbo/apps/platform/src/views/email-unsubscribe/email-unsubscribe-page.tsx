@@ -21,8 +21,8 @@ export function EmailUnsubscribePage() {
   const confirm = useSet(confirmEmailUnsubscribe$);
 
   return (
-    <div className="fixed inset-0 z-10 flex items-center justify-center bg-background">
-      <div className="flex w-[430px] max-w-[calc(100%-48px)] flex-col items-center gap-8 rounded-[20px] border border-border bg-background px-6 py-12 text-center">
+    <div className="fixed inset-0 z-10 flex h-viewport flex-col items-center overflow-y-auto bg-background pt-safe-offset-8 pr-safe-offset-6 pb-safe-offset-8 pl-safe-offset-6">
+      <div className="my-auto flex w-[430px] max-w-full shrink-0 flex-col items-center gap-8 rounded-[20px] border border-border bg-background px-6 py-12 text-center">
         <ProductBrandMark />
         {status === "done" ? (
           <div className="flex flex-col items-center gap-2.5">

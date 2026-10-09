@@ -507,11 +507,6 @@
       "owner": "testUserId$"
     },
     {
-      "id": "TX-0102",
-      "file": "turbo/apps/api/src/signals/services/cli-auth.service.ts",
-      "owner": "ensureTestOrgBillingRow$"
-    },
-    {
       "id": "TX-0103",
       "file": "turbo/apps/api/src/signals/services/cloudflare-access.service.ts",
       "owner": "createCloudflareAccessConfig$"
@@ -1252,11 +1247,6 @@
       "owner": "commitSshConnectionCreation$"
     },
     {
-      "id": "TX-0251",
-      "file": "turbo/apps/api/src/signals/services/ssh-connection.service.ts",
-      "owner": "commitSshConnectionUpdate$"
-    },
-    {
       "id": "TX-0252",
       "file": "turbo/apps/api/src/signals/services/ssh-credential.service.ts",
       "owner": "updateSshCredential$"
@@ -1525,11 +1515,6 @@
       "id": "TX-0306",
       "file": "turbo/apps/api/src/signals/services/usage-pack-subscription.service.ts",
       "owner": "retireReconciledUsagePackSnapshot$"
-    },
-    {
-      "id": "TX-0307",
-      "file": "turbo/apps/api/src/signals/services/usage.service.ts",
-      "owner": "usageMembers$"
     },
     {
       "id": "TX-0308",

@@ -16,7 +16,7 @@ release_json=$(yq -o=json '.' "$RELEASE_WORKFLOW")
 jq -e '
   .jobs["build-runner-release-assets"] as $job |
   $job["runs-on"] == "ubuntu-latest-8-cores" and
-  $job.container.image == "ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261008" and
+  $job.container.image == "ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009" and
   ($job | has("environment") | not) and
   $job.needs == ["release-please", "publish-cli-versioned-artifact"] and
   any($job.steps[];

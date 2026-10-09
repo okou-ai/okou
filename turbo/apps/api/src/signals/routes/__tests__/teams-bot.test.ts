@@ -1,3 +1,5 @@
+import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
+import { publicRunOwner } from "./helpers/public-run-owner";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import {
   createHmac,
@@ -3134,14 +3136,18 @@ describe("POST /api/webhooks/teams/bot", () => {
       authOrgApi.acceptAgentStorageWrites();
       runsApi.acceptStorageDownloads();
       runsApi.acceptTelemetryIngest();
-      const defaultAgent = await authOrgApi.bootstrapLimitedFreeOnboarding(
-        actor,
-        {
-          displayName: "Teams default agent",
-        },
-      );
-      await authOrgApi.updateAgentMetadata(actor, defaultAgent.body.agentId, {
+      await authOrgApi.completeOnboarding(actor);
+      const { defaultAgentId } = await authOrgApi.readOnboardingStatus(actor);
+      if (!defaultAgentId) {
+        throw new Error("Expected the normal onboarding Agent");
+      }
+      await authOrgApi.updateAgentMetadata(actor, defaultAgentId, {
         visibility: "public",
+      });
+      const ownedRuns = publicRunOwner(context, actor, {
+        afterRuns: async () => {
+          await deletePublicWorkspace(context, actor);
+        },
       });
       await runsApi.grantProEntitlement(actor);
       await runsApi.ensurePersonalSubscriptionModel(actor, {
@@ -3357,8 +3363,12 @@ describe("POST /api/webhooks/teams/bot", () => {
         },
       ]);
 
-      const dispatchRuns = await runsApi.listAgentRuns(actor, { limit: 20 });
-      const dispatchRun = dispatchRuns.runs.find((run) => {
+      const dispatchRuns = await createRunReadsApi(context).requestListLogs(
+        actor,
+        { limit: 20 },
+        [200],
+      );
+      const dispatchRun = dispatchRuns.body.data.find((run) => {
         return run.prompt.includes("ship the Teams dispatch");
       });
       if (!dispatchRun) {
@@ -3366,7 +3376,7 @@ describe("POST /api/webhooks/teams/bot", () => {
       }
       const runId = dispatchRun.id;
       await runsApi.heartbeatRunner(runnerGroup);
-      const claim = await runsApi.claimRunnerJob(runId);
+      const claim = await ownedRuns.claim(runId);
       const appendSystemPrompt = claim.appendSystemPrompt ?? "";
       const currentUserPrompt = promptSection(
         appendSystemPrompt,

@@ -544,17 +544,32 @@ async fn gc_versions_keeps_recent_config_only_version() {
 async fn gc_versions_keeps_recent_runner_binary_file() {
     let dir = tempfile::tempdir().unwrap();
     let home = test_home(dir.path());
-    let bin_dir = home.bin_dir();
+    let version_bin = home.bin_dir().join("v1.0.0");
+    let runner_binary = version_bin.join("runner");
 
-    std::fs::create_dir_all(bin_dir.join("v1.0.0")).unwrap();
+    std::fs::create_dir_all(&version_bin).unwrap();
+    std::fs::write(&runner_binary, "binary").unwrap();
     age_version_past_gc_min_age(&home, "v1.0.0");
-    std::fs::write(bin_dir.join("v1.0.0").join("runner"), "binary").unwrap();
+    // Update the existing leaf without refreshing its parent directory's mtime.
+    std::fs::write(&runner_binary, "updated binary").unwrap();
+
+    let now = SystemTime::now();
+    let directory_mtime = version_bin.metadata().unwrap().modified().unwrap();
+    let binary_mtime = runner_binary.metadata().unwrap().modified().unwrap();
+    assert!(
+        now.duration_since(directory_mtime).unwrap() > GC_MIN_AGE,
+        "fixture directory must be old so only the runner binary protects the version"
+    );
+    assert!(
+        now.duration_since(binary_mtime).unwrap() < GC_MIN_AGE,
+        "fixture runner binary must be recent"
+    );
 
     let removed = gc_versions(&home, false, None, None).await.unwrap();
 
     assert!(removed.is_empty());
     assert!(
-        bin_dir.join("v1.0.0").exists(),
+        version_bin.exists(),
         "recent runner binary file should protect its version"
     );
 }
@@ -563,23 +578,41 @@ async fn gc_versions_keeps_recent_runner_binary_file() {
 async fn gc_versions_keeps_recent_runner_config_file() {
     let dir = tempfile::tempdir().unwrap();
     let home = test_home(dir.path());
-    let bin_dir = home.bin_dir();
-    let runners_dir = home.runners_dir();
+    let version_bin = home.bin_dir().join("v1.0.0");
+    let version_config = home.runners_dir().join("v1.0.0");
+    let runner_config = version_config.join("runner.yaml");
 
-    std::fs::create_dir_all(bin_dir.join("v1.0.0")).unwrap();
-    std::fs::create_dir_all(runners_dir.join("v1.0.0")).unwrap();
+    std::fs::create_dir_all(&version_bin).unwrap();
+    std::fs::create_dir_all(&version_config).unwrap();
+    std::fs::write(&runner_config, "config").unwrap();
     age_version_past_gc_min_age(&home, "v1.0.0");
-    std::fs::write(runners_dir.join("v1.0.0").join("runner.yaml"), "config").unwrap();
+    // Update the existing leaf without refreshing its parent directory's mtime.
+    std::fs::write(&runner_config, "updated config").unwrap();
+
+    let now = SystemTime::now();
+    for path in [&version_bin, &version_config] {
+        let directory_mtime = path.metadata().unwrap().modified().unwrap();
+        assert!(
+            now.duration_since(directory_mtime).unwrap() > GC_MIN_AGE,
+            "fixture directory {} must be old so only the config file protects the version",
+            path.display()
+        );
+    }
+    let config_mtime = runner_config.metadata().unwrap().modified().unwrap();
+    assert!(
+        now.duration_since(config_mtime).unwrap() < GC_MIN_AGE,
+        "fixture runner config must be recent"
+    );
 
     let removed = gc_versions(&home, false, None, None).await.unwrap();
 
     assert!(removed.is_empty());
     assert!(
-        bin_dir.join("v1.0.0").exists(),
+        version_bin.exists(),
         "recent runner config file should protect its version"
     );
     assert!(
-        runners_dir.join("v1.0.0").exists(),
+        version_config.exists(),
         "recent runner config file should protect its config directory"
     );
 }

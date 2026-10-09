@@ -4994,6 +4994,27 @@
           "title": "Almacenamiento de IndexedDB",
           "unavailable": "El almacenamiento de IndexedDB no está disponible."
         },
+        "morningBriefEmail": {
+          "checkStatus": "Comprobar estado de entrega",
+          "description": "Envía un ejemplo fijo al correo de tu cuenta con la plantilla de Morning Brief. No ejecuta un Agent ni cambia tu programación.",
+          "reasons": {
+            "delivery-failed": "La entrega ha fallado. Es posible que el proveedor haya aceptado un intento anterior.",
+            "expired": "La entrega ha caducado. Es posible que el proveedor haya aceptado un intento anterior.",
+            "no-email": "Omitido: tu cuenta no tiene dirección de correo.",
+            "suppressed": "Omitido: la entrega al correo de tu cuenta está bloqueada.",
+            "unsubscribed": "Omitido: tu cuenta canceló la suscripción a las actualizaciones por correo."
+          },
+          "requestFailed": "La solicitud no se completó. El reintento usa la misma solicitud para evitar un correo duplicado.",
+          "retry": "Reintentar correo de prueba",
+          "send": "Enviar correo de prueba",
+          "sendAnother": "Enviar otro correo de prueba",
+          "sending": "Enviando…",
+          "status": {
+            "queued": "En cola de entrega. Comprueba el estado antes de enviar otro ejemplo.",
+            "sent": "El proveedor de correo lo ha aceptado. Revisa la bandeja de entrada y el spam; la llegada a la bandeja de entrada no está confirmada."
+          },
+          "title": "Correo de prueba de Morning Brief"
+        },
         "openrouterPreset": {
           "description": "Se aplica a las nuevas ejecuciones de Auto y Okou 1.0 integrado de toda la organización. Las ejecuciones existentes no cambian.",
           "loading": "Cargando…",

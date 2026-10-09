@@ -93,8 +93,35 @@ fn owned_pi_message_fixtures_preserve_canonical_bytes() {
     }
 }
 
-fn image(data: &str) -> Value {
-    json!({"type":"image", "mimeType":"image/png", "data":data})
+#[derive(serde::Serialize)]
+struct PiImage<'a> {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    #[serde(rename = "mimeType")]
+    mime_type: &'static str,
+    data: &'a str,
+}
+
+fn image(data: &str) -> PiImage<'_> {
+    PiImage {
+        kind: "image",
+        mime_type: "image/png",
+        data,
+    }
+}
+
+#[test]
+fn borrowed_pi_image_fixture_preserves_canonical_bytes() {
+    for data in ["", "AA==", "你好\"\\\n\0"] {
+        assert_eq!(
+            json!([image(data), image(data)]).to_string(),
+            json!([
+                {"type":"image", "mimeType":"image/png", "data":data},
+                {"type":"image", "mimeType":"image/png", "data":data}
+            ])
+            .to_string()
+        );
+    }
 }
 
 #[tokio::test]

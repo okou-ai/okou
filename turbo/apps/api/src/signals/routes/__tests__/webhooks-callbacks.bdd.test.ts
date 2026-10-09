@@ -13,7 +13,6 @@ import { testContext } from "../../../__tests__/test-context";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { mockNow, now, nowDate } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { deleteOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settle } from "../../utils";
 import {
@@ -4040,7 +4039,6 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     // Redelivering the processed team invoice re-runs lingering-pro cleanup.
     const cancelCallsBefore =
       context.mocks.stripe.subscriptions.cancel.mock.calls.length;
-    await deleteOrgPlanEntitlementFixture(orgId);
     await api.postStripeEvent(
       stripeEvent({ type: "invoice.paid", object: teamInvoice }),
       [200],
@@ -4048,9 +4046,9 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     expect(
       context.mocks.stripe.subscriptions.cancel.mock.calls.length,
     ).toBeGreaterThan(cancelCallsBefore);
-    const repaired = await billing.readBillingStatus(actor);
-    expect(repaired).toMatchObject(TEAM_BILLING_CAPABILITIES);
-    expect(repaired.credits).toBe(140_000);
+    const replayed = await billing.readBillingStatus(actor);
+    expect(replayed).toMatchObject(TEAM_BILLING_CAPABILITIES);
+    expect(replayed.credits).toBe(140_000);
 
     // A lower-tier subscription invoice cannot replace the team subscription.
     await api.postStripeEvent(

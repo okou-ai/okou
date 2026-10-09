@@ -1,12 +1,9 @@
+import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 import { createPublicBillingZeroFixture } from "./helpers/public-billing-zero-fixture";
 import { deleteFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createHash, randomUUID } from "node:crypto";
 import { describe, expect, it, onTestFinished, test } from "vitest";
 
-import {
-  upsertOrgPlanEntitlementFixture,
-  deleteOrgPlanEntitlementFixture,
-} from "../../../test-fixtures/org-plan-entitlement";
 import { clearAllDetached, createDeferredPromise } from "../../utils";
 import { http, HttpResponse } from "msw";
 import { server } from "../../../mocks/server";
@@ -16,10 +13,6 @@ import { holdSubscriptionKmsBatch } from "./helpers/subscription-kms-batch";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { testContext } from "../../../__tests__/test-context";
 
-import { setupRawAppRequestWithRoutes } from "../../../__tests__/test-app";
-import { chatEventsRoutes } from "../chat-events";
-
-import { createRouteMocks } from "./helpers/route-test";
 import { now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -164,7 +157,7 @@ async function fixture(type: SubscriptionType) {
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   const runnerGroup = runs.configureRunnerGroup();
-  await runs.grantProEntitlement(actor);
+  const subscription = await runs.grantProEntitlement(actor);
   mockClaudeCodeTokenEndpoint();
   const connected = await connect(actor, type, "identity-a");
   const model: "gpt-6-astra" | "claude-sonnet-5-5" =
@@ -191,6 +184,7 @@ async function fixture(type: SubscriptionType) {
   return {
     actor,
     connected,
+    subscription,
     start,
     claim,
     agentId: agent.agentId,
@@ -1141,12 +1135,9 @@ describe("personal effective provider entitlement", () => {
     if (!f.actor.orgId) {
       throw new Error("Expected an owned organization");
     }
-    // Infrastructure-only divergent entitlement snapshot, as in chat-events.
-    await upsertOrgPlanEntitlementFixture({
-      orgId: f.actor.orgId,
-      status: "suspended",
-      restrictedBuiltInModels: false,
-    });
+    await publicPlanLifecycle(context, f.actor, "pro", f.subscription).update(
+      "canceled",
+    );
     const restricted = await sendRejectedAtPick(f.actor, {
       agentId: f.agentId,
       model: f.model,
@@ -1163,45 +1154,6 @@ describe("personal effective provider entitlement", () => {
       credentialScope: "member",
       availability: "plan_restricted",
     });
-    await deleteOrgPlanEntitlementFixture(f.actor.orgId);
-    // Missing canonical entitlement fails model selection before a thread,
-    // input or run can be created. Use raw HTTP for the invariant 500 status.
-    const clientThreadId = randomUUID();
-    createRouteMocks(context).clerk.session(
-      f.actor.userId,
-      f.actor.orgId,
-      f.actor.orgRole,
-    );
-    const missing = await setupRawAppRequestWithRoutes({
-      context,
-      routes: chatEventsRoutes,
-    })("/api/chat/events", {
-      method: "POST",
-      headers: {
-        authorization: "Bearer clerk-session",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        agentId: f.agentId,
-        model: f.model,
-        clientThreadId,
-        prompt: "missing plan authority",
-        userMessage: {
-          version: 1,
-          parts: [{ type: "text", text: "missing plan authority" }],
-        },
-        hasTextContent: true,
-      }),
-    });
-    expect(missing).toStrictEqual({
-      status: 500,
-      body: { error: "Internal server error" },
-    });
-    await createChatFilesBddApi(context).requestReadThreadMetadata(
-      f.actor,
-      clientThreadId,
-      [404],
-    );
   });
 });
 

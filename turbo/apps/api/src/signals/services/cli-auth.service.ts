@@ -3,26 +3,19 @@ import { randomUUID } from "node:crypto";
 import { cliTokens } from "@okouai/db/schema/cli-tokens";
 import { orgCache } from "@okouai/db/schema/org-cache";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
-import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { userCache } from "@okouai/db/schema/user-cache";
 import { command, computed, type Computed } from "ccstate";
-import { and, desc, eq, ne, sql } from "drizzle-orm";
+import { and, desc, eq, ne } from "drizzle-orm";
 
 import { generateCliToken } from "../auth/tokens";
 import { clerk$ } from "../external/clerk";
 import { db$, writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
-import { orgPlanEntitlementValues } from "./org-plan-entitlements.service";
-import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
-import { expireOrgCreditsInTransaction } from "./org-credit-expiration.service";
 
-export const DEFAULT_TEST_EMAIL = "dev+clerk_test+serial@vm0-e2e.ai";
 const CLI_TOKEN_EXPIRES_IN_SECONDS = 90 * 24 * 60 * 60;
 
 const FAR_FUTURE_CACHE_MS = 365 * 24 * 60 * 60 * 1000;
 const USER_CACHE_TTL_MS = 15 * 60 * 1000;
-const TEST_ORG_CREDITS = 100_000;
 
 interface IssuedCliToken {
   readonly token: string;
@@ -150,108 +143,6 @@ export const testUserId$ = command(
 function clerkRoleToCacheRole(role: string): "admin" | "member" {
   return role === "org:admin" ? "admin" : "member";
 }
-
-/**
- * One transaction, no retry: expired remainder is cleared by one conditional
- * statement first, then the top-up is one atomic GREATEST update. A lost clear
- * throws OrgCreditExpirationConflict for this test-only caller.
- */
-const ensureTestOrgBillingRow$ = command(
-  async ({ set }, orgId: string, signal: AbortSignal): Promise<void> => {
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0102; new non-billing transactions are prohibited.
-    await set(writeDb$).transaction(async (tx) => {
-      const [inserted] = await tx
-        .insert(orgMetadataCanonicalWrites)
-        .values({ orgId, tier: "pro" })
-        .onConflictDoNothing()
-        .returning({ orgId: orgMetadata.orgId });
-      if (inserted) {
-        await tx
-          .insert(orgPlanEntitlements)
-          .values(
-            orgPlanEntitlementValues(
-              { orgId, tier: "pro", source: "org_metadata_migration" },
-              { stripeSubscriptionId: null, sourceMetadata: {} },
-            ),
-          )
-          .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
-      }
-      const at = nowDate();
-      await expireOrgCreditsInTransaction(tx, orgId, at);
-      await tx
-        .update(orgMetadata)
-        .set({
-          tier: "pro",
-          credits: sql`GREATEST(${orgMetadata.credits}, ${TEST_ORG_CREDITS})`,
-          updatedAt: at,
-        })
-        .where(eq(orgMetadata.orgId, orgId));
-      signal.throwIfAborted();
-    });
-    signal.throwIfAborted();
-  },
-);
-
-export const ensureTestOrg$ = command(
-  async (
-    { get, set },
-    userId: string,
-    signal: AbortSignal,
-  ): Promise<{ readonly orgId: string }> => {
-    const memberships = await get(clerk$).users.getOrganizationMembershipList({
-      userId,
-    });
-    signal.throwIfAborted();
-
-    const ordered = [...memberships.data].sort((a, b) => {
-      return a.createdAt - b.createdAt;
-    });
-    const membership = ordered[0];
-    if (!membership) {
-      throw new Error(`Test user ${userId} has no organization membership`);
-    }
-
-    const org = membership.organization;
-    const writeDb = set(writeDb$);
-    const [cached] = await writeDb
-      .select({ orgId: orgCache.orgId })
-      .from(orgCache)
-      .where(eq(orgCache.orgId, org.id))
-      .limit(1);
-    signal.throwIfAborted();
-
-    if (!cached) {
-      await writeDb.insert(orgCache).values({
-        orgId: org.id,
-        name: org.name,
-        cachedAt: new Date(nowDate().getTime() + FAR_FUTURE_CACHE_MS),
-      });
-      signal.throwIfAborted();
-    }
-
-    await set(ensureTestOrgBillingRow$, org.id, signal);
-    signal.throwIfAborted();
-
-    await writeDb
-      .insert(orgMembersCache)
-      .values({
-        orgId: org.id,
-        userId,
-        role: clerkRoleToCacheRole(membership.role),
-        cachedAt: new Date(nowDate().getTime() + FAR_FUTURE_CACHE_MS),
-      })
-      .onConflictDoUpdate({
-        target: [orgMembersCache.orgId, orgMembersCache.userId],
-        set: {
-          role: clerkRoleToCacheRole(membership.role),
-          cachedAt: new Date(nowDate().getTime() + FAR_FUTURE_CACHE_MS),
-        },
-      });
-    signal.throwIfAborted();
-
-    return { orgId: org.id };
-  },
-);
 
 export function testUserOrgId(
   userId: string,
