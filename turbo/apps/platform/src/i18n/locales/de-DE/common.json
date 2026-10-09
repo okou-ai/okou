@@ -4944,6 +4944,13 @@
           "title": "IndexedDB-Speicher",
           "unavailable": "IndexedDB-Speicher ist nicht verfügbar."
         },
+        "openrouterPreset": {
+          "description": "Gilt für neue Auto- und integrierte Okou 1.0-Ausführungen in der gesamten Organisation. Bestehende Ausführungen bleiben unverändert.",
+          "loading": "Wird geladen…",
+          "systemDefault": "Systemstandard",
+          "title": "OpenRouter-Preset",
+          "unavailable": "Nicht verfügbar"
+        },
         "welcomeThread": {
           "create": "Willkommenschat erstellen",
           "creating": "Wird erstellt…",

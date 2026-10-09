@@ -4936,6 +4936,13 @@
           "title": "IndexedDB storage",
           "unavailable": "IndexedDB storage is unavailable."
         },
+        "openrouterPreset": {
+          "description": "Applies to new Auto and Okou 1.0 Built-in runs for the entire organization. Existing runs are unchanged.",
+          "loading": "Loading…",
+          "systemDefault": "System default",
+          "title": "OpenRouter preset",
+          "unavailable": "Unavailable"
+        },
         "welcomeThread": {
           "create": "Create welcome thread",
           "creating": "Creating…",

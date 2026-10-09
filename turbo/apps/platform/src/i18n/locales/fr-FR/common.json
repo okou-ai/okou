@@ -5012,6 +5012,13 @@
           "title": "Stockage IndexedDB",
           "unavailable": "Le stockage IndexedDB est indisponible."
         },
+        "openrouterPreset": {
+          "description": "S’applique aux nouvelles exécutions Auto et Okou 1.0 intégré de toute l’organisation. Les exécutions existantes restent inchangées.",
+          "loading": "Chargement…",
+          "systemDefault": "Valeur par défaut du système",
+          "title": "Preset OpenRouter",
+          "unavailable": "Indisponible"
+        },
         "welcomeThread": {
           "create": "Créer une discussion de bienvenue",
           "creating": "Création…",

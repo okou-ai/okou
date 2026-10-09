@@ -11,6 +11,7 @@ import {
 import { pageSignal$ } from "../../../../../signals/page-signal.ts";
 import { detach, Reason } from "../../../../../signals/utils.ts";
 import { BuildInfoBlock } from "../build-info-block.tsx";
+import { OpenrouterPresetSettings } from "../openrouter-preset-settings.tsx";
 import { ConnectionDiagnosticsBlock } from "../connection-diagnostics-block.tsx";
 import { IndexedDbDiagnosticsBlock } from "../indexeddb-diagnostics-block.tsx";
 import { WelcomeThreadCard } from "../welcome-thread-card.tsx";
@@ -80,6 +81,7 @@ export function DebugSection() {
   return (
     <div className="flex flex-col gap-6">
       <BuildInfoBlock />
+      <OpenrouterPresetSettings />
       <WelcomeThreadCard />
       <ConnectionDiagnosticsBlock />
       <WorkerConnectionDiagnosticsBlock />

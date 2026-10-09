@@ -4923,6 +4923,13 @@
           "title": "Penyimpanan IndexedDB",
           "unavailable": "Penyimpanan IndexedDB tidak tersedia."
         },
+        "openrouterPreset": {
+          "description": "Berlaku untuk eksekusi Auto dan Okou 1.0 bawaan yang baru di seluruh organisasi. Eksekusi yang sudah ada tidak berubah.",
+          "loading": "Memuat…",
+          "systemDefault": "Default sistem",
+          "title": "Preset OpenRouter",
+          "unavailable": "Tidak tersedia"
+        },
         "welcomeThread": {
           "create": "Buat obrolan sambutan",
           "creating": "Membuat…",
