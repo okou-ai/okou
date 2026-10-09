@@ -1,5 +1,11 @@
 # Billing attribution foundation (A1)
 
+> The Allowance-specific readers, window grains and archive references in this
+> historical A1 record are superseded by
+> [organization Usage Allowance retirement](../deployment-compatibility.md#organization-usage-allowance-retired).
+> Migration 1356 deletes team-only Allowance history; current attribution keeps
+> ordinary usage identities and recorded credits, without Allowance tables.
+
 Issue [#33851](https://github.com/vm0-ai/vm0/issues/33851), parent
 [#33745](https://github.com/vm0-ai/vm0/issues/33745). This is additive preparation.
 No billing reader, pricing, allowance decision, recharge, subscription policy,

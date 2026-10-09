@@ -1,7 +1,6 @@
 import { command, computed, type Computed } from "ccstate";
 import type { AutoRechargeConfig } from "@okouai/api-contracts/contracts/billing";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { orgUsageAllowanceEntitlements } from "@okouai/db/schema/org-usage-allowance";
 import { eq } from "drizzle-orm";
 
 import { db$, writeDb$, type ReadonlyDb } from "../external/db";
@@ -45,18 +44,7 @@ async function stripeCustomerIdForOrg(
     .from(orgMetadata)
     .where(eq(orgMetadata.orgId, orgId))
     .limit(1);
-  if (org?.stripeCustomerId) {
-    return org.stripeCustomerId;
-  }
-
-  const [allowance] = await db
-    .select({
-      stripeCustomerId: orgUsageAllowanceEntitlements.stripeCustomerId,
-    })
-    .from(orgUsageAllowanceEntitlements)
-    .where(eq(orgUsageAllowanceEntitlements.orgId, orgId))
-    .limit(1);
-  return allowance?.stripeCustomerId ?? null;
+  return org?.stripeCustomerId ?? null;
 }
 
 /** Create either a legacy billing or restricted payment-method portal. */

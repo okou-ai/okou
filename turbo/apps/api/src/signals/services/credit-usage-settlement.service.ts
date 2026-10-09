@@ -13,19 +13,13 @@ import {
 import { parseRawRows as parseRows } from "../../lib/db-raw-rows";
 import { expireOrgCreditsInTransaction } from "./org-credit-expiration.service";
 import {
-  prepareUsageFinancialPlan$,
   usageFinancialPlan,
   type PreparedUsageFinancialPlan,
 } from "./credit-usage-financial-plan.service";
-import {
-  allowanceSettlementWrites,
-  issuedAllowanceWindowsQuery,
-} from "./usage-allowance-settlement-writes";
 import { settle } from "../utils";
 import { prepareUsageSettlementBatch$ } from "./credit-usage-batch-prepare.service";
 import {
   requireCompleteUsageClaim,
-  usageAllowanceRefreshArgs,
   UsageSettlementSnapshotConflict,
   requiredSettlementDebit,
   type PreparedUsageBatch,
@@ -77,20 +71,6 @@ import {
   settlementDefaultPlan,
   settlementReceipt,
 } from "./credit-usage-settlement-plan";
-import {
-  entitlementQuery,
-  allocationQuery,
-  anchorQuery,
-  planAllowanceCandidates,
-  windowQuery,
-  planAllowanceWrites,
-  requireAllowanceWrite,
-  insertWindowsSql,
-} from "./usage-allowance-settlement-plan";
-import {
-  prepareUsageAllowanceRefresh$,
-  type PreparedUsageAllowanceRefresh,
-} from "./usage-allowance.service";
 
 const L = logger("CreditUsageSettlement");
 
@@ -114,7 +94,6 @@ interface UsageSettlementArgs {
 }
 
 interface SettlementBatchArgs extends UsageSettlementArgs {
-  readonly refresh?: PreparedUsageAllowanceRefresh;
   readonly batch: PreparedUsageBatch;
   readonly financial?: PreparedUsageFinancialPlan;
   readonly at: Date;
@@ -122,14 +101,14 @@ interface SettlementBatchArgs extends UsageSettlementArgs {
 
 /**
  * All financial rows commit together; only plain values leave this command.
- * The pending claim prevents duplicate charging. Prices and allowances stay
- * prepared, but cash is re-read and locked before allocation.
+ * The pending claim prevents duplicate charging. Prices stay prepared,
+ * but cash is re-read and locked before allocation.
  * Member grants cannot overdraw; all remaining charges debit the organization.
  * No external I/O runs inside this transaction.
  */
 const commitUsageBatch$ = command(
   async ({ set }, args: SettlementBatchArgs, signal: AbortSignal) => {
-    const { orgId, refresh, batch, at } = args;
+    const { orgId, batch, at } = args;
     const { startedAt, work } = settlementObservation(batch.prices.length);
     const result = await set(writeDb$).transaction(async (tx) => {
       work.lockWaitMs = 0;
@@ -170,23 +149,12 @@ const commitUsageBatch$ = command(
       }
       let financial = args.financial;
       if (!financial) {
-        // Background Social jobs publish their usage in this transaction. Their
-        // newly created event identity is required for allowance allocations.
+        // Background Social jobs publish and claim their usage atomically.
+        // Their newly created event identity receives the prepared price.
         const priced = preparedSettlementPrices(args, batch, events);
-        const [entitlement] = await tx.select().from(entitlementQuery(orgId));
-        const allocations = await tx.select().from(allocationQuery(priced));
-        const anchors = await tx.select().from(anchorQuery(orgId, priced));
-        const plan = planAllowanceCandidates(priced, allocations, anchors);
-        const windows = await tx.select().from(windowQuery(orgId, plan));
-        const allowance = planAllowanceWrites(
-          { orgId, refresh, at },
-          plan,
-          windows,
-          entitlement,
-        );
-        financial = usageFinancialPlan(priced, allowance, at);
+        financial = usageFinancialPlan(priced, at);
       }
-      const { priced, allowance, charges } = financial;
+      const { priced, charges } = financial;
       const cash = usageCashQueries(orgId, charges.byUser, at);
       const [wallet] = await tx.select().from(cash.wallet);
       requireUsageCashWallet(wallet);
@@ -203,17 +171,6 @@ const commitUsageBatch$ = command(
           ? await tx.select().from(usageCashExpiryLotsQuery(orgId, at))
           : [];
       const expiry = planExpiryLotDeductions(lots, deduction.sharedCredits, at);
-      if (allowance.refresh) {
-        await tx.execute(allowance.refresh);
-      }
-      await tx.execute(insertWindowsSql(allowance.inserted));
-      const issued = allowance.inserted.length
-        ? await tx.select().from(issuedAllowanceWindowsQuery(allowance))
-        : [];
-      for (const write of allowanceSettlementWrites(allowance, issued)) {
-        const { rowCount } = await tx.execute(write.sql);
-        requireAllowanceWrite(write.kind, write.planned, rowCount);
-      }
       await tx.execute(settledEventsSql(charges, at));
       const grantSql = memberGrantDeductionsSql(deduction.updates);
       const granted = (await tx.execute(grantSql)).rowCount;
@@ -268,21 +225,13 @@ const commitUsageBatch$ = command(
 export const settleOrgUsage$ = command(
   async ({ get, set }, args: UsageSettlementArgs, signal: AbortSignal) => {
     const batch = await set(prepareUsageSettlementBatch$, args, signal);
-    const refreshArgs = usageAllowanceRefreshArgs(args, batch);
-    const refresh = refreshArgs
-      ? await set(prepareUsageAllowanceRefresh$, refreshArgs, signal)
-      : undefined;
     const financial = args.social
       ? undefined
-      : await set(
-          prepareUsageFinancialPlan$,
-          { orgId: args.orgId, batch, refresh },
-          signal,
-        );
+      : usageFinancialPlan(batch.priced, nowDate());
     const outcome = await settle(
       set(
         commitUsageBatch$,
-        { ...args, batch, refresh, financial, at: financial?.at ?? nowDate() },
+        { ...args, batch, financial, at: financial?.at ?? nowDate() },
         signal,
       ),
     );

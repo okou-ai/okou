@@ -9,7 +9,10 @@ import {
   piModelConfigSchema,
   type PiLaunchPayload,
 } from "@okouai/api-contracts/contracts/runners";
-import { createPiSessionJsonl } from "@okouai/pi-agent-runtime/api";
+import {
+  createPiSessionJsonl,
+  PI_MEMORY_PRESET,
+} from "@okouai/pi-agent-runtime/api";
 import {
   PiMemoryPhase2EngineError,
   materializePiAgentModelConfig,
@@ -232,10 +235,15 @@ async function materializeSandboxModel(
     });
     outcome = "success";
     // Chat Completions pins OpenRouter's sticky routing to the owning thread so
-    // every Run of that thread reuses one upstream prompt cache.
+    // every Run of that thread reuses one upstream prompt cache. Memory shares
+    // its owner-scoped route across stages, independently of the run/thread.
     const threadId = env.OKOU_CHAT_THREAD_ID?.trim();
-    return model.dialect === "openai-completions" && threadId
-      ? { ...model, sessionAffinityKey: threadId }
+    const affinityKey =
+      model.model === PI_MEMORY_PRESET
+        ? requiredEnv(env, "OKOU_MEMORY_SESSION_ID")
+        : threadId;
+    return model.dialect === "openai-completions" && affinityKey
+      ? { ...model, sessionAffinityKey: affinityKey }
       : model;
   } finally {
     finish(outcome);

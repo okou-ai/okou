@@ -43,14 +43,18 @@ async fn capture_raw(
         peer.write_all(&[0, 0, 0, 1]).await?;
         peer.write_all(&rectangle(0, 0, width, height, 0, &[]))
             .await?;
-        // A single supplied row repeats, avoiding a full-size solid fixture;
-        // noise supplies all rows. Neither path copies a full wire message.
-        for row in rows
-            .chunks_exact(row_bytes)
-            .cycle()
-            .take(usize::from(height))
-        {
-            peer.write_all(row).await?;
+        // Send an already-complete noise frame directly. A single solid row
+        // still repeats without allocating or copying a full wire message.
+        if rows.len() == row_bytes * usize::from(height) {
+            peer.write_all(rows).await?;
+        } else {
+            for row in rows
+                .chunks_exact(row_bytes)
+                .cycle()
+                .take(usize::from(height))
+            {
+                peer.write_all(row).await?;
+            }
         }
         peer.flush().await?;
         Ok::<(), io::Error>(())

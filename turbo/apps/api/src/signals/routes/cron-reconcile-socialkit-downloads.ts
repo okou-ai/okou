@@ -21,7 +21,6 @@ const reconcileSocialKitDownloadsRoute$ = command(
     const [downloads, jobs] = await joinAll([
       set(
         reconcileSocialKitDownloads$,
-        {},
         AbortSignal.any([
           signal,
           AbortSignal.timeout(SOCIALKIT_RECONCILIATION_TIMEOUT_MS),

@@ -67,6 +67,7 @@ readonly MODEL_ROUTE_STATE_RETIREMENT_PATH=turbo/packages/db/src/migrations/1338
 readonly PI_STABLE_CONTEXT_RETIREMENT_PATH=turbo/packages/db/src/migrations/1343_retire_pi_stable_context.sql
 readonly PI_DEBUG_TRACE_RETIREMENT_PATH=turbo/packages/db/src/migrations/1345_outstanding_the_hood.sql
 readonly CONNECTOR_CATALOG_PAYLOAD_INDEPENDENT_PATH=turbo/packages/db/src/migrations/1348_connector_catalog_payload_independent_api.sql
+readonly USAGE_ALLOWANCE_RETIREMENT_PATH=turbo/packages/db/src/migrations/1356_drop_organization_usage_allowance.sql
 
 fail() {
   echo "::error::$*" >&2
@@ -375,6 +376,19 @@ if [[ ! "$pi_debug_trace_retirement_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$pi_debug_trace_retirement_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Pi debug trace retirement: ${pi_debug_trace_retirement_commit}."
+fi
+
+# Migration 1356 drops Allowance history and its hourly columns. Earlier APIs
+# still read the allocation table and write the retired hourly shape, so none
+# can serve after the contraction. Resolve the canonical first-parent main
+# commit, never a branch-only implementation SHA.
+usage_allowance_retirement_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$USAGE_ALLOWANCE_RETIREMENT_PATH" | sed -n '1p')
+if [[ ! "$usage_allowance_retirement_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Usage Allowance retirement on main."
+fi
+if ! git merge-base --is-ancestor "$usage_allowance_retirement_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Usage Allowance retirement: ${usage_allowance_retirement_commit}."
 fi
 
 # Chat Event V8 removes eight event types and two context types. Earlier APIs

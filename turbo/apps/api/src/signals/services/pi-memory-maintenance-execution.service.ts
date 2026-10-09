@@ -1,11 +1,5 @@
 import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
-import {
-  getFrameworkForType,
-  getModelProviderFirewall,
-  isBuiltInModelProviderType,
-  modelProviderTypeSchema,
-  type ModelProviderFramework,
-} from "@okouai/api-contracts/contracts/model-providers";
+import { getModelProviderFirewall } from "@okouai/api-contracts/contracts/model-providers";
 import {
   DEFAULT_PROFILE,
   PI_MEMORY_ROOT,
@@ -34,16 +28,17 @@ import {
   type ImageModel,
 } from "@okouai/core/image-model-catalog";
 import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import type { PersistedStorageMount } from "@okouai/db/types";
-import { piMemoryPhase2SelectionDigest } from "@okouai/pi-agent-runtime/api";
+import {
+  piMemoryPhase2SelectionDigest,
+  piMemorySessionAffinityKey,
+} from "@okouai/pi-agent-runtime/api";
 import { command } from "ccstate";
 import { randomUUID } from "node:crypto";
 import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
-import { usagePricingResolution$ } from "../context/usage-pricing-resolution";
-import { db$, writeDb$ } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { safeSync, settle } from "../utils";
 import { activatePendingRun$ } from "./agent-run-activation.service";
 import type { PendingRunActivation } from "./agent-run-activation.types";
@@ -58,10 +53,6 @@ import {
   ApiDispatchTimingCollector,
   measureApiDispatchTiming,
 } from "./api-dispatch-timing.service";
-import {
-  prepareModelUsageContext,
-  type BuiltInRoutePricing,
-} from "./built-in-route-pricing";
 import {
   collectPermissionNames,
   compactRecord,
@@ -78,22 +69,9 @@ import {
   updateExecutionStoragePresignedUrlCache$,
   type PreparedExecutionStorageMount,
 } from "./execution-storage.service";
-import {
-  loadModelCatalog$,
-  modelCatalogForOrg,
-  type ModelCatalog,
-} from "./model-catalog.service";
-import { prepareSubscriptionModelEnvironment } from "./model-provider.service";
 import { readDisabledPaidTools$ } from "./paid-tools.service";
-import {
-  preparePiMemoryBuiltinEnvironment,
-  readPiMemoryBuiltinPricing$,
-} from "./pi-memory-builtin-config";
-import {
-  materializePreparedPiProvider,
-  resolvePlatformMemoryPiModelConfig,
-  resolvePreparedPiModelConfig,
-} from "./pi-sandbox-config";
+import { preparePiMemoryBuiltinEnvironment } from "./pi-memory-builtin-config";
+import { resolvePlatformMemoryPiModelConfig } from "./pi-sandbox-config";
 import { normalizeMountOverlay } from "./storage-mount-overlay";
 
 import { DISABLED_PAID_TOOLS_ENV_VAR } from "@okouai/api-contracts/contracts/paid-tools";
@@ -105,10 +83,6 @@ import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
-import {
-  modelProviderAccounts,
-  modelProviderAccountSecrets,
-} from "@okouai/db/schema/model-provider-account";
 import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
 import { storages } from "@okouai/db/schema/storage";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
@@ -117,8 +91,6 @@ import {
   PI_AGENT_RUNTIME_VERSION,
   PI_SESSION_CONSTRUCTION_DIGEST,
 } from "@okouai/pi-agent-runtime";
-import { and, eq, isNull } from "drizzle-orm";
-import { parseRawRows } from "../../lib/db-raw-rows";
 import { env, optionalEnv } from "../../lib/env";
 import { piModelConfigObservation } from "../../lib/pi-model-config-observation";
 import { getDatasetName, ingestToAxiom } from "../external/axiom";
@@ -126,37 +98,16 @@ import { normalizeRunMetadata } from "./agent-run-metadata-write.service";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { historyGenerationRunIdForStoredExecutionContext } from "./history-generation-run";
 import { billingRunAttributionWrite } from "./managed-usage-attribution";
-import { isPersonalSubscriptionProviderType } from "./model-provider-account.service";
-import {
-  loadOrgPlanCapabilities$,
-  type OrgPlanCapabilities,
-} from "./org-plan-entitlement-read.service";
-import {
-  allowanceSnapshotSchema,
-  pendingRunAllowancePlan,
-  pendingRunAllowanceWindowsPlan,
-} from "./pending-launch-allowance-plan";
-import { personalSubscriptionAccountIdentity } from "./personal-subscription-recovery.service";
 import {
   PiMemoryPhase2CredentialError,
   resolvePiMemoryPhase2Credential$,
   piMemoryPhase2CredentialValidationPlan,
   piMemoryPhase2FeatureContext,
   requirePiMemoryPhase2FeatureEnabled,
-  requirePiMemoryPhase2CredentialAccount,
-  requirePiMemoryPhase2CredentialQuotaPair as requireQuotaPair,
   requirePiMemoryPhase2CredentialStorage,
 } from "./pi-memory-phase2-credential.service";
 import type { ClaimedPiMemoryPhase2Job } from "./pi-memory-phase2-job.service";
 import { piMemoryPhase2MaintenanceBindingCondition } from "./pi-memory-phase2-maintenance.service";
-import {
-  PiMemoryQuotaError,
-  checkPiMemoryQuota$,
-} from "./pi-memory-quota.service";
-import {
-  checkOrgCreditsForRunAdmission$,
-  isFreePlanForCreditAdmission,
-} from "./run-admission.service";
 import {
   environmentRecordToEntries,
   executionFirewallsToAxiomEntries,
@@ -165,12 +116,6 @@ import {
   type RunContextAxiomSnapshot,
 } from "./run-context-snapshot.service";
 import { runnerJobQueueTimestamps } from "./runner-job-queue-lifecycle.service";
-import { requireRunAllowanceWindowPair } from "./usage-allowance-run-plan";
-import { entitlementQuery } from "./usage-allowance-settlement-plan";
-import {
-  prepareUsageAllowanceRefresh$,
-  type PreparedUsageAllowanceRefresh,
-} from "./usage-allowance.service";
 
 const log = logger("PiMemoryMaintenanceExecution");
 
@@ -217,23 +162,7 @@ type PiMaintenanceCredential = Awaited<
 function pinnedSourceIdentity(
   credential: PiMaintenanceCredential,
 ): ModelSourceIdentity {
-  const { pin, route } = credential;
-  if (pin.modelProvider === "built-in") {
-    if (!route) {
-      throw new PiMaintenanceDispositionError("model_route_unavailable");
-    }
-    return { kind: "built-in", modelKeyId: route.modelKeyId };
-  }
-  if (!pin.modelProviderId) {
-    throw new PiMaintenanceDispositionError("credential_unavailable");
-  }
-  if (
-    pin.modelProvider === "codex-oauth-token" &&
-    pin.modelProviderCredentialScope === "member"
-  ) {
-    return { kind: "member", accountId: pin.modelProviderId };
-  }
-  throw new PiMaintenanceDispositionError("credential_unavailable");
+  return { kind: "built-in", modelKeyId: credential.route.modelKeyId };
 }
 
 function maintenancePayload(
@@ -281,15 +210,12 @@ function maintenanceCallbackPayload(
 interface MaintenanceAdmission {
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly credential: PiMaintenanceCredential;
-  readonly catalog: ModelCatalog;
-  readonly selectedModel: string;
-  readonly framework: ModelProviderFramework;
 }
 
-/** Pi-owned admission: feature, current credential, credits and quota. */
+/** Pi-owned admission: feature and platform credential, independent of credits. */
 const admitMaintenance$ = command(
   async (
-    { get, set },
+    { set },
     job: ClaimedPiMemoryPhase2Job,
     signal: AbortSignal,
   ): Promise<MaintenanceAdmission> => {
@@ -303,69 +229,9 @@ const admitMaintenance$ = command(
     if (!isFeatureEnabled(FeatureSwitchKey.PiMemory, featureSwitchContext)) {
       throw new PiMaintenanceDispositionError("pi_memory_disabled");
     }
-    const [globalCatalog, [org]] = await Promise.all([
-      set(loadModelCatalog$, signal),
-      get(db$)
-        .select({ openrouterPreset: orgMetadata.openrouterPreset })
-        .from(orgMetadata)
-        .where(eq(orgMetadata.orgId, job.orgId))
-        .limit(1),
-    ]);
+    const credential = await set(resolvePiMemoryPhase2Credential$, job, signal);
     signal.throwIfAborted();
-    const catalog = modelCatalogForOrg(globalCatalog, org?.openrouterPreset);
-    const credential = await set(
-      resolvePiMemoryPhase2Credential$,
-      catalog,
-      job,
-      signal,
-    );
-    signal.throwIfAborted();
-    // Prepare ordinary credit admission first; quota then sees locally
-    // reconciled usage. The final transaction remains authoritative.
-    const admission = await set(
-      checkOrgCreditsForRunAdmission$,
-      {
-        catalog,
-        orgId: job.orgId,
-        userId: job.userId,
-        modelProviderType: credential.pin.modelProvider,
-        selectedModel: credential.pin.selectedModel,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (admission) {
-      throw new PiMaintenanceDispositionError("source_admission_denied");
-    }
-    await set(
-      checkPiMemoryQuota$,
-      {
-        orgId: job.orgId,
-        userId: job.userId,
-        stage: "phase2",
-        source: credential.quota,
-      },
-      signal,
-    );
-    const selectedModel = credential.pin.selectedModel;
-    // A pinned provider outside the current enum is unavailable, not a crash.
-    const modelProviderType = modelProviderTypeSchema.safeParse(
-      credential.pin.modelProvider,
-    ).data;
-    const framework =
-      selectedModel && modelProviderType
-        ? getFrameworkForType(modelProviderType)
-        : null;
-    if (!selectedModel || !framework) {
-      throw new PiMaintenanceDispositionError("model_route_unavailable");
-    }
-    return {
-      featureSwitchContext,
-      credential,
-      catalog,
-      selectedModel,
-      framework,
-    };
+    return { featureSwitchContext, credential };
   },
 );
 
@@ -374,46 +240,30 @@ const prepareMaintenanceModel$ = command(
   async (
     { set },
     args: {
-      readonly catalog: ModelCatalog;
-      readonly selectedModel: string;
-      readonly pin: PiMaintenanceCredential["pin"];
       readonly route: PiMaintenanceCredential["route"];
       readonly job: ClaimedPiMemoryPhase2Job;
       readonly source: Parameters<typeof preparePiMemoryBuiltinEnvironment>[0];
       readonly timing: ApiDispatchTimingCollector;
     },
   ) => {
-    const { catalog, pin, route, selectedModel, job, source } = args;
-    const resolvedProvider: ResolvedModelProviderEnvironment | null =
-      source.identity.kind === "built-in"
-        ? preparePiMemoryBuiltinEnvironment(source, route ?? undefined)
-        : await prepareSubscriptionModelEnvironment(source, selectedModel, {
-            catalog,
-            userId: job.userId,
-            sourceId: pin.modelProviderId ?? "",
-            piExecution: true,
-          });
-    const piInput = { catalog, piExecution: true };
-    const modelProvider = resolvedProvider
-      ? pin.modelProvider === "built-in"
-        ? {
-            ...resolvedProvider,
-            piModelConfig: resolvePlatformMemoryPiModelConfig(resolvedProvider),
-          }
-        : materializePreparedPiProvider(piInput, resolvedProvider)
-      : null;
-    if (!modelProvider) {
+    const { route, job, source } = args;
+    const resolvedProvider = preparePiMemoryBuiltinEnvironment(source, route);
+    if (!resolvedProvider) {
       throw new PiMaintenanceDispositionError("credential_unavailable");
     }
-    const piSandbox =
-      pin.modelProvider === "built-in"
-        ? modelProvider.piModelConfig
-        : resolvePreparedPiModelConfig({ input: piInput, modelProvider });
-    if (!piSandbox) {
-      throw new Error("Pi maintenance requires a Pi model configuration");
-    }
+    const piSandbox = resolvePlatformMemoryPiModelConfig(resolvedProvider);
+    const modelProvider = {
+      ...resolvedProvider,
+      environment: {
+        ...resolvedProvider.environment,
+        OKOU_MEMORY_SESSION_ID: piMemorySessionAffinityKey(
+          job.userId,
+          job.orgId,
+        ),
+      },
+      piModelConfig: piSandbox,
+    };
     const preparedUsage = await set(prepareMaintenanceUsage$, {
-      catalog,
       modelProvider,
       timing: args.timing,
     });
@@ -572,14 +422,12 @@ function maintenanceModelPermissionManifest(
   };
 }
 
-/** Model firewall/permission manifest and usage pricing for the run. */
+/** Model access remains firewalled; memory captures no billable usage. */
 async function prepareMaintenanceUsage(args: {
-  readonly catalog: MaintenanceAdmission["catalog"];
   readonly modelProvider: ResolvedModelProviderEnvironment;
   readonly timing: ApiDispatchTimingCollector;
-  readonly routePricing: BuiltInRoutePricing | null;
 }) {
-  const { catalog, modelProvider } = args;
+  const { modelProvider } = args;
   const permissionManifest = await measureApiDispatchTiming(
     args.timing,
     "api_dispatch_prepare_context_apply_model_provider_permission_policy",
@@ -588,16 +436,16 @@ async function prepareMaintenanceUsage(args: {
       return Promise.resolve(maintenanceModelPermissionManifest(modelProvider));
     },
   );
-  const usage = prepareModelUsageContext({
-    catalog,
-    modelProvider,
+  // Model access still has the ordinary firewall/credential policy, but no
+  // billable flow or pricing identity is captured for free maintenance.
+  return {
     permissionManifest,
-    routePricing: args.routePricing,
-  });
-  if ("kind" in usage) {
-    throw new PiMaintenanceDispositionError("maintenance_dispatch_failed");
-  }
-  return { permissionManifest, usage };
+    usage: {
+      billableFirewalls: [],
+      modelUsageProvider: undefined,
+      modelUsageLongContextMinTotalInputTokens: 0,
+    },
+  };
 }
 
 /** Pi's own record of one maintenance run: identity, prompt and model. */
@@ -765,7 +613,7 @@ const failMaintenanceLaunch$ = command(
       }
       signal.throwIfAborted();
       const proof = args.credential.proof;
-      // Preserve the storage, account, encrypted pair and feature read order.
+      // Preserve the storage and feature fences for the captured owner.
       const plan = piMemoryPhase2CredentialValidationPlan(proof);
       const [storage] = await tx
         .select(plan.storage.fields)
@@ -773,23 +621,6 @@ const failMaintenanceLaunch$ = command(
         .where(plan.storage.where)
         .for("share");
       requirePiMemoryPhase2CredentialStorage(storage);
-      const [credentialAccount] = plan.account
-        ? await tx
-            .select(plan.account.fields)
-            .from(modelProviderAccounts)
-            .where(plan.account.where)
-        : [];
-      requirePiMemoryPhase2CredentialAccount(proof, credentialAccount);
-      if (plan.pair && proof.quotaPair) {
-        const currentPair = await tx
-          .select(plan.pair.fields)
-          .from(modelProviderAccountSecrets)
-          .where(plan.pair.where)
-          .orderBy(plan.pair.orderBy)
-          .for("share");
-        signal.throwIfAborted();
-        requireQuotaPair(proof.quotaPair.snapshot, currentPair);
-      }
       const featureRows = await tx
         .select(plan.features.fields)
         .from(userFeatureSwitches)
@@ -810,8 +641,6 @@ interface MaintenanceCommitInput {
   readonly selectionDigest: string;
   readonly record: MaintenanceRunRecord;
   readonly launch: MaintenanceLaunch;
-  readonly allowanceRefresh: PreparedUsageAllowanceRefresh | undefined;
-  readonly planCapabilities: OrgPlanCapabilities | null;
   readonly timing: ApiDispatchTimingCollector;
 }
 
@@ -828,7 +657,7 @@ const persistMaintenanceRun$ = command(
     signal: AbortSignal,
   ): Promise<Omit<CommittedMaintenanceRun, "transactionReturnedAt">> => {
     const db = set(writeDb$);
-    const { job, record } = args;
+    const { record } = args;
     const admissionTiming = maintenanceAdmissionTiming(args);
     return db.transaction(async (tx) => {
       admissionTiming.transactionStarted();
@@ -843,23 +672,6 @@ const persistMaintenanceRun$ = command(
         .where(plan.storage.where)
         .for("share");
       requirePiMemoryPhase2CredentialStorage(storage);
-      const [credentialAccount] = plan.account
-        ? await tx
-            .select(plan.account.fields)
-            .from(modelProviderAccounts)
-            .where(plan.account.where)
-        : [];
-      requirePiMemoryPhase2CredentialAccount(proof, credentialAccount);
-      if (plan.pair && proof.quotaPair) {
-        const currentPair = await tx
-          .select(plan.pair.fields)
-          .from(modelProviderAccountSecrets)
-          .where(plan.pair.where)
-          .orderBy(plan.pair.orderBy)
-          .for("share");
-        signal.throwIfAborted();
-        requireQuotaPair(proof.quotaPair.snapshot, currentPair);
-      }
       const featureRows = await tx
         .select(plan.features.fields)
         .from(userFeatureSwitches)
@@ -867,19 +679,8 @@ const persistMaintenanceRun$ = command(
       const context = piMemoryPhase2FeatureContext(proof, featureRows);
       signal.throwIfAborted();
       requirePiMemoryPhase2FeatureEnabled(context);
-      // A member subscription account is re-validated and its identity is
-      // persisted on the run, as on every other run-creation path.
-      const subscriptionRead = maintenanceSubscriptionRead(record);
-      const [account] = subscriptionRead
-        ? await tx
-            .select()
-            .from(modelProviderAccounts)
-            .where(subscriptionRead)
-            .limit(1)
-        : [];
-      const identity = maintenanceSubscriptionIdentity(record, account);
       const createdAt = nowDate();
-      const rowInput = maintenancePendingRunInput(args, identity, createdAt);
+      const rowInput = maintenancePendingRunInput(args, createdAt);
       await tx.insert(agentSessions).values(rowInput.session);
       await tx.insert(agentRuns).values(maintenanceRunValues(rowInput));
       await tx.insert(agentRunCallbacks).values(rowInput.callback);
@@ -924,28 +725,6 @@ const persistMaintenanceRun$ = command(
         throw new Error(
           "Pi memory Phase 2 maintenance run lost its claim fence",
         );
-      }
-      if (isBuiltInModelProviderType(record.modelProvider.type)) {
-        const activation = maintenanceAllowanceInput(args, createdAt);
-        const [owned] = await tx.select().from(entitlementQuery(job.orgId));
-        const planned = pendingRunAllowancePlan(owned, activation, nowDate());
-        const [published] = planned.publication
-          ? parseRawRows(
-              allowanceSnapshotSchema,
-              await tx.execute(planned.publication),
-            )
-          : [];
-        const windows = pendingRunAllowanceWindowsPlan(
-          planned,
-          activation,
-          published,
-        );
-        if (windows) {
-          await tx.execute(windows.insert);
-          requireRunAllowanceWindowPair(
-            await tx.select().from(windows.windows),
-          );
-        }
       }
       // The unique active-run insert stays the final statement.
       await tx
@@ -1028,24 +807,16 @@ function maintenanceMemoryMount(job: ClaimedPiMemoryPhase2Job) {
   };
 }
 
-/** Read pricing for the already-prepared model once through its fixed owner. */
+/** Free memory has no pricing lookup or billable firewall capture. */
 const prepareMaintenanceUsage$ = command(
   async (
-    { get, set },
+    _,
     args: Pick<
       Parameters<typeof prepareMaintenanceUsage>[0],
-      "catalog" | "modelProvider" | "timing"
+      "modelProvider" | "timing"
     >,
   ) => {
-    const routePricing =
-      args.modelProvider.type === "built-in"
-        ? await set(
-            readPiMemoryBuiltinPricing$,
-            args.catalog,
-            get(usagePricingResolution$),
-          )
-        : null;
-    return await prepareMaintenanceUsage({ ...args, routePricing });
+    return await prepareMaintenanceUsage(args);
   },
 );
 
@@ -1090,7 +861,7 @@ const activateCommittedMaintenanceRun$ = command(
 );
 
 /**
- * Launch one claimed job: admit it (which may refresh a subscription),
+ * Launch one claimed job: admit its platform credential,
  * prepare the exact memory mount, the pinned model and the Pi launch,
  * atomically commit the run with its job binding, then activate it and write
  * the presigned URL cache. The pinned source is known only after admission;
@@ -1126,9 +897,6 @@ const launchMaintenanceRun$ = command(
       {
         job,
         source,
-        catalog: admitted.catalog,
-        selectedModel: admitted.selectedModel,
-        pin: admitted.credential.pin,
         route: admitted.credential.route,
         timing,
       },
@@ -1144,34 +912,25 @@ const launchMaintenanceRun$ = command(
       credential: admitted.credential,
       storedImageModel: member.preferences?.selectedImageModel,
     });
-    // Launch preparation and the built-in allowance refresh read run
-    // together outside the transaction; either failure records the failed run.
+    // Free memory prepares no member allowance or credit admission.
     const prepared = await settle(
-      Promise.all([
-        set(
-          prepareMaintenanceLaunch$,
-          {
-            job,
-            record,
-            selectionDigest,
-            piSandbox,
-            permissionManifest,
-            usage,
-            disabledPaidTools,
-            userTimezone: member.preferences?.timezone ?? undefined,
-            featureSwitchContext: admitted.featureSwitchContext,
-            timing,
-            preparedMounts,
-          },
-          signal,
-        ),
-        isBuiltInModelProviderType(modelProvider.type)
-          ? set(prepareUsageAllowanceRefresh$, { orgId: job.orgId })
-          : undefined,
-        isBuiltInModelProviderType(modelProvider.type)
-          ? set(loadOrgPlanCapabilities$, job.orgId)
-          : null,
-      ]),
+      set(
+        prepareMaintenanceLaunch$,
+        {
+          job,
+          record,
+          selectionDigest,
+          piSandbox,
+          permissionManifest,
+          usage,
+          disabledPaidTools,
+          userTimezone: member.preferences?.timezone ?? undefined,
+          featureSwitchContext: admitted.featureSwitchContext,
+          timing,
+          preparedMounts,
+        },
+        signal,
+      ),
       signal,
     );
     if (!prepared.ok) {
@@ -1181,15 +940,13 @@ const launchMaintenanceRun$ = command(
         signal,
       );
     }
-    const [launch, allowanceRefresh, planCapabilities] = prepared.value;
+    const launch = prepared.value;
     const commitInput = {
       job,
       credential: admitted.credential,
       selectionDigest,
       record,
       launch,
-      allowanceRefresh,
-      planCapabilities,
       timing,
     };
     const committed = await set(commitMaintenanceRun$, commitInput, signal);
@@ -1241,8 +998,7 @@ export const startMaintenanceRun$ = command(
     }
     if (
       launched.error instanceof PiMaintenanceDispositionError ||
-      launched.error instanceof PiMemoryPhase2CredentialError ||
-      launched.error instanceof PiMemoryQuotaError
+      launched.error instanceof PiMemoryPhase2CredentialError
     ) {
       return { errorClass: launched.error.errorClass };
     }
@@ -1364,9 +1120,14 @@ function buildMaintenanceExecutionContext(
 ) {
   const permissions = args.permissionManifest;
   const executionSecrets = maintenanceExecutionSecrets(args.modelProvider);
+  const memorySessionId = args.modelProvider.environment.OKOU_MEMORY_SESSION_ID;
+  if (!memorySessionId) {
+    throw new Error("Missing memory owner session affinity");
+  }
   const platformEnvironment = {
     [DISABLED_PAID_TOOLS_ENV_VAR]: JSON.stringify(args.disabledPaidTools),
     CLI_PKG_URL: env("CLI_PKG_URL"),
+    OKOU_MEMORY_SESSION_ID: memorySessionId,
   };
   const modelEnvironment = maintenanceModelEnvironment({
     modelProvider: args.modelProvider,
@@ -1439,17 +1200,12 @@ interface MaintenanceRunRecord {
 }
 
 function maintenanceRunMetadata(record: MaintenanceRunRecord) {
-  const exactSubscriptionId = isPersonalSubscriptionProviderType(
-    record.modelProvider.type,
-  )
-    ? record.modelProvider.id
-    : undefined;
   const route = record.modelProvider.builtInModelRuntimeRoute;
   return normalizeRunMetadata({
     // Maintenance runs are agent-triggered, as on every earlier release.
     triggerSource: "agent",
     modelProvider: record.modelPin.modelProvider,
-    modelProviderId: exactSubscriptionId ?? record.modelPin.modelProviderId,
+    modelProviderId: record.modelPin.modelProviderId,
     modelProviderCredentialScope: record.modelPin.modelProviderCredentialScope,
     selectedModel: record.modelPin.selectedModel,
     modelRuntimeProvider: route?.providerType ?? null,
@@ -1537,19 +1293,6 @@ function maintenanceBillingAttribution(
   });
 }
 
-function maintenanceSubscriptionCondition(
-  record: MaintenanceRunRecord,
-  providerId: string,
-) {
-  return and(
-    eq(modelProviderAccounts.id, providerId),
-    eq(modelProviderAccounts.orgId, record.orgId),
-    eq(modelProviderAccounts.userId, record.userId),
-    isNull(modelProviderAccounts.disconnectedAt),
-    eq(modelProviderAccounts.type, record.modelProvider.type),
-  );
-}
-
 function maintenanceDiagnosticValues(
   record: MaintenanceRunRecord,
   launch: MaintenanceLaunch,
@@ -1581,26 +1324,6 @@ function maintenanceRunnerJobValues(
   };
 }
 
-function maintenanceSubscriptionRead(record: MaintenanceRunRecord) {
-  return isPersonalSubscriptionProviderType(record.modelProvider.type) &&
-    record.modelProvider.id
-    ? maintenanceSubscriptionCondition(record, record.modelProvider.id)
-    : null;
-}
-
-function maintenanceSubscriptionIdentity(
-  record: MaintenanceRunRecord,
-  account: typeof modelProviderAccounts.$inferSelect | undefined,
-) {
-  if (!isPersonalSubscriptionProviderType(record.modelProvider.type)) {
-    return null;
-  }
-  if (!account) {
-    throw new PiMaintenanceDispositionError("credential_unavailable");
-  }
-  return personalSubscriptionAccountIdentity(account);
-}
-
 function maintenanceAdmissionTiming(args: MaintenanceCommitInput) {
   return new AdmissionAttemptTiming({
     runId: args.record.runId,
@@ -1626,7 +1349,6 @@ function maintenanceActiveRunValues(
 
 function maintenancePendingRunInput(
   args: MaintenanceCommitInput,
-  identity: string | null,
   createdAt: Date,
 ) {
   return {
@@ -1640,10 +1362,8 @@ function maintenancePendingRunInput(
     status: "pending" as const,
     runStorageMounts: args.launch.runStorageMounts,
     runnerGroup: args.launch.runnerGroup,
-    creditAdmitted:
-      isBuiltInModelProviderType(args.record.modelProvider.type) &&
-      isFreePlanForCreditAdmission(args.planCapabilities?.planKey),
-    accountIdentity: identity,
+    creditAdmitted: false,
+    accountIdentity: null,
     error: null,
   };
 }
@@ -1659,18 +1379,6 @@ function maintenanceBindingPlan(
       maintenanceBindingInput(args),
       fenceAt,
     ),
-  };
-}
-
-function maintenanceAllowanceInput(
-  args: MaintenanceCommitInput,
-  runCreatedAt: Date,
-) {
-  return {
-    orgId: args.job.orgId,
-    runId: args.record.runId,
-    runCreatedAt,
-    refresh: args.allowanceRefresh,
   };
 }
 

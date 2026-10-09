@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Reserve Neon capacity and limit each author's open PRs by rejecting unqueued
-# PR CI runs before preview deployment. Re-runs query current GitHub state
-# rather than the event's original snapshot.
+# Reserve Neon capacity and admit each author's oldest open PRs before preview
+# deployment. Re-runs query current GitHub state rather than the event's
+# original snapshot.
 if [[ "${EVENT_NAME:?EVENT_NAME is required}" != pull_request ]]; then
   echo "CI admission limits are only required for pull_request runs."
   exit 0
@@ -22,7 +22,7 @@ query="query(\$owner: String!, \$name: String!, \$number: Int!, \$endCursor: Str
   repository(owner: \$owner, name: \$name) {
     pullRequests(states: OPEN, first: 100, after: \$endCursor, orderBy: {field: CREATED_AT, direction: ASC}) {
       totalCount
-      nodes { number author { login } }
+      nodes { number createdAt author { login } }
       pageInfo { hasNextPage endCursor }
     }
     pullRequest(number: \$number) { number author { login } mergeQueueEntry { id } }
@@ -34,6 +34,7 @@ for attempt in 1 2 3; do
   if response=$(gh api graphql --paginate --slurp -f query="$query" \
     -f owner="$owner" -f name="$name" -F number="$pr_number") &&
     jq -e --argjson number "$pr_number" '
+      .[0].data.repository.pullRequest.author.login as $author |
       type == "array" and length > 0 and
       all(.[];
         ((.errors // []) | length == 0) and
@@ -43,10 +44,17 @@ for attempt in 1 2 3; do
         (.data.repository.pullRequest | has("mergeQueueEntry")) and
         (.data.repository.pullRequest.mergeQueueEntry |
           . == null or (.id | type == "string" and length > 0)) and
-        (.data.repository.pullRequests.nodes | type == "array" and all(.[]; has("author")))
+        (.data.repository.pullRequests.nodes | type == "array" and all(.[];
+          (.number | type == "number" and . > 0 and . == floor) and
+          (.createdAt | type == "string" and length > 0) and
+          has("author")
+        ))
       ) and
       (.[-1].data.repository.pullRequests.pageInfo.hasNextPage == false) and
-      ([.[].data.repository.pullRequests.nodes[]] | length) == .[0].data.repository.pullRequests.totalCount
+      ([.[].data.repository.pullRequests.nodes[]] | length) == .[0].data.repository.pullRequests.totalCount and
+      ([.[].data.repository.pullRequests.nodes[].number] | length == (unique | length)) and
+      ([.[].data.repository.pullRequests.nodes[] | select(.number == $number)] |
+        length == 1 and .[0].author.login == $author)
     ' <<<"$response" >/dev/null; then
     break
   fi
@@ -58,7 +66,7 @@ for attempt in 1 2 3; do
 done
 
 if [[ -z "$response" ]]; then
-  message="CI_ADMISSION_QUERY_FAILED: Could not determine repository and author open PR counts and merge queue membership after 3 attempts. Re-run this workflow after GitHub API access recovers: ${retry_command}"
+  message="CI_ADMISSION_QUERY_FAILED: Could not determine repository and author open PR counts, creation-order position, and merge queue membership after 3 attempts. Re-run this workflow after GitHub API access recovers: ${retry_command}"
   printf '::error title=CI admission query failed::%s\n' "$message"
   if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
     printf '### CI admission query failed\n\n%s\n' "$message" >>"$GITHUB_STEP_SUMMARY"
@@ -69,6 +77,10 @@ fi
 open_pr_count=$(jq -r '.[0].data.repository.pullRequests.totalCount' <<<"$response")
 author=$(jq -r '.[0].data.repository.pullRequest.author.login' <<<"$response")
 author_pr_count=$(jq --arg author "$author" '[.[].data.repository.pullRequests.nodes[] | select(.author.login == $author)] | length' <<<"$response")
+author_pr_position=$(jq --arg author "$author" --argjson number "$pr_number" '
+  [.[].data.repository.pullRequests.nodes[] | select(.author.login == $author)] |
+  sort_by(.createdAt, .number) | map(.number) | index($number) + 1
+' <<<"$response")
 in_merge_queue=$(jq -r '.[0].data.repository.pullRequest.mergeQueueEntry != null' <<<"$response")
 if [[ "$in_merge_queue" == true ]]; then
   echo "Open PRs: ${open_pr_count}; author ${author}: ${author_pr_count} open PRs; PR #${pr_number} in merge queue: true. Admission limits do not apply to queued PRs."
@@ -113,8 +125,8 @@ if ! bypass_numbers=$(jq -cn --arg list "${CI_PR_ADMISSION_BYPASS_LIST:-}" '
   exit 1
 fi
 
-author_count_command="gh api --paginate --slurp 'repos/${repository}/pulls?state=open&per_page=100' | jq 'add | map(select(.user.login == \"${author}\")) | length'"
-echo "Open PRs: ${open_pr_count}; limit: ${limit}; author ${author}: ${author_pr_count} open PRs; author limit: ${author_limit}; PR #${pr_number} in merge queue: ${in_merge_queue}"
+author_position_command="gh api --paginate --slurp 'repos/${repository}/pulls?state=open&per_page=100' | jq 'add | map(select(.user.login == \"${author}\")) | sort_by(.created_at, .number) | map(.number) | index(${pr_number}) | if . == null then error(\"PR is not open\") else . + 1 end'"
+echo "Open PRs: ${open_pr_count}; limit: ${limit}; author ${author}: ${author_pr_count} open PRs; PR #${pr_number} author position (oldest first): ${author_pr_position}; author limit: ${author_limit}; PR #${pr_number} in merge queue: ${in_merge_queue}"
 
 if jq -e --argjson number "$pr_number" 'index($number) != null' <<<"$bypass_numbers" >/dev/null; then
   message="CI_PR_ADMISSION_BYPASS: PR #${pr_number} is listed in CI_PR_ADMISSION_BYPASS_LIST. Repository and author PR count limits do not apply to this PR. Normal CI and required checks still run."
@@ -130,30 +142,30 @@ reasons=()
 if ((open_pr_count > limit)); then
   reasons+=("CI_CAPACITY_LIMIT: ${repository} has ${open_pr_count} open PRs (limit: ${limit}).")
 fi
-if ((author_pr_count > author_limit)); then
-  reasons+=("CI_AUTHOR_PR_LIMIT: Author ${author} has ${author_pr_count} open PRs in ${repository} (limit: ${author_limit}).")
+if ((author_pr_position > author_limit)); then
+  reasons+=("CI_AUTHOR_PR_LIMIT: PR #${pr_number} is at position ${author_pr_position} by creation time among ${author_pr_count} open PRs by ${author} in ${repository} (limit: ${author_limit}).")
 fi
 
 if ((${#reasons[@]} > 0)); then
   printf '::error title=PR CI admission limit::%s\n' "${reasons[@]}"
   echo "PR #${pr_number} is not in the merge queue. CI stopped before preview deployment to enforce PR concurrency limits and reserve Neon branch capacity for queued PRs."
   echo "This is a temporary admission limit, not a code or test failure. The PR cannot enter the merge queue until its required CI passes."
-  echo "PR owners and agents: check both counts later. Retry once the repository has fewer than ${limit} open PRs and this author has at most ${author_limit} open PRs. Do not repeatedly retry while either limit is exceeded."
-  printf 'Check repository open PRs:\n%s\nCheck author open PRs:\n%s\nRe-run the entire workflow after both limits recover:\n%s\n' \
-    "$count_command" "$author_count_command" "$retry_command"
+  echo "PR owners and agents: check the repository count and this PR's author position later. Retry once the repository has at most ${limit} open PRs and this PR is among the author's oldest ${author_limit} open PRs. Do not repeatedly retry while either limit is exceeded."
+  printf "Check repository open PRs:\n%s\nCheck this PR's author position (oldest first):\n%s\nRe-run the entire workflow after both limits recover:\n%s\n" \
+    "$count_command" "$author_position_command" "$retry_command"
 
   if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
     {
       printf '### PR CI paused by admission limits\n\n'
-      printf 'Repository %s: **%s open PRs** (limit: **%s**). Author **%s**: **%s open PRs** in this repository (limit: **%s**). PR **#%s** is **not in the merge queue**.\n\n' \
-        "$repository" "$open_pr_count" "$limit" "$author" "$author_pr_count" "$author_limit" "$pr_number"
+      printf 'Repository %s: **%s open PRs** (limit: **%s**). Author **%s**: **%s open PRs** in this repository; PR **#%s** is at creation-order position **%s** (oldest first; limit: **%s**) and is **not in the merge queue**.\n\n' \
+        "$repository" "$open_pr_count" "$limit" "$author" "$author_pr_count" "$pr_number" "$author_pr_position" "$author_limit"
       printf '%s\n\n' "${reasons[@]}"
       printf '%s\n\n' \
         'CI stopped before preview deployment to enforce PR concurrency limits and reserve Neon branch capacity for queued PRs.' \
         'This is a temporary admission limit, not a code or test failure. Required CI must pass before this PR can enter the merge queue.' \
-        "PR owners and agents: check both counts later. Once the repository has fewer than ${limit} open PRs and this author has at most ${author_limit} open PRs, re-run the entire workflow. Do not repeatedly retry while either limit is exceeded."
+        "PR owners and agents: once the repository has at most ${limit} open PRs and this PR is among the author's oldest ${author_limit} open PRs, re-run the entire workflow. Closing or merging earlier PRs frees author slots. Do not repeatedly retry while either limit is exceeded."
       printf "Check repository open PRs (including draft and bot PRs):\n\n\`\`\`sh\n%s\n\`\`\`\n\n" "$count_command"
-      printf "Check this author's open PRs in the same repository:\n\n\`\`\`sh\n%s\n\`\`\`\n\n" "$author_count_command"
+      printf "Check this PR's creation-order position among the author's open PRs (including draft and bot PRs):\n\n\`\`\`sh\n%s\n\`\`\`\n\n" "$author_position_command"
       printf "Re-run this entire workflow after both limits recover:\n\n\`\`\`sh\n%s\n\`\`\`\n" "$retry_command"
     } >>"$GITHUB_STEP_SUMMARY"
   fi

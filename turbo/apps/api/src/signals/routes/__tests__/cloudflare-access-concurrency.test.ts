@@ -152,6 +152,101 @@ function createHost(
   });
 }
 
+test.each(["personal", "organization"] as const)(
+  "accepts exactly one same-revision metadata rename for a %s configuration without changing host authority",
+  async (scope) => {
+    const owner = await actor();
+    const original = (
+      await accept(
+        configs().create({
+          headers: owner.headers,
+          query,
+          body: {
+            id: randomUUID(),
+            scope,
+            name: "Concurrent gateway",
+            credentials: {
+              clientId: "synthetic-id",
+              clientSecret: "synthetic-secret",
+            },
+          },
+        }),
+        [201],
+      )
+    ).body;
+    const own = (await accept(createHost(owner, original.id), [201])).body;
+    const member = await actor(owner.orgId, "member");
+    await accept(
+      createHost(member, scope === "organization" ? original.id : undefined),
+      [201],
+    );
+    const beforeOwn = (
+      await accept(hosts().list({ headers: owner.headers }), [200])
+    ).body;
+    const beforeMember = (
+      await accept(hosts().list({ headers: member.headers }), [200])
+    ).body;
+    const beforeLogins = (
+      await accept(credentials().list({ headers: owner.headers }), [200])
+    ).body;
+
+    const results = await Promise.all(
+      ["First rename", "Second rename"].map((name) => {
+        return accept(
+          configs().update({
+            headers: owner.headers,
+            params: { configId: original.id },
+            query,
+            body: { expectedRevision: original.revision, name },
+          }),
+          [200, 409],
+        );
+      }),
+    );
+    expect(
+      results
+        .map(({ status }) => {
+          return status;
+        })
+        .sort(),
+    ).toStrictEqual([200, 409]);
+    const renamed = results.find((result) => {
+      return result.status === 200;
+    });
+    const rejected = results.find((result) => {
+      return result.status === 409;
+    });
+    if (!renamed || !rejected) {
+      throw new Error("Expected one accepted and one rejected metadata rename");
+    }
+    expect(["First rename", "Second rename"]).toContain(renamed.body.name);
+    expect(renamed.body).toMatchObject({
+      id: original.id,
+      scope,
+      revision: original.revision + 1,
+      generation: original.generation,
+      sshHosts: [{ id: own.id, displayName: own.displayName }],
+    });
+    expect(rejected.body.error.code).toBe(
+      "CLOUDFLARE_ACCESS_REVISION_CONFLICT",
+    );
+    expect(
+      (await accept(configs().list({ headers: owner.headers, query }), [200]))
+        .body.configs,
+    ).toStrictEqual([renamed.body]);
+    expect(
+      (await accept(hosts().list({ headers: owner.headers }), [200])).body,
+    ).toStrictEqual(beforeOwn);
+    expect(
+      (await accept(hosts().list({ headers: member.headers }), [200])).body,
+    ).toStrictEqual(beforeMember);
+    expect(
+      (await accept(credentials().list({ headers: owner.headers }), [200]))
+        .body,
+    ).toStrictEqual(beforeLogins);
+  },
+);
+
 test.each(["create", "update"] as const)(
   "admits selected %s after a metadata-only rename during external login preparation without advancing host authority",
   async (operation) => {

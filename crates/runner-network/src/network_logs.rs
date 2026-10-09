@@ -1319,11 +1319,35 @@ mod tests {
     }
 
     fn network_log_content(logs: &[serde_json::Value]) -> String {
-        logs.iter()
-            .map(|log| serde_json::to_string(log).unwrap())
-            .collect::<Vec<_>>()
-            .join("\n")
-            + "\n"
+        let mut content = Vec::new();
+        for log in logs {
+            serde_json::to_writer(&mut content, log).unwrap();
+            content.push(b'\n');
+        }
+        if logs.is_empty() {
+            content.push(b'\n');
+        }
+        String::from_utf8(content).unwrap()
+    }
+
+    #[test]
+    fn network_log_fixture_preserves_canonical_lines_and_trailing_newline() {
+        for logs in [
+            Vec::new(),
+            vec![json!({"sequence":0,"body":"你好\"\\\n"})],
+            vec![
+                json!({"sequence":0}),
+                json!({"sequence":1,"body":[null,true,19]}),
+            ],
+        ] {
+            let expected = logs
+                .iter()
+                .map(|log| serde_json::to_string(log).unwrap())
+                .collect::<Vec<_>>()
+                .join("\n")
+                + "\n";
+            assert_eq!(network_log_content(&logs), expected);
+        }
     }
 
     fn one_entry_per_batch_logs(count: usize) -> Vec<serde_json::Value> {
