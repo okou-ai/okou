@@ -2,8 +2,9 @@
 
 The version-locked transport bridge joins pending inspection before the next
 body event and before the connection reads again. A callback retains one lazy
-wire-input iterator, one decoded delivery and the parser's bounded state; it
-never eagerly decodes or queues the rest of a compressed body.
+wire-input iterator, the current decoder output and the parser's bounded state;
+it never queues later wire callbacks. Brotli retains its existing soft output
+batch limit; zlib and identity output deliveries are hard chunk-bounded.
 """
 
 import asyncio

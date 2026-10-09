@@ -254,7 +254,11 @@ def _create_brotli_stream_decode_session(
                 return
             pending_input = b""
 
+            output_limit_exceeded = len(decoded) > remaining_decoded_bytes
             accepted = decoded[:remaining_decoded_bytes]
+            # A cooperative consumer may pause here. Do not retain the
+            # binding's rejected soft-limit overshoot throughout that pause.
+            del decoded
             for offset in range(0, len(accepted), max_decoded_chunk):
                 decoded_chunk = accepted[offset : offset + max_decoded_chunk]
                 decoded_bytes_emitted += len(decoded_chunk)
@@ -262,12 +266,12 @@ def _create_brotli_stream_decode_session(
                 if should_continue is not None and not should_continue():
                     inspection_stopped = True
                     return
-            if len(decoded) > remaining_decoded_bytes:
+            if output_limit_exceeded:
                 decode_error = DECODED_BODY_LIMIT_EXCEEDED
                 return
             if obj.is_finished():
                 return
-            if not decoded and obj.can_accept_more_data():
+            if not accepted and obj.can_accept_more_data():
                 return
 
     def finish_error() -> str | None:

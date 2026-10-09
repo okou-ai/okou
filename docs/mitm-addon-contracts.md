@@ -12,9 +12,13 @@ processes at most eight row/fragment steps in total across all its decoded feeds
 remaining work resumes with an explicit event-loop yield before each quantum.
 Rows retain their existing syntax and identity limits. Blank and invalid lines
 also consume steps. Decoder output remains lazy, so a pending callback retains
-one wire input, one bounded decoded delivery and the parser's bounded partial
-line, not an eager queue of decompressed rows. This is not a lifetime row limit,
-a billing cutoff, or an alternate price/count fallback.
+one wire input, the current decoder output and the parser's bounded partial
+line, not a queue of later wire callbacks. Zlib and identity output deliveries
+are hard chunk-bounded. Brotli keeps its existing documented soft output-batch
+limit: an accepted binding batch may exceed a delivery chunk and remain retained
+until consumed, but rejected expansion overshoot is released before yielding.
+This does not introduce a byte-exact Brotli allocation guarantee. This is not a
+lifetime row limit, a billing cutoff, or an alternate price/count fallback.
 
 The exact mitmproxy 12.2.3 compatibility bridge provides two ownership boundaries:
 it pauses the HTTP stream before its next body event, and joins the checkpoint's

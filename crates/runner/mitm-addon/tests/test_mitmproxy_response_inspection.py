@@ -4,6 +4,7 @@ import asyncio
 import gzip
 from unittest.mock import patch
 
+import pytest
 from mitmproxy import connection
 from mitmproxy.addons.proxyserver import Proxyserver
 from mitmproxy.proxy import commands, events, layer
@@ -16,7 +17,9 @@ from mitmproxy.test import taddons
 
 import flow_metadata_keys as metadata_keys
 import mitm_addon
+import mitmproxy_compat
 import usage
+from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 from tests.x_flow_helpers import make_x_pipeline_flow
 
 
@@ -45,8 +48,9 @@ class _ResponsePeerLayer(layer.Layer):
                 yield command
 
 
+@pytest.mark.parametrize("cancel_inspection", [False, True], ids=["complete", "cancel-hook"])
 async def test_native_read_loop_waits_for_inspection_and_hook_completion(
-    real_flow, tmp_path, sync_usage_executor, usage_webhook_api
+    real_flow, tmp_path, sync_usage_executor, usage_webhook_api, cancel_inspection
 ):
     flow = make_x_pipeline_flow(
         real_flow, tmp_path, path="/2/tweets/search/stream", content_encoding="gzip"
@@ -90,7 +94,10 @@ async def test_native_read_loop_waits_for_inspection_and_hook_completion(
             if len(read_sizes) == 2:
                 # The second chunk is already available; the production read
                 # loop must not request it until every first-chunk row finishes.
-                assert flow.metadata[metadata_keys.X_NDJSON_STATE]["lines_parsed"] == 100_000
+                if cancel_inspection:
+                    assert flow.metadata[metadata_keys.X_JSON_STATE]["body_parsed"] is False
+                else:
+                    assert flow.metadata[metadata_keys.X_NDJSON_STATE]["lines_parsed"] == 100_000
             data = await super().read(n)
             if len(read_sizes) == 1:
 
@@ -124,6 +131,10 @@ async def test_native_read_loop_waits_for_inspection_and_hook_completion(
 
         class Handler(ConnectionHandler):
             async def handle_hook(self, hook):
+                if cancel_inspection and isinstance(hook, mitmproxy_compat.ResponseInspectionHook):
+                    task = asyncio.current_task()
+                    assert task is not None
+                    loop.call_soon(task.cancel)
                 await addon_context.master.addons.invoke_addon(mitm_addon, hook)
                 if isinstance(hook, HttpResponseHook):
                     terminal_done.set_result(None)
@@ -166,8 +177,16 @@ async def test_native_read_loop_waits_for_inspection_and_hook_completion(
     assert 0 < rows_at_pulse <= 8
     assert read_sizes == [65535, 65535, 65535]
     assert received == first_wire + second_wire
-    (event,) = webhook.usage_events()
-    assert event["quantity"] == 1
-    assert event["resources"] == [{"id": "1", "occurrences": 1}]
+    if cancel_inspection:
+        assert webhook.usage_events() == []
+        assert flow.metadata[metadata_keys.X_JSON_STATE]["parse_error"] == (
+            "response inspection interrupted"
+        )
+        entries = read_jsonl_entries_after_flush(tmp_path / "proxy.jsonl")
+        assert any(entry.get("reason") == "response_inspection_interrupted" for entry in entries)
+    else:
+        (event,) = webhook.usage_events()
+        assert event["quantity"] == 1
+        assert event["resources"] == [{"id": "1", "occurrences": 1}]
     assert flow.response is not None
     assert flow.response.stream is False
