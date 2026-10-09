@@ -105,38 +105,38 @@ use futures_util::FutureExt;
 use tokio::task::JoinSet;
 use tracing::{info, warn};
 
-use super::factory_lifecycle::SharedFactory;
+use super::RuntimeProfile as ProfileConfig;
 use super::finalizing_claim::{FinalizingClaimRequest, spawn_finalizing_claim};
 use super::job_spawn::{JobProfile, SpawnContext, SpawnJobRequest, spawn_job};
 #[cfg(test)]
 use super::{OuterJobPanicPoint, maybe_panic_outer_job};
-use crate::config::ProfileConfig;
+use crate::SharedFactory;
+use crate::claimed_activation::{
+    ClaimedActivationGuard, ClaimedActivationResources, ClaimedJobSetup, ReadyClaimedResource,
+    blank_pool_selection_telemetry,
+};
+use crate::claimed_resource_activation::{
+    ActivationResources, ExactActivation, ReservedActivation, ReservedActivationRequest,
+    ReuseAdmissionRequest, ReuseFromPoolReady, activate_reserved_idle, activate_speculated_exact,
+    try_reuse_from_pool,
+};
 use crate::executor::{
     BlankPoolSelection, RunnerPreSpawnPhase, RunnerPreSpawnTiming, SessionHistoryRestorePlanInput,
     build_session_history_restore_plan, validate_resume_session_id,
 };
+use crate::idle_lifecycle::SharedIdlePool;
 use crate::idle_pool::ReusableIdleSandbox;
 use crate::lifecycle::RunnerMode;
+use crate::pre_claim_admission::{
+    AdmittedClaim, AdmittedResource, PreClaimOutcome, PreClaimRequest, PreClaimResources,
+    SandboxAdmittedResource, admit_and_claim, rollback_sandbox_admitted_resource,
+};
 use crate::resource_budget::ResourceBudget;
 use crate::status::{StatusPersistenceError, StatusTracker};
 use crate::telemetry::JobTelemetry;
 use runner_host::runner_process_identity::RunnerProcessIdentity;
 use runner_provider::{ClaimedJob, JobCandidate};
 use runner_provider::{RunCancellationRegistration, RunCancellationRegistry};
-use runner_supervisor::claimed_activation::{
-    ClaimedActivationGuard, ClaimedActivationResources, ClaimedJobSetup, ReadyClaimedResource,
-    blank_pool_selection_telemetry,
-};
-use runner_supervisor::claimed_resource_activation::{
-    ActivationResources, ExactActivation, ReservedActivation, ReservedActivationRequest,
-    ReuseAdmissionRequest, ReuseFromPoolReady, activate_reserved_idle, activate_speculated_exact,
-    try_reuse_from_pool,
-};
-use runner_supervisor::idle_lifecycle::SharedIdlePool;
-use runner_supervisor::pre_claim_admission::{
-    AdmittedClaim, AdmittedResource, PreClaimOutcome, PreClaimRequest, PreClaimResources,
-    SandboxAdmittedResource, admit_and_claim, rollback_sandbox_admitted_resource,
-};
 use runner_types::ids::RunId;
 use runner_types::types::{CompleteRequest, SandboxReuseResult};
 
