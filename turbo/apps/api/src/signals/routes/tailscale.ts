@@ -3,7 +3,7 @@ import {
   type CreateTailscaleConfigRequest,
   type UpdateTailscaleRequest,
 } from "@okouai/api-contracts/contracts/tailscale";
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
@@ -14,13 +14,13 @@ import type { RouteEntry } from "../route-entry";
 import {
   createTailscaleConfig$,
   deleteTailscaleConfig$,
-  listTailscaleConfigs$,
+  createTailscaleConfigList,
   updateTailscaleConfig$,
   convertTailscaleToOrganization$,
   convertTailscaleToPersonal$,
-  previewTailscaleImpact$,
+  createTailscaleImpactPreview,
 } from "../services/tailscale.service";
-import { userFeatureSwitchContext } from "../services/feature-switches.service";
+import { createUserFeatureSwitchContext } from "../services/feature-switches.service";
 import type { tailscaleFailure } from "../services/tailscale-config-model";
 
 const ownerAuth = {
@@ -28,12 +28,16 @@ const ownerAuth = {
   missingOrganizationStatus: 401,
   accept: ["session"],
 } as const;
-const encryptionContext$ = command(async ({ get }, signal: AbortSignal) => {
-  const owner = get(organizationAuthContext$);
-  const context = await get(
-    userFeatureSwitchContext(owner.orgId, owner.userId),
-  );
-  signal.throwIfAborted();
+const encryptionIdentity$ = computed((get) => {
+  return Promise.resolve(get(organizationAuthContext$));
+});
+const userEncryptionContext$ =
+  createUserFeatureSwitchContext(encryptionIdentity$);
+const encryptionContext$ = computed(async (get) => {
+  const context = await get(userEncryptionContext$);
+  if (!context) {
+    throw new Error("Authenticated Tailscale encryption context is missing");
+  }
   return context;
 });
 function errorResponse(error: ReturnType<typeof tailscaleFailure>) {
@@ -47,12 +51,17 @@ function errorResponse(error: ReturnType<typeof tailscaleFailure>) {
     body: { error: { code: error.code, message: error.message } },
   };
 }
+const configList$ = createTailscaleConfigList(organizationAuthContext$);
+const impactPreviewInput$ = computed((get) => {
+  const { configId } = get(pathParamsOf(tailscaleContract.impactPreview));
+  const { operation } = get(queryOf(tailscaleContract.impactPreview));
+  return { owner: get(organizationAuthContext$), configId, operation };
+});
+const configImpact$ = createTailscaleImpactPreview(impactPreviewInput$);
+
 const list$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "no-store");
-  const configs = await set(
-    listTailscaleConfigs$,
-    get(organizationAuthContext$),
-  );
+  const configs = await get(configList$);
   signal.throwIfAborted();
   return { status: 200 as const, body: { configs } };
 });
@@ -62,7 +71,8 @@ const createConfig$ = command(
     body: CreateTailscaleConfigRequest,
     signal: AbortSignal,
   ) => {
-    const featureContext = await set(encryptionContext$, signal);
+    const featureContext = await get(encryptionContext$);
+    signal.throwIfAborted();
     const result = await set(createTailscaleConfig$, {
       owner: get(organizationAuthContext$),
       body,
@@ -93,7 +103,8 @@ const updateConfig$ = command(
     body: UpdateTailscaleRequest,
     signal: AbortSignal,
   ) => {
-    const featureContext = await set(encryptionContext$, signal);
+    const featureContext = await get(encryptionContext$);
+    signal.throwIfAborted();
     const result = await set(updateTailscaleConfig$, {
       owner: get(organizationAuthContext$),
       configId,
@@ -175,13 +186,7 @@ const convert$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 const impactPreview$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "no-store");
-  const { configId } = get(pathParamsOf(tailscaleContract.impactPreview));
-  const { operation } = get(queryOf(tailscaleContract.impactPreview));
-  const result = await set(previewTailscaleImpact$, {
-    owner: get(organizationAuthContext$),
-    configId,
-    operation,
-  });
+  const result = await get(configImpact$);
   signal.throwIfAborted();
   if (!result.ok) {
     return errorResponse(result);

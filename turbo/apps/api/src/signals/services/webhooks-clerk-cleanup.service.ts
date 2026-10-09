@@ -697,42 +697,44 @@ async function deleteClerkExportReferences(
   });
 }
 
-async function deleteClerkSshResources(
-  db: Db,
-  scope: ClerkStorageCleanupScope,
-) {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0323; new non-billing transactions are prohibited.
-  await db.transaction(async (tx) => {
-    await tx
-      .delete(sshConnections)
-      .where(
-        scope.kind === "organization"
-          ? eq(sshConnections.orgId, scope.orgId)
-          : eq(sshConnections.userId, scope.userId),
-      );
-    await tx
-      .delete(sshCredentials)
-      .where(
-        scope.kind === "organization"
-          ? eq(sshCredentials.orgId, scope.orgId)
-          : eq(sshCredentials.userId, scope.userId),
-      );
-    await tx
-      .delete(cloudflareAccessConfigs)
-      .where(
-        scope.kind === "organization"
-          ? eq(cloudflareAccessConfigs.orgId, scope.orgId)
-          : eq(cloudflareAccessConfigs.userId, scope.userId),
-      );
-    await tx
-      .delete(tailscaleConfigs)
-      .where(
-        scope.kind === "organization"
-          ? eq(tailscaleConfigs.orgId, scope.orgId)
-          : eq(tailscaleConfigs.userId, scope.userId),
-      );
-  });
-}
+// The restrictive FKs require atomic dependent Host -> credential/config cleanup.
+// Organization configurations have no user owner and survive creator deletion.
+const deleteClerkSshResources$ = command(
+  async ({ set }, scope: ClerkStorageCleanupScope, signal: AbortSignal) => {
+    await set(writeDb$).transaction(async (tx) => {
+      await tx
+        .delete(sshConnections)
+        .where(
+          scope.kind === "organization"
+            ? eq(sshConnections.orgId, scope.orgId)
+            : eq(sshConnections.userId, scope.userId),
+        );
+      await tx
+        .delete(sshCredentials)
+        .where(
+          scope.kind === "organization"
+            ? eq(sshCredentials.orgId, scope.orgId)
+            : eq(sshCredentials.userId, scope.userId),
+        );
+      await tx
+        .delete(cloudflareAccessConfigs)
+        .where(
+          scope.kind === "organization"
+            ? eq(cloudflareAccessConfigs.orgId, scope.orgId)
+            : eq(cloudflareAccessConfigs.userId, scope.userId),
+        );
+      await tx
+        .delete(tailscaleConfigs)
+        .where(
+          scope.kind === "organization"
+            ? eq(tailscaleConfigs.orgId, scope.orgId)
+            : eq(tailscaleConfigs.userId, scope.userId),
+        );
+    });
+    signal.throwIfAborted();
+    return { outcome: "deleted" as const };
+  },
+);
 
 const deleteOrgData$ = command(
   async (
@@ -794,10 +796,13 @@ const deleteOrgData$ = command(
       signal,
     );
     signal.throwIfAborted();
-    // VNC references were removed at the start of organization cleanup. Remove
-    // Access rows before SSH hosts: rotation takes config then host locks.
-    // Delete hosts before credentials and configs for the restrictive FK.
-    await deleteClerkSshResources(db, { kind: "organization", orgId });
+    // VNC references were removed earlier. Preserve the restrictive FK order
+    // inside the owning SSH cleanup command, before organization removal.
+    await set(
+      deleteClerkSshResources$,
+      { kind: "organization", orgId },
+      signal,
+    );
     signal.throwIfAborted();
     await deleteConnectorOwnerState(
       db,
@@ -906,8 +911,7 @@ const deleteUserData$ = command(
     // VNC references were removed before user cleanup. Delete only this user's
     // SSH resources and personal Access configurations; organization Access
     // configurations have no user owner and must survive creator deletion.
-    // Take config locks first to match token rotation's config-then-host order.
-    await deleteClerkSshResources(db, { kind: "user", userId });
+    await set(deleteClerkSshResources$, { kind: "user", userId }, signal);
     signal.throwIfAborted();
     const cleanupJobIds = await deleteClerkStorageReferences(
       db,

@@ -1,4 +1,4 @@
-import { command } from "ccstate";
+import { command, computed, type Computed } from "ccstate";
 import { and, asc, count, eq, ne, sql } from "drizzle-orm";
 import { tailscaleConfigs } from "@okouai/db/schema/tailscale-config";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
@@ -13,13 +13,10 @@ import type {
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import type { CreateSshConnectionRequest } from "@okouai/api-contracts/contracts/ssh-connections";
 import { nowDate } from "../../lib/time";
-import { isUniqueViolation } from "../../lib/pg-errors";
-import { writeDb$ } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { encryptStoredSecretValue } from "./crypto.utils";
-import { sshCreationResult } from "./ssh-creation.service";
 import { publishSshRuntimeInvalidation$ } from "./ssh-runtime-wakeup.service";
 import { publishTailscaleClientInvalidation } from "./tailscale-client-invalidation.service";
-import { settle } from "../utils";
 import {
   tailscaleFailure,
   visibleTailscaleConfig,
@@ -104,9 +101,10 @@ export async function prepareInlineTailscaleConfig(
   }
   return await prepareTailscaleConfig(transport.create, context);
 }
-export const listTailscaleConfigs$ = command(
-  async ({ set }, owner: Owner): Promise<TailscaleConfig[]> => {
-    const rows = await set(writeDb$)
+export function createTailscaleConfigList(owner$: Computed<Owner>) {
+  return computed(async (get): Promise<TailscaleConfig[]> => {
+    const owner = get(owner$);
+    const rows = await get(db$)
       .select({
         config: metadata,
         host: {
@@ -141,8 +139,8 @@ export const listTailscaleConfigs$ = command(
       }
     }
     return [...configs.values()];
-  },
-);
+  });
+}
 export const createTailscaleConfig$ = command(
   async (
     { set },
@@ -165,36 +163,14 @@ export const createTailscaleConfig$ = command(
       orgId: args.owner.orgId,
       userId: scope === "organization" ? null : args.owner.userId,
     };
-    const created = await settle(
-      db.transaction(async (tx) => {
-        const [existing] = await tx
-          .select({
-            orgId: tailscaleConfigs.orgId,
-            userId: tailscaleConfigs.userId,
-          })
-          .from(tailscaleConfigs)
-          .where(eq(tailscaleConfigs.id, args.body.id));
-        const result = sshCreationResult(owner, existing);
-        if (!result.ok) {
-          return tailscaleFailure("resourceIdConflict");
-        }
-        if (!result.value) {
-          return { ok: true as const, value: undefined };
-        }
-        const [row] = await tx
-          .insert(tailscaleConfigs)
-          .values({ id: args.body.id, ...owner, scope, ...prepared })
-          .returning(metadata);
-        if (!row) {
-          throw new Error("Tailscale insert returned no row");
-        }
-        return { ok: true as const, value: response(row, []) };
-      }),
-    );
-    if (!created.ok) {
-      if (!isUniqueViolation(created.error, "tailscale_configs_pkey")) {
-        throw created.error;
-      }
+    // The caller-chosen primary key arbitrates concurrent creation atomically.
+    // A conflict never updates/replays credentials; only its owner may reconcile.
+    const [created] = await db
+      .insert(tailscaleConfigs)
+      .values({ id: args.body.id, ...owner, scope, ...prepared })
+      .onConflictDoNothing({ target: tailscaleConfigs.id })
+      .returning(metadata);
+    if (!created) {
       const [existing] = await db
         .select({
           orgId: tailscaleConfigs.orgId,
@@ -208,10 +184,8 @@ export const createTailscaleConfig$ = command(
         ? { ok: true as const, value: undefined }
         : tailscaleFailure("resourceIdConflict");
     }
-    if (created.value.ok && created.value.value !== undefined) {
-      await publishTailscaleClientInvalidation(args.owner, scope);
-    }
-    return created.value;
+    await publishTailscaleClientInvalidation(args.owner, scope);
+    return { ok: true as const, value: response(created, []) };
   },
 );
 
@@ -551,15 +525,15 @@ export const convertTailscaleToOrganization$ = command(
     };
   },
 );
-export const previewTailscaleImpact$ = command(
-  async (
-    { set },
-    args: ConfigArgs & { readonly operation: "convert" | "delete" },
-  ) => {
+export function createTailscaleImpactPreview(
+  args$: Computed<ConfigArgs & { readonly operation: "convert" | "delete" }>,
+) {
+  return computed(async (get) => {
+    const args = get(args$);
     if (args.operation === "delete" && args.owner.orgRole !== "admin") {
       return tailscaleFailure("forbidden");
     }
-    const db = set(writeDb$);
+    const db = get(db$);
     const [config] = await db
       .select(metadata)
       .from(tailscaleConfigs)
@@ -602,8 +576,8 @@ export const previewTailscaleImpact$ = command(
         impactSnapshot: impactSnapshot(config, hosts),
       },
     };
-  },
-);
+  });
+}
 export const convertTailscaleToPersonal$ = command(
   async (
     { set },

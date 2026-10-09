@@ -1,15 +1,15 @@
 import { runnerSshContract } from "@okouai/api-contracts/contracts/runner-ssh";
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 
 import { runnerAuth$ } from "../auth/runner-auth";
 import { authorization$, setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf } from "../context/request";
-import { db$, writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import {
-  pinRunnerSsh,
-  resolveRunnerSsh,
-  recordRunnerSshObservation,
+  pinRunnerSsh$,
+  resolveRunnerSsh$,
+  recordRunnerSshObservation$,
+  createCurrentRunnerSshConnection,
 } from "../services/runner-ssh.service";
 
 const authorizeSshRunner$ = command(
@@ -41,6 +41,29 @@ const authorizeSshRunner$ = command(
   },
 );
 
+const resolveInput$ = computed(async (get) => {
+  const body = await get(bodyResultOf(runnerSshContract.resolve));
+  return body.ok
+    ? { ...get(pathParamsOf(runnerSshContract.resolve)), ...body.data }
+    : null;
+});
+const pinInput$ = computed(async (get) => {
+  const body = await get(bodyResultOf(runnerSshContract.pin));
+  return body.ok
+    ? { ...get(pathParamsOf(runnerSshContract.pin)), ...body.data }
+    : null;
+});
+const observationInput$ = computed(async (get) => {
+  const body = await get(bodyResultOf(runnerSshContract.observe));
+  return body.ok
+    ? { ...get(pathParamsOf(runnerSshContract.observe)), ...body.data }
+    : null;
+});
+const resolveConnection$ = createCurrentRunnerSshConnection(resolveInput$);
+const pinConnection$ = createCurrentRunnerSshConnection(pinInput$);
+const observationConnection$ =
+  createCurrentRunnerSshConnection(observationInput$);
+
 const resolveSsh$ = command(async ({ get, set }, signal: AbortSignal) => {
   const error = await set(authorizeSshRunner$, signal);
   if (error) {
@@ -51,15 +74,9 @@ const resolveSsh$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!body.ok) {
     return body.response;
   }
-  const { runId } = get(pathParamsOf(runnerSshContract.resolve));
-  const result = await resolveRunnerSsh(
-    get(db$),
-    {
-      runId,
-      ...body.data,
-    },
-    signal,
-  );
+  const selected = await get(resolveConnection$);
+  signal.throwIfAborted();
+  const result = await set(resolveRunnerSsh$, selected, signal);
   return { status: 200 as const, body: result };
 });
 
@@ -74,12 +91,11 @@ const pinSsh$ = command(async ({ get, set }, signal: AbortSignal) => {
     return body.response;
   }
   const { runId } = get(pathParamsOf(runnerSshContract.pin));
-  const result = await pinRunnerSsh(
-    set(writeDb$),
-    {
-      runId,
-      ...body.data,
-    },
+  const initial = await get(pinConnection$);
+  signal.throwIfAborted();
+  const result = await set(
+    pinRunnerSsh$,
+    { input: { runId, ...body.data }, initial },
     signal,
   );
   return { status: 200 as const, body: result };
@@ -96,9 +112,11 @@ const observeSsh$ = command(async ({ get, set }, signal: AbortSignal) => {
     return body.response;
   }
   const { runId } = get(pathParamsOf(runnerSshContract.observe));
-  const result = await recordRunnerSshObservation(
-    set(writeDb$),
-    { runId, ...body.data },
+  const initial = await get(observationConnection$);
+  signal.throwIfAborted();
+  const result = await set(
+    recordRunnerSshObservation$,
+    { input: { runId, ...body.data }, initial },
     signal,
   );
   return { status: 200 as const, body: result };
