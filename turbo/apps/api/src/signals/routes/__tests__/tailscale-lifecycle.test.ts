@@ -41,13 +41,16 @@ async function owner(
   mocks.s3.listObjects([]);
   return value;
 }
-async function config(scope: "personal" | "organization") {
+async function config(
+  scope: "personal" | "organization",
+  id: string = randomUUID(),
+) {
   return (
     await accept(
       configs().create({
         headers,
         body: {
-          id: randomUUID(),
+          id,
           scope,
           name: "Owned private network",
           credentials: {
@@ -61,13 +64,13 @@ async function config(scope: "personal" | "organization") {
     )
   ).body;
 }
-async function host(configId: string) {
+async function host(configId: string, id: string = randomUUID()) {
   return (
     await accept(
       hosts().create({
         headers,
         body: {
-          id: randomUUID(),
+          id,
           displayName: "Owned private host",
           host: "peer",
           port: 2222,
@@ -88,12 +91,15 @@ async function host(configId: string) {
     )
   ).body;
 }
-async function deleteUser(id: string) {
+async function deletionWebhook(
+  type: "user.deleted" | "organization.deleted",
+  id: string,
+) {
   mockOptionalEnv(
     "CLERK_WEBHOOK_SIGNING_SECRET",
     "synthetic-tail-signing-secret",
   );
-  const event = { type: "user.deleted", data: { id } };
+  const event = { type, data: { id } };
   context.mocks.clerk.verifyWebhook.mockResolvedValueOnce(event);
   await accept(
     setupApp({ context, routes: webhooksClerkRoutes })(
@@ -112,7 +118,7 @@ test("user deletion preserves the creator's shared Tailscale configuration and o
   await host(personal.id);
   const member = await owner(creator.orgId, "member");
   const retained = await host(shared.id);
-  await deleteUser(creator.userId);
+  await deletionWebhook("user.deleted", creator.userId);
   mocks.clerk.session(member.userId, member.orgId, "org:member");
   expect(
     (await accept(configs().list({ headers }), [200])).body.configs,
@@ -125,4 +131,52 @@ test("user deletion preserves the creator's shared Tailscale configuration and o
   expect(
     (await accept(hosts().list({ headers }), [200])).body.connections,
   ).toStrictEqual([retained]);
+});
+
+test("organization deletion releases its configuration and Host identities while preserving another organization", async () => {
+  useSecretKmsProbe();
+  const creator = await owner();
+  const personal = await config("personal");
+  const personalHost = await host(personal.id);
+  const shared = await config("organization");
+  await owner(creator.orgId, "member");
+  const sharedHost = await host(shared.id);
+  const survivor = await owner();
+  const survivingConfig = await config("organization");
+  const survivingHost = await host(survivingConfig.id);
+
+  await deletionWebhook("organization.deleted", creator.orgId);
+
+  // This observer's organization still exists. Never authenticate through the
+  // deleted organization to inspect its private rows or fabricate authority.
+  mocks.clerk.session(survivor.userId, survivor.orgId, "org:admin");
+  expect(
+    (await accept(configs().list({ headers }), [200])).body.configs,
+  ).toStrictEqual([
+    {
+      ...survivingConfig,
+      sshHosts: [
+        { id: survivingHost.id, displayName: survivingHost.displayName },
+      ],
+    },
+  ]);
+  expect(
+    (await accept(hosts().list({ headers }), [200])).body.connections,
+  ).toStrictEqual([survivingHost]);
+  // Public caller-known UUID reuse proves deletion, not just owner invisibility:
+  // a retained foreign identity would reject these creations with 409/204.
+  const recreatedPersonal = await config("personal", personal.id);
+  const recreatedShared = await config("organization", shared.id);
+  expect(recreatedPersonal).toMatchObject({ id: personal.id, revision: 1 });
+  expect(recreatedShared).toMatchObject({ id: shared.id, revision: 1 });
+  await expect(
+    host(recreatedPersonal.id, personalHost.id),
+  ).resolves.toMatchObject({
+    id: personalHost.id,
+    generation: 1,
+  });
+  await expect(host(recreatedShared.id, sharedHost.id)).resolves.toMatchObject({
+    id: sharedHost.id,
+    generation: 1,
+  });
 });

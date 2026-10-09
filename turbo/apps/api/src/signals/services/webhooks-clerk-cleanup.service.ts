@@ -41,6 +41,7 @@ import {
   asc,
   count,
   eq,
+  gte,
   inArray,
   isNotNull,
   like,
@@ -697,40 +698,71 @@ async function deleteClerkExportReferences(
   });
 }
 
-// The restrictive FKs require atomic dependent Host -> credential/config cleanup.
-// Organization configurations have no user owner and survive creator deletion.
+// Dependent DELETE CTEs preserve Host -> credential -> configuration ordering
+// and RESTRICT atomicity in one statement. User cleanup is Personal-only;
+// shared configurations and surviving members remain outside its predicates.
 const deleteClerkSshResources$ = command(
   async ({ set }, scope: ClerkStorageCleanupScope, signal: AbortSignal) => {
-    await set(writeDb$).transaction(async (tx) => {
-      await tx
+    const db = set(writeDb$);
+    const removedHosts = db.$with("removed_clerk_ssh_hosts").as(
+      db
         .delete(sshConnections)
         .where(
           scope.kind === "organization"
             ? eq(sshConnections.orgId, scope.orgId)
             : eq(sshConnections.userId, scope.userId),
-        );
-      await tx
+        )
+        .returning({ id: sshConnections.id }),
+    );
+    const removedCredentials = db.$with("removed_clerk_ssh_credentials").as(
+      db
         .delete(sshCredentials)
         .where(
-          scope.kind === "organization"
-            ? eq(sshCredentials.orgId, scope.orgId)
-            : eq(sshCredentials.userId, scope.userId),
-        );
-      await tx
+          and(
+            scope.kind === "organization"
+              ? eq(sshCredentials.orgId, scope.orgId)
+              : eq(sshCredentials.userId, scope.userId),
+            gte(db.select({ count: count() }).from(removedHosts), 0),
+          ),
+        )
+        .returning({ id: sshCredentials.id }),
+    );
+    const removedAccess = db.$with("removed_clerk_access_configs").as(
+      db
         .delete(cloudflareAccessConfigs)
         .where(
-          scope.kind === "organization"
-            ? eq(cloudflareAccessConfigs.orgId, scope.orgId)
-            : eq(cloudflareAccessConfigs.userId, scope.userId),
-        );
-      await tx
+          and(
+            scope.kind === "organization"
+              ? eq(cloudflareAccessConfigs.orgId, scope.orgId)
+              : and(
+                  eq(cloudflareAccessConfigs.userId, scope.userId),
+                  eq(cloudflareAccessConfigs.scope, "personal"),
+                ),
+            gte(db.select({ count: count() }).from(removedCredentials), 0),
+          ),
+        )
+        .returning({ id: cloudflareAccessConfigs.id }),
+    );
+    const removedTailscale = db.$with("removed_clerk_tailscale_configs").as(
+      db
         .delete(tailscaleConfigs)
         .where(
-          scope.kind === "organization"
-            ? eq(tailscaleConfigs.orgId, scope.orgId)
-            : eq(tailscaleConfigs.userId, scope.userId),
-        );
-    });
+          and(
+            scope.kind === "organization"
+              ? eq(tailscaleConfigs.orgId, scope.orgId)
+              : and(
+                  eq(tailscaleConfigs.userId, scope.userId),
+                  eq(tailscaleConfigs.scope, "personal"),
+                ),
+            gte(db.select({ count: count() }).from(removedAccess), 0),
+          ),
+        )
+        .returning({ id: tailscaleConfigs.id }),
+    );
+    await db
+      .with(removedHosts, removedCredentials, removedAccess, removedTailscale)
+      .select({ count: count() })
+      .from(removedTailscale);
     signal.throwIfAborted();
     return { outcome: "deleted" as const };
   },
