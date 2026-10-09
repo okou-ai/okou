@@ -24,7 +24,7 @@ general rules; ESLint owns the custom lifecycle and import boundaries.
   before an application lifetime exists; its signal can be undefined.
 - `no-direct-fetch` rejects native fetch references. Only
   `lib/resource-fetch.ts` implements the native primitive.
-- The existing `signals/fetch.ts` now only exposes API navigation/base signals.
+- `signals/fetch.ts` only exposes API navigation/base signals.
 
 ## Asynchronous ownership
 
@@ -36,8 +36,7 @@ Within ESLint's application scope, `new AbortController` is reserved for
 `signals/utils.ts`, the browser polyfill, and the shared test context that owns
 the root test lifetime. Individual tests inherit `context.signal` or use a
 stable `resetSignal()` command. The `ccstate/no-create-child-abort-controller`
-rule remains enabled as an error to prevent reintroducing the removed
-imperative ownership helper. No migration suppressions remain.
+rule prohibits imperative child controller creation and is enforced as an error.
 
 Polling and timed retries use the shared loop primitives: `setLoop` starts an
 owner-scoped daemon, while `waitLoopUntil` waits for completion. The Ably
@@ -86,15 +85,14 @@ implementation.
 
 ## Import boundaries
 
-`no-restricted-imports` keeps the modular Clerk and Ably runtimes out of the
-eagerly loaded application bundle. `@clerk/clerk-js` stays behind
-`lib/clerk-runtime.ts` and is restricted in every form; `ably` stays behind
-`lib/ably-realtime.ts` and still permits type-only imports.
+`no-restricted-imports` enforces runtime entry points. `@clerk/clerk-js` stays
+behind `lib/clerk-runtime.ts` and is restricted in every form; `ably` stays
+behind `lib/ably-realtime.ts` and permits type-only imports.
 
-`@clerk/ui` is a live dependency again, used only by the auth pages and account
-switching. `src/clerk-ui.ts` is the single entry allowed to import it at
-runtime; it is built as its own asset by `scripts/clerk-ui.ts` and requested
+`@clerk/ui` is used only by the auth pages and account switching.
+`src/clerk-ui.ts` is the single entry allowed to import it at runtime; it is
+built as its own asset by `scripts/clerk-ui.ts` and requested
 through `ensureClerkUiLoaded$`. Every other `src/**` module may import the
 package for types only. `scripts/check-runtime-imports.node.mjs` asserts that
-boundary from the real ESLint configuration, so the entry cannot regain a lint
-suppression and other entries cannot acquire a runtime import.
+boundary from the real ESLint configuration. The entry must not use a lint
+suppression, and other entries must not import the package at runtime.

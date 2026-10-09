@@ -38,10 +38,9 @@ owning surface.
 
 ## Shared Standards and Testing
 
-- [Bad code smells](bad-smell.md): production-code quality boundaries.
+- [Bad code smells](bad-smell.md): production-code quality boundaries, including
+  [external reference authority](bad-smell.md#externally-managed-references).
 - [Fallbacks](fallback.md): legitimate exceptions, declarations, and removal gates.
-- [Externally managed references](externally-managed-references.md): reference
-  authority, dependency failures, and fail-closed resolution.
 - [Deployment compatibility](deployment-compatibility.md): independent releases,
   persisted state, schema transitions, drain, and rollback requirements.
 - [Testing](testing.md): strategy, [external behavior](testing.md#external-behavior),

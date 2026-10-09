@@ -161,18 +161,3 @@ the constants in `turbo/apps/platform/src/lib/clerk-versions.ts` must stay
 aligned; runtime loading rejects a mismatched UI version. An upgrade must pass
 the hosted Clerk Bats smoke and the Platform auth tests. Visual presentation is
 not an automated Playwright gate.
-
-## Why internal-DOM adapters are forbidden
-
-The retired hosted Clerk styling approach combined provider appearance,
-component appearance, and a route-level raw stylesheet of roughly 379 lines.
-That sheet depended on Clerk classes, partial class matches, internal
-attributes, DOM structure, and extensive `!important` declarations.
-
-That model split ownership: Clerk could change the DOM while the application
-remained responsible for every visual break. Fixes accumulated specificity,
-dark-mode, password-toggle, checkbox, OTP, and passkey exceptions. Upgrading
-Clerk effectively meant upgrading an undocumented DOM API with no type safety.
-
-The current implementation gives Clerk semantic constraints through its public
-API and leaves Clerk responsible for its own DOM and interaction states.

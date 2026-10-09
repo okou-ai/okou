@@ -41,7 +41,7 @@ gh api 'repos/okou-ai/okou/contents/docs/docs.md?ref=<PRACTICE_SHA>' --jq '.cont
 | Requests, protocols, queue payloads, schema, persisted state, service workers | [Deployment compatibility](docs/deployment-compatibility.md)                                                               |
 | Database schema, raw results, SQL rewrites, transactions, concurrency         | [Database guide](docs/api/database.md), then [database development](.claude/skills/database-development/SKILL.md)          |
 | New user-facing behavior and containment                                      | [Feature switches](.claude/skills/feature-switch/SKILL.md)                                                                 |
-| External identifiers and reference resolution                                 | [Externally managed references](docs/externally-managed-references.md)                                                     |
+| External identifiers and reference resolution                                 | [Externally managed references](docs/bad-smell.md#externally-managed-references)                                           |
 | App/shared UI styling or interactions                                         | [Styles](docs/app/styles.md), [UI interaction contracts](CLAUDE.md#ui-interaction-contracts)                               |
 | Chat-card recognition, registration, or rendering                             | [Chat cards](docs/app/chat-cards.md)                                                                                       |
 | Runner build, release, deploy, architecture selection, or rollback            | [Runner architectures](docs/runner/runner-multi-architecture.md)                                                           |

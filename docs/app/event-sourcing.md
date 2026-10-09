@@ -57,8 +57,7 @@ attachment when its final subscriber leaves.
 
 Streaming and final event insertion derive the same chat event UUID from the
 run ID and the delta's `runEventId`. The independent public event sequence
-still determines ordering. The retired API-first producer used
-`api-first:<attemptId>:<nativeContentIndex>` source IDs.
+still determines ordering.
 
 Chunk zero creates an optimistic `output.message`. Later chunks append only
 when that optimistic event exists. A persistent event with the same ID always

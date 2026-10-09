@@ -5,10 +5,6 @@ subscription that caused it, and reduce unnecessary work in the Okou platform.
 The examples use `ccstate-react`, but the measurement method applies to any
 React external store.
 
-The linked historical traces record what was measured on a specific day.
-Component, hook, and signal names inside them are the names that existed at the
-time, and some have since been renamed or removed by the fixes described. Read them as evidence, not as a current symbol index.
-
 ## What to Measure
 
 React performance investigations need three separate measurements:
@@ -174,12 +170,8 @@ commit. The following approaches all overcount in current React builds:
   subtree, so a changed value is still not proof that the component function
   executed.
 
-In one chat sample, the `WeakMap` technique reported 76 sidebar executions.
-The React Performance track for the same trace showed no execution spans for
-`SidebarLayout`, `Sidebar`, or `ChatThreadsContent`; the only visible
-sidebar update initiator was one `ChatThreadItem`. Use the root hook for exact
-commit boundaries and React Performance tracks or a deliberately placed React
-`Profiler` for component attribution.
+Use the root hook for exact commit boundaries and React Performance tracks or
+a deliberately placed React `Profiler` for component attribution.
 
 Also account for these sources of noise:
 
@@ -397,36 +389,13 @@ object or an array index when the item has a stable identifier.
 
 ## Validate the Fix
 
-Use three validation layers:
+Use two validation layers:
 
-1. **Hook integration tests**: wrap a consumer in React `Profiler` and assert
-   that an equivalent value causes zero additional commits while a semantic
-   change causes exactly one.
-2. **Page tests**: exercise user-visible behavior through the normal platform
+1. **Page tests**: exercise user-visible behavior through the normal platform
    page setup. Equality changes must not hide title, unread, running, queue, or
    message changes.
-3. **Real-browser profiling**: repeat the fixed streaming scenario and compare
+2. **Real-browser profiling**: repeat the fixed streaming scenario and compare
    region execution counts, commit counts, and duration.
-
-Example `Profiler` assertion:
-
-```tsx
-const onRender = vi.fn();
-
-render(
-  <Profiler id="consumer" onRender={onRender}>
-    <Consumer />
-  </Profiler>,
-);
-
-onRender.mockClear();
-store.set(ids$, new Set(["thread-1"]));
-await Promise.resolve();
-expect(onRender).not.toHaveBeenCalled();
-```
-
-Test a later semantic change as well. A test that only verifies suppression can
-pass with an equality function that incorrectly returns `true` for everything.
 
 ## Memory Leaks Are a Separate Investigation
 

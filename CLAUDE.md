@@ -17,7 +17,7 @@ guidance only for the surface being changed.
   locally. Expected external misses mean unavailable; unresolved references
   must never grant access. Do not disguise dependency failures or broken local
   invariants as missing external entities. See
-  [externally managed references](docs/externally-managed-references.md).
+  [externally managed references](docs/bad-smell.md#externally-managed-references).
 - Implement the requested behavior with the smallest necessary abstraction.
   Preserve meaningful error recovery, cleanup, permission checks, and active
   compatibility contracts when removing unused code.
