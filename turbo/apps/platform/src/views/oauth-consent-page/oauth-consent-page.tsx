@@ -34,7 +34,7 @@ export function OAuthConsentPage() {
     <AuthShell authBrand={authBrand}>
       <Show when="signed-in">
         <div
-          className="relative z-10 flex w-[var(--okou-auth-card-page-width)] max-w-[var(--okou-auth-card-max-width)] shrink-0 flex-col gap-3"
+          className="relative flex w-[var(--okou-auth-card-page-width)] max-w-[var(--okou-auth-card-max-width)] shrink-0 flex-col gap-3"
           data-testid="app-oauth-consent"
           ref={contentReady}
         >

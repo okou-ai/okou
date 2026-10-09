@@ -2,7 +2,7 @@
 
 These contracts cover addon control, logging, WebSocket framing and inspection, and path
 normalization. Read the relevant section before changing the addon or its pinned
-mitmproxy/wsproto dependencies. See the [testing guide](testing/mitm-addon-testing.md)
+mitmproxy/wsproto dependencies. See the [testing guide](mitm-addon-testing.md)
 for environment setup, commands, and executable coverage.
 
 ## Cooperative response inspection
@@ -110,7 +110,7 @@ Present intent naming that matching builtin prevents builtin exclusion; ordinary
 specificity, owner disambiguation, and authorization checks still follow. If a
 matching custom candidate is denied or blocked for malformed configuration, the
 excluded builtin candidates are not reconsidered. Existing executable coverage
-is in [cross-firewall precedence tests](../crates/runner/mitm-addon/tests/test_compiled_firewall_cross_firewall_precedence.py).
+is in [cross-firewall precedence tests](../../crates/runner/mitm-addon/tests/test_compiled_firewall_cross_firewall_precedence.py).
 
 A URL without an active firewall match keeps the ordinary network fallback. The
 private intent header is always stripped before upstream forwarding. Shared-base
@@ -557,7 +557,7 @@ the threshold. The API captures this value from the assigned catalog route:
 | Positive integer | Long-context at or above the threshold. |
 | `0`              | Single-tier pricing.                    |
 
-Apply [deployment compatibility](deployment-compatibility.md) to the API/Runner
+Apply [deployment compatibility](../deployment-compatibility.md) to the API/Runner
 payload boundary. The `.fast` suffix follows the observed service tier;
 `.ultrafast` is retired and remains only in historical usage categories.
 Current catalog and pricing behavior belong to their owning code and contracts.
@@ -581,11 +581,11 @@ wait for the runner rollout.
 
 ## WebSocket Framing Contract
 
-[`websocket_framing.py`](../crates/runner/mitm-addon/src/websocket_framing.py)
+[`websocket_framing.py`](../../crates/runner/mitm-addon/src/websocket_framing.py)
 is a version-pinned private replacement for mitmproxy's WebSocket connection
 class. It bounds decoded data before a complete message reaches mitmproxy's
 WebSocket addon hooks. The [real-layer integration
-tests](../crates/runner/mitm-addon/tests/test_mitmproxy_websocket_framing.py)
+tests](../../crates/runner/mitm-addon/tests/test_mitmproxy_websocket_framing.py)
 are the executable contract for the behavior described here.
 
 ### Limits and allocation boundary
@@ -649,7 +649,7 @@ inbound and outbound close paths.
 The first limit violation on each connection is stored as content-free
 diagnostic state. At terminal flow cleanup,
 `mitm_addon.py`'s
-[`_release_terminal_flow_state()`](../crates/runner/mitm-addon/src/mitm_addon.py#L1658-L1684)
+[`_release_terminal_flow_state()`](../../crates/runner/mitm-addon/src/mitm_addon.py#L1658-L1684)
 calls `log_limit_violation()` to consume that state and write a
 `websocket_framing_limit` warning for each stored direction. Its structured
 fields are `reason`,
@@ -664,16 +664,16 @@ diagnostic state without emitting a record.
 `install_websocket_framing()` is idempotent: it returns when the marked bounded
 connection class is already installed, and rejects an unexpected unmarked
 mitmproxy connection class. `mitm_addon.load()` installs the adaptation through
-the [exact-version compatibility gate](../crates/runner/mitm-addon/src/mitmproxy_compat.py)
+the [exact-version compatibility gate](../../crates/runner/mitm-addon/src/mitmproxy_compat.py)
 before registering addon options. The gate requires mitmproxy `12.2.3` and
-wsproto `1.3.2`; the [runner dependency contract](../crates/runner/src/deps.rs)
+wsproto `1.3.2`; the [runner dependency contract](../../crates/runner/src/deps.rs)
 and the addon `pyproject.toml`/`uv.lock` keep those pins aligned.
 
 Before either dependency is upgraded, re-audit the private mitmproxy
 connection, extension, frame-buffer, and generator behavior described above and
 update the compatibility gate, runner artifact metadata, Python dependency
 metadata, and this contract together. The
-[`test_mitmproxy_websocket_framing.py`](../crates/runner/mitm-addon/tests/test_mitmproxy_websocket_framing.py)
+[`test_mitmproxy_websocket_framing.py`](../../crates/runner/mitm-addon/tests/test_mitmproxy_websocket_framing.py)
 suite must continue to pass as the executable framing contract.
 
 ## WebSocket handshake inspection boundary

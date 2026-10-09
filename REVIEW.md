@@ -18,9 +18,9 @@ marker-comment mode, use the full normal PR comment described below instead.
 3. Read the complete diff and relevant callers, tests, and contracts. Distinguish
    introduced defects from unchanged code and unsupported possibilities.
 4. Fetch practice documents from `main`, recording the practice revision. Start
-   with [the documentation index](docs/docs.md) and read the matching documents
-   below. Read-only documentation changes need their actual links and consumers,
-   not every implementation guide.
+   with [the documentation guide and index](docs/docs.md) and read the matching
+   documents below. Read-only documentation changes need their actual links and
+   consumers, not every implementation guide.
 
 ## Select Practices by Behavior
 
@@ -30,29 +30,48 @@ A contents API read can fetch a guide at the recorded practice SHA:
 gh api 'repos/okou-ai/okou/contents/docs/docs.md?ref=<PRACTICE_SHA>' --jq '.content' | base64 -d
 ```
 
-| Changed behavior                                                              | Guidance                                                                                                           |
-| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Production logic                                                              | [Code quality](docs/bad-smell.md) and [testing](docs/testing.md)                                                   |
-| Tests or coverage decisions                                                   | [Testing](docs/testing.md), then the matching surface guide                                                        |
-| Fallbacks, defaults, removed paths, or rollout switches                       | [Fallbacks](docs/fallback.md)                                                                                      |
-| Persistent/optimistic events and reconciliation                               | [Event sourcing](docs/event-sourcing.md)                                                                           |
-| React, signals, caches, refs, or async ownership                              | [ccstate router](.claude/skills/ccstate/SKILL.md), [effects](docs/effect.md), [cache](docs/cache.md) as applicable |
-| API signals or HTTP client handling                                           | Relevant ccstate reactive, command, lifecycle, or HTTP references; React/DOM only if affected                      |
-| Requests, protocols, queue payloads, schema, persisted state, service workers | [Deployment compatibility](docs/deployment-compatibility.md)                                                       |
-| Database schema, raw results, SQL rewrites                                    | [Database development](.claude/skills/database-development/SKILL.md)                                               |
-| New user-facing behavior and containment                                      | [Feature switches](.claude/skills/feature-switch/SKILL.md)                                                         |
-| External identifiers and reference resolution                                 | [Externally managed references](docs/externally-managed-references.md)                                             |
-| App/shared UI styling or interactions                                         | [Styles](docs/styles.md), [UI interaction contracts](CLAUDE.md#ui-interaction-contracts)                           |
-| Chat-card recognition, registration, or rendering                             | [Chat cards](docs/chat-cards.md)                                                                                   |
-| Runner build, release, deploy, architecture selection, or rollback            | [Runner architectures](docs/runner-multi-architecture.md)                                                          |
-| React performance claims or subscription equality                             | [React measurements](docs/react-commit.md)                                                                         |
+| Changed behavior                                                              | Guidance                                                                                                                                                             |
+| ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Documentation additions, updates, moves, or removal                           | [Documentation boundary](docs/docs.md#documentation-boundary)                                                                                                        |
+| Production logic                                                              | [Code quality](docs/bad-smell.md) and [testing](docs/testing.md)                                                                                                     |
+| Tests or coverage decisions                                                   | [Testing](docs/testing.md), then the matching surface guide                                                                                                          |
+| Fallbacks, defaults, removed paths, or rollout switches                       | [Fallbacks](docs/fallback.md)                                                                                                                                        |
+| Persistent/optimistic events and reconciliation                               | [Event sourcing](docs/chat.md#event-sourcing-and-optimistic-events)                                                                                                  |
+| React, signals, caches, refs, or async ownership                              | [ccstate router](.claude/skills/ccstate/SKILL.md), [effects](docs/react.md#effects-and-ownership), [cache](docs/react.md#cache-and-resource-lifetimes) as applicable |
+| API signals or HTTP client handling                                           | Relevant ccstate reactive, command, lifecycle, or HTTP references; React/DOM only if affected                                                                        |
+| Requests, protocols, queue payloads, schema, persisted state, service workers | [Deployment compatibility](docs/deployment-compatibility.md)                                                                                                         |
+| Database schema, raw results, SQL rewrites, transactions, concurrency         | [Database guide](docs/api/database.md), then [database development](.claude/skills/database-development/SKILL.md)                                                    |
+| New user-facing behavior and containment                                      | [Feature switches](.claude/skills/feature-switch/SKILL.md)                                                                                                           |
+| External identifiers and reference resolution                                 | [Externally managed references](docs/bad-smell.md#externally-managed-references)                                                                                     |
+| App/shared UI styling or interactions                                         | [Styles](docs/app/styles.md), [UI interaction contracts](CLAUDE.md#ui-interaction-contracts)                                                                         |
+| Chat-card recognition, registration, or rendering                             | [Chat cards](docs/chat.md#chat-cards)                                                                                                                                |
+| Runner build, release, deploy, architecture selection, or rollback            | [Runner architectures](docs/runner/runner-multi-architecture.md)                                                                                                     |
+| React performance claims or subscription equality                             | [React measurements](docs/react.md#performance-measurement)                                                                                                          |
+
+For Platform requests, async ownership, module state, or runtime loading, read
+[Platform ccstate](docs/app/platform-ccstate.md). API graph changes also require
+[API ccstate](docs/api/api-ccstate.md).
 
 For changed tests, follow the surface routes in [Testing](docs/testing.md).
-API and Platform tests must also follow [external behavior](docs/testing/testing-external-behavior.md).
+API and Platform tests must also follow [external behavior](docs/testing.md#external-behavior).
 Reading an index or skill router does not replace reading the selected reference.
 Do not load unrelated references merely because they share a parent directory.
 
 ## Review Gates
+
+### Documentation Scope
+
+Apply the [documentation boundary](docs/docs.md#documentation-boundary) to new
+or expanded content in every changed file under `docs/`, including nested
+implementation, archive, and attachment directories. Require reusable guidance;
+flag feature descriptions, task plans, progress records, rollout/acceptance
+receipts, and one-off evidence that belongs in source or the owning issue/PR
+instead.
+
+For cleanup and consolidation, verify that rules, reusable examples, and shared
+contracts that still apply survive and that links and actual consumers follow
+the new location. Documentation removal alone does not justify retiring runtime
+protections, compatibility obligations, tests, data, or migration history.
 
 ### Correctness, Security, and Coverage
 
@@ -133,7 +152,7 @@ For changed UI interactions, apply the
   rejection tests when fail-closed security is the actual product behavior.
 - Persistent events reconcile optimistic events by shared ID. Do not require
   failure rollback, timeout removal, or other cleanup of optimistic projections
-  contrary to [event sourcing](docs/event-sourcing.md).
+  contrary to [event sourcing](docs/chat.md#event-sourcing-and-optimistic-events).
 
 ## Findings and Verdict
 

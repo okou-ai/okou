@@ -21,6 +21,7 @@
     "src/signals/auth/tokens.ts",
     "src/signals/context/hono.ts",
     "src/signals/context/system-skill-storage-resolution.ts",
+    "src/signals/services/system-skills-context.service.ts",
     "src/signals/external/agentphone-client.ts",
     "src/signals/external/axiom-datasets.ts",
     "src/signals/external/axiom.ts",

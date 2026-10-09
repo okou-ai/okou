@@ -198,7 +198,7 @@ The view does not make the new name available before migration.
 
 Temporary compatibility objects require the exact outgoing SQL contract,
 protected release, and removal gate. They are not permission to introduce
-business triggers; follow the [trigger policy](eslint/no-database-trigger.md).
+business triggers; follow the [trigger policy](api/database.md#database-triggers).
 
 ## Drain and Rollback Gates
 

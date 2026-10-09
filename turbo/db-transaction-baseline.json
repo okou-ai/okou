@@ -82,11 +82,6 @@
       "owner": "seedDiscordState$"
     },
     {
-      "id": "TX-0017",
-      "file": "turbo/apps/api/src/signals/routes/discord-state-preview.ts",
-      "owner": "deleteDiscordState$"
-    },
-    {
       "id": "TX-0018",
       "file": "turbo/apps/api/src/signals/routes/feishu-oauth.ts",
       "owner": "persistFeishuOAuthConnection"
@@ -507,11 +502,6 @@
       "owner": "testUserId$"
     },
     {
-      "id": "TX-0103",
-      "file": "turbo/apps/api/src/signals/services/cloudflare-access.service.ts",
-      "owner": "createCloudflareAccessConfig$"
-    },
-    {
       "id": "TX-0104",
       "file": "turbo/apps/api/src/signals/services/cloudflare-access.service.ts",
       "owner": "updateCloudflareAccessConfig$"
@@ -540,11 +530,6 @@
       "id": "TX-0109",
       "file": "turbo/apps/api/src/signals/services/computer-use-authorization.service.ts",
       "owner": "applyTeamsAuthorizationScope$"
-    },
-    {
-      "id": "TX-0110",
-      "file": "turbo/apps/api/src/signals/services/connector-account-lifecycle.service.ts",
-      "owner": "renameConnectorAccount$"
     },
     {
       "id": "TX-0111",
@@ -1360,11 +1345,6 @@
       "id": "TX-0275",
       "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
       "owner": "persistSuccessfulPayment$"
-    },
-    {
-      "id": "TX-0276",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
-      "owner": "claimInvitationCreation$"
     },
     {
       "id": "TX-0277",

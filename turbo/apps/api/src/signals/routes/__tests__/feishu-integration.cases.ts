@@ -5590,6 +5590,50 @@ export function registerFeishuIntegrationTests(
 
     // oxlint-disable-next-line vitest/no-conditional-tests -- The entrypoint selects this group before collection.
     if (group === "conversation") {
+      it("rejects renaming integration-managed connector accounts", async () => {
+        const fixture = await setupFeishuRunFixture();
+        await connectFixtureUser(fixture);
+        const definitions = await accept(
+          setupApp({ context, routes: customConnectorsRoutes })(
+            customConnectorsContract,
+          ).list({ headers: { authorization: "Bearer clerk-session" } }),
+          [200],
+        );
+        const definition = requireValue(
+          definitions.body.connectors.find((connector) => {
+            return connector.oauthConfig?.providerAdapter === "feishu";
+          }),
+          "Expected the integration-managed custom connector",
+        );
+        const connectionId = await claimConnectedFeishuSource(
+          fixture,
+          definition.id,
+        );
+        mocks.clerk.session(
+          fixture.actor.userId,
+          fixture.actor.orgId,
+          fixture.actor.orgRole,
+        );
+        for (const displayName of ["Rejected rename", null]) {
+          const rejected = await accept(
+            connectorAccountsClient().rename({
+              headers: { authorization: "Bearer clerk-session" },
+              params: { connectionId },
+              body: {
+                target: { kind: "custom", customConnectorId: definition.id },
+                displayName,
+              },
+            }),
+            [404],
+          );
+          expect(rejected.body.error).toStrictEqual({
+            code: "NOT_FOUND",
+            message: "Connector account not found",
+          });
+        }
+        await removeFeishuInstallation(fixture);
+      });
+
       it("retains platform run history when a model change starts a fresh session", async () => {
         const fixture = await setupFeishuRunFixture();
         const { actor, runnerGroup, appId, callbackUrl, defaultAgentId } =

@@ -220,19 +220,15 @@ const deleteDiscordState$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
     const query = get(queryOf(testDiscordStateContract.delete));
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0017; new non-billing transactions are prohibited.
-    await set(writeDb$).transaction(async (tx) => {
-      signal.throwIfAborted();
-      await tx
-        .delete(discordOrgInstallations)
-        .where(
-          and(
-            eq(discordOrgInstallations.guildId, query.guildId),
-            eq(discordOrgInstallations.orgId, auth.orgId),
-          ),
-        );
-      signal.throwIfAborted();
-    });
+    signal.throwIfAborted();
+    await set(writeDb$)
+      .delete(discordOrgInstallations)
+      .where(
+        and(
+          eq(discordOrgInstallations.guildId, query.guildId),
+          eq(discordOrgInstallations.orgId, auth.orgId),
+        ),
+      );
     signal.throwIfAborted();
     return { status: 200 as const, body: { ok: true as const } };
   },

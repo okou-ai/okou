@@ -182,9 +182,9 @@ binary overrides must use flags and environment keys matching the runner revisio
 
 ## Runner Operations
 
-- [Host configuration and I/O capacity](../docs/runner-host-configuration.md):
+- [Host configuration and I/O capacity](../docs/runner/runner-host-configuration.md):
   configure host-local concurrency and aggregate I/O capacity overrides.
-- [Multi-architecture rollout](../docs/runner-multi-architecture.md): select,
+- [Multi-architecture rollout](../docs/runner/runner-multi-architecture.md): select,
   build, deploy, and validate architecture-specific runner artifacts.
 
 ### Local control socket limits
@@ -491,4 +491,4 @@ cargo clippy --profile local --all-targets
 ```
 
 For affected-crate commands and serialized execution, see
-[memory-constrained Rust testing](../docs/testing/rust-testing.md#memory-constrained-environments).
+[memory-constrained Rust testing](../docs/runner/rust-testing.md#memory-constrained-environments).

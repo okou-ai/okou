@@ -4,9 +4,9 @@ Keep layout in CSS and drive application changes through explicit commands.
 Do not use `ResizeObserver` to discover the effects of changes the application
 already owns, or as a generic loop that repairs layout and scrolling afterward.
 
-This guide complements [effects and commands](./effect.md),
-[ccstate lifecycle ownership](../.claude/skills/ccstate/SKILL.md),
-[styles](./styles.md), and [stable chat cards](./chat-cards.md#fixed-height-and-stable-layout).
+This guide complements [effects and commands](../react.md#effects-and-ownership),
+[ccstate lifecycle ownership](../../.claude/skills/ccstate/SKILL.md),
+[styles](styles.md), and [stable chat cards](../chat.md#fixed-height-and-stable-layout).
 
 ## Recognize the Anti-Pattern
 
@@ -47,7 +47,7 @@ layout's breakpoint rule in one place instead of duplicating it in CSS and
 JavaScript.
 
 For the composer, follow the existing `composer-wide` variant described in
-[the styles guide](./styles.md#the-composers-width). Do not introduce width
+[the styles guide](styles.md#the-composers-width). Do not introduce width
 state or an observer to reproduce that rule.
 
 ## Invoke Commands at the Source of a Change
@@ -99,7 +99,7 @@ Reserve the space needed by asynchronous media and action slots. Matching the
 height before and after a replacement is insufficient if removing the old
 element temporarily shrinks the transcript. Fix the card structure instead of
 adding scroll compensation. Follow the detailed contract in
-[Fixed Height and Stable Layout](./chat-cards.md#fixed-height-and-stable-layout).
+[Fixed Height and Stable Layout](../chat.md#fixed-height-and-stable-layout).
 
 ## Derive the UI from State
 
@@ -136,7 +136,7 @@ different inputs.
 - Keep scheduling flags in ccstate and update them through `set`. Do not mutate
   fields such as `runtime.resizeScheduled` behind ccstate's back.
 - Coalesce high-frequency events only when needed, using the existing
-  [command scheduling primitives](../.claude/skills/ccstate/references/lifecycle.md#debounced-and-throttled-commands).
+  [command scheduling primitives](../../.claude/skills/ccstate/references/lifecycle.md#debounced-and-throttled-commands).
   Do not share a scheduler across unrelated lifecycle signals. Cancel pending
   work when its owner ends.
 

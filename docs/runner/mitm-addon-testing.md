@@ -6,7 +6,7 @@ The mitmproxy addon (`crates/runner/mitm-addon/`) is a Python module that interc
 
 ## Runtime Contracts
 
-Read [addon runtime contracts](../mitm-addon-contracts.md) when changing control, logging,
+Read [addon runtime contracts](mitm-addon-contracts.md) when changing control, logging,
 WebSocket framing or handshake inspection, path normalization, or dependency
 pins. That reference owns limits, redaction, failure handling, and rollout
 boundaries; the tests below exercise those contracts.

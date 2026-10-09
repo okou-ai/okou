@@ -42,7 +42,7 @@ Apply these questions in order:
    duplex listener on **52002**. Its connection is not an RPC request and cannot
    acquire an operation reservation until exact-run attachment; #37027 owns
    ticket admission before any public WSS acknowledgement. See the
-   [duplex owner](../crates/runner-remote/src/guest_duplex).
+   [duplex owner](../../crates/runner-remote/src/guest_duplex).
 
 Port 52000 has one accepted control connection: the Guest control service owns its
 end, and the host removes the listener after acceptance. Its current reader
@@ -54,8 +54,8 @@ but would require a bounded Guest-local helper-to-control-service bridge,
 disjoint request/stream identity and host dispatch, plus flow control, priority
 and cancellation that preserve control/exec/park behavior. Do not disguise a
 new request as an existing response or reuse `process-control-ipc` as a general
-bridge. See the [control listener](../crates/guest-control-client/src/connection/listener.rs)
-and [host reader](../crates/guest-control-client/src/connection/mod.rs).
+bridge. See the [control listener](../../crates/guest-control-client/src/connection/listener.rs)
+and [host reader](../../crates/guest-control-client/src/connection/mod.rs).
 
 Port 52001 is the private assignment-bound ingress for one-shot Guest-origin services.
 The helper connects once per request, while the Runner owns the handler,
@@ -65,8 +65,8 @@ For run-scoped work, 52001 admission uses the control client's authoritative
 normal-operation tracker and the host's current Run assignment; 52002 uses that
 same authority with a separate listener and connection lifetime. A separate
 listener does not create a second source of authority. See the
-[helper](../crates/runner-rpc-client/src/lib.rs) and
-[dispatch owner](../crates/runner-remote/src/guest_rpc/mod.rs).
+[helper](../../crates/runner-rpc-client/src/lib.rs) and
+[dispatch owner](../../crates/runner-remote/src/guest_rpc/mod.rs).
 
 **Before changing control/RPC placement:** a smaller socket count is not evidence
 of lower latency or simpler maintenance. Moving only `run.usage` to 52000 would leave
@@ -390,7 +390,7 @@ unchanged.
 SSH general availability changes no transport or CLI contract. Runner/rootfs,
 API, UI and selected commit-addressed CLI artifacts retain their independent
 deployment boundaries. Add no negotiation header, fallback routing, plugin
-registry, batching or pooling. See [deployment compatibility](deployment-compatibility.md).
+registry, batching or pooling. See [deployment compatibility](../deployment-compatibility.md).
 
 Local tests use real sockets, files, the real control handshake and operation
 tracker, plus unrelated external test methods. They require no web server.

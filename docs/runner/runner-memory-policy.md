@@ -1,6 +1,6 @@
 # Guest memory sharing and reclaim protection
 
-The [canonical policy](../crates/guest-contracts/src/process_containment.rs)
+The [canonical policy](../../crates/guest-contracts/src/process_containment.rs)
 separates a workload hard limit from protection of memory already charged to
 control services and the native agent runtime.
 
@@ -52,7 +52,7 @@ rejects stale base protection along with its existing quiescence checks.
 
 Runner and Guest binaries ship together; existing draining artifacts retain their
 old policy and do not adopt another artifact's sandbox. See
-[deployment compatibility](deployment-compatibility.md#drain-and-rollback-gates).
+[deployment compatibility](../deployment-compatibility.md#drain-and-rollback-gates).
 
 Resource-policy validation must include real native progress and compiler outcomes,
 control delivery/high output, checkpoint/finalization, cancellation, cleanup and
