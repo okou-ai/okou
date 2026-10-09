@@ -15,8 +15,7 @@ import {
 } from "./run-prompt-and-skills";
 import { createRotatedPrompt } from "./thread-run-prompt/rotated";
 import { createConnectorsContext } from "./connectors-context.service";
-import { createWorkflowsContext } from "./workflows-context.service";
-import { assertRequiredOfficialWorkflows } from "./workflow-skills.service";
+import { assertRequiredOfficialWorkflows } from "./official-workflow-observation.service";
 import { createSystemSkillsContext } from "./system-skills-context.service";
 import { createSlackThreadPrompt } from "./thread-run-prompt/slack";
 import { createTeamsThreadPrompt } from "./thread-run-prompt/teams";
@@ -4690,7 +4689,6 @@ export function createThreadClaimRunObjects(
   const workflowSkills$ = computed(async (get) => {
     return get((await get(executionContext$)).workflowSkills$);
   });
-  const workflowsContext$ = createWorkflowsContext(workflowSkills$);
   const systemSkillsContext$ = createSystemSkillsContext(
     systemSkillStorageResolution$,
   );
@@ -4723,7 +4721,7 @@ export function createThreadClaimRunObjects(
     return mergeRunPromptAndSkills(
       await Promise.all([
         get(connectorsContext$),
-        get(workflowsContext$),
+        get(workflowSkills$),
         get(systemSkillsContext$),
         get(runtimePrompt$),
       ]),
@@ -5616,15 +5614,16 @@ export function createThreadClaimRunObjects(
     if (await get(workflowModelError$)) {
       return undefined;
     }
-    const [skills, { command }] = await Promise.all([
-      get(workflowSkills$),
+    const selected = await get(executionContext$);
+    const [observation, { command }] = await Promise.all([
+      get(selected.officialWorkflowObservation$),
       get(preCreateExecutionInput$),
     ]);
     assertRequiredOfficialWorkflows(
-      skills,
+      observation,
       command.requiredOfficialWorkflowIds ?? [],
     );
-    return skills.official;
+    return observation;
   });
   const officialWorkflow$ = computed(
     async (get): Promise<PreparedOfficialWorkflow> => {

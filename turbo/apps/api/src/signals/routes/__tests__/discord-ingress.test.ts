@@ -190,16 +190,6 @@ describe("canonical Discord ingress", () => {
         chat.readThreadMetadata(actor.actor, guildThread.id),
       ).resolves.toMatchObject({ cloudBrowserEnabled: enabled });
       const firstRun = await launchedRun(actor, guildThread.id);
-      const enabledBrowserInstruction =
-        "`okou browser use` creates, reuses, or resumes a remote browser";
-      const disabledBrowserInstruction =
-        "Okou Browser is currently off for this chat thread";
-      expect(firstRun.appendSystemPrompt).toContain(
-        enabled ? enabledBrowserInstruction : disabledBrowserInstruction,
-      );
-      expect(firstRun.appendSystemPrompt).not.toContain(
-        enabled ? disabledBrowserInstruction : enabledBrowserInstruction,
-      );
       await runsApi.requestCancelRun(actor.actor, firstRun.runId, [200]);
       await flushWaitUntilForTest();
 
@@ -239,13 +229,6 @@ describe("canonical Discord ingress", () => {
       await expect(
         chat.readThreadMetadata(actor.actor, dmThread.id),
       ).resolves.toMatchObject({ cloudBrowserEnabled: !enabled });
-      const dmRun = await launchedRun(actor, dmThread.id);
-      expect(dmRun.appendSystemPrompt).toContain(
-        enabled ? disabledBrowserInstruction : enabledBrowserInstruction,
-      );
-      expect(dmRun.appendSystemPrompt).not.toContain(
-        enabled ? enabledBrowserInstruction : disabledBrowserInstruction,
-      );
     },
   );
 

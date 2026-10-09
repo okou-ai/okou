@@ -203,7 +203,7 @@
     "src/signals/services/connectors-context.service.ts",
     "src/signals/services/run-prompt-and-skills.ts",
     "src/signals/services/workflow-skills.service.ts",
-    "src/signals/services/workflows-context.service.ts",
+    "src/signals/services/official-workflow-observation.service.ts",
     "src/signals/services/api-dispatch-timing.service.ts",
     "src/signals/services/built-in-model-runtime-route.service.ts",
     "src/signals/services/built-in-route-pricing.ts",

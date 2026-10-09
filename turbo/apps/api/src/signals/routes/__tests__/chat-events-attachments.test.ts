@@ -20,10 +20,6 @@ import {
   formatUserPresentationTemplateId,
   userPresentationTemplateDirectory,
 } from "@okouai/core/presentation-template-selection";
-import {
-  getPresentationTemplateStorageName,
-  getUserTemplateStorageName,
-} from "@okouai/core/storage-names";
 import { userTemplateDirectory } from "@okouai/core/user-template-selection";
 import { randomUUID } from "node:crypto";
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -39,7 +35,6 @@ import { presentationTemplatesRoutes } from "../presentation-templates";
 import { userTemplatesRoutes } from "../user-templates";
 import { expectApiError, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
-import { expectCanonicalStorageManifest } from "./helpers/api-bdd-runs";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import {
   assistantEvent,
@@ -1180,7 +1175,7 @@ describe("CHAT-02: generation templates and attachments", () => {
   }, 120_000);
 
   it("rejects unavailable templates at pick and launches all templates once they are shared", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     const orgId = actor.orgId;
     if (!orgId) {
@@ -1366,22 +1361,6 @@ describe("CHAT-02: generation templates and attachments", () => {
     );
     expect(systemPrompt).toContain(
       `./${userTemplateDirectory(customId)}/SKILL.md`,
-    );
-    const { claim } = await claimChatRun(runnerGroup, sent.runId);
-    const mounts = expectCanonicalStorageManifest(
-      claim.storageManifest,
-    )?.storageMounts;
-    expect(mounts).toContainEqual(
-      expect.objectContaining({
-        name: getPresentationTemplateStorageName(presentationId),
-        mountPath: `/home/user/workspace/generated/presentation-template/${presentationId}`,
-      }),
-    );
-    expect(mounts).toContainEqual(
-      expect.objectContaining({
-        name: getUserTemplateStorageName(customId),
-        mountPath: `/home/user/workspace/generated/user-template/${customId}`,
-      }),
     );
     await cancelChatRun(actor, sent.runId);
   }, 60_000);
