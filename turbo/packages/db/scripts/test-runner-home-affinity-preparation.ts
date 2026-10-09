@@ -26,16 +26,18 @@ const journal = z
       await readFile(`${DRIZZLE_MIGRATE_OUT}/meta/_journal.json`, "utf8"),
     ),
   );
-const entry = journal.entries.find((item) =>
-  {return item.tag.endsWith("_prepare_home_affinity")},
-);
+const entry = journal.entries.find((item) => {
+  return item.tag.endsWith("_prepare_home_affinity");
+});
 assert.ok(
   entry,
   "Keep the home preparation validator through the deployment/drain cycle",
 );
 const migration = readMigrationFiles({
   migrationsFolder: DRIZZLE_MIGRATE_OUT,
-}).find((item) => {return item.folderMillis === entry.when});
+}).find((item) => {
+  return item.folderMillis === entry.when;
+});
 assert.ok(migration);
 await admin.query(`CREATE DATABASE "${databaseName}"`);
 const sql = postgres(url.toString(), { max: 1, onnotice: () => {} });
@@ -132,8 +134,8 @@ try {
     .returning();
   assert.equal(prepared[0]?.homeAffinityVersion, 1);
   assert.deepEqual(prepared[0]?.heldHomeStates, newObservation.heldHomeStates);
-  const currentEvidence = () =>
-    {return db
+  const currentEvidence = () => {
+    return db
       .select({ runnerId: runnerState.runnerId })
       .from(runnerState)
       .where(
@@ -146,7 +148,8 @@ try {
           ),
           eq(runnerState.homeAffinitySequence, runnerState.heartbeatSequence),
         ),
-      )};
+      );
+  };
   assert.equal((await currentEvidence()).length, 1);
 
   // A real outgoing mapping advances only columns that its API knows about.

@@ -57,5 +57,7 @@ export const runnerStateBeforeHome = pgTable(
       .default(false),
     lastSeenAt: timestamp("last_seen_at").notNull(),
   },
-  (table) => {return [index("runner_state_group_idx").on(table.runnerGroup)]},
+  (table) => {
+    return [index("runner_state_group_idx").on(table.runnerGroup)];
+  },
 );

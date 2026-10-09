@@ -60,7 +60,9 @@ describe("additive home affinity contracts", () => {
     expect(
       heldHomeStateSchema.safeParse({
         ...home,
-        homeCaches: Array.from({ length: 9 }, () => {return home.homeCaches[0]}),
+        homeCaches: Array.from({ length: 9 }, () => {
+          return home.homeCaches[0];
+        }),
       }).success,
     ).toBe(false);
     expect(
@@ -73,13 +75,17 @@ describe("additive home affinity contracts", () => {
       heldHomeStateSchema.safeParse({ ...home, lastCompletedAt: "not-a-date" })
         .success,
     ).toBe(false);
-    const states = Array.from({ length: 128 }, () => {return {
-      ...home,
-      homeCaches: Array.from({ length: 8 }, () => {return {
-        profile: "vm0/default",
-        homeAffinityVersion: 1,
-      }}),
-    }});
+    const states = Array.from({ length: 128 }, () => {
+      return {
+        ...home,
+        homeCaches: Array.from({ length: 8 }, () => {
+          return {
+            profile: "vm0/default",
+            homeAffinityVersion: 1,
+          };
+        }),
+      };
+    });
     expect(
       heartbeatBodySchema.safeParse({
         ...outgoingHeartbeat(),
@@ -96,7 +102,9 @@ describe("additive home affinity contracts", () => {
     expect(
       heartbeatBodySchema.safeParse({
         ...outgoingHeartbeat(),
-        heldHomeStates: Array.from({ length: 1025 }, () => {return home}),
+        heldHomeStates: Array.from({ length: 1025 }, () => {
+          return home;
+        }),
       }).success,
     ).toBe(false);
     expect(
