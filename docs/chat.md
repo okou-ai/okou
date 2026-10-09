@@ -25,7 +25,7 @@ Read [event sourcing and optimistic events](#event-sourcing-and-optimistic-event
 for persistence and streaming, and [chat cards](#chat-cards) for link enhancement,
 resource ownership, and layout. Follow [React](react.md),
 [Platform ccstate](app/platform-ccstate.md), and
-[cache/lifecycle](app/cache.md) for the underlying framework rules.
+[cache/lifecycle](react.md#cache-and-resource-lifetimes) for the underlying framework rules.
 
 ## Event Sourcing and Optimistic Events
 
@@ -155,7 +155,7 @@ presentation dialog is closed. Do not move action ownership into a details
 viewer or let stale thread work update a replacement card.
 
 Follow [ccstate](../.claude/skills/ccstate/SKILL.md), [effects](react.md), and
-[cache/lifecycle](app/cache.md) for graph construction, cancellation, and teardown.
+[cache/lifecycle](react.md#cache-and-resource-lifetimes) for graph construction, cancellation, and teardown.
 
 ### Fixed Height and Stable Layout
 

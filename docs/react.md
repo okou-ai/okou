@@ -6,6 +6,8 @@ it. This guide covers React and ccstate development in the Okou platform.
 
 - [Effects and ownership](#effects-and-ownership): render purity, execution
   boundaries, semantic commands, cancellation, and signal lifetimes.
+- [Cache and resource lifetimes](#cache-and-resource-lifetimes): retention bounds,
+  state isolation, cleanup, and lifecycle review.
 - [Performance measurement](#performance-measurement): reproducible profiling,
   subscription design, and behavior verification.
 
@@ -37,7 +39,8 @@ A component render must not:
 - mutate `document`, `window`, or `globalThis`;
 - schedule a timer, microtask, request, or polling loop;
 - register a listener, observer, or subscription;
-- create a signal factory, external resource, editor, or object URL;
+- call a signal factory or create `state`, `computed`, or `command` signals;
+- create an external resource, editor, or object URL;
 - synchronize props into another mutable source of truth.
 
 React can restart, replay, or abandon render work. Anything performed during
@@ -159,6 +162,12 @@ provides a mount signal. If the element parameter is unused, prove that the
 behavior is still about the committed presence of that DOM subtree. Otherwise,
 the DOM is only being used as a generic lifecycle trigger.
 
+An inline callback ref changes identity on every render and can repeatedly
+detach and attach. A wrapper can also discard the React-compatible cleanup
+function returned by `onRef`. These transitions must not write state, navigate,
+or acquire listeners, timers, observers, or subscriptions without matching
+cleanup.
+
 ```ts
 // Wrong: opening the dialog mounts a hidden trigger that starts a business
 // flow. The DOM element is not part of the operation.
@@ -268,9 +277,17 @@ belongs at an actual outer boundary, such as a React DOM callback.
 
 #### Separate loading state from business state
 
-Use loadable state for request lifecycle such as loading and transport errors.
+Use `useLoadable` or `useLoadableSet` for request lifecycle such as loading,
+transport errors, and completion. Do not store request status or submitted
+command arguments in a separate State when a loadable already represents the
+same lifecycle. A value used only while the command's loadable is loading
+duplicates that lifecycle even when it is not named `loading` or `pending`.
+
 Keep explicit state only for domain phases that the product understands, such
-as `pending`, `authorized`, `denied`, or `expired`.
+as `pending`, `authorized`, `denied`, or `expired`, or for an identity-scoped
+draft. A draft needs its own owner, identity, invalidation or reconciliation
+rule, and release path; it must not depend on a separate loadable to acquire
+meaning.
 
 Do not replace a multi-stage domain state machine with `useLoadableSet`, and do
 not maintain manual `loading` booleans when a loadable already represents the
@@ -286,13 +303,28 @@ Create signal groups at the narrowest lifecycle that owns their identity:
 - dialog state in a dialog owner;
 - editor resources in an editor session.
 
-Pass the resulting signal interface to React. Do not create it in a component
-render, and do not use an unbounded package-level keyed cache to preserve its
-identity. ccstate `computed` already memoizes its current result.
+Pass the resulting signal interface to React. Creating it in component render
+produces new atom identities, recomputes the graph, and replaces subscriptions
+even when the domain identity has not changed. A package-scope `computed` may
+select a factory result from a stable domain identity because ccstate memoizes
+its last result until its dependencies change. Do not add an unbounded
+package-level keyed cache to preserve that identity.
+
+Thread, route, agent, dialog, connector, and editor-session state must not
+default to a root Store or module singleton when simultaneous identities need
+isolation or data should be released before application shutdown. Every scoped
+state group needs:
+
+- an explicit domain identity;
+- isolation from simultaneous instances;
+- an invalidation or replacement rule;
+- a release path tied to its real owner.
 
 A scoped draft must carry the identity it edits. Prefer an authoritative server
 baseline plus an identity-scoped patch over copying the complete server object
-into a second mutable Store.
+into a second mutable Store. Derived values stay computed from the
+authoritative source. React effects and ref callbacks must not become
+synchronization bridges between two mutable state systems.
 
 ### Review Checklist
 
@@ -312,6 +344,113 @@ For each new effect or command, verify:
   identity?
 - Would the behavior remain correct if React restarted render, remounted a ref,
   or changed which dialog subtree was mounted?
+
+## Cache and Resource Lifetimes
+
+Apply the [render-purity](#keep-react-render-pure),
+[signal-ownership](#own-signals-outside-render), and
+[request-state](#separate-loading-state-from-business-state) rules when reviewing
+retention and cleanup. Do not classify a match from syntax alone. Trace the
+component, signal definition, callers, owner, identity key, invalidation path,
+and teardown path before deciding that it is a defect.
+
+### Bound Cache Retention
+
+Do not retain domain-scoped values in a package- or process-lifetime keyed cache
+unless retention has a proven finite domain or hard capacity. The cache also
+needs an explicit lifetime, invalidation, and release path. Review:
+
+- module-level `Map`, `Set`, or `WeakMap` instances;
+- function properties or factory closures that outlive the instance they create;
+- `globalThis` registries;
+- caches of `Computed`, Promise, DOM, editor, subscription, or resource objects;
+- keys such as thread, agent, workflow, route, URL, or user identity that can grow
+  throughout a session.
+
+A `WeakMap` is not automatically safe: it only weakens its key. Keys that stay
+reachable elsewhere still retain their entries, and cached values can retain
+the rest of the object graph. Trace every strong path instead of inferring a
+bound from the container type.
+
+ccstate `computed` already memoizes its last result while dependencies remain
+unchanged. Do not add a manual cache merely to duplicate that behavior.
+
+### Share One State Transition Model
+
+Do not maintain separate implementations of the same editor, draft, or state
+machine for one product behavior. Parallel paths drift in keyboard shortcuts,
+IME behavior, validation, submission, reset, and cleanup semantics even when
+their visible UI starts out equivalent.
+
+Shared behavior should have one lifecycle and one state transition model.
+Presentation differences may adapt that model without duplicating it.
+
+### Pair Acquisition with Teardown
+
+Every acquired resource needs teardown owned by the same lifecycle. Verify the
+pairing for:
+
+- `addEventListener` / `removeEventListener`;
+- timer creation / clearing;
+- observer creation / `disconnect`;
+- object URL creation / `revokeObjectURL`;
+- editor or external object creation / `destroy`, `dispose`, or equivalent;
+- subscription creation / unsubscribe;
+- async work / abort and awaited completion.
+
+Use stable [DOM refs](#dom-lifecycle-use-onref) that preserve cleanup, and give
+long-running ccstate work an `AbortSignal` whose owner will abort it. A reset
+signal used only for mutual exclusion is not enough for a polling loop that may
+never be started again. Follow the [cancellation rules](#make-cancellation-explicit)
+and do not use `detach()` to conceal a missing owner or abort path.
+
+### Review Beyond Lint Coverage
+
+Lint passing is not proof that render and lifecycle behavior is correct. Review
+patterns that can hide an effect from a syntax-based rule, including:
+
+- chained calls such as `useSet(command$)(...)`;
+- render-time side effects hidden inside a helper;
+- nested callbacks that a rule incorrectly treats as outside render;
+- wrappers that discard the cleanup return from `onRef`;
+- accessor aliases or closures that let ccstate `get` or `set` escape a command
+  callback.
+
+Treat a gap as both a code finding and a potential lint-rule coverage finding.
+Do not weaken or suppress the rule.
+
+### Avoiding False Positives
+
+The following patterns are not defects by themselves:
+
+- a stable callback ref returned by `useSet`;
+- `onRef` paired with its provided `AbortSignal` and cleanup;
+- a signal factory owned by a clear domain lifecycle with teardown;
+- a product-visible domain phase or identity-scoped draft with explicit lifecycle
+  and reconciliation;
+- normal ccstate `computed` memoization;
+- a cache with a proven finite domain or hard capacity plus explicit invalidation
+  and release.
+
+When the owner, bound, or teardown cannot be proved, record the item as needing
+confirmation rather than asserting a leak.
+
+### Review Evidence
+
+Every confirmed finding should record:
+
+- file and line;
+- the shortest trigger path;
+- the state or resource's real owner;
+- the identity or key that controls retention;
+- the missing or incorrect invalidation and teardown path;
+- user or engineering impact;
+- confidence and any evidence still missing.
+
+Merge findings with the same root cause instead of reporting every call site
+separately. Use [performance measurement](#performance-measurement) for render
+cost and [heap and subscription profiling](#memory-leaks-are-a-separate-investigation)
+for retention; one does not establish the other.
 
 ## Performance Measurement
 
@@ -748,8 +887,6 @@ the UI genuinely needs.
 
 ## Related Documentation
 
-- [React and ccstate cache and lifecycle practices](app/cache.md) defines the
-  anti-patterns used during implementation and review.
 - [Platform ccstate](app/platform-ccstate.md) defines request, lifecycle,
   module-state, and import boundaries.
 - [Platform testing](app/app-testing.md) defines page setup and user-visible

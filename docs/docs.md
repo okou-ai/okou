@@ -49,7 +49,8 @@ owning surface.
 - [Chat design](chat.md): event history, optimistic streaming, action links,
   card registration, lifecycle ownership, and stable transcript layout.
 - [React development](react.md): render purity, effects and commands, signal
-  ownership, subscription design, and performance measurement.
+  ownership, cache and resource lifetimes, subscription design, and performance
+  measurement.
 
 ## CLI
 
@@ -62,7 +63,6 @@ owning surface.
 - [Platform ccstate](app/platform-ccstate.md): transport, lifecycle, module state,
   and import boundaries. Read the matching shared
   [ccstate references](../.claude/skills/ccstate/SKILL.md) as needed.
-- [Cache and lifecycle](app/cache.md): ownership, retention, refs, and teardown.
 - [Styles](app/styles.md): shared tokens, semantic HTML, component composition,
   and [Clerk customization](app/styles.md#clerk-customization).
 - [ResizeObserver](app/resize-observer.md): CSS layout and measurement ownership.
