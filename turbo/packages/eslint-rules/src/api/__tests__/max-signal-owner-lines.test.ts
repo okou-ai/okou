@@ -224,6 +224,69 @@ const fixtureSources = {
       return createRead(input$);
     }
   `,
+  "record.ts": `
+    import { createLeaf as leaf } from "./leaf";
+    import { computed } from "ccstate";
+    export function createRead(inputs) {
+      const first$ = leaf(inputs.source$);
+      const channels = { first: first$, second: leaf(inputs.second$) };
+      return computed(get => get(channels.first) + get(channels.second));
+    }
+  `,
+  "forward-record.ts": `
+    import { createRead as read } from "./record";
+    function local(inputs) {
+      return read(inputs);
+    }
+    export function createRead(inputs) {
+      return local(inputs);
+    }
+  `,
+  ...Object.fromEntries(
+    [
+      ["getter", "{ get first() { return readDatabase(); } }"],
+      ["method", "{ first() { return readDatabase(); } }"],
+      ["spread", "{ ...inputs }"],
+      ["computed-key", "{ [readDatabase()]: inputs.source$ }"],
+      ["prototype", "{ __proto__: inputs }"],
+      ["eager", "{ first: readDatabase() }"],
+      ["command", "{ first: command(() => 1) }"],
+      ["state", "{ first: state(1) }"],
+      ["nested-read", "{ first: inputs.source$.value }"],
+    ].map(([name, initializer]) => [
+      `record-map-${name}.ts`,
+      `
+        import { computed, command, state } from "ccstate";
+        export function createRead(inputs) {
+          const channels = ${initializer};
+          return computed(() => channels);
+        }
+      `,
+    ]),
+  ),
+  ...Object.fromEntries(
+    [
+      ["default", "inputs = readDatabase()"],
+      ["destructured", "{ source$ }"],
+      ["rest", "...inputs"],
+    ].map(([name, parameter]) => [
+      `record-parameter-${name}.ts`,
+      `
+        import { computed } from "ccstate";
+        export function createRead(${parameter}) {
+          return computed(() => 1);
+        }
+      `,
+    ]),
+  ),
+  "record-mutation.ts": `
+    import { createLeaf as leaf } from "./leaf";
+    import { computed } from "ccstate";
+    export function createRead(inputs) {
+      const result$ = leaf(inputs.source$);
+      return computed(() => { delete inputs.source$; return result$; });
+    }
+  `,
 };
 for (const [name, source] of Object.entries(fixtureSources)) {
   writeFileSync(join(fixtureDirectory, name), source);
@@ -281,6 +344,98 @@ ruleTester.run(
         code: ownerCallingFactory("nested", "readDatabase()"),
         errors: [{ messageId: "tooLong" }],
       },
+    ],
+  },
+);
+
+function ownerCallingRecordFactory(
+  module = "record",
+  initializer = "{ source$, second$: source$ }",
+  extra = "",
+) {
+  return `
+    import { computed } from "ccstate";
+    import { createRead as build } from "./${module}";
+    function createClaimRunObjects(unknownInput) {
+      const source$ = computed(() => 1);
+      const inputs = ${initializer};
+      const result$ = build(inputs);
+      ${extra}
+      return { result$ };
+    }
+  `;
+}
+
+ruleTester.run(
+  "max-signal-owner-lines computed factories with flat input records",
+  maxSignalOwnerLines,
+  {
+    valid: [
+      ...["record", "forward-record"].map((module) => ({
+        name: `verifies own data fields and computed maps through ${module}`,
+        options,
+        filename: join(fixtureDirectory, "owner.ts"),
+        code: ownerCallingRecordFactory(module),
+      })),
+      {
+        name: "derives fields from the actual literal underneath a type assertion",
+        options,
+        filename: join(fixtureDirectory, "owner.ts"),
+        code: ownerCallingRecordFactory(
+          "record",
+          "{ source$, second$: source$ } as Inputs",
+        ),
+      },
+    ],
+    invalid: [
+      ...[
+        "{ get source$() { return readDatabase(); }, second$: source$ }",
+        "{ source$() { return readDatabase(); }, second$: source$ }",
+        "{ ...unknownInput, second$: source$ }",
+        "{ [readDatabase()]: source$, second$: source$ }",
+        "{ __proto__: unknownInput, source$, second$: source$ }",
+        "{ source$: readDatabase(), second$: source$ }",
+        "{ second$: source$ } as Inputs",
+        "unknownInput as Inputs",
+      ].map((initializer) => ({
+        name: `rejects unproven owner record ${initializer}`,
+        options,
+        filename: join(fixtureDirectory, "owner.ts"),
+        code: ownerCallingRecordFactory("record", initializer),
+        errors: [{ messageId: "tooLong" as const }],
+      })),
+      ...[
+        "const alias = inputs;",
+        "inputs.source$ = source$;",
+        "const mutation$ = computed(() => Object.defineProperty(inputs, 'source$', { get: readDatabase }));",
+        // Verifying the same factory with a record must not authorize opaque inputs.
+        "const unsafe$ = build(unknownInput);",
+      ].map((extra) => ({
+        name: `rejects escaped records or unsafe subsequent invocation: ${extra}`,
+        options,
+        filename: join(fixtureDirectory, "owner.ts"),
+        code: ownerCallingRecordFactory(
+          "record",
+          "{ source$, second$: source$ }",
+          extra,
+        ),
+        errors: [{ messageId: "tooLong" as const }],
+      })),
+      ...Object.keys(fixtureSources)
+        .filter((name) => {
+          return (
+            name.startsWith("record-map-") ||
+            name.startsWith("record-parameter-") ||
+            name === "record-mutation.ts"
+          );
+        })
+        .map((module) => ({
+          name: `rejects unverified construction in ${module}`,
+          options,
+          filename: join(fixtureDirectory, "owner.ts"),
+          code: ownerCallingRecordFactory(module),
+          errors: [{ messageId: "tooLong" as const }],
+        })),
     ],
   },
 );

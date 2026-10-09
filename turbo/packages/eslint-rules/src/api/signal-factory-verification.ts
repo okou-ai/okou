@@ -13,6 +13,18 @@ interface ModuleDeclarations {
   readonly writtenNames: ReadonlySet<string>;
 }
 
+/** Fields proven to be own data properties of a freshly constructed record. */
+export interface ComputedFactoryArgument {
+  readonly recordFields?: readonly string[];
+}
+
+function passiveValue(node: ts.Expression): ts.Expression {
+  if (ts.isAsExpression(node) || ts.isSatisfiesExpression(node)) {
+    return passiveValue(node.expression);
+  }
+  return node;
+}
+
 function isPassiveValue(node: ts.Expression): boolean {
   if (
     ts.isIdentifier(node) ||
@@ -23,12 +35,13 @@ function isPassiveValue(node: ts.Expression): boolean {
   ) {
     return true;
   }
-  if (ts.isAsExpression(node) || ts.isSatisfiesExpression(node)) {
-    return isPassiveValue(node.expression);
-  }
-  // Factories connect already constructed nodes or ordinary values. Calls,
-  // property accessors, spreads and defaults cannot execute during connection.
   return false;
+}
+
+function recordPropertyName(name: ts.PropertyName): string | undefined {
+  return ts.isIdentifier(name) || ts.isStringLiteral(name)
+    ? name.text
+    : undefined;
 }
 
 function writtenBindingNames(source: ts.SourceFile): ReadonlySet<string> {
@@ -48,7 +61,17 @@ function writtenBindingNames(source: ts.SourceFile): ReadonlySet<string> {
           target(property.expression);
         }
       }
-    } else if (ts.isSpreadElement(node) || ts.isParenthesizedExpression(node)) {
+    } else if (
+      ts.isPropertyAccessExpression(node) ||
+      ts.isElementAccessExpression(node)
+    ) {
+      target(node.expression);
+    } else if (
+      ts.isSpreadElement(node) ||
+      ts.isParenthesizedExpression(node) ||
+      ts.isAsExpression(node) ||
+      ts.isNonNullExpression(node)
+    ) {
       target(node.expression);
     }
   }
@@ -65,6 +88,8 @@ function writtenBindingNames(source: ts.SourceFile): ReadonlySet<string> {
         node.operator === ts.SyntaxKind.MinusMinusToken)
     ) {
       target(node.operand);
+    } else if (ts.isDeleteExpression(node)) {
+      target(node.expression);
     } else if (ts.isForInStatement(node) || ts.isForOfStatement(node)) {
       target(node.initializer);
     }
@@ -77,7 +102,7 @@ function writtenBindingNames(source: ts.SourceFile): ReadonlySet<string> {
 /** Verify source declarations, never factory names or asserted return types. */
 export function createComputedFactoryVerifier() {
   const modules = new Map<string, ModuleDeclarations | null>();
-  const checked = new Map<ts.FunctionDeclaration, boolean>();
+  const checked = new Map<ts.FunctionDeclaration, Map<string, boolean>>();
   const visiting = new Set<ts.FunctionDeclaration>();
 
   function readModule(importer: string, source: string) {
@@ -138,7 +163,12 @@ export function createComputedFactoryVerifier() {
     return null;
   }
 
-  function verifyImported(importer: string, source: string, name: string) {
+  function verifyImported(
+    importer: string,
+    source: string,
+    name: string,
+    args: readonly ComputedFactoryArgument[] = [],
+  ) {
     const module = readModule(importer, source);
     const declaration = module?.functions.get(name);
     return Boolean(
@@ -146,15 +176,21 @@ export function createComputedFactoryVerifier() {
       declaration?.modifiers?.some((modifier) => {
         return modifier.kind === ts.SyntaxKind.ExportKeyword;
       }) &&
-      verifyFunction(module, declaration),
+      verifyFunction(module, declaration, args),
     );
   }
 
   function verifyFunction(
     module: ModuleDeclarations,
     fn: ts.FunctionDeclaration,
+    args: readonly ComputedFactoryArgument[],
   ): boolean {
-    const prior = checked.get(fn);
+    const signature = JSON.stringify(
+      args.map((argument) =>
+        argument.recordFields ? [...argument.recordFields].sort() : null,
+      ),
+    );
+    const prior = checked.get(fn)?.get(signature);
     if (prior !== undefined) {
       return prior;
     }
@@ -181,12 +217,45 @@ export function createComputedFactoryVerifier() {
       fn.parameters.map((parameter) => parameter.name.getText()),
     );
     const nodes = new Set<string>();
+    const records = new Map<string, readonly string[]>();
+    fn.parameters.forEach((parameter, index) => {
+      const fields = args[index]?.recordFields;
+      if (
+        fields !== undefined &&
+        !module.writtenNames.has(parameter.name.getText())
+      ) {
+        records.set(parameter.name.getText(), fields);
+      }
+    });
     for (const statement of fn.body.statements) {
       if (ts.isVariableStatement(statement)) {
         for (const declaration of statement.declarationList.declarations) {
           localNames.add(declaration.name.getText());
         }
       }
+    }
+
+    function argumentShape(
+      node: ts.Expression,
+    ): ComputedFactoryArgument | null {
+      const value = passiveValue(node);
+      if (isPassiveValue(value)) {
+        const fields = ts.isIdentifier(value)
+          ? records.get(value.text)
+          : undefined;
+        return fields === undefined ? {} : { recordFields: fields };
+      }
+      if (
+        ts.isPropertyAccessExpression(value) &&
+        ts.isIdentifier(value.expression) &&
+        !module.writtenNames.has(value.expression.text) &&
+        records.get(value.expression.text)?.includes(value.name.text)
+      ) {
+        return {};
+      }
+      // Unknown objects may have getters. Only proven flat records permit
+      // property reads; asserted parameter types cannot establish that fact.
+      return null;
     }
 
     function isComputedNode(node: ts.Expression): boolean {
@@ -209,14 +278,53 @@ export function createComputedFactoryVerifier() {
           (ts.isArrowFunction(callback) || ts.isFunctionExpression(callback))
         );
       }
-      if (!node.arguments.every(isPassiveValue)) {
+      const shapes = node.arguments.map(argumentShape);
+      if (shapes.some((shape) => shape === null)) {
         return false;
       }
+      const args = shapes.filter((shape) => shape !== null);
       if (imported) {
-        return verifyImported(module.path, imported.source, imported.name);
+        return verifyImported(
+          module.path,
+          imported.source,
+          imported.name,
+          args,
+        );
       }
       const nested = module.functions.get(name);
-      return nested !== undefined && verifyFunction(module, nested);
+      return nested !== undefined && verifyFunction(module, nested, args);
+    }
+
+    function recordFields(node: ts.Expression): readonly string[] | undefined {
+      const value = passiveValue(node);
+      if (!ts.isObjectLiteralExpression(value)) {
+        return undefined;
+      }
+      const fields: string[] = [];
+      for (const property of value.properties) {
+        if (
+          !ts.isPropertyAssignment(property) &&
+          !ts.isShorthandPropertyAssignment(property)
+        ) {
+          return undefined;
+        }
+        const name = recordPropertyName(property.name);
+        if (name === undefined || name === "__proto__") {
+          return undefined;
+        }
+        if (ts.isShorthandPropertyAssignment(property)) {
+          if (property.objectAssignmentInitializer) {
+            return undefined;
+          }
+        } else if (
+          argumentShape(property.initializer) === null &&
+          !isComputedNode(property.initializer)
+        ) {
+          return undefined;
+        }
+        fields.push(name);
+      }
+      return fields;
     }
 
     const statements = [...fn.body.statements];
@@ -226,14 +334,21 @@ export function createComputedFactoryVerifier() {
         ts.isVariableStatement(statement) &&
         (statement.declarationList.flags & ts.NodeFlags.Const) !== 0 &&
         statement.declarationList.declarations.every((declaration) => {
+          if (!ts.isIdentifier(declaration.name) || !declaration.initializer) {
+            return false;
+          }
+          if (isComputedNode(declaration.initializer)) {
+            nodes.add(declaration.name.text);
+            return true;
+          }
+          const fields = recordFields(declaration.initializer);
           if (
-            !ts.isIdentifier(declaration.name) ||
-            !declaration.initializer ||
-            !isComputedNode(declaration.initializer)
+            fields === undefined ||
+            module.writtenNames.has(declaration.name.text)
           ) {
             return false;
           }
-          nodes.add(declaration.name.text);
+          records.set(declaration.name.text, fields);
           return true;
         })
       );
@@ -245,7 +360,9 @@ export function createComputedFactoryVerifier() {
       returned.expression !== undefined &&
       isComputedNode(returned.expression);
     visiting.delete(fn);
-    checked.set(fn, result);
+    const results = checked.get(fn) ?? new Map<string, boolean>();
+    results.set(signature, result);
+    checked.set(fn, results);
     return result;
   }
 

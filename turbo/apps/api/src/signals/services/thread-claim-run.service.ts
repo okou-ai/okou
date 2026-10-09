@@ -1,27 +1,16 @@
-import { createDiscordThreadContext } from "./discord-thread-prompt-context.service";
-import { createAgentPrompt } from "./thread-run-prompt/agent";
-import { createUserPrompt } from "./thread-run-prompt/user";
-import { createAgentPhoneThreadPrompt } from "./thread-run-prompt/agentphone";
-import { createAutomationThreadPrompt } from "./thread-run-prompt/automation";
-import { createComputerUsePrompt } from "./thread-run-prompt/computer-use";
-import { createDiscordThreadPrompt } from "./thread-run-prompt/discord";
-import { createFeishuThreadPrompt } from "./thread-run-prompt/feishu";
-import { createRuntimePrompt } from "./thread-run-prompt/runtime";
 import {
-  mergeRunPromptAndSkills,
-  renderRunPrompts,
+  createPromptAndSkillVolumesSignals,
+  PromptAndSkillVolumesError,
+  type PromptAndSkillVolumes,
+  type PromptAndSkillVolumesInputs,
+} from "./thread-run-prompt/prompt-and-skill-volumes";
+import { createDiscordThreadContext } from "./discord-thread-prompt-context.service";
+import {
   resolveRunSkillVolumes,
-  type RunPromptAndSkills,
   type SkillVolume,
 } from "./run-prompt-and-skills";
-import { createRotatedPrompt } from "./thread-run-prompt/rotated";
-import { createConnectorsContext } from "./connectors-context.service";
 import { assertRequiredOfficialWorkflows } from "./official-workflow-observation.service";
 import { createSystemSkillsContext } from "./system-skills-context.service";
-import { createSlackThreadPrompt } from "./thread-run-prompt/slack";
-import { createTeamsThreadPrompt } from "./thread-run-prompt/teams";
-import { createTelegramThreadPrompt } from "./thread-run-prompt/telegram";
-import { createWebThreadPrompt } from "./thread-run-prompt/web";
 import type {
   PickedThreadInputEvent,
   ThreadPromptSource,
@@ -518,7 +507,6 @@ import {
 import type { OfficialWorkflowContextFacts } from "./official-workflow-context.signals";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { PiModelConfigurationError } from "./pi-model-configuration-error";
-import { additionalVolumesForRun } from "./presentation-template-data.service";
 import { createRunTemplates } from "./run-templates.service";
 import {
   environmentRecordToEntries,
@@ -564,6 +552,7 @@ import { isWebChatContextId } from "./web-chat-queue-context.service";
 
 import {
   EVENT_POLICY,
+  restoredWorkflowAutomationEventPayload,
   type WorkflowAutomationEventPayload,
   workflowAutomationEventTypeSchema,
 } from "./workflow-automation-context.service";
@@ -717,9 +706,7 @@ class QueuedPromptLaunchUnavailableError extends Error {
 function queuedPromptRunInput(args: {
   readonly input: CreateQueuedChatRunInputArgs;
   readonly launch: QueuedLaunchMaterial;
-  readonly promptAndSkills: RunPromptAndSkills;
-  readonly userPrompt: RunPromptAndSkills;
-  readonly computerUsePrompt: RunPromptAndSkills;
+  readonly promptAndSkills: PromptAndSkillVolumes;
   readonly model: Exclude<
     QueuedMessageModelRouteResolution,
     { readonly error: unknown }
@@ -731,13 +718,6 @@ function queuedPromptRunInput(args: {
   readonly catalog: ModelCatalog;
 }): CreateQueuedChatRunInput {
   const { input, launch } = args;
-  const prompt = renderRunPrompts(
-    mergeRunPromptAndSkills([
-      args.promptAndSkills,
-      args.userPrompt,
-      args.computerUsePrompt,
-    ]),
-  );
   if (input.queuedMessage.autonomyBudget.kind !== "ok") {
     throw new Error("Rejected autonomy input cannot become a run");
   }
@@ -752,11 +732,8 @@ function queuedPromptRunInput(args: {
     expectedThreadAgentId: input.expectedThreadAgentId,
     threadSessionResolution: args.session,
     featureSwitchContext: args.features,
-    prompt: prompt.userPrompt,
-    appendSystemPrompt: prompt.systemPrompt,
-    presentationTemplateVolumes: resolveRunSkillVolumes(
-      args.promptAndSkills.skillVolumes,
-    ).skillVolumes,
+    prompt: args.promptAndSkills.userPrompt,
+    appendSystemPrompt: args.promptAndSkills.appendedSystemPrompt,
     threadId: input.threadId,
     queuedMessage: input.queuedMessage,
     requiredOfficialWorkflowIds:
@@ -808,7 +785,8 @@ function queuedPromptPreparationRejection(
   if (
     !(error instanceof DiscordQueuedLaunchUnavailableError) &&
     !(error instanceof QueuedPromptLaunchUnavailableError) &&
-    !(error instanceof QueuedPromptInputInvalidError)
+    !(error instanceof QueuedPromptInputInvalidError) &&
+    !(error instanceof PromptAndSkillVolumesError)
   ) {
     throw error;
   }
@@ -818,11 +796,13 @@ function queuedPromptPreparationRejection(
       userId: head.userId,
       error: {
         code:
-          error instanceof DiscordQueuedLaunchUnavailableError
-            ? "DISCORD_ACCESS_REVOKED"
-            : error instanceof QueuedPromptInputInvalidError
-              ? "INTERNAL_ERROR"
-              : "CONFLICT",
+          error instanceof PromptAndSkillVolumesError
+            ? error.code
+            : error instanceof DiscordQueuedLaunchUnavailableError
+              ? "DISCORD_ACCESS_REVOKED"
+              : error instanceof QueuedPromptInputInvalidError
+                ? "INTERNAL_ERROR"
+                : "CONFLICT",
         message: error.message,
       },
     },
@@ -875,7 +855,6 @@ type AutonomyBudgetResult =
     };
 
 function buildWorkflowAutomationQueuedLaunchMaterial(args: {
-  readonly prompt: RunPromptAndSkills;
   readonly workflowName: string | null;
   readonly eventType: string | null;
   readonly eventPayload: WorkflowAutomationEventPayload | null;
@@ -886,14 +865,13 @@ function buildWorkflowAutomationQueuedLaunchMaterial(args: {
   if (
     args.workflowName === null ||
     args.eventType === null ||
-    args.eventPayload === null
+    args.eventPayload === null ||
+    !restoredWorkflowAutomationEventPayload(args.eventPayload)
   ) {
     return null;
   }
   const eventType = workflowAutomationEventTypeSchema.parse(args.eventType);
   return {
-    prompt: renderRunPrompts(args.prompt).userPrompt,
-    appendSystemPrompt: undefined,
     callbacks: buildWorkflowAutomationCallbacks(
       args.automation,
       args.agentId,
@@ -917,14 +895,6 @@ type ComputerUseHostGrant = {
   readonly hostId: string;
   readonly displayName: string;
 } | null;
-
-interface WorkflowAutomationRunInput {
-  readonly prompt: string;
-  readonly additionalVolumes: readonly AgentRunCreateAdditionalVolume[];
-  readonly appendSystemPrompt: string | undefined;
-  readonly callbacks: readonly InternalRunCallbackInput[];
-  readonly agentRunMetadata: ReturnType<typeof workflowAutomationRunMetadata>;
-}
 
 function workflowAutomationRunMetadata(
   automation: AutomationRow,
@@ -1154,13 +1124,11 @@ function queuedAutomationLaunchArguments(args: {
     },
     queueEventId: event.id,
     apiStartTime: head.apiStartTime,
-    prompt: material.prompt,
     triggerBrief: event.triggerBrief ?? undefined,
     triggerSource,
     ...(event.connectorSourceId
       ? { connectorSourceId: event.connectorSourceId }
       : {}),
-    appendSystemPrompt: material.appendSystemPrompt,
     callbacks: material.callbacks,
     autonomyBudget,
     recordLastRunId: material.recordLastRunId,
@@ -1350,8 +1318,6 @@ type ClaimLaunchRecord =
     };
 
 interface WorkflowAutomationQueuedLaunchMaterial {
-  readonly prompt: string;
-  readonly appendSystemPrompt: string | undefined;
   readonly callbacks: ReturnType<typeof buildWorkflowAutomationCallbacks>;
   readonly recordLastRunId: boolean;
   readonly recordLastRunAt: boolean;
@@ -1405,11 +1371,9 @@ function buildWorkflowAutomationCallbacks(
 interface WorkflowAutomationLaunchArgs {
   readonly due: DueWorkflowAutomation;
   readonly apiStartTime: number;
-  readonly prompt: string;
   readonly triggerBrief?: string;
   readonly triggerSource?: TriggerSource;
   readonly connectorSourceId?: string;
-  readonly appendSystemPrompt: string | undefined;
   readonly callbacks: readonly InternalRunCallbackInput[];
   readonly autonomyBudget: number;
   readonly recordLastRunId: boolean;
@@ -1901,72 +1865,11 @@ export function createThreadClaimRunObjects(
   const agentPhoneContext$ = createAgentPhoneThreadContext(threadPromptSource$);
   const discordContext$ = createDiscordThreadContext(threadPromptSource$);
   const automationContext$ = createThreadAutomationContext(threadPromptSource$);
-  const webPrompt$ = createWebThreadPrompt(threadPromptSource$);
-  const slackPrompt$ = createSlackThreadPrompt(
-    threadPromptSource$,
-    slackContext$,
-  );
-  const feishuPrompt$ = createFeishuThreadPrompt(
-    threadPromptSource$,
-    feishuContext$,
-  );
-  const teamsPrompt$ = createTeamsThreadPrompt(
-    threadPromptSource$,
-    teamsContext$,
-  );
-  const telegramPrompt$ = createTelegramThreadPrompt(
-    threadPromptSource$,
-    telegramContext$,
-  );
-  const agentPhonePrompt$ = createAgentPhoneThreadPrompt(
-    threadPromptSource$,
-    agentPhoneContext$,
-  );
-  const discordPrompt$ = createDiscordThreadPrompt(
-    threadPromptSource$,
-    discordContext$,
-  );
-  const automationPrompt$ = createAutomationThreadPrompt(
-    threadPromptSource$,
-    automationContext$,
-  );
   const threadMemberMetadata$ = computed(async (get) => {
     const selected = (await get(isAutomation$))
       ? await get(queuedIdentityContext$)
       : await get(promptExecutionContext$);
     return get(selected.memberMetadata$);
-  });
-  const userPrompt$ = createUserPrompt(threadMemberMetadata$);
-  const selectedIntegrationPrompt$ = computed(async (get) => {
-    // Preserve canonical input validation before evaluating channel material.
-    const { queuedMessage } = await get(promptArgsArgs$);
-    switch (queuedMessage.contextType) {
-      case "web":
-      case "agent_run": {
-        return get(webPrompt$);
-      }
-      case "slack": {
-        return get(slackPrompt$);
-      }
-      case "feishu": {
-        return get(feishuPrompt$);
-      }
-      case "teams": {
-        return get(teamsPrompt$);
-      }
-      case "telegram": {
-        return get(telegramPrompt$);
-      }
-      case "agentphone": {
-        return get(agentPhonePrompt$);
-      }
-      case "discord": {
-        return get(discordPrompt$);
-      }
-      case "automation": {
-        throw new Error("Automation cannot enter the prompt assembler");
-      }
-    }
   });
   // Per-claim dispatch timing collectors, created once per graph like the run
   // ids; commands record into them in their own order.
@@ -2620,32 +2523,12 @@ export function createThreadClaimRunObjects(
       );
     },
   );
-  const rotatedPrompt$ = createRotatedPrompt(
-    pickedEvent$,
-    session$,
-    memberRoutes$,
-    claimCatalog$,
-  );
   const templateOrgId = claim.orgId;
   const runTemplates$ = createRunTemplates(
     pickedEvent$,
     templateOrgId,
     promptFeaturesFeatures$,
   );
-  const promptAndSkills$ = computed(async (get) => {
-    const [integration, continuation, templates] = await Promise.all([
-      get(selectedIntegrationPrompt$),
-      get(rotatedPrompt$),
-      get(runTemplates$),
-    ]);
-    if (!integration) {
-      return null;
-    }
-    if ("error" in templates) {
-      return templates;
-    }
-    return mergeRunPromptAndSkills([integration, continuation, templates]);
-  });
   const promptHostHost$ = computed(async (get) => {
     const [{ head }, thread] = await Promise.all([
       get(promptInputInput$),
@@ -2671,10 +2554,6 @@ export function createThreadClaimRunObjects(
       .limit(1);
     return host ?? null;
   });
-  const computerUsePrompt$ = createComputerUsePrompt(
-    pickedEvent$,
-    promptHostHost$,
-  );
   const promptCaptureCapture$ = computed(async (get) => {
     const { head } = await get(promptInputInput$);
     if (requestFacts?.input.id === head.id) {
@@ -2692,34 +2571,17 @@ export function createThreadClaimRunObjects(
     async (
       get,
     ): Promise<CreateQueuedChatRunInput | QueuedMessageAdmissionFailure> => {
-      const [
-        args,
-        launch,
-        context,
-        userPrompt,
-        computerUsePrompt,
-        model,
-        session,
-        host,
-        capture,
-        features,
-      ] = await Promise.all([
-        get(promptArgsArgs$),
-        get(promptMaterialMaterial$),
-        get(promptAndSkills$),
-        get(userPrompt$),
-        get(computerUsePrompt$),
-        get(promptModelModel$),
-        get(promptSessionSession$),
-        get(promptHostHost$),
-        get(promptCaptureCapture$),
-        get(promptFeaturesFeatures$),
-      ]);
-      if (!context) {
-        throw args.queuedMessage.contextType === "discord"
-          ? new DiscordQueuedLaunchUnavailableError()
-          : new QueuedPromptLaunchUnavailableError();
-      }
+      const [args, launch, model, session, host, capture, features, templates] =
+        await Promise.all([
+          get(promptArgsArgs$),
+          get(promptMaterialMaterial$),
+          get(promptModelModel$),
+          get(promptSessionSession$),
+          get(promptHostHost$),
+          get(promptCaptureCapture$),
+          get(promptFeaturesFeatures$),
+          get(runTemplates$),
+        ]);
       const autonomy = args.queuedMessage.autonomyBudget;
       if (autonomy.kind !== "ok") {
         return queuedMessageAdmissionFailure(args, launch, {
@@ -2736,8 +2598,16 @@ export function createThreadClaimRunObjects(
       if ("error" in model) {
         return queuedMessageAdmissionFailure(args, launch, model.error);
       }
-      if ("error" in context) {
-        return queuedMessageAdmissionFailure(args, launch, context.error);
+      if ("error" in templates) {
+        return queuedMessageAdmissionFailure(args, launch, templates.error);
+      }
+      const promptAndSkills = await get(preparedPromptAndSkillVolumes$);
+      if (isRouteError(promptAndSkills)) {
+        return queuedMessageAdmissionFailure(
+          args,
+          launch,
+          promptAndSkills.body.error,
+        );
       }
       if (!session) {
         throw new Error("A valid prompt model is missing session preparation");
@@ -2746,9 +2616,7 @@ export function createThreadClaimRunObjects(
         catalog: await get(claimCatalog$),
         input: args,
         launch,
-        promptAndSkills: context,
-        userPrompt,
-        computerUsePrompt,
+        promptAndSkills,
         model,
         session,
         host,
@@ -3049,24 +2917,6 @@ export function createThreadClaimRunObjects(
     }
     return (await get(availableMaterial$))?.connectorSourceId;
   });
-  const promptExecutionResourcesStorageBody$ = computed(async (get) => {
-    if (await get(internalEarlyAssembly$)) {
-      return {};
-    }
-    const context = await settle(get(promptAndSkills$));
-    if (!context.ok) {
-      queuedPromptPreparationRejection(
-        context.error,
-        (await get(promptInputInput$)).head,
-      );
-      return {};
-    }
-    return !context.value || "error" in context.value
-      ? {}
-      : additionalVolumesForRun(
-          resolveRunSkillVolumes(context.value.skillVolumes).skillVolumes,
-        );
-  });
   const event$ = automationContext$;
   const capturedAutomationTarget$ = computed(
     async (get): Promise<LaunchTarget | null> => {
@@ -3183,16 +3033,14 @@ export function createThreadClaimRunObjects(
     target$: queuedAutomationMaterialTarget$,
   } = queuedAutomationRunSources;
   const launchMaterial$ = computed(async (get) => {
-    const [event, target, prompt] = await Promise.all([
+    const [event, target] = await Promise.all([
       get(queuedAutomationMaterialEvent$),
       get(queuedAutomationMaterialTarget$),
-      get(automationPrompt$),
     ]);
-    if (!event || !target || !prompt) {
+    if (!event || !target) {
       return null;
     }
     return buildWorkflowAutomationQueuedLaunchMaterial({
-      prompt,
       workflowName: event.workflowName,
       eventType: event.eventType,
       eventPayload: event.eventPayload,
@@ -3236,13 +3084,13 @@ export function createThreadClaimRunObjects(
   };
   const { input$: workflowAutomationLaunchReadGraphInput$ } =
     workflowAutomationLaunchReadGraphSources;
-  const { input$: automationLaunchMaterialsInput$ } =
-    workflowAutomationLaunchReadGraphSources;
   const automationLaunchMaterialsComputerUseHostGrant$ = computed(
     async (get): Promise<ComputerUseHostGrant> => {
-      const { automation, chatThreadId } = (
-        await get(automationLaunchMaterialsInput$)
-      ).due;
+      const input = await get(automationExecutionInput$);
+      if (!input) {
+        return null;
+      }
+      const { automation, chatThreadId } = input.due;
       const [host] = await get(db$)
         .select({
           hostId: computerUseHosts.id,
@@ -3266,42 +3114,8 @@ export function createThreadClaimRunObjects(
       return host ?? null;
     },
   );
-  const automationComputerUsePrompt$ = createComputerUsePrompt(
-    pickedEvent$,
-    automationLaunchMaterialsComputerUseHostGrant$,
-  );
-  const automationLaunchMaterialsRunInput$ = computed(
-    async (get): Promise<WorkflowAutomationRunInput> => {
-      const args = await get(automationLaunchMaterialsInput$);
-      const integration = await get(automationPrompt$);
-      if (!integration) {
-        throw new Error("Admitted automation is missing its prompt");
-      }
-      const prompt = renderRunPrompts(
-        mergeRunPromptAndSkills([
-          integration,
-          await get(userPrompt$),
-          await get(automationComputerUsePrompt$),
-        ]),
-      );
-      return {
-        prompt: prompt.userPrompt,
-        additionalVolumes: resolveRunSkillVolumes(integration.skillVolumes)
-          .skillVolumes,
-        appendSystemPrompt: prompt.systemPrompt,
-        callbacks: args.callbacks,
-        agentRunMetadata: workflowAutomationRunMetadata(
-          args.due.automation,
-          args.triggerBrief,
-          args.autonomyBudget,
-        ),
-      };
-    },
-  );
   const workflowAutomationLaunchReadGraphComputerUseHostGrant$ =
     automationLaunchMaterialsComputerUseHostGrant$;
-  const workflowAutomationLaunchReadGraphRunInput$ =
-    automationLaunchMaterialsRunInput$;
   // Both claim paths share one queued model graph; its input follows the head.
   const automationLaunchEffectsResolveQueuedModel$ =
     queuedModelResolveQueuedModel$;
@@ -3403,8 +3217,6 @@ export function createThreadClaimRunObjects(
     workflowAutomationLaunchReadGraphInput$;
   const computerUseHostGrant$ =
     workflowAutomationLaunchReadGraphComputerUseHostGrant$;
-  const workflowAutomationLaunchRunInput$ =
-    workflowAutomationLaunchReadGraphRunInput$;
   const recordQueuedWorkflowReward$ =
     workflowAutomationLaunchReadGraphRecordQueuedWorkflowReward$;
   const timing$ = workflowAutomationLaunchReadGraphTiming$;
@@ -3417,15 +3229,17 @@ export function createThreadClaimRunObjects(
   const assembleWorkflowAutomationRun$ = computed(
     async (get): Promise<AssembledWorkflowAutomationRun | RunFailure> => {
       const args = await get(workflowAutomationLaunchInput$);
-      const [selection, model, computerUseHostGrant, runInput] =
-        await Promise.all([
-          get(workflowAutomationLaunchSelectionInput$),
-          get(workflowAutomationLaunchModel$),
-          get(computerUseHostGrant$),
-          get(workflowAutomationLaunchRunInput$),
-        ]);
+      const [selection, model, computerUseHostGrant] = await Promise.all([
+        get(workflowAutomationLaunchSelectionInput$),
+        get(workflowAutomationLaunchModel$),
+        get(computerUseHostGrant$),
+      ]);
       if (!model.ok) {
         return model.failure;
+      }
+      const promptAndSkills = await get(preparedPromptAndSkillVolumes$);
+      if (isRouteError(promptAndSkills)) {
+        return { kind: "run_error", response: promptAndSkills };
       }
       if (!selection) {
         throw new Error(
@@ -3439,13 +3253,16 @@ export function createThreadClaimRunObjects(
           triggerSource: args.triggerSource ?? "automation-schedule",
           body: {
             ...selection.command.body,
-            prompt: runInput.prompt,
-            ...additionalVolumesForRun(runInput.additionalVolumes),
+            prompt: promptAndSkills.userPrompt,
           },
           computerUseHostId: computerUseHostGrant?.hostId,
-          appendSystemPrompt: runInput.appendSystemPrompt,
-          callbacks: runInput.callbacks,
-          agentRunMetadata: runInput.agentRunMetadata,
+          appendSystemPrompt: promptAndSkills.appendedSystemPrompt,
+          callbacks: args.callbacks,
+          agentRunMetadata: workflowAutomationRunMetadata(
+            args.due.automation,
+            args.triggerBrief,
+            args.autonomyBudget,
+          ),
         },
         producerBinding: {
           kind: "automation",
@@ -3677,17 +3494,6 @@ export function createThreadClaimRunObjects(
     }
     return (await get(queuedAutomationAssemblerLaunchMaterial$))?.callbacks;
   });
-  const queuedAutomationAssemblerStorageBody$ = computed(async (get) => {
-    if (await get(queuedAutomationAssemblerInternalEarlyAssembly$)) {
-      return {};
-    }
-    const context = await get(automationPrompt$);
-    return context
-      ? additionalVolumesForRun(
-          resolveRunSkillVolumes(context.skillVolumes).skillVolumes,
-        )
-      : {};
-  });
   const queuedAutomationAssemblerConnectorSourceId$ = computed(async (get) => {
     return (
       (await get(queuedAutomationAssemblerEvent$))?.connectorSourceId ??
@@ -3739,13 +3545,6 @@ export function createThreadClaimRunObjects(
         : get(promptExecutionResourcesCallbackInputs$);
     },
   );
-  const storageBody$ = computed(async (get) => {
-    return get(
-      (await get(isAutomation$))
-        ? queuedAutomationAssemblerStorageBody$
-        : promptExecutionResourcesStorageBody$,
-    );
-  });
   const connectorSourceId$ = computed(async (get) => {
     return get(
       (await get(isAutomation$))
@@ -4093,11 +3892,6 @@ export function createThreadClaimRunObjects(
     }
     return thread.cloudBrowserEnabled;
   });
-  const agentPrompt$ = createAgentPrompt(
-    preCreateAgentAgent$,
-    agentFeatureSwitches$,
-    cloudBrowserEnabled$,
-  );
   const preCreatePreparedInput$ = computed(async (get) => {
     const [input, resolution, appendSystemPrompt, fullCommand, catalog] =
       await Promise.all([
@@ -4432,7 +4226,6 @@ export function createThreadClaimRunObjects(
       : piConfigurationRouteError(materialized.error);
   });
   const modelRoute$ = runModelProviderModelRoute$;
-  const connectorsContext$ = createConnectorsContext(authorizedConnectors$);
   const workflowSkills$ = computed(async (get) => {
     return get((await get(executionContext$)).workflowSkills$);
   });
@@ -4463,17 +4256,69 @@ export function createThreadClaimRunObjects(
       selectedImageModel,
     };
   });
-  const runtimePrompt$ = createRuntimePrompt(runtimePromptInput$);
-  const runtimePromptAndSkills$ = computed(async (get) => {
-    return mergeRunPromptAndSkills(
-      await Promise.all([
-        get(connectorsContext$),
-        get(workflowSkills$),
-        get(systemSkillsContext$),
-        get(runtimePrompt$),
-      ]),
+  const promptHostGrant$ = computed(async (get) => {
+    return get(
+      (await get(isAutomation$))
+        ? automationLaunchMaterialsComputerUseHostGrant$
+        : promptHostHost$,
     );
   });
+  const promptAndSkillVolumesInputs: PromptAndSkillVolumesInputs = {
+    source$: threadPromptSource$,
+    agent$: preCreateAgentAgent$,
+    memberMetadata$: threadMemberMetadata$,
+    featureSwitches$: agentFeatureSwitches$,
+    cloudBrowserEnabled$,
+    slackContext$,
+    feishuContext$,
+    teamsContext$,
+    telegramContext$,
+    agentPhoneContext$,
+    discordContext$,
+    automationContext$,
+    session$,
+    memberRoutes$,
+    catalog$: claimCatalog$,
+    templates$: runTemplates$,
+    authorizedConnectors$,
+    workflowSkills$,
+    systemSkills$: systemSkillsContext$,
+    runtime$: runtimePromptInput$,
+    computerUseHostGrant$: promptHostGrant$,
+  };
+  const promptAndSkillVolumes$ = createPromptAndSkillVolumesSignals(
+    promptAndSkillVolumesInputs,
+  );
+  const preparedPromptAndSkillVolumes$ = computed(
+    async (get): Promise<PromptAndSkillVolumes | CreateRunErrorResult> => {
+      if (!(await get(isAutomation$))) {
+        const templates = await get(runTemplates$);
+        if ("error" in templates) {
+          return badRequestMessage(templates.error.message);
+        }
+      }
+      // Preserve model and official-workflow admission before final rendering.
+      const officialWorkflow = await get(officialWorkflow$);
+      if (isRouteError(officialWorkflow)) {
+        return officialWorkflow;
+      }
+      const result = await settle(get(promptAndSkillVolumes$));
+      if (!result.ok) {
+        if (result.error instanceof PromptAndSkillVolumesError) {
+          // Source admission preserves the channel-specific rejection code;
+          // independent storage preparation must also return a failed result.
+          return result.error.code === "BAD_REQUEST"
+            ? badRequestMessage(result.error.message)
+            : conflict(result.error.message);
+        }
+        if (result.error instanceof OfficialWorkflowRunAdmissionError) {
+          return conflict(result.error.message);
+        }
+        throw result.error;
+      }
+      return result.value;
+    },
+  );
   const model = {
     providerInput$: providerInput$,
     featureSwitchContext$: preCreateModelFeatureSwitchContext$,
@@ -5475,7 +5320,6 @@ export function createThreadClaimRunObjects(
         requestedFramework,
         modelProvider,
         officialWorkflowRun,
-        body,
       ] = await Promise.all([
         get(preCreateInput$),
         get(preCreateAgentAgent$),
@@ -5483,7 +5327,6 @@ export function createThreadClaimRunObjects(
         get(runFramework$),
         get(modelRoute$),
         get(officialWorkflow$),
-        get(storageBody$),
       ]);
       if (!agent) {
         throw new Error("Agent disappeared after preparation authorization");
@@ -5513,12 +5356,16 @@ export function createThreadClaimRunObjects(
         },
         modelProvider,
       });
+      const promptAndSkills = await get(preparedPromptAndSkillVolumes$);
+      if (isRouteError(promptAndSkills)) {
+        return promptAndSkills;
+      }
       const metadata = prepareRunOutputMetadata({
-        promptAndSkills: await get(runtimePromptAndSkills$),
+        skillVolumes: promptAndSkills.skillVolumes,
         officialWorkflow: officialWorkflowRun,
         framework,
         piSandbox,
-        body,
+        body: {},
         resolved,
       });
       return {
@@ -6161,8 +6008,12 @@ export function createThreadClaimRunObjects(
     if (validation) {
       return validation;
     }
+    const promptAndSkills = await get(preparedPromptAndSkillVolumes$);
+    if (isRouteError(promptAndSkills)) {
+      return promptAndSkills;
+    }
     const metadata = prepareRunOutputMetadata({
-      promptAndSkills: await get(runtimePromptAndSkills$),
+      skillVolumes: promptAndSkills.skillVolumes,
       officialWorkflow: officialWorkflowRun,
       framework,
       piSandbox,
@@ -6748,23 +6599,14 @@ export function createThreadClaimRunObjects(
           context.piSandbox === undefined ? context.framework : ("pi" as const),
         runnerProfile: DEFAULT_PROFILE,
       };
-      const [agentPrompt, runtime] = await Promise.all([
-        get(agentPrompt$),
-        get(runtimePromptAndSkills$),
-      ]);
-      const prompt = renderRunPrompts(runtime, {
-        userPrompt: context.body.prompt,
-        systemPrompt: [
-          renderRunPrompts(agentPrompt).systemPrompt,
-          args.body.appendSystemPrompt,
-        ]
-          .filter(Boolean)
-          .join("\n\n"),
-      });
+      const promptAndSkills = await get(preparedPromptAndSkillVolumes$);
+      if (isRouteError(promptAndSkills)) {
+        return promptAndSkills;
+      }
       const body = {
         ...context.body,
-        prompt: prompt.userPrompt,
-        appendSystemPrompt: prompt.systemPrompt,
+        prompt: promptAndSkills.userPrompt,
+        appendSystemPrompt: promptAndSkills.appendedSystemPrompt,
       };
       const {
         officialWorkflowRun,
@@ -13006,18 +12848,19 @@ function validateRunEnvironmentReferences(args: {
 }
 
 function preparedRunAdditionalVolumes(args: {
-  readonly promptAndSkills: RunPromptAndSkills;
+  readonly skillVolumes: readonly SkillVolume[];
   readonly skillsRoot: string;
   readonly body: Pick<CreateRunBody, "additionalVolumes">;
   readonly resolved: Pick<ResolvedRunExecution, "additionalVolumes">;
 }): PreparedAdditionalVolumes {
   const bodyAdditionalVolumes = args.body.additionalVolumes;
-  const rendered = resolveRunSkillVolumes(
-    args.promptAndSkills.skillVolumes,
-    args.skillsRoot,
-  );
+  const rendered = resolveRunSkillVolumes(args.skillVolumes, args.skillsRoot);
+  const hasTemplateVolumes = args.skillVolumes.some((volume) => {
+    return volume.source === "request_additional_volume";
+  });
   const additionalVolumes =
-    bodyAdditionalVolumes ?? args.resolved.additionalVolumes ?? [];
+    bodyAdditionalVolumes ??
+    (hasTemplateVolumes ? [] : (args.resolved.additionalVolumes ?? []));
   return {
     volumes: [...rendered.skillVolumes, ...additionalVolumes],
     sources: [
@@ -13030,7 +12873,7 @@ function preparedRunAdditionalVolumes(args: {
 }
 
 function prepareRunOutputMetadata(args: {
-  readonly promptAndSkills: RunPromptAndSkills;
+  readonly skillVolumes: readonly SkillVolume[];
   readonly officialWorkflow: OfficialWorkflowObservation | undefined;
   readonly framework: SupportedFramework;
   readonly piSandbox: PiModelConfig | undefined;
@@ -13045,7 +12888,7 @@ function prepareRunOutputMetadata(args: {
 } {
   const skillsRoot = skillsRootForRun(args.framework, args.piSandbox);
   const additionalVolumes = preparedRunAdditionalVolumes({
-    promptAndSkills: args.promptAndSkills,
+    skillVolumes: args.skillVolumes,
     skillsRoot,
     body: args.body,
     resolved: args.resolved,
