@@ -1247,11 +1247,6 @@
       "owner": "commitSshConnectionCreation$"
     },
     {
-      "id": "TX-0251",
-      "file": "turbo/apps/api/src/signals/services/ssh-connection.service.ts",
-      "owner": "commitSshConnectionUpdate$"
-    },
-    {
       "id": "TX-0252",
       "file": "turbo/apps/api/src/signals/services/ssh-credential.service.ts",
       "owner": "updateSshCredential$"

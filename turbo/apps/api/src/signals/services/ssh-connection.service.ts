@@ -17,7 +17,18 @@ import {
   sshCredentialFailure,
 } from "./ssh-credential.service";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
-import { and, asc, count, eq, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  eq,
+  getTableColumns,
+  isNull,
+  lt,
+  ne,
+  or,
+  sql,
+} from "drizzle-orm";
 
 import {
   SSH_ERROR_CODES,
@@ -29,7 +40,9 @@ import {
   isUniqueViolation,
 } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
-import { writeDb$ } from "../external/db";
+import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
+import { alias } from "drizzle-orm/pg-core";
+import { db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { publishSshRuntimeInvalidation$ } from "./ssh-runtime-wakeup.service";
 import { sshCreationResult, resourceIdConflict } from "./ssh-creation.service";
@@ -243,19 +256,6 @@ function prepareAccessCreation(
   return transport?.type === "cloudflare_access" && "create" in transport
     ? prepareCloudflareAccessConfig(transport.create, context)
     : undefined;
-}
-
-function shouldClearLearnedHostKey(
-  current: SshConnectionRow,
-  host: string,
-  port: number,
-  selectedAccessId: string | null,
-): boolean {
-  return (
-    (host !== current.host || port !== current.port) &&
-    current.cloudflareAccessId === null &&
-    selectedAccessId === null
-  );
 }
 
 export const listSshConnections$ = command(
@@ -508,107 +508,273 @@ interface PreparedSshConnectionUpdate extends UpdateSshConnectionArgs {
     Awaited<ReturnType<typeof prepareSshCredentialSelection>> | undefined;
 }
 
+function inlineCredentialFields(
+  owner: Pick<PreparedSshConnectionUpdate, "orgId" | "userId">,
+  newCredential: NonNullable<
+    NonNullable<PreparedSshConnectionUpdate["preparedCredential"]>["create"]
+  >,
+) {
+  return {
+    id: sql`gen_random_uuid()`.mapWith(sshCredentials.id).as("id"),
+    orgId: sql`${owner.orgId}`.mapWith(sshCredentials.orgId).as("org_id"),
+    userId: sql`${owner.userId}`.mapWith(sshCredentials.userId).as("user_id"),
+    name: sql`${newCredential.name}`.mapWith(sshCredentials.name).as("name"),
+    username: sql`${newCredential.username}`
+      .mapWith(sshCredentials.username)
+      .as("username"),
+    authMethod: sql`${newCredential.authMethod}`
+      .mapWith(sshCredentials.authMethod)
+      .as("auth_method"),
+    encryptedPrivateKey: sql`${newCredential.encryptedPrivateKey}`
+      .mapWith(nullableDriverValueDecoder(sshCredentials.encryptedPrivateKey))
+      .as("encrypted_private_key"),
+    encryptedPassphrase: sql`${newCredential.encryptedPassphrase}`
+      .mapWith(nullableDriverValueDecoder(sshCredentials.encryptedPassphrase))
+      .as("encrypted_passphrase"),
+    encryptedPassword: sql`${newCredential.encryptedPassword}`
+      .mapWith(nullableDriverValueDecoder(sshCredentials.encryptedPassword))
+      .as("encrypted_password"),
+    revision: sql`1`.mapWith(sshCredentials.revision).as("revision"),
+    createdAt: sql`now()`.mapWith(sshCredentials.createdAt).as("created_at"),
+    updatedAt: sql`now()`.mapWith(sshCredentials.updatedAt).as("updated_at"),
+  };
+}
+
+function inlineAccessFields(
+  owner: Pick<PreparedSshConnectionUpdate, "orgId" | "userId">,
+  preparedAccess: NonNullable<PreparedSshConnectionUpdate["preparedAccess"]>,
+) {
+  return {
+    id: sql`gen_random_uuid()`.mapWith(cloudflareAccessConfigs.id).as("id"),
+    orgId: sql`${owner.orgId}`
+      .mapWith(cloudflareAccessConfigs.orgId)
+      .as("org_id"),
+    userId: sql`${owner.userId}`
+      .mapWith(nullableDriverValueDecoder(cloudflareAccessConfigs.userId))
+      .as("user_id"),
+    scope: sql`'personal'`.mapWith(cloudflareAccessConfigs.scope).as("scope"),
+    name: sql`${preparedAccess.name}`
+      .mapWith(cloudflareAccessConfigs.name)
+      .as("name"),
+    encryptedClientId: sql`${preparedAccess.encryptedClientId}`
+      .mapWith(cloudflareAccessConfigs.encryptedClientId)
+      .as("encrypted_client_id"),
+    encryptedClientSecret: sql`${preparedAccess.encryptedClientSecret}`
+      .mapWith(cloudflareAccessConfigs.encryptedClientSecret)
+      .as("encrypted_client_secret"),
+    revision: sql`1`.mapWith(cloudflareAccessConfigs.revision).as("revision"),
+    generation: sql`1`
+      .mapWith(cloudflareAccessConfigs.generation)
+      .as("generation"),
+    createdAt: sql`now()`
+      .mapWith(cloudflareAccessConfigs.createdAt)
+      .as("created_at"),
+    updatedAt: sql`now()`
+      .mapWith(cloudflareAccessConfigs.updatedAt)
+      .as("updated_at"),
+  };
+}
+
+function sshEditResult(
+  args: PreparedSshConnectionUpdate,
+  result:
+    | {
+        readonly current: Pick<SshConnectionRow, "generation" | "needsRebind">;
+        readonly authorityId: string | null;
+        readonly credential: {
+          readonly id: string;
+          readonly name: string;
+          readonly username: string;
+        } | null;
+        readonly updated: SshConnectionRow | null;
+      }
+    | undefined,
+): SshConnectionMutationResult<SshConnectionResponse> {
+  if (!result) {
+    return failure("notFound");
+  }
+  const rejected = validateSshHostUpdate(result.current, {
+    body: args.body,
+    host: args.host,
+    port: args.port,
+    accessId: args.accessId,
+    creatingAccess: args.preparedAccess !== undefined,
+  });
+  if (rejected) {
+    return rejected;
+  }
+  if (result.authorityId === null) {
+    return cloudflareAccessFailure("notFound");
+  }
+  if (!result.credential) {
+    return sshCredentialFailure("notFound");
+  }
+  if (!result.updated) {
+    throw new Error("Eligible SSH connection update returned no row");
+  }
+  return {
+    ok: true,
+    value: toSshConnectionResponse(result.updated, result.credential),
+    createdAccess: args.preparedAccess !== undefined,
+  };
+}
+
+function sshHostUpdateValues(args: PreparedSshConnectionUpdate) {
+  const selectedAccessId = sql`${sql.identifier("ssh_edit_access")}.${sql.identifier("selected_access_id")}`;
+  const clearHostKey = and(
+    or(ne(sshConnections.host, args.host), ne(sshConnections.port, args.port)),
+    isNull(sshConnections.cloudflareAccessId),
+    isNull(selectedAccessId),
+  );
+  return {
+    displayName: args.body.displayName,
+    host: args.host,
+    port: args.port,
+    credentialId: alias(sshCredentials, "ssh_edit_credential").id,
+    cloudflareAccessId: selectedAccessId,
+    needsRebind: false,
+    learnedHostKeyAlgorithm: sql`case when ${clearHostKey} then null else ${sshConnections.learnedHostKeyAlgorithm} end`,
+    learnedHostKeyFingerprint: sql`case when ${clearHostKey} then null else ${sshConnections.learnedHostKeyFingerprint} end`,
+    generation: sql`${sshConnections.generation} + 1`,
+    updatedAt: nowDate(),
+  };
+}
+
+function eligibleSshEdit(args: PreparedSshConnectionUpdate) {
+  const current = alias(sshConnections, "ssh_edit_current");
+  return and(
+    (args.accessId === null && args.preparedAccess === undefined) ||
+      (isIP(args.host) === 0 && args.host.includes(".") && args.port === 443)
+      ? undefined
+      : sql`false`,
+    eq(current.generation, args.body.expectedGeneration),
+    lt(current.generation, MAX_SSH_GENERATION),
+    args.body.transport === undefined
+      ? eq(current.needsRebind, false)
+      : undefined,
+  );
+}
+
 const commitSshConnectionUpdate$ = command(
   async (
     { set },
     args: PreparedSshConnectionUpdate,
   ): Promise<SshConnectionMutationResult<SshConnectionResponse>> => {
     const db = set(writeDb$);
-    const committed = await settle(
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0251; new non-billing transactions are prohibited.
-      db.transaction<SshConnectionMutationResult<SshConnectionResponse>>(
-        async (tx) => {
-          // An existing host must precede protected configuration authority,
-          // matching Runner pin/observation and configuration fanout.
-          const [current] = await tx
-            .select()
-            .from(sshConnections)
-            .where(ownedSshConnection(args))
-            .for("no key update");
-          if (!current) {
-            return failure("notFound");
-          }
-          const rejected = validateSshHostUpdate(current, {
-            body: args.body,
-            host: args.host,
-            port: args.port,
-            accessId: args.accessId,
-            creatingAccess: args.preparedAccess !== undefined,
-          });
-          if (rejected) {
-            return rejected;
-          }
-          if (args.accessId !== null) {
-            const [config] = await tx
-              .select({ id: cloudflareAccessConfigs.id })
-              .from(cloudflareAccessConfigs)
-              .where(visibleSshAccessConfig(args, args.accessId))
-              .for("share");
-            if (!config) {
-              return cloudflareAccessFailure("notFound");
-            }
-          }
-          const selectedCredential = args.preparedCredential ?? {
-            id: current.credentialId,
-          };
-          const [credential] =
-            selectedCredential.id !== undefined
-              ? await tx
-                  .select(credentialSelection)
-                  .from(sshCredentials)
-                  .where(ownedSshCredential(args, selectedCredential.id))
-              : await tx
-                  .insert(sshCredentials)
-                  .values({
-                    orgId: args.orgId,
-                    userId: args.userId,
-                    ...selectedCredential.create,
-                  })
-                  .returning(credentialSelection);
-          if (!credential) {
-            return sshCredentialFailure("notFound");
-          }
-          const [createdAccess] =
-            args.preparedAccess === undefined
-              ? []
-              : await tx
-                  .insert(cloudflareAccessConfigs)
-                  .values({
-                    orgId: args.orgId,
-                    userId: args.userId,
-                    scope: "personal",
-                    ...args.preparedAccess,
-                  })
-                  .returning({ id: cloudflareAccessConfigs.id });
-          if (args.preparedAccess !== undefined && !createdAccess) {
-            throw new Error("Cloudflare Access insert returned no row");
-          }
-          const [updated] = await tx
-            .update(sshConnections)
-            .set(
-              sshHostUpdateValues(current, {
-                body: args.body,
-                host: args.host,
-                port: args.port,
-                credentialId: credential.id,
-                accessId: createdAccess?.id ?? args.accessId,
-              }),
+    // Lock the owned host before configuration authority, as Runner and
+    // configuration fanout do. Locking reads recheck concurrently changed rows.
+    const current = db
+      .$with("ssh_edit_current")
+      .as(
+        db
+          .select()
+          .from(sshConnections)
+          .where(ownedSshConnection(args))
+          .for("no key update"),
+      );
+    const eligible = db
+      .$with("ssh_edit_eligible")
+      .as(db.select().from(current).where(eligibleSshEdit(args)));
+    const authority =
+      args.accessId === null
+        ? db
+            .$with("ssh_edit_authority")
+            .as(db.select({ id: eligible.id }).from(eligible))
+        : db
+            .$with("ssh_edit_authority")
+            .as(
+              db
+                .select({ id: cloudflareAccessConfigs.id })
+                .from(cloudflareAccessConfigs)
+                .crossJoin(eligible)
+                .where(visibleSshAccessConfig(args, args.accessId))
+                .for("share", { of: cloudflareAccessConfigs }),
+            );
+    const newCredential = args.preparedCredential?.create;
+    const credential = db.$with("ssh_edit_credential").as(
+      newCredential === undefined
+        ? db
+            .select(credentialSelection)
+            .from(sshCredentials)
+            .crossJoin(authority)
+            .crossJoin(eligible)
+            .where(
+              and(
+                eq(
+                  sshCredentials.id,
+                  args.preparedCredential?.id ?? eligible.credentialId,
+                ),
+                eq(sshCredentials.orgId, args.orgId),
+                eq(sshCredentials.userId, args.userId),
+              ),
             )
-            .where(ownedSshConnection(args))
-            .returning();
-          if (!updated) {
-            throw new Error("SSH connection update returned no row");
-          }
-          return {
-            ok: true,
-            value: toSshConnectionResponse(updated, credential),
-            createdAccess: createdAccess !== undefined,
-          };
-        },
-      ),
+        : db
+            .insert(sshCredentials)
+            .select(
+              db
+                .select(inlineCredentialFields(args, newCredential))
+                .from(authority),
+            )
+            .returning({ ...credentialSelection }),
+    );
+    const access = db.$with("ssh_edit_access").as(
+      args.preparedAccess === undefined
+        ? db
+            .select({
+              id: sql`${args.accessId}::uuid`
+                .mapWith(nullableDriverValueDecoder(cloudflareAccessConfigs.id))
+                .as("selected_access_id"),
+            })
+            .from(credential)
+        : db
+            .insert(cloudflareAccessConfigs)
+            .select(
+              db
+                .select(inlineAccessFields(args, args.preparedAccess))
+                .from(credential),
+            )
+            .returning({
+              id: sql`${cloudflareAccessConfigs.id}`
+                .mapWith(cloudflareAccessConfigs.id)
+                .as("selected_access_id"),
+            }),
+    );
+    // Every INSERT is downstream of all eligibility/authority checks. This
+    // exact host remains locked; there is no later rejectable UPDATE predicate.
+    // Missing selected credentials gate both inserts; any constraint failure
+    // aborts the entire statement. DML results travel through RETURNING,
+    // never a base-table reread.
+    const updated = db.$with("ssh_edit_updated").as(
+      db
+        .update(sshConnections)
+        .set(sshHostUpdateValues(args))
+        .from(sql`${eligible} cross join ${credential} cross join ${access}`)
+        .where(eq(sshConnections.id, eligible.id))
+        .returning({ ...getTableColumns(sshConnections) }),
+    );
+    const committed = await settle(
+      db
+        .with(current, eligible, authority, credential, access, updated)
+        .select({
+          current: {
+            generation: current.generation,
+            needsRebind: current.needsRebind,
+          },
+          authorityId: authority.id,
+          credential: {
+            id: credential.id,
+            name: credential.name,
+            username: credential.username,
+          },
+          updated: getTableColumns(alias(sshConnections, "ssh_edit_updated")),
+        })
+        .from(current)
+        .leftJoin(authority, sql`true`)
+        .leftJoin(credential, sql`true`)
+        .leftJoin(updated, eq(updated.id, current.id)),
     );
     if (committed.ok) {
-      return committed.value;
+      return sshEditResult(args, committed.value[0]);
     }
     if (isSshCredentialReferenceViolation(committed.error)) {
       return sshCredentialFailure("notFound");
@@ -622,10 +788,10 @@ const commitSshConnectionUpdate$ = command(
 
 export const updateSshConnection$ = command(
   async (
-    { set },
+    { get, set },
     args: UpdateSshConnectionArgs,
   ): Promise<SshConnectionResult<SshConnectionResponse>> => {
-    const db = set(writeDb$);
+    const db = get(db$);
     const canonicalHost =
       args.body.host === undefined
         ? undefined
@@ -830,7 +996,7 @@ function requestedSshAccessId(
       : null;
 }
 function validateSshHostUpdate(
-  current: SshConnectionRow,
+  current: Pick<SshConnectionRow, "generation" | "needsRebind">,
   args: {
     readonly body: UpdateSshConnectionRequest;
     readonly host: string;
@@ -861,40 +1027,6 @@ function validateSshHostUpdate(
   }
   return undefined;
 }
-function sshHostUpdateValues(
-  current: SshConnectionRow,
-  args: {
-    readonly body: UpdateSshConnectionRequest;
-    readonly host: string;
-    readonly port: number;
-    readonly credentialId: string;
-    readonly accessId: string | null;
-  },
-) {
-  const endpointChanged = shouldClearLearnedHostKey(
-    current,
-    args.host,
-    args.port,
-    args.accessId,
-  );
-  return {
-    displayName: args.body.displayName,
-    host: args.host,
-    port: args.port,
-    credentialId: args.credentialId,
-    cloudflareAccessId: args.accessId,
-    needsRebind: false,
-    learnedHostKeyAlgorithm: endpointChanged
-      ? null
-      : current.learnedHostKeyAlgorithm,
-    learnedHostKeyFingerprint: endpointChanged
-      ? null
-      : current.learnedHostKeyFingerprint,
-    generation: sql`${sshConnections.generation} + 1`,
-    updatedAt: nowDate(),
-  };
-}
-
 function sshConnectionCreationValues(
   args: PreparedSshConnectionCreation,
   credentialId: string,
