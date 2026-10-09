@@ -6,15 +6,27 @@ import { createChatEventsFixture } from "./chat-events-fixture";
 import { captureConnectorExternalState } from "./public-connector-actor";
 import { publicRunOwner } from "./public-run-owner";
 import { deletePublicWorkspace } from "./public-workspace-cleanup";
+import { deleteFeatureSwitchesForUser } from "./feature-switches";
 
 /** Own a normal Stripe/personal-model chat actor from its first API write. */
 export async function publicChatActor(
   context: TestContext,
-  options: { readonly restoreEnvironment?: () => void } = {},
+  options: {
+    readonly restoreEnvironment?: () => void;
+    readonly optionalEnvironmentNames?: readonly string[];
+  } = {},
 ) {
   const fixture = createChatEventsFixture(context);
   const actor = fixture.bdd.user();
-  let accepted = captureConnectorExternalState(context);
+  const orgId = actor.orgId;
+  if (!orgId) {
+    throw new Error("Expected a public chat workspace owner");
+  }
+  let ownsFeatures = false;
+  let accepted = captureConnectorExternalState(
+    context,
+    options.optionalEnvironmentNames,
+  );
   let previous: (() => void) | undefined;
   let restoreSetupWebhook: (() => void) | undefined;
   let ready = false;
@@ -23,15 +35,34 @@ export async function publicChatActor(
   });
   const owner = publicRunOwner(context, actor, {
     restoreEnvironment: () => {
-      previous ??= captureConnectorExternalState(context);
+      previous ??= captureConnectorExternalState(
+        context,
+        options.optionalEnvironmentNames,
+      );
       accepted();
       restoreSetupWebhook?.();
       if (ready) {
         options.restoreEnvironment?.();
       }
     },
-    afterRuns: () => {
-      return deletePublicWorkspace(context, actor);
+    afterRuns: async () => {
+      const features = await settleIncludingAbort(() => {
+        return ownsFeatures
+          ? deleteFeatureSwitchesForUser(context, { ...actor, orgId })
+          : Promise.resolve();
+      });
+      const workspace = await settleIncludingAbort(() => {
+        return deletePublicWorkspace(context, actor);
+      });
+      const errors = [features, workspace].flatMap((result) => {
+        return result.ok ? [] : [result.error];
+      });
+      if (errors.length === 1) {
+        throw errors[0];
+      }
+      if (errors.length > 1) {
+        throw new AggregateError(errors, "Chat workspace cleanup failed");
+      }
     },
   });
   function run<T>(operation: () => Promise<T>) {
@@ -39,7 +70,10 @@ export async function publicChatActor(
       // Helpers install provider mocks synchronously before their first request.
       // Capture after invocation so failed construction retains those mocks too.
       const pending = settleIncludingAbort(operation);
-      accepted = captureConnectorExternalState(context);
+      accepted = captureConnectorExternalState(
+        context,
+        options.optionalEnvironmentNames,
+      );
       return pending.then((result) => {
         if (!result.ok) {
           throw result.error;
@@ -83,6 +117,9 @@ export async function publicChatActor(
   return {
     ...entitled,
     run,
+    ownsFeatureSwitches() {
+      ownsFeatures = true;
+    },
     sendChatRun: (...parameters: Parameters<typeof fixture.sendChatRun>) => {
       return run(() => {
         return fixture.sendChatRun(...parameters);

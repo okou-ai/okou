@@ -72,6 +72,8 @@ export function captureConnectorExternalState(
     captureExternalMock(context.mocks.stripe.customers.retrieve),
     captureExternalMock(context.mocks.stripe.subscriptions.retrieve),
     captureExternalMock(context.mocks.stripe.subscriptions.list),
+    captureExternalMock(context.mocks.stripe.invoices.list),
+    captureExternalMock(context.mocks.clerk.verifyWebhook),
     captureExternalMock(context.mocks.stripe.webhooks.constructEvent),
     captureExternalMock(context.mocks.axiom.ingest),
     captureExternalMock(context.mocks.axiom.query),
@@ -128,6 +130,7 @@ export function createPublicConnectorActor(
   options: {
     readonly optionalEnvironmentNames?: readonly string[];
     readonly beforeWorkspaceCleanup?: () => Promise<void>;
+    readonly beforeDrain?: () => void;
   } = {},
 ) {
   const actor = createBddApi(context).user({ orgRole: "org:admin" });
@@ -177,6 +180,7 @@ export function createPublicConnectorActor(
           options.optionalEnvironmentNames,
         );
         accepted();
+        options.beforeDrain?.();
       },
     },
   );

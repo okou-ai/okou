@@ -61,6 +61,7 @@ import {
   okouTokenFromClaim,
 } from "./helpers/chat-events-fixture";
 import { publicRunOwner } from "./helpers/public-run-owner";
+import { captureConnectorExternalState } from "./helpers/public-connector-actor";
 import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
 import { purchaseToolCredits } from "./helpers/public-tool-actor";
 
@@ -839,6 +840,11 @@ async function createClaimedImageRun(imageModel: string, credits = 1000) {
     "SECRETS_ENCRYPTION_KEY",
   ] as const;
   function captureExternalState() {
+    const restoreCommon = captureConnectorExternalState(context, [
+      "OKOU_PRICE_CUSTOM_CREDIT_UNIT",
+    ]);
+    const checkout =
+      context.mocks.stripe.checkout.sessions.create.getMockImplementation();
     const values = environmentNames.map((name) => {
       return [name, env(name)] as const;
     });
@@ -864,6 +870,13 @@ async function createClaimedImageRun(imageModel: string, credits = 1000) {
     const createToken =
       context.mocks.ably.createTokenRequest.getMockImplementation();
     return () => {
+      restoreCommon();
+      context.mocks.stripe.checkout.sessions.create.mockReset();
+      if (checkout) {
+        context.mocks.stripe.checkout.sessions.create.mockImplementation(
+          checkout,
+        );
+      }
       for (const [name, value] of values) {
         mockEnv(name, value);
       }
@@ -880,14 +893,16 @@ async function createClaimedImageRun(imageModel: string, credits = 1000) {
       if (publish) {
         context.mocks.ably.publish.mockImplementation(publish);
       }
+      context.mocks.ably.createTokenRequest.mockReset();
       if (createToken) {
         context.mocks.ably.createTokenRequest.mockImplementation(createToken);
       }
     };
   }
+  const runnerGroup = chat.api.configureRunnerGroup();
   let restoreAcceptedState = captureExternalState();
   let restorePreviousState: (() => void) | undefined;
-  let runnerGroup: string | undefined;
+  let restoreSetupExternalState: (() => void) | undefined;
   onTestFinished(() => {
     server.events.removeListener("request:start", rememberProviderRequest);
     restorePreviousState?.();
@@ -897,6 +912,7 @@ async function createClaimedImageRun(imageModel: string, credits = 1000) {
     restoreEnvironment: () => {
       restorePreviousState ??= captureExternalState();
       restoreAcceptedState();
+      restoreSetupExternalState?.();
       if (runnerGroup) {
         mockOptionalEnv("RUNNER_DEFAULT_GROUP", runnerGroup);
       }
@@ -904,40 +920,102 @@ async function createClaimedImageRun(imageModel: string, credits = 1000) {
     beforeRuns: async () => {
       // The mock provider owns any unfinished accepted image. Settle it through
       // the exact callback URL emitted by the real submission, including on failure.
-      await flushWaitUntilForTest();
-      for (const requestUrl of providerRequests) {
-        await postFalWebhookEnvelope(createImageIoTestApp(), requestUrl, {
-          status: "ERROR",
-          error: "Image provider request cancelled during cleanup",
-        });
+      const pendingWork = await settleIncludingAbort(flushWaitUntilForTest);
+      const results = await Promise.all(
+        [...providerRequests].map((requestUrl) => {
+          return settleIncludingAbort(() => {
+            return postFalWebhookEnvelope(createImageIoTestApp(), requestUrl, {
+              status: "ERROR",
+              error: "Image provider request cancelled during cleanup",
+            });
+          });
+        }),
+      );
+      const flushed = await settleIncludingAbort(flushWaitUntilForTest);
+      const errors = [pendingWork, ...results, flushed].flatMap((result) => {
+        return result.ok ? [] : [result.error];
+      });
+      if (errors.length === 1) {
+        throw errors[0];
       }
-      await flushWaitUntilForTest();
+      if (errors.length > 1) {
+        throw new AggregateError(errors, "Image provider cleanup failed");
+      }
     },
     afterRuns: () => {
       return deletePublicWorkspace(context, actor);
     },
   });
   function run<T>(operation: () => Promise<T>): Promise<T> {
-    restoreAcceptedState = captureExternalState();
-    return owner.run(operation);
-  }
-  const claimed = await run(async () => {
-    const entitled = await chat.entitledChatActor(actor);
-    runnerGroup = entitled.runnerGroup;
-    await chat.api.updateUserModelPreference(actor, "claude-fable-5-1");
-    await useImageModel(fixture, imageModel);
-    await purchaseToolCredits(context, actor, {
-      credits,
-      customerId: entitled.customerId,
-      invoiceId: `in_image_${randomUUID()}`,
+    return owner.run(() => {
+      const pending = settleIncludingAbort(operation);
+      restoreAcceptedState = captureExternalState();
+      return pending.then((result) => {
+        if (!result.ok) {
+          throw result.error;
+        }
+        return result.value;
+      });
     });
-    const sent = await chat.sendChatRun(actor, {
-      agentId: entitled.agentId,
+  }
+  chat.chatCallbacks.acceptChatObjectStorage();
+  chat.api.acceptStorageDownloads();
+  chat.api.acceptTelemetryIngest();
+  mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+  chat.chatCallbacks.disableVapid();
+  const { customerId } = await run(() => {
+    return chat.api.grantProEntitlement(actor, {
+      onExternalStateReady: (restore) => {
+        restoreSetupExternalState = restore;
+      },
+    });
+  });
+  restoreSetupExternalState = undefined;
+  await run(() => {
+    return chat.api.ensurePersonalSubscriptionModel(actor);
+  });
+  const { agentId } = await run(() => {
+    return chat.bdd.createAgent(actor, {
+      displayName: "BDD chat messages agent",
+      description: "Exercises the web chat send route.",
+      visibility: "private",
+    });
+  });
+  await run(() => {
+    return chat.api.updateUserModelPreference(actor, "claude-fable-5-1");
+  });
+  await run(() => {
+    return useImageModel(fixture, imageModel);
+  });
+  await run(() => {
+    return purchaseToolCredits(context, actor, {
+      credits,
+      customerId,
+      invoiceId: `in_image_${randomUUID()}`,
+      onExternalStateReady: (restore) => {
+        restoreSetupExternalState = restore;
+      },
+    });
+  });
+  restoreSetupExternalState = undefined;
+  const sent = await run(() => {
+    return chat.sendChatRun(actor, {
+      agentId,
       prompt: "Generate an image for this Run",
     });
-    const accepted = await chat.claimChatRun(entitled.runnerGroup, sent.runId);
-    owner.rememberClaim(sent.runId, accepted.claim.sandboxToken);
-    return { ...sent, ...accepted };
+  });
+  const claimedRunnerGroup = runnerGroup;
+  await run(() => {
+    return chat.api.heartbeatRunner(claimedRunnerGroup);
+  });
+  const claimed = await run(async () => {
+    const claim = await chat.api.claimRunnerJob(sent.runId);
+    owner.rememberClaim(sent.runId, claim.sandboxToken);
+    return {
+      ...sent,
+      claim,
+      sandboxHeaders: { authorization: `Bearer ${claim.sandboxToken}` },
+    };
   });
   restoreAcceptedState = captureExternalState();
   return {

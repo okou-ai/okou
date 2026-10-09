@@ -44,40 +44,70 @@ export function publicRunOwner(
     }
     restoreEnvironment();
     context.mocks.ably.publish.mockResolvedValue(undefined);
-    await flushWaitUntilForTest();
+    const pendingWork = await settleIncludingAbort(flushWaitUntilForTest);
     createRouteMocks(context).clerk.session(
       actor.userId,
       actor.orgId,
       actor.orgRole,
     );
-    await options.beforeRuns?.();
-    const runs = createRunsApi(context);
-    const reads = createRunReadsApi(context);
-    let page = await reads.requestListLogs(actor, { limit: 100 }, [200]);
-    const all = [...page.body.data];
-    while (page.body.pagination.hasMore) {
-      const cursor = page.body.pagination.nextCursor;
-      if (!cursor) {
-        throw new Error("Expected the public Run-list continuation cursor");
-      }
-      page = await reads.requestListLogs(actor, { limit: 100, cursor }, [200]);
-      all.push(...page.body.data);
-    }
-    for (const run of all) {
-      if (["queued", "pending", "running"].includes(run.status)) {
-        await runs.requestCancelRun(actor, run.id, [200]);
-      }
-      const token = tokens.get(run.id);
-      if (token && !["completed", "failed", "timeout"].includes(run.status)) {
-        await createWebhookCallbackApi(context).requestAgentComplete(
-          { runId: run.id, exitCode: 1, error: "Run cancelled" },
-          { authorization: `Bearer ${token}` },
+    const beforeRuns = await settleIncludingAbort(() => {
+      return options.beforeRuns?.() ?? Promise.resolve();
+    });
+    createRouteMocks(context).clerk.session(
+      actor.userId,
+      actor.orgId,
+      actor.orgRole,
+    );
+    const settledRuns = await settleIncludingAbort(async () => {
+      const runs = createRunsApi(context);
+      const reads = createRunReadsApi(context);
+      let page = await reads.requestListLogs(actor, { limit: 100 }, [200]);
+      const all = [...page.body.data];
+      while (page.body.pagination.hasMore) {
+        const cursor = page.body.pagination.nextCursor;
+        if (!cursor) {
+          throw new Error("Expected the public Run-list continuation cursor");
+        }
+        page = await reads.requestListLogs(
+          actor,
+          { limit: 100, cursor },
           [200],
         );
+        all.push(...page.body.data);
       }
+      for (const run of all) {
+        if (["queued", "pending", "running"].includes(run.status)) {
+          await runs.requestCancelRun(actor, run.id, [200]);
+        }
+        const token = tokens.get(run.id);
+        if (token && !["completed", "failed", "timeout"].includes(run.status)) {
+          await createWebhookCallbackApi(context).requestAgentComplete(
+            { runId: run.id, exitCode: 1, error: "Run cancelled" },
+            { authorization: `Bearer ${token}` },
+            [200],
+          );
+        }
+      }
+    });
+    const terminalWork = await settleIncludingAbort(flushWaitUntilForTest);
+    const afterRuns = await settleIncludingAbort(() => {
+      return options.afterRuns?.() ?? Promise.resolve();
+    });
+    const errors = [
+      pendingWork,
+      beforeRuns,
+      settledRuns,
+      terminalWork,
+      afterRuns,
+    ].flatMap((result) => {
+      return result.ok ? [] : [result.error];
+    });
+    if (errors.length === 1) {
+      throw errors[0];
     }
-    await flushWaitUntilForTest();
-    await options.afterRuns?.();
+    if (errors.length > 1) {
+      throw new AggregateError(errors, "Run cleanup failed");
+    }
     cleaned = true;
   }
   let previousCleanupRunnerGroup: string | undefined;

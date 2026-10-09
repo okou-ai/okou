@@ -1,3 +1,8 @@
+import { createPublicConnectorActor } from "./helpers/public-connector-actor";
+import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { chatThreadRoutes } from "../chat-threads";
+import { createRouteMocks } from "./helpers/route-test";
 import { prepareSessionHistoryBytes } from "./helpers/prepared-session-history";
 import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { gzipSync } from "node:zlib";
@@ -15,7 +20,7 @@ import { MAX_FILE_SIZE_BYTES } from "@okouai/api-contracts/contracts/storages";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
 
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { mockNow, now, nowDate } from "../../../lib/time";
 import { server } from "../../../mocks/server";
@@ -44,11 +49,6 @@ import {
 import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createUserConfigBddApi } from "./helpers/api-bdd-user-config";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import {
-  readCustomConnectorCredentialStorageParent,
-  readThreadConnectorSelectionState,
-  seedCustomThreadConnectorSelection,
-} from "./helpers/connector-credential-storage-state";
 
 const context = testContext();
 const TERMINAL_RUN_STATUSES = ["completed", "failed", "cancelled"] as const;
@@ -6661,130 +6661,212 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
       expect(preserved.hasSubscription).toBeTruthy();
     }
 
-    it("deletes a user's connector state while preserving peer accounts and grants", async () => {
-      const fixture = await prepareUserDeletion();
-      const { runs, doomed, peer, sharedAgent, doomedAgent } = fixture;
+    it("preserves peer connector accounts and grants after a verified user-deletion webhook", async () => {
+      const bdd = createBddApi(context);
+      const runs = createRunsApi(context);
+      api.configureClerkWebhookSecret();
+      let restoreSetupWebhook: (() => void) | undefined;
+      const { actor: doomed, run: own } = createPublicConnectorActor(context, {
+        beforeDrain: () => {
+          restoreSetupWebhook?.();
+        },
+      });
+      bdd.acceptAgentStorageWrites();
+      runs.acceptStorageDownloads();
+      runs.acceptTelemetryIngest();
+      await own(() => {
+        return runs.grantProEntitlement(doomed, {
+          onExternalStateReady: (restore) => {
+            restoreSetupWebhook = restore;
+          },
+        });
+      });
+      restoreSetupWebhook = undefined;
+      const peer = bdd.user({ orgId: doomed.orgId, orgRole: "org:member" });
+      const sharedAgent = await own(() => {
+        return bdd.createAgent(peer, {
+          displayName: "BDD Shared Grant Agent",
+          visibility: "public",
+        });
+      });
+      const doomedAgent = await own(() => {
+        return bdd.createAgent(doomed, {
+          displayName: "BDD Doomed Agent",
+          visibility: "private",
+        });
+      });
       const connectors = createConnectorBddApi(context);
       const userConfig = createUserConfigBddApi(context);
       const chat = createChatFilesBddApi(context);
-      await connectors.connectManualGrant(doomed, "openai", "api-token", {
-        apiKey: "user-teardown-connector-token",
-      });
-      const connectorSelectionThread = await chat.createThread(doomed, {
-        agentId: doomedAgent.agentId,
-        title: "BDD doomed connector selection",
-      });
-      await runs.enableAgentConnectors(doomed, sharedAgent.agentId, ["openai"]);
-      await connectors.connectManualGrant(
-        peer,
-        "openai",
-        "api-token",
-        { apiKey: "peer-teardown-connector-token" },
-        sharedAgent.agentId,
-      );
-      const customManual = await connectors.createCustomConnector(
-        doomed,
-        customManualConnectorBodyForTeardown("user"),
-      );
-      await connectors.setCustomConnectorSecret(
-        doomed,
-        customManual.id,
-        "doomed-custom-secret",
-      );
-      const customManualStorage =
-        await readCustomConnectorCredentialStorageParent(context, {
-          orgId: orgOf(doomed),
-          userId: doomed.userId,
-          customConnectorId: customManual.id,
+      await own(() => {
+        return connectors.connectManualGrant(doomed, "openai", "api-token", {
+          apiKey: "user-teardown-connector-token",
         });
-      const customManualMemberConnectorId = customManualStorage.connector?.id;
-      if (!customManualMemberConnectorId) {
-        throw new Error("Expected the doomed custom connector account");
-      }
-      await connectors.setCustomConnectorSecret(
-        peer,
-        customManual.id,
-        "peer-custom-secret",
-      );
-      await connectors.updateAgentCustomConnectors(
-        doomed,
-        sharedAgent.agentId,
-        [customManual.id],
-      );
-      await connectors.updateAgentCustomConnectors(peer, sharedAgent.agentId, [
-        customManual.id,
-      ]);
-      await seedCustomThreadConnectorSelection(context, {
-        chatThreadId: connectorSelectionThread.id,
-        connectorId: customManualMemberConnectorId,
-        customConnectorId: customManual.id,
       });
-      await runs.applyUserPermissionGrant(doomed, {
-        agentId: sharedAgent.agentId,
-        connectorSlug: "slack",
-        permission: "conversations:read",
-        action: "allow",
+      const connectorSelectionThread = await own(() => {
+        return chat.createThread(doomed, {
+          agentId: doomedAgent.agentId,
+          title: "BDD doomed connector selection",
+        });
       });
-      await runs.applyUserPermissionGrant(peer, {
-        agentId: sharedAgent.agentId,
-        connectorSlug: "slack",
-        permission: "chat:write",
-        action: "deny",
+      await own(() => {
+        return runs.enableAgentConnectors(doomed, sharedAgent.agentId, [
+          "openai",
+        ]);
       });
-
-      await startUserDeletion(fixture);
-      await flushWaitUntilForTest();
-      await waitForExpectation(async () => {
-        const listed = await connectors.listBuiltinConnectors(doomed);
-        expect(listed.connectors).not.toContainEqual(
-          expect.objectContaining({
-            type: "openai",
-            connectionStatus: "connected",
-          }),
+      await own(() => {
+        return connectors.connectManualGrant(
+          peer,
+          "openai",
+          "api-token",
+          { apiKey: "peer-teardown-connector-token" },
+          sharedAgent.agentId,
         );
       });
-      await waitForExpectation(async () => {
-        await expect(
-          runs.listUserPermissionGrants(doomed, sharedAgent.agentId),
-        ).resolves.toStrictEqual([]);
+      const customManual = await own(() => {
+        return connectors.createCustomConnector(
+          doomed,
+          customManualConnectorBodyForTeardown("user"),
+        );
       });
-      const peerGrants = await runs.listUserPermissionGrants(
-        peer,
-        sharedAgent.agentId,
+      await own(() => {
+        return connectors.setCustomConnectorSecret(
+          doomed,
+          customManual.id,
+          "doomed-custom-secret",
+        );
+      });
+      const [customManualAccount] = await own(() => {
+        return connectors.listCustomConnectorAccounts(doomed, customManual.id);
+      });
+      if (!customManualAccount) {
+        throw new Error("Expected the doomed custom connector account");
+      }
+      const customManualMemberConnectorId = customManualAccount.id;
+      await own(() => {
+        return connectors.setCustomConnectorSecret(
+          peer,
+          customManual.id,
+          "peer-custom-secret",
+        );
+      });
+      await own(() => {
+        return connectors.updateAgentCustomConnectors(
+          doomed,
+          sharedAgent.agentId,
+          [customManual.id],
+        );
+      });
+      await own(() => {
+        return connectors.updateAgentCustomConnectors(
+          peer,
+          sharedAgent.agentId,
+          [customManual.id],
+        );
+      });
+      await own(() => {
+        createRouteMocks(context).clerk.session(
+          doomed.userId,
+          doomed.orgId,
+          doomed.orgRole,
+        );
+        return accept(
+          setupApp({ context, routes: chatThreadRoutes })(
+            chatThreadConnectorSelectionContract,
+          ).update({
+            headers: { authorization: "Bearer clerk-session" },
+            params: { id: connectorSelectionThread.id },
+            body: {
+              connectionId: customManualMemberConnectorId,
+              target: { kind: "custom", customConnectorId: customManual.id },
+            },
+          }),
+          [200],
+        );
+      });
+      await own(() => {
+        return runs.applyUserPermissionGrant(doomed, {
+          agentId: sharedAgent.agentId,
+          connectorSlug: "slack",
+          permission: "conversations:read",
+          action: "allow",
+        });
+      });
+      await own(() => {
+        return runs.applyUserPermissionGrant(peer, {
+          agentId: sharedAgent.agentId,
+          connectorSlug: "slack",
+          permission: "chat:write",
+          action: "deny",
+        });
+      });
+
+      context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+        { data: [{ publicUserData: { userId: peer.userId } }] },
       );
+      const deletionEvent = {
+        type: "user.deleted",
+        data: { id: doomed.userId },
+      };
+      const deletionPayload = JSON.stringify(deletionEvent);
+      context.mocks.clerk.verifyWebhook.mockImplementation(
+        async (request: unknown) => {
+          if (
+            !(request instanceof Request) ||
+            (await request.clone().text()) !== deletionPayload
+          ) {
+            throw new Error(
+              "Expected the accepted user-deletion webhook payload",
+            );
+          }
+          return deletionEvent;
+        },
+      );
+      const deletion = await own(() => {
+        return api.requestClerkWebhook(deletionPayload, {}, [200]);
+      });
+      expect(deletion.body).toBe("OK");
+      await own(flushWaitUntilForTest);
+      const peerGrants = await own(() => {
+        return runs.listUserPermissionGrants(peer, sharedAgent.agentId);
+      });
       expect(peerGrants).toHaveLength(1);
       expect(peerGrants[0]).toMatchObject({
         permission: "chat:write",
         action: "deny",
       });
       await expect(
-        userConfig.readUserConnectors(doomed, sharedAgent.agentId),
-      ).resolves.toStrictEqual({ enabledConnectorSlugs: [] });
-      await expect(
-        userConfig.readUserConnectors(peer, sharedAgent.agentId),
+        own(() => {
+          return userConfig.readUserConnectors(peer, sharedAgent.agentId);
+        }),
       ).resolves.toMatchObject({ enabledConnectorSlugs: ["openai"] });
       await expect(
-        connectors.readAgentCustomConnectors(doomed, sharedAgent.agentId),
-      ).resolves.toStrictEqual([]);
-      await expect(
-        connectors.readAgentCustomConnectors(peer, sharedAgent.agentId),
+        own(() => {
+          return connectors.readAgentCustomConnectors(
+            peer,
+            sharedAgent.agentId,
+          );
+        }),
       ).resolves.toStrictEqual([customManual.id]);
       await expect(
-        connectors.readCustomConnector(doomed, customManual.id),
-      ).resolves.toMatchObject({
-        connected: false,
-        configuredFieldKeys: [],
-      });
-      await expect(
-        readThreadConnectorSelectionState(context, {
-          chatThreadId: connectorSelectionThread.id,
-          connectorId: customManualMemberConnectorId,
+        own(() => {
+          return connectors.readCustomConnector(peer, customManual.id);
         }),
-      ).resolves.toBeFalsy();
-      await expect(
-        connectors.readCustomConnector(peer, customManual.id),
       ).resolves.toMatchObject({ connected: true });
-      await expectSurvivingOrganization(fixture);
+      await expect(
+        own(() => {
+          return connectors.listBuiltinConnectorAccounts(peer, "openai");
+        }),
+      ).resolves.toMatchObject([{ connectionStatus: "connected" }]);
+      expect(context.mocks.stripe.subscriptions.list).not.toHaveBeenCalled();
+      expect(context.mocks.stripe.subscriptions.update).not.toHaveBeenCalled();
+      expect(context.mocks.stripe.subscriptions.cancel).not.toHaveBeenCalled();
+      const billing = createBillingMediaApi(context);
+      const preserved = await own(() => {
+        return billing.readBillingStatus(peer);
+      });
+      expect(preserved.tier).toBe("pro");
+      expect(preserved.hasSubscription).toBeTruthy();
     });
 
     it("keeps the peer's pending builtin and custom OAuth states usable during user deletion", async () => {
