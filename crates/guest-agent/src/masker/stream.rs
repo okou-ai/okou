@@ -100,6 +100,9 @@ impl StreamingSecretMasker<'_> {
             range.end -= end;
             true
         });
+        // Independent matches can allocate many ranges in one large delta;
+        // retain_mut drops their elements but not that allocation.
+        self.redactions.shrink_to_fit();
         output
     }
 }
@@ -186,13 +189,18 @@ mod tests {
     #[test]
     fn large_deltas_do_not_retain_their_allocation() {
         let masker = masker(&["audit-secret-12345"]);
-        let mut stream = masker.stream();
-        let text = "z".repeat(100_000);
-        let mut actual = stream.push(&text);
-        assert!(stream.pending.len() <= stream.holdback + 3);
-        assert!(stream.pending.capacity() < text.len() / 2);
-        actual.push_str(&stream.finish());
-        assert_eq!(actual, text);
+        for text in ["z".repeat(100_000), "audit-secret-12345 ".repeat(5000)] {
+            let mut stream = masker.stream();
+            let mut actual = stream.push(&text);
+            assert!(stream.pending.len() <= stream.holdback + 3);
+            assert!(stream.pending.capacity() < text.len() / 2);
+            assert!(
+                stream.redactions.capacity() * std::mem::size_of::<Range<usize>>() < text.len() / 2,
+                "released matches must not retain a large per-source allocation"
+            );
+            actual.push_str(&stream.finish());
+            assert_eq!(actual, masker.mask_string(&text));
+        }
     }
 
     #[test]
