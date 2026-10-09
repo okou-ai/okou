@@ -4,6 +4,7 @@
 
 use std::{error::Error, io, path::PathBuf, time::Duration};
 
+use runner_remote::guest_duplex::RunGuestChannels;
 use runner_rpc_proto::{Delivery, ErrorCode, Response, ResponseWriter};
 use sandbox::{
     EXEC_OUTPUT_LIMIT_64_KIB, ExecRequest, ExecTermination, FactoryConfig, HomeDriveConfig,
@@ -13,6 +14,9 @@ use sandbox_firecracker::FirecrackerRuntime;
 use serde_json::{Value, json, value::RawValue};
 
 type TestResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
+
+#[path = "guest_rpc/duplex.rs"]
+mod duplex;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires root, KVM, NBD and matching packaged rootfs/snapshot; run by metal CI"]
@@ -84,13 +88,20 @@ async fn exercise_factories(runtime: &FirecrackerRuntime, base: PathBuf) -> Test
 }
 
 async fn exercise_sandbox(sandbox: &mut dyn Sandbox) -> TestResult<()> {
+    let registry = RunGuestChannels::default();
     let run = uuid::Uuid::new_v4().to_string();
     sandbox.bind_run_control(&run)?;
     sandbox.start().await?;
+    let first_epoch = duplex::exercise(sandbox, &run, &registry).await?;
+    // The established duplex must not consume or block the independent RPC path.
     exercise_requests(sandbox, &run).await?;
     let stale = sandbox
         .guest_rpc(&run)
         .ok_or_else(|| io::Error::other("missing RPC acceptor"))?;
+    let stale_duplex = sandbox
+        .guest_duplex(&run)
+        .ok_or_else(|| io::Error::other("missing duplex acceptor"))?;
+    first_epoch.retire().await?;
     if sandbox.park().await? != sandbox::SandboxParkOutcome::Reusable {
         return Err(io::Error::other("sandbox could not park after RPC completion").into());
     }
@@ -103,7 +114,19 @@ async fn exercise_sandbox(sandbox: &mut dyn Sandbox) -> TestResult<()> {
     {
         return Err(io::Error::other("old Run RPC acceptor survived park/reassignment").into());
     }
-    exercise_requests(sandbox, &next_run).await
+    if tokio::time::timeout(Duration::from_secs(5), stale_duplex.accept())
+        .await?
+        .is_ok()
+    {
+        return Err(io::Error::other("old Run duplex acceptor survived park/reassignment").into());
+    }
+    let next_epoch = duplex::exercise(sandbox, &next_run, &registry).await?;
+    exercise_requests(sandbox, &next_run).await?;
+    next_epoch.verify_provider_stop(sandbox).await?;
+    println!(
+        "DUPLEX_FIRECRACKER_PASS activation=acknowledged streams=8 recovery=verified reuse=fenced cancellation=idle"
+    );
+    Ok(())
 }
 
 async fn exercise_requests(sandbox: &dyn Sandbox, run: &str) -> TestResult<()> {

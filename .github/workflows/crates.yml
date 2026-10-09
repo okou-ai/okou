@@ -1346,7 +1346,7 @@ jobs:
           shared-key: ${{ needs.runner-host-groups.outputs.selected-target }}-guest-rpc
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - name: Cross-compile native guest RPC test
+      - name: Cross-compile native Guest RPC and duplex test
         id: build
         run: bash .github/scripts/runner-native-test-artifact.sh build
 
@@ -1413,7 +1413,7 @@ jobs:
           cf-access-client-id: ${{ secrets.CF_ACCESS_CLIENT_ID }}
           cf-access-client-secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
 
-      - name: Verify packaged RPC over fresh and restored Firecracker
+      - name: Verify packaged RPC and duplex over fresh and restored Firecracker
         run: bash .github/scripts/runner-behavior-guest-rpc.sh
 
   ci-gate-crates:
