@@ -58,21 +58,6 @@ export function createBillingCheckoutFixture() {
     return response.body;
   }
 
-  async function readUsagePackState(
-    orgId: string,
-    usagePackSubscriptionId?: string,
-  ) {
-    const response = await usagePackStateAction({
-      action: "read",
-      orgId,
-      usagePackSubscriptionId,
-    });
-    if (response.action !== "read") {
-      throw new Error("Usage pack test state did not return a read response");
-    }
-    return response.state;
-  }
-
   const APP_ORIGIN = "http://localhost:3002";
 
   // This unshared test tenant collides with the staff-org identity hash so the
@@ -823,7 +808,6 @@ export function createBillingCheckoutFixture() {
     context,
     mocks,
     usagePackStateAction,
-    readUsagePackState,
     APP_ORIGIN,
     TEST_STAFF_ORG_ID,
     TEST_PRICE_PRO,
