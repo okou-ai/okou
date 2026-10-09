@@ -142,8 +142,8 @@ os._exit(3)
         # /proc/<pid>/stat comm is an opaque kernel byte string, not ASCII.
         program = (
             "import ctypes,os,sys; libc=ctypes.CDLL(None); "
-            "name=ctypes.c_char_p(b'fixture-'+bytes([255])+b')'); "
-            "assert libc.prctl(15,name,0,0,0)==0; "
+            "name=ctypes.c_char_p(b'fixture-'+bytes([255])+b')')\n"
+            "if libc.prctl(15,name,0,0,0)!=0: sys.exit(2)\n"
             "print(os.getpid(),flush=True); sys.stdin.read(1)"
         )
         with subprocess.Popen(
@@ -154,6 +154,9 @@ os._exit(3)
         ) as child:
             try:
                 self.assertEqual(int(child.stdout.readline()), child.pid)
+                self.assertEqual(
+                    Path(f"/proc/{child.pid}/comm").read_bytes(), b"fixture-\xff)\n"
+                )
                 generation, state, parent = MODULE.process_identity(child.pid)
                 self.assertGreater(generation, 0)
                 self.assertNotEqual(state, "Z")
