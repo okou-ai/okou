@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.52.1](https://github.com/okou-ai/okou/compare/desktop-v0.52.0...desktop-v0.52.1) (2026-10-09)
+
+
+### Documentation
+
+* keep reusable engineering standards and remove feature records ([#38387](https://github.com/okou-ai/okou/issues/38387)) ([6507d86](https://github.com/okou-ai/okou/commit/6507d86c83ca37e7a8790e4efd66eb6a84267295))
+
 ## [0.52.0](https://github.com/okou-ai/okou/compare/desktop-v0.51.0...desktop-v0.52.0) (2026-10-08)
 
 

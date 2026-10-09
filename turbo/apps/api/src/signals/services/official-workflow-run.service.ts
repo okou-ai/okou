@@ -21,11 +21,10 @@ export class OfficialWorkflowRunAdmissionError extends Error {
   }
 }
 
-export interface OfficialWorkflowRunCandidate {
+export interface OfficialWorkflowCandidate {
   readonly workflowId: string;
   readonly workflowName: string;
   readonly definitionName: string;
-  readonly mountPath: string;
 }
 
 interface OfficialWorkflowRunBlueprintIdentity {
@@ -33,17 +32,24 @@ interface OfficialWorkflowRunBlueprintIdentity {
   readonly fingerprint: string;
 }
 
-export interface ResolvedOfficialWorkflowRunDefinition extends AgentRunOfficialWorkflowDefinitionProvenance {
+interface ResolvedOfficialWorkflowDefinition extends AgentRunOfficialWorkflowDefinitionProvenance {
   readonly workflowId: string;
   readonly workflowName: string;
-  readonly mountPath: string;
   readonly blueprints: readonly OfficialWorkflowRunBlueprintIdentity[];
 }
 
-export interface OfficialWorkflowRunObservation {
+export interface OfficialWorkflowObservation {
   readonly releaseId: string;
-  readonly definitions: readonly ResolvedOfficialWorkflowRunDefinition[];
+  readonly definitions: readonly ResolvedOfficialWorkflowDefinition[];
   readonly provenance: AgentRunOfficialWorkflowProvenance;
+}
+
+export interface ResolvedOfficialWorkflowRunDefinition extends ResolvedOfficialWorkflowDefinition {
+  readonly mountPath: string;
+}
+
+export interface OfficialWorkflowRunObservation extends OfficialWorkflowObservation {
+  readonly definitions: readonly ResolvedOfficialWorkflowRunDefinition[];
 }
 
 export function artifactMatches(
@@ -137,7 +143,7 @@ export function acceptedDefinitionForName(
 }
 
 function provenanceDefinition(
-  definition: ResolvedOfficialWorkflowRunDefinition,
+  definition: ResolvedOfficialWorkflowDefinition,
 ): AgentRunOfficialWorkflowDefinitionProvenance {
   return {
     name: definition.name,
@@ -146,15 +152,15 @@ function provenanceDefinition(
   };
 }
 
-interface AcceptedRunCandidate {
-  readonly candidate: OfficialWorkflowRunCandidate;
+interface AcceptedWorkflowCandidate {
+  readonly candidate: OfficialWorkflowCandidate;
   readonly accepted: OfficialWorkflowAcceptedDefinition;
 }
 
-export function acceptedRunCandidates(
+export function acceptedWorkflowCandidates(
   catalog: AcceptedOfficialWorkflowCatalog,
-  candidates: readonly OfficialWorkflowRunCandidate[],
-): readonly AcceptedRunCandidate[] {
+  candidates: readonly OfficialWorkflowCandidate[],
+): readonly AcceptedWorkflowCandidate[] {
   const orderedCandidates = [...candidates].sort((left, right) => {
     return (
       left.definitionName.localeCompare(right.definitionName) ||
@@ -163,18 +169,18 @@ export function acceptedRunCandidates(
   });
   const definitionNames = new Set<string>();
   const workflowIds = new Set<string>();
-  const mountPaths = new Set<string>();
+  const workflowNames = new Set<string>();
   return orderedCandidates.map((candidate) => {
     if (
       definitionNames.has(candidate.definitionName) ||
       workflowIds.has(candidate.workflowId) ||
-      mountPaths.has(candidate.mountPath)
+      workflowNames.has(candidate.workflowName)
     ) {
       throw new OfficialWorkflowRunAdmissionError();
     }
     definitionNames.add(candidate.definitionName);
     workflowIds.add(candidate.workflowId);
-    mountPaths.add(candidate.mountPath);
+    workflowNames.add(candidate.workflowName);
 
     const accepted = acceptedDefinitionForName(
       catalog.payload.definitions,
@@ -187,13 +193,13 @@ export function acceptedRunCandidates(
   });
 }
 
-export function assembleRunObservation(
+export function assembleWorkflowObservation(
   catalog: AcceptedOfficialWorkflowCatalog,
-  acceptedCandidates: readonly AcceptedRunCandidate[],
+  acceptedCandidates: readonly AcceptedWorkflowCandidate[],
   revisions: readonly (OfficialWorkflowAcceptedRevision | null)[],
-): OfficialWorkflowRunObservation {
+): OfficialWorkflowObservation {
   const definitions = acceptedCandidates.map(
-    ({ candidate, accepted }, index): ResolvedOfficialWorkflowRunDefinition => {
+    ({ candidate, accepted }, index): ResolvedOfficialWorkflowDefinition => {
       const revision = revisions[index];
       if (!revision || !acceptedRevisionMatchesDefinition(accepted, revision)) {
         throw new OfficialWorkflowRunAdmissionError();
@@ -201,7 +207,6 @@ export function assembleRunObservation(
       return {
         workflowId: candidate.workflowId,
         workflowName: candidate.workflowName,
-        mountPath: candidate.mountPath,
         name: accepted.name,
         revision: accepted.revision,
         artifact: {
