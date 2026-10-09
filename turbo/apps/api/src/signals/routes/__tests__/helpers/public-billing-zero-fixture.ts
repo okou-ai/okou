@@ -243,6 +243,7 @@ export function createPublicBillingZeroFixture(
               },
             },
             [200],
+            run,
           );
           await flushWaitUntilForTest();
           expect((await readStatus()).body).toMatchObject({
@@ -288,6 +289,7 @@ export function createPublicBillingZeroFixture(
               data: { object: subscription },
             },
             [200],
+            run,
           );
         }
         await flushWaitUntilForTest();

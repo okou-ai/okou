@@ -151,6 +151,7 @@ export async function createPublicImageMember(
         },
       },
       [200],
+      owner.run,
     );
     await flushWaitUntilForTest();
     createRouteMocks(context).clerk.session(actor.userId, orgId, actor.orgRole);
