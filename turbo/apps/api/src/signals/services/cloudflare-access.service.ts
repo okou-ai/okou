@@ -208,6 +208,7 @@ export const createCloudflareAccessConfig$ = command(
       userId: scope === "organization" ? null : args.owner.userId,
     };
     const transaction = await settle(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0103; new non-billing transactions are prohibited.
       db.transaction(async (tx) => {
         const [existing] = await tx
           .select({
@@ -472,6 +473,7 @@ export const updateCloudflareAccessConfig$ = command(
     );
     // Credentials and all bound-host generations must commit together. The
     // reference count needs a fresh statement snapshot after the config fence.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0104; new non-billing transactions are prohibited.
     const result = await db.transaction(async (tx) => {
       const hosts = await tx
         .select()
@@ -575,6 +577,7 @@ export const deleteCloudflareAccessConfig$ = command(
 
     // Protected detachment and config deletion must commit together under the
     // restrictive FK, with a fresh reference count after the config fence.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0105; new non-billing transactions are prohibited.
     const result = await db.transaction(async (tx) => {
       const hosts = await tx
         .select()
@@ -744,6 +747,7 @@ export const convertCloudflareAccessToOrganization$ = command(
     }
     // Scope/owner and bound-host generations must commit together. Validate
     // the complete reference set in a fresh snapshot after the config fence.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0106; new non-billing transactions are prohibited.
     const result = await db.transaction(async (tx) => {
       const hosts = await tx
         .select()
@@ -911,6 +915,7 @@ export const convertCloudflareAccessToPersonal$ = command(
     }
     // Other-owner detachment, own-host generations and adoption must commit
     // together, using a fresh post-fence count for the reviewed impact.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0107; new non-billing transactions are prohibited.
     const result = await db.transaction(async (tx) => {
       const hosts = await tx
         .select()

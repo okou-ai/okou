@@ -73,7 +73,7 @@ history is never repriced or replayed. Compaction conserves quantity and credits
 and preserves billing identity fences and transactional rollback without any
 window reconciliation. Privacy deletion still erases owned raw/hourly usage;
 there is no separate Allowance archive cleanup.
-See [deployment compatibility](../deployment-compatibility.md#organization-usage-allowance-retired)
+See [deployment compatibility](https://github.com/okou-ai/okou/blob/efdfb1ce76686698e2446eceb5a439caf88cd854/docs/deployment-compatibility.md#organization-usage-allowance-retired)
 for the owner-accepted, non-rolling DB/API cutover, rollback floor and external
 Stripe isolation. Deployment-window errors may affect shared paths for external
 organizations too; risk acceptance does not authorize production execution.

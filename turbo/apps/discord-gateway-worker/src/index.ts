@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { discordApplicationSchema } from "@okouai/api-contracts/contracts/discord-application";
 import {
   deadlineAfterHeartbeat,
   heartbeatAckExpired,
@@ -71,6 +72,7 @@ export class DiscordGateway {
   private helloTimer: ReturnType<typeof setTimeout> | null = null;
   private heartbeatDeadline: number | null = null;
   private heartbeatInterval: number | null = null;
+  private messageContentEnabled: boolean | null = null;
   private flushing = false;
   private deliveryAbort: AbortController | null = null;
 
@@ -129,6 +131,7 @@ export class DiscordGateway {
     this.helloTimer = null;
     this.heartbeatInterval = null;
     this.heartbeatDeadline = null;
+    this.messageContentEnabled = null;
     const socket = this.socket;
     this.socket = null;
     if (socket && socket.readyState < WebSocket.CLOSING)
@@ -284,12 +287,10 @@ export class DiscordGateway {
     this.startFlush();
   }
 
-  private async identifyGateway(): Promise<string | null> {
-    if (Date.now() < this.state.identifyAt) {
-      await this.save({ ...this.state, reconnectAt: this.state.identifyAt });
-      return null;
-    }
-    const response = await fetch("https://discord.com/api/v10/gateway/bot", {
+  private async discover(
+    path: "/gateway/bot" | "/applications/@me",
+  ): Promise<Response | null> {
+    const response = await fetch(`https://discord.com/api/v10${path}`, {
       headers: { Authorization: `Bot ${this.env.DISCORD_BOT_TOKEN}` },
       signal: AbortSignal.timeout(10_000),
       redirect: "manual",
@@ -312,7 +313,17 @@ export class DiscordGateway {
       );
       return null;
     }
-    if (!response.ok) throw new Error("Gateway discovery failed");
+    if (!response.ok) throw new Error("Discord discovery failed");
+    return response;
+  }
+
+  private async identifyGateway(): Promise<string | null> {
+    if (Date.now() < this.state.identifyAt) {
+      await this.save({ ...this.state, reconnectAt: this.state.identifyAt });
+      return null;
+    }
+    const response = await this.discover("/gateway/bot");
+    if (!response) return null;
     // `shards` is only Discord's recommendation. When sharding is actually
     // required, Discord closes the connection with fatal code 4011.
     const metadata = gatewayBotSchema.parse(await response.json());
@@ -334,6 +345,16 @@ export class DiscordGateway {
       });
       return null;
     }
+    const applicationResponse = await this.discover("/applications/@me");
+    if (!applicationResponse) return null;
+    const application = discordApplicationSchema.parse(
+      await applicationResponse.json(),
+    );
+    if (application.id !== this.env.DISCORD_APPLICATION_ID) {
+      await this.halt("application-mismatch");
+      return null;
+    }
+    this.messageContentEnabled = application.messageContentEnabled;
     // Reserve before any Identify reaches Discord, including response-loss/restart.
     await this.save({
       ...this.state,
@@ -486,8 +507,13 @@ export class DiscordGateway {
           Math.floor(Math.random() * interval),
         );
         const session = this.state.session;
-        if (!session)
+        if (!session) {
+          if (this.messageContentEnabled === null)
+            throw new Error(
+              "Discord application capabilities were not discovered",
+            );
           await this.save({ ...this.state, identifyAt: Date.now() + 5000 });
+        }
         this.socket?.send(
           JSON.stringify(
             session
@@ -503,11 +529,7 @@ export class DiscordGateway {
                   op: 2,
                   d: {
                     token: this.env.DISCORD_BOT_TOKEN,
-                    intents:
-                      4609 +
-                      (this.env.DISCORD_GATEWAY_MESSAGE_CONTENT === "true"
-                        ? 32768
-                        : 0),
+                    intents: 4609 + (this.messageContentEnabled ? 32768 : 0),
                     properties: {
                       os: "linux",
                       browser: "okou",

@@ -84,7 +84,7 @@ The shared terminal transition cleans the final disconnected reference after com
 
 `model_provider_accounts` and `model_provider_account_secrets` are the only
 store for personal Claude and Codex subscriptions. See the
-[deployment compatibility entry](deployment-compatibility.md#personal-subscription-credentials-become-account-only-2026-09-26)
+[deployment compatibility entry](https://github.com/okou-ai/okou/blob/efdfb1ce76686698e2446eceb5a439caf88cd854/docs/deployment-compatibility.md#personal-subscription-credentials-become-account-only-2026-09-26)
 for the credential storage deployment boundary.
 
 - Reads (firewall auth, Pi first-turn and memory credentials, run capture,

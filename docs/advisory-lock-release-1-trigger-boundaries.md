@@ -190,7 +190,7 @@ inventory verifies that the retired guard/function are absent.
 Main `3103651` retires `ssh_cloudflare_access_binding_guard` and
 `cloudflare_access_scope_change_guard` in published-history migration 1290.
 The source and observed serving/rollback evidence are recorded in
-[deployment compatibility](./deployment-compatibility.md#cloudflare-access-trigger-retirement-37355-37369).
+[deployment compatibility](https://github.com/okou-ai/okou/blob/efdfb1ce76686698e2446eceb5a439caf88cd854/docs/deployment-compatibility.md#cloudflare-access-trigger-retirement-37355-37369).
 That newer evidence supersedes this inventory's earlier foundation-writer
 uncertainty. The serving aliases and rollback floor must still be rechecked
 before release; this PR does not establish actual production journal completion.

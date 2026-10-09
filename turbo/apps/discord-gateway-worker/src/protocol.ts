@@ -99,7 +99,6 @@ export interface Env {
   DISCORD_GATEWAY_SECRET?: string;
   DISCORD_GATEWAY_CONTROL_SECRET?: string;
   DISCORD_API_ORIGIN?: string;
-  DISCORD_GATEWAY_MESSAGE_CONTENT?: string;
 }
 
 export function relayIdentity(env: Env): string {

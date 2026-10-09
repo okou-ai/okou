@@ -1,6 +1,7 @@
 -- #34230: aggregate observations, never a repair manifest.
 -- Run this whole file in a fresh psql -X session with ON_ERROR_STOP=1.
 -- Revalidate docs/database/historical-session-blob-audit.md before execution.
+-- eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0352; new non-billing transactions are prohibited.
 BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
 SET LOCAL statement_timeout = '30s';
 SET LOCAL lock_timeout = '3s';

@@ -62,7 +62,7 @@ OpenRouter Luna route for new Stage 1 and Phase 2 memory work. Migration
 routes after captured work and late usage have drained. Auto, internal Luna
 and personal subscription routes remain. The explicit Luna API rollback floor
 prevents DeepSeek admission from returning; see
-[the retirement contract](deployment-compatibility.md#deepseek-memory-execution-retirement-2026-10-08).
+[the retirement contract](https://github.com/okou-ai/okou/blob/efdfb1ce76686698e2446eceb5a439caf88cd854/docs/deployment-compatibility.md#deepseek-memory-execution-retirement-2026-10-08).
 Historical DeepSeek catalog metadata and pricing remain unchanged.
 
 ## Personal subscription launch defaults

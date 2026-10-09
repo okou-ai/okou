@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
+import { http, HttpResponse } from "msw";
+import { server } from "../../../mocks/server";
 import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
 import { testDiscordStateContract } from "@okouai/api-contracts/contracts/test-discord-state";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -12,6 +14,7 @@ import { discordStatePreviewRoutes } from "../discord-state-preview";
 import { integrationsDiscordRoutes } from "../integrations-discord";
 import {
   configureDiscordApp,
+  mockDiscordApplication,
   deleteDiscordFixture,
   mockDiscordMemberships,
   seedDiscordFixture,
@@ -296,9 +299,88 @@ describe("verified Discord integration settings", () => {
         },
       ],
     });
-    mockEnv("DISCORD_MESSAGE_CONTENT_ENABLED", "true");
+    mockDiscordApplication(1 << 18);
     await expect(status(owner)).resolves.toMatchObject({ contextMode: "full" });
   });
+
+  it.each([
+    { flags: 1 << 19 },
+    { flags: 0, flagsNew: String((1n << 40n) | (1n << 18n)) },
+    { flags: 0, flagsNew: String(1n << 19n) },
+  ])(
+    "reports full context for Discord's actual grant $flags/$flagsNew",
+    async ({ flags, flagsNew }) => {
+      const { actor } = createActors();
+      const owner = actor();
+      await fixture(owner);
+      mockDiscordApplication(flags, flagsNew);
+      await expect(status(owner)).resolves.toMatchObject({
+        contextMode: "full",
+      });
+    },
+  );
+
+  it.each([
+    { id: "123456789012345678", flags: 1 << 14 },
+    { id: "123456789012345678", flags: 1 << 18, flags_new: "0" },
+  ])(
+    "reports mentions-only when the authoritative flags do not grant content",
+    async (application) => {
+      const { actor } = createActors();
+      const owner = actor();
+      await fixture(owner);
+      server.use(
+        http.get("https://discord.com/api/v10/applications/@me", () => {
+          return HttpResponse.json(application);
+        }),
+      );
+      await expect(status(owner)).resolves.toMatchObject({
+        contextMode: "mentions_only",
+      });
+    },
+  );
+
+  it.each([
+    { id: "123456789012345679", flags: 1 << 18 },
+    { id: "123456789012345678" },
+    { id: "123456789012345678", flags: -1 },
+    { id: "123456789012345678", flags_new: "invalid" },
+  ])(
+    "does not claim content access from invalid or mismatched application metadata",
+    async (application) => {
+      const { actor } = createActors();
+      const owner = actor();
+      await fixture(owner);
+      server.use(
+        http.get("https://discord.com/api/v10/applications/@me", () => {
+          return HttpResponse.json(application);
+        }),
+      );
+      await expect(status(owner)).resolves.toMatchObject({
+        contextMode: "unavailable",
+      });
+    },
+  );
+
+  it.each([401, 403, 429, 500])(
+    "reports unavailable context when application discovery fails with %i",
+    async (statusCode) => {
+      const { actor } = createActors();
+      const owner = actor();
+      await fixture(owner);
+      server.use(
+        http.get("https://discord.com/api/v10/applications/@me", () => {
+          return HttpResponse.json(
+            { retry_after: 1, global: false },
+            { status: statusCode },
+          );
+        }),
+      );
+      await expect(status(owner)).resolves.toMatchObject({
+        contextMode: "unavailable",
+      });
+    },
+  );
 
   it("disconnects only the caller while preserving the guild and another verified user", async () => {
     const { actor } = createActors();

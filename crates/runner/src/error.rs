@@ -121,6 +121,23 @@ impl From<runner_network::NetworkError> for RunnerError {
     }
 }
 
+impl From<runner_supervisor::reactor::error::ReactorError> for RunnerError {
+    fn from(error: runner_supervisor::reactor::error::ReactorError) -> Self {
+        use runner_supervisor::reactor::error::ReactorError;
+        match error {
+            ReactorError::Host(error) => error.into(),
+            ReactorError::Provider(error) => error.into(),
+            ReactorError::Storage(error) => error.into(),
+            ReactorError::Lifecycle(error) => error.into(),
+            ReactorError::Network(error) => error.into(),
+            ReactorError::Executor(error) => error.into(),
+            ReactorError::Io(error) => Self::Io(error),
+            ReactorError::Sandbox(error) => Self::Sandbox(error),
+            ReactorError::Internal(message) => Self::Internal(message),
+        }
+    }
+}
+
 /// Error returned by `service stop` / `service uninstall` when the target
 /// runner has active jobs and the user did not pass `--force`.
 #[derive(Debug)]
@@ -245,6 +262,73 @@ mod tests {
         assert!(matches!(mapped, RunnerError::Io(ref io)
             if io.raw_os_error() == Some(libc::EACCES)
                 && io.kind() == std::io::ErrorKind::PermissionDenied));
+    }
+
+    #[test]
+    fn reactor_errors_preserve_root_categories_display_and_io_source() {
+        use runner_supervisor::reactor::error::ReactorError;
+        use std::error::Error;
+        let cases = [
+            (
+                ReactorError::Host(runner_host::HostError::Config("host".into())),
+                RunnerError::Config("host".into()),
+            ),
+            (
+                ReactorError::Provider(runner_provider::ProviderError::Api("provider".into())),
+                RunnerError::Api("provider".into()),
+            ),
+            (
+                ReactorError::Storage(runner_storage::StorageError::Cancelled),
+                RunnerError::Cancelled,
+            ),
+            (
+                ReactorError::Lifecycle(runner_lifecycle::LifecycleError::Internal(
+                    "lifecycle".into(),
+                )),
+                RunnerError::Internal("lifecycle".into()),
+            ),
+            (
+                ReactorError::Network(runner_network::NetworkError::Internal("network".into())),
+                RunnerError::Internal("network".into()),
+            ),
+            (
+                ReactorError::Executor(runner_executor::ExecutorError::Config("executor".into())),
+                RunnerError::Config("executor".into()),
+            ),
+            (
+                ReactorError::Internal("reactor".into()),
+                RunnerError::Internal("reactor".into()),
+            ),
+        ];
+        for (error, expected) in cases {
+            let mapped = RunnerError::from(error);
+            assert_eq!(
+                std::mem::discriminant(&mapped),
+                std::mem::discriminant(&expected)
+            );
+            assert_eq!(mapped.to_string(), expected.to_string());
+        }
+        let io = std::io::Error::from_raw_os_error(libc::EACCES);
+        let expected = io.to_string();
+        let mapped = RunnerError::from(ReactorError::Host(runner_host::HostError::Io(io)));
+        assert_eq!(mapped.to_string(), format!("io error: {expected}"));
+        assert_eq!(mapped.source().unwrap().to_string(), expected);
+        assert!(
+            matches!(mapped, RunnerError::Io(ref io) if io.raw_os_error() == Some(libc::EACCES))
+        );
+        let mapped = RunnerError::from(ReactorError::Sandbox(
+            sandbox::SandboxError::Initialization {
+                phase: sandbox::SandboxInitializationPhase::Factory,
+                message: "factory".into(),
+            },
+        ));
+        assert!(matches!(
+            mapped,
+            RunnerError::Sandbox(sandbox::SandboxError::Initialization {
+                phase: sandbox::SandboxInitializationPhase::Factory,
+                ..
+            })
+        ));
     }
 
     #[test]

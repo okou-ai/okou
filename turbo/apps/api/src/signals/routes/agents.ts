@@ -325,6 +325,7 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     );
     signal.throwIfAborted();
 
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0010; new non-billing transactions are prohibited.
     const transactionResult = await writeDb.transaction(async (tx) => {
       if (visibility === "public") {
         const [publicAgentCount] = await tx
@@ -490,6 +491,7 @@ const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
 
   const writeDb = set(writeDb$);
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0011; new non-billing transactions are prohibited.
   const result = await writeDb.transaction(async (tx) => {
     await tx
       .select({ id: agents.id })
@@ -575,6 +577,7 @@ const updateAgentMetadataInner$ = command(
     }
 
     const writeDb = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0012; new non-billing transactions are prohibited.
     const result = await writeDb.transaction(async (tx) => {
       await tx
         .select({ id: agents.id })

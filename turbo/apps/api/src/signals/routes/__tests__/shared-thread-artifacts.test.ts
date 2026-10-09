@@ -12,11 +12,13 @@ import {
 import { beforeEach, expect, onTestFinished, test } from "vitest";
 import { http, HttpResponse } from "msw";
 import { z } from "zod";
+import sharp from "sharp";
 import { server } from "../../../mocks/server";
 import { createDeferredPromise } from "../../utils";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
+import { artifactOgContract } from "@okouai/api-contracts/contracts/artifact-og";
 import { artifactDownloadsContract } from "@okouai/api-contracts/contracts/artifact-downloads";
 import {
   artifactReferencePath,
@@ -29,6 +31,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { artifactShareRoutes } from "../artifact-shares";
+import { artifactOgRoutes } from "../artifact-og";
 import { artifactReferenceRoutes } from "../artifact-references";
 import { artifactDownloadRoutes } from "../artifact-downloads";
 import { featureSwitchesRoutes } from "../feature-switches";
@@ -64,6 +67,7 @@ function api(rethrowErrors = false) {
       ...sharedThreadRoutes,
       ...featureSwitchesRoutes,
       ...artifactShareRoutes,
+      ...artifactOgRoutes,
       ...artifactReferenceRoutes,
       ...artifactDownloadRoutes,
       ...uploadsPrepareRoutes,
@@ -281,7 +285,7 @@ async function fixture() {
 
   async function upload(
     owner = actor,
-    content = "Original generated PDF",
+    content: string | Buffer = "Original generated PDF",
     options: {
       filename?: string;
       contentType?: string;
@@ -733,6 +737,39 @@ test.each(["missing", "unavailable"] as const)(
       [expected],
     );
     expect(published.body).not.toHaveProperty("preview");
+    const og = api()(artifactOgContract);
+    const disabledQuery = { kind: "reference" as const, id: reference };
+    expect(
+      (await accept(og.metadata({ query: disabledQuery }), [200])).body,
+    ).toStrictEqual({ available: false });
+    const disabledImage = await accept(
+      og.image({ query: { ...disabledQuery, version: "published" } }),
+      [200],
+    );
+    const generic = await accept(og.defaultImage(), [200]);
+    expect(Buffer.from(await disabledImage.body.arrayBuffer())).toStrictEqual(
+      Buffer.from(await generic.body.arrayBuffer()),
+    );
+    await accept(
+      api()(featureSwitchesContract).update({
+        headers: headers(f.actor),
+        body: { switches: { [FeatureSwitchKey.ArtifactPreviews]: true } },
+      }),
+      [200],
+    );
+    const ogStatus = failure === "missing" ? 200 : 500;
+    const metadata = await accept(
+      og.metadata({ query: { kind: "reference", id: reference } }),
+      [ogStatus],
+    );
+    expect(metadata.body).not.toHaveProperty("imageUrl");
+    const image = await accept(
+      og.image({
+        query: { kind: "reference", id: reference, version: "published" },
+      }),
+      [ogStatus],
+    );
+    expect(image.headers.get("cache-control")).toBe("private, no-store");
     const downloaded = await accept(
       api()(artifactDownloadsContract).download({
         headers: headers(f.actor),
@@ -1297,4 +1334,85 @@ test("shares distinct files and reuses a reference for repeated links", async ()
     expect(download.status).toBe(200);
     await expect(download.text()).resolves.toBe(content);
   }
+});
+
+test("oG uses the published thread snapshot and revokes its old image URL with the parent share", async () => {
+  const f = await fixture();
+  await accept(
+    api()(featureSwitchesContract).update({
+      headers: headers(f.actor),
+      body: { switches: { [FeatureSwitchKey.ArtifactPreviews]: true } },
+    }),
+    [200],
+  );
+  const bytes = await sharp({
+    create: { width: 64, height: 40, channels: 3, background: "#226688" },
+  })
+    .png()
+    .toBuffer();
+  const file = await f.upload(f.actor, bytes, {
+    filename: "published.png",
+    contentType: "image/png",
+  });
+  const selection = await f.selection(file.url);
+  const created = await accept(share(f.actor, selection), [201]);
+  const shared = await accept(
+    api()(sharedThreadsContract).get({ params: { id: created.body.id } }),
+    [200],
+  );
+  const target = {
+    kind: "reference" as const,
+    id: referenceName(shared.body.messages[0]!.content),
+  };
+  const og = api()(artifactOgContract);
+  const metadata = await accept(og.metadata({ query: target }), [200]);
+  expect(metadata.body).toMatchObject({
+    available: true,
+    title: "published.png",
+  });
+  if (!metadata.body.available) {
+    throw new Error("Expected published metadata");
+  }
+  const query = {
+    ...target,
+    version: new URL(metadata.body.imageUrl).searchParams.get("version")!,
+  };
+  // The snapshot remains public independently of the private source's lifetime.
+  f.objects.delete(file.key);
+  const image = await accept(og.image({ query }), [200]);
+  const publishedBytes = Buffer.from(await image.body.arrayBuffer());
+  await expect(sharp(publishedBytes).metadata()).resolves.toMatchObject({
+    width: 64,
+    height: 40,
+  });
+  expect(
+    (
+      await accept(
+        og.metadata({
+          query: { kind: "reference", id: referenceName(file.url) },
+        }),
+        [200],
+      )
+    ).body,
+  ).toStrictEqual({ available: false });
+  await accept(
+    api()(sharedThreadsContract).delete({
+      headers: headers(f.actor),
+      params: { id: created.body.id },
+    }),
+    [204],
+  );
+  expect(
+    (await accept(og.metadata({ query: target }), [200])).body,
+  ).toStrictEqual({
+    available: false,
+  });
+  const revoked = await accept(og.image({ query }), [200]);
+  expect(revoked.headers.get("cache-control")).toBe("private, no-store");
+  const revokedBytes = Buffer.from(await revoked.body.arrayBuffer());
+  expect(revokedBytes).not.toStrictEqual(publishedBytes);
+  await expect(sharp(revokedBytes).metadata()).resolves.toMatchObject({
+    width: 1280,
+    height: 800,
+  });
 });

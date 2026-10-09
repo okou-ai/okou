@@ -424,6 +424,7 @@ async function transaction<T>(
   db: Client,
   operation: () => Promise<T>,
 ): Promise<T> {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0365; new non-billing transactions are prohibited.
   await db.query("BEGIN");
   try {
     const result = await operation();

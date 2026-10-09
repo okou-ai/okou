@@ -39,8 +39,8 @@ general client rules:
 - App and CLI Snapshot readers require the paired `lastEventId` response
   metadata; they do not reconstruct it from the NDJSON body.
 
-For release receipts and contraction gates, see
-[deployment compatibility](./deployment-compatibility.md).
+For earlier release receipts and contraction gates, see the
+[pre-cleanup rollout records](https://github.com/okou-ai/okou/blob/efdfb1ce76686698e2446eceb5a439caf88cd854/docs/deployment-compatibility.md).
 
 ## MCP source metadata
 

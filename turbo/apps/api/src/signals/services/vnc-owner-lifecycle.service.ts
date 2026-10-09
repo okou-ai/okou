@@ -63,6 +63,7 @@ export const eraseVncOwnerData$ = command(
               eq(vncCredentials.orgId, scope.orgId),
               eq(vncCredentials.userId, scope.userId),
             );
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0318; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       await tx.delete(vncConnections).where(connectionCondition);
       await tx.delete(vncCredentials).where(credentialCondition);

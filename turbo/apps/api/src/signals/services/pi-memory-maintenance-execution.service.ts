@@ -578,6 +578,7 @@ const failMaintenanceLaunch$ = command(
     signal: AbortSignal,
   ): Promise<never> => {
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0221; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       const { record } = args;
       const error =
@@ -659,6 +660,7 @@ const persistMaintenanceRun$ = command(
     const db = set(writeDb$);
     const { record } = args;
     const admissionTiming = maintenanceAdmissionTiming(args);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0222; new non-billing transactions are prohibited.
     return db.transaction(async (tx) => {
       admissionTiming.transactionStarted();
       admissionTiming.admissionStarted();

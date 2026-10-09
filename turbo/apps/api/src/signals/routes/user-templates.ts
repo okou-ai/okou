@@ -567,6 +567,7 @@ const updateInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!bodyResult.ok) {
     return bodyResult.response;
   }
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0042; new non-billing transactions are prohibited.
   const mutation = await set(writeDb$).transaction(async (tx) => {
     const whereOwner = and(
       eq(userTemplates.id, params.templateId),

@@ -537,7 +537,7 @@ Runner's advertised pairs even for legacy connections. Old Runners reject
 X509None rows before KMS. An old App cannot be relied upon to manage the new
 credentialless response, and the old API's credential inner join omits these
 rows. Once one exists, disabling the switch does not make an old API a safe
-rollback target. The exact old/new App, API and Runner matrix is in [deployment compatibility](deployment-compatibility.md#vnc-x509none-owner-selected-rollout-default-off).
+rollback target. The exact old/new App, API and Runner matrix is in [deployment compatibility](https://github.com/okou-ai/okou/blob/efdfb1ce76686698e2446eceb5a439caf88cd854/docs/deployment-compatibility.md#vnc-x509none-owner-selected-rollout-default-off).
 
 The configuration API remains unavailable until the feature is explicitly
 enabled; merging this change does not enable it, authorize an out-of-band

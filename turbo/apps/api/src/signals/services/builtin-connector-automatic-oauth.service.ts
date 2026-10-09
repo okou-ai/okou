@@ -942,6 +942,7 @@ async function refreshAutomatic(
       isAutomaticOAuthInvalidClient(refreshed.error) &&
       binding.registrationMethod === "dcr"
     ) {
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0079; new non-billing transactions are prohibited.
       await args.db.transaction(async (tx) => {
         await dcrStore(tx, args.orgId, contract).retire(
           binding.dcrRegistration.id,
@@ -977,6 +978,7 @@ async function refreshAutomatic(
     { contract, token: refreshed.value, fallbackRefreshToken: refreshToken },
     signal,
   );
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0080; new non-billing transactions are prohibited.
   await args.db.transaction(async (tx) => {
     await writeEncryptedTokens(tx, {
       orgId: args.orgId,
@@ -1087,6 +1089,7 @@ export async function resolveBuiltinConnectorAutomaticMcpCredential(
     binding.dcrRegistration.expiresAt !== null &&
     binding.dcrRegistration.expiresAt <= nowDate()
   ) {
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0081; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       await dcrStore(tx, args.orgId, contract).retire(
         binding.dcrRegistration.id,

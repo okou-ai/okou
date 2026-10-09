@@ -55,6 +55,7 @@ export const synchronizeMorningBriefTimezone$ = command(
     const db = set(writeDb$);
     signal.throwIfAborted();
     const outcome = await settle(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0190; new non-billing transactions are prohibited.
       db.transaction(async (tx) => {
         const [target] = parseRawRows(
           timezoneTarget,

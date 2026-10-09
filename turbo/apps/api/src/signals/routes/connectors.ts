@@ -492,6 +492,7 @@ const startBuiltinConnectorOauthInner$ = command(
     signal.throwIfAborted();
 
     const writeDb = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0014; new non-billing transactions are prohibited.
     const mutationStart = await writeDb.transaction(async (tx) => {
       const resolution = await resolveConnectorConnectionMutation(tx, {
         orgId: auth.orgId,
@@ -616,6 +617,7 @@ const startBuiltinConnectorOpenIdInner$ = command(
     signal.throwIfAborted();
 
     const writeDb = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0015; new non-billing transactions are prohibited.
     const mutationStart = await writeDb.transaction(async (tx) => {
       const resolution = await resolveConnectorConnectionMutation(tx, {
         orgId: auth.orgId,

@@ -53,6 +53,7 @@ export async function acquireBuiltInModelKeyFixture(
 ): Promise<readonly BuiltInModelKeyRow[]> {
   const acquiredRows: BuiltInModelKeyRow[] = [];
   for (const value of rows) {
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0075; new non-billing transactions are prohibited.
     const apiKey = await db.transaction(async (tx) => {
       const [row] = await tx
         .insert(builtInModelKeys)
@@ -109,6 +110,7 @@ export async function releaseBuiltInModelKeyFixture(
   db: Db,
   fixtureId: string,
 ): Promise<void> {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0076; new non-billing transactions are prohibited.
   await db.transaction(async (tx) => {
     const rows = await tx
       .select({ id: builtInModelKeys.id, label: builtInModelKeys.label })

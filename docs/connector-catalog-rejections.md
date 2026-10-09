@@ -8,7 +8,7 @@ that the catalog is current.
 
 ## Interpreting rejection records
 
-Since the [Release 2 contraction](deployment-compatibility.md#connector-catalog-release-2-contraction-migration-1334),
+Since the [Release 2 contraction](https://github.com/okou-ai/okou/blob/efdfb1ce76686698e2446eceb5a439caf88cd854/docs/deployment-compatibility.md#connector-catalog-release-2-contraction-migration-1334),
 rejections are not persisted and there is no rejection cache. Every sync
 attempt revalidates the current publication, and each rejected attempt emits
 one `Connector catalog candidate rejected` WARN. The cron response is only the
@@ -16,7 +16,7 @@ attempt report: `{ outcome: "rejected", failureCode }`. It no longer reports
 the serving state; observe the retained generation with masked database
 queries against `connector_catalog`, or by a later sync of the serving
 publication returning `outcome: "unchanged"`. See
-[diagnostics removal](deployment-compatibility.md#connector-catalog-diagnostics-removed-2026-10-07).
+[diagnostics removal](https://github.com/okou-ai/okou/blob/efdfb1ce76686698e2446eceb5a439caf88cd854/docs/deployment-compatibility.md#connector-catalog-diagnostics-removed-2026-10-07).
 
 - `failureCode` keeps its existing meaning. `relationshipRule`, when present,
   identifies an explicit semantic validator check, such as
@@ -57,7 +57,7 @@ explicitly recorded an accepted reconciliation at 21:49:06 UTC.
 This supports a recovered rollout mismatch, not a continuing catalog outage.
 Individual historical events cannot be conclusively attributed without the
 missing fields. Deploy compatible API readers before publishing a catalog that
-needs them; see [PostHog deployment ordering](deployment-compatibility.md#posthog-cimd-oauth).
+needs them; see [PostHog deployment ordering](https://github.com/okou-ai/okou/blob/efdfb1ce76686698e2446eceb5a439caf88cd854/docs/deployment-compatibility.md#posthog-cimd-oauth).
 
 After an authorized deployment of this diagnostics change, observe the exact API
 artifact over a bounded window and record sync/status acceptance or retained

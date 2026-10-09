@@ -1,8 +1,10 @@
+import { dbTransactionExemptions } from "./rules/db-transaction-exemptions.ts";
 import { gatewayTypecheckBoundary } from "./rules/gateway-typecheck-boundary.ts";
 import { maxSignalOwnerLines } from "./rules/max-signal-owner-lines.ts";
 import { noCatchAbort } from "./rules/no-catch-abort.ts";
 import { noCrossTestTimeStaggering } from "./rules/no-cross-test-time-staggering.ts";
 import { noDatabaseTrigger } from "./rules/no-database-trigger.ts";
+import { noDbTransaction } from "./rules/no-db-transaction.ts";
 import { noDirectAgentRunTerminalUpdate } from "./rules/no-direct-agent-run-terminal-update.ts";
 import { noFnDollarSuffix } from "./rules/no-fn-dollar-suffix.ts";
 import { noGetterSetterParams } from "./rules/no-getter-setter-params.ts";
@@ -24,8 +26,9 @@ import { requireExecuteRowSchema } from "./rules/require-execute-row-schema.ts";
 import { requireSqlResultMapping } from "./rules/require-sql-result-mapping.ts";
 import { signalCheckAwait } from "./rules/signal-check-await.ts";
 import { sqlSourceParser } from "./sql-analysis/sql-source-parser.ts";
+import { transactionSqlParser } from "./sql-analysis/transaction-statements.ts";
 
-export { sqlSourceParser };
+export { sqlSourceParser, transactionSqlParser };
 
 export const apiLintPlugin = {
   meta: {
@@ -33,11 +36,13 @@ export const apiLintPlugin = {
     version: "1.0.0",
   },
   rules: {
+    "db-transaction-exemptions": dbTransactionExemptions,
     "gateway-typecheck-boundary": gatewayTypecheckBoundary,
     "max-signal-owner-lines": maxSignalOwnerLines,
     "no-catch-abort": noCatchAbort,
     "no-cross-test-time-staggering": noCrossTestTimeStaggering,
     "no-database-trigger": noDatabaseTrigger,
+    "no-db-transaction": noDbTransaction,
     "no-direct-agent-run-terminal-update": noDirectAgentRunTerminalUpdate,
     "no-fn-dollar-suffix": noFnDollarSuffix,
     "no-getter-setter-params": noGetterSetterParams,

@@ -20,8 +20,9 @@ import {
   discordIntegrationEnabledForOwner,
   discordIntegrationEnabledForOwner$,
   getDiscordAppConfig,
-  type DiscordAppConfig,
 } from "./discord-config";
+
+import { discordMessageContentCapability } from "./discord-application-capability.service";
 
 import {
   featureSwitchContextFromRows,
@@ -329,6 +330,7 @@ async function selectDiscordDmBinding(
   userIds: readonly string[],
   signal: AbortSignal,
 ): Promise<boolean> {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0151; new non-billing transactions are prohibited.
   const result = await db.transaction(async (tx) => {
     // Match guild uninstall's installation -> connection lock order.
     const [installation] = await tx
@@ -438,6 +440,7 @@ async function deleteDiscordBinding(
   },
   signal: AbortSignal,
 ): Promise<boolean> {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0152; new non-billing transactions are prohibited.
   const rows = await db.transaction(async (tx) => {
     signal.throwIfAborted();
     const removed = await tx
@@ -516,20 +519,12 @@ export function discordEffectiveAgent(args: {
   });
 }
 
-function discordContextMode(
-  config: DiscordAppConfig | null,
-): DiscordOrgStatus["contextMode"] {
-  if (!config) {
-    return "unavailable";
-  }
-  return config.messageContentEnabled ? "full" : "mentions_only";
-}
-
 export function discordOrgStatus(args: {
   readonly orgId: string;
   readonly userId: string;
   readonly orgRole?: ApiOrgRole;
 }): Computed<Promise<DiscordOrgStatus>> {
+  const capability$ = discordMessageContentCapability();
   return computed(async (get): Promise<DiscordOrgStatus> => {
     const enabled = await get(
       discordIntegrationEnabledForOwner(args.orgId, args.userId),
@@ -545,7 +540,7 @@ export function discordOrgStatus(args: {
       discordUserId: null,
       defaultAgentId: null,
       defaultAgentName: null,
-      contextMode: discordContextMode(enabled ? config : null),
+      contextMode: "unavailable",
       onboarding: "oauth_deferred",
       dmSelectionConnectionId: null,
       dmBindings: [],
@@ -562,12 +557,22 @@ export function discordOrgStatus(args: {
         contextMode: "unavailable",
       };
     }
+    const capability = await get(capability$);
+    const currentStatus: DiscordOrgStatus = {
+      ...status,
+      contextMode:
+        capability.kind === "available"
+          ? capability.enabled
+            ? "full"
+            : "mentions_only"
+          : "unavailable",
+    };
     const [installation] = await get(db$)
       .select()
       .from(discordOrgInstallations)
       .where(eq(discordOrgInstallations.orgId, args.orgId));
     if (!installation) {
-      return { ...status, isAdmin: role === "admin" };
+      return { ...currentStatus, isAdmin: role === "admin" };
     }
     const [connection] = await get(
       bindingRows(
@@ -589,7 +594,7 @@ export function discordOrgStatus(args: {
       ? await get(savedDiscordDmBinding(connection.discordUserId))
       : null;
     return {
-      ...status,
+      ...currentStatus,
       isAdmin: role === "admin",
       isInstalled: true,
       isConnected: connection !== undefined,

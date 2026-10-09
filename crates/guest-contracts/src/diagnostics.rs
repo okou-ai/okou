@@ -295,12 +295,19 @@ pub struct EventDeliveryDiagnostic {
     pub total_events: u64,
     /// Logical delivery batches started.
     pub total_batches: u64,
-    /// Logical batches whose HTTP retry budget was exhausted.
+    /// Logical batches that completed with a terminal delivery failure,
+    /// including non-retryable rejection and exhausted HTTP retry attempts.
+    ///
+    /// A batch interrupted by the global drain deadline is reported in
+    /// `drain_timeout` instead of being counted as a completed failed batch.
     pub failed_batches: u64,
     /// Highest contiguous event sequence acknowledged by the API.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_acknowledged_sequence: Option<u32>,
-    /// First logical batch whose retry budget was exhausted.
+    /// First logical batch that completed with a terminal delivery failure.
+    ///
+    /// Includes non-retryable rejection and exhausted HTTP retry attempts;
+    /// the recorded attempt and status details establish the failure path.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub first_failed_batch: Option<EventDeliveryFailedBatchDiagnostic>,
     /// Final delivery state captured at the global drain deadline.
@@ -308,7 +315,13 @@ pub struct EventDeliveryDiagnostic {
     pub drain_timeout: Option<EventDeliveryDrainTimeoutDiagnostic>,
 }
 
-/// First logical event batch whose HTTP retry budget was exhausted.
+/// First logical event batch that completed with a terminal delivery failure.
+///
+/// This includes non-retryable rejection and exhausted HTTP retry attempts.
+/// Inspect `attempts` and their failure/status details to distinguish the path;
+/// this diagnostic alone does not imply retry exhaustion. A batch interrupted
+/// by the global drain deadline is reported separately in
+/// [`EventDeliveryDrainTimeoutDiagnostic::active_batch`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EventDeliveryFailedBatchDiagnostic {

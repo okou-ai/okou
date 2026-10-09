@@ -212,8 +212,12 @@ async function postGithubWebhook(args: {
     | "workflow_run";
   readonly deliveryId: string;
   readonly rawBody: string;
+  readonly signatureSecret?: string;
 }): Promise<{ readonly status: number; readonly text: string }> {
-  const signature = `sha256=${createHmac("sha256", GITHUB_WEBHOOK_SECRET)
+  const signature = `sha256=${createHmac(
+    "sha256",
+    args.signatureSecret ?? GITHUB_WEBHOOK_SECRET,
+  )
     .update(args.rawBody)
     .digest("hex")}`;
   const response = await createApp({
@@ -636,6 +640,145 @@ describe("POST /api/webhooks/github for workflow automations", () => {
       expect(claim.appendSystemPrompt).not.toContain("# Current context");
     },
   );
+
+  it("validates workflow job actions before dispatching", async () => {
+    const { actor, agentId, workflowId } = await setupFixture();
+    const installed = await gh.installGithubApp(actor, agentId);
+    mockOptionalEnv("GITHUB_APP_WEBHOOK_SECRET", GITHUB_WEBHOOK_SECRET);
+    const testCase = githubWebhookAutomationCases.find((testCase) => {
+      return testCase.event === "workflow_job";
+    });
+    if (!testCase) {
+      throw new Error("Expected the completed workflow job case");
+    }
+    const created = await accept(
+      automationsClient().create({
+        headers: authHeaders(),
+        params: { workflowId },
+        body: testCase.body,
+      }),
+      [201],
+    );
+    if (!created.body.chatThreadId) {
+      throw new Error("Expected the automation to have a chat thread");
+    }
+
+    for (const payload of [
+      {},
+      { action: null },
+      { action: 42 },
+      { action: "completed" },
+      { action: "completed", workflow_job: null },
+      { action: "completed", workflow_job: {} },
+    ]) {
+      const response = await postGithubWebhook({
+        event: "workflow_job",
+        deliveryId: `delivery-${randomUUID()}`,
+        rawBody: JSON.stringify({
+          ...payload,
+          installation: { id: Number(installed.remoteInstallationId) },
+          repository: { id: 456, full_name: "okou-ai/okou" },
+          sender: { id: 101, login: "lancy", type: "User" },
+        }),
+      });
+      expect(response).toStrictEqual({
+        status: 400,
+        text: '{"error":"Invalid payload structure"}',
+      });
+    }
+
+    for (const action of [
+      "queued",
+      "in_progress",
+      "waiting",
+      "future_action",
+    ]) {
+      const response = await postGithubWebhook({
+        event: "workflow_job",
+        deliveryId: `delivery-${randomUUID()}`,
+        rawBody: JSON.stringify({
+          action,
+          workflow_job: null,
+          installation: { id: Number(installed.remoteInstallationId) },
+          repository: { id: 456, full_name: "okou-ai/okou" },
+          sender: { id: 101, login: "lancy", type: "User" },
+        }),
+      });
+      expect(response).toStrictEqual({ status: 200, text: "OK" });
+    }
+    await flushWaitUntilForTest();
+
+    const threadEvents = await wf.readThreadEvents(created.body.chatThreadId);
+    expect(
+      threadEvents.filter((event) => {
+        return (
+          event.eventType === "input.automation" ||
+          event.eventType === "input.prompt"
+        );
+      }),
+    ).toHaveLength(0);
+    const listedRuns = await listActiveRuns(actor, 20);
+    expect(listedRuns.runs).toHaveLength(0);
+  });
+
+  it("verifies signatures before ignoring workflow job actions", async () => {
+    mockOptionalEnv("GITHUB_APP_WEBHOOK_SECRET", GITHUB_WEBHOOK_SECRET);
+    const response = await postGithubWebhook({
+      event: "workflow_job",
+      deliveryId: `delivery-${randomUUID()}`,
+      rawBody: JSON.stringify({ action: "queued", workflow_job: null }),
+      signatureSecret: "incorrect-webhook-secret",
+    });
+    expect(response).toStrictEqual({
+      status: 401,
+      text: '{"error":"Invalid signature"}',
+    });
+  });
+
+  it("de-duplicates completed workflow job deliveries", async () => {
+    const { actor, agentId, workflowId } = await setupFixture();
+    const installed = await gh.installGithubApp(actor, agentId);
+    mockOptionalEnv("GITHUB_APP_WEBHOOK_SECRET", GITHUB_WEBHOOK_SECRET);
+    const testCase = githubWebhookAutomationCases.find((testCase) => {
+      return testCase.event === "workflow_job";
+    });
+    if (!testCase) {
+      throw new Error("Expected the completed workflow job case");
+    }
+    const created = await accept(
+      automationsClient().create({
+        headers: authHeaders(),
+        params: { workflowId },
+        body: testCase.body,
+      }),
+      [201],
+    );
+    if (!created.body.chatThreadId) {
+      throw new Error("Expected the automation to have a chat thread");
+    }
+
+    const deliveryId = `delivery-${randomUUID()}`;
+    const rawBody = testCase.payload(installed.remoteInstallationId);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const response = await postGithubWebhook({
+        event: "workflow_job",
+        deliveryId,
+        rawBody,
+      });
+      expect(response).toStrictEqual({ status: 200, text: "OK" });
+      await flushWaitUntilForTest();
+    }
+
+    const threadEvents = await wf.readThreadEvents(created.body.chatThreadId);
+    expect(
+      threadEvents.filter((event) => {
+        return event.eventType === "input.automation";
+      }),
+    ).toHaveLength(1);
+    await runsApi.heartbeatRunner();
+    const listedRuns = await listActiveRuns(actor, 20);
+    expect(listedRuns.runs).toHaveLength(1);
+  });
 
   it("validates pull request review actions before dispatching", async () => {
     const { actor, agentId, workflowId } = await setupFixture();

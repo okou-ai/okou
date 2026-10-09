@@ -162,6 +162,7 @@ pub struct SandboxConfig {
 
 /// Reference to a pre-built snapshot for fast VM boot.
 /// The backend resolves individual artifact paths from the output directory.
+#[derive(Clone)]
 pub struct SnapshotRef {
     /// Directory containing backend-specific snapshot artifacts.
     pub output_dir: PathBuf,
@@ -170,6 +171,8 @@ pub struct SnapshotRef {
 }
 
 /// Configuration for creating a sandbox factory for a specific profile.
+/// This is clonable path/data input, not ownership of a running factory.
+#[derive(Clone)]
 pub struct FactoryConfig {
     /// Profile name (e.g., "vm0/default").
     pub profile: String,

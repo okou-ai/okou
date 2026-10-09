@@ -565,7 +565,7 @@ transaction, and the subsequent completion establishes the new checkpoint. Pi
 reads only the canonical checkpoint rather than scanning historical runs for an
 older compatible session. `chat_threads.agent_session_id` has a unique index;
 old detached sessions remain historical records. See
-[deployment compatibility](deployment-compatibility.md#canonical-chat-application-sessions)
+[deployment compatibility](https://github.com/okou-ai/okou/blob/efdfb1ce76686698e2446eceb5a439caf88cd854/docs/deployment-compatibility.md#canonical-chat-application-sessions)
 for the migration preflight and mixed-version boundary.
 
 Removing memory initialization from run creation relies on the account

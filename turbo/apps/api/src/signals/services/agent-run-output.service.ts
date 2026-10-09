@@ -536,6 +536,7 @@ export const prepareSessionHistoryUpload$ = command(
       );
     }
 
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0048; new non-billing transactions are prohibited.
     const admission = await db.transaction(async (tx) => {
       const [run] = await tx
         .select({ status: agentRuns.status })

@@ -44,6 +44,7 @@ export const deleteDiscordUserData$ = command(
   async ({ set }, userId: string, signal: AbortSignal): Promise<void> => {
     // Installer detachment and connection revocation commit together. Preserve
     // the cleanup boundary: observe cancellation after this atomic revocation.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0154; new non-billing transactions are prohibited.
     await set(writeDb$).transaction(async (tx) => {
       // A surviving organization's installation is not the installer's account
       // data. Keep it usable by the remaining members and remove the association.

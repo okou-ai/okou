@@ -1362,6 +1362,7 @@ const ensureCanonicalDelivery$ = command(
     signal: AbortSignal,
   ): Promise<boolean> => {
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0086; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       const [asset] = await tx
         .select({ id: runUploadedFiles.id })
@@ -1708,6 +1709,7 @@ export const materializeCanonicalPublishedAsset$ = command(
     }
 
     // Materialization and the durable catalog handoff must commit together.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0087; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       await tx
         .update(runUploadedFiles)

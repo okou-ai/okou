@@ -925,6 +925,7 @@ async function persistBrowserUserAction(
   },
 ): Promise<RequestRow | null> {
   const { args, payload, prepared, requestToken } = input;
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0066; new non-billing transactions are prohibited.
   return await db.transaction(async (tx): Promise<RequestRow | null> => {
     const [currentRun] = await tx
       .select({ agentId: chatThreads.agentId })

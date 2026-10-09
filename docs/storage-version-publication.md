@@ -83,7 +83,7 @@ A crash before inventory persistence and a provider accepting a PUT after its
 cancelled response can still leave unreferenced bytes. Those require the wider
 parent's late-upload/grace-period sweep; this slice does not claim a complete
 physical-immutability or orphan-GC solution. See the
-[bootstrap scope and unchanged data contract](deployment-compatibility.md#bootstrap-private-generation-publication-and-advisory-retirement).
+[bootstrap scope and unchanged data contract](https://github.com/okou-ai/okou/blob/efdfb1ce76686698e2446eceb5a439caf88cd854/docs/deployment-compatibility.md#bootstrap-private-generation-publication-and-advisory-retirement).
 
 ## Agent instruction update ordering
 

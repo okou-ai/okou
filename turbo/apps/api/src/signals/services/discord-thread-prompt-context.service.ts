@@ -172,13 +172,18 @@ export function createDiscordThreadContext(
       return null;
     }
     // DM history is shared across orgs and must never reach a run.
+    let messageContentEnabled = sourceAccess.messageContentEnabled;
     let conversationContextAllowed =
-      sourceAccess.channel.type !== 1 && sourceAccess.messageContentEnabled;
+      sourceAccess.channel.type !== 1 && messageContentEnabled;
     if (context.conversationContext !== null && conversationContextAllowed) {
+      const historyAccess = checkedAccess(await get(historyAccess$), target);
+      if (historyAccess) {
+        messageContentEnabled = historyAccess.messageContentEnabled;
+      }
       conversationContextAllowed =
-        checkedAccess(await get(historyAccess$), target) !== null;
+        historyAccess !== null && messageContentEnabled;
     }
-    return { conversationContextAllowed };
+    return { conversationContextAllowed, messageContentEnabled };
   });
   const destinationAccessInput$ = computed(async (get) => {
     const conversation = await get(conversationAccess$);
@@ -220,7 +225,7 @@ export function createDiscordThreadContext(
       botUserId: context.botUserId,
       conversationContext: context.conversationContext,
       conversationContextAllowed: conversation.conversationContextAllowed,
-      messageContentEnabled: destinationAccess.messageContentEnabled,
+      messageContentEnabled: conversation.messageContentEnabled,
     };
   });
 }

@@ -131,7 +131,7 @@ backfill, cache change or release is established here.
 After reader activation, an API rollback must retain this endpoint; a Worker
 rollback must retain status checks once deletion relies on retained aliases.
 Historical HTML snapshot writer and named-alias conversion rollback restrictions
-in [deployment compatibility](../deployment-compatibility.md#hosted-site-publication-identity)
+in [deployment compatibility](https://github.com/okou-ai/okou/blob/efdfb1ce76686698e2446eceb5a439caf88cd854/docs/deployment-compatibility.md#hosted-site-publication-identity)
 remain independent. No historical backfill or reader/writer drain is assumed.
 
 ## Local evidence

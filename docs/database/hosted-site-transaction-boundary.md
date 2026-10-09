@@ -163,7 +163,7 @@ This preparation writes exactly the previous persisted bytes and uses exactly
 the previous transaction/lock ordering. Old/new APIs and Workers therefore
 share its existing protocol; it introduces no additional rollback floor or
 writer-drain requirement. The
-[hosted publication compatibility contract](../deployment-compatibility.md#hosted-site-publication-identity)
+[hosted publication compatibility contract](https://github.com/okou-ai/okou/blob/efdfb1ce76686698e2446eceb5a439caf88cd854/docs/deployment-compatibility.md#hosted-site-publication-identity)
 still prohibits restoring the old HTML snapshot writer after named-alias
 conversion. Its Worker/API rollout and historical backfill gates remain
 independent requirements.

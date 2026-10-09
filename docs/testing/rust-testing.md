@@ -52,7 +52,8 @@ cargo test --manifest-path crates/Cargo.toml --profile local --locked \
 # Seven focused mitmdump restart tests moved from runner/src/cmd/start/mitm_restart.rs
 # into runner-network/src/proxy/recovery.rs, plus fatal cleanup and cancelled
 # wait coverage (9 recovery tests total); none intentionally removed.
-# Runner's main-loop crash, panic, and shutdown tests remain in runner.
+# Main-loop crash/panic/shutdown coverage belongs to the Supervisor reactor;
+# select that ordinary owner target separately below.
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-network -- --test-threads=1
 
@@ -87,12 +88,18 @@ cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-executor -- --test-threads=1
 
 # Extracted Runner idle, pre-claim admission/rollback and pending-candidate state, finalizing-successor arbitration, claimed activation, post-executor finalizing/report ordering/sandbox finalization/settlement, heartbeat, and orphan-recovery owner tests
-# The pending-candidate policy has three supervisor unit tests; existing Runner
-# main-loop admission/expiry/duplicate tests remain as cross-domain coverage.
-# Exact idle pruning has two supervisor resource/ownership tests; all four Runner
-# operator IPC/reuse tests remain as composition coverage (no tests removed).
+# Policy and cross-domain runtime coverage both run in Supervisor's ordinary unit
+# target. 317 start cases follow their actual reactor/factory/dispatch/maintenance
+# entry; three shared provider-fixture cases follow their one private owner.
+# The 13 boot/config/CPU-placement/early-signal declarations remain in Runner,
+# including four guarded ignored children invoked by their ordinary parent.
+# New Root projection/error and Host UTF-8 budget regressions cover the seams.
+# No test=false, source inclusion, filtering or copied provider fixture is used.
+# Explicitly gated signal/shutdown controls use non-default test-support; default
+# production dependencies do not enable that feature.
+# Run both Supervisor and retained Root/Host coverage for this boundary.
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
-  -j 1 -p runner-supervisor -- --test-threads=1
+  -j 1 -p runner-host -p runner-supervisor -p runner -- --test-threads=1
 
 # Complete native Runner and extracted-domain test set, with ordinary Cargo targets
 cargo test --manifest-path crates/Cargo.toml --profile local --locked -j 1 \
@@ -188,6 +195,13 @@ Content-Length boundaries, empty bodies, existing lossy decoding, early-close
 failures and response gates. Repeated JSONL budget fixtures may reuse one owned
 entry while writing every canonical line; keep map ordering, full source files,
 request counts and exact overflow diagnostics unchanged.
+
+`json!` borrows and serializes expressions, including already-owned `Value`s.
+Move large owned content into a `Map` envelope instead of rebuilding it through
+the macro. Retain the original field insertion order for `preserve_order` builds
+without unchecked indexing or new panic paths. Consume a parsed event when
+normalizing it for an exact comparison; keep independent expected snapshots and complete canonical
+byte oracles in both map-order configurations.
 
 Keep real process/socket deadlines, full payload/file/pixel boundaries, key/KDF
 strengths, every assertion and actual retained image buffers. Compare complete
@@ -385,7 +399,7 @@ fn masks_nested_json() {
 ### Runner session-history overlap
 
 Exercise discovery and history planning through the full `run()` fixture in
-`cmd/start/tests/idle_reuse`. Use the external sandbox mock's
+`runner-supervisor/src/reactor/tests/idle_reuse`. Use the external sandbox mock's
 `set_storage_manifest_lifecycle_gate` to hold storage apply and a controlled local
 HTTP response to hold history materialization. A received history request while
 storage is blocked proves automatic prestart; a manually constructed `Prestarted`
