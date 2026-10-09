@@ -1225,6 +1225,7 @@ const persistUsagePackChangePreview$ = command(
   ): Promise<UsagePackAllocationChangeRow | undefined> => {
     const { context, source, args, preview } = input;
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0266; new non-billing transactions are prohibited.
     const [change] = await db.transaction(async (tx) => {
       // A quote is not accepted financial intent. Existing uniqueness handles
       // competing quotes; confirmation revalidates before claiming payment.
@@ -2353,6 +2354,7 @@ export async function reserveUsagePackMemberRemoval(
 ): Promise<string | null> {
   signal.throwIfAborted();
   const at = nowDate();
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0267; new non-billing transactions are prohibited.
   const reservationId = await db.transaction(async (tx) => {
     await expireStaleUsagePackPreviews(tx, args.orgId, at);
     const [allocation] = await tx
@@ -2575,6 +2577,7 @@ async function prepareUsagePackMemberRemoval(
   readonly change: UsagePackAllocationChangeRow;
 } | null> {
   const at = nowDate();
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0268; new non-billing transactions are prohibited.
   return await db.transaction(async (tx) => {
     // Refund amounts come from the member's grant rows that this read keeps
     // stable through zeroing; open changes stay single by active-org index.
@@ -3102,6 +3105,7 @@ async function commitReflectedUsagePackChanges(
     return 0;
   }
   const result = await settle(
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0269; new non-billing transactions are prohibited.
     db.transaction(async (tx) => {
       let applied = 0;
       const updatedAt = nowDate();
@@ -3224,6 +3228,7 @@ async function finalizeCanceledUsagePackChanges(
   }
   const at = nowDate();
   const result = await settle(
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0270; new non-billing transactions are prohibited.
     db.transaction(async (tx) => {
       // Each transition is conditional on the change status it was read in.
       // A paid invoice publication that commits first makes this batch roll
@@ -3801,6 +3806,7 @@ async function commitUsagePackUpgradeInvoice(
     readonly prorationPeriod: UsagePackPeriod;
   },
 ): Promise<void> {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0271; new non-billing transactions are prohibited.
   await db.transaction(async (tx) => {
     const [subscription] = await tx
       .select()
@@ -4166,6 +4172,7 @@ export async function fulfillUsagePackSubscriptionChangeInvoice(
 ): Promise<void> {
   const { expectedRoot, preparedGrants } =
     await prepareSubscriptionChangeFulfillment(db, args);
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0272; new non-billing transactions are prohibited.
   await db.transaction(async (tx) => {
     const [subscription] = await tx
       .select()
@@ -4879,6 +4886,7 @@ export const prepareUsagePackChangeConfirmation$ = command(
   ): Promise<PreparedUsagePackChangeConfirmation> => {
     const db = set(writeDb$);
     const at = nowDate();
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0273; new non-billing transactions are prohibited.
     const result = await db.transaction(async (tx) => {
       // The existing live standalone-operation uniqueness plus the real
       // preview -> applying transition admits this stored financial intent.

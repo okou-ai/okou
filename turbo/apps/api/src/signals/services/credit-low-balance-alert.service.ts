@@ -85,6 +85,7 @@ async function refreshOrgMemberCache(
   }
   const rows = [...rowsByUserId.values()];
 
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0121; new non-billing transactions are prohibited.
   await db.transaction(async (tx) => {
     if (rows.length > 0) {
       await tx

@@ -244,6 +244,10 @@ runtime objects, handles copied into state, and callbacks or returned closures
 that hide access to them. Reads obtain `get(db$)` inside their node; writes obtain
 `set(writeDb$)` inside their command.
 
+[Database transaction lint](eslint/no-db-transaction.md) enforces the default
+prohibition and deletion-only legacy inventory. A legacy ID is not approval to
+expand a transaction; new necessary billing exceptions still require review.
+
 Do not introduce new explicit database transactions except for necessary
 billing-related atomicity. The exception is limited to operations that directly
 protect financial correctness, such as charges, refunds, credit or balance

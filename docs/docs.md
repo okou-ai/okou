@@ -36,6 +36,8 @@ this index does not replace its detailed rules.
   [transaction and recovery constraints](advisory-lock-terminal-state.md).
 - [Signal-owner file limits](eslint/max-signal-owner-lines.md) and
   [database trigger policy](eslint/no-database-trigger.md).
+- [Database transaction lint](eslint/no-db-transaction.md): default prohibition,
+  deletion-only legacy call-site inventory, and necessary billing waivers.
 
 ## React and Platform
 

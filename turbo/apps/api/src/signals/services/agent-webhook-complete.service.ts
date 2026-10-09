@@ -811,6 +811,7 @@ export function createAgentRunCompletion(runId: string, userId: string) {
       let expectedChatThreadId = initialRun.chatThreadId;
       let commit: ReleasedCompletionCommit;
       while (true) {
+        // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0050; new non-billing transactions are prohibited.
         const result = await db.transaction(async (tx) => {
           const transition = await completeAgentRunTransition(
             tx,

@@ -39,6 +39,7 @@ export const ingestXResourceUsage$ = command(
     const actor = { orgId: auth.orgId, userId: auth.userId, runId: body.runId };
     const db = set(writeDb$);
     const outcome = await settle(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0349; new non-billing transactions are prohibited.
       db.transaction(
         async (tx) => {
           const [run] = await tx.select().from(xUsageRunQuery(actor));

@@ -243,6 +243,7 @@ export const applyBrowserAuthorizationRequest$ = command(
       return loaded;
     }
 
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0065; new non-billing transactions are prohibited.
     const applied = await db.transaction(async (tx) => {
       const [thread] = await tx
         .update(chatThreads)

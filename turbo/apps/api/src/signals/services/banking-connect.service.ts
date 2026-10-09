@@ -446,6 +446,7 @@ function replacePendingConnectSession(
   connectionId: string,
   body: BankingConnectSessionRequest,
 ) {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0059; new non-billing transactions are prohibited.
   return db.transaction(async (tx) => {
     // Lock the existing owner row without blocking account-sync FK checks.
     const [currentConnection] = await tx
@@ -807,6 +808,7 @@ async function syncCustomerAccounts(
       return account.providerAccountId;
     }),
   );
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0060; new non-billing transactions are prohibited.
   await db.transaction(async (tx) => {
     for (const account of providerAccounts) {
       const repairRequiredAt = account.repairRequired ? nowDate() : null;
@@ -994,6 +996,7 @@ async function persistFinicityWebhookEvent(
   const endReason =
     nullableString(event.payload.eventTrigger) ??
     nullableString(event.payload.reason);
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0061; new non-billing transactions are prohibited.
   await db.transaction(async (tx) => {
     const inserted = await tx
       .insert(bankingConnectEvents)

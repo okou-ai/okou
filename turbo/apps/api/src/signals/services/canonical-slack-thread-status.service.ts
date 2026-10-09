@@ -112,6 +112,7 @@ const canonicalSlackThreadHasOutstandingWork$ = command(
     signal: AbortSignal,
   ): Promise<boolean> => {
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0089; new non-billing transactions are prohibited.
     return await db.transaction(
       async (tx) => {
         const routeThreadTs = target.routeThreadTs ?? target.threadTs;

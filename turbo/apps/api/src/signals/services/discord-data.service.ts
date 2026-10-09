@@ -330,6 +330,7 @@ async function selectDiscordDmBinding(
   userIds: readonly string[],
   signal: AbortSignal,
 ): Promise<boolean> {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0151; new non-billing transactions are prohibited.
   const result = await db.transaction(async (tx) => {
     // Match guild uninstall's installation -> connection lock order.
     const [installation] = await tx
@@ -439,6 +440,7 @@ async function deleteDiscordBinding(
   },
   signal: AbortSignal,
 ): Promise<boolean> {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0152; new non-billing transactions are prohibited.
   const rows = await db.transaction(async (tx) => {
     signal.throwIfAborted();
     const removed = await tx

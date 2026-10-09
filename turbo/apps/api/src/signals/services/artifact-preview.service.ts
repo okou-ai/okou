@@ -685,6 +685,7 @@ const renderAndStoreArtifactPreview$ = command(
     }
     const db = set(writeDb$);
     // Publish the preview reference and its recoverable catalog handoff together.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0058; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       const [row] = await tx
         .update(runUploadedFiles)

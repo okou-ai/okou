@@ -242,6 +242,7 @@ const collectThread$ = command(
     signal: AbortSignal,
   ) => {
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0311; new non-billing transactions are prohibited.
     return await db.transaction(
       async (tx) => {
         const [thread] = await tx
@@ -453,6 +454,7 @@ const collectMessages$ = command(
     if (!current) {
       throw new Error("User export thread cursor is missing");
     }
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0312; new non-billing transactions are prohibited.
     return await db.transaction(
       async (tx) => {
         const [owned] = await tx

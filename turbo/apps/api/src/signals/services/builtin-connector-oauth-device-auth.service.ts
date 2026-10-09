@@ -819,6 +819,7 @@ const completeClaimedSession$ = command(
       signal,
     );
     let postCommitAbort: unknown = null;
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0084; new non-billing transactions are prohibited.
     const result = await args.writeDb.transaction(async (tx) => {
       const [insertedWallet] = await tx
         .insert(orgMetadataCanonicalWrites)
@@ -1121,6 +1122,7 @@ async function createDeviceAuthSession(
   },
   signal: AbortSignal,
 ) {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0085; new non-billing transactions are prohibited.
   return await db.transaction(async (tx) => {
     const mutationResolution = await resolveConnectorConnectionMutation(tx, {
       orgId: args.orgId,

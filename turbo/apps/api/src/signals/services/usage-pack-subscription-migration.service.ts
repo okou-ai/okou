@@ -730,6 +730,7 @@ export const getUsagePackMigrationState$ = command(
   ): Promise<MigrationStateResult> => {
     const db = set(writeDb$);
     const at = nowDate();
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0294; new non-billing transactions are prohibited.
     const stored = await db.transaction(async (tx) => {
       const openMigrationQuery = tx
         .select()
@@ -932,6 +933,7 @@ const persistMigrationPreview$ = command(
   ): Promise<MigrationRow | null> => {
     const db = set(writeDb$);
 
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0295; new non-billing transactions are prohibited.
     const result = await db.transaction(async (tx) => {
       const [source] = await tx
         .select({ orgId: orgMetadata.orgId })
@@ -1195,6 +1197,7 @@ const loadMigrationForRevision$ = command(
     const db = set(writeDb$);
     // Read-only preparation: persistMigrationRevisionIntent$ revalidates the
     // stored configuration with an exact-row CAS before any write.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0296; new non-billing transactions are prohibited.
     const result = await db.transaction(async (tx) => {
       const [migration] = await tx
         .select()
@@ -1434,6 +1437,7 @@ const persistMigrationRevisionIntent$ = command(
   ): Promise<PersistMigrationRevisionResult> => {
     const db = set(writeDb$);
 
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0297; new non-billing transactions are prohibited.
     const result = await db.transaction(async (tx) => {
       const [migration] = await tx
         .select(migrationColumnsWithRowVersion())
@@ -1976,6 +1980,7 @@ const materializeUsagePackSnapshot$ = command(
       selections,
     );
     const result = await settle(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0298; new non-billing transactions are prohibited.
       db.transaction(async (tx) => {
         // A Plan root already bound to this Stripe subscription keeps both
         // identities. The migration UUID identifies the conversion operation,
@@ -2417,6 +2422,7 @@ const completeMigrationInvitations$ = command(
       migration,
       selections,
     );
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0299; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       const [locked] = await tx
         .select(migrationColumnsWithRowVersion())
@@ -2938,6 +2944,7 @@ const claimMigrationConfirmation$ = command(
     | { readonly status: "conflict" }
   > => {
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0300; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       const [migration] = await tx
         .select(migrationColumnsWithRowVersion())

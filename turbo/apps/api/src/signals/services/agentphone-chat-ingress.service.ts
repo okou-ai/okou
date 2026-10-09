@@ -115,6 +115,7 @@ export const ensureAgentPhoneChatThreadRoute$ = command(
     );
     const candidateId = randomUUID();
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0051; new non-billing transactions are prohibited.
     const result = await db.transaction(async (tx) => {
       const existing = await loadAgentPhoneChatThreadRoute(tx, args);
       if (existing) {
