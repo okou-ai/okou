@@ -228,7 +228,7 @@ the current layout, not arbitrary files written by user tools.
 | `/home/user/.codex/auth.json`                                                                                 | Guest [Codex auth reconciliation](../../crates/guest-agent/src/codex_auth.rs) owns API-key or placeholder/account state read by Codex. The shared [preparation helper](../../crates/guest-agent/src/reuse_preparation.rs) scrubs it independently of framework, after containment excludes other live workloads.                                                                                                                                                                    |
 
 Both terminal callers use the same lifecycle helper: direct [supervisor
-finalization](../crates/runner-supervisor/src/sandbox_finalization.rs) and parked
+finalization](../../crates/runner-supervisor/src/sandbox_finalization.rs) and parked
 [idle destruction](../../crates/runner-lifecycle/src/idle_pool/entry.rs). They do not
 return a terminally prepared sandbox to idle or handoff. A missing/unsafe current
 or retained anchor rejects publication; it does not broaden deletion authority

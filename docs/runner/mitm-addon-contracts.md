@@ -545,7 +545,7 @@ wait for the runner rollout.
 is a version-pinned private replacement for mitmproxy's WebSocket connection
 class. It bounds decoded data before a complete message reaches mitmproxy's
 WebSocket addon hooks. The [real-layer integration
-tests](../crates/runner/mitm-addon/tests/test_mitmproxy_websocket_framing.py)
+tests](../../crates/runner/mitm-addon/tests/test_mitmproxy_websocket_framing.py)
 are the executable contract for the behavior described here.
 
 ### Limits and allocation boundary
