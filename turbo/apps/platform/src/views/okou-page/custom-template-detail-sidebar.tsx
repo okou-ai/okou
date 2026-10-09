@@ -350,7 +350,7 @@ export function CustomTemplateDetailSidebar({
             size="sm"
             className="mt-2 w-full text-destructive hover:text-destructive"
             onClick={() => {
-              requestDelete(detail.id);
+              requestDelete({ id: detail.id, title: detail.title });
             }}
           >
             {t(($) => {

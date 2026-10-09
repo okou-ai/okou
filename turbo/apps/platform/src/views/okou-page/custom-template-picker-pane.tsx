@@ -63,7 +63,7 @@ import {
   customTemplateCatalog$,
   deleteCustomTemplate$,
   openCustomTemplate$,
-  pendingDeleteCustomTemplateId$,
+  pendingCustomTemplateDeletion$,
   requestDeleteCustomTemplate$,
   setCustomTemplateSearchQuery$,
   projectCustomTemplatePicker$,
@@ -398,7 +398,7 @@ function CustomTemplateCard({
               );
             }}
             onDelete={() => {
-              requestDelete(template.id);
+              requestDelete({ id: template.id, title: template.title });
             }}
           />
         ) : null}
@@ -626,28 +626,39 @@ function CustomTemplatesEmpty({
  * Asks once before a template is removed, because removal cannot be undone.
  *
  * Both the tile menu and the open template's column request a deletion, so the
- * confirmation lives beside the picker rather than inside either of them. The
- * dialog stays open while the delete is in flight and closes only on success.
+ * confirmation lives beside the picker rather than inside either of them. It
+ * mounts per request, keyed by the template, so one request's failure is never
+ * shown on the next. It stays open while the delete is in flight and closes
+ * only on success.
  */
-function CustomTemplateDeleteConfirm() {
+function CustomTemplateDeleteConfirmSlot() {
+  const pending = useGet(pendingCustomTemplateDeletion$);
+  return pending ? (
+    <CustomTemplateDeleteConfirm
+      key={pending.id}
+      templateId={pending.id}
+      title={pending.title}
+    />
+  ) : null;
+}
+
+function CustomTemplateDeleteConfirm({
+  templateId,
+  title,
+}: {
+  readonly templateId: string;
+  readonly title: string;
+}) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
-  const pendingId = useGet(pendingDeleteCustomTemplateId$);
   const cancel = useSet(cancelDeleteCustomTemplate$);
   const [deleteLoadable, deleteTemplate] = useLoadableSet(
     deleteCustomTemplate$,
   );
   const deleting = deleteLoadable.state === "loading";
-  const catalog = useLastLoadable(customTemplateCatalog$);
-  const title =
-    catalog.state === "hasData"
-      ? catalog.data.find((template) => {
-          return template.id === pendingId;
-        })?.title
-      : undefined;
   return (
     <Dialog
-      open={pendingId !== null}
+      open
       onOpenChange={(next) => {
         if (!next && !deleting) {
           cancel();
@@ -666,7 +677,7 @@ function CustomTemplateDeleteConfirm() {
               ($) => {
                 return $.templates.delete.description;
               },
-              { title: title ?? "" },
+              { title },
             )}
           </DialogDescription>
         </DialogHeader>
@@ -685,14 +696,12 @@ function CustomTemplateDeleteConfirm() {
           </Button>
           <Button
             variant="destructive"
-            disabled={deleting || pendingId === null}
+            disabled={deleting}
             onClick={() => {
-              if (pendingId !== null) {
-                detach(
-                  deleteTemplate(pendingId, pageSignal),
-                  Reason.DomCallback,
-                );
-              }
+              detach(
+                deleteTemplate(templateId, pageSignal),
+                Reason.DomCallback,
+              );
             }}
           >
             {deleting
@@ -808,7 +817,7 @@ export function CustomTemplatePickerPane({
         )}
       </div>
       <CustomTemplatePreviewDialog onSelect={onSelect} />
-      <CustomTemplateDeleteConfirm />
+      <CustomTemplateDeleteConfirmSlot />
     </div>
   );
 }

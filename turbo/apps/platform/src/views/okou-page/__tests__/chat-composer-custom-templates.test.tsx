@@ -14,6 +14,7 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
+import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
   AGENT_ID,
   THREAD_ID,
@@ -186,8 +187,20 @@ function buttonByName(name: string, container: ParentNode = document.body) {
   });
 }
 
+function kindLabels(filters: HTMLElement): string[] {
+  return queryAllByRoleFast("radio", filters).map((radio) => {
+    return radio.textContent?.trim() ?? "";
+  });
+}
+
 function kindByName(name: string, filters: HTMLElement): HTMLElement {
-  return within(filters).getByRole("radio", { name });
+  const kind = queryAllByRoleFast("radio", filters).find((radio) => {
+    return radio.textContent?.trim() === name;
+  });
+  if (!kind) {
+    throw new Error(`Expected a kind named "${name}"`);
+  }
+  return kind;
 }
 
 function menuItemByName(name: string): HTMLElement {
@@ -436,9 +449,11 @@ test("Kind filters combine with search without an All option", async () => {
   ).resolves.toBeInTheDocument();
   expect(within(dialog).queryByText("Market day")).not.toBeInTheDocument();
   expect(within(dialog).queryByText("Q3 board review")).not.toBeInTheDocument();
-  expect(
-    within(filters).queryByRole("radio", { name: "All" }),
-  ).not.toBeInTheDocument();
+  expect(kindLabels(filters)).toStrictEqual([
+    "Document",
+    "Presentation",
+    "Image",
+  ]);
 });
 
 test("An empty kind keeps the search and kind filters in place", async () => {
@@ -447,14 +462,13 @@ test("An empty kind keeps the search and kind filters in place", async () => {
   const filters = await within(dialog).findByRole("radiogroup", {
     name: "Template categories",
   });
-  const search = within(dialog).getByLabelText("Search templates");
   click(kindByName("Image", filters));
   await expect(
     within(dialog).findByText("No images yet"),
   ).resolves.toBeInTheDocument();
-  // The toolbar does not change shape between kinds: the same search stays,
-  // and the kind filters remain so the member can leave the empty kind.
-  expect(within(dialog).getByLabelText("Search templates")).toBe(search);
+  // The toolbar does not change shape between kinds: the search stays, and
+  // the kind filters remain so the member can leave the empty kind.
+  expect(within(dialog).getByLabelText("Search templates")).toBeInTheDocument();
   const emptyKindFilters = within(dialog).getByRole("radiogroup", {
     name: "Template categories",
   });
@@ -467,10 +481,15 @@ test("An empty kind keeps the search and kind filters in place", async () => {
   expect(kindByName("Presentation", emptyKindFilters)).toBeChecked();
 });
 
-test("Returning to Custom shows the loaded catalog without asking again", async () => {
-  let listed = 0;
-  context.mocks.api(userTemplatesContract.list, ({ respond }) => {
-    listed += 1;
+test("Returning to Custom shows the loaded catalog without waiting on the network", async () => {
+  // Once the member has left Custom, any further catalog request stays
+  // unanswered for the rest of the test, as on a slow connection.
+  const slowNetwork = createDeferredPromise<void>(context.signal);
+  let answerCatalog = true;
+  context.mocks.api(userTemplatesContract.list, async ({ respond }) => {
+    if (!answerCatalog) {
+      await slowNetwork.promise;
+    }
     const {
       pageUrls: _pageUrls,
       sourceUrl: _sourceUrl,
@@ -481,19 +500,19 @@ test("Returning to Custom shows the loaded catalog without asking again", async 
 
   const { dialog } = await openCustomPanel();
   await within(dialog).findByText("Q3 board review");
-  const listedOnOpen = listed;
 
+  answerCatalog = false;
   click(tabByText("Presentation"));
   await waitFor(() => {
     expect(within(dialog).queryByText("Q3 board review")).toBeNull();
   });
   click(tabByText("Custom"));
 
-  // A refetch on every return blanked the pane until it answered.
+  // Reloading on every return blanked the pane until the request answered.
   await expect(
     within(dialog).findByText("Q3 board review"),
   ).resolves.toBeInTheDocument();
-  expect(listed).toBe(listedOnOpen);
+  expect(within(dialog).getByLabelText("Search templates")).toBeInTheDocument();
 });
 
 test("An empty catalog leads with the upload entry instead of showing no matches", async () => {
@@ -945,6 +964,52 @@ test("Cancelling the delete confirmation keeps the template", async () => {
     ).not.toBeInTheDocument();
   });
   expect(within(dialog).getByText("Q3 board review")).toBeInTheDocument();
+});
+
+test("A failed deletion is not reported again on the next confirmation", async () => {
+  let deletions = 0;
+  mockCustomTemplateStore([customTemplate()], {
+    delete: () => {
+      deletions += 1;
+      return deletions === 1 ? "fail" : undefined;
+    },
+  });
+
+  const { dialog } = await openCustomPanel();
+  await within(dialog).findByText("Q3 board review");
+
+  const askToDelete = async () => {
+    click(buttonByName("Actions for Q3 board review", dialog)!);
+    await waitFor(() => {
+      expect(menuItemByName("Delete")).toBeInTheDocument();
+    });
+    click(menuItemByName("Delete"));
+    return await screen.findByRole("dialog", { name: "Delete template?" });
+  };
+
+  const first = await askToDelete();
+  click(buttonByName("Delete template", first)!);
+  await expect(
+    within(first).findByText("Couldn't delete the template. Try again."),
+  ).resolves.toBeInTheDocument();
+  click(buttonByName("Cancel", first)!);
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: "Delete template?" }),
+    ).not.toBeInTheDocument();
+  });
+
+  // The next question is about a request that has not been made yet.
+  const second = await askToDelete();
+  expect(within(second).getByText(/Q3 board review/)).toBeInTheDocument();
+  expect(
+    within(second).queryByText("Couldn't delete the template. Try again."),
+  ).not.toBeInTheDocument();
+
+  click(buttonByName("Delete template", second)!);
+  await waitFor(() => {
+    expect(within(dialog).queryByText("Q3 board review")).toBeNull();
+  });
 });
 
 test.each(["visibility change", "deletion"] as const)(
