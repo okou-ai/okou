@@ -196,12 +196,9 @@ impl DecodedCache {
                         result.push(None);
                         continue;
                     };
-                    // Preserve the original content and file read-ahead envelopes
-                    // independently of the larger per-storage caps. Metadata is
-                    // validated before bodies can exceed either remaining budget.
-                    if ready_bytes >= storage_files::MAX_PAYLOAD_BYTES
-                        || ready_files >= READ_AHEAD_FILES
-                    {
+                    // Keep the existing payload stop. Check remaining file capacity
+                    // only after metadata validation, even when its budget is full.
+                    if ready_bytes >= storage_files::MAX_PAYLOAD_BYTES {
                         result.push(None);
                         continue;
                     }

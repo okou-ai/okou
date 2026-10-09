@@ -357,6 +357,45 @@ async fn empty_files_preserve_ready_file_read_ahead_and_allow_later_small_hits()
 }
 
 #[tokio::test]
+async fn exhausted_file_read_ahead_does_not_hide_later_invalid_metadata() {
+    let root = tempfile::tempdir().unwrap();
+    let home = HomePaths::with_root(root.path().to_owned());
+    let cancel = CancellationToken::new();
+    for (name, count) in [
+        ("first", 1024),
+        ("second", 1024),
+        ("third", 1024),
+        ("fourth", 1024),
+        ("invalid", 1),
+    ] {
+        disk::publish(
+            &home,
+            name,
+            "v1",
+            MAX_COMPRESSED_BYTES,
+            Some(&fixture_files(count, 0, false)),
+            &cancel,
+        )
+        .unwrap();
+    }
+    let index_path = disk::paths(&home, "invalid", "v1").0.join("index.json");
+    let mut index: serde_json::Value =
+        serde_json::from_slice(&fs::read(&index_path).unwrap()).unwrap();
+    index["files"][0]["mode"] = serde_json::json!(0o1000);
+    fs::write(index_path, serde_json::to_vec(&index).unwrap()).unwrap();
+
+    let cache = DecodedCache::new(home);
+    let keys = ["first", "second", "third", "fourth", "invalid"];
+    let error = cache
+        .get_ready_batch(&keys.map(|name| Some((name, "v1"))))
+        .await
+        .expect_err("invalid metadata must not be skipped when the file budget is full");
+    assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+    assert_eq!(cache.0.memory.available_permits(), CAPACITY);
+    cache.shutdown().await;
+}
+
+#[tokio::test]
 async fn retained_large_hits_exhaust_optional_budget_without_leaking_permits() {
     let root = tempfile::tempdir().unwrap();
     let home = HomePaths::with_root(root.path().to_owned());
