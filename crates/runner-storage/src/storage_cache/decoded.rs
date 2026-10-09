@@ -14,9 +14,9 @@ mod disk;
 const CAPACITY: usize = 64 * 1024 * 1024;
 // Reader capability is deployed before wider producer admission.
 const MAX_COMPRESSED_BYTES: usize = 2 * 1024 * 1024;
-pub(super) const MAX_ADMITTED_FILES: usize = 32;
-pub(super) const MAX_ADMITTED_STORAGE_BYTES: usize = 1024 * 1024;
-const MAX_ADMITTED_COMPRESSED_BYTES: usize = 1024 * 1024;
+pub(super) const MAX_ADMITTED_FILES: usize = 1024;
+pub(super) const MAX_ADMITTED_STORAGE_BYTES: usize = 4 * 1024 * 1024;
+const MAX_ADMITTED_COMPRESSED_BYTES: usize = 2 * 1024 * 1024;
 // 2 MiB source + 4 MiB content + 2 MiB bounded metadata/decoder allowance.
 // The semaphore covers optional cache work, not total Runner process RSS.
 const FILL_RESERVATION: u32 = 8 * 1024 * 1024;
@@ -415,6 +415,8 @@ fn decode(bytes: &[u8], cancel: &CancellationToken) -> io::Result<Option<Vec<Sto
     let mut archive = tar::Archive::new(decoder.take((2 * MAX_ADMITTED_STORAGE_BYTES + 1) as u64));
     let mut files = Vec::new();
     let mut expanded = 0usize;
+    let mut path_bytes = 0usize;
+    let mut long_name = None;
     for entry in archive.entries()?.raw(true) {
         if cancel.is_cancelled() {
             return Err(io::Error::new(
@@ -423,6 +425,28 @@ fn decode(bytes: &[u8], cancel: &CancellationToken) -> io::Result<Option<Vec<Sto
             ));
         }
         let mut entry = entry?;
+        if entry.header().entry_type().is_gnu_longname() {
+            // Match Guest's locked tar parser before interpreting extension data.
+            let header = entry.header();
+            if header.as_gnu().is_none() && header.as_ustar().is_none() {
+                return Ok(None);
+            }
+            let size = entry.size();
+            if long_name.is_some() || size == 0 || size > (storage_files::MAX_PATH_BYTES + 1) as u64
+            {
+                return Ok(None);
+            }
+            let mut name = vec![0; size as usize];
+            entry.read_exact(&mut name)?;
+            if name.pop() != Some(0) || name.is_empty() || name.contains(&0) {
+                return Ok(None);
+            }
+            let Ok(name) = String::from_utf8(name) else {
+                return Ok(None);
+            };
+            long_name = Some(name);
+            continue;
+        }
         if !entry.header().entry_type().is_file() || files.len() >= MAX_ADMITTED_FILES {
             return Ok(None);
         }
@@ -434,9 +458,21 @@ fn decode(bytes: &[u8], cancel: &CancellationToken) -> io::Result<Option<Vec<Sto
         if expanded > MAX_ADMITTED_STORAGE_BYTES || expanded > bytes.len().saturating_mul(4) {
             return Ok(None);
         }
-        let Some(path) = entry.path()?.to_str().map(str::to_owned) else {
-            return Ok(None);
+        let path = match long_name.take() {
+            Some(path) => path,
+            None => {
+                let Some(path) = entry.path()?.to_str().map(str::to_owned) else {
+                    return Ok(None);
+                };
+                path
+            }
         };
+        path_bytes = path_bytes
+            .checked_add(path.len())
+            .ok_or_else(|| io::Error::other("decoded path size overflow"))?;
+        if path_bytes > storage_files::MAX_TOTAL_PATH_BYTES {
+            return Ok(None);
+        }
         let mode = entry.header().mode()?;
         let mtime = entry.header().mtime()?;
         let mut content = vec![0; size as usize];
@@ -447,6 +483,9 @@ fn decode(bytes: &[u8], cancel: &CancellationToken) -> io::Result<Option<Vec<Sto
             mtime,
             content,
         });
+    }
+    if long_name.is_some() {
+        return Ok(None);
     }
     // Tar ends before gzip necessarily validates its CRC and size trailer.
     // Finish the same bounded reader before any decoded files can be cached.
@@ -478,6 +517,7 @@ fn decode(bytes: &[u8], cancel: &CancellationToken) -> io::Result<Option<Vec<Sto
 mod tests {
     use super::*;
 
+    mod gnu;
     mod large;
 
     #[tokio::test]
