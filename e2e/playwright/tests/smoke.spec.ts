@@ -18,6 +18,14 @@ import {
 import { deriveAppUrl } from "../playwright.config";
 
 async function expectChatShellInPlace(workspace: Locator): Promise<void> {
+  // Returning from Lab mounts the workspace before the chat finishes loading.
+  // Wait for the visible layout before reading its geometry.
+  await expect(
+    workspace.locator("[data-chat-thread-container-id] > header"),
+  ).toBeVisible();
+  await expect(
+    workspace.locator('[data-chat-composer] [data-slot="chat-composer-card"]'),
+  ).toBeVisible();
   await expect
     .poll(() =>
       workspace.evaluate((pane) => {
