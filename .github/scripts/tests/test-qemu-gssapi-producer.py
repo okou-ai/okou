@@ -859,6 +859,97 @@ print('held FIFO refused; no descriptor or decoder child remains')
             self.assertEqual(len(list(pathlib.Path('/proc/self/fd').iterdir())), descriptors)
             self.assertEqual(list(root.iterdir()), [])
 
+    def test_pending_sigterm_cannot_interrupt_retained_decoder_cleanup(self):
+        # The isolated caller installs a raising SIGTERM handler. Real dpkg and
+        # syscalls complete; a second signal arrives before the actual group
+        # signal. The old cleanup left its kernel-confirmed zombie unreaped.
+        script = '''
+import hashlib, importlib.util, os, pathlib, signal, subprocess, sys, tempfile
+spec = importlib.util.spec_from_file_location('real_producer', sys.argv[1])
+producer = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(producer)
+archive = pathlib.Path(sys.argv[2])
+initial_signal = int(sys.argv[3])
+original = hashlib.sha256(archive.read_bytes()).digest()
+descriptors = len(list(pathlib.Path('/proc/self/fd').iterdir()))
+original_mask = signal.pthread_sigmask(signal.SIG_BLOCK, set())
+real_spawn, real_waitid, real_killpg = subprocess.Popen, os.waitid, os.killpg
+children, observations, signals, terminations = [], [], [], []
+interrupted = False
+
+def terminate(signum, frame):
+    terminations.append(signum)
+    raise SystemExit(128 + signum)
+
+def observe_spawn(*args, **kwargs):
+    child = real_spawn(*args, **kwargs)
+    children.append(child)
+    return child
+
+def cancel_after_observation(*args):
+    global interrupted
+    result = real_waitid(*args)
+    if result is not None and not interrupted:
+        interrupted = True
+        observations.append(result)
+        os.kill(os.getpid(), initial_signal)
+    return result
+
+def signal_reserved_group(pid, signum):
+    result = real_waitid(os.P_PID, pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+    assert result is not None and result.si_pid == children[0].pid
+    signals.append((pid, signum))
+    os.kill(os.getpid(), signal.SIGTERM)
+    return real_killpg(pid, signum)
+
+previous = signal.signal(signal.SIGTERM, terminate)
+try:
+    subprocess.Popen = observe_spawn
+    os.waitid = cancel_after_observation
+    os.killpg = signal_reserved_group
+    try:
+        with tempfile.TemporaryFile(dir=archive.parent) as output:
+            producer.decode_package_payload(archive, output, 10240)
+    except SystemExit as error:
+        assert error.code == 128 + signal.SIGTERM
+    else:
+        raise AssertionError('pending SIGTERM was not propagated')
+    assert len(children) == len(observations) == len(signals) == 1
+    assert observations[0].si_code == os.CLD_EXITED and observations[0].si_status == 0
+    assert signals == [(children[0].pid, signal.SIGKILL)]
+    assert children[0].returncode == 0, 'SIGTERM interrupted the owned decoder reap'
+    try:
+        real_waitid(os.P_PID, children[0].pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+    except ChildProcessError:
+        pass
+    else:
+        raise AssertionError('owned decoder reservation was not reaped')
+    assert len(terminations) == (2 if initial_signal == signal.SIGTERM else 1)
+    assert signal.pthread_sigmask(signal.SIG_BLOCK, set()) == original_mask
+    assert len(list(pathlib.Path('/proc/self/fd').iterdir())) == descriptors
+    assert hashlib.sha256(archive.read_bytes()).digest() == original
+    assert not list(archive.parent.glob('package-decode-*'))
+    print('retained decoder reaped before pending SIGTERM; originals and descriptors unchanged')
+finally:
+    subprocess.Popen, os.waitid, os.killpg = real_spawn, real_waitid, real_killpg
+    signal.signal(signal.SIGTERM, previous)
+    # The negative case only observes an exited, still-owned decoder. Reap it
+    # safely even when an assertion fails; never signal an unowned numeric group.
+    for child in children:
+        child.wait(timeout=5)
+'''
+        for initial_signal in (signal.SIGINT, signal.SIGTERM):
+            with self.subTest(initial_signal=initial_signal), tempfile.TemporaryDirectory(dir=self.parent) as directory:
+                base = pathlib.Path(directory)
+                archive = self.public_payload_deb(base, b'\0' * 10240)
+                result = subprocess.run([sys.executable, '-I', '-S', '-B', '-c', script,
+                                         str(pathlib.Path(self.producer.__file__)), str(archive), str(int(initial_signal))],
+                                        stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=10,
+                                        env={'PATH': os.defpath, 'LANG': 'C.UTF-8'})
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.strip(),
+                                 'retained decoder reaped before pending SIGTERM; originals and descriptors unchanged')
+
     def test_interrupt_after_real_waitpid_reap_never_signals_released_group(self):
         # Drive the maintained Popen.wait KeyboardInterrupt path immediately
         # AFTER its real waitpid, before returncode bookkeeping. No decoder

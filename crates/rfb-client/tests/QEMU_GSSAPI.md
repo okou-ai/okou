@@ -100,11 +100,15 @@ stdout ceiling is enforced by the kernel before file growth, not after decoding.
 The 30-second completion phase uses `waitid(WNOWAIT)`, never a reaping wait/poll:
 an interrupted owned leader remains reserved until its group is signalled.
 Nondefault SIGCHLD ownership is refused before spawn; a lost child reservation
-never authorizes a numeric group signal. SIGINT is blocked only during critical
-group termination and the five-second leader reap. Normal reaping is outside
-the signalling handler, so an interruption after `waitpid` cannot signal a
-released/recycled group. This is not proof of grandchild reaping or an external
-source seal. Both borrowed executable hashes enter bootstrap metadata;
+never authorizes a numeric group signal. SIGINT and SIGTERM are blocked only during
+critical group termination and the five-second leader reap; the caller's mask is
+restored afterward. Inside this masked phase, a caller-installed raising SIGTERM
+handler is deferred until after the retained-leader reap. No handler or default
+SIGTERM disposition is changed.
+Normal reaping is outside the signalling handler, so an interruption after
+`waitpid` cannot signal a released/recycled group. This is not proof of grandchild
+reaping or an external source seal. Both borrowed executable hashes enter bootstrap
+metadata;
 a pathname/hash record is not race-free executed-inode or loader attestation.
 
 One provision-wide ledger charges every physical header, including skipped roots
@@ -165,8 +169,13 @@ changing real aliases, pre-existing entries and reserved future capacity. A genu
 sparse file plus hardlinks reaches the exact two-GiB filename sum without dense
 input; the next name refuses. Over-depth input refuses before any directory is
 created. An AST ordering check is structural evidence only, not a signed-provider
-execution receipt. Real-data cancellation regressions inject actual SIGINT
-after kernel-confirmed unreaped completion and immediately after actual
+execution receipt. A real-data isolated-caller regression injects initial SIGINT
+or raising SIGTERM after kernel-confirmed unreaped completion, then actual SIGTERM
+before the real group signal. It verifies the reserved decoder is reaped before
+the pending handler propagates, with unchanged original bytes and closed FDs;
+its negative teardown only reaps the already-exited owned child. Other real-data
+cancellation regressions inject actual SIGINT after unreaped completion and
+immediately after actual
 `waitpid`, before maintained `Popen.wait` return-code bookkeeping. Observers
 preserve real decoder/status syscalls; a possible unsafe signal attempt in the
 old-source negative control is intercepted rather than sent to an unowned group.

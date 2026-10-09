@@ -724,7 +724,9 @@ def decode_package_payload(archive, payload, limit, *, descriptor=None, control_
             # A lost child reservation is not permission to signal the numeric PGID.
             raise RuntimeError("package decoder ownership unavailable") from error
         except BaseException:
-            previous = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT})
+            # Defer caller interruption until the retained leader is reaped;
+            # a pending raising SIGTERM must not interrupt this owned cleanup.
+            previous = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT, signal.SIGTERM})
             try:
                 # No wait/poll/reap has occurred in this phase; even an exited leader
                 # remains our zombie and reserves its original PID/group identity.
