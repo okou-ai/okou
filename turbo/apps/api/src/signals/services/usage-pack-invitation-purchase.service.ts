@@ -2422,30 +2422,28 @@ const markLateAcceptanceForRefund$ = command(
   ): Promise<boolean> => {
     signal?.throwIfAborted();
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0282; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      // Conditional transition: only a still-acceptable purchase moves to
-      // refund_pending; anything else is a deterministic "not marked".
-      const [marked] = await tx
-        .update(usagePackInvitationPurchases)
-        .set({
-          status: "refund_pending",
-          failureReason: "invitation_accepted_after_period",
-          acceptedUserId: args.userId,
-          acceptedAt: args.acceptedAt,
-          updatedAt: nowDate(),
-        })
-        .where(
-          and(
-            eq(usagePackInvitationPurchases.id, candidate.id),
-            inArray(usagePackInvitationPurchases.status, [
-              ...ACCEPTABLE_INVITATION_PURCHASE_STATUSES,
-            ]),
-          ),
-        )
-        .returning({ id: usagePackInvitationPurchases.id });
-      return marked !== undefined;
-    });
+    // Conditional transition: only a still-acceptable purchase moves to
+    // refund_pending; anything else is a deterministic "not marked".
+    const [marked] = await db
+      .update(usagePackInvitationPurchases)
+      .set({
+        status: "refund_pending",
+        failureReason: "invitation_accepted_after_period",
+        acceptedUserId: args.userId,
+        acceptedAt: args.acceptedAt,
+        updatedAt: nowDate(),
+      })
+      .where(
+        and(
+          eq(usagePackInvitationPurchases.id, candidate.id),
+          inArray(usagePackInvitationPurchases.status, [
+            ...ACCEPTABLE_INVITATION_PURCHASE_STATUSES,
+          ]),
+        ),
+      )
+      .returning({ id: usagePackInvitationPurchases.id });
+    signal?.throwIfAborted();
+    return marked !== undefined;
   },
 );
 
