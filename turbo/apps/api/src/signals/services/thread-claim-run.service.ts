@@ -1,5 +1,8 @@
 import { createDiscordThreadContext } from "./discord-thread-prompt-context.service";
-import { createAgentPrompt } from "./thread-run-prompt/agent";
+import {
+  createAgentPrompt,
+  type AgentPromptContext,
+} from "./thread-run-prompt/agent";
 import { createUserPrompt } from "./thread-run-prompt/user";
 import { createAgentPhoneThreadPrompt } from "./thread-run-prompt/agentphone";
 import { createAutomationThreadPrompt } from "./thread-run-prompt/automation";
@@ -38,7 +41,6 @@ import {
 } from "./thread-run-context.service";
 import { createThreadAutomationContext } from "./thread-automation-context.service";
 import {
-  AGENT_EXECUTION_TIMEOUT_SECONDS,
   agentRunConnectorDiagnosticRegistrationPayloadSchema,
   CANONICAL_CLAUDE_CONFIG_DIR,
   CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
@@ -495,10 +497,6 @@ import {
   normalizeRunMetadata,
   type RunMetadataValues,
 } from "./agent-run-metadata-write.service";
-import {
-  buildAgentToolsPrompt,
-  buildAgentToolsPromptInputs,
-} from "./agent-tools-prompt.service";
 import {
   type ChatThreadRequestFacts,
   chatThreadRequestSelection,
@@ -4114,7 +4112,6 @@ export function createThreadClaimRunObjects(
       agentId,
     );
   });
-  const agentPrompt$ = createAgentPrompt(preCreateAgentAgent$);
   const authorizedConnectors$ = computed(async (get) => {
     return get((await get(executionContext$)).authorizedConnectors$);
   });
@@ -4379,21 +4376,35 @@ export function createThreadClaimRunObjects(
       cloudBrowserEnabled: resolution?.cloudBrowserEnabled,
     };
   });
+  const agentPromptContext$ = computed(
+    async (get): Promise<AgentPromptContext> => {
+      const input = await get(preCreatePreparedInput$);
+      if (!input || "status" in input) {
+        throw new Error("Agent prompt requires an admitted run");
+      }
+      return {
+        featureSwitchContext: input.featureSwitchContext,
+        triggerSource: input.command.triggerSource ?? "web",
+        cloudBrowserEnabled: input.cloudBrowserEnabled,
+      };
+    },
+  );
+  const agentPrompt$ = createAgentPrompt(
+    preCreateAgentAgent$,
+    agentPromptContext$,
+  );
   const preCreateRunArgsRunArgs$ = computed(async (get) => {
     const input = await get(preCreatePreparedInput$);
     if (!input || "status" in input) {
       return input;
     }
-    const initialAgentPrompt = input.command.piExecution
-      ? undefined
-      : await get(agentPrompt$);
     return {
       input,
       args: await measureAgentRunPreCreate(
         input.timing,
         "api_dispatch_pre_create_agent_build_create_run_args",
         () => {
-          return buildProductRunArgs(input, initialAgentPrompt);
+          return buildProductRunArgs(input);
         },
       ),
     };
@@ -6994,21 +7005,16 @@ export function createThreadClaimRunObjects(
         return storagePlan;
       }
       const { args, timing } = await get(contextInput$);
-      const finalAppendSystemPrompt =
-        args.piExecution && args.piSystemPrompt
-          ? bindStableAppendSystemPrompt(
-              args.piSystemPrompt.buildPrompt(await get(agentPrompt$)),
-              args.body.appendSystemPrompt ??
-                args.piSystemPrompt.dynamicAppendSystemPrompt,
-            )
-          : args.body.appendSystemPrompt;
       const launchSnapshot = {
         schemaVersion: 3 as const,
         framework:
           context.piSandbox === undefined ? context.framework : ("pi" as const),
         runnerProfile: DEFAULT_PROFILE,
       };
-      const runtime = await get(runtimePromptAndSkills$);
+      const [agentPrompt, runtime] = await Promise.all([
+        get(agentPrompt$),
+        get(runtimePromptAndSkills$),
+      ]);
       const prompt = renderRunPrompts(
         {
           ...runtime,
@@ -7022,7 +7028,12 @@ export function createThreadClaimRunObjects(
         },
         {
           userPrompt: context.body.prompt,
-          systemPrompt: finalAppendSystemPrompt,
+          systemPrompt: [
+            renderRunPrompts(agentPrompt).systemPrompt,
+            args.body.appendSystemPrompt,
+          ]
+            .filter(Boolean)
+            .join("\n\n"),
         },
       );
       const body = {
@@ -12900,55 +12911,6 @@ function agentRunsCreateForbidden(
   };
 }
 
-function buildExecutionTimeLimitPrompt(): string {
-  const executionHours = AGENT_EXECUTION_TIMEOUT_SECONDS / (60 * 60);
-  const executionHourUnit = executionHours === 1 ? "hour" : "hours";
-  return [
-    "# Execution Time Limit",
-    "",
-    `A single agent run has a maximum execution time of ${executionHours} ${executionHourUnit}.`,
-    "Plan and prioritize the work so you can complete the most important in-scope tasks and provide a final response before the run ends.",
-  ].join("\n");
-}
-
-function buildStableAgentPrompt(args: {
-  readonly privateArtifactsEnabled: boolean;
-  readonly agentPrompt: RunPromptAndSkills;
-  readonly triggerSource: TriggerSource;
-  readonly cloudBrowserEnabled: boolean | undefined;
-  readonly browserNativeInputEnabled: boolean;
-  readonly bankingEnabled: boolean;
-  readonly vncEnabled: boolean;
-  readonly larkEnabled: boolean;
-  readonly discordEnabled: boolean;
-  readonly deliveryFormatGuidanceEnabled: boolean;
-  readonly presentationConvertEnabled: boolean;
-  readonly customConnectorMcpEnabled: boolean;
-}): RunPromptAndSkills {
-  return mergeRunPromptAndSkills([
-    args.agentPrompt,
-    {
-      systemPromptVariables: {
-        executionLimit: buildExecutionTimeLimitPrompt(),
-        tools: buildAgentToolsPrompt({
-          privateArtifactsEnabled: args.privateArtifactsEnabled,
-          triggerSource: args.triggerSource,
-          cloudBrowserEnabled: args.cloudBrowserEnabled,
-          browserNativeInputEnabled: args.browserNativeInputEnabled,
-          bankingEnabled: args.bankingEnabled,
-          vncEnabled: args.vncEnabled,
-          larkEnabled: args.larkEnabled,
-          discordEnabled: args.discordEnabled,
-          deliveryFormatGuidanceEnabled: args.deliveryFormatGuidanceEnabled,
-          presentationConvertEnabled: args.presentationConvertEnabled,
-        }),
-      },
-      userPromptVariables: {},
-      skillVolumes: [],
-    },
-  ]);
-}
-
 function buildAgentRunPlatformEnvironment(args: {
   readonly agentId: string;
   readonly triggerSource: TriggerSource;
@@ -13020,16 +12982,12 @@ function agentRunOrigin(args: {
 function createRunBody(args: {
   readonly body: AgentRunCreateBody;
   readonly agent: AgentRunRecord;
-  readonly stablePrompt: RunPromptAndSkills | undefined;
   readonly permissionPolicies: FirewallPolicies | null | undefined;
   readonly triggerSource: TriggerSource | undefined;
   readonly appendSystemPrompt: string | undefined;
   readonly standaloneIntegrationNote: string;
 }) {
   const triggerSource = args.triggerSource ?? "web";
-  const baseAppendSystemPrompt = args.stablePrompt
-    ? renderRunPrompts(args.stablePrompt).systemPrompt
-    : "";
   return {
     prompt: args.body.prompt,
     agentId: args.agent.id,
@@ -13043,7 +13001,6 @@ function createRunBody(args: {
     permissionPolicies: args.permissionPolicies ?? undefined,
     triggerSource,
     appendSystemPrompt: [
-      baseAppendSystemPrompt,
       args.appendSystemPrompt,
       args.appendSystemPrompt ? "" : args.standaloneIntegrationNote,
     ]
@@ -13124,52 +13081,6 @@ function standaloneIntegrationNote(args: ProductRunArgsInput): string {
   });
 }
 
-function buildStableRunPromptContext(
-  args: ProductRunArgsInput,
-  initialAgentPrompt: RunPromptAndSkills | undefined,
-): {
-  readonly initialStablePrompt: RunPromptAndSkills | undefined;
-  readonly piSystemPrompt: PiSystemPromptInput;
-} {
-  const promptInputs = buildAgentToolsPromptInputs({
-    featureSwitchContext: args.featureSwitchContext,
-    triggerSource: args.command.triggerSource ?? "web",
-    cloudBrowserEnabled: args.cloudBrowserEnabled,
-  });
-  let stablePrompt: RunPromptAndSkills | undefined;
-  const buildPrompt = (agentPrompt: RunPromptAndSkills) => {
-    stablePrompt ??= buildStableAgentPrompt({
-      ...promptInputs,
-      agentPrompt,
-    });
-    return stablePrompt;
-  };
-  return {
-    initialStablePrompt: initialAgentPrompt
-      ? buildPrompt(initialAgentPrompt)
-      : undefined,
-    piSystemPrompt: {
-      buildPrompt,
-      dynamicAppendSystemPrompt: [
-        args.command.appendSystemPrompt,
-        standaloneIntegrationNote(args),
-      ]
-        .filter((part): part is string => {
-          return Boolean(part);
-        })
-        .join("\n\n"),
-    },
-  };
-}
-
-/** Pi system-prompt parts captured by the product entry point. */
-interface PiSystemPromptInput {
-  /** Agent identity, execution limit, and tool sections, built on demand. */
-  readonly buildPrompt: (agentPrompt: RunPromptAndSkills) => RunPromptAndSkills;
-  /** Dynamic profile/channel text and explicit caller appendage, bound later. */
-  readonly dynamicAppendSystemPrompt: string;
-}
-
 /**
  * Explicit run arguments a product entry point (chat/automation) prepares for
  * Thread: exactly the facts this builder sets, no legacy direct-run knobs.
@@ -13189,7 +13100,6 @@ interface ProductRunArgs {
   readonly queueFirstAssociation?: QueueFirstRunAssociation;
   readonly body: CreateRunBody;
   readonly apiStartTime: number;
-  readonly piSystemPrompt?: PiSystemPromptInput;
   readonly chatThreadId?: string;
   readonly connectorSourceId?: string;
   readonly threadSessionResolution?: ChatThreadSessionResolution;
@@ -13209,29 +13119,20 @@ interface ProductRunArgs {
   readonly timingDimensions?: ApiDispatchTimingDimensions;
 }
 
-function buildProductRunArgs(
-  args: ProductRunArgsInput,
-  initialAgentPrompt: RunPromptAndSkills | undefined,
-): ProductRunArgs {
+function buildProductRunArgs(args: ProductRunArgsInput): ProductRunArgs {
   const command = args.command;
-  const { initialStablePrompt, piSystemPrompt } = buildStableRunPromptContext(
-    args,
-    initialAgentPrompt,
-  );
   return {
     ...selectedRunModelProviderArgs(command),
     catalog: args.catalog,
     body: createRunBody({
       body: command.body,
       agent: args.agent,
-      stablePrompt: initialStablePrompt,
       permissionPolicies: args.runPermissionPolicies,
       triggerSource: command.triggerSource,
       appendSystemPrompt: command.appendSystemPrompt,
       standaloneIntegrationNote: standaloneIntegrationNote(args),
     }),
     apiStartTime: command.apiStartTime,
-    piSystemPrompt,
     chatThreadId: command.chatThreadId,
     ...(command.connectorSourceId
       ? { connectorSourceId: command.connectorSourceId }
@@ -13532,16 +13433,6 @@ interface PreparePiLaunchResourcesArgs {
   readonly piLaunchConfig: PiLaunchConfigOverrides | undefined;
 }
 
-function bindStableAppendSystemPrompt(
-  prompt: RunPromptAndSkills,
-  dynamicAppendSystemPrompt: string,
-): string {
-  return [renderRunPrompts(prompt).systemPrompt, dynamicAppendSystemPrompt]
-    .filter((part) => {
-      return Boolean(part);
-    })
-    .join("\n\n");
-}
 // --- Thread-private implementation: launch admission ---
 
 type AtomicLaunchCommitAttempt =

@@ -142,7 +142,7 @@ interface RenderedRunPrompts {
   readonly systemPrompt: string;
 }
 
-/** Stable/Pi prompt binding may supply an already-rendered prefix. */
+/** Run assembly may prepend already-rendered prompt contributions. */
 export function renderRunPrompts(
   part: RunPromptAndSkills,
   base: { readonly userPrompt?: string; readonly systemPrompt?: string } = {},
