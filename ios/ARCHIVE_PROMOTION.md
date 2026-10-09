@@ -20,8 +20,8 @@ Both native jobs must succeed before the Ubuntu publisher writes canonical
 objects. The publisher compares their independently captured **complete input
 fingerprints and toolchains**, rejecting a missing or mismatched simulator
 record. It verifies the tar checksum produced on macOS before transfer and
-checks archive provenance against `build-archive`, test provenance against
-`build-test`, in the same exact run attempt. The required `ci-gate-ios` includes
+checks archive provenance against `build-archive` and test provenance against
+`build-test`, using each producer's exact run attempt. The required `ci-gate-ios` includes
 both native jobs and publication, not just compilation.
 
 A release-only merge group can omit simulator tests only when an existing test
@@ -145,5 +145,6 @@ Promotion tests invoke the real CLI with temporary Git repositories and files;
 only external R2/GitHub commands are replaced. They cover differing builder/main
 SHAs, metadata-only test reuse, missing evidence/full tests, mixed groups, input
 invalidation, independent native-job provenance and input agreement, bounded
-queue ancestry, immutable readiness, checksums, missing objects, and safe extraction. Generated archive placeholders test the protocol,
-not native compilation, signing, or TestFlight availability.
+queue ancestry, immutable readiness, checksums, missing objects, and safe
+extraction. Generated archive placeholders test the protocol, not native
+compilation, signing, or TestFlight availability.
