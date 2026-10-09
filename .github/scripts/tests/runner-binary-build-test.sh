@@ -369,9 +369,9 @@ workflow_toolchain=$(awk '
 . "${REPO_ROOT}/.github/scripts/runner-binary-build/contract.env"
 [ "$RUNNER_BINARY_INPUT_SCHEMA_VERSION" = "6" ] \
   || fail "runner binary input schema must identify content-only CLI inputs"
-[ "$workflow_toolchain" = 'ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261008' ] \
+[ "$workflow_toolchain" = 'ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009' ] \
   || fail "Runner Image workflow toolchain must derive its owner from GitHub context"
-expected_runtime_toolchain="ghcr.io/${GITHUB_REPOSITORY_OWNER:-okou-ai}/vm0-toolchain-rust:20261008"
+expected_runtime_toolchain="ghcr.io/${GITHUB_REPOSITORY_OWNER:-okou-ai}/vm0-toolchain-rust:20261009"
 [ "$RUNNER_BINARY_TOOLCHAIN_IMAGE" = "$expected_runtime_toolchain" ] \
   || fail "hashed build contract must derive the same runtime toolchain owner"
 

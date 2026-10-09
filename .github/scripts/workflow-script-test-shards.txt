@@ -54,6 +54,7 @@
 2 runner-image-workflow-test.sh
 2 runner-rust-cache-prewarm-workflow-test.sh
 2 runner-token-env-alias-test.sh
+2 setup-r2-sccache-test.sh
 2 smoke-okou-cli-artifact-test.sh
 2 staging-workflow-test.sh
 2 verify-okou-cli-artifact-test.sh
@@ -76,6 +77,7 @@
 3 prepare-okou-app-worker-shell-test.sh
 3 prepare-runner-image-test.sh
 3 report-cgroup-memory-peak-test.sh
+3 report-sccache-stats-test.sh
 3 resolve-pr-title-test.sh
 3 resolve-production-rollback-target-test.sh
 3 runner-behavior-cancel-test.sh
@@ -116,6 +118,7 @@
 4 runner-lifecycle-lock-test.sh
 4 runner-lifecycle-ownership-workflow-test.sh
 4 rust-coverage-cache-workflow-test.sh
+4 toolchain-image-references-test.sh
 4 update-rollback-dashboard-body-test.sh
 4 verify-okou-app-artifact-test.sh
 4 vm0-monitoring-workspace-image-cache-collect-test.sh

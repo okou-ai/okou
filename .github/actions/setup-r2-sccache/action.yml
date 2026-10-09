@@ -1,5 +1,5 @@
 name: "Setup R2 sccache"
-description: "Install sccache and start an R2-backed compiler cache server"
+description: "Verify preinstalled sccache and start an R2-backed compiler cache server"
 
 inputs:
   architecture:
@@ -18,15 +18,29 @@ inputs:
     description: "R2 bucket for shared compiler outputs"
     required: true
 
+outputs:
+  started:
+    description: "Whether the R2 cache server started and compiler settings were exported"
+    value: ${{ steps.configure.outputs.started }}
+
 runs:
   using: "composite"
   steps:
-    - name: Install sccache
-      uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-      with:
-        version: "v0.15.0"
+    - name: Verify preinstalled sccache
+      shell: bash
+      run: |
+        command -v sccache >/dev/null || {
+          echo "sccache 0.18.0 must be preinstalled in the toolchain image" >&2
+          exit 1
+        }
+        version=$(sccache --version)
+        if [ "$version" != "sccache 0.18.0" ]; then
+          echo "Expected sccache 0.18.0, found: $version" >&2
+          exit 1
+        fi
 
     - name: Configure R2 sccache
+      id: configure
       shell: bash
       env:
         AWS_ACCESS_KEY_ID: ${{ inputs.r2-access-key-id }}
@@ -58,10 +72,11 @@ runs:
         # Share compiler outputs across PR and merge-group refs without the
         # GitHub cache quota. Keep the server alive for this job: a restart
         # from a build step would not inherit the startup-only credentials.
-        SCCACHE_CONF="$SCCACHE_CONF_PATH" ${SCCACHE_PATH:-sccache} --start-server
+        SCCACHE_CONF="$SCCACHE_CONF_PATH" sccache --start-server
 
         {
           echo "CARGO_INCREMENTAL=0"
           echo "SCCACHE_CONF=$SCCACHE_CONF_PATH"
           echo "RUSTC_WRAPPER=sccache"
         } >> "$GITHUB_ENV"
+        echo "started=true" >> "$GITHUB_OUTPUT"

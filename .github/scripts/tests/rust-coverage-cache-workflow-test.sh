@@ -21,7 +21,7 @@ jq -e '
   $coverage["runs-on"] == "ubuntu-latest-8-cores" and
   $coverage["timeout-minutes"] == 20 and
   $coverage.env.CARGO_PROFILE_TEST_DEBUG == "line-tables-only" and
-  $coverage.container.image == "ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261008" and
+  $coverage.container.image == "ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009" and
   $coverage.needs == ["detect"] and
   $coverage.if == "needs.detect.outputs.any-changed == '\''true'\''" and
   any($coverage.steps[];
@@ -83,12 +83,7 @@ jq -e '
   ) and
   ([.jobs | to_entries[] |
     select(any(.value.steps[]?; .uses == "./.github/actions/setup-r2-sccache")) |
-    .key] == ["coverage", "runner-rootfs-process-test"]) and
-  ([.jobs | to_entries[] |
-    select(any(.value.steps[]?;
-      (.uses // "") | startswith("mozilla-actions/sccache-action@")
-    )) |
-    .key] == [])
+    .key] == ["coverage", "runner-rootfs-process-test"])
 ' <<<"$workflow_json" >/dev/null || fail "coverage must retain its tested R2 sccache and reporting contract"
 
 report_script=$(jq -r '.jobs.coverage.steps[] | select(.name == "Validate coverage report") | .run' <<<"$workflow_json")
