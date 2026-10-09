@@ -128,7 +128,6 @@ async function state() {
     'sessions', (SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM agent_sessions s),
     'storages', (SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM storages s),
     'versions', (SELECT jsonb_agg(to_jsonb(v) ORDER BY id) FROM storage_versions v),
-    'checkpoints', (SELECT jsonb_agg(to_jsonb(c) ORDER BY id) FROM checkpoints c),
     'selections', (SELECT jsonb_agg(to_jsonb(s) ORDER BY user_id, slot) FROM pi_memory_stage1_selections s),
     'constraints', (SELECT jsonb_agg(to_jsonb(c) ORDER BY oid) FROM pg_constraint c),
     'triggers', (SELECT jsonb_agg(to_jsonb(t) ORDER BY oid) FROM pg_trigger t)
@@ -192,8 +191,6 @@ async function seedScale() {
       SELECT md5('conversation-' || i)::uuid, md5('run-' || i)::uuid, 'pi',
         md5('cli-' || i), lpad(to_hex(i), 64, '0'), '2026-09-10'
       FROM generate_series(1, 277197) i;
-    INSERT INTO checkpoints (run_id, conversation_id, storage_mounts)
-      SELECT run_id, id, '[]'::jsonb FROM conversations;
     UPDATE agent_sessions SET conversation_id = md5('conversation-' || i)::uuid
       FROM generate_series(1, 71876) i WHERE id = md5('session-' || i)::uuid;
     INSERT INTO storages (id, org_id, user_id, name, s3_prefix)
@@ -342,9 +339,7 @@ try {
   await candidate(1);
   await candidate(8, "2026-09-14 01:11:37.999999");
   await candidate(9, "2026-09-14 01:11:38");
-  await writer.query(`INSERT INTO checkpoints (run_id, conversation_id, storage_mounts)
-    SELECT run_id, id, '[]'::jsonb FROM conversations;
-    UPDATE agent_sessions SET conversation_id = (SELECT id FROM conversations LIMIT 1);
+  await writer.query(`    UPDATE agent_sessions SET conversation_id = (SELECT id FROM conversations LIMIT 1);
     INSERT INTO storage_versions (id, storage_id, s3_key, archive_size, created_by)
     VALUES ('${hash(1)}', '${storage}', 'private-path-sentinel', 1, 'audit-user');
     INSERT INTO pi_memory_stage1_days (user_id, day, org_id, trigger_thread_id, requested_at)
