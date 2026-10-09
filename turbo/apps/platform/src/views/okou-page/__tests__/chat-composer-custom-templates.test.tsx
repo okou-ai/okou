@@ -438,21 +438,20 @@ test("Kind filters combine with search without an All option", async () => {
   expect(buttonByName("All", filters)).toBeUndefined();
 });
 
-test("An empty kind keeps the kind filters so another kind can be chosen", async () => {
+test("An empty kind keeps the search and kind filters in place", async () => {
   mockCustomTemplates([customTemplate()]);
   const { dialog } = await openCustomPanel();
   const filters = await within(dialog).findByRole("group", {
     name: "Template categories",
   });
+  const search = within(dialog).getByLabelText("Search templates");
   click(buttonByName("Image", filters)!);
   await expect(
     within(dialog).findByText("No images yet"),
   ).resolves.toBeInTheDocument();
-  // Search has nothing to match in an empty kind, so it stays hidden; the kind
-  // filters remain so the member can leave the empty kind from here.
-  expect(
-    within(dialog).queryByLabelText("Search templates"),
-  ).not.toBeInTheDocument();
+  // The toolbar does not change shape between kinds: the same search stays,
+  // and the kind filters remain so the member can leave the empty kind.
+  expect(within(dialog).getByLabelText("Search templates")).toBe(search);
   const emptyKindFilters = within(dialog).getByRole("group", {
     name: "Template categories",
   });
@@ -469,6 +468,35 @@ test("An empty kind keeps the kind filters so another kind can be chosen", async
     "aria-pressed",
     "true",
   );
+});
+
+test("Returning to Custom shows the loaded catalog without asking again", async () => {
+  let listed = 0;
+  context.mocks.api(userTemplatesContract.list, ({ respond }) => {
+    listed += 1;
+    const {
+      pageUrls: _pageUrls,
+      sourceUrl: _sourceUrl,
+      ...entry
+    } = customTemplate();
+    return respond(200, [entry]);
+  });
+
+  const { dialog } = await openCustomPanel();
+  await within(dialog).findByText("Q3 board review");
+  const listedOnOpen = listed;
+
+  click(tabByText("Presentation"));
+  await waitFor(() => {
+    expect(within(dialog).queryByText("Q3 board review")).toBeNull();
+  });
+  click(tabByText("Custom"));
+
+  // A refetch on every return blanked the pane until it answered.
+  await expect(
+    within(dialog).findByText("Q3 board review"),
+  ).resolves.toBeInTheDocument();
+  expect(listed).toBe(listedOnOpen);
 });
 
 test("An empty catalog leads with the upload entry instead of showing no matches", async () => {

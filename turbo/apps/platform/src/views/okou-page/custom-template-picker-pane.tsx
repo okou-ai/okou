@@ -443,8 +443,10 @@ function CustomTemplateImportButton({
         render={
           <label
             className={cn(
-              buttonVariants({ variant: "outline", size: "sm" }),
-              "max-[374px]:px-2 max-[374px]:text-xs has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring has-[:focus-visible]:ring-offset-2",
+              buttonVariants({ variant: "outline" }),
+              // A phone keeps the icon only, so the search beside it keeps
+              // room for its placeholder; the input still carries the name.
+              "max-sm:w-9 max-sm:px-0 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring has-[:focus-visible]:ring-offset-2",
             )}
           >
             <input
@@ -466,7 +468,7 @@ function CustomTemplateImportButton({
               }}
             />
             <Upload aria-hidden />
-            {label}
+            <span className="max-sm:sr-only">{label}</span>
           </label>
         }
       />
@@ -516,7 +518,9 @@ function CustomTemplateKindFilters({
       aria-label={t(($) => {
         return $.artifacts.templates.categories;
       })}
-      className="w-full gap-1 lg:w-auto"
+      // Below lg the filters wrap onto their own row under the search and the
+      // import; at lg they sit between them, in reading order.
+      className="order-last w-full gap-1 lg:order-none lg:w-auto"
     >
       {options.map(({ value, label }) => {
         return (
@@ -524,7 +528,9 @@ function CustomTemplateKindFilters({
             key={value}
             value={value}
             variant="quiet"
-            size="sm"
+            // The search and the import beside them are h-9 too, so the band
+            // reads as one row of equal controls.
+            size="default"
             className="flex-1 max-[374px]:px-2 max-[374px]:text-xs lg:flex-none"
           >
             {label}
@@ -724,21 +730,22 @@ export function CustomTemplatePickerPane({
   const projectPicker = useGet(projectCustomTemplatePicker$);
   const view = catalog.state === "hasData" ? projectPicker(catalog.data) : null;
   const hasQuery = query.trim().length > 0;
-  // A non-empty catalog always shows its kind filters, including when the
-  // selected kind is empty, so a member can leave an empty kind from here.
-  // Search only applies to what is listed, so it stays with a populated kind.
-  const showSearch = view !== null && (view.templates.length > 0 || hasQuery);
+  // A non-empty catalog always shows its search and kind filters, including
+  // when the selected kind is empty, so neither moves while a member switches
+  // kinds and an empty kind can be left from here.
   const showFilters = view !== null && !view.isEmptyCatalog;
-  const showHeaderImport = showFilters || view?.isEmptyCatalog === true;
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-      {showHeaderImport ? (
-        // The same 68px band the workflow search uses, so the search sits on
-        // the same axis in both categories and clears the dialog's close button.
-        <div className="relative flex h-[68px] shrink-0 items-center gap-3 px-6 pr-14">
-          {showSearch && view ? (
-            <div className="relative w-56 shrink-0">
+      {/* The 68px band the workflow search uses, so the search sits on the
+          same axis in both categories and the import clears the dialog's
+          close button. It renders before the catalog resolves, so the band
+          never collapses while a request is pending. Below lg the filters
+          take a second row instead of overflowing the dialog. */}
+      <div className="flex shrink-0 flex-wrap items-center gap-3 px-6 py-4 sm:pr-14 lg:h-[68px] lg:flex-nowrap lg:py-0">
+        {showFilters ? (
+          <>
+            <div className="relative min-w-0 flex-1 lg:w-56 lg:flex-none">
               <Search
                 className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
                 aria-hidden
@@ -757,18 +764,16 @@ export function CustomTemplatePickerPane({
                 }}
               />
             </div>
-          ) : null}
-          {showFilters && view ? (
             <CustomTemplateKindFilters kind={view.kind} />
-          ) : null}
-          <div className="ml-auto shrink-0">
-            <CustomTemplateImportButton
-              signals={signals}
-              onImported={onImported}
-            />
-          </div>
+          </>
+        ) : null}
+        <div className="ml-auto shrink-0">
+          <CustomTemplateImportButton
+            signals={signals}
+            onImported={onImported}
+          />
         </div>
-      ) : null}
+      </div>
       <div
         role="region"
         aria-label={t(($) => {

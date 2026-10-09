@@ -5286,9 +5286,9 @@ function TemplatePickerDialog({
   };
 
   const handleCategoryChange = (nextCategory: string) => {
-    if (nextCategory === "custom") {
-      resetCustomTemplatePicker();
-    }
+    // Returning to Custom keeps the catalog it already has. Publishes and
+    // mutations refresh it on their own, and a forced reload here blanked the
+    // whole pane until the request came back.
     setCategory(nextCategory);
     if (!isPreviewing) {
       prewarmTemplatePreviewsForCategory(nextCategory);
