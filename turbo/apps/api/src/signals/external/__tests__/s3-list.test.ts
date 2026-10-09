@@ -62,8 +62,9 @@ describe("bounded S3 object listing provider contract", () => {
     expect(listingRequests()).toHaveLength(1);
   });
 
-  it("can continue past 1000 unchanged versions of one thread without subdividing its UUID", async () => {
-    const threadPrefix = `${prefix}12340000-0000-4000-8000-000000000000/`;
+  it("can continue past 1000 unchanged versions of one thread within its shard", async () => {
+    const shardPrefix = `${prefix}123`;
+    const threadPrefix = `${shardPrefix}40000-0000-4000-8000-000000000000/`;
     const keys = Array.from({ length: 1501 }, (_, index) => {
       return `${threadPrefix}${index.toString()}-r1-${"a".repeat(64)}.ndjson.gz`;
     }).sort();
@@ -85,7 +86,7 @@ describe("bounded S3 object listing provider contract", () => {
     });
     const store = createStore();
     const first = await store.get(
-      listS3ObjectsPage(bucket, prefix, 1000, undefined, context.signal),
+      listS3ObjectsPage(bucket, shardPrefix, 1000, undefined, context.signal),
     );
     expect(first.objects).toHaveLength(1000);
     expect(first.isTruncated).toBeTruthy();
@@ -96,7 +97,7 @@ describe("bounded S3 object listing provider contract", () => {
       throw new Error("Expected the first page's resume key");
     }
     const second = await store.get(
-      listS3ObjectsPage(bucket, prefix, 1000, cursor, context.signal),
+      listS3ObjectsPage(bucket, shardPrefix, 1000, cursor, context.signal),
     );
     expect(second.isTruncated).toBeFalsy();
     expect(
@@ -105,8 +106,13 @@ describe("bounded S3 object listing provider contract", () => {
       }),
     ).toStrictEqual(keys);
     expect(listingRequests()).toStrictEqual([
-      { Bucket: bucket, Prefix: prefix, MaxKeys: 1000 },
-      { Bucket: bucket, Prefix: prefix, MaxKeys: 1000, StartAfter: cursor },
+      { Bucket: bucket, Prefix: shardPrefix, MaxKeys: 1000 },
+      {
+        Bucket: bucket,
+        Prefix: shardPrefix,
+        MaxKeys: 1000,
+        StartAfter: cursor,
+      },
     ]);
   });
 
@@ -166,6 +172,19 @@ describe("bounded S3 object listing provider contract", () => {
         prefix,
         1000,
         "other/key",
+        context.signal,
+      );
+    }).toThrow("S3 list cursor must belong to its prefix");
+    expect(context.mocks.s3.send).not.toHaveBeenCalled();
+  });
+
+  it("rejects another shard's cursor even inside the same bucket namespace", () => {
+    expect(() => {
+      return listS3ObjectsPage(
+        bucket,
+        `${prefix}123`,
+        1000,
+        `${prefix}12440000-0000-4000-8000-000000000000/snapshot.ndjson.gz`,
         context.signal,
       );
     }).toThrow("S3 list cursor must belong to its prefix");

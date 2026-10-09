@@ -39,7 +39,6 @@ interface ChatEventSnapshotCompletionCounters {
   readonly r2GcPagesScanned: number;
   readonly r2GcDeferred: boolean;
   readonly r2GcFailed: boolean;
-  readonly r2GcCycleCompleted: boolean;
 }
 
 function recordChatEventSnapshotCompleted(
@@ -83,7 +82,6 @@ function recordChatEventSnapshotCompleted(
       r2GcPagesScanned: counters.r2GcPagesScanned,
       r2GcDeferred: counters.r2GcDeferred,
       r2GcFailed: counters.r2GcFailed,
-      r2GcCycleCompleted: counters.r2GcCycleCompleted,
     },
   ]);
 }

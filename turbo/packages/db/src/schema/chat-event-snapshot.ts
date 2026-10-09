@@ -4,6 +4,7 @@ import {
   index,
   integer,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -78,22 +79,28 @@ export const chatEventSnapshots = pgTable(
 );
 
 /**
- * Independent progress through the ordered R2 object namespace. The cycle ID
- * fences stale page checkpoints after a sweep wraps; it is not a deletion lease.
- * Failed or uncertain external work leaves the position replayable.
+ * One reusable pagination position per bucket/shard in the existing GC rotation.
+ * The cycle ID fences stale checkpoints after that shard wraps; it is not a
+ * deletion lease. Failed work does not block another shard's progress.
  */
 export const chatEventSnapshotGcState = pgTable(
   "chat_event_snapshot_gc_state",
   {
-    bucket: text("bucket").primaryKey(),
+    bucket: text("bucket").notNull(),
+    prefix: text("prefix").notNull(),
     cursorObjectKey: text("cursor_object_key"),
     cycleId: uuid("cycle_id").defaultRandom().notNull(),
   },
   (table) => {
     return [
+      primaryKey({ columns: [table.bucket, table.prefix] }),
+      check(
+        "chat_event_snapshot_gc_prefix_check",
+        sql`${table.prefix} ~ '^chat-events/[0-9a-f]{3}$'`,
+      ),
       check(
         "chat_event_snapshot_gc_cursor_check",
-        sql`${table.cursorObjectKey} IS NULL OR starts_with(${table.cursorObjectKey}, 'chat-events/')`,
+        sql`${table.cursorObjectKey} IS NULL OR starts_with(${table.cursorObjectKey}, ${table.prefix})`,
       ),
     ];
   },

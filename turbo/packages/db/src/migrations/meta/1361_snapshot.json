@@ -1,5 +1,5 @@
 {
-  "id": "105904ce-1339-4e5d-83b1-e35791ddd39e",
+  "id": "87a048a6-5e6b-4273-a6df-0f6b098d94c2",
   "prevId": "f367f116-f341-4797-8772-19a1027500d4",
   "version": "7",
   "dialect": "postgresql",
@@ -6444,7 +6444,13 @@
         "bucket": {
           "name": "bucket",
           "type": "text",
-          "primaryKey": true,
+          "primaryKey": false,
+          "notNull": true
+        },
+        "prefix": {
+          "name": "prefix",
+          "type": "text",
+          "primaryKey": false,
           "notNull": true
         },
         "cursor_object_key": {
@@ -6463,13 +6469,25 @@
       },
       "indexes": {},
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
+      "compositePrimaryKeys": {
+        "chat_event_snapshot_gc_state_bucket_prefix_pk": {
+          "name": "chat_event_snapshot_gc_state_bucket_prefix_pk",
+          "columns": [
+            "bucket",
+            "prefix"
+          ]
+        }
+      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "chat_event_snapshot_gc_prefix_check": {
+          "name": "chat_event_snapshot_gc_prefix_check",
+          "value": "\"chat_event_snapshot_gc_state\".\"prefix\" ~ '^chat-events/[0-9a-f]{3}$'"
+        },
         "chat_event_snapshot_gc_cursor_check": {
           "name": "chat_event_snapshot_gc_cursor_check",
-          "value": "\"chat_event_snapshot_gc_state\".\"cursor_object_key\" IS NULL OR starts_with(\"chat_event_snapshot_gc_state\".\"cursor_object_key\", 'chat-events/')"
+          "value": "\"chat_event_snapshot_gc_state\".\"cursor_object_key\" IS NULL OR starts_with(\"chat_event_snapshot_gc_state\".\"cursor_object_key\", \"chat_event_snapshot_gc_state\".\"prefix\")"
         }
       },
       "isRLSEnabled": false
