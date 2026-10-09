@@ -142,6 +142,50 @@ function metadataBody(
 }
 
 test.each(["name", "tag order"] as const)(
+  "commits only one concurrent %s edit for the same revision and returns its decoded state",
+  async (kind) => {
+    const admin = owner();
+    authenticate(admin);
+    const shared = await config();
+    const request = {
+      headers,
+      params: { configId: shared.id },
+      body: metadataBody(kind, shared.revision),
+    };
+    const results = await joinAll([
+      accept(configs().update(request), [200, 409]),
+      accept(configs().update(request), [200, 409]),
+    ]);
+    expect(
+      results
+        .map((result) => {
+          return result.status;
+        })
+        .sort(),
+    ).toStrictEqual([200, 409]);
+    const winner = results.find((result) => {
+      return result.status === 200;
+    });
+    const rejected = results.find((result) => {
+      return result.status === 409;
+    });
+    expect(winner?.body).toStrictEqual({
+      ...shared,
+      name: kind === "name" ? "Renamed private network" : shared.name,
+      tags: kind === "tag order" ? ["tag:ci", "tag:prod"] : shared.tags,
+      revision: shared.revision + 1,
+      updatedAt: expect.any(String),
+    });
+    expect(rejected?.body).toMatchObject({
+      error: { code: "TAILSCALE_REVISION_CONFLICT" },
+    });
+    expect(
+      (await accept(configs().list({ headers }), [200])).body.configs,
+    ).toStrictEqual([winner?.body]);
+  },
+);
+
+test.each(["name", "tag order"] as const)(
   "updates %s alongside host editing and selected binding without exposing another owner's hosts",
   async (kind) => {
     const admin = owner();

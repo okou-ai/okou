@@ -1,5 +1,15 @@
 import { command, computed, type Computed } from "ccstate";
-import { and, asc, count, eq, ne, sql } from "drizzle-orm";
+import {
+  and,
+  arrayContained,
+  arrayContains,
+  asc,
+  count,
+  eq,
+  lt,
+  ne,
+  sql,
+} from "drizzle-orm";
 import { tailscaleConfigs } from "@okouai/db/schema/tailscale-config";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import type {
@@ -367,64 +377,118 @@ const updateTailscaleMetadata$ = command(
       >;
     },
   ) => {
-    const result = await set(writeDb$).transaction(async (tx) => {
-      const [config] = await tx
-        .select(metadata)
-        .from(tailscaleConfigs)
-        .where(visibleTailscaleConfig(args.owner, args.configId))
-        .for("update");
-      if (!config) {
-        return tailscaleFailure("notFound");
-      }
-      if (denied(config, args.owner)) {
-        return tailscaleFailure("forbidden");
-      }
-      if (
-        config.revision !== args.body.expectedRevision ||
-        changesTagMembership(args.body.tags, config.tags)
-      ) {
-        return tailscaleFailure("conflict");
-      }
-      if (exhausted(config, [], false)) {
-        return tailscaleFailure("exhausted");
-      }
-      const [updated] = await tx
+    const db = set(writeDb$);
+    // Keep the existing config fence and its captured failure clock in one SQL
+    // statement. This lane never acquires or mutates Host authority afterward.
+    const current = db
+      .$with("current_tailscale_metadata")
+      .as(
+        db
+          .select(metadata)
+          .from(tailscaleConfigs)
+          .where(visibleTailscaleConfig(args.owner, args.configId))
+          .for("update"),
+      );
+    const tags = args.body.tags;
+    const updated = db.$with("updated_tailscale_metadata").as(
+      db
         .update(tailscaleConfigs)
         .set({
           name: args.body.name,
-          tags: args.body.tags,
-          revision: config.revision + 1,
+          tags,
+          revision: sql`${tailscaleConfigs.revision} + 1`,
           updatedAt: nowDate(),
         })
-        .where(eq(tailscaleConfigs.id, config.id))
-        .returning(metadata);
-      if (!updated) {
-        throw new Error("Tailscale metadata update returned no row");
-      }
-      // Caller MVCC metadata, not impact/authority. No later Host lock or write.
-      const hosts = await tx
-        .select({
-          id: sshConnections.id,
-          displayName: sshConnections.displayName,
-        })
-        .from(sshConnections)
+        .from(current)
         .where(
           and(
-            referencingHostPredicate(args),
-            eq(sshConnections.userId, args.owner.userId),
+            eq(tailscaleConfigs.id, current.id),
+            args.owner.orgRole === "admin"
+              ? undefined
+              : eq(current.scope, "personal"),
+            eq(current.revision, args.body.expectedRevision),
+            lt(current.revision, 2_147_483_647),
+            tags === undefined
+              ? undefined
+              : and(
+                  arrayContains(current.tags, tags),
+                  arrayContained(current.tags, tags),
+                  sql`cardinality(${current.tags}) = ${tags.length}`,
+                ),
           ),
         )
-        .orderBy(asc(sshConnections.id));
-      return {
-        ok: true as const,
-        value: response(updated, hosts),
-        scope: config.scope,
-      };
-    });
-    if (result.ok) {
-      await publishTailscaleClientInvalidation(args.owner, result.scope);
+        .returning({ ...metadata }),
+    );
+    // Host names are caller-only, nonlocking statement-snapshot observations,
+    // not reviewed impact or revocation authority. Read changed config fields
+    // from RETURNING: the base table retains the statement's initial snapshot.
+    const rows = await db
+      .with(current, updated)
+      .select({
+        config: {
+          id: current.id,
+          name: current.name,
+          scope: current.scope,
+          tags: current.tags,
+          revision: current.revision,
+          generation: current.generation,
+          createdAt: current.createdAt,
+          updatedAt: current.updatedAt,
+        },
+        updated: {
+          id: updated.id,
+          name: updated.name,
+          scope: updated.scope,
+          tags: updated.tags,
+          revision: updated.revision,
+          generation: updated.generation,
+          createdAt: updated.createdAt,
+          updatedAt: updated.updatedAt,
+        },
+        host: {
+          id: sshConnections.id,
+          displayName: sshConnections.displayName,
+        },
+      })
+      .from(current)
+      .leftJoin(updated, eq(updated.id, current.id))
+      .leftJoin(
+        sshConnections,
+        and(
+          eq(sshConnections.tailscaleId, updated.id),
+          eq(sshConnections.orgId, args.owner.orgId),
+          eq(sshConnections.userId, args.owner.userId),
+        ),
+      )
+      .orderBy(asc(sshConnections.id));
+    const [first] = rows;
+    if (!first) {
+      return tailscaleFailure("notFound");
     }
-    return result;
+    if (denied(first.config, args.owner)) {
+      return tailscaleFailure("forbidden");
+    }
+    if (
+      first.config.revision !== args.body.expectedRevision ||
+      changesTagMembership(tags, first.config.tags)
+    ) {
+      return tailscaleFailure("conflict");
+    }
+    if (exhausted(first.config, [], false)) {
+      return tailscaleFailure("exhausted");
+    }
+    if (!first.updated) {
+      throw new Error("Tailscale metadata update returned no row");
+    }
+    const hosts = rows.flatMap(({ host }) => {
+      return host ? [host] : [];
+    });
+    await publishTailscaleClientInvalidation(args.owner, first.updated.scope);
+    return {
+      ok: true as const,
+      value: response(first.updated, hosts),
+      scope: first.updated.scope,
+    };
   },
 );
 export const updateTailscaleConfig$ = command(
