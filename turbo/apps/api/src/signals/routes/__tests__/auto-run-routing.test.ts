@@ -15,7 +15,7 @@ const {
 
 describe("fixed Auto through public admission and runner claim", () => {
   it.each([null, "auto"])(
-    "preserves PR1 public writes for Auto intent %s",
+    "writes canonical identity for Auto intent %s",
     async (model) => {
       await seedBuiltInModelKey("okou-1.0");
       const { actor, agentId } = await entitledNativeChatActor();
@@ -24,10 +24,10 @@ describe("fixed Auto through public admission and runner claim", () => {
         model,
         prompt: "Use Auto intent",
       });
-      await expectThreadCreatedModelEvent(actor, run.threadId, null);
+      await expectThreadCreatedModelEvent(actor, run.threadId, "auto");
       const log = await api.readRun(actor, run.runId);
       expect(log.source).toMatchObject({
-        model: "okou-1.0",
+        model: "auto",
         providerType: "built-in",
         credentialScope: "org",
       });
@@ -56,12 +56,12 @@ describe("fixed Auto through public admission and runner claim", () => {
     });
     const log = await api.readRun(actor, run.runId);
     expect(log.source).toMatchObject({
-      model: "okou-1.0",
+      model: "auto",
       providerType: "built-in",
       credentialScope: "org",
     });
     expect(claimed.claim.cliAgentType).toBe("pi");
-    expect(claimed.claim.modelUsageProvider).toBe("okou-1.0");
+    expect(claimed.claim.modelUsageProvider).toBe("@preset/okou-1-0");
     expect(claimed.claim.piModelConfig).toStrictEqual({
       schemaVersion: 5,
       dialect: "openai-completions",
@@ -69,7 +69,7 @@ describe("fixed Auto through public admission and runner claim", () => {
       provider: "openrouter",
       baseUrl: "https://openrouter.ai/api/v1",
       model: "@preset/okou-1-0",
-      catalogModel: "okou-1.0",
+      catalogModel: "auto",
       credentialBindings: [
         {
           kind: "api-key",

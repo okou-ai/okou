@@ -859,7 +859,7 @@ describe("CHAT-02: model-first routing", () => {
     expect(claim.modelUsageProvider).toBe("@preset/okou-1-0");
     expect(claim.piModelConfig).toMatchObject({
       model: "@preset/okou-1-0",
-      catalogModel: "okou-1.0",
+      catalogModel: "auto",
     });
     expect(claim.billableFirewalls).toContain(
       "model-provider:openrouter-codex",

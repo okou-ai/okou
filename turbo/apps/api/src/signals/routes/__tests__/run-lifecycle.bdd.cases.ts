@@ -5007,9 +5007,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(claim.cliAgentType).toBe("pi");
         expect(claim.piModelConfig).toMatchObject({
           provider: "openrouter",
-          catalogModel: SEEDED_SYSTEM_DEFAULT_MODEL,
+          catalogModel: "auto",
         });
-        expect(claim.modelUsageProvider).toBe(SEEDED_SYSTEM_DEFAULT_MODEL);
+        expect(claim.modelUsageProvider).toBe("@preset/okou-1-0");
         await api.requestCancelRun(actor, sent.runId, [200]);
         await finishCancelledRun(sent.runId, claim.sandboxToken);
 
