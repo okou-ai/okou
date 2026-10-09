@@ -138,7 +138,6 @@ import {
   runHasActiveCreditAdmission,
   type RunCreditAdmissionState,
 } from "./run-admission.service";
-import { resolveUsageAllowanceAvailabilityForRun$ } from "./usage-allowance-run-availability.service";
 
 type AccessSecretSource = SecretConnectorMetadata["sourceType"];
 type StorageSecretSource = Exclude<AccessSecretSource, "platform-secret">;
@@ -511,23 +510,14 @@ export const resolveBillableFirewallCacheExpiry$ = command(
           NORMAL_BILLABLE_FIREWALL_LEASE_SECONDS,
       };
     }
-    const allowance =
-      availability.spendableCredits > 0
-        ? null
-        : await set(
-            resolveUsageAllowanceAvailabilityForRun$,
-            { orgId: params.auth.orgId, runId: params.auth.runId },
-            signal,
-          );
-    const spendableUnits =
+    const spendableCredits =
       availability.usagePackCredits +
-      Math.max(availability.spendableCredits, 0) +
-      (allowance?.remainingUnits ?? 0);
-    if (spendableUnits <= 0) {
+      Math.max(availability.spendableCredits, 0);
+    if (spendableCredits <= 0) {
       return insufficientCredits();
     }
     const leaseSeconds =
-      spendableUnits <= LOW_BILLABLE_FIREWALL_CREDIT_THRESHOLD
+      spendableCredits <= LOW_BILLABLE_FIREWALL_CREDIT_THRESHOLD
         ? LOW_BILLABLE_FIREWALL_LEASE_SECONDS
         : NORMAL_BILLABLE_FIREWALL_LEASE_SECONDS;
     return { expiresAt: Math.floor(nowDate().getTime() / 1000) + leaseSeconds };

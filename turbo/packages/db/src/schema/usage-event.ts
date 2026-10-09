@@ -33,8 +33,8 @@ import { agentRuns } from "./agent-run";
  *   video     bytedance/seedance-2.0       output_video_tokens
  *
  * Charging is applied by the billing processor, which looks up the
- * `(kind, provider, category)` pricing-table entry. The processor applies
- * allowances to the gross amount and writes `creditsCharged`.
+ * `(kind, provider, category)` pricing-table entry and writes `creditsCharged`.
+ * Settlement is credit-only and never reprices processed usage.
  *
  * `billingError` is a short code naming a billing-time problem on the
  * row. NULL on healthy rows. Ops queries `WHERE billing_error IS NOT
@@ -52,7 +52,7 @@ import { agentRuns } from "./agent-run";
  * Zero quantities are discarded without an idempotency receipt. Transactional
  * writers may reserve a zero placeholder, but must remove it before commit if
  * its final quantity is zero. Positive usage is retained even when its charge
- * is covered by allowances or its price resolves to zero credits.
+ * resolves to zero credits.
  *
  * Healthy usage remains `processed` for at least four days before hourly
  * rollup replacement, after which the source event is deleted.

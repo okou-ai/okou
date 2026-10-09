@@ -1,4 +1,3 @@
-import { orgUsageAllowanceEntitlements } from "@okouai/db/schema/org-usage-allowance";
 import { socialDataJobs } from "@okouai/db/schema/social-data-job";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { usageEventHourlyRollup } from "@okouai/db/schema/usage-event-hourly-rollup";
@@ -32,14 +31,6 @@ export function usageCleanupTargets({ scope, id }: UsageCleanupScope) {
         id,
       ),
     },
-    ...(org
-      ? [
-          {
-            table: orgUsageAllowanceEntitlements,
-            condition: eq(orgUsageAllowanceEntitlements.orgId, id),
-          },
-        ]
-      : []),
   ] as const;
 }
 
@@ -56,7 +47,6 @@ export const deleteUsageData$ = command(
       // Actual raw deletion precedes the rollup deletion. If compaction won
       // those raw rows, this next statement sees and deletes its committed
       // rollups; if cleanup won, compaction consumes no source facts.
-      // A user cleanup leaves the organization's entitlement.
       for (const target of targets) {
         await tx.delete(target.table).where(target.condition);
       }

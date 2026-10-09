@@ -1,6 +1,5 @@
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
-import { usageAllowanceAllocations } from "@okouai/db/schema/org-usage-allowance";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { usageEventHourlyRollup } from "@okouai/db/schema/usage-event-hourly-rollup";
 import { command } from "ccstate";
@@ -32,7 +31,6 @@ import { safeSync } from "../utils";
 const L = logger("CronCompactUsageEvents");
 const USAGE_EVENT_COMPACTION_RAW_SEED_LIMIT = 500;
 const event = alias(usageEvent, "event");
-const allocation = alias(usageAllowanceAllocations, "allocation");
 
 interface UsageEventCompactionStats {
   readonly cutoff: string;
@@ -46,9 +44,6 @@ interface UsageEventCompactionStats {
   readonly hourlyRowsInserted: number;
   readonly quantity: string;
   readonly creditsCharged: string;
-  readonly allowanceUnits: string;
-  readonly affectedShortWindows: number;
-  readonly affectedWeeklyWindows: number;
   readonly reconciled: boolean;
   readonly hasMore: boolean;
   readonly lockWaitMs: number;
@@ -80,9 +75,6 @@ const compactionRowSchema = z.object({
   maxGrainSourceRows: safeCountSchema,
   quantity: integerTextSchema,
   creditsCharged: integerTextSchema,
-  allowanceUnits: integerTextSchema,
-  affectedShortWindows: z.int(),
-  affectedWeeklyWindows: z.int(),
   reconciled: z.boolean(),
   observedRunIds: z.array(z.uuid()).max(USAGE_EVENT_COMPACTION_RAW_SEED_LIMIT),
 });
@@ -115,9 +107,7 @@ function physicalGrainColumns(alias: string): SQL {
     ${billingGrainColumns(alias)},
     ${source}.kind,
     ${source}.provider,
-    ${source}.category,
-    ${source}.short_window_id,
-    ${source}.weekly_window_id
+    ${source}.category
   `;
 }
 
@@ -133,9 +123,7 @@ function physicalGrainOrder(alias: string): SQL {
     ${source}.billing_context ASC,
     ${source}.kind ASC,
     ${source}.provider ASC,
-    ${source}.category ASC,
-    ${source}.short_window_id ASC NULLS FIRST,
-    ${source}.weekly_window_id ASC NULLS FIRST
+    ${source}.category ASC
   `;
 }
 
@@ -224,7 +212,6 @@ function candidateCtes(args: {
       SELECT
         event.id,
         event::text AS observed_event,
-        COALESCE(allocation.units_applied, 0)::bigint AS allowance_units,
         date_trunc('hour', event.processed_at)::timestamp AS processed_hour,
         event.org_id,
         event.user_id,
@@ -245,8 +232,6 @@ function candidateCtes(args: {
         event.kind,
         event.provider,
         event.category,
-        allocation.short_window_id,
-        allocation.weekly_window_id,
         event.quantity,
         COALESCE(event.credits_charged, 0)::bigint AS credits_charged,
         (
@@ -261,8 +246,6 @@ function candidateCtes(args: {
       FROM ${usageEvent} ${event}
       INNER JOIN raw_candidates candidate ON candidate.id = event.id
       LEFT JOIN resolved_attributions attribution ON attribution.run_id = COALESCE(event.billing_run_id, event.run_id)
-      LEFT JOIN ${usageAllowanceAllocations} ${allocation}
-        ON ${eq(allocation.usageEventId, event.id)}
       WHERE ${eligibleRawPredicate(args.cutoff)}
         AND event.run_id IS NOT DISTINCT FROM candidate.run_id
         AND event.billing_run_id IS NOT DISTINCT FROM candidate.billing_run_id
@@ -312,11 +295,8 @@ function consumedSourceCtes(): SQL {
         event.kind,
         event.provider,
         event.category,
-        event.short_window_id,
-        event.weekly_window_id,
         event.quantity,
-        event.credits_charged,
-        event.allowance_units
+        event.credits_charged
       FROM deleted_raw event
       WHERE event.billing_context <> 'run'
         OR EXISTS (
@@ -332,8 +312,7 @@ function consumedSourceCtes(): SQL {
       SELECT
         ${physicalGrainColumns("locked_raw")},
         locked_raw.quantity::numeric AS quantity,
-        locked_raw.credits_charged::numeric AS credits_charged,
-        locked_raw.allowance_units::numeric AS allowance_units
+        locked_raw.credits_charged::numeric AS credits_charged
       FROM locked_raw
     ),
     consolidated AS MATERIALIZED (
@@ -341,7 +320,6 @@ function consumedSourceCtes(): SQL {
         ${physicalGrainColumns("source_facts")},
         SUM(source_facts.quantity) AS quantity,
         SUM(source_facts.credits_charged) AS credits_charged,
-        SUM(source_facts.allowance_units) AS allowance_units,
         ${count()} AS source_rows
       FROM source_facts
       GROUP BY ${physicalGrainColumns("source_facts")}
@@ -363,17 +341,13 @@ function mutationCtes(): SQL {
         kind,
         provider,
         category,
-        short_window_id,
-        weekly_window_id,
         quantity,
-        credits_charged,
-        allowance_units
+        credits_charged
       )
       SELECT
         ${physicalGrainColumns("consolidated")},
         consolidated.quantity,
-        consolidated.credits_charged,
-        consolidated.allowance_units
+        consolidated.credits_charged
       FROM consolidated
       RETURNING
         processed_hour,
@@ -386,11 +360,8 @@ function mutationCtes(): SQL {
         kind,
         provider,
         category,
-        short_window_id,
-        weekly_window_id,
         quantity,
-        credits_charged,
-        allowance_units
+        credits_charged
     )
   `;
 }
@@ -414,94 +385,14 @@ function productTotalCtes(): SQL {
     source_totals AS (
       SELECT
         COALESCE(SUM(quantity), 0)::numeric AS quantity,
-        COALESCE(SUM(credits_charged), 0)::numeric AS credits_charged,
-        COALESCE(SUM(allowance_units), 0)::numeric AS allowance_units
+        COALESCE(SUM(credits_charged), 0)::numeric AS credits_charged
       FROM source_facts
     ),
     inserted_totals AS (
       SELECT
         COALESCE(SUM(quantity), 0)::numeric AS quantity,
-        COALESCE(SUM(credits_charged), 0)::numeric AS credits_charged,
-        COALESCE(SUM(allowance_units), 0)::numeric AS allowance_units
+        COALESCE(SUM(credits_charged), 0)::numeric AS credits_charged
       FROM inserted_hourly
-    )
-  `;
-}
-
-function windowTotalCtes(): SQL {
-  return sql`
-    source_window_totals AS (
-      SELECT
-        source_windows.window_kind,
-        source_windows.window_id,
-        SUM(source_windows.allowance_units)::numeric AS allowance_units
-      FROM (
-        SELECT
-          'short'::text AS window_kind,
-          source_facts.short_window_id AS window_id,
-          source_facts.allowance_units
-        FROM source_facts
-        WHERE source_facts.allowance_units > 0
-
-        UNION ALL
-
-        SELECT
-          'weekly'::text AS window_kind,
-          source_facts.weekly_window_id AS window_id,
-          source_facts.allowance_units
-        FROM source_facts
-        WHERE source_facts.allowance_units > 0
-      ) source_windows
-      GROUP BY source_windows.window_kind, source_windows.window_id
-    ),
-    inserted_window_totals AS (
-      SELECT
-        inserted_windows.window_kind,
-        inserted_windows.window_id,
-        SUM(inserted_windows.allowance_units)::numeric AS allowance_units
-      FROM (
-        SELECT
-          'short'::text AS window_kind,
-          inserted_hourly.short_window_id AS window_id,
-          inserted_hourly.allowance_units
-        FROM inserted_hourly
-        WHERE inserted_hourly.allowance_units > 0
-
-        UNION ALL
-
-        SELECT
-          'weekly'::text AS window_kind,
-          inserted_hourly.weekly_window_id AS window_id,
-          inserted_hourly.allowance_units
-        FROM inserted_hourly
-        WHERE inserted_hourly.allowance_units > 0
-      ) inserted_windows
-      GROUP BY inserted_windows.window_kind, inserted_windows.window_id
-    )
-  `;
-}
-
-function windowReconciliationCte(): SQL {
-  return sql`
-    window_reconciliation AS (
-      SELECT
-        ${count()} FILTER (
-          WHERE COALESCE(source_windows.window_kind, inserted_windows.window_kind) = 'short'
-        )::int AS short_windows,
-        ${count()} FILTER (
-          WHERE COALESCE(source_windows.window_kind, inserted_windows.window_kind) = 'weekly'
-        )::int AS weekly_windows,
-        COALESCE(
-          BOOL_AND(
-            COALESCE(source_windows.allowance_units, 0)
-              = COALESCE(inserted_windows.allowance_units, 0)
-          ),
-          true
-        ) AS reconciled
-      FROM source_window_totals source_windows
-      FULL OUTER JOIN inserted_window_totals inserted_windows
-        ON inserted_windows.window_kind = source_windows.window_kind
-       AND inserted_windows.window_id = source_windows.window_id
     )
   `;
 }
@@ -521,16 +412,11 @@ function compactionSummarySelect(): SQL {
         AS "maxGrainSourceRows",
       source_totals.quantity::text AS "quantity",
       source_totals.credits_charged::text AS "creditsCharged",
-      source_totals.allowance_units::text AS "allowanceUnits",
-      window_reconciliation.short_windows AS "affectedShortWindows",
-      window_reconciliation.weekly_windows AS "affectedWeeklyWindows",
       ARRAY(SELECT DISTINCT billing_run_id FROM inserted_hourly
             WHERE billing_context = 'run') AS "observedRunIds",
       (
         source_totals.quantity = inserted_totals.quantity
         AND source_totals.credits_charged = inserted_totals.credits_charged
-        AND source_totals.allowance_units = inserted_totals.allowance_units
-        AND window_reconciliation.reconciled
         AND row_counts.locked_raw_rows = row_counts.raw_rows_deleted
         AND row_counts.selected_grains >= row_counts.hourly_rows_inserted
         AND NOT EXISTS (SELECT 1 FROM raw_seed WHERE NOT billing_identity_valid)
@@ -544,7 +430,6 @@ function compactionSummarySelect(): SQL {
       ) AS "reconciled"
     FROM source_totals
     CROSS JOIN inserted_totals
-    CROSS JOIN window_reconciliation
     CROSS JOIN row_counts
   `;
 }
@@ -559,9 +444,7 @@ function compactUsageEventsSql(args: {
     ${consumedSourceCtes()},
     ${mutationCtes()},
     ${rowCountCte()},
-    ${productTotalCtes()},
-    ${windowTotalCtes()},
-    ${windowReconciliationCte()}
+    ${productTotalCtes()}
     ${compactionSummarySelect()}
   `;
 }
@@ -675,9 +558,6 @@ const compactUsageEventBatch$ = command(
         hourlyRowsInserted: compaction.hourlyRowsInserted,
         quantity: compaction.quantity,
         creditsCharged: compaction.creditsCharged,
-        allowanceUnits: compaction.allowanceUnits,
-        affectedShortWindows: compaction.affectedShortWindows,
-        affectedWeeklyWindows: compaction.affectedWeeklyWindows,
         reconciled: compaction.reconciled,
         hasMore: hasMoreRaw,
         lockWaitMs,

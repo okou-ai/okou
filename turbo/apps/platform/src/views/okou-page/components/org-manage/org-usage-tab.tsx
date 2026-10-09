@@ -66,8 +66,6 @@ function segmentKey(seg: CreditSegment): string {
 }
 
 type CreditGrant = BillingStatusResponse["creditGrants"][number];
-type UsageAllowance = NonNullable<BillingStatusResponse["usageAllowance"]>;
-type UsageAllowanceWindow = UsageAllowance["windows"][number];
 
 export interface CreditAddition {
   readonly id: string;
@@ -168,183 +166,6 @@ function expiresLabel(grant: CreditAddition): string {
       return $.billing.usage.expires;
     },
     { date: formatCreditDate(grant.expiresAt) },
-  );
-}
-
-function allowanceRemainingPercent(window: UsageAllowanceWindow): number {
-  if (window.unitLimit <= 0) {
-    return 0;
-  }
-  return (window.remainingUnits / window.unitLimit) * 100;
-}
-
-function usageTone(remainingPercent: number | null): {
-  readonly barClassName: string;
-  readonly trackClassName: string;
-} {
-  if (remainingPercent !== null && remainingPercent < 20) {
-    return {
-      barClassName: "bg-red-500",
-      trackClassName: "bg-red-500/15",
-    };
-  }
-  if (remainingPercent !== null && remainingPercent < 50) {
-    return {
-      barClassName: "bg-amber-500",
-      trackClassName: "bg-amber-500/15",
-    };
-  }
-  return {
-    barClassName: "bg-usage-kind-model",
-    trackClassName: "bg-muted/40",
-  };
-}
-
-function formatAllowanceWindowLabel(window: UsageAllowanceWindow): string {
-  if (window.kind === "weekly" || window.windowSeconds % 604_800 === 0) {
-    const weeks = Math.max(1, window.windowSeconds / 604_800);
-    return i18n.t(
-      ($) => {
-        return $.billing.usage.allowance.week;
-      },
-      { value: formatLocalizedNumber(weeks) },
-    );
-  }
-  if (window.windowSeconds % 86_400 === 0) {
-    return i18n.t(
-      ($) => {
-        return $.billing.usage.allowance.day;
-      },
-      { value: formatLocalizedNumber(window.windowSeconds / 86_400) },
-    );
-  }
-  if (window.windowSeconds % 3600 === 0) {
-    return i18n.t(
-      ($) => {
-        return $.billing.usage.allowance.hour;
-      },
-      { value: formatLocalizedNumber(window.windowSeconds / 3600) },
-    );
-  }
-  if (window.windowSeconds % 60 === 0) {
-    return i18n.t(
-      ($) => {
-        return $.billing.usage.allowance.minute;
-      },
-      { value: formatLocalizedNumber(window.windowSeconds / 60) },
-    );
-  }
-  return window.kind;
-}
-
-function formatAllowanceReset(window: UsageAllowanceWindow): string {
-  const text = window.expiresAt?.trim();
-  if (!text) {
-    return "";
-  }
-  const date = new Date(text);
-  if (Number.isNaN(date.getTime())) {
-    return i18n.t(
-      ($) => {
-        return $.billing.usage.allowance.resetsRaw;
-      },
-      { value: text },
-    );
-  }
-  // A window that resets today only needs the clock, and one that resets later
-  // only needs the day. Printing the full timestamp with the zone made the row
-  // read as a log line next to the number it belongs to.
-  const resetsToday = date.toDateString() === new Date(now()).toDateString();
-  const formatted = new Intl.DateTimeFormat(
-    currentLocale(),
-    resetsToday
-      ? { hour: "numeric", minute: "2-digit" }
-      : { month: "short", day: "numeric" },
-  ).format(date);
-  return i18n.t(
-    ($) => {
-      return $.billing.usage.allowance.resets;
-    },
-    { date: formatted },
-  );
-}
-
-function UsageAllowanceWindowRow({ window }: { window: UsageAllowanceWindow }) {
-  const { t } = useTranslation();
-  const remainingPercent = allowanceRemainingPercent(window);
-  const tone = usageTone(remainingPercent);
-  const label = formatAllowanceWindowLabel(window);
-  const width = Math.min(100, Math.max(0, remainingPercent));
-
-  return (
-    <div className="flex flex-col gap-2">
-      <div className="flex min-w-0 items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-sm font-semibold text-foreground">{label}</div>
-          <div className="mt-0.5 truncate text-[13px] text-muted-foreground">
-            {formatAllowanceReset(window)}
-          </div>
-        </div>
-        <div className="shrink-0 text-right text-sm font-semibold tabular-nums text-foreground">
-          {t(
-            ($) => {
-              return $.billing.usage.allowance.left;
-            },
-            { value: formatLocalizedNumber(window.remainingUnits) },
-          )}
-        </div>
-      </div>
-      <div
-        role="progressbar"
-        aria-label={t(
-          ($) => {
-            return $.billing.usage.allowance.remainingAria;
-          },
-          { label },
-        )}
-        aria-valuemin={0}
-        aria-valuemax={window.unitLimit}
-        aria-valuenow={window.remainingUnits}
-        className={`h-2 overflow-hidden rounded-full ${tone.trackClassName}`}
-      >
-        <span
-          className={`block h-full rounded-full transition-[width] ${tone.barClassName}`}
-          style={{ width: `${width}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
-function UsageAllowanceCard({
-  allowance,
-}: {
-  allowance: UsageAllowance | null | undefined;
-}) {
-  const { t } = useTranslation();
-  const windows = allowance?.windows.filter((window) => {
-    return window.unitLimit > 0;
-  });
-  if (!windows || windows.length === 0) {
-    return null;
-  }
-
-  return (
-    <div
-      data-testid="usage-allowance-section"
-      className="overflow-hidden rounded-xl bg-card px-5 py-4 border border-surface-border"
-    >
-      <p className="text-sm font-semibold text-foreground">
-        {t(($) => {
-          return $.billing.usage.allowance.title;
-        })}
-      </p>
-      <div className="mt-3 flex flex-col gap-4">
-        {windows.map((window) => {
-          return <UsageAllowanceWindowRow key={window.kind} window={window} />;
-        })}
-      </div>
-    </div>
   );
 }
 
@@ -455,10 +276,7 @@ function OrgCreditHeader({ total }: { total: number }) {
   );
 }
 
-/**
- * The composition of the balance. The segments are gapped so it cannot be
- * mistaken for the filled allowance meter above it.
- */
+/** The composition of the balance, separated into credit sources. */
 function CreditBreakdownBar({
   segments,
   tier,
@@ -621,11 +439,7 @@ function CreditBalanceActions({
 // Credit balance card
 // ---------------------------------------------------------------------------
 
-/**
- * The org credit balance summary card: what refills on its own (the usage
- * allowance) above what does not (the org credit wallet, its additions, and the
- * action that tops it up).
- */
+/** The org credit wallet, its additions, and the action that tops it up. */
 export function CreditBalanceCard({
   onBuyCredits,
   onComparePlans,
@@ -640,32 +454,27 @@ export function CreditBalanceCard({
   const billingLoading = billingLoadable.state === "loading";
 
   return (
-    <div className="flex flex-col gap-4">
-      {billing ? (
-        <UsageAllowanceCard allowance={billing.usageAllowance} />
-      ) : null}
-      <div className="overflow-hidden rounded-xl bg-card border border-surface-border">
-        {billingLoading && !billing ? (
-          <div className="px-5 py-4 space-y-2">
-            <div className="h-4 w-48 rounded bg-muted/50 animate-pulse" />
-            <div className="h-1.5 w-full rounded-full bg-muted/40 animate-pulse" />
-          </div>
-        ) : billing ? (
-          <CreditBalanceChart
-            billing={billing}
-            onBuyCredits={onBuyCredits}
-            onComparePlans={onComparePlans}
-          />
-        ) : (
-          <div className="px-5 py-4">
-            <p className="text-sm text-muted-foreground">
-              {t(($) => {
-                return $.billing.usage.unavailable;
-              })}
-            </p>
-          </div>
-        )}
-      </div>
+    <div className="overflow-hidden rounded-xl bg-card border border-surface-border">
+      {billingLoading && !billing ? (
+        <div className="px-5 py-4 space-y-2">
+          <div className="h-4 w-48 rounded bg-muted/50 animate-pulse" />
+          <div className="h-1.5 w-full rounded-full bg-muted/40 animate-pulse" />
+        </div>
+      ) : billing ? (
+        <CreditBalanceChart
+          billing={billing}
+          onBuyCredits={onBuyCredits}
+          onComparePlans={onComparePlans}
+        />
+      ) : (
+        <div className="px-5 py-4">
+          <p className="text-sm text-muted-foreground">
+            {t(($) => {
+              return $.billing.usage.unavailable;
+            })}
+          </p>
+        </div>
+      )}
     </div>
   );
 }

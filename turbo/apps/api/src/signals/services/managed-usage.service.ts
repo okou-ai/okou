@@ -13,7 +13,6 @@ import {
   type ManagedUsageRecordArgs,
   type ManagedUsageResource,
 } from "./managed-usage-record";
-import { resolveUsageAllowanceAvailability$ } from "./usage-allowance-availability.service";
 
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
@@ -42,7 +41,6 @@ import {
   loadOrgPlanCapabilities$,
 } from "./org-plan-entitlement-read.service";
 import { resolveActiveRunCreditAdmission } from "./run-admission.service";
-import type { UsageAllowanceAvailabilitySnapshot } from "./usage-allowance.service";
 import { getSpendableUsagePackCredits } from "./usage-pack-credit.service";
 
 export interface ManagedUsageErrorResponse {
@@ -106,17 +104,13 @@ export interface ManagedUsageCreditCheckArgs {
   readonly enforceBalance?: boolean;
 }
 
-interface ManagedUsageUncoveredBalance {
-  readonly requiredCredits: bigint;
-  readonly spendableCredits: bigint;
-}
-
-async function checkManagedCreditBalance(
+/** Check spendable credits within the caller's admission transaction. */
+export async function checkManagedCreditsSnapshotInDb(
   writeDb: Db,
   args: ManagedUsageCreditCheckArgs,
   pricingResolution: UsagePricingResolution,
   signal: AbortSignal,
-): Promise<ManagedUsageErrorResponse | ManagedUsageUncoveredBalance | null> {
+): Promise<ManagedUsageErrorResponse | null> {
   const pricingProvider = resolveUsagePricingProvider(
     pricingResolution,
     args.resource.kind,
@@ -208,37 +202,7 @@ async function checkManagedCreditBalance(
     return null;
   }
 
-  return {
-    requiredCredits,
-    spendableCredits:
-      usagePackCredits + (spendableCredits > 0n ? spendableCredits : 0n),
-  };
-}
-
-/** The caller releases its owner row before performing any allowance refresh. */
-export async function checkManagedCreditsSnapshotInDb(
-  writeDb: Db,
-  args: ManagedUsageCreditCheckArgs,
-  pricingResolution: UsagePricingResolution,
-  allowance: UsageAllowanceAvailabilitySnapshot,
-  signal: AbortSignal,
-): Promise<ManagedUsageErrorResponse | "allowance_refresh_required" | null> {
-  const balance = await checkManagedCreditBalance(
-    writeDb,
-    args,
-    pricingResolution,
-    signal,
-  );
-  if (!balance || "status" in balance) {
-    return balance;
-  }
-  if (allowance === "allowance_refresh_required") {
-    return allowance;
-  }
-  return balance.spendableCredits + BigInt(allowance?.remainingUnits ?? 0) >=
-    balance.requiredCredits
-    ? null
-    : insufficientCredits();
+  return insufficientCredits();
 }
 
 const checkManagedCreditBalance$ = command(
@@ -247,9 +211,7 @@ const checkManagedCreditBalance$ = command(
     args: ManagedUsageCreditCheckArgs,
     pricingResolution: UsagePricingResolution,
     signal: AbortSignal,
-  ): Promise<
-    ManagedUsageErrorResponse | ManagedUsageUncoveredBalance | null
-  > => {
+  ): Promise<ManagedUsageErrorResponse | null> => {
     const writeDb = set(writeDb$);
     const pricingProvider = resolveUsagePricingProvider(
       pricingResolution,
@@ -357,11 +319,7 @@ const checkManagedCreditBalance$ = command(
       return null;
     }
 
-    return {
-      requiredCredits,
-      spendableCredits:
-        usagePackCredits + (spendableCredits > 0n ? spendableCredits : 0n),
-    };
+    return insufficientCredits();
   },
 );
 
@@ -371,26 +329,12 @@ export const checkManagedCredits$ = command(
     args: ManagedUsageCreditCheckArgs,
     signal: AbortSignal,
   ): Promise<ManagedUsageErrorResponse | null> => {
-    const balance = await set(
+    return await set(
       checkManagedCreditBalance$,
       args,
       get(usagePricingResolution$),
       signal,
     );
-    signal.throwIfAborted();
-    if (!balance || "status" in balance) {
-      return balance;
-    }
-    const allowance = await set(
-      resolveUsageAllowanceAvailability$,
-      args.orgId,
-      signal,
-    );
-    signal.throwIfAborted();
-    return balance.spendableCredits + BigInt(allowance?.remainingUnits ?? 0) >=
-      balance.requiredCredits
-      ? null
-      : insufficientCredits();
   },
 );
 

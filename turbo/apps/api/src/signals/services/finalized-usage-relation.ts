@@ -1,4 +1,3 @@
-import { usageAllowanceAllocations } from "@okouai/db/schema/org-usage-allowance";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { usageEventHourlyRollup } from "@okouai/db/schema/usage-event-hourly-rollup";
 import { and, eq, gte, isNotNull, lt, sql } from "drizzle-orm";
@@ -24,6 +23,7 @@ interface FinalizedUsageBounds {
  * start it never knew.
  */
 
+/** Read finalized raw and hourly usage with the originally recorded credit charge. */
 export function buildFinalizedUsageRelation(bounds?: FinalizedUsageBounds) {
   const queryBuilder = new QueryBuilder();
   const rawRows = queryBuilder
@@ -42,22 +42,12 @@ export function buildFinalizedUsageRelation(bounds?: FinalizedUsageBounds) {
       kind: usageEvent.kind,
       provider: usageEvent.provider,
       category: usageEvent.category,
-      shortWindowId: usageAllowanceAllocations.shortWindowId,
-      weeklyWindowId: usageAllowanceAllocations.weeklyWindowId,
       quantity: usageEvent.quantity,
       creditsCharged: sql`COALESCE(${usageEvent.creditsCharged}, 0)::bigint`
         .mapWith(pgInt8ToSafeIntegerDecoder)
         .as("credits_charged"),
-      allowanceUnits:
-        sql`COALESCE(${usageAllowanceAllocations.unitsApplied}, 0)::bigint`
-          .mapWith(pgInt8ToSafeIntegerDecoder)
-          .as("allowance_units"),
     })
     .from(usageEvent)
-    .leftJoin(
-      usageAllowanceAllocations,
-      eq(usageAllowanceAllocations.usageEventId, usageEvent.id),
-    )
     .where(
       and(
         eq(usageEvent.status, "processed"),
@@ -82,11 +72,8 @@ export function buildFinalizedUsageRelation(bounds?: FinalizedUsageBounds) {
       kind: usageEventHourlyRollup.kind,
       provider: usageEventHourlyRollup.provider,
       category: usageEventHourlyRollup.category,
-      shortWindowId: usageEventHourlyRollup.shortWindowId,
-      weeklyWindowId: usageEventHourlyRollup.weeklyWindowId,
       quantity: usageEventHourlyRollup.quantity,
       creditsCharged: usageEventHourlyRollup.creditsCharged,
-      allowanceUnits: usageEventHourlyRollup.allowanceUnits,
     })
     .from(usageEventHourlyRollup)
     .where(

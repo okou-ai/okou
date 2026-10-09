@@ -11,7 +11,6 @@ import type {
 import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
-import { orgUsageAllowanceEntitlements } from "@okouai/db/schema/org-usage-allowance";
 import {
   usagePackAllocationChanges,
   usagePackSubscriptionChanges,
@@ -49,10 +48,7 @@ import {
   setStripeSubscriptionPaymentMethod,
   type BillingPurchasePaymentMethod,
 } from "./billing-payment-method.service";
-import {
-  canceledUsageAllowanceScheduleMetadata,
-  subscriptionScheduleHasNoFutureChanges,
-} from "./stripe-subscription-schedules.service";
+import { subscriptionScheduleHasNoFutureChanges } from "./stripe-subscription-schedules.service";
 
 const CONCURRENCY_SUBSCRIPTION_QUANTITY_MAX = 1000;
 const STRIPE_INVOICE_LINE_PAGE_SIZE = 100;
@@ -169,47 +165,6 @@ const findActiveConcurrencySubscription$ = command(
   },
 );
 
-type SharedBillingSubscriptionKind = "plan" | "allowance" | null;
-
-const sharedBillingSubscriptionKind$ = command(
-  async (
-    { set },
-    args: ConcurrencySubscriptionArgs,
-    signal: AbortSignal,
-  ): Promise<SharedBillingSubscriptionKind> => {
-    const db = set(writeDb$);
-    const [plan] = await db
-      .select({ orgId: orgPlanEntitlements.orgId })
-      .from(orgPlanEntitlements)
-      .where(
-        and(
-          eq(orgPlanEntitlements.orgId, args.orgId),
-          eq(orgPlanEntitlements.stripeSubscriptionId, args.subscriptionId),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    if (plan) {
-      return "plan";
-    }
-    const [allowance] = await db
-      .select({ orgId: orgUsageAllowanceEntitlements.orgId })
-      .from(orgUsageAllowanceEntitlements)
-      .where(
-        and(
-          eq(orgUsageAllowanceEntitlements.orgId, args.orgId),
-          eq(
-            orgUsageAllowanceEntitlements.stripeSubscriptionId,
-            args.subscriptionId,
-          ),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    return allowance ? "allowance" : null;
-  },
-);
-
 function concurrencySubscriptionItem(
   items: readonly StripeSubscriptionItem[],
 ): {
@@ -234,6 +189,14 @@ function requiredConcurrencySubscriptionItem(
   return item;
 }
 
+function subscriptionHasUnrelatedConcurrencyItems(
+  subscription: StripeSubscription,
+): boolean {
+  return subscription.items.data.some((item) => {
+    return !isConcurrencyPriceId(item.price.id);
+  });
+}
+
 function concurrencyPriceItem(
   items: readonly StripeSubscriptionItem[],
 ): StripeSubscriptionItem | undefined {
@@ -250,6 +213,29 @@ function stripeObjectId(value: StripeRef | undefined): string | null {
 }
 
 type ConcurrencyScheduleOwner = "plan" | "shared" | null;
+
+function scheduleHasUnrelatedConcurrencyItems(
+  schedule: StripeSubscriptionSchedule,
+  planPriceId?: string,
+): boolean {
+  const currentStart = schedule.current_phase?.start_date;
+  return (
+    currentStart !== undefined &&
+    schedule.phases.some((phase) => {
+      return (
+        phase.start_date >= currentStart &&
+        (phase.items ?? []).some((item) => {
+          const priceId = stripeObjectId(item.price);
+          return (
+            priceId !== null &&
+            priceId !== planPriceId &&
+            !isConcurrencyPriceId(priceId)
+          );
+        })
+      );
+    })
+  );
+}
 
 const concurrencyScheduleOwner$ = command(
   async (
@@ -296,20 +282,9 @@ const concurrencyScheduleOwner$ = command(
     const [sharedSubscription] = await db
       .select({
         planPriceId: orgPlanEntitlements.stripePriceId,
-        allowanceOrgId: orgUsageAllowanceEntitlements.orgId,
         pendingPlanScheduleId: orgMetadata.pendingSubscriptionScheduleId,
       })
       .from(orgPlanEntitlements)
-      .leftJoin(
-        orgUsageAllowanceEntitlements,
-        and(
-          eq(orgUsageAllowanceEntitlements.orgId, orgPlanEntitlements.orgId),
-          eq(
-            orgUsageAllowanceEntitlements.stripeSubscriptionId,
-            orgPlanEntitlements.stripeSubscriptionId,
-          ),
-        ),
-      )
       .leftJoin(orgMetadata, eq(orgMetadata.orgId, orgPlanEntitlements.orgId))
       .where(
         and(
@@ -319,11 +294,16 @@ const concurrencyScheduleOwner$ = command(
       )
       .limit(1);
     signal.throwIfAborted();
+    if (!sharedSubscription?.planPriceId) {
+      return scheduleHasUnrelatedConcurrencyItems(schedule) ? "shared" : null;
+    }
     if (
-      !sharedSubscription?.planPriceId ||
-      (!sharedSubscription.allowanceOrgId &&
-        schedule.end_behavior !== "cancel" &&
-        sharedSubscription.pendingPlanScheduleId !== schedule.id)
+      schedule.end_behavior !== "cancel" &&
+      sharedSubscription.pendingPlanScheduleId !== schedule.id &&
+      !scheduleHasUnrelatedConcurrencyItems(
+        schedule,
+        sharedSubscription.planPriceId,
+      )
     ) {
       return null;
     }
@@ -532,7 +512,6 @@ function schedulePhaseParams(
   phase: StripeSchedulePhase,
   args: {
     readonly items: StripeSchedulePhaseItemParam[];
-    readonly metadataOverlay: Readonly<Record<string, string>> | null;
     readonly period?: { readonly start: number; readonly end: number };
   },
 ): StripeSchedulePhaseParam {
@@ -543,9 +522,7 @@ function schedulePhaseParams(
   if (period.end <= period.start) {
     throw new Error("Stripe subscription schedule phase has an invalid period");
   }
-  const metadata = args.metadataOverlay
-    ? { ...phase.metadata, ...args.metadataOverlay }
-    : phase.metadata;
+  const metadata = phase.metadata;
   return phaseWithDiscounts(
     {
       start_date: period.start,
@@ -591,9 +568,6 @@ function concurrencyScheduleMergeParams(args: {
   readonly targetQuantity: number;
   readonly prorationBehavior: "always_invoice" | "none";
 }): NonNullable<StripeInvoiceCreatePreviewParams["schedule_details"]> {
-  const metadataOverlay = canceledUsageAllowanceScheduleMetadata(
-    args.subscription,
-  );
   return {
     end_behavior: scheduleEndBehavior(args.schedule),
     proration_behavior: args.prorationBehavior,
@@ -604,7 +578,6 @@ function concurrencyScheduleMergeParams(args: {
           args.priceId,
           args.targetQuantity,
         ),
-        metadataOverlay,
       });
     }),
   };
@@ -629,9 +602,6 @@ function planEndingConcurrencyScheduleMergeParams(args: {
   ) {
     throw new Error("Stripe subscription schedule cannot be safely updated");
   }
-  const metadataOverlay = canceledUsageAllowanceScheduleMetadata(
-    args.subscription,
-  );
   return {
     end_behavior: scheduleEndBehavior(args.schedule),
     proration_behavior: args.prorationBehavior,
@@ -645,7 +615,6 @@ function planEndingConcurrencyScheduleMergeParams(args: {
         return [
           schedulePhaseParams(phase, {
             items: activeItems,
-            metadataOverlay,
           }),
         ];
       }
@@ -654,19 +623,16 @@ function planEndingConcurrencyScheduleMergeParams(args: {
         return [
           schedulePhaseParams(phase, {
             items: endedItems,
-            metadataOverlay,
           }),
         ];
       }
       return [
         schedulePhaseParams(phase, {
           items: activeItems,
-          metadataOverlay,
           period: { start: phase.start_date, end: args.endsAt },
         }),
         schedulePhaseParams(phase, {
           items: endedItems,
-          metadataOverlay,
           period: { start: args.endsAt, end: phase.end_date },
         }),
       ];
@@ -692,9 +658,6 @@ function deferredConcurrencyScheduleMergeParams(args: {
   ) {
     throw new Error("Stripe subscription schedule cannot be safely updated");
   }
-  const metadataOverlay = canceledUsageAllowanceScheduleMetadata(
-    args.subscription,
-  );
   return {
     end_behavior: scheduleEndBehavior(args.schedule),
     proration_behavior: "none",
@@ -703,7 +666,6 @@ function deferredConcurrencyScheduleMergeParams(args: {
         return [
           schedulePhaseParams(phase, {
             items: schedulePhaseItems(phase),
-            metadataOverlay,
           }),
         ];
       }
@@ -716,14 +678,12 @@ function deferredConcurrencyScheduleMergeParams(args: {
         return [
           schedulePhaseParams(phase, {
             items: updatedItems,
-            metadataOverlay,
           }),
         ];
       }
       return [
         schedulePhaseParams(phase, {
           items: schedulePhaseItems(phase),
-          metadataOverlay,
           period: {
             start: phase.start_date,
             end: args.effectiveAt,
@@ -731,7 +691,6 @@ function deferredConcurrencyScheduleMergeParams(args: {
         }),
         schedulePhaseParams(phase, {
           items: updatedItems,
-          metadataOverlay,
           period: {
             start: args.effectiveAt,
             end: phase.end_date,
@@ -2270,11 +2229,11 @@ export const cancelConcurrencySubscription$ = command(
       return { ok: false, reason: "not_found" };
     }
     const stripe = getStripeClient();
-    if ((await set(sharedBillingSubscriptionKind$, args, signal)) !== null) {
-      const stripeSubscription = await stripe.subscriptions.retrieve(
-        args.subscriptionId,
-      );
-      signal.throwIfAborted();
+    const stripeSubscription = await stripe.subscriptions.retrieve(
+      args.subscriptionId,
+    );
+    signal.throwIfAborted();
+    if (subscriptionHasUnrelatedConcurrencyItems(stripeSubscription)) {
       const schedulePreparation = await set(
         prepareConcurrencySchedule$,
         {
@@ -2369,15 +2328,12 @@ const restoreScheduledConcurrencyChange$ = command(
     args: ConcurrencySubscriptionArgs & {
       readonly quantity: number;
       readonly shared: boolean;
-      readonly restoreSubscriptionCancellation: boolean;
+      readonly subscription: StripeSubscription;
     },
     signal: AbortSignal,
   ): Promise<RestoreConcurrencyStripeResult> => {
     const stripe = getStripeClient();
-    const stripeSubscription = await stripe.subscriptions.retrieve(
-      args.subscriptionId,
-    );
-    signal.throwIfAborted();
+    const stripeSubscription = args.subscription;
     const item = concurrencySubscriptionItem(stripeSubscription.items.data);
     if (!item) {
       return "not_found";
@@ -2387,12 +2343,6 @@ const restoreScheduledConcurrencyChange$ = command(
     if (!scheduleId) {
       if (item.quantity !== args.quantity) {
         return "not_found";
-      }
-      if (args.restoreSubscriptionCancellation) {
-        await stripe.subscriptions.update(args.subscriptionId, {
-          cancel_at_period_end: false,
-        });
-        signal.throwIfAborted();
       }
       return "restored";
     }
@@ -2484,19 +2434,19 @@ export const restoreConcurrencySubscription$ = command(
     }
 
     const stripe = getStripeClient();
-    const sharedKind = await set(sharedBillingSubscriptionKind$, args, signal);
+    const stripeSubscription = await stripe.subscriptions.retrieve(
+      args.subscriptionId,
+    );
     signal.throwIfAborted();
-    if (sharedKind !== null || subscription.scheduledQuantity !== null) {
+    const shared = subscriptionHasUnrelatedConcurrencyItems(stripeSubscription);
+    if (shared || subscription.scheduledQuantity !== null) {
       const stripeResult = await set(
         restoreScheduledConcurrencyChange$,
         {
           ...args,
           quantity: subscription.quantity,
-          shared: sharedKind !== null,
-          restoreSubscriptionCancellation:
-            sharedKind === "allowance" &&
-            subscription.cancelAtPeriodEnd &&
-            subscription.scheduledQuantity === null,
+          shared,
+          subscription: stripeSubscription,
         },
         signal,
       );
