@@ -11,6 +11,7 @@ import {
   rustTypeBindings,
 } from "../types";
 import { modelProviderCodexRuntimeConfigSchema } from "../../contracts/model-providers";
+import { runnerWssTicketsContract } from "../../contracts/runner-wss-tickets";
 import {
   piLaunchConfigSchema,
   piModelConfigV2Schema,
@@ -26,6 +27,11 @@ import {
 } from "../../contracts/webhooks";
 
 const expectedBindings = [
+  {
+    rustModulePath: ["runners", "wss"],
+    rustTypeName: "ConsumeResponse",
+    direction: "response",
+  },
   ...["Resolve", "Check"].flatMap((name) => {
     return [
       {
@@ -343,6 +349,46 @@ describe("Rust type bindings", () => {
     expect(actualBindings).toEqual(
       [...expectedBindings].sort(compareBindingName),
     );
+  });
+
+  it("retains the complete WSS consume authority with a required epoch", () => {
+    const binding = rustTypeBindings.find((entry) => {
+      return (
+        entry.rustModulePath.join("/") === "runners/wss" &&
+        entry.rustTypeName === "ConsumeResponse"
+      );
+    });
+    expect(binding?.schema).toBe(
+      runnerWssTicketsContract.consume.responses[200],
+    );
+    expect(
+      z.toJSONSchema(runnerWssTicketsContract.consume.responses[200]),
+    ).toMatchObject({
+      required: [
+        "runId",
+        "runnerId",
+        "orgId",
+        "userId",
+        "origin",
+        "authorizationEpoch",
+      ],
+      properties: { authorizationEpoch: { type: "string", format: "uuid" } },
+    });
+    const rendered = renderRustTypes(rustTypeBindings);
+    const body = rendered.match(
+      /pub struct ConsumeResponse \{([\s\S]*?)\n\s+\}/u,
+    )?.[1];
+    for (const field of [
+      "run_id",
+      "runner_id",
+      "org_id",
+      "user_id",
+      "origin",
+      "authorization_epoch",
+    ]) {
+      expect(body).toContain(`pub ${field}: String,`);
+    }
+    expect(body).not.toContain("Option<");
   });
 
   it("renders deterministic Rust DTOs for the supported registry", () => {

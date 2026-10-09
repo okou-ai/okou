@@ -2,6 +2,18 @@ import { normalizeRouteBindings, renderRustRoutes } from "../generate";
 import { type RustRouteBinding, rustRouteBindings } from "../routes";
 
 const expectedBindings = [
+  {
+    method: "POST",
+    path: "/api/runners/wss/tickets/consume",
+    rustModulePath: ["runners", "wss"],
+    rustConstName: "CONSUME",
+  },
+  {
+    method: "POST",
+    path: "/api/runners/wss/authorizations/check",
+    rustModulePath: ["runners", "wss"],
+    rustConstName: "CHECK",
+  },
   ...(["resolve", "check"] as const).map((action) => {
     return {
       method: "POST",
