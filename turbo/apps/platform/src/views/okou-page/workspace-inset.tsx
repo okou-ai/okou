@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { useGet } from "ccstate-react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { cn } from "@okouai/ui";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 
 /**
@@ -56,11 +55,9 @@ export function WorkspaceInset({
 
   return (
     <div
-      className={cn(
-        "relative z-0 before:absolute before:inset-0 before:-z-1 before:bg-workspace-canvas before:bg-workspace-canvas-image before:bg-[length:100%_100%] before:content-[''] flex min-h-0 min-w-0 flex-1 flex-col bg-background md:m-2 md:rounded-xl md:border md:border-border [anchor-name:--workspace-canvas]",
-        fixedLayout ? "md:overflow-clip" : "md:overflow-hidden",
-        beside === "chat-list" && "md:ml-0",
-      )}
+      className={`relative z-0 before:absolute before:inset-0 before:-z-1 before:bg-workspace-canvas before:bg-workspace-canvas-image before:bg-[length:100%_100%] before:content-[''] flex min-h-0 min-w-0 flex-1 flex-col bg-background md:m-2 md:rounded-xl md:border md:border-border [anchor-name:--workspace-canvas] ${
+        fixedLayout ? "md:overflow-clip" : "md:overflow-hidden"
+      } ${beside === "chat-list" ? "md:ml-0" : ""}`}
       data-testid="workspace-inset"
       // The chrome the sheet is framed against, so the rendered layout case is
       // readable as data rather than inferred from the margin utility.
