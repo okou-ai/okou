@@ -435,107 +435,6 @@ export const selectDiscordDmBinding$ = command(
   },
 );
 
-async function deleteDiscordBinding(
-  db: Db,
-  args: {
-    readonly connectionId: string;
-    readonly discordUserId: string;
-    readonly orgId?: string;
-  },
-  signal: AbortSignal,
-): Promise<boolean> {
-  const rows = await db.transaction(async (tx) => {
-    signal.throwIfAborted();
-    const [candidate] = await tx
-      .select({
-        guildId: discordOrgConnections.guildId,
-        userId: discordOrgConnections.userId,
-        orgId: discordOrgInstallations.orgId,
-      })
-      .from(discordOrgConnections)
-      .innerJoin(
-        discordOrgInstallations,
-        eq(discordOrgInstallations.guildId, discordOrgConnections.guildId),
-      )
-      .where(
-        and(
-          eq(discordOrgConnections.id, args.connectionId),
-          eq(discordOrgConnections.discordUserId, args.discordUserId),
-          args.orgId
-            ? eq(discordOrgInstallations.orgId, args.orgId)
-            : undefined,
-        ),
-      );
-    signal.throwIfAborted();
-    if (!candidate) {
-      return [];
-    }
-    await tx
-      .delete(discordOauthStates)
-      .where(
-        and(
-          eq(discordOauthStates.userId, candidate.userId),
-          eq(discordOauthStates.orgId, candidate.orgId),
-        ),
-      );
-    signal.throwIfAborted();
-    const [installation] = await tx
-      .select({ guildId: discordOrgInstallations.guildId })
-      .from(discordOrgInstallations)
-      .where(
-        and(
-          eq(discordOrgInstallations.guildId, candidate.guildId),
-          eq(discordOrgInstallations.orgId, candidate.orgId),
-        ),
-      )
-      .for("update");
-    signal.throwIfAborted();
-    if (!installation) {
-      return [];
-    }
-    const identities = await tx
-      .select({ discordUserId: discordUserIdentities.discordUserId })
-      .from(discordUserIdentities)
-      .where(discordIdentityOwnersWhere([args.discordUserId]))
-      .orderBy(asc(discordUserIdentities.discordUserId))
-      .for("update");
-    signal.throwIfAborted();
-    const removed = await tx
-      .delete(discordOrgConnections)
-      .where(
-        and(
-          eq(discordOrgConnections.id, args.connectionId),
-          eq(discordOrgConnections.discordUserId, args.discordUserId),
-          eq(discordOrgConnections.userId, candidate.userId),
-          eq(discordOrgConnections.guildId, candidate.guildId),
-          args.orgId
-            ? eq(
-                discordOrgConnections.guildId,
-                tx
-                  .select({ guildId: discordOrgInstallations.guildId })
-                  .from(discordOrgInstallations)
-                  .where(eq(discordOrgInstallations.orgId, args.orgId)),
-              )
-            : undefined,
-        ),
-      )
-      .returning({ userId: discordOrgConnections.userId });
-    signal.throwIfAborted();
-    await tx
-      .delete(discordUserIdentities)
-      .where(unusedDiscordIdentityOwnersWhere(identities));
-    signal.throwIfAborted();
-    return removed;
-  });
-  await publishDiscordChanged(
-    rows.map((row) => {
-      return row.userId;
-    }),
-  );
-  signal.throwIfAborted();
-  return rows.length > 0;
-}
-
 export const disconnectDiscordBinding$ = command(
   async (
     { set },
@@ -546,7 +445,99 @@ export const disconnectDiscordBinding$ = command(
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
-    return await deleteDiscordBinding(set(writeDb$), args, signal);
+    const db = set(writeDb$);
+    // Attempt cancellation, child revocation and unused-parent release commit together.
+    const rows = await db.transaction(async (tx) => {
+      signal.throwIfAborted();
+      const [candidate] = await tx
+        .select({
+          guildId: discordOrgConnections.guildId,
+          userId: discordOrgConnections.userId,
+          orgId: discordOrgInstallations.orgId,
+        })
+        .from(discordOrgConnections)
+        .innerJoin(
+          discordOrgInstallations,
+          eq(discordOrgInstallations.guildId, discordOrgConnections.guildId),
+        )
+        .where(
+          and(
+            eq(discordOrgConnections.id, args.connectionId),
+            eq(discordOrgConnections.discordUserId, args.discordUserId),
+            args.orgId
+              ? eq(discordOrgInstallations.orgId, args.orgId)
+              : undefined,
+          ),
+        );
+      signal.throwIfAborted();
+      if (!candidate) {
+        return [];
+      }
+      await tx
+        .delete(discordOauthStates)
+        .where(
+          and(
+            eq(discordOauthStates.userId, candidate.userId),
+            eq(discordOauthStates.orgId, candidate.orgId),
+          ),
+        );
+      signal.throwIfAborted();
+      const [installation] = await tx
+        .select({ guildId: discordOrgInstallations.guildId })
+        .from(discordOrgInstallations)
+        .where(
+          and(
+            eq(discordOrgInstallations.guildId, candidate.guildId),
+            eq(discordOrgInstallations.orgId, candidate.orgId),
+          ),
+        )
+        .for("update");
+      signal.throwIfAborted();
+      if (!installation) {
+        return [];
+      }
+      const identities = await tx
+        .select({ discordUserId: discordUserIdentities.discordUserId })
+        .from(discordUserIdentities)
+        .where(discordIdentityOwnersWhere([args.discordUserId]))
+        .orderBy(asc(discordUserIdentities.discordUserId))
+        .for("update");
+      signal.throwIfAborted();
+      const removed = await tx
+        .delete(discordOrgConnections)
+        .where(
+          and(
+            eq(discordOrgConnections.id, args.connectionId),
+            eq(discordOrgConnections.discordUserId, args.discordUserId),
+            eq(discordOrgConnections.userId, candidate.userId),
+            eq(discordOrgConnections.guildId, candidate.guildId),
+            args.orgId
+              ? eq(
+                  discordOrgConnections.guildId,
+                  tx
+                    .select({ guildId: discordOrgInstallations.guildId })
+                    .from(discordOrgInstallations)
+                    .where(eq(discordOrgInstallations.orgId, args.orgId)),
+                )
+              : undefined,
+          ),
+        )
+        .returning({ userId: discordOrgConnections.userId });
+      signal.throwIfAborted();
+      await tx
+        .delete(discordUserIdentities)
+        .where(unusedDiscordIdentityOwnersWhere(identities));
+      signal.throwIfAborted();
+      return removed;
+    });
+    signal.throwIfAborted();
+    await publishDiscordChanged(
+      rows.map((row) => {
+        return row.userId;
+      }),
+    );
+    signal.throwIfAborted();
+    return rows.length > 0;
   },
 );
 

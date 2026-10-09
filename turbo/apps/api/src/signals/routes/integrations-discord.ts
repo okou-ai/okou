@@ -7,7 +7,8 @@ import { discordOrgInstallations } from "@okouai/db/schema/discord-org-installat
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, queryOf } from "../context/request";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
+import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import type { RouteEntry } from "../route-entry";
 import {
   discordOrgStatus,
@@ -42,71 +43,84 @@ const getDiscordStatus$ = computed(async (get) => {
   };
 });
 
-async function uninstallDiscordOrganization(
-  db: Db,
-  auth: { readonly orgId: string; readonly userId: string },
-  signal: AbortSignal,
-): Promise<boolean> {
-  const recipients = await db.transaction(async (tx) => {
-    await tx
-      .delete(discordOauthStates)
-      .where(eq(discordOauthStates.orgId, auth.orgId));
+const uninstallDiscordOrganization$ = command(
+  async (
+    { set },
+    auth: { readonly orgId: string; readonly userId: string },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+    // Guild removal, pending-attempt cancellation and identity release are atomic.
+    const recipients = await db.transaction(async (tx) => {
+      await tx
+        .delete(discordOauthStates)
+        .where(eq(discordOauthStates.orgId, auth.orgId));
+      signal.throwIfAborted();
+      const [installation] = await tx
+        .select({ guildId: discordOrgInstallations.guildId })
+        .from(discordOrgInstallations)
+        .where(eq(discordOrgInstallations.orgId, auth.orgId))
+        .for("update");
+      signal.throwIfAborted();
+      if (!installation) {
+        return null;
+      }
+      const connections = await tx
+        .select({
+          userId: discordOrgConnections.userId,
+          discordUserId: discordOrgConnections.discordUserId,
+        })
+        .from(discordOrgConnections)
+        .where(eq(discordOrgConnections.guildId, installation.guildId));
+      signal.throwIfAborted();
+      const identities = await tx
+        .select({ discordUserId: discordUserIdentities.discordUserId })
+        .from(discordUserIdentities)
+        .where(
+          discordIdentityOwnersWhere(
+            connections.map((connection) => {
+              return connection.discordUserId;
+            }),
+          ),
+        )
+        .orderBy(asc(discordUserIdentities.discordUserId))
+        .for("update");
+      signal.throwIfAborted();
+      const admins = await tx
+        .select({ userId: orgMembersCache.userId })
+        .from(orgMembersCache)
+        .where(
+          and(
+            eq(orgMembersCache.orgId, auth.orgId),
+            eq(orgMembersCache.role, "admin"),
+          ),
+        );
+      const userIds = discordOrgChangedUserIds(admins, [
+        auth.userId,
+        ...connections.map((connection) => {
+          return connection.userId;
+        }),
+      ]);
+      signal.throwIfAborted();
+      await tx
+        .delete(discordOrgInstallations)
+        .where(eq(discordOrgInstallations.guildId, installation.guildId));
+      signal.throwIfAborted();
+      await tx
+        .delete(discordUserIdentities)
+        .where(unusedDiscordIdentityOwnersWhere(identities));
+      signal.throwIfAborted();
+      return userIds;
+    });
     signal.throwIfAborted();
-    const [installation] = await tx
-      .select({ guildId: discordOrgInstallations.guildId })
-      .from(discordOrgInstallations)
-      .where(eq(discordOrgInstallations.orgId, auth.orgId))
-      .for("update");
-    signal.throwIfAborted();
-    if (!installation) {
-      return null;
+    if (!recipients) {
+      return false;
     }
-    const connections = await tx
-      .select({
-        userId: discordOrgConnections.userId,
-        discordUserId: discordOrgConnections.discordUserId,
-      })
-      .from(discordOrgConnections)
-      .where(eq(discordOrgConnections.guildId, installation.guildId));
+    await publishDiscordChanged(recipients);
     signal.throwIfAborted();
-    const identities = await tx
-      .select({ discordUserId: discordUserIdentities.discordUserId })
-      .from(discordUserIdentities)
-      .where(
-        discordIdentityOwnersWhere(
-          connections.map((connection) => {
-            return connection.discordUserId;
-          }),
-        ),
-      )
-      .orderBy(asc(discordUserIdentities.discordUserId))
-      .for("update");
-    signal.throwIfAborted();
-    const userIds = await discordOrgChangedUserIds(tx, auth.orgId, [
-      auth.userId,
-      ...connections.map((connection) => {
-        return connection.userId;
-      }),
-    ]);
-    signal.throwIfAborted();
-    await tx
-      .delete(discordOrgInstallations)
-      .where(eq(discordOrgInstallations.guildId, installation.guildId));
-    signal.throwIfAborted();
-    await tx
-      .delete(discordUserIdentities)
-      .where(unusedDiscordIdentityOwnersWhere(identities));
-    signal.throwIfAborted();
-    return userIds;
-  });
-  if (!recipients) {
-    signal.throwIfAborted();
-    return false;
-  }
-  await publishDiscordChanged(recipients);
-  signal.throwIfAborted();
-  return true;
-}
+    return true;
+  },
+);
 
 const deleteDiscordIntegration$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -128,7 +142,7 @@ const deleteDiscordIntegration$ = command(
           },
         };
       }
-      const removed = await uninstallDiscordOrganization(db, auth, signal);
+      const removed = await set(uninstallDiscordOrganization$, auth, signal);
       return removed
         ? { status: 200 as const, body: { ok: true as const } }
         : unavailable();

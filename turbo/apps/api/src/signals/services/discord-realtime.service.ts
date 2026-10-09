@@ -1,21 +1,10 @@
-import { and, eq } from "drizzle-orm";
-import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
-
-import type { ReadonlyDb } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
 
-/** Capture recipients before deleting a guild's connected-user rows. */
-export async function discordOrgChangedUserIds(
-  db: Pick<ReadonlyDb, "select">,
-  orgId: string,
-  additionalUserIds: readonly string[] = [],
-): Promise<string[]> {
-  const admins = await db
-    .select({ userId: orgMembersCache.userId })
-    .from(orgMembersCache)
-    .where(
-      and(eq(orgMembersCache.orgId, orgId), eq(orgMembersCache.role, "admin")),
-    );
+/** Combine recipient facts captured by the owning transaction before deletion. */
+export function discordOrgChangedUserIds(
+  admins: readonly { readonly userId: string }[],
+  additionalUserIds: readonly string[],
+): string[] {
   return [
     ...new Set([
       ...additionalUserIds,
