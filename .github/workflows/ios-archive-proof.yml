@@ -7,6 +7,7 @@ on:
       - ios/scripts/archive-proof.py
       - ios/scripts/archive-proof.test.py
       - ios/scripts/build-archive-proof.sh
+      - ios/scripts/build-archive.sh
       - ios/scripts/release-testflight.sh
   workflow_dispatch:
     inputs:
@@ -35,8 +36,8 @@ jobs:
           ref: ${{ github.sha }}
       - name: Test archive preparation and export verification
         run: |
-          bash -n ios/scripts/build-archive-proof.sh ios/scripts/release-testflight.sh
-          shellcheck ios/scripts/build-archive-proof.sh ios/scripts/release-testflight.sh
+          bash -n ios/scripts/build-archive-proof.sh ios/scripts/build-archive.sh ios/scripts/release-testflight.sh
+          shellcheck ios/scripts/build-archive-proof.sh ios/scripts/build-archive.sh ios/scripts/release-testflight.sh
           python3 ios/scripts/archive-proof.test.py
 
   unsigned-archive:

@@ -4,7 +4,8 @@ name: release-please
 # adds no artifact dependency: each queued pull request's merge-group Turbo run
 # uploads the canonical app and CLI artifacts under its merged commit SHA, and
 # the Desktop workflow does the same when its package version changes.
-# iOS archives are built in the approved TestFlight publishing job below.
+# iOS merge groups publish immutable unsigned archives by exact input fingerprint;
+# the approved publishing job maps release_target to one archive and signs/exports it.
 # release-please deploys that same SHA as release_target. Staging independently
 # reuses the Turbo artifacts to deploy and verify the shared staging environment.
 on:
@@ -400,10 +401,12 @@ jobs:
     environment: production
     permissions:
       contents: read
+      actions: read
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
       IOS_VERSION: ${{ needs.release-please.outputs.ios_version }}
       IOS_INTERNAL_GROUP_NAME: ${{ vars.IOS_INTERNAL_GROUP_NAME }}
+      IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2
     steps:
       - name: Notify Slack - Starting
         id: slack-start
@@ -426,6 +429,34 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
+      - name: Install AWS CLI for private archive consumption
+        run: |
+          if ! command -v aws >/dev/null; then
+            HOMEBREW_NO_AUTO_UPDATE=1 brew install awscli
+          fi
+          aws --version
+      - name: Resolve and verify exact release archive
+        env:
+          IOS_ARCHIVE_DIR: ${{ runner.temp }}/okou-ios-promotion
+          GH_TOKEN: ${{ github.token }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID_DEV }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY_DEV }}
+          AWS_DEFAULT_REGION: auto
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_BUCKET_NAME: user-artifact-private-dev
+        run: |
+          echo "IOS_ARCHIVE_DIR=$IOS_ARCHIVE_DIR" >> "$GITHUB_ENV"
+          mkdir "$IOS_ARCHIVE_DIR"
+          python3 ios/scripts/archive-promotion.py toolchain "$IOS_ARCHIVE_DIR/toolchain.json"
+          python3 ios/scripts/archive-promotion.py inputs --toolchain "$IOS_ARCHIVE_DIR/toolchain.json" --output "$IOS_ARCHIVE_DIR/inputs.json"
+          python3 ios/scripts/archive-promotion.py consume "$IOS_ARCHIVE_DIR"
+      - name: Retain exact release-to-archive mapping
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ios-release-mapping-${{ needs.release-please.outputs.release_target }}
+          path: ${{ env.IOS_ARCHIVE_DIR }}/release-mapping.json
+          if-no-files-found: error
+          retention-days: 90
       - name: Resolve internal group and next build number
         id: prepare
         env:
@@ -434,7 +465,7 @@ jobs:
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.IOS_APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.IOS_APP_STORE_CONNECT_API_ISSUER_ID }}
         run: node ios/scripts/testflight.mjs prepare
-      - name: Archive and upload internal-only iOS build
+      - name: Sign export and upload the canonical internal-only iOS archive
         env:
           IOS_BUILD_NUMBER: ${{ steps.prepare.outputs.build_number }}
           IOS_APP_ID: ${{ steps.prepare.outputs.app_id }}
@@ -444,7 +475,7 @@ jobs:
           APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.IOS_APP_STORE_CONNECT_API_KEY_BASE64 }}
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.IOS_APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.IOS_APP_STORE_CONNECT_API_ISSUER_ID }}
-        run: bash ios/scripts/release-testflight.sh
+        run: bash ios/scripts/release-testflight.sh --archive "$IOS_ARCHIVE_DIR/Original.xcarchive"
       - name: Wait for processing and verify internal availability
         env:
           IOS_RELEASE_METADATA: ${{ runner.temp }}/okou-ios-release.json

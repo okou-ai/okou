@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 env:
   npm_config_audit: "false"
@@ -27,17 +28,18 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # Merge groups and main pushes can contain more than one commit.
           fetch-depth: 0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
-      - name: Verify CI change detection and gate behavior
+      - name: Verify CI change detection and promotion contracts
         run: |
           bash -n ios/scripts/*.sh
           shellcheck ios/scripts/*.sh
           bash ios/scripts/test-ci.sh
           node --test ios/scripts/testflight.test.mjs
+          python3 ios/scripts/archive-proof.test.py
+          python3 ios/scripts/archive-promotion.test.py
       - name: Detect iOS changes
         id: changes
         env:
@@ -53,23 +55,70 @@ jobs:
 
   build-test:
     needs: detect
-    if: needs.detect.outputs.needed == 'true'
+    # Main pushes consume previously built archives in release-please; never rebuild/test.
+    if: needs.detect.outputs.needed == 'true' && github.event_name != 'push'
     runs-on: macos-26
-    timeout-minutes: 15
+    timeout-minutes: 25
     env:
-      # https://github.com/actions/runner-images/blob/main/images/macos/macos-26-arm64-Readme.md
-      # Image 20260907.0351.1 includes Xcode 26.3 and the iOS 26.2 runtime.
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
       IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Configure archive workspace
+        run: echo "IOS_ARCHIVE_DIR=$RUNNER_TEMP/okou-ios-promotion" >> "$GITHUB_ENV"
+      - name: Capture promotion inputs
+        run: |
+          mkdir "$IOS_ARCHIVE_DIR"
+          python3 ios/scripts/archive-promotion.py toolchain "$IOS_ARCHIVE_DIR/toolchain.json"
+          python3 ios/scripts/archive-promotion.py inputs --toolchain "$IOS_ARCHIVE_DIR/toolchain.json" --output "$IOS_ARCHIVE_DIR/inputs.json"
+      - name: Install AWS CLI
+        if: github.event_name == 'merge_group'
+        run: |
+          if ! command -v aws >/dev/null; then
+            HOMEBREW_NO_AUTO_UPDATE=1 brew install awscli
+          fi
+          aws --version
+      - name: Resolve exact-input test evidence
+        id: evidence
+        if: github.event_name == 'merge_group'
+        env:
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          GH_TOKEN: ${{ github.token }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID_DEV }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY_DEV }}
+          AWS_DEFAULT_REGION: auto
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_BUCKET_NAME: user-artifact-private-dev
+        run: python3 ios/scripts/archive-promotion.py resolve-tests "$IOS_ARCHIVE_DIR"
       - name: Check Swift formatting and property lists
         run: |
           xcodebuild -version
           xcrun swift-format lint --strict --recursive ios/Okou ios/OkouTests
           plutil -lint ios/Okou/Resources/Info.plist ios/Okou.xcodeproj/project.pbxproj
       - name: Build app and run isolated simulator tests
+        if: github.event_name != 'merge_group' || steps.evidence.outputs.run_tests == 'true'
         run: bash ios/scripts/ci-test.sh
+      - name: Build unsigned device Release archive
+        if: github.event_name == 'merge_group'
+        run: |
+          bash ios/scripts/build-archive.sh
+          python3 ios/scripts/archive-promotion.py inputs --toolchain "$IOS_ARCHIVE_DIR/toolchain.json" --output "$IOS_ARCHIVE_DIR/inputs.json"
+          echo "${{ steps.evidence.outputs.run_tests }}" > "$IOS_ARCHIVE_DIR/ran-tests.txt"
+      - name: Transfer unsigned archive and evidence
+        if: github.event_name == 'merge_group'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ios-promotion-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.IOS_ARCHIVE_DIR }}/archive.tar.gz
+            ${{ env.IOS_ARCHIVE_DIR }}/archive-sha256.txt
+            ${{ env.IOS_ARCHIVE_DIR }}/inputs.json
+            ${{ env.IOS_ARCHIVE_DIR }}/test-evidence.json
+            ${{ env.IOS_ARCHIVE_DIR }}/ran-tests.txt
+          if-no-files-found: error
+          retention-days: 7
       - name: Upload failed test results
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -79,8 +128,36 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  ci-gate-ios:
+  publish-archive:
     needs: [detect, build-test]
+    if: github.event_name == 'merge_group' && needs.detect.outputs.needed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+      GH_TOKEN: ${{ github.token }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID_DEV }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY_DEV }}
+      AWS_DEFAULT_REGION: auto
+      R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+      R2_BUCKET_NAME: user-artifact-private-dev
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ios-promotion-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/okou-ios-promotion
+      - name: Publish immutable archive and readiness
+        run: |
+          aws --version
+          IOS_RAN_TESTS="$(<"$RUNNER_TEMP/okou-ios-promotion/ran-tests.txt")"
+          export IOS_RAN_TESTS
+          python3 ios/scripts/archive-promotion.py publish "$RUNNER_TEMP/okou-ios-promotion"
+
+  ci-gate-ios:
+    needs: [detect, build-test, publish-archive]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -88,7 +165,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Validate iOS check results
         env:
+          EVENT_NAME: ${{ github.event_name }}
           DETECT_RESULT: ${{ needs.detect.result }}
           IOS_NEEDED: ${{ needs.detect.outputs.needed }}
           BUILD_RESULT: ${{ needs.build-test.result }}
+          PUBLISH_RESULT: ${{ needs.publish-archive.result }}
         run: bash ios/scripts/ci-gate.sh

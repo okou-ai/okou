@@ -115,7 +115,7 @@ reject EVENT_NAME=pull_request CHECKOUT_REF=refs/heads/ios-pr
 reject EVENT_NAME=unexpected
 
 gate() {
-  DETECT_RESULT=$1 IOS_NEEDED=$2 BUILD_RESULT=$3 bash "$script_dir/ci-gate.sh"
+  EVENT_NAME=pull_request DETECT_RESULT=$1 IOS_NEEDED=$2 BUILD_RESULT=$3 PUBLISH_RESULT=skipped bash "$script_dir/ci-gate.sh"
 }
 gate success true success
 gate success false skipped
@@ -135,4 +135,12 @@ if gate success "" skipped > "$test_root/rejected.log" 2>&1; then
   echo "Gate accepted a missing change decision" >&2
   exit 1
 fi
+EVENT_NAME=merge_group DETECT_RESULT=success IOS_NEEDED=true BUILD_RESULT=success PUBLISH_RESULT=success bash "$script_dir/ci-gate.sh"
+EVENT_NAME=push DETECT_RESULT=success IOS_NEEDED=true BUILD_RESULT=skipped PUBLISH_RESULT=skipped bash "$script_dir/ci-gate.sh"
+for publish_result in failure cancelled skipped; do
+  if EVENT_NAME=merge_group DETECT_RESULT=success IOS_NEEDED=true BUILD_RESULT=success PUBLISH_RESULT=$publish_result bash "$script_dir/ci-gate.sh" > "$test_root/rejected.log" 2>&1; then
+    echo "Gate accepted failed/missing archive publication $publish_result" >&2
+    exit 1
+  fi
+done
 echo "iOS CI change detection and gate tests passed."

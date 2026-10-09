@@ -1,92 +1,138 @@
-# Archive promotion prerequisite
+# iOS archive promotion
 
-This is a proof, not a replacement for the current iOS CI or TestFlight release
-pipeline. Simulator tests and the existing production publishing path remain
-unchanged until a real device archive passes distribution export without
-recompilation.
+The iOS pipeline separates merge-group validation/builds from production signing,
+export, and TestFlight publication. Main never resolves packages, compiles, or
+runs simulator tests to recover a missing archive.
 
-## What this PR verifies
+## CI and test evidence
 
-The `iOS Archive Promotion Proof` workflow builds an **unsigned device Release
-archive** with Xcode 26.3 and locked packages. It uses the production configuration,
-rejects `Local.xcconfig`, and does not load signing or App Store Connect credentials.
-It then copies that archive and changes the build number in the application and
-archive plists. Every other file, including the executable and dSYMs, must remain
-byte-identical; the original archive must remain untouched.
+`.github/workflows/ios.yml` runs simulator checks on ordinary PRs and dispatches.
+A main merge group with changed iOS inputs also builds an **unsigned device
+Release archive**, with locked Swift packages and no production credentials.
+Both checks must succeed before the Ubuntu publisher writes canonical objects.
+The publisher also verifies the tar checksum produced on macOS before transfer.
+The required `ci-gate-ios` includes publication, not just compilation.
 
-The unsigned archive is transferred as a private same-run artifact with the source
-commit and SHA-256 digest. It is a proof artifact, not a production-ready marker or
-proof that application tests passed. The PR workflow runs this part only.
+A release-only merge group can omit simulator tests only when an existing test
+record matches its complete test input fingerprint. The classifier examines the
+**whole group's diff**, not its branch name or last commit. Its conservative
+allowlist accepts release manifest versions, configured package changelogs,
+simple version files, package.json top-level versions, Cargo package versions and
+local Cargo.lock package versions, and the exact release-please version line in
+`ios/Config/Shared.xcconfig`. Other changes, including mixed code changes outside
+iOS, run tests normally. Unrecognized metadata changes also run tests.
 
-## Distribution export proof
+The fingerprint covers Git blob contents **and modes** for all tracked iOS files
+(except `ios/CHANGELOG.md`), the iOS/proof/release workflows, the CI base resolver,
+and release-please configuration. It also includes actual Xcode build version,
+device and simulator SDK build versions, architecture, and simulator destination.
+Only the values in `ios/version.txt` and the marked `MARKETING_VERSION` line are
+normalized for test reuse. The archive fingerprint keeps those values intact.
+Consequently an old-version archive never substitutes for a new-version archive.
+Dirty or untracked promotion inputs and `Local.xcconfig` are rejected.
 
-After reviewed changes have landed on `main`, explicitly dispatch
-`.github/workflows/ios-archive-proof.yml` on **main**, enabling `signing_export`.
-This is a separate operator action and requires the existing `production`
-environment approval. It is never enabled for a PR or a dispatch on another branch.
+Test records preserve repository, builder commit, run ID, and **run attempt**.
+Readers consult GitHub's exact run-attempt API and require the iOS workflow's
+`build-test` job and actual simulator test step to have succeeded in a main
+merge group. They fetch the builder commit when necessary and recompute its
+fingerprint; claimed JSON hashes alone are insufficient. Missing test evidence
+selects full tests; corrupt evidence, permission errors, or unverifiable
+provenance stop the pipeline rather than masquerading as a cache miss.
 
-The protected job downloads the archive from the same run, validates provenance
-and the archive digest, changes its build number to **9999**, and calls:
+## Immutable private storage
 
-```sh
-bash ios/scripts/release-testflight.sh --verify-archive <Original.xcarchive>
+Unsigned applications and dSYMs use the existing private development artifact
+bucket `user-artifact-private-dev`, not the public static bucket. CI and the
+consumer use the existing repository `R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID_DEV` /
+`R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY_DEV` secrets and `R2_ACCOUNT_ID` variable.
+No new credentials or infrastructure are required. Protect the `okou-ios/`
+prefix from independent overwrite or retention cleanup while releases reference
+it; deleting an object makes promotion fail closed.
+
+Objects use conditional `PutObject` with `If-None-Match: *`:
+
+```text
+okou-ios/tests/<test-input-sha256>/evidence.json
+okou-ios/archives/<archive-input-sha256>/<builder-sha>/<run-id>/<attempt>/archive.tar.gz
+okou-ios/archives/<archive-input-sha256>/<builder-sha>/<run-id>/<attempt>/manifest.json
+okou-ios/inputs/<archive-input-sha256>/ready.json
+okou-ios/releases/<release-target-sha>/mapping.json
 ```
 
-This mode uses the existing distribution certificate/profile checks and cleanup,
-but does not resolve packages, compile, query App Store Connect, or upload an IPA.
-The only Xcode action is `-exportArchive`. It has no compile-on-failure fallback.
+The archive and manifest are uploaded first; readiness is written **last**. Each
+builder has a unique namespace, so simultaneous builds cannot combine one run's
+archive with another's manifest. The first completed exact-input readiness marker
+wins and cannot be overwritten by a later successful run. A losing publisher
+verifies the existing complete archive. Test evidence and readiness are separate:
+a successful upload does not prove tests passed.
 
-Acceptance requires:
+The manifest binds the archive SHA-256, full inputs/toolchain, app version,
+builder identity, and exact prior/current test evidence. Readiness binds its
+canonical manifest key and manifest SHA-256. Publication can fail if the installed
+AWS CLI or R2 does not support conditional writes; there is no unconditional-write
+fallback. Repository Actions read permission is required to verify provenance.
 
-- Xcode exports the previously unsigned archive with App Store Connect manual
-  distribution signing and the existing internal-only export policy.
-- The exported bundle ID, release version, and final build number are correct.
-- Every archived Mach-O file retains its compiled sections after export, excluding
-  the signing/link-edit region. The original unsigned archive remains available
-  for comparison. Export may add distribution runtime files.
-- `codesign --verify --deep --strict` passes, and the exported app has the expected
-  distribution team/application entitlements with `get-task-allow` disabled.
-- No TestFlight upload occurs and no signing material or exported IPA is retained
-  as a workflow artifact. The temporary signing keychain/profile/files are removed.
+## Production consumption and release mapping
 
-If export rejects unsigned archives or the checks fail, the prerequisite has **not**
-passed. Inspect the native Xcode error before choosing a different archive-signing
-strategy; do not switch the production pipeline or retry by recompiling.
+`publish-ios-testflight` remains behind the existing **production approval** and
+checks out `release-please.outputs.release_target`. Before calling App Store
+Connect, it computes that checkout's actual fingerprints, waits up to ten minutes
+for the **exact** readiness key, checks provenance and both checksums, and safely
+unpacks the device archive. It does not list archives, choose a latest successful
+run, or assume the merge-group and main SHAs match.
 
-This proof does not establish App Store Connect acceptance, device installation,
-or the absence of every conceivable compiler/linker transformation. The section
-fingerprints establish preservation of the archived compiled sections; native
-signature checks establish the local export's signing validity.
+After verification it writes an immutable `release-target → archive` mapping,
+including the original builder SHA/run/attempt, manifest key/hash, archive hash,
+and test evidence. A conflicting mapping for the same release target fails.
+The same record is retained as a private workflow artifact for 90 days.
 
-## Follow-up after the proof passes
+The existing App Store Connect preparation obtains the next build number and
+internal group. `release-testflight.sh --archive <Original.xcarchive>` copies the
+archive and changes only its application/archive Info.plist build numbers. It
+imports production distribution material into a disposable keychain and calls
+`xcodebuild -exportArchive`, never `archive`, `test`, or package resolution.
+Before uploading, it verifies compiled Mach-O sections against the original,
+release version/build number, `codesign --verify --deep --strict`, and the expected
+team/application distribution entitlements with `get-task-allow` disabled.
 
-Adopt Turbo App's build/consume separation rather than its SHA resolver blindly:
+Internal-only upload, processing/group availability checks, and private symbol
+retention remain unchanged. Signing material and temporary IPA files are deleted
+on exit. A missing mapping input, archive, checksum, source identity, toolchain,
+or signing verification fails without rebuilding or retesting. Recovery requires
+restoring the exact immutable object or fixing the cause, not selecting another
+build. Runner-image Xcode/SDK drift between build and consumption also fails
+closed and requires matching merge-group inputs to be built again through CI.
 
-1. Ordinary PR merge groups run build and tests, with evidence bound to all relevant
-   iOS source, dependencies, build configuration, and toolchain inputs.
-2. Release-only merge groups verify that evidence and allowlisted metadata changes,
-   then build and persist the device Release archive, manifest, and final readiness
-   marker. Mixed groups containing unverified code must not skip tests.
-3. Publish an explicit mapping from the release target to that verified archive.
-   Merge-group and main SHAs are not assumed to match. Preserve the original builder
-   commit and checksums; never use the most recent successful archive as a substitute.
-4. The main release publishing job waits for the exact mapped archive, verifies it,
-   obtains the next build number, exports/signs, and uploads to TestFlight. Missing
-   evidence/artifacts or identity mismatches fail closed; no build/test fallback.
+## Export-only proof and rollout boundary
 
-The current `deploy-app` readiness marker establishes completed artifact upload,
-not passing tests. Keep test evidence separate from build readiness in the iOS
-promotion design too.
+`iOS Archive Promotion Proof` remains available for native validation. Its PR job
+builds an unsigned device archive and proves metadata-only build-number changes.
+On main, an explicit dispatch with `signing_export=true` uses production approval
+and calls `--verify-archive`; it verifies distribution export/signing and never
+accesses the App Store Connect API or uploads a build. The production script no
+longer accepts a no-argument build-and-upload invocation.
 
-## Local checks
+The main signing/export prerequisite passed in
+[run 37862058239](https://github.com/okou-ai/okou/actions/runs/37862058239) at commit
+`3e0f689475709a63a8ed534d11f34e583e8ac3f6`. That proves the local distribution
+export path, not App Store Connect acceptance or installation of this pipeline's
+first promoted build. The first merge group running this protocol has no
+matching evidence, so it runs full tests and seeds the immutable records. No
+pre-protocol proof artifacts are eligible for promotion.
+
+## Verification without Apple access
 
 ```sh
+python3 ios/scripts/archive-promotion.test.py
 python3 ios/scripts/archive-proof.test.py
-bash -n ios/scripts/build-archive-proof.sh ios/scripts/release-testflight.sh
-shellcheck ios/scripts/build-archive-proof.sh ios/scripts/release-testflight.sh
+bash ios/scripts/test-ci.sh
+node --test ios/scripts/testflight.test.mjs
+bash .github/scripts/tests/ios-testflight-workflow-test.sh
 ```
 
-These tests run the real preparation/verification commands against temporary
-archives and IPA containers. Their generated Mach-O/signature placeholders test
-metadata and section-fingerprint contracts only; they do not substitute for
-building the actual app or the protected distribution export proof above.
+Promotion tests invoke the real CLI with temporary Git repositories and files;
+only external R2/GitHub commands are replaced. They cover differing builder/main
+SHAs, metadata-only test reuse, missing evidence/full tests, mixed groups, input
+invalidation, passing test provenance, immutable readiness, checksums, missing
+objects, and safe extraction. Generated archive placeholders test the protocol,
+not native compilation, signing, or TestFlight availability.

@@ -2,17 +2,16 @@
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
-verify_archive=""
-if (( $# != 0 )); then
-  if (( $# != 2 )) || [ "$1" != --verify-archive ] || [ -z "$2" ]; then
-    echo 'usage: release-testflight.sh [--verify-archive <unsigned.xcarchive>]' >&2
-    exit 1
-  fi
-  verify_archive=$2
+if (( $# != 2 )) || [[ "$1" != --archive && "$1" != --verify-archive ]] || [ -z "$2" ]; then
+  echo 'usage: release-testflight.sh (--archive|--verify-archive) <unsigned.xcarchive>' >&2
+  exit 1
 fi
+archive=$2
+proof=false
+if [ "$1" = --verify-archive ]; then proof=true; fi
 required=(RUNNER_TEMP IOS_VERSION IOS_BUILD_NUMBER
   IOS_DISTRIBUTION_P12_BASE64 IOS_DISTRIBUTION_P12_PASSWORD IOS_PROVISIONING_PROFILE_BASE64)
-if [ -z "$verify_archive" ]; then
+if [ "$proof" = false ]; then
   required+=(IOS_APP_ID APP_STORE_CONNECT_API_KEY_BASE64 APP_STORE_CONNECT_API_KEY_ID APP_STORE_CONNECT_API_ISSUER_ID)
 fi
 for name in "${required[@]}"; do
@@ -31,7 +30,7 @@ if [ -e ios/Config/Local.xcconfig ]; then
   exit 1
 fi
 [[ "$IOS_BUILD_NUMBER" =~ ^[1-9][0-9]{0,3}$ ]] || exit 1
-if [ -z "$verify_archive" ]; then
+if [ "$proof" = false ]; then
   [[ "$APP_STORE_CONNECT_API_KEY_ID" =~ ^[A-Za-z0-9]+$ ]] || exit 1
 fi
 
@@ -45,11 +44,9 @@ cleanup() {
   rm -rf "$work"
 }
 trap cleanup EXIT
-if [ -n "$verify_archive" ]; then
-  # Validate and prepare before opening the signing keychain. Never compile in proof mode.
-  python3 ios/scripts/archive-proof.py prepare "$verify_archive" "$work/Okou.xcarchive" \
-    --version "$IOS_VERSION" --build-number "$IOS_BUILD_NUMBER"
-fi
+# Validate and prepare before opening the signing keychain. Never compile here.
+python3 ios/scripts/archive-proof.py prepare "$archive" "$work/Okou.xcarchive" \
+  --version "$IOS_VERSION" --build-number "$IOS_BUILD_NUMBER"
 printf '%s' "$IOS_DISTRIBUTION_P12_BASE64" | base64 -D > "$work/distribution.p12"
 printf '%s' "$IOS_PROVISIONING_PROFILE_BASE64" | base64 -D > "$work/profile.mobileprovision"
 security cms -D -i "$work/profile.mobileprovision" > "$work/profile.plist"
@@ -86,24 +83,6 @@ security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain
 identity=$(security find-identity -v -p codesigning "$keychain" | sed -n 's/.*) \([A-F0-9]*\) "Apple Distribution:.*"/\1/p')
 [[ "$identity" =~ ^[A-F0-9]{40}$ ]] || { echo 'Expected one valid Apple Distribution identity' >&2; exit 1; }
 
-if [ -z "$verify_archive" ]; then
-  resolved=ios/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
-  cp "$resolved" "$work/Package.resolved"
-  xcode_args=(
-    -project ios/Okou.xcodeproj -scheme Okou -configuration Release
-    -destination 'generic/platform=iOS' -derivedDataPath "$work/DerivedData"
-    -clonedSourcePackagesDirPath "$work/SourcePackages"
-    -onlyUsePackageVersionsFromResolvedFile -disableAutomaticPackageResolution -skipPackageUpdates
-    CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=C5UWSXYB67
-    CODE_SIGN_IDENTITY="$identity" OKOU_RELEASE_PROFILE_UUID="$profile_uuid"
-    OTHER_CODE_SIGN_FLAGS="--keychain $keychain"
-    MARKETING_VERSION="$IOS_VERSION" CURRENT_PROJECT_VERSION="$IOS_BUILD_NUMBER"
-  )
-  xcodebuild "${xcode_args[@]}" -resolvePackageDependencies
-  cmp "$resolved" "$work/Package.resolved"
-  xcodebuild "${xcode_args[@]}" -archivePath "$work/Okou.xcarchive" archive
-  cmp "$resolved" "$work/Package.resolved"
-fi
 python3 - "$work/ExportOptions.plist" "$profile_uuid" "$identity" <<'PY'
 import plistlib, sys
 with open(sys.argv[1], 'wb') as f:
@@ -119,14 +98,13 @@ with open(sys.argv[1], 'wb') as f:
 PY
 xcodebuild -exportArchive -archivePath "$work/Okou.xcarchive" \
   -exportOptionsPlist "$work/ExportOptions.plist" -exportPath "$work/export"
-if [ -n "$verify_archive" ]; then
-  python3 ios/scripts/archive-proof.py verify-export "$verify_archive" "$work/export/Okou.ipa" \
-    --version "$IOS_VERSION" --build-number "$IOS_BUILD_NUMBER"
-  mkdir "$work/unpacked"
-  ditto -x -k "$work/export/Okou.ipa" "$work/unpacked"
-  codesign --verify --deep --strict "$work/unpacked/Payload/Okou.app"
-  codesign --display --entitlements - --xml "$work/unpacked/Payload/Okou.app" > "$work/entitlements.plist" 2>/dev/null
-  python3 - "$work/entitlements.plist" <<'PY'
+python3 ios/scripts/archive-proof.py verify-export "$archive" "$work/export/Okou.ipa" \
+  --version "$IOS_VERSION" --build-number "$IOS_BUILD_NUMBER"
+mkdir "$work/unpacked"
+ditto -x -k "$work/export/Okou.ipa" "$work/unpacked"
+codesign --verify --deep --strict "$work/unpacked/Payload/Okou.app"
+codesign --display --entitlements - --xml "$work/unpacked/Payload/Okou.app" > "$work/entitlements.plist" 2>/dev/null
+python3 - "$work/entitlements.plist" <<'PY'
 import plistlib, sys
 with open(sys.argv[1], 'rb') as file:
     entitlements = plistlib.load(file)
@@ -137,6 +115,7 @@ if entitlements['com.apple.developer.team-identifier'] != 'C5UWSXYB67':
 if entitlements.get('get-task-allow'):
     raise ValueError('Exported IPA is development-signed')
 PY
+if [ "$proof" = true ]; then
   echo 'Archive promotion proof passed: distribution export, build number, compiled sections, and signature verified; nothing uploaded.'
   exit 0
 fi

@@ -8,8 +8,9 @@ its changelog. Merging that PR creates `ios-v<VERSION>` and runs
 Like Desktop, publication uses GitHub-hosted macOS and the existing `production`
 environment approval. No local Mac, Apple account password, external beta review,
 or App Store release submission is part of routine publication. The release job
-checks out the exact release target, uses locked Swift packages, signs a device
-archive, exports an **internal-only** IPA, and uploads it to App Store Connect.
+checks out the exact release target and consumes its verified, immutable device
+archive from merge-group CI. It signs/exports an **internal-only** IPA and uploads
+it to App Store Connect without resolving packages, compiling, or retesting.
 An internal-only build cannot later be used for external testing or an App Store
 release; that would require a new build and a deliberate export-policy change.
 
@@ -86,6 +87,9 @@ required for the final archive.
   `IN_BETA_TESTING` state. Missing export compliance, invalid builds, API access
   errors, and timeouts fail the job. This is API evidence of availability; verify
   installation and login on a tester's iPhone for the first release.
+- A missing or mismatched canonical archive/test record stops publication before
+  App Store Connect preparation. Restore the exact object or correct the cause;
+  never select a latest successful archive or rebuild inside the publishing job.
 - On failure, inspect the publishing job and App Store Connect. Re-run the failed
   publishing job after resolving the cause; it allocates a new build number for
   the same release source. Re-running the whole release-please workflow may no
@@ -101,17 +105,26 @@ required for the final archive.
   Ship a corrected build instead. A separate minimum-build API gate remains
   outstanding; TestFlight's 90-day build validity is not that gate.
 
-## Archive promotion prerequisite
+## Archive promotion
 
-[Archive promotion](ARCHIVE_PROMOTION.md) documents the separate unsigned archive
-and protected, export-only proof. It must pass on Xcode before changing the
-production release pipeline to consume prebuilt archives. The proof does not
-skip the current simulator checks or upload anything to TestFlight.
+[Archive promotion](ARCHIVE_PROMOTION.md) defines the exact input fingerprints,
+prior-test evidence, immutable private storage/readiness, and release-target
+mapping. Ordinary merge groups run simulator tests and build unsigned Release
+archives. Release-only groups omit tests only with verified, matching prior
+merge-group evidence; missing evidence or mixed groups run full tests. The
+production job requires `release-testflight.sh --archive <unsigned.xcarchive>`.
+Its export-only `--verify-archive` mode remains available and never uploads.
+
+The main distribution-export prerequisite passed in run
+[37862058239](https://github.com/okou-ai/okou/actions/runs/37862058239). First-release
+App Store Connect acceptance and device installation still require verification.
 
 ## Local verification without Apple access
 
 ```sh
 node --test ios/scripts/testflight.test.mjs
+python3 ios/scripts/archive-promotion.test.py
+python3 ios/scripts/archive-proof.test.py
 bash .github/scripts/tests/ios-testflight-workflow-test.sh
 ```
 

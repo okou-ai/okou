@@ -200,8 +200,13 @@ def main():
         command.add_argument("output", type=Path)
         command.add_argument("--version", required=True)
         command.add_argument("--build-number", required=True)
+    validate = subparsers.add_parser("validate")
+    validate.add_argument("source", type=Path)
+    validate.add_argument("--version", required=True)
     args = parser.parse_args()
-    if args.command == "prepare":
+    if args.command == "validate":
+        validate_archive(args.source, args.version)
+    elif args.command == "prepare":
         prepare(args.source, args.output, args.version, args.build_number)
     else:
         verify_export(args.source, args.output, args.version, args.build_number)
