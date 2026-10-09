@@ -1,3 +1,4 @@
+import ChatDomain
 import Foundation
 import Synchronization
 

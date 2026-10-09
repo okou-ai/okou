@@ -4,6 +4,10 @@ Use this index to locate the repository's authoritative engineering guidance
 before implementation or review. Read the documents relevant to the changed
 surface; the index does not replace their detailed rules.
 
+Keep `docs/` focused on engineering principles, framework architecture, and
+reusable development guidance. Feature-specific business logic belongs in
+self-explanatory source code rather than separate documents.
+
 ## Code Review
 
 - [Bad code smells](./bad-smell.md): production-code quality rules.
@@ -91,6 +95,8 @@ surface; the index does not replace their detailed rules.
   billing identity, writer inventory, bounded backfill and activation boundaries.
 - [X resource observations](./x-resource-observations.md): atomic daily
   deduplication, two-date cleanup, transient remainder and activation gates.
+- [Database transaction lint](./eslint/no-db-transaction.md): default prohibition,
+  deletion-only legacy call-site inventory, and necessary billing waivers.
 - [Database trigger retirement](./database-trigger-retirement.md): explicit API
   entitlement writers, repair paths, and the serving/rollback removal gate.
 - [Hosted publication version retirement](./database/hosted-publication-retirement.md):
@@ -115,36 +121,6 @@ surface; the index does not replace their detailed rules.
   eight-site reader closure, transaction ownership, physical retirement and test mapping.
 - [Dependency override audit](./dependency-overrides.md): retained dependency
   constraints, their origins, and evidence for removing obsolete overrides.
-- [Official Workflow Morning Brief](./morning-brief.md): current installation
-  ownership, explicit preferences, claim and settlement lifetime, future-only
-  expiry, and retained email/accounting boundaries.
-- [Morning Brief GitHub collection](./morning-brief-github-collection.md): the
-  protected preview entrypoint, live connector authorization, GitHub branch
-  semantics, budgets, and coverage/failure classification.
-- [Morning Brief source collection](./morning-brief-collection.md): the bounded
-  Slack source contract, occurrence/attempt/lease ownership, owner revocation
-  boundary, live shared-scope revalidation, and the coverage limits this first
-  collector declares.
-- [Morning Brief calendar collection](./morning-brief-calendar-collection.md):
-  the owner-timezone three-day window, readable-calendar selection, all-day and
-  recurrence semantics, calendar caps, and its use of the shared reader.
-- [Morning Brief Gmail collection](./morning-brief-gmail-collection.md): the
-  shared Morning Brief OAuth authorization boundary, Gmail's two bounded
-  branches and caps, source outcome classification, and the preview-only
-  deployment boundary.
-  boundary, and the coverage limits this first collector declares.
-- [Morning Brief platform-funded generation](./morning-brief-generation.md): the
-  single-invocation reservation contract, the validated result shape, and the
-  anonymous platform cost receipt kept outside every user ledger.
-- [Morning Brief thread provenance](./morning-brief-chat-provenance.md): the
-  sticky whole-thread exclusion, its producers and coverage limits, the bounded
-  unread Chat collection that consumes it, and the old-writer activation gate.
-- [Morning Brief platform-funded generation](./morning-brief-generation.md): the
-  single-invocation reservation contract, the validated result shape, and the
-  anonymous platform cost receipt kept outside every user ledger.
-- [Morning Brief thread provenance](./morning-brief-chat-provenance.md): the
-  sticky whole-thread exclusion, its producers and coverage limits, the bounded
-  unread Chat collection that consumes it, and the old-writer activation gate.
 - [Marketing privacy rollback](./marketing-privacy-choices.md): withdrawn runtime
   behavior, storage retirement, and rollout boundaries.
 - [Google Cloud LLM voice and Maps Grounding routing](./google-llm-voice.md):

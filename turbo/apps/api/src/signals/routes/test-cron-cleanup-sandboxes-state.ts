@@ -148,6 +148,7 @@ async function seedRunForAction(
     return actionBadRequest("failed to seed Agent");
   }
 
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0027; new non-billing transactions are prohibited.
   await db.transaction(async (tx) => {
     const metadataRows = await tx
       .insert(orgMetadataCanonicalWrites)
@@ -182,6 +183,7 @@ async function seedRunForAction(
   const runMetadata = threadless
     ? normalizeRunMetadata({ triggerSource: triggerSource.data })
     : null;
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0028; new non-billing transactions are prohibited.
   const run = await db.transaction(async (tx) => {
     const [created] = await tx
       .insert(agentRuns)
@@ -404,6 +406,7 @@ async function seedHostedPublication(
   const hostedSiteId = randomUUID();
   const hostedDeploymentId = randomUUID();
   const publicSlug = `cleanup-${randomUUID()}`;
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0029; new non-billing transactions are prohibited.
   await db.transaction(async (tx) => {
     const scope = await canonicalizeHostedSiteScope(tx, {
       orgId: run.orgId,
@@ -481,6 +484,7 @@ async function seedOwnershipUsage(
   signal: AbortSignal,
 ): Promise<string> {
   const usageEventId = randomUUID();
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0030; new non-billing transactions are prohibited.
   await db.transaction(async (tx) => {
     const capture = billingRunAttributionWrite(run);
     await tx
@@ -750,6 +754,7 @@ async function deleteRunOwnershipForAction(
   }
   const hostedSiteId = readString(body, "hosted_site_id");
   if (hostedSiteId) {
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0031; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       await deleteArtifactCatalogForHostedSiteId(tx, hostedSiteId);
       await tx.delete(hostedSites).where(eq(hostedSites.id, hostedSiteId));
@@ -800,6 +805,7 @@ async function transitionRunTerminalForAction(
   if (!terminalStatus) {
     return actionBadRequest("terminal status is required");
   }
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0032; new non-billing transactions are prohibited.
   const updated = await db.transaction(async (tx) => {
     const transitions = await transitionAgentRunsToTerminal(tx, {
       values: {

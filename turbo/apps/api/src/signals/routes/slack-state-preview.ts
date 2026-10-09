@@ -161,6 +161,7 @@ const commitSlackStarterDefault$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0023; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       const initialTier = "limited-free-1";
       const [inserted] = await tx

@@ -293,6 +293,7 @@ async function commitStaleRunTimeout(
 ): Promise<CommittedTimeout | undefined> {
   let expectedChatThreadId = run.chatThreadId;
   while (true) {
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0128; new non-billing transactions are prohibited.
     const result = await db.transaction(
       async (tx): Promise<TimeoutTransactionResult> => {
         const lockedRun = await lockTimeoutRun(tx, run.id);

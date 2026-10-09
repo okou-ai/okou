@@ -248,6 +248,7 @@ export const retireBuiltinDcrRegistration$ = command(
   ): Promise<void> => {
     const db = set(writeDb$);
     const { owner, id } = args;
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0078; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       await retireRegistration(tx, owner, id);
     });

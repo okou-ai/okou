@@ -113,6 +113,7 @@ export const testUserId$ = command(
       [user.firstName, user.lastName].filter(Boolean).join(" ") || null;
     const cachedAt = nowDate();
 
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0101; new non-billing transactions are prohibited.
     await set(writeDb$).transaction(async (tx) => {
       await tx
         .delete(userCache)
@@ -157,6 +158,7 @@ function clerkRoleToCacheRole(role: string): "admin" | "member" {
  */
 const ensureTestOrgBillingRow$ = command(
   async ({ set }, orgId: string, signal: AbortSignal): Promise<void> => {
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0102; new non-billing transactions are prohibited.
     await set(writeDb$).transaction(async (tx) => {
       const [inserted] = await tx
         .insert(orgMetadataCanonicalWrites)

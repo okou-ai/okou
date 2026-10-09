@@ -279,6 +279,7 @@ const storeVerificationToken$ = command(
       args.token,
     );
     signal.throwIfAborted();
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0191; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       await tx
         .update(notionWebhookSecrets)
@@ -525,6 +526,7 @@ const repairNotionAutomationProjection$ = command(
             automation.eventConfig,
             eventConnectorId,
           );
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0192; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       const [retargeted] = await tx
         .update(workflowAutomations)
@@ -824,6 +826,7 @@ const publishNotionPendingEvent$ = command(
       eq(workflowAutomations.eventConnectorId, args.connectorId),
     );
     const published = await settle(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0193; new non-billing transactions are prohibited.
       db.transaction(async (tx): Promise<NotionPendingPublication> => {
         const [current] = await tx
           .select({

@@ -594,6 +594,7 @@ const createHostedSiteDeployment$ = command(
   ): Promise<SiteDeploymentCreationResult> => {
     const db = set(writeDb$);
     const result = await settle(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0169; new non-billing transactions are prohibited.
       db.transaction(async (tx): Promise<SiteDeploymentCreationResult> => {
         const plan = hostedDeploymentAllocationPlan(args, context);
         let step = plan.next();
@@ -950,6 +951,7 @@ const bindHostedSiteDeployment$ = command(
     signal: AbortSignal,
   ): Promise<HostedSitePromotion> => {
     const writeDb = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0170; new non-billing transactions are prohibited.
     return writeDb.transaction(async (tx) => {
       const [ownedSite] = await tx
         .select()
@@ -2014,6 +2016,7 @@ export const deleteHostedSite$ = command(
     await set(revokeHostedSiteShare$, candidate, signal);
     signal.throwIfAborted();
 
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0171; new non-billing transactions are prohibited.
     const deleted = await set(writeDb$).transaction(async (tx) => {
       // The publisher binds under this lock, so a completion cannot reactivate
       // a version after deletion commits.

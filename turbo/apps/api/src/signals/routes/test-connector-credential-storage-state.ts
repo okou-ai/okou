@@ -254,6 +254,7 @@ async function seedAutomaticOAuthBinding(
   body: ConnectorCredentialStorageAction<"seed-automatic-oauth-binding">,
   signal: AbortSignal,
 ) {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0024; new non-billing transactions are prohibited.
   await db.transaction(async (tx) => {
     await tx.insert(orgCustomConnectors).values({
       id: body.custom_connector_id,
@@ -370,6 +371,7 @@ async function deleteCustomCredentialValues(
       body: { error: "Custom connector storage test fixture was not found" },
     };
   }
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0025; new non-billing transactions are prohibited.
   await db.transaction(async (tx) => {
     await tx
       .delete(secrets)
@@ -509,6 +511,7 @@ async function seedOwnedSecret(
   body: ConnectorCredentialStorageAction<"seed-owned-secret">,
   signal: AbortSignal,
 ) {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0026; new non-billing transactions are prohibited.
   const connectorId = await db.transaction(async (tx) => {
     const [connector] = await tx
       .insert(connectors)

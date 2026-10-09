@@ -10,9 +10,6 @@ Part of [#32492](https://github.com/vm0-ai/vm0/issues/32492).
   artifact storage. Only the stable private reference enters the catalog and
   thread metadata. Rendering failure leaves the existing live-preview fallback.
   A flag change during rendering cannot publish private screenshot bytes.
-- New video uploads use the existing playable video preview. Server-side video
-  poster extraction is retired; previously stored posters remain readable and
-  keep their existing access policy. No historical poster or video is deleted.
 - Public **file** shares allocate ten lowercase alphanumeric characters, with
   atomic delivery registration and at most ten collision attempts. Legacy files
   and new publications share one namespace; registration determines ownership.
@@ -63,9 +60,8 @@ one-year cache override, defeating revocation.
    original download, warm cache, revoke, organization audience, and republish.
    Repeat with a retained 24-character link and a legacy ten-character file.
    Verify private hosted screenshots, a new deployment version, and flag-off
-   access to already-created screenshots and video posters. Verify private video
-   playback and downloads. Browser Rendering and Images must be enabled on the
-   deployed account; mocks do not prove those services.
+   access to already-created screenshots. Browser Rendering and Images must be
+   enabled on the deployed account; mocks do not prove those services.
 4. Do not restore the old cache expression once ten-character shares exist.
    Any Worker rollback must retain policy-aware ten-character readers and
    response headers. API rollback can stop new creation, but it must not turn
@@ -109,9 +105,8 @@ operate on registered source-file records, not share policy URLs.
 The original-image fallback for formats/size outside the binding's documented
 limits is a reachable input, owned by #32492 until the renderer supports those
 inputs. Private screenshot rendering reuses the existing temporary owner grant
-lifetime and cleanup policy. Videos use the existing playable-video preview
-when no stored poster is available. This change does not expand retention
-cleanup, provider ingestion or historical registration work.
+lifetime and cleanup policy. This change does not expand retention cleanup,
+provider ingestion or historical registration work.
 
 [Cloudflare Images binding API](https://developers.cloudflare.com/images/optimization/binding/).
 Local route/Worker/page tests check behavior with external services mocked.

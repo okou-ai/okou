@@ -574,7 +574,7 @@ import { teamsDeliveryTargetSchema } from "./teams-chat-callback-payload";
 
 import { telegramDeliveryTargetSchema } from "./telegram-chat-callback-payload";
 
-import { webChatQueueContextFromContextId } from "./web-chat-queue-context.service";
+import { isWebChatContextId } from "./web-chat-queue-context.service";
 
 import {
   EVENT_POLICY,
@@ -627,31 +627,20 @@ function resolveQueuedOfficialWorkflowContext(args: {
       `Queued ${args.contextType} input cannot carry an Official Workflow source claim`,
     );
   }
-  const webContext =
-    args.contextType === "web"
-      ? webChatQueueContextFromContextId(args.contextId)
-      : null;
-  if (args.contextType === "web" && webContext === null) {
+  const hasWebContextId = isWebChatContextId(args.contextId);
+  if (args.contextType === "web" && !hasWebContextId) {
     throw new QueuedPromptInputInvalidError("Invalid Web chat context");
   }
-  // Both Official agent markers identify the claim here, never the source Run.
-  // Recognizing both also keeps annotation-based source/budget recovery shared.
-  const officialAgentContext =
-    args.contextType === "agent_run"
-      ? webChatQueueContextFromContextId(args.contextId)
-      : null;
-  const contextRequiresClaim =
-    webContext?.officialWorkflowClaimRequired === true ||
-    officialAgentContext !== null;
-  if (
-    (contextRequiresClaim && !hasClaim) ||
-    (hasClaim && webContext === null && officialAgentContext === null)
-  ) {
+  // Official agent inputs use Web identity, never a source Run pointer. Their
+  // private claim and server-owned annotation retain source/budget authority.
+  const officialAgentClaim =
+    args.contextType === "agent_run" && hasWebContextId;
+  if ((officialAgentClaim && !hasClaim) || (hasClaim && !hasWebContextId)) {
     throw new QueuedPromptInputInvalidError(
       "Queued Official Workflow context and source claim do not match",
     );
   }
-  return { webContext, officialAgentContext };
+  return officialAgentClaim;
 }
 
 function queuedUserMessageAutonomyBudget(
@@ -2400,7 +2389,7 @@ export function createThreadClaimRunObjects(
       );
     }
     const requiredOfficialWorkflowIds = parsedClaim.ok;
-    const official = resolveQueuedOfficialWorkflowContext({
+    const officialAgentClaim = resolveQueuedOfficialWorkflowContext({
       contextType: event.contextType,
       contextId: event.contextId,
       requiredOfficialWorkflowIds,
@@ -2410,7 +2399,7 @@ export function createThreadClaimRunObjects(
       userMessage: event.userMessage,
       contextType: event.contextType,
       requiredOfficialWorkflowIds,
-      officialAgentClaim: official.officialAgentContext !== null,
+      officialAgentClaim,
     };
   });
   const promptSourceAutonomyBudgetSourceAutonomyBudget$ = computed(
@@ -6687,6 +6676,7 @@ export function createThreadClaimRunObjects(
       const rejectedAt = new Date(
         Math.max(nowDate().getTime(), source.createdAt.getTime() + 1),
       );
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0261; new non-billing transactions are prohibited.
       return await set(writeDb$).transaction(async (tx) => {
         const rejected =
           parseRawRows(
@@ -7977,6 +7967,7 @@ export function createThreadClaimRunObjects(
           signal.throwIfAborted();
           // Only journaled occurrences require this post-commit lock. Read
           // supersession after acquiring it so a concurrent claim is visible.
+          // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0262; new non-billing transactions are prohibited.
           await database.transaction(async (tx) => {
             const [locked] = await tx
               .select({ id: workflowAutomations.id })
@@ -15691,6 +15682,7 @@ export const commitPreparedPendingLaunch$ = command(
     signal.throwIfAborted();
     const { admissionTiming, timing } = args;
     assertPendingLaunchClaim(args, claim);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0263; new non-billing transactions are prohibited.
     return await set(writeDb$).transaction(
       async (tx): Promise<AtomicLaunchCommitAttempt> => {
         admissionTiming.transactionStarted();

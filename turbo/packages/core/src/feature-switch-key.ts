@@ -55,6 +55,7 @@ export enum FeatureSwitchKey {
   ChatThreadMuting = "chatThreadMuting",
   ChatRunningIndicatorWave = "chatRunningIndicatorWave",
   ComposerAddMenu = "composerAddMenu",
+  ComposerAnchoredSuggestions = "composerAnchoredSuggestions",
   CustomTemplates = "customTemplates",
   PresentationConvert = "presentationConvert",
   DeliveryFormatGuidance = "deliveryFormatGuidance",

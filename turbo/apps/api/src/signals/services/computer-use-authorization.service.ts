@@ -363,6 +363,7 @@ const applyChatAuthorizationScope$ = command(
     signal: AbortSignal,
   ): Promise<boolean> => {
     // Successful preference and durable event writes commit together.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0108; new non-billing transactions are prohibited.
     const applied = await set(writeDb$).transaction(async (tx) => {
       const [thread] = await tx
         .update(chatThreads)
@@ -437,6 +438,7 @@ const applyTeamsAuthorizationScope$ = command(
     signal.throwIfAborted();
 
     // Keep route authority, preference and durable event in this transaction.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0109; new non-billing transactions are prohibited.
     const applied = await set(writeDb$).transaction(async (tx) => {
       const [existing] = await tx
         .select({

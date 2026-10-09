@@ -485,6 +485,7 @@ const syncHostedArtifact$ = command(
       return true;
     }
 
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0056; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       // A hosted site is shared by every member of its organization. Lock that
       // product before reading or writing its registry row so concurrent first
@@ -714,6 +715,7 @@ const syncFileArtifact$ = command(
   ): Promise<boolean> => {
     const db = set(writeDb$);
     const { row, orgId, authorUserId, logicalKey, kind, entityId } = args;
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0057; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       // Serialize retries for one file before touching either artifact key.
       const [lockedFile] = await tx

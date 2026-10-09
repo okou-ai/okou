@@ -1,10 +1,25 @@
-import { env } from "./env";
+import { z } from "zod";
 
-// Global deployment switch, deliberately independent of per-user Lab overrides.
-// Leave unset until the replacement is published and every serving/rollback API
-// supports this admission contract. #38098 owns activation; #37997 owns retirement.
+import compatibilityConfig from "./desktop-compatibility.json";
+import { desktopVersionIsSupported } from "./desktop-version";
+
+const desktopCompatibilityConfigSchema = z.object({
+  minimumSupportedVersion: z
+    .string()
+    .refine((value) => {
+      return desktopVersionIsSupported(value, "0.51.0");
+    }, "The Desktop floor must be a stable version at least 0.51.0")
+    .nullable(),
+});
+
+desktopCompatibilityConfigSchema.parse(compatibilityConfig);
+
+// Global source-controlled policy; changes require a PR and an API release.
+// Keep null until the replacement is published and serving/rollback APIs support
+// admission and draining. #38098 owns activation; #37997 owns token retirement.
 export function desktopMinimumSupportedVersion(): string | null {
-  return env("OKOU_DESKTOP_MINIMUM_SUPPORTED_VERSION") ?? null;
+  return desktopCompatibilityConfigSchema.parse(compatibilityConfig)
+    .minimumSupportedVersion;
 }
 
 export function desktopUpgradeRequired(minimumSupportedVersion: string) {

@@ -80,6 +80,18 @@ This does not require a distribution certificate or device provisioning profile.
 Normal simulator signing through Xcode is also appropriate; do not use
 `CODE_SIGNING_ALLOWED=NO` for a runnable build.
 
+The local [ChatDomain package](Packages/ChatDomain/Package.swift) contains pure
+chat models, event projection, and thread replay. It depends only on Foundation;
+the App explicitly imports its public API. Run the eight domain tests without
+launching an app or simulator:
+
+```sh
+swift test --package-path ios/Packages/ChatDomain
+```
+
+Domain tests construct domain values directly. HTTP decoding and store/UI
+integration remain in `OkouTests`. The CI test script runs both suites.
+
 The project uses synchronized folders: adding Swift files beneath `Okou/` or
 `OkouTests/` adds them to the corresponding target. `Resources/Info.plist` is
 excluded from resource copying and used as the app's build-time Info.plist.
@@ -208,7 +220,9 @@ remain outstanding.
 and manual dispatch. A lightweight Linux job tests change detection and gate
 behavior on every run. Changes to `ios/`, the iOS workflow, or the shared
 changed-base helper trigger Swift formatting, property-list validation, an app
-build, and the simulator tests on macOS 26 with Xcode 26.3 and iOS 26.2. Swift
+build, standalone ChatDomain tests, and the simulator tests on macOS 26 with
+Xcode 26.3 and iOS 26.2. Formatting includes the package manifest, sources, and
+tests. Swift
 packages must match `Package.resolved`; CI checks that it remains unchanged.
 
 The `ci-gate-ios` check succeeds only after the required build/tests pass, or

@@ -3,8 +3,8 @@ import Foundation
 /// Replays the thread snapshot and its ordered lifecycle tail. This follows
 /// `replayChatThreadEvents` in the web client; display-specific pin ranking is
 /// applied separately by `sidebarOrder`.
-enum ChatThreadReplay {
-  static func replay(snapshot: [ChatThread], events: [ChatThreadChange]) -> [ChatThread] {
+public enum ChatThreadReplay {
+  public static func replay(snapshot: [ChatThread], events: [ChatThreadChange]) -> [ChatThread] {
     var threads: [String: ChatThread] = [:]
     for thread in snapshot { threads[thread.id] = thread }
     var pendingUpdates: [String: [ChatThreadChange]] = [:]
@@ -17,7 +17,7 @@ enum ChatThreadReplay {
 
   /// Matches the web sidebar's separate `comparePinnedThreads` pass. Unpinned
   /// threads retain the reducer's activity order.
-  static func sidebarOrder(_ threads: [ChatThread]) -> [ChatThread] {
+  public static func sidebarOrder(_ threads: [ChatThread]) -> [ChatThread] {
     threads.sorted { left, right in
       switch (left.pinnedAt, right.pinnedAt) {
       case (.some, .none): return true

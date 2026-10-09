@@ -32,6 +32,7 @@ const contexts = [
 const client = new Client({ connectionString: databaseUrl });
 await client.connect();
 try {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0382; new non-billing transactions are prohibited.
   await client.query("BEGIN");
   // A temporary table isolates the transform from every real queued Run.
   await client.query(

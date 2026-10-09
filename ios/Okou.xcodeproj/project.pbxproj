@@ -5,6 +5,23 @@
 	};
 	"objectVersion" = 77;
 	"objects" = {
+		"000000000000000000000028" = {
+			"isa" = "XCLocalSwiftPackageReference";
+			"relativePath" = "Packages/ChatDomain";
+		};
+		"000000000000000000000029" = {
+			"isa" = "XCSwiftPackageProductDependency";
+			"package" = "000000000000000000000028";
+			"productName" = "ChatDomain";
+		};
+		"00000000000000000000002A" = {
+			"isa" = "PBXBuildFile";
+			"productRef" = "000000000000000000000029";
+		};
+		"00000000000000000000002B" = {
+			"isa" = "PBXBuildFile";
+			"productRef" = "000000000000000000000029";
+		};
 		"000000000000000000000009" = {
 			"isa" = "PBXFileReference";
 			"explicitFileType" = "wrapper.application";
@@ -120,7 +137,7 @@
 		"000000000000000000000015" = {
 			"isa" = "PBXFrameworksBuildPhase";
 			"buildActionMask" = 2147483647;
-			"files" = ("00000000000000000000000F", "000000000000000000000011", "000000000000000000000013", "000000000000000000000027",);
+			"files" = ("00000000000000000000000F", "000000000000000000000011", "000000000000000000000013", "000000000000000000000027", "00000000000000000000002A",);
 			"runOnlyForDeploymentPostprocessing" = 0;
 		};
 		"000000000000000000000016" = {
@@ -138,7 +155,7 @@
 		"000000000000000000000018" = {
 			"isa" = "PBXFrameworksBuildPhase";
 			"buildActionMask" = 2147483647;
-			"files" = ();
+			"files" = ("00000000000000000000002B",);
 			"runOnlyForDeploymentPostprocessing" = 0;
 		};
 		"000000000000000000000019" = {
@@ -260,7 +277,7 @@
 			"dependencies" = ();
 			"fileSystemSynchronizedGroups" = ("000000000000000000000005",);
 			"name" = "Okou";
-			"packageProductDependencies" = ("00000000000000000000000E", "000000000000000000000010", "000000000000000000000012", "000000000000000000000026",);
+			"packageProductDependencies" = ("00000000000000000000000E", "000000000000000000000010", "000000000000000000000012", "000000000000000000000026", "000000000000000000000029",);
 			"productName" = "Okou";
 			"productReference" = "000000000000000000000009";
 			"productType" = "com.apple.product-type.application";
@@ -273,7 +290,7 @@
 			"dependencies" = ("00000000000000000000001B",);
 			"fileSystemSynchronizedGroups" = ("000000000000000000000006",);
 			"name" = "OkouTests";
-			"packageProductDependencies" = ();
+			"packageProductDependencies" = ("000000000000000000000029",);
 			"productName" = "OkouTests";
 			"productReference" = "00000000000000000000000A";
 			"productType" = "com.apple.product-type.bundle.unit-test";
@@ -300,7 +317,7 @@
 			"knownRegions" = ("en", "Base",);
 			"mainGroup" = "000000000000000000000008";
 			"minimizedProjectReferenceProxies" = 1;
-			"packageReferences" = ("00000000000000000000000C", "00000000000000000000000D", "000000000000000000000025",);
+			"packageReferences" = ("00000000000000000000000C", "00000000000000000000000D", "000000000000000000000025", "000000000000000000000028",);
 			"preferredProjectObjectVersion" = 77;
 			"productRefGroup" = "000000000000000000000007";
 			"projectDirPath" = "";

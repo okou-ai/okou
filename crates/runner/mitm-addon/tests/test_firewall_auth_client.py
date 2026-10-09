@@ -2414,9 +2414,13 @@ class TestFirewallAuthAsyncTransport:
         assert retry["cache_hit"] is False
         assert len(requests) == 3
 
+    @pytest.mark.parametrize(
+        "proxy_prefix", ["http://", "", "//"], ids=["url", "authority", "prefixed-authority"]
+    )
     async def test_http_environment_proxy_uses_absolute_form_and_proxy_credentials(
         self,
         mitm_ctx,
+        proxy_prefix: str,
     ):
         proxy = FakeAuthEndpoint()
         proxy.queue_json_response(firewall_auth_success_response({}))
@@ -2426,10 +2430,11 @@ class TestFirewallAuthAsyncTransport:
         )
 
         with proxy.run():
-            proxy_url = proxy.api_url.removeprefix("http://").replace(
+            proxy_authority = proxy.api_url.removeprefix("http://").replace(
                 "127.0.0.1",
                 "proxy-user:proxy-password@faß.proxy",
             )
+            proxy_url = f"{proxy_prefix}{proxy_authority}"
             proxy_environment = {
                 "http_proxy": proxy_url,
                 "HTTP_PROXY": "",
@@ -2458,7 +2463,56 @@ class TestFirewallAuthAsyncTransport:
         assert proxy.requests[0].headers["proxy-authorization"] == expected_proxy_authorization
         assert proxy.requests[0].headers["authorization"] == "Bearer tok-xyz"
 
-    async def test_environment_proxy_rejects_unsafe_hostname_before_dns(self, mitm_ctx):
+    @pytest.mark.parametrize(
+        ("proxy_template", "message"),
+        [
+            pytest.param("https://{authority}", "only HTTP environment proxies", id="https-proxy"),
+            pytest.param("socks5://{authority}", "only HTTP environment proxies", id="socks-proxy"),
+            pytest.param("ftp://{authority}", "only HTTP environment proxies", id="ftp-proxy"),
+            pytest.param("//", "Proxy URL must include a host", id="missing-host"),
+            pytest.param("///{authority}", "Proxy URL must include a host", id="extra-slash"),
+            pytest.param("//{authority}/path", "Invalid firewall auth HTTP proxy URL", id="path"),
+            pytest.param(
+                "//{authority}?query=1", "Invalid firewall auth HTTP proxy URL", id="query"
+            ),
+            pytest.param(
+                "//{authority}#fragment", "Invalid firewall auth HTTP proxy URL", id="fragment"
+            ),
+            pytest.param("//127.0.0.1:", "invalid port", id="empty-port"),
+            pytest.param("//127.0.0.1:invalid", "invalid port", id="invalid-port"),
+            pytest.param("//127.0.0.1:65536", "invalid port", id="port-range"),
+        ],
+    )
+    async def test_environment_proxy_rejects_invalid_url_without_sending_auth(
+        self,
+        mitm_ctx,
+        proxy_template: str,
+        message: str,
+    ):
+        origin = FakeAuthEndpoint()
+        proxy = FakeAuthEndpoint()
+        origin.queue_json_response(firewall_auth_success_response({}))
+        proxy.queue_json_response(firewall_auth_success_response({}))
+
+        with origin.run(), proxy.run():
+            proxy_authority = proxy.api_url.removeprefix("http://")
+            proxy_url = proxy_template.format(authority=proxy_authority)
+            with (
+                patch.dict(os.environ, _EMPTY_PROXY_ENVIRONMENT | {"http_proxy": proxy_url}),
+                mitm_ctx(api_url=origin.api_url),
+                pytest.raises(ValueError, match=message),
+            ):
+                await auth_client.fetch_firewall_headers(firewall_auth_request())
+
+        assert origin.request_count == 0
+        assert proxy.request_count == 0
+
+    @pytest.mark.parametrize(
+        "proxy_prefix", ["http://", "", "//"], ids=["url", "authority", "prefixed-authority"]
+    )
+    async def test_environment_proxy_rejects_unsafe_hostname_before_dns(
+        self, mitm_ctx, proxy_prefix: str
+    ):
         resolved_hosts: list[str] = []
 
         class RecordingResolver:
@@ -2467,7 +2521,7 @@ class TestFirewallAuthAsyncTransport:
                 return []
 
         proxy_environment = {
-            "http_proxy": "http://proxy-user:proxy-password@\uff26\uff2f\uff2f.proxy:8123",
+            "http_proxy": f"{proxy_prefix}proxy-user:proxy-password@\uff26\uff2f\uff2f.proxy:8123",
             "HTTP_PROXY": "",
             "all_proxy": "",
             "ALL_PROXY": "",
@@ -2484,14 +2538,18 @@ class TestFirewallAuthAsyncTransport:
 
         assert resolved_hosts == []
 
-    async def test_no_proxy_bypasses_environment_proxy(self, mitm_ctx):
+    @pytest.mark.parametrize(
+        "proxy_prefix", ["http://", "", "//"], ids=["url", "authority", "prefixed-authority"]
+    )
+    async def test_no_proxy_bypasses_environment_proxy(self, mitm_ctx, proxy_prefix: str):
         origin = FakeAuthEndpoint()
         proxy = FakeAuthEndpoint()
         origin.queue_json_response(firewall_auth_success_response({}))
 
         with origin.run(), proxy.run():
+            proxy_authority = proxy.api_url.removeprefix("http://")
             proxy_environment = {
-                "http_proxy": proxy.api_url,
+                "http_proxy": f"{proxy_prefix}{proxy_authority}",
                 "HTTP_PROXY": "",
                 "all_proxy": "",
                 "ALL_PROXY": "",
@@ -2699,6 +2757,9 @@ class TestFirewallAuthAsyncTransport:
         assert exc_info.value.phase is auth_client.FirewallAuthFetchPhase.PROXY_CONNECT
 
     @pytest.mark.parametrize(
+        "proxy_prefix", ["http://", "", "//"], ids=["url", "authority", "prefixed-authority"]
+    )
+    @pytest.mark.parametrize(
         ("origin_authority", "connect_authority"),
         [
             ("localhost", "localhost:443"),
@@ -2710,6 +2771,7 @@ class TestFirewallAuthAsyncTransport:
         self,
         mitm_ctx,
         tmp_path: Path,
+        proxy_prefix: str,
         origin_authority: str,
         connect_authority: str,
     ):
@@ -2763,7 +2825,7 @@ class TestFirewallAuthAsyncTransport:
                     await _close_test_writer(client_writer)
 
             async with _run_test_server(handle_proxy) as proxy_port:
-                proxy_url = f"http://proxy-user:proxy-password@127.0.0.1:{proxy_port}"
+                proxy_url = f"{proxy_prefix}proxy-user:proxy-password@127.0.0.1:{proxy_port}"
                 with (
                     patch.dict(
                         os.environ,

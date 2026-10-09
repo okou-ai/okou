@@ -691,6 +691,7 @@ const prepareAutomaticOAuthStart$ = command(
   ) => {
     const db = set(writeDb$);
     const { connector, args, featureContext, client } = context;
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0137; new non-billing transactions are prohibited.
     const preflight = await db.transaction(async (tx) => {
       await lockCustomConnectorOAuth2CredentialContract({
         db: tx,
@@ -797,6 +798,7 @@ async function persistCustomConnectorOAuthStart(
 ) {
   const { db, connector, args, prepared } = context;
   const expiresAt = connectorOAuthStateExpiresAt();
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0138; new non-billing transactions are prohibited.
   const result = await db.transaction(async (tx) => {
     await lockCustomConnectorOAuth2CredentialContract({
       db: tx,
@@ -886,6 +888,7 @@ async function persistAutomaticNoAuthConnection(
   signal: AbortSignal,
 ) {
   const { db, connector, args } = context;
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0139; new non-billing transactions are prohibited.
   const transaction = db.transaction(async (tx) => {
     await lockCustomConnectorOAuth2CredentialContract({
       db: tx,
@@ -1387,6 +1390,7 @@ async function replaceConnectionTokens(args: {
     args.token.userInfo,
   );
   const encrypted = await encryptTokenValues(args);
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0140; new non-billing transactions are prohibited.
   return await args.db.transaction(async (tx) => {
     const [claimed] = await tx
       .update(connectors)
@@ -1527,6 +1531,7 @@ export async function storeCustomConnectorOAuth2Connection(
 > {
   const encrypted = await encryptTokenValues(args);
   signal.throwIfAborted();
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0141; new non-billing transactions are prohibited.
   return await args.db.transaction(async (tx) => {
     const [insertedWallet] = await tx
       .insert(orgMetadataCanonicalWrites)
@@ -1999,6 +2004,7 @@ async function handleAutomaticOAuthRefreshFailure(args: {
     args.binding.registrationMethod === "dcr"
   ) {
     const registrationId = args.binding.dcrRegistration.id;
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0142; new non-billing transactions are prohibited.
     await args.db.transaction(async (tx) => {
       await retireCustomConnectorDcrRegistration(tx, registrationId);
     });
@@ -2076,6 +2082,7 @@ async function refreshAutomaticOAuthAccessToken(
     binding.dcrRegistration.expiresAt !== null &&
     binding.dcrRegistration.expiresAt <= nowDate()
   ) {
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0143; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       await retireCustomConnectorDcrRegistration(
         tx,

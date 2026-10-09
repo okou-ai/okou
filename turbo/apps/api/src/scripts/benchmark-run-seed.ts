@@ -17,6 +17,7 @@ export const insertBenchmarkRunBatch$ = command(
       throw new Error("Benchmark Run batches must contain 1 to 500 rows");
     }
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0004; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       const inserted = await tx
         .insert(agentRuns)

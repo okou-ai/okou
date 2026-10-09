@@ -425,6 +425,7 @@ const publishCandidate$ = command(
           signal,
         );
         signal.throwIfAborted();
+        // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0113; new non-billing transactions are prohibited.
         return await set(writeDb$).transaction(async (tx) => {
           const { switched } = await publishImmutableCatalogPointer(tx, {
             schemaVersion: args.candidate.artifact.artifactSchemaVersion,

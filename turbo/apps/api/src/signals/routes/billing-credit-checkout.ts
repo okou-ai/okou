@@ -84,6 +84,7 @@ const bootstrapCreditAutoRechargeOrg$ = command(
     const db = set(writeDb$);
     // Only newly inserted metadata publishes a default entitlement. Keep both
     // writes atomic without repairing or replacing an existing Plan.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0013; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       const rows = await tx
         .insert(orgMetadataCanonicalWrites)

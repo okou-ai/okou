@@ -27,6 +27,7 @@ const commitDiscordGuildRemoval$ = command(
       .digest("hex");
     // The receipt and guild revocation commit together, with recipients captured
     // before cascades and the installation locked before its connections.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0153; new non-billing transactions are prohibited.
     return await set(writeDb$).transaction(async (tx) => {
       const [receipt] = await tx
         .insert(discordGatewayReceipts)
