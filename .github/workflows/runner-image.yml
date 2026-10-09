@@ -681,6 +681,9 @@ jobs:
   # toolchain; only its matching native consumer may execute the output.
   native-release-build:
     name: Compile full-LTO native package consumer (${{ matrix.label }})
+    outputs:
+      producer-attempt-x86_64-unknown-linux-musl: ${{ steps.optimized-producer.outputs.attempt-x86_64-unknown-linux-musl }}
+      producer-attempt-aarch64-unknown-linux-musl: ${{ steps.optimized-producer.outputs.attempt-aarch64-unknown-linux-musl }}
     runs-on: ubuntu-latest-8-cores
     container:
       image: ${{ needs.prepare.outputs.runner-toolchain-image }}
@@ -733,7 +736,16 @@ jobs:
       # Still inside the existing pinned producer and its unchanged 25m budget.
       # These are optimized integration executables, NOT relabeled Runner assets.
       - name: Compile real optimized supervisor and independent-peer consumers
-        run: bash .github/scripts/build-runner-native-supervisor.sh
+        id: optimized-producer
+        run: |
+          set -euo pipefail
+          bash .github/scripts/build-runner-native-supervisor.sh
+          case "$TARGET_TRIPLE" in
+            x86_64-unknown-linux-musl|aarch64-unknown-linux-musl) ;;
+            *) exit 1 ;;
+          esac
+          [[ "$GITHUB_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]] || exit 1
+          printf 'attempt-%s=%s\n' "$TARGET_TRIPLE" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
       - name: Transfer checked ci supervisor inputs
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
@@ -833,6 +845,7 @@ jobs:
         target: [x86_64-unknown-linux-musl, aarch64-unknown-linux-musl]
     env:
       SOURCE_SHA: ${{ needs.prepare.outputs.head-sha }}
+      OPTIMIZED_PRODUCER_ATTEMPT: ${{ needs.native-release-build.outputs[format('producer-attempt-{0}', matrix.target)] }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:

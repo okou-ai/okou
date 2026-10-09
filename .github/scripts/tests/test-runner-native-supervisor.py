@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import unittest
+import unittest.mock as mock
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -222,6 +223,69 @@ class OptimizedSupervisor(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'optimized compiler lost original same-source producer/CLI context'):
                 implementation.finish(out, 'release', 'x86_64-unknown-linux-musl', head)
             self.assertFalse(out.exists())
+
+    def test_consumer_only_retry_retains_independently_bound_original_attempt(self):
+        # Inert provenance-predicate data only. No compiler context, executable,
+        # helper, package or runtime receipt is created or accepted here.
+        producer = {'repository': 'okou-ai/okou', 'headSha': 'inert-source-boundary',
+                    'runId': 42, 'runAttempt': 1, 'workflowPath': '.github/workflows/runner-image.yml'}
+        original = dict(producer)
+        with mock.patch.dict(os.environ, {'GITHUB_RUN_ID': '42', 'GITHUB_RUN_ATTEMPT': '2'}):
+            self.assertEqual(module().validate_original_producer(producer, producer['headSha'], '1'), 2)
+            self.assertEqual(producer, original)  # Never relabel the producer as attempt2.
+            with self.assertRaisesRegex(ValueError, 'original optimized producer mismatch'):
+                module().validate_original_producer(producer, producer['headSha'], '2')
+
+    def test_original_attempt_has_no_current_attempt_default_or_future_fallback(self):
+        producer = {'repository': 'okou-ai/okou', 'headSha': 'inert-source-boundary',
+                    'runId': 42, 'runAttempt': 1, 'workflowPath': '.github/workflows/runner-image.yml'}
+        with mock.patch.dict(os.environ, {'GITHUB_RUN_ID': '42', 'GITHUB_RUN_ATTEMPT': '2'}):
+            for expected in (None, '', '0', '01', '-1', '1 ', 'one'):
+                with self.subTest(expected=expected), self.assertRaisesRegex(ValueError, 'attempt unavailable'):
+                    module().validate_original_producer(producer, producer['headSha'], expected)
+            with mock.patch.dict(os.environ, {'GITHUB_RUN_ATTEMPT': '1'}):
+                producer['runAttempt'] = 2
+                with self.assertRaisesRegex(ValueError, 'attempt is from the future'):
+                    module().validate_original_producer(producer, producer['headSha'], '2')
+
+    def test_retry_preserves_every_original_producer_identity_check(self):
+        producer = {'repository': 'okou-ai/okou', 'headSha': 'inert-source-boundary',
+                    'runId': 42, 'runAttempt': 1, 'workflowPath': '.github/workflows/runner-image.yml'}
+        with mock.patch.dict(os.environ, {'GITHUB_RUN_ID': '42', 'GITHUB_RUN_ATTEMPT': '2'}):
+            for field, value in (('repository', 'untrusted/inert'), ('headSha', 'other-inert-source'),
+                                 ('runId', 43), ('runAttempt', 2), ('runAttempt', True),
+                                 ('workflowPath', '.github/workflows/unrelated-inert.yml')):
+                changed = {**producer, field: value}
+                with self.subTest(field=field, value=value), self.assertRaisesRegex(ValueError, 'original optimized producer mismatch'):
+                    module().validate_original_producer(changed, producer['headSha'], '1')
+
+    def test_missing_expected_attempt_refuses_before_consumer_input_or_provisioning(self):
+        import subprocess
+        script = ROOT / '.github/scripts/check-runner-native-supervisor.sh'
+        result = subprocess.run(['bash', str(script), str(ROOT / 'crates/target'),
+                                 str(ROOT / 'crates/target'), 'ci', 'x86_64-unknown-linux-musl'],
+                                cwd=ROOT, env={'PATH': '/usr/bin:/bin'}, capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('missing original optimized producer attempt', result.stderr)
+        self.assertEqual(result.stdout, '')
+
+    def test_original_producer_attempt_is_bound_per_target_not_to_consumer_attempt(self):
+        # Workflow ownership only, not a compiler context or native receipt.
+        jobs = json.loads(Path(os.environ['RUNNER_NATIVE_WORKFLOW_JSON']).read_text())['jobs']
+        producer = jobs['native-release-build']
+        consumer = jobs['native-supervisor-runtime']
+        self.assertEqual(consumer['env'].get('OPTIMIZED_PRODUCER_ATTEMPT'),
+                         "${{ needs.native-release-build.outputs[format('producer-attempt-{0}', matrix.target)] }}")
+        for target in ('x86_64-unknown-linux-musl', 'aarch64-unknown-linux-musl'):
+            self.assertEqual(producer.get('outputs', {}).get('producer-attempt-' + target),
+                             '${{ steps.optimized-producer.outputs.attempt-' + target + ' }}')
+        build = next(s for s in producer['steps'] if 'build-runner-native-supervisor.sh' in s.get('run', ''))
+        self.assertEqual(build.get('id'), 'optimized-producer')
+        self.assertIn('GITHUB_RUN_ATTEMPT', build['run'])
+        self.assertIn('GITHUB_OUTPUT', build['run'])
+        self.assertLess(build['run'].index('build-runner-native-supervisor.sh'),
+                        build['run'].index('GITHUB_OUTPUT'))
+        self.assertNotIn('GITHUB_RUN_ATTEMPT', consumer['env']['OPTIMIZED_PRODUCER_ATTEMPT'])
 
     def test_profile_target_matrix_requires_original_package_and_failure_gate(self):
         jobs = json.loads(Path(os.environ['RUNNER_NATIVE_WORKFLOW_JSON']).read_text())['jobs']

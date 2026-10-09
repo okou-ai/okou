@@ -257,6 +257,21 @@ def finish(out, profile, target, head):
           'scope': 'optimized Rust integration consumers; not distributed Runner execution, full QEMU PNG or K3'})
 
 
+def validate_original_producer(producer, head, expected_attempt):
+    # The successful producer job owns this target-specific attempt. The
+    # manifest cannot select its own expected identity on a consumer-only rerun.
+    current_attempt = os.environ.get('GITHUB_RUN_ATTEMPT')
+    require(all(isinstance(value, str) and re.fullmatch(r'[1-9][0-9]*', value)
+                for value in (expected_attempt, current_attempt)),
+            'original optimized producer attempt unavailable')
+    require(int(expected_attempt) <= int(current_attempt), 'original optimized producer attempt is from the future')
+    require(producer['repository'] == 'okou-ai/okou' and producer['headSha'] == head
+            and producer['runId'] == int(os.environ['GITHUB_RUN_ID'])
+            and type(producer['runAttempt']) is int and producer['runAttempt'] == int(expected_attempt)
+            and producer['workflowPath'] == '.github/workflows/runner-image.yml', 'original optimized producer mismatch')
+    return int(current_attempt)
+
+
 def validate(out, package, profile, target, head):
     require(target in TARGETS and platform.machine() == target.split('-')[0], 'native matching CPU required')
     require(not git('status', '--porcelain', '--untracked-files=no')
@@ -268,10 +283,7 @@ def validate(out, package, profile, target, head):
             and manifest['profile'] == profile and manifest['target'] == target
             and manifest['profileContract'] == profile_contract(profile), 'optimized consumer source/profile mismatch')
     producer = manifest['producer']
-    require(producer['repository'] == 'okou-ai/okou' and producer['headSha'] == head
-            and producer['runId'] == int(os.environ['GITHUB_RUN_ID'])
-            and producer['runAttempt'] == int(os.environ['GITHUB_RUN_ATTEMPT'])
-            and producer['workflowPath'] == '.github/workflows/runner-image.yml', 'original optimized producer mismatch')
+    verifier_attempt = validate_original_producer(producer, head, os.environ.get('OPTIMIZED_PRODUCER_ATTEMPT'))
     context_bytes = regular(out / 'distribution-build-context.json', 65536)
     context = json.loads(context_bytes)
     require(sha(context_bytes) == manifest['distributionContextSha256']
@@ -315,7 +327,8 @@ def validate(out, package, profile, target, head):
     # Original compiler input, provenance and attribution remain distinct from the verifier.
     write(out / 'validated.json', {'packageReceiptSha256': sha(receipt_bytes), 'packageProducer': receipt['producer'],
                                  'testProducer': producer, 'verifierHeadSha': head, 'profile': profile,
-                                 'target': target, 'trackedSourceDirty': False, 'runtimeVerified': False})
+                                 'target': target, 'verifierRunAttempt': verifier_attempt,
+                                 'trackedSourceDirty': False, 'runtimeVerified': False})
 
 
 def check_results(text, expected):

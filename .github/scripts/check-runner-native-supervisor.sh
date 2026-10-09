@@ -3,6 +3,7 @@
 # Namespace PID1 supervises live children; no host policy or native overrides.
 set -euo pipefail
 [[ $# == 4 ]] || { echo 'usage: check-runner-native-supervisor.sh INPUT PACKAGE PROFILE TARGET' >&2; exit 1; }
+: "${OPTIMIZED_PRODUCER_ATTEMPT:?missing original optimized producer attempt}"
 cd "$(git rev-parse --show-toplevel)"
 input=$(realpath "$1"); package=$(realpath "$2"); profile=$3; target=$4
 [[ "$profile" == ci || "$profile" == release ]] || exit 1
