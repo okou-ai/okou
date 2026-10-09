@@ -12,11 +12,7 @@ import {
 } from "drizzle-orm/pg-core";
 
 export type BackgroundJobStatus =
-  | "pending"
-  | "running"
-  | "completed"
-  | "failed"
-  | "cancelled";
+  "pending" | "running" | "completed" | "failed" | "cancelled";
 
 /** Durable control state for handlers that finish work across bounded calls. */
 export const backgroundJobs = pgTable(

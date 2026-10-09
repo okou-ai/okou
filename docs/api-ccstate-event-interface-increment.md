@@ -95,6 +95,11 @@ callers changed are:
 - `routes/test-cron-monitor-chat-event-queue-state.ts` and existing
   `test-fixtures/{chat-events,chat-event-search,chat-event-retention,official-workflow-queue}.ts`.
 
+The caller list above records that increment's historical scope. #37440
+[batch013](implementation/issue-37440-batches/batch-013.md) later removed the
+private queue-monitor fixture route and its fabricated-state tests; the earlier
+migration is not evidence that those tests satisfy the current public boundary.
+
 The three existing infrastructure acceptance programs under
 `scripts/chat-event-{context,sequences,auxiliary}/acceptance.ts` also use the SQL
 constructors. Their assertions and exception scenarios are retained, not

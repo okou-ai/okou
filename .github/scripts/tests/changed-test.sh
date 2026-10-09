@@ -30,7 +30,7 @@ git -C "$repo" commit -qm current
 cat >"$test_dir/bin/npx" <<'STUB'
 #!/usr/bin/env bash
 set -euo pipefail
-[[ "$*" == '-y turbo@^2.5.6 --skip-infer bin' ]] || exit 99
+[[ "$#" == 4 && "$1" == -y && "$2" =~ ^turbo@[0-9]+\.[0-9]+\.[0-9]+$ && "$3" == --skip-infer && "$4" == bin ]] || exit 99
 if [[ "$STUB_MODE" == resolution-failure ]]; then
   echo 'stdout-private-fixture'
   printf 'npm error ETEST: unable to resolve Turbo %s\n' "$HASH_TEST_TOKEN" >&2

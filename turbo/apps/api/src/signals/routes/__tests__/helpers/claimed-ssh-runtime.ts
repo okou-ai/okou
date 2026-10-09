@@ -183,7 +183,7 @@ export function createClaimedSshRuntimeApi(
     );
     expect(completed.status).toBe("completed");
     expect(completed.completedAt).toBeDefined();
-    expect(completed.result?.checkpointId).toBeDefined();
+    expect(completed.result?.conversationId).toBeDefined();
     active.delete(value.runId);
     await flushWaitUntilForTest();
     options.authenticate(value);

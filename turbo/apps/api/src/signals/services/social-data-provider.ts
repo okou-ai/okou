@@ -90,12 +90,7 @@ export interface SocialDataProviderQuote {
 export interface SocialDataProviderRun {
   readonly upstreamRunId?: string;
   readonly state:
-    | "pending"
-    | "running"
-    | "completed"
-    | "failed"
-    | "cancelled"
-    | "unknown";
+    "pending" | "running" | "completed" | "failed" | "cancelled" | "unknown";
   readonly data?: SocialDataResult;
   readonly actualCostUsdMicros?: number;
   readonly billedUnits?: number;

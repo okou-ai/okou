@@ -12,20 +12,20 @@ import { workflowAutomationSnapshot } from "./workflow-automation-snapshot";
 import {
   ensureGmailWatchForUser$,
   reconcileGmailWatchesForUser$,
-} from "./gmail-automation-event.service";
+} from "./gmail-automation-watch.service";
 import {
   ensureGoogleCalendarWatchForUser$,
   reconcileGoogleCalendarWatchesForUser$,
   stageGoogleCalendarWatchTargetForReconfiguration$,
-} from "./google-calendar-automation-event.service";
+} from "./google-calendar-automation-watch.service";
 import {
   ensureGoogleFormsWatchForUser$,
   reconcileGoogleFormsWatchesForUser$,
-} from "./google-forms-automation-event.service";
+} from "./google-forms-automation-watch.service";
 import {
   ensureGoogleMeetTranscriptGeneratedSubscriptionForUser$,
   reconcileGoogleMeetSubscriptionsForUser$,
-} from "./google-meet-automation-event.service";
+} from "./google-meet-automation-watch.service";
 
 interface AutomationEventWatchAutomation {
   readonly orgId: string;

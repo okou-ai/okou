@@ -8,7 +8,7 @@ import type { Firewall } from "@okouai/connectors/firewall-types";
 import {
   connectorCatalog,
   connectorCatalogEntries,
-} from "@okouai/db/schema/connector-catalog";
+} from "@okouai/db/runtime/connector-catalog";
 import { asc, eq } from "drizzle-orm";
 
 import { singleton } from "../../lib/singleton";

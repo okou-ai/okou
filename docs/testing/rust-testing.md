@@ -36,6 +36,14 @@ cargo test --manifest-path crates/Cargo.toml --profile local -p guest-agent
 cargo test --manifest-path crates/Cargo.toml --profile local \
   -j 1 -p runner-host -- --test-threads=1
 
+# Host-owned systemd primitives and retained Runner command composition
+# All 97 identity/query/config/diagnostic cases moved into runner-host/src/service.
+# Reload, stop, drain/resume, unit generation and output composition tests remain
+# in Runner. Three private state fixtures use host's non-default test-support
+# feature, requested by Runner only as a dev-dependency. No cases were removed.
+cargo test --manifest-path crates/Cargo.toml --profile local --locked \
+  -j 1 -p runner-host -p runner -- --test-threads=1
+
 # Extracted Runner provider coordination and its owner tests
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-provider -- --test-threads=1
@@ -111,7 +119,51 @@ Pre-commit hooks run `cargo fmt` and `cargo doc --profile local` on staged Rust
 files. Clippy remains in the Crates CI workflow. To run it locally from `crates/`,
 use `cargo clippy --profile local --all-targets --all-features`.
 
+## Coverage in CI
+
+The Crates coverage job installs pinned `cargo-llvm-cov` and `cargo-nextest`
+versions and runs the full target/feature selection through nextest. It limits
+execution to eight concurrent tests on the eight-core runner, while retaining
+R2 sccache, the existing Rust cache, line-tables-only debug information, and the
+locked Python addon setup.
+
+After preparing the addon environment from the repository root, run the same
+coverage command from `crates/`:
+
+```bash
+cargo llvm-cov nextest --all-targets --all-features --test-threads 8 \
+  --lcov --output-path lcov.info
+```
+
+Nextest schedules tests across executables and runs each case in a separate
+process. Guest mock fixtures recognize the verified Cargo or nextest parent
+session so the mock binaries are built once per invocation, not once per case.
+The job requires a nonempty LCOV report with at least one source file, then
+logs the unique normalized source-file count and source-set SHA-256 before
+uploading to Codecov. It does not compare the digest against an expected value;
+failed coverage still fails the Crates gate.
+
 ## Test Organization
+
+### Keep large fixtures cheap without weakening their contracts
+
+Remove redundant setup and observation instead of reducing a slow test's workload.
+A sequential authentication matrix may share freshly generated invariant synthetic
+server material within that test, but each client exchange and session proof must
+remain independent. Do not commit private keys or cache production credentials.
+
+Count recorded events under their owner's lock when waiting for quiescence;
+clone complete bodies only when an owned snapshot is needed. Never hold a
+synchronous guard across an await. Consume owned parsed arrays rather than
+cloning them, and reuse canonical fixture bytes for exact-original checks.
+Textual JSON observations must include member names and preserve the caller's
+search domain; they are not arbitrary serialized-JSON substring searches.
+
+Keep real process/socket deadlines, full payload/file/pixel boundaries, key/KDF
+strengths, every assertion and actual retained image buffers. Compare complete
+unchanged target selections with matching profile/instrumentation/thread settings;
+exclude compilation and warm-build differences from speed claims. Local samples
+do not establish stable CI speedup or memory reduction.
 
 ### Shared firewall contract in CI
 

@@ -8,6 +8,7 @@ import {
 } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { zstdDecompressSync } from "node:zlib";
 
 import { encode } from "gpt-tokenizer/encoding/o200k_base";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -362,13 +363,16 @@ async function startProvider(steps: readonly ProviderStep[]): Promise<{
         chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       }
       const index = requests.length;
+      const bytes = Buffer.concat(chunks);
       requests.push({
         url: request.url,
         headers: request.headers,
-        body: JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<
-          string,
-          unknown
-        >,
+        body: JSON.parse(
+          (request.headers["content-encoding"] === "zstd"
+            ? zstdDecompressSync(bytes)
+            : bytes
+          ).toString("utf8"),
+        ) as Record<string, unknown>,
       });
       const step = steps[index];
       if (!step) {
@@ -626,58 +630,72 @@ describe("Pi memory Phase 2 consolidation engine", () => {
     });
   });
 
-  it("raises maintenance effort for a model that publishes no medium step", async () => {
-    // DeepSeek V4.1 Flash maps `medium` to nothing, so the built-in binding
-    // must consolidate at that model's documented default instead.
-    const provider = await startProvider([
-      {
-        type: "tool",
-        name: "phase2_write",
-        arguments: {
-          path: "memory/MEMORY.md",
-          content: "# Task Group: updated by maintenance\n",
+  it.each([
+    { model: "openai/gpt-6-luna", effort: "medium" },
+    { model: "gpt-6-luna", effort: "medium" },
+  ] as const)(
+    "keeps captured $model maintenance effort at $effort",
+    async (route) => {
+      const { model, effort } = route;
+      const provider = await startProvider([
+        {
+          type: "tool",
+          name: "phase2_write",
+          arguments: {
+            path: "memory/MEMORY.md",
+            content: "# Task Group: updated by maintenance\n",
+          },
         },
-      },
-      {
-        type: "tool",
-        name: "phase2_write",
-        arguments: {
-          path: "memory/memory_summary.md",
-          content: "v1\n## User Profile\n- updated by maintenance\n",
+        {
+          type: "tool",
+          name: "phase2_write",
+          arguments: {
+            path: "memory/memory_summary.md",
+            content: "v1\n## User Profile\n- updated by maintenance\n",
+          },
         },
-      },
-      { type: "text", text: "MODEL_TEXT_SECRET_31243 completed" },
-    ]);
-    const sessions: PiMemoryPhase2SessionSnapshot[] = [];
-    const result = await runPiMemoryPhase2LocalConsolidation(
-      args(provider.baseUrl, {
-        model: {
-          provider: "openrouter",
-          baseUrl: provider.baseUrl,
-          apiKey: "PROVIDER_KEY_SECRET_31243",
-          model: "deepseek/deepseek-v4.1-flash",
-          dialect: "openai-responses",
-          transport: "sse",
+        { type: "text", text: "MODEL_TEXT_SECRET_31243 completed" },
+      ]);
+      const sessions: PiMemoryPhase2SessionSnapshot[] = [];
+      const result = await runPiMemoryPhase2LocalConsolidation(
+        args(provider.baseUrl, {
+          model:
+            model === "gpt-6-luna"
+              ? {
+                  provider: "openai-codex",
+                  baseUrl: provider.baseUrl,
+                  apiKey: "PROVIDER_KEY_SECRET_31243",
+                  accountId: "test-codex-account",
+                  model,
+                  dialect: "openai-codex-responses",
+                  transport: "sse",
+                }
+              : {
+                  provider: "openrouter",
+                  baseUrl: provider.baseUrl,
+                  apiKey: "PROVIDER_KEY_SECRET_31243",
+                  model,
+                  dialect: "openai-responses",
+                  transport: "sse",
+                },
+        }),
+        new AbortController().signal,
+        {
+          onSessionCreated(snapshot) {
+            sessions.push(snapshot);
+          },
         },
-      }),
-      new AbortController().signal,
-      {
-        onSessionCreated(snapshot) {
-          sessions.push(snapshot);
-        },
-      },
-    );
+      );
 
-    expect(result.status).toBe("prepared");
-    expect(sessions[0]?.thinkingLevel).toBe("high");
-    expect(provider.requests).not.toHaveLength(0);
-    for (const request of provider.requests) {
-      expect(request.body).toMatchObject({
-        model: "deepseek/deepseek-v4.1-flash",
-        reasoning: { effort: "high" },
-      });
-    }
-  });
+      expect(result.status).toBe("prepared");
+      expect(sessions[0]?.thinkingLevel).toBe(effort);
+      expect(provider.requests).not.toHaveLength(0);
+      for (const request of provider.requests) {
+        expect(request.body).toMatchObject({ model });
+        expect(request.body).toMatchObject({ reasoning: { effort } });
+      }
+    },
+  );
 
   it("uses one restricted official AgentSession and returns exact prepared usage", async () => {
     const credentialDir = await mkdtemp(

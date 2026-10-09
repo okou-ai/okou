@@ -113,6 +113,48 @@ def test_check_flow_metadata_keys_cli_passes_clean_addon(tmp_path):
     assert result.stderr == ""
 
 
+@pytest.mark.parametrize(
+    ("alias_value", "expression", "has_violation"),
+    [
+        ("flow.metadata", "[(meta := {}) for _ in rows]", True),
+        ("flow.metadata", "[(meta := {}) for _ in [1] if condition]", True),
+        ("flow.metadata", "((meta := {}) for _ in [1])", True),
+        ("flow.metadata", "[(meta := {}) for _ in [1]]", False),
+        ("flow.metadata", "[(meta := flow.metadata) for _ in [1] if (meta := {})]", False),
+        ("{}", "[(meta := {}) for _ in rows]", False),
+        ("{}", "list((meta := flow.metadata) for _ in [1])", True),
+    ],
+)
+def test_check_flow_metadata_keys_cli_tracks_optional_comprehension_rebindings(
+    tmp_path, alias_value, expression, has_violation
+):
+    addon_root = tmp_path / "mitm-addon"
+    check_script = _copy_linter_scripts(addon_root)
+    src_root = addon_root / "src"
+    src_root.mkdir()
+    (src_root / "flow_metadata_keys.py").write_text(
+        'SANDBOX_RUN_ID = "sandbox_run_id"\n', encoding="utf-8"
+    )
+    (src_root / "optional_comprehension.py").write_text(
+        "def exercise(flow, rows, condition):\n"
+        f"    meta = {alias_value}\n"
+        f"    {expression}\n"
+        '    meta["sandbox_run_id"] = "run-1"\n',
+        encoding="utf-8",
+    )
+
+    result = _run_check_script(check_script, addon_root, tmp_path)
+
+    assert result.returncode == (1 if has_violation else 0)
+    assert result.stdout == (
+        "src/optional_comprehension.py:4: use metadata_keys.SANDBOX_RUN_ID "
+        "for flow.metadata access\n"
+        if has_violation
+        else ""
+    )
+    assert result.stderr == ""
+
+
 def test_check_flow_metadata_keys_cli_reports_configured_registry_path(tmp_path):
     addon_root = tmp_path / "mitm-addon"
     check_script = _copy_linter_scripts(addon_root)
@@ -586,6 +628,69 @@ async def test_loop_alias_fixture_matches_runtime_metadata_accesses(case, access
     metadata = _TrackedMetadata()
 
     result = namespace[case](SimpleNamespace(metadata=metadata))
+    if inspect.isawaitable(result):
+        await result
+
+    assert metadata.accesses == ["sandbox_run_id"] * access_count
+
+
+def test_registered_flow_metadata_guard_tracks_comprehension_walrus_exits(tmp_path):
+    source_path = tmp_path / "comprehension_walrus_flow.py"
+    _write_python_source(source_path, "comprehension_walrus_flow.base.py.txt")
+
+    violations = flow_metadata_key_linter.metadata_key_violations(source_path)
+
+    assert _normalized_violations(source_path, violations) == _expected_lines(
+        "comprehension_walrus_flow.expected.txt"
+    )
+
+
+@pytest.mark.parametrize(
+    ("case", "access_count"),
+    [
+        ("optional_list_rows", 1),
+        ("optional_set_rows", 1),
+        ("optional_dict_rows", 1),
+        ("optional_dict_key", 1),
+        ("filtered_list", 1),
+        ("filtered_set", 1),
+        ("filtered_dict", 1),
+        ("filter_creates_alias_before_rejection", 1),
+        ("filter_kills_alias_before_rejection", 0),
+        ("later_filter_creates_alias", 0),
+        ("optional_first_generator", 1),
+        ("optional_later_generator", 1),
+        ("empty_later_generator_retains_filter_effect", 0),
+        ("nested_optional_rebind", 1),
+        ("nested_guaranteed_rebind", 0),
+        ("nested_deferred_rebind", 1),
+        ("deferred_nested_eager_rebind", 1),
+        ("unconsumed_generator", 1),
+        ("deferred_filter_rebind", 1),
+        ("deferred_later_iterable_access", 1),
+        ("consumed_generator_addition", 1),
+        ("directly_iterated_generator_addition", 1),
+        ("consumed_generator_filter_alias", 1),
+        ("deferred_body_diagnostics_are_retained", 1),
+        ("generator_first_iterable_is_evaluated", 2),
+        ("ordinary_dictionary", 0),
+        ("guaranteed_list_rebind", 0),
+        ("guaranteed_set_rebind", 0),
+        ("guaranteed_dict_rebind", 0),
+        ("later_statement_rebinds", 0),
+        ("statically_empty_body", 1),
+        ("comprehension_target_stays_local", 1),
+        ("lambda_target_stays_local", 1),
+        ("optional_addition_is_retained", 0),
+        ("optional_async_rows", 1),
+    ],
+)
+async def test_comprehension_walrus_fixture_matches_runtime_metadata_accesses(case, access_count):
+    # Execute only the checked-in bounded fixture; consume generators only inside its controls.
+    namespace = runpy.run_path(str(_FIXTURE_ROOT / "comprehension_walrus_flow.base.py.txt"))
+    metadata = _TrackedMetadata()
+
+    result = namespace[case](SimpleNamespace(metadata=metadata), [], False)
     if inspect.isawaitable(result):
         await result
 

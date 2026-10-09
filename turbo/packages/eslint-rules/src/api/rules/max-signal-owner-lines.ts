@@ -5,6 +5,7 @@ import {
 } from "@typescript-eslint/utils";
 
 import { createRule } from "../utils.ts";
+import { createComputedFactoryVerifier } from "../signal-factory-verification.ts";
 
 type FunctionNode =
   | TSESTree.FunctionDeclaration
@@ -46,6 +47,45 @@ export const maxSignalOwnerLines = createRule({
     },
   },
   create(context, [options]) {
+    const verifyComputedFactory = createComputedFactoryVerifier();
+
+    function isComputedFactory(node: TSESTree.CallExpression): boolean {
+      if (
+        node.callee.type !== AST_NODE_TYPES.Identifier ||
+        !node.arguments.every((argument) => {
+          return (
+            argument.type === AST_NODE_TYPES.Identifier ||
+            argument.type === AST_NODE_TYPES.Literal
+          );
+        })
+      ) {
+        return false;
+      }
+      const variable = ASTUtils.findVariable(
+        context.sourceCode.getScope(node),
+        node.callee,
+      );
+      const definition = variable?.defs.find(
+        (item) => item.type === "ImportBinding",
+      );
+      if (
+        definition?.node.type !== AST_NODE_TYPES.ImportSpecifier ||
+        definition.node.importKind === "type" ||
+        definition.node.parent.type !== AST_NODE_TYPES.ImportDeclaration ||
+        definition.node.parent.importKind === "type"
+      ) {
+        return false;
+      }
+      const imported = definition.node.imported;
+      return verifyComputedFactory(
+        context.filename,
+        definition.node.parent.source.value,
+        imported.type === AST_NODE_TYPES.Identifier
+          ? imported.name
+          : imported.value,
+      );
+    }
+
     function isSignalConstructor(node: TSESTree.CallExpression): boolean {
       if (node.callee.type !== AST_NODE_TYPES.Identifier) {
         return false;
@@ -112,7 +152,7 @@ export const maxSignalOwnerLines = createRule({
             return element === null || isDeclarationValue(element);
           });
         case AST_NODE_TYPES.CallExpression:
-          return isSignalConstructor(node);
+          return isSignalConstructor(node) || isComputedFactory(node);
         default:
           return false;
       }

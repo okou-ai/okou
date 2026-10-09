@@ -4,9 +4,7 @@ import { Button } from "@okouai/ui";
 
 type PermissionPolicyToggleValue = "allow" | "deny";
 type PermissionPolicyToggleState =
-  | PermissionPolicyToggleValue
-  | "ask"
-  | "mixed";
+  PermissionPolicyToggleValue | "ask" | "mixed";
 
 export function PermissionPolicyMixedBadge() {
   const { t } = useTranslation();

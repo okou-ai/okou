@@ -7,23 +7,6 @@ import { connectors } from "@okouai/db/schema/connector";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { sql } from "drizzle-orm";
 
-import type { ReadonlyDb } from "../external/db";
-import { resolveWorkflowAutomationConnectorId } from "./workflow-automation-account.service";
-
-export async function resolveGoogleFormsAutomationConnectorId(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly workflowId: string;
-  },
-): Promise<string | null> {
-  return await resolveWorkflowAutomationConnectorId(db, {
-    ...args,
-    connectorSlug: "google-forms",
-  });
-}
-
 /**
  * Publish the selected business source and discard an incompatible cursor.
  * No row locks: the desired account is read from the statement snapshot and

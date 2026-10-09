@@ -135,9 +135,7 @@ export interface ComposerSubmission {
 export type ComposerSubmissionAction = "send" | "queue";
 
 export type ComposerPrimaryAction =
-  | ComposerSubmissionAction
-  | "stop"
-  | "disabled";
+  ComposerSubmissionAction | "stop" | "disabled";
 
 export interface ComposerPendingEvent {
   readonly kind: "message" | "automation";

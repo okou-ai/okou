@@ -15,12 +15,12 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@playwright/test": "^1.60.0",
-    "@types/node": "^25.9.3",
-    "dotenv": "^17.4.2"
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^26.6.4",
+    "dotenv": "^18.0.5"
   },
   "devDependencies": {
-    "tsx": "^4.22.4",
-    "typescript": "6.0.3"
+    "tsx": "^4.23.15",
+    "typescript": "7.0.2"
   }
 }

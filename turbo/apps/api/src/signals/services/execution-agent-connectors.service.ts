@@ -60,8 +60,7 @@ export function agentConnectorSelectionFromRows(
 type SelectedDefinitionRow = {
   readonly connector: typeof orgCustomConnectors.$inferSelect;
   readonly oauthConfig:
-    | typeof orgCustomConnectorOauthConfigs.$inferSelect
-    | null;
+    typeof orgCustomConnectorOauthConfigs.$inferSelect | null;
 };
 
 function executionDefinitionFromRow(

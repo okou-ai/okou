@@ -4,6 +4,10 @@ import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 
+export const desktopUpgradeRequiredSchema = apiErrorSchema.extend({
+  minimumSupportedVersion: z.string().regex(/^\d+\.\d+\.\d+$/u),
+});
+
 /**
  * Every desktop update line the `:product` routes accept.
  *
@@ -73,6 +77,20 @@ export type SquirrelMacReleases = z.infer<typeof squirrelMacReleasesSchema>;
  * invalid"), which stay loud because they need a human.
  */
 export const desktopUpdatesContract = c.router({
+  compatibility: {
+    method: "GET",
+    path: "/api/desktop/compatibility",
+    responses: {
+      200: z.object({
+        minimumSupportedVersion: z
+          .string()
+          .regex(/^\d+\.\d+\.\d+$/u)
+          .nullable(),
+      }),
+    },
+    summary:
+      "Read the globally enforced Desktop version floor without signing in",
+  },
   productAppcast: {
     method: "GET",
     path: "/api/desktop/updates/:product/:channel/:platform/:arch/appcast.xml",

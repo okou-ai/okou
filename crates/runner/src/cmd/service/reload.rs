@@ -6,11 +6,11 @@ use crate::error::{RunnerError, RunnerResult};
 use runner_host::paths::HomePaths;
 
 use super::drain_override::drain_restart_override_path;
-use super::systemctl::{
+use super::{RunnerServiceUnit, ServiceFuture};
+use runner_host::service::{
     BoundedSystemctlOutcome, SystemdReloadState, read_systemd_reload_state,
     read_systemd_reload_state_bounded, run_systemctl, run_systemctl_bounded,
 };
-use super::{RunnerServiceUnit, ServiceFuture};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct SystemdReloadRequirement {
@@ -66,8 +66,10 @@ impl SystemdReloadOps for RealSystemdReloadOps {
     ) -> ServiceFuture<'a, SystemdReloadState> {
         Box::pin(async move {
             match self.command_timeout {
-                Some(duration) => read_systemd_reload_state_bounded(unit, duration).await,
-                None => read_systemd_reload_state(unit).await,
+                Some(duration) => read_systemd_reload_state_bounded(unit, duration)
+                    .await
+                    .map_err(Into::into),
+                None => read_systemd_reload_state(unit).await.map_err(Into::into),
             }
         })
     }
@@ -87,7 +89,7 @@ impl SystemdReloadOps for RealSystemdReloadOps {
                         ))),
                     }
                 }
-                None => run_systemctl(&["daemon-reload"]).await,
+                None => run_systemctl(&["daemon-reload"]).await.map_err(Into::into),
             }
         })
     }
@@ -186,6 +188,7 @@ mod tests {
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
     use super::*;
+    use runner_host::service::test_support;
 
     #[derive(Clone)]
     struct OperationGate {
@@ -223,7 +226,7 @@ mod tests {
                 if query_error {
                     Err(RunnerError::Internal("query failed".to_string()))
                 } else {
-                    Ok(SystemdReloadState::for_test(
+                    Ok(test_support::reload_state(
                         false,
                         dirty.load(Ordering::SeqCst),
                         if drain_override_loaded {
@@ -271,7 +274,7 @@ mod tests {
     #[test]
     fn install_requires_reload_for_not_found_unit() {
         let unit = RunnerServiceUnit::from_suffix("test").unwrap();
-        let state = SystemdReloadState::for_test(true, false, Vec::new());
+        let state = test_support::reload_state(true, false, Vec::new());
 
         assert!(
             SystemdReloadRequirement::dirty_or_not_found().requires_reload(&unit, &state),
@@ -283,8 +286,8 @@ mod tests {
     #[test]
     fn drain_override_state_requires_reload_when_systemd_dirty_flag_misses_change() {
         let unit = RunnerServiceUnit::from_suffix("test").unwrap();
-        let absent = SystemdReloadState::for_test(false, false, Vec::new());
-        let present = SystemdReloadState::for_test(
+        let absent = test_support::reload_state(false, false, Vec::new());
+        let present = test_support::reload_state(
             false,
             false,
             vec![

@@ -1,5 +1,7 @@
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import { billingCreditCheckoutContract } from "@okouai/api-contracts/contracts/billing";
+import { orgTierSchema } from "@okouai/api-contracts/contracts/orgs";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { eq } from "drizzle-orm";
@@ -22,8 +24,11 @@ import {
   previewExistingBillingCreditPurchase$,
 } from "../services/billing-checkout.service";
 import { updateAutoRechargeConfig$ } from "../services/billing.service";
-import { loadOrgPlanCapabilities } from "../services/org-plan-entitlement-read.service";
-import { ensureOrgMetadataPlanEntitlement } from "../services/org-plan-entitlements.service";
+import {
+  ORG_PLAN_CAPABILITY_SELECTION,
+  orgPlanCapabilitiesFromRow,
+} from "../services/org-plan-entitlement-read.service";
+import { orgPlanEntitlementValues } from "../services/org-plan-entitlements.service";
 import type { RouteEntry } from "../route-entry";
 
 const adminRequired = Object.freeze({
@@ -35,6 +40,82 @@ const adminRequired = Object.freeze({
     }),
   }),
 });
+
+const creditPurchaseCapabilities$ = computed(async (get) => {
+  const { orgId } = get(organizationAuthContext$);
+  const db = get(db$);
+  const [row] = await db
+    .select({
+      planKey: ORG_PLAN_CAPABILITY_SELECTION.planKey,
+      status: ORG_PLAN_CAPABILITY_SELECTION.status,
+      baseConcurrencyLimit: ORG_PLAN_CAPABILITY_SELECTION.baseConcurrencyLimit,
+      canBuyConcurrency: ORG_PLAN_CAPABILITY_SELECTION.canBuyConcurrency,
+      canBuyCredits: ORG_PLAN_CAPABILITY_SELECTION.canBuyCredits,
+      showUsagePack: ORG_PLAN_CAPABILITY_SELECTION.showUsagePack,
+      autoRechargeAllowed: ORG_PLAN_CAPABILITY_SELECTION.autoRechargeAllowed,
+      restrictedBuiltInModels:
+        ORG_PLAN_CAPABILITY_SELECTION.restrictedBuiltInModels,
+      workflowWebhookAutomationAllowed:
+        ORG_PLAN_CAPABILITY_SELECTION.workflowWebhookAutomationAllowed,
+      audioLifetimeLimit: ORG_PLAN_CAPABILITY_SELECTION.audioLifetimeLimit,
+      audioDailyRateLimit: ORG_PLAN_CAPABILITY_SELECTION.audioDailyRateLimit,
+      audioDailyDurationSeconds:
+        ORG_PLAN_CAPABILITY_SELECTION.audioDailyDurationSeconds,
+    })
+    .from(orgPlanEntitlements)
+    .where(eq(orgPlanEntitlements.orgId, orgId))
+    .limit(1);
+  if (row) {
+    return orgPlanCapabilitiesFromRow(row, orgId);
+  }
+  const [org] = await db
+    .select({ orgId: orgMetadata.orgId })
+    .from(orgMetadata)
+    .where(eq(orgMetadata.orgId, orgId))
+    .limit(1);
+  if (!org) {
+    return null;
+  }
+  throw new Error(`Missing org plan entitlement for ${orgId}`);
+});
+
+const bootstrapCreditAutoRechargeOrg$ = command(
+  async ({ set }, orgId: string, signal: AbortSignal): Promise<void> => {
+    const db = set(writeDb$);
+    // Only newly inserted metadata publishes a default entitlement. Keep both
+    // writes atomic without repairing or replacing an existing Plan.
+    await db.transaction(async (tx) => {
+      const rows = await tx
+        .insert(orgMetadataCanonicalWrites)
+        .values({ orgId })
+        .onConflictDoNothing({ target: orgMetadataCanonicalWrites.orgId })
+        .returning({ orgId: orgMetadata.orgId, tier: orgMetadata.tier });
+      signal.throwIfAborted();
+      for (const row of rows) {
+        const tier = orgTierSchema.safeParse(row.tier);
+        if (!tier.success) {
+          continue;
+        }
+        await tx
+          .insert(orgPlanEntitlements)
+          .values(
+            orgPlanEntitlementValues(
+              {
+                orgId: row.orgId,
+                tier: tier.data,
+                source: "org_metadata_migration",
+              },
+              { stripeSubscriptionId: null, sourceMetadata: {} },
+            ),
+          )
+          .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
+        signal.throwIfAborted();
+      }
+      signal.throwIfAborted();
+    });
+    signal.throwIfAborted();
+  },
+);
 
 const creditCheckoutAuthed$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -60,7 +141,7 @@ const creditCheckoutAuthed$ = command(
       supportsInAppPreview,
     } = bodyResult.data;
 
-    const capabilities = await loadOrgPlanCapabilities(get(db$), auth.orgId);
+    const capabilities = await get(creditPurchaseCapabilities$);
     signal.throwIfAborted();
     if (capabilities?.canBuyCredits === false) {
       return badRequestMessage(
@@ -89,18 +170,7 @@ const creditCheckoutAuthed$ = command(
           "auto-recharge requires both threshold and amount",
         );
       }
-      const db = set(writeDb$);
-      await db.transaction(async (tx) => {
-        const rows = await tx
-          .insert(orgMetadataCanonicalWrites)
-          .values({ orgId: auth.orgId })
-          .onConflictDoNothing({ target: orgMetadataCanonicalWrites.orgId })
-          .returning({ orgId: orgMetadata.orgId, tier: orgMetadata.tier });
-        for (const row of rows) {
-          await ensureOrgMetadataPlanEntitlement(tx, row);
-        }
-        signal.throwIfAborted();
-      });
+      await set(bootstrapCreditAutoRechargeOrg$, auth.orgId, signal);
       signal.throwIfAborted();
       const updateResult = await set(
         updateAutoRechargeConfig$,
@@ -178,7 +248,7 @@ const creditPurchaseConfirmAuthed$ = command(
     if (!bodyResult.ok) {
       return bodyResult.response;
     }
-    const capabilities = await loadOrgPlanCapabilities(get(db$), auth.orgId);
+    const capabilities = await get(creditPurchaseCapabilities$);
     signal.throwIfAborted();
     if (capabilities?.canBuyCredits === false) {
       return badRequestMessage(
@@ -207,39 +277,37 @@ const creditPurchaseConfirmAuthed$ = command(
   },
 );
 
+const creditCheckoutAuth$ = authRoute(
+  {
+    requireOrganization: true,
+    missingOrganizationStatus: 401,
+    requiredCapability: "billing:write",
+  },
+  creditCheckoutAuthed$,
+);
+
+const creditPurchaseConfirmAuth$ = authRoute(
+  {
+    requireOrganization: true,
+    missingOrganizationStatus: 401,
+    requiredCapability: "billing:write",
+  },
+  creditPurchaseConfirmAuthed$,
+);
+
 const creditCheckout$ = command(async ({ set }, signal: AbortSignal) => {
   if (!optionalEnv("STRIPE_SECRET_KEY")) {
     return providerUnavailable("Billing not configured");
   }
 
-  return await set(
-    authRoute(
-      {
-        requireOrganization: true,
-        missingOrganizationStatus: 401,
-        requiredCapability: "billing:write",
-      },
-      creditCheckoutAuthed$,
-    ),
-    signal,
-  );
+  return await set(creditCheckoutAuth$, signal);
 });
 
 const creditPurchaseConfirm$ = command(async ({ set }, signal: AbortSignal) => {
   if (!optionalEnv("STRIPE_SECRET_KEY")) {
     return providerUnavailable("Billing not configured");
   }
-  return await set(
-    authRoute(
-      {
-        requireOrganization: true,
-        missingOrganizationStatus: 401,
-        requiredCapability: "billing:write",
-      },
-      creditPurchaseConfirmAuthed$,
-    ),
-    signal,
-  );
+  return await set(creditPurchaseConfirmAuth$, signal);
 });
 
 export const billingCreditCheckoutRoutes: readonly RouteEntry[] = [

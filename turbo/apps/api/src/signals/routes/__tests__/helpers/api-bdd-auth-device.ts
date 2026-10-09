@@ -11,7 +11,6 @@ import {
 import {
   cliAuthTestCodexOauthContract,
   cliAuthTestConnectorContract,
-  cliAuthTestEnableConnectorContract,
   cliAuthTestTokenContract,
 } from "@okouai/api-contracts/contracts/cli-auth-test";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
@@ -65,9 +64,6 @@ interface TestEmailQuery {
 
 type SeedTestConnectorBody = z.infer<
   (typeof cliAuthTestConnectorContract.create)["body"]
->;
-type SeedTestEnableConnectorBody = z.infer<
-  (typeof cliAuthTestEnableConnectorContract.create)["body"]
 >;
 type SeedTestCodexOauthBody = z.infer<
   (typeof cliAuthTestCodexOauthContract.create)["body"]
@@ -168,9 +164,7 @@ export function makeCodexJwt(payload: Record<string, unknown>): string {
 }
 
 type CodexWorkspaceClaim =
-  | "organization.title"
-  | "workspace.name"
-  | "chatgpt_workspace_name";
+  "organization.title" | "workspace.name" | "chatgpt_workspace_name";
 
 function makeCodexIdToken(opts: {
   readonly accountId: string | null;
@@ -562,19 +556,6 @@ export function createAuthDeviceApiActions(context: TestContext) {
 
     async requestTestConnectorRaw(rawBody: string) {
       return await postRawJson("/api/cli/auth/test-connector", rawBody);
-    },
-
-    async requestTestEnableConnector(
-      query: TestEmailQuery,
-      body: SeedTestEnableConnectorBody,
-      statuses: readonly (200 | 400 | 404)[],
-    ) {
-      const client = authDeviceApp(context)(cliAuthTestEnableConnectorContract);
-      return await accept(client.create({ query, body }), statuses);
-    },
-
-    async requestTestEnableConnectorRaw(rawBody: string) {
-      return await postRawJson("/api/cli/auth/test-enable-connector", rawBody);
     },
 
     async requestTestCodexOauth(

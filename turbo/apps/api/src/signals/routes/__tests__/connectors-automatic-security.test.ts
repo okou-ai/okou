@@ -10,10 +10,7 @@ import { builtinConnectorsAutomaticRoutes } from "../connectors-automatic";
 import { builtinConnectorsRoutes } from "../connectors";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { mockAutomaticMcpOAuthProvider } from "./helpers/api-bdd-connectors";
-import {
-  automaticMcpCatalogFixture,
-  installAutomaticMcpCatalog,
-} from "./helpers/connector-automatic-catalog";
+import { automaticMcpCatalogFixture } from "./helpers/connector-automatic-catalog";
 
 import { createRouteMocks } from "./helpers/route-test";
 
@@ -34,7 +31,7 @@ function accounts() {
   return setupApp({ context, routes })(connectorAccountsContract);
 }
 
-async function fixture(legacyCatalog = false) {
+function fixture() {
   const actor = {
     userId: `user_${randomUUID()}`,
     orgId: `org_${randomUUID()}`,
@@ -42,13 +39,8 @@ async function fixture(legacyCatalog = false) {
   mocks.clerk.session(actor.userId, actor.orgId);
   mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
   mockEnv("APP_URL", "https://app.okou.ai");
-  const catalog = legacyCatalog
-    ? await installAutomaticMcpCatalog()
-    : automaticMcpCatalogFixture();
+  const catalog = automaticMcpCatalogFixture();
   onTestFinished(async () => {
-    if (legacyCatalog) {
-      mockEnv("R2_USER_STORAGES_BUCKET_NAME", catalog.bucket);
-    }
     mocks.clerk.session(actor.userId, actor.orgId);
     const result = await accept(
       accounts().connections({ headers, query: catalog.target }),
@@ -121,7 +113,7 @@ function receipt(f: Fixture, attemptId: string) {
 
 describe("builtin Automatic account and consent ownership", () => {
   it("preserves an existing account and DCR client after a temporary callback failure", async () => {
-    const f = await fixture();
+    const f = fixture();
     const provider = mockAutomaticMcpOAuthProvider(context, {
       registration: "dcr",
       initialExpiresIn: 3600,
@@ -157,7 +149,7 @@ describe("builtin Automatic account and consent ownership", () => {
   });
 
   it("retires a rejected DCR client during callback and registers a new client on reconnect", async () => {
-    const f = await fixture();
+    const f = fixture();
     const provider = mockAutomaticMcpOAuthProvider(context, {
       registration: "dcr",
       initialExpiresIn: 3600,
@@ -193,7 +185,7 @@ describe("builtin Automatic account and consent ownership", () => {
   });
 
   it("rejects reconnecting an account owned by another user or organization", async () => {
-    const f = await fixture();
+    const f = fixture();
     mockAutomaticMcpOAuthProvider(context, {
       registration: "none",
       authentication: "none",
@@ -223,7 +215,7 @@ describe("builtin Automatic account and consent ownership", () => {
   });
 
   it("leaves the account connected after two overlapping reconnects", async () => {
-    const f = await fixture();
+    const f = fixture();
     const provider = mockAutomaticMcpOAuthProvider(context, {
       registration: "cimd",
       initialExpiresIn: 3600,

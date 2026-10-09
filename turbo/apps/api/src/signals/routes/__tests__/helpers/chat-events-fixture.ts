@@ -36,11 +36,6 @@ import { createAppWithRoutes } from "../../../../app-factory-core";
 import { env, mockEnv, mockOptionalEnv } from "../../../../lib/env";
 import { computeHmacSignature } from "../../../../lib/event-consumer/hmac";
 import { server } from "../../../../mocks/server";
-import {
-  readmitPiMemoryStage1CandidateFixture,
-  readPiConversationIdentityFixture,
-  readPiMemoryStage1CandidateFixture,
-} from "../../../../test-fixtures/pi-memory-stage1-candidates";
 import { seededSystemSkillArchive } from "../../../../test-fixtures/seeded-system-skill-archive";
 import {
   createUsagePricingFixture,
@@ -356,62 +351,6 @@ export function modelProviderSecretPlaceholder(
     throw new Error(`Missing model provider placeholder for ${secretName}`);
   }
   return placeholder;
-}
-
-export async function expectExactPrivatePiMemoryAdmission(args: {
-  readonly orgId: string;
-  readonly runId: string;
-  readonly userId: string;
-}): Promise<void> {
-  // Stage 1 candidates intentionally have no production read API. After the
-  // real send and completion paths run, verify completion did not enqueue and
-  // explicitly exercise the canonical writer's exact checkpoint ownership.
-  const conversation = await readPiConversationIdentityFixture(args.runId);
-  const beforeAdmission = await readPiMemoryStage1CandidateFixture({
-    orgId: args.orgId,
-    userId: args.userId,
-  });
-  expect(beforeAdmission?.sourceRunId).not.toBe(args.runId);
-  const admitted = await readmitPiMemoryStage1CandidateFixture(args.runId);
-  if (admitted.outcome === "skipped") {
-    throw new Error(`Private Pi memory admission skipped: ${admitted.reason}`);
-  }
-  const candidate = await readPiMemoryStage1CandidateFixture({
-    orgId: args.orgId,
-    userId: args.userId,
-  });
-  if (!candidate) {
-    throw new Error("Expected delegated Pi history to create a candidate");
-  }
-  expect(candidate).toMatchObject({
-    orgId: args.orgId,
-    userId: args.userId,
-    memoryStorageName: "memory",
-    piSessionId: conversation.piSessionId,
-    sourceRunId: args.runId,
-    sourceHistoryHash: conversation.sourceHistoryHash,
-    status: "pending",
-  });
-  expect(
-    candidate.eligibleAt.getTime() - candidate.sourceCompletedAt.getTime(),
-  ).toBe(0);
-  await expect(
-    readmitPiMemoryStage1CandidateFixture(args.runId),
-  ).resolves.toMatchObject({ outcome: "exact_retry" });
-  // Admission has no public endpoint. A mismatched captured identity must not
-  // create or replace learning, even when the run has valid native history.
-  for (const ownership of [
-    { userId: `other-${args.userId}` },
-    { orgId: `other-${args.orgId}` },
-    { chatThreadId: randomUUID() },
-  ]) {
-    await expect(
-      readmitPiMemoryStage1CandidateFixture(args.runId, ownership),
-    ).resolves.toMatchObject({
-      outcome: "skipped",
-      reason: "not_owned_chat_thread",
-    });
-  }
 }
 
 export interface PiCheckpointS3Command {

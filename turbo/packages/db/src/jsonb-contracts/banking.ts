@@ -1,9 +1,7 @@
 import type { JsonObject } from "./shared";
 
 export type BankingOperationScope =
-  | "accounts.read"
-  | "balances.read"
-  | "transactions.read";
+  "accounts.read" | "balances.read" | "transactions.read";
 
 export type BankingConnectionAuditMetadata = JsonObject;
 export type BankingAccountMetadata = JsonObject;

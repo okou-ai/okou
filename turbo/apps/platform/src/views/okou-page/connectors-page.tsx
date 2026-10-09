@@ -907,8 +907,7 @@ interface ConnectorsBrowseModel {
    * heading above them.
    */
   readonly categoryConnectors:
-    | readonly PlatformConnectorCatalogStatusItem[]
-    | null;
+    readonly PlatformConnectorCatalogStatusItem[] | null;
   readonly layout: ConnectorShelfLayout<PlatformConnectorCatalogStatusItem>;
   readonly connected: readonly PlatformConnectorCatalogStatusItem[];
   readonly chipSections: readonly ConnectorCategorySection<PlatformConnectorCatalogStatusItem>[];

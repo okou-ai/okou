@@ -3949,8 +3949,7 @@ function acceptsAllowanceSubscription(args: {
   readonly bound: boolean;
   readonly subscription: SubscriptionInput;
   readonly entitlement:
-    | typeof orgUsageAllowanceEntitlements.$inferSelect
-    | undefined;
+    typeof orgUsageAllowanceEntitlements.$inferSelect | undefined;
   readonly wallet:
     | { readonly stripeSubscriptionId: string | null; readonly tier: string }
     | undefined;

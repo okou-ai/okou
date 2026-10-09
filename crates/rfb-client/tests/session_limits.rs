@@ -24,7 +24,7 @@ fn noisy_pixels(width: u16, height: u16) -> Vec<u8> {
         value = (value ^ (value >> 16)).wrapping_mul(0x85eb_ca6b);
         value = (value ^ (value >> 13)).wrapping_mul(0xc2b2_ae35);
         value ^= value >> 16;
-        pixels.extend([value as u8, (value >> 8) as u8, (value >> 16) as u8, 0]);
+        pixels.extend_from_slice(&[value as u8, (value >> 8) as u8, (value >> 16) as u8, 0]);
     }
     pixels
 }

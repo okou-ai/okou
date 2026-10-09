@@ -28,9 +28,9 @@ import { z } from "zod";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import {
-  downloadS3BufferWithMaxBytes,
+  downloadS3BufferWithMaxBytes$,
   S3ObjectSizeLimitError,
   isS3NotFoundError,
 } from "../external/s3";
@@ -59,8 +59,6 @@ const manifestSchema = z
   })
   .strict();
 
-type ProjectionDb = Pick<Db, "insert">;
-
 interface CanonicalMemoryStorageIdentity {
   readonly id: string;
   readonly orgId: string;
@@ -74,7 +72,6 @@ interface MemorySummaryProjectionScope {
 }
 
 interface MemorySummaryProjectionWorkerInput {
-  readonly scope: MemorySummaryProjectionScope | undefined;
   readonly currentTime: Date;
 }
 
@@ -140,54 +137,28 @@ function isCanonicalUserMemoryStorage(
   );
 }
 
-export async function enqueueMemorySummaryProjection(
-  args: {
-    readonly db: ProjectionDb;
-    readonly storage: CanonicalMemoryStorageIdentity;
-    readonly storageVersionId: string;
-  },
-  signal?: AbortSignal,
-): Promise<boolean> {
-  if (!isCanonicalUserMemoryStorage(args.storage)) {
-    return false;
-  }
-
-  const [inserted] = await args.db
-    .insert(memorySummaryProjections)
-    .values({
-      memoryStorageId: args.storage.id,
-      storageVersionId: args.storageVersionId,
-      orgId: args.storage.orgId,
-      userId: args.storage.userId,
-    })
-    .onConflictDoNothing()
-    .returning({
-      memoryStorageId: memorySummaryProjections.memoryStorageId,
-    });
-  signal?.throwIfAborted();
-  return inserted !== undefined;
-}
-
-function projectionScopeCondition(
-  scope: MemorySummaryProjectionScope | undefined,
-) {
-  return scope
-    ? and(
-        eq(memorySummaryProjections.memoryStorageId, scope.memoryStorageId),
-        eq(memorySummaryProjections.storageVersionId, scope.storageVersionId),
-      )
+export function memorySummaryProjectionValues(args: {
+  readonly storage: CanonicalMemoryStorageIdentity;
+  readonly storageVersionId: string;
+}) {
+  return isCanonicalUserMemoryStorage(args.storage)
+    ? {
+        memoryStorageId: args.storage.id,
+        storageVersionId: args.storageVersionId,
+        orgId: args.storage.orgId,
+        userId: args.storage.userId,
+      }
     : undefined;
 }
 
 const backfillMissingProjections$ = command(
   async (
-    { set },
-    scope: MemorySummaryProjectionScope | undefined,
+    { get, set },
     currentTime: Date,
     signal: AbortSignal,
   ): Promise<number> => {
     const db = set(writeDb$);
-    const rows = await db
+    const rows = await get(db$)
       .select({
         memoryStorageId: storages.id,
         storageVersionId: storageVersions.id,
@@ -208,12 +179,10 @@ const backfillMissingProjections$ = command(
           eq(storages.name, MEMORY_ARTIFACT_NAME),
           ne(storages.userId, VOLUME_ORG_USER_ID),
           isNull(memorySummaryProjections.storageVersionId),
-          scope ? eq(storages.id, scope.memoryStorageId) : undefined,
-          scope ? eq(storageVersions.id, scope.storageVersionId) : undefined,
         ),
       )
       .orderBy(asc(storageVersions.createdAt), asc(storageVersions.id))
-      .limit(scope ? 1 : BACKFILL_BATCH_SIZE);
+      .limit(BACKFILL_BATCH_SIZE);
     signal.throwIfAborted();
     if (rows.length === 0) {
       return 0;
@@ -238,7 +207,6 @@ const backfillMissingProjections$ = command(
 const claimProjectionWork$ = command(
   async (
     { set },
-    scope: MemorySummaryProjectionScope | undefined,
     currentTime: Date,
     signal: AbortSignal,
   ): Promise<readonly ClaimedProjection[]> => {
@@ -291,7 +259,6 @@ const claimProjectionWork$ = command(
                 lte(memorySummaryProjections.leaseExpiresAt, currentTime),
               ),
             ),
-            projectionScopeCondition(scope),
           ),
         )
         .orderBy(
@@ -299,7 +266,7 @@ const claimProjectionWork$ = command(
           asc(memorySummaryProjections.memoryStorageId),
           asc(memorySummaryProjections.storageVersionId),
         )
-        .limit(scope ? 1 : WORK_BATCH_SIZE)
+        .limit(WORK_BATCH_SIZE)
         .for("update", { of: memorySummaryProjections, skipLocked: true });
       signal.throwIfAborted();
 
@@ -515,20 +482,17 @@ function extractSummaryFromArchive(
 
 const downloadProjectionManifest$ = command(
   async (
-    { get },
+    { set },
     work: ClaimedProjection,
     signal: AbortSignal,
   ): Promise<ManifestValidationResult> => {
     const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
     const manifestKey = `${work.s3Key}/manifest.json`;
     const manifestDownload = await settle(
-      get(
-        downloadS3BufferWithMaxBytes(
-          bucket,
-          manifestKey,
-          MANIFEST_MAX_BYTES,
-          signal,
-        ),
+      set(
+        downloadS3BufferWithMaxBytes$,
+        { bucket, key: manifestKey, maxBytes: MANIFEST_MAX_BYTES },
+        signal,
       ),
       signal,
     );
@@ -547,7 +511,7 @@ const downloadProjectionManifest$ = command(
 
 const downloadProjectionArchive$ = command(
   async (
-    { get },
+    { set },
     args: {
       readonly work: ClaimedProjection;
       readonly summary: FileEntryWithHash;
@@ -561,13 +525,10 @@ const downloadProjectionArchive$ = command(
     // previously issued upload URL can leave a different gzip size for the
     // same logical version; enforce limits on the actual object instead.
     const archiveDownload = await settle(
-      get(
-        downloadS3BufferWithMaxBytes(
-          bucket,
-          archiveKey,
-          ARCHIVE_MAX_BYTES,
-          signal,
-        ),
+      set(
+        downloadS3BufferWithMaxBytes$,
+        { bucket, key: archiveKey, maxBytes: ARCHIVE_MAX_BYTES },
+        signal,
       ),
       signal,
     );
@@ -753,16 +714,10 @@ export const executeMemorySummaryProjectionWork$ = command(
   ): Promise<MemorySummaryProjectionWorkerResult> => {
     const backfilled = await set(
       backfillMissingProjections$,
-      input.scope,
       input.currentTime,
       signal,
     );
-    const claimed = await set(
-      claimProjectionWork$,
-      input.scope,
-      input.currentTime,
-      signal,
-    );
+    const claimed = await set(claimProjectionWork$, input.currentTime, signal);
     let ready = 0;
     let noContent = 0;
     let retried = 0;
@@ -907,77 +862,3 @@ export function memorySummaryProjectionReadResult(
     ? { input, ready }
     : { input, ready: null, unavailableReason: "invalid" };
 }
-
-/** Read one immutable projection snapshot without scheduling repair. */
-export const readMemorySummaryProjectionObservation$ = command(
-  async (
-    { get },
-    args: ReadMemorySummaryProjectionArgs,
-    signal: AbortSignal,
-  ): Promise<MemorySummaryProjectionReadResult> => {
-    const db = get(db$);
-    const [row] = await db
-      .select({
-        storageId: storages.id,
-        storageOrgId: storages.orgId,
-        storageUserId: storages.userId,
-        storageName: storages.name,
-        projectionStatus: memorySummaryProjections.status,
-        content: memorySummaryProjections.content,
-        sourceHash: memorySummaryProjections.sourceHash,
-        sourceSize: memorySummaryProjections.sourceSize,
-        tokenCount: memorySummaryProjections.tokenCount,
-      })
-      .from(storages)
-      .innerJoin(
-        storageVersions,
-        and(
-          eq(storageVersions.storageId, storages.id),
-          eq(storageVersions.id, args.storageVersionId),
-        ),
-      )
-      .leftJoin(
-        memorySummaryProjections,
-        and(
-          eq(memorySummaryProjections.memoryStorageId, storages.id),
-          eq(memorySummaryProjections.storageVersionId, storageVersions.id),
-          eq(memorySummaryProjections.orgId, args.orgId),
-          eq(memorySummaryProjections.userId, args.userId),
-        ),
-      )
-      .where(
-        and(
-          eq(storages.id, args.memoryStorageId),
-          eq(storages.orgId, args.orgId),
-          eq(storages.userId, args.userId),
-          eq(storages.name, MEMORY_ARTIFACT_NAME),
-          ne(storages.userId, VOLUME_ORG_USER_ID),
-        ),
-      )
-      .limit(1);
-
-    signal.throwIfAborted();
-    return memorySummaryProjectionReadResult({ args }, row);
-  },
-);
-
-export const readMemorySummaryProjection$ = command(
-  async (
-    { set },
-    args: ReadMemorySummaryProjectionArgs,
-    signal: AbortSignal,
-  ): Promise<ReadyMemorySummaryProjection | null> => {
-    const observation = await set(
-      readMemorySummaryProjectionObservation$,
-      args,
-      signal,
-    );
-    if (observation.unavailableReason) {
-      log.warn("Memory summary projection is not ready", {
-        ...args,
-        reason: observation.unavailableReason,
-      });
-    }
-    return observation.ready;
-  },
-);

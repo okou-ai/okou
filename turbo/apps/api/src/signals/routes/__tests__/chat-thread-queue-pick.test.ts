@@ -1,8 +1,7 @@
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
-import { insertSubscriptionRouteCapabilitiesFixture } from "../../../test-fixtures/subscription-route-capabilities";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { randomUUID } from "node:crypto";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
@@ -559,117 +558,6 @@ describe("CHAT-02: queued chat thread picks", () => {
       modelSettings: { "gpt-6-astra": { effort: "ultra" } },
     });
     await cancelChatRun(actor, launched.runId, claimed.sandboxHeaders);
-  }, 90_000);
-
-  it("rejects one input per thread and continues picking the organization's next thread", async () => {
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-    const retiredModel = `queued-revoked-${randomUUID()}`;
-    const restoreRetiredModel =
-      await insertSubscriptionRouteCapabilitiesFixture(retiredModel);
-    onTestFinished(restoreRetiredModel);
-    await createBddIntegrationApi(context)
-      .configureNativeSubscriptionModels(actor)
-      .then(() => {
-        return api.updateUserModelPreference(actor, "claude-fable-5-1");
-      });
-    const blocker = await sendChatRun(actor, {
-      agentId,
-      prompt: "occupy the only organization slot",
-    });
-    const clientEventId = randomUUID();
-    const unavailable = await sendWaitingChatInput(actor, {
-      agentId,
-      prompt: "uses a model removed before admission",
-      clientEventId,
-      model: retiredModel,
-    });
-    await chat.updateUserModelPreference(actor, "claude-fable-5-1");
-    const successorEventId = randomUUID();
-    const successor = await sendWaitingChatInput(actor, {
-      agentId,
-      threadId: unavailable.threadId,
-      prompt: "wait for the next pass after the rejected head",
-      clientEventId: successorEventId,
-      model: "claude-fable-5-1",
-    });
-    const later = await sendWaiting(actor, agentId, "uses the remaining model");
-    await restoreRetiredModel();
-    // A retired stored selection is rejected at its pick; the rejection must
-    // not block the other personal thread.
-
-    await finishRun(runnerGroup, blocker.runId);
-
-    const rejected = await chat.listThreadEvents(actor, unavailable.threadId);
-    expect(rejected.events).toContainEqual(
-      expect.objectContaining({
-        eventType: "input.rejected",
-        revokesEventId: clientEventId,
-        error: "bad_request",
-      }),
-    );
-    expect(rejected.events).toContainEqual(
-      expect.objectContaining({
-        eventType: "output.error",
-        error: "bad_request",
-      }),
-    );
-    await expect(
-      threadRunIds(actor, unavailable.threadId),
-    ).resolves.toStrictEqual([]);
-    // A null result from rejection advances the organization pass to another
-    // thread. This pass does not consume the rejected head's successor.
-    await expect(
-      runOfInput(actor, successor.threadId, successorEventId),
-    ).resolves.toBeUndefined();
-    const picked = await later.launchedRun();
-    await finishRun(runnerGroup, picked.runId);
-    const successorRun = await successor.launchedRun();
-    await cancelChatRun(actor, successorRun.runId);
-  }, 90_000);
-
-  it("rejects a queued retired model at its pick", async () => {
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-    const model = `queued-retired-${randomUUID()}`;
-    const restore = await insertSubscriptionRouteCapabilitiesFixture(model);
-    onTestFinished(restore);
-
-    await createBddIntegrationApi(context)
-      .configureNativeSubscriptionModels(actor)
-      .then(() => {
-        return api.updateUserModelPreference(actor, "claude-fable-5-1");
-      });
-    const blocker = await sendChatRun(actor, {
-      agentId,
-      prompt: "occupy the only organization slot",
-    });
-    const clientEventId = randomUUID();
-    const waiting = await sendWaitingChatInput(actor, {
-      agentId,
-      prompt: "retired model input",
-      clientEventId,
-      model,
-    });
-    // The real input records a model that existed at enqueue. Removing only
-    // its owned catalog entry leaves that recorded model unknown at the pick.
-    await restore();
-
-    await finishRun(runnerGroup, blocker.runId);
-
-    const rejected = await chat.listThreadEvents(actor, waiting.threadId);
-    expect(rejected.events).toContainEqual(
-      expect.objectContaining({
-        eventType: "input.rejected",
-        revokesEventId: clientEventId,
-        error: "bad_request",
-      }),
-    );
-    await expect(threadRunIds(actor, waiting.threadId)).resolves.toStrictEqual(
-      [],
-    );
   }, 90_000);
 
   it("skips a recalled head and launches a later message on the thread", async () => {

@@ -11,11 +11,10 @@ import { logger } from "../../lib/log";
 import {
   clerk$,
   createClerkReadContext,
-  type ClerkClient,
   type ClerkOrganizationMembership,
 } from "../external/clerk";
 import { listAllOrganizationMemberships } from "../external/clerk-organization-lists";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import { nowDate } from "../../lib/time";
 import {
   buildOneClickUnsubscribeUrl,
@@ -23,7 +22,7 @@ import {
   buildUnsubscribeHeaders,
   buildUnsubscribeUrl,
   CREDIT_LOW_BALANCE_EMAIL_SUBJECT,
-  getUserEmail,
+  getUserEmail$,
   type EmailTemplate,
 } from "./email-common.service";
 
@@ -133,63 +132,69 @@ function adminUserIds(
   ];
 }
 
-async function subscribedUserIds(
-  db: Db,
-  userIds: readonly string[],
-): Promise<Set<string>> {
-  if (userIds.length === 0) {
-    return new Set();
-  }
-
-  const unsubscribedRows = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(
-      and(
-        inArray(users.id, [...userIds].sort()),
-        eq(users.emailUnsubscribed, true),
-      ),
-    );
-  const unsubscribed = new Set(
-    unsubscribedRows.map((row) => {
-      return row.id;
-    }),
-  );
-  return new Set(
-    userIds.filter((userId) => {
-      return !unsubscribed.has(userId);
-    }),
-  );
-}
-
-async function resolveRecipients(
-  db: Db,
-  clerk: ClerkClient,
-  userIds: readonly string[],
-  signal: AbortSignal,
-): Promise<Recipient[]> {
-  const eligibleUserIds = await subscribedUserIds(db, userIds);
-  signal.throwIfAborted();
-
-  const byEmail = new Map<string, Recipient>();
-  for (const userId of userIds) {
-    if (!eligibleUserIds.has(userId)) {
-      continue;
+const subscribedUserIds$ = command(
+  async (
+    { get },
+    userIds: readonly string[],
+    signal: AbortSignal,
+  ): Promise<Set<string>> => {
+    const db = get(db$);
+    if (userIds.length === 0) {
+      return new Set();
     }
 
-    const email = await getUserEmail(db, clerk, userId);
+    const unsubscribedRows = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(
+        and(
+          inArray(users.id, [...userIds].sort()),
+          eq(users.emailUnsubscribed, true),
+        ),
+      );
     signal.throwIfAborted();
-    if (!email) {
-      continue;
-    }
+    const unsubscribed = new Set(
+      unsubscribedRows.map((row) => {
+        return row.id;
+      }),
+    );
+    return new Set(
+      userIds.filter((userId) => {
+        return !unsubscribed.has(userId);
+      }),
+    );
+  },
+);
 
-    const key = email.toLowerCase();
-    if (!byEmail.has(key)) {
-      byEmail.set(key, { userId, email });
+const resolveRecipients$ = command(
+  async (
+    { set },
+    userIds: readonly string[],
+    signal: AbortSignal,
+  ): Promise<Recipient[]> => {
+    const eligibleUserIds = await set(subscribedUserIds$, userIds, signal);
+    signal.throwIfAborted();
+
+    const byEmail = new Map<string, Recipient>();
+    for (const userId of userIds) {
+      if (!eligibleUserIds.has(userId)) {
+        continue;
+      }
+
+      const email = await set(getUserEmail$, userId, signal);
+      signal.throwIfAborted();
+      if (!email) {
+        continue;
+      }
+
+      const key = email.toLowerCase();
+      if (!byEmail.has(key)) {
+        byEmail.set(key, { userId, email });
+      }
     }
-  }
-  return [...byEmail.values()];
-}
+    return [...byEmail.values()];
+  },
+);
 
 async function suppressedEmailKeys(
   db: Db,
@@ -249,7 +254,7 @@ export const enqueueCreditLowBalanceAlert$ = command(
       return;
     }
 
-    const recipients = await resolveRecipients(db, clerk, userIds, signal);
+    const recipients = await set(resolveRecipients$, userIds, signal);
     const suppressed = await suppressedEmailKeys(
       db,
       recipients.map((recipient) => {

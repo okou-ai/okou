@@ -1,3 +1,4 @@
+import { desktopUpgradeRequiredSchema } from "./desktop-updates";
 import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
@@ -504,6 +505,7 @@ export const computerUseHostsContract = c.router({
     headers: authHeadersSchema,
     body: computerUseHostStartBodySchema,
     responses: {
+      426: desktopUpgradeRequiredSchema,
       200: computerUseHostStartResponseSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
@@ -668,6 +670,7 @@ export const computerUseHostCommandsContract = c.router({
     headers: authHeadersSchema,
     body: computerUseHostCommandNextBodySchema,
     responses: {
+      426: desktopUpgradeRequiredSchema,
       200: computerUseHostCommandNextResponseSchema,
       401: apiErrorSchema,
     },
@@ -787,6 +790,7 @@ export const computerUseSessionHostsContract = c.router({
     body: computerUseHostStartBodySchema,
     responses: {
       200: sessionHostGenerationSchema.extend({ hostId: z.string().uuid() }),
+      426: desktopUpgradeRequiredSchema,
       ...sessionHostResponses,
     },
     summary: "Register a computer-use host bound to the current Clerk session",
@@ -827,6 +831,7 @@ export const computerUseSessionHostsContract = c.router({
     ),
     responses: {
       200: computerUseHostCommandNextResponseSchema,
+      426: desktopUpgradeRequiredSchema,
       ...sessionHostResponses,
     },
     summary: "Claim a command using the current Clerk session",

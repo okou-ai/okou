@@ -52,10 +52,14 @@ printf '// iOS source\n' >"$repo/ios/App.swift"
 git -C "$repo" add .
 git -C "$repo" commit -qm base
 base=$(git -C "$repo" rev-parse HEAD)
+npm_cache="$test_dir/npm-cache"
+npm_offline=false
 
 compare() {
   local revision=$1 expected=$2
-  if ! (cd "$repo" && bash "$script" "$revision") >"$test_dir/result.json" 2>"$test_dir/stderr"; then
+  if ! (cd "$repo" && npm_config_cache="$npm_cache" npm_config_prefer_offline=true \
+    npm_config_offline="$npm_offline" bash "$script" "$revision") \
+    >"$test_dir/result.json" 2>"$test_dir/stderr"; then
     cat "$test_dir/stderr" >&2
     exit 1
   fi
@@ -67,6 +71,15 @@ compare() {
 
 # Use the actual Turbo CLI: npx injects directory-specific PATH entries even
 # when both worktrees contain exactly the same build inputs.
+compare "$base" '{"shared":false,"web":false,"unrelated":false}'
+
+# A restored install and registry cache must work from a fresh cache location
+# without npm networking, while both worktrees retain the same inherited PATH.
+restored_cache="$test_dir/restored-npm-cache"
+mkdir -p "$restored_cache"
+cp -a "$npm_cache/_cacache" "$npm_cache/_npx" "$restored_cache/"
+npm_cache="$restored_cache"
+npm_offline=true
 compare "$base" '{"shared":false,"web":false,"unrelated":false}'
 printf '// iOS-only edit\n' >>"$repo/ios/App.swift"
 git -C "$repo" commit -qam ios-only
@@ -80,5 +93,17 @@ shared=$(git -C "$repo" rev-parse HEAD)
 printf 'console.log(value);\n' >>"$repo/turbo/apps/web/index.ts"
 git -C "$repo" commit -qam web-source
 compare "$shared" '{"shared":false,"web":true,"unrelated":false}'
+
+# An unavailable required tool is still a failure, never an all-unchanged result.
+status=0
+(cd "$repo" && npm_config_cache="$test_dir/empty-npm-cache" \
+  npm_config_offline=true bash "$script" "$base") \
+  >"$test_dir/result.json" 2>"$test_dir/stderr" || status=$?
+[[ "$status" != 0 && ! -s "$test_dir/result.json" ]] || {
+  echo 'An empty offline cache must fail without a package-change result' >&2
+  exit 1
+}
+grep -q 'Turbo executable resolution failed' "$test_dir/stderr"
+[[ $(git -C "$repo" worktree list --porcelain | grep -c '^worktree ') == 1 ]]
 
 echo 'changed-environment-test: ok'

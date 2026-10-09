@@ -9,7 +9,6 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { now, withMockNowForTest } from "../../../lib/time";
-import { replayPendingChatInputQueueEventFixture } from "../../../test-fixtures/chat-events";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
@@ -23,6 +22,7 @@ import {
 
 const context = testContext();
 const {
+  bdd,
   api,
   chat,
   chatCallbacks,
@@ -324,6 +324,7 @@ describe("CHAT-02: shared user message queue", () => {
     if (!actor.orgId) {
       throw new Error("Expected an organization-scoped chat actor");
     }
+    await bdd.readMe(actor);
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     // Thirty-two public delegation hops exhaust the source. Human forwarding is
@@ -386,6 +387,13 @@ describe("CHAT-02: shared user message queue", () => {
 
     const forwardedRun = await api.readRun(actor, forwardedRunId);
     const forwardedSystemPrompt = forwardedRun.appendSystemPrompt ?? "";
+    expect(
+      forwardedSystemPrompt.match(/^# Current User Info$/gmu),
+    ).toHaveLength(1);
+    expect(forwardedSystemPrompt).toContain(`Email: ${actor.email}`);
+    expect(forwardedSystemPrompt.indexOf("# Current User Info")).toBeLessThan(
+      forwardedSystemPrompt.indexOf("# Current Integration"),
+    );
     expect(forwardedSystemPrompt).toContain("# This Run's Trigger");
     expect(forwardedSystemPrompt).toContain(
       "was sent by a person who forwarded selected content",
@@ -815,9 +823,9 @@ describe("CHAT-02: shared user message queue", () => {
     }
     const incompleteRun = await api.readRun(actor, incompleteRunId);
     const incompleteSystemPrompt = incompleteRun.appendSystemPrompt ?? "";
-    expect(incompleteSystemPrompt).toContain("# Web Chat Run Context");
+    expect(incompleteSystemPrompt).not.toContain("# Web Chat Run Context");
     expect(incompleteSystemPrompt).toContain(incompletePrompt);
-    expect(incompleteSystemPrompt).not.toContain("# Incomplete Rounds Context");
+    expect(incompleteSystemPrompt).toContain("# Incomplete Rounds Context");
     expect(incompleteSystemPrompt).toContain("Web chat files: use");
     const promotedIncompleteClaim = await claimChatRun(
       runnerGroup,
@@ -945,13 +953,20 @@ describe("CHAT-02: shared user message queue", () => {
     const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
 
     const previewMessageId = randomUUID();
-    const previewFileId = randomUUID();
-    chat.mockCompletedUploadObject(
-      actor,
-      previewFileId,
-      "preview-notes.txt",
-      18,
-    );
+    const storage = chatCallbacks.acceptChatObjectStorage();
+    const upload = await chat.prepareUpload(actor, {
+      filename: "preview-notes.txt",
+      contentType: "text/plain",
+      size: 18,
+    });
+    storage.addObject({
+      bucket: "test-private-artifacts",
+      key: `private-artifacts/${upload.id}/preview-notes.txt`,
+      size: 18,
+    });
+    const { id: previewFileId } = await chat.completeUpload(actor, {
+      id: upload.id,
+    });
     const previewQueued = await chat.requestSendEvent(
       actor,
       {
@@ -976,11 +991,6 @@ describe("CHAT-02: shared user message queue", () => {
       [201],
     );
     expect(previewQueued.body).toMatchObject({ runId: null });
-    const replayedPreviewMessageId = randomUUID();
-    await replayPendingChatInputQueueEventFixture({
-      eventId: previewMessageId,
-      replacementId: replayedPreviewMessageId,
-    });
     const mockMessageId = randomUUID();
     const mockQueued = await chat.requestSendEvent(
       actor,
@@ -998,8 +1008,7 @@ describe("CHAT-02: shared user message queue", () => {
       [FeatureSwitchKey.RealAgentInPreview]: true,
     });
 
-    // Terminal callbacks and the cleanup safety sweep use the same queued
-    // auto-send builder; finishing the anchor guarantees that builder owns both.
+    // Completing the active Run releases the next normally queued request.
     chatCallbacks.mockChatOutputEvents([]);
     await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
     const previewMessages = await waitForThreadMessages(
@@ -1008,7 +1017,7 @@ describe("CHAT-02: shared user message queue", () => {
       (items) => {
         return userMessages(items).some((message) => {
           return (
-            message.revokesEventId === replayedPreviewMessageId &&
+            message.revokesEventId === previewMessageId &&
             typeof message.runId === "string"
           );
         });
@@ -1016,7 +1025,7 @@ describe("CHAT-02: shared user message queue", () => {
     );
     const previewRunId = userMessages(previewMessages.events).find(
       (message) => {
-        return message.revokesEventId === replayedPreviewMessageId;
+        return message.revokesEventId === previewMessageId;
       },
     )?.runId;
     if (!previewRunId) {
@@ -1108,10 +1117,9 @@ describe("CHAT-02: shared user message queue", () => {
 
     chatCallbacks.mockChatOutputEvents([]);
     await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
-    // The terminal callback acknowledges before it drains the queue, and it
-    // reports the template usage only after the auto-sent run is already
-    // visible. Settle that background work so the assertions below observe the
-    // finished dispatch instead of a half-built one.
+    // The terminal callback acknowledges before it drains the queue. Settle
+    // that background work so the assertions below observe the finished
+    // dispatch instead of a half-built one.
     await flushWaitUntilForTest();
 
     const messages = await waitForThreadMessages(

@@ -385,18 +385,13 @@ export function mockCustomConnectorOAuth2Provider(
 
 interface AutomaticMcpOAuthProviderOptions {
   readonly authorizationCodeErrors?: readonly (
-    | "invalid_client"
-    | "invalid_grant"
-    | "temporarily_unavailable"
-    | null
+    "invalid_client" | "invalid_grant" | "temporarily_unavailable" | null
   )[];
   readonly registration: "cimd" | "dcr" | "none";
   readonly authentication?: "invalid" | "none" | "oauth";
   readonly issuerParameterSupported?: boolean;
   readonly dcrTokenEndpointAuthMethod?:
-    | "none"
-    | "client_secret_basic"
-    | "client_secret_post";
+    "none" | "client_secret_basic" | "client_secret_post";
   readonly synchronizeAuthorizationServerDiscovery?: boolean;
   readonly dcrFailureStatus?: number;
   readonly dcrFailureDescription?: string;
@@ -411,13 +406,9 @@ interface AutomaticMcpOAuthProviderOptions {
   readonly metadataScopes?: readonly string[];
   readonly authorizationCodeScopes?: readonly string[];
   readonly refreshError?:
-    | "invalid_client"
-    | "invalid_grant"
-    | "temporarily_unavailable";
+    "invalid_client" | "invalid_grant" | "temporarily_unavailable";
   readonly refreshErrors?: readonly (
-    | "invalid_client"
-    | "invalid_grant"
-    | "temporarily_unavailable"
+    "invalid_client" | "invalid_grant" | "temporarily_unavailable"
   )[];
   readonly refreshResponse?: (
     attempt: number,
@@ -429,6 +420,7 @@ interface AutomaticMcpOAuthProviderOptions {
   readonly endpoint?: string;
   readonly initialAccessToken?: string;
   readonly resource?: string;
+  readonly issuer?: string;
   readonly authorizationEndpoint?: string;
   readonly metadataIssuer?: string;
   readonly userInfoEndpoint?: string;
@@ -497,6 +489,12 @@ function automaticOAuthTokenResponse(args: {
   };
 }
 
+function automaticOAuthProviderIssuer(
+  options: AutomaticMcpOAuthProviderOptions,
+): string {
+  return options.issuer ?? "https://automatic-issuer.example.test";
+}
+
 export function mockAutomaticMcpOAuthProvider(
   context: TestContext,
   options: AutomaticMcpOAuthProviderOptions,
@@ -505,7 +503,7 @@ export function mockAutomaticMcpOAuthProvider(
     options.endpoint ?? "https://automatic-mcp.example.test/server";
   const endpointUrl = new URL(endpoint);
   const resourceMetadataUrl = new URL("/oauth-resource", endpoint).href;
-  const issuer = "https://automatic-issuer.example.test";
+  const issuer = automaticOAuthProviderIssuer(options);
   const authorizationUrl = `${issuer}/authorize`;
   const tokenUrl = `${issuer}/token`;
   const registrationUrl = `${issuer}/register`;
@@ -546,10 +544,7 @@ export function mockAutomaticMcpOAuthProvider(
       ? { registration_endpoint: registrationUrl }
       : {}),
   };
-  for (const hostname of [
-    endpointUrl.hostname,
-    "automatic-issuer.example.test",
-  ]) {
+  for (const hostname of [endpointUrl.hostname, new URL(issuer).hostname]) {
     context.mocks.dns.lookupOverrides.set(hostname, [
       { address: "93.184.216.34", family: 4 },
     ]);

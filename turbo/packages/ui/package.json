@@ -1,6 +1,6 @@
 {
   "name": "@okouai/ui",
-  "version": "1.12.4",
+  "version": "1.12.5",
   "type": "module",
   "private": true,
   "exports": {
@@ -37,13 +37,13 @@
     "tailwindcss": "^4.3.3",
     "@typescript/native": "npm:typescript@7.0.2",
     "typescript": "npm:@typescript/typescript6@6.0.2",
-    "vitest": "^5.0.1"
+    "vitest": "^5.0.3"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "lucide-react": "1.30.0",
+    "lucide-react": "1.49.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "sonner": "^2.0.7",

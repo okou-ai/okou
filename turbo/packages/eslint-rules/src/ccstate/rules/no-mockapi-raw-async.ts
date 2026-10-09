@@ -51,8 +51,7 @@ export default createRule({
   },
   create(context) {
     const handlerStack: (
-      | TSESTree.ArrowFunctionExpression
-      | TSESTree.FunctionExpression
+      TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression
     )[] = [];
 
     function isMswHandler(

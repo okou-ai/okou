@@ -26,6 +26,7 @@ pub(super) async fn make_idle_destroy_payload_for(
     overrides: Arc<MockSandboxOverrides>,
     workspace_promotion: Option<WorkspaceImagePromotionContext>,
 ) -> IdleDestroyPayload {
+    crate::workspace_promotion::test_support::add_healthy_cache_preparation_matcher(&overrides);
     let factory: Arc<Box<dyn SandboxFactory>> = Arc::new(Box::new(
         MockSandboxFactory::with_overrides(Arc::clone(&overrides)),
     ));
@@ -122,9 +123,10 @@ async fn idle_destroy_job_destroy_panic_preserves_workspace_cache_and_releases_b
     assert_eq!(result.outcome, DestroyOutcome::Uncertain);
     assert!(result.workspace_cache_promoted);
     let exec_calls = overrides.exec_calls();
-    assert_eq!(exec_calls.len(), 1);
+    assert_eq!(exec_calls.len(), 2);
+    assert!(exec_calls[0].cmd.contains("prepare-for-cache"));
     assert!(
-        exec_calls[0]
+        exec_calls[1]
             .cmd
             .contains("\"$workspace_fsfreeze_path\" --freeze")
     );
@@ -170,9 +172,10 @@ async fn idle_destroy_job_kill_panic_still_attempts_destroy_and_releases_budget_
 
     assert!(!promoted);
     let exec_calls = overrides.exec_calls();
-    assert_eq!(exec_calls.len(), 1);
+    assert_eq!(exec_calls.len(), 2);
+    assert!(exec_calls[0].cmd.contains("prepare-for-cache"));
     assert!(
-        exec_calls[0]
+        exec_calls[1]
             .cmd
             .contains("\"$workspace_fsfreeze_path\" --freeze")
     );
@@ -218,9 +221,10 @@ async fn idle_destroy_job_publishes_frozen_workspace_only_after_successful_kill(
     assert_eq!(overrides.stop_call_count(), 0);
     assert_eq!(overrides.kill_call_count(), 1);
     let exec_calls = overrides.exec_calls();
-    assert_eq!(exec_calls.len(), 1);
+    assert_eq!(exec_calls.len(), 2);
+    assert!(exec_calls[0].cmd.contains("prepare-for-cache"));
     assert!(
-        exec_calls[0]
+        exec_calls[1]
             .cmd
             .contains("\"$workspace_fsfreeze_path\" --freeze")
     );
@@ -269,9 +273,10 @@ async fn idle_destroy_job_kill_error_abandons_frozen_workspace_and_still_destroy
     assert_eq!(overrides.stop_call_count(), 0);
     assert_eq!(overrides.kill_call_count(), 1);
     let exec_calls = overrides.exec_calls();
-    assert_eq!(exec_calls.len(), 1);
+    assert_eq!(exec_calls.len(), 2);
+    assert!(exec_calls[0].cmd.contains("prepare-for-cache"));
     assert!(
-        exec_calls[0]
+        exec_calls[1]
             .cmd
             .contains("\"$workspace_fsfreeze_path\" --freeze")
     );
@@ -304,9 +309,10 @@ async fn idle_destroy_job_publication_failure_after_kill_still_destroys() {
     assert!(!promoted);
     assert_eq!(overrides.unpark_call_count(), 1);
     let exec_calls = overrides.exec_calls();
-    assert_eq!(exec_calls.len(), 1);
+    assert_eq!(exec_calls.len(), 2);
+    assert!(exec_calls[0].cmd.contains("prepare-for-cache"));
     assert!(
-        exec_calls[0]
+        exec_calls[1]
             .cmd
             .contains("\"$workspace_fsfreeze_path\" --freeze")
     );

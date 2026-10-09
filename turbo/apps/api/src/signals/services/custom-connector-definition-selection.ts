@@ -11,11 +11,7 @@ export type CustomConnectorExecutionOAuthConfig = Omit<
 >;
 
 type ExecutionDefinitionFields =
-  | "enabled"
-  | "createdBy"
-  | "createdAt"
-  | "updatedAt"
-  | "oauthConfig";
+  "enabled" | "createdBy" | "createdAt" | "updatedAt" | "oauthConfig";
 
 /** Execution configuration excludes definition audit data and stored user tokens. */
 export type CustomConnectorExecutionDefinition =

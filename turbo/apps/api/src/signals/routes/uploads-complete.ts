@@ -5,7 +5,7 @@ import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
 import { normalizeWebUploadContentType } from "../../lib/uploads-constants";
-import { uploadedArtifactObject } from "../services/uploaded-artifact.service";
+import { uploadedArtifactObject$ } from "../services/uploaded-artifact.service";
 import { registerLegacyArtifactFile$ } from "../services/artifact-delivery.service";
 import { completePrivateArtifact$ } from "../services/private-artifact-storage.service";
 import { recordWebUploadedFile$ } from "../services/run-uploaded-files.service";
@@ -36,8 +36,10 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     }
   }
 
-  const s3Object = await get(
-    uploadedArtifactObject({ userId: auth.userId, orgId: auth.orgId, id }),
+  const s3Object = await set(
+    uploadedArtifactObject$,
+    { userId: auth.userId, orgId: auth.orgId, id },
+    signal,
   );
   signal.throwIfAborted();
   if (!s3Object) {

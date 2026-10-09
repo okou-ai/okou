@@ -82,15 +82,15 @@ describe("official Pi model limits at the provider boundary", () => {
   it.each([
     {
       provider: "openrouter",
-      model: "deepseek/deepseek-v4.1-flash",
+      model: "openai/gpt-6-luna",
       baseUrl: "https://openrouter.ai/api/v1",
-      maxTokens: 943_718,
+      maxTokens: 128_000,
     },
     {
       provider: "openrouter",
-      model: "deepseek/deepseek-v4-flash",
+      model: "openai/gpt-6-sol",
       baseUrl: "https://openrouter.ai/api/v1",
-      maxTokens: 384_000,
+      maxTokens: 128_000,
     },
   ])(
     "sends the exact $provider/$model ceiling without conflating versions or providers",

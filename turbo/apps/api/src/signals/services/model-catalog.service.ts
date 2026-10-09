@@ -1,5 +1,8 @@
 import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import {
+  AUTO_SELECTED_MODEL,
+  autoRunBillingProvider,
+  isAutoSelectedModel,
   AUTO_RUN_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS,
   AUTO_RUN_MODEL,
   AUTO_RUN_PRICING_PROVIDER,
@@ -255,9 +258,9 @@ export function catalogBuiltInRoute(
   model: string,
   concreteProviderType: string,
 ): CatalogRoute | null {
-  if (model === AUTO_RUN_MODEL) {
+  if (isAutoSelectedModel(model)) {
     return concreteProviderType === AUTO_RUN_PROVIDER
-      ? { ...autoCatalogRoute(), upstreamModel: catalog.autoUpstreamModel }
+      ? catalogAutoRoute(catalog, model)
       : null;
   }
   return (
@@ -301,6 +304,9 @@ export function resolveCatalogModel(
   catalog: ModelCatalog,
   model: string,
 ): CatalogModelResolution {
+  if (model === AUTO_SELECTED_MODEL) {
+    return { kind: "active", model, resolvedModel: model, chain: [model] };
+  }
   const row = catalog.byModel.get(model);
   if (!row) {
     return { kind: "unknown", model };
@@ -325,6 +331,9 @@ export function resolveCatalogRunModel(
   catalog: ModelCatalog,
   model: string,
 ): string | null {
+  if (isAutoSelectedModel(model)) {
+    return model;
+  }
   const resolution = resolveCatalogModel(catalog, model);
   if (resolution.kind === "unknown") {
     return null;
@@ -355,8 +364,17 @@ export function catalogAutoRoute(
   catalog: ModelCatalog,
   model: string,
 ): CatalogRoute | null {
-  return model === AUTO_RUN_MODEL
-    ? { ...autoCatalogRoute(), upstreamModel: catalog.autoUpstreamModel }
+  return isAutoSelectedModel(model)
+    ? {
+        ...autoCatalogRoute(),
+        model,
+        upstreamModel: catalog.autoUpstreamModel,
+        // Only future persisted decisions use runtime pricing. PR1 captures the legacy ID.
+        pricingProvider: autoRunBillingProvider(
+          model,
+          catalog.autoUpstreamModel,
+        ),
+      }
     : null;
 }
 

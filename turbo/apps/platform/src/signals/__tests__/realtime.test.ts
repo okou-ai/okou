@@ -190,6 +190,8 @@ class TestSharedWorkerRealtimeBridge implements SharedDatabaseBridge {
     return Promise.resolve();
   }
 
+  setTabVisibility(_visibility: DocumentVisibilityState): void {}
+
   subscribeRealtime(
     subscriptionId: string,
     scope: SharedDatabaseRealtimeScope,

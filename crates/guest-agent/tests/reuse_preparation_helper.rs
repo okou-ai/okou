@@ -832,6 +832,167 @@ impl ContainmentFixture {
     }
 }
 
+#[tokio::test]
+async fn prepare_for_cache_removes_completed_private_state_and_preserves_user_history() -> TestResult
+{
+    let home = tempfile::tempdir()?;
+    let runs = guest_contracts::runtime_paths::runtime_parent_for_home(home.path());
+    let current = runs.join("current");
+    let retained = runs.join("retained");
+    for runtime in [&current, &retained] {
+        for name in [
+            "user-env/env.json",
+            "run-payload/payload.json",
+            "connector-account-context/context.json",
+            "pi-launch-payload/payload.json",
+            "logs/agent.jsonl",
+            "telemetry/system-log.pos",
+            "claude-append-system-prompt",
+            "final-session-history-identity.json",
+            "failure-diagnostic.json",
+            "session-history-sidecar",
+        ] {
+            let path = runtime.join(name);
+            std::fs::create_dir_all(path.parent().unwrap())?;
+            std::fs::write(path, b"synthetic private input")?;
+        }
+    }
+    let codex_home = home.path().join(".codex");
+    std::fs::create_dir_all(codex_home.join("sessions"))?;
+    std::fs::write(codex_home.join("auth.json"), b"synthetic managed auth")?;
+    std::fs::write(codex_home.join("sessions/keep.jsonl"), b"history")?;
+    let outside = home.path().join("workspace/user-file");
+    std::fs::create_dir_all(outside.parent().unwrap())?;
+    std::fs::write(&outside, b"user file")?;
+    symlink(&outside, runs.join("stale-link"))?;
+    let output = run_cache_helper(
+        &ReusePreparationRequest {
+            current_runtime_dir: path_string(&current),
+            retained_runtime_dir: Some(path_string(&retained)),
+        },
+        &runs,
+        &codex_home,
+        None,
+    )
+    .await?;
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: ReusePreparationReport = serde_json::from_slice(&output.stdout)?;
+    assert_eq!(report.removed_entries, 3);
+    assert_eq!(std::fs::read_dir(&runs)?.count(), 0);
+    assert!(!codex_home.join("auth.json").exists());
+    assert_eq!(
+        std::fs::read(codex_home.join("sessions/keep.jsonl"))?,
+        b"history"
+    );
+    assert_eq!(std::fs::read(&outside)?, b"user file");
+    Ok(())
+}
+
+#[tokio::test]
+async fn prepare_for_cache_rejects_arbitrary_parent_and_missing_retained_anchor_before_mutation()
+-> TestResult {
+    let home = tempfile::tempdir()?;
+    let runs = guest_contracts::runtime_paths::runtime_parent_for_home(home.path());
+    let current = runs.join("current");
+    let codex_home = home.path().join(".codex");
+    std::fs::create_dir_all(&current)?;
+    std::fs::create_dir_all(&codex_home)?;
+    std::fs::write(current.join("keep"), b"private")?;
+    std::fs::write(codex_home.join("auth.json"), b"auth")?;
+    for (request, code) in [
+        (
+            ReusePreparationRequest {
+                current_runtime_dir: path_string(&home.path().join("workspace")),
+                retained_runtime_dir: None,
+            },
+            REUSE_PREPARATION_EXIT_INVALID_REQUEST,
+        ),
+        (
+            ReusePreparationRequest {
+                current_runtime_dir: path_string(&current),
+                retained_runtime_dir: Some(path_string(&runs.join("missing"))),
+            },
+            REUSE_PREPARATION_EXIT_CLEANUP_FAILED,
+        ),
+    ] {
+        let output = run_cache_helper(&request, &runs, &codex_home, None).await?;
+        assert_eq!(output.status.code(), Some(code));
+        assert_eq!(std::fs::read(current.join("keep"))?, b"private");
+        assert_eq!(std::fs::read(codex_home.join("auth.json"))?, b"auth");
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn prepare_for_cache_rejects_live_writers_and_unsafe_auth() -> TestResult {
+    let home = tempfile::tempdir()?;
+    let runs = guest_contracts::runtime_paths::runtime_parent_for_home(home.path());
+    let current = runs.join("current");
+    let codex_home = home.path().join(".codex");
+    std::fs::create_dir_all(&current)?;
+    std::fs::create_dir_all(&codex_home)?;
+    std::fs::write(current.join("keep"), b"private")?;
+    let target = home.path().join("user-auth");
+    std::fs::write(&target, b"user auth")?;
+    symlink(&target, codex_home.join("auth.json"))?;
+    let request = ReusePreparationRequest {
+        current_runtime_dir: path_string(&current),
+        retained_runtime_dir: None,
+    };
+    let containment = ContainmentFixture::new()?;
+    std::fs::create_dir(containment.base.join("exec-live"))?;
+    let output = run_cache_helper(&request, &runs, &codex_home, Some(&containment)).await?;
+    assert_eq!(
+        output.status.code(),
+        Some(REUSE_PREPARATION_EXIT_CONTAINMENT_FAILED)
+    );
+    let output = run_cache_helper(&request, &runs, &codex_home, None).await?;
+    assert_eq!(
+        output.status.code(),
+        Some(REUSE_PREPARATION_EXIT_CLEANUP_FAILED)
+    );
+    assert_eq!(std::fs::read(current.join("keep"))?, b"private");
+    assert_eq!(std::fs::read(&target)?, b"user auth");
+    Ok(())
+}
+
+async fn run_cache_helper(
+    request: &ReusePreparationRequest,
+    runtime_parent: &Path,
+    codex_home: &Path,
+    containment: Option<&ContainmentFixture>,
+) -> TestResult<Output> {
+    let owned;
+    let containment = if let Some(containment) = containment {
+        containment
+    } else {
+        owned = ContainmentFixture::new()?;
+        &owned
+    };
+    let mut command = Command::new(env!("CARGO_BIN_EXE_guest-agent"));
+    command
+        .env_clear()
+        .env("OKOU_TEST_PROCESS_CONTAINMENT_ROOT", &containment.root)
+        .env(
+            "OKOU_TEST_PROCESS_CONTAINMENT_CURRENT_GROUP",
+            "/vm0-exec/exec-current/workload",
+        )
+        .env("OKOU_TEST_CODEX_HOME_DIR", codex_home)
+        .env("OKOU_TEST_CACHE_RUNTIME_PARENT", runtime_parent)
+        .arg("prepare-for-cache");
+    Ok(common::command_output_with_stdin_timeout(
+        &mut command,
+        &serde_json::to_vec(request)?,
+        REUSE_PREPARATION_HELPER_TIMEOUT,
+        "terminal cache helper exceeded its test budget",
+    )
+    .await?)
+}
+
 fn reusable_request() -> TestResult<(ReusePreparationRequest, tempfile::TempDir)> {
     let runtime = tempfile::tempdir()?;
     let current = runtime.path().join("runs/current");

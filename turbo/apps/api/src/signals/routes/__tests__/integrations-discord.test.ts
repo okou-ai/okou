@@ -7,9 +7,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { withDiscordDmPreferenceInsertBarrierFixture } from "../../../test-fixtures/discord-preference";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { settleIncludingAbort } from "../../utils";
 import { discordStatePreviewRoutes } from "../discord-state-preview";
 import { integrationsDiscordRoutes } from "../integrations-discord";
 import {
@@ -562,55 +560,6 @@ describe("verified Discord integration settings", () => {
       [200],
     );
     await expectDiscordChanges([owner.userId, differentUser.userId]);
-  });
-
-  it("rolls back a DM selection cancelled after its INSERT without publishing", async () => {
-    const { actor } = createActors();
-    const owner = actor();
-    const installed = await fixture(owner);
-    const cancelled = new AbortController();
-    const cancelledClient = setupApp({
-      context,
-      routes: integrationsDiscordRoutes,
-      signal: cancelled.signal,
-    })(integrationsDiscordContract);
-
-    await withDiscordDmPreferenceInsertBarrierFixture(
-      {
-        connectionId: installed.connectionId,
-        work: async (barrier) => {
-          const writing = settleIncludingAbort(
-            cancelledClient.setDmSelection({
-              headers: authenticate(owner),
-              body: { connectionId: installed.connectionId },
-            }),
-          );
-          const observed = await settleIncludingAbort(async () => {
-            expect((await barrier.entered).rowCount).toBe(1);
-          });
-          cancelled.abort(new DOMException("Operation ended", "AbortError"));
-          barrier.release();
-          // Always join the caller after releasing its transaction, including
-          // a failed entry assertion, before the SQL observer is removed.
-          const outcome = await writing;
-          if (!observed.ok) {
-            throw observed.error;
-          }
-          expect(outcome).toMatchObject({
-            ok: false,
-            error: expect.objectContaining({
-              message: expect.stringMatching(/Unknown response status 500/),
-            }),
-          });
-        },
-      },
-      context.signal,
-    );
-
-    await expect(status(owner)).resolves.toMatchObject({
-      dmSelectionConnectionId: null,
-    });
-    await expectDiscordChanges([]);
   });
 
   it("always reports the organization default agent", async () => {

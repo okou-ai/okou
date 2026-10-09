@@ -1,3 +1,4 @@
+import { isAutoSelectedModel } from "@okouai/core/auto-run-model";
 import type { ModelCatalogResponse } from "@okouai/api-contracts/contracts/model-catalog";
 
 type CatalogModel = ModelCatalogResponse["models"][number];
@@ -21,14 +22,16 @@ function findCatalogModel(
 const AUTO_MODEL_ARGUMENT = "auto";
 export const AUTO_MODEL_LABEL = "Auto";
 
-/** `auto` selects Auto (null); any other id is passed through as given. */
+/** Auto aliases send nullable intent to both API releases; other IDs pass through. */
 export function parseModelSelectionArgument(value: string): string | null {
-  return value.trim().toLowerCase() === AUTO_MODEL_ARGUMENT ? null : value;
+  return isAutoSelectedModel(value.trim().toLowerCase()) ? null : value;
 }
 
 /** The argument that selects a model: its id, or `auto` for Auto. */
 export function formatModelSelectionArgument(model: string | null): string {
-  return model ?? AUTO_MODEL_ARGUMENT;
+  return model === null || isAutoSelectedModel(model)
+    ? AUTO_MODEL_ARGUMENT
+    : model;
 }
 
 /**
@@ -40,7 +43,7 @@ export function resolveCatalogModel(
   catalog: ModelCatalogResponse,
   model: string | null,
 ): string {
-  if (model === null) {
+  if (model === null || isAutoSelectedModel(model)) {
     return catalog.systemDefaultModel;
   }
   return findCatalogModel(catalog, model)?.resolvedModel ?? model;
@@ -51,7 +54,7 @@ export function formatCatalogModelSelection(
   catalog: ModelCatalogResponse,
   model: string | null,
 ): string {
-  if (model === null) {
+  if (model === null || isAutoSelectedModel(model)) {
     return AUTO_MODEL_LABEL;
   }
   return `${getCatalogModelDisplayName(catalog, model)} (${model})`;
@@ -69,7 +72,7 @@ export function isCatalogModelActive(
   catalog: ModelCatalogResponse,
   model: string | null,
 ): boolean {
-  if (model === null) {
+  if (model === null || isAutoSelectedModel(model)) {
     return true;
   }
   const entry = findCatalogModel(catalog, model);
@@ -90,7 +93,7 @@ export function sortByCatalogOrder<T extends { readonly model: string | null }>(
     }),
   );
   const rank = (model: string | null): number => {
-    if (model === null) {
+    if (model === null || isAutoSelectedModel(model)) {
       return Number.MIN_SAFE_INTEGER;
     }
     return order.get(model) ?? Number.MAX_SAFE_INTEGER;
@@ -118,6 +121,9 @@ export function getCatalogModelEfforts(
   catalog: ModelCatalogResponse,
   model: string,
 ): string[] {
+  if (isAutoSelectedModel(model)) {
+    return [];
+  }
   const efforts: string[] = [];
   for (const route of enabledRoutes(catalog, model)) {
     for (const effort of route.efforts) {
@@ -150,6 +156,9 @@ export function getCatalogThreadEffort(
   model: string,
   settings: ThreadModelSettings | null | undefined,
 ): string | null {
+  if (isAutoSelectedModel(model)) {
+    return null;
+  }
   const saved = settings?.[model]?.effort;
   if (
     saved !== undefined &&
@@ -172,6 +181,7 @@ export function formatCatalogThreadModel(
   const model = resolveCatalogModel(catalog, storedModel);
   const effort = getCatalogThreadEffort(catalog, model, settings);
   const suffix = effort ? ` · effort ${effort}` : "";
-  const selection = storedModel === null ? null : model;
+  const selection =
+    storedModel === null || isAutoSelectedModel(storedModel) ? null : model;
   return `${formatCatalogModelSelection(catalog, selection)}${suffix}`;
 }

@@ -223,10 +223,10 @@ installation without relying on the retired Native projection.
 
 ## The exported contract
 
-`loadMorningBriefOwnership(db, owner)` answers "which installation does this
+`set(loadMorningBriefOwnership$, owner, signal)` answers "which installation does this
 member's preference surface manage?" and returns the enrollment row, every
 Morning Brief installation the member holds (oldest first), and the selected
-one. `loadMorningBriefMigrationState(db, owner)` composes the full view on top
+one. `set(loadMorningBriefMigrationState$, owner, signal)` composes the full view on top
 of it and returns exactly one of:
 
 | `kind`         | Meaning                                                     |
@@ -242,7 +242,7 @@ installation and `chatThreadId`. An `installed` state carries the automation's
 `enabled`, `cronExpression`, `timezone` and `nextRunAt`; an `inconsistent`
 state carries which invariant failed.
 
-`loadMorningBriefDefaultAgentId(db, owner)` resolves the Agent an org-wide
+`set(loadMorningBriefDefaultAgentId$, owner, signal)` resolves the Agent an org-wide
 action would use, and backs both the adoption tie-break and the Settings
 availability check.
 
@@ -300,11 +300,18 @@ instances before declaring automatic installation stopped in production.
 
 ## Reading it safely
 
-`loadMorningBriefMigrationState` is a composed read, not a transactional
-snapshot. Its parts can move between queries. Callers that act on the result —
-enabling, disabling, installing, or eventually claiming an occurrence — must
-invoke it inside the transaction or advisory lock that already guards that
-mutation, exactly as the preference surface does today.
+The reader commands obtain their own database through `get(db$)` and accept
+plain member identity plus a final positional `AbortSignal`. Database or
+transaction handles do not cross the reader boundary.
+
+`loadMorningBriefMigrationState$` is a composed read, not a transactional
+snapshot. Its parts can move between queries. The preference operation records
+the explicit choice, re-reads current ownership, and uses the existing
+conditional automation writer to apply it. That writer keeps the Official
+enabled bit and enrollment choice in one command-local transaction. Enrollment
+completion is conditional so a concurrent cancellation wins. Preserve these
+write guards and re-read after conditional writes; do not add a lock around
+the composed reader.
 
 ## Migration boundary
 

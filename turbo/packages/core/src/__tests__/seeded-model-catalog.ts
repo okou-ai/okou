@@ -2,9 +2,9 @@ import type { PiCatalogSource } from "../pi-execution";
 
 /**
  * Active rows of `run_model_catalog` and every `model_routes` row remaining
- * after migration 1326 (Auto on `openrouter-codex` plus personal Claude Code
- * and Codex subscriptions), so admission tests read the same catalog data the
- * API serves.
+ * after memory route retirement (Auto and internal Luna on `openrouter-codex`
+ * plus personal Claude Code and Codex subscriptions), so admission tests read
+ * the same catalog data the API serves.
  */
 export const SEEDED_MODEL_CATALOG: PiCatalogSource = {
   models: [
@@ -55,14 +55,14 @@ export const SEEDED_MODEL_CATALOG: PiCatalogSource = {
       serviceTiers: [],
     },
     {
-      model: "deepseek-v4.1-flash",
+      model: "gpt-6-luna",
       providerType: "built-in",
       concreteProviderType: "openrouter-codex",
       subscriptionType: null,
-      upstreamModel: "deepseek/deepseek-v4.1-flash",
+      upstreamModel: "openai/gpt-6-luna",
       enabled: true,
       priority: 1,
-      serviceTiers: [],
+      serviceTiers: ["priority"],
     },
     {
       model: "gpt-6-astra",

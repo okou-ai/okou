@@ -5,9 +5,8 @@ import { command } from "ccstate";
 import { eq, sql } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
-import { clerk$ } from "../external/clerk";
-import { writeDb$ } from "../external/db";
-import { getUserEmail } from "./email-common.service";
+import { db$, writeDb$ } from "../external/db";
+import { getUserEmail$ } from "./email-common.service";
 
 export const emailSubscription$ = command(
   async (
@@ -15,8 +14,8 @@ export const emailSubscription$ = command(
     userId: string,
     signal: AbortSignal,
   ): Promise<EmailSubscriptionResponse> => {
-    const db = set(writeDb$);
-    const email = await getUserEmail(db, get(clerk$), userId);
+    const db = get(db$);
+    const email = await set(getUserEmail$, userId, signal);
     signal.throwIfAborted();
     const [user] = await db
       .select({ emailUnsubscribed: users.emailUnsubscribed })

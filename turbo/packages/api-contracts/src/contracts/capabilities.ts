@@ -2,6 +2,7 @@
  * Capabilities carried by Okou run tokens when they call protected API routes.
  */
 export const CAPABILITIES = [
+  "notify:write",
   "agent:read",
   "agent:write",
   "agent:delete",
@@ -72,6 +73,10 @@ export interface CapabilityMeta {
  * will produce a TypeScript compile error.
  */
 export const CAPABILITY_META: Record<Capability, CapabilityMeta> = {
+  "notify:write": {
+    group: "Notifications",
+    label: "Send email notifications to you",
+  },
   "agent:read": { group: "Agent", label: "Read agents" },
   "agent:write": { group: "Agent", label: "Create & update agents" },
   "agent:delete": { group: "Agent", label: "Delete agents" },

@@ -23,6 +23,7 @@ import {
   closeConnection$,
   openConnection$,
   recordConnectionHeartbeat$,
+  recordTabVisibility$,
   registerConnection$,
 } from "./worker-context.ts";
 import {
@@ -187,7 +188,8 @@ export class SharedDatabaseMessagePortServer {
     const signal = this.store.set(
       registerConnection$,
       this.connectionId,
-      { getToken: this.requestToken, port: this.port },
+      this.port,
+      this.requestToken,
       this.connectionSignal,
     );
     this.registeredSignal = signal;
@@ -331,6 +333,14 @@ export class SharedDatabaseMessagePortServer {
             );
           });
         }
+        return;
+      }
+      if (message.type === "tab-visibility") {
+        this.store.set(
+          recordTabVisibility$,
+          this.connectionId,
+          message.visibility,
+        );
         return;
       }
       if (message.type === "heartbeat") {

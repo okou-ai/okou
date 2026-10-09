@@ -100,8 +100,7 @@ describe("builtin MCP discovery authority", () => {
       throw new Error("Expected foreign account");
     }
     const unavailableSources: readonly (
-      | Readonly<Record<string, string>>
-      | undefined
+      Readonly<Record<string, string>> | undefined
     )[] = [
       undefined,
       { "manual-mcp": foreignAccount.id },

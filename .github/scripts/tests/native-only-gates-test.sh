@@ -45,7 +45,7 @@ def context(ios=True, ts=False, event='pull_request', release=False):
 
 # Evaluate the actual job predicates with GitHub's default success condition.
 def condition(job, values, cancelled=False):
-    expression = job.get('if', 'true').strip().removeprefix('${{').removesuffix('}}').strip()
+    expression = job.get('if', 'True').strip().removeprefix('${{').removesuffix('}}').strip()
     has_status = any(f'{function}(' in expression for function in ['success', 'failure', 'cancelled', 'always'])
     if not has_status and any(values[f'needs.{name}.result'] != 'success' for name in job.get('needs', [])):
         return False
@@ -77,13 +77,13 @@ for result in ['failure', 'cancelled', 'skipped']:
 
 for job in ts_jobs + ['lint-runtime-api-compat'] + artifacts:
     assert not condition(turbo[job], native), job
-for job in ['bench-api', 'bench-app']:
+for job in ['bench-app']:
     assert not condition(benchmark[job], native), job
     assert condition(benchmark[job], context(ios=False, ts=True)), job
     assert condition(benchmark[job], context(ios=False, ts=True, event='push')), job
 for job in ['codeql', 'pnpm-audit']:
     assert not condition(security[job], native), job
-for job in ['semgrep', 'gitleaks', 'actionlint', 'workflow-script-tests', 'pr-title']:
+for job in ['action-pins', 'semgrep', 'gitleaks', 'actionlint', 'workflow-script-tests', 'pr-title']:
     assert condition(security[job], native), job
 for job in ts_jobs:
     assert condition(turbo[job], context(ios=False, ts=True)), job
@@ -127,7 +127,7 @@ native = context()
 for job in ['codeql', 'pnpm-audit']:
     native[f'needs.{job}.result'] = 'skipped'
 gate(security, 'ci-gate-security', native, True)
-for job in ['detect-release', 'detect-native-only', 'pr-title', 'semgrep', 'codeql', 'pnpm-audit',
+for job in ['detect-release', 'action-pins', 'detect-native-only', 'pr-title', 'semgrep', 'codeql', 'pnpm-audit',
             'actionlint', 'workflow-script-tests', 'gitleaks']:
     for failure in ['failure', 'cancelled']:
         gate(security, 'ci-gate-security', native | {f'needs.{job}.result': failure}, False)
@@ -148,6 +148,15 @@ for job in ['detect-native-only', 'pr-title', 'semgrep', 'codeql', 'pnpm-audit',
             'workflow-script-tests', 'gitleaks']:
     released[f'needs.{job}.result'] = 'skipped'
 gate(security, 'ci-gate-security', released, True)
+assert condition(security['action-pins'], released)
+assert 'action-pins' in security['ci-gate-security']['needs']
+for event in ['pull_request', 'merge_group', 'push']:
+    for result in ['failure', 'cancelled', 'skipped']:
+        for release in [False, True]:
+            values = context(event=event, release=release)
+            values['needs.action-pins.result'] = result
+            assert condition(security['action-pins'], values)
+            gate(security, 'ci-gate-security', values, False)
 
 print('native-only workflow selection and gates: ok')
 PY

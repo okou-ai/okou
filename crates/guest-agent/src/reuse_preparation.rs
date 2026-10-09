@@ -1,4 +1,9 @@
-//! Reclaims runner-owned runtime state before a completed guest enters idle reuse.
+//! Reclaims runner-owned runtime state before idle reuse or terminal image publication.
+//!
+//! Idle preparation protects current/retained runtime readers. Terminal cache preparation instead
+//! validates those anchors under the canonical managed runtime parent and removes all its children.
+//! The terminal caller must finish checkpoint, diagnostic, log and sidecar readers first; it must
+//! terminate the sandbox after cleanup rather than return it to idle or handoff.
 //!
 //! This module is the guest-side safety boundary for idle admission. The runner invokes the helper
 //! as part of the final guest exec before parking a sandbox and admits the sandbox to the idle pool
@@ -75,6 +80,14 @@ const TEST_CONTAINMENT_ROOT_ENV: &str = "OKOU_TEST_PROCESS_CONTAINMENT_ROOT";
 const TEST_CONTAINMENT_CURRENT_GROUP_ENV: &str = "OKOU_TEST_PROCESS_CONTAINMENT_CURRENT_GROUP";
 #[cfg(debug_assertions)]
 const TEST_CODEX_HOME_DIR_ENV: &str = "OKOU_TEST_CODEX_HOME_DIR";
+#[cfg(debug_assertions)]
+const TEST_CACHE_RUNTIME_PARENT_ENV: &str = "OKOU_TEST_CACHE_RUNTIME_PARENT";
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RuntimeRetention {
+    IdleReaders,
+    TerminalCache,
+}
 const PROC_SELF_CGROUP: &str = "/proc/self/cgroup";
 
 /// Failure returned by the reuse-preparation helper.
@@ -162,6 +175,26 @@ struct ProtectedRuntime {
 /// Cleanup is not transactional. After removal begins, an error can be returned even though
 /// earlier stale entries were already removed.
 pub fn prepare_from_stdin() -> Result<ReusePreparationReport, ReusePreparationError> {
+    prepare_from_stdin_with_retention(RuntimeRetention::IdleReaders)
+}
+
+/// Remove completed managed-private state before terminal cache publication.
+///
+/// The bounded request/report and safety checks are shared with idle preparation, but no runtime
+/// child is protected. Current and retained anchors must exist under the canonical managed parent.
+/// Required readers must finish before invoking this helper. Any error rejects publication;
+/// partial deletion is not rolled back and unlink does not establish forensic block erasure.
+///
+/// # Errors
+///
+/// Returns the same request, containment, cleanup and inspection failures as [`prepare_from_stdin`].
+pub fn prepare_for_cache_from_stdin() -> Result<ReusePreparationReport, ReusePreparationError> {
+    prepare_from_stdin_with_retention(RuntimeRetention::TerminalCache)
+}
+
+fn prepare_from_stdin_with_retention(
+    retention: RuntimeRetention,
+) -> Result<ReusePreparationReport, ReusePreparationError> {
     let mut bytes = Vec::new();
     io::stdin()
         .take(MAX_REQUEST_BYTES + 1)
@@ -176,14 +209,20 @@ pub fn prepare_from_stdin() -> Result<ReusePreparationReport, ReusePreparationEr
     let request = serde_json::from_slice(&bytes).map_err(|error| {
         ReusePreparationError::InvalidRequest(io::Error::new(io::ErrorKind::InvalidData, error))
     })?;
-    prepare(&request)
+    prepare(&request, retention)
 }
 
 fn prepare(
     request: &ReusePreparationRequest,
+    retention: RuntimeRetention,
 ) -> Result<ReusePreparationReport, ReusePreparationError> {
     let current_path = Path::new(&request.current_runtime_dir);
     let (runtime_parent, current_name) = split_runtime_path(current_path)?;
+    if retention == RuntimeRetention::TerminalCache && runtime_parent != cache_runtime_parent() {
+        return Err(invalid_path(
+            "terminal cleanup requires the canonical managed runtime parent",
+        ));
+    }
     let retained_name = request
         .retained_runtime_dir
         .as_deref()
@@ -205,6 +244,10 @@ fn prepare(
         }
     }
 
+    if retention == RuntimeRetention::TerminalCache {
+        // The opened anchors prove scope/mount safety, not authority to retain private inputs.
+        protected.clear();
+    }
     remove_managed_codex_auth().map_err(ReusePreparationError::Cleanup)?;
 
     let before = rootfs_capacity().map_err(ReusePreparationError::Inspection)?;
@@ -233,12 +276,35 @@ fn prepare(
         }
     }
 
+    if retention == RuntimeRetention::TerminalCache {
+        let identity = Dir::open_absolute(&runtime_parent)
+            .and_then(|directory| directory.identity())
+            .map_err(ReusePreparationError::Cleanup)?;
+        if identity != parent_identity {
+            return Err(ReusePreparationError::Cleanup(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "managed runtime parent identity changed during terminal cleanup",
+            )));
+        }
+    }
     let after = rootfs_capacity().map_err(ReusePreparationError::Inspection)?;
     Ok(ReusePreparationReport {
         before,
         after,
         removed_entries,
     })
+}
+
+fn cache_runtime_parent() -> PathBuf {
+    #[cfg(debug_assertions)]
+    if let Some(path) =
+        std::env::var_os(TEST_CACHE_RUNTIME_PARENT_ENV).filter(|path| !path.is_empty())
+    {
+        return PathBuf::from(path);
+    }
+    guest_contracts::runtime_paths::runtime_parent_for_home(
+        api_contracts::generated::constants::runners::paths::CANONICAL_GUEST_HOME_DIR,
+    )
 }
 
 fn remove_managed_codex_auth() -> io::Result<()> {

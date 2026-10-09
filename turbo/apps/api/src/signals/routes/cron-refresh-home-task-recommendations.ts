@@ -2,45 +2,21 @@ import { cronRefreshHomeTaskRecommendationsContract } from "@okouai/api-contract
 import { command } from "ccstate";
 
 import type { RouteEntry } from "../route-entry";
-import {
-  refreshDueHomeTaskRecommendations$,
-  type HomeTaskScope,
-} from "../services/home-task-recommendations.service";
+import { refreshDueHomeTaskRecommendations$ } from "../services/home-task-recommendations.service";
 import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
 
-function createRefreshHomeTaskRecommendationsRoute(
-  onlyScope?: HomeTaskScope,
-): RouteEntry["handler"] {
-  return command(async ({ get, set }, signal: AbortSignal) => {
-    if (!get(hasValidCronSecret$)) {
-      return cronUnauthorized();
-    }
-    const body = await set(
-      refreshDueHomeTaskRecommendations$,
-      onlyScope,
-      signal,
-    );
-    signal.throwIfAborted();
-    return { status: 200 as const, body };
-  });
-}
+const refresh$ = command(async ({ get, set }, signal: AbortSignal) => {
+  if (!get(hasValidCronSecret$)) {
+    return cronUnauthorized();
+  }
+  const body = await set(refreshDueHomeTaskRecommendations$, signal);
+  signal.throwIfAborted();
+  return { status: 200 as const, body };
+});
 
-function routesFor(handler: RouteEntry["handler"]): readonly RouteEntry[] {
-  return [
-    {
-      route: cronRefreshHomeTaskRecommendationsContract.refresh,
-      handler,
-    },
-  ];
-}
-
-export const cronRefreshHomeTaskRecommendationsRoutes = routesFor(
-  createRefreshHomeTaskRecommendationsRoute(),
-);
-
-/** Test-only owner scoping while retaining the deployed cron route boundary. */
-export function createScopedHomeTaskRecommendationCronRoutesForTest(
-  scope: HomeTaskScope,
-): readonly RouteEntry[] {
-  return routesFor(createRefreshHomeTaskRecommendationsRoute(scope));
-}
+export const cronRefreshHomeTaskRecommendationsRoutes: readonly RouteEntry[] = [
+  {
+    route: cronRefreshHomeTaskRecommendationsContract.refresh,
+    handler: refresh$,
+  },
+];

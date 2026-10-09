@@ -58,14 +58,9 @@ export const notionWebhookEvents = pgTable(
 );
 
 export type NotionWorkflowPendingEventStatus =
-  | "pending"
-  | "running"
-  | "processed"
-  | "skipped";
+  "pending" | "running" | "processed" | "skipped";
 export type NotionWorkflowPendingEventFamily =
-  | "new_child_page"
-  | "new_database_item"
-  | "page_content_updated";
+  "new_child_page" | "new_database_item" | "page_content_updated";
 export type NotionWorkflowPendingEventScopeType = "page" | "data_source";
 
 export const notionWorkflowPendingEvents = pgTable(

@@ -31,7 +31,7 @@ import { mockNow, now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { server } from "../../../mocks/server";
-import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -145,7 +145,7 @@ async function voiceActor(
   if (!actor.orgId) {
     throw new Error("Voice draft tests require an organization");
   }
-  await seedOrgMetadata({ orgId: actor.orgId, tier: "pro", credits: 10_000 });
+  await createRunsApi(context).grantProEntitlement(actor);
   mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
   if (Object.keys(overrides).length > 0) {
     await updateFeatureSwitchesForUser(

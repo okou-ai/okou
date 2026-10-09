@@ -26,9 +26,7 @@ export interface ShareableChatEvent {
 
 export type SharedThreadSelectionPhase = "idle" | "selecting" | "created";
 export type ToggleSharedThreadSelectionResult =
-  | "selected"
-  | "deselected"
-  | "too-large";
+  "selected" | "deselected" | "too-large";
 
 export interface ChatThreadSharingSignals {
   readonly phase$: Computed<SharedThreadSelectionPhase>;

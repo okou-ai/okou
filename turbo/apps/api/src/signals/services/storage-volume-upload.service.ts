@@ -18,9 +18,14 @@ import {
 } from "./storage-version-registration.service";
 import { piResourceProjectionValues } from "./pi-resource-version-index.service";
 import {
-  consumePublicationFence,
+  generationScopeCondition,
+  publicationScopeCondition,
   type StoragePublicationFence,
 } from "./storage-publication-fence.service";
+import {
+  storagePublicationGenerations,
+  storagePublicationTokens,
+} from "@okouai/db/schema/storage-publication-fence";
 
 interface UploadedVolume {
   readonly storageName: string;
@@ -65,15 +70,6 @@ function storageHeadValues(volume: PreparedServerSideVolume) {
   };
 }
 
-function preparedProjection(volume: PreparedServerSideVolume) {
-  return volume.piResourceIndex?.kind === "prepared"
-    ? piResourceProjectionValues(
-        volume.piResourceIndex.projection,
-        volume.version.archiveSize,
-      )
-    : undefined;
-}
-
 interface PreparedVolumePublication {
   readonly volume: PreparedServerSideVolume;
   readonly publicationFence?: StoragePublicationFence;
@@ -89,7 +85,14 @@ const commitPreparedVolumeUpload$ = command(
     const db = set(writeDb$);
     const version = args.volume.version;
     const fence = args.publicationFence;
-    const projection = preparedProjection(args.volume);
+    const projection =
+      args.volume.piResourceIndex?.kind === "prepared"
+        ? piResourceProjectionValues(
+            args.volume.piResourceIndex.projection,
+            args.volume.version.archiveSize,
+            nowDate(),
+          )
+        : undefined;
     await db.transaction(async (tx) => {
       // The version insert's FK check keeps the Storage parent from being
       // deleted, and the HEAD UPDATE below then owns that row implicitly.
@@ -137,13 +140,25 @@ const commitPreparedVolumeUpload$ = command(
             sourceArchiveSize: version.archiveSize,
           })
           .onConflictDoNothing();
-        await tx.execute(repairVolumeIndexSql(version));
+        await tx.execute(repairVolumeIndexSql(version, nowDate()));
       }
       signal.throwIfAborted();
       if (!fence) {
         return;
       }
-      if (!(await consumePublicationFence(tx, fence, nowDate()))) {
+      // Own generation before token, matching reservation and cleanup order.
+      const [generation] = await tx
+        .update(storagePublicationGenerations)
+        .set({ updatedAt: nowDate() })
+        .where(generationScopeCondition(fence.scope))
+        .returning({ generation: storagePublicationGenerations.generation });
+      const [publication] = generation
+        ? await tx
+            .delete(storagePublicationTokens)
+            .where(publicationScopeCondition(fence))
+            .returning({ token: storagePublicationTokens.token })
+        : [];
+      if (!publication) {
         throw new StalePublicationFenceError(
           "Storage publication was superseded before Storage HEAD commit",
         );

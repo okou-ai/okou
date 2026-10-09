@@ -2,10 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
-import {
-  CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES,
-  type CreateCustomConnectorBody,
-} from "@okouai/api-contracts/contracts/custom-connectors";
+import type { CreateCustomConnectorBody } from "@okouai/api-contracts/contracts/custom-connectors";
 import { mcpConnectorsContract } from "@okouai/api-contracts/contracts/mcp-connectors";
 import { afterEach } from "vitest";
 
@@ -708,8 +705,8 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       }
       const registrationCount = provider.registrationBodies.length;
       provider.advertiseAuthorizationServers([
-        "https://alternate-issuer.example.test",
         provider.issuer,
+        "https://alternate-issuer.example.test",
       ]);
 
       const response = await accept(
@@ -756,10 +753,12 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
           return account.id === siblingAccount.id;
         })?.oauthScopes,
       ).toStrictEqual(["read"]);
-      provider.advertiseAuthorizationServers([
-        "https://alternate-issuer.example.test",
-      ]);
-      const removedIssuer = await accept(
+      const replacementProvider = mockAutomaticMcpOAuthProvider(context, {
+        registration,
+        endpoint: provider.endpoint,
+        issuer: "https://alternate-issuer.example.test",
+      });
+      const changedAuthority = await accept(
         client().reauthorizeOAuth({
           headers: headers(okouToken),
           body: {
@@ -767,13 +766,22 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
             scopes: ["owner"],
           },
         }),
-        [409],
+        [200],
       );
-      expect(removedIssuer.body.error).toStrictEqual({
-        code: CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES.BINDING_CHANGED,
-        message:
-          "Automatic MCP OAuth authorization changed. Reconnect the account and try again.",
-      });
+      expect(new URL(changedAuthority.body.authorizationUrl).origin).toBe(
+        replacementProvider.issuer,
+      );
+      const changedCallback =
+        await connectors.completeCustomConnectorOAuth2Callback({
+          code: "changed-authority-code",
+          state: stateFromAuthorizationUrl(
+            changedAuthority.body.authorizationUrl,
+          ),
+          iss: replacementProvider.issuer,
+        });
+      expect(changedCallback.headers.get("location")).toBe(
+        "https://app.okou.ai/connectors/custom/callback/success",
+      );
       await runs.requestCancelRun(actor, run.runId, [200]);
     },
   );

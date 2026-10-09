@@ -268,7 +268,7 @@ import type {
   ChatEvent,
 } from "../../signals/chat-page/chat-event-types.ts";
 import { optimisticEventIds$ } from "../../signals/chat-page/optimistic-chat-events.ts";
-import { AUTO_RUN_MODEL } from "@okouai/core/auto-run-model";
+import { AUTO_RUN_MODEL, sameSelectedModel } from "@okouai/core/auto-run-model";
 import type { ChatRunModelSelection } from "../../signals/chat-page/chat-event-state.ts";
 import type { AgentReferenceSignals } from "../../signals/chat-page/agent-reference-signals.ts";
 import type { AssistantErrorRecovery } from "../../signals/chat-page/assistant-error-recovery.ts";
@@ -492,7 +492,12 @@ function modelChangesByEventId(
         previousSelection !== undefined &&
         selection !== undefined
       ) {
-        if (selection.selectedModel !== previousSelection.selectedModel) {
+        if (
+          !sameSelectedModel(
+            selection.selectedModel,
+            previousSelection.selectedModel,
+          )
+        ) {
           changes.set(event.id, { kind: "model", selection });
         } else if (
           fastModeEnabled(selection) !== fastModeEnabled(previousSelection)
@@ -3332,7 +3337,12 @@ function ChatThreadNextRunModelNotice({
       : {}),
   };
   let label: string;
-  if (selectedRunSelection.selectedModel !== runningSelection.selectedModel) {
+  if (
+    !sameSelectedModel(
+      selectedRunSelection.selectedModel,
+      runningSelection.selectedModel,
+    )
+  ) {
     label = t(
       ($) => {
         return $.chat.run.selectedModelAppliesAfterCurrentRun;
@@ -4493,7 +4503,9 @@ function FinishedStatusRow({ thread }: { thread: ChatPanelSignals }) {
       equalityFn: equalRecommendedFollowupSources,
     }) ?? null;
   return (
-    <div data-role="assistant-thinking" className="animate-thinking-in min-w-0">
+    // Completed content also mounts when reopening a historical thread. Keep it
+    // opaque so the PWA page-transition snapshot and the live page agree.
+    <div data-role="assistant-thinking" className="min-w-0">
       <FinishedRunRow thread={thread} source={recommendedFollowupSource} />
     </div>
   );

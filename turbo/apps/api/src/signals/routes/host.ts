@@ -6,6 +6,7 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { setResHeader$ } from "../context/hono";
 import {
+  authorizeHostedSiteDelivery$,
   completeHostedSiteDeployment$,
   deleteHostedSite$,
   getHostedSiteDeployments$,
@@ -84,6 +85,20 @@ const prepareInner$ = command(
 );
 
 const completeParams$ = pathParamsOf(hostContract.complete);
+const deliveryParams$ = pathParamsOf(hostContract.deliveryAuthorization);
+const deliveryQuery$ = queryOf(hostContract.deliveryAuthorization);
+const deliveryAuthorization$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    set(setResHeader$, "Cache-Control", "private, no-store");
+    const allowed = await set(
+      authorizeHostedSiteDelivery$,
+      { ...get(deliveryParams$), ...get(deliveryQuery$) },
+      signal,
+    );
+    signal.throwIfAborted();
+    return { status: 200 as const, body: { allowed } };
+  },
+);
 const filesParams$ = pathParamsOf(hostContract.files);
 const filesQuery$ = queryOf(hostContract.files);
 const deploymentsParams$ = pathParamsOf(hostContract.deployments);
@@ -208,6 +223,10 @@ const deleteSiteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 export const hostRoutes: readonly RouteEntry[] = [
+  {
+    route: hostContract.deliveryAuthorization,
+    handler: deliveryAuthorization$,
+  },
   {
     route: hostContract.preparePrivate,
     handler: authRoute(

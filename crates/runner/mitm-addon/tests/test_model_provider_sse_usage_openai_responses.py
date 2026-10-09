@@ -82,7 +82,13 @@ class TestOpenAIResponsesSseUsage:
             "tokens.cache_creation": 15,
         }
 
-    def test_full_pipeline_pi_responses_path_reports_usage(self, tmp_path, real_flow):
+    @pytest.mark.parametrize(
+        "captured_provider",
+        ["okou-1.0", "@preset/okou-1-0", "@preset/okou-experimental", "@preset/" + "x" * 247],
+    )
+    def test_full_pipeline_pi_responses_path_reports_usage(
+        self, tmp_path, real_flow, captured_provider
+    ):
         flow = model_provider_sse_flow(
             tmp_path,
             real_flow,
@@ -90,7 +96,7 @@ class TestOpenAIResponsesSseUsage:
             original_url="https://openrouter.ai/api/v1/responses",
             firewall_name="model-provider:openrouter-codex",
             cli_agent_type="pi",
-            model_usage_provider="okou-1.0",
+            model_usage_provider=captured_provider,
         )
         mitm_addon.responseheaders(flow)
         response_stream(flow)(
@@ -102,6 +108,7 @@ class TestOpenAIResponsesSseUsage:
 
         webhook = run_response(flow, self._usage_webhook_api)
 
+        assert {event["provider"] for event in webhook.usage_events()} == {captured_provider}
         assert {event["category"]: event["quantity"] for event in webhook.usage_events()} == {
             "tokens.input": 1627,
             "tokens.output": 49,

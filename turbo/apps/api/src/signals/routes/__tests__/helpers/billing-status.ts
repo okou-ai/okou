@@ -1,5 +1,6 @@
 import { command } from "ccstate";
 
+import { nowDate } from "../../../../lib/time";
 import {
   createBillingWebhookFixture,
   generatedStripeCustomerId,
@@ -15,8 +16,6 @@ import {
   TEST_PRICE_CONCURRENCY,
   type BillingWebhookFixture,
 } from "./stripe-billing-webhook";
-import { nowDate } from "../../../../lib/time";
-import { insertUsageAllowanceWindowsFixture } from "../../../../test-fixtures/usage-allowance";
 
 export interface BillingStatusFixture {
   readonly orgId: string;
@@ -56,14 +55,6 @@ interface ConcurrencyEntitlementSeed {
   readonly stripePriceId?: string;
 }
 
-interface UsageAllowanceWindowSeed {
-  readonly kind: "short" | "weekly";
-  readonly startsAt: Date;
-  readonly expiresAt: Date;
-  readonly unitLimit: number;
-  readonly consumedUnits?: number;
-}
-
 interface UsageAllowanceSeed {
   readonly status?: string;
   readonly shortWindowSeconds: number;
@@ -72,7 +63,6 @@ interface UsageAllowanceSeed {
   readonly weeklyWindowUnits: number;
   readonly effectiveAt?: Date;
   readonly expiresAt?: Date | null;
-  readonly windows?: readonly UsageAllowanceWindowSeed[];
 }
 
 interface BillingStatusSeedValues {
@@ -256,27 +246,6 @@ async function applyConcurrencySeeds(
   }
 }
 
-async function insertUsageAllowanceWindows(
-  orgId: string,
-  windows: readonly UsageAllowanceWindowSeed[] | undefined,
-): Promise<void> {
-  if (!windows || windows.length === 0) {
-    return;
-  }
-  await insertUsageAllowanceWindowsFixture({
-    orgId,
-    windows: windows.map((window) => {
-      return {
-        kind: window.kind,
-        startsAt: window.startsAt,
-        expiresAt: window.expiresAt,
-        unitLimit: window.unitLimit,
-        consumedUnits: window.consumedUnits,
-      };
-    }),
-  });
-}
-
 async function applyUsageAllowanceSeed(
   signal: AbortSignal,
   fixture: BillingWebhookFixture,
@@ -299,7 +268,6 @@ async function applyUsageAllowanceSeed(
     effectiveAt: seed.effectiveAt ?? nowDate(),
     expiresAt: seed.expiresAt ?? new Date("2099-01-01T00:00:00.000Z"),
   });
-  await insertUsageAllowanceWindows(fixture.orgId, seed.windows);
 }
 
 export const seedBillingStatusOrg$ = command(

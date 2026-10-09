@@ -25,11 +25,7 @@ export type GenerationTarget =
   | "docs-design";
 
 type ResourceKind =
-  | "skill"
-  | "template"
-  | "design-system"
-  | "color-system"
-  | "image-style";
+  "skill" | "template" | "design-system" | "color-system" | "image-style";
 
 interface ResourceSourceRef {
   readonly path: string;

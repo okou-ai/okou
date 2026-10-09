@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { Client } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
+import { jsonb, pgTable, primaryKey } from "drizzle-orm/pg-core";
 import {
   connectorCatalogArtifactSchema,
   type ConnectorCatalogArtifactConnector,
@@ -12,8 +13,25 @@ import {
   connectorCatalogEntryColumns,
   connectorCatalogPermissionSummary,
 } from "@okouai/connectors/connector-catalog/entry-columns";
-import { connectorCatalogEntries } from "../src/schema/connector-catalog";
+import { connectorCatalogColumns } from "../src/columns/connector-catalog";
+import {
+  connectorCatalog,
+  connectorCatalogEntries as runtimeEntries,
+} from "../src/runtime/connector-catalog";
+import { validateConnectorCatalogColumnContract } from "./test-connector-catalog-columns-permanent";
 
+// Frozen outgoing table shape, only for expand/preparation migration replay.
+// Production schema and runtime both use the final payload-free table.
+const connectorCatalogEntries = pgTable(
+  "connector_catalog_entries",
+  {
+    ...connectorCatalogColumns(),
+    payload: jsonb("payload").$type<ConnectorCatalogArtifactConnector>(),
+  },
+  (table) => {
+    return [primaryKey({ columns: [table.hash, table.slug] })];
+  },
+);
 const databaseUrl = process.env.DATABASE_URL;
 assert.ok(databaseUrl, "DATABASE_URL is required");
 const client = new Client({ connectionString: databaseUrl });
@@ -30,6 +48,20 @@ const expansion = await readFile(
 const backfill = await readFile(
   new URL(
     "../src/migrations/1340_backfill_connector_catalog_entry_columns.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const preparation = await readFile(
+  new URL(
+    "../src/migrations/1348_connector_catalog_payload_independent_api.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const contraction = await readFile(
+  new URL(
+    "../src/migrations/1351_drop_connector_catalog_payload.sql",
     import.meta.url,
   ),
   "utf8",
@@ -275,9 +307,17 @@ try {
     hash text NOT NULL, slug text NOT NULL, payload jsonb NOT NULL,
     PRIMARY KEY (hash, slug)
   )`);
+  await client.query(`CREATE TABLE connector_catalog (
+    schema_version integer PRIMARY KEY, hash text NOT NULL
+  )`);
+  await db
+    .insert(connectorCatalog)
+    .values({ schemaVersion: 4, hash: "current" });
   // Neither migration may assume only the currently published hash matters.
-  for (const hash of ["historical", "current"]) {
-    for (const connector of connectors) {
+  for (const hash of ["historical", "current", "partial-preparation"]) {
+    for (const connector of hash === "partial-preparation"
+      ? connectors.slice(0, 1)
+      : connectors) {
       await client.query(
         "INSERT INTO connector_catalog_entries VALUES ($1, $2, $3)",
         [hash, connector.slug, JSON.stringify(connector)],
@@ -287,7 +327,7 @@ try {
   await client.query(expansion);
   await client.query(backfill);
   const rows = await db.select().from(connectorCatalogEntries);
-  assert.equal(rows.length, connectors.length * 2);
+  assert.equal(rows.length, connectors.length * 2 + 1);
   for (const row of rows) {
     const expected = connectors.find((connector) => {
       return connector.slug === row.slug;
@@ -334,8 +374,137 @@ try {
     0,
     "new writer already supplies the projection",
   );
+  // Fail closed on an incomplete retained projection; DDL rollback must keep
+  // the old NOT NULL payload contract intact. No automatic data rewrite.
+  await client.query(
+    "UPDATE connector_catalog_entries SET label = NULL WHERE hash = 'historical'",
+  );
+  await client.query("SAVEPOINT preparation");
+  await assert.rejects(client.query(preparation), (error: unknown) => {
+    return error instanceof Error && "code" in error && error.code === "23502";
+  });
+  await client.query("ROLLBACK TO SAVEPOINT preparation");
+  const payloadConstraint = await client.query(
+    `SELECT is_nullable FROM information_schema.columns
+     WHERE table_schema = $1 AND table_name = 'connector_catalog_entries'
+       AND column_name = 'payload'`,
+    [testSchema],
+  );
+  assert.deepEqual(payloadConstraint.rows, [{ is_nullable: "NO" }]);
+  await client.query(
+    `UPDATE connector_catalog_entries SET label = payload ->> 'label'
+     WHERE hash = 'historical'`,
+  );
+  const before = await db.select().from(connectorCatalogEntries);
+  await client.query(preparation);
+  assert.deepEqual(await db.select().from(connectorCatalogEntries), before);
+  await validateConnectorCatalogColumnContract(client);
+  // The immediately outgoing dual writer remains valid while migrations run
+  // before API promotion, even though payload is now optional.
+  await db.insert(connectorCatalogEntries).values({
+    hash: "outgoing-dual-writer",
+    slug: base.slug,
+    payload: base,
+    ...connectorCatalogEntryColumns(base),
+  });
+  await client.query(preparation);
+  assert.deepEqual(await db.select().from(connectorCatalogEntries), [
+    ...before,
+    {
+      hash: "outgoing-dual-writer",
+      slug: base.slug,
+      payload: base,
+      ...connectorCatalogEntryColumns(base),
+    },
+  ]);
+  const retained = await db
+    .select()
+    .from(runtimeEntries)
+    .orderBy(runtimeEntries.hash, runtimeEntries.slug);
+  const pointers = await db.select().from(connectorCatalog);
+  // The actual contraction must roll back along with its transaction.
+  await client.query("SAVEPOINT contraction");
+  await client.query(contraction);
+  await validateConnectorCatalogColumnContract(client);
+  await client.query("ROLLBACK TO SAVEPOINT contraction");
+  await client.query("RELEASE SAVEPOINT contraction");
+  assert.deepEqual(await db.select().from(connectorCatalogEntries), [
+    ...before,
+    {
+      hash: "outgoing-dual-writer",
+      slug: base.slug,
+      payload: base,
+      ...connectorCatalogEntryColumns(base),
+    },
+  ]);
+  await client.query(contraction);
+  const physicalColumns = await client.query(
+    `SELECT column_name FROM information_schema.columns
+     WHERE table_schema = $1 AND table_name = 'connector_catalog_entries'
+       AND column_name = 'payload'`,
+    [testSchema],
+  );
+  assert.deepEqual(physicalColumns.rows, []);
+  // DROP is incompatible with a still-serving dual writer. This rejection
+  // makes the separate preparation-release/drain boundary explicit.
+  await client.query("SAVEPOINT retired_writer");
+  await assert.rejects(
+    db.insert(connectorCatalogEntries).values({
+      hash: "retired-dual-writer",
+      slug: base.slug,
+      payload: base,
+      ...connectorCatalogEntryColumns(base),
+    }),
+    (error: unknown) => {
+      return (
+        error instanceof Error &&
+        "cause" in error &&
+        error.cause instanceof Error &&
+        "code" in error.cause &&
+        error.cause.code === "42703"
+      );
+    },
+  );
+  await client.query("ROLLBACK TO SAVEPOINT retired_writer");
+  await client.query("RELEASE SAVEPOINT retired_writer");
+  assert.deepEqual(
+    await db
+      .select()
+      .from(runtimeEntries)
+      .orderBy(runtimeEntries.hash, runtimeEntries.slug),
+    retained,
+    "contraction preserves every projection and hash/slug receipt across current, historical and partial generations",
+  );
+  assert.deepEqual(await db.select().from(connectorCatalog), pointers);
+  // A retained partial generation can still finish with payload-free inserts;
+  // the already-existing entry is its immutable receipt, not an update target.
+  const partialRetry = await db
+    .insert(runtimeEntries)
+    .values(
+      connectors.map((connector) => {
+        return {
+          hash: "partial-preparation",
+          slug: connector.slug,
+          ...connectorCatalogEntryColumns(connector),
+        };
+      }),
+    )
+    .onConflictDoNothing()
+    .returning();
+  assert.equal(partialRetry.length, connectors.length - 1);
+  assert.deepEqual(await db.select().from(connectorCatalog), pointers);
+  assert.deepEqual(
+    await db
+      .select()
+      .from(runtimeEntries)
+      .orderBy(runtimeEntries.hash, runtimeEntries.slug),
+    [...retained, ...partialRetry].sort((a, b) => {
+      return a.hash.localeCompare(b.hash) || a.slug.localeCompare(b.slug);
+    }),
+  );
+  await validateConnectorCatalogColumnContract(client);
   console.log(
-    `Catalog entry expansion/backfill: ${rows.length} rows across historical/current hashes, ${cases.length} summary boundaries, outgoing/new writer coexistence, idempotent retry`,
+    `Catalog entry expansion/backfill/preparation/contraction: ${rows.length} retained rows, ${cases.length} summary boundaries, transactional DDL rollback, outgoing/new writers, unchanged identity/projections/pointer, post-DROP runtime reads`,
   );
 } finally {
   await client.query("ROLLBACK");

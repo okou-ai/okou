@@ -1,35 +1,33 @@
-import { command, computed } from "ccstate";
+import { command } from "ccstate";
 import { and, desc, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
 import { z } from "zod";
 import { linkLayoutSegment } from "@okouai/api-contracts/contracts/link-layout";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   RUN_UPLOADED_FILE_SOURCES,
   runUploadedFiles,
 } from "@okouai/db/schema/run-uploaded-file";
 
 import { env } from "../../lib/env";
-import { userFeatureSwitchContext } from "./feature-switches.service";
 import { s3ObjectHead, tryListMultipartS3Parts } from "../external/s3";
 import { nowDate } from "../../lib/time";
 import { db$ } from "../external/db";
 import {
   allocateArtifactObject$,
-  resolvedArtifactObject,
+  resolvedArtifactObject$,
   resolveArtifactMultipartUpload$,
 } from "./artifact-storage.service";
 import {
   allocatePrivateArtifact$,
+  privateArtifactCreationEnabled$,
   completePrivateArtifact$,
-  privateArtifactRecord,
+  privateArtifactRecord$,
   privateArtifactUrl,
 } from "./private-artifact-storage.service";
 import { resolveArtifactPreviewUrl$ } from "./artifact-preview-url.service";
 
 export const allocateUploadedArtifact$ = command(
   async (
-    { get, set },
+    { set },
     args: {
       readonly userId: string;
       readonly orgId: string | undefined;
@@ -46,10 +44,12 @@ export const allocateUploadedArtifact$ = command(
     if (args.orgId) {
       const privateArtifacts =
         args.privateArtifacts ??
-        isFeatureEnabled(
-          FeatureSwitchKey.PrivateArtifacts,
-          await get(userFeatureSwitchContext(args.orgId, args.userId)),
-        );
+        (await set(
+          privateArtifactCreationEnabled$,
+          args.orgId,
+          args.userId,
+          signal,
+        ));
       signal.throwIfAborted();
       if (privateArtifacts) {
         return await set(
@@ -78,10 +78,12 @@ interface UploadedArtifactIdentity {
 }
 
 /** Resolve poster metadata without consulting a chat-thread artifact list. */
-export function uploadedArtifactPreviewImageUrl(
-  args: Pick<UploadedArtifactIdentity, "id" | "userId" | "orgId">,
-) {
-  return computed(async (get): Promise<string | null> => {
+export const uploadedArtifactPreviewImageUrl$ = command(
+  async (
+    { get },
+    args: Pick<UploadedArtifactIdentity, "id" | "userId" | "orgId">,
+    signal: AbortSignal,
+  ): Promise<string | null> => {
     // Keep the external-ID lookup on the existing (source, external_id)
     // index; source is a closed writer-owned set.
     const externalIdMatches = and(
@@ -106,13 +108,14 @@ export function uploadedArtifactPreviewImageUrl(
       )
       .orderBy(desc(runUploadedFiles.updatedAt))
       .limit(1);
+    signal.throwIfAborted();
     return row?.previewImageUrl ?? null;
-  });
-}
+  },
+);
 
-export function uploadedArtifactObject(args: UploadedArtifactIdentity) {
-  return computed(async (get) => {
-    const record = await get(privateArtifactRecord(args.id));
+export const uploadedArtifactObject$ = command(
+  async ({ get, set }, args: UploadedArtifactIdentity, signal: AbortSignal) => {
+    const record = await set(privateArtifactRecord$, args.id, signal);
     if (record) {
       // This check never consults the rollout switch. Disabling creation must
       // not remove authorization or try the public bucket for a private ID.
@@ -120,6 +123,7 @@ export function uploadedArtifactObject(args: UploadedArtifactIdentity) {
         return null;
       }
       const head = await get(s3ObjectHead(record.bucket, record.key));
+      signal.throwIfAborted();
       if (head.kind === "missing") {
         return null;
       }
@@ -139,14 +143,7 @@ export function uploadedArtifactObject(args: UploadedArtifactIdentity) {
       };
     }
     // Historical public objects remain readable without rewriting their URLs.
-    const object = await get(
-      resolvedArtifactObject(
-        args.userId,
-        args.id,
-        args.filenameHint,
-        args.variant,
-      ),
-    );
+    const object = await set(resolvedArtifactObject$, args, signal);
     return object
       ? {
           ...object,
@@ -154,13 +151,13 @@ export function uploadedArtifactObject(args: UploadedArtifactIdentity) {
           isPrivate: false,
         }
       : null;
-  });
-}
+  },
+);
 
 /** Finalize verified bytes before an integration publishes or transfers them. */
 export const materializeUploadedArtifact$ = command(
-  async ({ get, set }, args: UploadedArtifactIdentity, signal: AbortSignal) => {
-    const object = await get(uploadedArtifactObject(args));
+  async ({ set }, args: UploadedArtifactIdentity, signal: AbortSignal) => {
+    const object = await set(uploadedArtifactObject$, args, signal);
     signal.throwIfAborted();
     if (object?.isPrivate) {
       await set(completePrivateArtifact$, { id: args.id, ...object }, signal);
@@ -202,7 +199,7 @@ export const resolveUploadedMultipart$ = command(
     },
     signal: AbortSignal,
   ) => {
-    const record = await get(privateArtifactRecord(args.id));
+    const record = await set(privateArtifactRecord$, args.id, signal);
     signal.throwIfAborted();
     if (record) {
       if (

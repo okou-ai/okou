@@ -1,3 +1,4 @@
+import { desktopVersionIsSupported } from "../../lib/desktop-version";
 import {
   DESKTOP_UPDATE_LINE_LEGACY_OKOU,
   DESKTOP_UPDATE_LINE_OKOU,
@@ -8,6 +9,7 @@ import {
 } from "@okouai/api-contracts/contracts/desktop-updates";
 import { command } from "ccstate";
 
+import { desktopMinimumSupportedVersion } from "../../lib/desktop-compatibility";
 import { desktopUpdateUnavailable, notFound } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { setResHeader$ } from "../context/hono";
@@ -65,6 +67,14 @@ const DESKTOP_ZERO_MIGRATION_POLICY = {
   schemaVersion: 1,
   mode: "hard",
 } as const satisfies DesktopZeroMigrationPolicy;
+
+const getDesktopCompatibility$ = command(({ set }) => {
+  set(setResHeader$, "Cache-Control", "no-store");
+  return {
+    status: 200 as const,
+    body: { minimumSupportedVersion: desktopMinimumSupportedVersion() },
+  };
+});
 
 const getDesktopMigrationPolicy$ = command(({ set }) => {
   set(setResHeader$, "Cache-Control", "no-store");
@@ -356,6 +366,7 @@ const getProductDesktopAppcast$ = command(
     // Both generations receive the same channel and blocked-version decisions.
     // ZIP bundles are authenticated by Sparkle against the installed app's
     // Developer ID designated requirement (same trust boundary as Squirrel).
+    const minimum = desktopMinimumSupportedVersion();
     const items = loaded.value.releases
       .map(({ updateTo }) => {
         return `<item>
@@ -365,6 +376,7 @@ const getProductDesktopAppcast$ = command(
       <sparkle:version>${xmlText(updateTo.version)}</sparkle:version>
       <sparkle:shortVersionString>${xmlText(updateTo.version)}</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      ${minimum !== null && desktopVersionIsSupported(updateTo.version, minimum) ? `<sparkle:criticalUpdate sparkle:version="${xmlText(minimum)}"/>` : ""}
       <enclosure url="${xmlText(updateTo.url)}" type="application/octet-stream"/>
     </item>`;
       })
@@ -421,6 +433,10 @@ const getProductDesktopDmgDownload$ = command(
 );
 
 export const desktopUpdateRoutes: readonly RouteEntry[] = [
+  {
+    route: desktopUpdatesContract.compatibility,
+    handler: getDesktopCompatibility$,
+  },
   {
     route: desktopUpdatesContract.productAppcast,
     handler: getProductDesktopAppcast$,

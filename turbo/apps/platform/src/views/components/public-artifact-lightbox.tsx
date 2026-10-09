@@ -1,4 +1,6 @@
+import { ArtifactDiagramLightbox } from "./artifact-diagram-lightbox.tsx";
 import {
+  PreserveScrollAnchor,
   Button,
   Dialog,
   DialogBody,
@@ -38,7 +40,9 @@ export function PublicArtifactLightbox({
   const current = useGet(signals.current$);
   return current ? (
     <PublicArtifactDialog signals={signals} current={current} />
-  ) : null;
+  ) : (
+    <ArtifactDiagramLightbox signals={signals.diagram} />
+  );
 }
 
 function PublicArtifactDialog({
@@ -80,59 +84,75 @@ function PublicArtifactDialog({
         contentClassName="flex flex-col gap-0 overflow-hidden bg-background p-0"
         data-testid="public-artifact-lightbox"
       >
-        <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border/70 pl-4 pr-3">
-          <div className="min-w-0 flex-1">
-            <DialogTitle className="truncate text-sm font-medium">
-              {current.title}
-            </DialogTitle>
-            <div
-              role={downloadState.state === "hasError" ? "alert" : undefined}
-              className="truncate text-xs text-muted-foreground"
-            >
-              {downloadState.state === "hasError"
-                ? t(($) => {
-                    return $.artifacts.toasts.downloadFailed;
-                  })
-                : artifactFallbackSubtitle(current.preview.kind, current.title)}
-            </div>
-          </div>
-          <PublicArtifactActions
-            signals={signals}
-            shareAvailable={current.source === "stored"}
-            supportsFullscreen={artifactSupportsFullscreen(
-              current.preview.kind,
-            )}
-            downloading={downloadState.state === "loading"}
-            downloadAvailable={resource.state === "hasData"}
-            onDownload={() => {
-              detach(download(pageSignal), Reason.DomCallback);
-            }}
-          />
-        </div>
-        <DialogBody
-          scrollable={false}
-          className="overflow-hidden bg-background"
+        <PreserveScrollAnchor
+          layoutKey={fullscreen}
+          anchor={
+            current.preview.kind === "markdown"
+              ? {
+                  viewportSelector: '[data-testid="artifact-dialog-stage"]',
+                  anchorSelector: "h1, h2, h3, h4, h5, h6, p, pre, li, tr",
+                }
+              : undefined
+          }
         >
-          {resource.state === "hasError" ? (
-            <div
-              role="status"
-              className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground"
-            >
-              {t(($) => {
-                return $.artifacts.access.title;
-              })}
+          <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border/70 pl-4 pr-3">
+            <div className="min-w-0 flex-1">
+              <DialogTitle className="truncate text-sm font-medium">
+                {current.title}
+              </DialogTitle>
+              <div
+                role={downloadState.state === "hasError" ? "alert" : undefined}
+                className="truncate text-xs text-muted-foreground"
+              >
+                {downloadState.state === "hasError"
+                  ? t(($) => {
+                      return $.artifacts.toasts.downloadFailed;
+                    })
+                  : artifactFallbackSubtitle(
+                      current.preview.kind,
+                      current.title,
+                    )}
+              </div>
             </div>
-          ) : (
-            <ArtifactPreviewBody
-              artifact={undefined}
-              focusHtmlOnMount={false}
-              fullscreen={fullscreen}
-              imageCanvasSignals={signals.imageCanvas}
-              preview={current.preview}
+            <PublicArtifactActions
+              signals={signals}
+              shareAvailable
+              supportsFullscreen={artifactSupportsFullscreen(
+                current.preview.kind,
+              )}
+              downloading={downloadState.state === "loading"}
+              downloadAvailable={resource.state === "hasData"}
+              onDownload={() => {
+                detach(download(pageSignal), Reason.DomCallback);
+              }}
             />
-          )}
-        </DialogBody>
+          </div>
+          <DialogBody
+            scrollable={false}
+            className="overflow-hidden bg-background"
+          >
+            {resource.state === "hasError" ? (
+              <div
+                role="status"
+                className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground"
+              >
+                {t(($) => {
+                  return $.artifacts.access.title;
+                })}
+              </div>
+            ) : (
+              <ArtifactPreviewBody
+                artifact={undefined}
+                focusHtmlOnMount={false}
+                fullscreen={fullscreen}
+                imageCanvasSignals={signals.imageCanvas}
+                preview={current.preview}
+              />
+            )}
+          </DialogBody>
+        </PreserveScrollAnchor>
       </DialogContent>
+      <ArtifactDiagramLightbox signals={signals.diagram} />
     </Dialog>
   );
 }

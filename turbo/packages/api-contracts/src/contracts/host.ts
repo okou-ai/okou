@@ -274,6 +274,28 @@ const creationRoute = {
 } as const;
 
 export const hostContract = c.router({
+  deliveryAuthorization: {
+    method: "GET",
+    path: "/api/host/delivery/:siteId/:deploymentId",
+    pathParams: z.object({
+      siteId: z.string().uuid().toLowerCase(),
+      deploymentId: z.string().uuid().toLowerCase(),
+    }),
+    query: z.object({
+      alias: hostedSitePublicSlugSchema,
+      publicSlug: hostedSitePublicSlugSchema,
+      publicBrand: z.enum(["vm0", "okou"]),
+      prefix: z.string().startsWith("sites/").max(1024),
+      manifestKey: z.string().startsWith("sites/").max(1024),
+    }),
+    responses: {
+      200: z.object({ allowed: z.boolean() }),
+      400: apiErrorSchema,
+      // Database/invariant failures reach the API's generic error boundary.
+      500: z.object({ error: z.string() }),
+    },
+    summary: "Check the current authority of a public hosted deployment",
+  },
   prepare: creationRoute,
   preparePrivate: {
     ...creationRoute,

@@ -1,15 +1,12 @@
 import { and, eq, lt } from "drizzle-orm";
 import { piMemoryStage1Watermarks } from "@okouai/db/schema/pi-memory-stage1-schedule";
-import type { Tx } from "../../lib/db-types";
 
-export async function advancePiMemoryStage1Watermark(
-  tx: Tx,
+export function piMemoryStage1WatermarkPlan(
   source: typeof piMemoryStage1Watermarks.$inferInsert,
-): Promise<void> {
-  await tx
-    .insert(piMemoryStage1Watermarks)
-    .values(source)
-    .onConflictDoUpdate({
+) {
+  return {
+    values: source,
+    conflict: {
       target: [
         piMemoryStage1Watermarks.memoryStorageId,
         piMemoryStage1Watermarks.chatThreadId,
@@ -23,5 +20,6 @@ export async function advancePiMemoryStage1Watermark(
         eq(piMemoryStage1Watermarks.userId, source.userId),
         lt(piMemoryStage1Watermarks.sourceActivityAt, source.sourceActivityAt),
       ),
-    });
+    },
+  };
 }

@@ -49,11 +49,7 @@ import {
   type PiMemoryPhase2FailureCounts,
   type PiMemoryPhase2ProviderUsage,
 } from "./phase2-memory-types";
-import {
-  PI_MEMORY_PHASE2_BUILT_IN_MAINTENANCE_REASONING,
-  PI_MEMORY_PHASE2_MAINTENANCE_REASONING,
-} from "./memory-background-config";
-import type { PiAgentThinkingLevel } from "./types";
+import { PI_MEMORY_PHASE2_MAINTENANCE_REASONING } from "./memory-background-config";
 import { resolvePiAgentModel } from "./model";
 import {
   createPiModelRuntime,
@@ -416,27 +412,6 @@ function providerResult(
   return { responseId: final.responseId ?? null, usage: Object.freeze(usage) };
 }
 
-type ResolvedPiAgentModel = NonNullable<ReturnType<typeof resolvePiAgentModel>>;
-
-/**
- * Consolidation effort for the model this maintenance run actually resolved.
- *
- * Maintenance is pinned to the source run's own binding, so the sandbox sees
- * the binding only through its resolved model. `null` in the published map
- * means the level is unsupported, and only the built-in binding's DeepSeek
- * model reports that for `medium`; the personal Codex binding's GPT model publishes it
- * and therefore keeps the unchanged effort. A missing key is a provider
- * default, not an unsupported level.
- */
-function maintenanceThinkingLevel(
-  model: ResolvedPiAgentModel,
-): PiAgentThinkingLevel {
-  return model.thinkingLevelMap?.[PI_MEMORY_PHASE2_MAINTENANCE_REASONING] ===
-    null
-    ? PI_MEMORY_PHASE2_BUILT_IN_MAINTENANCE_REASONING
-    : PI_MEMORY_PHASE2_MAINTENANCE_REASONING;
-}
-
 async function createMaintenanceSession(args: {
   readonly input: SnapshotPhase2Input;
   readonly workspace: Phase2PrivateWorkspace;
@@ -504,7 +479,7 @@ async function createMaintenanceSession(args: {
       id: randomUUID(),
     }),
     model,
-    thinkingLevel: maintenanceThinkingLevel(model),
+    thinkingLevel: PI_MEMORY_PHASE2_MAINTENANCE_REASONING,
     tools: [...PI_MEMORY_PHASE2_TOOL_NAMES],
     customTools,
   });

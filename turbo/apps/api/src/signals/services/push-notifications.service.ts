@@ -7,6 +7,7 @@ import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { env, optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
 import type { Db } from "../external/db";
+import { isUserInForeground } from "../external/realtime";
 import { settle } from "../utils";
 
 const log = logger("api:push");
@@ -30,12 +31,17 @@ function notificationUrl(pathOrUrl: string) {
  *
  * Missing VAPID keys are an intentional no-op, matching the legacy web route.
  */
-export async function sendUserPushNotifications(args: {
-  readonly db: Db;
-  readonly userId: string;
-  readonly threadId: string;
-  readonly notification: PushNotification;
-}): Promise<void> {
+export async function sendUserPushNotifications(
+  args: {
+    readonly db: Db;
+    readonly userId: string;
+    readonly orgId: string;
+    readonly threadId: string;
+    readonly notification: PushNotification;
+  },
+  signal: AbortSignal,
+): Promise<void> {
+  signal.throwIfAborted();
   const publicKey = optionalEnv("VAPID_PUBLIC_KEY");
   const privateKey = optionalEnv("VAPID_PRIVATE_KEY");
   if (!publicKey || !privateKey) {
@@ -62,6 +68,11 @@ export async function sendUserPushNotifications(args: {
     .from(pushSubscriptions)
     .where(eq(pushSubscriptions.userId, args.userId));
   if (subscriptions.length === 0) {
+    return;
+  }
+
+  // Presence is scoped to the notification's org, not the device's active org.
+  if (await isUserInForeground(args.userId, args.orgId, signal)) {
     return;
   }
 

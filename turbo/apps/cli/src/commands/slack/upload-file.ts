@@ -28,8 +28,7 @@ import {
 import { isSlackUserId } from "./message/send";
 
 type SlackUploadDestination =
-  | { readonly channel: string }
-  | { readonly user: string };
+  { readonly channel: string } | { readonly user: string };
 
 interface UploadFileOptions {
   readonly file: string;

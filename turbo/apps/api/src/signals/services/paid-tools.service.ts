@@ -1,28 +1,30 @@
 import type { PaidToolId } from "@okouai/api-contracts/contracts/paid-tools";
 import { userDisabledPaidTools } from "@okouai/db/schema/user-disabled-paid-tools";
 import { and, asc, eq } from "drizzle-orm";
+import { command } from "ccstate";
 
-import type { Db, ReadonlyDb } from "../external/db";
+import { db$, type Db } from "../external/db";
 
-export async function readDisabledPaidTools(
-  db: Pick<ReadonlyDb, "select">,
-  orgId: string,
-  userId: string,
-): Promise<string[]> {
-  const rows = await db
-    .select({ toolId: userDisabledPaidTools.toolId })
-    .from(userDisabledPaidTools)
-    .where(
-      and(
-        eq(userDisabledPaidTools.orgId, orgId),
-        eq(userDisabledPaidTools.userId, userId),
-      ),
-    )
-    .orderBy(asc(userDisabledPaidTools.toolId));
-  return rows.map((row) => {
-    return row.toolId;
-  });
-}
+export const readDisabledPaidTools$ = command(
+  async (
+    { get },
+    owner: { readonly orgId: string; readonly userId: string },
+  ): Promise<string[]> => {
+    const rows = await get(db$)
+      .select({ toolId: userDisabledPaidTools.toolId })
+      .from(userDisabledPaidTools)
+      .where(
+        and(
+          eq(userDisabledPaidTools.orgId, owner.orgId),
+          eq(userDisabledPaidTools.userId, owner.userId),
+        ),
+      )
+      .orderBy(asc(userDisabledPaidTools.toolId));
+    return rows.map((row) => {
+      return row.toolId;
+    });
+  },
+);
 
 export async function updateDisabledPaidTool(
   db: Pick<Db, "insert" | "delete">,

@@ -1,3 +1,4 @@
+import { isAutoSelectedModel } from "@okouai/core/auto-run-model";
 import { command, computed, state } from "ccstate";
 import {
   modelCatalogContract,
@@ -6,6 +7,7 @@ import {
 import { piCatalogModel, type PiCatalogModel } from "@okouai/core/pi-execution";
 import { apiClient$ } from "../api-client.ts";
 import { accept } from "../../lib/accept.ts";
+import { i18n } from "../../i18n/index.ts";
 
 type CatalogModelEntry = ModelCatalogResponse["models"][number];
 type CatalogRouteEntry = ModelCatalogResponse["routes"][number];
@@ -82,7 +84,7 @@ function createIdentifierLookup(
     modelsByUpstream.set(route.upstreamModel, models);
   }
   return (identifier) => {
-    if (byModel.has(identifier)) {
+    if (isAutoSelectedModel(identifier) || byModel.has(identifier)) {
       return identifier;
     }
     const candidates = modelsByUpstream.get(identifier);
@@ -164,15 +166,23 @@ export function createModelCatalog(
     models,
     activeModels,
     has(model) {
-      return typeof model === "string" && byModel.has(model);
+      return (
+        isAutoSelectedModel(model) ||
+        (typeof model === "string" && byModel.has(model))
+      );
     },
     isActive(model) {
       return (
-        typeof model === "string" && byModel.get(model)?.replacedBy === null
+        isAutoSelectedModel(model) ||
+        (typeof model === "string" && byModel.get(model)?.replacedBy === null)
       );
     },
     displayName(model) {
-      return byModel.get(model)?.displayName ?? model;
+      return isAutoSelectedModel(model)
+        ? i18n.t(($) => {
+            return $.settings.models.picker.auto;
+          })
+        : (byModel.get(model)?.displayName ?? model);
     },
     modelForIdentifier: createIdentifierLookup(byModel, response.routes),
     sortOrder,
@@ -187,7 +197,9 @@ export function createModelCatalog(
       if (typeof model !== "string") {
         return undefined;
       }
-      return byModel.get(model)?.resolvedModel;
+      return isAutoSelectedModel(model)
+        ? model
+        : byModel.get(model)?.resolvedModel;
     },
     routes,
     efforts(model, query) {

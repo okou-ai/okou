@@ -11,13 +11,13 @@ import { authorization$, setResHeader$ } from "../context/hono";
 import { pathParamsOf, queryOf } from "../context/request";
 import { s3ObjectHead } from "../external/s3";
 import { resolveArtifactPreviewUrl$ } from "../services/artifact-preview-url.service";
-import { privateArtifactRecord } from "../services/private-artifact-storage.service";
+import { privateArtifactRecord$ } from "../services/private-artifact-storage.service";
 import {
   resolveArtifactShare$,
   resolveArtifactTargetShare$,
   resolvePublicArtifactUrl$,
 } from "../services/artifact-shares.service";
-import { artifactReferenceRecord } from "../services/artifact-reference.service";
+import { artifactReferenceRecord$ } from "../services/artifact-reference.service";
 import { resolveSharedThreadArtifactReference$ } from "../services/shared-thread-artifact-reference.service";
 import type { RouteEntry } from "../route-entry";
 
@@ -32,7 +32,7 @@ const resolveFileReference$ = command(
   ) => {
     const { id, ownerKind } = args;
     const auth = get(authContext$);
-    const file = await get(privateArtifactRecord(id));
+    const file = await set(privateArtifactRecord$, id, signal);
     signal.throwIfAborted();
     if (file) {
       if (ownerKind === "html") {
@@ -94,7 +94,7 @@ const resolveReference$ = command(
     let id = parsed.id;
     let targetKind: "file" | "html" | undefined;
     if (id === null) {
-      const record = await get(artifactReferenceRecord(parsed.hash, signal));
+      const record = await set(artifactReferenceRecord$, parsed.hash, signal);
       signal.throwIfAborted();
       if (!record) {
         return notFound("Artifact unavailable");
@@ -158,14 +158,14 @@ const resolve$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 const resolvePublicReference$ = command(
-  async ({ get, set }, reference: string, signal: AbortSignal) => {
+  async ({ set }, reference: string, signal: AbortSignal) => {
     const parsed = parseArtifactReference(`/artifacts/${reference}`);
     if (!parsed) {
       return notFound("Artifact unavailable");
     }
     const record =
       parsed.id === null
-        ? await get(artifactReferenceRecord(parsed.hash, signal))
+        ? await set(artifactReferenceRecord$, parsed.hash, signal)
         : null;
     signal.throwIfAborted();
     if (record?.version === 3) {
@@ -285,7 +285,7 @@ export const artifactReferenceRoutes: readonly RouteEntry[] = [
         const parsed = parseArtifactReference(`/artifacts/${reference}`);
         const record =
           parsed?.id === null
-            ? await get(artifactReferenceRecord(parsed.hash, signal))
+            ? await set(artifactReferenceRecord$, parsed.hash, signal)
             : null;
         signal.throwIfAborted();
         if (record?.version === 3) {
