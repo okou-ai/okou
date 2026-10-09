@@ -42,7 +42,9 @@ export const orgMembersMetadata = pgTable(
       .default(true),
     theme: text("theme").$type<ThemePreference>(),
     colorTheme: text("color_theme").$type<ColorTheme>(),
-    selectedModel: varchar("selected_model", { length: 255 }),
+    selectedModel: varchar("selected_model", { length: 255 })
+      .default("auto")
+      .notNull(),
     /** Sparse defaults keyed by run model. */
     modelSettings: jsonb("model_settings")
       .$type<ModelSettings>()
@@ -87,6 +89,14 @@ export const orgMembersMetadata = pgTable(
   (table) => {
     return [
       primaryKey({ columns: [table.orgId, table.userId] }),
+      check(
+        "org_members_metadata_selected_model_check",
+        sql`char_length(${table.selectedModel}) > 0`,
+      ),
+      check(
+        "org_members_metadata_explicit_model_settings_check",
+        sql`jsonb_typeof(${table.modelSettings}) = 'object' AND NOT jsonb_path_exists(${table.modelSettings}, '$.keyvalue() ? (@.key == "auto" || @.key == "okou-1.0" || @.key == "okou-1.0-pro" || @.key == "okou-1.0-max" || @.key starts with "@preset/")')`,
+      ),
       check(
         "chk_org_members_metadata_service_tier",
         sql`${table.serviceTier} IS NULL OR ${table.serviceTier} = 'priority'`,

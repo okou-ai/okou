@@ -4,14 +4,10 @@ import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-id
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$ } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
 import { publishBuiltinConnectorInvalidationAfterCommit } from "./connector-client-invalidation.service";
 import { updateUserBuiltinConnectors$ } from "./user-connectors.service";
-
-interface AuthorizableAgent {
-  readonly id: string;
-}
 
 type AuthorizeConnectedConnectorResult =
   | { readonly status: "authorized"; readonly agentId: string }
@@ -30,31 +26,6 @@ export function connectorAgentAuthorizationRequested(args: {
     args.authorizeAgent === true ||
     (args.agentId !== null && args.agentId !== undefined)
   );
-}
-
-async function authorizableAgent(
-  db: Pick<Db, "select">,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly agentId: string;
-  },
-): Promise<AuthorizableAgent | null> {
-  const [agent] = await db
-    .select({
-      id: agents.id,
-      name: agents.name,
-    })
-    .from(agents)
-    .where(
-      and(
-        eq(agents.orgId, args.orgId),
-        eq(agents.id, args.agentId),
-        or(eq(agents.visibility, "public"), eq(agents.owner, args.userId)),
-      ),
-    )
-    .limit(1);
-  return agent ?? null;
 }
 
 export const validateConnectorAuthorizationTarget$ = command(
@@ -94,32 +65,9 @@ export const validateConnectorAuthorizationTarget$ = command(
   },
 );
 
-async function resolveConnectorAuthorizationAgent(
-  db: Pick<Db, "select">,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly agentId: string | null;
-  },
-): Promise<AuthorizableAgent | null> {
-  let agentId = args.agentId;
-  if (!agentId) {
-    const [metadata] = await db
-      .select({ defaultAgentId: orgMetadata.defaultAgentId })
-      .from(orgMetadata)
-      .where(eq(orgMetadata.orgId, args.orgId))
-      .limit(1);
-    agentId = metadata?.defaultAgentId ?? null;
-  }
-  if (!agentId) {
-    return null;
-  }
-  return await authorizableAgent(db, { ...args, agentId });
-}
-
 export const authorizeConnectedConnector$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly orgId: string;
       readonly userId: string;
@@ -128,24 +76,51 @@ export const authorizeConnectedConnector$ = command(
     },
     signal: AbortSignal,
   ): Promise<AuthorizeConnectedConnectorResult> => {
-    const writeDb = set(writeDb$);
-    const agent = await resolveConnectorAuthorizationAgent(writeDb, args);
+    const { orgId, userId, agentId: requestedAgentId, connectorSlug } = args;
+    let agentId = requestedAgentId;
+    if (!agentId) {
+      const [metadata] = await get(db$)
+        .select({ defaultAgentId: orgMetadata.defaultAgentId })
+        .from(orgMetadata)
+        .where(eq(orgMetadata.orgId, orgId))
+        .limit(1);
+      signal.throwIfAborted();
+      agentId = metadata?.defaultAgentId ?? null;
+    }
+    if (!agentId) {
+      return { status: "noAgent" };
+    }
+
+    const [agent] = await get(db$)
+      .select({
+        id: agents.id,
+        name: agents.name,
+      })
+      .from(agents)
+      .where(
+        and(
+          eq(agents.orgId, orgId),
+          eq(agents.id, agentId),
+          or(eq(agents.visibility, "public"), eq(agents.owner, userId)),
+        ),
+      )
+      .limit(1);
     signal.throwIfAborted();
     if (!agent) {
-      if (!args.agentId) {
+      if (!requestedAgentId) {
         return { status: "noAgent" };
       }
       return {
         status: "agentNotFound",
-        message: agentNotFoundMessage(args.agentId),
+        message: agentNotFoundMessage(requestedAgentId),
       };
     }
 
     const updated = await set(updateUserBuiltinConnectors$, {
-      orgId: args.orgId,
-      userId: args.userId,
+      orgId,
+      userId,
       agentId: agent.id,
-      enabledConnectorSlugs: [args.connectorSlug],
+      enabledConnectorSlugs: [connectorSlug],
       operation: "add",
     });
     signal.throwIfAborted();
@@ -158,12 +133,12 @@ export const authorizeConnectedConnector$ = command(
 
     await publishBuiltinConnectorInvalidationAfterCommit(
       {
-        userId: args.userId,
-        connectorSlug: args.connectorSlug,
+        userId,
+        connectorSlug,
       },
       signal,
     );
-    await publishUserSignal([args.userId], "composerAgentConnectorsChanged", {
+    await publishUserSignal([userId], "composerAgentConnectorsChanged", {
       agentId: agent.id,
     });
     signal.throwIfAborted();

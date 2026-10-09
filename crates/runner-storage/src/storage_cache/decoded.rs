@@ -12,8 +12,17 @@ use tokio_util::{sync::CancellationToken, task::TaskTracker};
 mod disk;
 
 const CAPACITY: usize = 64 * 1024 * 1024;
-// Source, decoded files, bounded index/path metadata and decoder scratch.
-const FILL_RESERVATION: u32 = 3 * 1024 * 1024;
+// Reader capability is deployed before wider producer admission.
+const MAX_COMPRESSED_BYTES: usize = 2 * 1024 * 1024;
+pub(super) const MAX_ADMITTED_FILES: usize = 32;
+pub(super) const MAX_ADMITTED_STORAGE_BYTES: usize = 1024 * 1024;
+const MAX_ADMITTED_COMPRESSED_BYTES: usize = 1024 * 1024;
+// 2 MiB source + 4 MiB content + 2 MiB bounded metadata/decoder allowance.
+// The semaphore covers optional cache work, not total Runner process RSS.
+const FILL_RESERVATION: u32 = 8 * 1024 * 1024;
+const READ_AHEAD_BYTES: usize = 16 * 1024 * 1024;
+// Preserve the original 128-key/32-file ready-read-ahead envelope for tiny files.
+const READ_AHEAD_FILES: usize = 128 * 32;
 // A bounded lookup window avoids repeatedly pausing archive delivery for misses.
 pub(super) const LOOKUP_BATCH_SIZE: usize = 128;
 // Retain the former 16-key worst-case string budget while batching typical keys.
@@ -23,6 +32,7 @@ pub(super) const REJECTION_BATCH_SIZE: usize = 16;
 #[derive(Debug)]
 pub struct CachedFiles {
     pub files: Vec<StorageFile>,
+    compressed_bytes: usize,
     pub(crate) archive_retirement_candidate: bool,
     _memory: OwnedSemaphorePermit,
 }
@@ -184,14 +194,14 @@ impl DecodedCache {
                 let mut first_memory = Some(memory);
                 let mut result = Vec::with_capacity(keys.len());
                 let mut ready_bytes = 0;
+                let mut ready_files = 0;
                 for key in keys {
                     let Some((name, version)) = key else {
                         result.push(None);
                         continue;
                     };
-                    // Widen miss probes without widening ready-file read-ahead.
-                    // The final read adds at most one storage (1 MiB), keeping
-                    // content below the former 16-key maximum of 16 MiB.
+                    // Keep the existing payload stop. Check remaining file capacity
+                    // only after metadata validation, even when its budget is full.
                     if ready_bytes >= storage_files::MAX_PAYLOAD_BYTES {
                         result.push(None);
                         continue;
@@ -205,11 +215,28 @@ impl DecodedCache {
                         result.push(None);
                         continue;
                     };
-                    let files = disk::read(&inner.home, &name, &version, &inner.cancel)?.flatten();
-                    if let Some(files) = &files {
-                        ready_bytes += files.iter().map(|file| file.content.len()).sum::<usize>();
+                    let files = disk::read_with_source_size(
+                        &inner.home,
+                        &name,
+                        &version,
+                        READ_AHEAD_BYTES - ready_bytes,
+                        READ_AHEAD_FILES - ready_files,
+                        &inner.cancel,
+                    )?
+                    .flatten();
+                    if let Some(entry) = &files {
+                        ready_bytes += entry
+                            .files
+                            .iter()
+                            .map(|file| file.content.len())
+                            .sum::<usize>();
+                        ready_files += entry.files.len();
                     }
-                    result.push(files.map(|files| {
+                    result.push(files.map(|entry| {
+                        let disk::ReadFiles {
+                            files,
+                            compressed_bytes,
+                        } = entry;
                         // Only a scheduling hint, not authority to delete. An
                         // absent archive must not repeatedly consume the bounded
                         // background queue. Errors are handled by retirement,
@@ -220,7 +247,7 @@ impl DecodedCache {
                             .join("archive.tar.gz");
                         let candidate = !matches!(std::fs::symlink_metadata(archive),
                             Err(error) if error.kind() == io::ErrorKind::NotFound);
-                        cached_files(files, memory, candidate)
+                        cached_files(files, memory, candidate, compressed_bytes)
                     }));
                 }
                 Ok(result)
@@ -274,7 +301,7 @@ impl DecodedCache {
                     "storage archive is not a file",
                 ));
             }
-            if metadata.len() == 0 || metadata.len() > storage_files::MAX_STORAGE_BYTES as u64 {
+            if metadata.len() == 0 || metadata.len() > MAX_ADMITTED_COMPRESSED_BYTES as u64 {
                 return Ok(());
             }
             let mut bytes = vec![0; metadata.len() as usize];
@@ -323,9 +350,7 @@ impl DecodedCache {
         version: &str,
         bytes: Bytes,
     ) -> io::Result<Option<Arc<CachedFiles>>> {
-        if name.len() > 4096
-            || version.len() > 4096
-            || bytes.len() > storage_files::MAX_STORAGE_BYTES
+        if name.len() > 4096 || version.len() > 4096 || bytes.len() > MAX_ADMITTED_COMPRESSED_BYTES
         {
             return Ok(None);
         }
@@ -340,7 +365,7 @@ impl DecodedCache {
                 files.as_deref(),
                 &inner.cancel,
             )?;
-            Ok(files.map(|files| cached_files(files, memory, false)))
+            Ok(files.map(|files| cached_files(files, memory, false, bytes.len())))
         })
         .await
         .map(Option::flatten)
@@ -351,6 +376,7 @@ fn cached_files(
     files: Vec<StorageFile>,
     mut memory: OwnedSemaphorePermit,
     archive_retirement_candidate: bool,
+    compressed_bytes: usize,
 ) -> Arc<CachedFiles> {
     let charged = files.capacity() * std::mem::size_of::<StorageFile>()
         + files
@@ -363,9 +389,21 @@ fn cached_files(
     }
     Arc::new(CachedFiles {
         files,
+        compressed_bytes,
         archive_retirement_candidate,
         _memory: memory,
     })
+}
+
+pub(super) fn admitted_for_delivery(files: &CachedFiles) -> bool {
+    files.compressed_bytes <= MAX_ADMITTED_COMPRESSED_BYTES
+        && files.files.len() <= MAX_ADMITTED_FILES
+        && files
+            .files
+            .iter()
+            .map(|file| file.content.len())
+            .sum::<usize>()
+            <= MAX_ADMITTED_STORAGE_BYTES
 }
 
 fn decode(bytes: &[u8], cancel: &CancellationToken) -> io::Result<Option<Vec<StorageFile>>> {
@@ -373,9 +411,8 @@ fn decode(bytes: &[u8], cancel: &CancellationToken) -> io::Result<Option<Vec<Sto
         return Ok(None);
     }
     let decoder = flate2::read::GzDecoder::new(bytes);
-    // Bound even ignored extension/header data, not just admitted file contents.
-    let mut archive =
-        tar::Archive::new(decoder.take((2 * storage_files::MAX_STORAGE_BYTES + 1) as u64));
+    // Retain the producer's stream envelope independently of reader capability.
+    let mut archive = tar::Archive::new(decoder.take((2 * MAX_ADMITTED_STORAGE_BYTES + 1) as u64));
     let mut files = Vec::new();
     let mut expanded = 0usize;
     for entry in archive.entries()?.raw(true) {
@@ -386,7 +423,7 @@ fn decode(bytes: &[u8], cancel: &CancellationToken) -> io::Result<Option<Vec<Sto
             ));
         }
         let mut entry = entry?;
-        if !entry.header().entry_type().is_file() || files.len() >= storage_files::MAX_FILES {
+        if !entry.header().entry_type().is_file() || files.len() >= MAX_ADMITTED_FILES {
             return Ok(None);
         }
         let size = entry.size();
@@ -394,7 +431,7 @@ fn decode(bytes: &[u8], cancel: &CancellationToken) -> io::Result<Option<Vec<Sto
             return Ok(None);
         }
         expanded += size as usize;
-        if expanded > storage_files::MAX_STORAGE_BYTES || expanded > bytes.len().saturating_mul(4) {
+        if expanded > MAX_ADMITTED_STORAGE_BYTES || expanded > bytes.len().saturating_mul(4) {
             return Ok(None);
         }
         let Some(path) = entry.path()?.to_str().map(str::to_owned) else {
@@ -440,6 +477,8 @@ fn decode(bytes: &[u8], cancel: &CancellationToken) -> io::Result<Option<Vec<Sto
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    mod large;
 
     #[tokio::test]
     async fn lookup_skips_unselected_and_oversized_identities_without_io() {
@@ -656,7 +695,7 @@ mod tests {
             .unwrap();
         let mut encoder = builder.into_inner().unwrap();
         encoder
-            .write_all(&vec![0; 2 * storage_files::MAX_STORAGE_BYTES])
+            .write_all(&vec![0; 2 * MAX_ADMITTED_STORAGE_BYTES])
             .unwrap();
         let cache_root = tempfile::tempdir().unwrap();
         let cache = DecodedCache::new(HomePaths::with_root(cache_root.path().to_owned()));

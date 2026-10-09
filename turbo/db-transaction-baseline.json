@@ -512,11 +512,6 @@
       "owner": "applyTeamsAuthorizationScope$"
     },
     {
-      "id": "TX-0110",
-      "file": "turbo/apps/api/src/signals/services/connector-account-lifecycle.service.ts",
-      "owner": "renameConnectorAccount$"
-    },
-    {
       "id": "TX-0111",
       "file": "turbo/apps/api/src/signals/services/connector-account-lifecycle.service.ts",
       "owner": "setDefaultGoogleFormsAccount$"
@@ -530,11 +525,6 @@
       "id": "TX-0113",
       "file": "turbo/apps/api/src/signals/services/connector-catalog-sync.service.ts",
       "owner": "publishCandidate$/result"
-    },
-    {
-      "id": "TX-0114",
-      "file": "turbo/apps/api/src/signals/services/connector-check.service.ts",
-      "owner": "resolveConnectorCheck$"
     },
     {
       "id": "TX-0115",
@@ -1332,11 +1322,6 @@
       "owner": "persistSuccessfulPayment$"
     },
     {
-      "id": "TX-0276",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
-      "owner": "claimInvitationCreation$"
-    },
-    {
       "id": "TX-0277",
       "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
       "owner": "persistInvitation$"
@@ -1360,11 +1345,6 @@
       "id": "TX-0281",
       "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
       "owner": "activateAcceptedPurchase$"
-    },
-    {
-      "id": "TX-0282",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
-      "owner": "markLateAcceptanceForRefund$"
     },
     {
       "id": "TX-0283",

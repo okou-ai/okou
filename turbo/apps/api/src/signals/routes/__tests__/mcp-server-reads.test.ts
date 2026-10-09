@@ -1744,11 +1744,11 @@ describe("MCP ordinary discovery", () => {
     });
   });
 
-  it("discovers Auto as the null default without a member preference", async () => {
+  it("discovers canonical Auto without a member preference", async () => {
     const auth = await fixture();
     const models = await listModels(auth.token());
     expect(models.models).toContainEqual(
-      expect.objectContaining({ id: null, name: "Auto" }),
+      expect.objectContaining({ id: "auto", name: "Auto" }),
     );
     expect(models.defaultModel).toStrictEqual({
       model: null,

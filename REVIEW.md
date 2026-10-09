@@ -18,9 +18,9 @@ marker-comment mode, use the full normal PR comment described below instead.
 3. Read the complete diff and relevant callers, tests, and contracts. Distinguish
    introduced defects from unchanged code and unsupported possibilities.
 4. Fetch practice documents from `main`, recording the practice revision. Start
-   with [the documentation index](docs/docs.md) and read the matching documents
-   below. Read-only documentation changes need their actual links and consumers,
-   not every implementation guide.
+   with [the documentation guide and index](docs/docs.md) and read the matching
+   documents below. Read-only documentation changes need their actual links and
+   consumers, not every implementation guide.
 
 ## Select Practices by Behavior
 
@@ -32,6 +32,7 @@ gh api 'repos/okou-ai/okou/contents/docs/docs.md?ref=<PRACTICE_SHA>' --jq '.cont
 
 | Changed behavior                                                              | Guidance                                                                                                                                                             |
 | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Documentation additions, updates, moves, or removal                           | [Documentation boundary](docs/docs.md#documentation-boundary)                                                                                                        |
 | Production logic                                                              | [Code quality](docs/bad-smell.md) and [testing](docs/testing.md)                                                                                                     |
 | Tests or coverage decisions                                                   | [Testing](docs/testing.md), then the matching surface guide                                                                                                          |
 | Fallbacks, defaults, removed paths, or rollout switches                       | [Fallbacks](docs/fallback.md)                                                                                                                                        |
@@ -57,6 +58,20 @@ Reading an index or skill router does not replace reading the selected reference
 Do not load unrelated references merely because they share a parent directory.
 
 ## Review Gates
+
+### Documentation Scope
+
+Apply the [documentation boundary](docs/docs.md#documentation-boundary) to new
+or expanded content in every changed file under `docs/`, including nested
+implementation, archive, and attachment directories. Require reusable guidance;
+flag feature descriptions, task plans, progress records, rollout/acceptance
+receipts, and one-off evidence that belongs in source or the owning issue/PR
+instead.
+
+For cleanup and consolidation, verify that rules, reusable examples, and shared
+contracts that still apply survive and that links and actual consumers follow
+the new location. Documentation removal alone does not justify retiring runtime
+protections, compatibility obligations, tests, data, or migration history.
 
 ### Correctness, Security, and Coverage
 

@@ -35,6 +35,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "pg";
+import { validateCanonicalModelSelections } from "./test-canonical-model-selections-permanent";
 import { validateAgentRunLaunchSnapshotSchema } from "./test-agent-run-launch-snapshot";
 import { validateAgentRunOfficialWorkflowProvenanceSchema } from "./test-agent-run-official-workflow-provenance";
 import { validateOfficialAutomationResultEmailSchema } from "./test-official-automation-result-email-schema";
@@ -2673,6 +2674,7 @@ async function main(): Promise<void> {
     await validatePermanentOrgPlanEntitlementState(dbUrl1);
     await validatePermanentConnectorCatalogColumns(dbUrl1);
     await validatePermanentModelCatalogConstraints(dbUrl1);
+    await validateCanonicalModelSelections(dbUrl1);
     await validateModelCatalogSeed(dbUrl1);
     await validateXResourceUsageSchema(dbUrl1);
     await validateAgentRunLaunchSnapshotSchema(dbUrl1);
@@ -2702,6 +2704,7 @@ async function main(): Promise<void> {
     await validatePermanentOrgPlanEntitlementState(dbUrl2);
     await validatePermanentConnectorCatalogColumns(dbUrl2);
     await validatePermanentModelCatalogConstraints(dbUrl2);
+    await validateCanonicalModelSelections(dbUrl2);
     await validateXResourceUsageSchema(dbUrl2);
     await validateAgentRunLaunchSnapshotSchema(dbUrl2);
     await validateAgentRunOfficialWorkflowProvenanceSchema(dbUrl2);

@@ -112,6 +112,19 @@ are enforced by the integration ingress tests.
 
 ### Active transition validators
 
+- `scripts/test-canonical-selected-model-history.ts` protects migration
+  `1359_canonical_selected_model_history`: keyset pages, preserved personal
+  selection/effort, optional uncaptured decisions, unconsumed legacy-input
+  rejection, transactional recovery and idempotent transform replay. Runs and
+  inline/hash-backed native references remain unchanged. Keep it until #38114's
+  serving, installed-consumer and retained-history gates close and the migration
+  ships. `test-canonical-model-selections-permanent.ts` covers current defaults,
+  nonempty present selections/annotations, explicit effort keys and conditional
+  executable Built-in capture against both replayed and freshly generated
+  schemas. `scripts/migrations/020-canonical-model-selections/test.ts` covers the
+  independent owner-scoped immutable-object/pointer publication contract. The
+  numbered maintenance tool remains a permanent historical record.
+
 - `scripts/test-pi-memory-phase2-input-revision.ts` executes the production Phase 2
   input-revision SQL before and after a simulated generic-ID column drop. It
   retains the outgoing ORM mapping to prove the preparation boundary and covers

@@ -11984,6 +11984,94 @@ describe("usage pack allocation management", () => {
     ).toMatchObject({ claimedCount: 1, earnedCredits: 100 });
   });
 
+  it("refunds a paid invitation accepted at period end once across webhook replay", async () => {
+    mockNow(new Date("2035-05-15T00:00:00.000Z"));
+    onTestFinished(() => {
+      clearMockNow();
+    });
+    const fixture = await purchaseDeferredReplaySubscription();
+    const email = `late-invitation-${randomUUID()}@example.test`;
+    const invitationId = `inv_${randomUUID()}`;
+    const acceptedUserId = `user_${randomUUID()}`;
+    mockUsagePackChangePreviews(1000, 2000);
+    const client = setupApp({ context, routes: orgInviteRoutes })(
+      orgInviteContract,
+    );
+    const preview = await accept(
+      client.previewPurchase({
+        headers: { authorization: "Bearer clerk-session" },
+        body: { email, role: "member", usagePackUsd: 20 },
+      }),
+      [200],
+    );
+    const purchase: InvitationPurchaseFixture = {
+      fixture,
+      existingMemberUserId: fixture.userId,
+      email,
+      purchaseId: preview.body.purchaseId,
+      paymentIntentId: `pi_${randomUUID()}`,
+    };
+    await payInvitationPurchase(purchase, invitationId);
+    const refundId = `re_${randomUUID()}`;
+    context.mocks.stripe.refunds.create.mockResolvedValue({
+      id: refundId,
+      status: "succeeded",
+    });
+    mockNow(new Date(fixture.billingPeriod.end * 1000));
+    await postClerkInvitationAccepted({
+      purchase,
+      invitationId,
+      userId: acceptedUserId,
+    });
+    await postClerkInvitationAccepted({
+      purchase,
+      invitationId,
+      userId: acceptedUserId,
+    });
+
+    expect(context.mocks.stripe.refunds.create).toHaveBeenCalledOnce();
+    expect(context.mocks.stripe.refunds.create).toHaveBeenCalledWith(
+      {
+        payment_intent: purchase.paymentIntentId,
+        amount: 1000,
+        metadata: expect.objectContaining({
+          purpose: "usage_pack_invitation_purchase",
+          usagePackInvitationPurchaseId: purchase.purchaseId,
+        }),
+      },
+      {
+        idempotencyKey: `usage-pack-invitation:${purchase.purchaseId}:refund:1`,
+      },
+    );
+    expect(context.mocks.stripe.subscriptions.update).not.toHaveBeenCalled();
+    const inactive = await accept(
+      client.confirmPurchase({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { purchaseId: purchase.purchaseId },
+        body: {},
+      }),
+      [409],
+    );
+    expect(inactive.body.error.code).toBe("INVITATION_PURCHASE_INACTIVE");
+    authenticateOrg(
+      { orgId: fixture.orgId, userId: acceptedUserId },
+      "org:member",
+    );
+    const credits = await accept(
+      setupApp({ context, routes: billingUsagePackCreditsRoutes })(
+        billingUsagePackCreditsContract,
+      ).get({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+    expect(credits.body).toStrictEqual({
+      totalCredits: 0,
+      purchasedCredits: 0,
+      bonusCredits: 0,
+      hasUsagePack: false,
+      creditGrants: [],
+    });
+  });
+
   it("activates one paid invitation exactly once after Clerk creates the membership", async () => {
     const purchase = await beginInvitationPurchase(
       createOrgFixture(),

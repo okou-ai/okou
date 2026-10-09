@@ -25,14 +25,14 @@ function list() {
 }
 
 describe("available run models", () => {
-  it("offers Auto as the null selection to a member without subscriptions", async () => {
+  it("offers canonical Auto to a member without subscriptions", async () => {
     const member = identity();
     mocks.clerk.session(member.userId, member.orgId);
     const response = await accept(list(), [200]);
     expect(response.body).not.toHaveProperty("defaultModel");
     expect(response.body.models).toStrictEqual([
       expect.objectContaining({
-        model: null,
+        model: "auto",
         modelLabel: "Auto",
         memberEffective: expect.objectContaining({
           runtimeProviderType: "openrouter-codex",
@@ -72,7 +72,7 @@ describe("available run models", () => {
       other.body.models.map((model) => {
         return model.model;
       }),
-    ).toStrictEqual([null]);
+    ).toStrictEqual(["auto"]);
   });
   it("requires authentication", async () => {
     context.mocks.clerk.authenticateRequest.mockResolvedValue({

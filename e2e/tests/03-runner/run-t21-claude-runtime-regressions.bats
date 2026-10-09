@@ -23,7 +23,7 @@ teardown() {
     run runner_api_curl "/api/run-models"
     assert_success
     run jq -e '
-        .models[0].model == null and
+        .models[0].model == "auto" and
         any(.models[]?;
             .model == "claude-sonnet-5-5" and
             .memberEffective.providerType == "claude-code-oauth-token" and
