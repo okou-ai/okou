@@ -1350,16 +1350,48 @@ mod tests {
         }
     }
 
+    fn one_entry_per_batch_log(sequence: usize) -> serde_json::Value {
+        json!({
+            "sequence": sequence,
+            "body": "x".repeat(NETWORK_LOG_UPLOAD_MAX_BATCH_BYTES / 2),
+        })
+    }
+
     fn one_entry_per_batch_logs(count: usize) -> Vec<serde_json::Value> {
-        let body = "x".repeat(NETWORK_LOG_UPLOAD_MAX_BATCH_BYTES / 2);
-        (0..count)
-            .map(|sequence| {
-                json!({
-                    "sequence": sequence,
-                    "body": &body,
+        (0..count).map(one_entry_per_batch_log).collect()
+    }
+
+    fn one_entry_per_batch_log_content(count: usize) -> String {
+        let mut log = one_entry_per_batch_log(0);
+        let mut content = Vec::new();
+        for sequence in 0..count {
+            *log.get_mut("sequence").unwrap() = json!(sequence);
+            serde_json::to_writer(&mut content, &log).unwrap();
+            content.push(b'\n');
+        }
+        if count == 0 {
+            content.push(b'\n');
+        }
+        String::from_utf8(content).unwrap()
+    }
+
+    #[test]
+    fn repeated_batch_fixture_preserves_every_canonical_line_and_empty_input() {
+        for count in [0, 1, 3, 11] {
+            let body = "x".repeat(NETWORK_LOG_UPLOAD_MAX_BATCH_BYTES / 2);
+            let expected = (0..count)
+                .map(|sequence| {
+                    serde_json::to_string(&json!({"sequence": sequence, "body": &body})).unwrap()
                 })
-            })
-            .collect()
+                .collect::<Vec<_>>()
+                .join("\n")
+                + "\n";
+            assert_eq!(
+                one_entry_per_batch_log_content(count),
+                expected,
+                "{count} complete original entries"
+            );
+        }
     }
 
     fn estimated_batch_bytes(run_id: &RunId, logs: &[serde_json::Value]) -> usize {
@@ -1502,45 +1534,123 @@ mod tests {
         }
     }
 
-    async fn read_http_request(stream: &mut tokio::net::TcpStream) -> TestHttpRequest {
+    async fn read_http_request(
+        stream: &mut (impl tokio::io::AsyncRead + Unpin),
+    ) -> TestHttpRequest {
         let mut request = Vec::new();
         let mut chunk = [0_u8; 8192];
-
-        loop {
+        let header_end = loop {
             let bytes_read = stream.read(&mut chunk).await.unwrap();
             assert!(bytes_read > 0, "connection closed before request completed");
             request.extend_from_slice(&chunk[..bytes_read]);
-
-            let Some(header_end) = request.windows(4).position(|window| window == b"\r\n\r\n")
-            else {
-                continue;
-            };
-            let headers = std::str::from_utf8(&request[..header_end])
-                .unwrap()
-                .to_string();
-            let content_length = headers
-                .lines()
-                .find_map(|line| {
-                    let (name, value) = line.split_once(':')?;
-                    if name.eq_ignore_ascii_case("content-length") {
-                        Some(value.trim().parse::<usize>().unwrap())
-                    } else {
-                        None
-                    }
-                })
-                .expect("request must include content-length");
-            let body_start = header_end + 4;
-            if request.len() >= body_start + content_length {
-                return TestHttpRequest {
-                    headers,
-                    body: request[body_start..body_start + content_length].to_vec(),
-                };
+            if let Some(header_end) = request.windows(4).position(|window| window == b"\r\n\r\n") {
+                break header_end;
             }
+        };
+        let headers = std::str::from_utf8(&request[..header_end])
+            .unwrap()
+            .to_string();
+        let content_length = headers
+            .lines()
+            .find_map(|line| {
+                let (name, value) = line.split_once(':')?;
+                if name.eq_ignore_ascii_case("content-length") {
+                    Some(value.trim().parse::<usize>().unwrap())
+                } else {
+                    None
+                }
+            })
+            .expect("request must include content-length");
+        let body_start = header_end + 4;
+        let body_end = body_start
+            .checked_add(content_length)
+            .expect("request body length overflow");
+        request.truncate(body_end);
+        request.drain(..body_start);
+        if request.len() < content_length {
+            stream
+                .take((content_length - request.len()) as u64)
+                .read_to_end(&mut request)
+                .await
+                .unwrap();
+            assert_eq!(
+                request.len(),
+                content_length,
+                "connection closed before request completed"
+            );
+        }
+        TestHttpRequest {
+            headers,
+            body: request,
         }
     }
 
     async fn read_http_request_body(stream: &mut tokio::net::TcpStream) -> Vec<u8> {
         read_http_request(stream).await.body
+    }
+
+    #[tokio::test]
+    async fn http_fixture_preserves_fragmented_headers_and_complete_bodies() {
+        for body in [Vec::new(), b"head\r\n\r\n\0\xff-tail".repeat(32)] {
+            let headers = format!(
+                "POST /fixture HTTP/1.1\r\nx-client-request-id: fixture-id\r\ncOntent-Length: {}",
+                body.len()
+            );
+            let mut wire = format!("{headers}\r\n\r\n").into_bytes();
+            wire.extend_from_slice(&body);
+            wire.extend_from_slice(b"zz");
+            let (mut reader, mut writer) = tokio::io::duplex(3);
+            let (actual, ()) = tokio::time::timeout(Duration::from_secs(5), async {
+                tokio::join!(read_http_request(&mut reader), async {
+                    writer.write_all(&wire).await.unwrap();
+                })
+            })
+            .await
+            .unwrap();
+            assert_eq!(actual.headers, headers);
+            assert_eq!(actual.header(CLIENT_REQUEST_ID_HEADER), "fixture-id");
+            assert_eq!(actual.body, body);
+        }
+    }
+
+    #[tokio::test]
+    #[should_panic(expected = "connection closed before request completed")]
+    async fn http_fixture_rejects_early_header_close() {
+        let (mut reader, mut writer) = tokio::io::duplex(3);
+        tokio::time::timeout(Duration::from_secs(5), async {
+            tokio::join!(read_http_request(&mut reader), async {
+                writer
+                    .write_all(b"POST /partial HTTP/1.1\r\n")
+                    .await
+                    .unwrap();
+                drop(writer);
+            })
+        })
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    #[should_panic(expected = "connection closed before request completed")]
+    async fn http_fixture_rejects_early_body_close_without_declared_allocation() {
+        let (mut reader, mut writer) = tokio::io::duplex(3);
+        tokio::time::timeout(Duration::from_secs(5), async {
+            tokio::join!(read_http_request(&mut reader), async {
+                writer
+                    .write_all(
+                        format!(
+                            "POST /partial HTTP/1.1\r\nContent-Length: {}\r\n\r\nab",
+                            usize::MAX / 2
+                        )
+                        .as_bytes(),
+                    )
+                    .await
+                    .unwrap();
+                drop(writer);
+            })
+        })
+        .await
+        .unwrap();
     }
 
     #[test]
@@ -1723,10 +1833,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = network_log_file(&dir);
         let run_id = RunId::from(uuid::Uuid::nil());
-        let logs = one_entry_per_batch_logs(NETWORK_LOG_UPLOAD_MAX_BATCHES);
-        tokio::fs::write(&path, network_log_content(&logs))
-            .await
-            .unwrap();
+        let content = one_entry_per_batch_log_content(NETWORK_LOG_UPLOAD_MAX_BATCHES);
+        tokio::fs::write(&path, content).await.unwrap();
 
         let server = MockServer::start_async().await;
         let upload = server
@@ -1842,14 +1950,12 @@ mod tests {
         let path = network_log_file(&dir);
         let run_id = RunId::from(uuid::Uuid::nil());
         let uploaded_count = NETWORK_LOG_UPLOAD_MAX_BATCHES;
-        let logs = one_entry_per_batch_logs(uploaded_count + 2);
-        let content = network_log_content(&logs);
+        let content = one_entry_per_batch_log_content(uploaded_count + 2);
+        let mut dropped_log = one_entry_per_batch_log(uploaded_count);
         let dropped_entry_bytes =
-            estimated_entry_bytes(&serde_json::to_string(&logs[uploaded_count]).unwrap());
-        let remaining_source_bytes = serde_json::to_string(&logs[uploaded_count + 1])
-            .unwrap()
-            .len()
-            + 1;
+            estimated_entry_bytes(&serde_json::to_string(&dropped_log).unwrap());
+        *dropped_log.get_mut("sequence").unwrap() = json!(uploaded_count + 1);
+        let remaining_source_bytes = serde_json::to_string(&dropped_log).unwrap().len() + 1;
         tokio::fs::write(&path, &content).await.unwrap();
 
         let server = MockServer::start_async().await;
