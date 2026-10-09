@@ -504,6 +504,9 @@ def main():
         metadata = json.loads(bounded_read(args.metadata))
         if not isinstance(metadata, dict):
             raise TypeError("metadata must be a JSON object")
+        # Python accepts NaN/Infinity and overflowing float exponents. Reject
+        # them before effects instead of emitting a report other JSON readers reject.
+        json.dumps(metadata, allow_nan=False)
         report = collect(
             args.output,
             command,

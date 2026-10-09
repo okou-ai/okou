@@ -474,6 +474,27 @@ runpy.run_path(sys.argv[0], run_name='__main__')
                 self.assertFalse(marker.exists())
                 self.assertFalse(output.exists())
 
+    def test_nonfinite_metadata_rejected_before_fixture_launch(self):
+        # NaN/Infinity are Python JSON extensions; a huge valid exponent also
+        # overflows its float decoder. None may become a non-JSON report.
+        for index, value in enumerate(
+            ("NaN", "Infinity", "-Infinity", "1e999", "-1e999")
+        ):
+            with self.subTest(value=value):
+                self.metadata.write_text('{"observed_ratio":' + value + "}")
+                output = self.root / f"nonfinite-{index}"
+                marker = self.root / f"launched-{index}"
+                result = subprocess.run(
+                    self.command(output, f"open({str(marker)!r},'w').close()"),
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    check=False,
+                )
+                self.assertEqual(result.returncode, 1, (result.stdout, result.stderr))
+                self.assertFalse(marker.exists())
+                self.assertFalse(output.exists())
+
     def test_invalid_limits_rejected_without_launch(self):
         for limit in ("nan", "inf", "-1", "601"):
             result = subprocess.run(
