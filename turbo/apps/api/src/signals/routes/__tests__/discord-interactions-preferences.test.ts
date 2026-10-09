@@ -617,7 +617,7 @@ describe("Discord account preferences through private controls", () => {
     );
   });
 
-  it("switches the routed server thread to Auto as an empty selection", async () => {
+  it("switches the routed server thread to canonical Auto", async () => {
     const owner = actor();
     mockDiscordMemberships(context, [owner]);
     await configureModelPreferences({ owner });
@@ -654,7 +654,7 @@ describe("Discord account preferences through private controls", () => {
     );
     expect(
       (await chat.readThreadMetadata(owner, thread.id)).selectedModel,
-    ).toBeNull();
+    ).toBe("auto");
     expect(
       preselected(await discord.send(commandPayload(sender, "model"))),
     ).toStrictEqual(["auto"]);
