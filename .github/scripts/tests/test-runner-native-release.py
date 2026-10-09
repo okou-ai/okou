@@ -46,6 +46,33 @@ class ReleaseConsumerGraph(unittest.TestCase):
         self.assertTrue(any(s.get('with', {}).get('if-no-files-found') == 'error'
                             for s in consumer['steps']))
 
+    def test_native_consumers_share_event_source_with_the_actual_runner(self):
+        jobs = workflow_jobs()
+        build_revision = '${{ needs.prepare.outputs.head-sha }}'
+        self.assertEqual(jobs['compile']['env']['RUNNER_BINARY_GIT_REVISION'], build_revision)
+        self.assertEqual(jobs['prepare']['outputs']['producer-head-sha'],
+                         '${{ steps.identity.outputs.producer-head-sha }}')
+        self.assertEqual(jobs['prepare']['outputs']['head-sha'],
+                         '${{ steps.identity.outputs.head-sha }}')
+        identity = next(s for s in jobs['prepare']['steps'] if s.get('id') == 'identity')
+        self.assertEqual(identity['env']['HEAD_SHA'], '${{ github.sha }}')
+        self.assertEqual(identity['env']['PRODUCER_HEAD_SHA'],
+                         '${{ github.event.pull_request.head.sha || github.sha }}')
+        for name in ('native-package', 'native-release-build', 'native-release-package',
+                     'native-supervisor-runtime'):
+            with self.subTest(job=name):
+                checkouts = [s for s in jobs[name]['steps']
+                             if s.get('uses', '').startswith('actions/checkout@')]
+                self.assertEqual(len(checkouts), 1)
+                self.assertEqual(checkouts[0]['with']['ref'], build_revision)
+        digest = next(s for s in jobs['native-package']['steps'] if s.get('id') == 'binary-input')
+        self.assertEqual(digest['env']['RUNNER_BINARY_GIT_REVISION'], build_revision)
+        for name in ('native-release-build', 'native-supervisor-runtime'):
+            self.assertEqual(jobs[name]['env']['SOURCE_SHA'], build_revision)
+        validation = next(s for s in jobs['native-release-package']['steps']
+                          if s.get('name') == 'Validate original release compiler/source/profile/target before execution')
+        self.assertIn('--source-sha "' + build_revision + '"', validation['run'])
+
     def test_release_image_admission_uses_the_canonical_runner_contract(self):
         path = ROOT / '.github/scripts/runner-native-release.py'
         spec = importlib.util.spec_from_file_location('native_release_image', path)
@@ -70,7 +97,7 @@ class ReleaseConsumerGraph(unittest.TestCase):
         step = next(s for s in jobs['prepare']['steps'] if s.get('id') == 'toolchain')
         self.assertEqual(step['shell'], 'bash')
         self.assertEqual(step['if'], "steps.identity.outputs.release-skip != 'true'")
-        self.assertEqual(step['env']['SOURCE_SHA'], '${{ steps.identity.outputs.source-head-sha }}')
+        self.assertEqual(step['env']['SOURCE_SHA'], '${{ steps.identity.outputs.head-sha }}')
         for job, field in (('compile', 'RUNNER_BINARY_ACTUAL_TOOLCHAIN_IMAGE'),
                            ('native-release-build', 'RUNNER_RELEASE_TOOLCHAIN_IMAGE')):
             self.assertEqual(jobs[job]['container']['image'], '${{ needs.prepare.outputs.runner-toolchain-image }}')

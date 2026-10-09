@@ -94,7 +94,10 @@ therefore use the synthetic merge commit, and previews represent main plus the
 PR rather than the bare PR branch. Push and merge-group builds use their captured
 event revision as well. CLI bundling, binary input planning, compilation, image
 preparation, asset publication, and dependency-cache prewarming share this build
-revision; they do not resolve a newer mutable merge ref mid-run.
+revision; they do not resolve a newer mutable merge ref mid-run. Native Kerberos
+package, full-LTO, and optimized-supervisor conformance also use that revision,
+including their selected toolchain recipe, CLI, compiler inputs, and verifiers.
+Their existing helper, source, profile, and package equality checks stay intact.
 
 Actions producer provenance is a separate identity. A pull-request run's API
 `head_sha` is the PR head, not its checkout merge commit. The image workflow keeps

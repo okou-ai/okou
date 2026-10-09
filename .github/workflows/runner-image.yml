@@ -99,14 +99,14 @@ jobs:
           CHECK_PR_OPEN: "true"
         run: .github/scripts/runner-image-context.sh resolve
 
-      # Both compiler jobs use the selected source's canonical image, never
-      # an independently maintained conformance pin or a merge-tree recipe.
+      # Both compiler jobs use the captured event source's canonical recipe,
+      # never an independent conformance pin or an unrelated checkout recipe.
       - name: Resolve selected Runner toolchain
         id: toolchain
         if: steps.identity.outputs.release-skip != 'true'
         shell: bash
         env:
-          SOURCE_SHA: ${{ steps.identity.outputs.source-head-sha }}
+          SOURCE_SHA: ${{ steps.identity.outputs.head-sha }}
         run: |
           set -euo pipefail
           contract_dir=$(mktemp -d "${RUNNER_TEMP:?missing Runner input directory}/runner-toolchain.XXXXXXXX")
@@ -621,7 +621,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.prepare.outputs.source-head-sha }}
+          ref: ${{ needs.prepare.outputs.head-sha }}
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: runner-cli-${{ github.run_id }}
@@ -631,7 +631,7 @@ jobs:
         env:
           GUEST_CLI_PATH: runner-cli-intermediate/package.tgz
           GUEST_CLI_MANIFEST_PATH: runner-cli-intermediate/manifest.json
-          RUNNER_BINARY_GIT_REVISION: ${{ needs.prepare.outputs.source-head-sha }}
+          RUNNER_BINARY_GIT_REVISION: ${{ needs.prepare.outputs.head-sha }}
         run: .github/scripts/runner-binary-build/digest.sh "${{ matrix.target }}"
       # Native Ubuntu workers already provide a native AWS CLI. The shared
       # installer is x86-only and fails on preinstalled hosted-worker installs.
@@ -704,12 +704,12 @@ jobs:
         include: ${{ fromJSON(needs.prepare.outputs.runner-host-groups-matrix) }}
     env:
       TARGET_TRIPLE: ${{ matrix.target }}
-      SOURCE_SHA: ${{ needs.prepare.outputs.source-head-sha }}
+      SOURCE_SHA: ${{ needs.prepare.outputs.head-sha }}
       RUNNER_RELEASE_TOOLCHAIN_IMAGE: ${{ needs.prepare.outputs.runner-toolchain-image }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.prepare.outputs.source-head-sha }}
+          ref: ${{ needs.prepare.outputs.head-sha }}
       - name: Download same-source verified CLI build input
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
@@ -779,7 +779,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.prepare.outputs.source-head-sha }}
+          ref: ${{ needs.prepare.outputs.head-sha }}
       - name: Download this target's actual pre-merge release build
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
@@ -788,7 +788,7 @@ jobs:
       - name: Validate original release compiler/source/profile/target before execution
         run: |
           set -euo pipefail
-          python3 -B .github/scripts/runner-native-release.py validate crates/target/f5-release-input --source-sha "${{ needs.prepare.outputs.source-head-sha }}" --target "${{ matrix.target }}"
+          python3 -B .github/scripts/runner-native-release.py validate crates/target/f5-release-input --source-sha "${{ needs.prepare.outputs.head-sha }}" --target "${{ matrix.target }}"
           chmod 755 crates/target/f5-release-input/runner
       - name: Verify actual full-LTO package and strict native protocol
         run: |
@@ -832,11 +832,11 @@ jobs:
         profile: [ci, release]
         target: [x86_64-unknown-linux-musl, aarch64-unknown-linux-musl]
     env:
-      SOURCE_SHA: ${{ needs.prepare.outputs.source-head-sha }}
+      SOURCE_SHA: ${{ needs.prepare.outputs.head-sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ needs.prepare.outputs.source-head-sha }}
+          ref: ${{ needs.prepare.outputs.head-sha }}
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: native-supervisor-input-${{ matrix.profile }}-${{ matrix.target }}

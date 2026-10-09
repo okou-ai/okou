@@ -237,7 +237,8 @@ jq -e '
   .jobs["native-release-build"].env.RUNNER_RELEASE_TOOLCHAIN_IMAGE == .jobs.compile.container.image and
   (.jobs["native-release-build"] | has("environment") | not) and
   (.jobs["native-release-build"].if | contains("current-runner-image-needed")) and
-  .jobs["native-release-build"].env.SOURCE_SHA == "${{ needs.prepare.outputs.source-head-sha }}" and
+  .jobs["native-release-build"].env.SOURCE_SHA == "${{ needs.prepare.outputs.head-sha }}" and
+  .jobs["native-release-build"].env.SOURCE_SHA == .jobs.compile.env.RUNNER_BINARY_GIT_REVISION and
   .jobs["native-release-build"].env.TARGET_TRIPLE == "${{ matrix.target }}" and
   any(.jobs["native-release-build"].steps[];
     .run == "bash .github/scripts/build-runner-native-release.sh" and
