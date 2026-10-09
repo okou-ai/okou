@@ -368,12 +368,13 @@ test("Choosing a cover consumes the slash token that opened the panel", async ()
 });
 
 function slashMenuButtonNames(): (string | undefined)[] {
-  return queryAllByRoleFast(
-    "button",
-    screen.getByTestId("slash-workflow-menu"),
-  ).map((button) => {
-    return button.textContent?.trim();
-  });
+  return queryAllByRoleFast("button", screen.getByTestId("slash-workflow-menu"))
+    .filter((button) => {
+      return !button.closest('[data-slot="slash-template-detail"]');
+    })
+    .map((button) => {
+      return button.textContent?.trim();
+    });
 }
 
 test("Composer-anchored slash suggestions default to the bottom candidate and navigate visually", async () => {
@@ -465,6 +466,47 @@ test("Composer-anchored keyboard navigation crosses from categories into workflo
   expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
 });
 
+test("Composer-anchored desktop suggestions embed selectable previews inside the menu", async () => {
+  context.mocks.browser.matchMedia((query) => {
+    return query === SIDEBAR_DESKTOP_MEDIA_QUERY;
+  });
+  await openSlashMenu("", true);
+  const menu = screen.getByTestId("slash-workflow-menu");
+  expect(
+    within(menu).getByRole("region", { name: "Presentation" }),
+  ).toBeInTheDocument();
+  expect(flyout()).toBeNull();
+
+  const user = userEvent.setup();
+  await user.keyboard("{ArrowUp}");
+  expect(
+    within(menu).getByRole("region", { name: "Illustration" }),
+  ).toBeInTheDocument();
+  const website = slashButton("Website");
+  fireEvent.mouseOver(website);
+  fireEvent.mouseMove(website);
+  await waitFor(() => {
+    expect(
+      within(menu).getByRole("region", { name: "Website" }),
+    ).toBeInTheDocument();
+  });
+  const [first] = WEBSITE_TEMPLATE_ITEMS;
+  if (!first) {
+    throw new Error("Expected a website template");
+  }
+  const cover = slashButton(first.title);
+  // Use exact boundary events, as in the legacy flyout test above: user-event
+  // omits relatedTarget on mouseout and cannot model this pointer handoff.
+  fireEvent.mouseOut(website, { relatedTarget: cover });
+  fireEvent.mouseOver(cover, { relatedTarget: website });
+  expect(detailPane()).toHaveAttribute("data-category", "website");
+  await user.click(cover);
+  await expectInlineTemplateInComposer(first.title);
+  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+  const editor = await findComposerEditor();
+  expect(editor).toHaveFocus();
+});
+
 test("Composer-anchored slash suggestions hide the template flyout at the mobile breakpoint and retain the picker", async () => {
   const viewport = context.mocks.browser.matchMedia((query) => {
     return query === SIDEBAR_DESKTOP_MEDIA_QUERY;
@@ -503,4 +545,5 @@ test("Disabling composer-anchored suggestions retains the original menu and mobi
   });
   expect(slashButton("Presentation")).toHaveAttribute("data-active", "true");
   expect(detailPane()).toHaveAttribute("data-category", "slides");
+  expect(flyout()).toHaveAccessibleName("Presentation");
 });

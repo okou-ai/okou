@@ -1,5 +1,5 @@
-// The two-pane slash panel. The left column indexes what you can make and the
-// workflows you have; the right pane previews a type independently of selection.
+// The slash panel indexes creation types and workflows. Composer-anchored menus
+// embed desktop previews on the right; the legacy menu uses a separate flyout.
 // It renders inside the slash menu's popover shell from slash-workflow.tsx.
 import type { Ref } from "react";
 import { ChevronRight, Globe, Image, Presentation, Route } from "lucide-react";
@@ -141,9 +141,11 @@ function SlashTemplateCover({
 
 function SlashTemplateDetailPane({
   category,
+  embedded = false,
   onSelectTemplate,
 }: {
   readonly category: SlashTemplateCategory;
+  readonly embedded?: boolean;
   readonly onSelectTemplate: (
     preview: SlashTemplatePreview,
     category: SlashTemplateCategory,
@@ -153,8 +155,14 @@ function SlashTemplateDetailPane({
   const nativeAspect = isSlashTemplateNativeAspectCategory(category);
   return (
     <div
-      // The pane paints its own surface inside the shadowless positioning box.
-      className="h-full w-[320px] overflow-hidden rounded-[12px] border border-[hsl(var(--gray-400))] bg-card shadow-lg"
+      className={cn(
+        "h-full overflow-hidden",
+        embedded
+          ? "w-[320px] max-w-1/2 shrink-0 border-l border-border/60"
+          : "w-[320px] rounded-[12px] border border-[hsl(var(--gray-400))] bg-card shadow-lg",
+      )}
+      role={embedded ? "region" : undefined}
+      aria-label={embedded ? slashTemplateCategoryLabel(category) : undefined}
       data-slot="slash-template-detail"
       data-category={category}
     >
@@ -560,7 +568,10 @@ export function SlashTemplatePanel({
   );
   return (
     <div
-      className="flex h-full w-full flex-col overflow-hidden"
+      className={cn(
+        "flex h-full w-full overflow-hidden",
+        reversed ? "flex-row" : "flex-col",
+      )}
       data-slot="slash-panel"
       onMouseLeave={(event) => {
         // Moving into the flyout is not leaving the menu, even though the two
@@ -571,7 +582,7 @@ export function SlashTemplatePanel({
         onPreview(null);
       }}
     >
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {/*
           Make and Workflows scroll as one list. Scrolling only the workflows
           left a row sliced in half under a pinned section label, and hid that
@@ -585,7 +596,14 @@ export function SlashTemplatePanel({
         </div>
         {!reversed && browseAll}
       </div>
-      {detailCategory !== null && (!reversed || isDesktop) && (
+      {detailCategory !== null && reversed && isDesktop && (
+        <SlashTemplateDetailPane
+          embedded
+          category={detailCategory}
+          onSelectTemplate={onSelectTemplate}
+        />
+      )}
+      {detailCategory !== null && !reversed && (
         <SlashTemplateDetailFlyout
           menuRef={menuRef}
           onClose={onClose}
