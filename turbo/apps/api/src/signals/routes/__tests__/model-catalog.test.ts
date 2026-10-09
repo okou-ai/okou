@@ -505,7 +505,7 @@ describe("public selections of replaced models", () => {
     await flushWaitUntilForTest();
     await cancelChatRun(actor, active.runId);
     const runId = await pickedRunId(actor, active.threadId, clientEventId);
-    expect((await api.readRun(actor, runId)).source.model).toBe("okou-1.0");
+    expect((await api.readRun(actor, runId)).source.model).toBe("auto");
     await cancelChatRun(actor, runId);
   }, 90_000);
 

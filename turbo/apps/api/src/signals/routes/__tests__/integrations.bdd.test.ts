@@ -3144,7 +3144,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
         OPENAI_MODEL: "gpt-6-astra",
       });
 
-      // Auto is offered as its own picker value and stored as no selection.
+      // Auto is offered as its own picker value and stored canonically.
       const autoSelection = await integrations.postSlackInteractive(
         integrations.modelPickerSubmission({
           workspaceId: teamId,
@@ -3164,7 +3164,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       );
       expect(
         (await chat.readThreadMetadata(actor, chatThreadId)).selectedModel,
-      ).toBeNull();
+      ).toBe("auto");
     });
   });
 
@@ -3803,7 +3803,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     expect(continuationRun.result?.agentSessionId).toBe(gptSessionId);
   });
 
-  it("captures the system default for a NULL Slack thread without changing its pin", async () => {
+  it("captures canonical Auto for a Slack thread without changing its pin", async () => {
     const actor = bdd.user();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
@@ -3857,7 +3857,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     await seedBuiltInModelKey(context, SEEDED_SYSTEM_DEFAULT_MODEL);
     expect(
       (await chat.readThreadMetadata(actor, chatThreadId)).selectedModel,
-    ).toBeNull();
+    ).toBe("auto");
 
     await integrations.postSlackEvent(teamId, {
       type: "app_mention",
@@ -3867,15 +3867,14 @@ describe("INT-01: Slack app deep webhook flows", () => {
       thread_ts: threadTs,
       channel: channelId,
     });
-    // An existing Auto (null) thread runs the Auto model, not the member
-    // preference.
+    // An existing Auto thread runs Auto, not the member's personal preference.
     const resolvedRunId = await pollSlackRun(runnerGroup);
     expect((await runs.readRun(actor, resolvedRunId)).source.model).toBe(
-      SEEDED_SYSTEM_DEFAULT_MODEL,
+      "auto",
     );
     expect(
       (await chat.readThreadMetadata(actor, chatThreadId)).selectedModel,
-    ).toBeNull();
+    ).toBe("auto");
 
     const threadEvents = await chat.requestThreadEvents(actor, {}, [200]);
     if (threadEvents.status !== 200) {
