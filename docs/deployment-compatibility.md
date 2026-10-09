@@ -8591,25 +8591,38 @@ these premises, not for arbitrary sets. A smaller count or missing aggregate row
 fails as an invariant violation. Impact, exhaustion and incompatible-owner
 checks use the complete retained records, including their current generations.
 
-A larger count ends an explicitly unwritten attempt; there is at most one fresh
-host-first transaction with the same prepared values. A second expansion
-conflicts. No transaction acquires a new host in reverse order after the
-configuration fence, and no exception/deadlock or ambiguous write is replayed.
-Current revision, management/scope, exhaustion and exact impact checks precede
-business writes. An empty-set preview cannot authorize affecting a newly bound
-member host. Encryption stays outside transactions; identifier-only best-effort
-notices and existing batching/cache windows stay post-commit. Login, target,
+The follow-up in #38278 removes automatic transaction retries from all four
+authority-changing commands. A larger count returns the existing revision
+conflict before any business write; each command makes one attempt. The caller
+may inspect current state, obtain fresh impact where required, and explicitly
+submit a new request. No transaction acquires a new host in reverse order after
+the configuration fence, and no exception/deadlock or ambiguous write is
+replayed. Current revision, management/scope, exhaustion and exact impact checks
+precede business writes.
+
+Each remaining short command-owned transaction preserves a related-write
+invariant: rotation couples credentials and host generations; deletion couples
+protected detachment and config deletion; promotion couples scope/owner and host
+generations; adoption couples other-owner detachment, own-host generations and
+scope/owner. The reference count also requires a fresh READ COMMITTED statement
+snapshot after the exclusive config fence, including after any lock wait. Simply
+collapsing these reads and writes into a single-statement CTE would retain its
+initial statement snapshot, not this post-fence membership check.
+
+An empty-set preview cannot authorize affecting a newly bound member host.
+Encryption stays outside transactions; identifier-only best-effort notices and existing batching/cache windows stay post-commit. Login, target,
 learned trust, atomic generations and explicit protected `needs_rebind` behavior
 are preserved. Counting still scans references and token rotation still advances
 N persisted host generations synchronously; no measured latency/throughput gain
 is established by the structural optimization.
 
 No schema, migration, App/Runner DTO or provider changes are introduced. The
-#37955 host-first writers and #37975 optimized writers can coexist with the same
-authority and generation contracts; no new migration or client cutover is
-required for the optimization. Older pre-#37955 API configuration-first/unlocked
-writers retain the original concurrency risks while serving; code merge or
-green CI does not prove that they have drained.
+#37955 host-first writers, #37975 optimized writers and #38278 single-attempt
+writers can coexist with the same authority and generation contracts. The
+single-attempt policy may return a conflict earlier instead of internally
+retrying, but needs no new migration or client cutover. Older pre-#37955 API
+configuration-first/unlocked writers retain the original concurrency risks while
+serving; code merge or green CI does not prove that they have drained.
 This change does not authorize production drain, deployment or activation.
 Independent SSH-login revision semantics are unchanged. Writer inventory found
 login rotation host-before-login and Clerk cleanup host-before-login-before-config,
