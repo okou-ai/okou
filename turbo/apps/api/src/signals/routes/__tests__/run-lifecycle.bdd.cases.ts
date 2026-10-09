@@ -7595,47 +7595,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           unknownPolicy: "allow",
         });
 
-        if (!actor.orgId) {
-          throw new Error("Expected an organization-scoped MCP actor");
-        }
-        await deleteCustomConnectorCredentialValues(context, {
-          orgId: actor.orgId,
-          userId: actor.userId,
-          customConnectorId: mcp.id,
-        });
-        const [disconnectedResult] = await api.syncConnectorRuntime(run.runId, {
-          targets: [target],
-        });
-        const disconnectedRuntime =
-          availableCustomConnectorRuntime(disconnectedResult);
-        const { body: disconnectedAuthBody } = customConnectorRuntimeAuthBody(
-          disconnectedRuntime,
-          fw.encryptedSecretsBody({}),
-        );
-        const disconnectedAuth = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${claim.sandboxToken}` },
-          disconnectedAuthBody,
-          [424],
-        );
-        if (disconnectedAuth.status !== 424) {
-          throw new Error("Expected disconnected MCP connector credentials");
-        }
-        expect(disconnectedAuth.body.error).toMatchObject({
-          code: "CONNECTOR_NOT_CONFIGURED",
-        });
-
-        const disconnectedRun = await api.createThreadRun(actor, {
-          agentId,
-          prompt: "do not advertise a disconnected MCP connector",
-        });
-        const disconnectedClaim = await api.claimRunnerJob(
-          disconnectedRun.runId,
-        );
-        expect(
-          mcpConnectorPromptSection(disconnectedClaim.appendSystemPrompt ?? ""),
-        ).toBeUndefined();
-        await api.requestCancelRun(actor, disconnectedRun.runId, [200]);
-
         const [mismatchedRoutingResult] = await api.syncConnectorRuntime(
           run.runId,
           {
@@ -7653,9 +7612,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           reason: "runtime-configuration-unavailable",
         });
 
-        await connectors.setCustomConnectorValues(actor, mcp.id, [
-          { key: "secret", kind: "secret", value: "mcp-restored-token" },
-        ]);
         await connectors.updateAgentCustomConnectors(
           actor,
           agentId,
@@ -7668,6 +7624,58 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(
           availableCustomConnectorRuntime(removedGrantResult).baseUrlVars,
         ).toStrictEqual({});
+
+        await connectors.updateAgentCustomConnectors(
+          actor,
+          agentId,
+          [mcp.id],
+          "add",
+        );
+        if (!target.sourceId) {
+          throw new Error("Expected the MCP account selected for this Run");
+        }
+        await connectors.deleteCustomConnectorAccount(
+          actor,
+          mcp.id,
+          target.sourceId,
+        );
+        const [disconnectedResult] = await api.syncConnectorRuntime(run.runId, {
+          targets: [target],
+        });
+        expect(disconnectedResult).toMatchObject({
+          target: { kind: "custom", customConnectorId: mcp.id },
+          state: "absent",
+          reason: "connector-unavailable",
+        });
+        const disconnectedAuth = await fw.requestFirewallAuth(
+          { authorization: `Bearer ${claim.sandboxToken}` },
+          initialAuthBody,
+          [424],
+        );
+        if (disconnectedAuth.status !== 424) {
+          throw new Error("Expected disconnected MCP connector credentials");
+        }
+        expect(disconnectedAuth.body.error).toMatchObject({
+          code: "CONNECTOR_NOT_CONFIGURED",
+        });
+
+        const disconnectedRun = await api.createThreadRun(actor, {
+          agentId,
+          prompt: "identify an authorized MCP connector that needs connection",
+        });
+        const disconnectedClaim = await api.claimRunnerJob(
+          disconnectedRun.runId,
+        );
+        expect(
+          mcpConnectorPromptSection(disconnectedClaim.appendSystemPrompt ?? ""),
+        ).toContain(`- \`${mcp.slug}\``);
+        expect(disconnectedClaim.connectorRuntimeTargets).not.toContainEqual(
+          expect.objectContaining({
+            kind: "custom",
+            customConnectorId: mcp.id,
+          }),
+        );
+        await api.requestCancelRun(actor, disconnectedRun.runId, [200]);
 
         await connectors.deleteCustomConnector(actor, mcp.id);
         const [deletedResult] = await api.syncConnectorRuntime(run.runId, {
@@ -7691,14 +7699,14 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           {},
           NATIVE_RUNNER_ROUTE,
         );
-        const admittedSlugs = Array.from(
+        const connectedSlugs = Array.from(
           { length: MCP_CONNECTOR_PROMPT_INVENTORY_LIMIT + 1 },
           (_, index) => {
             return `_mcp-awareness-${String(index).padStart(2, "0")}`;
           },
         );
-        const admittedConnectorIds: string[] = [];
-        for (const slug of [...admittedSlugs].reverse()) {
+        const connectedConnectorIds: string[] = [];
+        for (const slug of [...connectedSlugs].reverse()) {
           const connector = await connectors.createCustomConnector(
             actor,
             manualMcpRuntimeConnectorBody({
@@ -7710,9 +7718,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           await connectors.setCustomConnectorValues(actor, connector.id, [
             { key: "secret", kind: "secret", value: `credential-${slug}` },
           ]);
-          admittedConnectorIds.push(connector.id);
+          connectedConnectorIds.push(connector.id);
         }
-        const incompleteSlug = "_mcp-awareness-incomplete";
+        const incompleteSlug = "_mcp-awareness-00-unconnected";
         const incomplete = await connectors.createCustomConnector(
           actor,
           manualMcpRuntimeConnectorBody({
@@ -7734,7 +7742,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           { key: "secret", kind: "secret", value: "ungranted-credential" },
         ]);
         await connectors.updateAgentCustomConnectors(actor, agentId, [
-          ...admittedConnectorIds,
+          ...connectedConnectorIds,
           incomplete.id,
         ]);
         return {
@@ -7744,7 +7752,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           actor,
           agentId,
           runnerGroup,
-          admittedSlugs,
+          connectedSlugs,
           incompleteSlug,
           ungrantedSlug,
         };
@@ -7759,9 +7767,14 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         if (!section) {
           throw new Error("Expected MCP awareness");
         }
-        const expectedListedSlugs = [...fixture.admittedSlugs]
-          .sort()
-          .slice(0, MCP_CONNECTOR_PROMPT_INVENTORY_LIMIT);
+        const authorizedSlugs = [
+          ...fixture.connectedSlugs,
+          fixture.incompleteSlug,
+        ].sort();
+        const expectedListedSlugs = authorizedSlugs.slice(
+          0,
+          MCP_CONNECTOR_PROMPT_INVENTORY_LIMIT,
+        );
         expect(
           section.split("\n").filter((line) => {
             return line.startsWith("- `");
@@ -7772,12 +7785,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           }),
         );
         expect(section).not.toContain(
-          fixture.admittedSlugs[MCP_CONNECTOR_PROMPT_INVENTORY_LIMIT],
+          authorizedSlugs[MCP_CONNECTOR_PROMPT_INVENTORY_LIMIT],
         );
         expect(section).toContain(
-          "1 additional admitted MCP connector was omitted from this prompt",
+          "2 additional authorized MCP connectors were omitted from this prompt",
         );
-        expect(section).not.toContain(fixture.incompleteSlug);
+        expect(section).toContain(fixture.incompleteSlug);
         expect(section).not.toContain(fixture.ungrantedSlug);
         expect(section).not.toContain("Remote display");
         expect(section).not.toContain("example.test");
@@ -7785,7 +7798,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         return section;
       }
 
-      it("bounds admitted MCP awareness for an initial Claude run", async () => {
+      it("bounds authorized MCP awareness for an initial Claude run", async () => {
         const fixture = await setupBoundedMcpAwareness();
         const run = await fixture.api.createThreadRun(fixture.actor, {
           agentId: fixture.agentId,

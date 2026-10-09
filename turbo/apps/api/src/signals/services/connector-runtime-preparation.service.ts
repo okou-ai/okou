@@ -1,6 +1,5 @@
 /** Runtime connector capability shared by launch preparation and runtime sync. */
 import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
-import { customConnectorSlugSchema } from "@okouai/api-contracts/contracts/custom-connectors";
 import type { ConnectorRuntimeTargetRegistration } from "@okouai/api-contracts/contracts/runners";
 import {
   type ExecutionFirewallInlineEntry,
@@ -45,7 +44,6 @@ export interface CustomConnectorRuntimeContext {
   readonly customConnectorSourceIdByFirewallName: Readonly<
     Record<string, string>
   >;
-  readonly mcpConnectorSlugs: readonly string[];
   readonly skills: readonly {
     readonly connectorId: string;
     readonly connectorSlug: string;
@@ -450,7 +448,6 @@ export async function buildCustomConnectorRuntimeContext(
   const targets: ConnectorRuntimeTargetRegistration[] = [];
   const customConnectorIdByFirewallName: Record<string, string> = {};
   const customConnectorSourceIdByFirewallName: Record<string, string> = {};
-  const mcpConnectorSlugs: string[] = [];
   const skills: {
     connectorId: string;
     connectorSlug: string;
@@ -480,12 +477,6 @@ export async function buildCustomConnectorRuntimeContext(
       customConnectorSourceIdByFirewallName[built.firewall.name] =
         built.registration.sourceId;
     }
-    if (row.connector.kind === "mcp") {
-      const slug = customConnectorSlugSchema.safeParse(row.connector.slug);
-      if (slug.success) {
-        mcpConnectorSlugs.push(slug.data);
-      }
-    }
     if (built.permissionPolicy) {
       permissionPolicies[built.firewall.name] = built.permissionPolicy;
     }
@@ -501,7 +492,6 @@ export async function buildCustomConnectorRuntimeContext(
     targets,
     customConnectorIdByFirewallName,
     customConnectorSourceIdByFirewallName,
-    mcpConnectorSlugs,
     skills,
   };
 }

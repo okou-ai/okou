@@ -47,6 +47,12 @@ in [API ccstate design](api-ccstate.md#1-factories-take-plain-values).
 - `connectors$`: #37563's joined account/variable/credential statement, source
   snapshots and safely settled credential decryption. `environment$` shares the
   same statement; there is no second variable or selected-secret query.
+- `authorizedConnectors$`: Agent-authorized builtin/custom connector identities,
+  slugs and MCP flags, derived from `connectorSelection$` and the captured
+  `catalog$`. It has no account or credential dependency. Thread's connector
+  prompt consumes this group from the matched execution identity, including
+  authorized connectors without a connected account; runtime account admission
+  and MCP discovery still use the independently selected accounts.
 - `officialCatalog$`: global accepted catalog, shared across identity changes.
   It starts only when selected Official Workflows consume it, avoiding extra
   reads for Agents with no Official mounts.

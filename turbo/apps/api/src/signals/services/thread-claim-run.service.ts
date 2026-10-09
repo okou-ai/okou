@@ -5,6 +5,7 @@ import { createDiscordThreadPrompt } from "./thread-run-prompt/discord";
 import { createFeishuThreadPrompt } from "./thread-run-prompt/feishu";
 import { renderThreadPrompt } from "./thread-run-prompt/render";
 import { createRotatedPrompt } from "./thread-run-prompt/rotated";
+import { createConnectorPrompt } from "./thread-run-prompt/connectors";
 import { createSlackThreadPrompt } from "./thread-run-prompt/slack";
 import { createTeamsThreadPrompt } from "./thread-run-prompt/teams";
 import { createTelegramThreadPrompt } from "./thread-run-prompt/telegram";
@@ -4190,6 +4191,10 @@ export function createThreadClaimRunObjects(
       agentId,
     );
   });
+  const authorizedConnectors$ = computed(async (get) => {
+    return get((await get(executionContext$)).authorizedConnectors$);
+  });
+  const connectorPrompt$ = createConnectorPrompt(authorizedConnectors$);
   const preCreateBootstrapMetadata$ = computed(async (get) => {
     const startedAt = now();
     const selected = await get(executionContext$);
@@ -7137,14 +7142,16 @@ export function createThreadClaimRunObjects(
       if (!(await get(selectionInput$))) {
         return null;
       }
-      const [selected, context, storagePlan] = await Promise.all([
-        get(preCreateRunArgsRunArgs$),
-        get(preparedRunPlan$),
-        get(storagePlan$),
-        // Start session-based execution alongside firewall/body assembly,
-        // rather than only after the completed create arguments are available.
-        get(execution$),
-      ]);
+      const [selected, context, storagePlan, connectorPrompt] =
+        await Promise.all([
+          get(preCreateRunArgsRunArgs$),
+          get(preparedRunPlan$),
+          get(storagePlan$),
+          get(connectorPrompt$),
+          // Start session-based execution alongside firewall/body assembly,
+          // rather than only after the completed create arguments are available.
+          get(execution$),
+        ]);
       if (!selected || isRouteError(selected)) {
         return selected;
       }
@@ -7176,10 +7183,7 @@ export function createThreadClaimRunObjects(
         body: { ...context.body, appendSystemPrompt: finalAppendSystemPrompt },
         framework: context.framework,
         chatThreadId: args.chatThreadId,
-        mcpConnectorSlugs: [
-          ...context.connectorContext.mcpConnectorSlugs,
-          ...context.customConnectorContext.mcpConnectorSlugs,
-        ],
+        connectorPrompt,
         selectedImageModel: context.selectedImageModel,
         cliAvailable: args.includeOkouTokenSecret === true,
       });
@@ -10630,7 +10634,6 @@ function emptyCustomConnectorRuntimeContext(): CustomConnectorRuntimeContext {
     targets: [],
     customConnectorIdByFirewallName: {},
     customConnectorSourceIdByFirewallName: {},
-    mcpConnectorSlugs: [],
     skills: [],
   };
 }
@@ -13557,58 +13560,17 @@ const AUTO_MEMORY_MISSING_ROOT_POLICY: ArtifactMissingRootPolicy =
 const CODEX_WEB_IMAGE_GENERATION_UPLOAD_PROMPT =
   "If you use the built-in image generation tool and it saves generated output image file(s) to local paths, upload each output file you intend to show with `okou web upload-file -f <path>` before telling the web chat user the image is available. Quote the path when needed. Do not provide only sandbox-local paths, because users cannot open local files.";
 
-const MCP_CONNECTOR_PROMPT_INVENTORY_LIMIT = 20;
-
-function buildMcpConnectorPrompt(
-  connectorSlugs: readonly string[],
-): string | undefined {
-  if (connectorSlugs.length === 0) {
-    return undefined;
-  }
-  const sortedSlugs = [...connectorSlugs].sort();
-  const listedSlugs = sortedSlugs.slice(
-    0,
-    MCP_CONNECTOR_PROMPT_INVENTORY_LIMIT,
-  );
-  const omittedCount = sortedSlugs.length - listedSlugs.length;
-  const inventory = listedSlugs.map((slug) => {
-    return `- \`${slug}\``;
-  });
-  if (omittedCount > 0) {
-    inventory.push(
-      `- ${omittedCount} additional admitted MCP connector${omittedCount === 1 ? " was" : "s were"} omitted from this prompt`,
-    );
-  }
-
-  return [
-    "# MCP Connectors",
-    "",
-    "The following MCP connectors were admitted when this Run started:",
-    ...inventory,
-    "",
-    "Use the Okou CLI to discover and invoke their tools:",
-    "1. Run `okou mcp list --json` to check current connector metadata and availability.",
-    "2. Before choosing a tool, run `okou mcp list-tools <connector-slug> --json`.",
-    "3. Invoke the exact returned tool name with `okou mcp call <connector-slug> <tool-name> --input '<json>' --json`, providing JSON that matches its input schema.",
-    "",
-    "Current connector authorization or configuration may differ from this Run-start snapshot. Runner enforcement is authoritative; if discovery or invocation reports that a connector is unavailable, do not bypass it and start a new Run after authorization is updated.",
-  ].join("\n");
-}
-
 function withFinalRunAppendSystemPrompt(args: {
   readonly body: CreateRunBody;
   readonly framework: SupportedFramework;
   readonly chatThreadId: string | undefined;
-  readonly mcpConnectorSlugs: readonly string[];
+  readonly connectorPrompt: string;
   readonly selectedImageModel: ImageModel;
   readonly cliAvailable: boolean;
 }): CreateRunBody {
   const appendedParts: string[] = [];
-  if (args.cliAvailable) {
-    const mcpConnectorPrompt = buildMcpConnectorPrompt(args.mcpConnectorSlugs);
-    if (mcpConnectorPrompt) {
-      appendedParts.push(mcpConnectorPrompt);
-    }
+  if (args.cliAvailable && args.connectorPrompt) {
+    appendedParts.push(args.connectorPrompt);
   }
   if (
     args.framework === "codex" &&
