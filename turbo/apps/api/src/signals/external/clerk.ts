@@ -180,10 +180,7 @@ export interface ClerkOrganizationInvitation {
 }
 
 export type ClerkOrganizationInvitationStatus =
-  | "pending"
-  | "accepted"
-  | "revoked"
-  | "expired";
+  "pending" | "accepted" | "revoked" | "expired";
 
 export interface ClerkUsersApi {
   getUser(
@@ -296,7 +293,20 @@ export interface ClerkMachineToMachineApi {
   }): Promise<{ readonly token?: string }>;
 }
 
+export interface ClerkSessionsApi {
+  getSession(
+    sessionId: string,
+    context?: ClerkReadContext,
+    signal?: AbortSignal,
+  ): Promise<{
+    readonly id: string;
+    readonly userId: string;
+    readonly status: string;
+  }>;
+}
+
 export interface ClerkClient {
+  readonly sessions: ClerkSessionsApi;
   readonly users: ClerkUsersApi;
   readonly organizations: ClerkOrganizationsApi;
   readonly signInTokens: ClerkSignInTokensApi;
@@ -325,8 +335,7 @@ const CLERK_READ_PROVIDER_UNAVAILABLE_DELAY_MS = 1000;
 export interface ClerkReadUnavailable {
   readonly providerStatus: number | null;
   readonly failureClass:
-    | "transient_read_exhausted"
-    | "transport_read_exhausted";
+    "transient_read_exhausted" | "transport_read_exhausted";
 }
 
 class ClerkReadUnavailableError extends Error implements ClerkReadUnavailable {
@@ -389,8 +398,7 @@ export function isClerkResourceNotFound(error: unknown): boolean {
 }
 
 export type ClerkOrganizationInvitationConflict =
-  | "already_member"
-  | "already_invited";
+  "already_member" | "already_invited";
 
 /**
  * Clerk rejects an invitation when the address is already a member or still
@@ -667,6 +675,17 @@ function clerkRead<T>(
 const clerkClient = singleton((): ClerkClient => {
   const sdk = clerkSdk();
   return {
+    sessions: {
+      getSession: (sessionId, context, signal) => {
+        return clerkRead(
+          () => {
+            return sdk.sessions.getSession(sessionId);
+          },
+          context,
+          signal,
+        );
+      },
+    },
     users: {
       getUser: (userId, context, signal) => {
         return clerkRead(

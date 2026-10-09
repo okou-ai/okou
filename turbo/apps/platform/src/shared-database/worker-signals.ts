@@ -25,6 +25,7 @@ import {
   setAblyLoop$,
   setAblyPayloadLoop$,
   setupRealtime$,
+  setForegroundPresence$,
 } from "../signals/realtime.ts";
 import {
   rootSignal$,
@@ -32,7 +33,7 @@ import {
   setRootSignal$,
 } from "../signals/root-signal.ts";
 import { logger } from "../signals/log.ts";
-import { detach, Reason, settle } from "../signals/utils.ts";
+import { detach, Reason, settle, setLoop } from "../signals/utils.ts";
 import { throttleCommand } from "../signals/command-scheduling.ts";
 import {
   chatThreadIndicators$,
@@ -52,6 +53,8 @@ import type { SharedDatabaseClientMessage } from "./protocol.ts";
 import {
   broadcastSharedDatabaseWorkerMessage$,
   forwardChatThreadReadCursorUpdated$,
+  hasVisibleTab$,
+  waitForVisibleTabChange$,
   reloadComputedForConnections$,
   reportWorkerUnavailableForConnections$,
   requireConnectionSignal$,
@@ -389,6 +392,26 @@ const reloadWorkerQueueDataFromRealtime$ = command(
   },
 );
 
+const setupWorkerForegroundPresence$ = command(
+  ({ get, set }, signal: AbortSignal): void => {
+    let entered = false;
+    setLoop(
+      async () => {
+        const visible = get(hasVisibleTab$);
+        if (visible !== entered) {
+          await set(setForegroundPresence$, visible, signal);
+          entered = visible;
+        }
+        await set(waitForVisibleTabChange$, visible, signal);
+        return false;
+      },
+      0,
+      signal,
+      { retryTransientErrors: false },
+    );
+  },
+);
+
 const runSharedDatabaseWorkerDaemons$ = command(
   async ({ set }, signal: AbortSignal): Promise<void> => {
     const setup = await settle(set(setupRealtime$, signal), signal);
@@ -396,6 +419,7 @@ const runSharedDatabaseWorkerDaemons$ = command(
       L.warn("shared database realtime setup failed", setup.error);
       return;
     }
+    set(setupWorkerForegroundPresence$, signal);
     const onError = (error: unknown) => {
       L.warn("shared database realtime subscriptions failed", error);
     };

@@ -1,19 +1,7 @@
 import { randomUUID } from "node:crypto";
 
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
 import { HttpResponse, http } from "msw";
-import type {
-  TestComputerUseStateGetResponse,
-  TestComputerUseStatePostResponse,
-} from "@okouai/api-contracts/contracts/test-computer-use-state";
-import {
-  COMPUTER_USE_FILESYSTEM_PLUGIN,
-  COMPUTER_USE_PLUGIN_CALL_KIND,
-  computerUseMcpServerCapability,
-  computerUsePluginCapability,
-  computerUsePluginToolCapability,
-} from "@okouai/api-contracts/contracts/computer-use-plugins";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createAppWithRoutes } from "../../../app-factory-core";
@@ -24,14 +12,12 @@ import {
   now,
   withMockNowForTest,
 } from "../../../lib/time";
-import { generateSandboxToken } from "../../auth/tokens";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { teamsConnectRoutes } from "../teams-connect";
 import { computerUseRoutes } from "../computer-use";
-import { testComputerUseStateRoutes } from "../test-computer-use-state";
 import {
   createBddApi,
   expectApiError,
@@ -56,8 +42,6 @@ import {
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { readRunLaunchSnapshotFixture } from "./helpers/runtime-state";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 
 /*
@@ -66,16 +50,11 @@ import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
  *   their last heartbeat/claim. The offline/ambiguous constructions below
  *   move mocked time forward (+91s/+120s) and rely on host heartbeat/claim
  *   calls refreshing lastSeenAt (#15750) to bring a stale host back online.
- * - The screenshot retention chain builds >30-day-old rows by running the
- *   full command flow under mockNow(now - 40d), then clears the mock before
- *   invoking fixture-scoped cleanup so the retention cutoff is computed at
- *   real time.
  */
 
 const context = testContext();
 const bdd = createBddApi(context);
 const api = createComputerUseBddApi(context);
-const COMPUTER_USE_STATE_ROUTE = "/api/test/computer-use-state";
 
 afterEach(() => {
   clearMockNow();
@@ -86,99 +65,6 @@ function requireOrg(actor: ApiTestUser): string {
     throw new Error("Expected test actor to have an org");
   }
   return actor.orgId;
-}
-
-async function enableComputerUseDesktopPlugins(
-  actor: ApiTestUser,
-): Promise<void> {
-  await updateFeatureSwitchesForUser(
-    context,
-    {
-      userId: actor.userId,
-      orgId: requireOrg(actor),
-      orgRole: actor.orgRole,
-    },
-    {
-      [FeatureSwitchKey.ComputerUseDesktopPlugins]: true,
-    },
-  );
-}
-
-function filesystemToolCapabilities(tool: "read_text_file"): readonly string[] {
-  return [
-    COMPUTER_USE_PLUGIN_CALL_KIND,
-    computerUsePluginCapability(COMPUTER_USE_FILESYSTEM_PLUGIN),
-    computerUsePluginToolCapability(COMPUTER_USE_FILESYSTEM_PLUGIN, tool),
-  ];
-}
-
-interface ComputerUseRunFixture {
-  readonly composeId: string;
-  readonly runId: string;
-  readonly sessionId: string;
-  readonly threadId: string | null;
-}
-
-function requestComputerUseState(
-  path: string,
-  init?: RequestInit,
-): Promise<Response> {
-  const app = createAppWithRoutes({
-    signal: context.signal,
-    routes: testComputerUseStateRoutes,
-  });
-  return Promise.resolve(app.request(path, init));
-}
-
-async function readJson<T>(response: Response): Promise<T> {
-  return (await response.json()) as T;
-}
-
-async function deleteComputerUseRunFixture(
-  fixture: ComputerUseRunFixture,
-): Promise<void> {
-  await requestComputerUseState(
-    `${COMPUTER_USE_STATE_ROUTE}?run_id=${encodeURIComponent(fixture.runId)}`,
-    { method: "DELETE" },
-  );
-}
-
-const trackComputerUseRun = createFixtureTracker(deleteComputerUseRunFixture);
-
-async function seedAgentRun(args: {
-  readonly actor: ApiTestUser;
-  readonly triggerSource: "web" | "slack" | "teams";
-  readonly canonicalThread?: boolean;
-}): Promise<ComputerUseRunFixture> {
-  const response = await requestComputerUseState(COMPUTER_USE_STATE_ROUTE, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      user_id: args.actor.userId,
-      org_id: requireOrg(args.actor),
-      trigger_source: args.triggerSource,
-      canonical_thread: args.canonicalThread,
-    }),
-  });
-  expect(response.status).toBe(200);
-  const body = await readJson<TestComputerUseStatePostResponse>(response);
-  const fixture = {
-    composeId: body.compose_id,
-    runId: body.run_id,
-    sessionId: body.session_id,
-    threadId: body.thread_id,
-  };
-  return await trackComputerUseRun(Promise.resolve(fixture));
-}
-
-async function readComputerUseRunState(
-  runId: string,
-): Promise<TestComputerUseStateGetResponse> {
-  const response = await requestComputerUseState(
-    `${COMPUTER_USE_STATE_ROUTE}?run_id=${encodeURIComponent(runId)}`,
-  );
-  expect(response.status).toBe(200);
-  return await readJson<TestComputerUseStateGetResponse>(response);
 }
 
 async function claimCanonicalIntegrationRun(args: {
@@ -305,37 +191,10 @@ describe("FILE-03 desktop computer-use runtime", () => {
     mockEnv("APP_URL", "https://app.okou.ai");
     const orgId = `org_${randomUUID()}`;
     const actor = bdd.user({ orgId });
-    const run = await seedAgentRun({ actor, triggerSource: "web" });
-    await expect(
-      readRunLaunchSnapshotFixture(context, run.runId),
-    ).resolves.toStrictEqual({
-      exists: true,
-      launch_snapshot: null,
-    });
-    if (!run.threadId) {
-      throw new Error("Expected web run fixture to create a chat thread");
-    }
-
+    const { chat, run, created, requestToken } =
+      await createAuthorizationScenario(actor);
     const host = await api.startComputerUseHost(actor, {
       hostName: "Studio Mac",
-    });
-    mockClerkMembership(context, actor, "org:admin");
-    const legacyToken = generateSandboxToken(actor.userId, run.runId, orgId);
-    const legacyCreated = await api.createComputerUseAuthorizationRequest({
-      bearer: legacyToken,
-    });
-    expect(new URL(legacyCreated.authorizationUrl).origin).toBe(
-      "https://app.okou.ai",
-    );
-    const token = computerUseToken({
-      userId: actor.userId,
-      orgId,
-      runId: run.runId,
-      capabilities: ["connector:read"],
-    }).token;
-
-    const created = await api.createComputerUseAuthorizationRequest({
-      bearer: token,
     });
     expect(created).toMatchObject({
       source: "chat",
@@ -345,7 +204,6 @@ describe("FILE-03 desktop computer-use runtime", () => {
       "https://app.okou.ai",
     );
 
-    const requestToken = requestTokenFromUrl(created.authorizationUrl);
     const readable = await api.readComputerUseAuthorizationRequest(
       actor,
       requestToken,
@@ -368,10 +226,9 @@ describe("FILE-03 desktop computer-use runtime", () => {
       computerUseHostId: host.hostId,
     });
 
-    await expect(readComputerUseRunState(run.runId)).resolves.toStrictEqual({
-      source: "web",
-      computer_use_host_id: host.hostId,
-    });
+    await expect(
+      chat.readThreadMetadata(actor, run.threadId),
+    ).resolves.toMatchObject({ computerUseHostId: host.hostId });
 
     const completed = await api.readComputerUseAuthorizationRequest(
       actor,
@@ -1160,17 +1017,11 @@ describe("FILE-03 desktop computer-use runtime", () => {
     const actor = bdd.user();
     await api.startComputerUseHost(actor, {
       hostName: "Other Desktop",
-      supportedCapabilities: [
-        "plugin.call",
-        computerUseMcpServerCapability("other"),
-      ],
+      supportedCapabilities: ["apps.list"],
     });
     const host = await api.startComputerUseHost(actor, {
       hostName: "Apple Notes Desktop",
-      supportedCapabilities: [
-        "plugin.call",
-        computerUseMcpServerCapability("apple-notes"),
-      ],
+      supportedCapabilities: ["app.state"],
     });
     mockClerkMembership(context, actor, "org:admin");
 
@@ -1185,10 +1036,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
     expect(listed.hosts[0]).toMatchObject({
       id: host.hostId,
       hostName: "Apple Notes Desktop",
-      supportedCapabilities: [
-        "plugin.call",
-        computerUseMcpServerCapability("apple-notes"),
-      ],
+      supportedCapabilities: ["app.state"],
     });
 
     const unbound = computerUseToken({
@@ -1565,44 +1413,35 @@ describe("FILE-03 desktop computer-use runtime", () => {
     );
   });
 
-  it("withdraws native create and claim admission with non-empty plugin-only capabilities", async () => {
+  it("withdraws native create and claim admission when host capabilities narrow", async () => {
     const actor = bdd.user();
-    await enableComputerUseDesktopPlugins(actor);
-    const pluginCapabilities = filesystemToolCapabilities("read_text_file");
     const host = await api.startComputerUseHost(actor, {
-      supportedCapabilities: ["apps.list", ...pluginCapabilities],
+      supportedCapabilities: ["apps.list", "app.state"],
     });
     await api.createComputerUseReadCommand(actor, { kind: "apps.list" });
-    const withdrawn = await api.claimNextComputerUseCommand(
-      host.hostToken,
-      pluginCapabilities,
-    );
+    const withdrawn = await api.claimNextComputerUseCommand(host.hostToken, [
+      "app.state",
+    ]);
     expect(withdrawn.status).toBe("idle");
     await api.heartbeatComputerUseHost(host.hostToken, {
-      supportedCapabilities: pluginCapabilities,
-      permissions: { accessibility: false, screenRecording: false },
+      supportedCapabilities: ["app.state"],
+      permissions: { accessibility: true, screenRecording: true },
     });
-    const native = await api.requestCreateComputerUseReadCommand(
+    const unsupported = await api.requestCreateComputerUseReadCommand(
       actor,
       { kind: "apps.list" },
       [409],
     );
-    expectApiError(native.body);
-    const plugin = await api.createComputerUsePluginCommand(actor, {
-      plugin: "filesystem",
-      tool: "read_text_file",
-      arguments: { path: "/tmp/notes.txt" },
+    expectApiError(unsupported.body);
+    const created = await api.createComputerUseReadCommand(actor, {
+      kind: "app.state",
+      app: "Safari",
     });
-    // Empty claim updates retain the last non-empty capability set. They must
-    // not restore native support after a plugin-only withdrawal.
+    // Empty claims retain the last non-empty capability set.
     const claimed = await api.claimNextComputerUseCommand(host.hostToken, []);
     expect(claimed).toMatchObject({
       status: "command",
-      command: {
-        id: plugin.commandId,
-        kind: "plugin.call",
-        timeoutMs: 60_000,
-      },
+      command: { id: created.commandId, kind: "app.state", timeoutMs: 60_000 },
     });
   });
 
@@ -1625,245 +1464,6 @@ describe("FILE-03 desktop computer-use runtime", () => {
         claimedAt: expect.any(String),
       },
     });
-  });
-
-  it("gates plugin commands by feature switch and routes them by tool capability", async () => {
-    const actor = bdd.user();
-
-    const disabled = await api.requestCreateComputerUsePluginCommand(
-      actor,
-      {
-        plugin: "filesystem",
-        tool: "read_text_file",
-        arguments: { path: "/tmp/notes.txt" },
-      },
-      [403],
-    );
-    expectApiError(disabled.body);
-    expect(disabled.body.error.message).toBe(
-      "Computer Use Desktop plugins are disabled",
-    );
-
-    await enableComputerUseDesktopPlugins(actor);
-    const unsupportedHost = await api.startComputerUseHost(actor);
-
-    const unsupported = await api.requestCreateComputerUsePluginCommand(
-      actor,
-      {
-        plugin: "filesystem",
-        tool: "read_text_file",
-        arguments: { path: "/tmp/notes.txt" },
-      },
-      [409],
-    );
-    expectApiError(unsupported.body);
-    expect(unsupported.body.error.message).toBe(
-      "No online computer-use host supports this plugin tool",
-    );
-
-    const pluginCapabilities = filesystemToolCapabilities("read_text_file");
-    const pluginHost = await api.startComputerUseHost(actor, {
-      supportedCapabilities: pluginCapabilities,
-    });
-    const created = await api.createComputerUsePluginCommand(actor, {
-      plugin: "filesystem",
-      tool: "read_text_file",
-      arguments: { path: "/tmp/notes.txt" },
-    });
-
-    const unsupportedClaim = await api.claimNextComputerUseCommand(
-      unsupportedHost.hostToken,
-    );
-    expect(unsupportedClaim.status).toBe("idle");
-
-    const claimed = await api.claimNextComputerUseCommand(
-      pluginHost.hostToken,
-      pluginCapabilities,
-    );
-    expect(claimed.status).toBe("command");
-    if (claimed.status !== "command") {
-      throw new Error("Expected plugin host to claim the plugin command");
-    }
-    expect(claimed.command).toMatchObject({
-      id: created.commandId,
-      hostId: pluginHost.hostId,
-      kind: "plugin.call",
-      payload: {
-        plugin: "filesystem",
-        tool: "read_text_file",
-        arguments: { path: "/tmp/notes.txt" },
-      },
-    });
-  });
-
-  it("routes mcp plugin commands by server capability and passes arguments through", async () => {
-    const actor = bdd.user();
-    await enableComputerUseDesktopPlugins(actor);
-
-    const invalidName = await api.requestCreateComputerUsePluginCommand(
-      actor,
-      {
-        plugin: "mcp",
-        server: "Bad Name!",
-        tool: "create_note",
-        arguments: {},
-      },
-      [400],
-    );
-    expectApiError(invalidName.body);
-
-    const notesHost = await api.startComputerUseHost(actor, {
-      supportedCapabilities: ["plugin.call", "plugin.mcp.notes"],
-    });
-
-    const unsupported = await api.requestCreateComputerUsePluginCommand(
-      actor,
-      {
-        plugin: "mcp",
-        server: "figma",
-        tool: "get_selection",
-        arguments: {},
-      },
-      [409],
-    );
-    expectApiError(unsupported.body);
-    expect(unsupported.body.error.message).toBe(
-      "No online computer-use host supports this plugin tool",
-    );
-
-    const created = await api.createComputerUsePluginCommand(actor, {
-      plugin: "mcp",
-      server: "notes",
-      tool: "create_note",
-      arguments: { title: "hello", nested: { tags: ["a", "b"] } },
-    });
-
-    const claimed = await api.claimNextComputerUseCommand(notesHost.hostToken, [
-      "plugin.call",
-      "plugin.mcp.notes",
-    ]);
-    expect(claimed.status).toBe("command");
-    if (claimed.status !== "command") {
-      throw new Error("Expected notes host to claim the mcp plugin command");
-    }
-    expect(claimed.command).toMatchObject({
-      id: created.commandId,
-      hostId: notesHost.hostId,
-      kind: "plugin.call",
-      payload: {
-        plugin: "mcp",
-        server: "notes",
-        tool: "create_note",
-        arguments: { title: "hello", nested: { tags: ["a", "b"] } },
-      },
-    });
-  });
-
-  it("offloads filesystem plugin content and records metadata-only audit", async () => {
-    const fake = api.installComputerUseS3Fake();
-    const orgId = `org_${randomUUID()}`;
-    const userId = `user_${randomUUID()}`;
-    const actor = bdd.user({ orgId, userId });
-    await enableComputerUseDesktopPlugins(actor);
-
-    const pluginCapabilities = filesystemToolCapabilities("read_text_file");
-    const host = await api.startComputerUseHost(actor, {
-      supportedCapabilities: pluginCapabilities,
-    });
-    mockClerkMembership(context, actor, "org:admin");
-    const granted = computerUseToken({
-      userId,
-      orgId,
-      capabilities: ["computer-use:write"],
-      computerUseHostId: host.hostId,
-    });
-
-    const created = await api.createComputerUsePluginCommand(
-      { bearer: granted.token },
-      {
-        plugin: "filesystem",
-        tool: "read_text_file",
-        arguments: { path: "/tmp/notes.txt" },
-      },
-    );
-    const claimed = await api.claimNextComputerUseCommand(
-      host.hostToken,
-      pluginCapabilities,
-    );
-    expect(claimed.status).toBe("command");
-
-    const content = Buffer.from("private local notes");
-    await api.completeComputerUseCommandWith(
-      host.hostToken,
-      created.commandId,
-      {
-        status: "succeeded",
-        result: {
-          plugin: "filesystem",
-          tool: "read_text_file",
-          sizeBytes: content.length,
-          pluginContent: {
-            dataBase64: content.toString("base64"),
-            mimeType: "text/plain",
-            fileName: "notes.txt",
-          },
-        },
-      },
-    );
-
-    const key = `computer-use/${orgId}/${userId}/${created.commandId}/plugin-content.txt`;
-    expect(fake.puts).toHaveLength(1);
-    expect(fake.puts[0]).toMatchObject({
-      bucket: "test-user-storages",
-      key,
-      contentType: "text/plain",
-    });
-    expect(fake.puts[0]?.body.equals(content)).toBeTruthy();
-
-    const detail = await api.readComputerUseCommand(actor, created.commandId);
-    expect(detail.result?.pluginContent).toStrictEqual({
-      type: "s3",
-      mimeType: "text/plain",
-      sizeBytes: content.length,
-      fileName: "notes.txt",
-    });
-    expect(JSON.stringify(detail.result)).not.toContain(
-      content.toString("base64"),
-    );
-
-    const downloaded = await api.downloadComputerUsePluginContent(
-      actor,
-      created.commandId,
-    );
-    expect(downloaded.contentType).toBe("text/plain");
-    expect(downloaded.fileName).toBe("notes.txt");
-    expect(downloaded.bytes.equals(content)).toBeTruthy();
-
-    const audit = await api.listComputerUseAuditEvents(actor, {
-      runId: granted.runId,
-      hostId: host.hostId,
-    });
-    expect(audit.auditEvents).toHaveLength(1);
-    expect(audit.auditEvents[0]).toMatchObject({
-      commandId: created.commandId,
-      runId: granted.runId,
-      hostId: host.hostId,
-      kind: "plugin.call",
-      redactedResult: {
-        plugin: "filesystem",
-        tool: "read_text_file",
-        status: "succeeded",
-        destructive: false,
-        path: "/tmp/notes.txt",
-        offloaded: true,
-        sizeBytes: content.length,
-        fileName: "notes.txt",
-        mimeType: "text/plain",
-      },
-    });
-    expect(JSON.stringify(audit.auditEvents[0]?.redactedResult)).not.toContain(
-      "private local notes",
-    );
   });
 
   it("normalizes NUL characters in completion results and errors", async () => {
@@ -2070,7 +1670,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
     );
   });
 
-  it("offloads, proxies, and expires screenshots through the retention cron", async () => {
+  it("offloads and proxies screenshots with owner isolation", async () => {
     const fake = api.installComputerUseS3Fake();
     const orgId = `org_${randomUUID()}`;
     const userId = `user_${randomUUID()}`;
@@ -2079,7 +1679,6 @@ describe("FILE-03 desktop computer-use runtime", () => {
     const peerUserId = `user_${randomUUID()}`;
     const peer = bdd.user({ orgId: peerOrgId, userId: peerUserId });
 
-    mockNow(now() - 40 * 24 * 60 * 60 * 1000);
     const host = await api.startComputerUseHost(actor);
 
     const first = await api.createComputerUseReadCommand(actor, {
@@ -2165,112 +1764,6 @@ describe("FILE-03 desktop computer-use runtime", () => {
     );
     expectApiError(legacyScreenshot.body);
     expect(legacyScreenshot.body.error.code).toBe("NOT_FOUND");
-
-    const sentinelHost = await api.startComputerUseHost(peer);
-    const sentinel = await api.createComputerUseReadCommand(peer, {
-      kind: "app.state",
-      app: "Safari",
-    });
-    const claimedSentinel = await api.claimNextComputerUseCommand(
-      sentinelHost.hostToken,
-    );
-    expect(claimedSentinel.status).toBe("command");
-    const sentinelBytes = Buffer.from("bdd-expired-sentinel-png-bytes");
-    await api.completeComputerUseCommandWith(
-      sentinelHost.hostToken,
-      sentinel.commandId,
-      {
-        status: "succeeded",
-        result: {
-          snapshotId: "snap_bdd_expired_sentinel",
-          screenshot: `data:image/png;base64,${sentinelBytes.toString("base64")}`,
-          screenshotWidth: 1024,
-          screenshotHeight: 768,
-        },
-      },
-    );
-    const sentinelKey = `computer-use/${peerOrgId}/${peerUserId}/${sentinel.commandId}/screenshot.png`;
-
-    // Back to real time: the retention cutoff must be computed against the
-    // wall clock so only the 40-day-old rows above fall outside the window.
-    clearMockNow();
-    const refresh = await api.claimNextComputerUseCommand(host.hostToken);
-    expect(refresh.status).toBe("idle");
-
-    const third = await api.createComputerUseReadCommand(actor, {
-      kind: "app.state",
-      app: "Safari",
-    });
-    await api.claimNextComputerUseCommand(host.hostToken);
-    const recentBytes = Buffer.from("bdd-recent-png-bytes");
-    await api.completeComputerUseCommandWith(host.hostToken, third.commandId, {
-      status: "succeeded",
-      result: {
-        snapshotId: "snap_bdd_recent",
-        screenshot: `data:image/png;base64,${recentBytes.toString("base64")}`,
-        screenshotWidth: 800,
-        screenshotHeight: 600,
-      },
-    });
-    const thirdKey = `computer-use/${orgId}/${userId}/${third.commandId}/screenshot.png`;
-    const ownedCommandIds = [first.commandId, second.commandId];
-
-    const invalidCron = await api.runComputerUseScreenshotCleanupCron(
-      "invalid",
-      ownedCommandIds,
-    );
-    expect(invalidCron.status).toBe(401);
-    expectApiError(invalidCron.body);
-    expect(invalidCron.body.error.message).toBe("Invalid cron secret");
-
-    const missingCron = await api.runComputerUseScreenshotCleanupCron(
-      "missing",
-      ownedCommandIds,
-    );
-    expect(missingCron.status).toBe(401);
-
-    const swept = await api.runComputerUseScreenshotCleanupCron(
-      "valid",
-      ownedCommandIds,
-    );
-    if (swept.status !== 200) {
-      throw new Error("Expected the screenshot cleanup cron to run");
-    }
-    expect(swept.body.cleaned).toBe(2);
-    expect(fake.deletedKeys).toContain(firstKey);
-    expect(fake.deletedKeys).not.toContain(thirdKey);
-    expect(fake.deletedKeys).not.toContain(sentinelKey);
-
-    const expiredPointer = await api.readComputerUseCommand(
-      actor,
-      first.commandId,
-    );
-    expect(expiredPointer.result?.screenshot).toStrictEqual({
-      type: "expired",
-    });
-    const expiredLegacy = await api.readComputerUseCommand(
-      actor,
-      second.commandId,
-    );
-    expect(expiredLegacy.result?.screenshot).toStrictEqual({
-      type: "expired",
-    });
-    const keptRecent = await api.readComputerUseCommand(actor, third.commandId);
-    expect(keptRecent.result?.screenshot).toMatchObject({ type: "s3" });
-    const keptSentinel = await api.readComputerUseCommand(
-      peer,
-      sentinel.commandId,
-    );
-    expect(keptSentinel.result?.screenshot).toMatchObject({ type: "s3" });
-
-    const resweep = await api.runComputerUseScreenshotCleanupCron(
-      "valid",
-      ownedCommandIds,
-    );
-    if (resweep.status !== 200) {
-      throw new Error("Expected the second cleanup sweep to run");
-    }
-    expect(resweep.body.cleaned).toBe(0);
   });
 });
 

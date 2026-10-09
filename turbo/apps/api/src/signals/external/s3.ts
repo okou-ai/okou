@@ -606,6 +606,43 @@ export function downloadS3BufferWithMaxBytes(
   );
 }
 
+const getS3Object$ = command(
+  async (
+    { get },
+    args: {
+      readonly bucket: string;
+      readonly key: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    return await get(s3ClientForBucket(args.bucket)).send(
+      new GetObjectCommand({ Bucket: args.bucket, Key: args.key }),
+      { abortSignal: signal },
+    );
+  },
+);
+
+/** Fixed reader retaining SDK failure and body validation/cancellation order. */
+export const downloadS3BufferWithMaxBytes$ = command(
+  async (
+    { set },
+    args: {
+      readonly bucket: string;
+      readonly key: string;
+      readonly maxBytes: number;
+    },
+    signal: AbortSignal,
+  ): Promise<Buffer> => {
+    const response = await set(getS3Object$, args, signal);
+    return await readS3ObjectBody(
+      response,
+      args.key,
+      { maxBytes: args.maxBytes },
+      signal,
+    );
+  },
+);
+
 function isAsyncIterableByteStream(
   value: unknown,
 ): value is AsyncIterable<Uint8Array> {
@@ -1075,42 +1112,39 @@ export function generatePresignedGetUrl(
 }
 
 /** Use the same clock for the signature and its advertised expiration. */
-export function generateArtifactPreviewUrl(
-  bucket: string,
-  key: string,
-  options: {
-    readonly signingDate: Date;
-    readonly filename?: string;
-  },
-): Computed<Promise<{ url: string; expiresAt: string }>> {
-  return computed(async (get) => {
+export const generateArtifactPreviewUrl$ = command(
+  async (
+    { get },
+    bucket: string,
+    key: string,
+    options: {
+      readonly signingDate: Date;
+      readonly filename?: string;
+    },
+    signal: AbortSignal,
+  ): Promise<{ url: string; expiresAt: string }> => {
     const { filename } = options;
     const signingDate = new Date(
       Math.floor(options.signingDate.getTime() / 1000) * 1000,
     );
-    const url = await get(
-      generatePresignedGetUrlWithClient(
-        s3ClientForBucket(bucket, true),
-        bucket,
-        key,
-        {
-          filename,
-          signingDate,
-          responseCacheControl:
-            bucket === env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME")
-              ? PRIVATE_ARTIFACT_CACHE_CONTROL
-              : undefined,
-        },
-      ),
-    );
+    const sign = get(presignedGetUrlSignerForBucket(bucket, true));
+    const url = await sign(bucket, key, {
+      filename,
+      signingDate,
+      responseCacheControl:
+        bucket === env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME")
+          ? PRIVATE_ARTIFACT_CACHE_CONTROL
+          : undefined,
+    });
+    signal.throwIfAborted();
     return {
       url,
       expiresAt: new Date(
         signingDate.getTime() + PRESIGNED_URL_TTL_SECONDS * 1000,
       ).toISOString(),
     };
-  });
-}
+  },
+);
 
 function generatePresignedGetUrlWithClient(
   client$: Computed<S3Client>,
@@ -1155,6 +1189,28 @@ function signPresignedGetUrl(
     ...(options?.signingDate ? { signingDate: options.signingDate } : {}),
   });
 }
+
+/** Sign from plain request data through a preconstructed bucket client. */
+export const signPresignedGetUrl$ = command(
+  async (
+    { get },
+    args: {
+      readonly bucket: string;
+      readonly key: string;
+      readonly publicEndpoint: boolean;
+      readonly filename?: string;
+      readonly responseCacheControl?: string;
+      readonly signingDate?: Date;
+    },
+  ): Promise<string> => {
+    return await signPresignedGetUrl(
+      get(s3ClientForBucket(args.bucket, args.publicEndpoint)),
+      args.bucket,
+      args.key,
+      args,
+    );
+  },
+);
 
 export function putS3Object(
   bucket: string,

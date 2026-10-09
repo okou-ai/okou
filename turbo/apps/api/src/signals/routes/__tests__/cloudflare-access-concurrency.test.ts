@@ -152,6 +152,194 @@ function createHost(
   });
 }
 
+test.each(["personal", "organization"] as const)(
+  "accepts exactly one same-revision metadata rename for a %s configuration without changing host authority",
+  async (scope) => {
+    const owner = await actor();
+    const original = (
+      await accept(
+        configs().create({
+          headers: owner.headers,
+          query,
+          body: {
+            id: randomUUID(),
+            scope,
+            name: "Concurrent gateway",
+            credentials: {
+              clientId: "synthetic-id",
+              clientSecret: "synthetic-secret",
+            },
+          },
+        }),
+        [201],
+      )
+    ).body;
+    const own = (await accept(createHost(owner, original.id), [201])).body;
+    const member = await actor(owner.orgId, "member");
+    await accept(
+      createHost(member, scope === "organization" ? original.id : undefined),
+      [201],
+    );
+    const beforeOwn = (
+      await accept(hosts().list({ headers: owner.headers }), [200])
+    ).body;
+    const beforeMember = (
+      await accept(hosts().list({ headers: member.headers }), [200])
+    ).body;
+    const beforeLogins = (
+      await accept(credentials().list({ headers: owner.headers }), [200])
+    ).body;
+
+    const results = await Promise.all(
+      ["First rename", "Second rename"].map((name) => {
+        return accept(
+          configs().update({
+            headers: owner.headers,
+            params: { configId: original.id },
+            query,
+            body: { expectedRevision: original.revision, name },
+          }),
+          [200, 409],
+        );
+      }),
+    );
+    expect(
+      results
+        .map(({ status }) => {
+          return status;
+        })
+        .sort(),
+    ).toStrictEqual([200, 409]);
+    const renamed = results.find((result) => {
+      return result.status === 200;
+    });
+    const rejected = results.find((result) => {
+      return result.status === 409;
+    });
+    if (!renamed || !rejected) {
+      throw new Error("Expected one accepted and one rejected metadata rename");
+    }
+    expect(["First rename", "Second rename"]).toContain(renamed.body.name);
+    expect(renamed.body).toMatchObject({
+      id: original.id,
+      scope,
+      revision: original.revision + 1,
+      generation: original.generation,
+      sshHosts: [{ id: own.id, displayName: own.displayName }],
+    });
+    expect(rejected.body.error.code).toBe(
+      "CLOUDFLARE_ACCESS_REVISION_CONFLICT",
+    );
+    expect(
+      (await accept(configs().list({ headers: owner.headers, query }), [200]))
+        .body.configs,
+    ).toStrictEqual([renamed.body]);
+    expect(
+      (await accept(hosts().list({ headers: owner.headers }), [200])).body,
+    ).toStrictEqual(beforeOwn);
+    expect(
+      (await accept(hosts().list({ headers: member.headers }), [200])).body,
+    ).toStrictEqual(beforeMember);
+    expect(
+      (await accept(credentials().list({ headers: owner.headers }), [200]))
+        .body,
+    ).toStrictEqual(beforeLogins);
+  },
+);
+
+test.each(["create", "update"] as const)(
+  "admits selected %s after a metadata-only rename during external login preparation without advancing host authority",
+  async (operation) => {
+    const admin = await actor();
+    const shared = await sharedConfig(admin);
+    const own = (await accept(createHost(admin, shared.id), [201])).body;
+    const member = await actor(admin.orgId, "member");
+    const retained = (await accept(createHost(member, shared.id), [201])).body;
+    const existing =
+      operation === "update"
+        ? (await accept(createHost(member), [201])).body
+        : undefined;
+    const beforeAdmin = (
+      await accept(hosts().list({ headers: admin.headers }), [200])
+    ).body;
+
+    useSecretKmsProbe(async (request, callNumber) => {
+      if (callNumber === 1) {
+        const renamed = await accept(
+          configs().update({
+            headers: admin.headers,
+            params: { configId: shared.id },
+            query,
+            body: {
+              expectedRevision: shared.revision,
+              name: "Renamed gateway",
+            },
+          }),
+          [200],
+        );
+        expect(renamed.body).toMatchObject({
+          name: "Renamed gateway",
+          revision: shared.revision + 1,
+          generation: shared.generation,
+        });
+        expect(renamed.body.sshHosts).toStrictEqual([
+          { id: own.id, displayName: own.displayName },
+        ]);
+      }
+      return {
+        keyId: request.keyId,
+        plaintext: Buffer.from("0123456789abcdef0123456789abcdef", "utf8"),
+        encryptedDataKey: Buffer.from(
+          `encrypted-data-key:${request.keyId}`,
+          "utf8",
+        ),
+      };
+    });
+    const selected = existing
+      ? await accept(
+          hosts().update({
+            headers: member.headers,
+            params: { connectionId: existing.id },
+            body: {
+              expectedGeneration: existing.generation,
+              port: 443,
+              credential: { create: login },
+              transport: { type: "cloudflare_access", configId: shared.id },
+            },
+          }),
+          [200],
+        )
+      : await accept(createHost(member, shared.id), [201]);
+    expect(selected.body).toMatchObject({
+      generation: existing ? existing.generation + 1 : 1,
+      port: 443,
+      transport: { type: "cloudflare_access", configId: shared.id },
+    });
+    expect(
+      (await accept(hosts().list({ headers: admin.headers }), [200])).body,
+    ).toStrictEqual(beforeAdmin);
+    expect(
+      (await accept(hosts().list({ headers: member.headers }), [200])).body
+        .connections,
+    ).toContainEqual(retained);
+    const visible = (
+      await accept(configs().list({ headers: member.headers, query }), [200])
+    ).body.configs;
+    expect(visible).toHaveLength(1);
+    expect(visible[0]).toMatchObject({
+      id: shared.id,
+      name: "Renamed gateway",
+      revision: shared.revision + 1,
+      generation: shared.generation,
+      sshHosts: expect.arrayContaining([
+        { id: retained.id, displayName: retained.displayName },
+        { id: selected.body.id, displayName: selected.body.displayName },
+      ]),
+    });
+    expect(visible[0]?.sshHosts).toHaveLength(2);
+  },
+);
+
 test.each(["create", "update"] as const)(
   "rejects selected %s after scope conversion during external login preparation without an orphan login",
   async (operation) => {
@@ -545,6 +733,238 @@ test.each(["first", "late"] as const)(
   },
 );
 
+test.each(["rotate", "convert", "delete"] as const)(
+  "preserves revision authority when metadata rename races configuration %s",
+  async (operation) => {
+    const admin = await actor();
+    const shared = await sharedConfig(admin);
+    const member = await actor(admin.orgId, "member");
+    const host = (await accept(createHost(member, shared.id), [201])).body;
+    const beforeLogins = (
+      await accept(credentials().list({ headers: member.headers }), [200])
+    ).body;
+    const preview = (
+      await accept(
+        configs().impactPreview({
+          headers: admin.headers,
+          params: { configId: shared.id },
+          query: { operation: operation === "delete" ? "delete" : "convert" },
+        }),
+        [200],
+      )
+    ).body;
+    const changing =
+      operation === "rotate"
+        ? accept(
+            configs().update({
+              headers: admin.headers,
+              params: { configId: shared.id },
+              query,
+              body: {
+                expectedRevision: shared.revision,
+                credentials: {
+                  clientId: "rotated-id",
+                  clientSecret: "rotated-secret",
+                },
+              },
+            }),
+            [200, 409],
+          )
+        : operation === "convert"
+          ? accept(
+              configs().convertToPersonal({
+                headers: admin.headers,
+                params: { configId: shared.id },
+                body: {
+                  expectedRevision: preview.expectedRevision,
+                  impactSnapshot: preview.impactSnapshot,
+                },
+              }),
+              [200, 409],
+            )
+          : accept(
+              configs().delete({
+                headers: admin.headers,
+                params: { configId: shared.id },
+                body: {
+                  expectedRevision: preview.expectedRevision,
+                  impactSnapshot: preview.impactSnapshot,
+                },
+              }),
+              [204, 409],
+            );
+    const [renamed, changed] = await Promise.all([
+      accept(
+        configs().update({
+          headers: admin.headers,
+          params: { configId: shared.id },
+          query,
+          body: { expectedRevision: shared.revision, name: "Renamed gateway" },
+        }),
+        [200, 404, 409],
+      ),
+      changing,
+    ]);
+    const current = (
+      await accept(configs().list({ headers: admin.headers, query }), [200])
+    ).body.configs;
+    const saved = (
+      await accept(hosts().list({ headers: member.headers }), [200])
+    ).body.connections;
+    if (renamed.status === 200) {
+      if (changed.status !== 409) {
+        throw new Error("Expected stale configuration authority to conflict");
+      }
+      expect(changed.body.error.code).toBe(
+        "CLOUDFLARE_ACCESS_REVISION_CONFLICT",
+      );
+      expect(current).toHaveLength(1);
+      expect(current[0]).toMatchObject({
+        name: "Renamed gateway",
+        scope: "organization",
+        revision: shared.revision + 1,
+        generation: shared.generation,
+        sshHosts: [],
+      });
+      expect(saved).toStrictEqual([host]);
+    } else {
+      expect(renamed.body.error.code).toBe(
+        renamed.status === 404
+          ? "CLOUDFLARE_ACCESS_NOT_FOUND"
+          : "CLOUDFLARE_ACCESS_REVISION_CONFLICT",
+      );
+      expect(changed.status).toBe(operation === "delete" ? 204 : 200);
+      if (operation === "delete") {
+        expect(current).toStrictEqual([]);
+      } else {
+        expect(current).toHaveLength(1);
+        expect(current[0]).toMatchObject({
+          name: shared.name,
+          scope: operation === "convert" ? "personal" : "organization",
+          revision: shared.revision + 1,
+          generation: shared.generation + 1,
+        });
+      }
+      expect(saved).toHaveLength(1);
+      expect(saved[0]).toMatchObject({
+        id: host.id,
+        credentialId: host.credentialId,
+        host: host.host,
+        port: host.port,
+        generation: host.generation + 1,
+        transport:
+          operation === "rotate"
+            ? { type: "cloudflare_access", configId: shared.id }
+            : { type: "cloudflare_access", needsRebind: true },
+      });
+    }
+    expect(
+      (await accept(credentials().list({ headers: member.headers }), [200]))
+        .body,
+    ).toStrictEqual(beforeLogins);
+  },
+);
+
+test.each(["delete", "detach"] as const)(
+  "retains reference-fence safety when a bound host concurrently leaves through %s",
+  async (operation) => {
+    const owner = await actor();
+    const shared = await sharedConfig(owner);
+    const host = (await accept(createHost(owner, shared.id), [201])).body;
+    const beforeLogins = (
+      await accept(credentials().list({ headers: owner.headers }), [200])
+    ).body;
+    const departing =
+      operation === "delete"
+        ? accept(
+            hosts().delete({
+              headers: owner.headers,
+              params: { connectionId: host.id },
+            }),
+            [204],
+          )
+        : accept(
+            hosts().update({
+              headers: owner.headers,
+              params: { connectionId: host.id },
+              body: {
+                expectedGeneration: host.generation,
+                port: 22,
+                transport: { type: "direct" },
+              },
+            }),
+            [200, 409],
+          );
+    const [rotated, departed] = await Promise.all([
+      accept(
+        configs().update({
+          headers: owner.headers,
+          params: { configId: shared.id },
+          query,
+          body: {
+            expectedRevision: shared.revision,
+            credentials: {
+              clientId: "rotated-id",
+              clientSecret: "rotated-secret",
+            },
+          },
+        }),
+        [200],
+      ),
+      departing,
+    ]);
+    expect(rotated.body).toMatchObject({
+      revision: shared.revision + 1,
+      generation: shared.generation + 1,
+    });
+    const listed = (
+      await accept(hosts().list({ headers: owner.headers }), [200])
+    ).body.connections;
+    const current = (
+      await accept(configs().list({ headers: owner.headers, query }), [200])
+    ).body.configs;
+    if (departed.status === 409) {
+      expect(departed.body.error.code).toBe("SSH_GENERATION_CONFLICT");
+      expect(listed).toContainEqual(
+        expect.objectContaining({
+          id: host.id,
+          generation: host.generation + 1,
+          transport: { type: "cloudflare_access", configId: shared.id },
+        }),
+      );
+      expect(current[0]?.sshHosts).toStrictEqual([
+        { id: host.id, displayName: host.displayName },
+      ]);
+    } else {
+      expect(current[0]?.sshHosts).toStrictEqual([]);
+      if (operation === "delete") {
+        expect(listed).toStrictEqual([]);
+      } else {
+        expect(listed).toContainEqual(
+          expect.objectContaining({
+            id: host.id,
+            credentialId: host.credentialId,
+            generation: host.generation + 1,
+            port: 22,
+          }),
+        );
+        expect(listed[0]).not.toHaveProperty("transport");
+      }
+    }
+    expect(
+      (await accept(credentials().list({ headers: owner.headers }), [200]))
+        .body,
+    ).toStrictEqual({
+      credentials: beforeLogins.credentials.map((credential) => {
+        return {
+          ...credential,
+          hosts: operation === "delete" ? [] : credential.hosts,
+        };
+      }),
+    });
+  },
+);
+
 test("serializes configuration rotation with independent-login deletion without losing the binding", async () => {
   const owner = await actor();
   const shared = await sharedConfig(owner);
@@ -627,6 +1047,106 @@ describe("protected host writes with authorized Runner authority", () => {
     };
     return { owner, shared, host, runner, request };
   }
+
+  it("preserves pin and observation authority across a concurrent metadata-only rename without rotating credentials", async () => {
+    const { owner, shared, host, runner, request } = await claimedHost();
+    const member = await actor(owner.orgId, "member");
+    await accept(createHost(member, shared.id), [201]);
+    const beforeOther = (
+      await accept(hosts().list({ headers: member.headers }), [200])
+    ).body;
+    const beforeLogins = (
+      await accept(credentials().list({ headers: owner.headers }), [200])
+    ).body;
+    const [renamed, pinned, observed] = await Promise.all([
+      accept(
+        configs().update({
+          headers: owner.headers,
+          params: { configId: shared.id },
+          query,
+          body: { expectedRevision: shared.revision, name: "Renamed gateway" },
+        }),
+        [200],
+      ),
+      accept(
+        runner.pin({
+          ...request,
+          body: {
+            ...request.body,
+            expectedGeneration: host.generation,
+            observedHostKey: hostKey,
+          },
+        }),
+        [200],
+      ),
+      accept(
+        runner.observe({
+          ...request,
+          body: {
+            ...request.body,
+            expectedGeneration: host.generation,
+            observedAt: nowDate().toISOString(),
+            failureReason: null,
+          },
+        }),
+        [200],
+      ),
+    ]);
+    expect(renamed.body).toMatchObject({
+      name: "Renamed gateway",
+      revision: shared.revision + 1,
+      generation: shared.generation,
+    });
+    expect(renamed.body.sshHosts).toStrictEqual([
+      { id: host.id, displayName: host.displayName },
+    ]);
+    expect(pinned.body).toStrictEqual({
+      outcome: "pinned",
+      generation: host.generation + 1,
+    });
+    expect(["recorded", "ignored"]).toContain(observed.body.outcome);
+    expect(
+      (await accept(hosts().list({ headers: owner.headers }), [200])).body
+        .connections,
+    ).toContainEqual(
+      expect.objectContaining({
+        id: host.id,
+        credentialId: host.credentialId,
+        host: host.host,
+        port: host.port,
+        generation: host.generation + 1,
+        learnedHostKey: hostKey,
+        transport: { type: "cloudflare_access", configId: shared.id },
+      }),
+    );
+    expect(
+      (await accept(hosts().list({ headers: member.headers }), [200])).body,
+    ).toStrictEqual(beforeOther);
+    expect((await accept(runner.resolve(request), [200])).body).toMatchObject({
+      outcome: "resolved_access",
+      generation: host.generation + 1,
+      learnedHostKey: hostKey,
+      username: login.username,
+      authentication: {
+        method: "password",
+        password: login.authentication.password,
+      },
+      access: {
+        configId: shared.id,
+        generation: shared.generation,
+        clientId: "synthetic-id",
+        clientSecret: "synthetic-secret",
+      },
+    });
+    expect(
+      (await accept(hosts().observations({ headers: owner.headers }), [200]))
+        .body.observations,
+    ).toStrictEqual([]);
+    expect(
+      (await accept(credentials().list({ headers: owner.headers }), [200]))
+        .body,
+    ).toStrictEqual(beforeLogins);
+  });
 
   it("rejects an edit delayed at KMS after Runner learns trust, without replacing the pin or leaving an inline login", async () => {
     const { owner, shared, host, runner, request } = await claimedHost();

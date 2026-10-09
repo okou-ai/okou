@@ -616,7 +616,7 @@ ever holding stale rows, but it bounds nothing on its own: an owner who invokes
 once and never again would keep title and Markdown forever. The real bound is
 `executeMorningBriefGenerationRetentionWork$`, a batch on the existing
 `/api/cron/execute-workflow-automations` tick — the same maintenance entrypoint
-the Morning Brief enrollment worker already runs on. It settles independently of
+that formerly hosted the enrollment worker (retired by #36270). It settles independently of
 the automations beside it, and it is deliberately finite: up to 200 rows per
 statement and 10 statements per tick, selected in deadline order with
 `SKIP LOCKED` so it never queues behind a live attempt or takes a table-wide

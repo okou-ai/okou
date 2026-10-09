@@ -5,7 +5,6 @@ import {
   githubPullRequestEventConfigSchema,
   githubPullRequestReviewSubmittedEventConfigSchema,
   githubWorkflowJobCompletedEventConfigSchema,
-  type GithubAutomationEventConfig,
   type GithubDeploymentState,
   type GithubDeploymentStatusCreatedEventConfig,
   type GithubIssueCommentCreatedEventConfig,
@@ -15,7 +14,6 @@ import {
   type GithubPullRequestReviewSubmittedEventConfig,
   type GithubWorkflowJobCompletedEventConfig,
   type GithubWorkflowRunConclusion,
-  type WorkflowAutomationEventType,
 } from "@okouai/api-contracts/contracts/workflows";
 import { githubInstallations } from "@okouai/db/schema/github-installation";
 import {
@@ -41,6 +39,11 @@ import type { WorkflowAutomationContext } from "./workflow-automation-context.se
 import type { AutomationRow } from "./workflow-automation-enqueue.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
 import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
+import {
+  type GithubWebhookAutomationEventType,
+  type GithubWebhookAutomationEventConfig,
+  parseGithubWebhookAutomationConfig,
+} from "./github-webhook-automation-config";
 
 const log = logger("api:github-webhook-automation-event");
 
@@ -182,24 +185,6 @@ export interface GithubIssueCommentEventPayload {
   readonly sender: GithubWebhookUser;
 }
 
-type GithubWebhookAutomationEventType = Extract<
-  WorkflowAutomationEventType,
-  | "github-deployment-status-created"
-  | "github-issue-comment-created"
-  | "github-pull-request"
-  | "github-pull-request-review-submitted"
-  | "github-workflow-job-completed"
->;
-
-type GithubWebhookAutomationEventConfig = Extract<
-  GithubAutomationEventConfig,
-  | { readonly event: "deployment_status_created" }
-  | { readonly event: "issue_comment_created" }
-  | { readonly event: "pull_request" }
-  | { readonly event: "pull_request_review_submitted" }
-  | { readonly event: "workflow_job_completed" }
->;
-
 type GithubWebhookAutomationEvent =
   | {
       readonly eventType: "github-workflow-job-completed";
@@ -235,40 +220,6 @@ interface GithubWebhookAutomationRow {
   readonly workflowName: string;
   readonly chatThreadId: string;
   readonly config: GithubWebhookAutomationEventConfig;
-}
-
-export function parseGithubWebhookAutomationConfig(
-  eventType: GithubWebhookAutomationEventType,
-  eventConfig: unknown,
-): GithubWebhookAutomationEventConfig | null {
-  switch (eventType) {
-    case "github-workflow-job-completed": {
-      const parsed =
-        githubWorkflowJobCompletedEventConfigSchema.safeParse(eventConfig);
-      return parsed.success ? parsed.data : null;
-    }
-    case "github-pull-request": {
-      const parsed = githubPullRequestEventConfigSchema.safeParse(eventConfig);
-      return parsed.success ? parsed.data : null;
-    }
-    case "github-pull-request-review-submitted": {
-      const parsed =
-        githubPullRequestReviewSubmittedEventConfigSchema.safeParse(
-          eventConfig,
-        );
-      return parsed.success ? parsed.data : null;
-    }
-    case "github-deployment-status-created": {
-      const parsed =
-        githubDeploymentStatusCreatedEventConfigSchema.safeParse(eventConfig);
-      return parsed.success ? parsed.data : null;
-    }
-    case "github-issue-comment-created": {
-      const parsed =
-        githubIssueCommentCreatedEventConfigSchema.safeParse(eventConfig);
-      return parsed.success ? parsed.data : null;
-    }
-  }
 }
 
 function normalized(value: string): string {

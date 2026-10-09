@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.52.0](https://github.com/okou-ai/okou/compare/desktop-v0.51.0...desktop-v0.52.0) (2026-10-08)
+
+
+### Features
+
+* **desktop:** enforce minimum versions with automatic required upgrades ([#38115](https://github.com/okou-ai/okou/issues/38115)) ([ae3a5b2](https://github.com/okou-ai/okou/commit/ae3a5b291a085bd900c21689563c74240c4123cb))
+
+## [0.51.0](https://github.com/okou-ai/okou/compare/desktop-v0.50.1...desktop-v0.51.0) (2026-10-08)
+
+
+### Features
+
+* **desktop:** use clerk session tokens for native computer use ([#37965](https://github.com/okou-ai/okou/issues/37965)) ([fccd4a9](https://github.com/okou-ai/okou/commit/fccd4a98bb370bdaf9c8dd312988f5ba267bbb2c))
+
+
+### Bug Fixes
+
+* **desktop:** center controls within the full titlebar ([#37969](https://github.com/okou-ai/okou/issues/37969)) ([1ac3498](https://github.com/okou-ai/okou/commit/1ac3498aa66ffa29ec7b208845bb2abe46b67e7d))
+* **desktop:** redesign workspace selection sheet ([#37983](https://github.com/okou-ai/okou/issues/37983)) ([fb6b844](https://github.com/okou-ai/okou/commit/fb6b8449b0e46997d6073146bf7adcfc8a7be046))
+
 ## [0.50.1](https://github.com/okou-ai/okou/compare/desktop-v0.50.0...desktop-v0.50.1) (2026-10-08)
 
 

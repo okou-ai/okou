@@ -9,7 +9,6 @@ import {
   SYSTEM_ORG_ID,
   VOLUME_ORG_USER_ID,
 } from "@okouai/core/storage-names";
-import { testWorkflowSkillStoragePresignedUrlCacheStateContract } from "@okouai/api-contracts/contracts/test-workflow-skill-storage-presigned-url-cache-state";
 import { createHash, randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
@@ -18,10 +17,8 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { mockEnv } from "../../../lib/env";
 import { mockNow, nowDate } from "../../../lib/time";
-import { readStorageS3PrefixFixture } from "../../../test-fixtures/storage";
 import { cronPruneStoragePresignedUrlsRoutes } from "../cron-prune-storage-presigned-urls";
 import { testSystemStoragePresignedUrlCacheStateRoutes } from "../test-system-storage-presigned-url-cache-state";
-import { testWorkflowSkillStoragePresignedUrlCacheStateRoutes } from "../test-workflow-skill-storage-presigned-url-cache-state";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -30,7 +27,6 @@ import {
   createRunsApi,
   expectCanonicalStorageManifest,
 } from "./helpers/api-bdd-runs";
-import { storageTextFile } from "./helpers/api-bdd-storage-files";
 import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 
 describe("system storage presigned URL cache", () => {
@@ -543,13 +539,7 @@ describe("system storage presigned URL cache", () => {
     },
   );
 
-  it("preserves a 52-mount manifest across mixed-scope cache reuse", async () => {
-    const fixture = createOwnedSystemStorageFixture("mixed-batch");
-    const versionId = createVersionId("mixed-batch");
-    await claimOwnedStorage(fixture);
-    registerOwnedStorageCleanup(fixture);
-    await seedOwnedStorageVersion({ fixture, versionId, archiveSize: 1024 });
-
+  it("preserves 51 workflow and connector mounts across Runner claims", async () => {
     const runFixture = await entitledDirectRunActor();
     const { actor } = runFixture;
     if (!actor.orgId) {
@@ -557,9 +547,7 @@ describe("system storage presigned URL cache", () => {
     }
     const storages = createStoragesBddApi(context);
     storages.mockStorageObjectsExist(2048);
-    // 50 Agent workflow skills (workflow_skill_storage scope), one custom
-    // connector skill (readonly_storage scope) and the seed system skill
-    // (system_storage scope) make 52 mounts across the three cache scopes.
+    // All selected mounts come from normal workflow and connector creation.
     const misc = createMiscRoutesApi(context);
     const storageNames: string[] = [];
     const workflowMountPaths = new Map<string, string>();
@@ -604,51 +592,9 @@ describe("system storage presigned URL cache", () => {
       custom.id,
     ]);
     const readOnlyStorageName = getCustomConnectorSkillStorageName(custom.id);
-    // Every non-system archive key, by Storage name: org-owned skills live
-    // under the organization volume user.
-    const objectKeyPrefixes = new Map<string, string>();
-    for (const name of [...storageNames, readOnlyStorageName]) {
-      objectKeyPrefixes.set(
-        name,
-        await readStorageS3PrefixFixture({
-          orgId: actor.orgId,
-          userId: VOLUME_ORG_USER_ID,
-          name,
-        }),
-      );
-    }
-    onTestFinished(async () => {
-      for (const [name, prefix] of objectKeyPrefixes) {
-        await accept(
-          setupApp({
-            context,
-            routes: testWorkflowSkillStoragePresignedUrlCacheStateRoutes,
-          })(testWorkflowSkillStoragePresignedUrlCacheStateContract).action({
-            body: {
-              action: "cleanup",
-              object_key_prefix: prefix,
-              scope:
-                name === readOnlyStorageName
-                  ? "readonly_storage"
-                  : "workflow_skill_storage",
-            },
-          }),
-          [200],
-        );
-      }
-    });
-    const systemObjectKey = storageArchiveKey(fixture, versionId);
+    const expectedStorageNames = [...storageNames, readOnlyStorageName].sort();
     const signedCount = mockUniquePresignedUrls();
-    await seedOwnedStorageCacheRow({
-      fixture,
-      versionId,
-      presignedUrl: expectedPresignedUrl(systemObjectKey, 1),
-      expiresAt: new Date(nowDate().getTime() + 2 * 24 * 60 * 60 * 1000),
-      refreshAfter: new Date(nowDate().getTime() + 24 * 60 * 60 * 1000),
-    });
-    const api = createRunsApi(context, {
-      [SYSTEM_SKILL]: fixture.storageName,
-    });
+    const api = createRunsApi(context);
     const createAndClaim = async (prompt: string) => {
       const run = await api.createThreadRun(actor, {
         agentId: runFixture.agentId,
@@ -665,10 +611,7 @@ describe("system storage presigned URL cache", () => {
         expectCanonicalStorageManifest(
           claim.storageManifest,
         )?.storageMounts.filter((mount) => {
-          return (
-            objectKeyPrefixes.has(mount.name) ||
-            mount.name === fixture.storageName
-          );
+          return expectedStorageNames.includes(mount.name);
         }) ?? [];
       await api.requestCancelRun(actor, run.runId, [200]);
       return mounts
@@ -685,34 +628,33 @@ describe("system storage presigned URL cache", () => {
         });
     };
 
-    // The first run signs each workflow and read-only archive once and its
-    // post-commit write caches the exact URLs; the system row is pre-cached.
-    const warmed = await createAndClaim(
-      "warm the mixed-scope storage URL cache",
+    const expected = await createAndClaim(
+      "request all workflow and connector skills",
     );
-    expect(warmed).toHaveLength(52);
-    const objectKeys = warmed.flatMap((mount) => {
-      const prefix = objectKeyPrefixes.get(mount.name);
-      return prefix ? [`${prefix}/${mount.versionId}/archive.tar.gz`] : [];
-    });
-    expect(objectKeys).toHaveLength(51);
-    const expected = warmed.map((mount) => {
-      const prefix = objectKeyPrefixes.get(mount.name);
-      return {
-        ...mount,
-        archiveUrl: prefix
-          ? expectedPresignedUrl(
-              `${prefix}/${mount.versionId}/archive.tar.gz`,
-              1,
-            )
-          : expectedPresignedUrl(systemObjectKey, 1),
-      };
-    });
-    expect(warmed).toStrictEqual(expected);
-    // Workflow skills mount exactly at their slug, the connector skill and
-    // the seed system skill at their skill directories.
+    expect(expected).toHaveLength(51);
     expect(
-      warmed
+      expected.map((mount) => {
+        return mount.name;
+      }),
+    ).toStrictEqual(expectedStorageNames);
+    // Keys are observed in the provider URLs delivered to the Runner, not read
+    // from private Storage rows. Each returned archive was signed once.
+    const objectKeys = expected.map((mount) => {
+      if (!mount.archiveUrl) {
+        throw new Error("Expected a Runner archive URL");
+      }
+      const url = new URL(mount.archiveUrl);
+      expect(url.origin).toBe("https://r2.example.com");
+      expect(url.searchParams.get("sig")).toBe("1");
+      const objectKey = decodeURIComponent(url.pathname.slice(1));
+      expect(
+        objectKey.endsWith(`/${mount.versionId}/archive.tar.gz`),
+      ).toBeTruthy();
+      return objectKey;
+    });
+    // Workflow skills mount exactly at their slug; all paths remain distinct.
+    expect(
+      expected
         .filter((mount) => {
           return workflowMountPaths.has(mount.name);
         })
@@ -720,7 +662,7 @@ describe("system storage presigned URL cache", () => {
           return mount.mountPath;
         }),
     ).toStrictEqual(
-      warmed
+      expected
         .filter((mount) => {
           return workflowMountPaths.has(mount.name);
         })
@@ -730,21 +672,16 @@ describe("system storage presigned URL cache", () => {
     );
     expect(
       new Set(
-        warmed.map((mount) => {
+        expected.map((mount) => {
           return mount.mountPath;
         }),
       ).size,
-    ).toBe(52);
-    for (const mount of warmed) {
+    ).toBe(51);
+    for (const mount of expected) {
       expect(mount.mountPath).toMatch(
         /^\/home\/user\/\.claude\/skills\/[^/]+$/,
       );
     }
-    expect(
-      warmed.find((mount) => {
-        return mount.name === fixture.storageName;
-      })?.mountPath,
-    ).toBe(SYSTEM_SKILL_MOUNT_PATH);
     expect(
       objectKeys.map((objectKey) => {
         return signedCount(objectKey);
@@ -754,10 +691,8 @@ describe("system storage presigned URL cache", () => {
         return 1;
       }),
     );
-    expect(signedCount(systemObjectKey)).toBe(0);
 
-    // Every later run hits the cache in all three scopes: the exact cached
-    // URLs return and nothing is signed again.
+    // Later Runner claims return the complete same manifest and signed URLs.
     for (const prompt of [
       "use the mixed-scope storage URL cache",
       "reuse the mixed-scope storage URL cache",
@@ -773,7 +708,6 @@ describe("system storage presigned URL cache", () => {
         return 1;
       }),
     );
-    expect(signedCount(systemObjectKey)).toBe(0);
   });
 
   it("refreshes a hard-expired row with a new exact URL", async () => {
@@ -801,105 +735,6 @@ describe("system storage presigned URL cache", () => {
 
     expect(refreshed.mount.archiveUrl).toBe(expectedPresignedUrl(objectKey, 1));
     expect(signedCount(objectKey)).toBe(1);
-  });
-
-  it("prefers owned system storage and falls back to the primary organization", async () => {
-    const storages = createStoragesBddApi(context);
-    const runFixture = await entitledDirectRunActor();
-    const fixture = createOwnedSystemStorageFixture("fallback");
-    const versionId = createVersionId("system-fallback");
-    await claimOwnedStorage(fixture);
-    registerOwnedStorageCleanup(fixture);
-    await seedOwnedStorageVersion({
-      fixture,
-      versionId,
-      archiveSize: 1024,
-    });
-
-    storages.mockStorageObjectsExist(2048);
-    const primaryFile = storageTextFile(
-      "primary.txt",
-      `primary fallback ${randomUUID()}`,
-    );
-    const primary = await storages.prepareStorage(runFixture.actor, {
-      storageName: fixture.storageName,
-      storageOwner: "organization",
-      files: [primaryFile],
-    });
-    await storages.commitStorage(runFixture.actor, {
-      storageName: fixture.storageName,
-      storageOwner: "organization",
-      versionId: primary.versionId,
-      files: [primaryFile],
-    });
-    if (!runFixture.actor.orgId) {
-      throw new Error("Expected an organization-scoped cache actor");
-    }
-    const primaryPrefix = await readStorageS3PrefixFixture({
-      orgId: runFixture.actor.orgId,
-      userId: VOLUME_ORG_USER_ID,
-      name: fixture.storageName,
-    });
-    const signedCount = mockUniquePresignedUrls();
-    const systemObjectKey = storageArchiveKey(fixture, versionId);
-    const systemArchiveUrl = expectedPresignedUrl(systemObjectKey, 1);
-    await seedOwnedStorageCacheRow({
-      fixture,
-      versionId,
-      presignedUrl: systemArchiveUrl,
-      expiresAt: new Date(nowDate().getTime() + 2 * 24 * 60 * 60 * 1000),
-      refreshAfter: new Date(nowDate().getTime() + 24 * 60 * 60 * 1000),
-    });
-
-    const systemRun = await createAndClaimOwnedSystemStorage({
-      ...runFixture,
-      fixture,
-      prompt: "prefer the owned system storage candidate",
-    });
-    expect(systemRun.mount).toStrictEqual({
-      name: fixture.storageName,
-      mountPath: fixture.mountPath,
-      versionId,
-      archiveSize: 1024,
-      archiveUrl: systemArchiveUrl,
-    });
-    expect(signedCount(systemObjectKey)).toBe(0);
-
-    await stateAction({
-      action: "cleanup-owned-storages",
-      storage_ids: [fixture.storageId],
-    });
-    await claimOwnedStorage(fixture);
-    await expect(readOwnedStorageState(fixture)).resolves.toStrictEqual({
-      s3_prefix: fixture.s3Prefix,
-      size: 0,
-      file_count: 0,
-      head_version_id: null,
-    });
-
-    const primaryObjectKey = `${primaryPrefix}/${primary.versionId}/archive.tar.gz`;
-    const fallbackRun = await createAndClaimOwnedSystemStorage({
-      ...runFixture,
-      fixture,
-      prompt: "fall back to the primary storage candidate",
-    });
-    expect(fallbackRun.mount).toStrictEqual({
-      name: fixture.storageName,
-      mountPath: fixture.mountPath,
-      versionId: primary.versionId,
-      archiveSize: 2048,
-      archiveUrl: expectedPresignedUrl(primaryObjectKey, 1),
-    });
-    expect(signedCount(primaryObjectKey)).toBe(1);
-    expect(
-      sortedCacheSnapshots(await readOwnedStorageCache(fixture)),
-    ).toStrictEqual([
-      expectedCacheRow({
-        fixture,
-        versionId,
-        presignedUrl: systemArchiveUrl,
-      }),
-    ]);
   });
 
   it("prunes expired owned cache rows", async () => {

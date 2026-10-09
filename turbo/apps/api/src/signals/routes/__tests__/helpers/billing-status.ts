@@ -10,13 +10,10 @@ import {
   postCreditPurchaseInvoicePaid,
   postOneTimePurchaseCompleted,
   postSubscriptionInvoicePaid,
-  postUsageAllowanceInvoicePaid,
   subscriptionCredits,
   TEST_PRICE_CONCURRENCY,
   type BillingWebhookFixture,
 } from "./stripe-billing-webhook";
-import { nowDate } from "../../../../lib/time";
-import { insertUsageAllowanceWindowsFixture } from "../../../../test-fixtures/usage-allowance";
 
 export interface BillingStatusFixture {
   readonly orgId: string;
@@ -56,32 +53,12 @@ interface ConcurrencyEntitlementSeed {
   readonly stripePriceId?: string;
 }
 
-interface UsageAllowanceWindowSeed {
-  readonly kind: "short" | "weekly";
-  readonly startsAt: Date;
-  readonly expiresAt: Date;
-  readonly unitLimit: number;
-  readonly consumedUnits?: number;
-}
-
-interface UsageAllowanceSeed {
-  readonly status?: string;
-  readonly shortWindowSeconds: number;
-  readonly shortWindowUnits: number;
-  readonly weeklyWindowSeconds?: number;
-  readonly weeklyWindowUnits: number;
-  readonly effectiveAt?: Date;
-  readonly expiresAt?: Date | null;
-  readonly windows?: readonly UsageAllowanceWindowSeed[];
-}
-
 interface BillingStatusSeedValues {
   readonly credits?: number;
   readonly onboardingPaymentPending?: boolean;
   readonly subscription?: SubscriptionSeed;
   readonly expiresRecords?: readonly ExpiresRecordSeed[];
   readonly concurrencyEntitlements?: readonly ConcurrencyEntitlementSeed[];
-  readonly usageAllowance?: UsageAllowanceSeed;
   readonly extraGrantedCredits?: number;
 }
 
@@ -256,52 +233,6 @@ async function applyConcurrencySeeds(
   }
 }
 
-async function insertUsageAllowanceWindows(
-  orgId: string,
-  windows: readonly UsageAllowanceWindowSeed[] | undefined,
-): Promise<void> {
-  if (!windows || windows.length === 0) {
-    return;
-  }
-  await insertUsageAllowanceWindowsFixture({
-    orgId,
-    windows: windows.map((window) => {
-      return {
-        kind: window.kind,
-        startsAt: window.startsAt,
-        expiresAt: window.expiresAt,
-        unitLimit: window.unitLimit,
-        consumedUnits: window.consumedUnits,
-      };
-    }),
-  });
-}
-
-async function applyUsageAllowanceSeed(
-  signal: AbortSignal,
-  fixture: BillingWebhookFixture,
-  customerId: string,
-  seed: UsageAllowanceSeed | undefined,
-): Promise<void> {
-  if (!seed) {
-    return;
-  }
-
-  await postUsageAllowanceInvoicePaid(signal, {
-    ...fixture,
-    customerId,
-    subscriptionId: generatedStripeSubscriptionId(),
-    status: seed.status,
-    shortWindowSeconds: seed.shortWindowSeconds,
-    shortWindowUnits: seed.shortWindowUnits,
-    weeklyWindowSeconds: seed.weeklyWindowSeconds ?? 604_800,
-    weeklyWindowUnits: seed.weeklyWindowUnits,
-    effectiveAt: seed.effectiveAt ?? nowDate(),
-    expiresAt: seed.expiresAt ?? new Date("2099-01-01T00:00:00.000Z"),
-  });
-  await insertUsageAllowanceWindows(fixture.orgId, seed.windows);
-}
-
 export const seedBillingStatusOrg$ = command(
   async (
     _,
@@ -334,12 +265,6 @@ export const seedBillingStatusOrg$ = command(
       fixture,
       customerId,
       values.concurrencyEntitlements,
-    );
-    await applyUsageAllowanceSeed(
-      signal,
-      fixture,
-      customerId,
-      values.usageAllowance,
     );
 
     if (values.extraGrantedCredits && values.extraGrantedCredits > 0) {

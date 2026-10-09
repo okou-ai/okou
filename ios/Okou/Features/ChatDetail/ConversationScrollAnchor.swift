@@ -1,0 +1,234 @@
+import SwiftUI
+
+/// Restores a message and its viewport offset after explicit presentation changes.
+/// Uses public scroll APIs without replacing the container's delegate.
+@MainActor
+final class ConversationScrollAnchor {
+  private let markers = NSHashTable<ConversationRowMarker>.weakObjects()
+  private weak var scrollView: UIScrollView?
+  private var position: ConversationReadingPosition?
+  private var displayLink: CADisplayLink?
+  private var settlingFrames = 0
+  private var needsReveal = false
+  private var followsBottom = false
+  private var reportedPosition: ConversationReadingPosition?
+  var isScrolling = false {
+    didSet { if !isScrolling { layoutDidChange() } }
+  }
+  var revealRow: (@MainActor (String) -> Void)?
+  var viewportDidChange: (@MainActor () -> Void)?
+  var readingPositionDidChange: (@MainActor (ConversationReadingPosition) -> Void)?
+  var isPresentedMarker: (@MainActor (ConversationRowMarker) -> Bool)?
+  var preservedPosition: ConversationReadingPosition? { position }
+
+  func capture() -> ConversationReadingPosition? {
+    guard let scrollView else { return nil }
+    let top = scrollView.bounds.minY + scrollView.adjustedContentInset.top
+    let bottom = scrollView.bounds.maxY - scrollView.adjustedContentInset.bottom
+    let visible = markers.allObjects
+      .filter { isEligible($0, in: scrollView) }
+      .map { ($0.messageID, $0.convert($0.bounds, to: scrollView)) }
+      .filter { $0.1.maxY > top && $0.1.minY < bottom }
+      .min { $0.1.minY < $1.1.minY }
+    guard let visible else { return nil }
+    return ConversationReadingPosition(messageID: visible.0, offset: visible.1.minY - top)
+  }
+
+  func preserve(_ position: ConversationReadingPosition) {
+    followsBottom = false
+    if self.position != position {
+      self.position = position
+    }
+    layoutDidChange()
+  }
+
+  func restore(_ position: ConversationReadingPosition) {
+    // A snapshot can recycle the anchor cell even while its old marker is attached.
+    needsReveal = true
+    preserve(position)
+  }
+
+  func followBottom() {
+    position = nil
+    needsReveal = false
+    followsBottom = true
+    layoutDidChange()
+  }
+
+  func cancel() {
+    position = nil
+    followsBottom = false
+    needsReveal = false
+    displayLink?.invalidate()
+    displayLink = nil
+    settlingFrames = 0
+  }
+
+  func layoutDidChange() {
+    // Verify the correction after the native cell transaction settles.
+    settlingFrames = 2
+    scheduleFrame()
+  }
+
+  private func scheduleFrame() {
+    guard position != nil || followsBottom || readingPositionDidChange != nil,
+      !isScrolling, displayLink == nil
+    else { return }
+    // A main-queue yield can precede the native cell transaction. Correct on the next frame.
+    let target = ConversationAnchorFrameTarget(anchor: self)
+    let link = CADisplayLink(
+      target: target, selector: #selector(ConversationAnchorFrameTarget.tick(_:)))
+    displayLink = link
+    link.add(to: .main, forMode: .common)
+  }
+
+  fileprivate func correctOnFrame(_ link: CADisplayLink) {
+    guard displayLink === link else { return }
+    link.invalidate()
+    displayLink = nil
+    correctPosition()
+    if !isScrolling, let readingPositionDidChange, let captured = capture(),
+      reportedPosition != captured
+    {
+      reportedPosition = captured
+      readingPositionDidChange(captured)
+    }
+    if settlingFrames > 0 {
+      settlingFrames -= 1
+      scheduleFrame()
+    }
+  }
+
+  fileprivate func register(_ marker: ConversationRowMarker) {
+    guard marker.window != nil else { return }
+    markers.add(marker)
+    if let scroll = marker.enclosingScrollView, scrollView !== scroll {
+      scrollView = scroll
+    }
+    layoutDidChange()
+  }
+
+  fileprivate func unregister(_ marker: ConversationRowMarker) {
+    markers.remove(marker)
+    layoutDidChange()
+  }
+
+  private func isEligible(_ marker: ConversationRowMarker, in scrollView: UIScrollView) -> Bool {
+    marker.anchor === self && marker.window != nil && marker.enclosingScrollView === scrollView
+      && (isPresentedMarker?(marker) ?? true)
+  }
+
+  private func correctPosition() {
+    guard let scrollView, !isScrolling, !scrollView.isTracking, !scrollView.isDragging,
+      !scrollView.isDecelerating
+    else { return }
+    // Commit pending native layout before measuring mounted row positions.
+    scrollView.layoutIfNeeded()
+    if followsBottom {
+      let y = max(
+        -scrollView.adjustedContentInset.top,
+        scrollView.contentSize.height - scrollView.bounds.height
+          + scrollView.adjustedContentInset.bottom)
+      if abs(y - scrollView.contentOffset.y) > 0.5 {
+        scrollView.setContentOffset(CGPoint(x: scrollView.contentOffset.x, y: y), animated: false)
+        layoutDidChange()
+      } else {
+        followsBottom = false
+      }
+      return
+    }
+    guard let position else { return }
+    if needsReveal, let revealRow {
+      needsReveal = false
+      revealRow(position.messageID)
+      layoutDidChange()
+      return
+    }
+    guard
+      let marker = markers.allObjects.first(where: {
+        $0.messageID == position.messageID && isEligible($0, in: scrollView)
+      })
+    else {
+      // Materialize a recycled anchor cell before correcting its viewport offset.
+      if let revealRow {
+        revealRow(position.messageID)
+        // The ID is in the render window, but its cell transaction may not have committed yet.
+        layoutDidChange()
+      }
+      return
+    }
+    let offset =
+      marker.convert(marker.bounds, to: scrollView).minY
+      - scrollView.bounds.minY - scrollView.adjustedContentInset.top
+    let minimum = -scrollView.adjustedContentInset.top
+    let maximum = max(
+      minimum,
+      scrollView.contentSize.height - scrollView.bounds.height
+        + scrollView.adjustedContentInset.bottom)
+    let y = min(maximum, max(minimum, scrollView.contentOffset.y + offset - position.offset))
+    guard abs(y - scrollView.contentOffset.y) > 0.5 else { return }
+    scrollView.setContentOffset(CGPoint(x: scrollView.contentOffset.x, y: y), animated: false)
+    // Verify the resulting frame after native layout responds to this move.
+    layoutDidChange()
+  }
+}
+
+@MainActor
+private final class ConversationAnchorFrameTarget: NSObject {
+  weak var anchor: ConversationScrollAnchor?
+  init(anchor: ConversationScrollAnchor) { self.anchor = anchor }
+  @objc func tick(_ link: CADisplayLink) {
+    guard let anchor else {
+      link.invalidate()
+      return
+    }
+    anchor.correctOnFrame(link)
+  }
+}
+
+struct ConversationRowAnchor: UIViewRepresentable {
+  let messageID: String
+  let anchor: ConversationScrollAnchor
+
+  func makeUIView(context: Context) -> ConversationRowMarker {
+    let view = ConversationRowMarker()
+    view.isUserInteractionEnabled = false
+    return view
+  }
+
+  func updateUIView(_ view: ConversationRowMarker, context: Context) {
+    view.anchor?.unregister(view)
+    view.messageID = messageID
+    view.anchor = anchor
+    anchor.register(view)
+  }
+
+  static func dismantleUIView(_ view: ConversationRowMarker, coordinator: ()) {
+    view.anchor?.unregister(view)
+    view.anchor = nil
+  }
+}
+
+final class ConversationRowMarker: UIView {
+  fileprivate(set) var messageID = ""
+  fileprivate weak var anchor: ConversationScrollAnchor?
+
+  var enclosingScrollView: UIScrollView? {
+    var ancestor = superview
+    while let view = ancestor {
+      if let scroll = view as? UIScrollView { return scroll }
+      ancestor = view.superview
+    }
+    return nil
+  }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    if window == nil { anchor?.unregister(self) } else { anchor?.register(self) }
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    anchor?.register(self)
+  }
+}

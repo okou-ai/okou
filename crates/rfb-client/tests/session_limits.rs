@@ -24,7 +24,7 @@ fn noisy_pixels(width: u16, height: u16) -> Vec<u8> {
         value = (value ^ (value >> 16)).wrapping_mul(0x85eb_ca6b);
         value = (value ^ (value >> 13)).wrapping_mul(0xc2b2_ae35);
         value ^= value >> 16;
-        pixels.extend([value as u8, (value >> 8) as u8, (value >> 16) as u8, 0]);
+        pixels.extend_from_slice(&[value as u8, (value >> 8) as u8, (value >> 16) as u8, 0]);
     }
     pixels
 }
@@ -43,14 +43,18 @@ async fn capture_raw(
         peer.write_all(&[0, 0, 0, 1]).await?;
         peer.write_all(&rectangle(0, 0, width, height, 0, &[]))
             .await?;
-        // A single supplied row repeats, avoiding a full-size solid fixture;
-        // noise supplies all rows. Neither path copies a full wire message.
-        for row in rows
-            .chunks_exact(row_bytes)
-            .cycle()
-            .take(usize::from(height))
-        {
-            peer.write_all(row).await?;
+        // Send an already-complete noise frame directly. A single solid row
+        // still repeats without allocating or copying a full wire message.
+        if rows.len() == row_bytes * usize::from(height) {
+            peer.write_all(rows).await?;
+        } else {
+            for row in rows
+                .chunks_exact(row_bytes)
+                .cycle()
+                .take(usize::from(height))
+            {
+                peer.write_all(row).await?;
+            }
         }
         peer.flush().await?;
         Ok::<(), io::Error>(())

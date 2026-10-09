@@ -4,12 +4,14 @@ import { piResourceProjectionValues } from "./pi-resource-version-index.service"
 import { sql } from "drizzle-orm";
 import { piResourceVersionIndexes } from "@okouai/db/schema/pi-resource-version-index";
 import { PI_RESOURCE_EXTRACTOR_VERSION } from "../../lib/pi-resource-index";
-import { nowDate } from "../../lib/time";
 import type { PreparedStorageVersion } from "./storage-version-registration.service";
 
 /** One immutable version per publication; insert-first distinguishes new work from encoding repair. */
-export function repairVolumeIndexSql(version: PreparedStorageVersion) {
-  const at = nowDate().toISOString();
+export function repairVolumeIndexSql(
+  version: PreparedStorageVersion,
+  updatedAt: Date,
+) {
+  const at = updatedAt.toISOString();
   return sql`UPDATE ${piResourceVersionIndexes} SET status = 'pending', projection = NULL, projection_hash = NULL,
       source_archive_size = ${version.archiveSize}, lease_id = NULL, lease_expires_at = NULL,
       available_at = ${at}::timestamp, attempt_count = 0, updated_at = ${at}::timestamp

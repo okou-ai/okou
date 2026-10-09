@@ -19,7 +19,7 @@ commit() {
   git commit --quiet -m "$1"
 }
 detect() {
-  env -u EVENT_NAME -u CHECKOUT_REF -u PULL_REQUEST_BASE_SHA \
+  env -u EVENT_NAME -u HEAD_REF -u CHECKOUT_REF -u PULL_REQUEST_BASE_SHA \
     -u MERGE_GROUP_BASE_SHA -u PUSH_BEFORE_SHA "$@" bash "$script_dir/ci-changed.sh"
 }
 expect() {
@@ -64,6 +64,14 @@ echo ios-change > ios/App.swift
 commit ios-change
 expect true EVENT_NAME=pull_request CHECKOUT_REF=refs/heads/ios-pr PULL_REQUEST_BASE_SHA="$base"
 
+# Only release PRs skip native checks, even when version metadata touches ios/.
+expect false EVENT_NAME=pull_request HEAD_REF=release-please--branches--main CHECKOUT_REF=refs/heads/ios-pr PULL_REQUEST_BASE_SHA="$base"
+expect true EVENT_NAME=pull_request HEAD_REF=fix/ios-build CHECKOUT_REF=refs/heads/ios-pr PULL_REQUEST_BASE_SHA="$base"
+expect true EVENT_NAME=pull_request HEAD_REF=release-please-imitation CHECKOUT_REF=refs/heads/ios-pr PULL_REQUEST_BASE_SHA="$base"
+expect true EVENT_NAME=merge_group HEAD_REF=release-please--branches--main MERGE_GROUP_BASE_SHA="$base"
+expect true EVENT_NAME=push HEAD_REF=release-please--branches--main PUSH_BEFORE_SHA="$base"
+expect true EVENT_NAME=workflow_dispatch HEAD_REF=release-please--branches--main
+
 # An iOS change earlier in a multi-entry merge group/main push must not disappear.
 echo later > turbo/app.ts
 commit later-unrelated-change
@@ -107,7 +115,7 @@ reject EVENT_NAME=pull_request CHECKOUT_REF=refs/heads/ios-pr
 reject EVENT_NAME=unexpected
 
 gate() {
-  DETECT_RESULT=$1 IOS_NEEDED=$2 BUILD_RESULT=$3 bash "$script_dir/ci-gate.sh"
+  EVENT_NAME=pull_request DETECT_RESULT=$1 IOS_NEEDED=$2 BUILD_RESULT=$3 ARCHIVE_RESULT=skipped PUBLISH_RESULT=skipped bash "$script_dir/ci-gate.sh"
 }
 gate success true success
 gate success false skipped
@@ -127,4 +135,16 @@ if gate success "" skipped > "$test_root/rejected.log" 2>&1; then
   echo "Gate accepted a missing change decision" >&2
   exit 1
 fi
+EVENT_NAME=merge_group DETECT_RESULT=success IOS_NEEDED=true BUILD_RESULT=success ARCHIVE_RESULT=success PUBLISH_RESULT=success bash "$script_dir/ci-gate.sh"
+EVENT_NAME=push DETECT_RESULT=success IOS_NEEDED=true BUILD_RESULT=skipped ARCHIVE_RESULT=skipped PUBLISH_RESULT=skipped bash "$script_dir/ci-gate.sh"
+for result in failure cancelled skipped; do
+  if EVENT_NAME=merge_group DETECT_RESULT=success IOS_NEEDED=true BUILD_RESULT=success ARCHIVE_RESULT=success PUBLISH_RESULT=$result bash "$script_dir/ci-gate.sh" > "$test_root/rejected.log" 2>&1; then
+    echo "Gate accepted failed/missing archive publication $result" >&2
+    exit 1
+  fi
+  if EVENT_NAME=merge_group DETECT_RESULT=success IOS_NEEDED=true BUILD_RESULT=success ARCHIVE_RESULT=$result PUBLISH_RESULT=success bash "$script_dir/ci-gate.sh" > "$test_root/rejected.log" 2>&1; then
+    echo "Gate accepted failed/missing native archive build $result" >&2
+    exit 1
+  fi
+done
 echo "iOS CI change detection and gate tests passed."

@@ -1,4 +1,5 @@
 import { Readable } from "node:stream";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
   hostContract,
@@ -115,6 +116,30 @@ function notFoundS3Error(key: string): Error {
   return error;
 }
 
+function objectEtag(body: string): string {
+  return `"${createHash("sha256").update(body).digest("hex")}"`;
+}
+
+function preconditionFailedS3Error(key: string): Error {
+  const error = new Error(`Precondition failed: ${key}`) as Error & {
+    $metadata: { httpStatusCode: number };
+  };
+  error.name = "PreconditionFailed";
+  error.$metadata = { httpStatusCode: 412 };
+  return error;
+}
+
+function objectPreconditionFails(
+  input: Record<string, unknown>,
+  previous: string | undefined,
+): boolean {
+  return (
+    (input.IfNoneMatch === "*" && previous !== undefined) ||
+    (typeof input.IfMatch === "string" &&
+      (previous === undefined || objectEtag(previous) !== input.IfMatch))
+  );
+}
+
 const hostMapsRoutes: readonly RouteEntry[] = [...hostRoutes, ...mapsRoutes];
 
 export function createHostMapsBddApi(context: TestContext) {
@@ -185,14 +210,19 @@ export function createHostMapsBddApi(context: TestContext) {
           }
           return Promise.resolve({
             Body: Readable.from([Buffer.from(body)]),
-            ETag: '"hosted-fixture"',
+            ETag: objectEtag(body),
             ContentLength: Buffer.byteLength(body),
           });
         }
         if (name === "PutObjectCommand") {
+          const previous = objects.get(key);
+          if (objectPreconditionFails(input, previous)) {
+            return Promise.reject(preconditionFailedS3Error(key));
+          }
           const body = bodyText(input.Body);
           objects.set(key, body);
           capture.puts.push({ key, body });
+          return Promise.resolve({ ETag: objectEtag(body) });
         }
         if (name === "DeleteObjectsCommand") {
           const deleted = z

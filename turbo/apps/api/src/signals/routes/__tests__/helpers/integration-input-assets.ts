@@ -78,11 +78,10 @@ export async function expectIntegrationInputPreview(
     readonly privateFiles?: boolean;
   },
 ): Promise<void> {
+  const privateFiles = args.privateFiles ?? true;
   expect(args.uploads).toContainEqual(
     expect.objectContaining({
-      Bucket: args.privateFiles
-        ? "test-private-artifacts"
-        : "test-user-artifacts",
+      Bucket: privateFiles ? "test-private-artifacts" : "test-user-artifacts",
       Body: args.bytes,
       ContentType: args.contentType,
     }),
@@ -100,7 +99,7 @@ export async function expectIntegrationInputPreview(
     [200],
   );
   expect(response.body.url).toBeTruthy();
-  if (args.privateFiles) {
+  if (privateFiles) {
     expect(response.body.publicUrl).toBeNull();
   } else {
     expect(response.body.publicUrl).toBeTruthy();

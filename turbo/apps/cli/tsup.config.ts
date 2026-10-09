@@ -59,9 +59,8 @@ async function buildImageResizeWorker(): Promise<void> {
 export default defineConfig({
   entry: ["src/okou.ts"],
   format: ["esm"],
-  // Skip DTS generation in watch mode to avoid memory issues
-  // DTS files are still generated during production builds
-  dts: !isWatchMode,
+  // This executable ships no declarations; check-types owns type validation.
+  dts: false,
   sourcemap: true,
   clean: true,
   shims: true,

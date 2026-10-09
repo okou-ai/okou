@@ -31,10 +31,7 @@ export interface FeatureSwitchMetadata {
 }
 
 export type FeatureSwitchRolloutStage =
-  | "released"
-  | "beta"
-  | "alpha"
-  | "internal";
+  "released" | "beta" | "alpha" | "internal";
 
 export interface FeatureSwitchContext {
   readonly userId?: string;
@@ -47,6 +44,11 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.NotifyMail]: {
+    maintainer: "lancy@okou.ai",
+    description: "Allow agents to send Okou email notifications to their user",
+    enabled: false,
+  },
   [FeatureSwitchKey.HomeTaskRecommendations]: {
     maintainer: "yuma@okou.ai",
     description:
@@ -72,12 +74,8 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Convert an HTML presentation into an editable pptx from the CLI.",
     enabled: false,
-    // Opened to the staff org: the open question is how a converted deck reads
-    // for a viewer without its fonts, and that needs more decks than the
-    // maintainer alone can try.
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-    // Kept beside the org so the maintainer keeps the feature while signed
-    // into a customer workspace, where the org hash does not apply.
+    // Limit the rollout to the maintainer across workspaces while conversion
+    // fidelity is being evaluated.
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
   },
@@ -93,12 +91,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Create native web forms that apply user-provided values to exact managed Browser controls",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ChatLastReadMarker]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Show the previous read boundary in chat and start unread conversations at that boundary.",
-    enabled: false,
   },
   [FeatureSwitchKey.Dummy]: {
     maintainer: "ethan@okou.ai",
@@ -294,32 +286,18 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.LangfuseTrace]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Trace explicitly opted-in Pi runs across the API-first and Sandbox ownership boundary in Langfuse.",
-    enabled: false,
-  },
   [FeatureSwitchKey.ZapierConnector]: {
     maintainer: "yuma@okou.ai",
     description:
       "Enable the Zapier connector. When disabled, Zapier is hidden from the connectors list and cannot be connected.",
     enabled: false,
   },
-  [FeatureSwitchKey.ComputerUseDesktopPlugins]: {
-    maintainer: "lancy@okou.ai",
-    description:
-      "Enable Okou Desktop Computer Use plugins for local resources, starting with the bundled filesystem plugin gateway.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   // Every artifact privacy slice in #32492 uses this same rollout switch.
   [FeatureSwitchKey.PrivateArtifacts]: {
     maintainer: "yuma@okou.ai",
     description:
       "Use private artifact storage, the Okou viewer, and organization and public sharing.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.SidebarSubscriptionUsage]: {
     maintainer: "ethan@okou.ai",
@@ -332,13 +310,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "ethan@okou.ai",
     description:
       "Use bottom navigation, an agent chat list, and Me at mobile viewport widths in any browser.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.AgentResponsibilitySetup]: {
-    maintainer: "yuma@okou.ai",
-    description:
-      "Require a responsibility when creating an Agent, then pin it and open a setup thread asking it to adopt that responsibility.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

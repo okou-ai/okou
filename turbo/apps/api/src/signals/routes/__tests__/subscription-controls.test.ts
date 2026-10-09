@@ -156,6 +156,42 @@ test("agents read all subscriptions and single-account live usage without a fail
     },
   });
   expect(detail.body).not.toHaveProperty("secrets");
+  expect(detail.body.modelProviderId).toStrictEqual(expect.any(String));
+  expect(listed.body.modelProviders).toContainEqual(
+    expect.objectContaining({
+      id: detail.body.id,
+      modelProviderId: detail.body.modelProviderId,
+    }),
+  );
+  const otherDetail = await accept(
+    app()(personalSubscriptionsContract).get({
+      headers,
+      params: { id: accountIds[1] },
+    }),
+    [200],
+  );
+  expect(otherDetail.body).toMatchObject({
+    id: accountIds[1],
+    modelProviderId: detail.body.modelProviderId,
+    type: "codex-oauth-token",
+  });
+  const repeatedDetail = await accept(
+    app()(personalSubscriptionsContract).get({
+      headers,
+      params: { id: accountIds[0] },
+    }),
+    [200],
+  );
+  expect(repeatedDetail.body).toMatchObject({
+    id: accountIds[0],
+    modelProviderId: detail.body.modelProviderId,
+  });
+  for (const response of [detail.body, otherDetail.body, repeatedDetail.body]) {
+    expect(response).not.toHaveProperty("secrets");
+    expect(response).not.toHaveProperty("externalAccountId");
+    expect(response).not.toHaveProperty("orgId");
+    expect(response).not.toHaveProperty("userId");
+  }
 });
 
 test("cLI account activation reuses the existing switch behavior", async () => {
@@ -173,6 +209,10 @@ test("cLI account activation reuses the existing switch behavior", async () => {
     [200],
   );
   expect(switched.body).toMatchObject({ id: accountIds[1], isActive: true });
+  expect(switched.body).not.toHaveProperty("secrets");
+  expect(switched.body).not.toHaveProperty("externalAccountId");
+  expect(switched.body).not.toHaveProperty("orgId");
+  expect(switched.body).not.toHaveProperty("userId");
   const listed = await accept(
     app()(personalModelProvidersMainContract).list({ headers }),
     [200],
@@ -192,6 +232,37 @@ test("cLI account activation reuses the existing switch behavior", async () => {
       return account.id === accountIds[1];
     })?.isActive,
   ).toBeTruthy();
+  const repeated = await accept(
+    app()(personalModelProviderAccountsByIdContract).activate({
+      headers,
+      params: { id: accountIds[1] },
+      body: {},
+    }),
+    [200],
+  );
+  expect(repeated.body).toMatchObject({
+    id: accountIds[1],
+    modelProviderId: switched.body.modelProviderId,
+    isActive: true,
+  });
+  const afterRepeat = await accept(
+    app()(personalModelProvidersMainContract).list({ headers }),
+    [200],
+  );
+  expect(
+    afterRepeat.body.modelProviders
+      .filter((account) => {
+        return account.isActive;
+      })
+      .map((account) => {
+        return account.id;
+      }),
+  ).toStrictEqual([accountIds[1]]);
+  expect(
+    afterRepeat.body.modelProviders.map((account) => {
+      return account.id;
+    }),
+  ).toStrictEqual([accountIds[1], accountIds[0]]);
 });
 
 test("read capability cannot switch, and even a switching agent cannot execute reset", async () => {
@@ -241,6 +312,60 @@ test("read capability cannot switch, and even a switching agent cannot execute r
   expect(consumed).toBeFalsy();
 });
 
+test("a missing run cannot authorize recovery or reset of a connected account", async () => {
+  const { actor, accountIds } = await fixture();
+  const headers = human(actor);
+  const runId = randomUUID();
+  const client = app()(personalModelProviderAccountsByIdContract);
+  const existing = await accept(
+    client.getById({
+      headers,
+      params: { id: accountIds[0] },
+      query: { runId },
+    }),
+    [404],
+  );
+  const missing = await accept(
+    client.getById({
+      headers,
+      params: { id: randomUUID() },
+      query: { runId },
+    }),
+    [404],
+  );
+  expect(existing.body).toStrictEqual(missing.body);
+  const reset = await accept(
+    client.resetFailedRunSubscriptionUsage({
+      headers,
+      params: { id: accountIds[0], runId },
+      body: { idempotencyKey: randomUUID() },
+    }),
+    [404],
+  );
+  const missingReset = await accept(
+    client.resetFailedRunSubscriptionUsage({
+      headers,
+      params: { id: randomUUID(), runId },
+      body: { idempotencyKey: randomUUID() },
+    }),
+    [404],
+  );
+  expect(reset.body).toStrictEqual(missingReset.body);
+  const detail = await accept(
+    app()(personalSubscriptionsContract).get({
+      headers,
+      params: { id: accountIds[0] },
+    }),
+    [200],
+  );
+  expect(detail.body).toMatchObject({
+    id: accountIds[0],
+    subscriptionResetCredits: 3,
+  });
+  expect(detail.body).not.toHaveProperty("secrets");
+  expect(detail.body).not.toHaveProperty("externalAccountId");
+});
+
 test("foreign users and organizations cannot read or activate the linked account", async () => {
   const { actor, accountIds } = await fixture();
   for (const other of [
@@ -277,6 +402,15 @@ test("foreign users and organizations cannot read or activate the linked account
       [404],
     );
     expect(activated.status).toBe(404);
+    const missingActivation = await accept(
+      app()(personalModelProviderAccountsByIdContract).activate({
+        headers,
+        params: { id: randomUUID() },
+        body: {},
+      }),
+      [404],
+    );
+    expect(activated.body).toStrictEqual(missingActivation.body);
   }
 });
 

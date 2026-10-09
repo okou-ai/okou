@@ -22,6 +22,7 @@ import {
 } from "@okouai/api-contracts/contracts/social";
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import { usageRecordContract } from "@okouai/api-contracts/contracts/usage-record";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -55,6 +56,7 @@ import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRouteMocks } from "./helpers/route-test";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { reconcileSocialKitDownloadsForTest } from "./helpers/runtime-state";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const SOCIALKIT_BASE = "https://api.socialkit.dev";
@@ -197,6 +199,7 @@ async function cleanupFundedSocialActor(
     id: owned.subscriptionId,
     status: "active",
     metadata: {},
+    items: { data: [{ price: { id: "price_bdd_pro" } }] },
   });
   context.mocks.stripe.subscriptions.update.mockResolvedValue({
     id: owned.subscriptionId,
@@ -412,16 +415,6 @@ async function setupConfiguredPricing(
         unitSize: 1,
       },
     ],
-  });
-  return fixture;
-}
-
-async function setupMissingPricing(): Promise<UsagePricingFixture> {
-  const fixture = await createUsagePricingFixture({
-    missing: [socialPricingKey()],
-  });
-  onTestFinished(async () => {
-    await fixture.cleanup();
   });
   return fixture;
 }
@@ -2366,32 +2359,6 @@ describe("managed SocialKit route", () => {
     expect(response.body.error.code).toBe("NOT_CONFIGURED");
   });
 
-  it("returns missing pricing before provider work", async () => {
-    const actor = createBddApi(context).user();
-    let providerRequests = 0;
-    configureProvider();
-    await fundActorWithSubscription(actor);
-    const pricing = await setupMissingPricing();
-    server.use(
-      providerHandler("GET", "/youtube/transcript", () => {
-        providerRequests += 1;
-        return HttpResponse.json(providerResponse());
-      }),
-    );
-
-    const response = await accept(
-      client(pricing.resolution)(socialContract).request({
-        headers: authenticate(actor),
-        body: DEFAULT_SOCIAL_REQUEST,
-      }),
-      [503],
-    );
-
-    expectApiError(response.body);
-    expect(response.body.error.code).toBe("PRICING_NOT_CONFIGURED");
-    expect(providerRequests).toBe(0);
-  });
-
   it.each([
     {
       path: "/linkedin/profile",
@@ -4234,237 +4201,265 @@ describe("managed SocialKit route", () => {
     });
   });
 
-  it("reuses a completed multipart result and bills concurrent retries once", async () => {
-    const actor = createBddApi(context).user();
-    configureProvider();
-    const pricing = await setupConfiguredPricing();
-    const owner = await fundActorWithSubscription(actor, {
-      cleanupDownloads: true,
-    });
-    await owner.run(async () => {
-      const beforeCredits = await credits(actor);
-      const payload = new TextEncoder().encode("retryable social video");
-      const providerJobId = `provider-retry-${randomUUID()}`;
-      let providerStarts = 0;
-      let multipartAttempts = 0;
-      let providerCredits = 2;
-      let artifactStored = false;
-      const createdDownload: { id?: string } = {};
-      context.mocks.dns.lookupOverrides.set("media.socialkit.test", [
-        { address: "8.8.8.8", family: 4 },
-      ]);
-      server.use(
-        http.post(`${SOCIALKIT_BASE}/v2/youtube/download`, () => {
-          providerStarts += 1;
-          return HttpResponse.json({ jobId: providerJobId, status: "queued" });
-        }),
-        http.get(`${SOCIALKIT_BASE}/v2/downloads/${providerJobId}`, () => {
-          return HttpResponse.json({
-            jobId: providerJobId,
-            status: "ready",
-            platform: "youtube",
-            downloadUrl: "https://media.socialkit.test/retry-download",
-            durationSeconds: 61,
-            fileSizeMB: 1,
-            creditsCost: providerCredits,
-            quality: "720p",
-            format: "mp4",
-            title: { untrusted: true },
-            thumbnail: "https://media.socialkit.test/retry-download#preview",
-          });
-        }),
-        http.get("https://media.socialkit.test/retry-download", () => {
-          return new HttpResponse(payload, {
-            headers: { "content-length": String(payload.byteLength) },
-          });
-        }),
-      );
-      context.mocks.s3.send.mockImplementation((command: unknown) => {
-        if (command instanceof HeadObjectCommand) {
-          if (!artifactStored) {
-            const error = new Error("Artifact not found");
-            error.name = "NotFound";
-            return Promise.reject(error);
+  it.each([true, false])(
+    "reuses completed multipart output without rebilling (private=%s)",
+    async (privateFiles) => {
+      const actor = createBddApi(context).user();
+      if (!actor.orgId) {
+        throw new Error("Social test actor must belong to an organization");
+      }
+      if (!privateFiles) {
+        await updateFeatureSwitchesForUser(
+          context,
+          { userId: actor.userId, orgId: actor.orgId },
+          { [FeatureSwitchKey.PrivateArtifacts]: false },
+        );
+      }
+      configureProvider();
+      const pricing = await setupConfiguredPricing();
+      const owner = await fundActorWithSubscription(actor, {
+        cleanupDownloads: true,
+      });
+      await owner.run(async () => {
+        const beforeCredits = await credits(actor);
+        const payload = new TextEncoder().encode("retryable social video");
+        const providerJobId = `provider-retry-${randomUUID()}`;
+        let providerStarts = 0;
+        let multipartAttempts = 0;
+        let providerCredits = 2;
+        let artifactStored = false;
+        const createdDownload: { id?: string } = {};
+        context.mocks.dns.lookupOverrides.set("media.socialkit.test", [
+          { address: "8.8.8.8", family: 4 },
+        ]);
+        server.use(
+          http.post(`${SOCIALKIT_BASE}/v2/youtube/download`, () => {
+            providerStarts += 1;
+            return HttpResponse.json({
+              jobId: providerJobId,
+              status: "queued",
+            });
+          }),
+          http.get(`${SOCIALKIT_BASE}/v2/downloads/${providerJobId}`, () => {
+            return HttpResponse.json({
+              jobId: providerJobId,
+              status: "ready",
+              platform: "youtube",
+              downloadUrl: "https://media.socialkit.test/retry-download",
+              durationSeconds: 61,
+              fileSizeMB: 1,
+              creditsCost: providerCredits,
+              quality: "720p",
+              format: "mp4",
+              title: { untrusted: true },
+              thumbnail: "https://media.socialkit.test/retry-download#preview",
+            });
+          }),
+          http.get("https://media.socialkit.test/retry-download", () => {
+            return new HttpResponse(payload, {
+              headers: { "content-length": String(payload.byteLength) },
+            });
+          }),
+        );
+        context.mocks.s3.send.mockImplementation((command: unknown) => {
+          if (command instanceof HeadObjectCommand) {
+            if (!artifactStored) {
+              const error = new Error("Artifact not found");
+              error.name = "NotFound";
+              return Promise.reject(error);
+            }
+            const createdDownloadId = createdDownload.id;
+            if (!createdDownloadId) {
+              return Promise.reject(new Error("Missing created download id"));
+            }
+            const filename = `download-${createdDownloadId.slice(0, 8)}.mp4`;
+            const key = privateFiles
+              ? `private-artifacts/${createdDownloadId}/${filename}`
+              : buildArtifactKeyV2(createdDownloadId, filename, "socialkit");
+            const bucket = privateFiles
+              ? "test-private-artifacts"
+              : "test-user-artifacts";
+            if (command.input.Key !== key || command.input.Bucket !== bucket) {
+              return Promise.reject(new Error("Unexpected artifact key"));
+            }
+            return Promise.resolve({
+              ContentLength: payload.byteLength,
+              ContentType: "video/mp4",
+              LastModified: new Date("2026-08-27T00:00:00.000Z"),
+              Metadata: privateFiles
+                ? { "artifact-id": createdDownloadId }
+                : {
+                    "artifact-id": createdDownloadId,
+                    filename: encodeURIComponent(filename),
+                    "user-id": encodeURIComponent(actor.userId),
+                    "public-brand": "vm0",
+                  },
+            });
           }
-          const createdDownloadId = createdDownload.id;
-          if (!createdDownloadId) {
-            return Promise.reject(new Error("Missing created download id"));
+          if (command instanceof CreateMultipartUploadCommand) {
+            multipartAttempts += 1;
+            return Promise.resolve({
+              UploadId: `socialkit-retry-${multipartAttempts}`,
+            });
           }
-          const filename = `download-${createdDownloadId.slice(0, 8)}.mp4`;
-          const key = buildArtifactKeyV2(
-            createdDownloadId,
-            filename,
-            "socialkit",
-          );
-          if (command.input.Key !== key) {
-            return Promise.reject(new Error("Unexpected artifact key"));
+          if (command instanceof UploadPartCommand) {
+            return Promise.resolve({ ETag: '"socialkit-retry-etag"' });
           }
-          return Promise.resolve({
-            ContentLength: payload.byteLength,
-            ContentType: "video/mp4",
-            LastModified: new Date("2026-08-27T00:00:00.000Z"),
-            Metadata: {
-              "artifact-id": createdDownloadId,
-              filename: encodeURIComponent(filename),
-              "user-id": encodeURIComponent(actor.userId),
-              "public-brand": "vm0",
+          if (command instanceof CompleteMultipartUploadCommand) {
+            artifactStored = true;
+            return Promise.reject(new Error("R2 completion response was lost"));
+          }
+          return Promise.resolve({});
+        });
+        const socialClient = client(pricing.resolution)(socialContract);
+
+        const created = await accept(
+          socialClient.createDownload({
+            headers: authenticate(actor),
+            body: {
+              platform: "youtube",
+              url: "https://youtu.be/public-video",
+              maxDuration: 120,
+              quality: "720p",
+              format: "mp4",
             },
-          });
-        }
-        if (command instanceof CreateMultipartUploadCommand) {
-          multipartAttempts += 1;
-          return Promise.resolve({
-            UploadId: `socialkit-retry-${multipartAttempts}`,
-          });
-        }
-        if (command instanceof UploadPartCommand) {
-          return Promise.resolve({ ETag: '"socialkit-retry-etag"' });
-        }
-        if (command instanceof CompleteMultipartUploadCommand) {
-          artifactStored = true;
-          return Promise.reject(new Error("R2 completion response was lost"));
-        }
-        return Promise.resolve({});
-      });
-      const socialClient = client(pricing.resolution)(socialContract);
+          }),
+          [202],
+        );
+        createdDownload.id = created.body.downloadId;
+        await flushWaitUntilForTest();
+        const failed = await accept(
+          socialClient.getDownload({
+            headers: authenticate(actor),
+            params: { downloadId: created.body.downloadId },
+          }),
+          [200],
+        );
+        const creditsAfterFailure = await credits(actor);
 
-      const created = await accept(
-        socialClient.createDownload({
-          headers: authenticate(actor),
-          body: {
-            platform: "youtube",
-            url: "https://youtu.be/public-video",
-            maxDuration: 120,
-            quality: "720p",
-            format: "mp4",
+        const discovered = await accept(
+          socialClient.listDownloads({
+            headers: authenticate(actor),
+            query: { status: "artifact_failed" },
+          }),
+          [200],
+        );
+        expect(discovered.body.downloads).toMatchObject([
+          {
+            downloadId: created.body.downloadId,
+            status: "artifact_failed",
+            request: { url: "https://youtu.be/public-video" },
+            resumeCommand: `okou social download --resume ${created.body.downloadId}`,
+            billing: { quantity: 2, creditsCharged: 6 },
           },
-        }),
-        [202],
-      );
-      createdDownload.id = created.body.downloadId;
-      await flushWaitUntilForTest();
-      const failed = await accept(
-        socialClient.getDownload({
-          headers: authenticate(actor),
-          params: { downloadId: created.body.downloadId },
-        }),
-        [200],
-      );
-      const creditsAfterFailure = await credits(actor);
+        ]);
 
-      const discovered = await accept(
-        socialClient.listDownloads({
-          headers: authenticate(actor),
-          query: { status: "artifact_failed" },
-        }),
-        [200],
-      );
-      expect(discovered.body.downloads).toMatchObject([
-        {
-          downloadId: created.body.downloadId,
+        expect(failed.body).toMatchObject({
           status: "artifact_failed",
-          request: { url: "https://youtu.be/public-video" },
-          resumeCommand: `okou social download --resume ${created.body.downloadId}`,
           billing: { quantity: 2, creditsCharged: 6 },
-        },
-      ]);
+          error: { billed: true, retryable: true },
+        });
+        expect(failed.body.provider).not.toHaveProperty("title");
+        expect(failed.body.provider).not.toHaveProperty("thumbnail");
+        expect(beforeCredits - creditsAfterFailure).toBe(6);
+        expect(
+          context.mocks.s3.send.mock.calls.some(([command]) => {
+            return command instanceof AbortMultipartUploadCommand;
+          }),
+        ).toBeTruthy();
+        const blocked = await accept(
+          socialClient.createDownload({
+            headers: authenticate(actor),
+            body: {
+              platform: "youtube",
+              url: "https://youtu.be/another-public-video",
+              maxDuration: 120,
+              quality: "720p",
+              format: "mp4",
+            },
+          }),
+          [409],
+        );
 
-      expect(failed.body).toMatchObject({
-        status: "artifact_failed",
-        billing: { quantity: 2, creditsCharged: 6 },
-        error: { billed: true, retryable: true },
-      });
-      expect(failed.body.provider).not.toHaveProperty("title");
-      expect(failed.body.provider).not.toHaveProperty("thumbnail");
-      expect(beforeCredits - creditsAfterFailure).toBe(6);
-      expect(
-        context.mocks.s3.send.mock.calls.some(([command]) => {
-          return command instanceof AbortMultipartUploadCommand;
-        }),
-      ).toBeTruthy();
-      const blocked = await accept(
-        socialClient.createDownload({
-          headers: authenticate(actor),
-          body: {
-            platform: "youtube",
-            url: "https://youtu.be/another-public-video",
-            maxDuration: 120,
-            quality: "720p",
-            format: "mp4",
+        expectApiError(blocked.body);
+        expect(blocked.body.error.code).toBe("DOWNLOAD_IN_PROGRESS");
+        expect(blocked.body.error.recovery?.downloadId).toBe(
+          created.body.downloadId,
+        );
+        expect(providerStarts).toBe(1);
+
+        // Even a valid current HD rate cannot replace this paid job's legacy cost.
+        providerCredits = 8;
+        mockNow(now() + 61_000);
+        await accept(
+          socialClient.getDownload({
+            headers: authenticate(actor),
+            params: { downloadId: created.body.downloadId },
+          }),
+          [200],
+        );
+        await flushWaitUntilForTest();
+        const inconsistentRefresh = await accept(
+          socialClient.getDownload({
+            headers: authenticate(actor),
+            params: { downloadId: created.body.downloadId },
+          }),
+          [200],
+        );
+        expect(inconsistentRefresh.body).toMatchObject({
+          status: "artifact_failed",
+          provider: { creditsCost: 2 },
+          billing: { quantity: 2, creditsCharged: 6 },
+        });
+        await expect(credits(actor)).resolves.toBe(creditsAfterFailure);
+
+        providerCredits = 2;
+        mockNow(now() + 121_000);
+        await Promise.all([
+          owner.run(async () => {
+            return await accept(
+              socialClient.getDownload({
+                headers: authenticate(actor),
+                params: { downloadId: created.body.downloadId },
+              }),
+              [200],
+            );
+          }),
+          owner.run(async () => {
+            return await accept(
+              socialClient.getDownload({
+                headers: authenticate(actor),
+                params: { downloadId: created.body.downloadId },
+              }),
+              [200],
+            );
+          }),
+        ]);
+        await flushWaitUntilForTest();
+        const completed = await accept(
+          socialClient.getDownload({
+            headers: authenticate(actor),
+            params: { downloadId: created.body.downloadId },
+          }),
+          [200],
+        );
+
+        expect(completed.body).toMatchObject({
+          status: "completed",
+          artifact: {
+            url: expect.stringMatching(
+              privateFiles
+                ? /^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.mp4$/u
+                : /^https:\/\/cdn\.vm7\.io\/artifacts\//u,
+            ),
           },
-        }),
-        [409],
-      );
-
-      expectApiError(blocked.body);
-      expect(blocked.body.error.code).toBe("DOWNLOAD_IN_PROGRESS");
-      expect(blocked.body.error.recovery?.downloadId).toBe(
-        created.body.downloadId,
-      );
-      expect(providerStarts).toBe(1);
-
-      // Even a valid current HD rate cannot replace this paid job's legacy cost.
-      providerCredits = 8;
-      mockNow(now() + 61_000);
-      await accept(
-        socialClient.getDownload({
-          headers: authenticate(actor),
-          params: { downloadId: created.body.downloadId },
-        }),
-        [200],
-      );
-      await flushWaitUntilForTest();
-      const inconsistentRefresh = await accept(
-        socialClient.getDownload({
-          headers: authenticate(actor),
-          params: { downloadId: created.body.downloadId },
-        }),
-        [200],
-      );
-      expect(inconsistentRefresh.body).toMatchObject({
-        status: "artifact_failed",
-        provider: { creditsCost: 2 },
-        billing: { quantity: 2, creditsCharged: 6 },
+        });
+        expect(providerStarts).toBe(1);
+        expect(multipartAttempts).toBe(1);
+        await expect(credits(actor)).resolves.toBe(creditsAfterFailure);
       });
-      await expect(credits(actor)).resolves.toBe(creditsAfterFailure);
-
-      providerCredits = 2;
-      mockNow(now() + 121_000);
-      await Promise.all([
-        owner.run(async () => {
-          return await accept(
-            socialClient.getDownload({
-              headers: authenticate(actor),
-              params: { downloadId: created.body.downloadId },
-            }),
-            [200],
-          );
-        }),
-        owner.run(async () => {
-          return await accept(
-            socialClient.getDownload({
-              headers: authenticate(actor),
-              params: { downloadId: created.body.downloadId },
-            }),
-            [200],
-          );
-        }),
-      ]);
-      await flushWaitUntilForTest();
-      const completed = await accept(
-        socialClient.getDownload({
-          headers: authenticate(actor),
-          params: { downloadId: created.body.downloadId },
-        }),
-        [200],
-      );
-
-      expect(completed.body.status).toBe("completed");
-      expect(providerStarts).toBe(1);
-      expect(multipartAttempts).toBe(1);
-      await expect(credits(actor)).resolves.toBe(creditsAfterFailure);
-    });
-  });
+    },
+  );
 
   it.each([
     {

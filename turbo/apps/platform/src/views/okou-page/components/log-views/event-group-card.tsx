@@ -359,10 +359,7 @@ function TaskEventGroupCard({
 }
 
 type CodexSubAgentActivityKind =
-  | "started"
-  | "interacted"
-  | "interrupted"
-  | "completed";
+  "started" | "interacted" | "interrupted" | "completed";
 
 function isCodexSubAgentActivityKind(
   value: string | undefined,

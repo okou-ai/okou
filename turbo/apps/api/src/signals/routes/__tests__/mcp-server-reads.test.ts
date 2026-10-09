@@ -228,7 +228,7 @@ async function messageFixture() {
     // without a run. Finish it so later reads, including reads after the
     // history moves into a snapshot, see the rejection.
     await flushWaitUntilForTest();
-    return response.body;
+    return { ...response.body, eventId: clientEventId };
   }
   return { ...f, send };
 }
@@ -1083,6 +1083,19 @@ describe("MCP canonical message reads", () => {
   });
 });
 describe("MCP original input observations", () => {
+  it("rejects an oversized relevant input instead of returning partial queued state", async () => {
+    const f = await messageFixture();
+    const sent = await f.send("x".repeat(33 * 1024 * 1024));
+    expect(
+      structuredToolError(
+        await callTool(f.auth.token(), "get_chat_input", {
+          threadId: sent.threadId,
+          eventId: sent.eventId,
+        }),
+      ).code,
+    ).toBe("history_limit");
+  });
+
   it("observes a small live input despite unrelated output exceeding the full-history budget", async () => {
     const auth = fixture();
     const f = createChatEventsFixture(context);

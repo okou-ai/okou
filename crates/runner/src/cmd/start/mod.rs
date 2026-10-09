@@ -966,7 +966,6 @@ async fn run_start_with_home(
         decoded_cache: crate::storage_cache::decoded::DecodedCache::new(home.clone()),
         background_fill,
         pre_spawn_admission,
-        storage_baseline_observer: Default::default(),
         home: home.clone(),
         workspace_cache: Some(
             WorkspaceImageCache::shared(paths.clone(), &home, &group_name)

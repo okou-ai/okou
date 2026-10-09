@@ -18,16 +18,10 @@ import {
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { command } from "ccstate";
 import { randomUUID } from "node:crypto";
-import { writeDb$, type ReadonlyDb } from "../external/db";
-import {
-  chatThreadCreatedEventSql,
-  prepareChatThreadInsert,
-  createdChatThreadFromRow,
-} from "./chat-thread-create.service";
+import { db$, writeDb$ } from "../external/db";
 import {
   chatThreadEventInsertSql,
   chatThreadServiceTierFromCodex,
-  type ChatThreadEventTransaction,
 } from "./chat-thread-event.service";
 import {
   resolveDefaultModelFirstPin$,
@@ -163,29 +157,21 @@ export function workflowUserAutomationThreadOwnerCondition(
   );
 }
 
-async function readWorkflowUserAutomationThreadBinding(
-  db: Pick<ReadonlyDb, "select">,
-  owner: WorkflowUserAutomationThreadOwner,
-): Promise<{ readonly chatThreadId: string | null } | null> {
-  const [binding] = await db
-    .select({ chatThreadId: workflowUserAutomationThreads.chatThreadId })
-    .from(workflowUserAutomationThreads)
-    .where(workflowUserAutomationThreadOwnerCondition(owner))
-    .limit(1);
-  return binding ?? null;
-}
-
-export async function loadWorkflowUserAutomationThreadId(
-  db: Pick<ReadonlyDb, "select">,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly workflowId: string;
+export const loadWorkflowUserAutomationThreadId$ = command(
+  async (
+    { get },
+    args: WorkflowUserAutomationThreadOwner,
+    signal: AbortSignal,
+  ): Promise<string | null> => {
+    const [binding] = await get(db$)
+      .select({ chatThreadId: workflowUserAutomationThreads.chatThreadId })
+      .from(workflowUserAutomationThreads)
+      .where(workflowUserAutomationThreadOwnerCondition(args))
+      .limit(1);
+    signal.throwIfAborted();
+    return binding?.chatThreadId ?? null;
   },
-): Promise<string | null> {
-  const binding = await readWorkflowUserAutomationThreadBinding(db, args);
-  return binding?.chatThreadId ?? null;
-}
+);
 
 /**
  * Pause every enabled automation that shares a workflow-user chat thread.
@@ -213,123 +199,6 @@ export function threadBoundWorkflowAutomationsPredicate(args: {
         ),
     ),
   );
-}
-
-async function createAutomationChatThread(
-  db: ChatThreadEventTransaction,
-  args: {
-    readonly userId: string;
-    readonly orgId: string;
-    readonly agentId: string;
-    readonly title: string;
-    readonly currentTime: Date;
-    readonly preparation: WorkflowThreadPreparation;
-  },
-): Promise<string> {
-  const pin = args.preparation.initialModel;
-  const threadPlan = prepareChatThreadInsert({
-    orgId: args.orgId,
-    userId: args.userId,
-    agentId: args.agentId,
-    title: args.title,
-    modelSettings: args.preparation.modelSettings,
-    cloudBrowserEnabled: args.preparation.cloudBrowserEnabled,
-    selectedModel: pin.selectedModel,
-    codexServiceTier: pin.serviceTier === "priority" ? "fast" : null,
-    lastMessageAt: args.currentTime,
-    createdAt: args.currentTime,
-    updatedAt: args.currentTime,
-  });
-  const [threadRow] = await db
-    .with(...threadPlan.defaults)
-    .insert(chatThreads)
-    .values(threadPlan.values)
-    .onConflictDoNothing()
-    .returning({
-      id: chatThreads.id,
-      userId: chatThreads.userId,
-      title: chatThreads.title,
-      selectedModel: chatThreads.selectedModel,
-      modelSettings: chatThreads.modelSettings,
-      codexServiceTier: chatThreads.codexServiceTier,
-      computerUseHostId: chatThreads.computerUseHostId,
-      cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
-      createdAt: chatThreads.createdAt,
-    });
-  const thread = threadRow
-    ? createdChatThreadFromRow(threadRow, threadPlan.values.agentId)
-    : undefined;
-  if (!thread) {
-    throw new Error("Failed to create workflow automation chat thread");
-  }
-  await db.execute(chatThreadCreatedEventSql({ orgId: args.orgId, thread }));
-  return thread.id;
-}
-
-/** Insert this owner's binding if missing and return its destination. */
-async function upsertWorkflowUserAutomationThreadBinding(
-  db: ChatThreadEventTransaction,
-  args: WorkflowUserAutomationThreadOwner & { readonly currentTime: Date },
-): Promise<{ readonly chatThreadId: string | null }> {
-  await db
-    .insert(workflowUserAutomationThreads)
-    .values({
-      orgId: args.orgId,
-      userId: args.userId,
-      workflowId: args.workflowId,
-      createdAt: args.currentTime,
-      updatedAt: args.currentTime,
-    })
-    .onConflictDoNothing({
-      target: [
-        workflowUserAutomationThreads.orgId,
-        workflowUserAutomationThreads.userId,
-        workflowUserAutomationThreads.workflowId,
-      ],
-    });
-  const binding = await readWorkflowUserAutomationThreadBinding(db, args);
-  return { chatThreadId: binding?.chatThreadId ?? null };
-}
-
-async function bindWorkflowUserAutomationThread(
-  db: ChatThreadEventTransaction,
-  args: WorkflowUserAutomationThreadOwner & { readonly currentTime: Date },
-  chatThreadId: string,
-): Promise<string> {
-  await db
-    .update(workflowUserAutomationThreads)
-    .set({ chatThreadId, updatedAt: args.currentTime })
-    .where(workflowUserAutomationThreadOwnerCondition(args));
-  return chatThreadId;
-}
-
-export async function ensureWorkflowUserAutomationThread(
-  db: ChatThreadEventTransaction,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly workflowId: string;
-    readonly agentId: string;
-    readonly workflowTitle: string;
-    readonly currentTime: Date;
-    readonly preparation: WorkflowThreadPreparation;
-  },
-): Promise<string> {
-  const binding = await upsertWorkflowUserAutomationThreadBinding(db, args);
-  if (binding.chatThreadId) {
-    return binding.chatThreadId;
-  }
-
-  const title = args.preparation.title;
-  const chatThreadId = await createAutomationChatThread(db, {
-    userId: args.userId,
-    orgId: args.orgId,
-    agentId: args.agentId,
-    title,
-    preparation: args.preparation,
-    currentTime: args.currentTime,
-  });
-  return await bindWorkflowUserAutomationThread(db, args, chatThreadId);
 }
 
 interface WorkflowThreadOwner extends WorkflowUserAutomationThreadOwner {
@@ -373,8 +242,29 @@ export const ensureWorkflowUserAutomationThread$ = command(
     );
     const db = set(writeDb$);
     const result = await db.transaction(async (tx) => {
-      const binding = await upsertWorkflowUserAutomationThreadBinding(tx, args);
-      if (binding.chatThreadId) {
+      // The binding, created thread and created event are one publication.
+      await tx
+        .insert(workflowUserAutomationThreads)
+        .values({
+          orgId: args.orgId,
+          userId: args.userId,
+          workflowId: args.workflowId,
+          createdAt: args.currentTime,
+          updatedAt: args.currentTime,
+        })
+        .onConflictDoNothing({
+          target: [
+            workflowUserAutomationThreads.orgId,
+            workflowUserAutomationThreads.userId,
+            workflowUserAutomationThreads.workflowId,
+          ],
+        });
+      const [binding] = await tx
+        .select({ chatThreadId: workflowUserAutomationThreads.chatThreadId })
+        .from(workflowUserAutomationThreads)
+        .where(workflowUserAutomationThreadOwnerCondition(args))
+        .limit(1);
+      if (binding?.chatThreadId) {
         return binding.chatThreadId;
       }
       const values = preparedWorkflowThreadValues(
@@ -398,11 +288,11 @@ export const ensureWorkflowUserAutomationThread$ = command(
           createdAt: values.createdAt,
         }),
       );
-      const chatThreadId = await bindWorkflowUserAutomationThread(
-        tx,
-        args,
-        values.id,
-      );
+      await tx
+        .update(workflowUserAutomationThreads)
+        .set({ chatThreadId: values.id, updatedAt: args.currentTime })
+        .where(workflowUserAutomationThreadOwnerCondition(args));
+      const chatThreadId = values.id;
       signal.throwIfAborted();
       return chatThreadId;
     });

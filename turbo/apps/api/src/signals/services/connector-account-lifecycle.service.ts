@@ -46,7 +46,7 @@ import {
 } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { db$, writeDb$, type ReadonlyDb } from "../external/db";
 import { safeJsonParse, settle } from "../utils";
 import { isUniqueViolation, safeSqlStateCode } from "../../lib/pg-errors";
 import { googleFormsAccountProjectionStatement } from "./google-forms-automation-account.service";
@@ -74,7 +74,7 @@ import {
 import {
   connectorCatalog,
   connectorCatalogEntries,
-} from "@okouai/db/schema/connector-catalog";
+} from "@okouai/db/runtime/connector-catalog";
 import {
   connectorCatalogCurrentWhere,
   connectorCatalogSlugJoin,
@@ -1035,35 +1035,6 @@ function clearOtherDefaultsSql(
   );
 }
 
-/**
- * Move the default with ordinary writes. A concurrent default change that
- * trips the partial unique index rolls back and is reported as a conflict.
- */
-async function changeDefaultConnectorAccount(
-  tx: Tx,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly target: ConnectorAccountTarget;
-    readonly connectionId: string;
-  },
-): Promise<Date> {
-  const owner = connectorAccountOwnerCondition(args);
-  await tx
-    .update(connectors)
-    .set({ isDefault: false, updatedAt: sql`clock_timestamp()` })
-    .where(clearOtherDefaultsSql(owner, args.connectionId));
-  const [updated] = await tx
-    .update(connectors)
-    .set({ isDefault: true, updatedAt: sql`clock_timestamp()` })
-    .where(and(owner, eq(connectors.id, args.connectionId)))
-    .returning({ updatedAt: connectors.updatedAt });
-  if (!updated) {
-    throw new DefaultConnectorAccountMissing();
-  }
-  return updated.updatedAt;
-}
-
 /** Known default-account races roll back; other database failures propagate. */
 export function isConnectorAccountDefaultConflict(error: unknown): boolean {
   return (
@@ -1092,6 +1063,7 @@ async function settleDefaultChange(
   throw settled.error;
 }
 
+/** Keep the default transition and Forms projection atomic on missing/racing targets. */
 export const setDefaultGoogleFormsAccount$ = command(
   async (
     { set },
@@ -1105,10 +1077,24 @@ export const setDefaultGoogleFormsAccount$ = command(
     const db = set(writeDb$);
     return await settleDefaultChange(
       db.transaction(async (tx) => {
-        const updatedAt = await changeDefaultConnectorAccount(tx, {
-          ...args,
+        const owner = connectorAccountOwnerCondition({
+          orgId: args.orgId,
+          userId: args.userId,
           target: { kind: "builtin", connectorSlug: "google-forms" },
         });
+        await tx
+          .update(connectors)
+          .set({ isDefault: false, updatedAt: sql`clock_timestamp()` })
+          .where(clearOtherDefaultsSql(owner, args.connectionId));
+        const [updated] = await tx
+          .update(connectors)
+          .set({ isDefault: true, updatedAt: sql`clock_timestamp()` })
+          .where(and(owner, eq(connectors.id, args.connectionId)))
+          .returning({ updatedAt: connectors.updatedAt });
+        if (!updated) {
+          throw new DefaultConnectorAccountMissing();
+        }
+        const updatedAt = updated.updatedAt;
         await tx.execute(googleFormsAccountProjectionStatement(args));
         signal.throwIfAborted();
         return updatedAt;
@@ -1117,33 +1103,60 @@ export const setDefaultGoogleFormsAccount$ = command(
   },
 );
 
-export async function setDefaultConnectorAccount(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly target: ConnectorAccountTarget;
-    readonly connectionId: string;
+/** Clear/select defaults together so missing targets and index conflicts roll back. */
+export const setDefaultConnectorAccount$ = command(
+  async (
+    { set },
+    input: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly target: ConnectorAccountTarget;
+      readonly connectionId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<Date | "conflict" | null> => {
+    const target: ConnectorAccountTarget =
+      input.target.kind === "builtin"
+        ? { kind: "builtin", connectorSlug: input.target.connectorSlug }
+        : { kind: "custom", customConnectorId: input.target.customConnectorId };
+    const args = {
+      orgId: input.orgId,
+      userId: input.userId,
+      connectionId: input.connectionId,
+      target,
+    };
+    const db = set(writeDb$);
+    return await settleDefaultChange(
+      db.transaction(async (tx) => {
+        if (
+          args.target.kind === "custom" &&
+          !(await customTargetIsVisible(tx, {
+            orgId: args.orgId,
+            customConnectorId: args.target.customConnectorId,
+          }))
+        ) {
+          throw new DefaultConnectorAccountMissing();
+        }
+        const owner = connectorAccountOwnerCondition(args);
+        await tx
+          .update(connectors)
+          .set({ isDefault: false, updatedAt: sql`clock_timestamp()` })
+          .where(clearOtherDefaultsSql(owner, args.connectionId));
+        const [updated] = await tx
+          .update(connectors)
+          .set({ isDefault: true, updatedAt: sql`clock_timestamp()` })
+          .where(and(owner, eq(connectors.id, args.connectionId)))
+          .returning({ updatedAt: connectors.updatedAt });
+        if (!updated) {
+          throw new DefaultConnectorAccountMissing();
+        }
+        const updatedAt = updated.updatedAt;
+        await reprojectWorkflowAutomationsForOwner(tx, args, signal);
+        return updatedAt;
+      }),
+    );
   },
-  signal: AbortSignal,
-): Promise<Date | "conflict" | null> {
-  return await settleDefaultChange(
-    db.transaction(async (tx) => {
-      if (
-        args.target.kind === "custom" &&
-        !(await customTargetIsVisible(tx, {
-          orgId: args.orgId,
-          customConnectorId: args.target.customConnectorId,
-        }))
-      ) {
-        throw new DefaultConnectorAccountMissing();
-      }
-      const updatedAt = await changeDefaultConnectorAccount(tx, args);
-      await reprojectWorkflowAutomationsForOwner(tx, args, signal);
-      return updatedAt;
-    }),
-  );
-}
+);
 
 export function connectorAccountDeletionImpact(args: {
   readonly orgId: string;

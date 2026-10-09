@@ -1,6 +1,7 @@
 import Ably, { type CapabilityOp } from "ably";
 import type { RunnerSshInvalidate } from "@okouai/api-contracts/contracts/runner-ssh";
 import {
+  foregroundChannelName,
   sessionOutputChannelName,
   type BrowserSessionChangedPayload,
   type HomeTaskRecommendationsChangedPayload,
@@ -17,7 +18,7 @@ import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { singleton } from "../../lib/singleton";
 import { waitUntil } from "../context/wait-until";
-import { awaitWithSignal, bestEffort, settle, tapError } from "../utils";
+import { bestEffort, tapError } from "../utils";
 
 const L = logger("Realtime");
 
@@ -26,6 +27,20 @@ const ablyClient = singleton((): Ably.Rest => {
   L.debug("Ably client initialised");
   return client;
 });
+
+export async function isUserInForeground(
+  userId: string,
+  orgId: string,
+  signal: AbortSignal,
+): Promise<boolean> {
+  signal.throwIfAborted();
+  const channel = ablyClient().channels.get(
+    foregroundChannelName(userId, orgId),
+  );
+  const members = await channel.presence.get({ clientId: userId, limit: 1 });
+  signal.throwIfAborted();
+  return members.items.length > 0;
+}
 
 function getUserChannelName(userId: string): string {
   return `user:${userId}`;
@@ -58,19 +73,17 @@ async function createPlatformUserRealtimeToken(
   return tokenRequest;
 }
 
-// Exchanging the token here saves the browser its own requestToken round trip
-// before the WebSocket can open. Past this budget the browser exchanges it.
-const PLATFORM_REALTIME_TOKEN_EXCHANGE_TIMEOUT_MS = 1000;
-
 export async function createPlatformRealtimeToken(
   userId: string,
   orgId: string | undefined,
   signal: AbortSignal,
-): Promise<Ably.TokenDetails | Ably.TokenRequest> {
+): Promise<Ably.TokenRequest> {
+  signal.throwIfAborted();
   const capability: Record<string, CapabilityOp[]> = {
     [getUserChannelName(userId)]: ["subscribe"],
   };
   if (orgId !== undefined) {
+    capability[foregroundChannelName(userId, orgId)] = ["presence"];
     capability[getOrgChannelName(orgId)] = ["subscribe"];
     capability[getUserOrgChannelName(userId, orgId)] = ["subscribe"];
     capability[sessionOutputChannelName(userId, orgId, "*")] = ["subscribe"];
@@ -81,29 +94,8 @@ export async function createPlatformRealtimeToken(
     clientId: userId,
   };
   const scope = `user:${userId}${orgId === undefined ? "" : `/org:${orgId}`}`;
-  const exchanged = await settle(
-    awaitWithSignal(
-      ablyClient().auth.requestToken(tokenParams),
-      AbortSignal.any([
-        signal,
-        AbortSignal.timeout(PLATFORM_REALTIME_TOKEN_EXCHANGE_TIMEOUT_MS),
-      ]),
-    ),
-    signal,
-  );
-  if (exchanged.ok) {
-    L.debug(`Exchanged platform realtime token for ${scope}`);
-    return exchanged.value;
-  }
-
-  L.warn("Platform realtime token exchange failed; returning a token request", {
-    scope,
-    error:
-      exchanged.error instanceof Error
-        ? exchanged.error.message
-        : String(exchanged.error),
-  });
   const tokenRequest = await ablyClient().auth.createTokenRequest(tokenParams);
+  signal.throwIfAborted();
   L.debug(`Generated platform realtime token request for ${scope}`);
   return tokenRequest;
 }

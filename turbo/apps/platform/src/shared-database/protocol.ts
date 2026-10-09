@@ -48,6 +48,13 @@ const heartbeatMessageSchema = z
   .object({ type: z.literal("heartbeat") })
   .strict();
 
+const tabVisibilityMessageSchema = z
+  .object({
+    type: z.literal("tab-visibility"),
+    visibility: z.enum(["visible", "hidden"]),
+  })
+  .strict();
+
 const queryRequestSchema = z
   .object({
     type: z.literal("query"),
@@ -118,6 +125,7 @@ const realtimeUnsubscribeRequestSchema = z
 export const sharedDatabaseClientMessageSchema = z.discriminatedUnion("type", [
   registerTabMessageSchema,
   heartbeatMessageSchema,
+  tabVisibilityMessageSchema,
   queryRequestSchema,
   getComputedRequestSchema,
   tokenResultMessageSchema,

@@ -129,8 +129,7 @@ interface AxiomIngestStatus {
 }
 
 type DirectAxiomIngestResult =
-  | { readonly configured: false }
-  | { readonly configured: true };
+  { readonly configured: false } | { readonly configured: true };
 
 type DirectAxiomIngestErrorOptions =
   | {
@@ -538,7 +537,10 @@ async function queryAxiomDirect<T = Record<string, unknown>>(
             : { endTime: options.endTime }),
         }
       : undefined;
-  const result = await client.query(apl, axiomOptions);
+  const result = await client.query(apl, {
+    ...axiomOptions,
+    format: "legacy",
+  });
   return mapAxiomMatches<T>(result);
 }
 

@@ -126,7 +126,9 @@ async def test_worker_start_failures_release_bodies_and_recover(
                     assert admission.state_for_tests() == (0, 0)
                     del flow
 
-            gc.collect()
+            # Skip the heap scan only once both release oracles are complete.
+            if any(flow_ref() is not None for flow_ref in flows) or len(released) != len(flows):
+                gc.collect()
             assert all(flow_ref() is None for flow_ref in flows)
             assert sorted(released) == list(range(5))
             assert hashed == []
@@ -248,6 +250,7 @@ async def test_done_joins_hashes_and_closes_hashing(
     real_flow,
     headers,
     mitm_ctx,
+    fresh_usage_executor,
     catalog_shutdown_fails: bool,
 ) -> None:
     hasher = _ControlledHashes(asyncio.get_running_loop())

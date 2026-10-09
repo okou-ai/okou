@@ -1,10 +1,6 @@
-import { setOrgOpenrouterPresetFixture } from "../../../test-fixtures/org-metadata";
-import { assertPiLangfuseRelayContract } from "./helpers/pi-langfuse-relay";
 import { randomUUID } from "node:crypto";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
-import { mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
@@ -12,15 +8,12 @@ import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { expectApiError, type ApiTestUser } from "./helpers/api-bdd";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 import {
   createChatEventsFixture,
   CODEX_WEB_IMAGE_UPLOAD_PROMPT_SNIPPET,
-  type ChatRunSendBody,
   type PromptMessage,
   requireOrgId,
-  createGptUsagePricingResolution,
   claimEnvironment,
   userMessages,
 } from "./helpers/chat-events-fixture";
@@ -50,7 +43,6 @@ const {
   mockPiCheckpointObjectStore,
   publishPendingPiInstructions,
   mockPiResourceArchiveDownloads,
-  completeSandboxFirstPiRun,
 } = createChatEventsFixture(context);
 
 function base64UrlEncode(input: string): string {
@@ -122,28 +114,6 @@ async function waitForPickedInput(
     throw new Error("Expected the picked input replacement");
   }
   return { picked, events: messages.events };
-}
-
-/** A send is accepted without a run; wait for its pick's outcome. */
-async function sendUntilPicked(
-  actor: ApiTestUser,
-  body: Omit<ChatRunSendBody, "template" | "clientEventId">,
-) {
-  const clientEventId = randomUUID();
-  const sent = await chat.requestSendEvent(
-    actor,
-    { ...body, clientEventId },
-    [201],
-  );
-  if (sent.status !== 201) {
-    throw new Error("Expected the send to be accepted");
-  }
-  expect(sent.body.runId).toBeNull();
-  const threadId = sent.body.threadId;
-  return {
-    threadId,
-    ...(await waitForPickedInput(actor, threadId, clientEventId)),
-  };
 }
 
 describe("CHAT-02: model-first routing", () => {
@@ -398,145 +368,6 @@ describe("CHAT-02: model-first routing", () => {
     expect(claim.modelUsageProvider).toBe("okou-1.0");
     await cancelChatRun(actor, run.runId);
   }, 90_000);
-
-  it("exposes the owner's run trace URL after tracing is disabled", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    const orgId = requireOrgId(actor);
-    await configureBuiltInPiModel(actor, "okou-1.0");
-    const pricing = await createGptUsagePricingResolution();
-    mockPiResourceArchiveDownloads();
-    const checkpointObjects = mockPiCheckpointObjectStore();
-    mockOptionalEnv("LANGFUSE_PUBLIC_KEY", "pk-lf-bdd-trace-link");
-    mockOptionalEnv("LANGFUSE_SECRET_KEY", "sk-lf-bdd-trace-link");
-    mockOptionalEnv("LANGFUSE_BASE_URL", undefined);
-    mockOptionalEnv("LANGFUSE_PROJECT_ID", undefined);
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId },
-      {
-        [FeatureSwitchKey.LangfuseTrace]: true,
-      },
-    );
-    const tracedPrompt = "complete a traced run";
-    const traced = await sendChatRun(actor, {
-      agentId,
-      prompt: tracedPrompt,
-      model: null,
-    });
-    await completeSandboxFirstPiRun({
-      actor,
-      answer: "Completed answer",
-      checkpointObjects,
-      claim: await claimChatRun(runnerGroup, traced.runId),
-      prompt: tracedPrompt,
-      run: traced,
-      usagePricingResolution: pricing,
-    });
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId },
-      {
-        [FeatureSwitchKey.LangfuseTrace]: false,
-      },
-    );
-    const traceUrl = `https://us.cloud.langfuse.com/project/cmu0bvhcu012gad0drbw8ddts/traces/${traced.runId.replaceAll("-", "")}`;
-    expect((await api.readRun(actor, traced.runId)).langfuseTraceUrl).toBe(
-      traceUrl,
-    );
-    const untraced = await sendChatRun(actor, {
-      agentId,
-      threadId: traced.threadId,
-      prompt: "continue without tracing",
-      model: null,
-    });
-    await flushWaitUntilForTest();
-    expect((await api.readRun(actor, untraced.runId)).status).toBe("pending");
-    await expect(
-      api.readRun(actor, untraced.runId),
-    ).resolves.not.toHaveProperty("langfuseTraceUrl");
-    expect((await api.readRun(actor, traced.runId)).langfuseTraceUrl).toBe(
-      traceUrl,
-    );
-    const peer = { ...actor, userId: `${actor.userId}_peer` };
-    await api.requestReadRun(peer, traced.runId, [404]);
-    mockOptionalEnv("LANGFUSE_BASE_URL", "https://langfuse.example/");
-    mockOptionalEnv("LANGFUSE_PROJECT_ID", "  project-debug  ");
-    expect((await api.readRun(actor, traced.runId)).langfuseTraceUrl).toBe(
-      `https://langfuse.example/project/project-debug/traces/${traced.runId.replaceAll("-", "")}`,
-    );
-    mockOptionalEnv("LANGFUSE_BASE_URL", "javascript:alert(1)");
-    await expect(api.readRun(actor, traced.runId)).resolves.not.toHaveProperty(
-      "langfuseTraceUrl",
-    );
-    await cancelChatRun(actor, untraced.runId);
-  });
-
-  it("relays admitted run traces with platform credentials after runner claim", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    const orgId = requireOrgId(actor);
-    await publishPendingPiInstructions(actor, agentId);
-    await configureBuiltInPiModel(actor, "okou-1.0");
-    mockPiResourceArchiveDownloads(true);
-    mockOptionalEnv("LANGFUSE_PUBLIC_KEY", "pk-lf-bdd-trace-admission");
-    mockOptionalEnv("LANGFUSE_SECRET_KEY", "sk-lf-bdd-trace-admission");
-    mockOptionalEnv("LANGFUSE_BASE_URL", "https://langfuse.example");
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId },
-      {
-        [FeatureSwitchKey.LangfuseTrace]: true,
-      },
-    );
-    await api.heartbeatRunner(runnerGroup);
-
-    const run = await sendChatRun(actor, {
-      agentId,
-      prompt: "preserve the Langfuse trace gate through claim",
-      model: null,
-    });
-    await flushWaitUntilForTest();
-
-    const claimed = await claimChatRun(runnerGroup, run.runId);
-    expect(claimed.claim.cliAgentType).toBe("pi");
-    expect(claimed.claim.platformEnvironment).toMatchObject({
-      OKOU_PI_LANGFUSE_DEBUG_ENABLED: "true",
-      LANGFUSE_TRACING_ENABLED: "true",
-    });
-    expect(claimed.claim.platformEnvironment).not.toHaveProperty(
-      "LANGFUSE_PUBLIC_KEY",
-    );
-    expect(claimed.claim.platformEnvironment).not.toHaveProperty(
-      "LANGFUSE_SECRET_KEY",
-    );
-    expect(claimed.claim.secretValues).not.toContain(
-      "sk-lf-bdd-trace-admission",
-    );
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId },
-      {
-        [FeatureSwitchKey.LangfuseTrace]: false,
-      },
-    );
-    const relay = await assertPiLangfuseRelayContract(context, {
-      runId: run.runId,
-      token: claimed.claim.platformEnvironment.OKOU_TOKEN,
-    });
-    await cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
-
-    const untraced = await sendChatRun(actor, {
-      agentId,
-      prompt: "run without trace admission",
-      model: null,
-    });
-    await flushWaitUntilForTest();
-    const untracedClaim = await claimChatRun(runnerGroup, untraced.runId);
-    await relay.expectAdmissionDenied(
-      untraced.runId,
-      untracedClaim.claim.platformEnvironment.OKOU_TOKEN,
-    );
-    await cancelChatRun(actor, untraced.runId, untracedClaim.sandboxHeaders);
-  });
 
   it("rejects a disconnected thread subscription until its owner explicitly selects Auto", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
@@ -1010,115 +841,6 @@ describe("CHAT-02: model-first routing", () => {
     );
     await chat.requestReadThread(actor, rejectedThreadId, [404]);
   }, 90_000);
-
-  it.each([null, "@preset/org-premium"] as const)(
-    "routes built-in okou-1.0 with org preset %s and falls back only for null",
-    async (openrouterPreset) => {
-      const model = "okou-1.0";
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
-      await setOrgOpenrouterPresetFixture({
-        orgId: requireOrgId(actor),
-        openrouterPreset,
-      });
-      await seedBuiltInModelKey(model);
-      await preparePiResourceHandoff(actor, agentId);
-      await chat.updateUserModelPreference(actor, null);
-
-      // No thread pin or member preference: Auto applies.
-      const run = await sendChatRun(actor, {
-        agentId,
-        prompt: "capture the managed Okou Preset route",
-      });
-      // The launched Run keeps its route even if operator config changes.
-      await setOrgOpenrouterPresetFixture({
-        orgId: requireOrgId(actor),
-        openrouterPreset: "@preset/changed-after-launch",
-      });
-      const { claim } = await claimChatRun(runnerGroup, run.runId);
-      expect(claim.cliAgentType).toBe("pi");
-      expect(claim.modelUsageProvider).toBe(model);
-      expect(claim.piModelConfig).toMatchObject({
-        provider: "openrouter",
-        baseUrl: "https://openrouter.ai/api/v1",
-        model: openrouterPreset ?? "@preset/okou-1-0",
-        catalogModel: model,
-      });
-      expect(claim.billableFirewalls).toContain(
-        "model-provider:openrouter-codex",
-      );
-      await cancelChatRun(actor, run.runId);
-    },
-  );
-
-  it("isolates org presets and restores the catalog route when cleared", async () => {
-    const first = await entitledChatActor();
-    const second = await entitledChatActor();
-    await seedBuiltInModelKey("okou-1.0");
-    await preparePiResourceHandoff(first.actor, first.agentId);
-    await preparePiResourceHandoff(second.actor, second.agentId);
-    await setOrgOpenrouterPresetFixture({
-      orgId: requireOrgId(first.actor),
-      openrouterPreset: "@preset/first-org",
-    });
-    await setOrgOpenrouterPresetFixture({
-      orgId: requireOrgId(second.actor),
-      openrouterPreset: "@preset/second-org",
-    });
-
-    for (const [owner, expected] of [
-      [first, "@preset/first-org"],
-      [second, "@preset/second-org"],
-    ] as const) {
-      const run = await sendChatRun(owner.actor, {
-        agentId: owner.agentId,
-        model: null,
-        prompt: "use this organization's preset",
-      });
-      const { claim } = await claimChatRun(owner.runnerGroup, run.runId);
-      expect(claim.piModelConfig).toMatchObject({
-        model: expected,
-        catalogModel: "okou-1.0",
-      });
-      await cancelChatRun(owner.actor, run.runId);
-    }
-
-    await setOrgOpenrouterPresetFixture({
-      orgId: requireOrgId(first.actor),
-      openrouterPreset: null,
-    });
-    const reset = await sendChatRun(first.actor, {
-      agentId: first.agentId,
-      model: null,
-      prompt: "use the catalog route after clearing the override",
-    });
-    const { claim } = await claimChatRun(first.runnerGroup, reset.runId);
-    expect(claim.piModelConfig).toMatchObject({
-      model: "@preset/okou-1-0",
-      catalogModel: "okou-1.0",
-    });
-    await cancelChatRun(first.actor, reset.runId);
-  });
-
-  it.each(["", "not-a-preset", "@preset/"])(
-    "rejects invalid operator preset %s without substituting Auto's default",
-    async (openrouterPreset) => {
-      const { actor, agentId } = await entitledChatActor();
-      await seedBuiltInModelKey("okou-1.0");
-      await setOrgOpenrouterPresetFixture({
-        orgId: requireOrgId(actor),
-        openrouterPreset,
-      });
-      const { picked } = await sendUntilPicked(actor, {
-        agentId,
-        prompt: "operator configuration must fail closed",
-        model: null,
-      });
-      expect(picked).toMatchObject({
-        eventType: "input.rejected",
-        error: "model_provider_unavailable",
-      });
-    },
-  );
 
   it("launches a free-plan okou-1.0 run on its Built-in route", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();

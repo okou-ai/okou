@@ -76,7 +76,7 @@ runs:
     - name: Start deployment
       id: deployment
       if: inputs.skip-start != 'true'
-      uses: bobheadxi/deployments@v1
+      uses: bobheadxi/deployments@648679e8e4915b27893bd7dbc35cb504dc915bc8 # v1
       with:
         step: start
         token: ${{ github.token }}
@@ -232,7 +232,7 @@ runs:
         echo "Deployment URL: $DEPLOYMENT_URL"
 
     - name: Finish deployment
-      uses: bobheadxi/deployments@v1
+      uses: bobheadxi/deployments@648679e8e4915b27893bd7dbc35cb504dc915bc8 # v1
       if: always() && inputs.skip-start != 'true' && inputs.skip-finish != 'true'
       with:
         step: finish

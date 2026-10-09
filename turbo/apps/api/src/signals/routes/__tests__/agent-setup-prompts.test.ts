@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 
 import { agentSetupPromptsContract } from "@okouai/api-contracts/contracts/agent-setup-prompts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 
@@ -10,7 +9,6 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { agentSetupPromptRoutes } from "../agent-setup-prompts";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 import {
   mockGoogleText,
@@ -31,36 +29,17 @@ function client() {
   );
 }
 
-async function signIn(options: { readonly featureEnabled: boolean }) {
-  const actor = {
-    orgId: `org_agent_setup_${randomUUID()}`,
-    userId: `user_agent_setup_${randomUUID()}`,
-  };
-  if (options.featureEnabled) {
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.AgentResponsibilitySetup]: true,
-    });
-  }
-  mocks.clerk.session(actor.userId, actor.orgId);
+function signIn() {
+  mocks.clerk.session(
+    `user_agent_setup_${randomUUID()}`,
+    `org_agent_setup_${randomUUID()}`,
+  );
 }
 
 describe("POST /api/agent-setup-prompts", () => {
-  it("is unavailable to members without the feature", async () => {
-    mockOptionalEnv("GCP_LLM_PROJECT_ID", undefined);
-    await signIn({ featureEnabled: false });
-    const response = await accept(
-      client().create({
-        headers,
-        body: { agentName: "Support Scout", responsibility },
-      }),
-      [403],
-    );
-    expect(response.body.error.code).toBe("FORBIDDEN");
-  });
-
   it("rejects a blank responsibility", async () => {
     mockOptionalEnv("GCP_LLM_PROJECT_ID", undefined);
-    await signIn({ featureEnabled: true });
+    signIn();
     const response = await accept(
       client().create({
         headers,
@@ -95,7 +74,7 @@ describe("POST /api/agent-setup-prompts", () => {
     async ({ usageMetadata }) => {
       mockGoogleText();
       mockOptionalEnv("OPENROUTER_API_KEY", undefined);
-      await signIn({ featureEnabled: true });
+      signIn();
       const polished = [
         "Hi Support Scout, here is your responsibility:",
         "",
@@ -250,7 +229,7 @@ describe("POST /api/agent-setup-prompts", () => {
       }
       // An available OpenRouter key must not become an implicit generation fallback.
       mockOptionalEnv("OPENROUTER_API_KEY", "unused-openrouter-key");
-      await signIn({ featureEnabled: true });
+      signIn();
       let openRouterRequests = 0;
       server.use(
         http.post(VERTEX_TEXT_URL, provider),

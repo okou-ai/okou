@@ -34,7 +34,7 @@ interface RecordingDatabase extends DBSchema {
 }
 
 async function recordings() {
-  const db = await openDB<RecordingDatabase>("okou-voice-drafts", 1);
+  const db = await openDB<RecordingDatabase>("okou-voice-drafts");
   const saved = await db.getAll("drafts");
   db.close();
   return saved;
@@ -93,6 +93,9 @@ describe("reuse an unfinished agent recording in the forward dialog without repl
     context.mocks.browser.voiceInput({ rms: 0.12 });
     const uploads: ArrayBuffer[] = [];
     let successful = false;
+    context.mocks.http.post("*/api/voice-io/polish/segments", () => {
+      return HttpResponse.json({ text: "Original recording." });
+    });
     context.mocks.http.post(
       "*/api/voice-io/transcribe/segment",
       async ({ request }) => {
@@ -100,7 +103,7 @@ describe("reuse an unfinished agent recording in the forward dialog without repl
         return successful
           ? HttpResponse.json({
               transcript: "original",
-              polishedText: "Original recording.",
+
               language: "en-US",
             })
           : HttpResponse.json({ error: "Temporary outage" }, { status: 503 });

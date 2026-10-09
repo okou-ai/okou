@@ -4,7 +4,7 @@ import {
   artifactShareReferencePath,
   parseArtifactReference,
 } from "@okouai/api-contracts/contracts/artifact-references";
-import { command, computed } from "ccstate";
+import { command } from "ccstate";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -23,14 +23,14 @@ import { sanitizeArtifactFilename } from "../../lib/file-url";
 import { nowDate } from "../../lib/time";
 import { apiBackendUrl } from "../../lib/api-backend-url";
 import { db$, writeDb$ } from "../external/db";
-import { userFeatureSwitchContext } from "./feature-switches.service";
+import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { safeUrlParse } from "../utils";
 import {
   allocateArtifactReference$,
-  artifactReferenceRecord,
+  artifactReferenceRecord$,
 } from "./artifact-reference.service";
 import {
-  queueArtifactCatalogFile,
+  queueArtifactCatalogFileSql,
   syncArtifactCatalogForFile$,
 } from "./artifact-catalog.service";
 
@@ -46,12 +46,18 @@ const privateMetadataSchema = z.object({
     .optional(),
 });
 
-export function privateArtifactCreationEnabled(orgId: string, userId: string) {
-  return computed(async (get) => {
-    const context = await get(userFeatureSwitchContext(orgId, userId));
+export const privateArtifactCreationEnabled$ = command(
+  async ({ set }, orgId: string, userId: string, signal: AbortSignal) => {
+    const context = await set(
+      loadUserFeatureSwitchContext$,
+      orgId,
+      userId,
+      signal,
+    );
+    signal.throwIfAborted();
     return isFeatureEnabled(FeatureSwitchKey.PrivateArtifacts, context);
-  });
-}
+  },
+);
 
 export function artifactFileReference(
   value: string,
@@ -80,16 +86,13 @@ export function artifactFileReference(
   return { id: url.searchParams.get("file_id") ?? "" };
 }
 
-export function resolveArtifactFileReference(
-  value: string,
-  signal: AbortSignal,
-) {
-  return computed(async (get) => {
+export const resolveArtifactFileReference$ = command(
+  async ({ set }, value: string, signal: AbortSignal) => {
     const reference = artifactFileReference(value);
     if (!reference || reference.id || !reference.hash) {
       return reference;
     }
-    const record = await get(artifactReferenceRecord(reference.hash, signal));
+    const record = await set(artifactReferenceRecord$, reference.hash, signal);
     // Share aliases grant viewing only. Provider input still requires ownership.
     return {
       id:
@@ -97,8 +100,8 @@ export function resolveArtifactFileReference(
           ? record.target.id
           : "",
     };
-  });
-}
+  },
+);
 
 export function privateArtifactReferenceUrl(
   reference: string,
@@ -273,8 +276,8 @@ export const allocatePrivateArtifact$ = command(
   },
 );
 
-export function privateArtifactRecord(id: string) {
-  return computed(async (get) => {
+export const privateArtifactRecord$ = command(
+  async ({ get }, id: string, signal: AbortSignal) => {
     // Historical file IDs are not all UUIDs; the database key is a UUID.
     if (!z.uuid().safeParse(id).success) {
       return null;
@@ -284,6 +287,7 @@ export function privateArtifactRecord(id: string) {
       .from(runUploadedFiles)
       .where(eq(runUploadedFiles.id, id))
       .limit(1);
+    signal.throwIfAborted();
     if (!row || row.metadata.storage === undefined) {
       return null;
     }
@@ -307,8 +311,8 @@ export function privateArtifactRecord(id: string) {
       ...metadata,
       layout: linkLayoutFromSegment(publicBrand),
     };
-  });
-}
+  },
+);
 
 export const completePrivateArtifact$ = command(
   async (
@@ -324,6 +328,7 @@ export const completePrivateArtifact$ = command(
     signal: AbortSignal,
   ) => {
     const db = set(writeDb$);
+    // A completed file and its durable catalog handoff must commit together.
     const changed = await db.transaction(async (tx) => {
       const [row] = await tx
         .update(runUploadedFiles)
@@ -337,7 +342,8 @@ export const completePrivateArtifact$ = command(
         .where(eq(runUploadedFiles.id, args.id))
         .returning({ id: runUploadedFiles.id });
       if (row) {
-        await queueArtifactCatalogFile(tx, row.id, signal);
+        await tx.execute(queueArtifactCatalogFileSql(row.id));
+        signal.throwIfAborted();
       }
       return Boolean(row);
     });

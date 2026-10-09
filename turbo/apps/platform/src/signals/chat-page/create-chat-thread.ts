@@ -1,4 +1,8 @@
 import {
+  isAutoSelectedModel,
+  sameSelectedModel,
+} from "@okouai/core/auto-run-model";
+import {
   chatEventCompatibilityRole,
   isChatEventContentTextType,
   isChatRunTerminalEventType,
@@ -194,7 +198,6 @@ import {
 } from "./chat-thread-remote-signals.ts";
 import { createChatThreadSharingSignals } from "./chat-thread-sharing.ts";
 import { getChatThreadTitleParts } from "./chat-thread-title.ts";
-import { createChatLastReadMarkerSignals } from "./chat-last-read-marker.ts";
 import { compareCreatedAt } from "./compare-created-at.ts";
 import { createComputerUseAuthorizationCardSignalsRegistry } from "./computer-use-authorization-block.ts";
 import { createConnectorAccountActionCardSignalsRegistry } from "./connector-account-action-block.ts";
@@ -215,10 +218,6 @@ import {
 import { createPermissionCardSignalsRegistry } from "./permission-card-signals.ts";
 import { createSubscriptionResetCardSignalsRegistry } from "./subscription-reset-block.ts";
 import { createPlanUpgradeCardSignalsRegistry } from "./plan-upgrade-block.ts";
-import {
-  createRunDetailSignalsRegistry,
-  type RunDetailSignals,
-} from "./run-detail.ts";
 import { serverUnreadAt$ } from "./sidebar-unread-threads.ts";
 import {
   createThreadActivitySummarySignals,
@@ -405,7 +404,11 @@ function createModelSelection(
         get(availableRunModels$),
         get(modelCatalog$),
       ]);
-      const resolvedModel = catalog.resolve(get(selectedModel$));
+      const storedModel = get(selectedModel$);
+      if (storedModel === null || isAutoSelectedModel(storedModel)) {
+        return null;
+      }
+      const resolvedModel = catalog.resolve(storedModel);
       return resolvedModel !== undefined &&
         models.models.some((runModel) => {
           return runModel.model === resolvedModel;
@@ -478,7 +481,10 @@ function createModelSelectionForSend({
       // A pin without an offered route is shown as Auto. Switch the thread to
       // Auto the way the picker does, so the send runs what the composer shows
       // without changing the member's default model.
-      if (selectedModel === null && get(selectedModel$) !== null) {
+      if (
+        selectedModel === null &&
+        !sameSelectedModel(selectedModel, get(selectedModel$))
+      ) {
         await set(setModelSelection$, { selectedModel: null }, signal);
         signal.throwIfAborted();
       }
@@ -976,7 +982,6 @@ function createRenderedChatGroups(
 
 interface RegisteredChatEvent {
   readonly event: ChatEvent;
-  readonly runDetail: RunDetailSignals | undefined;
   readonly userMessageRenderDocument: UserMessageRenderDocument | undefined;
 }
 
@@ -1134,8 +1139,7 @@ interface OptimisticChatEventProjectionEntry {
 }
 
 type ChatEventProjectionEntry =
-  | ServerChatEventProjectionEntry
-  | OptimisticChatEventProjectionEntry;
+  ServerChatEventProjectionEntry | OptimisticChatEventProjectionEntry;
 
 function isPersistedChatEvent(event: ChatEvent): event is PersistedChatEvent {
   return event.seqId !== undefined;
@@ -1982,7 +1986,6 @@ function createPagedEventResources({
     previewCatalogReady$,
   );
   const agentReferenceSignals = createAgentReferenceSignalsRegistry();
-  const runDetailSignals = createRunDetailSignalsRegistry();
   const subscriptionResetCardSignals =
     createSubscriptionResetCardSignalsRegistry();
   const connectorCardSignals = createConnectorCardSignalsRegistry();
@@ -2002,9 +2005,6 @@ function createPagedEventResources({
     ({ set }, event: ChatEvent): RegisteredChatEvent => {
       return {
         event,
-        runDetail: event.runId
-          ? set(runDetailSignals.register$, event.runId)
-          : undefined,
         userMessageRenderDocument: set(
           registerUserMessageRenderDocument$,
           event,
@@ -2041,13 +2041,6 @@ function createPagedEventResources({
   });
 
   const registeredEvents$ = state<RegisteredChatEvent[]>([]);
-  const runDetails$ = computed((get) => {
-    return new Map(
-      get(registeredEvents$).flatMap(({ runDetail }) => {
-        return runDetail ? [[runDetail.runId, runDetail] as const] : [];
-      }),
-    );
-  });
   // Tree parsing is not part of the sync: the render window decides which
   // events need trees, so the ensure step runs at the window's write points.
   const syncRegisteredEvents$ = command(
@@ -2077,7 +2070,6 @@ function createPagedEventResources({
     diagramCodesForEvents$,
     mermaidDiagrams,
     publicSignals: {
-      runDetails$,
       browserSessionSignals,
       subscribeBrowserSessions$: browserSessionSignals.subscribe$,
       retryRichEventTree$,
@@ -2217,7 +2209,6 @@ function createEventChangeEffects({
   chatEvents,
   projections,
   scroll,
-  lastReadMarker,
   syncVisibleEventTrees$,
 }: {
   readonly threadId: string;
@@ -2227,7 +2218,6 @@ function createEventChangeEffects({
     "rawEvents$" | "latestRunFinishCreatedAt$"
   >;
   readonly scroll: ChatThreadScrollSignals;
-  readonly lastReadMarker: ReturnType<typeof createChatLastReadMarkerSignals>;
   readonly syncVisibleEventTrees$: Command<
     Promise<void>,
     [boolean, AbortSignal]
@@ -2242,18 +2232,13 @@ function createEventChangeEffects({
   });
   const updateEventPresentation$ = command(
     async (
-      { get, set },
+      { set },
       scrollPosition: ThreadScrollPosition | null,
       signal: AbortSignal,
     ): Promise<void> => {
       await set(syncVisibleEventTrees$, true, signal);
       signal.throwIfAborted();
-      const initialPosition = set(
-        lastReadMarker.initialScrollPosition$,
-        scrollPosition,
-        get(chatEvents.hasOptimisticUserMessage$),
-      );
-      await set(scroll.autoScroll$, initialPosition, signal);
+      await set(scroll.autoScroll$, scrollPosition, signal);
     },
   );
   const afterEventsChange$ = command(
@@ -2304,7 +2289,6 @@ function createChatEventPresentationLifecycle({
   syncVisibleEventTrees$,
   enableSidebarEntryAnimations$,
   initialEventsReady$,
-  lastReadMarker,
 }: {
   readonly chatEvents: ChatEventSignals;
   readonly usage: ReturnType<typeof createChatRunUsageSignals>;
@@ -2315,12 +2299,9 @@ function createChatEventPresentationLifecycle({
   >;
   readonly enableSidebarEntryAnimations$: Command<void, []>;
   readonly initialEventsReady$: State<boolean>;
-  readonly lastReadMarker: ReturnType<typeof createChatLastReadMarkerSignals>;
 }) {
   const setup$ = command(
     async ({ set }, signal: AbortSignal): Promise<void> => {
-      await set(lastReadMarker.initialize$, signal);
-      signal.throwIfAborted();
       set(
         registerChatEventChangeHandler$,
         chatEvents.chatEvents$,
@@ -2341,7 +2322,6 @@ function createChatEventPresentationLifecycle({
   const catchUp$ = command(
     async ({ set }, signal: AbortSignal): Promise<void> => {
       const result = await settle(set(chatEvents.catchUp$, signal), signal);
-      set(lastReadMarker.finishInitialScroll$);
       set(initialEventsReady$, true);
       if (!result.ok) {
         throw result.error;
@@ -2401,9 +2381,6 @@ interface ChatThreadMessagePipelineOptions {
   previewCatalogReady$: Computed<boolean>;
   connector: ComposerConnectorSignals;
   thinkingSummaries$: Computed<Promise<ThinkingSummaries | null>>;
-  threadDetail$: ReturnType<
-    typeof createCancellationRecoverySignals
-  >["detail$"];
 }
 
 function createChatThreadMessagePipeline({
@@ -2414,7 +2391,6 @@ function createChatThreadMessagePipeline({
   previewCatalogReady$,
   connector,
   thinkingSummaries$,
-  threadDetail$,
 }: ChatThreadMessagePipelineOptions) {
   const { threadId } = chatActionContext;
   // Position is created before scroll writers are wired to the render window.
@@ -2439,11 +2415,6 @@ function createChatThreadMessagePipeline({
     registeredEvents$: resources.registeredEvents$,
     eventTrees$: resources.eventTrees$,
     eventTreeErrors$: resources.eventTreeErrors$,
-  });
-  const lastReadMarker = createChatLastReadMarkerSignals({
-    threadDetail$,
-    allChatGroups$: projections.allChatGroups$,
-    threadScrollPosition$: position.threadScrollPosition$,
   });
   const initialEventsReady$ = state(false);
   const initialEventsReadyView$ = computed((get): boolean => {
@@ -2492,7 +2463,6 @@ function createChatThreadMessagePipeline({
     chatEvents,
     projections,
     scroll,
-    lastReadMarker,
     syncVisibleEventTrees$,
   });
   const lifecycle = createChatEventPresentationLifecycle({
@@ -2502,7 +2472,6 @@ function createChatThreadMessagePipeline({
     syncVisibleEventTrees$,
     enableSidebarEntryAnimations$: effects.sidebar.enableEntryAnimations$,
     initialEventsReady$,
-    lastReadMarker,
   });
   const assistantErrorRecovery = createAssistantErrorRecoverySignals({
     threadId,
@@ -2522,7 +2491,6 @@ function createChatThreadMessagePipeline({
     sidebar: effects.sidebar,
     ...lifecycle,
     initialEventsReady$: initialEventsReadyView$,
-    lastReadMarker$: lastReadMarker.marker$,
     ...assistantErrorRecovery,
     ...projections,
     ...resources.publicSignals,
@@ -3565,14 +3533,12 @@ function createThinkingIndicatorSignals() {
 
 function publicChatThreadEventSignals(events: MessageListSignals) {
   return {
-    runDetails$: events.runDetails$,
     latestRunFinishCreatedAt$: events.latestRunFinishCreatedAt$,
     latestAssistantTextCreatedAt$: events.latestAssistantTextCreatedAt$,
     visibleRenderedChatGroups$: events.visibleRenderedChatGroups$,
     visibleRenderedChatGroupsReady$: events.visibleRenderedChatGroupsReady$,
     readyScrollAfterRenderRequest$: events.readyScrollAfterRenderRequest$,
     initialEventsReady$: events.initialEventsReady$,
-    lastReadMarker$: events.lastReadMarker$,
     assistantErrorRecovery$: events.assistantErrorRecovery$,
     assistantErrorRecoveryEventId$: events.assistantErrorRecoveryEventId$,
     retryAssistantError$: events.retryAssistantError$,
@@ -3871,7 +3837,6 @@ export function createChatPanelSignals(
     previewCatalogReady$,
     connector: composer.connector,
     thinkingSummaries$: activity.thinkingSummaries$,
-    threadDetail$: cancellationRecovery.detail$,
   });
   const messages: MessageListSignals = {
     ...messagePipeline,

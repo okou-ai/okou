@@ -2,7 +2,7 @@ import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { command, computed } from "ccstate";
 import { and, eq, inArray } from "drizzle-orm";
 
-import { db$, writeDb$ } from "../external/db";
+import { db$ } from "../external/db";
 import { dispatchRunCallbacks$ } from "./agent-run-callback.service";
 
 export type RequiredTerminalChatCallbackResult =
@@ -51,7 +51,6 @@ export function createRequiredTerminalChatCallback(runId: string) {
       const [callbackResult] = await set(
         dispatchRunCallbacks$,
         {
-          db: set(writeDb$),
           runId,
           status: input.status,
           error: input.error,

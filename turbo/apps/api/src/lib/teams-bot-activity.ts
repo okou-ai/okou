@@ -20,8 +20,7 @@ interface TeamsMentionNormalizationResult {
 }
 
 type TeamsActivityNormalizationResult =
-  | NormalizedTeamsActivityResult
-  | InvalidTeamsActivityResult;
+  NormalizedTeamsActivityResult | InvalidTeamsActivityResult;
 
 interface ActivityBase {
   readonly activityId: string | null;

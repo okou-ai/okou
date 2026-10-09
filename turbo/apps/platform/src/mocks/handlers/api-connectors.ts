@@ -60,14 +60,12 @@ type MockOauthDeviceAuthSessionStartResponse = Omit<
 };
 
 let mockOauthDeviceAuthSessionStartResponse:
-  | MockOauthDeviceAuthSessionStartResponse
-  | undefined;
+  MockOauthDeviceAuthSessionStartResponse | undefined;
 let mockOauthDeviceAuthSessionPollResponses: BuiltinConnectorOauthDeviceAuthSessionPollResponse[] =
   [];
 
 let mockExternalCodeSessionStartResponse:
-  | Partial<BuiltinConnectorExternalCodeSessionStartResponse>
-  | undefined;
+  Partial<BuiltinConnectorExternalCodeSessionStartResponse> | undefined;
 
 function createMockOauthDeviceAuthConnector(
   connectorSlug: ConnectorSlug,

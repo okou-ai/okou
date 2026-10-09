@@ -31,11 +31,6 @@ import {
   executeClerkUserDeletionWork$,
 } from "../services/clerk-user-deletion-job.service";
 import { handleUsagePackInvitationAccepted$ } from "../services/usage-pack-invitation-purchase.service";
-import { recordMorningBriefMembership$ } from "../services/morning-brief-enrollment-data.service";
-import {
-  ensureMorningBriefDefaultEnabled$,
-  type EnsureMorningBriefDefaultEnabledResult,
-} from "../services/morning-brief-preference.service";
 import {
   deliverWelcomeChatThread$,
   type WelcomeThreadDeliveryOutcome,
@@ -172,46 +167,6 @@ function enqueueOrgBootstrap(args: {
   );
 }
 
-async function observeNewMembershipMorningBriefProvisioning(
-  identity: NonNullable<ReturnType<typeof organizationMembershipIdentity>> & {
-    readonly createdAt: Date;
-  },
-  task: Promise<EnsureMorningBriefDefaultEnabledResult>,
-): Promise<void> {
-  const provisioning = await task;
-  const details = {
-    orgId: identity.orgId,
-    userId: identity.userId,
-    provisioning,
-  };
-  if (provisioning.outcome === "failed") {
-    L.warn("Morning Brief membership provisioning outcome", details);
-    return;
-  }
-  L.info("Morning Brief membership provisioning outcome", details);
-}
-
-function enqueueMorningBriefMembershipProvisioning(args: {
-  readonly identity: NonNullable<
-    ReturnType<typeof organizationMembershipIdentity>
-  > & { readonly createdAt: Date };
-  readonly task: Promise<EnsureMorningBriefDefaultEnabledResult>;
-}): void {
-  const identity = args.identity;
-  waitUntil(
-    tapError(
-      observeNewMembershipMorningBriefProvisioning(identity, args.task),
-      (error) => {
-        L.error("Morning Brief membership provisioning failed", {
-          orgId: identity.orgId,
-          userId: identity.userId,
-          error,
-        });
-      },
-    ),
-  );
-}
-
 interface WelcomeThreadDelivery {
   readonly trigger: string;
   readonly orgId: string;
@@ -234,7 +189,7 @@ async function observeWelcomeThreadDelivery(
 /**
  * Welcome delivery is a one-shot registration side effect, guarded like the
  * other bootstrap work here: the handler answers 200 either way, a failure
- * cannot block Morning Brief enrollment or org bootstrap, and a workspace that
+ * cannot block org bootstrap, and a workspace that
  * is not ready is logged and abandoned rather than retried.
  */
 function enqueueWelcomeThreadDelivery(args: WelcomeThreadDelivery): void {
@@ -300,8 +255,7 @@ const enqueueUsagePackInvitationAcceptance$ = command(
   (
     { set },
     eventType:
-      | "organizationInvitation.accepted"
-      | "organizationMembership.created",
+      "organizationInvitation.accepted" | "organizationMembership.created",
     identity: UsagePackInvitationAcceptanceIdentity,
     signal: AbortSignal,
   ): void => {
@@ -342,7 +296,7 @@ const handleOrganizationInvitationAcceptedWebhook$ = command(
 );
 
 const handleOrganizationMembershipCreatedWebhook$ = command(
-  async ({ set }, data: unknown, signal: AbortSignal): Promise<Response> => {
+  ({ set }, data: unknown, signal: AbortSignal): Response => {
     const identity = organizationMembershipIdentity(data);
     if (!identity) {
       L.error("organizationMembership.created event missing org/user ID", {
@@ -374,7 +328,6 @@ const handleOrganizationMembershipCreatedWebhook$ = command(
         );
       }
     }
-    await set(enrollMorningBriefMembership$, identity, signal);
     // Every new member is owed a welcome, including non-admin invited members.
     enqueueWelcomeThreadDelivery({
       trigger: "organizationMembership.created",
@@ -546,55 +499,6 @@ const handleOrganizationCreatedWebhook$ = command(
   },
 );
 
-const enrollMorningBriefMembership$ = command(
-  async (
-    { set },
-    identity: NonNullable<ReturnType<typeof organizationMembershipIdentity>>,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const createdAt = identity.createdAt;
-    if (
-      !identity.membershipId ||
-      !createdAt ||
-      !Number.isFinite(createdAt.getTime())
-    ) {
-      L.error(
-        "organizationMembership.created event missing valid creation time",
-        {
-          orgId: identity.orgId,
-          userId: identity.userId,
-        },
-      );
-      return;
-    }
-    await set(
-      recordMorningBriefMembership$,
-      {
-        orgId: identity.orgId,
-        userId: identity.userId,
-        membershipId: identity.membershipId,
-        createdAt,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    enqueueMorningBriefMembershipProvisioning({
-      identity: { ...identity, createdAt },
-      task: set(
-        ensureMorningBriefDefaultEnabled$,
-        {
-          orgId: identity.orgId,
-          member: {
-            userId: identity.userId,
-            role: identity.role ?? "member",
-          },
-        },
-        signal,
-      ),
-    });
-  },
-);
-
 const handleDeletedUserWebhook$ = command(
   async ({ set }, userId: string, signal: AbortSignal): Promise<Response> => {
     const revocation = await settle(
@@ -706,7 +610,7 @@ const postClerkWebhook$ = command(
         await set(initializeMemberMemory$, identity, signal);
         signal.throwIfAborted();
       }
-      return await set(
+      return set(
         handleOrganizationMembershipCreatedWebhook$,
         event.data,
         signal,

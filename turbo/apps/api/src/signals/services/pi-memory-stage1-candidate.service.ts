@@ -1,32 +1,33 @@
+import { command } from "ccstate";
+import { QueryBuilder } from "drizzle-orm/pg-core";
+import { writeDb$ } from "../external/db";
+import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
+import { piMemoryStage1Watermarks } from "@okouai/db/schema/pi-memory-stage1-schedule";
+import type { PiMemoryStage1Selection } from "./pi-memory-stage1-schedule.service";
 import {
-  featureSwitchContextFromRows,
-  userFeatureSwitchRowCondition,
-} from "./feature-switch-scope";
-import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
-import { advancePiMemoryStage1Watermark } from "./pi-memory-stage1-watermark.service";
+  piMemoryStage1SelectionLockPlans,
+  piMemoryStage1DayConsumedByAnotherThread,
+  piMemoryStage1LockedSelectionValid,
+  piMemoryStage1SelectionSourcePlans,
+  piMemoryStage1SelectionThreadEligible,
+  piMemoryStage1SelectionRunEligible,
+  piMemoryStage1SelectionConversationPlan,
+  piMemoryStage1SelectionSourceMatches,
+} from "./pi-memory-stage1-selection-plan";
+
+import { piMemoryStage1WatermarkPlan } from "./pi-memory-stage1-watermark.service";
 import { and, asc, eq, gt, gte, inArray, sql, type SQL } from "drizzle-orm";
 
-import {
-  PI_MEMORY_TRIGGER_SOURCE_CLASSES,
-  triggerSourceSchema,
-} from "@okouai/api-contracts/contracts/logs";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
-import { agents } from "@okouai/db/schema/agent";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentSessions } from "@okouai/db/schema/agent-session";
 import { blobs } from "@okouai/db/schema/blob";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { conversations } from "@okouai/db/schema/conversation";
 import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-candidate";
 import { storages } from "@okouai/db/schema/storage";
 
 import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
 
-import { advancePiMemoryPhase2InputRevision } from "./pi-memory-phase2-job.service";
-import { newStorageS3Location } from "./storage-s3-prefix.utils";
+import { piMemoryPhase2InputRevisionPlan } from "./pi-memory-phase2-job.service";
 
 // Stage 1 admission and maintenance completion retain checkpoint blobs. Lock
 // their existing owner first to avoid a parent/blob cycle with cleanup.
@@ -45,17 +46,6 @@ export async function lockPiMemoryCandidateStorage(
       ),
     )
     .for("no key update");
-}
-
-async function retainCandidateReference(tx: Tx, hash: string): Promise<void> {
-  const [retained] = await tx
-    .update(blobs)
-    .set({ refCount: sql`${blobs.refCount} + 1` })
-    .where(eq(blobs.hash, hash))
-    .returning({ hash: blobs.hash });
-  if (!retained) {
-    throw new Error("Pi memory candidate source blob does not exist");
-  }
 }
 
 async function releaseCandidateReferences(
@@ -80,51 +70,6 @@ async function releaseCandidateReferences(
       );
     }
   }
-}
-
-/** Supported insertion path for admission and controlled fixture/repair writers. */
-export async function insertPiMemoryStage1Candidates(
-  tx: Tx,
-  rows: readonly (typeof piMemoryStage1Candidates.$inferInsert)[],
-) {
-  if (rows.length === 0) {
-    return [];
-  }
-  const ids = [
-    ...new Set(
-      rows.map((row) => {
-        return row.memoryStorageId;
-      }),
-    ),
-  ];
-  await tx
-    .select({ id: storages.id })
-    .from(storages)
-    .where(inArray(storages.id, ids))
-    .orderBy(asc(storages.id))
-    .for("no key update");
-  return await insertCandidateRows(tx, rows);
-}
-
-async function insertCandidateRows(
-  tx: Tx,
-  rows: readonly (typeof piMemoryStage1Candidates.$inferInsert)[],
-) {
-  const created = await tx
-    .insert(piMemoryStage1Candidates)
-    .values([...rows])
-    .onConflictDoNothing()
-    .returning({
-      memoryStorageId: piMemoryStage1Candidates.memoryStorageId,
-      piSessionId: piMemoryStage1Candidates.piSessionId,
-      sourceHistoryHash: piMemoryStage1Candidates.sourceHistoryHash,
-    });
-  for (const row of [...created].sort((a, b) => {
-    return a.sourceHistoryHash.localeCompare(b.sourceHistoryHash);
-  })) {
-    await retainCandidateReference(tx, row.sourceHistoryHash);
-  }
-  return created;
 }
 
 /** Lock parents before children, including standalone candidate retention cleanup. */
@@ -179,341 +124,6 @@ export async function deleteStoragesWithPiMemoryCandidates(
   return deleted.length;
 }
 
-type PiMemoryStage1AdmissionSkipReason =
-  | "generation_disabled"
-  | "history_not_hash_backed"
-  | "missing_chat_thread"
-  | "non_interactive_source"
-  | "not_completed"
-  | "not_pi"
-  | "not_owned_chat_thread"
-  | "pi_memory_disabled"
-  | "invalid_source"
-  | "synthetic_source"
-  | "stale_source";
-
-type PiMemoryStage1Admission =
-  | {
-      readonly outcome: "created" | "exact_retry" | "replaced";
-      readonly memoryStorageId: string;
-      readonly piSessionId: string;
-      readonly sourceHistoryHash: string;
-    }
-  | {
-      readonly outcome: "skipped";
-      readonly reason: PiMemoryStage1AdmissionSkipReason;
-      readonly memoryStorageId?: string;
-      readonly piSessionId?: string;
-      readonly sourceHistoryHash?: string;
-    };
-
-export interface AdmitPiMemoryStage1CandidateArgs {
-  readonly runId: string;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly status: "completed" | "failed";
-  readonly framework: "claude-code" | "codex" | "pi" | null;
-  readonly generationEnabled: boolean;
-  readonly triggerSource: string | null;
-  readonly chatThreadId: string | null;
-  readonly completedAt: Date;
-  readonly idleDelayMs: number;
-}
-
-export function getPiMemoryStage1AdmissionPrerequisiteSkipReason(
-  args: AdmitPiMemoryStage1CandidateArgs,
-): PiMemoryStage1AdmissionSkipReason | null {
-  if (args.status !== "completed") {
-    return "not_completed";
-  }
-  if (args.framework !== "pi") {
-    return "not_pi";
-  }
-  if (!args.generationEnabled) {
-    return "generation_disabled";
-  }
-  const triggerSource = triggerSourceSchema.safeParse(args.triggerSource);
-  if (!triggerSource.success) {
-    return "invalid_source";
-  }
-  // The source class is decided before the Chat Thread check so a threadless
-  // maintenance run or a thread-bound automation run reports its real reason
-  // rather than a misleading missing_chat_thread.
-  const sourceClass = PI_MEMORY_TRIGGER_SOURCE_CLASSES[triggerSource.data];
-  if (sourceClass === "synthetic") {
-    return "synthetic_source";
-  }
-  if (sourceClass === "non_interactive") {
-    return "non_interactive_source";
-  }
-  if (args.chatThreadId === null) {
-    return "missing_chat_thread";
-  }
-  return null;
-}
-
-async function ownsProductChatThread(
-  tx: Tx,
-  args: AdmitPiMemoryStage1CandidateArgs,
-): Promise<boolean> {
-  if (args.chatThreadId === null) {
-    return false;
-  }
-  const [thread] = await tx
-    .select({ id: chatThreads.id })
-    .from(agentRuns)
-    .innerJoin(agentSessions, eq(agentSessions.id, agentRuns.sessionId))
-    .innerJoin(
-      chatThreads,
-      and(
-        eq(chatThreads.id, agentRuns.chatThreadId),
-        eq(chatThreads.agentId, agentSessions.agentId),
-      ),
-    )
-    .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-    .where(
-      and(
-        eq(agentRuns.id, args.runId),
-        eq(agentRuns.userId, args.userId),
-        eq(agentRuns.orgId, args.orgId),
-        eq(chatThreads.id, args.chatThreadId),
-        eq(chatThreads.userId, args.userId),
-        eq(agentSessions.userId, args.userId),
-        eq(agentSessions.orgId, args.orgId),
-        eq(agents.orgId, args.orgId),
-      ),
-    )
-    .limit(1);
-  // Private maintenance has no product Agent/session/thread binding, even
-  // though its run uses the same owner and the ordinary "agent" source.
-  return thread !== undefined;
-}
-
-async function resolveMemoryStorageId(
-  tx: Tx,
-  args: Pick<AdmitPiMemoryStage1CandidateArgs, "orgId" | "userId">,
-): Promise<string> {
-  const [existing] = await tx
-    .select({ id: storages.id })
-    .from(storages)
-    .where(
-      and(
-        eq(storages.orgId, args.orgId),
-        eq(storages.userId, args.userId),
-        eq(storages.name, MEMORY_ARTIFACT_NAME),
-      ),
-    )
-    .for("no key update")
-    .limit(1);
-  if (existing) {
-    return existing.id;
-  }
-
-  const location = newStorageS3Location(args.orgId);
-  const [created] = await tx
-    .insert(storages)
-    .values({
-      id: location.storageId,
-      orgId: args.orgId,
-      userId: args.userId,
-      name: MEMORY_ARTIFACT_NAME,
-      s3Prefix: location.s3Prefix,
-    })
-    .onConflictDoNothing()
-    .returning({ id: storages.id });
-  if (created) {
-    return created.id;
-  }
-
-  const [winner] = await tx
-    .select({ id: storages.id })
-    .from(storages)
-    .where(
-      and(
-        eq(storages.orgId, args.orgId),
-        eq(storages.userId, args.userId),
-        eq(storages.name, MEMORY_ARTIFACT_NAME),
-      ),
-    )
-    .for("no key update")
-    .limit(1);
-  if (!winner) {
-    throw new Error("Memory Storage create race produced no canonical row");
-  }
-  return winner.id;
-}
-
-/**
- * Ordered gates before any source read or candidate write: static
- * prerequisites, then Chat Thread ownership, then the owning Run's PiMemory
- * switch. The owner's identity decides the switch, never the caller; off means
- * the source is not read and no candidate is written or replaced.
- */
-async function getPiMemoryStage1AdmissionSkipReason(
-  tx: Tx,
-  args: AdmitPiMemoryStage1CandidateArgs,
-): Promise<PiMemoryStage1AdmissionSkipReason | null> {
-  const prerequisiteSkipReason =
-    getPiMemoryStage1AdmissionPrerequisiteSkipReason(args);
-  if (prerequisiteSkipReason !== null) {
-    return prerequisiteSkipReason;
-  }
-  if (!(await ownsProductChatThread(tx, args))) {
-    return "not_owned_chat_thread";
-  }
-  const featureSwitchContextRows0 = await tx
-    .select({
-      userId: userFeatureSwitches.userId,
-      switches: userFeatureSwitches.switches,
-    })
-    .from(userFeatureSwitches)
-    .where(userFeatureSwitchRowCondition(args.orgId, args.userId));
-  const featureSwitchContext = featureSwitchContextFromRows(
-    args.orgId,
-    args.userId,
-    featureSwitchContextRows0,
-  );
-  return isFeatureEnabled(FeatureSwitchKey.PiMemory, featureSwitchContext)
-    ? null
-    : "pi_memory_disabled";
-}
-
-async function readPiMemoryCandidateSource(tx: Tx, runId: string) {
-  const [source] = await tx
-    .select({
-      piSessionId: conversations.cliAgentSessionId,
-      sourceHistoryHash: conversations.cliAgentSessionHistoryHash,
-    })
-    .from(conversations)
-    .innerJoin(blobs, eq(conversations.cliAgentSessionHistoryHash, blobs.hash))
-    .where(
-      and(eq(conversations.runId, runId), eq(conversations.cliAgentType, "pi")),
-    )
-    .limit(1);
-  return source;
-}
-
-export async function admitPiMemoryStage1Candidate(
-  tx: Tx,
-  args: AdmitPiMemoryStage1CandidateArgs,
-): Promise<PiMemoryStage1Admission> {
-  const skipReason = await getPiMemoryStage1AdmissionSkipReason(tx, args);
-  if (skipReason !== null) {
-    return { outcome: "skipped", reason: skipReason };
-  }
-
-  const source = await readPiMemoryCandidateSource(tx, args.runId);
-  if (!source?.sourceHistoryHash) {
-    return { outcome: "skipped", reason: "history_not_hash_backed" };
-  }
-
-  const memoryStorageId = await resolveMemoryStorageId(tx, args);
-  const eligibleAt = new Date(args.completedAt.getTime() + args.idleDelayMs);
-  const [created] = await insertCandidateRows(tx, [
-    {
-      memoryStorageId,
-      orgId: args.orgId,
-      userId: args.userId,
-      piSessionId: source.piSessionId,
-      sourceRunId: args.runId,
-      sourceHistoryHash: source.sourceHistoryHash,
-      sourceCompletedAt: args.completedAt,
-      eligibleAt,
-      status: "pending",
-    },
-  ]);
-  if (created) {
-    return {
-      outcome: "created",
-      memoryStorageId,
-      piSessionId: source.piSessionId,
-      sourceHistoryHash: source.sourceHistoryHash,
-    };
-  }
-
-  const [current] = await tx
-    .select({
-      sourceCompletedAt: piMemoryStage1Candidates.sourceCompletedAt,
-      sourceHistoryHash: piMemoryStage1Candidates.sourceHistoryHash,
-    })
-    .from(piMemoryStage1Candidates)
-    .where(
-      and(
-        eq(piMemoryStage1Candidates.memoryStorageId, memoryStorageId),
-        eq(piMemoryStage1Candidates.piSessionId, source.piSessionId),
-      ),
-    )
-    .for("update", { of: piMemoryStage1Candidates })
-    .limit(1);
-  if (!current) {
-    throw new Error("Pi memory candidate conflict produced no canonical row");
-  }
-  if (current.sourceHistoryHash === source.sourceHistoryHash) {
-    return {
-      outcome: "exact_retry",
-      memoryStorageId,
-      piSessionId: source.piSessionId,
-      sourceHistoryHash: source.sourceHistoryHash,
-    };
-  }
-  if (current.sourceCompletedAt >= args.completedAt) {
-    return {
-      outcome: "skipped",
-      reason: "stale_source",
-      memoryStorageId,
-      piSessionId: source.piSessionId,
-      sourceHistoryHash: source.sourceHistoryHash,
-    };
-  }
-
-  const [replaced] = await tx
-    .update(piMemoryStage1Candidates)
-    .set({
-      sourceRunId: args.runId,
-      sourceHistoryHash: source.sourceHistoryHash,
-      sourceCompletedAt: args.completedAt,
-      eligibleAt,
-      status: "pending",
-      leaseToken: null,
-      leaseExpiresAt: null,
-      retryAt: null,
-      retryCount: 0,
-      lastErrorClass: null,
-      rawMemory: null,
-      rolloutSummary: null,
-      rolloutSlug: null,
-      generatedAt: null,
-      lastSelectedSourceHistoryHash: null,
-      usageCount: 0,
-      lastUsedAt: null,
-      updatedAt: nowDate(),
-    })
-    .where(
-      and(
-        eq(piMemoryStage1Candidates.memoryStorageId, memoryStorageId),
-        eq(piMemoryStage1Candidates.piSessionId, source.piSessionId),
-        eq(
-          piMemoryStage1Candidates.sourceHistoryHash,
-          current.sourceHistoryHash,
-        ),
-      ),
-    )
-    .returning({
-      sourceHistoryHash: piMemoryStage1Candidates.sourceHistoryHash,
-    });
-  if (!replaced) {
-    throw new Error("Locked Pi memory candidate lost its source replacement");
-  }
-  await retainCandidateReference(tx, replaced.sourceHistoryHash);
-  await releaseCandidateReferences(tx, [current.sourceHistoryHash]);
-  return {
-    outcome: "replaced",
-    memoryStorageId,
-    piSessionId: source.piSessionId,
-    sourceHistoryHash: source.sourceHistoryHash,
-  };
-}
-
 export type PiMemoryStage1CommitResult =
   | {
       readonly kind: "succeeded";
@@ -545,50 +155,7 @@ interface CommitPiMemoryStage1CandidateArgs {
   };
 }
 
-async function lockOwnedPiMemorySourceThread(
-  tx: Tx,
-  userId: string,
-  threadId: string,
-): Promise<boolean> {
-  const [thread] = await tx
-    .select({ id: chatThreads.id })
-    .from(chatThreads)
-    .where(and(eq(chatThreads.id, threadId), eq(chatThreads.userId, userId)))
-    .for("key share");
-  return thread !== undefined;
-}
-
-export async function commitPiMemoryStage1Candidate(
-  tx: Tx,
-  args: CommitPiMemoryStage1CandidateArgs,
-): Promise<boolean> {
-  // Take the Thread FK lock before Storage/candidate and Phase 2 locks.
-  if (
-    args.selectedSource &&
-    !(await lockOwnedPiMemorySourceThread(
-      tx,
-      args.userId,
-      args.selectedSource.chatThreadId,
-    ))
-  ) {
-    return false;
-  }
-  // Phase 2 enqueue can take a parent FK lock after updating the candidate.
-  // Take it first so cleanup cannot hold the parent while waiting for this row.
-  const [owner] = await tx
-    .select({ id: storages.id })
-    .from(storages)
-    .where(
-      and(
-        eq(storages.id, args.memoryStorageId),
-        eq(storages.orgId, args.orgId),
-        eq(storages.userId, args.userId),
-      ),
-    )
-    .for("key share");
-  if (!owner) {
-    return false;
-  }
+function candidateCommitValues(args: CommitPiMemoryStage1CandidateArgs) {
   const common = {
     leaseToken: null,
     leaseExpiresAt: null,
@@ -639,51 +206,199 @@ export async function commitPiMemoryStage1Candidate(
               retryAt: null,
               lastErrorClass: args.result.errorClass,
             };
-  const [committed] = await tx
-    .update(piMemoryStage1Candidates)
-    .set({ ...common, ...resultValues })
-    .where(
-      and(
-        eq(piMemoryStage1Candidates.memoryStorageId, args.memoryStorageId),
-        eq(piMemoryStage1Candidates.orgId, args.orgId),
-        eq(piMemoryStage1Candidates.userId, args.userId),
-        eq(piMemoryStage1Candidates.piSessionId, args.piSessionId),
-        eq(piMemoryStage1Candidates.sourceHistoryHash, args.sourceHistoryHash),
-        args.selectedSource
-          ? eq(
-              piMemoryStage1Candidates.sourceRunId,
-              args.selectedSource.sourceRunId,
-            )
-          : undefined,
-        eq(piMemoryStage1Candidates.status, "leased"),
-        eq(piMemoryStage1Candidates.leaseToken, args.leaseToken),
-        gt(piMemoryStage1Candidates.leaseExpiresAt, args.committedAt),
-      ),
-    )
-    .returning({ memoryStorageId: piMemoryStage1Candidates.memoryStorageId });
-  if (!committed) {
-    return false;
-  }
-  if (
-    args.result.kind === "succeeded" ||
-    args.result.kind === "succeeded_no_output"
-  ) {
-    if (args.selectedSource) {
-      await advancePiMemoryStage1Watermark(tx, {
-        memoryStorageId: args.memoryStorageId,
-        orgId: args.orgId,
-        userId: args.userId,
-        chatThreadId: args.selectedSource.chatThreadId,
-        sourceActivityAt: args.selectedSource.sourceActivityAt,
-        sourceHistoryHash: args.sourceHistoryHash,
-      });
-    }
-    await advancePiMemoryPhase2InputRevision(tx, {
+  return { ...common, ...resultValues };
+}
+function candidateCommitCondition(args: CommitPiMemoryStage1CandidateArgs) {
+  return and(
+    eq(piMemoryStage1Candidates.memoryStorageId, args.memoryStorageId),
+    eq(piMemoryStage1Candidates.orgId, args.orgId),
+    eq(piMemoryStage1Candidates.userId, args.userId),
+    eq(piMemoryStage1Candidates.piSessionId, args.piSessionId),
+    eq(piMemoryStage1Candidates.sourceHistoryHash, args.sourceHistoryHash),
+    args.selectedSource
+      ? eq(
+          piMemoryStage1Candidates.sourceRunId,
+          args.selectedSource.sourceRunId,
+        )
+      : undefined,
+    eq(piMemoryStage1Candidates.status, "leased"),
+    eq(piMemoryStage1Candidates.leaseToken, args.leaseToken),
+    gt(piMemoryStage1Candidates.leaseExpiresAt, args.committedAt),
+  );
+}
+
+function candidateCommitPlan(args: CommitPiMemoryStage1CandidateArgs) {
+  const builder = new QueryBuilder();
+  return {
+    condition: candidateCommitCondition(args),
+    values: candidateCommitValues(args),
+    sourceThread: args.selectedSource
+      ? builder
+          .select({ id: chatThreads.id })
+          .from(chatThreads)
+          .where(
+            and(
+              eq(chatThreads.id, args.selectedSource.chatThreadId),
+              eq(chatThreads.userId, args.userId),
+            ),
+          )
+          .for("key share")
+          .as("candidate_source_thread")
+      : undefined,
+    storage: builder
+      .select({ id: storages.id })
+      .from(storages)
+      .where(
+        and(
+          eq(storages.id, args.memoryStorageId),
+          eq(storages.orgId, args.orgId),
+          eq(storages.userId, args.userId),
+        ),
+      )
+      .for("key share")
+      .as("candidate_owner_storage"),
+    watermark: args.selectedSource
+      ? piMemoryStage1WatermarkPlan({
+          memoryStorageId: args.memoryStorageId,
+          orgId: args.orgId,
+          userId: args.userId,
+          chatThreadId: args.selectedSource.chatThreadId,
+          sourceActivityAt: args.selectedSource.sourceActivityAt,
+          sourceHistoryHash: args.sourceHistoryHash,
+        })
+      : undefined,
+    revision: piMemoryPhase2InputRevisionPlan({
       memoryStorageId: args.memoryStorageId,
       orgId: args.orgId,
       userId: args.userId,
       enqueuedAt: args.committedAt,
-    });
-  }
-  return true;
+    }),
+  };
 }
+
+/** Finite result reconciliation: the output, watermark and Phase2 revision commit together. */
+export const commitPiMemoryStage1Candidate$ = command(
+  async (
+    { set },
+    args: CommitPiMemoryStage1CandidateArgs,
+    selectionToValidate?: PiMemoryStage1Selection,
+  ): Promise<boolean> => {
+    const plan = candidateCommitPlan(args);
+    return await set(writeDb$).transaction(async (tx) => {
+      if (selectionToValidate) {
+        const selection = selectionToValidate;
+        if (selection.day !== args.committedAt.toISOString().slice(0, 10)) {
+          return false;
+        }
+        const locks = piMemoryStage1SelectionLockPlans(selection);
+        const [lockedThread] = await tx.select().from(locks.thread);
+        if (!lockedThread) {
+          return false;
+        }
+        await tx.select().from(locks.storage);
+        const [day] = await tx.select().from(locks.day);
+        if (!piMemoryStage1DayConsumedByAnotherThread(selection, day)) {
+          return false;
+        }
+        const [frozen] = await tx.select().from(locks.frozen);
+        if (!frozen) {
+          return false;
+        }
+        const observedAt = nowDate();
+        if (selection.day !== observedAt.toISOString().slice(0, 10)) {
+          return false;
+        }
+        const features = await tx.select().from(locks.features);
+        if (
+          !piMemoryStage1LockedSelectionValid(
+            selection,
+            { day, frozen: !!frozen, features },
+            observedAt,
+          )
+        ) {
+          return false;
+        }
+        const sourcePlans = piMemoryStage1SelectionSourcePlans(selection);
+        const [thread] = await tx.select().from(sourcePlans.thread);
+        if (!thread) {
+          return false;
+        }
+        const [active] = await tx.select().from(sourcePlans.active);
+        if (
+          !piMemoryStage1SelectionThreadEligible(
+            thread,
+            !!active,
+            args.committedAt,
+          )
+        ) {
+          return false;
+        }
+        const [latest] = await tx.select().from(sourcePlans.latest);
+        if (
+          !piMemoryStage1SelectionRunEligible(
+            latest,
+            selection,
+            args.committedAt,
+          )
+        ) {
+          return false;
+        }
+        const [source] = await tx
+          .select()
+          .from(piMemoryStage1SelectionConversationPlan(selection, latest));
+        if (
+          !piMemoryStage1SelectionSourceMatches(
+            selection,
+            latest,
+            thread,
+            source,
+          )
+        ) {
+          return false;
+        }
+      }
+      // Thread -> Storage -> candidate -> watermark/Phase2, including unrevalidated
+      // post-midnight reconciliation of an already admitted provider result.
+      if (plan.sourceThread) {
+        const [thread] = await tx.select().from(plan.sourceThread);
+        if (!thread) {
+          return false;
+        }
+      }
+      const [owner] = await tx.select().from(plan.storage);
+      if (!owner) {
+        return false;
+      }
+      const [committed] = await tx
+        .update(piMemoryStage1Candidates)
+        .set(plan.values)
+        .where(plan.condition)
+        .returning({
+          memoryStorageId: piMemoryStage1Candidates.memoryStorageId,
+        });
+      if (!committed) {
+        return false;
+      }
+      if (
+        args.result.kind === "succeeded" ||
+        args.result.kind === "succeeded_no_output"
+      ) {
+        if (plan.watermark) {
+          await tx
+            .insert(piMemoryStage1Watermarks)
+            .values(plan.watermark.values)
+            .onConflictDoUpdate(plan.watermark.conflict);
+        }
+        const [advanced] = await tx
+          .insert(piMemoryPhase2Jobs)
+          .values(plan.revision.values)
+          .onConflictDoUpdate(plan.revision.conflict)
+          .returning({ memoryStorageId: piMemoryPhase2Jobs.memoryStorageId });
+        if (!advanced) {
+          throw new Error("Pi memory Phase 2 input revision did not advance");
+        }
+      }
+      return true;
+    });
+  },
+);

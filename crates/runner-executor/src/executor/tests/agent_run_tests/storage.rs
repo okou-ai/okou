@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use api_contracts::generated::types::runners::storage::ArtifactEntryMissingRootPolicy;
 use guest_contracts::{storage_files, storage_manifest::Manifest};
-use sandbox::{SandboxError, SandboxOperation, SandboxOperationReason};
+use sandbox::{ExecResult, SandboxError, SandboxOperation, SandboxOperationReason};
 use sandbox_mock::MockLifecycleGate;
 
 use super::support::{
@@ -231,8 +231,7 @@ async fn run_in_sandbox_starts_deferred_cache_fill_after_agent_spawn() {
     let mut ctx = minimal_context();
     let mut archive_server = spawn_storage_archive_server(&extracted_archive()).await;
     let archive_url = format!("{}/archive.tar.gz", archive_server.url());
-    let mut storage = api_storage("instructions", "/home/user/.codex", "v1", &archive_url);
-    storage.baseline_candidate = true;
+    let storage = api_storage("instructions", "/home/user/.codex", "v1", &archive_url);
     ctx.storage_manifest = Some(StorageManifest {
         storages: vec![storage],
         artifacts: vec![],
@@ -518,67 +517,78 @@ async fn run_in_sandbox_records_storage_manifest_no_work_timing_without_guest_st
 
 #[tokio::test]
 async fn run_in_sandbox_records_storage_manifest_guest_storage_apply_failure_timing() {
-    let dir = tempfile::tempdir().unwrap();
-    let config = test_executor_config(dir.path()).await;
-    let sandbox = sandbox_mock::MockSandbox::new("test");
-    sandbox.push_exec_result(Err(sandbox_exec_error("vsock exec failed")));
-    let mut ctx = minimal_context();
-    let mut storage = api_storage(
-        "instructions",
-        "/home/user/.codex",
-        "v1",
-        "https://example.com/instructions.tar.gz",
-    );
-    storage.instructions_target_filename = Some("AGENTS.md".into());
-    ctx.storage_manifest = Some(StorageManifest {
-        storages: vec![storage],
-        artifacts: vec![],
-    });
-    let prev_storage = StorageFingerprints {
-        storages: HashMap::from([(
-            "/home/user/.codex".into(),
-            StorageFingerprint::new("instructions", "v1"),
-        )]),
-        artifacts: HashMap::new(),
-    };
-    let mut telemetry = test_telemetry(&config, &ctx);
+    for guest_result in [
+        Err(sandbox_exec_error("vsock exec failed")),
+        Ok(ExecResult::new(
+            1,
+            Vec::new(),
+            b"Required instruction normalization failed".to_vec(),
+        )),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let config = test_executor_config(dir.path()).await;
+        let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+        overrides.push_storage_manifest_result(guest_result);
+        let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
+        let mut ctx = minimal_context();
+        let mut storage = api_storage(
+            "instructions",
+            "/home/user/.codex",
+            "v1",
+            "https://example.com/instructions.tar.gz",
+        );
+        storage.instructions_target_filename = Some("AGENTS.md".into());
+        ctx.storage_manifest = Some(StorageManifest {
+            storages: vec![storage],
+            artifacts: vec![],
+        });
+        let prev_storage = StorageFingerprints {
+            storages: HashMap::from([(
+                "/home/user/.codex".into(),
+                StorageFingerprint::new("instructions", "v1"),
+            )]),
+            artifacts: HashMap::new(),
+        };
+        let mut telemetry = test_telemetry(&config, &ctx);
 
-    let result = run_in_sandbox(
-        &sandbox,
-        &ctx,
-        &config,
-        RunStart {
-            restore_guest_state: false,
-            reuse_result: SandboxReuseResult::Reused,
-            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::SandboxReused,
-            prev_storage: Some(&prev_storage),
-        },
-        &mut telemetry,
-        RunControls::new(tokio_util::sync::CancellationToken::new(), None),
-    )
-    .await;
+        let result = run_in_sandbox(
+            sandbox.as_ref(),
+            &ctx,
+            &config,
+            RunStart {
+                restore_guest_state: false,
+                reuse_result: SandboxReuseResult::Reused,
+                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::SandboxReused,
+                prev_storage: Some(&prev_storage),
+            },
+            &mut telemetry,
+            RunControls::new(tokio_util::sync::CancellationToken::new(), None),
+        )
+        .await;
 
-    assert!(
-        result.is_err(),
-        "guest-storage-apply failure should still fail the storage manifest phase"
-    );
-    let ops = telemetry.pending_ops_snapshot();
-    assert_successful_action_once(&ops, "runner_storage_manifest_fingerprint_reuse");
-    assert_successful_action_once(&ops, "runner_storage_manifest_has_work");
-    assert_successful_action_once(&ops, "runner_storage_manifest_cache_populate");
-    assert_failed_action_error_once(
-        &ops,
-        "runner_storage_manifest_guest_storage_apply",
-        "storage-download-failed",
-    );
-    let apply_failures = ops
-        .iter()
-        .filter(|op| op.0 == "runner_storage_manifest_apply" && !op.1)
-        .count();
-    assert_eq!(
-        apply_failures, 1,
-        "top-level storage manifest apply failure should still be recorded once, got: {ops:?}"
-    );
+        assert!(
+            result.is_err(),
+            "guest-storage-apply failure should still fail the storage manifest phase"
+        );
+        assert!(overrides.start_agent_process_calls().is_empty());
+        let ops = telemetry.pending_ops_snapshot();
+        assert_successful_action_once(&ops, "runner_storage_manifest_fingerprint_reuse");
+        assert_successful_action_once(&ops, "runner_storage_manifest_has_work");
+        assert_successful_action_once(&ops, "runner_storage_manifest_cache_populate");
+        assert_failed_action_error_once(
+            &ops,
+            "runner_storage_manifest_guest_storage_apply",
+            "storage-download-failed",
+        );
+        let apply_failures = ops
+            .iter()
+            .filter(|op| op.0 == "runner_storage_manifest_apply" && !op.1)
+            .count();
+        assert_eq!(
+            apply_failures, 1,
+            "top-level storage manifest apply failure should still be recorded once, got: {ops:?}"
+        );
+    }
 }
 
 #[tokio::test]

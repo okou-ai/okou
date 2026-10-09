@@ -1,6 +1,3 @@
-import { prepareUsageExpiryPrefix$ } from "./usage-expiry-prefix-prepare.service";
-import { prepareUsageGrantPrefix$ } from "./usage-grant-prefix-prepare.service";
-import { usageGrossByUser } from "./usage-grant-prefix";
 import { priceUsageEvents } from "./credit-usage-pricing";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
@@ -68,11 +65,6 @@ export const prepareUsageSettlementBatch$ = command(
     const events = snapshots.filter(({ event }) => {
       return event.status === "pending";
     });
-    const hasSocialReceipt =
-      Boolean(args.social) &&
-      snapshots.some(({ event }) => {
-        return event.status === "processed";
-      });
     const pricingKeys = settlementPricingKeys(
       events,
       get(usagePricingResolution$),
@@ -93,29 +85,12 @@ export const prepareUsageSettlementBatch$ = command(
       false,
     );
     const social = prepareSocialSettlement(job);
-    const grossByUser = usageGrossByUser(priced, social);
-    const grants = await set(
-      prepareUsageGrantPrefix$,
-      { orgId: args.orgId, grossByUser },
-      signal,
-    );
-    const gross = [...grossByUser.values()].reduce((total, amount) => {
-      return total + amount;
-    }, 0);
-    const lots = await set(
-      prepareUsageExpiryPrefix$,
-      { orgId: args.orgId, gross },
-      signal,
-    );
     return {
       events,
       social,
-      hasSocialReceipt,
       prices,
       records,
       priced,
-      grants,
-      lots,
     };
   },
 );

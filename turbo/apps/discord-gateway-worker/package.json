@@ -23,7 +23,7 @@
     "miniflare": "5.20260903.0-alpha",
     "oxlint": "^1.75.0",
     "typescript": "npm:@typescript/typescript6@6.0.2",
-    "vitest": "^5.0.1",
+    "vitest": "^5.0.3",
     "wrangler": "^4.129.0"
   }
 }

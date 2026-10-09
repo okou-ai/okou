@@ -1,11 +1,8 @@
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
-import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { sql } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
 import type { Tx } from "../../lib/db-types";
-import { writeOrgMetadataWithDefaultPlanEntitlement } from "./org-plan-entitlements.service";
+import { createUsagePackCreditGrant } from "./usage-pack-credit.service";
 
 const L = logger("onboarding-credit-grants.service");
 
@@ -21,49 +18,23 @@ export function onboardingCreditsExpiresAt(grantedAt: Date): Date {
   return new Date(grantedAt.getTime() + ONBOARDING_CREDIT_TTL_MS);
 }
 
-export async function grantOrgCredits(
+export async function grantOnboardingUsagePackCredits(
   tx: DbTransaction,
   orgId: string,
-  amount: number,
-): Promise<void> {
-  await writeOrgMetadataWithDefaultPlanEntitlement(
-    tx,
-    orgId,
-    async (writeTx) => {
-      return await writeTx
-        .insert(orgMetadataCanonicalWrites)
-        .values({
-          orgId,
-          credits: amount,
-          createdAt: sql`now()`,
-          updatedAt: sql`now()`,
-        })
-        .onConflictDoUpdate({
-          target: orgMetadataCanonicalWrites.orgId,
-          set: {
-            credits: sql`${orgMetadata.credits} + ${amount}`,
-            updatedAt: sql`now()`,
-          },
-        })
-        .returning({ orgId: orgMetadata.orgId, tier: orgMetadata.tier });
-    },
-  );
-}
-
-export async function grantOnboardingCredits(
-  tx: DbTransaction,
-  orgId: string,
+  userId: string,
   amount: number,
   expiresAt: Date,
 ): Promise<void> {
+  // Keep the shared receipt identity so legacy grants and rolling API versions
+  // cannot award onboarding twice. This reservation carries no org credits.
   const rows = await tx
     .insert(creditExpiresRecord)
     .values({
       orgId,
       source: ONBOARDING_CREDIT_SOURCE,
       stripeInvoiceId: ONBOARDING_CREDIT_IDEMPOTENCY_KEY,
-      amount,
-      remaining: amount,
+      amount: 0,
+      remaining: 0,
       expiresAt,
     })
     .onConflictDoNothing()
@@ -74,5 +45,12 @@ export async function grantOnboardingCredits(
     return;
   }
 
-  await grantOrgCredits(tx, orgId, amount);
+  await createUsagePackCreditGrant(tx, {
+    orgId,
+    userId,
+    grantType: "bonus",
+    idempotencyKey: `${ONBOARDING_CREDIT_IDEMPOTENCY_KEY}:${orgId}`,
+    amount,
+    expiresAt,
+  });
 }

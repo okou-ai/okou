@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.104.8](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.7...guest-agent-v0.104.8) (2026-10-09)
+
+
+### Refactoring
+
+* retire generic run checkpoints from completion ([#38147](https://github.com/okou-ai/okou/issues/38147)) ([e8002cf](https://github.com/okou-ai/okou/commit/e8002cfcc9995e2b245947dbf25a9f9dd73f1ca0))
+
+
+### Performance Improvements
+
+* **ci:** run crates coverage with nextest ([#38148](https://github.com/okou-ai/okou/issues/38148)) ([979aedb](https://github.com/okou-ai/okou/commit/979aedbd21bb094ec628193aaa0e586c5d9021da))
+* **test:** remove redundant slow crates fixture work ([#38196](https://github.com/okou-ai/okou/issues/38196)) ([e818b6b](https://github.com/okou-ai/okou/commit/e818b6ba36cd71a5e4528f52b7a42449d053737a))
+
+## [0.104.7](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.6...guest-agent-v0.104.7) (2026-10-08)
+
+## [0.104.6](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.5...guest-agent-v0.104.6) (2026-10-08)
+
+
+### Bug Fixes
+
+* classify codex cybersecurity safety refusals ([#37945](https://github.com/okou-ai/okou/issues/37945)) ([5693b80](https://github.com/okou-ai/okou/commit/5693b806ad5a55154a8e9f3d7b3bb5de727624e2))
+
+## [0.104.5](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.4...guest-agent-v0.104.5) (2026-10-08)
+
 ## [0.104.4](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.3...guest-agent-v0.104.4) (2026-10-08)
 
 

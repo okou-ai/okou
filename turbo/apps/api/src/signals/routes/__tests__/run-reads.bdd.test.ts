@@ -14,7 +14,6 @@ import { describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now, nowDate, withMockNowForTest } from "../../../lib/time";
-import { clearRunLaunchSnapshotFixture } from "../../../test-fixtures/agent-runs";
 import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
@@ -460,7 +459,7 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
     ).not.toContain(lifecycleRun.runId);
   });
 
-  it("lists and reads runs with status, agent, and window filters", async () => {
+  it("lists and reads runs through public logs with status, agent, and since filters", async () => {
     // Keep this capacity scenario independent of the product-tier limit.
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     const actor = await entitledActor();
@@ -472,9 +471,7 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
         displayName,
         visibility: "private",
       });
-      // Public creation names an Agent by its canonical id, the value run
-      // reads report as agentName.
-      return { agentId: created.agentId, name: created.agentId };
+      return { agentId: created.agentId };
     };
     const target = await namedAgent(actor, "bdd-target");
     const other = await namedAgent(actor, "bdd-other");
@@ -498,108 +495,75 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
       prompt: "other run b",
     });
 
-    const defaults = await reads.requestListAgentRuns(actor, {}, [200]);
-    const defaultPrompts = defaults.body.runs.map((run) => {
+    const defaults = await reads.requestListLogs(actor, {}, [200]);
+    const defaultPrompts = defaults.body.data.map((run) => {
       return run.prompt;
     });
     expect(defaultPrompts).toStrictEqual(
       expect.arrayContaining(["target run a", "other run b"]),
     );
 
-    const memberView = await reads.requestListAgentRuns(member, {}, [200]);
+    const memberView = await reads.requestListLogs(member, {}, [200]);
     expect(
-      memberView.body.runs.map((run) => {
+      memberView.body.data.map((run) => {
         return run.id;
       }),
     ).not.toContain(runA.runId);
 
-    const invalidStatus = await reads.requestListAgentRuns(
-      actor,
-      { status: "running,bogus" },
-      [400],
-    );
-    expectApiError(invalidStatus.body);
-    expect(invalidStatus.body.error.message).toContain("Invalid status: bogus");
-
-    const invalidSince = await reads.requestListAgentRuns(
-      actor,
-      { since: "not-a-date" },
-      [400],
-    );
-    expectApiError(invalidSince.body);
-    expect(invalidSince.body.error.message).toBe(
-      "Invalid since timestamp format",
-    );
-
-    const invalidUntil = await reads.requestListAgentRuns(
-      actor,
-      { until: "not-a-date" },
-      [400],
-    );
-    expectApiError(invalidUntil.body);
-    expect(invalidUntil.body.error.message).toBe(
-      "Invalid until timestamp format",
-    );
+    for (const query of ["status=running%2Cbogus", "since=not-a-date"]) {
+      const invalid = await reads.rawApiRequest(actor, `/api/logs?${query}`);
+      expect(invalid.status).toBe(400);
+      expectApiError(invalid.body);
+      expect(invalid.body.error.code).toBe("BAD_REQUEST");
+    }
 
     const claimA = await api.claimRunnerJob(runA.runId);
     const claimB = await api.claimRunnerJob(runB.runId);
     await completeRun(runB.runId, claimB.sandboxToken);
 
-    const runningOnly = await reads.requestListAgentRuns(
+    const runningOnly = await reads.requestListLogs(
       actor,
       { status: "running" },
       [200],
     );
-    const runningIds = runningOnly.body.runs.map((run) => {
+    const runningIds = runningOnly.body.data.map((run) => {
       return run.id;
     });
     expect(runningIds).toContain(runA.runId);
     expect(runningIds).not.toContain(runB.runId);
 
-    const afterComplete = await reads.requestListAgentRuns(actor, {}, [200]);
+    const afterComplete = await reads.requestListLogs(actor, {}, [200]);
     expect(
-      afterComplete.body.runs.map((run) => {
+      afterComplete.body.data.map((run) => {
         return run.prompt;
       }),
-    ).not.toContain("other run b");
+    ).toContain("other run b");
 
-    const completedByAgent = await reads.requestListAgentRuns(
+    const completedByAgent = await reads.requestListLogs(
       actor,
-      { status: "completed", agent: other.name, limit: 1 },
+      { status: "completed", agentId: other.agentId, limit: 1 },
       [200],
     );
-    expect(completedByAgent.body.runs).toHaveLength(1);
-    expect(completedByAgent.body.runs[0]).toMatchObject({
+    expect(completedByAgent.body.data).toHaveLength(1);
+    expect(completedByAgent.body.data[0]).toMatchObject({
       id: runB.runId,
-      agentName: other.name,
+      agentId: other.agentId,
       status: "completed",
       prompt: "other run b",
     });
-    expect(completedByAgent.body.runs[0]?.startedAt).not.toBeNull();
+    expect(completedByAgent.body.data[0]?.startedAt).not.toBeNull();
 
-    const pastWindow = await reads.requestListAgentRuns(
+    const insideWindow = await reads.requestListLogs(
       actor,
       {
         status: "completed",
-        agent: other.name,
-        until: new Date(now() - 60 * 60_000).toISOString(),
-      },
-      [200],
-    );
-    expect(pastWindow.body.runs).toStrictEqual([]);
-
-    const insideWindow = await reads.requestListAgentRuns(
-      actor,
-      {
-        status: "completed",
-        agent: other.name,
-        since: new Date(now() - 60 * 60_000).toISOString(),
-        until: new Date(now() + 60_000).toISOString(),
+        agentId: other.agentId,
+        since: now() - 60 * 60_000,
       },
       [200],
     );
     expect(
-      insideWindow.body.runs.map((run) => {
+      insideWindow.body.data.map((run) => {
         return run.id;
       }),
     ).toContain(runB.runId);
@@ -3404,56 +3368,5 @@ describe("RUN-04/OPS-01: agent run logs", () => {
     });
     expect(sinceFilteredIds).toContain(sinceBoundaryRun.runId);
     expect(sinceFilteredIds).not.toContain(beforeBoundaryRun.runId);
-  });
-
-  it("preserves historical agent-source logs without provenance", async () => {
-    const actor = await entitledActor();
-    if (!actor.orgId) {
-      throw new Error("Historical logs require an org-scoped actor");
-    }
-    const agent = await bdd.createAgent(actor, {
-      displayName: "historical-agent-log",
-      visibility: "private",
-    });
-    // A persisted historical agent-source run without launch provenance.
-    const historicalAgentRun = await store.set(
-      seedRun$,
-      {
-        orgId: actor.orgId,
-        userId: actor.userId,
-        composeId: agent.agentId,
-        prompt: "historical agent-source run",
-        status: "pending",
-        triggerSource: "agent",
-      },
-      context.signal,
-    );
-    await api.requestCancelRun(actor, historicalAgentRun.runId, [200]);
-    await clearRunLaunchSnapshotFixture(historicalAgentRun.runId);
-
-    const listed = await reads.requestListLogs(actor, {}, [200]);
-    if (listed.status !== 200) {
-      throw new Error("Expected the historical agent-source log list");
-    }
-    expect(
-      listed.body.data.find((entry) => {
-        return entry.id === historicalAgentRun.runId;
-      }),
-    ).toMatchObject({
-      triggerSource: "agent",
-      framework: null,
-    });
-    expect(listed.body.filters.sources).toContain("agent");
-
-    const detail = await reads.requestReadLogById(
-      actor,
-      historicalAgentRun.runId,
-      [200],
-    );
-    expect(detail.body).toMatchObject({
-      id: historicalAgentRun.runId,
-      triggerSource: "agent",
-      framework: null,
-    });
   });
 });

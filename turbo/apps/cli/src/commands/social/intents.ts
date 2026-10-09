@@ -13,13 +13,7 @@ import {
 } from "@okouai/api-contracts/contracts/social-discovery";
 
 type SocialTargetKind =
-  | "channel"
-  | "company"
-  | "playlist"
-  | "post"
-  | "profile"
-  | "unknown"
-  | "video";
+  "channel" | "company" | "playlist" | "post" | "profile" | "unknown" | "video";
 
 export interface SocialUrlTarget {
   readonly kind: "url";

@@ -1380,16 +1380,12 @@ async function replaceConnectionTokens(args: {
   readonly featureContext: FeatureSwitchContext;
 }): Promise<
   | { readonly kind: "replaced"; readonly encryptedAccessToken: string }
-  | { readonly kind: "identity-mismatch" }
   | { readonly kind: "publication-lost" }
 > {
   const identity = resolveRefreshedOAuthIdentity(
     args.storedIdentity,
     args.token.userInfo,
   );
-  if (identity.kind === "mismatch") {
-    return { kind: "identity-mismatch" };
-  }
   const encrypted = await encryptTokenValues(args);
   return await args.db.transaction(async (tx) => {
     const [claimed] = await tx
@@ -1519,9 +1515,7 @@ export async function storeCustomConnectorOAuth2Connection(
       readonly tokenEndpoint: string;
       readonly clientId: string;
       readonly tokenEndpointAuthMethod:
-        | "none"
-        | "client_secret_basic"
-        | "client_secret_post";
+        "none" | "client_secret_basic" | "client_secret_post";
       readonly registrationMethod: "cimd" | "dcr";
       readonly dcrRegistrationId: string | null;
     };
@@ -1761,8 +1755,7 @@ type CustomConnectorOAuth2AccessTokenResolution =
 function storedConnectionAccessToken(
   connection: StoredConnection,
 ):
-  | AvailableCustomConnectorOAuth2AccessToken
-  | { readonly kind: "unavailable" } {
+  AvailableCustomConnectorOAuth2AccessToken | { readonly kind: "unavailable" } {
   if (!connection.encryptedAccessToken) {
     return { kind: "unavailable" };
   }
@@ -1850,15 +1843,6 @@ async function storeRefreshedConnectionTokens(
   });
   if (replacement.kind === "publication-lost") {
     return replacement;
-  }
-  if (replacement.kind === "identity-mismatch") {
-    await markCustomConnectorNeedsReconnect(
-      args.db,
-      args.connection.id,
-      "authorization_expired_or_revoked",
-      args.connection.encryptedRefreshToken,
-    );
-    return { kind: "reconnect-required" };
   }
   signal.throwIfAborted();
   return {

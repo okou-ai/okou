@@ -3,19 +3,12 @@ import { Buffer } from "node:buffer";
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import { seoContract } from "@okouai/api-contracts/contracts/seo";
 import { HttpResponse, http } from "msw";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import {
-  createUsagePricingFixture,
-  type UsagePricingFixture,
-  type UsagePricingRow,
-} from "../../../test-fixtures/system-config-seeds";
-import { signSandboxJwtForTests } from "../../auth/tokens";
 import {
   createBddApi,
   expectApiError,
@@ -33,18 +26,7 @@ const DATAFORSEO_BASE_URL = "https://api.dataforseo.com";
 
 type OrgApiTestUser = ApiTestUser & {
   readonly orgId: string;
-  readonly usagePricingResolution: UsagePricingFixture["resolution"];
 };
-
-const SEO_PRICING_ROWS = [
-  {
-    kind: "seo",
-    provider: "dataforseo",
-    category: "provider_cost_usd_micros",
-    unitPrice: 1250,
-    unitSize: 1_000_000,
-  },
-] as const satisfies readonly UsagePricingRow[];
 
 function authenticate(actor: ApiTestUser) {
   createRouteMocks(context).clerk.session(
@@ -55,16 +37,8 @@ function authenticate(actor: ApiTestUser) {
   return { authorization: "Bearer clerk-session" };
 }
 
-function client(usagePricingResolution?: UsagePricingFixture["resolution"]) {
-  return setupApp({ context, routes: SEO_ROUTES, usagePricingResolution });
-}
-
-async function seedSeoPricing(): Promise<UsagePricingFixture> {
-  const pricing = await createUsagePricingFixture({
-    configured: SEO_PRICING_ROWS,
-  });
-  onTestFinished(pricing.cleanup);
-  return pricing;
+function client() {
+  return setupApp({ context, routes: SEO_ROUTES });
 }
 
 async function seedActor(): Promise<OrgApiTestUser> {
@@ -74,8 +48,7 @@ async function seedActor(): Promise<OrgApiTestUser> {
   }
   const orgActor = { ...actor, orgId: actor.orgId };
   await createRunsApi(context).grantProEntitlement(orgActor);
-  const pricing = await seedSeoPricing();
-  return { ...orgActor, usagePricingResolution: pricing.resolution };
+  return orgActor;
 }
 
 async function createUnfundedActor() {
@@ -84,18 +57,17 @@ async function createUnfundedActor() {
     throw new Error("SEO test actor must belong to an organization");
   }
   const orgActor = { ...actor, orgId: actor.orgId };
-  const pricing = await seedSeoPricing();
   const fixture = createPublicUnfundedProFixture(context, orgActor);
   await fixture.initialize();
   return {
-    actor: { ...orgActor, usagePricingResolution: pricing.resolution },
+    actor: orgActor,
     run: fixture.run,
   };
 }
 
 async function credits(actor: OrgApiTestUser): Promise<number> {
   const response = await accept(
-    client(actor.usagePricingResolution)(billingStatusContract).get({
+    client()(billingStatusContract).get({
       headers: authenticate(actor),
     }),
     [200],
@@ -113,7 +85,7 @@ function requestLabsLocation(
   operation: "keyword-ideas" | "ranked-keywords",
   location: string,
 ) {
-  const seoClient = client(actor.usagePricingResolution)(seoContract);
+  const seoClient = client()(seoContract);
   const headers = authenticate(actor);
   const body = { location, languageCode: "en", limit: 10 };
   return operation === "keyword-ideas"
@@ -336,44 +308,6 @@ describe("SEO routes", () => {
     });
   });
 
-  it("rejects agent tokens without the seo capability", async () => {
-    const actor = await seedActor();
-    if (!actor.orgId) {
-      throw new Error("SEO test actor must belong to an organization");
-    }
-    const seconds = Math.floor(now() / 1000);
-    const token = signSandboxJwtForTests({
-      scope: "okou",
-      userId: actor.userId,
-      orgId: actor.orgId,
-      runId: "run_seo_missing_capability",
-      capabilities: [],
-      iat: seconds,
-      exp: seconds + 60,
-    });
-
-    const response = await accept(
-      client(actor.usagePricingResolution)(seoContract).serp({
-        headers: { authorization: `Bearer ${token}` },
-        body: {
-          query: "technical seo",
-          provider: "dataforseo",
-          engine: "google",
-          location: "United States",
-          languageCode: "en",
-          device: "desktop",
-          limit: 10,
-        },
-      }),
-      [403],
-    );
-
-    expectApiError(response.body);
-    expect(response.body.error.message).toBe(
-      "Missing required capability: seo:read",
-    );
-  });
-
   it("rejects insufficient credits before calling the provider", async () => {
     const { actor, run } = await createUnfundedActor();
     await run(async () => {
@@ -390,7 +324,7 @@ describe("SEO routes", () => {
       );
 
       const response = await accept(
-        client(actor.usagePricingResolution)(seoContract).serp({
+        client()(seoContract).serp({
           headers: authenticate(actor),
           body: {
             query: "technical seo",
@@ -432,7 +366,7 @@ describe("SEO routes", () => {
     );
 
     const response = await accept(
-      client(actor.usagePricingResolution)(seoContract).serp({
+      client()(seoContract).serp({
         headers: authenticate(actor),
         body: {
           query: "technical seo",
@@ -476,7 +410,7 @@ describe("SEO routes", () => {
     );
 
     const response = await accept(
-      client(actor.usagePricingResolution)(seoContract).serp({
+      client()(seoContract).serp({
         headers: authenticate(actor),
         body: {
           query: "technical seo",
@@ -520,7 +454,7 @@ describe("SEO routes", () => {
       );
 
       const response = await accept(
-        client(actor.usagePricingResolution)(seoContract).serp({
+        client()(seoContract).serp({
           headers: authenticate(actor),
           body: {
             query: "site:example.com",
@@ -571,7 +505,7 @@ describe("SEO routes", () => {
       );
 
       const response = await accept(
-        client(actor.usagePricingResolution)(seoContract).serp({
+        client()(seoContract).serp({
           headers: authenticate(actor),
           body: {
             query: "site:example.com",
@@ -602,7 +536,7 @@ describe("SEO routes", () => {
     );
 
     const response = await accept(
-      client(actor.usagePricingResolution)(seoContract).backlinksSummary({
+      client()(seoContract).backlinksSummary({
         headers: authenticate(actor),
         body: { target: "example.com", includeSubdomains: false },
       }),
@@ -633,7 +567,7 @@ describe("SEO routes", () => {
     );
 
     const response = await accept(
-      client(actor.usagePricingResolution)(seoContract).serp({
+      client()(seoContract).serp({
         headers: authenticate(actor),
         body: {
           query: "technical seo",
@@ -673,7 +607,7 @@ describe("SEO routes", () => {
     );
 
     const response = await accept(
-      client(actor.usagePricingResolution)(seoContract).serp({
+      client()(seoContract).serp({
         headers: authenticate(actor),
         body: {
           query: "technical seo",
@@ -729,7 +663,7 @@ describe("SEO routes", () => {
     );
 
     const response = await accept(
-      client(actor.usagePricingResolution)(seoContract).serp({
+      client()(seoContract).serp({
         headers: authenticate(actor),
         body: {
           query: "coffee shops",
@@ -799,7 +733,7 @@ describe("SEO routes", () => {
       ),
     );
     const headers = authenticate(actor);
-    const seoClient = client(actor.usagePricingResolution)(seoContract);
+    const seoClient = client()(seoContract);
 
     const serp = await accept(
       seoClient.serp({
@@ -923,7 +857,7 @@ describe("SEO routes", () => {
         },
       ),
     );
-    const seoClient = client(actor.usagePricingResolution)(seoContract);
+    const seoClient = client()(seoContract);
     const headers = authenticate(actor);
 
     const bing = await accept(

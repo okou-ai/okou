@@ -172,6 +172,24 @@
 //! sends the linked request through `exec_request`, and validates the linked
 //! report in `validate_result`.
 //!
+//! ## `prepare-for-cache`
+//!
+//! ```text
+//! guest-agent prepare-for-cache < request.json
+//! ```
+//!
+//! This terminal helper shares the bounded request, report and exit-code contract
+//! above, but accepts only the canonical managed runtime parent
+//! `/home/user/.vm0/guest-agent/runs`. Both requested anchors must pass the existing
+//! containment, no-follow, mount and identity checks before mutation. Once required
+//! readers and sidecar export/host copy finish, it removes all completed runtime
+//! children (including current/retained anchors) and managed Codex auth. It does not
+//! delete ordinary user files, framework histories/catalogs or package caches.
+//! Unlike idle preparation, Runner does not apply a rootfs-reserve gate to its
+//! report. Failure rejects optional publication; successful deletion is not a
+//! forensic block-erasure guarantee. Runner invokes it from
+//! `crates/runner-lifecycle/src/workspace_promotion.rs` before freeze and stop.
+//!
 //! ## `cleanup-codex-session`
 //!
 //! ### Invocation
@@ -203,16 +221,16 @@
 //!
 //! The fixed-role launcher is
 //! `crates/guest-control-server/src/agent_command.rs::spawn_codex_session_cleanup_with_pipes`.
-//! The runner invokes the operation only for an actually reused sandbox from
+//! The runner invokes the operation before every actual Codex history replacement,
+//! independently of VM provenance. Serial restoration and post-storage staged destination
+//! preparation share
 //! `crates/runner-executor/src/executor/session_restore/codex.rs::cleanup_existing_codex_session_files`
-//! before writing replacement history, and independently validates the output in
-//! `parse_codex_cleanup_output`
+//! and independently validate the output in `parse_codex_cleanup_output`
 //! before using a returned path as the restore destination. Keep these source
 //! references in sync with the shared contract when changing this protocol.
 
 pub mod active_input;
 mod artifact;
-pub mod checkpoint;
 pub mod cli;
 mod codex_auth;
 pub mod codex_session_cleanup;
@@ -225,6 +243,7 @@ pub mod error;
 pub mod events;
 pub mod failure_diagnostics;
 mod failure_patterns;
+pub mod finalization;
 pub mod heartbeat;
 pub mod http;
 pub mod masker;

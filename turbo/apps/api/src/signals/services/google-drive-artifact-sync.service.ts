@@ -50,17 +50,16 @@ import {
   loadBuiltinConnectorCredentialConnection$,
   loadBuiltinConnectorCredentialValues$,
   refreshBuiltinConnectorCredentialAccess$,
-} from "./builtin-connector-credential-command.service";
-import {
   builtinConnectorCredentialRuntimeValueRef,
   type BuiltinConnectorCredentialConnection,
 } from "./builtin-connector-credential-runtime.service";
+
 import { runOwnedChatEventForRunCondition } from "./chat-event-type.service";
 import type { ConnectorRuntimeAuthLookup } from "./connector-catalog-runtime.service";
 import { loadConnectorRuntimeAuthSelection } from "./connector-catalog-slug-source.service";
 import { userFeatureSwitchOverrides } from "./feature-switches.service";
-import { resolveArtifactFileReference } from "./private-artifact-storage.service";
-import { uploadedArtifactObject } from "./uploaded-artifact.service";
+import { resolveArtifactFileReference$ } from "./private-artifact-storage.service";
+import { uploadedArtifactObject$ } from "./uploaded-artifact.service";
 
 const GOOGLE_DRIVE_FILES_URL = "https://www.googleapis.com/drive/v3/files";
 const GOOGLE_DRIVE_UPLOAD_URL =
@@ -863,20 +862,25 @@ function artifactSourceUrls(artifact: ArtifactFileRow): readonly string[] {
   ];
 }
 
-function resolveArtifactS3Object(
-  artifact: ArtifactFileRow,
-  userId: string,
-  orgId: string,
-  signal: AbortSignal,
-): Computed<Promise<ArtifactS3Object | null>> {
-  return computed(async (get): Promise<ArtifactS3Object | null> => {
+const resolveArtifactS3Object$ = command(
+  async (
+    { set },
+    artifact: ArtifactFileRow,
+    owner: { readonly userId: string; readonly orgId: string },
+    signal: AbortSignal,
+  ): Promise<ArtifactS3Object | null> => {
+    const { userId, orgId } = owner;
     const reference = artifact.url
-      ? await get(resolveArtifactFileReference(artifact.url, signal))
+      ? await set(resolveArtifactFileReference$, artifact.url, signal)
       : null;
+    signal.throwIfAborted();
     if (reference) {
-      const object = await get(
-        uploadedArtifactObject({ id: reference.id, userId, orgId }),
+      const object = await set(
+        uploadedArtifactObject$,
+        { id: reference.id, userId, orgId },
+        signal,
       );
+      signal.throwIfAborted();
       return object ? { bucketName: object.bucket, key: object.key } : null;
     }
     const value = artifact.metadata.s3Key;
@@ -895,8 +899,8 @@ function resolveArtifactS3Object(
     }
 
     return null;
-  });
-}
+  },
+);
 
 const resolveHostedArtifactContent$ = command(
   async (
@@ -1527,9 +1531,7 @@ export const syncArtifactToGoogleDrive$ = command(
     const s3Object =
       hostedContent || artifact.metadata.access === "owner-private-v1"
         ? null
-        : await get(
-            resolveArtifactS3Object(artifact, args.userId, args.orgId, signal),
-          );
+        : await set(resolveArtifactS3Object$, artifact, args, signal);
     signal.throwIfAborted();
     let content: ResolvedArtifactContent;
     if (hostedContent) {

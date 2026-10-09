@@ -1,13 +1,13 @@
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import type { Db } from "../external/db";
+import { command } from "ccstate";
 import {
   awaitWithSignal,
   readBoundedResponseText,
   safeJsonParse,
   settleIncludingAbort,
 } from "../utils";
-import { readPiMemoryBuiltinQuota } from "./pi-memory-builtin-quota.service";
+import { readPiMemoryBuiltinQuota$ } from "./pi-memory-builtin-quota.service";
 
 export type PiMemoryQuotaSource =
   | { readonly providerClass: "builtin" }
@@ -28,23 +28,15 @@ export interface PiMemoryQuotaDecision {
     | "metadata_unrecognized"
     | "metadata_read_failed"
     | "metadata_timeout"
-    | "cash_percentage_unknown"
-    | "entitlement_stale";
-  readonly bucket?:
-    | "primary"
-    | "secondary"
-    | "short"
-    | "weekly"
-    | "member_pool";
+    | "cash_percentage_unknown";
+  readonly bucket?: "primary" | "secondary" | "member_pool";
   readonly remainingPercent?: number;
 }
 
 export class PiMemoryQuotaError extends Error {
   constructor(
     readonly errorClass:
-      | "quota_below_threshold"
-      | "quota_limit_reached"
-      | "quota_unavailable",
+      "quota_below_threshold" | "quota_limit_reached" | "quota_unavailable",
   ) {
     super("Pi memory quota admission failed");
     this.name = "PiMemoryQuotaError";
@@ -181,33 +173,35 @@ async function fetchCodexQuota(
 }
 
 /** One admission snapshot per new attempt; never a reservation or per-turn poll. */
-export async function checkPiMemoryQuota(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly stage: "stage1" | "phase2";
-    readonly source: PiMemoryQuotaSource;
+export const checkPiMemoryQuota$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly stage: "stage1" | "phase2";
+      readonly source: PiMemoryQuotaSource;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    signal.throwIfAborted();
+    const decision =
+      args.source.providerClass === "codex"
+        ? await readCodexQuota(args.source, signal)
+        : await set(readPiMemoryBuiltinQuota$, args, nowDate(), signal);
+    signal.throwIfAborted();
+    log.info("Pi memory quota admission", {
+      stage: args.stage,
+      providerClass: args.source.providerClass,
+      thresholdPercent: 25,
+      ...decision,
+    });
+    if (
+      decision.reason === "quota_below_threshold" ||
+      decision.reason === "quota_limit_reached" ||
+      decision.reason === "quota_unavailable"
+    ) {
+      throw new PiMemoryQuotaError(decision.reason);
+    }
   },
-  signal: AbortSignal,
-): Promise<void> {
-  signal.throwIfAborted();
-  const decision =
-    args.source.providerClass === "codex"
-      ? await readCodexQuota(args.source, signal)
-      : await readPiMemoryBuiltinQuota(db, args, nowDate(), signal);
-  signal.throwIfAborted();
-  log.info("Pi memory quota admission", {
-    stage: args.stage,
-    providerClass: args.source.providerClass,
-    thresholdPercent: 25,
-    ...decision,
-  });
-  if (
-    decision.reason === "quota_below_threshold" ||
-    decision.reason === "quota_limit_reached" ||
-    decision.reason === "quota_unavailable"
-  ) {
-    throw new PiMemoryQuotaError(decision.reason);
-  }
-}
+);

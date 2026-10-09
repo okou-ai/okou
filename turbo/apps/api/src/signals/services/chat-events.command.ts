@@ -1,4 +1,7 @@
-import type { Tx } from "../../lib/db-types";
+import {
+  AUTO_SELECTED_MODEL,
+  isAutoSelectedModel,
+} from "@okouai/core/auto-run-model";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { chatEventCommandResultSchema } from "./chat-event-append.service";
 import {
@@ -28,6 +31,7 @@ import {
   type ChatEventAttachFileMetadata,
 } from "@okouai/db/schema/chat-event";
 import { computerUseHosts } from "@okouai/db/schema/computer-use-host";
+import { chatNetworkBodyCaptures } from "@okouai/db/schema/chat-network-body-capture";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { command } from "ccstate";
@@ -66,7 +70,11 @@ import {
   cancelRun$,
   type CancelRunResult,
 } from "./agent-run-terminal-transition.service";
-import { registerCanonicalWebInputAssets } from "./canonical-asset.service";
+import {
+  canonicalPrivateWebInputPlan,
+  canonicalWebInputPlan,
+} from "./canonical-asset.service";
+import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import {
   canonicalChatEventContent,
   canonicalChatEventError,
@@ -90,7 +98,6 @@ import {
   capturedModelReplacement,
   resolveChatInputModelSelection$,
 } from "./chat-input-model.service";
-import { recordChatNetworkBodyCapture } from "./chat-network-body-capture.service";
 import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
 import {
   chatThreadCreatedEventSql,
@@ -123,11 +130,8 @@ import {
   dispatchCancelSideEffects$,
   shouldDispatchCancelSideEffects,
 } from "./run-cancel.service";
-import { uploadedArtifactObject } from "./uploaded-artifact.service";
-import {
-  officialWorkflowQueueContextId,
-  webChatContextId,
-} from "./web-chat-queue-context.service";
+import { uploadedArtifactObject$ } from "./uploaded-artifact.service";
+import { webChatContextId } from "./web-chat-queue-context.service";
 /** Canonical ChatEvent write commands. */
 type SendBody = z.infer<typeof chatEventsContract.send.body>;
 interface NormalSendBody {
@@ -513,7 +517,7 @@ function unwrapSettledResult<T>(result: PromiseSettledResult<T>): T {
  */
 const resolveIncomingAttachFileMetadata$ = command(
   async (
-    { get },
+    { set },
     args: {
       readonly userId: string;
       readonly orgId: string;
@@ -534,13 +538,15 @@ const resolveIncomingAttachFileMetadata$ = command(
       );
       const results = await Promise.allSettled(
         wave.map(async (file) => {
-          const object = await get(
-            uploadedArtifactObject({
+          const object = await set(
+            uploadedArtifactObject$,
+            {
               userId: args.userId,
               orgId: args.orgId,
               id: file.fileId,
               filenameHint: file.filenameSnapshot,
-            }),
+            },
+            signal,
           );
           return { file, object };
         }),
@@ -662,8 +668,11 @@ function requestedThreadRunSettings(
   },
 ): ThreadRunSettings | ReturnType<typeof badRequestMessage> {
   // An explicit null selects Auto; omission keeps the current selection.
-  const selectedModel =
+  const requestedModel =
     body.model === undefined ? current.selectedModel : body.model;
+  const selectedModel = isAutoSelectedModel(requestedModel)
+    ? null
+    : requestedModel;
   const effort = resolveChatReasoningEffort({
     catalog,
     selectedModel,
@@ -1060,46 +1069,6 @@ function existingSendThreadUpdatePlan(
     events: [...modelEvents, ...accessEvents],
   };
 }
-/**
- * Write the send's thread update plan. A replacement is a compare-and-set, as
- * the enqueue rewrite: a concurrent model change wins and the replacement
- * writes no events.
- */
-async function applyExistingSendThreadUpdate(
-  tx: Tx,
-  args: NormalSendArgs,
-  thread: SendThread,
-  plan: NonNullable<ReturnType<typeof existingSendThreadUpdatePlan>>,
-): Promise<void> {
-  const threadCondition = and(
-    eq(chatThreads.id, thread.threadId),
-    eq(chatThreads.userId, args.userId),
-  );
-  const { replacement } = plan;
-  if (replacement) {
-    const [replaced] = await tx
-      .update(chatThreads)
-      .set(replacement.values)
-      .where(
-        and(
-          threadCondition,
-          eq(chatThreads.selectedModel, replacement.replacedModel),
-        ),
-      )
-      .returning({ id: chatThreads.id });
-    if (replaced) {
-      for (const event of replacement.events) {
-        await tx.execute(chatThreadEventInsertSql(event));
-      }
-    }
-  }
-  if (plan.values) {
-    await tx.update(chatThreads).set(plan.values).where(threadCondition);
-  }
-  for (const event of plan.events) {
-    await tx.execute(chatThreadEventInsertSql(event));
-  }
-}
 /** An explicit model selection also becomes the member's default for new chats. */
 function userModelPreferencePlan(
   args: NormalSendArgs,
@@ -1217,10 +1186,7 @@ function normalSendEvent(params: {
     ...(params.triggerSource === "web"
       ? {
           contextType: "web",
-          contextId:
-            params.requiredOfficialWorkflowIds === undefined
-              ? webChatContextId()
-              : officialWorkflowQueueContextId(),
+          contextId: webChatContextId(),
         }
       : {}),
     ...(params.triggerSource === "agent" && params.agentRunSource
@@ -1234,7 +1200,7 @@ function normalSendEvent(params: {
           }
         : {
             contextType: "agent_run",
-            contextId: officialWorkflowQueueContextId(),
+            contextId: webChatContextId(),
           }
       : {}),
   };
@@ -1347,20 +1313,99 @@ const createdSendThreadSelection = Object.freeze({
   createdAt: chatThreads.createdAt,
 });
 
+interface NormalSendInput {
+  readonly thread: SendThread;
+  readonly event: ReturnType<typeof normalSendEvent>;
+  readonly attachFileMetadata: readonly ChatEventAttachFileMetadata[];
+}
+
+/** Prepare ordinary write facts without capturing the transaction owner. */
+function normalSendInputPlan(args: NormalSendArgs, input: NormalSendInput) {
+  const { thread, event } = input;
+  const existing = existingSendThreadUpdatePlan(args, thread);
+  const threadCondition = and(
+    eq(chatThreads.id, thread.threadId),
+    eq(chatThreads.userId, args.userId),
+  );
+  return {
+    thread,
+    event,
+    queueInput: { chatThreadId: thread.threadId, orgId: args.orgId },
+    existingPlan: existing && {
+      ...existing,
+      where: threadCondition,
+      replacement: existing.replacement && {
+        ...existing.replacement,
+        where: and(
+          threadCondition,
+          eq(chatThreads.selectedModel, existing.replacement.replacedModel),
+        ),
+      },
+    },
+    preferencePlan: userModelPreferencePlan(args, thread.runSettings),
+    attachments: input.attachFileMetadata.map((file) => {
+      const owner = {
+        chatThreadId: thread.threadId,
+        userId: args.userId,
+        orgId: args.orgId,
+        file,
+      };
+      return {
+        owner,
+        plan: file.objectKey.startsWith("private-artifacts/")
+          ? null
+          : canonicalWebInputPlan(owner),
+      };
+    }),
+  };
+}
+
+function normalSendInputInsertSql(
+  event: ReturnType<typeof normalSendEvent>,
+  replacementRows:
+    Parameters<typeof requireChatEventReplacementTarget>[0] | null,
+) {
+  return replacementRows === null
+    ? chatEventInsertSql(event, "id")
+    : chatEventReplacementInsertSql(
+        requireChatEventReplacementTarget(replacementRows),
+        event,
+      );
+}
+
+function newSendThreadCreatedEventSql(
+  args: NormalSendArgs,
+  row: Parameters<typeof createdChatThreadFromRow>[0],
+) {
+  return chatThreadCreatedEventSql({
+    orgId: args.orgId,
+    eventId: args.body.chatThreadEventId,
+    thread: createdChatThreadFromRow(row, args.body.agentId),
+  });
+}
+
+function normalSendGetStartedSql(args: NormalSendArgs, sourceEventId: string) {
+  return args.getStartedWorkflowId
+    ? recordGetStartedWorkflowSql(
+        {
+          orgId: args.orgId,
+          userId: args.userId,
+          workflowId: args.getStartedWorkflowId,
+          sourceEventId,
+        },
+        nowDate(),
+      )
+    : undefined;
+}
+
 const appendNormalSendInput$ = command(
   async (
     { set },
     args: NormalSendArgs,
-    input: {
-      readonly thread: SendThread;
-      readonly event: ReturnType<typeof normalSendEvent>;
-      readonly attachFileMetadata: readonly ChatEventAttachFileMetadata[];
-    },
+    input: ReturnType<typeof normalSendInputPlan>,
     signal: AbortSignal,
   ) => {
-    const { thread, event } = input;
-    const existingPlan = existingSendThreadUpdatePlan(args, thread);
-    const preferencePlan = userModelPreferencePlan(args, thread.runSettings);
+    const { thread, event, existingPlan, preferencePlan } = input;
     const inserted = await set(writeDb$).transaction(async (tx) => {
       if (thread.kind === "new") {
         const createdPlan = newSendThreadInsertPlan(args, thread);
@@ -1373,30 +1418,17 @@ const appendNormalSendInput$ = command(
         if (!createdRow) {
           throw new NewThreadSendCollision("thread");
         }
-        await tx.execute(
-          chatThreadCreatedEventSql({
-            orgId: args.orgId,
-            eventId: args.body.chatThreadEventId,
-            thread: createdChatThreadFromRow(
-              createdRow,
-              createdPlan.values.agentId,
-            ),
-          }),
-        );
+        await tx.execute(newSendThreadCreatedEventSql(args, createdRow));
       }
-      const insert = args.body.revokesEventId
-        ? chatEventReplacementInsertSql(
-            requireChatEventReplacementTarget(
-              parseRawRows(
-                chatEventReplacementTargetSchema,
-                await tx.execute(
-                  chatEventReplacementTargetSql(args.body.revokesEventId),
-                ),
-              ),
+      const replacementRows = args.body.revokesEventId
+        ? parseRawRows(
+            chatEventReplacementTargetSchema,
+            await tx.execute(
+              chatEventReplacementTargetSql(args.body.revokesEventId),
             ),
-            event,
           )
-        : chatEventInsertSql(event, "id");
+        : null;
+      const insert = normalSendInputInsertSql(event, replacementRows);
       const [inserted] = parseRawRows(
         chatEventCommandResultSchema,
         await tx.execute(insert),
@@ -1412,13 +1444,35 @@ const appendNormalSendInput$ = command(
         await tx.execute(contextInsert);
       }
       if (existingPlan) {
-        await applyExistingSendThreadUpdate(tx, args, thread, existingPlan);
+        const { replacement } = existingPlan;
+        if (replacement) {
+          // A concurrent model change wins; a lost CAS writes no events.
+          const [replaced] = await tx
+            .update(chatThreads)
+            .set(replacement.values)
+            .where(replacement.where)
+            .returning({ id: chatThreads.id });
+          if (replaced) {
+            for (const event of replacement.events) {
+              await tx.execute(chatThreadEventInsertSql(event));
+            }
+          }
+        }
+        if (existingPlan.values) {
+          await tx
+            .update(chatThreads)
+            .set(existingPlan.values)
+            .where(existingPlan.where);
+        }
+        for (const event of existingPlan.events) {
+          await tx.execute(chatThreadEventInsertSql(event));
+        }
       }
       if (args.body.captureNetworkBodies) {
-        await recordChatNetworkBodyCapture(tx, {
-          chatEventId: inserted.id,
-          chatThreadId: thread.threadId,
-        });
+        await tx
+          .insert(chatNetworkBodyCaptures)
+          .values({ chatEventId: inserted.id, chatThreadId: thread.threadId })
+          .onConflictDoNothing({ target: chatNetworkBodyCaptures.chatEventId });
       }
       if (preferencePlan) {
         await tx
@@ -1426,29 +1480,41 @@ const appendNormalSendInput$ = command(
           .values(preferencePlan.values)
           .onConflictDoUpdate(preferencePlan.conflict);
       }
-      await registerCanonicalWebInputAssets(tx, {
-        chatThreadId: thread.threadId,
-        userId: args.userId,
-        orgId: args.orgId,
-        files: input.attachFileMetadata,
-      });
-      if (args.getStartedWorkflowId) {
-        await tx.execute(
-          recordGetStartedWorkflowSql(
-            {
-              orgId: args.orgId,
-              userId: args.userId,
-              workflowId: args.getStartedWorkflowId,
-              sourceEventId: inserted.id,
-            },
-            nowDate(),
-          ),
-        );
+      // Canonical attachments and their input event commit as one unit.
+      for (const { owner, plan } of input.attachments) {
+        if (plan === null) {
+          const [owned] = await tx
+            .select()
+            .from(runUploadedFiles)
+            .where(eq(runUploadedFiles.id, owner.file.id))
+            .limit(1);
+          const plan = canonicalPrivateWebInputPlan({ ...owner, owned });
+          // Existing generated/integration identity is retained by the update predicate.
+          await tx.update(runUploadedFiles).set(plan.values).where(plan.where);
+          continue;
+        }
+        const [registered] = await tx
+          .insert(runUploadedFiles)
+          .values(plan.values)
+          .onConflictDoNothing()
+          .returning({ id: runUploadedFiles.id });
+        if (registered) {
+          continue;
+        }
+        const [existing] = await tx
+          .select({ id: runUploadedFiles.id })
+          .from(runUploadedFiles)
+          .where(plan.identity)
+          .limit(1);
+        if (!existing) {
+          throw new Error("Canonical web input asset conflict is missing");
+        }
       }
-      const plan = queuedChatThreadEnqueuePlan({
-        chatThreadId: thread.threadId,
-        orgId: args.orgId,
-      });
+      const getStartedInsert = normalSendGetStartedSql(args, inserted.id);
+      if (getStartedInsert) {
+        await tx.execute(getStartedInsert);
+      }
+      const plan = queuedChatThreadEnqueuePlan(input.queueInput);
       await tx
         .insert(queuedChatThreads)
         .values(plan.values)
@@ -1540,6 +1606,7 @@ const prepareNormalSend$ = command(
     signal.throwIfAborted();
     if (
       typeof args.body.model === "string" &&
+      args.body.model !== AUTO_SELECTED_MODEL &&
       resolveRunSelectionModel(catalog, args.body.model) === null
     ) {
       return badRequestMessage(`Unknown model "${args.body.model}"`);
@@ -1866,7 +1933,7 @@ export const sendNormalEvent$ = command(
         const committed = await set(
           appendNormalSendInput$,
           args,
-          { thread, event, attachFileMetadata },
+          normalSendInputPlan(args, { thread, event, attachFileMetadata }),
           signal,
         );
         if (committed === null) {

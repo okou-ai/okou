@@ -11,6 +11,8 @@ import {
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
+import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -18,6 +20,7 @@ import { createRouteMocks } from "./helpers/route-test";
 import { uploadsCompleteRoutes } from "../uploads-complete";
 import { uploadsMultipartRoutes } from "../uploads-multipart";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
+import { featureSwitchesRoutes } from "../feature-switches";
 
 const uploadsTestRoutes = Object.freeze([
   ...uploadsCompleteRoutes,
@@ -34,6 +37,19 @@ function apiClient() {
 
 function authHeaders() {
   return { authorization: "Bearer clerk-session" };
+}
+
+async function useLegacyPublicUploads(userId: string, orgId: string) {
+  mocks.clerk.session(userId, orgId);
+  await accept(
+    setupApp({ context, routes: featureSwitchesRoutes })(
+      featureSwitchesContract,
+    ).update({
+      headers: authHeaders(),
+      body: { switches: { [FeatureSwitchKey.PrivateArtifacts]: false } },
+    }),
+    [200],
+  );
 }
 
 describe("multipart user artifact uploads", () => {
@@ -74,7 +90,7 @@ describe("multipart user artifact uploads", () => {
   it("prepares 5 MiB parts for a large upload", async () => {
     const userId = `user_${randomUUID()}`;
     const orgId = `org_${randomUUID()}`;
-    mocks.clerk.session(userId, orgId);
+    await useLegacyPublicUploads(userId, orgId);
     let publicRegistration: unknown;
     context.mocks.s3.send.mockImplementation((command: unknown) => {
       if (command instanceof ListObjectsV2Command) {
@@ -174,7 +190,7 @@ describe("multipart user artifact uploads", () => {
   });
 
   it("stores the declared text charset when preparing a multipart artifact", async () => {
-    mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
+    await useLegacyPublicUploads(`user_${randomUUID()}`, `org_${randomUUID()}`);
     context.mocks.s3.send.mockImplementation((command) => {
       if (command instanceof ListObjectsV2Command) {
         return Promise.resolve({ Contents: [] });
@@ -216,7 +232,7 @@ describe("multipart user artifact uploads", () => {
   it("keeps the legacy single PUT response for small multipart requests", async () => {
     const userId = `user_${randomUUID()}`;
     const orgId = `org_${randomUUID()}`;
-    mocks.clerk.session(userId, orgId);
+    await useLegacyPublicUploads(userId, orgId);
     mocks.s3.listObjects([]);
 
     const response = await accept(
@@ -245,7 +261,7 @@ describe("multipart user artifact uploads", () => {
     expect(response.body).not.toHaveProperty("multipart");
   });
 
-  it("aborts the multipart session when the API owner is cancelled after creation", async () => {
+  it("aborts the default-private multipart session when the API owner is cancelled after creation", async () => {
     const userId = `user_${randomUUID()}`;
     const orgId = `org_${randomUUID()}`;
     const controller = new AbortController();
@@ -291,8 +307,10 @@ describe("multipart user artifact uploads", () => {
         return command instanceof AbortMultipartUploadCommand;
       });
     expect(abortCommand?.input).toMatchObject({
-      Bucket: "test-user-artifacts",
-      Key: expect.stringMatching(/^artifacts\/[0-9a-z]{10}\.mp4$/u),
+      Bucket: "test-private-artifacts",
+      Key: expect.stringMatching(
+        /^private-artifacts\/[0-9a-f-]{36}\/cancelled\.mp4$/u,
+      ),
       UploadId: "multipart-upload-cancelled",
     });
   });

@@ -34,7 +34,13 @@ import {
   visibleThreadTitles,
 } from "./sidebar-test-helpers.tsx";
 
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
@@ -85,7 +91,62 @@ test("Browse a long sidebar chat history", async () => {
   expect(scrollArea).toBeInTheDocument();
 });
 
-test("Toggle the chat list from its title with pointer and keyboard", async () => {
+test.each([false, true])(
+  "Keep the three-column chat list expanded with saved collapsed state %s",
+  async (savedCollapsed) => {
+    const viewport = mockMobileLayout();
+    prepareDefaultAgent();
+    mockSidebarThreadStory([createThread(EXISTING_THREAD_ID, "Release plan")]);
+
+    await setupSidebarPage({
+      context,
+      path: `/agents/${AGENT_ID}/chat`,
+    });
+
+    click(screen.getByLabelText("Open menu"));
+    const drawer = await waitFor(() => {
+      const current = mobileSidebar();
+      expect(within(current).getByText("Release plan")).toBeInTheDocument();
+      return current;
+    });
+    const mobileTitle = buttonByText("Chats with Okou", drawer);
+    if (savedCollapsed) {
+      click(mobileTitle);
+    }
+    expect(mobileTitle).toHaveAttribute(
+      "aria-expanded",
+      String(!savedCollapsed),
+    );
+    expect(within(drawer).queryByText("Release plan") !== null).toBe(
+      !savedCollapsed,
+    );
+    act(() => {
+      viewport.setMatches((query) => {
+        return query === "(min-width: 48rem)";
+      });
+    });
+
+    const list = await screen.findByTestId("chat-list-column");
+    const thread = await within(list).findByText("Release plan");
+    const title = within(list).getByText("Chats with Okou");
+    expect(
+      queryAllByRoleFast("button", list).some((button) => {
+        return button.textContent?.includes("Chats with Okou");
+      }),
+    ).toBeFalsy();
+    expect(thread).toBeVisible();
+
+    click(title);
+    expect(thread).toBeVisible();
+    for (const button of within(list).getAllByLabelText("New chat")) {
+      expect(button).toBeEnabled();
+    }
+    expect(within(list).getByLabelText("Open chat list menu")).toBeEnabled();
+  },
+);
+
+test("Toggle the mobile chat list from its title with pointer and keyboard", async () => {
+  mockMobileLayout();
   const user = userEvent.setup({ delay: null });
   prepareDefaultAgent();
   mockSidebarThreadStory([createThread(EXISTING_THREAD_ID, "Release plan")]);
@@ -95,8 +156,12 @@ test("Toggle the chat list from its title with pointer and keyboard", async () =
     path: `/agents/${AGENT_ID}/chat`,
   });
 
-  const list = await screen.findByTestId("chat-list-column");
-  await within(list).findByText("Release plan");
+  click(screen.getByLabelText("Open menu"));
+  const list = await waitFor(() => {
+    const current = mobileSidebar();
+    expect(within(current).getByText("Release plan")).toBeInTheDocument();
+    return current;
+  });
   const titleButton = buttonByText("Chats with Okou", list);
   const contentId = titleButton.getAttribute("aria-controls");
   if (!contentId) {
@@ -1016,6 +1081,7 @@ test("Mark all of an agent’s chats read", async () => {
     path: `/agents/${AGENT_ID}/chat`,
   });
 
+  click(screen.getByLabelText("Open menu"));
   const nav = await waitFor(() => {
     const current = mobileSidebar();
     expect(within(current).getByText("Research Agent")).toBeInTheDocument();

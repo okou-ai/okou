@@ -9,7 +9,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { Menu, Package, Share2, UserPlus } from "lucide-react";
 import type { RouteKey } from "../../signals/route-paths.ts";
-import { Button, cn, useMediaQuery } from "@okouai/ui";
+import { Button, Sheet, SheetTrigger, cn, useMediaQuery } from "@okouai/ui";
 import { Sidebar, ThreeColumnSearchDialogContainer } from "./sidebar.tsx";
 import {
   AutomationMenuButton,
@@ -301,7 +301,6 @@ function MobileTopBarActions({ activeId }: { activeId: RouteKey | null }) {
 }
 
 function MobileTopBar({ pwaNavigation = false }: { pwaNavigation?: boolean }) {
-  const setExpanded = useSet(setSidebarExpanded$);
   const { t } = useTranslation();
 
   const breadcrumbLoadable = useLastLoadable(mobileBreadcrumb$);
@@ -319,22 +318,23 @@ function MobileTopBar({ pwaNavigation = false }: { pwaNavigation?: boolean }) {
           <PwaBackToChats />
         ) : null
       ) : (
-        <Button
-          showTooltip
-          type="button"
-          onClick={() => {
-            setExpanded(true);
-          }}
-          variant="quiet"
-          size="icon-sm"
-          iconSize="md"
-          className="shrink-0"
-          aria-label={t(($) => {
-            return $.appShell.sidebar.mobile.openMenu;
-          })}
+        <SheetTrigger
+          render={
+            <Button
+              showTooltip
+              type="button"
+              variant="quiet"
+              size="icon-sm"
+              iconSize="md"
+              className="shrink-0"
+              aria-label={t(($) => {
+                return $.appShell.sidebar.mobile.openMenu;
+              })}
+            />
+          }
         >
           <Menu size={18} />
-        </Button>
+        </SheetTrigger>
       )}
       {activeId === "chat" ? (
         <div className="flex-1 min-w-0">
@@ -389,25 +389,12 @@ function SkillImportDialogMount() {
 function MobileSidebarMount() {
   const expanded = useGet(sidebarExpanded$);
   const setExpanded = useSet(setSidebarExpanded$);
-  const { t } = useTranslation();
 
   return (
-    <>
+    <Sheet open={expanded} onOpenChange={setExpanded}>
+      <MobileTopBar />
       <Sidebar isDesktop={false} />
-      <div
-        data-sidebar-expanded={expanded || undefined}
-        // A fixed cover is clipped by the visual viewport, so in a standalone
-        // PWA it stops short of the bottom safe inset. Extending `bottom` by
-        // that inset keeps the scrim painted to the physical screen edge.
-        className="fixed inset-0 z-30 bg-black/40 hidden data-[sidebar-expanded]:max-md:block [@media(display-mode:standalone)]:-bottom-safe"
-        aria-label={t(($) => {
-          return $.appShell.sidebar.mobile.overlay;
-        })}
-        onClick={() => {
-          return setExpanded(false);
-        }}
-      />
-    </>
+    </Sheet>
   );
 }
 
@@ -449,9 +436,7 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
         </>
       ) : isDesktop ? (
         <Sidebar isDesktop />
-      ) : (
-        <MobileSidebarMount />
-      )}
+      ) : null}
       <WorkspaceInset beside={chatListHidden ? "nav-rail" : "chat-list"}>
         <InstallBanner />
         <IosInstallModal />
@@ -460,7 +445,12 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
             pwaNavigation &&
             (activeRoute === "me" ||
               (activeRoute === "agentChat" && chatListVisible))
-          ) && <MobileTopBar pwaNavigation={pwaNavigation} />}
+          ) &&
+          (pwaNavigation ? (
+            <MobileTopBar pwaNavigation />
+          ) : (
+            <MobileSidebarMount />
+          ))}
         {pwaNavigation ? (
           <>
             <div className="flex min-h-0 flex-1 flex-col [--okou-safe-b:0px]">

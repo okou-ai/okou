@@ -1,6 +1,6 @@
 import { HttpResponse } from "msw";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { uploadsContract } from "@okouai/api-contracts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
@@ -88,7 +88,11 @@ test("groups attach, template and import skills actions in the add menu", async 
   });
   const card = composerCard(editor);
 
-  expect(within(card).queryByLabelText("Attach")).toBeNull();
+  expect(
+    queryAllByRoleFast("button", card).find((button) => {
+      return button.getAttribute("aria-label") === "Attach";
+    }),
+  ).toBeUndefined();
   expect(within(card).queryByLabelText("Template")).toBeNull();
 
   const menu = await openAddMenu(editor);
@@ -162,9 +166,9 @@ test("still reaches the template picker with its toolbar button gone", async () 
   ).resolves.toBeVisible();
 });
 
-// The operating system's file dialog is not reachable from jsdom, so the row
-// stands in for the user opening it and the assertion stays on what the page
-// shows afterwards: the chosen file attached to the message.
+// Happy DOM has no native picker. Stub that browser boundary here; native
+// pointer/keyboard activation needs Chromium on the deployed preview.
+// Selection must still attach the file after the menu has closed.
 test("attaches the chosen file from the attach row", async () => {
   const editor = await setupComposer({
     [FeatureSwitchKey.ComposerAddMenu]: true,
@@ -174,14 +178,12 @@ test("attaches the chosen file from the attach row", async () => {
   if (!(input instanceof HTMLInputElement)) {
     throw new Error("Expected the composer file input");
   }
-  let opened = false;
-  input.addEventListener("click", (event) => {
-    event.preventDefault();
-    opened = true;
-  });
+  Object.defineProperty(input, "showPicker", { value: vi.fn<() => void>() });
 
   click(menuItem(menu, "Attach"));
-  expect(opened).toBeTruthy();
+  await waitFor(() => {
+    expect(screen.queryByRole("menu", { name: "Add" })).not.toBeInTheDocument();
+  });
 
   fireEvent.change(input, {
     target: {

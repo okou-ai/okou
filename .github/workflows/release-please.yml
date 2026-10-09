@@ -4,7 +4,8 @@ name: release-please
 # adds no artifact dependency: each queued pull request's merge-group Turbo run
 # uploads the canonical app and CLI artifacts under its merged commit SHA, and
 # the Desktop workflow does the same when its package version changes.
-# iOS archives are built in the approved TestFlight publishing job below.
+# iOS merge groups publish immutable unsigned archives by exact input fingerprint;
+# the approved publishing job maps release_target to one archive and signs/exports it.
 # release-please deploys that same SHA as release_target. Staging independently
 # reuses the Turbo artifacts to deploy and verify the shared staging environment.
 on:
@@ -400,10 +401,12 @@ jobs:
     environment: production
     permissions:
       contents: read
+      actions: read
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
       IOS_VERSION: ${{ needs.release-please.outputs.ios_version }}
       IOS_INTERNAL_GROUP_NAME: ${{ vars.IOS_INTERNAL_GROUP_NAME }}
+      IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2
     steps:
       - name: Notify Slack - Starting
         id: slack-start
@@ -426,6 +429,34 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
+      - name: Install AWS CLI for private archive consumption
+        run: |
+          if ! command -v aws >/dev/null; then
+            HOMEBREW_NO_AUTO_UPDATE=1 brew install awscli
+          fi
+          aws --version
+      - name: Resolve and verify exact release archive
+        env:
+          IOS_ARCHIVE_DIR: ${{ runner.temp }}/okou-ios-promotion
+          GH_TOKEN: ${{ github.token }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID_DEV }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY_DEV }}
+          AWS_DEFAULT_REGION: auto
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_BUCKET_NAME: user-artifact-private-dev
+        run: |
+          echo "IOS_ARCHIVE_DIR=$IOS_ARCHIVE_DIR" >> "$GITHUB_ENV"
+          mkdir "$IOS_ARCHIVE_DIR"
+          python3 ios/scripts/archive-promotion.py toolchain "$IOS_ARCHIVE_DIR/toolchain.json"
+          python3 ios/scripts/archive-promotion.py inputs --toolchain "$IOS_ARCHIVE_DIR/toolchain.json" --output "$IOS_ARCHIVE_DIR/inputs.json"
+          python3 ios/scripts/archive-promotion.py consume "$IOS_ARCHIVE_DIR"
+      - name: Retain exact release-to-archive mapping
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ios-release-mapping-${{ needs.release-please.outputs.release_target }}
+          path: ${{ env.IOS_ARCHIVE_DIR }}/release-mapping.json
+          if-no-files-found: error
+          retention-days: 90
       - name: Resolve internal group and next build number
         id: prepare
         env:
@@ -434,7 +465,7 @@ jobs:
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.IOS_APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.IOS_APP_STORE_CONNECT_API_ISSUER_ID }}
         run: node ios/scripts/testflight.mjs prepare
-      - name: Archive and upload internal-only iOS build
+      - name: Sign export and upload the canonical internal-only iOS archive
         env:
           IOS_BUILD_NUMBER: ${{ steps.prepare.outputs.build_number }}
           IOS_APP_ID: ${{ steps.prepare.outputs.app_id }}
@@ -444,7 +475,7 @@ jobs:
           APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.IOS_APP_STORE_CONNECT_API_KEY_BASE64 }}
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.IOS_APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.IOS_APP_STORE_CONNECT_API_ISSUER_ID }}
-        run: bash ios/scripts/release-testflight.sh
+        run: bash ios/scripts/release-testflight.sh --archive "$IOS_ARCHIVE_DIR/Original.xcarchive"
       - name: Wait for processing and verify internal availability
         env:
           IOS_RELEASE_METADATA: ${{ runner.temp }}/okou-ios-release.json
@@ -515,7 +546,7 @@ jobs:
       APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
       APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.release-please.outputs.release_target }}
 
@@ -526,7 +557,7 @@ jobs:
       - name: Notify Slack - Starting
         id: slack-start
         if: ${{ vars.SLACK_RELEASE_CHANNEL_ID != '' }}
-        uses: slackapi/slack-github-action@v4.0.0
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
         with:
           method: chat.postMessage
           token: ${{ secrets.CI_SLACK_BOT_TOKEN }}
@@ -777,7 +808,7 @@ jobs:
 
       - name: Notify Slack - Success
         if: ${{ success() && steps.slack-start.outputs.ts }}
-        uses: slackapi/slack-github-action@v4.0.0
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
         with:
           method: chat.update
           token: ${{ secrets.CI_SLACK_BOT_TOKEN }}
@@ -793,7 +824,7 @@ jobs:
 
       - name: Notify Slack - Failure
         if: ${{ failure() && steps.slack-start.outputs.ts }}
-        uses: slackapi/slack-github-action@v4.0.0
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
         with:
           method: chat.update
           token: ${{ secrets.CI_SLACK_BOT_TOKEN }}
@@ -901,7 +932,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.release-please.outputs.release_target }}
           fetch-depth: 0
@@ -951,12 +982,12 @@ jobs:
       group: deploy-host-worker-production
       cancel-in-progress: false
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
     permissions:
       contents: read
     environment: production
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.release-please.outputs.release_target }}
       - uses: ./.github/actions/toolchain-init
@@ -964,7 +995,7 @@ jobs:
       - name: Notify Slack - Starting
         id: slack-start
         if: ${{ vars.SLACK_RELEASE_CHANNEL_ID != '' }}
-        uses: slackapi/slack-github-action@v4.0.0
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
         with:
           method: chat.postMessage
           token: ${{ secrets.CI_SLACK_BOT_TOKEN }}
@@ -1012,7 +1043,7 @@ jobs:
 
       - name: Notify Slack - Success
         if: ${{ success() && steps.slack-start.outputs.ts }}
-        uses: slackapi/slack-github-action@v4.0.0
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
         with:
           method: chat.update
           token: ${{ secrets.CI_SLACK_BOT_TOKEN }}
@@ -1028,7 +1059,7 @@ jobs:
 
       - name: Notify Slack - Failure
         if: ${{ failure() && steps.slack-start.outputs.ts }}
-        uses: slackapi/slack-github-action@v4.0.0
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
         with:
           method: chat.update
           token: ${{ secrets.CI_SLACK_BOT_TOKEN }}
@@ -1150,7 +1181,7 @@ jobs:
       needs.release-please.outputs.releases_created == 'true'
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
     outputs:
       deployment_url: ${{ steps.deploy.outputs.url }}
       vercel_dashboard_url: ${{ steps.vercel-dashboard.outputs.url }}
@@ -1160,7 +1191,7 @@ jobs:
       id-token: write
     environment: production
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.release-please.outputs.release_target }}
 
@@ -1208,7 +1239,7 @@ jobs:
 
       - name: Fetch production Doppler OAuth config
         id: doppler-oauth
-        uses: dopplerhq/secrets-fetch-action@v2.0.0
+        uses: dopplerhq/secrets-fetch-action@451892f16195f9ac360e1a5bcbf0b5fd0e957534 # v2.0.0
         with:
           auth-method: oidc
           doppler-identity-id: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
@@ -1277,7 +1308,7 @@ jobs:
       - name: Notify Slack - Migration Starting
         id: migration-slack-start
         if: ${{ needs.release-please.outputs.api_release_created == 'true' && vars.SLACK_RELEASE_CHANNEL_ID != '' }}
-        uses: slackapi/slack-github-action@v4.0.0
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
         with:
           method: chat.postMessage
           token: ${{ secrets.CI_SLACK_BOT_TOKEN }}
@@ -1327,7 +1358,7 @@ jobs:
 
       - name: Notify Slack - Migration Success
         if: ${{ success() && steps.migration-slack-start.outputs.ts }}
-        uses: slackapi/slack-github-action@v4.0.0
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
         with:
           method: chat.update
           token: ${{ secrets.CI_SLACK_BOT_TOKEN }}
@@ -1348,7 +1379,7 @@ jobs:
             steps.migration-slack-start.outputs.ts &&
             steps.run-migration-smoke-test.outcome == 'failure'
           }}
-        uses: slackapi/slack-github-action@v4.0.0
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
         with:
           method: chat.update
           token: ${{ secrets.CI_SLACK_BOT_TOKEN }}
@@ -1369,7 +1400,7 @@ jobs:
             steps.migration-slack-start.outputs.ts &&
             steps.run-migration-smoke-test.outcome != 'failure'
           }}
-        uses: slackapi/slack-github-action@v4.0.0
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
         with:
           method: chat.update
           token: ${{ secrets.CI_SLACK_BOT_TOKEN }}
@@ -1385,7 +1416,7 @@ jobs:
 
       - name: Start GitHub Deployment
         id: deployment
-        uses: bobheadxi/deployments@v1
+        uses: bobheadxi/deployments@648679e8e4915b27893bd7dbc35cb504dc915bc8 # v1
         with:
           step: start
           token: ${{ github.token }}
@@ -1396,7 +1427,7 @@ jobs:
       - name: Notify Slack - Starting
         id: slack-start
         if: ${{ vars.SLACK_RELEASE_CHANNEL_ID != '' }}
-        uses: slackapi/slack-github-action@v4.0.0
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
         with:
           method: chat.postMessage
           token: ${{ secrets.CI_SLACK_BOT_TOKEN }}
@@ -1431,43 +1462,6 @@ jobs:
           skip-finish: "true"
           skip-setup: "true"
 
-      - name: Reconcile production connector catalog (best effort)
-        shell: bash
-        env:
-          API_DEPLOYMENT_URL: ${{ steps.deploy.outputs.url }}
-          CRON_SECRET: ${{ secrets.CRON_SECRET }}
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: |
-          set -euo pipefail
-
-          if ! response=$(vercel curl /api/cron/sync-connector-catalog \
-            --deployment "$API_DEPLOYMENT_URL" \
-            --token "$VERCEL_TOKEN" \
-            -- \
-            --fail-with-body \
-            --show-error \
-            --silent \
-            --max-time 120 \
-            --header "Authorization: Bearer ${CRON_SECRET}"); then
-            echo "::warning::Connector catalog reconcile request failed; the scheduled cron will retry"
-            exit 0
-          fi
-
-          # The deployment just created from this commit returns the attempt
-          # report `{ outcome, failureCode }`. Pre-change API builds also return
-          # `outcome` and `failureCode`; their extra fields are ignored.
-          if ! summary=$(jq -c '{outcome, failureCode}' <<< "$response"); then
-            echo "::warning::Connector catalog reconcile returned invalid JSON; the scheduled cron will retry"
-            exit 0
-          fi
-
-          echo "Connector catalog reconcile: ${summary}"
-          if ! jq -e '
-            .outcome == "accepted" or .outcome == "unchanged"
-          ' <<< "$response" >/dev/null; then
-            echo "::warning::Connector catalog reconcile was rejected or reported no outcome; the scheduled cron will retry"
-          fi
-
       - name: Resolve Vercel dashboard URL
         id: vercel-dashboard
         if: ${{ steps.deploy.outputs.url != '' }}
@@ -1478,7 +1472,7 @@ jobs:
 
       - name: Finish GitHub Deployment
         if: ${{ always() && steps.deployment.outputs.deployment_id }}
-        uses: bobheadxi/deployments@v1
+        uses: bobheadxi/deployments@648679e8e4915b27893bd7dbc35cb504dc915bc8 # v1
         with:
           step: finish
           token: ${{ github.token }}
@@ -1500,7 +1494,7 @@ jobs:
 
       - name: Notify Slack - Success
         if: ${{ success() && steps.slack-start.outputs.ts }}
-        uses: slackapi/slack-github-action@v4.0.0
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
         with:
           method: chat.update
           token: ${{ secrets.CI_SLACK_BOT_TOKEN }}
@@ -1516,7 +1510,7 @@ jobs:
 
       - name: Notify Slack - Failure
         if: ${{ failure() && steps.slack-start.outputs.ts }}
-        uses: slackapi/slack-github-action@v4.0.0
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
         with:
           method: chat.update
           token: ${{ secrets.CI_SLACK_BOT_TOKEN }}
@@ -1603,7 +1597,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
     defaults:
       run:
         shell: bash
@@ -1905,7 +1899,7 @@ jobs:
       contents: read
       issues: write
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
 
@@ -1987,7 +1981,7 @@ jobs:
     if: ${{ needs.release-please.outputs.runner_rs_release_created == 'true' }}
     runs-on: ubuntu-latest-8-cores
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261008
     defaults:
       run:
         shell: bash
@@ -2000,7 +1994,7 @@ jobs:
           - aarch64-unknown-linux-musl
           - x86_64-unknown-linux-musl
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.release-please.outputs.release_target }}
 
@@ -2035,7 +2029,7 @@ jobs:
           r2-account-id: ${{ vars.R2_ACCOUNT_ID }}
           r2-bucket-name: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: crates -> target
           shared-key: ${{ steps.target-metadata.outputs.cache_suffix }}-release
@@ -2044,7 +2038,7 @@ jobs:
       - name: Notify Slack - Starting
         id: slack-start
         if: ${{ vars.SLACK_RELEASE_CHANNEL_ID != '' }}
-        uses: slackapi/slack-github-action@v4.0.0
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
         with:
           method: chat.postMessage
           token: ${{ secrets.CI_SLACK_BOT_TOKEN }}
@@ -2170,7 +2164,7 @@ jobs:
 
       - name: Notify Slack - Success
         if: ${{ success() && steps.slack-start.outputs.ts }}
-        uses: slackapi/slack-github-action@v4.0.0
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
         with:
           method: chat.update
           token: ${{ secrets.CI_SLACK_BOT_TOKEN }}
@@ -2186,7 +2180,7 @@ jobs:
 
       - name: Notify Slack - Failure
         if: ${{ failure() && steps.slack-start.outputs.ts }}
-        uses: slackapi/slack-github-action@v4.0.0
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
         with:
           method: chat.update
           token: ${{ secrets.CI_SLACK_BOT_TOKEN }}
@@ -2213,7 +2207,7 @@ jobs:
       # resolve the host subset from matrix.id inside that job.
       matrix: ${{ steps.groups.outputs.matrix }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.release-please.outputs.release_target }}
 
@@ -2264,7 +2258,7 @@ jobs:
     if: ${{ needs.release-please.outputs.runner_rs_release_created == 'true' }}
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261008
     permissions:
       contents: read
     environment: production
@@ -2273,14 +2267,14 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.runner-production-host-groups.outputs.matrix || '[]') }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.release-please.outputs.release_target }}
 
       - name: Notify Slack - Starting
         id: slack-start
         if: ${{ vars.SLACK_RELEASE_CHANNEL_ID != '' }}
-        uses: slackapi/slack-github-action@v4.0.0
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
         with:
           method: chat.postMessage
           token: ${{ secrets.CI_SLACK_BOT_TOKEN }}
@@ -2459,7 +2453,7 @@ jobs:
 
       - name: Notify Slack - Success
         if: ${{ success() && steps.slack-start.outputs.ts }}
-        uses: slackapi/slack-github-action@v4.0.0
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
         with:
           method: chat.update
           token: ${{ secrets.CI_SLACK_BOT_TOKEN }}
@@ -2475,7 +2469,7 @@ jobs:
 
       - name: Notify Slack - Failure
         if: ${{ failure() && steps.slack-start.outputs.ts }}
-        uses: slackapi/slack-github-action@v4.0.0
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
         with:
           method: chat.update
           token: ${{ secrets.CI_SLACK_BOT_TOKEN }}
@@ -2514,7 +2508,7 @@ jobs:
        needs.promote-api-production.result == 'success')
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261008
     permissions:
       contents: read
     environment: production
@@ -2523,14 +2517,14 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.runner-production-host-groups.outputs.matrix || '[]') }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.release-please.outputs.release_target }}
 
       - name: Notify Slack - Starting
         id: slack-start
         if: ${{ vars.SLACK_RELEASE_CHANNEL_ID != '' }}
-        uses: slackapi/slack-github-action@v4.0.0
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
         with:
           method: chat.postMessage
           token: ${{ secrets.CI_SLACK_BOT_TOKEN }}
@@ -2651,7 +2645,7 @@ jobs:
 
       - name: Notify Slack - Success
         if: ${{ success() && steps.slack-start.outputs.ts && steps.promote-runner.outputs.has_warnings != 'true' && steps.global-doctor.outputs.has_warnings != 'true' }}
-        uses: slackapi/slack-github-action@v4.0.0
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
         with:
           method: chat.update
           token: ${{ secrets.CI_SLACK_BOT_TOKEN }}
@@ -2667,7 +2661,7 @@ jobs:
 
       - name: Notify Slack - Success with warnings
         if: ${{ success() && steps.slack-start.outputs.ts && (steps.promote-runner.outputs.has_warnings == 'true' || steps.global-doctor.outputs.has_warnings == 'true') }}
-        uses: slackapi/slack-github-action@v4.0.0
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
         with:
           method: chat.update
           token: ${{ secrets.CI_SLACK_BOT_TOKEN }}
@@ -2683,7 +2677,7 @@ jobs:
 
       - name: Notify Slack - Failure
         if: ${{ failure() && steps.slack-start.outputs.ts }}
-        uses: slackapi/slack-github-action@v4.0.0
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
         with:
           method: chat.update
           token: ${{ secrets.CI_SLACK_BOT_TOKEN }}
@@ -2703,11 +2697,11 @@ jobs:
     if: ${{ needs.release-please.outputs.releases_created == 'true' }}
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.release-please.outputs.release_target }}
       - uses: ./.github/actions/toolchain-init
@@ -2740,7 +2734,7 @@ jobs:
           MERGE_SCRIPT
 
       - name: Upload SBOM as workflow artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: sbom
           path: sbom.json

@@ -7,11 +7,7 @@ import { getGmtOffset } from "@okouai/core/timezone";
 import { nowDate } from "../../lib/time.ts";
 
 type AutomationTimeOption =
-  | "every-weekday"
-  | "every-day"
-  | "every-week"
-  | "every-month"
-  | "loop";
+  "every-weekday" | "every-day" | "every-week" | "every-month" | "loop";
 
 export type CronTimeOption = Exclude<AutomationTimeOption, "loop">;
 

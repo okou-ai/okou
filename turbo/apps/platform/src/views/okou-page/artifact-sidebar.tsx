@@ -1,3 +1,4 @@
+import { ArtifactDiagramLightbox } from "../components/artifact-diagram-lightbox.tsx";
 import type { ReactNode } from "react";
 import {
   ArrowLeft,
@@ -34,8 +35,8 @@ import {
   artifactPreviewUrlsMatch,
   publicAttachmentUrl,
 } from "./attachment-url.ts";
-import { bindSidebarImageNavigation$ } from "../../signals/okou-page/artifact-image-navigation.ts";
-import { MarkdownEventBody } from "../components/markdown.tsx";
+import { ArtifactImageNavigationRegion } from "./artifact-image-navigation-region.tsx";
+import { ArtifactMarkdownDocument } from "../components/artifact-markdown-document.tsx";
 import { jsonParseOr } from "../../signals/utils.ts";
 import type { TextPreviewComputed } from "../../signals/text-preview.ts";
 import type { MarkdownPreviewTreeComputed } from "../../signals/markdown-preview-tree.ts";
@@ -47,7 +48,6 @@ import {
   ArtifactActionSeparator,
   ArtifactActionTooltip,
   ArtifactDownloadMenu,
-  ArtifactImageNavigationControls,
   ArtifactImageZoomControls,
   ArtifactShareButton,
   type ArtifactDownloadSyncTarget,
@@ -154,25 +154,28 @@ export function ArtifactSidebar({
   };
 
   return (
-    <ArtifactSidebarContent
-      agentId={agentId}
-      artifactRef={artifactRef}
-      fullscreenState={fullscreenState}
-      imageCanvasSignals={thread.sidebar.imageCanvas}
-      imageNavigation={{
-        onNext: imageNavigationAction(imageNavigation.next),
-        onPrevious: imageNavigationAction(imageNavigation.previous),
-      }}
-      item={item}
-      markdownTree$={markdownTree$}
-      onBack={onBack}
-      onClose={onClose}
-      onSyncSuccess={() => {
-        reloadArtifacts();
-      }}
-      text$={text$}
-      threadId={thread.threadId}
-    />
+    <>
+      <ArtifactSidebarContent
+        agentId={agentId}
+        artifactRef={artifactRef}
+        fullscreenState={fullscreenState}
+        imageCanvasSignals={thread.sidebar.imageCanvas}
+        imageNavigation={{
+          onNext: imageNavigationAction(imageNavigation.next),
+          onPrevious: imageNavigationAction(imageNavigation.previous),
+        }}
+        item={item}
+        markdownTree$={markdownTree$}
+        onBack={onBack}
+        onClose={onClose}
+        onSyncSuccess={() => {
+          reloadArtifacts();
+        }}
+        text$={text$}
+        threadId={thread.threadId}
+      />
+      <ArtifactDiagramLightbox signals={thread.sidebar.diagram} />
+    </>
   );
 }
 
@@ -918,9 +921,7 @@ function ArtifactMarkdownBody({
   return (
     <ArtifactStageShell>
       <ArtifactStageCard>
-        <div className="h-full overflow-auto p-6">
-          <MarkdownEventBody tree={loadable.data} mediaPreview={false} />
-        </div>
+        <ArtifactMarkdownDocument tree={loadable.data} />
       </ArtifactStageCard>
     </ArtifactStageShell>
   );
@@ -1082,46 +1083,38 @@ function ArtifactImageBody({
   url: string;
   filename: string;
 }) {
-  const bindNavigation = useSet(bindSidebarImageNavigation$);
-  const hasNavigation = Boolean(
-    imageNavigation?.onPrevious || imageNavigation?.onNext,
-  );
-
-  if (resourceUrl === null) {
-    return <ArtifactSpinner />;
-  }
-
   return (
     <ArtifactStageShell flush scrollable={false}>
       <ArtifactStageCard fillHeight>
-        <div
-          ref={hasNavigation ? bindNavigation : undefined}
-          data-image-navigation-fullscreen={fullscreen}
-          className="relative h-full min-h-0"
+        <ArtifactImageNavigationRegion
+          signals={imageCanvasSignals}
+          filename={filename}
+          navigation={resourceUrl === null ? undefined : imageNavigation}
+          testIdPrefix="artifact-sidebar"
         >
-          <ZoomableArtifactImageCanvas
-            key={`${fullscreen ? "fullscreen" : "sidebar"}:${url}`}
-            src={resourceUrl}
-            alt={filename}
-            signals={imageCanvasSignals}
-            imageTestId="artifact-sidebar-body-image"
-            contentClassName="p-6"
-            pendingContent={<ArtifactSpinner />}
-          >
-            {(controls) => {
-              return (
-                <ArtifactImageZoomControls
-                  controls={controls}
-                  testIdPrefix="artifact-sidebar"
-                />
-              );
-            }}
-          </ZoomableArtifactImageCanvas>
-          <ArtifactImageNavigationControls
-            navigation={imageNavigation}
-            testIdPrefix="artifact-sidebar"
-          />
-        </div>
+          {resourceUrl === null ? (
+            <ArtifactSpinner />
+          ) : (
+            <ZoomableArtifactImageCanvas
+              key={`${fullscreen ? "fullscreen" : "sidebar"}:${url}`}
+              src={resourceUrl}
+              alt={filename}
+              signals={imageCanvasSignals}
+              imageTestId="artifact-sidebar-body-image"
+              contentClassName="p-6"
+              pendingContent={<ArtifactSpinner />}
+            >
+              {(controls) => {
+                return (
+                  <ArtifactImageZoomControls
+                    controls={controls}
+                    testIdPrefix="artifact-sidebar"
+                  />
+                );
+              }}
+            </ZoomableArtifactImageCanvas>
+          )}
+        </ArtifactImageNavigationRegion>
       </ArtifactStageCard>
     </ArtifactStageShell>
   );

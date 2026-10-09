@@ -1,8 +1,10 @@
 diff --git a/dist/api/openai-codex-responses.d.ts b/dist/api/openai-codex-responses.d.ts
-index 704476d..8274468 100644
+index 704476da084be53d6aa194a5f774fa3ad47f5e9a..87a8eea1330f3a7bf98f063045d28d099deaaeb6 100644
 --- a/dist/api/openai-codex-responses.d.ts
 +++ b/dist/api/openai-codex-responses.d.ts
-@@ -1,6 +1,7 @@
+@@ -1,6 +1,9 @@
++import type { Model } from "../types.ts";
++import type { TranscriptContext } from "../utils/transcript.ts";
  import type { ResponseCreateParamsStreaming } from "openai/resources/responses/responses.js";
  import type { SimpleStreamOptions, StreamFunction, StreamOptions } from "../types.ts";
  export interface OpenAICodexResponsesOptions extends StreamOptions {
@@ -10,8 +12,16 @@ index 704476d..8274468 100644
      reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
      reasoningSummary?: "auto" | "concise" | "detailed" | "off" | "on" | null;
      serviceTier?: ResponseCreateParamsStreaming["service_tier"];
+@@ -28,4 +31,6 @@ export interface OpenAICodexWebSocketDebugStats {
+ export declare function getOpenAICodexWebSocketDebugStats(sessionId: string): OpenAICodexWebSocketDebugStats | undefined;
+ export declare function resetOpenAICodexWebSocketDebugStats(sessionId?: string): void;
+ export declare function closeOpenAICodexWebSocketSessions(sessionId?: string): void;
++/** Pure request-body projection using the same builder as the stream. */
++export declare function preparePayload(model: Model<"openai-codex-responses">, context: TranscriptContext, options?: OpenAICodexResponsesOptions): unknown;
+ //# sourceMappingURL=openai-codex-responses.d.ts.map
+\ No newline at end of file
 diff --git a/dist/api/openai-codex-responses.js b/dist/api/openai-codex-responses.js
-index dfdb6ec..afdb30f 100644
+index dfdb6ec3651febbba6b8788f16118ecbf4b38fa8..8c9e1ae824ad74690b6ff105453a9ba44b647e42 100644
 --- a/dist/api/openai-codex-responses.js
 +++ b/dist/api/openai-codex-responses.js
 @@ -166,7 +166,10 @@ export const stream = (model, context, options) => {
@@ -26,17 +36,89 @@ index dfdb6ec..afdb30f 100644
              const grammarToolInputProperties = createGrammarToolInputProperties(getDeclaredTools(normalizedContext.messages), model.compat?.supportsOpenAIGrammarTools ?? false);
              const cacheSessionId = options?.cacheRetention === "none" ? undefined : options?.sessionId;
              const codexSessionId = clampOpenAIPromptCacheKey(cacheSessionId);
-diff --git a/patched/package/dist/utils/provider-queue-timeout.d.ts b/dist/utils/provider-queue-timeout.d.ts
+@@ -1300,4 +1303,10 @@ function buildWebSocketHeaders(initHeaders, additionalHeaders, accountId, token,
+     headers.set("session-id", requestId);
+     return headers;
+ }
++/** Pure request-body projection using the same builder as the stream. */
++export function preparePayload(model, context, options) {
++    const normalizedContext = resolveTranscript(context, model.compat?.supportsMidConvoSystemMessages);
++    const cacheSessionId = options?.cacheRetention === "none" ? undefined : options?.sessionId;
++    return buildRequestBody(model, normalizedContext, options, clampOpenAIPromptCacheKey(cacheSessionId));
++}
+ //# sourceMappingURL=openai-codex-responses.js.map
+\ No newline at end of file
+diff --git a/dist/api/openai-completions.d.ts b/dist/api/openai-completions.d.ts
+index 7f146126800d7446fd7e2493fd9b05d455d7ad95..3aa7449674a47c888b6de15fee96def8b7d61e21 100644
+--- a/dist/api/openai-completions.d.ts
++++ b/dist/api/openai-completions.d.ts
+@@ -23,4 +23,6 @@ export declare const stream: StreamFunction<"openai-completions", OpenAICompleti
+ export declare const streamSimple: StreamFunction<"openai-completions", SimpleStreamOptions>;
+ export declare function convertMessages(model: Model<"openai-completions">, context: TranscriptContext, compat: ResolvedOpenAICompletionsCompat, options?: ConvertCompletionsMessagesOptions): ChatCompletionMessageParam[];
+ export {};
++/** Pure request-body projection using the same builder as the stream. */
++export declare function preparePayload(model: Model<"openai-completions">, context: TranscriptContext, options?: OpenAICompletionsOptions): unknown;
+ //# sourceMappingURL=openai-completions.d.ts.map
+\ No newline at end of file
+diff --git a/dist/api/openai-completions.js b/dist/api/openai-completions.js
+index fc8e89382b75f259eb4f041b522840b0d603c033..34c1153d188c2a76b63d742e08c23bb867698c49 100644
+--- a/dist/api/openai-completions.js
++++ b/dist/api/openai-completions.js
+@@ -1339,4 +1339,9 @@ function getCompat(model) {
+         vllmPriority: model.compat.vllmPriority,
+     };
+ }
++/** Pure request-body projection using the same builder as the stream. */
++export function preparePayload(model, context, options) {
++    const normalizedContext = resolveTranscript(context, getCompat(model).supportsMidConvoSystemMessages);
++    return buildParams(model, normalizedContext, options);
++}
+ //# sourceMappingURL=openai-completions.js.map
+\ No newline at end of file
+diff --git a/dist/api/openai-responses.d.ts b/dist/api/openai-responses.d.ts
+index 41267bd50904069aa0879cc8634ea94bc1045236..3d7e30ebc76cf507b88a2a1a2926c38c8ff6d58d 100644
+--- a/dist/api/openai-responses.d.ts
++++ b/dist/api/openai-responses.d.ts
+@@ -1,3 +1,5 @@
++import type { Model } from "../types.ts";
++import type { TranscriptContext } from "../utils/transcript.ts";
+ import type { ResponseCreateParamsStreaming } from "openai/resources/responses/responses.js";
+ import type { SimpleStreamOptions, StreamFunction, StreamOptions } from "../types.ts";
+ export interface OpenAIResponsesOptions extends StreamOptions {
+@@ -11,4 +13,6 @@ export interface OpenAIResponsesOptions extends StreamOptions {
+  */
+ export declare const stream: StreamFunction<"openai-responses", OpenAIResponsesOptions>;
+ export declare const streamSimple: StreamFunction<"openai-responses", SimpleStreamOptions>;
++/** Pure request-body projection using the same builder as the stream. */
++export declare function preparePayload(model: Model<"openai-responses">, context: TranscriptContext, options?: OpenAIResponsesOptions): unknown;
+ //# sourceMappingURL=openai-responses.d.ts.map
+\ No newline at end of file
+diff --git a/dist/api/openai-responses.js b/dist/api/openai-responses.js
+index 1396c8d57ffb0e300382281a026d878e6a96b43a..8bcfe08977ac3aa266e5d661ff73c3f1b2b9f8fd 100644
+--- a/dist/api/openai-responses.js
++++ b/dist/api/openai-responses.js
+@@ -290,4 +290,9 @@ function applyServiceTierPricing(usage, serviceTier, model) {
+     usage.cost.cacheWrite *= multiplier;
+     usage.cost.total = usage.cost.input + usage.cost.output + usage.cost.cacheRead + usage.cost.cacheWrite;
+ }
++/** Pure request-body projection using the same builder as the stream. */
++export function preparePayload(model, context, options) {
++    const normalizedContext = resolveTranscript(context, getCompat(model).supportsMidConvoSystemMessages);
++    return buildParams(model, normalizedContext, options);
++}
+ //# sourceMappingURL=openai-responses.js.map
+\ No newline at end of file
+diff --git a/dist/utils/provider-queue-timeout.d.ts b/dist/utils/provider-queue-timeout.d.ts
 new file mode 100644
-index 0000000..af6bdff
+index 0000000000000000000000000000000000000000..af6bdff0e88e49509f6c57fbc9814408ec07efce
 --- /dev/null
 +++ b/dist/utils/provider-queue-timeout.d.ts
 @@ -0,0 +1,2 @@
 +/** Only call for a failed provider request or assistant result. */
 +export declare function isProviderQueueTimeout(error: unknown): boolean;
-diff --git a/patched/package/dist/utils/provider-queue-timeout.js b/dist/utils/provider-queue-timeout.js
+diff --git a/dist/utils/provider-queue-timeout.js b/dist/utils/provider-queue-timeout.js
 new file mode 100644
-index 0000000..d4b554b
+index 0000000000000000000000000000000000000000..d4b554b2d2a821394284b3d5e4e8b96398b63798
 --- /dev/null
 +++ b/dist/utils/provider-queue-timeout.js
 @@ -0,0 +1,33 @@
@@ -74,7 +156,7 @@ index 0000000..d4b554b
 +        "we were unable to start processing your request within the 900-second timeout limit. please try again later.";
 +}
 diff --git a/dist/utils/provider-retry.js b/dist/utils/provider-retry.js
-index a08fefd..0654751 100644
+index a08fefd7e254f494f838ffa95affd6bf279973db..065475141167b6436818c231741ff76699057dcf 100644
 --- a/dist/utils/provider-retry.js
 +++ b/dist/utils/provider-retry.js
 @@ -1,3 +1,4 @@
@@ -93,7 +175,7 @@ index a08fefd..0654751 100644
      if (shouldRetry === "true")
          return true;
 diff --git a/dist/utils/retry.js b/dist/utils/retry.js
-index 6538c63..b84d8fa 100644
+index 6538c63c99f75a4f232ebd413adf80571a0f39b4..41643ef2a0028d19cc0cb9ec9d799b076a16d69e 100644
 --- a/dist/utils/retry.js
 +++ b/dist/utils/retry.js
 @@ -1,3 +1,4 @@
@@ -101,7 +183,7 @@ index 6538c63..b84d8fa 100644
  function buildProviderErrorPattern(patterns) {
      return new RegExp(patterns.join("|"), "i");
  }
-@@ -163,6 +164,48 @@ export async function retryAssistantCall(produce, policy, signal, callbacks) {
+@@ -163,6 +164,52 @@ export async function retryAssistantCall(produce, policy, signal, callbacks) {
          await callbacks?.onRetryAttemptStart?.();
      }
  }
@@ -122,7 +204,7 @@ index 6538c63..b84d8fa 100644
 +    "response_connection_lost",
 +]);
 +/**
-+ * Read the transient verdict Okou already recorded for the failed request.
++ * Read the transient verdict or safety veto Okou recorded for the failed request.
 + *
 + * A provider may author an error body carrying none of the text below: the
 + * incident in okou-ai/okou#35577 was an HTTP 503 whose entire body was
@@ -135,22 +217,26 @@ index 6538c63..b84d8fa 100644
 + *
 + * Remove once upstream classifies structurally rather than by error text.
 + */
-+function isOkouRetryableModelRequest(message) {
++function okouModelRequestRetryDecision(message) {
 +    const diagnostics = message.diagnostics;
 +    if (!Array.isArray(diagnostics))
-+        return false;
++        return undefined;
 +    for (let index = diagnostics.length - 1; index >= 0; index--) {
 +        const diagnostic = diagnostics[index];
 +        if (diagnostic?.type !== "okou_model_request")
 +            continue;
-+        return OKOU_RETRYABLE_MODEL_REQUEST_REASONS.has(diagnostic.details?.failureReason);
++        const reason = diagnostic.details?.failureReason;
++        // Incidental text such as a link containing 503 cannot retry a refusal.
++        if (reason === "safety_policy_refusal")
++            return false;
++        return OKOU_RETRYABLE_MODEL_REQUEST_REASONS.has(reason) ? true : undefined;
 +    }
-+    return false;
++    return undefined;
 +}
  /**
   * Classifies whether a failed assistant message looks like a transient provider
   * or transport error, so callers can decide if the last assistant turn should be
-@@ -176,8 +219,14 @@ export function isRetryableAssistantError(message) {
+@@ -176,8 +223,15 @@ export function isRetryableAssistantError(message) {
      if (message.stopReason !== "error" || !message.errorMessage)
          return false;
      const errorMessage = message.errorMessage;
@@ -160,9 +246,9 @@ index 6538c63..b84d8fa 100644
          return false;
 +    // After both terminal guards, so a known-terminal body stays terminal, and
 +    // before the text patterns, which the structured verdict supersedes.
-+    if (isOkouRetryableModelRequest(message))
-+        return true;
++    const requestRetryDecision = okouModelRequestRetryDecision(message);
++    if (requestRetryDecision !== undefined)
++        return requestRetryDecision;
      return RETRYABLE_PROVIDER_ERROR_PATTERN.test(errorMessage);
  }
  //# sourceMappingURL=retry.js.map
-\ No newline at end of file

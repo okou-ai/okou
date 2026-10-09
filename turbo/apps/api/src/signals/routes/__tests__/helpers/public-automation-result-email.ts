@@ -240,7 +240,7 @@ export function createPublicAutomationResultEmailApi(context: TestContext) {
     const current = await runs.readRun(actor, runId);
     expect(current.status).toBe(args.exitCode === 1 ? "failed" : "completed");
     if (args.exitCode !== 1) {
-      expect(current.result?.checkpointId).toStrictEqual(expect.any(String));
+      expect(current.result?.conversationId).toStrictEqual(expect.any(String));
     }
   }
 

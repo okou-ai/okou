@@ -63,11 +63,7 @@ import { onRef } from "../utils.ts";
 type WorkflowDetailActionDialog = "copy" | "delete" | null;
 export type WorkflowDetailTab = "automations" | "instructions" | "info";
 export type WorkflowFilter =
-  | "all"
-  | "automated"
-  | "without"
-  | "private"
-  | "public";
+  "all" | "automated" | "without" | "private" | "public";
 export type WorkflowSortMode = "next-run" | "alphabetical" | "created";
 export interface WorkflowCopyFormState {
   readonly selectedAgentId: string | null;
@@ -194,11 +190,7 @@ function workflowDetailRouteForTab(
 }
 
 export type WorkflowCronFrequency =
-  | "every_day"
-  | "every_weekday"
-  | "every_week"
-  | "every_month"
-  | "custom";
+  "every_day" | "every_weekday" | "every_week" | "every_month" | "custom";
 
 export interface WorkflowCronFields {
   readonly frequency: WorkflowCronFrequency;
@@ -691,6 +683,21 @@ export const selectedWorkflowFilePath$ = computed((get) => {
     get(searchParams$).get(WORKFLOW_DETAIL_FILE_PARAM) ??
     get(internalSelectedFilePath$)
   );
+});
+
+const internalWorkflowFileInput$ = state<HTMLInputElement | null>(null);
+
+export const setWorkflowFileInput$ = onRef(
+  command(({ set }, element: HTMLInputElement, signal: AbortSignal) => {
+    set(internalWorkflowFileInput$, element);
+    signal.addEventListener("abort", () => {
+      set(internalWorkflowFileInput$, null);
+    });
+  }),
+);
+
+export const showWorkflowFilePicker$ = command(({ get }) => {
+  get(internalWorkflowFileInput$)?.showPicker();
 });
 
 export const targetedWorkflowAutomationId$ = computed((get) => {

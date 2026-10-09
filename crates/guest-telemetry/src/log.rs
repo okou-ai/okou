@@ -160,7 +160,7 @@ pub fn emit(level: &str, tag: &str, args: std::fmt::Arguments<'_>) {
 #[macro_export]
 macro_rules! log_info {
     ($tag:expr, $($arg:tt)*) => {
-        $crate::log::emit("INFO", $tag, format_args!($($arg)*));
+        $crate::log::emit("INFO", $tag, format_args!($($arg)*))
     };
 }
 
@@ -172,7 +172,7 @@ macro_rules! log_info {
 #[macro_export]
 macro_rules! log_warn {
     ($tag:expr, $($arg:tt)*) => {
-        $crate::log::emit("WARN", $tag, format_args!($($arg)*));
+        $crate::log::emit("WARN", $tag, format_args!($($arg)*))
     };
 }
 
@@ -184,7 +184,7 @@ macro_rules! log_warn {
 #[macro_export]
 macro_rules! log_error {
     ($tag:expr, $($arg:tt)*) => {
-        $crate::log::emit("ERROR", $tag, format_args!($($arg)*));
+        $crate::log::emit("ERROR", $tag, format_args!($($arg)*))
     };
 }
 

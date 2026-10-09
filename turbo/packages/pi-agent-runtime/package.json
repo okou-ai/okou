@@ -1,6 +1,6 @@
 {
   "name": "@okouai/pi-agent-runtime",
-  "version": "1.46.23",
+  "version": "1.47.1",
   "private": true,
   "type": "module",
   "exports": {
@@ -29,7 +29,6 @@
   "dependencies": {
     "@earendil-works/pi-ai": "0.87.1",
     "@earendil-works/pi-coding-agent": "0.87.1",
-    "@langfuse/pi-observability-plugin": "0.1.2",
     "@okouai/api-contracts": "workspace:*",
     "gpt-tokenizer": "^3.4.0",
     "yaml": "^2.9.0"
@@ -45,6 +44,6 @@
     "oxlint": "^1.75.0",
     "oxlint-tsgolint": "7.0.2001",
     "typescript": "npm:@typescript/typescript6@6.0.2",
-    "vitest": "^5.0.1"
+    "vitest": "^5.0.3"
   }
 }

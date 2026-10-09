@@ -1,10 +1,7 @@
+import { desktopUpgradeRequiredSchema } from "./desktop-updates";
 import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
-import {
-  COMPUTER_USE_PLUGIN_CALL_KIND,
-  computerUseAnyPluginCallBodySchema,
-} from "./computer-use-plugins";
 
 const c = initContract();
 
@@ -25,14 +22,9 @@ export const computerUseWriteCommandKindSchema = z.enum([
   "keyboard.press_key",
 ]);
 
-export const computerUsePluginCommandKindSchema = z.literal(
-  COMPUTER_USE_PLUGIN_CALL_KIND,
-);
-
 export const computerUseCommandKindSchema = z.enum([
   ...computerUseReadCommandKindSchema.options,
   ...computerUseWriteCommandKindSchema.options,
-  COMPUTER_USE_PLUGIN_CALL_KIND,
 ]);
 
 export const computerUseCommandStatusSchema = z.enum([
@@ -56,17 +48,8 @@ export const computerUseCommandErrorCodeSchema = z.enum([
   "unsupported_command",
   "timeout",
   "command_timeout",
-  "feature_disabled",
-  "plugin_disabled",
-  "plugin_unavailable",
-  "plugin_restarting",
-  "unknown_plugin",
-  "unknown_tool",
   "invalid_arguments",
-  "path_denied",
   "result_too_large",
-  "input_too_large",
-  "mcp_error",
 ]);
 
 const hostNameSchema = z.string().trim().min(1).max(253);
@@ -358,22 +341,6 @@ export interface ClientScreenshotPointer {
   readonly height?: number;
 }
 
-export interface StoredPluginContentPointer {
-  readonly type: "s3";
-  readonly bucket: string;
-  readonly key: string;
-  readonly mimeType: string;
-  readonly sizeBytes: number;
-  readonly fileName: string;
-}
-
-export interface ClientPluginContentPointer {
-  readonly type: "s3" | "expired";
-  readonly mimeType?: string;
-  readonly sizeBytes?: number;
-  readonly fileName?: string;
-}
-
 export function isStoredScreenshotPointer(
   value: unknown,
 ): value is StoredScreenshotPointer {
@@ -386,30 +353,6 @@ export function isStoredScreenshotPointer(
 }
 
 export function isExpiredScreenshotPointer(
-  value: unknown,
-): value is { readonly type: "expired" } {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    (value as { readonly type?: unknown }).type === "expired"
-  );
-}
-
-export function isStoredPluginContentPointer(
-  value: unknown,
-): value is StoredPluginContentPointer {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    (value as { readonly type?: unknown }).type === "s3" &&
-    typeof (value as { readonly bucket?: unknown }).bucket === "string" &&
-    typeof (value as { readonly key?: unknown }).key === "string" &&
-    typeof (value as { readonly mimeType?: unknown }).mimeType === "string" &&
-    typeof (value as { readonly fileName?: unknown }).fileName === "string"
-  );
-}
-
-export function isExpiredPluginContentPointer(
   value: unknown,
 ): value is { readonly type: "expired" } {
   return (
@@ -562,6 +505,7 @@ export const computerUseHostsContract = c.router({
     headers: authHeadersSchema,
     body: computerUseHostStartBodySchema,
     responses: {
+      426: desktopUpgradeRequiredSchema,
       200: computerUseHostStartResponseSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
@@ -699,19 +643,6 @@ export const computerUseCommandContract = c.router({
     },
     summary: "Download a desktop computer-use command screenshot",
   },
-  getPluginContent: {
-    method: "GET",
-    path: "/api/computer-use/commands/:commandId/plugin-content",
-    headers: authHeadersSchema,
-    pathParams: commandIdPathParamsSchema,
-    responses: {
-      200: c.type<Blob>(),
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      404: apiErrorSchema,
-    },
-    summary: "Download offloaded desktop computer-use plugin content",
-  },
 });
 
 export const computerUseWriteCommandContract = c.router({
@@ -732,24 +663,6 @@ export const computerUseWriteCommandContract = c.router({
   },
 });
 
-export const computerUsePluginCommandContract = c.router({
-  create: {
-    method: "POST",
-    path: "/api/computer-use/plugin-commands",
-    headers: authHeadersSchema,
-    body: computerUseAnyPluginCallBodySchema,
-    responses: {
-      200: computerUseCommandCreateResponseSchema,
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      404: apiErrorSchema,
-      409: apiErrorSchema,
-    },
-    summary: "Create a desktop computer-use plugin command",
-  },
-});
-
 export const computerUseHostCommandsContract = c.router({
   next: {
     method: "POST",
@@ -757,6 +670,7 @@ export const computerUseHostCommandsContract = c.router({
     headers: authHeadersSchema,
     body: computerUseHostCommandNextBodySchema,
     responses: {
+      426: desktopUpgradeRequiredSchema,
       200: computerUseHostCommandNextResponseSchema,
       401: apiErrorSchema,
     },
@@ -843,9 +757,6 @@ export type ComputerUseReadCommandKind = z.infer<
 export type ComputerUseWriteCommandKind = z.infer<
   typeof computerUseWriteCommandKindSchema
 >;
-export type ComputerUsePluginCommandKind = z.infer<
-  typeof computerUsePluginCommandKindSchema
->;
 export type ComputerUseAuditEventsContract =
   typeof computerUseAuditEventsContract;
 export type ComputerUseCommandContract = typeof computerUseCommandContract;
@@ -857,5 +768,91 @@ export type ComputerUseHostCommandsContract =
 export type ComputerUseHostsContract = typeof computerUseHostsContract;
 export type ComputerUseWriteCommandContract =
   typeof computerUseWriteCommandContract;
-export type ComputerUsePluginCommandContract =
-  typeof computerUsePluginCommandContract;
+
+// Session-only Native Desktop protocol. Legacy routes are retained until the
+// installed Desktop version floor and API rollback window exclude them.
+const sessionHostPathParamsSchema = z.object({ hostId: z.string().uuid() });
+const sessionHostGenerationSchema = z.object({
+  connectionGeneration: z.number().int().positive(),
+});
+const sessionHostResponses = {
+  401: apiErrorSchema,
+  403: apiErrorSchema,
+  409: apiErrorSchema,
+  429: apiErrorSchema,
+  503: apiErrorSchema,
+};
+export const computerUseSessionHostsContract = c.router({
+  register: {
+    method: "POST",
+    path: "/api/computer-use/hosts/register",
+    headers: authHeadersSchema,
+    body: computerUseHostStartBodySchema,
+    responses: {
+      200: sessionHostGenerationSchema.extend({ hostId: z.string().uuid() }),
+      426: desktopUpgradeRequiredSchema,
+      ...sessionHostResponses,
+    },
+    summary: "Register a computer-use host bound to the current Clerk session",
+  },
+  heartbeat: {
+    method: "POST",
+    path: "/api/computer-use/hosts/:hostId/heartbeat",
+    headers: authHeadersSchema,
+    pathParams: sessionHostPathParamsSchema,
+    body: computerUseRuntimeBodySchema.extend(
+      sessionHostGenerationSchema.shape,
+    ),
+    responses: {
+      200: computerUseHeartbeatResponseSchema,
+      ...sessionHostResponses,
+    },
+    summary: "Refresh the current session's computer-use host",
+  },
+  stop: {
+    method: "POST",
+    path: "/api/computer-use/hosts/:hostId/stop",
+    headers: authHeadersSchema,
+    pathParams: sessionHostPathParamsSchema,
+    body: sessionHostGenerationSchema,
+    responses: {
+      200: computerUseHostStopResponseSchema,
+      ...sessionHostResponses,
+    },
+    summary: "Stop the current session's computer-use host connection",
+  },
+  next: {
+    method: "POST",
+    path: "/api/computer-use/hosts/:hostId/commands/next",
+    headers: authHeadersSchema,
+    pathParams: sessionHostPathParamsSchema,
+    body: computerUseHostCommandNextBodySchema.extend(
+      sessionHostGenerationSchema.shape,
+    ),
+    responses: {
+      200: computerUseHostCommandNextResponseSchema,
+      426: desktopUpgradeRequiredSchema,
+      ...sessionHostResponses,
+    },
+    summary: "Claim a command using the current Clerk session",
+  },
+  complete: {
+    method: "POST",
+    path: "/api/computer-use/hosts/:hostId/commands/:commandId/complete",
+    headers: authHeadersSchema,
+    pathParams: sessionHostPathParamsSchema.extend(
+      commandIdPathParamsSchema.shape,
+    ),
+    body: z.intersection(
+      computerUseHostCommandCompleteBodySchema,
+      sessionHostGenerationSchema,
+    ),
+    responses: {
+      200: computerUseCommandCompleteResponseSchema,
+      400: apiErrorSchema,
+      404: apiErrorSchema,
+      ...sessionHostResponses,
+    },
+    summary: "Report a claimed command using the current Clerk session",
+  },
+});

@@ -322,8 +322,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
   async function claimRun(runnerGroup: string, runId: string) {
     await runsApi.heartbeatRunner(runnerGroup);
     let response:
-      | Awaited<ReturnType<typeof runsApi.requestClaimRunnerJob>>
-      | undefined;
+      Awaited<ReturnType<typeof runsApi.requestClaimRunnerJob>> | undefined;
     await flushWaitUntilForTest();
     await expect(
       (async () => {
@@ -1164,12 +1163,13 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
       throw new Error("Expected canonical Slack upload initialization");
     }
     const canonicalAssetId = initialized.body.assetId;
-    const storageKey = `artifacts${new URL(initialized.body.url).pathname}`;
+    const storageKey = `private-artifacts/${canonicalAssetId}/report.csv`;
     objectStore.addObject({
-      bucket: "test-user-artifacts",
+      bucket: "test-private-artifacts",
       key: storageKey,
       size: 42,
       body: Buffer.alloc(42, "a"),
+      metadata: { "artifact-id": canonicalAssetId },
     });
 
     const materializeClient = setupApp({
@@ -1267,12 +1267,13 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
       throw new Error("Expected canonical Slack upload initialization");
     }
     const canonicalAssetId = initialized.body.assetId;
-    const storageKey = `artifacts${new URL(initialized.body.url).pathname}`;
+    const storageKey = `private-artifacts/${canonicalAssetId}/report.csv`;
     objectStore.addObject({
-      bucket: "test-user-artifacts",
+      bucket: "test-private-artifacts",
       key: storageKey,
       size: 42,
       body: Buffer.alloc(42, "a"),
+      metadata: { "artifact-id": canonicalAssetId },
     });
 
     const materializeClient = setupApp({
@@ -1391,7 +1392,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
     });
   });
 
-  it("stores a Slack video preview in the configured artifact host", async () => {
+  it("records an uploaded Slack video in its thread artifacts", async () => {
     const { orgId, userId, runId, threadId } = await seedRunScoped();
     const fileId = `F-${randomUUID().slice(0, 8)}`;
     const permalink = `https://slack.example/files/${fileId}`;
@@ -1407,19 +1408,6 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
         permalink,
       },
     });
-    const objectStore = chatCallbacks.acceptChatObjectStorage();
-    const frameRequests: string[] = [];
-    server.use(
-      http.get(
-        /^https:\/\/a\.okou\.io\/cdn-cgi\/media\/mode=frame,time=1s,width=640,format=jpg\//,
-        ({ request }) => {
-          frameRequests.push(request.url);
-          return new HttpResponse(new Uint8Array([0xff, 0xd8, 0xff]), {
-            headers: { "Content-Type": "image/jpeg" },
-          });
-        },
-      ),
-    );
     const token = okouToken({
       userId,
       orgId,
@@ -1437,21 +1425,6 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
       }),
       [200],
     );
-    await flushWaitUntilForTest();
-
-    expect(frameRequests).toStrictEqual([
-      `https://a.okou.io/cdn-cgi/media/mode=frame,time=1s,width=640,format=jpg/${permalink}`,
-    ]);
-    expect(
-      objectStore.puts.some((put) => {
-        return (
-          put.bucket === "test-user-artifacts" &&
-          /^artifacts\/[0-9a-z]{10}\.jpg$/u.test(put.key) &&
-          put.contentType === "image/jpeg" &&
-          put.metadata?.["public-brand"] === "okou"
-        );
-      }),
-    ).toBeTruthy();
     const files = await visibleUploadedFiles({
       orgId,
       userId,
@@ -1461,9 +1434,9 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
     expect(files).toHaveLength(1);
     expect(files[0]).toMatchObject({
       id: fileId,
-      previewImageUrl: expect.stringMatching(
-        /^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.jpg$/u,
-      ),
+      filename: "Demo video",
+      contentType: "video/mp4",
+      url: permalink,
     });
   });
 

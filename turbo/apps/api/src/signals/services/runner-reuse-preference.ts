@@ -16,10 +16,11 @@ import {
   type SQL,
   type SQLWrapper,
 } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
+import { alias, QueryBuilder } from "drizzle-orm/pg-core";
+import { command } from "ccstate";
 
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
-import type { Db } from "../external/db";
+import { db$ } from "../external/db";
 
 const RUNNER_REUSE_PROTECTION_MS = 2000;
 const RUNNER_EXACT_HISTORY_PROTECTION_MS = Math.min(
@@ -96,14 +97,13 @@ function capableWorkspaceCondition(args: {
 }
 
 function runnerStateHas(args: {
-  readonly db: Pick<Db, "select">;
   readonly runnerId?: string;
   readonly runnerGroup: string;
   readonly freshAfter: Date;
   readonly resourceCondition: SQL;
 }): SQL {
   return exists(
-    args.db
+    new QueryBuilder()
       .select({ runnerId: runnerState.runnerId })
       .from(runnerState)
       .where(
@@ -148,7 +148,6 @@ function finalizingPredecessorCondition(args: {
 }
 
 function runnerStateHasFinalizingPredecessor(args: {
-  readonly db: Pick<Db, "select">;
   readonly runnerId?: string;
   readonly runnerGroup: string;
   readonly historyGenerationRunId: SQLWrapper;
@@ -157,7 +156,7 @@ function runnerStateHasFinalizingPredecessor(args: {
   readonly activeProducer: SQL;
 }): SQL {
   return exists(
-    args.db
+    new QueryBuilder()
       .select({ runnerId: runnerState.runnerId })
       .from(runnerState)
       .innerJoin(
@@ -192,7 +191,6 @@ function runnerStateHasFinalizingPredecessor(args: {
  * preference identity.
  */
 export function runnerReusePreferencePollPriority(args: {
-  readonly db: Pick<Db, "select">;
   readonly runnerId: string;
   readonly runnerGroup: string;
   readonly currentDate: Date;
@@ -219,7 +217,6 @@ export function runnerReusePreferencePollPriority(args: {
   const workspaceCondition = capableWorkspaceCondition({ reuseKey, profile });
   const global = (resourceCondition: SQL) => {
     return runnerStateHas({
-      db: args.db,
       runnerGroup: args.runnerGroup,
       freshAfter,
       resourceCondition,
@@ -227,7 +224,6 @@ export function runnerReusePreferencePollPriority(args: {
   };
   const local = (resourceCondition: SQL) => {
     return runnerStateHas({
-      db: args.db,
       runnerId: args.runnerId,
       runnerGroup: args.runnerGroup,
       freshAfter,
@@ -250,7 +246,6 @@ export function runnerReusePreferencePollPriority(args: {
       }),
     ) ?? sql`false`;
   const hasGlobalFinalizingPredecessor = runnerStateHasFinalizingPredecessor({
-    db: args.db,
     runnerGroup: args.runnerGroup,
     historyGenerationRunId: targetGenerationRunId,
     freshAfter,
@@ -258,7 +253,6 @@ export function runnerReusePreferencePollPriority(args: {
     activeProducer: pendingProducer,
   });
   const hasLocalFinalizingPredecessor = runnerStateHasFinalizingPredecessor({
-    db: args.db,
     runnerId: args.runnerId,
     runnerGroup: args.runnerGroup,
     historyGenerationRunId: targetGenerationRunId,
@@ -366,8 +360,7 @@ interface RunnerReuseHolder {
   readonly sourceCompletedAt: Date | null;
 }
 
-async function selectRunnerReuseHolder(args: {
-  readonly db: Pick<Db, "select">;
+function runnerReuseHolderPlan(args: {
   readonly runnerGroup: string;
   readonly profile: string;
   readonly reuseKey: string;
@@ -376,7 +369,7 @@ async function selectRunnerReuseHolder(args: {
   readonly shouldLookUpExactGeneration: boolean;
   readonly shouldLookUpGenericReuse: boolean;
   readonly finalizingCompletedAfter: Date;
-}): Promise<RunnerReuseHolder | null> {
+}) {
   const reusableCondition = args.shouldLookUpGenericReuse
     ? reusableSandboxCondition({
         reuseKey: sql.param(args.reuseKey),
@@ -421,8 +414,8 @@ async function selectRunnerReuseHolder(args: {
     WHEN ${workspaceCondition} THEN 1
     ELSE 0
   END`;
-  const [holder] = await args.db
-    .select({
+  return {
+    fields: {
       runnerId: runnerState.runnerId,
       heartbeatGeneration: runnerState.heartbeatGeneration,
       hasExactHistoryGeneration: sql`${exactGenerationCondition}`.mapWith(
@@ -434,101 +427,128 @@ async function selectRunnerReuseHolder(args: {
       hasActiveProducer: sql`${producerCondition}`.mapWith(pgBooleanDecoder),
       hasReusableSandbox: sql`${reusableCondition}`.mapWith(pgBooleanDecoder),
       sourceCompletedAt: finalizingSourceRun.completedAt,
-    })
-    .from(runnerState)
-    .leftJoin(
-      finalizingSourceRun,
-      args.historyGenerationRunId
-        ? eq(finalizingSourceRun.id, args.historyGenerationRunId)
-        : sql`false`,
-    )
-    .where(
-      and(
-        eq(runnerState.runnerGroup, args.runnerGroup),
-        eq(runnerState.mode, "running"),
-        gt(runnerState.lastSeenAt, args.freshAfter),
-        gt(runnerState.heartbeatGeneration, 0),
-        or(
-          exactGenerationCondition,
-          finalizingCondition,
-          reusableCondition,
-          workspaceCondition,
-        ),
-      ),
-    )
-    .orderBy(desc(resourceRank), asc(runnerState.runnerId))
-    .limit(1);
-
-  if (!holder) {
-    return null;
-  }
-  return {
-    runnerIdentity: {
-      runnerId: holder.runnerId,
-      heartbeatGeneration: holder.heartbeatGeneration,
     },
-    hasExactHistoryGeneration: holder.hasExactHistoryGeneration,
-    isFinalizingPredecessor: holder.isFinalizingPredecessor,
-    hasActiveProducer: holder.hasActiveProducer,
-    hasReusableSandbox: holder.hasReusableSandbox,
-    sourceCompletedAt: holder.sourceCompletedAt,
+    joinCondition: args.historyGenerationRunId
+      ? eq(finalizingSourceRun.id, args.historyGenerationRunId)
+      : sql`false`,
+    where: and(
+      eq(runnerState.runnerGroup, args.runnerGroup),
+      eq(runnerState.mode, "running"),
+      gt(runnerState.lastSeenAt, args.freshAfter),
+      gt(runnerState.heartbeatGeneration, 0),
+      or(
+        exactGenerationCondition,
+        finalizingCondition,
+        reusableCondition,
+        workspaceCondition,
+      ),
+    ),
+    orderBy: [desc(resourceRank), asc(runnerState.runnerId)] as const,
   };
 }
 
-export async function resolveRunnerReusePreference(args: {
-  readonly db: Pick<Db, "select">;
+interface RunnerReusePreferenceArgs {
   readonly runnerGroup: string;
   readonly profile: string;
   readonly reuseKey: string | null;
   readonly historyGenerationRunId: string | undefined;
   readonly createdAt: Date;
   readonly currentDate: Date;
-  readonly onFinalizingSource?: (
-    source: "active_producer" | "completion_bridge",
-  ) => void;
-}): Promise<RunnerPreference> {
-  if (!args.reuseKey) {
-    return {
-      kind: "noPreference",
-      reason: "noReuseKey",
-    };
-  }
-  const matchingReuseExpiresAt = new Date(
-    args.createdAt.getTime() + RUNNER_REUSE_PROTECTION_MS,
-  );
-  const exactHistoryExpiresAt = args.historyGenerationRunId
-    ? new Date(args.createdAt.getTime() + RUNNER_EXACT_HISTORY_PROTECTION_MS)
-    : null;
-  const shouldLookUpGenericReuse = matchingReuseExpiresAt > args.currentDate;
-  if (!shouldLookUpGenericReuse && !args.historyGenerationRunId) {
-    return {
-      kind: "noPreference",
-      reason: "expired",
-    };
-  }
+}
 
-  const freshAfter = runnerReuseHolderFreshAfter(args.currentDate);
-  const shouldLookUpExactGeneration =
-    exactHistoryExpiresAt !== null && exactHistoryExpiresAt > args.currentDate;
-  const finalizingCompletedAfter = new Date(
-    args.currentDate.getTime() - RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
-  );
-  const holder = await selectRunnerReuseHolder({
-    db: args.db,
-    runnerGroup: args.runnerGroup,
-    profile: args.profile,
-    reuseKey: args.reuseKey,
-    historyGenerationRunId: args.historyGenerationRunId,
-    freshAfter,
-    shouldLookUpExactGeneration,
+interface RunnerReusePreferenceResolution {
+  readonly preference: RunnerPreference;
+  readonly finalizingSource?: "active_producer" | "completion_bridge";
+}
+
+export const resolveRunnerReusePreference$ = command(
+  async (
+    { get },
+    args: RunnerReusePreferenceArgs,
+  ): Promise<RunnerReusePreferenceResolution> => {
+    if (!args.reuseKey) {
+      return {
+        preference: { kind: "noPreference", reason: "noReuseKey" },
+      };
+    }
+    const matchingReuseExpiresAt = new Date(
+      args.createdAt.getTime() + RUNNER_REUSE_PROTECTION_MS,
+    );
+    const exactHistoryExpiresAt = args.historyGenerationRunId
+      ? new Date(args.createdAt.getTime() + RUNNER_EXACT_HISTORY_PROTECTION_MS)
+      : null;
+    const shouldLookUpGenericReuse = matchingReuseExpiresAt > args.currentDate;
+    if (!shouldLookUpGenericReuse && !args.historyGenerationRunId) {
+      return {
+        preference: { kind: "noPreference", reason: "expired" },
+      };
+    }
+
+    const freshAfter = runnerReuseHolderFreshAfter(args.currentDate);
+    const shouldLookUpExactGeneration =
+      exactHistoryExpiresAt !== null &&
+      exactHistoryExpiresAt > args.currentDate;
+    const finalizingCompletedAfter = new Date(
+      args.currentDate.getTime() - RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
+    );
+    const plan = runnerReuseHolderPlan({
+      runnerGroup: args.runnerGroup,
+      profile: args.profile,
+      reuseKey: args.reuseKey,
+      historyGenerationRunId: args.historyGenerationRunId,
+      freshAfter,
+      shouldLookUpExactGeneration,
+      shouldLookUpGenericReuse,
+      finalizingCompletedAfter,
+    });
+    const [row] = await get(db$)
+      .select(plan.fields)
+      .from(runnerState)
+      .leftJoin(finalizingSourceRun, plan.joinCondition)
+      .where(plan.where)
+      .orderBy(...plan.orderBy)
+      .limit(1);
+    const holder: RunnerReuseHolder | null = row
+      ? {
+          runnerIdentity: {
+            runnerId: row.runnerId,
+            heartbeatGeneration: row.heartbeatGeneration,
+          },
+          hasExactHistoryGeneration: row.hasExactHistoryGeneration,
+          isFinalizingPredecessor: row.isFinalizingPredecessor,
+          hasActiveProducer: row.hasActiveProducer,
+          hasReusableSandbox: row.hasReusableSandbox,
+          sourceCompletedAt: row.sourceCompletedAt,
+        }
+      : null;
+    return runnerReusePreferenceResult({
+      holder,
+      matchingReuseExpiresAt,
+      exactHistoryExpiresAt,
+      shouldLookUpGenericReuse,
+    });
+  },
+);
+
+function runnerReusePreferenceResult(args: {
+  readonly holder: RunnerReuseHolder | null;
+  readonly matchingReuseExpiresAt: Date;
+  readonly exactHistoryExpiresAt: Date | null;
+  readonly shouldLookUpGenericReuse: boolean;
+}): RunnerReusePreferenceResolution {
+  const {
+    holder,
+    matchingReuseExpiresAt,
+    exactHistoryExpiresAt,
     shouldLookUpGenericReuse,
-    finalizingCompletedAfter,
-  });
+  } = args;
 
   if (!holder) {
     return {
-      kind: "noPreference",
-      reason: shouldLookUpGenericReuse ? "noViableHolder" : "expired",
+      preference: {
+        kind: "noPreference",
+        reason: shouldLookUpGenericReuse ? "noViableHolder" : "expired",
+      },
     };
   }
 
@@ -537,10 +557,12 @@ export async function resolveRunnerReusePreference(args: {
       throw new Error("Exact history preference is missing its deadline");
     }
     return {
-      kind: "preference",
-      runnerIdentity: holder.runnerIdentity,
-      tier: "exactSandbox",
-      expiresAt: exactHistoryExpiresAt.toISOString(),
+      preference: {
+        kind: "preference",
+        runnerIdentity: holder.runnerIdentity,
+        tier: "exactSandbox",
+        expiresAt: exactHistoryExpiresAt.toISOString(),
+      },
     };
   }
 
@@ -548,28 +570,32 @@ export async function resolveRunnerReusePreference(args: {
     if (!holder.sourceCompletedAt) {
       throw new Error("Finalizing predecessor is missing its completion time");
     }
-    args.onFinalizingSource?.(
-      holder.hasActiveProducer ? "active_producer" : "completion_bridge",
-    );
     return {
-      kind: "preference",
-      runnerIdentity: holder.runnerIdentity,
-      tier: "finalizingPredecessor",
-      expiresAt: (holder.hasActiveProducer
-        ? matchingReuseExpiresAt
-        : new Date(
-            holder.sourceCompletedAt.getTime() +
-              RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
-          )
-      ).toISOString(),
+      finalizingSource: holder.hasActiveProducer
+        ? "active_producer"
+        : "completion_bridge",
+      preference: {
+        kind: "preference",
+        runnerIdentity: holder.runnerIdentity,
+        tier: "finalizingPredecessor",
+        expiresAt: (holder.hasActiveProducer
+          ? matchingReuseExpiresAt
+          : new Date(
+              holder.sourceCompletedAt.getTime() +
+                RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
+            )
+        ).toISOString(),
+      },
     };
   }
 
   return {
-    kind: "preference",
-    runnerIdentity: holder.runnerIdentity,
-    tier: holder.hasReusableSandbox ? "reusableSandbox" : "workspaceCache",
-    expiresAt: matchingReuseExpiresAt.toISOString(),
+    preference: {
+      kind: "preference",
+      runnerIdentity: holder.runnerIdentity,
+      tier: holder.hasReusableSandbox ? "reusableSandbox" : "workspaceCache",
+      expiresAt: matchingReuseExpiresAt.toISOString(),
+    },
   };
 }
 

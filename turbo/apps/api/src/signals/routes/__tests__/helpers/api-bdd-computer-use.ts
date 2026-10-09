@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
-import { cronComputerUseScreenshotCleanupContract } from "@okouai/api-contracts/contracts/cron";
 import {
   computerUseAuthorizationRequestsContract,
   computerUseAuditEventsContract,
@@ -9,7 +8,6 @@ import {
   computerUseHeartbeatContract,
   computerUseHostCommandsContract,
   computerUseHostsContract,
-  computerUsePluginCommandContract,
   computerUseWriteCommandContract,
   type ComputerUseAuthorizationRequestApplyResponse,
   type ComputerUseAuthorizationRequestCreateResponse,
@@ -23,7 +21,6 @@ import {
   type ComputerUseReadCommandKind,
   type ComputerUseWriteCommandKind,
 } from "@okouai/api-contracts/contracts/computer-use";
-import type { ComputerUseAnyPluginCallBody } from "@okouai/api-contracts/contracts/computer-use-plugins";
 
 import { now } from "../../../../lib/time";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
@@ -32,7 +29,6 @@ import { setupApp } from "../../../../__tests__/test-helpers";
 import { signSandboxJwtForTests } from "../../../auth/tokens";
 import type { ApiTestUser } from "./api-bdd";
 import { createRouteMocks } from "./route-test";
-import { cronComputerUseScreenshotCleanupRoutesForTest } from "../../cron-computer-use-screenshot-cleanup";
 import { computerUseRoutes } from "../../computer-use";
 import { computerUseAuthorizationRoutes } from "../../computer-use-authorization";
 
@@ -79,13 +75,6 @@ interface ComputerUseWriteCommandBody {
   readonly clickCount?: number;
 }
 
-type OptionalTimeout<Body> = Body extends unknown
-  ? Omit<Body, "timeoutMs"> & { readonly timeoutMs?: number }
-  : never;
-
-type ComputerUsePluginCommandBody =
-  OptionalTimeout<ComputerUseAnyPluginCallBody>;
-
 type ComputerUseCompleteBody =
   | {
       readonly status: "succeeded";
@@ -101,107 +90,6 @@ interface RecordedComputerUseS3Put {
   readonly key: string;
   readonly body: Buffer;
   readonly contentType: string;
-}
-
-function bufferFromBinaryChunk(chunk: unknown): Buffer {
-  if (Buffer.isBuffer(chunk)) {
-    return chunk;
-  }
-  if (chunk instanceof Uint8Array) {
-    return Buffer.from(chunk);
-  }
-  if (ArrayBuffer.isView(chunk)) {
-    return Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
-  }
-  if (chunk instanceof ArrayBuffer) {
-    return Buffer.from(chunk);
-  }
-  if (typeof chunk === "string") {
-    return Buffer.from(chunk);
-  }
-  throw new Error("Expected a binary computer-use plugin content chunk");
-}
-
-function hasArrayBufferMethod(
-  body: unknown,
-): body is { readonly arrayBuffer: () => Promise<ArrayBuffer> } {
-  return (
-    typeof body === "object" &&
-    body !== null &&
-    "arrayBuffer" in body &&
-    typeof body.arrayBuffer === "function"
-  );
-}
-
-function hasWebStreamReader(body: unknown): body is {
-  readonly getReader: () => {
-    readonly read: () => Promise<{
-      readonly done?: boolean;
-      readonly value?: unknown;
-    }>;
-    readonly releaseLock?: () => void;
-  };
-} {
-  return (
-    typeof body === "object" &&
-    body !== null &&
-    "getReader" in body &&
-    typeof body.getReader === "function"
-  );
-}
-
-function isAsyncIterable(body: unknown): body is AsyncIterable<unknown> {
-  return (
-    typeof body === "object" &&
-    body !== null &&
-    Symbol.asyncIterator in body &&
-    typeof body[Symbol.asyncIterator] === "function"
-  );
-}
-
-async function binaryResponseBodyToBuffer(body: unknown): Promise<Buffer> {
-  if (body instanceof Blob) {
-    return Buffer.from(await body.arrayBuffer());
-  }
-  if (Buffer.isBuffer(body)) {
-    return body;
-  }
-  if (typeof body === "string") {
-    return Buffer.from(body);
-  }
-  if (body instanceof Uint8Array) {
-    return Buffer.from(body);
-  }
-  if (ArrayBuffer.isView(body)) {
-    return Buffer.from(body.buffer, body.byteOffset, body.byteLength);
-  }
-  if (body instanceof ArrayBuffer) {
-    return Buffer.from(body);
-  }
-  if (hasArrayBufferMethod(body)) {
-    return Buffer.from(await body.arrayBuffer());
-  }
-  if (hasWebStreamReader(body)) {
-    const reader = body.getReader();
-    const chunks: Buffer[] = [];
-    while (true) {
-      const result = await reader.read();
-      if (result.done) {
-        break;
-      }
-      chunks.push(bufferFromBinaryChunk(result.value));
-    }
-    reader.releaseLock?.();
-    return Buffer.concat(chunks);
-  }
-  if (isAsyncIterable(body)) {
-    const chunks: Buffer[] = [];
-    for await (const chunk of body) {
-      chunks.push(bufferFromBinaryChunk(chunk));
-    }
-    return Buffer.concat(chunks);
-  }
-  throw new Error("Expected a binary computer-use plugin content body");
 }
 
 interface RecordedComputerUseS3Get {
@@ -220,7 +108,6 @@ export interface ComputerUseS3ReadBarrier {
 export interface ComputerUseS3Fake {
   readonly puts: readonly RecordedComputerUseS3Put[];
   readonly gets: readonly RecordedComputerUseS3Get[];
-  readonly deletedKeys: readonly string[];
   readonly holdNextGetObject: () => ComputerUseS3ReadBarrier;
   readonly holdNextBody: () => ComputerUseS3ReadBarrier;
   readonly failNextGetObject: (error: unknown) => void;
@@ -484,12 +371,6 @@ export function createComputerUseBddApi(context: TestContext) {
     );
   }
 
-  function pluginCommandClient(signal?: AbortSignal) {
-    return setupApp({ context, routes: computerUseRoutes, signal })(
-      computerUsePluginCommandContract,
-    );
-  }
-
   function hostCommandsClient() {
     return setupApp({ context, routes: computerUseRoutes })(
       computerUseHostCommandsContract,
@@ -508,18 +389,11 @@ export function createComputerUseBddApi(context: TestContext) {
     );
   }
 
-  function cleanupCronClient(commandIds: readonly string[]) {
-    return setupApp({
-      context,
-      routes: cronComputerUseScreenshotCleanupRoutesForTest(commandIds),
-    })(cronComputerUseScreenshotCleanupContract);
-  }
-
   return {
     /**
-     * Stateful in-memory S3 fake for the screenshot offload, proxy, and
-     * retention flows. PutObject stores bytes and records the put, GetObject
-     * streams stored bytes back, DeleteObjects records and removes keys.
+     * Stateful in-memory S3 fake for screenshot offload and proxy flows.
+     * PutObject stores bytes and records the put, GetObject streams stored
+     * bytes back, and DeleteObjects removes keys.
      * Installed on the vi mock, so the global afterEach mockReset uninstalls
      * it; install inside the test that needs it.
      */
@@ -530,7 +404,6 @@ export function createComputerUseBddApi(context: TestContext) {
       >();
       const puts: RecordedComputerUseS3Put[] = [];
       const gets: RecordedComputerUseS3Get[] = [];
-      const deletedKeys: string[] = [];
       let heldGetObject: PendingComputerUseS3ReadBarrier | undefined;
       let heldBody: PendingComputerUseS3ReadBarrier | undefined;
       let getObjectFailure: unknown | undefined;
@@ -609,7 +482,6 @@ export function createComputerUseBddApi(context: TestContext) {
           }
           if (name === "DeleteObjectsCommand") {
             for (const deletedKey of deleteObjectKeys(input)) {
-              deletedKeys.push(deletedKey);
               store.delete(`${bucket}/${deletedKey}`);
             }
             return {};
@@ -621,7 +493,6 @@ export function createComputerUseBddApi(context: TestContext) {
       return {
         puts,
         gets,
-        deletedKeys,
         holdNextGetObject: () => {
           return reserveBarrier("GetObject");
         },
@@ -807,36 +678,6 @@ export function createComputerUseBddApi(context: TestContext) {
       );
     },
 
-    async createComputerUsePluginCommand(
-      auth: ComputerUseAuth,
-      body: ComputerUsePluginCommandBody,
-      signal?: AbortSignal,
-    ): Promise<ComputerUseCommandCreateResponse> {
-      const response = await accept(
-        pluginCommandClient(signal).create({
-          headers: authenticate(auth),
-          body: { ...body, timeoutMs: body.timeoutMs ?? 60_000 },
-        }),
-        [200],
-      );
-      return response.body;
-    },
-
-    async requestCreateComputerUsePluginCommand(
-      auth: ComputerUseAuth,
-      body: ComputerUsePluginCommandBody,
-      statuses: readonly (200 | 400 | 401 | 403 | 404 | 409)[],
-      signal?: AbortSignal,
-    ) {
-      return await accept(
-        pluginCommandClient(signal).create({
-          headers: authenticate(auth),
-          body: { ...body, timeoutMs: body.timeoutMs ?? 60_000 },
-        }),
-        statuses,
-      );
-    },
-
     async readComputerUseCommand(
       auth: ComputerUseAuth,
       commandId: string,
@@ -882,55 +723,6 @@ export function createComputerUseBddApi(context: TestContext) {
       );
     },
 
-    async requestComputerUsePluginContent(
-      auth: ComputerUseAuth,
-      commandId: string,
-      statuses: readonly (200 | 401 | 403 | 404)[],
-      signal?: AbortSignal,
-    ) {
-      return await accept(
-        commandClient(signal).getPluginContent({
-          headers: authenticate(auth),
-          params: { commandId },
-        }),
-        statuses,
-      );
-    },
-
-    async downloadComputerUsePluginContent(
-      auth: ComputerUseAuth,
-      commandId: string,
-      signal?: AbortSignal,
-    ): Promise<{
-      readonly contentType: string | null;
-      readonly contentLength: string | null;
-      readonly cacheControl: string | null;
-      readonly contentDisposition: string | null;
-      readonly fileName: string | null;
-      readonly bytes: Buffer;
-    }> {
-      const response = await accept(
-        commandClient(signal).getPluginContent({
-          headers: authenticate(auth),
-          params: { commandId },
-        }),
-        [200],
-      );
-      const body: unknown = response.body;
-      const bytes = await binaryResponseBodyToBuffer(body);
-      const contentDisposition = response.headers.get("content-disposition");
-      return {
-        contentType: response.headers.get("content-type"),
-        contentLength: response.headers.get("content-length"),
-        cacheControl: response.headers.get("cache-control"),
-        contentDisposition,
-        fileName: contentDisposition
-          ? (/filename="([^"]+)"/.exec(contentDisposition)?.[1] ?? null)
-          : null,
-        bytes,
-      };
-    },
-
     async downloadComputerUseScreenshot(
       auth: ComputerUseAuth,
       commandId: string,
@@ -939,6 +731,7 @@ export function createComputerUseBddApi(context: TestContext) {
       readonly contentType: string | null;
       readonly contentLength: string | null;
       readonly cacheControl: string | null;
+      readonly contentDisposition: string | null;
       readonly bytes: Buffer;
     }> {
       const response = await accept(
@@ -956,6 +749,7 @@ export function createComputerUseBddApi(context: TestContext) {
         contentType: response.headers.get("content-type"),
         contentLength: response.headers.get("content-length"),
         cacheControl: response.headers.get("cache-control"),
+        contentDisposition: response.headers.get("content-disposition"),
         bytes: Buffer.from(await body.arrayBuffer()),
       };
     },
@@ -1172,25 +966,6 @@ export function createComputerUseBddApi(context: TestContext) {
           body: { computerUseHostId },
         }),
         statuses,
-      );
-    },
-
-    async runComputerUseScreenshotCleanupCron(
-      auth: "valid" | "invalid" | "missing",
-      commandIds: readonly string[],
-    ) {
-      const headers =
-        auth === "missing"
-          ? {}
-          : {
-              authorization:
-                auth === "valid"
-                  ? "Bearer test-cron-secret"
-                  : "Bearer wrong-secret",
-            };
-      return await accept(
-        cleanupCronClient(commandIds).cleanup({ headers }),
-        [200, 401],
       );
     },
   };

@@ -1,13 +1,11 @@
 import { piMemoryPhase2SelectionDigest } from "@okouai/pi-agent-runtime/api";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
-import { checkpoints } from "@okouai/db/schema/checkpoint";
 import {
   PI_MEMORY_PHASE2_MAX_ATTEMPTS,
   piMemoryPhase2Jobs,
 } from "@okouai/db/schema/pi-memory-phase2-job";
 import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-candidate";
-import { storageVersionLineage } from "@okouai/db/schema/storage-version-lineage";
 import {
   and,
   eq,
@@ -20,12 +18,16 @@ import {
   sql,
   type SQL,
   type SQLWrapper,
+  or,
 } from "drizzle-orm";
 import { z } from "zod";
+import { command } from "ccstate";
+import { writeDb$ } from "../external/db";
+import { piMemoryPhase2Checkpoints } from "@okouai/db/schema/pi-memory-phase2-checkpoint";
 
 import type { ApiDb, Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
-import { findPiMemoryPhase2Checkpoint } from "./pi-memory-phase2-checkpoint.service";
+import { piMemoryPhase2PublicationCondition } from "./pi-memory-phase2-publication.service";
 import type {
   InternalRunCallbackDispatchResult,
   InternalRunCallbackEnvelope,
@@ -73,7 +75,7 @@ interface PiMemoryPhase2MaintenanceRunBinding {
   readonly selectionDigest: string;
 }
 
-/** Preserve storage-before-checkpoint lock ordering only for maintenance. */
+/** Preserve storage-before-publication lock ordering only for maintenance. */
 export async function lockPiMemoryPhase2CompletionStorage(
   tx: Tx,
   run: { readonly id: string; readonly orgId: string; readonly userId: string },
@@ -223,136 +225,74 @@ function exactActiveMaintenanceCondition(args: {
   );
 }
 
-/** Bind the run before its transaction can make a runner job visible. */
-export async function bindPiMemoryPhase2MaintenanceRun(
-  tx: Tx,
+/** The admission owner samples this clock after its update timestamp. */
+export function piMemoryPhase2MaintenanceBindingCondition(
   args: {
     readonly binding: PiMemoryPhase2MaintenanceRunBinding;
-    readonly runId: string;
   },
-): Promise<void> {
-  const [bound] = await tx
-    .update(piMemoryPhase2Jobs)
-    .set({ maintenanceRunId: args.runId, updatedAt: nowDate() })
-    .where(
-      and(
-        eq(piMemoryPhase2Jobs.memoryStorageId, args.binding.memoryStorageId),
-        eq(piMemoryPhase2Jobs.orgId, args.binding.orgId),
-        eq(piMemoryPhase2Jobs.userId, args.binding.userId),
-        eq(piMemoryPhase2Jobs.status, "leased"),
-        eq(piMemoryPhase2Jobs.leaseToken, args.binding.leaseToken),
-        eq(piMemoryPhase2Jobs.sandboxLeaseToken, args.binding.leaseToken),
-        eq(piMemoryPhase2Jobs.claimedRevision, args.binding.claimedRevision),
-        eq(
-          piMemoryPhase2Jobs.claimedBaseVersionId,
-          args.binding.claimedBaseVersionId,
-        ),
-        eq(
-          piMemoryPhase2Jobs.claimedSelectionDigest,
-          args.binding.selectionDigest,
-        ),
-        sql`${piMemoryPhase2Jobs.maintenanceRunId} IS NULL`,
-        sql`${piMemoryPhase2Jobs.leaseExpiresAt} > ${nowDate()}`,
-      ),
-    )
-    .returning({ memoryStorageId: piMemoryPhase2Jobs.memoryStorageId });
-  if (!bound) {
-    throw new Error("Pi memory Phase 2 maintenance run lost its claim fence");
-  }
+  currentTime: Date,
+) {
+  return and(
+    eq(piMemoryPhase2Jobs.memoryStorageId, args.binding.memoryStorageId),
+    eq(piMemoryPhase2Jobs.orgId, args.binding.orgId),
+    eq(piMemoryPhase2Jobs.userId, args.binding.userId),
+    eq(piMemoryPhase2Jobs.status, "leased"),
+    eq(piMemoryPhase2Jobs.leaseToken, args.binding.leaseToken),
+    eq(piMemoryPhase2Jobs.sandboxLeaseToken, args.binding.leaseToken),
+    eq(piMemoryPhase2Jobs.claimedRevision, args.binding.claimedRevision),
+    eq(
+      piMemoryPhase2Jobs.claimedBaseVersionId,
+      args.binding.claimedBaseVersionId,
+    ),
+    eq(piMemoryPhase2Jobs.claimedSelectionDigest, args.binding.selectionDigest),
+    isNull(piMemoryPhase2Jobs.maintenanceRunId),
+    gt(piMemoryPhase2Jobs.leaseExpiresAt, currentTime),
+  );
 }
 
-async function updateSelectionWatermarks(
-  tx: Tx,
-  payload: PiMemoryPhase2MaintenanceCallbackPayload,
-): Promise<void> {
-  await tx
-    .update(piMemoryStage1Candidates)
-    .set({ lastSelectedSourceHistoryHash: null })
-    .where(
-      and(
-        eq(piMemoryStage1Candidates.memoryStorageId, payload.memoryStorageId),
-        eq(piMemoryStage1Candidates.orgId, payload.orgId),
-        eq(piMemoryStage1Candidates.userId, payload.userId),
-      ),
-    );
-  for (const candidate of payload.selected) {
-    await tx
-      .update(piMemoryStage1Candidates)
-      .set({ lastSelectedSourceHistoryHash: candidate.sourceHistoryHash })
-      .where(
-        and(
-          eq(piMemoryStage1Candidates.memoryStorageId, payload.memoryStorageId),
-          eq(piMemoryStage1Candidates.orgId, payload.orgId),
-          eq(piMemoryStage1Candidates.userId, payload.userId),
-          eq(piMemoryStage1Candidates.status, "succeeded"),
-          eq(piMemoryStage1Candidates.piSessionId, candidate.piSessionId),
-          eq(
-            piMemoryStage1Candidates.sourceHistoryHash,
-            candidate.sourceHistoryHash,
-          ),
-        ),
-      );
-  }
-}
-
-async function transitionMaintenanceFailure(
-  tx: Tx,
-  args: {
-    readonly payload: PiMemoryPhase2MaintenanceCallbackPayload;
-    readonly runId: string;
-    readonly errorClass: string;
-    readonly inputRevision: number;
-    readonly retryCount: number;
-  },
-): Promise<void> {
+function maintenanceFailureValues(args: {
+  readonly payload: PiMemoryPhase2MaintenanceCallbackPayload;
+  readonly runId: string;
+  readonly errorClass: string;
+  readonly inputRevision: number;
+  readonly retryCount: number;
+}) {
   const hasNewerInput = args.inputRevision > args.payload.claimedRevision;
   const retryCount = hasNewerInput
     ? 0
     : Math.min(PI_MEMORY_PHASE2_MAX_ATTEMPTS, args.retryCount + 1);
   const terminal = retryCount >= PI_MEMORY_PHASE2_MAX_ATTEMPTS;
-  const [failed] = await tx
-    .update(piMemoryPhase2Jobs)
-    .set({
-      status: hasNewerInput
-        ? "pending"
-        : terminal
-          ? "terminal_failure"
-          : "retryable_failure",
-      claimedRevision: null,
-      claimedBaseVersionId: null,
-      leaseToken: null,
-      legacyLeaseToken: null,
-      sandboxLeaseToken: null,
-      leaseExpiresAt: null,
-      maintenanceRunId: null,
-      retryCount,
-      retryAt:
-        hasNewerInput || terminal
-          ? null
-          : new Date(nowDate().getTime() + PI_MEMORY_PHASE2_RETRY_DELAY_MS),
-      lastErrorClass: hasNewerInput ? null : args.errorClass,
-      claimedSelectionDigest: null,
-      claimedSelectedCount: null,
-      claimedSelectedUtf8Bytes: null,
-      lastMaintenanceRunId: args.runId,
-      lastMaintenanceRevision: args.payload.claimedRevision,
-      lastMaintenanceBaseVersionId: args.payload.claimedBaseVersionId,
-      lastMaintenanceSelectionDigest: args.payload.selectionDigest,
-      lastMaintenanceCheckpointId: null,
-      lastMaintenanceCheckpointVersionId: null,
-      lastMaintenanceOutcome: "failed",
-      updatedAt: nowDate(),
-    })
-    .where(
-      exactActiveMaintenanceCondition({
-        binding: args.payload,
-        runId: args.runId,
-      }),
-    )
-    .returning({ id: piMemoryPhase2Jobs.memoryStorageId });
-  if (!failed) {
-    throw new Error("Pi memory maintenance failure lost its exact run fence");
-  }
+
+  return {
+    status: hasNewerInput
+      ? "pending"
+      : terminal
+        ? "terminal_failure"
+        : "retryable_failure",
+    claimedRevision: null,
+    claimedBaseVersionId: null,
+    leaseToken: null,
+    legacyLeaseToken: null,
+    sandboxLeaseToken: null,
+    leaseExpiresAt: null,
+    maintenanceRunId: null,
+    retryCount,
+    retryAt:
+      hasNewerInput || terminal
+        ? null
+        : new Date(nowDate().getTime() + PI_MEMORY_PHASE2_RETRY_DELAY_MS),
+    lastErrorClass: hasNewerInput ? null : args.errorClass,
+    claimedSelectionDigest: null,
+    claimedSelectedCount: null,
+    claimedSelectedUtf8Bytes: null,
+    lastMaintenanceRunId: args.runId,
+    lastMaintenanceRevision: args.payload.claimedRevision,
+    lastMaintenanceBaseVersionId: args.payload.claimedBaseVersionId,
+    lastMaintenanceSelectionDigest: args.payload.selectionDigest,
+    lastMaintenanceCheckpointVersionId: null,
+    lastMaintenanceOutcome: "failed",
+    updatedAt: nowDate(),
+  } as const;
 }
 
 function callbackErrorClass(
@@ -372,303 +312,271 @@ function callbackErrorClass(
   return "maintenance_run_failed";
 }
 
-interface ExactMaintenanceCheckpoint {
-  readonly id: string | null;
+interface ExactMaintenancePublication {
   readonly versionId: string;
 }
 
-async function findExactMaintenanceCheckpoint(
-  tx: Tx,
-  payload: PiMemoryPhase2MaintenanceCallbackPayload,
-  runId: string,
-): Promise<ExactMaintenanceCheckpoint | undefined> {
-  const [checkpoint] = await tx
-    .select({
-      id: checkpoints.id,
-      storageMounts: checkpoints.storageMounts,
-    })
-    .from(checkpoints)
-    .where(eq(checkpoints.runId, runId))
-    .limit(1);
-  const memoryMount = checkpoint?.storageMounts?.find((mount) => {
-    return (
-      mount.storageId === payload.memoryStorageId &&
-      mount.name === "memory" &&
-      mount.writeback === true
-    );
-  });
-  const versionId = memoryMount?.version;
-  if (!checkpoint || !versionId) {
-    return undefined;
-  }
-  if (versionId === payload.claimedBaseVersionId) {
-    return { id: checkpoint.id, versionId };
-  }
-
-  const [lineage] = await tx
-    .select({ id: storageVersionLineage.id })
-    .from(storageVersionLineage)
-    .where(
-      and(
-        eq(storageVersionLineage.storageId, payload.memoryStorageId),
-        eq(storageVersionLineage.versionId, versionId),
-        eq(storageVersionLineage.parentVersionId, payload.claimedBaseVersionId),
-        eq(storageVersionLineage.runId, runId),
-      ),
-    )
-    .limit(1);
-  return lineage ? { id: checkpoint.id, versionId } : undefined;
-}
-
-async function completeMaintenanceSuccess(
-  tx: Tx,
-  args: {
-    readonly payload: PiMemoryPhase2MaintenanceCallbackPayload;
-    readonly runId: string;
-    readonly checkpoint: ExactMaintenanceCheckpoint;
-  },
-): Promise<void> {
-  await updateSelectionWatermarks(tx, args.payload);
+function maintenanceSuccessValues(args: {
+  readonly payload: PiMemoryPhase2MaintenanceCallbackPayload;
+  readonly runId: string;
+  readonly publication: ExactMaintenancePublication;
+}) {
   const published =
-    args.checkpoint.versionId !== args.payload.claimedBaseVersionId;
+    args.publication.versionId !== args.payload.claimedBaseVersionId;
   const completedAt = nowDate();
-  const [completed] = await tx
-    .update(piMemoryPhase2Jobs)
-    .set({
-      status: sql`CASE
+
+  return {
+    status: sql`CASE
         WHEN ${piMemoryPhase2Jobs.inputRevision} = ${args.payload.claimedRevision}
         THEN 'idle'
         ELSE 'pending'
       END`,
-      completedRevision: args.payload.claimedRevision,
-      claimedRevision: null,
-      claimedBaseVersionId: null,
-      leaseToken: null,
-      legacyLeaseToken: null,
-      sandboxLeaseToken: null,
-      leaseExpiresAt: null,
-      maintenanceRunId: null,
-      retryCount: 0,
-      retryAt: null,
-      lastErrorClass: null,
-      lastSucceededAt: completedAt,
-      claimedSelectionDigest: null,
-      claimedSelectedCount: null,
-      claimedSelectedUtf8Bytes: null,
-      ...(published
-        ? {
-            lastPublishedVersionId: args.checkpoint.versionId,
-            lastPublishedAt: completedAt,
-          }
-        : {}),
-      lastMaintenanceRunId: args.runId,
-      lastMaintenanceRevision: args.payload.claimedRevision,
-      lastMaintenanceBaseVersionId: args.payload.claimedBaseVersionId,
-      lastMaintenanceSelectionDigest: args.payload.selectionDigest,
-      lastMaintenanceCheckpointId: args.checkpoint.id,
-      lastMaintenanceCheckpointVersionId: args.checkpoint.versionId,
-      lastMaintenanceOutcome: published ? "published" : "no_diff",
-      updatedAt: completedAt,
-    })
-    .where(
-      exactActiveMaintenanceCondition({
-        binding: args.payload,
-        runId: args.runId,
-      }),
-    )
-    .returning({ id: piMemoryPhase2Jobs.memoryStorageId });
-  if (!completed) {
-    throw new Error(
-      "Pi memory maintenance completion lost its exact run fence",
-    );
-  }
+    completedRevision: args.payload.claimedRevision,
+    claimedRevision: null,
+    claimedBaseVersionId: null,
+    leaseToken: null,
+    legacyLeaseToken: null,
+    sandboxLeaseToken: null,
+    leaseExpiresAt: null,
+    maintenanceRunId: null,
+    retryCount: 0,
+    retryAt: null,
+    lastErrorClass: null,
+    lastSucceededAt: completedAt,
+    claimedSelectionDigest: null,
+    claimedSelectedCount: null,
+    claimedSelectedUtf8Bytes: null,
+    ...(published
+      ? {
+          lastPublishedVersionId: args.publication.versionId,
+          lastPublishedAt: completedAt,
+        }
+      : {}),
+    lastMaintenanceRunId: args.runId,
+    lastMaintenanceRevision: args.payload.claimedRevision,
+    lastMaintenanceBaseVersionId: args.payload.claimedBaseVersionId,
+    lastMaintenanceSelectionDigest: args.payload.selectionDigest,
+    lastMaintenanceCheckpointVersionId: args.publication.versionId,
+    lastMaintenanceOutcome: published ? "published" : "no_diff",
+    updatedAt: completedAt,
+  } as const;
 }
 
-/**
- * Commit validated checkpoint control state in the publisher's transaction.
- * No completion/observer acknowledgement is needed to make the receipt true.
- * This also prevents a draining API's failed-run observer from retrying a
- * publication whose later completion report was lost.
- */
-export async function settlePiMemoryPhase2Checkpoint(
-  tx: Tx,
-  runId: string,
-  versionId: string,
-): Promise<void> {
-  const [callback] = await tx
-    .select({ payload: agentRunCallbacks.payload })
-    .from(agentRunCallbacks)
-    .where(
-      and(
-        eq(agentRunCallbacks.runId, runId),
-        eq(agentRunCallbacks.internalKind, "pi-memory:phase2"),
-      ),
-    )
-    .limit(1);
-  const payload = piMemoryPhase2MaintenanceCallbackPayloadSchema.parse(
-    callback?.payload,
-  );
-  if (
-    piMemoryPhase2SelectionDigest(payload.selected) !== payload.selectionDigest
-  ) {
-    throw new Error("Pi memory checkpoint selection mismatch");
-  }
-  await completeMaintenanceSuccess(tx, {
-    payload,
-    runId,
-    checkpoint: { id: null, versionId },
-  });
-}
-
-async function observeTerminalMaintenance(
-  tx: Tx,
-  envelope: InternalRunCallbackEnvelope,
+const maintenanceJobColumns = Object.freeze({
+  inputRevision: piMemoryPhase2Jobs.inputRevision,
+  retryCount: piMemoryPhase2Jobs.retryCount,
+  lastMaintenanceRunId: piMemoryPhase2Jobs.lastMaintenanceRunId,
+});
+const maintenanceRunColumns = Object.freeze({
+  status: agentRuns.status,
+  failureReason: agentRuns.failureReason,
+});
+function maintenanceJobOwnerCondition(
   payload: PiMemoryPhase2MaintenanceCallbackPayload,
-): Promise<InternalRunCallbackDispatchResult> {
-  const [job] = await tx
-    .select({
-      inputRevision: piMemoryPhase2Jobs.inputRevision,
-      retryCount: piMemoryPhase2Jobs.retryCount,
-      lastMaintenanceRunId: piMemoryPhase2Jobs.lastMaintenanceRunId,
-    })
-    .from(piMemoryPhase2Jobs)
-    .where(
-      and(
-        eq(piMemoryPhase2Jobs.memoryStorageId, payload.memoryStorageId),
-        eq(piMemoryPhase2Jobs.orgId, payload.orgId),
-        eq(piMemoryPhase2Jobs.userId, payload.userId),
-      ),
-    )
-    .limit(1)
-    .for("update", { of: piMemoryPhase2Jobs });
-  if (!job) {
-    return { success: true, skipped: true };
+) {
+  return and(
+    eq(piMemoryPhase2Jobs.memoryStorageId, payload.memoryStorageId),
+    eq(piMemoryPhase2Jobs.orgId, payload.orgId),
+    eq(piMemoryPhase2Jobs.userId, payload.userId),
+  );
+}
+function maintenanceCandidateOwnerCondition(
+  payload: PiMemoryPhase2MaintenanceCallbackPayload,
+) {
+  return and(
+    eq(piMemoryStage1Candidates.memoryStorageId, payload.memoryStorageId),
+    eq(piMemoryStage1Candidates.orgId, payload.orgId),
+    eq(piMemoryStage1Candidates.userId, payload.userId),
+  );
+}
+function maintenanceSelectionWatermarkValues(
+  payload: PiMemoryPhase2MaintenanceCallbackPayload,
+) {
+  if (payload.selected.length === 0) {
+    return { lastSelectedSourceHistoryHash: null };
   }
-  if (job.lastMaintenanceRunId === envelope.runId) {
-    const [checkpoint] = await tx
-      .select({ id: checkpoints.id })
-      .from(checkpoints)
-      .where(eq(checkpoints.runId, envelope.runId))
-      .limit(1);
-    if (checkpoint) {
-      await tx
-        .update(piMemoryPhase2Jobs)
-        .set({ lastMaintenanceCheckpointId: checkpoint.id })
-        .where(
-          and(
-            eq(piMemoryPhase2Jobs.memoryStorageId, payload.memoryStorageId),
-            eq(piMemoryPhase2Jobs.lastMaintenanceRunId, envelope.runId),
-            sql`${piMemoryPhase2Jobs.lastMaintenanceOutcome} IN ('published', 'no_diff')`,
+  const selected = and(
+    eq(piMemoryStage1Candidates.status, "succeeded"),
+    or(
+      ...payload.selected.map((candidate) => {
+        return and(
+          eq(piMemoryStage1Candidates.piSessionId, candidate.piSessionId),
+          eq(
+            piMemoryStage1Candidates.sourceHistoryHash,
+            candidate.sourceHistoryHash,
           ),
         );
-    }
-    return { success: true, skipped: true };
-  }
-
-  const [run] = await tx
-    .select({
-      status: agentRuns.status,
-      failureReason: agentRuns.failureReason,
-    })
-    .from(agentRuns)
-    .where(
-      and(
-        eq(agentRuns.id, envelope.runId),
-        eq(agentRuns.orgId, payload.orgId),
-        eq(agentRuns.userId, payload.userId),
-      ),
-    )
-    .limit(1);
-  const activeCondition = exactActiveMaintenanceCondition({
-    binding: payload,
-    runId: envelope.runId,
-  });
-  const [active] = await tx
-    .select({ id: piMemoryPhase2Jobs.memoryStorageId })
-    .from(piMemoryPhase2Jobs)
-    .where(activeCondition)
-    .limit(1);
-  if (!active) {
-    return { success: true, skipped: true };
-  }
-
-  const receipt = await findPiMemoryPhase2Checkpoint(tx, {
-    ...payload,
-    runId: envelope.runId,
-  });
-  if (receipt) {
-    const [checkpoint] = await tx
-      .select({ id: checkpoints.id })
-      .from(checkpoints)
-      .where(eq(checkpoints.runId, envelope.runId))
-      .limit(1);
-    await completeMaintenanceSuccess(tx, {
-      payload,
-      runId: envelope.runId,
-      checkpoint: { id: checkpoint?.id ?? null, versionId: receipt.versionId },
-    });
-    return { success: true };
-  }
-
-  if (envelope.status !== "completed" || run?.status !== "completed") {
-    await transitionMaintenanceFailure(tx, {
-      payload,
-      runId: envelope.runId,
-      errorClass: callbackErrorClass(run),
-      inputRevision: job.inputRevision,
-      retryCount: job.retryCount,
-    });
-    return { success: true };
-  }
-
-  const checkpoint = await findExactMaintenanceCheckpoint(
-    tx,
-    payload,
-    envelope.runId,
+      }),
+    ),
   );
-  if (!checkpoint) {
-    await transitionMaintenanceFailure(tx, {
-      payload,
-      runId: envelope.runId,
-      errorClass: "maintenance_checkpoint_invalid",
-      inputRevision: job.inputRevision,
-      retryCount: job.retryCount,
-    });
-    return { success: true };
-  }
-
-  await completeMaintenanceSuccess(tx, {
-    payload,
-    runId: envelope.runId,
-    checkpoint,
-  });
-  return { success: true };
+  return {
+    lastSelectedSourceHistoryHash: sql`CASE WHEN ${selected} THEN ${piMemoryStage1Candidates.sourceHistoryHash} ELSE NULL END`,
+  };
 }
 
-/** Observe an exact terminal run/checkpoint; never writes Storage state. */
-export async function handlePiMemoryPhase2MaintenanceCallback(
-  db: ApiDb,
+function observedTerminalValues(
+  payload: PiMemoryPhase2MaintenanceCallbackPayload,
   envelope: InternalRunCallbackEnvelope,
-): Promise<InternalRunCallbackDispatchResult> {
-  if (envelope.status === "progress") {
-    return { success: true, skipped: true };
-  }
-  const parsed = piMemoryPhase2MaintenanceCallbackPayloadSchema.safeParse(
-    envelope.payload,
-  );
-  if (!parsed.success) {
-    return { success: false, error: "Invalid Pi memory maintenance callback" };
-  }
-  const payload = parsed.data;
-  if (
-    piMemoryPhase2SelectionDigest(payload.selected) !== payload.selectionDigest
-  ) {
-    return {
-      success: false,
-      error: "Pi memory maintenance callback selection mismatch",
+  observed: {
+    readonly publication: ExactMaintenancePublication | undefined;
+    readonly job: {
+      readonly inputRevision: number;
+      readonly retryCount: number;
     };
+    readonly run: Parameters<typeof callbackErrorClass>[0];
+  },
+) {
+  if (observed.publication) {
+    return maintenanceSuccessValues({
+      payload,
+      runId: envelope.runId,
+      publication: observed.publication,
+    });
   }
-  return await db.transaction(async (tx) => {
-    return await observeTerminalMaintenance(tx, envelope, payload);
+  return maintenanceFailureValues({
+    payload,
+    runId: envelope.runId,
+    inputRevision: observed.job.inputRevision,
+    retryCount: observed.job.retryCount,
+    errorClass:
+      envelope.status !== "completed" || observed.run?.status !== "completed"
+        ? callbackErrorClass(observed.run)
+        : "maintenance_publication_missing",
   });
 }
+
+function maintenanceRunOwnerCondition(
+  payload: PiMemoryPhase2MaintenanceCallbackPayload,
+  runId: string,
+) {
+  return and(
+    eq(agentRuns.id, runId),
+    eq(agentRuns.orgId, payload.orgId),
+    eq(agentRuns.userId, payload.userId),
+  );
+}
+const terminalMaintenanceResult = Object.freeze({ success: true } as const);
+const skippedMaintenanceResult = Object.freeze({
+  success: true,
+  skipped: true,
+} as const);
+
+const observeTerminalMaintenance$ = command(
+  async (
+    { set },
+    envelope: InternalRunCallbackEnvelope,
+    payload: PiMemoryPhase2MaintenanceCallbackPayload,
+    signal: AbortSignal,
+  ): Promise<InternalRunCallbackDispatchResult> => {
+    signal.throwIfAborted();
+    const binding = { ...payload, runId: envelope.runId };
+    // The job fence, publication evidence, selected watermarks and terminal receipt
+    // commit together. Publication itself remains owned by Storage.
+    const result = await set(writeDb$).transaction(async (tx) => {
+      const [job] = await tx
+        .select(maintenanceJobColumns)
+        .from(piMemoryPhase2Jobs)
+        .where(maintenanceJobOwnerCondition(payload))
+        .limit(1)
+        .for("update", { of: piMemoryPhase2Jobs });
+      signal.throwIfAborted();
+      if (!job) {
+        return skippedMaintenanceResult;
+      }
+      if (job.lastMaintenanceRunId === envelope.runId) {
+        return skippedMaintenanceResult;
+      }
+      const [run] = await tx
+        .select(maintenanceRunColumns)
+        .from(agentRuns)
+        .where(maintenanceRunOwnerCondition(payload, envelope.runId))
+        .limit(1);
+      signal.throwIfAborted();
+      const activeCondition = exactActiveMaintenanceCondition({
+        binding: payload,
+        runId: envelope.runId,
+      });
+      const [active] = await tx
+        .select({ id: piMemoryPhase2Jobs.memoryStorageId })
+        .from(piMemoryPhase2Jobs)
+        .where(activeCondition)
+        .limit(1);
+      signal.throwIfAborted();
+      if (!active) {
+        return skippedMaintenanceResult;
+      }
+      const [receipt] = await tx
+        .select()
+        .from(piMemoryPhase2Checkpoints)
+        .where(piMemoryPhase2PublicationCondition(binding))
+        .limit(1);
+      signal.throwIfAborted();
+      const exactPublication = receipt
+        ? { versionId: receipt.versionId }
+        : undefined;
+      if (exactPublication) {
+        await tx
+          .update(piMemoryStage1Candidates)
+          .set(maintenanceSelectionWatermarkValues(payload))
+          .where(maintenanceCandidateOwnerCondition(payload));
+        signal.throwIfAborted();
+      }
+      const [finished] = await tx
+        .update(piMemoryPhase2Jobs)
+        .set(
+          observedTerminalValues(payload, envelope, {
+            publication: exactPublication,
+            job,
+            run,
+          }),
+        )
+        .where(activeCondition)
+        .returning({ id: piMemoryPhase2Jobs.memoryStorageId });
+      signal.throwIfAborted();
+      if (!finished) {
+        throw new Error(
+          exactPublication
+            ? "Pi memory maintenance completion lost its exact run fence"
+            : "Pi memory maintenance failure lost its exact run fence",
+        );
+      }
+      return terminalMaintenanceResult;
+    });
+    signal.throwIfAborted();
+    return result;
+  },
+);
+
+/** Observe an exact terminal run/publication; never writes Storage state. */
+export const handlePiMemoryPhase2MaintenanceCallback$ = command(
+  async (
+    { set },
+    envelope: InternalRunCallbackEnvelope,
+    signal: AbortSignal,
+  ): Promise<InternalRunCallbackDispatchResult> => {
+    signal.throwIfAborted();
+    if (envelope.status === "progress") {
+      return skippedMaintenanceResult;
+    }
+    const parsed = piMemoryPhase2MaintenanceCallbackPayloadSchema.safeParse(
+      envelope.payload,
+    );
+    if (!parsed.success) {
+      return {
+        success: false,
+        error: "Invalid Pi memory maintenance callback",
+      };
+    }
+    const payload = parsed.data;
+    if (
+      piMemoryPhase2SelectionDigest(payload.selected) !==
+      payload.selectionDigest
+    ) {
+      return {
+        success: false,
+        error: "Pi memory maintenance callback selection mismatch",
+      };
+    }
+    return await set(observeTerminalMaintenance$, envelope, payload, signal);
+  },
+);

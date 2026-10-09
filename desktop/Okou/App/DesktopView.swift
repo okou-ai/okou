@@ -7,16 +7,19 @@ private let muted = Color(red: 0.40, green: 0.44, blue: 0.52)
 private let brand = Color(red: 1, green: 0.647, blue: 0)
 
 struct DesktopView: View {
+  static let titlebarExtension: CGFloat = 4
   @Environment(\.displayScale) private var displayScale
   @ObservedObject var model: DesktopModel
   var body: some View {
     VStack(spacing: 0) {
-      Color(nsColor: .windowBackgroundColor).frame(height: 4)
+      Color(nsColor: .windowBackgroundColor).frame(height: Self.titlebarExtension)
         .overlay(alignment: .bottom) {
           Rectangle().fill(foreground.opacity(0.1)).frame(height: 1 / displayScale)
         }
       Group {
-        if model.preparing {
+        if model.compatibility.required {
+          requiredUpgrade
+        } else if model.preparing {
           VStack(spacing: 18) {
             BrandImage(name: "symbol").frame(width: 92, height: 92)
             ProgressView().controlSize(.small)
@@ -68,8 +71,43 @@ struct DesktopView: View {
     }
     .font(.system(size: 14)).foregroundStyle(foreground)
     .preferredColorScheme(.light)
-    .sheet(isPresented: $model.showWorkspaces) { workspacePicker }
+    .sheet(isPresented: $model.showWorkspaces) { WorkspacePicker(model: model) }
     .sheet(isPresented: $model.showDiagnostics) { diagnostics }
+  }
+  private var requiredUpgrade: some View {
+    VStack(spacing: 20) {
+      BrandImage(name: "symbol").frame(width: 76, height: 76)
+      VStack(spacing: 10) {
+        Text("Update Okou to continue").font(.system(size: 28, weight: .semibold))
+        Text(
+          "Computer Use is paused on this version. Okou will finish any current command, then install the update and restart automatically."
+        )
+        .foregroundStyle(muted).multilineTextAlignment(.center).lineSpacing(4)
+        if let minimum = model.compatibility.minimumSupportedVersion {
+          Text("Installed \(model.version) · Requires \(minimum) or later")
+            .font(.system(size: 12)).foregroundStyle(muted)
+        }
+      }
+      VStack(spacing: 12) {
+        if !model.upgradePhase.failed {
+          if let progress = model.upgradePhase.progress {
+            ProgressView(value: progress).tint(brand)
+          } else {
+            ProgressView().controlSize(.small)
+          }
+        }
+        Text(model.upgradePhase.label).font(.system(size: 13))
+          .foregroundStyle(muted).multilineTextAlignment(.center)
+        if model.upgradePhase.failed {
+          HStack(spacing: 12) {
+            Button("Retry update") { model.retryRequiredUpgrade() }
+              .buttonStyle(BrandButtonStyle()).disabled(model.compatibilityChecking)
+            Button("Download latest") { model.downloadLatest() }
+              .buttonStyle(WorkspaceButtonStyle(primary: false))
+          }
+        }
+      }.padding(20).frame(maxWidth: .infinity).card()
+    }.frame(maxWidth: 460).padding(40).frame(maxWidth: .infinity, maxHeight: .infinity)
   }
   private var accountCard: some View {
     VStack(alignment: .leading, spacing: 12) {
@@ -303,19 +341,6 @@ struct DesktopView: View {
       }
     }.padding(18).frame(maxWidth: .infinity, alignment: .leading).card()
   }
-  private var workspacePicker: some View {
-    VStack(alignment: .leading, spacing: 16) {
-      Text("Select a workspace").font(.title2.bold())
-      if model.organizations.isEmpty {
-        Text("No workspace memberships were found. Join a workspace in Okou, then try again.")
-      }
-      ForEach(model.organizations, id: \.id) { org in
-        Button(org.name) { model.chooseWorkspace(org.id) }.frame(
-          maxWidth: .infinity, alignment: .leading)
-      }
-      Button("Cancel") { model.showWorkspaces = false }
-    }.padding(24).frame(width: 420).disabled(model.busy)
-  }
   private var diagnostics: some View {
     VStack(alignment: .leading, spacing: 16) {
       HStack {
@@ -348,6 +373,145 @@ struct DesktopView: View {
       }.frame(width: 24, height: 24)
       Text(label).font(.system(size: 12, weight: .semibold)).foregroundStyle(muted)
     }
+  }
+}
+
+private struct WorkspacePicker: View {
+  @ObservedObject var model: DesktopModel
+  @Environment(\.displayScale) private var displayScale
+  @State private var selection: String?
+  @State private var hoveredWorkspace: String?
+
+  private var selectionIsAvailable: Bool {
+    model.organizations.contains { $0.id == selection }
+  }
+
+  var body: some View {
+    VStack(spacing: 0) {
+      VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 6) {
+          Text(model.organizationID == nil ? "Select a workspace" : "Switch workspace")
+            .font(.system(size: 20, weight: .semibold))
+          Text("Choose where this Mac connects to Okou.")
+            .font(.system(size: 13)).foregroundStyle(muted)
+        }
+        if model.organizations.isEmpty {
+          VStack(spacing: 10) {
+            Image(systemName: "square.stack.3d.up")
+              .font(.system(size: 26)).foregroundStyle(muted)
+            Text("No workspaces available").font(.system(size: 14, weight: .medium))
+            Text("Join a workspace in Okou, then try again.")
+              .font(.system(size: 12)).foregroundStyle(muted)
+          }.frame(maxWidth: .infinity).padding(.vertical, 24)
+        } else {
+          ScrollView {
+            VStack(spacing: 0) {
+              ForEach(model.organizations, id: \.id) { workspace in
+                if workspace.id != model.organizations.first?.id {
+                  Rectangle().fill(foreground.opacity(0.08))
+                    .frame(height: 1 / displayScale).padding(.leading, 66)
+                }
+                workspaceRow(id: workspace.id, name: workspace.name)
+              }
+            }
+          }
+          .frame(
+            height: min(
+              CGFloat(model.organizations.count) * 64
+                + CGFloat(model.organizations.count - 1) / displayScale, 256)
+          )
+          .background(.white)
+          .clipShape(RoundedRectangle(cornerRadius: 10))
+          .overlay {
+            RoundedRectangle(cornerRadius: 10).stroke(
+              foreground.opacity(0.1), lineWidth: 1 / displayScale)
+          }
+        }
+        if let error = model.error {
+          Label(error, systemImage: "exclamationmark.circle")
+            .font(.system(size: 12)).foregroundStyle(.red).fixedSize(
+              horizontal: false, vertical: true)
+        }
+      }
+      .frame(maxWidth: .infinity, alignment: .leading).padding(24)
+      HStack(spacing: 10) {
+        Spacer()
+        Button("Cancel") { model.showWorkspaces = false }
+          .buttonStyle(WorkspaceButtonStyle(primary: false))
+          .keyboardShortcut(.cancelAction)
+        Button {
+          if let selection, selectionIsAvailable { model.chooseWorkspace(selection) }
+        } label: {
+          HStack(spacing: 6) {
+            if model.busy { ProgressView().controlSize(.small) }
+            Text(model.busy ? "Switching…" : model.organizationID == nil ? "Continue" : "Switch")
+          }
+        }
+        .buttonStyle(WorkspaceButtonStyle(primary: true))
+        .keyboardShortcut(.defaultAction).disabled(!selectionIsAvailable)
+      }
+      .padding(.horizontal, 24).padding(.vertical, 16)
+      .overlay(alignment: .top) {
+        Rectangle().fill(foreground.opacity(0.08)).frame(height: 1 / displayScale)
+      }
+    }
+    .frame(width: 440).foregroundStyle(foreground)
+    .background(Color(nsColor: .windowBackgroundColor))
+    .disabled(model.busy).interactiveDismissDisabled(model.busy)
+    .onAppear { selection = model.organizationID }
+  }
+
+  private func workspaceRow(id: String, name: String) -> some View {
+    let selected = selection == id
+    let current = model.organizationID == id
+    return Button {
+      selection = id
+    } label: {
+      HStack(spacing: 12) {
+        Text(name.prefix(1).uppercased()).font(.system(size: 17, weight: .semibold))
+          .frame(width: 36, height: 36)
+          .background(brand.opacity(0.14), in: RoundedRectangle(cornerRadius: 8))
+        Text(name).font(.system(size: 14, weight: .medium)).lineLimit(1)
+          .frame(maxWidth: .infinity, alignment: .leading)
+        if current {
+          Text("Current").font(.system(size: 11)).foregroundStyle(muted)
+        }
+        Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+          .font(.system(size: 18))
+          .foregroundStyle(selected ? brand : foreground.opacity(0.18))
+      }
+      .padding(.horizontal, 16).frame(height: 64).contentShape(Rectangle())
+      .background(
+        selected ? brand.opacity(0.08) : hoveredWorkspace == id ? foreground.opacity(0.035) : .clear
+      )
+    }
+    .buttonStyle(.plain).help(name)
+    .accessibilityLabel(current ? "\(name), current workspace" : name)
+    .accessibilityAddTraits(selected ? .isSelected : [])
+    .onHover { hoveredWorkspace = $0 ? id : nil }
+  }
+}
+
+private struct WorkspaceButtonStyle: ButtonStyle {
+  let primary: Bool
+  @Environment(\.displayScale) private var displayScale
+  @Environment(\.isEnabled) private var isEnabled
+
+  func makeBody(configuration: Configuration) -> some View {
+    configuration.label.font(.system(size: 13, weight: .semibold))
+      .padding(.horizontal, 14).frame(minWidth: 82).frame(height: 32)
+      .foregroundStyle(foreground)
+      .background(
+        primary
+          ? (configuration.isPressed ? brand.opacity(0.8) : brand)
+          : (configuration.isPressed ? foreground.opacity(0.06) : .white),
+        in: RoundedRectangle(cornerRadius: 7)
+      )
+      .overlay {
+        RoundedRectangle(cornerRadius: 7).stroke(
+          primary ? .clear : foreground.opacity(0.12), lineWidth: 1 / displayScale)
+      }
+      .opacity(isEnabled ? 1 : 0.5)
   }
 }
 

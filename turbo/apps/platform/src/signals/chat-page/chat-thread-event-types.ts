@@ -16,7 +16,6 @@ export type OptimisticChatThreadEventInput = Pick<
   Partial<OptimisticChatThreadEvent>;
 
 export type CompatibleChatThreadEvent =
-  | ChatThreadEvent
-  | UnsequencedChatThreadEvent;
+  ChatThreadEvent | UnsequencedChatThreadEvent;
 
 export type ChatThreadEventView = CompatibleChatThreadEvent;

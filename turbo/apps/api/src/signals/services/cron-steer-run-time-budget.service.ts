@@ -1,16 +1,16 @@
-import { chatEventCommandResultSchema } from "./chat-event-append.service";
-import { parseRawRows } from "../../lib/db-raw-rows";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { agents } from "@okouai/db/schema/agent";
 import { command } from "ccstate";
 import { and, eq, isNotNull, lte } from "drizzle-orm";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agents } from "@okouai/db/schema/agent";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { parseRawRows } from "../../lib/db-raw-rows";
+import { chatEventCommandResultSchema } from "./chat-event-append.service";
 
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { runTimeBudgetEventIdForRun } from "./assistant-event-id";
-import { notifyRunningChatRunOfPendingInput$ } from "./chat-thread-queue-drain.service";
 import { chatEventInsertSql } from "./chat-event.service";
+import { notifyRunningChatRunOfPendingInput$ } from "./chat-thread-queue-drain.service";
 import { createUserMessageDocument } from "./chat-user-message.service";
 
 const RUN_TIME_BUDGET_LIMIT_MS = 120 * 60 * 1000;
@@ -34,15 +34,10 @@ interface RunTimeBudgetCandidate {
   readonly chatThreadId: string;
 }
 
-interface RunTimeBudgetCandidateScope {
-  readonly runId: string;
-}
-
 const loadRunTimeBudgetCandidates$ = command(
   async (
     { get },
     startedBefore: Date,
-    scope: RunTimeBudgetCandidateScope | undefined,
     signal: AbortSignal,
   ): Promise<readonly RunTimeBudgetCandidate[]> => {
     const db = get(db$);
@@ -59,11 +54,10 @@ const loadRunTimeBudgetCandidates$ = command(
           eq(agentRuns.status, "running"),
           lte(agentRuns.startedAt, startedBefore),
           isNotNull(agentRuns.triggerSource),
-          scope ? eq(agentRuns.id, scope.runId) : undefined,
         ),
       )
       .orderBy(agentRuns.startedAt)
-      .limit(scope ? 1 : RUN_TIME_BUDGET_SCAN_LIMIT);
+      .limit(RUN_TIME_BUDGET_SCAN_LIMIT);
     signal.throwIfAborted();
     return rows;
   },
@@ -145,7 +139,6 @@ const persistRunTimeBudgetInput$ = command(
 const steerOwnedRunsNearTimeBudget$ = command(
   async (
     { set },
-    scope: RunTimeBudgetCandidateScope | undefined,
     signal: AbortSignal,
   ): Promise<{ readonly scanned: number; readonly steered: number }> => {
     const createdAt = nowDate();
@@ -155,7 +148,6 @@ const steerOwnedRunsNearTimeBudget$ = command(
     const candidates = await set(
       loadRunTimeBudgetCandidates$,
       startedBefore,
-      scope,
       signal,
     );
     signal.throwIfAborted();
@@ -195,17 +187,6 @@ const steerOwnedRunsNearTimeBudget$ = command(
  */
 export const steerRunsNearTimeBudget$ = command(
   async ({ set }, signal: AbortSignal) => {
-    return await set(steerOwnedRunsNearTimeBudget$, undefined, signal);
-  },
-);
-
-/** Scope the global sweep to one owned run for shared-database route tests. */
-export const steerRunNearTimeBudgetForTest$ = command(
-  async (
-    { set },
-    runId: string,
-    signal: AbortSignal,
-  ): Promise<{ readonly scanned: number; readonly steered: number }> => {
-    return await set(steerOwnedRunsNearTimeBudget$, { runId }, signal);
+    return await set(steerOwnedRunsNearTimeBudget$, signal);
   },
 );

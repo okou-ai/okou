@@ -130,10 +130,11 @@ export interface ApiTestMocks {
     readonly batchPublish: Mock<AblyBatchPublish>;
     readonly useRealBatchPublish: Mock<() => boolean>;
     readonly publish: AsyncMock;
+    readonly presenceGet: AsyncMock;
     readonly createTokenRequest: AsyncMock;
-    readonly requestToken: AsyncMock;
   };
   readonly clerk: {
+    readonly sessions: { readonly getSession: AsyncMock };
     readonly authenticateRequest: AsyncMock;
     readonly verifyWebhook: AsyncMock;
     readonly organizations: {
@@ -309,6 +310,9 @@ export interface ApiTestMocks {
       readonly retrieve: AsyncMock;
       readonly create: AsyncMock;
     };
+    readonly products: {
+      readonly retrieve: AsyncMock;
+    };
   };
   readonly webpush: {
     readonly sendNotification: AsyncMock;
@@ -372,6 +376,7 @@ const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
   };
 
   const clerk = {
+    sessions: { getSession: vi.fn<(...args: unknown[]) => Promise<unknown>>() },
     authenticateRequest: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
     verifyWebhook: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
     organizations: {
@@ -527,6 +532,17 @@ const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
       ),
       create: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
     },
+    products: {
+      retrieve: vi
+        .fn<(...args: unknown[]) => Promise<unknown>>()
+        .mockImplementation((id) => {
+          return Promise.resolve({
+            id,
+            name: "Live billing product",
+            metadata: {},
+          });
+        }),
+    },
   };
 
   const telegram = {
@@ -552,8 +568,8 @@ const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
       batchPublish: vi.fn<AblyBatchPublish>(),
       useRealBatchPublish: vi.fn<() => boolean>(),
       publish: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
+      presenceGet: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
       createTokenRequest: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
-      requestToken: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
     },
     axiom,
     axiomLogging,
@@ -1068,15 +1084,19 @@ vi.mock("ably", async (importOriginal) => {
     readonly channels = {
       get: (channelName: string) => {
         apiTestMocks.ably.channelGet(channelName);
-        return { publish: apiTestMocks.ably.publish };
+        return {
+          publish: apiTestMocks.ably.publish,
+          presence: {
+            get: (params: unknown) => {
+              return apiTestMocks.ably.presenceGet(channelName, params);
+            },
+          },
+        };
       },
     };
     readonly auth = {
       createTokenRequest: (...args: unknown[]): Promise<unknown> => {
         return apiTestMocks.ably.createTokenRequest(...args);
-      },
-      requestToken: (...args: unknown[]): Promise<unknown> => {
-        return apiTestMocks.ably.requestToken(...args);
       },
     };
   }
@@ -1175,6 +1195,9 @@ vi.mock("stripe", async (importOriginal) => {
         prices: {
           retrieve: apiTestMocks.stripe.prices.retrieve,
           create: apiTestMocks.stripe.prices.create,
+        },
+        products: {
+          retrieve: apiTestMocks.stripe.products.retrieve,
         },
       };
     }),
@@ -1462,11 +1485,9 @@ export function resetApiTestMocks(): void {
   apiTestMocks.ably.useRealBatchPublish.mockReset();
   apiTestMocks.ably.publish.mockReset();
   apiTestMocks.ably.publish.mockResolvedValue(undefined);
+  apiTestMocks.ably.presenceGet.mockReset();
+  apiTestMocks.ably.presenceGet.mockResolvedValue({ items: [] });
   apiTestMocks.ably.createTokenRequest.mockReset();
-  apiTestMocks.ably.requestToken.mockReset();
-  apiTestMocks.ably.requestToken.mockResolvedValue({
-    token: "test-ably-token",
-  });
   apiTestMocks.axiom.useRealTelemetry.mockReset();
   apiTestMocks.axiom.useRealTelemetry.mockReturnValue(false);
   apiTestMocks.axiom.clientError.mockReset();
@@ -1488,6 +1509,7 @@ export function resetApiTestMocks(): void {
   apiTestMocks.console.warn.mockReset();
   apiTestMocks.browserUseCdp.connect.mockReset();
   apiTestMocks.browserUseCdp.command.mockReset();
+  apiTestMocks.clerk.sessions.getSession.mockReset();
   apiTestMocks.clerk.authenticateRequest.mockReset();
   apiTestMocks.clerk.verifyWebhook.mockReset();
   apiTestMocks.clerk.organizations.createOrganizationInvitation.mockReset();
@@ -1599,6 +1621,14 @@ export function resetApiTestMocks(): void {
     resolveDefaultStripePrice,
   );
   apiTestMocks.stripe.prices.create.mockReset();
+  apiTestMocks.stripe.products.retrieve.mockReset();
+  apiTestMocks.stripe.products.retrieve.mockImplementation((id) => {
+    return Promise.resolve({
+      id,
+      name: "Live billing product",
+      metadata: {},
+    });
+  });
   apiTestMocks.webpush.sendNotification.mockReset();
   apiTestMocks.webpush.sendNotification.mockResolvedValue(undefined);
   // Re-install the Stripe client override so getStripeClient() returns

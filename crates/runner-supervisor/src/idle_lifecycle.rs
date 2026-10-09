@@ -905,6 +905,9 @@ mod tests {
         let fixture = WorkspacePromotionFixture::new("thread:idle-destroy-cache").await;
         let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
         add_healthy_reuse_preparation_matcher(&overrides);
+        runner_lifecycle::workspace_promotion::test_support::add_healthy_cache_preparation_matcher(
+            &overrides,
+        );
         let factory: Arc<Box<dyn SandboxFactory>> =
             Arc::new(Box::new(MockSandboxFactory::with_overrides(overrides)));
         let sandbox = factory

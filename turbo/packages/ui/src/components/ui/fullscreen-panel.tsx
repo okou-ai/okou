@@ -6,6 +6,11 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "../../lib/utils";
+import {
+  captureScrollAnchor,
+  restoreScrollAnchor,
+  type ScrollAnchorSnapshot,
+} from "../../lib/scroll-anchor";
 
 type FullscreenPanelProps = ComponentPropsWithoutRef<"div"> & {
   readonly as?: "div" | "aside";
@@ -21,70 +26,6 @@ type FullscreenPanelMount = {
   readonly inline: HTMLDivElement;
   readonly portal: HTMLDivElement;
 };
-
-type ScrollAnchorSnapshot = {
-  readonly viewport: HTMLElement;
-  readonly anchor: HTMLElement;
-  readonly offset: number;
-  readonly anchoringAlreadyDisabled: boolean;
-};
-
-function captureScrollAnchor(
-  mount: FullscreenPanelMount,
-  options: NonNullable<FullscreenPanelProps["scrollAnchor"]>,
-): ScrollAnchorSnapshot | null {
-  const viewport = mount.portal.querySelector<HTMLElement>(
-    options.viewportSelector,
-  );
-  if (!viewport) {
-    return null;
-  }
-  const viewportBounds = viewport.getBoundingClientRect();
-  for (const anchor of viewport.querySelectorAll<HTMLElement>(
-    options.anchorSelector,
-  )) {
-    // Prefer the visible paragraph inside a list item or table row over a
-    // potentially much taller ancestor whose start has already scrolled away.
-    if (anchor.querySelector(options.anchorSelector)) {
-      continue;
-    }
-    const bounds = anchor.getBoundingClientRect();
-    if (
-      bounds.height <= 0 ||
-      bounds.width <= 0 ||
-      bounds.bottom <= viewportBounds.top ||
-      bounds.top >= viewportBounds.bottom
-    ) {
-      continue;
-    }
-    const anchoringAlreadyDisabled = viewport.classList.contains(
-      "[overflow-anchor:none]",
-    );
-    // This must happen before React changes the fullscreen geometry. Otherwise
-    // browser anchoring may already have adjusted scrollTop for the new width.
-    viewport.classList.add("[overflow-anchor:none]");
-    return {
-      viewport,
-      anchor,
-      offset: bounds.top - viewportBounds.top,
-      anchoringAlreadyDisabled,
-    };
-  }
-  return null;
-}
-
-function restoreScrollAnchor(snapshot: ScrollAnchorSnapshot) {
-  const { viewport, anchor, offset } = snapshot;
-  if (!viewport.contains(anchor)) {
-    return;
-  }
-  const bounds = anchor.getBoundingClientRect();
-  // If a clipped paragraph becomes shorter than its old clipped portion,
-  // keep that paragraph in view instead of scrolling past it entirely.
-  const targetOffset = bounds.height + offset > 0 ? offset : 0;
-  viewport.scrollTop +=
-    bounds.top - viewport.getBoundingClientRect().top - targetOffset;
-}
 
 function movePortal(mount: FullscreenPanelMount, fullscreen: boolean) {
   // Escape workspace stacking contexts, while remaining below body-level
@@ -139,7 +80,7 @@ class FullscreenPanelPortal extends Component<
     if (previous.fullscreen === fullscreen || !scrollAnchor) {
       return null;
     }
-    return captureScrollAnchor(mount, scrollAnchor);
+    return captureScrollAnchor(mount.portal, scrollAnchor);
   }
 
   public componentDidMount() {

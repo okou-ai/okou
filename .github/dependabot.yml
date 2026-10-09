@@ -43,7 +43,8 @@ updates:
     schedule:
       interval: "weekly"
 
-  # GitHub Actions
+  # GitHub Actions: reconcile updates with the approved SHA allowlist in
+  # .github/scripts/tests/action-pins-test.py and all workflow/composite refs.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:

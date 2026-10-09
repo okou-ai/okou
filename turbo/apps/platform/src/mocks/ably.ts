@@ -134,6 +134,17 @@ function invokeAuthCallback(
 }
 
 class FakeChannel {
+  presenceEntered = false;
+  readonly presence = {
+    enter: async (): Promise<void> => {
+      await this.attach();
+      this.presenceEntered = true;
+    },
+    leave: (): Promise<void> => {
+      this.presenceEntered = false;
+      return Promise.resolve();
+    },
+  };
   readonly subscriptions = new Map<string, Set<Callback>>();
   readonly channelSubscriptions = new Set<Callback>();
   state: MockChannelState = "initialized";
@@ -167,6 +178,7 @@ class FakeChannel {
   }
 
   clear(): void {
+    this.presenceEntered = false;
     this.subscriptions.clear();
     this.channelSubscriptions.clear();
     this.transition("detached");
@@ -549,6 +561,13 @@ export class Realtime {
 
 export { Realtime as BaseRealtime };
 export const FetchRequest = Symbol("FetchRequest");
+export const RealtimePresence = Symbol("RealtimePresence");
+
+export function getAblyPresenceCount(channelName: string): number {
+  return [...realtimeInstances].filter((realtime) => {
+    return realtime.getExistingChannel(channelName)?.presenceEntered === true;
+  }).length;
+}
 export const WebSocketTransport = Symbol("WebSocketTransport");
 export const XHRPolling = Symbol("XHRPolling");
 

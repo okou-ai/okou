@@ -46,13 +46,15 @@ interface CatalogActor {
 }
 
 /**
- * Stage an uploadable object. The object-storage mock is global, so the store
- * is re-accepted per upload to keep tests with more than one actor working.
+ * Stage uploaded bytes at the external object-storage boundary. Callers that
+ * observe several uploads together supply one store so earlier bytes survive.
  */
-function stageUploadObject(key: string, size: number): void {
-  chatCallbacks
-    .acceptChatObjectStorage()
-    .addObject({ bucket: "test-user-artifacts", key, size });
+function stageUploadObject(
+  key: string,
+  size: number,
+  storage = chatCallbacks.acceptChatObjectStorage(),
+): void {
+  storage.addObject({ bucket: "test-user-artifacts", key, size });
 }
 
 async function catalogActor(
@@ -281,6 +283,9 @@ async function uploadFile(args: {
   readonly contentType: string;
   readonly sizeBytes?: number;
   readonly fileId?: string;
+  readonly objectStorage?: ReturnType<
+    typeof chatCallbacks.acceptChatObjectStorage
+  >;
 }): Promise<{
   readonly fileId: string;
   readonly url: string;
@@ -299,6 +304,7 @@ async function uploadFile(args: {
   stageUploadObject(
     `artifacts/${args.owner.actor.userId}/${fileId}/${args.filename}`,
     args.sizeBytes ?? 1024,
+    args.objectStorage,
   );
   const completed = await chat.completeUploadWithBearer(
     bearer,
@@ -584,38 +590,42 @@ describe("GET /api/artifacts/catalog", () => {
     ]);
   }, 180_000);
 
-  it("lists the source URL for a video without a poster", async () => {
-    const owner = await catalogActor("Artifact catalog video source owner");
-    const run = await sendChatRun(owner.actor, {
-      agentId: owner.agentId,
-      prompt: "Upload an artifact through the Runner protocol",
-    });
-    const { claim } = await claimChatRun(owner.runnerGroup, run.runId);
-    const fileId = randomUUID();
-    stageUploadObject(
-      `artifacts/${owner.actor.userId}/${fileId}/source-fallback.webm`,
-      1024,
-    );
-    const completed = await chat.completeUploadWithBearer(
-      `Bearer ${okouTokenFromClaim(claim)}`,
-      { id: fileId, contentType: "video/webm" },
-      [200],
-    );
-    if (completed.status !== 200) {
-      throw new Error("Expected video upload completion to succeed");
-    }
+  it.each(["mp4", "webm"])(
+    "lists the source URL for a %s video without a poster",
+    async (container) => {
+      const owner = await catalogActor("Artifact catalog video source owner");
+      const run = await sendChatRun(owner.actor, {
+        agentId: owner.agentId,
+        prompt: "Upload an artifact through the Runner protocol",
+      });
+      const { claim } = await claimChatRun(owner.runnerGroup, run.runId);
+      const fileId = randomUUID();
+      stageUploadObject(
+        `artifacts/${owner.actor.userId}/${fileId}/source-fallback.${container}`,
+        1024,
+      );
+      const completed = await chat.completeUploadWithBearer(
+        `Bearer ${okouTokenFromClaim(claim)}`,
+        { id: fileId, contentType: `video/${container}` },
+        [200],
+      );
+      if (completed.status !== 200) {
+        throw new Error("Expected video upload completion to succeed");
+      }
 
-    const catalog = await chat.listArtifactCatalog(owner.actor);
+      const catalog = await chat.listArtifactCatalog(owner.actor);
 
-    expect(catalog.artifacts).toStrictEqual([
-      expect.objectContaining({
-        kind: "file",
-        videoSourceUrl: completed.body.url,
-        thumbnail: null,
-        title: "source-fallback.webm",
-      }),
-    ]);
-  }, 180_000);
+      expect(catalog.artifacts).toStrictEqual([
+        expect.objectContaining({
+          kind: "file",
+          videoSourceUrl: completed.body.url,
+          thumbnail: null,
+          title: `source-fallback.${container}`,
+        }),
+      ]);
+    },
+    180_000,
+  );
 
   it("keeps owned files and catalog identity after deleting the backing agent", async () => {
     const owner = await catalogActor("Artifact catalog deletion owner");
@@ -648,23 +658,26 @@ describe("GET /api/artifacts/catalog", () => {
   }, 180_000);
 
   it.each(["user", "organization"] as const)(
-    "erases independently retained files by %s ownership after Run deletion",
+    "preserves unrelated files after %s deletion of an artifact owner",
     async (kind) => {
       const owner = await catalogActor("Independent artifact erasure owner");
       const outsider = await catalogActor(
         "Independent artifact erasure outsider",
       );
+      const objectStorage = chatCallbacks.acceptChatObjectStorage();
       const uploaded = await uploadFile({
         owner,
         prompt: "publish a report before account erasure",
         filename: "account-report.txt",
         contentType: "text/plain",
+        objectStorage,
       });
       const unrelated = await uploadFile({
         owner: outsider,
         prompt: "publish an unrelated report",
         filename: "unrelated-report.txt",
         contentType: "text/plain",
+        objectStorage,
       });
       await bdd.deleteAgent(owner.actor, owner.agentId);
       const catalog = await chat.listArtifactCatalog(owner.actor);
@@ -672,6 +685,12 @@ describe("GET /api/artifacts/catalog", () => {
       if (!artifactId) {
         throw new Error("Expected a retained artifact after Agent deletion");
       }
+      await expect(
+        chat.resolveWebFileUrl(owner.actor, uploaded.fileId),
+      ).resolves.toMatchObject({ publicUrl: uploaded.url });
+      await expect(
+        chat.getArtifactCatalogEntry(owner.actor, artifactId),
+      ).resolves.toMatchObject({ id: artifactId });
       webhooks.configureClerkWebhookSecret();
       webhooks.verifyNextClerkWebhook({
         type: kind === "user" ? "user.deleted" : "organization.deleted",
@@ -679,8 +698,6 @@ describe("GET /api/artifacts/catalog", () => {
       });
       await webhooks.requestClerkWebhook("{}", {}, [200]);
       await flushWaitUntilForTest();
-      await chat.requestWebFileUrl(owner.actor, uploaded.fileId, [404]);
-      await chat.requestArtifactCatalogEntry(owner.actor, artifactId, [404]);
       const unrelatedFile = await chat.resolveWebFileUrl(
         outsider.actor,
         unrelated.fileId,

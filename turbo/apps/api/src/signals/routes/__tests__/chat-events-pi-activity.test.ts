@@ -24,8 +24,8 @@ import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { commitMemoryVersion } from "./helpers/memory";
 import {
   createChatEventsFixture,
-  requireOrgId,
   createPiUsagePricingResolution,
+  requireOrgId,
   claimEnvironment,
   eventBackedContents,
 } from "./helpers/chat-events-fixture";
@@ -36,6 +36,7 @@ const {
   chat,
   webhooks,
   entitledChatActor,
+  configureSubscriptionPiModel,
   configureBuiltInPiModelOnOpenRouter,
   sendChatRunAfterPick,
   claimChatRun,
@@ -180,9 +181,8 @@ describe("CHAT-02: model-first routing", () => {
   async function piActivityScenario(): Promise<void> {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const orgId = requireOrgId(actor);
-    const usagePricingResolution =
-      await createPiUsagePricingResolution("okou-1.0");
-    const model = await configureBuiltInPiModelOnOpenRouter(actor, "okou-1.0");
+    const model = "gpt-6-luna";
+    await configureSubscriptionPiModel(actor, {}, model);
     await updateFeatureSwitchesForUser(
       context,
       { ...actor, orgId },
@@ -197,15 +197,11 @@ describe("CHAT-02: model-first routing", () => {
       "# Sandbox checkpoint\n\nPersist this staged sandbox note.\n";
     const checkpointObjects = mockPiCheckpointObjectStore();
     const prompt = "use the Okou CLI in the Sandbox";
-    const run = await sendChatRunAfterPick(
-      actor,
-      {
-        agentId,
-        prompt,
-        model,
-      },
-      usagePricingResolution,
-    );
+    const run = await sendChatRunAfterPick(actor, {
+      agentId,
+      prompt,
+      model,
+    });
     const claimed = await claimChatRun(runnerGroup, run.runId);
     expect(claimed.claim.cliAgentType).toBe("pi");
     expect(claimed.claim.piSessionId).toBe(run.threadId);
@@ -215,8 +211,8 @@ describe("CHAT-02: model-first routing", () => {
       piSandboxBaseSession(claimed.claim, checkpointObjects).toString("utf8"),
     );
     expect(claimed.claim.piModelConfig).toMatchObject({
-      provider: "openrouter",
-      model: "@preset/okou-1-0",
+      provider: "openai-codex",
+      model: "gpt-6-luna",
     });
     expect(claimed.claim.piModelConfig).not.toHaveProperty("api");
     expect(claimed.claim.piLaunchConfig).toMatchObject({ schemaVersion: 2 });
@@ -245,33 +241,6 @@ describe("CHAT-02: model-first routing", () => {
       throw new Error("Expected the Pi memory mount");
     }
     expect(claimed.claim.prompt).toBe(prompt);
-    const sandboxUsageEvent = {
-      idempotencyKey: randomUUID(),
-      kind: "model" as const,
-      provider: "okou-1.0",
-      category: "tokens.output",
-      quantity: 2,
-    };
-    const sandboxUsageReceipts = await Promise.all([
-      webhooks.requestAgentUsageEvent(
-        { runId: run.runId, events: [sandboxUsageEvent] },
-        claimed.sandboxHeaders,
-        [200],
-        usagePricingResolution,
-      ),
-      webhooks.requestAgentUsageEvent(
-        { runId: run.runId, events: [sandboxUsageEvent] },
-        claimed.sandboxHeaders,
-        [200],
-        usagePricingResolution,
-      ),
-    ]);
-    expect(
-      sandboxUsageReceipts.map((receipt) => {
-        return receipt.body;
-      }),
-    ).toStrictEqual([{ success: true }, { success: true }]);
-
     await webhooks.requestAgentEvents(
       {
         runId: run.runId,
@@ -369,8 +338,8 @@ describe("CHAT-02: model-first routing", () => {
         { type: "text", text: "after parallel tools" },
       ],
       api: "openai-responses",
-      provider: "openrouter",
-      model: "@preset/okou-1-0",
+      provider: "openai-codex",
+      model: "gpt-6-luna",
       usage: {
         input: 0,
         output: 0,
@@ -409,8 +378,8 @@ describe("CHAT-02: model-first routing", () => {
       role: "assistant",
       content: [{ type: "text", text: "Sandbox H2 complete" }],
       api: "openai-responses",
-      provider: "openrouter",
-      model: "@preset/okou-1-0",
+      provider: "openai-codex",
+      model: "gpt-6-luna",
       usage: {
         input: 5,
         output: 3,
@@ -457,12 +426,20 @@ describe("CHAT-02: model-first routing", () => {
       `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${h2Hash}.blob`,
       Buffer.from(h2, "utf8"),
     );
-    const checkpointedMemory = await commitMemoryVersion(context, actor, [
+    const checkpointedMemory = await commitMemoryVersion(
+      context,
       {
-        path: `extensions/ad_hoc/notes/${adHocNoteFilename}`,
-        content: adHocNote,
+        runId: run.runId,
+        sandboxHeaders: claimed.sandboxHeaders,
+        storageManifest: claimed.claim.storageManifest,
       },
-    ]);
+      [
+        {
+          path: `extensions/ad_hoc/notes/${adHocNoteFilename}`,
+          content: adHocNote,
+        },
+      ],
+    );
     expect(checkpointedMemory.storageId).toBe(lunaMemoryMount.storageId);
     const memoryArtifactSnapshots = [
       {
@@ -490,7 +467,6 @@ describe("CHAT-02: model-first routing", () => {
       claimed.sandboxHeaders,
       [200],
       undefined,
-      usagePricingResolution,
     );
     expect(combinedH2.body).toStrictEqual({
       success: true,
@@ -503,7 +479,7 @@ describe("CHAT-02: model-first routing", () => {
         artifact: { memory: checkpointedMemory.versionId },
       },
     });
-    const committedH2 = await webhooks.requestAgentCheckpoint(
+    const committedH2 = await webhooks.requestAgentRunOutputs(
       {
         runId: run.runId,
         cliAgentType: "pi",
@@ -514,34 +490,33 @@ describe("CHAT-02: model-first routing", () => {
       claimed.sandboxHeaders,
       [200],
     );
-    const committedH2Body = committedH2.body;
-    if ("error" in committedH2Body) {
-      throw new Error(
-        `Expected H2 checkpoint success: ${committedH2Body.error.message}`,
-      );
-    }
-    const idempotentH2 = await webhooks.requestAgentCheckpoint(
-      {
-        runId: run.runId,
-        cliAgentType: "pi",
-        cliAgentSessionId: run.threadId,
-        cliAgentSessionHistoryHash: h2Hash,
-        artifactSnapshots: memoryArtifactSnapshots,
-      },
-      claimed.sandboxHeaders,
-      [200],
-    );
-    expect(idempotentH2.body).toMatchObject({
-      checkpointId: committedH2Body.checkpointId,
-      conversationId: committedH2Body.conversationId,
+    expect(committedH2.body).toStrictEqual({
+      success: true,
+      status: "completed",
     });
+    const committedResult = (await api.readRun(actor, run.runId)).result;
+    const idempotentH2 = await webhooks.requestAgentRunOutputs(
+      {
+        runId: run.runId,
+        cliAgentType: "pi",
+        cliAgentSessionId: run.threadId,
+        cliAgentSessionHistoryHash: h2Hash,
+        artifactSnapshots: memoryArtifactSnapshots,
+      },
+      claimed.sandboxHeaders,
+      [200],
+    );
+    expect(idempotentH2.body).toStrictEqual(committedH2.body);
+    expect((await api.readRun(actor, run.runId)).result).toStrictEqual(
+      committedResult,
+    );
 
     h2Session.appendMessage({
       role: "assistant",
       content: [{ type: "text", text: "late replacement H2" }],
       api: "openai-responses",
-      provider: "openrouter",
-      model: "@preset/okou-1-0",
+      provider: "openai-codex",
+      model: "gpt-6-luna",
       usage: {
         input: 0,
         output: 0,
@@ -575,7 +550,7 @@ describe("CHAT-02: model-first routing", () => {
       `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${replacementH2Hash}.blob`,
       Buffer.from(replacementH2, "utf8"),
     );
-    const replacementCheckpoint = await webhooks.requestAgentCheckpoint(
+    const replacementCheckpoint = await webhooks.requestAgentRunOutputs(
       {
         runId: run.runId,
         cliAgentType: "pi",
@@ -586,7 +561,7 @@ describe("CHAT-02: model-first routing", () => {
       [400],
     );
     expect(JSON.stringify(replacementCheckpoint.body)).toContain(
-      "[PI_H2_ALREADY_COMMITTED]",
+      "[RUN_OUTPUT_ALREADY_COMMITTED]",
     );
 
     const failedRun = await sendChatRunAfterPick(actor, {
@@ -654,7 +629,7 @@ describe("CHAT-02: model-first routing", () => {
       [400],
     );
     expect(JSON.stringify(lateFailedH2.body)).toContain("[PI_H2_RUN_TERMINAL]");
-    const spoofedFailedH2 = await webhooks.requestAgentCheckpoint(
+    const spoofedFailedH2 = await webhooks.requestAgentRunOutputs(
       {
         runId: failedRun.runId,
         cliAgentType: "claude-code",
@@ -720,7 +695,7 @@ describe("CHAT-02: model-first routing", () => {
       status: "failed",
     });
     await waitForRunStatus(actor, retry.runId, "failed");
-    const retryLateFailedH2 = await webhooks.requestAgentCheckpoint(
+    const retryLateFailedH2 = await webhooks.requestAgentRunOutputs(
       {
         runId: retry.runId,
         cliAgentType: "pi",
@@ -785,7 +760,6 @@ describe("CHAT-02: model-first routing", () => {
       [200],
     );
     expect(repeatedCombinedH2.body).toStrictEqual(combinedH2.body);
-    await expectThreadModelTokens(context, actor, run.threadId, 2);
     const probe = await sendChatRunAfterPick(actor, {
       agentId,
       threadId: run.threadId,
@@ -817,8 +791,146 @@ describe("CHAT-02: model-first routing", () => {
   }
 
   it(
-    "launches fixed Auto in the Sandbox, captures guest tool activity, and checkpoints Pi memory notes",
+    "launches personal Codex in the Sandbox, captures guest tool activity, and checkpoints Pi memory notes",
     piActivityScenario,
     150_000,
   );
+
+  // Preserved from the original combined scenario. Its managed key/pricing
+  // factory remains unprocessed by #37440; it is not a public memory writer.
+  it("deduplicates built-in model usage across repeated H2 completion", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const usagePricingResolution =
+      await createPiUsagePricingResolution("okou-1.0");
+    const model = await configureBuiltInPiModelOnOpenRouter(actor, "okou-1.0");
+    mockPiResourceArchiveDownloads();
+    const checkpointObjects = mockPiCheckpointObjectStore();
+    const prompt = "retain the built-in model usage receipt";
+    const run = await sendChatRunAfterPick(
+      actor,
+      { agentId, prompt, model },
+      usagePricingResolution,
+    );
+    const claimed = await claimChatRun(runnerGroup, run.runId);
+    expect(claimed.claim.piModelConfig).toMatchObject({
+      provider: "openrouter",
+      model: "@preset/okou-1-0",
+    });
+    const usageEvent = {
+      idempotencyKey: randomUUID(),
+      kind: "model" as const,
+      provider: "okou-1.0",
+      category: "tokens.output",
+      quantity: 2,
+    };
+    const receipts = await Promise.all([
+      webhooks.requestAgentUsageEvent(
+        { runId: run.runId, events: [usageEvent] },
+        claimed.sandboxHeaders,
+        [200],
+        usagePricingResolution,
+      ),
+      webhooks.requestAgentUsageEvent(
+        { runId: run.runId, events: [usageEvent] },
+        claimed.sandboxHeaders,
+        [200],
+        usagePricingResolution,
+      ),
+    ]);
+    expect(
+      receipts.map((receipt) => {
+        return receipt.body;
+      }),
+    ).toStrictEqual([{ success: true }, { success: true }]);
+
+    const session = MemoryPiSession.fromJsonl(
+      piSandboxBaseSession(claimed.claim, checkpointObjects).toString("utf8"),
+    );
+    session.appendMessage({ role: "user", content: prompt, timestamp: 1 });
+    session.appendMessage({
+      role: "assistant",
+      content: [{ type: "text", text: "built-in usage recorded" }],
+      api: "openai-responses",
+      provider: "openrouter",
+      model: "@preset/okou-1-0",
+      usage: {
+        input: 0,
+        output: 2,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 2,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+      stopReason: "stop",
+      timestamp: 2,
+    });
+    const h2 = Buffer.from(session.toJsonl(), "utf8");
+    const hash = createHash("sha256").update(h2).digest("hex");
+    await webhooks.requestAgentCheckpointPrepareHistory(
+      {
+        runId: run.runId,
+        hash,
+        rawSize: h2.length,
+        encodedSize: h2.length,
+        encoding: "identity",
+      },
+      claimed.sandboxHeaders,
+      [200],
+    );
+    checkpointObjects.set(
+      `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${hash}.blob`,
+      h2,
+    );
+    await webhooks.requestAgentEvents(
+      {
+        runId: run.runId,
+        events: [
+          {
+            type: "assistant",
+            sequenceNumber: 1,
+            message: {
+              content: [{ type: "text", text: "built-in usage recorded" }],
+            },
+          },
+          {
+            type: "result",
+            sequenceNumber: 2,
+            result: "built-in usage recorded",
+          },
+        ],
+      },
+      claimed.sandboxHeaders,
+      [200],
+    );
+    const completion = {
+      runId: run.runId,
+      exitCode: 0,
+      lastEventSequence: 2,
+      checkpoint: {
+        cliAgentType: "pi",
+        cliAgentSessionId: run.threadId,
+        cliAgentSessionHistoryHash: hash,
+      },
+    } as const;
+    const first = await webhooks.requestAgentComplete(
+      completion,
+      claimed.sandboxHeaders,
+      [200],
+      undefined,
+      usagePricingResolution,
+    );
+    expect(first.body).toStrictEqual({ success: true, status: "completed" });
+    await flushWaitUntilForTest();
+    await expectThreadModelTokens(context, actor, run.threadId, 2);
+    const repeated = await webhooks.requestAgentComplete(
+      completion,
+      claimed.sandboxHeaders,
+      [200],
+      undefined,
+      usagePricingResolution,
+    );
+    expect(repeated.body).toStrictEqual(first.body);
+    await flushWaitUntilForTest();
+    await expectThreadModelTokens(context, actor, run.threadId, 2);
+  });
 });

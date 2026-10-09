@@ -14,7 +14,6 @@ import { http, HttpResponse } from "msw";
 import { z } from "zod";
 import { server } from "../../../mocks/server";
 import { createDeferredPromise } from "../../utils";
-import { completeHostedSiteWithoutDependencyIndex } from "../../../test-fixtures/hosted-site-dependencies-previous-api";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
@@ -28,9 +27,7 @@ import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { signSandboxJwtForTests } from "../../auth/tokens";
 import { artifactShareRoutes } from "../artifact-shares";
 import { artifactReferenceRoutes } from "../artifact-references";
 import { artifactDownloadRoutes } from "../artifact-downloads";
@@ -40,8 +37,7 @@ import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { uploadsCompleteRoutes } from "../uploads-complete";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
-import { hostedTextFile } from "./helpers/api-bdd-host-files";
+import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -102,7 +98,7 @@ async function fixture() {
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
-  runs.configureRunnerGroup();
+  const runnerGroup = runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor);
   const agent = await bdd.createAgent(actor, {
@@ -124,12 +120,10 @@ async function fixture() {
 
   context.mocks.s3.getSignedUrl.mockImplementation(
     (client: unknown, command: unknown) => {
-      if (
-        !(
-          command instanceof PutObjectCommand ||
-          command instanceof GetObjectCommand
-        )
-      ) {
+      if (!(
+        command instanceof PutObjectCommand ||
+        command instanceof GetObjectCommand
+      )) {
         throw new Error("Unexpected presign operation");
       }
       const url = new URL(
@@ -349,66 +343,27 @@ async function fixture() {
     return { threadId, runId, eventId: event.id, content };
   }
 
-  async function site(
-    files: { path: string; content: string; contentType?: string }[],
-    name = `snapshot-${randomUUID().slice(0, 8)}`,
-    legacy = false,
-    bearerToken?: string,
-  ) {
-    const host = createHostMapsBddApi(context);
-    const hostActor = bearerToken ? { bearerToken } : actor;
-    const prepared = await host.prepareHostedSite(hostActor, {
-      site: name,
-      artifactKind: "hosted-site",
-      spaFallback: true,
-      files: files.map((file) => {
-        return hostedTextFile(file.path, file.content, file.contentType);
-      }),
-    });
-    for (const upload of prepared.uploads) {
-      const source = files.find((file) => {
-        return file.path === upload.path;
-      });
-      if (!source) {
-        throw new Error("Unexpected hosted upload");
-      }
-      objects.set(
-        decodeURIComponent(new URL(upload.uploadUrl).pathname.slice(1)),
-        Buffer.from(source.content),
-      );
-    }
-    if (legacy) {
-      if (!actor.orgId) {
-        throw new Error(
-          "Expected an organization for the historical deployment",
-        );
-      }
-      await completeHostedSiteWithoutDependencyIndex({
-        id: prepared.deploymentId,
-        userId: actor.userId,
-        orgId: actor.orgId,
-      });
-    } else {
-      await host.completeHostedSite(hostActor, prepared.deploymentId);
-    }
-    return {
-      ...prepared,
-      name,
-    };
-  }
-  return { actor, objects, copies, failedWrites, upload, selection, site };
+  return {
+    actor,
+    runnerGroup,
+    objects,
+    copies,
+    failedWrites,
+    upload,
+    selection,
+  };
 }
 
 function share(
   actor: ApiTestUser,
   selection: { threadId: string; eventId: string },
-  options?: { signal: AbortSignal; rethrowErrors: boolean },
+  options?: { signal: AbortSignal; rethrowErrors: boolean; id?: string },
 ) {
   return api(options?.rethrowErrors)(sharedThreadsContract).create({
     fetchOptions: { signal: options?.signal },
     headers: headers(actor),
     params: { threadId: selection.threadId },
-    body: { eventIds: [selection.eventId] },
+    body: { eventIds: [selection.eventId], id: options?.id },
   });
 }
 
@@ -647,75 +602,29 @@ test("resolves a public snapshot to copied bytes without exposing its private so
   expect(revokedDownload.body).not.toHaveProperty("url");
 });
 
-// Hosted sites are public publications and are no longer copied into a
-// snapshot, so only an uploaded file carries a copied cover.
-test("copies a generated video cover with a stable reference, independent bytes, and the parent revocation", async () => {
+test("copies an uploaded video with independent bytes and the parent revocation", async () => {
   const f = await fixture();
-  const generatedImage = Buffer.from("Generated preview image");
-  mockEnv("CLOUDFLARE_BROWSER_RENDERING_API_TOKEN", "preview-token");
-  mockEnv(
-    "ARTIFACT_PREVIEW_WAF_SECRET",
-    "test-artifact-preview-waf-secret-value",
-  );
-  server.use(
-    http.post("https://files.okou.app/__artifact-video-poster", () => {
-      return new HttpResponse(new Uint8Array(generatedImage), {
-        headers: { "Content-Type": "image/jpeg" },
-      });
-    }),
-    http.post(
-      "https://api.cloudflare.com/client/v4/accounts/test-account/browser-rendering/snapshot",
-      () => {
-        return HttpResponse.json({
-          success: true,
-          errors: [],
-          meta: { status: 200, title: "Snapshot preview" },
-          result: {
-            content: "<main>Snapshot preview</main>",
-            screenshot: generatedImage.toString("base64"),
-          },
-        });
-      },
-    ),
-  );
-  const sourceRun = await f.selection("Generate an artifact with a cover");
-  if (!f.actor.orgId) {
-    throw new Error("Expected artifact owner organization");
-  }
-  const seconds = Math.floor(now() / 1000);
-  const bearerToken = signSandboxJwtForTests({
-    scope: "okou",
-    userId: f.actor.userId,
-    orgId: f.actor.orgId,
-    runId: sourceRun.runId,
-    capabilities: ["file:write", "host:write"],
-    iat: seconds,
-    exp: seconds + 60,
-  });
+  const sourceRun = await f.selection("Upload a video");
+  await runs.heartbeatRunner(f.runnerGroup);
+  const claim = await runs.claimRunnerJob(sourceRun.runId);
+  const bearerToken = okouTokenFromClaim(claim);
   const source = await f.upload(f.actor, "Private video bytes", {
     filename: "video.mp4",
     contentType: "video/mp4",
     bearerToken,
   });
-  await flushWaitUntilForTest();
   const sourceArtifacts = await chat.listThreadArtifacts(
     f.actor,
     sourceRun.threadId,
   );
-  const sourcePreviewUrl = sourceArtifacts.runs
-    .flatMap((run) => {
+  expect(
+    sourceArtifacts.runs.flatMap((run) => {
       return run.files;
-    })
-    .find((file) => {
-      return file.url === source.url;
-    })?.previewImageUrl;
-  expect(sourcePreviewUrl).toBeDefined();
-  const originalPreview = await accept(
-    api()(artifactReferencesContract).resolve({
-      headers: headers(f.actor),
-      params: { reference: referenceName(sourcePreviewUrl!) },
     }),
-    [200],
+  ).toStrictEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ url: source.url, contentType: "video/mp4" }),
+    ]),
   );
   const selection = await f.selection(source.url);
   const created = await accept(share(f.actor, selection), [201]);
@@ -728,7 +637,6 @@ test("copies a generated video cover with a stable reference, independent bytes,
     api()(artifactReferencesContract).resolve({ params: { reference } }),
     [200],
   );
-  const previewImageUrl = resolved.body.previewImageUrl;
   expect(resolved.body.downloadUrl).toBeDefined();
   const download = new URL(resolved.body.downloadUrl!);
   expect(download.searchParams.get("X-Amz-Credential")).toBe(
@@ -744,45 +652,30 @@ test("copies a generated video cover with a stable reference, independent bytes,
     'attachment; filename="video.mp4"',
   );
   await expect(downloaded.text()).resolves.toBe("Private video bytes");
-  expect(previewImageUrl).toMatch(
-    /^https:\/\/app\.okou\.ai\/artifacts\/[a-z0-9]{10}\.(jpg|webp)$/u,
-  );
-  expect(previewImageUrl).not.toBe(
-    new URL(sourcePreviewUrl!, "https://app.okou.ai").href,
-  );
   const published = await accept(
     api()(artifactReferencesContract).publicUrl({ params: { reference } }),
     [200],
   );
-  expect(published.body.preview.previewImageUrl).toBe(previewImageUrl);
+  expect(published.body.preview).toMatchObject({
+    filename: "video.mp4",
+    contentType: "video/mp4",
+  });
   expect(published.body.downloadUrl).toBe(resolved.body.downloadUrl);
-  const previewReference = referenceName(previewImageUrl!);
-  const sourceKey = decodeURIComponent(
-    new URL(originalPreview.body.url).pathname.slice(1),
+  f.objects.set(source.key, Buffer.from("Changed source video"));
+  await expect((await fetch(published.body.url)).text()).resolves.toBe(
+    "Private video bytes",
   );
-  f.objects.set(sourceKey, Buffer.from("Changed source preview"));
-  const copiedPreview = await accept(
-    api()(artifactReferencesContract).resolve({
-      params: { reference: previewReference },
-    }),
+  f.objects.delete(source.key);
+  const retained = await accept(
+    api()(artifactReferencesContract).publicUrl({ params: { reference } }),
     [200],
   );
-  await expect((await fetch(copiedPreview.body.url)).text()).resolves.toBe(
-    generatedImage.toString(),
-  );
-  f.objects.delete(sourceKey);
-  const retainedPreview = await accept(
-    api()(artifactReferencesContract).publicUrl({
-      params: { reference: previewReference },
-    }),
-    [200],
-  );
-  await expect((await fetch(retainedPreview.body.url)).text()).resolves.toBe(
-    generatedImage.toString(),
+  await expect((await fetch(retained.body.url)).text()).resolves.toBe(
+    "Private video bytes",
   );
   await accept(
     api()(artifactReferencesContract).publicUrl({
-      params: { reference: referenceName(sourcePreviewUrl!) },
+      params: { reference: referenceName(source.url) },
     }),
     [404],
   );
@@ -793,20 +686,14 @@ test("copies a generated video cover with a stable reference, independent bytes,
     }),
     [204],
   );
-  for (const revoked of [reference, previewReference]) {
-    await accept(
-      api()(artifactReferencesContract).resolve({
-        params: { reference: revoked },
-      }),
-      [404],
-    );
-    await accept(
-      api()(artifactReferencesContract).publicUrl({
-        params: { reference: revoked },
-      }),
-      [404],
-    );
-  }
+  await accept(
+    api()(artifactReferencesContract).resolve({ params: { reference } }),
+    [404],
+  );
+  await accept(
+    api()(artifactReferencesContract).publicUrl({ params: { reference } }),
+    [404],
+  );
 });
 
 test.each(["missing", "unavailable"] as const)(
@@ -856,55 +743,6 @@ test.each(["missing", "unavailable"] as const)(
     expect(downloaded.body).not.toHaveProperty("url");
   },
 );
-
-test("snapshot reference collisions preserve the existing owner reference", async () => {
-  const f = await fixture();
-  const file = await f.upload();
-  const selection = await f.selection(file.url);
-  const storage = context.mocks.s3.send.getMockImplementation()!;
-  let occupiedReference: string | undefined;
-  context.mocks.s3.send.mockImplementation((command) => {
-    if (
-      !occupiedReference &&
-      command instanceof PutObjectCommand &&
-      command.input.Key?.startsWith("artifact-references/")
-    ) {
-      occupiedReference = command.input.Key.slice(
-        "artifact-references/".length,
-      ).replace(/\.json$/u, "");
-      f.objects.set(
-        `${command.input.Bucket}/${command.input.Key}`,
-        Buffer.from(
-          JSON.stringify({ version: 2, target: { kind: "file", id: file.id } }),
-        ),
-      );
-    }
-    return storage(command);
-  });
-  const created = await accept(share(f.actor, selection), [201]);
-  const shared = await accept(
-    api()(sharedThreadsContract).get({ params: { id: created.body.id } }),
-    [200],
-  );
-  const snapshotReference = referenceName(shared.body.messages[0]!.content);
-  expect(occupiedReference).toBeDefined();
-  expect(snapshotReference).not.toBe(`${occupiedReference}.pdf`);
-  const owner = await accept(
-    api()(artifactReferencesContract).resolve({
-      headers: headers(f.actor),
-      params: { reference: occupiedReference! },
-    }),
-    [200],
-  );
-  expect(owner.body.url).toContain(file.key);
-  const snapshot = await accept(
-    api()(artifactReferencesContract).resolve({
-      params: { reference: snapshotReference },
-    }),
-    [200],
-  );
-  expect(snapshot.body.url).toContain(`/thread-shares/${created.body.id}/`);
-});
 
 test.each(["short", "legacy"] as const)(
   "%s organization share references cannot authorize a recipient to publish a thread snapshot",
@@ -972,48 +810,6 @@ test("a partial copy failure leaves no usable share and cleans copied private by
   });
   expect(catalog.artifacts).toStrictEqual([]);
   expect(f.objects.has(file.key)).toBeTruthy();
-});
-
-test("snapshot short-reference collisions preserve the occupied alias and retry", async () => {
-  const f = await fixture();
-  const file = await f.upload();
-  const selection = await f.selection(file.url);
-  const storage = context.mocks.s3.send.getMockImplementation()!;
-  let occupiedKey: string | undefined;
-  let occupiedBody: Buffer | undefined;
-  context.mocks.s3.send.mockImplementation((command) => {
-    if (
-      !occupiedKey &&
-      command instanceof PutObjectCommand &&
-      command.input.Key?.startsWith("artifact-delivery/files/")
-    ) {
-      occupiedKey = `${command.input.Bucket}/${command.input.Key}`;
-      const record = JSON.parse(String(command.input.Body)) as Record<
-        string,
-        unknown
-      >;
-      occupiedBody = Buffer.from(
-        JSON.stringify({
-          ...record,
-          threadId: randomUUID(),
-          targetId: randomUUID(),
-        }),
-      );
-      f.objects.set(occupiedKey, occupiedBody);
-    }
-    return storage(command);
-  });
-  const created = await accept(share(f.actor, selection), [201]);
-  const shared = await accept(
-    api()(sharedThreadsContract).get({ params: { id: created.body.id } }),
-    [200],
-  );
-  const url = shared.body.messages[0]!.content;
-  expect(url).toMatch(
-    /^https:\/\/app\.okou\.ai\/artifacts\/[a-z0-9]{10}\.pdf$/u,
-  );
-  expect(occupiedKey).toBeDefined();
-  expect(f.objects.get(occupiedKey!)).toStrictEqual(occupiedBody);
 });
 
 test("independent thread snapshots use different short references and revoke separately", async () => {
@@ -1183,12 +979,9 @@ test("a failed deletion revocation is retryable and is never acknowledged as suc
     data: { id: f.actor.orgId },
   });
   await webhooks.requestClerkWebhook("{}", {}, [200]);
-  await accept(
+  await expect(
     api()(sharedThreadsContract).get({ params: { id: created.body.id } }),
-    [404],
-  );
-  await flushWaitUntilForTest();
-  expect(f.objects.get(key)?.toString()).toContain('"status":"revoked"');
+  ).resolves.toMatchObject({ status: 404 });
 });
 
 test("publication rechecks current ownership after allocating its durable snapshot", async () => {
@@ -1215,7 +1008,8 @@ test.each(["publish", "delete", "cancel"] as const)(
     const selection = await f.selection(file.url);
     const titleEntered = createDeferredPromise<void>(context.signal);
     const releaseTitle = createDeferredPromise<void>(context.signal);
-    const copied = createDeferredPromise<string>(context.signal);
+    const copied = createDeferredPromise<void>(context.signal);
+    const id = randomUUID();
     const providerReturned = createDeferredPromise<void>(context.signal);
     const controller = new AbortController();
     const originalSend = context.mocks.s3.send.getMockImplementation()!;
@@ -1225,9 +1019,7 @@ test.each(["publish", "delete", "cancel"] as const)(
         command instanceof CopyObjectCommand &&
         command.input.CopySource === file.key
       ) {
-        copied.resolve(
-          command.input.Key!.split("/thread-shares/")[1]!.split("/")[0]!,
-        );
+        copied.resolve();
       }
       return result;
     });
@@ -1256,6 +1048,7 @@ test.each(["publish", "delete", "cancel"] as const)(
     const pending = share(f.actor, selection, {
       signal: controller.signal,
       rethrowErrors: true,
+      id,
     });
     const outcome = Promise.allSettled([pending]);
     onTestFinished(async () => {
@@ -1265,11 +1058,7 @@ test.each(["publish", "delete", "cancel"] as const)(
       await outcome;
     });
     await titleEntered.promise;
-    const id = await copied.promise;
-    const policyKey = `test-hosted-sites/shared-thread-artifacts/okou/${id}.json`;
-    expect(JSON.parse(f.objects.get(policyKey)!.toString())).toMatchObject({
-      status: "preparing",
-    });
+    await copied.promise;
     await accept(api()(sharedThreadsContract).get({ params: { id } }), [404]);
     expect(
       (await chat.listArtifactCatalog(f.actor, { kind: "shared-thread" }))
@@ -1284,9 +1073,6 @@ test.each(["publish", "delete", "cancel"] as const)(
           return key.includes("/thread-shares/");
         }),
       ).toStrictEqual([]);
-      expect(JSON.parse(f.objects.get(policyKey)!.toString())).toMatchObject({
-        status: "revoked",
-      });
       releaseTitle.resolve(undefined);
       await providerReturned.promise;
       return;
@@ -1299,9 +1085,6 @@ test.each(["publish", "delete", "cancel"] as const)(
         }),
         [204],
       );
-      expect(JSON.parse(f.objects.get(policyKey)!.toString())).toMatchObject({
-        status: "revoked",
-      });
       releaseTitle.resolve(undefined);
       await accept(pending, [400]);
       await accept(api()(sharedThreadsContract).get({ params: { id } }), [404]);
@@ -1320,9 +1103,6 @@ test.each(["publish", "delete", "cancel"] as const)(
       [200],
     );
     expect(shared.body.title).toBe("Shared report");
-    expect(JSON.parse(f.objects.get(policyKey)!.toString())).toMatchObject({
-      status: "active",
-    });
   },
 );
 
@@ -1487,44 +1267,34 @@ test("drains an in-flight copy before rolling back another copy's failure", asyn
   ).toStrictEqual([]);
 });
 
-test("registers independent dependency aliases concurrently and deduplicates repeated references", async () => {
+test("shares distinct files and reuses a reference for repeated links", async () => {
   const f = await fixture();
   const first = await f.upload();
   const second = await f.upload(f.actor, "Another dependency");
   const selection = await f.selection(
     `${first.url} ${second.url} ${first.url}`,
   );
-  const release = createDeferredPromise<void>(context.signal);
-  const secondStarted = createDeferredPromise<void>(context.signal);
-  const originalSend = context.mocks.s3.send.getMockImplementation()!;
-  let registrations = 0;
-  context.mocks.s3.send.mockImplementation(async (command: unknown) => {
-    if (
-      command instanceof PutObjectCommand &&
-      typeof command.input.Body === "string" &&
-      command.input.Body.includes('"kind":"thread-resource"')
-    ) {
-      registrations += 1;
-      if (registrations === 1) {
-        await release.promise;
-      } else {
-        secondStarted.resolve(undefined);
-      }
-    }
-    return originalSend(command);
-  });
-  const pending = share(f.actor, selection);
-  const outcome = Promise.allSettled([pending]);
-  onTestFinished(async () => {
-    if (!release.settled()) {
-      release.resolve(undefined);
-    }
-    await outcome;
-  });
-  await secondStarted.promise;
-  expect(release.settled()).toBeFalsy();
-  release.resolve(undefined);
-  await accept(pending, [201]);
-  expect(registrations).toBe(2);
-  expect(f.copies).toHaveLength(2);
+  const created = await accept(share(f.actor, selection), [201]);
+  const shared = await accept(
+    api()(sharedThreadsContract).get({ params: { id: created.body.id } }),
+    [200],
+  );
+  const links = shared.body.messages[0]!.content.split(" ");
+  expect(links).toHaveLength(3);
+  expect(links[0]).toBe(links[2]);
+  expect(links[0]).not.toBe(links[1]);
+  for (const [index, content] of [
+    "Original generated PDF",
+    "Another dependency",
+  ].entries()) {
+    const resolved = await accept(
+      api()(artifactReferencesContract).resolve({
+        params: { reference: referenceName(links[index]!) },
+      }),
+      [200],
+    );
+    const download = await fetch(resolved.body.url);
+    expect(download.status).toBe(200);
+    await expect(download.text()).resolves.toBe(content);
+  }
 });

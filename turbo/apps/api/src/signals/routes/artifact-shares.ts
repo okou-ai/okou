@@ -5,7 +5,7 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { setResHeader$ } from "../context/hono";
 import { notFound } from "../../lib/error";
-import { privateArtifactCreationEnabled } from "../services/private-artifact-storage.service";
+import { privateArtifactCreationEnabled$ } from "../services/private-artifact-storage.service";
 import {
   readArtifactShare$,
   resolveArtifactShare$,
@@ -13,10 +13,13 @@ import {
 } from "../services/artifact-shares.service";
 import type { RouteEntry } from "../route-entry";
 
-const availability$ = command(async ({ get }, signal: AbortSignal) => {
+const availability$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  const enabled = await get(
-    privateArtifactCreationEnabled(auth.orgId, auth.userId),
+  const enabled = await set(
+    privateArtifactCreationEnabled$,
+    auth.orgId,
+    auth.userId,
+    signal,
   );
   signal.throwIfAborted();
   return { status: 200 as const, body: { enabled } };
@@ -49,7 +52,12 @@ const update$ = command(async ({ get, set }, signal: AbortSignal) => {
   const body = parsed.data;
   if (
     body.audience !== "private" &&
-    !(await get(privateArtifactCreationEnabled(auth.orgId, auth.userId)))
+    !(await set(
+      privateArtifactCreationEnabled$,
+      auth.orgId,
+      auth.userId,
+      signal,
+    ))
   ) {
     return {
       status: 403 as const,

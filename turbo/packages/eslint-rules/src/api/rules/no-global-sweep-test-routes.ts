@@ -31,11 +31,7 @@ interface ParameterSource {
 }
 
 type FactoryPropertyResolution =
-  | "canonical"
-  | "missing"
-  | "noncanonical"
-  | "undefined"
-  | "unknown";
+  "canonical" | "missing" | "noncanonical" | "undefined" | "unknown";
 type FactoryValueKind = "factory" | "namespace";
 
 interface GlobalSweepBoundary {

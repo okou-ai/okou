@@ -7,11 +7,22 @@ owner identity or Runner identity. The [private authority API](runner-vnc-author
 resolves and rechecks the saved configuration. The
 [RFB engine](../crates/rfb-client/README.md) owns verified TLS, decoding and input.
 
-VNC runs alongside SSH without using SSH's credential cache, invalidation
-notifications or session admission. Official fleet startup installs either
-available consumer independently. Local/PAT Runners cannot use VNC. The token
-prefix selects the transport only; the API authenticates the actual secret and
-the immutable winning Runner process on every resolve/check.
+Direct VNC does not use SSH's credential cache, invalidation notifications or
+interactive session admission. SSH-routed VNC reuses the Run's exact
+`Arc<ssh::Run>` and opens its saved destination through
+`ssh::Run::open_direct_tcpip`. The SSH layer remains the sole owner of SSH
+credential decryption, host-key trust, Cloudflare Access, credential caching,
+the connection pool, forwarding capacity and invalidation. SSH forwarding
+permits are separate from interactive SSH session limits. See
+[shared SSH ownership and cleanup](runner-vnc-authority.md#runtime-and-cleanup)
+for the lifecycle contract.
+
+Official fleet startup installs either available consumer independently.
+SSH-routed VNC requires the Run's SSH runtime; an SSH setup or channel failure
+is terminal, with no retry as direct TCP or a different profile. Local/PAT
+Runners cannot use VNC. The token prefix selects the transport only; the API
+authenticates the actual secret and the immutable winning Runner process on
+every resolve/check.
 
 ## Guest RPC
 

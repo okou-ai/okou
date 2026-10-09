@@ -55,7 +55,7 @@ export const modelRoutes = pgTable(
     efforts: text("efforts").array().notNull(),
     defaultEffort: varchar("default_effort", { length: 20 }),
     pricingKind: varchar("pricing_kind", { length: 30 }),
-    pricingProvider: varchar("pricing_provider", { length: 100 }),
+    pricingProvider: text("pricing_provider"),
     longContextMinTotalInputTokens: integer(
       "long_context_min_total_input_tokens",
     ),

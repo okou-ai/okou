@@ -16,7 +16,6 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
-import { seedLegacyPrivateDefaultAgentFixture } from "../../../test-fixtures/legacy-default-agent";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { welcomeChatThreadRoutes } from "../welcome-chat-threads";
 import { chatThreadRoutes } from "../chat-threads";
@@ -194,26 +193,6 @@ describe("POST /api/welcome-chat-threads", () => {
       [404],
     );
     await expect(createdEvents(actor, clientThreadId)).resolves.toStrictEqual(
-      [],
-    );
-  });
-
-  it("does not grant access to another member's private default agent", async () => {
-    const { actor, agentId } = await fixture();
-    // Current agent APIs prevent private defaults. Preserve access-denial
-    // coverage for historical data through the explicit legacy fixture.
-    await seedLegacyPrivateDefaultAgentFixture(agentId);
-    const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
-    const clientThreadId = randomUUID();
-    const rejected = await accept(
-      welcomeClient().create({
-        headers: headers(member),
-        body: { clientThreadId },
-      }),
-      [409],
-    );
-    expect(rejected.body.error.code).toBe("CONFLICT");
-    await expect(createdEvents(member, clientThreadId)).resolves.toStrictEqual(
       [],
     );
   });

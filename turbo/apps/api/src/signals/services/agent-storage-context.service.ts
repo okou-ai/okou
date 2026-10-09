@@ -98,8 +98,8 @@ function agentStorageRequests(
   official: OfficialWorkflowContextFacts,
 ): readonly StorageRequest[] {
   const { orgId, userId } = owner;
-  // The root identity is independent of framework, thread and message. A Pi
-  // continuation's pinned historical version is still resolved by its Thread.
+  // Every Run selects the current user memory root, independently of native
+  // session continuation and framework.
   const requests: StorageRequest[] = [
     {
       lookup: { orgId, userId, name: MEMORY_ARTIFACT_NAME },

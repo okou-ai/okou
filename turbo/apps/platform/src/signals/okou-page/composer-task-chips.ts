@@ -14,10 +14,7 @@ import { onRef } from "../utils.ts";
 import { observeRail, type RailTravel } from "./rail-travel.ts";
 
 export type ComposerTask =
-  | ComposerCreateMode
-  | "workflow"
-  | "website"
-  | "visualization";
+  ComposerCreateMode | "workflow" | "website" | "visualization";
 export type ComposerIdeaTask = Exclude<ComposerTask, "visualization">;
 /** The tasks whose ideas render as a prompt row; workflow has its own surface. */
 export type ComposerPromptRowTask = Exclude<ComposerIdeaTask, "workflow">;

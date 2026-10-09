@@ -1008,7 +1008,9 @@ test("Credential replacement retains input during saving and clears secrets on c
   expect(
     within(dialog).getByRole("checkbox", { name: "Replace authentication" }),
   ).toHaveAttribute("aria-disabled", "true");
-  expect(getAction("button", "Choose file", dialog)).toBeDisabled();
+  expect(
+    within(dialog).getByLabelText("Choose private key file"),
+  ).toBeDisabled();
   ready.resolve();
   await waitFor(() => {
     return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();

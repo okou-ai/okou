@@ -8,7 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::error::{RunnerError, RunnerResult};
 
-use super::target::RunnerServiceUnit;
+use runner_host::service::RunnerServiceUnit;
 
 const UNIT_STAGING_MARKER: &str = ".tmp@";
 const UNIT_STAGING_MAX_ATTEMPTS: u64 = 32;
@@ -653,7 +653,7 @@ mod tests {
         ));
         assert!(content.contains(r#"Environment="LITERAL=${VALUE}""#));
         assert_eq!(
-            crate::cmd::service::unit_config::parse_unit_config_path(&content),
+            runner_host::service::parse_unit_config_path(&content),
             Some(config_path.to_path_buf())
         );
     }

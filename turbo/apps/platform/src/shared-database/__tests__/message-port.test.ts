@@ -195,6 +195,43 @@ function connectProtocolTransport(
   };
 }
 
+// Multiple tabs share one Worker; exercise their independent MessagePorts.
+test("Keep foreground presence until the last visible tab hides or disconnects", async () => {
+  initializeWorker();
+  const resetSecond$ = resetSignal();
+  const secondSignal = context.store.set(resetSecond$, context.signal);
+  const first = connectProtocolTransport(context.signal);
+  const second = connectProtocolTransport(secondSignal);
+  await first.bridge.registerTab(context.signal);
+  await second.bridge.registerTab(secondSignal);
+  const { userId, orgId } = identity();
+  const channel = `user-org-foreground:${userId}:${orgId}`;
+
+  first.bridge.setTabVisibility("visible");
+  await vi.waitFor(() => {
+    expect(context.mocks.ably.getPresenceCount(channel)).toBe(1);
+  });
+  second.bridge.setTabVisibility("visible");
+  first.bridge.setTabVisibility("hidden");
+  // A query round trip observes both preceding state messages on each port.
+  await first.bridge.getComputed("connection-diagnostics");
+  await second.bridge.getComputed("connection-diagnostics");
+  expect(context.mocks.ably.getPresenceCount(channel)).toBe(1);
+
+  second.bridge.setTabVisibility("hidden");
+  await vi.waitFor(() => {
+    expect(context.mocks.ably.getPresenceCount(channel)).toBe(0);
+  });
+  second.bridge.setTabVisibility("visible");
+  await vi.waitFor(() => {
+    expect(context.mocks.ably.getPresenceCount(channel)).toBe(1);
+  });
+  context.store.set(resetSecond$);
+  await vi.waitFor(() => {
+    expect(context.mocks.ably.getPresenceCount(channel)).toBe(0);
+  });
+});
+
 // A future feature's event has no existing page interaction. Exercise the
 // production MessagePort boundary so new events cannot close the chat read port.
 test.each(["user", "org", "credential"] as const)(
@@ -1195,8 +1232,7 @@ test("Keep scopes, topics, and subscriber releases independent on one port", asy
     id: string,
     scope: "user" | "org",
     topicName:
-      | "presentationTemplatesChanged"
-      | "connectorPermissionUpdated" = topic,
+      "presentationTemplatesChanged" | "connectorPermissionUpdated" = topic,
   ) => {
     return bridge.subscribeRealtime(
       id,

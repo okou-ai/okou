@@ -116,7 +116,9 @@ test("A user starts a chat from an agent's detail page", async () => {
   });
 
   await screen.findByRole("heading", { name: "Research Agent" });
-  click(labelledButton("Chat with Research Agent"));
+  const chatLink = screen.getByLabelText("Chat with Research Agent");
+  expect(chatLink).toHaveAttribute("href", `/agents/${RESEARCH_AGENT_ID}/chat`);
+  click(chatLink);
 
   await waitFor(() => {
     expect(window.location.pathname).toBe(`/agents/${RESEARCH_AGENT_ID}/chat`);

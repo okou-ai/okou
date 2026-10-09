@@ -18,26 +18,22 @@ import {
   artifactSharePolicySchema,
   artifactSharesContract,
 } from "@okouai/api-contracts/contracts/artifact-shares";
-import { artifactDeliveryKey } from "@okouai/api-contracts/contracts/artifact-delivery";
-import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { testContext, accept } from "../../../__tests__/test-context";
-import { apiTestS3PresignedUrl } from "../../../__tests__/mocks";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { insertLegacyHostedSitePublicationFixture } from "../../../test-fixtures/hosted-sites";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { artifactReferenceRoutes } from "../artifact-references";
 import { artifactShareRoutes } from "../artifact-shares";
 import { featureSwitchesRoutes } from "../feature-switches";
-import { hostRoutes } from "../host";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { uploadsCompleteRoutes } from "../uploads-complete";
 import { webFileUrlRoutes } from "../web-file-url";
 import { createRouteMocks } from "./helpers/route-test";
+import { createDeferredPromise } from "../../utils";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -62,7 +58,6 @@ const api = () => {
       ...artifactShareRoutes,
       ...artifactReferenceRoutes,
       ...featureSwitchesRoutes,
-      ...hostRoutes,
       ...uploadsPrepareRoutes,
       ...uploadsCompleteRoutes,
       ...webFileUrlRoutes,
@@ -211,12 +206,7 @@ async function fixture() {
       return Promise.resolve({});
     }
     if (cmd instanceof GetObjectCommand) {
-      // Host fixtures treat presigned uploads as complete, as does HEAD above.
-      const body =
-        objects.get(cmd.input.Key!) ??
-        (cmd.input.Key?.startsWith("private-sites/")
-          ? "Hosted fixture"
-          : undefined);
+      const body = objects.get(cmd.input.Key!);
       if (body === undefined) {
         return Promise.reject(
           Object.assign(new Error("Missing"), { name: "NoSuchKey" }),
@@ -236,142 +226,6 @@ async function fixture() {
   await flag(true);
   return { owner, org, organization, members, objects, session };
 }
-
-test("historical HTML snapshots keep token downloads and owner revocation while republishing is refused", async () => {
-  const f = await fixture();
-  // Public-only prepare cannot reproduce a retained private HTML publication.
-  // Seed that historical identity, then exercise its current HTTP contracts.
-  const legacy = await insertLegacyHostedSitePublicationFixture({
-    orgId: f.org,
-    userId: f.owner,
-    site: `snapshot-${randomUUID().slice(0, 8)}`,
-    files: [
-      {
-        path: "/index.html",
-        size: 13,
-        sha256: "a".repeat(64),
-        contentType: "text/html",
-      },
-    ],
-  });
-  f.objects.set(legacy.policyKey, JSON.stringify(legacy.policy));
-  for (const alias of [legacy.publicSlug, legacy.publicToken]) {
-    f.objects.set(
-      artifactDeliveryKey("okou", "html", alias),
-      JSON.stringify({
-        version: 1,
-        kind: "publication",
-        publicBrand: "okou",
-        shareId: legacy.shareId,
-        publicToken: legacy.publicToken,
-        targetKind: "html",
-      }),
-    );
-  }
-  context.mocks.s3.getSignedUrl.mockImplementation((_client, command) => {
-    return Promise.resolve(apiTestS3PresignedUrl(command));
-  });
-  const target = { kind: "html" as const, id: legacy.deploymentId };
-  for (const audience of ["public", "organization"] as const) {
-    const rejected = await accept(
-      api()(artifactSharesContract).update({
-        headers,
-        body: { target, audience },
-      }),
-      [400],
-    );
-    expect(rejected.body.error).toMatchObject({
-      code: "BAD_REQUEST",
-      message:
-        "Hosted sites are public. Publish a new deployment to update the site.",
-    });
-  }
-  const status = await accept(
-    api()(artifactSharesContract).status({ headers, body: target }),
-    [200],
-  );
-  expect(status.body).toMatchObject({
-    audience: "public",
-    selectedTarget: target,
-  });
-
-  const download = () => {
-    return api()(hostContract).files({
-      headers,
-      params: { publicSlug: legacy.publicToken },
-      query: { hostname: `${legacy.publicToken}.okou.app` },
-    });
-  };
-  f.session(`user_${randomUUID()}`, null);
-  const snapshot = await accept(download(), [200]);
-  expect(snapshot.body).toMatchObject({
-    siteId: legacy.siteId,
-    deploymentId: legacy.deploymentId,
-    fileCount: 1,
-  });
-  expect(
-    new URL(snapshot.body.files[0]!.downloadUrl).searchParams.get("object"),
-  ).toContain(`${legacy.snapshotPrefix}/index.html`);
-
-  f.session(`user_${randomUUID()}`);
-  await accept(
-    api()(artifactSharesContract).update({
-      headers,
-      body: { target, audience: "private" },
-    }),
-    [404],
-  );
-  await accept(download(), [200]);
-  f.session();
-  await flag(false);
-  const revoked = await accept(
-    api()(artifactSharesContract).update({
-      headers,
-      body: { target, audience: "private" },
-    }),
-    [200],
-  );
-  expect(revoked.body).toMatchObject({ audience: "private", url: null });
-  await accept(download(), [404]);
-});
-
-test("unshared historical HTML deployments cannot create new snapshots", async () => {
-  const f = await fixture();
-  // The current hosting API cannot create the historical private target.
-  // No policy is installed: this is a previously allocated, unshared identity.
-  const legacy = await insertLegacyHostedSitePublicationFixture({
-    orgId: f.org,
-    userId: f.owner,
-    site: `unshared-${randomUUID().slice(0, 8)}`,
-    files: [
-      {
-        path: "/index.html",
-        size: 13,
-        sha256: "a".repeat(64),
-        contentType: "text/html",
-      },
-    ],
-  });
-  const target = { kind: "html" as const, id: legacy.deploymentId };
-  for (const audience of ["public", "organization"] as const) {
-    await accept(
-      api()(artifactSharesContract).update({
-        headers,
-        body: { target, audience },
-      }),
-      [400],
-    );
-  }
-  const status = await accept(
-    api()(artifactSharesContract).status({ headers, body: target }),
-    [200],
-  );
-  expect(status.body).toMatchObject({
-    audience: "private",
-    selectedTarget: null,
-    shareId: null,
-  });
-});
 
 test.each(["private", "organization", "public"] as const)(
   "%s share status reuses the fresh membership name and observes renames",
@@ -1784,6 +1638,67 @@ test("a failed publication write does not report a narrower audience, and unavai
   );
 });
 
+test("stopping an unpublished file records revocation and preserves its snapshot for a later explicit share", async () => {
+  const { members, session } = await fixture();
+  const target = await file();
+  const stopped = await accept(
+    api()(artifactSharesContract).update({
+      headers,
+      body: { target, audience: "private" },
+    }),
+    [200],
+  );
+  expect(stopped.body).toMatchObject({
+    audience: "private",
+    url: null,
+    shortUrl: null,
+    selectedTarget: target,
+  });
+  expect(stopped.body.shareId).toBeTruthy();
+  const status = await accept(
+    api()(artifactSharesContract).status({ headers, body: target }),
+    [200],
+  );
+  expect(status.body).toStrictEqual(stopped.body);
+  const recipient = `user_${randomUUID()}`;
+  members.add(recipient);
+  session(recipient);
+  await accept(
+    api()(artifactSharesContract).resolve({
+      headers,
+      params: { id: stopped.body.shareId! },
+    }),
+    [404],
+  );
+  session();
+  const shared = await accept(
+    api()(artifactSharesContract).update({
+      headers,
+      body: { target, audience: "organization" },
+    }),
+    [200],
+  );
+  expect(shared.body.shareId).toBe(stopped.body.shareId);
+  session(recipient);
+  const resolved = await accept(
+    api()(artifactSharesContract).resolve({
+      headers,
+      params: { id: shared.body.shareId! },
+    }),
+    [200],
+  );
+  expect(resolved.body.url).toContain("signature=temporary");
+  expect(context.mocks.s3.getSignedUrl).toHaveBeenCalledWith(
+    expect.anything(),
+    expect.objectContaining({
+      input: expect.objectContaining({
+        Key: expect.stringContaining(`private-artifacts/${target.id}/shares/`),
+      }),
+    }),
+    expect.anything(),
+  );
+});
+
 test("sharing copies file bytes once into private storage without changing the owner reference", async () => {
   await fixture();
   const target = await file();
@@ -1824,43 +1739,108 @@ test("sharing copies file bytes once into private storage without changing the o
   expect(ownerPreview.body.publicUrl).toBeNull();
 });
 
-test("a delayed writer cannot resurrect a public grant after a newer revocation", async () => {
-  const { objects } = await fixture();
-  const target = await file();
-  const shared = await accept(
-    api()(artifactSharesContract).update({
+test.each(["organization", "private"] as const)(
+  "a delayed publication cannot restore public access after a newer %s update",
+  async (audience) => {
+    await fixture();
+    const target = await file();
+    const shared = await accept(
+      api()(artifactSharesContract).update({
+        headers,
+        body: { target, audience: "public" },
+      }),
+      [200],
+    );
+    const publicationStarted = createDeferredPromise<void>(context.signal);
+    const resumePublication = createDeferredPromise<void>(context.signal);
+    const storage = context.mocks.s3.send.getMockImplementation()!;
+    let delayed = false;
+    context.mocks.s3.send.mockImplementation(async (cmd) => {
+      if (
+        !delayed &&
+        cmd instanceof PutObjectCommand &&
+        cmd.input.Key?.startsWith("artifact-shares/") &&
+        artifactSharePolicySchema.parse(JSON.parse(String(cmd.input.Body)))
+          .audience === "public"
+      ) {
+        delayed = true;
+        publicationStarted.resolve();
+        await resumePublication.promise;
+      }
+      return await storage(cmd);
+    });
+    const publication = api()(artifactSharesContract).update({
       headers,
       body: { target, audience: "public" },
-    }),
-    [200],
-  );
-  const key = `artifact-shares/okou/${shared.body.shareId}.json`;
-  const storage = context.mocks.s3.send.getMockImplementation()!;
-  context.mocks.s3.send.mockImplementation((cmd) => {
-    if (cmd instanceof PutObjectCommand && cmd.input.Key === key) {
-      // A different writer committed after this request's read. R2 must reject
-      // its stale If-Match even if the old process lost its database row lock.
-      const previous = JSON.parse(objects.get(key)!);
-      objects.set(
-        key,
-        JSON.stringify({
-          ...previous,
-          revision: randomUUID(),
-          audience: "private",
-          status: "revoked",
-          publicToken: null,
+    });
+    await publicationStarted.promise;
+    await accept(
+      api()(artifactSharesContract).update({
+        headers,
+        body: { target, audience },
+      }),
+      [200],
+    );
+    resumePublication.resolve();
+    await accept(publication, [500]);
+    const status = await accept(
+      api()(artifactSharesContract).status({ headers, body: target }),
+      [200],
+    );
+    expect(status.body.audience).toBe(audience);
+    expect(status.body.shareId).toBe(shared.body.shareId);
+    if (audience === "private") {
+      expect(status.body.url).toBeNull();
+      await accept(
+        api()(artifactSharesContract).resolve({
+          headers,
+          params: { id: shared.body.shareId! },
         }),
+        [404],
       );
     }
-    return storage(cmd);
+    await accept(
+      api()(artifactReferencesContract).publicUrl({
+        params: {
+          reference: artifactReferencePath(target.id, "report.pdf")
+            .split("/")
+            .at(-1)!,
+        },
+      }),
+      [404],
+    );
+  },
+);
+
+test("a first publication preparing its snapshot cannot grant access after an initial stop", async () => {
+  await fixture();
+  const target = await file();
+  const preparationStarted = createDeferredPromise<void>(context.signal);
+  const resumePreparation = createDeferredPromise<void>(context.signal);
+  const storage = context.mocks.s3.send.getMockImplementation()!;
+  let delayed = false;
+  context.mocks.s3.send.mockImplementation(async (cmd) => {
+    if (!delayed && cmd instanceof CopyObjectCommand) {
+      delayed = true;
+      preparationStarted.resolve();
+      await resumePreparation.promise;
+    }
+    return await storage(cmd);
   });
+  const publication = api()(artifactSharesContract).update({
+    headers,
+    body: { target, audience: "public" },
+  });
+  await preparationStarted.promise;
   await accept(
     api()(artifactSharesContract).update({
       headers,
-      body: { target, audience: "public" },
+      body: { target, audience: "private" },
     }),
-    [500],
+    [200],
   );
+  resumePreparation.resolve();
+  await accept(publication, [500]);
   const status = await accept(
     api()(artifactSharesContract).status({ headers, body: target }),
     [200],
@@ -1869,7 +1849,17 @@ test("a delayed writer cannot resurrect a public grant after a newer revocation"
   await accept(
     api()(artifactSharesContract).resolve({
       headers,
-      params: { id: shared.body.shareId! },
+      params: { id: status.body.shareId! },
+    }),
+    [404],
+  );
+  await accept(
+    api()(artifactReferencesContract).publicUrl({
+      params: {
+        reference: artifactReferencePath(target.id, "report.pdf")
+          .split("/")
+          .at(-1)!,
+      },
     }),
     [404],
   );

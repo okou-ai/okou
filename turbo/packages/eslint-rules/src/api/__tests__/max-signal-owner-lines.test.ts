@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { RuleTester } from "@typescript-eslint/rule-tester";
 import { afterAll, describe, it } from "vitest";
 import { maxSignalOwnerLines } from "../rules/max-signal-owner-lines.ts";
@@ -130,3 +133,154 @@ ruleTester.run("max-signal-owner-lines", maxSignalOwnerLines, {
     },
   ],
 });
+
+const fixtureDirectory = mkdtempSync(join(tmpdir(), "signal-owner-factories-"));
+afterAll(() => {
+  rmSync(fixtureDirectory, { recursive: true, force: true });
+});
+const fixtureSources = {
+  "leaf.ts": `
+    import { computed as read } from "ccstate";
+    export function createLeaf(input$) {
+      const result$ = read(get => get(input$));
+      return result$;
+    }
+  `,
+  "nested.ts": `
+    import { createLeaf as leaf } from "./leaf";
+    import { computed } from "ccstate";
+    function local(input$) {
+      return computed(get => get(input$));
+    }
+    export function createRead(input$) {
+      const first$ = leaf(input$);
+      const second$ = local(first$);
+      return second$;
+    }
+  `,
+  "eager.ts": `
+    import { computed } from "ccstate";
+    export function createRead(input$) {
+      const eager = readDatabase();
+      return computed(get => get(input$) + eager);
+    }
+  `,
+  "mutation.ts": `
+    import { computed } from "ccstate";
+    export function createRead(input$) {
+      writeToDatabase();
+      return computed(get => get(input$));
+    }
+  `,
+  "default.ts": `
+    import { computed } from "ccstate";
+    export function createRead(input$ = readDatabase()) {
+      return computed(get => get(input$));
+    }
+  `,
+  "spoof.ts": `
+    import { computed } from "other-package";
+    export function createRead(input$) {
+      return computed(get => get(input$));
+    }
+  `,
+  "shadow.ts": `
+    import { computed } from "ccstate";
+    export function createRead(computed) {
+      return computed(() => 1);
+    }
+  `,
+  "command.ts": `
+    import { command } from "ccstate";
+    export function createRead(input$) {
+      return command(({ get }) => get(input$));
+    }
+  `,
+  "state.ts": `
+    import { state } from "ccstate";
+    export function createRead(input$) {
+      return state(input$);
+    }
+  `,
+  "reassigned.ts": `
+    import { computed } from "ccstate";
+    export function createRead(input$) {
+      return computed(get => get(input$));
+    }
+    createRead = () => writeToDatabase();
+  `,
+  "reassigned-helper.ts": `
+    import { computed } from "ccstate";
+    function leaf(input$) {
+      return computed(get => get(input$));
+    }
+    export function createRead(input$) {
+      return leaf(input$);
+    }
+    [leaf] = [() => writeToDatabase()];
+  `,
+  "cycle.ts": `
+    export function createRead(input$) {
+      return createRead(input$);
+    }
+  `,
+};
+for (const [name, source] of Object.entries(fixtureSources)) {
+  writeFileSync(join(fixtureDirectory, name), source);
+}
+
+function ownerCallingFactory(module: string, argument = "source$") {
+  return `
+    import { computed } from "ccstate";
+    import { createRead as build } from "./${module}";
+    function createClaimRunObjects() {
+      const source$ = computed(() => 1);
+      const result$ = build(${argument});
+      const wrapped$ = computed(get => get(result$));
+      return { wrapped$ };
+    }
+  `;
+}
+
+ruleTester.run(
+  "max-signal-owner-lines imported computed factories",
+  maxSignalOwnerLines,
+  {
+    valid: [
+      {
+        name: "verifies imported aliases and nested local and imported read factories",
+        options,
+        filename: join(fixtureDirectory, "owner.ts"),
+        code: ownerCallingFactory("nested"),
+      },
+    ],
+    invalid: [
+      ...[
+        "eager",
+        "mutation",
+        "default",
+        "spoof",
+        "shadow",
+        "command",
+        "state",
+        "cycle",
+        "reassigned",
+        "reassigned-helper",
+        "missing",
+      ].map((module) => ({
+        name: `rejects unverified ${module} factory construction`,
+        options,
+        filename: join(fixtureDirectory, "owner.ts"),
+        code: ownerCallingFactory(module),
+        errors: [{ messageId: "tooLong" as const }],
+      })),
+      {
+        name: "rejects eager work passed to a verified factory",
+        options,
+        filename: join(fixtureDirectory, "owner.ts"),
+        code: ownerCallingFactory("nested", "readDatabase()"),
+        errors: [{ messageId: "tooLong" }],
+      },
+    ],
+  },
+);

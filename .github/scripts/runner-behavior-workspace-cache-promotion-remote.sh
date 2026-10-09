@@ -15,7 +15,8 @@ SUBMIT_PID=""
 WRITER_EXEC_PID=""
 SANDBOX_ID=""
 TURN1_INVOCATION_ID=""
-TURN2_INVOCATION_ID=""
+PROMOTION_INVOCATION_ID=""
+RESTORE_INVOCATION_ID=""
 
 fail() { echo "FAIL: $1"; exit 1; }
 wait_for_unit_inactive() {
@@ -57,7 +58,8 @@ for ((ATTEMPT = 1; ATTEMPT <= MAX_ATTEMPTS; ATTEMPT++)); do
   WRITER_EXEC_PID=""
   SANDBOX_ID=""
   TURN1_INVOCATION_ID=""
-  TURN2_INVOCATION_ID=""
+  PROMOTION_INVOCATION_ID=""
+  RESTORE_INVOCATION_ID=""
 
   echo "--- Workspace cache promotion attempt ${ATTEMPT}/${MAX_ATTEMPTS} ---"
   sudo "$BIN_DIR/runner" service stop --name "$SVC" --force
@@ -77,9 +79,8 @@ for ((ATTEMPT = 1; ATTEMPT <= MAX_ATTEMPTS; ATTEMPT++)); do
   [ -n "$TURN1_INVOCATION_ID" ] || fail "turn 1 runner invocation ID unavailable"
 
   # Keep the supervised turn active while an independently owned runner exec
-  # creates the live writer. Supervised descendants are reclaimed before
-  # promotion, so creating the writer from the turn would not exercise the
-  # freeze boundary.
+  # creates a live writer. Terminal private cleanup must reject that writer
+  # rather than delete state while another workload can still access it.
   echo "--- Turn 1: create live workspace state ---"
   sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
     --chat-thread-id "$CHAT_THREAD_ID" \
@@ -185,12 +186,12 @@ exit 42' 2>&1)
   fi
 
   # Enter draining while both the supervised turn and independent writer are
-  # live. Releasing the turn then drives freeze, stop, and promotion without
-  # allowing a supervised-descendant cleanup to remove the writer first.
-  echo "--- Draining runner to promote the workspace cache ---"
+  # live. Terminal preparation must fail closed before freeze/publication,
+  # without changing the successful turn's outcome. Sandbox stop owns the writer.
+  echo "--- Draining runner with a live writer ---"
   sudo "$BIN_DIR/runner" service drain --name "$SVC"
   kill -0 "$WRITER_EXEC_PID" 2>/dev/null \
-    || fail "Independent workspace writer was not live before the freeze boundary"
+    || fail "Independent workspace writer was not live before terminal preparation"
   sudo timeout 20 "$BIN_DIR/runner" exec --timeout 15 \
     --sandbox "$SANDBOX_ID" -- sh -c \
     'printf release > /tmp/vm0-workspace-cache-release' \
@@ -204,9 +205,56 @@ exit 42' 2>&1)
   wait "$WRITER_EXEC_PID" 2>/dev/null || true
   WRITER_EXEC_PID=""
 
-  PROMOTION_LOGS=$(sudo journalctl --no-pager \
+  REJECTION_LOGS=$(sudo journalctl --no-pager \
     "_SYSTEMD_INVOCATION_ID=$TURN1_INVOCATION_ID" 2>&1) \
-    || fail "failed to read workspace cache promotion runner logs"
+    || fail "failed to read live-writer terminal preparation logs"
+  REJECTION_LINES=$(grep -F 'workspace image cache promotion skipped because guest preparation failed' \
+    <<<"$REJECTION_LOGS" || true)
+  if ! grep -F 'stale exec operation cgroup remains' <<<"$REJECTION_LINES" >/dev/null \
+    || grep -F 'workspace image cache promoted' <<<"$REJECTION_LOGS" >/dev/null; then
+    printf '%s\n' "$REJECTION_LOGS"
+    fail "Live writer did not reject optional publication through process containment"
+  fi
+  echo "PASS: live writer rejected publication without failing the turn"
+
+  # A new writer-free turn must miss the rejected candidate, then produce a
+  # usable cache entry. Keep the positive freeze/nested-mount/restart contract;
+  # do not make the native test pass merely by accepting every cache rejection.
+  sudo "$BIN_DIR/runner" service stop --name "$SVC" --force
+  sudo "$BIN_DIR/runner" service start --name "$SVC" \
+    --config "$RUNNER_DIR/runner.yaml" --local --env USE_MOCK_CLAUDE=true --env USE_MOCK_CODEX=true
+  for _ in $(seq 1 30); do
+    PROMOTION_INVOCATION_ID=$(sudo systemctl show "$UNIT" \
+      --property=InvocationID --value 2>/dev/null) || true
+    if [ -n "$PROMOTION_INVOCATION_ID" ] \
+      && [ "$PROMOTION_INVOCATION_ID" != "$TURN1_INVOCATION_ID" ]; then
+      break
+    fi
+    PROMOTION_INVOCATION_ID=""
+    sleep 1
+  done
+  [ -n "$PROMOTION_INVOCATION_ID" ] || fail "writer-free runner invocation ID unavailable"
+
+  echo "--- Turn 2: create a writer-free cache candidate ---"
+  if ! sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
+    --chat-thread-id "$CHAT_THREAD_ID" \
+    --session-id "$SESSION_ID" \
+    --feature-flag sandboxReuse=true \
+    --prompt 'set -eu
+test ! -e /home/user/workspace/cache-marker
+test ! -e /home/user/workspace/live-writer
+printf "workspace-cache-marker\n" > /home/user/workspace/cache-marker
+printf "completed-writer\n" > /home/user/workspace/live-writer
+mkdir -p /home/user/workspace/nested
+sudo mount -t tmpfs -o size=1m tmpfs /home/user/workspace/nested
+sudo touch /home/user/workspace/nested/ephemeral'; then
+    fail "Writer-free turn failed or restored the rejected live-writer candidate"
+  fi
+  sudo "$BIN_DIR/runner" service drain --name "$SVC"
+  wait_for_unit_inactive
+  PROMOTION_LOGS=$(sudo journalctl --no-pager \
+    "_SYSTEMD_INVOCATION_ID=$PROMOTION_INVOCATION_ID" 2>&1) \
+    || fail "failed to read writer-free workspace cache promotion logs"
   if grep -F 'workspace image cache promotion skipped: capacity lock busy' \
     <<<"$PROMOTION_LOGS" >/dev/null; then
     if [ "$ATTEMPT" -eq "$MAX_ATTEMPTS" ]; then
@@ -215,16 +263,9 @@ exit 42' 2>&1)
     echo "RETRY: workspace cache promotion capacity lock was busy on attempt ${ATTEMPT}"
     continue
   fi
-  if ! grep -F 'workspace image cache promoted' \
-    <<<"$PROMOTION_LOGS" >/dev/null; then
-    echo "--- Workspace cache logs for invocation ${TURN1_INVOCATION_ID} ---"
-    PROMOTION_LINES=$(grep -F 'workspace image cache' <<<"$PROMOTION_LOGS" || true)
-    if [ -n "$PROMOTION_LINES" ]; then
-      printf '%s\n' "$PROMOTION_LINES"
-    else
-      echo "No workspace image cache logs found"
-    fi
-    fail "Workspace cache turn 1 did not publish a reusable cache entry"
+  if ! grep -F 'workspace image cache promoted' <<<"$PROMOTION_LOGS" >/dev/null; then
+    printf '%s\n' "$PROMOTION_LOGS"
+    fail "Writer-free turn did not publish a reusable cache entry"
   fi
 
   # Clear the drain drop-in before starting a fresh transient service.
@@ -232,32 +273,33 @@ exit 42' 2>&1)
   sudo "$BIN_DIR/runner" service start --name "$SVC" \
     --config "$RUNNER_DIR/runner.yaml" --local --env USE_MOCK_CLAUDE=true --env USE_MOCK_CODEX=true
 
-  # Scope restore diagnostics to the restarted runner, never the promotion invocation.
+  # Scope restore diagnostics to the third runner, never an earlier invocation.
   for _ in $(seq 1 30); do
-    TURN2_INVOCATION_ID=$(sudo systemctl show "$UNIT" \
+    RESTORE_INVOCATION_ID=$(sudo systemctl show "$UNIT" \
       --property=InvocationID --value 2>/dev/null) || true
-    if [ -n "$TURN2_INVOCATION_ID" ] \
-      && [ "$TURN2_INVOCATION_ID" != "$TURN1_INVOCATION_ID" ]; then
+    if [ -n "$RESTORE_INVOCATION_ID" ] \
+      && [ "$RESTORE_INVOCATION_ID" != "$PROMOTION_INVOCATION_ID" ] \
+      && [ "$RESTORE_INVOCATION_ID" != "$TURN1_INVOCATION_ID" ]; then
       break
     fi
-    TURN2_INVOCATION_ID=""
+    RESTORE_INVOCATION_ID=""
     sleep 1
   done
-  [ -n "$TURN2_INVOCATION_ID" ] || fail "turn 2 runner invocation ID unavailable"
+  [ -n "$RESTORE_INVOCATION_ID" ] || fail "restore runner invocation ID unavailable"
 
-  echo "--- Turn 2: restore promoted workspace ---"
+  echo "--- Turn 3: restore promoted workspace ---"
   if sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
     --chat-thread-id "$CHAT_THREAD_ID" \
     --session-id "$SESSION_ID" \
     --feature-flag sandboxReuse=true \
-    --prompt 'test "$(cat /home/user/workspace/cache-marker)" = workspace-cache-marker && test -s /home/user/workspace/live-writer && test ! -e /home/user/workspace/nested/ephemeral'; then
-    echo "PASS: workspace cache restored after freeze-based promotion"
+    --prompt 'test "$(cat /home/user/workspace/cache-marker)" = workspace-cache-marker && test "$(cat /home/user/workspace/live-writer)" = completed-writer && test ! -e /home/user/workspace/nested/ephemeral'; then
+    echo "PASS: workspace cache restored after terminal cleanup and freeze-based promotion"
     PROMOTION_VERIFIED=true
     break
   fi
 
   RESTORE_LOGS=$(sudo journalctl --no-pager \
-    "_SYSTEMD_INVOCATION_ID=$TURN2_INVOCATION_ID" 2>&1) \
+    "_SYSTEMD_INVOCATION_ID=$RESTORE_INVOCATION_ID" 2>&1) \
     || fail "failed to read workspace cache restore runner logs"
   if grep -F 'workspace image cache lock busy or unavailable; using fresh workspace image' \
     <<<"$RESTORE_LOGS" \
@@ -269,14 +311,14 @@ exit 42' 2>&1)
     continue
   fi
 
-  echo "--- Workspace cache logs for invocation ${TURN2_INVOCATION_ID} ---"
+  echo "--- Workspace cache logs for invocation ${RESTORE_INVOCATION_ID} ---"
   RESTORE_LINES=$(grep -F 'workspace image cache' <<<"$RESTORE_LOGS" || true)
   if [ -n "$RESTORE_LINES" ]; then
     printf '%s\n' "$RESTORE_LINES"
   else
     echo "No workspace image cache logs found"
   fi
-  fail "Workspace cache turn 2: promoted workspace state was not restored correctly"
+  fail "Workspace cache turn 3: promoted workspace state was not restored correctly"
 done
 
 [ "$PROMOTION_VERIFIED" = true ] || fail "Workspace cache promotion was not verified"

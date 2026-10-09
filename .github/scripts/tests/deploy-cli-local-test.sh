@@ -21,6 +21,8 @@ mkdir -p \
 ln -s "$deploy_script" "${test_root}/scripts/deploy-cli-local.sh"
 ln -s "$build_script" "${test_root}/.github/scripts/build-okou-cli-artifact.sh"
 ln -s "$verify_script" "${test_root}/.github/scripts/verify-okou-cli-artifact.sh"
+ln -s "${repo_root}/.github/scripts/read-okou-cli-package-identity.py" \
+  "${test_root}/.github/scripts/read-okou-cli-package-identity.py"
 
 cat >"${test_root}/scripts/.env.local" <<'EOF'
 R2_ACCOUNT_ID=test-account
@@ -43,7 +45,13 @@ cat >"${test_root}/turbo/apps/cli/dist/package.json" <<'EOF'
   "version": "1.0.0",
   "private": true,
   "bin": { "okou": "okou.js" },
-  "files": ["*.js", "*.wasm", "migrations/*.sql"]
+  "files": ["*.js", "*.wasm", "migrations/*.sql"],
+  "okouBuildIdentity": {
+    "schemaVersion": 1,
+    "piAgentRuntime": "1.36.0",
+    "piSdk": "0.86.1+okou.0123456789ab",
+    "sessionConstruction": {"digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}
+  }
 }
 EOF
 printf '#!/usr/bin/env node\n' >"${test_root}/turbo/apps/cli/dist/okou.js"

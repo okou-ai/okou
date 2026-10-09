@@ -5,7 +5,7 @@ interface LegacyVolumeVersionsSnapshot {
   readonly versions: Record<string, string>;
 }
 
-interface LegacyCheckpointStorageProjection {
+interface RunStorageProjection {
   readonly artifactSnapshots: readonly ContextArtifact[] | null;
   readonly artifactVersions: Record<string, string> | null;
   readonly volumeVersionsSnapshot: LegacyVolumeVersionsSnapshot | null;
@@ -32,21 +32,18 @@ export function projectLegacyWritebackArtifacts(
 }
 
 /**
- * Keeps legacy checkpoint and run-result response shapes available without
- * persisting a second Storage representation for new checkpoints.
+ * Projects launch mounts and writeback outputs into the existing Run result shape.
  */
-export function projectLegacyCheckpointStorage(
+export function projectRunStorage(
   mounts: readonly PersistedStorageMount[],
-): LegacyCheckpointStorageProjection {
+): RunStorageProjection {
   const artifactSnapshots: ContextArtifact[] = [];
   const artifactVersions: Record<string, string> = {};
   const volumeVersions: Record<string, string> = {};
 
   for (const mount of mounts) {
     if (mount.version === undefined) {
-      throw new Error(
-        `Invalid canonical checkpoint Storage "${mount.name}": missing version`,
-      );
+      throw new Error(`Invalid Run Storage "${mount.name}": missing version`);
     }
     if (mount.writeback) {
       artifactSnapshots.push({
@@ -60,7 +57,7 @@ export function projectLegacyCheckpointStorage(
       artifactVersions[mount.name] = mount.version;
       continue;
     }
-    // Legacy checkpoint and run-result payloads reported user volume state,
+    // Run-result payloads reported user volume state,
     // not internal system Storage or resolved instruction mounts.
     if (
       mount.orgId === SYSTEM_ORG_ID ||

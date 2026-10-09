@@ -712,10 +712,7 @@ function officialCatalogDetail(
 function officialSalesResearch(
   lifecycle: "active" | "retired" | "unavailable" = "active",
   reconciliationStatus:
-    | "current"
-    | "reconciling"
-    | "needs_reconfiguration"
-    | "failed" = "current",
+    "current" | "reconciling" | "needs_reconfiguration" | "failed" = "current",
 ): WorkflowDetailResponse {
   const ordinary = salesResearch();
   const [automation] = ordinary.automations;
@@ -1519,6 +1516,16 @@ function menuItemByText(text: RoleTextMatch): HTMLElement {
   return item;
 }
 
+function workflowFileItemByText(text: RoleTextMatch): HTMLElement {
+  const item = queryAllByRoleFast("menuitemradio").find((candidate) => {
+    return matchesText(candidate, text);
+  });
+  if (!item) {
+    throw new Error(`${matchLabel(text)} workflow file item not found`);
+  }
+  return item;
+}
+
 // The "Add automation" automation picker is a dialog split into category tabs on
 // the left and automation cards on the right; a card only mounts once its category
 // is active. Select the category, then the card (matched by its leading title,
@@ -1573,16 +1580,6 @@ function linkByAriaLabel(
     throw new Error(`${label} link not found`);
   }
   return link;
-}
-
-function tabByName(name: string): HTMLElement {
-  const tab = queryAllByRoleFast("button").find((candidate) => {
-    return candidate.textContent?.trim() === name;
-  });
-  if (!tab) {
-    throw new Error(`${name} filter pill not found`);
-  }
-  return tab;
 }
 
 function selectOptionByLabel(
@@ -1899,6 +1896,7 @@ test("Identify existing Stripe automations in the workflow list", async () => {
 });
 
 test("Filter workflows by automation and visibility", async () => {
+  const user = userEvent.setup();
   context.mocks.data.userPreferences({ timezone: "UTC" });
   mockAgentPageApis();
   mockChatLifecycle(context);
@@ -1918,6 +1916,16 @@ test("Filter workflows by automation and visibility", async () => {
     expect(linkByAriaLabel("Open Sales Research")).toBeInTheDocument();
   });
   expect(search()).toBe("");
+  const filterGroup = screen.getByRole("group", { name: "Workflows" });
+  const expectSelectedFilter = (selected: string) => {
+    for (const name of ["All", "Automated", "Manual", "Private", "Public"]) {
+      expect(buttonByText(name, filterGroup)).toHaveAttribute(
+        "aria-pressed",
+        String(name === selected),
+      );
+    }
+  };
+  expectSelectedFilter("All");
 
   // The default "All" view lists every workspace workflow.
   expect(linkByAriaLabel("Open Ops Playbook")).toBeInTheDocument();
@@ -1935,50 +1943,62 @@ test("Filter workflows by automation and visibility", async () => {
   );
 
   // "Automated" keeps only workflows that have at least one automation.
-  click(tabByName("Automated"));
+  await user.click(buttonByText("Automated", filterGroup));
   await waitFor(() => {
     expect(search()).toBe("?filter=automated");
   });
+  expectSelectedFilter("Automated");
   expect(linkByAriaLabel("Open Sales Research")).toBeInTheDocument();
   expect(screen.queryByText("Ops Playbook")).not.toBeInTheDocument();
   expect(screen.queryByText("Launch Checklist")).not.toBeInTheDocument();
   expect(screen.queryByText("Support Intake")).not.toBeInTheDocument();
 
-  // "Manual" keeps only the manual workflows.
-  click(tabByName("Manual"));
+  // Space selects "Manual" using the native button contract.
+  buttonByText("Manual", filterGroup).focus();
+  await user.keyboard(" ");
   await waitFor(() => {
     expect(search()).toBe("?filter=without");
   });
+  expectSelectedFilter("Manual");
   expect(screen.queryByText("Sales Research")).not.toBeInTheDocument();
   expect(linkByAriaLabel("Open Ops Playbook")).toBeInTheDocument();
   expect(linkByAriaLabel("Open Launch Checklist")).toBeInTheDocument();
 
   // The pills are a single mutually-exclusive group: selecting "Private"
   // replaces the automation selection rather than combining with it.
-  click(tabByName("Private"));
+  buttonByText("Private", filterGroup).focus();
+  await user.keyboard("{Enter}");
   await waitFor(() => {
     expect(search()).toBe("?filter=private");
   });
+  expectSelectedFilter("Private");
   expect(linkByAriaLabel("Open Ops Playbook")).toBeInTheDocument();
   expect(linkByAriaLabel("Open Launch Checklist")).toBeInTheDocument();
   expect(screen.queryByText("Sales Research")).not.toBeInTheDocument();
   expect(screen.queryByText("Support Intake")).not.toBeInTheDocument();
 
   // "Public" keeps only the public workflows.
-  click(tabByName("Public"));
+  click(buttonByText("Public", filterGroup));
   await waitFor(() => {
     expect(search()).toBe("?filter=public");
   });
+  expectSelectedFilter("Public");
   expect(linkByAriaLabel("Open Sales Research")).toBeInTheDocument();
   expect(linkByAriaLabel("Open Support Intake")).toBeInTheDocument();
   expect(screen.queryByText("Ops Playbook")).not.toBeInTheDocument();
   expect(screen.queryByText("Launch Checklist")).not.toBeInTheDocument();
 
+  // Re-selecting a filter keeps it selected; only "All" clears filtering.
+  click(buttonByText("Public", filterGroup));
+  expect(search()).toBe("?filter=public");
+  expectSelectedFilter("Public");
+
   // Clearing the filter returns to the full list.
-  click(tabByName("All"));
+  click(buttonByText("All", filterGroup));
   await waitFor(() => {
     expect(search()).toBe("");
   });
+  expectSelectedFilter("All");
   expect(linkByAriaLabel("Open Ops Playbook")).toBeInTheDocument();
 });
 
@@ -4336,7 +4356,81 @@ test("Warn when a workflow slash command resolves to another workflow", async ()
   expect(screen.getByText("Private Sales Research")).toBeInTheDocument();
 });
 
-test("Delete a supplementary workflow file", async () => {
+test.each(["Enter", "Space"])(
+  "Select workflow files with accessible current state using %s",
+  async (activation) => {
+    const user = userEvent.setup();
+    mockWorkflowApis([salesResearch()]);
+
+    await setupWorkflowDetailPage(
+      `${workflowDetailPath("instructions")}?file=config%2Fsettings.json`,
+    );
+    await expect(
+      screen.findByDisplayValue('{ "risk": "low", "tone": "direct" }'),
+    ).resolves.toBeInTheDocument();
+
+    const picker = screen.getByLabelText("Workflow files");
+    expect(picker).toHaveTextContent("config/settings.json");
+    click(picker);
+    expect(workflowFileItemByText(/config\/settings\.json/)).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    const instructions = workflowFileItemByText("instructions");
+    expect(instructions).toHaveAttribute("aria-checked", "false");
+    expect(workflowFileItemByText(/examples\/prompt\.md/)).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
+
+    await user.keyboard("{Home}");
+    expect(instructions).toHaveFocus();
+    expect(search()).toBe("?file=config%2Fsettings.json");
+    await user.keyboard(activation === "Enter" ? "{Enter}" : " ");
+    await expect(
+      screen.findByText("Gather CRM context before outreach."),
+    ).resolves.toBeInTheDocument();
+    expect(search()).toBe("");
+    await waitFor(() => {
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+      expect(picker).toHaveFocus();
+    });
+
+    click(picker);
+    expect(workflowFileItemByText("instructions")).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    click(workflowFileItemByText(/examples\/prompt\.md/));
+    await expect(
+      screen.findByText("Ask for market segment and urgency."),
+    ).resolves.toBeInTheDocument();
+    expect(search()).toBe("?file=examples%2Fprompt.md");
+    expect(picker).toHaveTextContent("examples/prompt.md");
+    await waitFor(() => {
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    });
+
+    click(picker);
+    expect(workflowFileItemByText(/examples\/prompt\.md/)).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    expect(workflowFileItemByText("instructions")).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+      expect(picker).toHaveFocus();
+    });
+    expect(search()).toBe("?file=examples%2Fprompt.md");
+  },
+);
+
+test("Reach workflow file actions with arrows and typeahead, then delete with Enter", async () => {
+  const user = userEvent.setup();
   const updateBodies: WorkflowUpdateRequest[] = [];
   mockWorkflowApis([salesResearch()], (body) => {
     updateBodies.push(body);
@@ -4350,9 +4444,17 @@ test("Delete a supplementary workflow file", async () => {
     ).toBeInTheDocument();
   });
   click(screen.getByLabelText("Workflow files"));
-  click(menuItemByText(/config\/settings\.json/));
-  click(screen.getByLabelText("Workflow files"));
-  click(screen.getByLabelText("Delete config/settings.json"));
+  click(workflowFileItemByText(/config\/settings\.json/));
+  await user.click(screen.getByLabelText("Workflow files"));
+  await user.keyboard("{End}");
+  expect(menuItemByText("Delete selected file")).toHaveFocus();
+  await user.keyboard("{ArrowUp}");
+  expect(menuItemByText("Upload text files")).toHaveFocus();
+  await user.keyboard("{Home}u");
+  expect(menuItemByText("Upload text files")).toHaveFocus();
+  await user.keyboard("{Escape}{ArrowDown}d");
+  expect(menuItemByText("Delete selected file")).toHaveFocus();
+  await user.keyboard("{Enter}");
 
   await waitFor(() => {
     expect(updateBodies.at(-1)?.files).toStrictEqual([
@@ -4362,9 +4464,15 @@ test("Delete a supplementary workflow file", async () => {
       },
     ]);
   });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Workflow files")).toHaveTextContent(
+      "instructions",
+    );
+  });
 });
 
-test("Upload a supplementary workflow file", async () => {
+test("Upload after the file menu closes and reselect the same file after an empty selection", async () => {
+  const user = userEvent.setup();
   const updateBodies: WorkflowUpdateRequest[] = [];
   mockWorkflowApis([salesResearch()], (body) => {
     updateBodies.push(body);
@@ -4378,13 +4486,15 @@ test("Upload a supplementary workflow file", async () => {
     ).toBeInTheDocument();
   });
 
-  click(screen.getByLabelText("Workflow files"));
-  const input = screen.getByLabelText("Upload workflow files");
-  fireEvent.change(input, {
-    target: {
-      files: [new File(["new notes"], "notes.md", { type: "text/markdown" })],
-    },
+  await user.click(screen.getByLabelText("Workflow files"));
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
+  const file = new File(["new notes"], "notes.md", {
+    type: "text/markdown",
+  });
+  await user.upload(screen.getByLabelText("Upload workflow files"), file);
 
   await waitFor(() => {
     expect(updateBodies.at(-1)?.files).toContainEqual({
@@ -4395,6 +4505,23 @@ test("Upload a supplementary workflow file", async () => {
   expect(updateBodies.at(-1)?.files).toContainEqual({
     path: "config/settings.json",
     content: '{ "risk": "low", "tone": "direct" }',
+  });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Workflow files")).toHaveTextContent(
+      "notes.md",
+    );
+  });
+
+  await user.upload(screen.getByLabelText("Upload workflow files"), []);
+  expect(screen.getByLabelText("Workflow files")).toHaveTextContent("notes.md");
+
+  click(screen.getByLabelText("Workflow files"));
+  click(workflowFileItemByText("instructions"));
+  await user.upload(screen.getByLabelText("Upload workflow files"), file);
+  await waitFor(() => {
+    expect(screen.getByLabelText("Workflow files")).toHaveTextContent(
+      "notes.md",
+    );
   });
 });
 

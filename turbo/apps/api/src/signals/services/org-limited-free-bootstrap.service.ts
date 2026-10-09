@@ -30,7 +30,7 @@ import {
   DEFAULT_AGENT_SOUND,
 } from "./default-agent-profile";
 import {
-  grantOnboardingCredits,
+  grantOnboardingUsagePackCredits,
   LIMITED_FREE_ONBOARDING_CREDITS,
   onboardingCreditsExpiresAt,
 } from "./onboarding-credit-grants.service";
@@ -495,9 +495,10 @@ async function finalizeBootstrap(
     return { bootstrapped: true, agentId: agentRow.id };
   }
 
-  await grantOnboardingCredits(
+  await grantOnboardingUsagePackCredits(
     tx,
     args.orgId,
+    args.ownerUserId,
     LIMITED_FREE_ONBOARDING_CREDITS,
     onboardingCreditsExpiresAt(nowDate()),
   );

@@ -162,6 +162,9 @@ pub(in super::super) fn mock_run_config_with_api_url(
 fn healthy_mock_sandbox_runtime() -> Box<dyn sandbox::SandboxRuntime> {
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
     crate::idle_reuse_preparation::add_healthy_reuse_preparation_matcher(&overrides);
+    runner_lifecycle::workspace_promotion::test_support::add_healthy_cache_preparation_matcher(
+        &overrides,
+    );
     Box::new(MockSandboxRuntime::with_overrides(overrides))
 }
 
@@ -282,7 +285,6 @@ fn build_mock_run_config_with_runtime(
             background_fill: crate::storage_cache::StorageCacheBackgroundFillCoordinator::new()
                 .unwrap(),
             pre_spawn_admission: crate::pre_spawn_admission::PreSpawnAdmission::new(2).unwrap(),
-            storage_baseline_observer: Default::default(),
             home,
             workspace_cache: None,
         }),
@@ -390,6 +392,9 @@ pub(in super::super) fn mock_run_config_with_overrides_and_api_url(
     api_url: &str,
 ) -> (RunConfig, MockRunEnv) {
     crate::idle_reuse_preparation::add_healthy_reuse_preparation_matcher(&overrides);
+    runner_lifecycle::workspace_promotion::test_support::add_healthy_cache_preparation_matcher(
+        &overrides,
+    );
     build_mock_run_config_with_runtime(
         profiles,
         budget_vcpu,

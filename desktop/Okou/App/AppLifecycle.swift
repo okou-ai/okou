@@ -9,10 +9,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
   SPUUpdaterDelegate
 {
   private static let wordmarkItem = NSToolbarItem.Identifier("okou.wordmark")
+  private var wordmarkView: NSImageView?
   private var window: NSWindow!
   private var model: DesktopModel!
   private var statusItem: NSStatusItem!
-  private var updaterController: SPUStandardUpdaterController?
+  private var updater: SPUUpdater?
+  private var updateDriver: DesktopUpdateDriver?
+  private var updateInstalling = false
+  private var requiredCheckPending = false
   private var pendingUpdate: (() -> Void)?
   private var terminating = false
   private var menuRefreshPending = false
@@ -83,8 +87,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
       // Unsigned CI artifacts exercise startup without attempting a
       // production update; distribution artifacts use Developer ID trust.
       if Bundle.main.object(forInfoDictionaryKey: "OkouUpdatesEnabled") as? Bool == true {
-        updaterController = SPUStandardUpdaterController(
-          startingUpdater: true, updaterDelegate: self, userDriverDelegate: nil)
+        let driver = DesktopUpdateDriver(model: model)
+        updateDriver = driver
+        let updater = SPUUpdater(
+          hostBundle: .main, applicationBundle: .main,
+          userDriver: driver, delegate: self)
+        self.updater = updater
+        try updater.start()
+      }
+      model.requestRequiredUpdate = { [weak self] in
+        self?.showWindow()
+        self?.checkRequiredUpdate()
       }
       scheduleMenus()
       model.start()
@@ -110,19 +123,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
       let url = Bundle.main.url(forResource: "wordmark", withExtension: "png"),
       let image = NSImage(contentsOf: url)
     else { return nil }
-    let view = NSImageView()
+    let container = NSView(frame: NSRect(x: 0, y: 0, width: 64, height: 22))
+    container.translatesAutoresizingMaskIntoConstraints = false
+    NSLayoutConstraint.activate([
+      container.widthAnchor.constraint(equalToConstant: 64),
+      container.heightAnchor.constraint(equalToConstant: 22),
+    ])
+    let view = NSImageView(frame: container.bounds)
     view.image = image
     view.imageScaling = .scaleProportionallyUpOrDown
-    view.translatesAutoresizingMaskIntoConstraints = false
-    NSLayoutConstraint.activate([
-      view.widthAnchor.constraint(equalToConstant: 64),
-      view.heightAnchor.constraint(equalToConstant: 22),
-    ])
     view.setAccessibilityElement(false)
+    container.addSubview(view)
+    wordmarkView = view
     let item = NSToolbarItem(itemIdentifier: itemIdentifier)
     item.label = "Okou"
-    item.view = view
+    item.view = container
     return item
+  }
+  func windowDidUpdate(_ notification: Notification) {
+    guard let contentView = window?.contentView else { return }
+    let top = contentView.convert(contentView.bounds, to: nil).maxY
+    // Center within the native toolbar and its matching SwiftUI extension together.
+    let titlebarHeight = top - window.contentLayoutRect.maxY + DesktopView.titlebarExtension
+    let center = NSPoint(x: 0, y: top - titlebarHeight / 2)
+    let views: [NSView?] = [
+      window.standardWindowButton(.closeButton),
+      window.standardWindowButton(.miniaturizeButton),
+      window.standardWindowButton(.zoomButton),
+      wordmarkView,
+    ]
+    for case let view? in views {
+      guard let superview = view.superview else { continue }
+      let originY = superview.convert(center, from: nil).y - view.frame.height / 2
+      if view.frame.origin.y != originY {
+        view.setFrameOrigin(NSPoint(x: view.frame.origin.x, y: originY))
+      }
+    }
   }
   private func smokeTest(configuration: DesktopConfiguration) throws {
     guard Bundle.main.bundleIdentifier != nil, configuration.product == "okou",
@@ -148,6 +184,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
     NSApplication.shared.setActivationPolicy(.regular)
     window?.makeKeyAndOrderFront(nil)
     NSApplication.shared.activate(ignoringOtherApps: true)
+  }
+  func applicationDidBecomeActive(_ notification: Notification) {
+    guard model != nil, !terminating, !updateInstalling else { return }
+    Task { await model.checkCompatibility() }
+  }
+  private func checkRequiredUpdate() {
+    guard let updater else {
+      model.upgradePhase = .failed(
+        "Automatic updates are unavailable in this build. Download the latest Okou.")
+      return
+    }
+    updateDriver?.requireUpgrade()
+    if updater.canCheckForUpdates {
+      requiredCheckPending = false
+      updater.checkForUpdates()
+    } else {
+      // A scheduled check may already own Sparkle at launch. Resume the
+      // required foreground cycle when it finishes rather than losing it.
+      requiredCheckPending = true
+    }
   }
   func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool
   {
@@ -204,7 +260,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
     menu.autoenablesItems = false
     menu.addItem(
       item(
-        "Okou · \(model.online ? model.statusLabel : model.ready ? "Offline" : "Needs setup")",
+        "Okou · \(model.compatibility.required ? "Update required" : model.online ? model.statusLabel : model.ready ? "Offline" : "Needs setup")",
         enabled: false))
     menu.addItem(.separator())
     menu.addItem(item("Open Okou", action: #selector(showWindow)))
@@ -256,7 +312,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
     app.addItem(
       item(
         "Check for Updates...", action: #selector(checkForUpdates),
-        enabled: updaterController?.updater.canCheckForUpdates == true))
+        enabled: updater?.canCheckForUpdates == true))
     if model.developerToolsAvailable {
       let developer = item("Developer Tools", action: #selector(toggleDeveloper))
       developer.state = model.developerToolsEnabled ? .on : .off
@@ -314,7 +370,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
   }
   @objc private func about() { NSApplication.shared.orderFrontStandardAboutPanel(nil) }
   @objc private func quit() { NSApplication.shared.terminate(nil) }
-  @objc private func checkForUpdates() { updaterController?.checkForUpdates(nil) }
+  @objc private func checkForUpdates() { updater?.checkForUpdates() }
+  func updater(
+    _ updater: SPUUpdater, shouldProceedWithUpdate item: SUAppcastItem,
+    updateCheck: SPUUpdateCheck
+  ) throws {
+    if model.compatibility.required
+      && (item.isInformationOnlyUpdate || !model.compatibility.permitsUpdate(item.versionString))
+    {
+      throw DesktopFailure(
+        "unsupported_update", "No update meeting the minimum version is available")
+    }
+  }
+  func updater(
+    _ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck,
+    error: Error?
+  ) {
+    updateDriver?.finishCycle()
+    if let error, model.compatibility.required, !model.upgradePhase.failed {
+      model.upgradePhase = .failed(DesktopUpdateDriver.failureMessage(error))
+    }
+    if error != nil { updateInstalling = false }
+    if requiredCheckPending, model.compatibility.required, pendingUpdate == nil, !updateInstalling {
+      requiredCheckPending = false
+      DispatchQueue.main.async { [weak self] in self?.checkRequiredUpdate() }
+    }
+    scheduleMenus()
+  }
   func updater(
     _ updater: SPUUpdater, willInstallUpdateOnQuit item: SUAppcastItem,
     immediateInstallationBlock: @escaping () -> Void
@@ -324,11 +406,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
     return true
   }
   private func installPendingUpdateWhenIdle() {
-    guard !terminating, !model.busy, !model.runtime.shouldDeferUpdate, let install = pendingUpdate
+    guard !terminating, !updateInstalling, !model.busy,
+      model.compatibility.required || !model.runtime.shouldDeferUpdate, let install = pendingUpdate
     else { return }
     pendingUpdate = nil
+    updateInstalling = true
     Task {
-      await model.shutdown()
+      if model.compatibility.required {
+        await model.drainForUpgrade()
+        model.upgradePhase = .installing
+      }
+      await model.stopForUpdate()
       install()
     }
   }

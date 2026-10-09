@@ -9,7 +9,6 @@ import {
   setSecretKmsClientForTests,
 } from "../../../lib/secret-kms-client";
 
-import { setModelPiRouteClassFixture } from "../../../test-fixtures/model-catalog";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 
 import { chatEventDisplayText } from "./helpers/chat-event";
@@ -216,47 +215,6 @@ describe("CHAT-02: model-first routing", () => {
     await expectThreadModelCredits(context, actor, run.threadId, 0);
     await cancelChatRun(actor, run.runId);
   }, 90_000);
-
-  it("launches a model on the runtime its catalog Pi route class selects", async () => {
-    await seedBuiltInModelKey(context, "okou-1.0", undefined, {
-      isolatePg: true,
-    });
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    const { model, runModel, sendChatRun, claimChatRun, cancelChatRun } =
-      await configureResponsesWithOwnedRuns({
-        actor,
-        agentId,
-        runnerGroup,
-        selectedModel: "okou-1.0",
-      });
-    mockPiResourceArchiveDownloads();
-    mockPiCheckpointObjectStore();
-    const launch = async (prompt: string) => {
-      const run = await sendChatRun(actor, {
-        agentId,
-        prompt,
-        model,
-      });
-      await flushWaitUntilForTest();
-      const { claim } = await claimChatRun(runnerGroup, run.runId);
-      await cancelChatRun(actor, run.runId);
-      return { claim };
-    };
-
-    // An operator takes the model off Pi: it launches on its vendor harness.
-    const restore = await setModelPiRouteClassFixture(runModel, null);
-    const vendor = await launch("run on the vendor harness");
-    await restore();
-    expect(vendor.claim.cliAgentType).toBe("pi");
-
-    // The seeded `gpt-codex` class launches the same route on Pi.
-    const pi = await launch("run on Pi");
-    expect(pi.claim.cliAgentType).toBe("pi");
-    expect(pi.claim.piModelConfig).toMatchObject({
-      provider: "openrouter",
-      model: "@preset/okou-1-0",
-    });
-  });
 
   it("transfers pre-migration OpenRouter Chat JSONL by reference", async () => {
     await seedBuiltInModelKey(context, "okou-1.0");

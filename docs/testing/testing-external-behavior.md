@@ -64,6 +64,21 @@ That means:
    too. Use the production endpoint appropriate to that actor and mock only its
    external dependencies. Thin API helpers must preserve that boundary.
 
+An external storage mock does not authorize inventing application-owned records.
+Returning S3 unavailability for an upload created through the normal API is a
+provider failure; injecting an artifact alias with invented target identities
+to force a collision is private application-state construction. Observe share
+publication and revocation through the resulting access and catalog responses.
+External byte transfers and emitted documents consumed by another production
+component can still be meaningful boundary effects.
+
+The observer must also be a real surviving caller. After a verified account
+deletion, mocking the deleted session back into existence does not establish a
+public observation path. Unrelated owners can still verify their own files; that
+proves isolation, not the erased owner's physical row deletion. Likewise, an
+overlapping request may use a caller-supplied ID or an already returned ID, not
+one learned only by inspecting an internal write.
+
 For API tests, the database is not the external interface. DB schema is internal
 implementation.
 
@@ -89,7 +104,11 @@ worker execution, and service return values all cross the internal boundary.
 Moving a test HTTP operation into an exported fixture function preserves the
 same problem, even if that function has no direct DB import. Follow the
 commands it invokes. A helper may wrap genuine authenticated API calls; its
-name is not evidence that its setup is public.
+name is not evidence that its setup is public. A test-only transport probe
+that exposes arbitrary methods, a cancellation toggle, or raw service results
+is also private execution. Prefer the real OAuth lifecycle and its externally
+observable discovery or callback result; do not preserve the probe by moving
+its handler into a helper.
 
 ## Cases Without Public Construction
 
@@ -139,6 +158,14 @@ records this decision separately for each inventoried definition or operation.
 Inventory-item progress and test-declaration/parameter-branch changes are
 different measures; neither endpoint removal nor helper renaming establishes
 compliance by itself.
+
+A genuine shared-library protocol can have its own boundary. For example,
+`piMemoryPhase2SelectionDigest` is exported by `@okouai/pi-agent-runtime/api`
+and consumed by both API maintenance and runtime filesystem code. Its owning
+package tests the fixed byte-encoding vectors without an API database, worker
+or private fixture. Batch 005 retains those vectors there while removing a
+redundant API wrapper. This does not authorize relocating API service tests or
+privately constructed business scenarios into a library package.
 
 ## Infrastructure and External Providers
 

@@ -24,8 +24,7 @@ import { i18n } from "../../i18n/index.ts";
 import { connectorIconFromSearchParams } from "./connector-redirecting-page-setup.ts";
 
 type ConnectorCallbackPageResult =
-  | { readonly status: "loading" }
-  | ConnectorOauthCallbackResult;
+  { readonly status: "loading" } | ConnectorOauthCallbackResult;
 type ConnectorCallbackSlug = ConnectorSlug | "custom";
 
 function connectorSlugFromPath(

@@ -43,10 +43,7 @@ const internalReload$ = state(0);
 const internalAuthorizedAgentsReload$ = state(0);
 
 export type CustomConnectorAuthMethodType =
-  | "none"
-  | "api"
-  | "automatic"
-  | "oauth2";
+  "none" | "api" | "automatic" | "oauth2";
 
 export const customConnectorAuthorizationReloadVersion$ = computed((get) => {
   return get(internalAuthorizedAgentsReload$);

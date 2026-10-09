@@ -30,49 +30,16 @@ mv "$output_dir/$package_filename" "$output_dir/package.tgz"
 package_sha256="$(sha256sum "$output_dir/package.tgz" | cut -d ' ' -f 1)"
 package_size="$(wc -c < "$output_dir/package.tgz" | tr -d '[:space:]')"
 
-# Versions carried by this bundle. The runner rootfs installs the bundle by
-# `cli` version and the API compares `piAgentRuntime` for API-first handoff
-# parity, so both must be the release versions of the packed sources. The Pi
-# SDK identity is the pinned upstream version plus a digest of the first-party
-# patch set, because the same upstream pin can carry different patches.
-release_version_pattern='^[0-9]+\.[0-9]+\.[0-9]+$'
-cli_version="$(jq -er '.version' turbo/apps/cli/dist/package.json)"
-pi_agent_runtime_version="$(jq -er '.version' turbo/packages/pi-agent-runtime/package.json)"
-pi_sdk_pin="$(jq -er '.dependencies["@earendil-works/pi-coding-agent"]' turbo/packages/pi-agent-runtime/package.json)"
-for pair in "cli:$cli_version" "piAgentRuntime:$pi_agent_runtime_version" "piSdk pin:$pi_sdk_pin"; do
-  if [[ ! "${pair#*:}" =~ $release_version_pattern ]]; then
-    echo "CLI artifact ${pair%%:*} version must be MAJOR.MINOR.PATCH: ${pair#*:}" >&2
-    exit 1
-  fi
-done
-pi_sdk_patch_files=()
-while IFS= read -r patch_file; do
-  pi_sdk_patch_files+=("$patch_file")
-done < <(find turbo/patches -maxdepth 1 -type f -name '@earendil-works__*.patch' | LC_ALL=C sort)
-if [[ ${#pi_sdk_patch_files[@]} -eq 0 ]]; then
-  echo "CLI artifact expects the first-party Pi SDK patch set under turbo/patches" >&2
-  exit 1
-fi
-pi_sdk_patch_set="$(cat "${pi_sdk_patch_files[@]}" | sha256sum | cut -c1-12)"
-pi_sdk_version="${pi_sdk_pin}+okou.${pi_sdk_patch_set}"
-
-# The session-construction digest is the parity key the guest and the CLI
-# compare for API-first handoffs. The runtime package commits it and its test
-# suite fails while it is stale, so the packed sources and this value agree.
-pi_session_construction_digest="$(jq -er '.digest' turbo/packages/pi-agent-runtime/session-construction-digest.json)"
-if [[ ! "$pi_session_construction_digest" =~ ^[0-9a-f]{64}$ ]]; then
-  echo "CLI artifact session-construction digest must be 64 lowercase hex: $pi_session_construction_digest" >&2
-  exit 1
-fi
+# Installation identity belongs to the actual package, not a second workspace
+# read after packing. Commit provenance and byte integrity remain external.
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+identity="$(python3 "${script_dir}/read-okou-cli-package-identity.py" "$output_dir/package.tgz")"
 
 jq -n \
   --arg commit_sha "$commit_sha" \
   --arg package_sha256 "$package_sha256" \
   --argjson package_size "$package_size" \
-  --arg cli_version "$cli_version" \
-  --arg pi_agent_runtime_version "$pi_agent_runtime_version" \
-  --arg pi_sdk_version "$pi_sdk_version" \
-  --arg pi_session_construction_digest "$pi_session_construction_digest" \
+  --argjson identity "$identity" \
   '{
     version: 1,
     commitSha: $commit_sha,
@@ -81,14 +48,8 @@ jq -n \
       sha256: $package_sha256,
       size: $package_size
     },
-    versions: {
-      cli: $cli_version,
-      piAgentRuntime: $pi_agent_runtime_version,
-      piSdk: $pi_sdk_version
-    },
-    sessionConstruction: {
-      digest: $pi_session_construction_digest
-    }
+    versions: $identity.versions,
+    sessionConstruction: $identity.sessionConstruction
   }' > "$output_dir/manifest.json"
 
 manifest_sha256="$(sha256sum "$output_dir/manifest.json" | cut -d ' ' -f 1)"

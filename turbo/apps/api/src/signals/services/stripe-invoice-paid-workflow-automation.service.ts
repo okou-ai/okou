@@ -10,6 +10,7 @@ import {
   loadBuiltinConnectorCredentialConnection,
   loadBuiltinConnectorCredentialValues,
   type BuiltinConnectorCredentialConnection,
+  type BuiltinConnectorCredentialConnectionResult,
 } from "./builtin-connector-credential-runtime.service";
 import { resolveWorkflowAutomationConnectorId } from "./workflow-automation-account.service";
 import { loadConnectorRuntimeAuthSelection } from "./connector-catalog-slug-source.service";
@@ -18,8 +19,6 @@ const STRIPE_CONNECTOR_SLUG = "stripe";
 const STRIPE_LIVEMODE_VALUE_REF = "$vars.STRIPE_LIVEMODE";
 const STRIPE_LIVEMODE_VARIABLE_NAME = "STRIPE_LIVEMODE";
 
-const CONNECT_STRIPE_OAUTH_MESSAGE =
-  "Connect Stripe with OAuth in Live mode before adding a Stripe invoice-paid automation";
 const RECONNECT_STRIPE_OAUTH_MESSAGE =
   "Reconnect Stripe with OAuth before using Stripe invoice-paid automations";
 const STRIPE_OAUTH_REQUIRED_MESSAGE =
@@ -56,31 +55,12 @@ function badRequest(message: string): ReadyStripeConnectionResult {
   return { kind: "bad_request", message };
 }
 
-async function loadReadyStripeConnection(
-  args: {
-    readonly connectorId: string;
-    readonly db: ReadonlyDb;
-    readonly missingMessage: string;
-    readonly orgId: string;
-    readonly userId: string;
-  },
-  signal: AbortSignal,
-): Promise<ReadyStripeConnectionResult> {
-  const snapshot = await loadConnectorRuntimeAuthSelection(args.db, {
-    connectorSlugs: [STRIPE_CONNECTOR_SLUG],
-  });
-  signal.throwIfAborted();
-  const loaded = await loadBuiltinConnectorCredentialConnection({
-    db: args.db,
-    snapshot,
-    orgId: args.orgId,
-    userId: args.userId,
-    connectorSlug: STRIPE_CONNECTOR_SLUG,
-    connectorId: args.connectorId,
-  });
-  signal.throwIfAborted();
+export function stripeConnectionReadiness(
+  loaded: BuiltinConnectorCredentialConnectionResult,
+  missingMessage: string,
+): ReadyStripeConnectionResult {
   if (loaded.kind === "missing") {
-    return badRequest(args.missingMessage);
+    return badRequest(missingMessage);
   }
   if (loaded.kind === "unavailable") {
     return badRequest(RECONNECT_STRIPE_OAUTH_MESSAGE);
@@ -105,6 +85,46 @@ async function loadReadyStripeConnection(
     return badRequest(RECONNECT_STRIPE_OAUTH_MESSAGE);
   }
 
+  return { kind: "ok", connection, stripeAccountId };
+}
+
+export function stripeLiveModeReadinessMessage(
+  value: string | undefined,
+): string | null {
+  if (value === "false") {
+    return STRIPE_LIVE_MODE_REQUIRED_MESSAGE;
+  }
+  return value === "true" ? null : RECONNECT_STRIPE_OAUTH_MESSAGE;
+}
+
+async function loadReadyStripeConnection(
+  args: {
+    readonly connectorId: string;
+    readonly db: ReadonlyDb;
+    readonly missingMessage: string;
+    readonly orgId: string;
+    readonly userId: string;
+  },
+  signal: AbortSignal,
+): Promise<ReadyStripeConnectionResult> {
+  const snapshot = await loadConnectorRuntimeAuthSelection(args.db, {
+    connectorSlugs: [STRIPE_CONNECTOR_SLUG],
+  });
+  signal.throwIfAborted();
+  const loaded = await loadBuiltinConnectorCredentialConnection({
+    db: args.db,
+    snapshot,
+    orgId: args.orgId,
+    userId: args.userId,
+    connectorSlug: STRIPE_CONNECTOR_SLUG,
+    connectorId: args.connectorId,
+  });
+  signal.throwIfAborted();
+  const ready = stripeConnectionReadiness(loaded, args.missingMessage);
+  if (ready.kind === "bad_request") {
+    return ready;
+  }
+  const { connection, stripeAccountId } = ready;
   const values = await loadBuiltinConnectorCredentialValues({
     connection,
     db: args.db,
@@ -112,56 +132,12 @@ async function loadReadyStripeConnection(
   });
   signal.throwIfAborted();
   const livemode = values.get(STRIPE_LIVEMODE_VALUE_REF);
-  if (livemode === "false") {
-    return badRequest(STRIPE_LIVE_MODE_REQUIRED_MESSAGE);
-  }
-  if (livemode !== "true") {
-    return badRequest(RECONNECT_STRIPE_OAUTH_MESSAGE);
+  const modeError = stripeLiveModeReadinessMessage(livemode);
+  if (modeError !== null) {
+    return badRequest(modeError);
   }
 
   return { kind: "ok", connection, stripeAccountId };
-}
-
-export async function resolveStripeInvoicePaidAutomationBinding(
-  args: {
-    readonly db: ReadonlyDb;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly workflowId: string;
-  },
-  signal: AbortSignal,
-): Promise<StripeInvoicePaidAutomationReadinessResult> {
-  const connectorId = await resolveWorkflowAutomationConnectorId(args.db, {
-    orgId: args.orgId,
-    userId: args.userId,
-    workflowId: args.workflowId,
-    connectorSlug: STRIPE_CONNECTOR_SLUG,
-  });
-  signal.throwIfAborted();
-  if (connectorId === null) {
-    return { kind: "bad_request", message: CONNECT_STRIPE_OAUTH_MESSAGE };
-  }
-  const ready = await loadReadyStripeConnection(
-    {
-      db: args.db,
-      orgId: args.orgId,
-      userId: args.userId,
-      connectorId,
-      missingMessage: STRIPE_SELECTION_CHANGED_MESSAGE,
-    },
-    signal,
-  );
-  if (ready.kind === "bad_request") {
-    return ready;
-  }
-  return {
-    kind: "ok",
-    binding: {
-      connectorId: ready.connection.connectorId,
-      stripeAccountId: ready.stripeAccountId,
-      mode: "live",
-    },
-  };
 }
 
 export async function validateStripeInvoicePaidAutomationBinding(

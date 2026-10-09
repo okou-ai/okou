@@ -17,6 +17,7 @@ import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
   Button,
+  buttonVariants,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -63,8 +64,6 @@ import type { ComposerSignals } from "../../signals/okou-page/composer-signals.t
 import {
   CUSTOM_TEMPLATE_IMPORT_ACCEPT,
   importPresentationTemplateDeck$,
-  openCustomTemplateImport$,
-  setCustomTemplateImportInput$,
 } from "../../signals/okou-page/presentation-template-import.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
@@ -426,53 +425,50 @@ function CustomTemplateImportButton({
   readonly onImported: () => void;
 }) {
   const { t } = useTranslation();
-  const setInput = useSet(setCustomTemplateImportInput$);
-  const openImport = useSet(openCustomTemplateImport$);
   const rootSignal = useGet(rootSignal$);
   const importDeck = useSet(importPresentationTemplateDeck$);
   const label = t(($) => {
     return $.artifacts.templates.importFile;
   });
   return (
-    <>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="max-[374px]:px-2 max-[374px]:text-xs"
-              onClick={openImport}
-            >
-              <Upload aria-hidden />
-              {label}
-            </Button>
-          }
-        />
-        <TooltipContent>
-          {t(($) => {
-            return $.templates.importHint;
-          })}
-        </TooltipContent>
-      </Tooltip>
-      <input
-        ref={setInput}
-        type="file"
-        className="hidden"
-        accept={CUSTOM_TEMPLATE_IMPORT_ACCEPT}
-        aria-label={label}
-        onChange={(event) => {
-          const file = event.currentTarget.files?.[0];
-          event.currentTarget.value = "";
-          if (!file) {
-            return;
-          }
-          onImported();
-          detach(importDeck({ signals, file }, rootSignal), Reason.DomCallback);
-        }}
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <label
+            className={cn(
+              buttonVariants({ variant: "outline", size: "sm" }),
+              "max-[374px]:px-2 max-[374px]:text-xs has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring has-[:focus-visible]:ring-offset-2",
+            )}
+          >
+            <input
+              type="file"
+              className="sr-only"
+              accept={CUSTOM_TEMPLATE_IMPORT_ACCEPT}
+              aria-label={label}
+              onChange={(event) => {
+                const file = event.currentTarget.files?.[0];
+                event.currentTarget.value = "";
+                if (!file) {
+                  return;
+                }
+                onImported();
+                detach(
+                  importDeck({ signals, file }, rootSignal),
+                  Reason.DomCallback,
+                );
+              }}
+            />
+            <Upload aria-hidden />
+            {label}
+          </label>
+        }
       />
-    </>
+      <TooltipContent>
+        {t(($) => {
+          return $.templates.importHint;
+        })}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 

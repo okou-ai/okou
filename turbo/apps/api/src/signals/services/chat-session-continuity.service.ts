@@ -1,10 +1,14 @@
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import type { ChatThreadRequestRow } from "./chat-thread-request-facts";
 import { agents } from "@okouai/db/schema/agent";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { blobs } from "@okouai/db/schema/blob";
 import { conversations } from "@okouai/db/schema/conversation";
+import { computed, type Computed } from "ccstate";
+import { and, eq, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
+import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
+import { db$ } from "../external/db";
+import type { ChatThreadRequestRow } from "./chat-thread-request-facts";
 import {
   canReuseSession,
   type SessionExecutionIdentity,
@@ -13,9 +17,7 @@ import {
 export type ChatThreadSessionRoute = SessionExecutionIdentity;
 
 export type ChatThreadSessionResolutionAction =
-  | "initialized"
-  | "reused"
-  | "rotated";
+  "initialized" | "reused" | "rotated";
 
 export interface ChatThreadSessionSnapshot {
   readonly threadAgentId: string | null;
@@ -27,6 +29,7 @@ export interface ChatThreadSessionSnapshot {
 
 export interface ChatThreadSessionResolution {
   readonly sessionId: string | undefined;
+  readonly previousAgentId: string | null;
   /** Native history may reset while the thread keeps its application session. */
   readonly action: ChatThreadSessionResolutionAction;
   readonly resetNativeSession: boolean;
@@ -71,54 +74,106 @@ export interface ChatThreadSessionQuerySnapshot extends Omit<
   readonly agentSessionId: string | null;
   readonly agentSessionRunId: string | null;
   readonly selectedModel: string | null;
+  readonly cliAgentType: string | null;
   readonly cloudBrowserEnabled: boolean;
   readonly session: ChatThreadExecutionSnapshot["session"] | null;
 }
 
-export const chatThreadConversationRun = alias(
-  agentRuns,
-  "chat_thread_conversation_run",
-);
+export type ChatThreadSessionRead = Omit<
+  ChatThreadSessionQuerySnapshot,
+  | "threadAgentId"
+  | "agentSessionId"
+  | "agentSessionRunId"
+  | "cloudBrowserEnabled"
+  | "agent"
+>;
 
-export function chatThreadSessionSelection() {
+export function createChatThreadSessionRead(
+  thread$: Computed<Promise<ChatThreadRequestRow | null>>,
+  orgId: string,
+  userId: string,
+): Computed<Promise<ChatThreadSessionRead | undefined>> {
+  return computed(async (get) => {
+    const thread = await get(thread$);
+    if (!thread?.agentSessionId) {
+      return undefined;
+    }
+    const conversationRun = alias(agentRuns, "chat_thread_conversation_run");
+    const [row] = await get(db$)
+      .select({
+        selectedModel: agentRuns.selectedModel,
+        cliAgentType: sql`${agentRuns.launchSnapshot}->>'framework'`.mapWith(
+          nullableDriverValueDecoder(conversations.cliAgentType),
+        ),
+        session: {
+          id: agentSessions.id,
+          agentId: agentSessions.agentId,
+          storageMounts: agentSessions.storageMounts,
+          conversationId: agentSessions.conversationId,
+        },
+        conversation: {
+          id: conversations.id,
+          runId: conversations.runId,
+          cliAgentType: conversations.cliAgentType,
+          cliAgentSessionId: conversations.cliAgentSessionId,
+          cliAgentSessionHistory: conversations.cliAgentSessionHistory,
+          cliAgentSessionHistoryHash: conversations.cliAgentSessionHistoryHash,
+        },
+        historyBlob: { hash: blobs.hash, encoding: blobs.encoding },
+        previousRun: {
+          id: conversationRun.id,
+          vars: conversationRun.vars,
+          storageMounts: conversationRun.storageMounts,
+          selectedModel: conversationRun.selectedModel,
+        },
+      })
+      .from(agentSessions)
+      .leftJoin(
+        conversations,
+        eq(conversations.id, agentSessions.conversationId),
+      )
+      .leftJoin(blobs, eq(blobs.hash, conversations.cliAgentSessionHistoryHash))
+      .leftJoin(conversationRun, eq(conversationRun.id, conversations.runId))
+      .leftJoin(
+        agentRuns,
+        thread.agentSessionRunId
+          ? eq(agentRuns.id, thread.agentSessionRunId)
+          : sql`FALSE`,
+      )
+      .where(
+        and(
+          eq(agentSessions.id, thread.agentSessionId),
+          eq(agentSessions.userId, userId),
+          eq(agentSessions.orgId, orgId),
+        ),
+      )
+      .limit(1);
+    return row;
+  });
+}
+
+/** Compare the model and runtime belonging to the same native generation. */
+export function chatThreadSessionIdentity(
+  read: ChatThreadSessionRead | undefined,
+): SessionExecutionIdentity | null {
+  if (!read?.session) {
+    return null;
+  }
+  if (read.conversation) {
+    return {
+      selectedModel: read.previousRun?.selectedModel ?? null,
+      cliAgentType: read.conversation.cliAgentType,
+    };
+  }
   return {
-    selectedModel: agentRuns.selectedModel,
-    session: {
-      id: agentSessions.id,
-      agentId: agentSessions.agentId,
-      storageMounts: agentSessions.storageMounts,
-      conversationId: agentSessions.conversationId,
-    },
-    conversation: {
-      id: conversations.id,
-      runId: conversations.runId,
-      cliAgentType: conversations.cliAgentType,
-      cliAgentSessionId: conversations.cliAgentSessionId,
-      cliAgentSessionHistory: conversations.cliAgentSessionHistory,
-      cliAgentSessionHistoryHash: conversations.cliAgentSessionHistoryHash,
-    },
-    historyBlob: { hash: blobs.hash, encoding: blobs.encoding },
-    previousRun: {
-      id: chatThreadConversationRun.id,
-      vars: chatThreadConversationRun.vars,
-      storageMounts: chatThreadConversationRun.storageMounts,
-      selectedModel: chatThreadConversationRun.selectedModel,
-    },
+    selectedModel: read.selectedModel,
+    cliAgentType: read.cliAgentType,
   };
 }
 
 export function capturedChatThreadSessionSnapshot(
   thread: ChatThreadRequestRow,
-  read:
-    | Omit<
-        ChatThreadSessionQuerySnapshot,
-        | "threadAgentId"
-        | "agentSessionId"
-        | "agentSessionRunId"
-        | "cloudBrowserEnabled"
-        | "agent"
-      >
-    | undefined,
+  read: ChatThreadSessionRead | undefined,
   agent: ChatThreadExecutionSnapshot["agent"],
 ): ChatThreadSessionQuerySnapshot {
   // Preserve the original LEFT JOIN's nullable session result when no session exists.
@@ -129,6 +184,7 @@ export function capturedChatThreadSessionSnapshot(
     cloudBrowserEnabled: thread.cloudBrowserEnabled,
     agent,
     selectedModel: read?.selectedModel ?? null,
+    cliAgentType: read?.cliAgentType ?? null,
     session: read?.session ?? null,
     conversation: read?.conversation ?? null,
     historyBlob: read?.historyBlob ?? null,
@@ -138,7 +194,7 @@ export function capturedChatThreadSessionSnapshot(
 
 export function resolveChatThreadSessionSnapshot(
   thread: ChatThreadSessionQuerySnapshot,
-  args: { readonly agentId: string; readonly route: ChatThreadSessionRoute },
+  args: { readonly route: ChatThreadSessionRoute },
 ): ChatThreadSessionResolution {
   const session = thread.session;
   if (thread.agentSessionId !== null && session !== null) {
@@ -149,24 +205,12 @@ export function resolveChatThreadSessionSnapshot(
       sessionId: session.id,
       conversationId: session.conversationId,
     };
-    const historylessConversation =
-      thread.conversation !== null &&
-      thread.conversation.cliAgentSessionHistory === null &&
-      thread.conversation.cliAgentSessionHistoryHash === null;
-    const rotate =
-      thread.threadAgentId !== args.agentId ||
-      session.agentId !== args.agentId ||
-      historylessConversation ||
-      !canReuseSession(
-        {
-          selectedModel: thread.selectedModel,
-          cliAgentType: thread.conversation?.cliAgentType ?? null,
-        },
-        args.route,
-      );
+    const identity = chatThreadSessionIdentity(thread);
+    const rotate = identity !== null && !canReuseSession(identity, args.route);
     return {
       sessionId: session.id,
       action: rotate ? "rotated" : "reused",
+      previousAgentId: session.agentId,
       resetNativeSession: rotate,
       expected,
       cloudBrowserEnabled: thread.cloudBrowserEnabled,
@@ -182,8 +226,9 @@ export function resolveChatThreadSessionSnapshot(
 
   return {
     sessionId: undefined,
-    action: thread.threadAgentId === args.agentId ? "initialized" : "rotated",
-    resetNativeSession: thread.threadAgentId !== args.agentId,
+    previousAgentId: null,
+    action: "initialized",
+    resetNativeSession: false,
     expected: {
       threadAgentId: thread.threadAgentId,
       agentSessionId: thread.agentSessionId,

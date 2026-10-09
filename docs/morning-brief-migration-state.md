@@ -223,10 +223,10 @@ installation without relying on the retired Native projection.
 
 ## The exported contract
 
-`loadMorningBriefOwnership(db, owner)` answers "which installation does this
+`set(loadMorningBriefOwnership$, owner, signal)` answers "which installation does this
 member's preference surface manage?" and returns the enrollment row, every
 Morning Brief installation the member holds (oldest first), and the selected
-one. `loadMorningBriefMigrationState(db, owner)` composes the full view on top
+one. `set(loadMorningBriefMigrationState$, owner, signal)` composes the full view on top
 of it and returns exactly one of:
 
 | `kind`         | Meaning                                                     |
@@ -242,7 +242,7 @@ installation and `chatThreadId`. An `installed` state carries the automation's
 `enabled`, `cronExpression`, `timezone` and `nextRunAt`; an `inconsistent`
 state carries which invariant failed.
 
-`loadMorningBriefDefaultAgentId(db, owner)` resolves the Agent an org-wide
+`set(loadMorningBriefDefaultAgentId$, owner, signal)` resolves the Agent an org-wide
 action would use, and backs both the adoption tie-break and the Settings
 availability check.
 
@@ -276,45 +276,42 @@ availability check.
   reader converts a dependency failure into "no brief", and nothing here
   writes.
 
-## Automatic enrollment retries
+## Explicit installation only (#36270)
 
-Initialization, onboarding, membership events and the enrollment worker share
-the existing member advisory lock and durable enrollment retry fields. Intent
-is recorded before checking the feature switch, timezone, default Agent and
-accepted active workflow definition. Unknown eligibility is qualified once
-against Clerk so historical members keep their ineligible preference state.
-For a known eligible member, an unavailable local prerequisite does not repeat
-that read or consume the external failure budget; the worker revisits it after
-a minute, and an inline request can proceed as soon as the prerequisite arrives.
+Morning Brief is no longer automatically installed by preference initialization,
+timezone updates, onboarding completion, or Clerk membership creation. The
+workflow cron no longer scans historical timezone-bearing members or retries
+`checking` / `pending` enrollment rows. There is no enrollment retry lease,
+backoff, membership qualification, or automatic installation command in the API.
 
-A first qualification or locally ready attempt claims a five-minute recovery
-lease before reading current Clerk membership. Failed attempts retry after 1,
-2, 4, 8, then at most 15 minutes, and inline requests honor the same deadline as
-workers. Skipped requests do not extend an existing deadline. Explicit preference changes keep
-their own immediate behavior. Membership qualification preserves its lease;
-a new membership event or explicit choice invalidates an older retry writer.
-Settings reads the preference on load; enrollment progress is not pushed to an
-open page.
+Users can still install through the Official Workflow catalog or explicitly
+turn on the Morning Brief preference. An explicit choice with missing
+prerequisites remains recorded, but no background enrollment worker completes
+it: the user must repeat the enable operation after supplying the prerequisites.
+Existing installations, their selected ownership, explicit opt-outs, timezone
+synchronization, scheduled delivery, and manual enable/disable remain intact.
 
-Deletion records the departed membership generation even when enrollment has
-not started or an earlier live lookup already marked the member departed.
-Replayed creation of that generation cannot revive enrollment.
-A different live generation can qualify on a later ready attempt, including
-when its creation webhook was missed. Installation still checks current
-membership; local prerequisites and retry state never grant authority.
-
-These changes reuse the existing schema and HTTP contracts. Old browser
-initialization requests remain supported, and mixed older API workers may
-retain the previous retry behavior until rollout completes. Rollback does not
-require a data migration.
+The enrollment schema is retained because preference selection, explicit choices,
+membership cleanup and schedule claims still use it, and an outgoing API may
+still execute the former installer during rollout. No table, stored ownership,
+retry record or historical migration is physically deleted by this cleanup.
+Rollback requires no data migration; complete API promotion and drain outgoing
+instances before declaring automatic installation stopped in production.
 
 ## Reading it safely
 
-`loadMorningBriefMigrationState` is a composed read, not a transactional
-snapshot. Its parts can move between queries. Callers that act on the result —
-enabling, disabling, installing, or eventually claiming an occurrence — must
-invoke it inside the transaction or advisory lock that already guards that
-mutation, exactly as the preference surface does today.
+The reader commands obtain their own database through `get(db$)` and accept
+plain member identity plus a final positional `AbortSignal`. Database or
+transaction handles do not cross the reader boundary.
+
+`loadMorningBriefMigrationState$` is a composed read, not a transactional
+snapshot. Its parts can move between queries. The preference operation records
+the explicit choice, re-reads current ownership, and uses the existing
+conditional automation writer to apply it. That writer keeps the Official
+enabled bit and enrollment choice in one command-local transaction. Enrollment
+completion is conditional so a concurrent cancellation wins. Preserve these
+write guards and re-read after conditional writes; do not add a lock around
+the composed reader.
 
 ## Migration boundary
 

@@ -1,6 +1,7 @@
 # Balanced from successful PR runs 35555773756 and 35558264546, plus
 # merge-group run 35555833634.
 # The shard runner rejects missing, unknown, or duplicate test assignments.
+1 action-pins-test.sh
 1 aws-audit-target-setup-test.sh
 1 changed-test.sh
 1 check-workflow-shell-compatibility-test.sh
@@ -50,6 +51,7 @@
 2 runner-guest-binaries-test.sh
 2 runner-host-architecture-groups-test.sh
 2 runner-image-workflow-test.sh
+2 runner-rust-cache-prewarm-workflow-test.sh
 2 runner-token-env-alias-test.sh
 2 smoke-okou-cli-artifact-test.sh
 2 staging-workflow-test.sh
@@ -87,10 +89,12 @@
 3 workflow-script-test-shards-test.sh
 4 changed-base-ref-test.sh
 4 check-pr-title-test.sh
+4 check-pr-ci-capacity-test.sh
 4 check-release-please-component-releases-test.sh
 4 check-release-please-workspace-coverage-test.sh
 4 cleanup-stale-runners-test.sh
 4 clerk-test-resource-workflow-test.sh
+4 cli-package-identity-test.sh
 4 deploy-cli-local-test.sh
 4 dev-runner-test.sh
 4 fetch-okou-app-artifact-test.sh

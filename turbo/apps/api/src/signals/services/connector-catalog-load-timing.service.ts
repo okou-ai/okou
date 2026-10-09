@@ -7,28 +7,19 @@ import {
 
 type AcceptedConnectorCatalogCacheOutcome = "hit" | "miss" | "in_flight";
 type AcceptedConnectorCatalogCacheMissReason =
-  | "process_empty"
-  | "catalog_identity_changed"
-  | "capability_identity_changed";
+  "process_empty" | "catalog_identity_changed" | "capability_identity_changed";
 type ConnectorRuntimeSnapshotCacheOutcome = "hit" | "miss";
 type ConnectorCatalogValidationResult =
   | { readonly outcome: "attested" }
   | {
       readonly outcome: "full_fallback";
       readonly fallbackReason:
-        | "missing_authority"
-        | "different_authority"
-        | "missing_compatibility";
+        "missing_authority" | "different_authority" | "missing_compatibility";
     }
   | { readonly outcome: "not_run" };
 
 type ConnectorCatalogCountBucket =
-  | "0"
-  | "1"
-  | "2_4"
-  | "5_8"
-  | "9_16"
-  | "17_plus";
+  "0" | "1" | "2_4" | "5_8" | "9_16" | "17_plus";
 type ConnectorCatalogRawSizeBucket =
   | "0_255_kib"
   | "256_511_kib"
@@ -40,8 +31,7 @@ type ConnectorCatalogRawSizeBucket =
   | "16_32_mib"
   | "32_64_mib";
 type ConnectorCatalogCompressedSizeBucket =
-  | ConnectorCatalogRawSizeBucket
-  | "64_128_mib";
+  ConnectorCatalogRawSizeBucket | "64_128_mib";
 type ConnectorCatalogResolvedConnectorFractionBucket =
   | "not_applicable"
   | "none"
@@ -147,11 +137,9 @@ function acceptedCacheOutcomeRank(
 
 export class ConnectorCatalogLoadTiming {
   private acceptedCacheOutcome:
-    | AcceptedConnectorCatalogCacheOutcome
-    | undefined;
+    AcceptedConnectorCatalogCacheOutcome | undefined;
   private acceptedCacheMissReason:
-    | AcceptedConnectorCatalogCacheMissReason
-    | undefined;
+    AcceptedConnectorCatalogCacheMissReason | undefined;
   private runtimeCacheOutcome: ConnectorRuntimeSnapshotCacheOutcome | undefined;
   private validationResult: ConnectorCatalogValidationResult | undefined;
   private catalogRawSize: number | undefined;

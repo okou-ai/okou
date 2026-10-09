@@ -52,8 +52,7 @@ const ACCOUNT_CONFLICT_MESSAGE =
   "The subscription account changed concurrently. Refresh and try again.";
 
 export type PersonalSubscriptionProviderType =
-  | typeof CODEX_TYPE
-  | typeof CLAUDE_CODE_TYPE;
+  typeof CODEX_TYPE | typeof CLAUDE_CODE_TYPE;
 
 /** Connected Claude/Codex member accounts read together for one queued model route. */
 export interface MemberModelAccountSnapshot {
@@ -744,34 +743,17 @@ async function prepareClaudeAccountIdentities(
   return identities.size === 0 ? null : identities;
 }
 
-async function accountWithProvider(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly id: string;
-  },
-): Promise<{
-  readonly account: AccountRow;
-  readonly provider: ProviderRow;
-} | null> {
-  const [row] = await db
-    .select({ account: modelProviderAccounts, provider: providerColumns })
-    .from(modelProviderAccounts)
-    .innerJoin(
-      modelProviders,
-      eq(modelProviderAccounts.modelProviderId, modelProviders.id),
-    )
-    .where(
-      and(
-        eq(modelProviderAccounts.id, args.id),
-        isNull(modelProviderAccounts.disconnectedAt),
-        eq(modelProviderAccounts.orgId, args.orgId),
-        eq(modelProviderAccounts.userId, args.userId),
-      ),
-    )
-    .limit(1);
-  return row ?? null;
+function exactConnectedPersonalAccountCondition(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly id: string;
+}) {
+  return and(
+    eq(modelProviderAccounts.id, args.id),
+    isNull(modelProviderAccounts.disconnectedAt),
+    eq(modelProviderAccounts.orgId, args.orgId),
+    eq(modelProviderAccounts.userId, args.userId),
+  );
 }
 
 export const activatePersonalModelProviderAccount$ = command(
@@ -789,9 +771,19 @@ export const activatePersonalModelProviderAccount$ = command(
     | ReturnType<typeof conflict>
   > => {
     const db = set(writeDb$);
+    // Deactivating siblings and activating the target must commit together.
     const result = await withAccountConflict(
       db.transaction(async (tx) => {
-        const current = await accountWithProvider(tx, args);
+        const [row] = await tx
+          .select({ account: modelProviderAccounts, provider: providerColumns })
+          .from(modelProviderAccounts)
+          .innerJoin(
+            modelProviders,
+            eq(modelProviderAccounts.modelProviderId, modelProviders.id),
+          )
+          .where(exactConnectedPersonalAccountCondition(args))
+          .limit(1);
+        const current = row ?? null;
         if (
           !current ||
           !isPersonalSubscriptionProviderType(current.account.type)
@@ -953,16 +945,35 @@ export async function personalModelProviderAccountById(args: {
 }
 
 /** Exact management reads never enumerate, seed, or substitute a sibling. */
-export async function personalModelProviderAccountResponseById(args: {
-  readonly db: Db;
-  readonly id: string;
-  readonly orgId: string;
-  readonly userId: string;
-}): Promise<ModelProviderResponse | null> {
-  const row = await accountWithProvider(args.db, args);
-  return row && isPersonalSubscriptionProviderType(row.account.type)
-    ? accountResponse(row)
-    : null;
+export function personalModelProviderAccountResponseById(
+  scope$: Computed<{
+    readonly orgId: string;
+    readonly userId: string;
+    readonly id: string;
+  }>,
+) {
+  return computed(async (get): Promise<ModelProviderResponse | null> => {
+    const args = get(scope$);
+    const [row] = await get(db$)
+      .select({ account: modelProviderAccounts, provider: providerColumns })
+      .from(modelProviderAccounts)
+      .innerJoin(
+        modelProviders,
+        eq(modelProviderAccounts.modelProviderId, modelProviders.id),
+      )
+      .where(
+        exactConnectedPersonalAccountCondition({
+          id: args.id,
+          orgId: args.orgId,
+          userId: args.userId,
+        }),
+      )
+      .limit(1);
+    const current = row ?? null;
+    return current && isPersonalSubscriptionProviderType(current.account.type)
+      ? accountResponse(current)
+      : null;
+  });
 }
 
 /** Settings never receive retired credentials. Runtime retention requires the
@@ -1050,6 +1061,79 @@ interface SubscriptionCredentialOwner {
   readonly sourceId?: string;
   readonly runId?: string;
 }
+
+/** Exact connected/live-run account read owned by a fixed graph command. */
+export const readPersonalSubscriptionAccount$ = command(
+  async (
+    { get },
+    owner: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly id: string;
+      readonly runId?: string;
+    },
+  ) => {
+    const [account] = await get(db$)
+      .select()
+      .from(modelProviderAccounts)
+      .where(
+        and(
+          eq(modelProviderAccounts.id, owner.id),
+          personalSubscriptionAccountAccessCondition(owner.runId),
+          eq(modelProviderAccounts.orgId, owner.orgId),
+          eq(modelProviderAccounts.userId, owner.userId),
+        ),
+      )
+      .limit(1);
+    return account ?? null;
+  },
+);
+
+/** Capture the exact account and all ciphertexts in one statement, then decrypt. */
+export const readPersonalSubscriptionCredentialBundle$ = command(
+  async ({ get }, owner: Omit<SubscriptionCredentialOwner, "db">) => {
+    if (!owner.sourceId) {
+      return null;
+    }
+    const rows = await get(db$)
+      .select({
+        account: modelProviderAccounts,
+        secret: {
+          name: modelProviderAccountSecrets.name,
+          encryptedValue: modelProviderAccountSecrets.encryptedValue,
+        },
+      })
+      .from(modelProviderAccounts)
+      .leftJoin(
+        modelProviderAccountSecrets,
+        eq(
+          modelProviderAccountSecrets.modelProviderAccountId,
+          modelProviderAccounts.id,
+        ),
+      )
+      .where(
+        and(
+          eq(modelProviderAccounts.id, owner.sourceId),
+          personalSubscriptionAccountAccessCondition(owner.runId),
+          eq(modelProviderAccounts.orgId, owner.orgId),
+          eq(modelProviderAccounts.userId, owner.userId),
+          eq(modelProviderAccounts.type, owner.type),
+        ),
+      );
+    const account = rows[0]?.account;
+    if (!account) {
+      return null;
+    }
+    const ciphertexts = rows.flatMap((row) => {
+      return row.secret ? [row.secret] : [];
+    });
+    const values = await credentialValues(
+      ciphertexts,
+      owner.featureSwitchContext,
+    );
+    return { account, values };
+  },
+);
 
 /** One non-locking statement for the exact account and its whole ciphertext
  * bundle. Callers decrypt after it returns, never inside a transaction. */

@@ -94,10 +94,7 @@ export interface StripeSchedulePhase {
   readonly currency?: string | null;
   readonly metadata?: Record<string, string> | null;
   readonly proration_behavior?:
-    | "always_invoice"
-    | "create_prorations"
-    | "none"
-    | null;
+    "always_invoice" | "create_prorations" | "none" | null;
   readonly items?: readonly {
     readonly price: StripeRef;
     readonly quantity?: number;
@@ -171,9 +168,7 @@ export interface StripeSubscriptionUpdateParams {
   readonly default_source?: string;
   readonly items?: StripeSubscriptionUpdateItemParam[];
   readonly payment_behavior?:
-    | "allow_incomplete"
-    | "error_if_incomplete"
-    | "pending_if_incomplete";
+    "allow_incomplete" | "error_if_incomplete" | "pending_if_incomplete";
   readonly proration_behavior?: "always_invoice" | "create_prorations" | "none";
   readonly proration_date?: number;
   readonly expand?: string[];
@@ -273,10 +268,7 @@ export interface StripeCreditNoteParams {
   readonly email_type?: "credit_note" | "none";
   readonly metadata?: StripeMetadataParam;
   readonly reason?:
-    | "duplicate"
-    | "fraudulent"
-    | "order_change"
-    | "product_unsatisfactory";
+    "duplicate" | "fraudulent" | "order_change" | "product_unsatisfactory";
 }
 
 export interface StripeInvoiceLine {
@@ -286,10 +278,17 @@ export interface StripeInvoiceLine {
   readonly subtotal?: number | null;
   readonly metadata?: Record<string, string> | null;
   readonly quantity?: number | null;
-  readonly price?: { readonly id: string } | null;
+  readonly price?: {
+    readonly id: string;
+    readonly product?: StripeProductRef | null;
+  } | null;
   readonly pricing?: {
     readonly price_details?: {
-      readonly price?: StripeRef;
+      readonly price?:
+        | string
+        | { readonly id: string; readonly product?: StripeProductRef | null }
+        | null;
+      readonly product?: StripeProductRef | null;
     } | null;
   } | null;
   readonly proration?: boolean;
@@ -507,6 +506,10 @@ export interface StripeCustomersApi {
   ): Promise<StripeCustomer>;
 }
 
+export interface StripeProductsApi {
+  retrieve(id: string): Promise<StripeProduct | StripeDeletedProduct>;
+}
+
 export interface StripePricesApi {
   retrieve(id: string, params?: { expand?: string[] }): Promise<StripePrice>;
 }
@@ -585,7 +588,7 @@ export interface StripeInvoiceCreatePreviewParams {
   readonly subscription?: string;
   readonly schedule?: string;
   readonly preview_mode: "next" | "recurring";
-  readonly discounts?: "" | { readonly coupon: string }[];
+  readonly discounts?: "" | StripeSchedulePhaseDiscountParam[];
   readonly invoice_items?: {
     readonly price: string;
     readonly quantity: number;
@@ -594,17 +597,13 @@ export interface StripeInvoiceCreatePreviewParams {
   readonly subscription_details?: StripeInvoicePreviewCancellationParams & {
     readonly items: StripeSubscriptionUpdateItemParam[];
     readonly proration_behavior?:
-      | "always_invoice"
-      | "create_prorations"
-      | "none";
+      "always_invoice" | "create_prorations" | "none";
     readonly proration_date?: number;
   };
   readonly schedule_details?: {
     readonly end_behavior?: "cancel" | "release";
     readonly proration_behavior?:
-      | "always_invoice"
-      | "create_prorations"
-      | "none";
+      "always_invoice" | "create_prorations" | "none";
     readonly phases?: StripeSchedulePhaseParam[];
   };
 }
@@ -738,6 +737,7 @@ export interface StripeClient {
   readonly subscriptionSchedules: StripeSubscriptionSchedulesApi;
   readonly customers: StripeCustomersApi;
   readonly prices: StripePricesApi;
+  readonly products: StripeProductsApi;
   readonly coupons: StripeCouponsApi;
   readonly invoices: StripeInvoicesApi;
   readonly invoiceItems: StripeInvoiceItemsApi;
@@ -964,8 +964,7 @@ export interface UndeliveredStripePaidInvoice {
 export interface UndeliveredStripePaidCheckoutSession {
   readonly eventId: string;
   readonly eventType:
-    | "checkout.session.completed"
-    | "checkout.session.async_payment_succeeded";
+    "checkout.session.completed" | "checkout.session.async_payment_succeeded";
   readonly created: number;
   readonly session: StripeCheckoutSession;
 }

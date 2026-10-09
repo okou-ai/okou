@@ -14,13 +14,12 @@ import { z } from "zod";
 
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
-import { clerk$ } from "../external/clerk";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import {
   buildFromAddress,
   buildOneClickUnsubscribeUrl,
   buildUnsubscribeHeaders,
-  getUserEmail,
+  getUserEmail$,
   OFFICIAL_AUTOMATION_RESULT_EMAIL_SUBJECT_MAX_CHARACTERS,
   OFFICIAL_AUTOMATION_RESULT_EMAIL_TEXT_MAX_CHARACTERS,
   OFFICIAL_AUTOMATION_RESULT_EMAIL_TEXT_TRUNCATION_MARKER,
@@ -30,8 +29,8 @@ import type {
   InternalRunCallbackDispatchResult,
   InternalRunCallbackEnvelope,
 } from "./internal-run-callback";
-import { readAcceptedOfficialWorkflowRevision } from "./official-workflow-catalog-read.service";
-import { getRunOutputText } from "./run-output.service";
+import { readAcceptedOfficialWorkflowRevision$ } from "./official-workflow-catalog-read.service";
+import { getRunOutputText$ } from "./run-output.service";
 
 const log = logger("api:official-automation-result-email");
 const EMPTY_RESULT_FALLBACK = "This run completed without a text result.";
@@ -59,17 +58,18 @@ function truncateWithMarker(
   ].join("");
 }
 
-async function userEmailIsUnsubscribed(
-  db: Db,
-  userId: string,
-): Promise<boolean> {
-  const [user] = await db
-    .select({ emailUnsubscribed: users.emailUnsubscribed })
-    .from(users)
-    .where(eq(users.id, userId))
-    .limit(1);
-  return user?.emailUnsubscribed ?? false;
-}
+const userEmailIsUnsubscribed$ = command(
+  async ({ get }, userId: string, signal: AbortSignal): Promise<boolean> => {
+    const db = get(db$);
+    const [user] = await db
+      .select({ emailUnsubscribed: users.emailUnsubscribed })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    signal.throwIfAborted();
+    return user?.emailUnsubscribed ?? false;
+  },
+);
 
 function resultEmailTitle(workflowName: string): string {
   return truncateWithMarker(
@@ -87,35 +87,37 @@ function resultEmailSubject(workflowName: string): string {
   );
 }
 
-async function resultEmailWorkflowLabel(
-  db: Db,
-  workflowName: string,
-  provenance: AgentRunOfficialWorkflowProvenance | null,
-  signal: AbortSignal,
-): Promise<string> {
-  if (!provenance) {
-    return workflowName;
-  }
-  const definition = provenance.definitions.find((candidate) => {
-    return candidate.name === workflowName;
-  });
-  if (!definition) {
-    throw new Error(
-      `Official Workflow provenance does not contain ${workflowName}`,
+const resultEmailWorkflowLabel$ = command(
+  async (
+    { set },
+    workflowName: string,
+    provenance: AgentRunOfficialWorkflowProvenance | null,
+    signal: AbortSignal,
+  ): Promise<string> => {
+    if (!provenance) {
+      return workflowName;
+    }
+    const definition = provenance.definitions.find((candidate) => {
+      return candidate.name === workflowName;
+    });
+    if (!definition) {
+      throw new Error(
+        `Official Workflow provenance does not contain ${workflowName}`,
+      );
+    }
+    const revision = await set(
+      readAcceptedOfficialWorkflowRevision$,
+      { name: definition.name, revision: definition.revision },
+      signal,
     );
-  }
-  const revision = await readAcceptedOfficialWorkflowRevision(
-    db,
-    { name: definition.name, revision: definition.revision },
-    signal,
-  );
-  if (!revision) {
-    throw new Error(
-      `Official Workflow revision ${definition.name}@${definition.revision} is unavailable`,
-    );
-  }
-  return revision.definition.workflow.displayName;
-}
+    if (!revision) {
+      throw new Error(
+        `Official Workflow revision ${definition.name}@${definition.revision} is unavailable`,
+      );
+    }
+    return revision.definition.workflow.displayName;
+  },
+);
 
 function boundedResultText(output: string | undefined): string {
   const normalized = output?.trim();
@@ -132,38 +134,133 @@ interface WorkflowAutomationManageUrlArgs {
   readonly productUrl: string;
 }
 
-async function workflowAutomationManageUrl(
-  db: Db,
-  args: WorkflowAutomationManageUrlArgs,
-  signal: AbortSignal,
-): Promise<string> {
-  const [automation] = await db
-    .select({
-      workflowId: workflowAutomations.workflowId,
-      officialDefinitionName: workflows.officialDefinitionName,
-    })
-    .from(workflowAutomations)
-    .innerJoin(workflows, eq(workflows.id, workflowAutomations.workflowId))
-    .where(
-      and(
-        eq(workflowAutomations.id, args.automationId),
-        eq(workflowAutomations.ownerUserId, args.userId),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  if (
-    automation?.officialDefinitionName ===
-    MORNING_BRIEF_OFFICIAL_DEFINITION_NAME
-  ) {
-    return `${args.productUrl}${MORNING_BRIEF_PREFERENCES_PATH}`;
-  }
-  return automation
-    ? `${args.productUrl}/workflows/${encodeURIComponent(
-        automation.workflowId,
-      )}/automations?automationId=${encodeURIComponent(args.automationId)}`
-    : `${args.productUrl}/workflows`;
+const workflowAutomationManageUrl$ = command(
+  async (
+    { get },
+    args: WorkflowAutomationManageUrlArgs,
+    signal: AbortSignal,
+  ): Promise<string> => {
+    const db = get(db$);
+    const [automation] = await db
+      .select({
+        workflowId: workflowAutomations.workflowId,
+        officialDefinitionName: workflows.officialDefinitionName,
+      })
+      .from(workflowAutomations)
+      .innerJoin(workflows, eq(workflows.id, workflowAutomations.workflowId))
+      .where(
+        and(
+          eq(workflowAutomations.id, args.automationId),
+          eq(workflowAutomations.ownerUserId, args.userId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (
+      automation?.officialDefinitionName ===
+      MORNING_BRIEF_OFFICIAL_DEFINITION_NAME
+    ) {
+      return `${args.productUrl}${MORNING_BRIEF_PREFERENCES_PATH}`;
+    }
+    return automation
+      ? `${args.productUrl}/workflows/${encodeURIComponent(
+          automation.workflowId,
+        )}/automations?automationId=${encodeURIComponent(args.automationId)}`
+      : `${args.productUrl}/workflows`;
+  },
+);
+
+interface ResultEmailEnqueueArgs {
+  readonly userId: string;
+  readonly runId: string;
+  readonly automationId: string;
+  readonly workflowName: string;
+  readonly userEmail: string;
+  readonly workflowLabel: string;
+  readonly output: string | undefined;
+  readonly productUrl: string;
+  readonly manageUrl: string;
 }
+const enqueueResultEmail$ = command(
+  async (
+    { set },
+    args: ResultEmailEnqueueArgs,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const enqueued = await set(writeDb$).transaction(async (tx) => {
+      // Linearize the final preference decision with enqueue. Both explicit
+      // unsubscribe and complaint handling upsert this same row, so their write
+      // locks serialize with this lock before the durable source is claimed.
+      // Creating a missing row first also closes the insert-vs-insert gap for a
+      // user whose preference projection has not been materialized yet.
+      await tx
+        .insert(users)
+        .values({ id: args.userId })
+        .onConflictDoNothing({ target: users.id });
+      const [lockedPreference] = await tx
+        .select({ emailUnsubscribed: users.emailUnsubscribed })
+        .from(users)
+        .where(eq(users.id, args.userId))
+        .for("update")
+        .limit(1);
+      signal.throwIfAborted();
+      if (lockedPreference?.emailUnsubscribed ?? false) {
+        return false;
+      }
+
+      const [claim] = await tx
+        .insert(officialAutomationResultEmailClaims)
+        .values({
+          runId: args.runId,
+          workflowAutomationId: args.automationId,
+        })
+        .onConflictDoNothing({
+          target: [
+            officialAutomationResultEmailClaims.runId,
+            officialAutomationResultEmailClaims.workflowAutomationId,
+          ],
+        })
+        .returning({
+          emailOutboxId: officialAutomationResultEmailClaims.emailOutboxId,
+        });
+      signal.throwIfAborted();
+      if (!claim) {
+        return false;
+      }
+
+      await tx.insert(emailOutbox).values({
+        id: claim.emailOutboxId,
+        fromAddress: buildFromAddress(),
+        toAddresses: args.userEmail,
+        subject: resultEmailSubject(args.workflowLabel),
+        headers: buildUnsubscribeHeaders(
+          buildOneClickUnsubscribeUrl(args.userId),
+        ),
+        template: {
+          template: "official-automation-result",
+          props: {
+            title: resultEmailTitle(args.workflowName),
+            resultText: boundedResultText(args.output),
+            runUrl: `${args.productUrl}/activities/${encodeURIComponent(args.runId)}`,
+            // Keep the persisted props shape rollout-compatible while changing
+            // manageUrl from the legacy account unsubscribe destination to the
+            // originating automation deep link.
+            manageUrl: args.manageUrl,
+          },
+        },
+        sourceRunId: args.runId,
+        sourceWorkflowAutomationId: args.automationId,
+        status: "pending",
+        attempts: 0,
+      });
+      signal.throwIfAborted();
+      return true;
+    });
+    signal.throwIfAborted();
+
+    return enqueued;
+  },
+);
 
 export const handleWorkflowAutomationResultEmailInternalCallback$ = command(
   async (
@@ -171,7 +268,7 @@ export const handleWorkflowAutomationResultEmailInternalCallback$ = command(
     envelope: InternalRunCallbackEnvelope,
     signal: AbortSignal,
   ): Promise<InternalRunCallbackDispatchResult> => {
-    const db = set(writeDb$);
+    const db = get(db$);
     if (envelope.status !== "completed") {
       return { success: true, skipped: true };
     }
@@ -198,28 +295,27 @@ export const handleWorkflowAutomationResultEmailInternalCallback$ = command(
       return { success: true, skipped: true };
     }
 
-    if (await userEmailIsUnsubscribed(db, run.userId)) {
+    if (await set(userEmailIsUnsubscribed$, run.userId, signal)) {
       signal.throwIfAborted();
       return { success: true, skipped: true };
     }
 
-    const clerk = get(clerk$);
-    const userEmail = await getUserEmail(db, clerk, run.userId);
+    const userEmail = await set(getUserEmail$, run.userId, signal);
     signal.throwIfAborted();
     if (!userEmail) {
       return { success: true, skipped: true };
     }
 
-    const output = await getRunOutputText(db, envelope.runId, signal);
-    const workflowLabel = await resultEmailWorkflowLabel(
-      db,
+    const output = await set(getRunOutputText$, envelope.runId, signal);
+    const workflowLabel = await set(
+      resultEmailWorkflowLabel$,
       payload.data.workflowName,
       run.officialWorkflowProvenance ?? null,
       signal,
     );
     const productUrl = env("APP_URL");
-    const manageUrl = await workflowAutomationManageUrl(
-      db,
+    const manageUrl = await set(
+      workflowAutomationManageUrl$,
       {
         automationId: payload.data.automationId,
         userId: run.userId,
@@ -227,76 +323,21 @@ export const handleWorkflowAutomationResultEmailInternalCallback$ = command(
       },
       signal,
     );
-    const enqueued = await db.transaction(async (tx) => {
-      // Linearize the final preference decision with enqueue. Both explicit
-      // unsubscribe and complaint handling upsert this same row, so their write
-      // locks serialize with this lock before the durable source is claimed.
-      // Creating a missing row first also closes the insert-vs-insert gap for a
-      // user whose preference projection has not been materialized yet.
-      await tx
-        .insert(users)
-        .values({ id: run.userId })
-        .onConflictDoNothing({ target: users.id });
-      const [lockedPreference] = await tx
-        .select({ emailUnsubscribed: users.emailUnsubscribed })
-        .from(users)
-        .where(eq(users.id, run.userId))
-        .for("update")
-        .limit(1);
-      signal.throwIfAborted();
-      if (lockedPreference?.emailUnsubscribed ?? false) {
-        return false;
-      }
-
-      const [claim] = await tx
-        .insert(officialAutomationResultEmailClaims)
-        .values({
-          runId: envelope.runId,
-          workflowAutomationId: payload.data.automationId,
-        })
-        .onConflictDoNothing({
-          target: [
-            officialAutomationResultEmailClaims.runId,
-            officialAutomationResultEmailClaims.workflowAutomationId,
-          ],
-        })
-        .returning({
-          emailOutboxId: officialAutomationResultEmailClaims.emailOutboxId,
-        });
-      signal.throwIfAborted();
-      if (!claim) {
-        return false;
-      }
-
-      await tx.insert(emailOutbox).values({
-        id: claim.emailOutboxId,
-        fromAddress: buildFromAddress(),
-        toAddresses: userEmail,
-        subject: resultEmailSubject(workflowLabel),
-        headers: buildUnsubscribeHeaders(
-          buildOneClickUnsubscribeUrl(run.userId),
-        ),
-        template: {
-          template: "official-automation-result",
-          props: {
-            title: resultEmailTitle(payload.data.workflowName),
-            resultText: boundedResultText(output),
-            runUrl: `${productUrl}/activities/${encodeURIComponent(envelope.runId)}`,
-            // Keep the persisted props shape rollout-compatible while changing
-            // manageUrl from the legacy account unsubscribe destination to the
-            // originating automation deep link.
-            manageUrl,
-          },
-        },
-        sourceRunId: envelope.runId,
-        sourceWorkflowAutomationId: payload.data.automationId,
-        status: "pending",
-        attempts: 0,
-      });
-      signal.throwIfAborted();
-      return true;
-    });
-    signal.throwIfAborted();
+    const enqueued = await set(
+      enqueueResultEmail$,
+      {
+        userId: run.userId,
+        runId: envelope.runId,
+        automationId: payload.data.automationId,
+        workflowName: payload.data.workflowName,
+        userEmail,
+        workflowLabel,
+        output,
+        productUrl,
+        manageUrl,
+      },
+      signal,
+    );
 
     log.debug("Official Automation result email callback handled", {
       runId: envelope.runId,

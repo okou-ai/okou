@@ -22,8 +22,7 @@ interface ChatThreadMentionSegment {
 }
 
 type ChatThreadLineSegment =
-  | ChatThreadMentionTextSegment
-  | ChatThreadMentionSegment;
+  ChatThreadMentionTextSegment | ChatThreadMentionSegment;
 
 // Matches `[title](/chats/<uuid>)` where the title backslash-escapes
 // `\`, `[` and `]` (the characters escaped by serializeChatThreadMention).

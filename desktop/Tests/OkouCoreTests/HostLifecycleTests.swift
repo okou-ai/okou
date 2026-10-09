@@ -56,6 +56,14 @@ private final class CompletionFlag: @unchecked Sendable {
   var value: Bool { lock.withLock { completed } }
 }
 
+private actor SessionTokens {
+  private var first = true
+  func next() -> String {
+    defer { first = false }
+    return first ? "clerk-session" : "refreshed-clerk-session"
+  }
+}
+
 private final class StateTransitions: @unchecked Sendable {
   private let lock = NSLock()
   private var seen: Set<String> = []
@@ -65,10 +73,10 @@ private final class StateTransitions: @unchecked Sendable {
 }
 
 final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
-  func testStopWaitsForDelayedRegistrationAndRetiresItsHostToken() async throws {
+  func testStopWaitsForDelayedRegistrationAndStopsItsConnection() async throws {
     let received = expectation(description: "Server received registration")
     let stopping = expectation(description: "Admission is closed")
-    let retired = expectation(description: "Late registration token is retired")
+    let retired = expectation(description: "Late registration connection is stopped")
     let returned = expectation(description: "Stop returned after cleanup")
     let pending = PendingResponse()
     let finished = CompletionFlag()
@@ -79,13 +87,13 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
     defer { session.invalidateAndCancel() }
     URLProtocolFixture.boundary.set { connection in
       let path = connection.request.url!.path
-      if path.hasSuffix("/hosts/start") {
+      if path.hasSuffix("/hosts/register") {
         pending.hold(connection)
         received.fulfill()
       } else if path.hasSuffix("/stop") {
         XCTAssertFalse(finished.value)
         XCTAssertEqual(
-          connection.request.value(forHTTPHeaderField: "Authorization"), "Bearer late-host-token")
+          connection.request.value(forHTTPHeaderField: "Authorization"), "Bearer clerk-session")
         retired.fulfill()
         connection.reply(.object([:]))
       } else {
@@ -99,7 +107,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
       executor: CommandExecutor(
         helper: NativeProcess(executable: URL(fileURLWithPath: "/nonexistent/helper"))),
       installationId: UUID().uuidString, hostName: "Test Mac", version: "0.49.72",
-      tokenProvider: { "clerk-session" },
+      tokenProvider: { _ in "clerk-session" },
       onChange: { state in
         if state.status == "stopping" { transitions.notify("stopping", expectation: stopping) }
       })
@@ -115,10 +123,59 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
     try await Task.sleep(for: .milliseconds(100))
     XCTAssertFalse(finished.value)
     pending.reply(
-      .object(["hostToken": .string("late-host-token"), "hostId": .string("late-host")]))
+      .object([
+        "connectionGeneration": .number(1),
+        "hostId": .string("00000000-0000-0000-0000-000000000001"),
+      ]))
     await fulfillment(of: [retired, returned], timeout: 3, enforceOrder: true)
     await starting.value
     await drain.value
+  }
+
+  func testUpgradeRejectionClosesAdmissionAndKeepsStopAuthenticated() async throws {
+    let rejected = expectation(description: "Upgrade state is published")
+    let stopped = expectation(description: "Rejected generation is stopped with its session")
+    let transitions = StateTransitions()
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [URLProtocolFixture.self]
+    let session = URLSession(configuration: configuration)
+    defer { session.invalidateAndCancel() }
+    URLProtocolFixture.boundary.set { connection in
+      let path = connection.request.url!.path
+      XCTAssertEqual(
+        connection.request.value(forHTTPHeaderField: "Authorization"), "Bearer clerk-session")
+      if path.hasSuffix("/hosts/register") {
+        connection.reply(
+          .object([
+            "hostId": .string("00000000-0000-0000-0000-000000000001"),
+            "connectionGeneration": .number(1),
+          ]))
+      } else if path.hasSuffix("/next") {
+        connection.reply(.object(["minimumSupportedVersion": .string("0.51.0")]), status: 426)
+      } else if path.hasSuffix("/stop") {
+        stopped.fulfill()
+        connection.reply(.object([:]))
+      } else {
+        XCTFail("Unexpected host request: \(path)")
+      }
+    }
+    let runtime = HostRuntime(
+      api: APIClient(
+        baseURL: URL(string: "https://api.example.test")!, version: "0.50.1", session: session),
+      executor: CommandExecutor(
+        helper: NativeProcess(executable: URL(fileURLWithPath: "/nonexistent/helper"))),
+      installationId: UUID().uuidString, hostName: "Test Mac", version: "0.50.1",
+      tokenProvider: { _ in "clerk-session" },
+      onChange: { state in
+        if state.updateRequired {
+          XCTAssertEqual(state.minimumSupportedVersion, "0.51.0")
+          transitions.notify("rejected", expectation: rejected)
+        }
+      })
+    await runtime.start()
+    await fulfillment(of: [rejected], timeout: 3)
+    await runtime.stop()
+    await fulfillment(of: [stopped], timeout: 3)
   }
 
   func testAPIBoundsAnUnfinishedClaimRequest() async throws {
@@ -179,9 +236,12 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
     let timestamp = formatter.string(from: Date())
     URLProtocolFixture.boundary.set { connection in
       let path = connection.request.url!.path
-      if path.hasSuffix("/hosts/start") {
+      if path.hasSuffix("/hosts/register") {
         connection.reply(
-          .object(["hostToken": .string("host-token"), "hostId": .string("host-1")]))
+          .object([
+            "connectionGeneration": .number(1),
+            "hostId": .string("00000000-0000-0000-0000-000000000001"),
+          ]))
       } else if path.hasSuffix("/next") {
         connection.reply(
           .object([
@@ -214,7 +274,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
         baseURL: URL(string: "https://api.example.test")!, version: "0.49.71", session: session),
       executor: CommandExecutor(helper: NativeProcess(executable: helper)),
       installationId: UUID().uuidString,
-      hostName: "Test Mac", version: "0.49.71", tokenProvider: { "clerk-session" },
+      hostName: "Test Mac", version: "0.49.71", tokenProvider: { _ in "clerk-session" },
       onChange: { state in
         if state.busy && state.status == "online" {
           transitions.notify("began", expectation: began)
@@ -230,26 +290,120 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
     await drain.value
     await secondDrain.value
   }
-  func testStopReportsLateClaimWithoutDispatchAndUsesIndependentHostToken() async throws {
+  func testUpgradeRejectionWhileDrainingDoesNotCancelCompletion() async throws {
+    let transitions = StateTransitions()
+    let began = expectation(description: "Command is visible in the UI")
+    let stopping = expectation(description: "Admission is closed")
+    let heartbeat = expectation(description: "Server receives a heartbeat while draining")
+    let reported = expectation(description: "Running command completed successfully")
+    let stopped = expectation(description: "Host authorization retired after reporting")
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let release = directory.appendingPathComponent("release")
+    let marker = directory.appendingPathComponent("dispatched")
+    let helper = directory.appendingPathComponent("helper")
+    try """
+    #!/usr/bin/python3
+    import sys,json,time,pathlib
+    for line in sys.stdin:
+        r=json.loads(line)
+        if r['kind']=='permissions.state':
+            result={'accessibility':True,'screenRecording':True}
+        else:
+            pathlib.Path('\(marker.path)').write_text('once')
+            while not pathlib.Path('\(release.path)').exists(): time.sleep(0.01)
+            result={'apps':[{'name':'Test app'}]}
+        print(json.dumps({'id':r['id'],'status':'succeeded','result':result}),flush=True)
+    """.write(to: helper, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: helper.path)
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [URLProtocolFixture.self]
+    let session = URLSession(configuration: configuration)
+    defer { session.invalidateAndCancel() }
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    let timestamp = formatter.string(from: Date())
+    URLProtocolFixture.boundary.set { connection in
+      let path = connection.request.url!.path
+      if path.hasSuffix("/hosts/register") {
+        connection.reply(
+          .object([
+            "connectionGeneration": .number(1),
+            "hostId": .string("00000000-0000-0000-0000-000000000001"),
+          ]))
+      } else if path.hasSuffix("/next") {
+        connection.reply(
+          .object([
+            "status": .string("command"),
+            "command": .object([
+              "id": .string("running"), "kind": .string("apps.list"), "payload": .object([:]),
+              "timeoutMs": .number(60000),
+              "createdAt": .string(timestamp), "claimedAt": .string(timestamp),
+            ]),
+          ]))
+      } else if path.hasSuffix("/heartbeat") {
+        XCTAssertEqual(try? String(contentsOf: marker, encoding: .utf8), "once")
+        try! Data().write(to: release)
+        connection.reply(.object(["minimumSupportedVersion": .string("0.51.0")]), status: 426)
+        heartbeat.fulfill()
+      } else if path.hasSuffix("/complete") {
+        XCTAssertEqual(connection.body["status"].string, "succeeded")
+        XCTAssertEqual(connection.body["result"]["apps"].array?.first?["name"].string, "Test app")
+        connection.reply(.object([:]))
+        reported.fulfill()
+      } else if path.hasSuffix("/stop") {
+        connection.reply(.object([:]))
+        stopped.fulfill()
+      } else {
+        XCTFail("Unexpected host request: \(path)")
+      }
+    }
+    let runtime = HostRuntime(
+      api: APIClient(
+        baseURL: URL(string: "https://api.example.test")!, version: "0.49.71", session: session),
+      executor: CommandExecutor(helper: NativeProcess(executable: helper)),
+      installationId: UUID().uuidString,
+      hostName: "Test Mac", version: "0.49.71", tokenProvider: { _ in "clerk-session" },
+      onChange: { state in
+        if state.busy && state.status == "online" {
+          transitions.notify("began", expectation: began)
+        }
+        if state.status == "stopping" { transitions.notify("stopping", expectation: stopping) }
+      })
+    await runtime.start()
+    await fulfillment(of: [began], timeout: 3)
+    let drain = Task { await runtime.stop() }
+    await fulfillment(of: [stopping], timeout: 3)
+    let secondDrain = Task { await runtime.stop() }
+    await fulfillment(of: [heartbeat, reported, stopped], timeout: 5, enforceOrder: true)
+    await drain.value
+    await secondDrain.value
+  }
+  func testStopReportsLateClaimWithoutDispatchAndUsesCurrentSessionToken() async throws {
     let next = expectation(description: "Server received a claim request")
     let stopping = expectation(description: "UI reports admission closed")
     let complete = expectation(description: "Late claim was completed")
     let stopped = expectation(description: "Host stopped after completion")
     let claim = PendingResponse()
+    let tokens = SessionTokens()
     let installation = UUID().uuidString.lowercased()
     URLProtocolFixture.boundary.set { connection in
       let path = connection.request.url!.path
-      if path.hasSuffix("/hosts/start") {
+      if path.hasSuffix("/hosts/register") {
         XCTAssertEqual(
           connection.request.value(forHTTPHeaderField: "Authorization"), "Bearer clerk-session")
         XCTAssertEqual(connection.request.value(forHTTPHeaderField: "X-Client-Type"), "Desktop")
         XCTAssertEqual(connection.body["installationId"].string, installation)
         connection.reply(
-          .object(["hostToken": .string("independent-host-token"), "hostId": .string("host-1")]))
+          .object([
+            "connectionGeneration": .number(1),
+            "hostId": .string("00000000-0000-0000-0000-000000000001"),
+          ]))
       } else {
         XCTAssertEqual(
           connection.request.value(forHTTPHeaderField: "Authorization"),
-          "Bearer independent-host-token")
+          "Bearer refreshed-clerk-session")
         if path.hasSuffix("/next") {
           claim.hold(connection)
           next.fulfill()
@@ -279,7 +433,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
       executor: CommandExecutor(
         helper: NativeProcess(executable: URL(fileURLWithPath: "/nonexistent/helper"))),
       installationId: installation, hostName: "Test Mac", version: "0.49.71",
-      tokenProvider: { "clerk-session" },
+      tokenProvider: { _ in await tokens.next() },
       onChange: { state in
         if state.status == "stopping" { stopping.fulfill() }
       })
@@ -307,9 +461,12 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
     defer { session.invalidateAndCancel() }
     URLProtocolFixture.boundary.set { connection in
       let path = connection.request.url!.path
-      if path.hasSuffix("/hosts/start") {
+      if path.hasSuffix("/hosts/register") {
         connection.reply(
-          .object(["hostToken": .string("host-token"), "hostId": .string("host-1")]))
+          .object([
+            "connectionGeneration": .number(1),
+            "hostId": .string("00000000-0000-0000-0000-000000000001"),
+          ]))
       } else if path.hasSuffix("/next") {
         connection.reply(
           .object([
@@ -336,9 +493,87 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
       executor: CommandExecutor(
         helper: NativeProcess(executable: URL(fileURLWithPath: "/nonexistent/helper"))),
       installationId: UUID().uuidString, hostName: "Test Mac", version: "0.49.71",
-      tokenProvider: { "clerk-session" }, onChange: { _ in })
+      tokenProvider: { _ in "clerk-session" }, onChange: { _ in })
     await runtime.start()
     await fulfillment(of: [reported], timeout: 3)
     await runtime.stop()
   }
+  func testAuthenticationRefreshesRejectedTokenBeforeReportingTheSameResult() async throws {
+    let old = expectation(description: "Cached token rejected")
+    let renewed = expectation(description: "SDK refresh used for the same result")
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [URLProtocolFixture.self]
+    let session = URLSession(configuration: configuration)
+    defer { session.invalidateAndCancel() }
+    let result: JSONValue = .object([
+      "status": .string("succeeded"), "result": .object(["apps": .array([])]),
+    ])
+    URLProtocolFixture.boundary.set { connection in
+      XCTAssertEqual(connection.body, result)
+      if connection.request.value(forHTTPHeaderField: "Authorization") == "Bearer cached-session" {
+        old.fulfill()
+        connection.reply(.object([:]), status: 401)
+      } else {
+        XCTAssertEqual(
+          connection.request.value(forHTTPHeaderField: "Authorization"), "Bearer fresh-session")
+        renewed.fulfill()
+        connection.reply(.object(["ok": .bool(true)]))
+      }
+    }
+    let api = APIClient(
+      baseURL: URL(string: "https://api.example.test")!, version: "0.50.0", session: session)
+    let response = try await api.authenticatedRequest(
+      "api/computer-use/hosts/host/commands/command/complete", body: result, timeout: 1,
+      tokenProvider: { force in force ? "fresh-session" : "cached-session" })
+    XCTAssertEqual(response.status, 200)
+    await fulfillment(of: [old, renewed], timeout: 1, enforceOrder: true)
+  }
+
+  func testAuthenticationBudgetIncludesAnUnfinishedSDKRead() async throws {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [URLProtocolFixture.self]
+    let session = URLSession(configuration: configuration)
+    defer { session.invalidateAndCancel() }
+    URLProtocolFixture.boundary.set { connection in
+      XCTFail("An unfinished token lookup must not submit a request")
+      connection.reply(.object([:]))
+    }
+    let api = APIClient(
+      baseURL: URL(string: "https://api.example.test")!, version: "0.50.0", session: session)
+    do {
+      _ = try await api.authenticatedRequest(
+        "api/computer-use/hosts/register", body: .object([:]), timeout: 0.05,
+        tokenProvider: { _ in
+          try await Task.sleep(for: .seconds(10))
+          return "session"
+        })
+      XCTFail("SDK lookup must share the request deadline")
+    } catch let error as DesktopFailure {
+      XCTAssertEqual(error.code, "network_error")
+    }
+  }
+
+  func testOldAPIDoesNotFallBackToHostTokenRegistration() async throws {
+    let unavailable = expectation(description: "Unsupported protocol shown to user")
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [URLProtocolFixture.self]
+    let session = URLSession(configuration: configuration)
+    defer { session.invalidateAndCancel() }
+    URLProtocolFixture.boundary.set { connection in
+      XCTAssertTrue(connection.request.url!.path.hasSuffix("/hosts/register"))
+      connection.reply(.object([:]), status: 404)
+    }
+    let runtime = HostRuntime(
+      api: APIClient(
+        baseURL: URL(string: "https://api.example.test")!, version: "0.50.0", session: session),
+      executor: CommandExecutor(
+        helper: NativeProcess(executable: URL(fileURLWithPath: "/nonexistent/helper"))),
+      installationId: UUID().uuidString, hostName: "Mac", version: "0.50.0",
+      tokenProvider: { _ in "clerk-session" },
+      onChange: { state in if state.status == "error" { unavailable.fulfill() } })
+    await runtime.start()
+    await fulfillment(of: [unavailable], timeout: 1)
+    await runtime.stop()
+  }
+
 }

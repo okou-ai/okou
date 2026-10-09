@@ -87,6 +87,7 @@ import { discordInteractionsRoutes } from "./routes/discord-interactions";
 import { discordStatePreviewRoutes } from "./routes/discord-state-preview";
 import { emailInboundRoutes } from "./routes/email-inbound";
 import { emailSubscriptionRoutes } from "./routes/email-subscription";
+import { notificationsRoutes } from "./routes/notifications";
 import { emailUnsubscribeRoutes } from "./routes/email-unsubscribe";
 import { featureSwitchesRoutes } from "./routes/feature-switches";
 import { feishuBrowserConnectRoutes } from "./routes/feishu-browser-connect";
@@ -207,12 +208,11 @@ import { weatherRoutes } from "./routes/weather";
 import { webDownloadRoutes } from "./routes/web-download";
 import { webFileUrlRoutes } from "./routes/web-file-url";
 import { webSearchRoutes } from "./routes/web-search";
-import { webhooksAgentCheckpointsRoutes } from "./routes/webhooks-agent-checkpoints";
+import { webhooksAgentSessionHistoryRoutes } from "./routes/webhooks-agent-session-history";
 import { webhooksAgentCompleteRoutes } from "./routes/webhooks-agent-complete";
 import { webhooksAgentEventsRoutes } from "./routes/webhooks-agent-events";
 import { webhooksAgentFirewallAuthRoutes } from "./routes/webhooks-agent-firewall-auth";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "./routes/webhooks-agent-health-usage-telemetry";
-import { webhooksAgentLangfuseRoutes } from "./routes/webhooks-agent-langfuse";
 import { webhooksAgentSessionOutputRoutes } from "./routes/webhooks-agent-session-output";
 import { webhooksAgentStorageRoutes } from "./routes/webhooks-agent-storage";
 import { webhooksBuiltInGenerationRoutes } from "./routes/webhooks-built-in-generations";
@@ -253,8 +253,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...webhooksStripeRoutes,
   ...webhooksStripeAutomationEventsRoutes,
   ...webhooksAgentHealthUsageTelemetryRoutes,
-  ...webhooksAgentLangfuseRoutes,
-  ...webhooksAgentCheckpointsRoutes,
+  ...webhooksAgentSessionHistoryRoutes,
   ...webhooksAgentCompleteRoutes,
   ...webhooksAgentEventsRoutes,
   ...webhooksAgentSessionOutputRoutes,
@@ -400,6 +399,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...userModelPreferenceRoutes,
   ...morningBriefPreferenceRoutes,
   ...emailSubscriptionRoutes,
+  ...notificationsRoutes,
   ...workflowsRoutes,
   ...officialWorkflowRoutes,
   ...workflowAutomationsRoutes,

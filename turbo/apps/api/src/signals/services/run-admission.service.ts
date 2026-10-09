@@ -31,7 +31,6 @@ import {
   isMemberSubscriptionRoute,
   memberModelRouteContextFromAccounts,
 } from "./effective-model-route.service";
-import { resolveUsageAllowanceAvailability$ } from "./usage-allowance-availability.service";
 import {
   catalogModelForSelectedId,
   catalogRunModelRouteAccess,
@@ -190,11 +189,11 @@ function creditAvailability(
     : null;
 }
 
-function admissionBeforeAllowance(
+function creditOnlyAdmission(
   input: RunAdmissionInput,
   availability: OrgCreditAvailability | null,
   personalSubscription: boolean,
-): RunAdmissionFailure | "allowance_required" | null {
+): RunAdmissionFailure | null {
   const routeFailure = checkCatalogRunRoute(input.catalog, input);
   if (routeFailure) {
     return routeFailure;
@@ -211,7 +210,7 @@ function admissionBeforeAllowance(
     (availability &&
       (availability.usagePackCredits > 0 || availability.spendableCredits > 0))
     ? null
-    : "allowance_required";
+    : insufficientCredits();
 }
 
 /** Runtime input is a plain captured snapshot; this command owns all reads. */
@@ -248,22 +247,11 @@ export const checkRunAdmission$ = command(
       db.select().from(memberCreditsQuery(input.orgId, input.userId, at)),
     ]);
     signal.throwIfAborted();
-    const admission = admissionBeforeAllowance(
+    return creditOnlyAdmission(
       input,
       creditAvailability(capabilities, balance, memberCredits?.total ?? 0),
       personalSubscription,
     );
-    if (admission !== "allowance_required") {
-      return admission;
-    }
-    const available = await set(
-      resolveUsageAllowanceAvailability$,
-      input.orgId,
-      signal,
-    );
-    return available && available.remainingUnits > 0
-      ? null
-      : insufficientCredits();
   },
 );
 

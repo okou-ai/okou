@@ -120,7 +120,7 @@ impl RunCleanupState {
     fn mark_at_least(&self, next: u8) {
         let _ = self
             .state
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |current| {
                 (next > current).then_some(next)
             });
     }

@@ -13,8 +13,8 @@ The Okou implementation described here is independently written.
 | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
 | Account and feature services              | [TelegramEngine](https://github.com/TelegramMessenger/Telegram-iOS/blob/6ad963e5b62d354da79040f388ae2b9132fb17b8/submodules/TelegramCore/Sources/TelegramEngine/TelegramEngine.swift)                                                                     | AuthenticationService; workspace-scoped ChatSync, ChatCommands, and feature stores    |
 | Serialized durable data                   | [Postbox](https://github.com/TelegramMessenger/Telegram-iOS/blob/6ad963e5b62d354da79040f388ae2b9132fb17b8/submodules/Postbox/Sources/Postbox.swift)                                                                                                       | ChatCache actor; raw snapshots and ordered events                                     |
-| Stable history updates                    | [PreparedChatHistoryViewTransition](https://github.com/TelegramMessenger/Telegram-iOS/blob/6ad963e5b62d354da79040f388ae2b9132fb17b8/submodules/TelegramUI/Sources/PreparedChatHistoryViewTransition.swift)                                                | ChatEventProjection; stable message IDs in the native List                            |
-| Visible rows and asynchronous preparation | [ListView](https://github.com/TelegramMessenger/Telegram-iOS/blob/6ad963e5b62d354da79040f388ae2b9132fb17b8/submodules/Display/Source/ListView.swift)                                                                                                      | Native List virtualization; MarkdownWorker actor                                      |
+| Stable history updates                    | [PreparedChatHistoryViewTransition](https://github.com/TelegramMessenger/Telegram-iOS/blob/6ad963e5b62d354da79040f388ae2b9132fb17b8/submodules/TelegramUI/Sources/PreparedChatHistoryViewTransition.swift)                                                | ChatEventProjection; stable message IDs in the collection snapshot                    |
+| Visible rows and asynchronous preparation | [ListView](https://github.com/TelegramMessenger/Telegram-iOS/blob/6ad963e5b62d354da79040f388ae2b9132fb17b8/submodules/Display/Source/ListView.swift)                                                                                                      | UICollectionView reuse and measured row sizes; MarkdownWorker actor                   |
 | Reusable text preparation                 | [ChatMessageTextBubbleContentNode](https://github.com/TelegramMessenger/Telegram-iOS/blob/6ad963e5b62d354da79040f388ae2b9132fb17b8/submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/Sources/ChatMessageTextBubbleContentNode.swift) | MessageMarkdownCache; value-based MessageBodyView equality                            |
 | Directional gesture recognition           | [InteractiveTransitionGestureRecognizer](https://github.com/TelegramMessenger/Telegram-iOS/blob/6ad963e5b62d354da79040f388ae2b9132fb17b8/submodules/Display/Source/InteractiveTransitionGestureRecognizer.swift)                                          | SidebarPanGesture rejects vertical movement and restricts opening to the leading edge |
 
@@ -34,9 +34,11 @@ flowchart TD
   Sync <--> Cache[ChatCache actor and SQLite]
   Sync --> Projection[Domain events and pure projections]
   Projection --> Conversation
-  Conversation --> Prepare[MarkdownWorker actor]
+  Conversation --> Window[ConversationRenderWindow]
+  Window --> Prepare[MarkdownWorker actor]
   Prepare --> Presentation[Bounded workspace Markdown cache]
-  Presentation --> List[Native List with stable message IDs]
+  Presentation --> Measure[Bounded row measurement hosts]
+  Measure --> List[UICollectionView with stable IDs and measured sizes]
   List --> Body[Textual renders prepared attributed content]
 ```
 
@@ -103,6 +105,76 @@ checking this contract. Textual still performs SwiftUI layout, attachment
 loading, selection, and syntax highlighting on its own execution paths;
 background Markdown parsing does not make all rendering asynchronous.
 
+## Progressive history presentation
+
+The PWA transcript in `create-chat-thread.ts` starts with ten render groups and
+expands its suffix ten groups at a time. It does not maintain a constant-size
+viewport window. The iOS transcript follows that presentation policy while
+retaining native UICollectionView cell reuse. Its presentation groups are consecutive
+messages with the same role; grouping determines boundaries without combining
+message rows or changing assistant-avatar spacing.
+
+ConversationRenderWindow is a pure presentation helper. ConversationStore keeps
+the complete projected history and pending inputs, derives visibleMessages only
+when messages or the window change, and owns one expansion task. Expansion
+prepares only the four rows immediately preceding the current boundary through
+the existing bounded Markdown cache. After preparation it expands the current
+projection, so concurrent refreshes and sends cannot be overwritten by a stale
+prepared array. Closing a conversation cancels the task.
+
+ChatDetailView renders the visible suffix. Scrolling near the top loads an
+earlier page after scrolling settles; the accessible Load earlier messages
+button also works when a short window cannot be scrolled. Initial positioning
+follows the latest message. Reading history pins the window boundary, and
+incoming messages preserve the reading position. A local send follows its new
+row. The explicit bottom button shrinks the window after reaching the bottom.
+Resident stores retain their expanded window and reading position; an evicted
+and recreated store starts with the latest ten groups after hydrating full
+durable history.
+
+ConversationCollectionView owns native cell reuse, sizing, refresh, and scroll
+callbacks. SwiftUI still renders each message. Before applying a snapshot, it
+prepares Markdown and mounts at most four temporary measurement hosts at a time.
+It samples settled layout and caches pixel-rounded heights by presentation
+revision, container width, and content-size category. The collection uses those
+sizes with automatic self-sizing disabled. Reentering the viewport therefore
+does not replace an estimated row height with a different measured height.
+Pending snapshots and asynchronous attachment height changes wait until scrolling
+ends. Attachment observations are checked against their row revision and width;
+the resulting resize preserves the visible row or follows the bottom. Closing
+the controller cancels preparation, resize, and refresh tasks. This bounds live
+measurement views without eagerly retaining the whole expanded history.
+
+ConversationScrollAnchor registers weak markers for mounted message rows and
+records a message ID plus its offset from the usable viewport top. The collection
+accepts only markers inside the current native cell for that message. Marker
+readiness and geometry publish reading-position changes on a display frame even
+when the scroll metrics have not changed. Capture waits until the measured
+snapshot matches the native viewport width and content-size category, so a
+transition's intermediate geometry cannot overwrite the saved position. It restores
+that offset after a snapshot or attachment resize. The collection first
+materializes the identified row and the anchor corrects its offset on the next
+display frame, then verifies two settling frames without polling while idle.
+Ordinary user scrolling only records a position; it does not schedule offset
+corrections. If replay revokes a row before the collection reports its new
+geometry, the bridge uses the reading
+position accepted by the store rather than restoring the removed identity.
+The bridge uses the public UIScrollView ancestor and contentOffset APIs;
+it does not replace the delegate or depend on private implementation classes. User
+tracking cancels restoration, including already scheduled layout corrections.
+Bottom requests also correct the native offset after viewport insets change,
+including when a send error increases the composer's height. Animated scrolling
+pauses these corrections until scrolling settles.
+
+Revocation can remove a valid presentation identity. The window advances a
+removed boundary to the next surviving row, and a removed reading anchor moves
+to the next surviving message, or the preceding survivor when there is no next
+message. If no previous message survives, initial/latest positioning applies.
+This is presentation recovery for a normal event operation, not protocol or
+cache compatibility. Full replay, API contracts, and SQLite storage are
+unchanged. Ten groups are not a message-count or process-memory limit: a single
+role group may contain many messages, and backward expansion grows the suffix.
+
 ## Interaction and update rules
 
 - Opening the sidebar starts at the leading 28 points and requires predominantly
@@ -135,10 +207,9 @@ measured text/block layout, behind the same ChatMessage input. Telegram's
 asynchronous node layout is a useful design reference for that experiment.
 Migrating the whole application to a new UI framework is not needed to try it.
 
-Keep feature state isolated as capabilities grow. A Swift Package boundary and
-windowed history presentation can be considered separately after measuring
-remaining coupling or long-history costs. API contract generation and CI consumer
-selection are outside this iOS-only ownership refactor.
+Keep feature state isolated as capabilities grow. A Swift Package boundary can
+be considered separately after measuring remaining coupling. API contract
+generation and CI consumer selection are outside these iOS presentation changes.
 
 ## Acceptance
 
@@ -158,6 +229,45 @@ while reading history, message/code copying, and keyboard/composer behavior.
 Use a physical device with a Release build and Animation Hitches to assess frame
 pacing. Debug simulator responsiveness and CPU samples do not establish a
 device frame-rate improvement.
+
+Progressive-history regressions cover full HTTP pagination at 100, 1,000, and
+5,000 messages; whole-group boundaries; overlapping expansion; close-time
+cancellation; failed send/retry; revocation; and SQLite rehydration. Mounted
+native scroll-anchor and real ChatDetailView tests verify partial-row offsets through
+prepends, height changes, remote refresh, detail-view recreation, and local send.
+Hosting setup waits for stable native geometry and samples complete presentation
+frames. Position assertions remain independent of this setup and retain their
+three-second deadline. Repeated traversal of code and table messages also
+verifies stable content height and allocated cell heights after reuse, including
+width and Dynamic Type changes. Viewport resizing verifies bottom following.
+The collection supports
+native animated accessibility paging as well as touch scrolling.
+These are correctness and rendering-scope checks. A physical-device Release
+comparison of initial positioning, Animation Hitches, and memory remains
+required before claiming a measured performance improvement. Header/bottom
+button activation and VoiceOver scrolling remain part of interactive acceptance;
+the in-process hosting tests do not expose SwiftUI's accessibility button tree.
+At the October 7 checkpoint, the connected iPhone on iOS 26.6.2 could not mount its developer disk image with
+the installed Xcode 26.3, so this checkpoint has no physical-device measurements.
+
+### October 8, 2026 collection sizing checkpoint
+
+- The iPhone 16 Pro / iOS 26.4 simulator build and all 69 tests passed.
+  Swift formatting, documentation formatting, and local documentation links passed.
+- Simulator investigation reproduced a code/table row changing from 36 points
+  to 259.33 points when remounted in the previous self-sizing List. Parsed
+  Markdown alone did not settle Textual's initial view state and overflow layout.
+- In the measured collection, native animated accessibility paging through the
+  mixed-message fixture produced no content-height changes. The explicit bottom
+  button then caused the expected reduction to the latest ten render groups.
+  Repeating the button action reached the latest message and footer.
+- Opening the keyboard at the bottom exposed a viewport-following regression;
+  reporting native bounds changes restored the latest message and footer above
+  the composer. Automated hosting checks cover resizing, font changes, refresh,
+  send, revocation, and resident reading-position restoration.
+- These observations establish layout correctness on the simulator. Touch
+  dragging through the available computer-use input and physical-device frame
+  pacing remain unverified.
 
 ### October 7, 2026 checkpoint
 

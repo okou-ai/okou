@@ -8,11 +8,7 @@ import { xResourceClockQuery } from "./x-resource-usage-lifecycle";
 const DELETE_BATCH_SIZE = 1000;
 
 const cleanupXResourceReadsBatch$ = command(
-  async (
-    { set },
-    resourceIds: readonly string[] | undefined,
-    signal: AbortSignal,
-  ): Promise<number> => {
+  async ({ set }, signal: AbortSignal): Promise<number> => {
     const db = set(writeDb$);
     signal.throwIfAborted();
     // Admission is limited to today and yesterday. Sample the database clock
@@ -34,14 +30,7 @@ const cleanupXResourceReadsBatch$ = command(
         resourceId: xResourceReads.resourceId,
       })
       .from(xResourceReads)
-      .where(
-        and(
-          lt(xResourceReads.utcDay, cutoff),
-          resourceIds === undefined
-            ? undefined
-            : inArray(xResourceReads.resourceId, resourceIds),
-        ),
-      )
+      .where(lt(xResourceReads.utcDay, cutoff))
       .orderBy(
         asc(xResourceReads.utcDay),
         asc(xResourceReads.resourceType),
@@ -79,16 +68,6 @@ const cleanupXResourceReadsBatch$ = command(
 
 export const cleanupXResourceReads$ = command(
   async ({ set }, signal: AbortSignal): Promise<number> => {
-    return await set(cleanupXResourceReadsBatch$, undefined, signal);
-  },
-);
-
-export const cleanupXResourceReadsForTest$ = command(
-  async (
-    { set },
-    resourceIds: readonly string[],
-    signal: AbortSignal,
-  ): Promise<number> => {
-    return await set(cleanupXResourceReadsBatch$, resourceIds, signal);
+    return await set(cleanupXResourceReadsBatch$, signal);
   },
 );

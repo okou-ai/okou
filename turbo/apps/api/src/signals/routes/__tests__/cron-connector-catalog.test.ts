@@ -42,7 +42,6 @@ import { createDeferredPromise } from "../../utils";
 import { createRouteMocks } from "./helpers/route-test";
 import { assertPublicConnectorCatalogHasNoPrivateFields } from "./helpers/connector-catalog-public-leak";
 import { readConnectorCredentialStorageState } from "./helpers/connector-credential-storage-state";
-import { readUserSecrets } from "./helpers/user-config-state";
 import {
   createBddApi,
   expectApiError,
@@ -378,11 +377,7 @@ function assertFixtureAuthComponentsComplete(artifact: JsonRecord): void {
 function publicAuthMethod(args: {
   readonly id: string;
   readonly grantKind:
-    | "manual"
-    | "auth-code"
-    | "openid-auth"
-    | "external-code"
-    | "device-auth";
+    "manual" | "auth-code" | "openid-auth" | "external-code" | "device-auth";
   readonly manual?: boolean;
 }): JsonRecord {
   return {
@@ -2000,17 +1995,6 @@ describe("connector catalog valid lifecycle", () => {
       connectionStatus: "connected",
     });
     routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    const secrets = await readUserSecrets(context, {
-      orgId: actor.orgId ?? "",
-      userId: actor.userId,
-    });
-    expect(secrets).toContainEqual(
-      expect.objectContaining({
-        name: "CATALOG_CLI_DEVICE_ACCESS_TOKEN",
-        type: "connector",
-      }),
-    );
-    expect(JSON.stringify(secrets)).not.toContain("catalog-cli-access-token");
     expect(context.mocks.s3.send).toHaveBeenCalledTimes(callsBeforeSeed);
   });
 
@@ -3806,16 +3790,6 @@ describe("connector catalog valid lifecycle", () => {
     const callsBeforeProviderResume = context.mocks.s3.send.mock.calls.length;
     providerResume.release();
     await firstCallback;
-
-    const firstSecrets = await readUserSecrets(context, {
-      orgId: actor.orgId ?? "",
-      userId: actor.userId,
-    });
-    expect(
-      firstSecrets.map((secret) => {
-        return secret.name;
-      }),
-    ).toContain("FIRST_RELEASE_SLACK_TOKEN");
     const firstStorageState = await readConnectorCredentialStorageState(
       context,
       {
@@ -3853,15 +3827,6 @@ describe("connector catalog valid lifecycle", () => {
       code: "second-release",
       state: secondState,
     });
-    const secondSecrets = await readUserSecrets(context, {
-      orgId: actor.orgId ?? "",
-      userId: actor.userId,
-    });
-    expect(
-      secondSecrets.map((secret) => {
-        return secret.name;
-      }),
-    ).toContain("SECOND_RELEASE_SLACK_TOKEN");
     const secondStorageState = await readConnectorCredentialStorageState(
       context,
       {

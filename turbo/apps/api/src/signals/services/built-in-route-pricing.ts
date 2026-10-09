@@ -1,4 +1,8 @@
 import {
+  AUTO_SELECTED_MODEL,
+  autoRunBillingProvider,
+} from "@okouai/core/auto-run-model";
+import {
   resolveUsagePricingProvider,
   type UsagePricingResolution,
 } from "../context/usage-pricing-resolution";
@@ -335,11 +339,23 @@ function builtInRouteForContext(
   if (!concreteProviderType) {
     return null;
   }
-  return catalogBuiltInRoute(
+  const route = catalogBuiltInRoute(
     catalog,
     modelProvider.selectedModel,
     concreteProviderType,
   );
+  const runtime = modelProvider.builtInModelRuntimeRoute;
+  // Captured runtime owns billing even if the organization's current preset changed.
+  return route && runtime && modelProvider.selectedModel === AUTO_SELECTED_MODEL
+    ? {
+        ...route,
+        upstreamModel: runtime.upstreamModel,
+        pricingProvider: autoRunBillingProvider(
+          modelProvider.selectedModel,
+          runtime.upstreamModel,
+        ),
+      }
+    : route;
 }
 
 /**

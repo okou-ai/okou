@@ -2382,11 +2382,6 @@ function TemplatePreviewPage({
               }}
               className="absolute inset-y-0 right-0 w-1/2 cursor-e-resize bg-transparent focus:outline-none disabled:cursor-default"
             />
-            {template.state === "loading" || html.state === "loading" ? (
-              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-muted">
-                <div className="h-full w-1/3 animate-pulse bg-muted-foreground/40" />
-              </div>
-            ) : null}
           </div>
           <div
             className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(96px,1fr))] gap-1.5 lg:grid-cols-8"
@@ -4217,10 +4212,13 @@ function ImportedPresentationTemplateRenameControl({
             );
           }}
           onKeyDown={(event) => {
+            // Safari can end composition before the confirming Enter, while
+            // keyCode remains 229 for that IME-owned keystroke.
             if (
               event.key !== "Enter" ||
               event.shiftKey ||
-              event.nativeEvent.isComposing
+              event.nativeEvent.isComposing ||
+              event.nativeEvent.keyCode === 229
             ) {
               return;
             }
@@ -6556,7 +6554,12 @@ function ComposerConnectorAccountMenuContent({
           </span>
         </div>
         {showSearch ? (
-          <div className="shrink-0 border-b border-border/50 px-3 py-2">
+          <div className="relative shrink-0 border-b border-border/50 px-3 py-2">
+            <Search
+              size={16}
+              aria-hidden="true"
+              className="pointer-events-none absolute left-6 top-1/2 -translate-y-1/2 text-muted-foreground"
+            />
             <Input
               value={search}
               onChange={(event) => {
@@ -6569,7 +6572,7 @@ function ComposerConnectorAccountMenuContent({
               placeholder={t(($) => {
                 return $.connectors.accounts.find;
               })}
-              className="h-8"
+              className="h-8 pl-9"
             />
           </div>
         ) : null}
@@ -6859,6 +6862,7 @@ function ConnectorsPopoverButton({
         </Tooltip>
       </TooltipProvider>
       <PopoverContent
+        initialFocus={isMobileTextInputDevice() ? false : undefined}
         side="top"
         align="start"
         aria-label={t(($) => {
@@ -6886,6 +6890,19 @@ function ConnectorsPopoverButton({
       />
     </Popover>
   );
+}
+
+function focusComposerConnectorSearch(element: HTMLElement | null) {
+  const panel = element?.closest("[data-connector-panel]");
+  if (
+    panel?.closest("[data-slot='popover-content'][data-open]") &&
+    panel.ownerDocument.activeElement === panel &&
+    !isMobileTextInputDevice()
+  ) {
+    panel
+      .querySelector<HTMLInputElement>("[data-connector-search]")
+      ?.focus({ preventScroll: true });
+  }
 }
 
 /**
@@ -6972,13 +6989,34 @@ function ComposerConnectorsPopoverBody({
   };
 
   return (
-    <div className={cn("flex min-h-0 flex-col", showSearch && "h-100")}>
+    <div
+      data-connector-panel
+      // Base UI focuses this while loading; once ready, search is first.
+      tabIndex={connectorsLoading ? 0 : -1}
+      onFocus={(event) => {
+        focusComposerConnectorSearch(event.currentTarget);
+      }}
+      className={cn(
+        "flex min-h-0 flex-col outline-none",
+        showSearch && "h-100",
+      )}
+    >
       {(connectorItems.length > 0 || connectorsLoading) && (
         <div className="flex min-h-0 flex-1 flex-col py-1">
           {showSearch && (
-            <div className="shrink-0 px-3 py-1 border-b border-border/50">
+            <div className="flex shrink-0 items-center gap-2 px-3 py-1 border-b border-border/50">
+              <Search
+                size={16}
+                aria-hidden="true"
+                className="pointer-events-none shrink-0 text-muted-foreground"
+              />
               <input
+                ref={focusComposerConnectorSearch}
+                data-connector-search
                 type="text"
+                aria-label={t(($) => {
+                  return $.chat.connectors.find;
+                })}
                 placeholder={t(($) => {
                   return $.chat.connectors.find;
                 })}
@@ -6988,7 +7026,7 @@ function ComposerConnectorsPopoverBody({
                     popoverSearch: e.target.value,
                   });
                 }}
-                className="w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none"
+                className="min-w-0 w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none"
               />
             </div>
           )}
@@ -7618,27 +7656,24 @@ function VoiceDraftFooter({
 
 function ComposerAttachButton({ signals }: { signals: ComposerSignals }) {
   const { t } = useTranslation();
-  const fileInput = useGet(signals.draft.composerFileInput$);
   return (
     <TooltipProvider delay={300}>
       <Tooltip>
         <TooltipTrigger
           render={
-            <Button
-              type="button"
-              variant="quiet"
-              size="icon-sm"
-              iconSize="md"
-              className="shrink-0"
-              aria-label={t(($) => {
-                return $.chat.attachments.attach;
-              })}
-              onClick={() => {
-                fileInput?.click();
-              }}
+            <label
+              className={cn(
+                buttonVariants({
+                  variant: "quiet",
+                  size: "icon-sm",
+                  iconSize: "md",
+                }),
+                "shrink-0 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring has-[:focus-visible]:ring-offset-2",
+              )}
             >
-              <Paperclip size={18} />
-            </Button>
+              <ComposerFileInput signals={signals} />
+              <Paperclip size={18} aria-hidden />
+            </label>
           }
         />
         <TooltipContent side="top" className="text-xs">
@@ -7677,7 +7712,7 @@ function useComposerAddMenuGroups(
           return $.chat.attachments.attach;
         }),
         onSelect: () => {
-          fileInput?.click();
+          fileInput?.showPicker();
         },
       },
       {
@@ -7708,7 +7743,15 @@ function useComposerAddMenuGroups(
  * template picker's signals just to build rows it will not render.
  */
 function ComposerAddMenuSlot({ signals }: { signals: ComposerSignals }) {
-  return <ComposerAddMenu groups={useComposerAddMenuGroups(signals)} />;
+  const groups = useComposerAddMenuGroups(signals);
+  return (
+    <>
+      <ComposerAddMenu groups={groups} />
+      {/* Menu.Item owns keyboard activation through showPicker(). Keep its
+          input outside the popup so selection survives the menu closing. */}
+      <ComposerFileInput signals={signals} hidden />
+    </>
+  );
 }
 
 function ComposerAddSlot({ signals }: { signals: ComposerSignals }) {
@@ -8616,7 +8659,14 @@ function resolveComposerConnectorCollections({
   };
 }
 
-function ComposerFileInput({ signals }: { signals: ComposerSignals }) {
+function ComposerFileInput({
+  signals,
+  hidden = false,
+}: {
+  signals: ComposerSignals;
+  hidden?: boolean;
+}) {
+  const { t } = useTranslation();
   const setFileInput = useSet(signals.draft.setComposerFileInput$);
   const uploadFile = useComposerFileUpload(signals);
   const notifyDraftChanged = useComposerDraftChange(signals);
@@ -8625,7 +8675,10 @@ function ComposerFileInput({ signals }: { signals: ComposerSignals }) {
     <input
       ref={setFileInput}
       type="file"
-      className="hidden"
+      className={hidden ? "hidden" : "sr-only"}
+      aria-label={t(($) => {
+        return $.chat.attachments.attach;
+      })}
       multiple
       onChange={(event) => {
         const files = event.target.files;
@@ -9216,7 +9269,6 @@ export function ChatComposer({
   );
   return (
     <>
-      <ComposerFileInput signals={signals} />
       {/* The composer group's width, named once. The card is not the container
           itself: the model-scope notice and the pending-items strip are its
           siblings at exactly this width, and a control that reads a width it is

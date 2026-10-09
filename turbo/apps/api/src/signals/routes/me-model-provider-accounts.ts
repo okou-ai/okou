@@ -2,13 +2,14 @@ import {
   personalModelProviderAccountsByIdContract,
   personalSubscriptionsContract,
 } from "@okouai/api-contracts/contracts/personal-model-providers";
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
 
 import { isNotFoundResponse, notFound } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
-import { writeDb$ } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import {
@@ -22,10 +23,28 @@ import {
   refreshPersonalModelProviderSubscriptionUsage$,
 } from "../services/model-provider-subscription-usage.service";
 import {
-  failedRunAccountIdentity,
+  failedRunAccountIdentityCondition,
   personalSubscriptionAccountIdentity,
 } from "../services/personal-subscription-recovery.service";
 import { resetDisconnectedMemberModelSelection } from "../services/member-subscription-models.service";
+
+const accountResponse$ = personalModelProviderAccountResponseById(
+  computed((get) => {
+    const auth = get(organizationAuthContext$);
+    const params = get(
+      pathParamsOf(personalModelProviderAccountsByIdContract.getById),
+    );
+    return { orgId: auth.orgId, userId: auth.userId, id: params.id };
+  }),
+);
+
+const subscriptionResponse$ = personalModelProviderAccountResponseById(
+  computed((get) => {
+    const auth = get(organizationAuthContext$);
+    const params = get(pathParamsOf(personalSubscriptionsContract.get));
+    return { orgId: auth.orgId, userId: auth.userId, id: params.id };
+  }),
+);
 
 const getInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
@@ -44,20 +63,28 @@ const getInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!account) {
     return notFound("Resource not found");
   }
-  const expectedIdentity = await failedRunAccountIdentity({
-    ...args,
-    runId: query.runId,
-    accountId: account.id,
-    providerType: account.type,
-  });
+  const [run] = await get(db$)
+    .select({ identity: agentRuns.modelProviderAccountIdentity })
+    .from(agentRuns)
+    .where(
+      failedRunAccountIdentityCondition({
+        runId: query.runId,
+        accountId: account.id,
+        providerType: account.type,
+        userId: auth.userId,
+        orgId: auth.orgId,
+      }),
+    )
+    .limit(1);
   signal.throwIfAborted();
+  const expectedIdentity = run?.identity ?? null;
   if (
     !expectedIdentity ||
     personalSubscriptionAccountIdentity(account) !== expectedIdentity
   ) {
     return notFound("Resource not found");
   }
-  const provider = await personalModelProviderAccountResponseById(args);
+  const provider = await get(accountResponse$);
   signal.throwIfAborted();
   if (!provider) {
     return notFound("Resource not found");
@@ -91,13 +118,7 @@ const getInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 const getSubscriptionInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
-    const params = get(pathParamsOf(personalSubscriptionsContract.get));
-    const provider = await personalModelProviderAccountResponseById({
-      db: set(writeDb$),
-      orgId: auth.orgId,
-      userId: auth.userId,
-      id: params.id,
-    });
+    const provider = await get(subscriptionResponse$);
     signal.throwIfAborted();
     if (!provider) {
       return notFound("Resource not found");
@@ -193,16 +214,22 @@ function resetAccountSubscriptionUsage(
     if (!account || account.type !== "codex-oauth-token") {
       return notFound("Resource not found");
     }
-    const expectedIdentity = runId
-      ? await failedRunAccountIdentity({
-          db: set(writeDb$),
-          orgId: auth.orgId,
-          userId: auth.userId,
-          runId: runId,
-          accountId: account.id,
-          providerType: account.type,
-        })
-      : undefined;
+    const [run] = runId
+      ? await get(db$)
+          .select({ identity: agentRuns.modelProviderAccountIdentity })
+          .from(agentRuns)
+          .where(
+            failedRunAccountIdentityCondition({
+              runId: runId,
+              accountId: account.id,
+              providerType: account.type,
+              userId: auth.userId,
+              orgId: auth.orgId,
+            }),
+          )
+          .limit(1)
+      : [];
+    const expectedIdentity = runId ? (run?.identity ?? null) : undefined;
     if (
       runId &&
       (!expectedIdentity ||

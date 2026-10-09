@@ -29,11 +29,10 @@ import { resolveBuiltinConnectorCredentialAccess } from "./builtin-connector-cre
 import {
   loadBuiltinConnectorCredentialValues$,
   refreshBuiltinConnectorCredentialAccess$,
-} from "./builtin-connector-credential-command.service";
-import {
   builtinConnectorCredentialRuntimeValueRef,
   type BuiltinConnectorCredentialConnection,
 } from "./builtin-connector-credential-runtime.service";
+
 import type { ConnectorRuntimeSelection } from "./connector-catalog-runtime.service";
 import {
   GmailAuthorizationError,
@@ -142,12 +141,10 @@ interface MailDraftErrorResult {
 export type MailDraftMutationResult = MailDraftResult | MailDraftErrorResult;
 
 export type MailDraftLinkMutationResult =
-  | MailDraftLinkResult
-  | MailDraftErrorResult;
+  MailDraftLinkResult | MailDraftErrorResult;
 
 type MailDraftAttachmentResult =
-  | MailDraftAttachmentSuccess
-  | MailDraftErrorResult;
+  MailDraftAttachmentSuccess | MailDraftErrorResult;
 
 const reconnectMailError = Object.freeze({
   kind: "conflict" as const,

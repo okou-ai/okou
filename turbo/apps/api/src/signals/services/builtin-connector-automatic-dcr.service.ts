@@ -1,28 +1,24 @@
 import { command } from "ccstate";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { builtinConnectorDcrRegistrations } from "@okouai/db/schema/connector-dcr-registration";
 import { builtinConnectorAccountOauthBindings } from "@okouai/db/schema/connector-account-oauth-binding";
 import { connectors } from "@okouai/db/schema/connector";
-import { connectorCatalog } from "@okouai/db/schema/connector-catalog";
-import type { ExternalCatalogIdentity } from "./connector-catalog-view";
 import { writeDb$, type Db } from "../external/db";
 import { nowDate } from "../../lib/time";
 import {
   decryptStoredSecretValue,
   encryptStoredSecretValue,
 } from "./crypto.utils";
-import {
-  McpAutomaticOAuthError,
-  type McpAutomaticOAuthDcrRegistration,
-  type McpAutomaticOAuthDcrRegistrationInput,
-  type McpAutomaticOAuthDcrStore,
+import type {
+  McpAutomaticOAuthDcrRegistration,
+  McpAutomaticOAuthDcrRegistrationInput,
+  McpAutomaticOAuthDcrStore,
 } from "./mcp-automatic-oauth.service";
 
 export interface BuiltinConnectorAutomaticContractOwner {
   readonly orgId: string;
   readonly connectorSlug: string;
   readonly authMethod: string;
-  readonly contractHash: string;
 }
 
 function ownerCondition(owner: BuiltinConnectorAutomaticContractOwner) {
@@ -30,7 +26,6 @@ function ownerCondition(owner: BuiltinConnectorAutomaticContractOwner) {
     eq(builtinConnectorDcrRegistrations.orgId, owner.orgId),
     eq(builtinConnectorDcrRegistrations.connectorSlug, owner.connectorSlug),
     eq(builtinConnectorDcrRegistrations.authMethod, owner.authMethod),
-    eq(builtinConnectorDcrRegistrations.contractHash, owner.contractHash),
   );
 }
 
@@ -58,7 +53,6 @@ async function retireRegistration(
     eq(builtinConnectorAccountOauthBindings.orgId, owner.orgId),
     eq(builtinConnectorAccountOauthBindings.connectorSlug, owner.connectorSlug),
     eq(builtinConnectorAccountOauthBindings.authMethod, owner.authMethod),
-    eq(builtinConnectorAccountOauthBindings.contractHash, owner.contractHash),
   );
   await db
     .update(connectors)
@@ -112,6 +106,10 @@ export const readBuiltinDcrRegistrationByIssuer$ = command(
           eq(builtinConnectorDcrRegistrations.issuer, args.issuer),
         ),
       )
+      .orderBy(
+        desc(builtinConnectorDcrRegistrations.issuedAt),
+        desc(builtinConnectorDcrRegistrations.id),
+      )
       .limit(1);
     signal.throwIfAborted();
     return row ? registration(row) : null;
@@ -140,19 +138,11 @@ export const hasBuiltinDcrLinkedAccounts$ = command(
   },
 );
 
-function builtinDcrCatalogCondition(identity: ExternalCatalogIdentity) {
-  return and(
-    eq(connectorCatalog.schemaVersion, identity.schemaVersion),
-    eq(connectorCatalog.hash, identity.catalogDigest),
-  );
-}
-
 export const createBuiltinDcrRegistration$ = command(
   async (
     { set },
     args: {
       readonly owner: BuiltinConnectorAutomaticContractOwner;
-      readonly catalogIdentity: ExternalCatalogIdentity;
       readonly value: McpAutomaticOAuthDcrRegistrationInput;
     },
     signal: AbortSignal,
@@ -164,19 +154,6 @@ export const createBuiltinDcrRegistration$ = command(
         ? null
         : await encryptStoredSecretValue(value.clientSecret);
     signal.throwIfAborted();
-    // A registration is created only for the current catalog.
-    const [catalog] = await db
-      .select({ hash: connectorCatalog.hash })
-      .from(connectorCatalog)
-      .where(builtinDcrCatalogCondition(args.catalogIdentity))
-      .limit(1);
-    signal.throwIfAborted();
-    if (!catalog) {
-      throw new McpAutomaticOAuthError(
-        { kind: "binding-drift", reason: "binding-drift" },
-        "Builtin MCP credential catalog changed during client registration",
-      );
-    }
     const [row] = await db
       .insert(builtinConnectorDcrRegistrations)
       .values({
@@ -215,6 +192,10 @@ export function builtinConnectorAutomaticDcrStore(
             ownerCondition(owner),
             eq(builtinConnectorDcrRegistrations.issuer, issuer),
           ),
+        )
+        .orderBy(
+          desc(builtinConnectorDcrRegistrations.issuedAt),
+          desc(builtinConnectorDcrRegistrations.id),
         )
         .limit(1);
       return row ? registration(row) : null;

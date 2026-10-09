@@ -37,7 +37,7 @@ import {
 } from "../../lib/artifact-text-references";
 import {
   artifactFileReference,
-  privateArtifactRecord,
+  privateArtifactRecord$,
   privateArtifactUrl,
 } from "./private-artifact-storage.service";
 import {
@@ -46,7 +46,7 @@ import {
 } from "./artifact-delivery.service";
 import {
   allocateSharedThreadArtifactReference$,
-  artifactReferenceRecord,
+  artifactReferenceRecord$,
 } from "./artifact-reference.service";
 
 const MAX_RESOURCES = 100;
@@ -115,8 +115,7 @@ interface ResourceReference {
 }
 
 type SnapshotSource =
-  | ResourceReference
-  | { readonly kind: "snapshot"; readonly url: string };
+  ResourceReference | { readonly kind: "snapshot"; readonly url: string };
 
 function signedFileReference(url: URL): ResourceReference {
   const [bucket, ...segments] = decodeURIComponent(url.pathname.slice(1)).split(
@@ -132,7 +131,7 @@ function signedFileReference(url: URL): ResourceReference {
 
 const resourceReference$ = command(
   async (
-    { get },
+    { set },
     value: string,
     signal: AbortSignal,
   ): Promise<SnapshotSource | null> => {
@@ -141,7 +140,11 @@ const resourceReference$ = command(
       if (reference.id) {
         return { id: reference.id, suffix: reference.fragment };
       }
-      const record = await get(artifactReferenceRecord(reference.hash, signal));
+      const record = await set(
+        artifactReferenceRecord$,
+        reference.hash,
+        signal,
+      );
       signal.throwIfAborted();
       if (record?.version === 3) {
         // Existing public snapshot links retain their original parent grant.
@@ -286,7 +289,7 @@ const allocateSnapshotReference$ = command(
 
 const privateFileSnapshot$ = command(
   async (
-    { get, set },
+    { set },
     args: SnapshotOwner & { readonly reservedTokens: Set<string> },
     reference: ResourceReference,
     signal: AbortSignal,
@@ -294,7 +297,7 @@ const privateFileSnapshot$ = command(
     if (reference.kind === "html") {
       return null;
     }
-    const file = await get(privateArtifactRecord(reference.id));
+    const file = await set(privateArtifactRecord$, reference.id, signal);
     signal.throwIfAborted();
     if (file) {
       if (
@@ -524,8 +527,8 @@ export const prepareSharedThreadArtifacts$ = command(
     const messages: SharedMessage[] = [];
     for (const message of args.messages) {
       const attachments:
-        | NonNullable<SharedMessage["attachments"]>[number][]
-        | undefined = message.attachments === undefined ? undefined : [];
+        NonNullable<SharedMessage["attachments"]>[number][] | undefined =
+        message.attachments === undefined ? undefined : [];
       for (const attachment of message.attachments ?? []) {
         attachments?.push({
           ...attachment,

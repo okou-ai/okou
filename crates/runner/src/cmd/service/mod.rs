@@ -13,7 +13,6 @@ use sha2::{Digest, Sha256};
 use tokio::time::{Duration as TokioDuration, Instant as TokioInstant};
 use tracing::{info, warn};
 
-mod diagnostic;
 mod drain_override;
 mod drain_override_cleanup;
 mod drain_resume;
@@ -23,24 +22,21 @@ mod reload;
 mod signal;
 mod state;
 mod stop;
-mod systemctl;
-mod target;
-mod unit_config;
 mod unit_file;
 
-pub(crate) use systemctl::{is_unit_active, is_unit_enabled};
-pub(crate) use target::RunnerServiceUnit;
-pub(crate) use unit_config::read_unit_config_path;
+pub(crate) use runner_host::service::{
+    RunnerServiceUnit, is_unit_active, is_unit_enabled, read_unit_config_path,
+};
 
 use drain_override::{remove_drain_restart_override, write_drain_restart_override};
 use drain_override_cleanup::{DrainOverrideReloadPolicy, reconcile_drain_restart_override_removal};
 use gate::{ActiveJobsGateOps, check_active_jobs_gate};
 use reload::{SystemdReloadRequirement, coordinate_systemd_reload};
-use systemctl::{
-    BoundedSystemctlQuery, SystemdUnitEnablement, is_unit_active_bounded_query,
-    journalctl_logs_status, read_unit_enablement, restore_unit_enablement, run_systemctl,
+use runner_host::service::{
+    BoundedSystemctlQuery, SystemdUnitEnablement, all_units_pattern, is_unit_active_bounded_query,
+    journalctl_logs_status, read_unit_config_path_bounded, read_unit_enablement,
+    restore_unit_enablement, run_systemctl,
 };
-use unit_config::read_unit_config_path_bounded;
 use unit_file::{
     RUNNER_SERVICE_CONTROL_SUBGROUP_DIRECTIVE, RUNNER_SERVICE_CPU_DELEGATION_DIRECTIVE,
     RUNNER_SERVICE_NOFILE_LIMIT_DIRECTIVE, cleanup_unit_staging_files, generate_unit_file,
@@ -566,14 +562,14 @@ struct RealServiceUninstallOps;
 
 impl ActiveJobsGateOps for RealServiceUninstallOps {
     fn is_unit_active<'a>(&'a mut self, unit: &'a RunnerServiceUnit) -> ServiceFuture<'a, bool> {
-        Box::pin(async move { is_unit_active(unit).await })
+        Box::pin(async move { is_unit_active(unit).await.map_err(Into::into) })
     }
 
     fn read_unit_config_path<'a>(
         &'a mut self,
         unit: &'a RunnerServiceUnit,
     ) -> ServiceFuture<'a, Option<PathBuf>> {
-        Box::pin(async move { read_unit_config_path(unit).await })
+        Box::pin(async move { read_unit_config_path(unit).await.map_err(Into::into) })
     }
 }
 
@@ -833,7 +829,7 @@ async fn status(args: ServiceStatusArgs) -> RunnerResult<()> {
         Some(suffix) => RunnerServiceUnit::from_suffix(suffix)?
             .service_name()
             .to_string(),
-        None => target::all_units_pattern(),
+        None => all_units_pattern(),
     };
     // Inherit stdout so user sees output directly.
     // systemctl status returns exit code 3 for inactive — ignore exit code.
@@ -858,7 +854,7 @@ async fn logs(args: ServiceLogsArgs) -> RunnerResult<()> {
         .status()
         .await
         .map_err(|e| RunnerError::Internal(format!("spawn journalctl: {e}")))?;
-    journalctl_logs_status(unit.service_name(), status)
+    journalctl_logs_status(unit.service_name(), status).map_err(Into::into)
 }
 
 #[cfg(test)]

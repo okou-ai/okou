@@ -11,34 +11,22 @@ import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 
-import { clerk$ } from "../external/clerk";
-import { settle } from "../utils";
-import { nowDate } from "../../lib/time";
 import {
   loadMorningBriefEnrollment$,
-  morningBriefEnrollmentWhere,
   recordMorningBriefChoice$,
-  recordMorningBriefMembership$,
   type MorningBriefMemberIdentity,
 } from "./morning-brief-enrollment-data.service";
 import {
-  claimMorningBriefEnrollment$,
-  deferMorningBriefPrerequisite$,
-  finishMorningBriefEnrollmentAttempt$,
-  prepareMorningBriefEnrollment$,
-} from "./morning-brief-enrollment-retry.service";
-import { readAcceptedOfficialWorkflowDefinition } from "./official-workflow-catalog-read.service";
-import {
-  loadMorningBriefDefaultAgentId,
-  loadMorningBriefMigrationState,
-  loadMorningBriefOwnership,
+  loadMorningBriefDefaultAgentId$,
+  loadMorningBriefMigrationState$,
+  loadMorningBriefOwnership$,
   type MorningBriefMigrationState,
 } from "./morning-brief-migration-state.service";
 import { completeMorningBriefEnrollment$ } from "./morning-brief-enrollment-completion.service";
-import { writeDb$, type ReadonlyDb } from "../external/db";
+import { db$ } from "../external/db";
 import {
   installOfficialWorkflow$,
-  loadOfficialWorkflowUserTimezone,
+  loadOfficialWorkflowUserTimezone$,
 } from "./official-workflow-installation.service";
 import { reconcileOfficialWorkflowInstallation$ } from "./official-workflow-reconciliation.service";
 import {
@@ -69,39 +57,6 @@ interface MorningBriefPreferenceMutationArgs extends MorningBriefPreferenceArgs 
   readonly enabled: boolean;
 }
 
-type EnsureMorningBriefDefaultEnabledArgs = MorningBriefPreferenceArgs;
-
-export type EnsureMorningBriefDefaultEnabledResult =
-  | {
-      readonly outcome: "installed";
-      readonly workflowId: string;
-    }
-  | {
-      readonly outcome: "unchanged";
-      readonly reason: "existing-installation";
-      readonly installationCount: number;
-    }
-  | {
-      readonly outcome: "skipped";
-      readonly reason:
-        | "not-eligible"
-        | "missing-timezone"
-        | "missing-default-agent"
-        | "user-disabled"
-        | "retry-deferred"
-        | "membership-unavailable";
-    }
-  | {
-      readonly outcome: "failed";
-      readonly reason: "installation-failed";
-      readonly failureKind:
-        | "bad-request"
-        | "not-found"
-        | "forbidden"
-        | "conflict";
-      readonly message: string;
-    };
-
 function conflict(
   code: Extract<
     MorningBriefPreferenceErrorCode,
@@ -114,16 +69,6 @@ function conflict(
 
 const MORNING_BRIEF_TIMEZONE_CONFLICT_MESSAGE =
   "Morning Brief changed concurrently. Retry the preference update.";
-
-/** A lost conditional Morning Brief write, reported once for the enrollment retry schedule. */
-function timezoneConflict(): EnsureMorningBriefDefaultEnabledResult {
-  return {
-    outcome: "failed",
-    reason: "installation-failed",
-    failureKind: "conflict",
-    message: MORNING_BRIEF_TIMEZONE_CONFLICT_MESSAGE,
-  };
-}
 
 function unavailableFailure(
   reason: NonNullable<MorningBriefPreferenceResponse["unavailableReason"]>,
@@ -147,52 +92,64 @@ function morningBriefOwner(
   return { orgId: args.orgId, userId: args.member.userId };
 }
 
-async function loadUnavailableReason(
-  db: ReadonlyDb,
-  args: MorningBriefPreferenceArgs,
-  installationAgentId?: string,
-): Promise<MorningBriefPreferenceResponse["unavailableReason"]> {
-  const owner = morningBriefOwner(args);
-  const timezone = await loadOfficialWorkflowUserTimezone(db, owner);
-  if (timezone === null || !isValidTimeZone(timezone)) {
-    return "missing-timezone";
-  }
+const loadUnavailableReason$ = command(
+  async (
+    { set },
+    args: MorningBriefPreferenceArgs,
+    installationAgentId: string | undefined,
+    signal: AbortSignal,
+  ): Promise<MorningBriefPreferenceResponse["unavailableReason"]> => {
+    const owner = morningBriefOwner(args);
+    const timezone = await set(
+      loadOfficialWorkflowUserTimezone$,
+      owner,
+      signal,
+    );
+    if (timezone === null || !isValidTimeZone(timezone)) {
+      return "missing-timezone";
+    }
 
-  const agentId =
-    installationAgentId ?? (await loadMorningBriefDefaultAgentId(db, owner));
-  if (agentId === null) {
-    return "missing-default-agent";
-  }
-  return null;
-}
+    const agentId =
+      installationAgentId ??
+      (await set(loadMorningBriefDefaultAgentId$, owner, signal));
+    if (agentId === null) {
+      return "missing-default-agent";
+    }
+    return null;
+  },
+);
 
-async function loadPendingPreference(
-  db: ReadonlyDb,
-  args: MorningBriefPreferenceArgs,
-  enrollment: typeof morningBriefEnrollments.$inferSelect | undefined,
-  installationAgentId?: string,
-): Promise<MorningBriefPreferenceResult> {
-  const unavailableReason = await loadUnavailableReason(
-    db,
-    args,
-    installationAgentId,
-  );
-  return {
-    kind: "ok",
-    preference: {
-      // Checking is unknown membership eligibility, not an enable choice.
-      // Only a qualified membership or an explicit toggle creates pending intent.
-      enabled: enrollment?.state === "pending",
-      status:
-        enrollment?.state === "pending" || enrollment?.state === "checking"
-          ? enrollment.lastError
-            ? "error"
-            : "preparing"
-          : "paused",
-      unavailableReason,
-    },
-  };
-}
+const loadPendingPreference$ = command(
+  async (
+    { set },
+    args: MorningBriefPreferenceArgs,
+    enrollment: typeof morningBriefEnrollments.$inferSelect | undefined,
+    installationAgentId: string | undefined,
+    signal: AbortSignal,
+  ): Promise<MorningBriefPreferenceResult> => {
+    const unavailableReason = await set(
+      loadUnavailableReason$,
+      args,
+      installationAgentId,
+      signal,
+    );
+    return {
+      kind: "ok",
+      preference: {
+        // Checking is unknown membership eligibility, not an enable choice.
+        // Only a qualified membership or an explicit toggle creates pending intent.
+        enabled: enrollment?.state === "pending",
+        status:
+          enrollment?.state === "pending" || enrollment?.state === "checking"
+            ? enrollment.lastError
+              ? "error"
+              : "preparing"
+            : "paused",
+        unavailableReason,
+      },
+    };
+  },
+);
 
 /**
  * Project the member's canonical state onto the Settings response.
@@ -200,55 +157,74 @@ async function loadPendingPreference(
  * The migration facts the state also carries — the additional installations it
  * left alone, and the thread the brief delivers into — stay internal.
  */
-async function projectInstalledPreference(
-  db: ReadonlyDb,
-  args: MorningBriefPreferenceArgs,
-  state: MorningBriefMigrationState,
-): Promise<MorningBriefPreferenceResult & { readonly workflowId?: string }> {
-  if (state.kind === "absent") {
-    return await loadPendingPreference(db, args, state.enrollment);
-  }
-  if (state.kind === "pending") {
-    return state.enrollment !== undefined
-      ? await loadPendingPreference(
-          db,
-          args,
-          state.enrollment,
-          state.installation.agentId,
-        )
-      : conflict(
-          "MORNING_BRIEF_STATE_CONFLICT",
-          "Morning Brief installation is not ready. Retry after installation completes.",
-        );
-  }
-  if (state.kind === "inconsistent") {
-    return conflict(
-      "MORNING_BRIEF_STATE_CONFLICT",
-      "Morning Brief installation state is inconsistent. Retry after reconciliation completes.",
-    );
-  }
-  return {
-    kind: "ok",
-    workflowId: state.installation.id,
-    preference: {
-      enabled: state.automation.enabled,
-      status: state.automation.enabled ? "enabled" : "paused",
-      unavailableReason: null,
-    },
-  };
-}
+const projectInstalledPreference$ = command(
+  async (
+    { set },
+    args: MorningBriefPreferenceArgs,
+    state: MorningBriefMigrationState,
+    signal: AbortSignal,
+  ): Promise<
+    MorningBriefPreferenceResult & { readonly workflowId?: string }
+  > => {
+    if (state.kind === "absent") {
+      return await set(
+        loadPendingPreference$,
+        args,
+        state.enrollment,
+        undefined,
+        signal,
+      );
+    }
+    if (state.kind === "pending") {
+      return state.enrollment !== undefined
+        ? await set(
+            loadPendingPreference$,
+            args,
+            state.enrollment,
+            state.installation.agentId,
+            signal,
+          )
+        : conflict(
+            "MORNING_BRIEF_STATE_CONFLICT",
+            "Morning Brief installation is not ready. Retry after installation completes.",
+          );
+    }
+    if (state.kind === "inconsistent") {
+      return conflict(
+        "MORNING_BRIEF_STATE_CONFLICT",
+        "Morning Brief installation state is inconsistent. Retry after reconciliation completes.",
+      );
+    }
+    return {
+      kind: "ok",
+      workflowId: state.installation.id,
+      preference: {
+        enabled: state.automation.enabled,
+        status: state.automation.enabled ? "enabled" : "paused",
+        unavailableReason: null,
+      },
+    };
+  },
+);
 
-async function loadInstalledPreference(
-  db: ReadonlyDb,
-  args: MorningBriefPreferenceArgs,
-): Promise<MorningBriefPreferenceResult & { readonly workflowId?: string }> {
-  const owner = morningBriefOwner(args);
-  return await projectInstalledPreference(
-    db,
-    args,
-    await loadMorningBriefMigrationState(db, owner),
-  );
-}
+const loadInstalledPreference$ = command(
+  async (
+    { set },
+    args: MorningBriefPreferenceArgs,
+    signal: AbortSignal,
+  ): Promise<
+    MorningBriefPreferenceResult & { readonly workflowId?: string }
+  > => {
+    const owner = morningBriefOwner(args);
+    signal.throwIfAborted();
+    return await set(
+      projectInstalledPreference$,
+      args,
+      await set(loadMorningBriefMigrationState$, owner, signal),
+      signal,
+    );
+  },
+);
 
 /** Read the live Official Workflow installation without writing or repairing it. */
 export const morningBriefPreference$ = command(
@@ -257,428 +233,40 @@ export const morningBriefPreference$ = command(
     args: MorningBriefPreferenceArgs,
     signal: AbortSignal,
   ): Promise<MorningBriefPreferenceResult> => {
-    const db = set(writeDb$);
     signal.throwIfAborted();
     const owner = morningBriefOwner(args);
-    const state = await loadMorningBriefMigrationState(db, owner);
+    const state = await set(loadMorningBriefMigrationState$, owner, signal);
     signal.throwIfAborted();
-    const legacy = await projectInstalledPreference(db, args, state);
+    const legacy = await set(projectInstalledPreference$, args, state, signal);
     signal.throwIfAborted();
     return legacy;
   },
 );
 
-const qualifyMorningBriefMembership$ = command(
+const loadMorningBriefAutomationId$ = command(
   async (
-    { get, set },
-    args: MorningBriefPreferenceArgs,
+    { get },
+    workflowId: string,
     signal: AbortSignal,
-  ): Promise<EnsureMorningBriefDefaultEnabledResult | null> => {
-    const db = set(writeDb$);
-    const identity = morningBriefOwner(args);
-    let enrollment = await set(loadMorningBriefEnrollment$, identity, signal);
-    signal.throwIfAborted();
-    if (
-      enrollment &&
-      enrollment.state !== "pending" &&
-      enrollment.state !== "checking" &&
-      enrollment.state !== "departed"
-    ) {
-      return {
-        outcome: "skipped",
-        reason:
-          enrollment.state === "cancelled" ? "user-disabled" : "not-eligible",
-      };
-    }
-    const memberships = await get(
-      clerk$,
-    ).organizations.getOrganizationMembershipList(
-      {
-        organizationId: args.orgId,
-        userId: [args.member.userId],
-        limit: 1,
-      },
-      undefined,
-      signal,
-    );
-    signal.throwIfAborted();
-    const membership = memberships.data.find((entry) => {
-      return (
-        entry.publicUserData?.userId === args.member.userId &&
-        entry.organization.id === args.orgId
-      );
-    });
-    if (
-      !membership ||
-      (enrollment?.state !== "departed" &&
-        enrollment?.membershipId &&
-        enrollment.membershipId !== membership.id)
-    ) {
-      if (enrollment) {
-        await db
-          .update(morningBriefEnrollments)
-          .set({ state: "departed", updatedAt: nowDate() })
-          .where(morningBriefEnrollmentWhere(identity));
-      }
-      return { outcome: "skipped", reason: "membership-unavailable" };
-    }
-    if (enrollment?.state === "checking" || enrollment?.state === "departed") {
-      const createdAt = new Date(membership.createdAt);
-      if (!Number.isFinite(createdAt.getTime())) {
-        throw new Error("Invalid Clerk membership creation time");
-      }
-      await set(
-        recordMorningBriefMembership$,
-        {
-          ...identity,
-          membershipId: membership.id,
-          createdAt,
-          preserveRetrySchedule: true,
-        },
-        signal,
-      );
-      signal.throwIfAborted();
-      enrollment = await set(loadMorningBriefEnrollment$, identity, signal);
-      signal.throwIfAborted();
-    }
-    if (enrollment?.state !== "pending") {
-      return { outcome: "skipped", reason: "not-eligible" };
-    }
-    return null;
-  },
-);
-
-/** Complete enrollment for an already-installed Official brief. */
-const completeExistingMorningBriefEnrollment$ = command(
-  async (
-    { set },
-    args: {
-      readonly identity: MorningBriefMemberIdentity;
-      readonly workflowId: string;
-      readonly installationCount: number;
-    },
-    signal: AbortSignal,
-  ): Promise<EnsureMorningBriefDefaultEnabledResult> => {
-    await set(
-      completeMorningBriefEnrollment$,
-      args.identity,
-      args.workflowId,
-      signal,
-    );
-    signal.throwIfAborted();
-    return {
-      outcome: "unchanged",
-      reason: "existing-installation",
-      installationCount: args.installationCount,
-    };
-  },
-);
-
-const installMorningBriefEnrollment$ = command(
-  async (
-    { set },
-    args: MorningBriefPreferenceArgs & { readonly agentId: string },
-    signal: AbortSignal,
-  ): Promise<EnsureMorningBriefDefaultEnabledResult> => {
-    const db = set(writeDb$);
-    const identity = morningBriefOwner(args);
-    const installed = await set(
-      installOfficialWorkflow$,
-      {
-        orgId: args.orgId,
-        member: args.member,
-        agentId: args.agentId,
-        definitionName: MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
-        blueprints: [
-          {
-            blueprintKey: MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
-            bindings: [],
-          },
-        ],
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (installed.kind === "ok") {
-      const intent = await set(loadMorningBriefEnrollment$, identity, signal);
-      signal.throwIfAborted();
-      if (intent?.state !== "pending") {
-        const automationId = await loadMorningBriefAutomationId(
-          db,
-          installed.workflowId,
-        );
-        signal.throwIfAborted();
-        if (automationId) {
-          await set(
-            disableWorkflowAutomation$,
-            { orgId: args.orgId, member: args.member, automationId },
-            signal,
-          );
-        }
-        return { outcome: "skipped", reason: "membership-unavailable" };
-      }
-      await set(
-        completeMorningBriefEnrollment$,
-        identity,
-        installed.workflowId,
-        signal,
-      );
-      signal.throwIfAborted();
-      const synchronized = await set(
-        synchronizeMorningBriefTimezone$,
-        args,
-        signal,
-      );
-      signal.throwIfAborted();
-      if (synchronized === "conflict") {
-        return timezoneConflict();
-      }
-      return { outcome: "installed", workflowId: installed.workflowId };
-    }
-
-    const raced = await loadMorningBriefOwnership(db, identity);
-    signal.throwIfAborted();
-    if (raced.installation?.installationState === "installed") {
-      return await set(
-        completeExistingMorningBriefEnrollment$,
-        {
-          identity,
-          workflowId: raced.installation.id,
-          installationCount: raced.installations.length,
-        },
-        signal,
-      );
-    }
-    return {
-      outcome: "failed",
-      reason: "installation-failed",
-      failureKind: installed.kind,
-      message: installed.message,
-    };
-  },
-);
-
-const preflightMorningBriefEnrollment$ = command(
-  async (
-    { set },
-    args: EnsureMorningBriefDefaultEnabledArgs & {
-      readonly installationAgentId?: string;
-    },
-    signal: AbortSignal,
-  ): Promise<
-    | EnsureMorningBriefDefaultEnabledResult
-    | { readonly outcome: "ready"; readonly agentId: string }
-  > => {
-    const db = set(writeDb$);
-    const identity = morningBriefOwner(args);
-    const unavailableReason = await loadUnavailableReason(
-      db,
-      args,
-      args.installationAgentId,
-    );
-    signal.throwIfAborted();
-    if (unavailableReason !== null) {
-      return { outcome: "skipped", reason: unavailableReason };
-    }
-
-    const agentId =
-      args.installationAgentId ??
-      (await loadMorningBriefDefaultAgentId(db, identity));
-    signal.throwIfAborted();
-    if (agentId === null) {
-      return { outcome: "skipped", reason: "missing-default-agent" };
-    }
-
-    const definition = await readAcceptedOfficialWorkflowDefinition(
-      db,
-      MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
-      signal,
-    );
-    signal.throwIfAborted();
-    if (!definition || definition.lifecycle !== "active") {
-      return {
-        outcome: "failed",
-        reason: "installation-failed",
-        failureKind: definition ? "conflict" : "not-found",
-        message: definition
-          ? `Official Workflow is retired: ${MORNING_BRIEF_OFFICIAL_DEFINITION_NAME}`
-          : `Official Workflow not found: ${MORNING_BRIEF_OFFICIAL_DEFINITION_NAME}`,
-      };
-    }
-    return { outcome: "ready", agentId };
-  },
-);
-
-const attemptMorningBriefEnrollment$ = command(
-  async (
-    { set },
-    args: MorningBriefPreferenceArgs & {
-      readonly agentId?: string;
-      readonly installationAgentId?: string;
-    },
-    signal: AbortSignal,
-  ): Promise<{
-    readonly result: EnsureMorningBriefDefaultEnabledResult;
-    readonly localDeferral: boolean;
-  }> => {
-    const qualification = await set(
-      qualifyMorningBriefMembership$,
-      args,
-      signal,
-    );
-    signal.throwIfAborted();
-    if (qualification !== null) {
-      return { result: qualification, localDeferral: false };
-    }
-    // Unknown eligibility is resolved once even without local prerequisites,
-    // so historical members retain their ineligible preference state.
-    const preflight =
-      args.agentId === undefined
-        ? await set(preflightMorningBriefEnrollment$, args, signal)
-        : { outcome: "ready" as const, agentId: args.agentId };
-    signal.throwIfAborted();
-    if (preflight.outcome !== "ready") {
-      return { result: preflight, localDeferral: true };
-    }
-    return {
-      result: await set(
-        installMorningBriefEnrollment$,
-        { ...args, agentId: preflight.agentId },
-        signal,
-      ),
-      localDeferral: false,
-    };
-  },
-);
-
-const ensureMorningBriefEnrollment$ = command(
-  async (
-    { set },
-    args: EnsureMorningBriefDefaultEnabledArgs,
-    signal: AbortSignal,
-  ): Promise<EnsureMorningBriefDefaultEnabledResult> => {
-    const db = set(writeDb$);
-    const identity = morningBriefOwner(args);
-    const { installation, installations } = await loadMorningBriefOwnership(
-      db,
-      identity,
-    );
-    signal.throwIfAborted();
-    if (installation?.installationState === "installed") {
-      return await set(
-        completeExistingMorningBriefEnrollment$,
-        {
-          identity,
-          workflowId: installation.id,
-          installationCount: installations.length,
-        },
-        signal,
-      );
-    }
-    await set(prepareMorningBriefEnrollment$, identity, signal);
-    signal.throwIfAborted();
-    const enrollment = await set(loadMorningBriefEnrollment$, identity, signal);
-    signal.throwIfAborted();
-    if (!enrollment) {
-      throw new Error("Morning Brief enrollment intent is missing");
-    }
-    if (
-      enrollment.state !== "checking" &&
-      enrollment.state !== "pending" &&
-      enrollment.state !== "departed"
-    ) {
-      return {
-        outcome: "skipped",
-        reason:
-          enrollment.state === "cancelled" ? "user-disabled" : "not-eligible",
-      };
-    }
-    const preflight =
-      enrollment.state === "checking"
-        ? null
-        : await set(
-            preflightMorningBriefEnrollment$,
-            { ...args, installationAgentId: installation?.agentId },
-            signal,
-          );
-    signal.throwIfAborted();
-    if (preflight !== null && preflight.outcome !== "ready") {
-      await set(
-        deferMorningBriefPrerequisite$,
-        enrollment,
-        preflight.outcome === "failed" ? preflight.message : null,
-        signal,
-      );
-      signal.throwIfAborted();
-      return preflight;
-    }
-    const claim = await set(claimMorningBriefEnrollment$, enrollment, signal);
-    signal.throwIfAborted();
-    if (!claim) {
-      return { outcome: "skipped", reason: "retry-deferred" };
-    }
-    const result = await settle(
-      set(
-        attemptMorningBriefEnrollment$,
-        {
-          ...args,
-          agentId: preflight?.agentId,
-          installationAgentId: installation?.agentId,
-        },
-        signal,
-      ),
-      signal,
-    );
-    const lastError = !result.ok
-      ? String(result.error)
-      : result.value.result.outcome === "failed"
-        ? result.value.result.message
-        : null;
-    await set(
-      finishMorningBriefEnrollmentAttempt$,
-      claim,
-      lastError,
-      result.ok && result.value.localDeferral,
-      signal,
-    );
-    signal.throwIfAborted();
-    if (!result.ok) {
-      throw result.error;
-    }
-    return result.value.result;
-  },
-);
-
-export const ensureMorningBriefDefaultEnabled$ = command(
-  async (
-    { set },
-    args: EnsureMorningBriefDefaultEnabledArgs,
-    signal: AbortSignal,
-  ): Promise<EnsureMorningBriefDefaultEnabledResult> => {
-    signal.throwIfAborted();
-    return await set(ensureMorningBriefEnrollment$, args, signal);
-  },
-);
-
-async function loadMorningBriefAutomationId(
-  db: ReadonlyDb,
-  workflowId: string,
-): Promise<string | null> {
-  const [automation] = await db
-    .select({ id: workflowAutomations.id })
-    .from(workflowAutomations)
-    .where(
-      and(
-        eq(workflowAutomations.workflowId, workflowId),
-        eq(
-          workflowAutomations.officialBlueprintKey,
-          MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
+  ): Promise<string | null> => {
+    const db = get(db$);
+    const [automation] = await db
+      .select({ id: workflowAutomations.id })
+      .from(workflowAutomations)
+      .where(
+        and(
+          eq(workflowAutomations.workflowId, workflowId),
+          eq(
+            workflowAutomations.officialBlueprintKey,
+            MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
+          ),
         ),
-      ),
-    )
-    .limit(1);
-  return automation?.id ?? null;
-}
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return automation?.id ?? null;
+  },
+);
 
 const createMorningBriefFromPreference$ = command(
   async (
@@ -686,17 +274,25 @@ const createMorningBriefFromPreference$ = command(
     args: MorningBriefPreferenceMutationArgs,
     signal: AbortSignal,
   ): Promise<MorningBriefPreferenceResult> => {
-    const db = set(writeDb$);
     const identity = morningBriefOwner(args);
     if (!args.enabled) {
-      return await loadInstalledPreference(db, args);
+      return await set(loadInstalledPreference$, args, signal);
     }
-    const unavailableReason = await loadUnavailableReason(db, args);
+    const unavailableReason = await set(
+      loadUnavailableReason$,
+      args,
+      undefined,
+      signal,
+    );
     signal.throwIfAborted();
     if (unavailableReason !== null) {
-      return await loadInstalledPreference(db, args);
+      return await set(loadInstalledPreference$, args, signal);
     }
-    const agentId = await loadMorningBriefDefaultAgentId(db, identity);
+    const agentId = await set(
+      loadMorningBriefDefaultAgentId$,
+      identity,
+      signal,
+    );
     signal.throwIfAborted();
     if (agentId === null) {
       return unavailableFailure("missing-default-agent");
@@ -719,9 +315,13 @@ const createMorningBriefFromPreference$ = command(
     );
     signal.throwIfAborted();
     if (installed.kind !== "ok") {
-      const state = await loadMorningBriefMigrationState(db, identity);
+      const state = await set(
+        loadMorningBriefMigrationState$,
+        identity,
+        signal,
+      );
       signal.throwIfAborted();
-      const raced = await projectInstalledPreference(db, args, state);
+      const raced = await set(projectInstalledPreference$, args, state, signal);
       signal.throwIfAborted();
       // No lock serializes concurrent requests: an installation another
       // request is still committing reports the recorded choice as preparing;
@@ -753,16 +353,15 @@ const createMorningBriefFromPreference$ = command(
         MORNING_BRIEF_TIMEZONE_CONFLICT_MESSAGE,
       );
     }
-    return await loadInstalledPreference(db, args);
+    return await set(loadInstalledPreference$, args, signal);
   },
 );
 
 /**
  * Re-read after recording a choice made while no installation was ready.
  *
- * No lock spans the preference operation. An automatic enrollment may have
- * committed its installation after this request read ownership; that installer
- * re-reads the durable choice only once, before completing. Whichever of the
+ * No lock spans the preference operation. Another explicit enable request may
+ * have committed its installation after this request read ownership. Whichever of the
  * two commits second observes the other: here, an installed brief whose
  * automation disagrees with the still-current choice is toggled through the
  * conditional automation writer.
@@ -774,8 +373,7 @@ const convergeRacedMorningBriefInstallation$ = command(
     recorded: MorningBriefPreferenceResult & { readonly workflowId?: string },
     signal: AbortSignal,
   ): Promise<MorningBriefPreferenceResult> => {
-    const db = set(writeDb$);
-    const current = await loadInstalledPreference(db, args);
+    const current = await set(loadInstalledPreference$, args, signal);
     signal.throwIfAborted();
     if (
       current.kind !== "ok" ||
@@ -798,9 +396,10 @@ const convergeRacedMorningBriefInstallation$ = command(
     if (!stillChosen) {
       return recorded;
     }
-    const automationId = await loadMorningBriefAutomationId(
-      db,
+    const automationId = await set(
+      loadMorningBriefAutomationId$,
       current.workflowId,
+      signal,
     );
     signal.throwIfAborted();
     if (automationId === null) {
@@ -812,7 +411,7 @@ const convergeRacedMorningBriefInstallation$ = command(
       signal,
     );
     signal.throwIfAborted();
-    return await loadInstalledPreference(db, args);
+    return await set(loadInstalledPreference$, args, signal);
   },
 );
 
@@ -822,9 +421,12 @@ const applyMorningBriefPreference$ = command(
     args: MorningBriefPreferenceMutationArgs,
     signal: AbortSignal,
   ): Promise<MorningBriefPreferenceResult> => {
-    const db = set(writeDb$);
     const identity = morningBriefOwner(args);
-    const { installation } = await loadMorningBriefOwnership(db, identity);
+    const { installation } = await set(
+      loadMorningBriefOwnership$,
+      identity,
+      signal,
+    );
     signal.throwIfAborted();
 
     if (!installation) {
@@ -850,7 +452,7 @@ const applyMorningBriefPreference$ = command(
       return await set(
         convergeRacedMorningBriefInstallation$,
         args,
-        await loadInstalledPreference(db, args),
+        await set(loadInstalledPreference$, args, signal),
         signal,
       );
     }
@@ -876,7 +478,7 @@ const applyMorningBriefPreference$ = command(
 
     await set(recordMorningBriefChoice$, identity, args.enabled, signal);
     signal.throwIfAborted();
-    const current = await loadInstalledPreference(db, args);
+    const current = await set(loadInstalledPreference$, args, signal);
     signal.throwIfAborted();
     if (current.kind !== "ok" || current.workflowId === undefined) {
       return current;
@@ -894,9 +496,10 @@ const applyMorningBriefPreference$ = command(
       return current;
     }
 
-    const automationId = await loadMorningBriefAutomationId(
-      db,
+    const automationId = await set(
+      loadMorningBriefAutomationId$,
       current.workflowId,
+      signal,
     );
     signal.throwIfAborted();
     if (automationId === null) {
@@ -933,7 +536,7 @@ const applyMorningBriefPreference$ = command(
     // The generic automation writer recognizes the selected Morning Brief and
     // commits the Official enabled bit and enrollment choice in one conditional
     // transaction, so the last toggle to commit leaves both consistent.
-    return await loadInstalledPreference(db, args);
+    return await set(loadInstalledPreference$, args, signal);
   },
 );
 

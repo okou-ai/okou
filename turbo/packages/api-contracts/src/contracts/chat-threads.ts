@@ -18,10 +18,6 @@ import { requireUserMessageForDraftAttachments } from "./draft-user-message";
 import { hostedArtifactKindSchema } from "./host";
 import { runFailureReasonTokenSchema } from "./run-failure-reasons";
 import { runModelIdSchema } from "./model-providers";
-import {
-  avatarVideoAspectRatioSchema,
-  avatarVideoVoiceIdSchema,
-} from "./avatar-video";
 
 const c = initContract();
 const chatEventCursorSchema = z.union([
@@ -430,6 +426,18 @@ const presentationGenerationTemplateRequestSchema = z.object({
     })
     .strict(),
 });
+
+const avatarVideoAspectRatioSchema = z.enum([
+  "portrait",
+  "landscape",
+  "square",
+]);
+const avatarVideoVoiceIdSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(200)
+  .regex(/^[A-Za-z0-9._:-]+$/);
 
 /**
  * Talking-avatar parameters. Unrelated to text-to-video despite sharing the
@@ -2122,10 +2130,7 @@ export type ChatInputEvent = Extract<
   ChatEvent,
   {
     eventType:
-      | "input.prompt"
-      | "input.automation"
-      | "input.budget"
-      | "input.rejected";
+      "input.prompt" | "input.automation" | "input.budget" | "input.rejected";
   }
 >;
 export type ChatUserMessageEvent = Extract<

@@ -45,7 +45,9 @@ type ModelProviderRefreshMetadataMap = typeof MODEL_PROVIDER_REFRESH_METADATA;
 type ModelProviderRefreshInputValues<
   ProviderKey extends ModelProviderRefreshProviderKey,
 > = {
-  readonly [InputName in keyof ModelProviderRefreshMetadataMap[ProviderKey]["inputs"]]: string;
+  readonly [
+    InputName in keyof ModelProviderRefreshMetadataMap[ProviderKey]["inputs"]
+  ]: string;
 };
 
 type ModelProviderRefreshableSecretName<
@@ -59,7 +61,9 @@ type ModelProviderRefreshableSecretName<
 type ModelProviderRequiredRefreshOutputName<
   ProviderKey extends ModelProviderRefreshProviderKey,
 > = {
-  readonly [OutputName in keyof ModelProviderRefreshMetadataMap[ProviderKey]["outputs"]]: ModelProviderRefreshMetadataMap[ProviderKey]["outputs"][OutputName] extends ModelProviderRefreshableSecretName<ProviderKey>
+  readonly [
+    OutputName in keyof ModelProviderRefreshMetadataMap[ProviderKey]["outputs"]
+  ]: ModelProviderRefreshMetadataMap[ProviderKey]["outputs"][OutputName] extends ModelProviderRefreshableSecretName<ProviderKey>
     ? OutputName
     : never;
 }[keyof ModelProviderRefreshMetadataMap[ProviderKey]["outputs"]];
@@ -72,14 +76,18 @@ type ModelProviderRefreshOutputValues<
     string
   >
 > & {
-  readonly [OutputName in Exclude<
-    keyof ModelProviderRefreshMetadataMap[ProviderKey]["outputs"],
-    ModelProviderRequiredRefreshOutputName<ProviderKey>
-  >]?: string;
+  readonly [
+    OutputName in Exclude<
+      keyof ModelProviderRefreshMetadataMap[ProviderKey]["outputs"],
+      ModelProviderRequiredRefreshOutputName<ProviderKey>
+    >
+  ]?: string;
 };
 
 type ModelProviderRefreshProviderMap = {
-  readonly [Key in ModelProviderRefreshProviderKey]: ModelProviderRefreshTokenAuthProvider<
+  readonly [
+    Key in ModelProviderRefreshProviderKey
+  ]: ModelProviderRefreshTokenAuthProvider<
     ModelProviderRefreshInputValues<Key>,
     ModelProviderRefreshOutputValues<Key>
   >;

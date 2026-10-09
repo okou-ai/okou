@@ -1,8 +1,9 @@
 import { CLIENT_REQUEST_ID_HEADER } from "@okouai/api-contracts/contracts/client-headers";
-import type {
-  VoiceIoTranscribeContext,
-  VoiceIoTranscribeSegmentOptions,
-  VoiceIoTranscribeSegmentResponse,
+import {
+  VOICE_IO_TRANSCRIBE_MAX_PREVIOUS_CHARS,
+  type VoiceIoTranscribeContext,
+  type VoiceIoTranscribeSegmentOptions,
+  type VoiceIoTranscribeSegmentResponse,
 } from "@okouai/api-contracts/contracts/voice-io-transcribe";
 import { command } from "ccstate";
 import { isSpanContextValid, trace } from "@opentelemetry/api";
@@ -11,12 +12,7 @@ import { env } from "../../lib/env";
 import { notConfigured } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { request$, requestSignal$, setResHeader$ } from "../context/hono";
-import {
-  VOICE_NO_SPEECH,
-  polishLongVoiceTranscript,
-  transcribeVoice,
-  finishIncrementalVoice,
-} from "../external/voice-completion";
+import { VOICE_NO_SPEECH, transcribeVoice } from "../external/voice-completion";
 import { onRejection, settle } from "../utils";
 import { GcpLlmAuthError, gcpLlmConfiguration } from "../external/gcp-llm-auth";
 import {
@@ -38,7 +34,7 @@ const VOICE_TRANSCRIPT_MINIMUM_SUSPICIOUS_CHARACTERS = 100;
 // receives a classified 503 instead of an edge 524 without CORS headers.
 const VOICE_SEGMENT_DEADLINE_MS = 60_000;
 
-type VoiceDraftTranscriptionInput = VoiceIoTranscribeContext &
+export type VoiceDraftTranscriptionInput = VoiceIoTranscribeContext &
   VoiceIoTranscribeSegmentOptions & {
     readonly files: readonly File[];
     readonly debug: boolean;
@@ -46,12 +42,7 @@ type VoiceDraftTranscriptionInput = VoiceIoTranscribeContext &
   };
 
 interface VoiceTranscriptionAttempt {
-  stage:
-    | "audio_read"
-    | "transcription"
-    | "finalization"
-    | "polish"
-    | "output_validation";
+  stage: "audio_read" | "transcription" | "output_validation";
   /** Whether the failed stage called the voice model. */
   modelCall: boolean;
   transcriptCharacters?: number;
@@ -105,7 +96,6 @@ async function emitVoiceFailure(
         ? { model: VOICE_INPUT_MODEL, provider: "vertex" }
         : {}),
       ...vertexFailureFields(error),
-      final: input.final,
       has_audio: input.files.length > 0,
       audio_duration_seconds: input.audioDurationSeconds,
       total_duration_seconds: input.totalDurationSeconds,
@@ -113,9 +103,6 @@ async function emitVoiceFailure(
       ...(transcriptCharacters === undefined
         ? {}
         : { transcript_chars: transcriptCharacters }),
-      ...(result?.polishedText === undefined
-        ? {}
-        : { polished_chars: result.polishedText.trim().length }),
       ...(span && isSpanContextValid(span) ? { trace_id: span.traceId } : {}),
       ...(clientRequestId &&
       /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/iu.test(clientRequestId)
@@ -174,16 +161,6 @@ async function voiceAudio(
   };
 }
 
-function normalizeVoiceTranscript(
-  result: VoiceIoTranscribeSegmentResponse,
-): VoiceIoTranscribeSegmentResponse {
-  return {
-    ...result,
-    transcript: result.transcript === VOICE_NO_SPEECH ? "" : result.transcript,
-    ...(result.polishedText === VOICE_NO_SPEECH ? { polishedText: "" } : {}),
-  };
-}
-
 function exceedsPlausibleSpeechRate(
   text: string,
   durationSeconds: number,
@@ -200,31 +177,12 @@ function rejectUnusableVoiceOutput(
   input: VoiceDraftTranscriptionInput,
   result: VoiceIoTranscribeSegmentResponse,
 ) {
-  const hasSavedSpeech = Boolean(input.previousTranscript.trim());
-  const hasTranscribedSpeech = Boolean(result.transcript.trim());
-  if (input.final && !hasSavedSpeech && !hasTranscribedSpeech) {
-    return { status: 204 as const, body: undefined };
-  }
   if (
     exceedsPlausibleSpeechRate(result.transcript, input.audioDurationSeconds)
   ) {
-    return input.final && !hasSavedSpeech
-      ? { status: 204 as const, body: undefined }
-      : new VoiceResponseError("transcription_rate_exceeded");
-  }
-  if (
-    input.final &&
-    result.polishedText !== undefined &&
-    exceedsPlausibleSpeechRate(result.polishedText, input.totalDurationSeconds)
-  ) {
-    return new VoiceResponseError("polish_rate_exceeded");
-  }
-  if (
-    input.final &&
-    (hasSavedSpeech || hasTranscribedSpeech) &&
-    !result.polishedText?.trim()
-  ) {
-    return new VoiceResponseError("polish_discarded_speech");
+    // Preserve the recording for retry instead of treating hallucinated output
+    // as silence and silently throwing away a potentially spoken short tail.
+    return new VoiceResponseError("transcription_rate_exceeded");
   }
 }
 
@@ -235,31 +193,21 @@ async function transcribeIncrementalVoice(
 ): Promise<VoiceIoTranscribeSegmentResponse> {
   const file = input.files[0];
   if (!file) {
-    // Only a final request may omit audio; it polishes the saved prefix.
-    const saved = input.previousTranscript.trim();
-    if (!saved) {
-      return { transcript: "", polishedText: "", language: "und" };
-    }
-    attempt.stage = "polish";
-    attempt.modelCall = true;
-    const polished = await polishLongVoiceTranscript(saved, input, signal);
-    if (!polished) {
-      throw new VoiceResponseError("not_configured");
-    }
-    return normalizeVoiceTranscript({ transcript: "", ...polished });
+    throw new Error("Voice transcription requires an audio segment");
   }
   const audio = await voiceAudio(file, signal);
   attempt.modelCall = true;
-  if (input.final) {
-    attempt.stage = "finalization";
-    const result = await finishIncrementalVoice(audio, input, signal);
-    if (!result) {
-      throw new VoiceResponseError("not_configured");
-    }
-    return normalizeVoiceTranscript(result);
-  }
   attempt.stage = "transcription";
-  const result = await transcribeVoice(audio, input, signal);
+  const result = await transcribeVoice(
+    audio,
+    {
+      ...input,
+      previousTranscript: input.previousTranscript.slice(
+        -VOICE_IO_TRANSCRIBE_MAX_PREVIOUS_CHARS,
+      ),
+    },
+    signal,
+  );
   if (!result) {
     throw new VoiceResponseError("not_configured");
   }
@@ -349,10 +297,7 @@ export const transcribeVoiceSegment$ = command(
         { append: true },
       );
     }
-    if (
-      !generated.value.transcript &&
-      (!input.final || !generated.value.polishedText)
-    ) {
+    if (!generated.value.transcript) {
       return { status: 204 as const, body: undefined };
     }
     return { status: 200 as const, body: generated.value };

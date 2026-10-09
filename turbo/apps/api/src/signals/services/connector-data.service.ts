@@ -100,25 +100,28 @@ import {
   userFeatureSwitchContext,
   userFeatureSwitchOverrides,
 } from "./feature-switches.service";
-import { reconcileGmailWatchesForUser$ } from "./gmail-automation-event.service";
+import { reconcileGmailWatchesForUser$ } from "./gmail-automation-watch.service";
 import {
   prepareGoogleCalendarWatchStopForConnector$,
-  reconcileGoogleCalendarWatchesForUser$,
   stopPreparedGoogleCalendarWatches,
   type PendingGoogleCalendarWatchStop,
-} from "./google-calendar-automation-event.service";
+  reconcileGoogleCalendarWatchesForUser$,
+} from "./google-calendar-automation-watch.service";
+
 import {
   prepareGoogleFormsWatchStopForConnector$,
-  reconcileGoogleFormsWatchesForUser$,
   stopPreparedGoogleFormsWatches,
   type PendingGoogleFormsWatchStop,
-} from "./google-forms-automation-event.service";
+  reconcileGoogleFormsWatchesForUser$,
+} from "./google-forms-automation-watch.service";
+
 import {
-  deletePreparedGoogleMeetSubscriptionWithLifecycleLock,
-  prepareGoogleMeetSubscriptionDeleteForConnector,
-  reconcileGoogleMeetSubscriptionsForUser,
+  deletePreparedGoogleMeetSubscriptionIfUnadopted$,
+  prepareGoogleMeetSubscriptionDeleteForConnector$,
+  reconcileGoogleMeetSubscriptionsForUser$,
   type PendingGoogleMeetSubscriptionDelete,
-} from "./google-meet-automation-event.service";
+} from "./google-meet-automation-watch.service";
+
 import { reprojectWorkflowAutomationsForOwner } from "./workflow-automation-account-projection.service";
 
 const log = logger("api:connector-data");
@@ -190,8 +193,7 @@ type ConnectorConnectionMutationFailure =
     };
 
 type ConnectorConnectionWriteFailureStatus =
-  | ConnectorConnectionMutationFailure["status"]
-  | "identityMismatch";
+  ConnectorConnectionMutationFailure["status"] | "identityMismatch";
 
 export function connectorConnectionWriteFailureMessage(
   status: ConnectorConnectionWriteFailureStatus,
@@ -981,7 +983,6 @@ const reconcileAccountBoundAutomationWatches$ = command(
     },
     signal: AbortSignal,
   ): Promise<void> => {
-    const db = set(writeDb$);
     if (args.connectorSlug === "gmail") {
       await bestEffort(
         set(reconcileGmailWatchesForUser$, { ...args }, signal),
@@ -999,7 +1000,7 @@ const reconcileAccountBoundAutomationWatches$ = command(
       );
     } else if (args.connectorSlug === "google-meet") {
       await bestEffort(
-        reconcileGoogleMeetSubscriptionsForUser({ db, ...args }, signal),
+        set(reconcileGoogleMeetSubscriptionsForUser$, { ...args }, signal),
         signal,
       );
     }
@@ -1086,23 +1087,25 @@ interface PendingConnectorAutomationCleanup {
  * Meet subscription deletion is prepared outside the account deletion
  * transaction, like Calendar and Forms; remote cleanup is best effort.
  */
-async function prepareDeletedConnectorMeetCleanup(
-  db: Db,
-  args: DeleteBuiltinConnectorLocalStateArgs,
-  signal: AbortSignal,
-): Promise<PendingGoogleMeetSubscriptionDelete | null> {
-  return args.connectorSlug === "google-meet"
-    ? await prepareGoogleMeetSubscriptionDeleteForConnector(
-        {
-          db,
-          orgId: args.orgId,
-          userId: args.userId,
-          connectorId: args.sourceId,
-        },
-        signal,
-      )
-    : null;
-}
+const prepareDeletedConnectorMeetCleanup$ = command(
+  async (
+    { set },
+    args: DeleteBuiltinConnectorLocalStateArgs,
+    signal: AbortSignal,
+  ): Promise<PendingGoogleMeetSubscriptionDelete | null> => {
+    return args.connectorSlug === "google-meet"
+      ? await set(
+          prepareGoogleMeetSubscriptionDeleteForConnector$,
+          {
+            orgId: args.orgId,
+            userId: args.userId,
+            connectorId: args.sourceId,
+          },
+          signal,
+        )
+      : null;
+  },
+);
 
 async function deleteBuiltinConnectorAccountLocalState(
   tx: Tx,
@@ -1199,38 +1202,40 @@ async function deleteBuiltinConnectorAccountLocalState(
   };
 }
 
-async function stopPendingConnectorAutomationCleanup(
-  db: Db,
-  pending: PendingConnectorAutomationCleanup,
-  signal: AbortSignal,
-): Promise<unknown> {
-  let capturedAbort: unknown = null;
-  capturedAbort ??= await stopPendingGoogleCalendarAutomationCleanup(
-    pending.pendingGoogleCalendarWatchStop,
-    signal,
-  );
-  if (pending.pendingGoogleMeetSubscriptionDelete !== null) {
-    const deleted = await settleIncludingAbort(
-      bestEffort(
-        deletePreparedGoogleMeetSubscriptionWithLifecycleLock(
-          {
-            db,
-            pending: pending.pendingGoogleMeetSubscriptionDelete,
-          },
+const stopDeletedWatches$ = command(
+  async (
+    { set },
+    pending: PendingConnectorAutomationCleanup,
+    signal: AbortSignal,
+  ): Promise<unknown> => {
+    let capturedAbort: unknown = null;
+    capturedAbort ??= await stopPendingGoogleCalendarAutomationCleanup(
+      pending.pendingGoogleCalendarWatchStop,
+      signal,
+    );
+    if (pending.pendingGoogleMeetSubscriptionDelete !== null) {
+      const deleted = await settleIncludingAbort(
+        bestEffort(
+          set(
+            deletePreparedGoogleMeetSubscriptionIfUnadopted$,
+            {
+              pending: pending.pendingGoogleMeetSubscriptionDelete,
+            },
+            signal,
+          ),
           signal,
         ),
-        signal,
-      ),
-    );
-    if (signal.aborted) {
-      capturedAbort ??= signal.reason;
+      );
+      if (signal.aborted) {
+        capturedAbort ??= signal.reason;
+      }
+      if (!deleted.ok) {
+        capturedAbort ??= deleted.error;
+      }
     }
-    if (!deleted.ok) {
-      capturedAbort ??= deleted.error;
-    }
-  }
-  return capturedAbort;
-}
+    return capturedAbort;
+  },
+);
 
 async function stopPendingGoogleCalendarAutomationCleanup(
   pending: PendingGoogleCalendarWatchStop | null,
@@ -1282,6 +1287,29 @@ const prepareDeletedConnectorCalendarCleanup$ = command(
   },
 );
 
+const prepareDeletedConnectorWatches$ = command(
+  async (
+    { set },
+    args: DeleteBuiltinConnectorLocalStateArgs,
+    signal: AbortSignal,
+  ): Promise<PendingConnectorAutomationCleanup> => {
+    const pendingGoogleCalendarWatchStop = await set(
+      prepareDeletedConnectorCalendarCleanup$,
+      args,
+      signal,
+    );
+    const pendingGoogleMeetSubscriptionDelete = await set(
+      prepareDeletedConnectorMeetCleanup$,
+      args,
+      signal,
+    );
+    return {
+      pendingGoogleCalendarWatchStop,
+      pendingGoogleMeetSubscriptionDelete,
+    };
+  },
+);
+
 /** A caller-provided snapshot, including an unavailable `null`, is reused. */
 async function deletionRuntimeSnapshot(
   db: ReadonlyDb,
@@ -1314,15 +1342,11 @@ export const deleteBuiltinConnectorLocalState$ = command(
             userId: args.userId,
             overrides: featureSwitchOverrides,
           } satisfies FeatureSwitchContext);
-    const automationCleanup: PendingConnectorAutomationCleanup = {
-      pendingGoogleCalendarWatchStop: await set(
-        prepareDeletedConnectorCalendarCleanup$,
-        args,
-        signal,
-      ),
-      pendingGoogleMeetSubscriptionDelete:
-        await prepareDeletedConnectorMeetCleanup(writeDb, args, signal),
-    };
+    const automationCleanup = await set(
+      prepareDeletedConnectorWatches$,
+      args,
+      signal,
+    );
     const formsCleanup =
       args.connectorSlug === "google-forms"
         ? await set(
@@ -1352,12 +1376,12 @@ export const deleteBuiltinConnectorLocalState$ = command(
       throwCapturedAbort(postCommitAbort);
       return deleteResult.kind;
     }
-    const automationCleanupAbort = await stopPendingConnectorAutomationCleanup(
-      writeDb,
+    const cleanupAbort = await set(
+      stopDeletedWatches$,
       automationCleanup,
       signal,
     );
-    postCommitAbort ??= automationCleanupAbort;
+    postCommitAbort ??= cleanupAbort;
     postCommitAbort ??= await stopPendingGoogleFormsAutomationCleanup(
       formsCleanup,
       signal,
@@ -1403,8 +1427,9 @@ export const deleteBuiltinConnectorLocalState$ = command(
     }
     if (args.connectorSlug === "google-meet") {
       await bestEffort(
-        reconcileGoogleMeetSubscriptionsForUser(
-          { db: writeDb, orgId: args.orgId, userId: args.userId },
+        set(
+          reconcileGoogleMeetSubscriptionsForUser$,
+          { orgId: args.orgId, userId: args.userId },
           signal,
         ),
         signal,

@@ -2,11 +2,13 @@ import { randomUUID } from "node:crypto";
 
 import { builtinConnectorNoAuthGrantContract } from "@okouai/api-contracts/contracts/connectors";
 import { mcpConnectorsContract } from "@okouai/api-contracts/contracts/mcp-connectors";
+import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
+import { agentsRoutes } from "../agents";
 import { builtinConnectorsRoutes } from "../connectors";
 import { mcpConnectorsRoutes } from "../mcp-connectors";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -64,6 +66,50 @@ async function connectPublic(actor: ApiTestUser, agentId: string) {
 }
 
 describe("builtin MCP Run admission", () => {
+  it("advertises an authorized MCP connector without admitting an unconnected account", async () => {
+    const { actor, agentId, runnerGroup } = await runActor();
+    mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+    await accept(
+      setupApp({ context, routes: agentsRoutes })(
+        userBuiltinConnectorsContract,
+      ).update({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { id: agentId },
+        body: { enabledConnectorSlugs: ["manual-mcp", "github"] },
+      }),
+      [200],
+    );
+
+    const run = await runs.createThreadRun(actor, {
+      agentId,
+      prompt: "Find out which MCP connectors are authorized",
+    });
+    await runs.heartbeatRunner(runnerGroup);
+    const claim = await runs.claimRunnerJob(run.runId);
+    expect(claim.appendSystemPrompt).toContain(
+      "The following MCP connectors are authorized for this Agent:",
+    );
+    expect(claim.appendSystemPrompt).toContain("- `manual-mcp`");
+    expect(claim.appendSystemPrompt).not.toContain("- `public-mcp`");
+    expect(claim.appendSystemPrompt).not.toContain("- `github`");
+    expect(claim.connectorRuntimeTargets).toStrictEqual([]);
+    expect(claim.environment).not.toHaveProperty("MCP_API_KEY");
+    const token = claim.platformEnvironment.OKOU_TOKEN;
+    if (!token) {
+      throw new Error("Expected the Run authentication context");
+    }
+    const discovery = await accept(
+      setupApp({ context, routes: mcpConnectorsRoutes })(
+        mcpConnectorsContract,
+      ).list({
+        headers: { authorization: `Bearer ${token}` },
+      }),
+      [200],
+    );
+    expect(discovery.body.connectors).toStrictEqual([]);
+    await runs.requestCancelRun(actor, run.runId, [200]);
+  });
+
   it("pins the admitted accounts and keeps MCP credentials behind firewall auth", async () => {
     const { actor, agentId, runnerGroup } = await runActor();
     const publicAccountId = await connectPublic(actor, agentId);

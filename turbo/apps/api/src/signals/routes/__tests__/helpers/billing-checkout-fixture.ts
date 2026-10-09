@@ -11,10 +11,6 @@ import { accept, testContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../../lib/env";
 import { now } from "../../../../lib/time";
-import {
-  seedOrgMetadata,
-  setOnboardingPaymentPendingFixture,
-} from "../../../../test-fixtures/system-config-seeds";
 import { signSandboxJwtForTests } from "../../../auth/tokens";
 import { billingCheckoutRoutes } from "../../billing-checkout";
 import { billingStatusRoutes } from "../../billing-status";
@@ -25,7 +21,6 @@ import {
   type TestUsagePackSubscriptionStateResponse,
 } from "../../test-usage-pack-subscription-state";
 import { webhooksStripeRoutes } from "../../webhooks-stripe";
-import { createBddApi } from "./api-bdd";
 import { seedOrgMembership$ } from "./org-membership";
 import { createPublicBillingZeroFixture } from "./public-billing-zero-fixture";
 import { createRouteMocks } from "./route-test";
@@ -176,6 +171,26 @@ export function createBillingCheckoutFixture() {
           recurring: { interval: "month", interval_count: 1 },
           unit_amount: 10_000,
           product: "prod_concurrency",
+        });
+      }
+      const fixedAmounts = new Map<string, number>([
+        [TEST_PRICE_PRO, 2000],
+        [TEST_PRICE_TEAM, 10_000],
+        [TEST_PRICE_CUSTOM, 0],
+        [TEST_PRICE_ATOM_GRANT, 0],
+        [TEST_PRICE_USAGE_PACK_PLAN_PRO, 0],
+        [TEST_PRICE_USAGE_PACK_PLAN_TEAM, 0],
+      ]);
+      const fixedAmount = fixedAmounts.get(priceId);
+      if (fixedAmount !== undefined) {
+        return Promise.resolve({
+          id: priceId,
+          active: true,
+          currency: "usd",
+          type: "recurring",
+          recurring: { interval: "month", interval_count: 1 },
+          unit_amount: fixedAmount,
+          product: { id: `prod_${priceId}`, metadata: {} },
         });
       }
       const configuration = usagePackPriceConfiguration(priceId);
@@ -336,27 +351,6 @@ export function createBillingCheckoutFixture() {
       [200],
     );
     return response.body;
-  }
-
-  async function createOnboardingPaymentPendingOrg(): Promise<BillingOrgFixture> {
-    const fixture = createOrgFixture();
-    const actor = {
-      ...fixture,
-      orgRole: "org:admin" as const,
-      email: `${fixture.userId}@example.test`,
-    };
-    const completed = await createBddApi(context).completeOnboarding(actor);
-    expect(completed.status).toBe(200);
-    await seedOrgMetadata({
-      orgId: fixture.orgId,
-      tier: "limited-free-1",
-      credits: 0,
-    });
-    await setOnboardingPaymentPendingFixture({
-      orgId: fixture.orgId,
-      onboardingPaymentPending: true,
-    });
-    return fixture;
   }
 
   async function createStripeCustomerOrgForFixture(
@@ -817,120 +811,6 @@ export function createBillingCheckoutFixture() {
     return { ...fixture, concurrencyItemId, planCredits };
   }
 
-  async function createMergedUsageAllowanceConcurrencySubscriptionOrg(
-    args: {
-      readonly slots: number;
-      readonly periodEnd: Date;
-    },
-    fixture: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly customerId: string;
-    },
-  ): Promise<
-    SubscriptionFixture & {
-      readonly allowanceItemId: string;
-      readonly concurrencyItemId: string;
-    }
-  > {
-    const customerId = fixture.customerId;
-    const subscriptionId = `sub_${randomUUID()}`;
-    const allowanceItemId = `si_${randomUUID()}`;
-    const concurrencyItemId = `si_${randomUUID()}`;
-    const periodStartUnix = currentSecond();
-    const periodEndUnix = Math.floor(args.periodEnd.getTime() / 1000);
-    const metadata = {
-      type: "usage_allowance",
-      purpose: "usage_allowance",
-      source: "atom_usage_allowance",
-      orgId: fixture.orgId,
-      shortWindowSeconds: "18000",
-      shortWindowUnits: "625000",
-      weeklyWindowSeconds: "604800",
-      weeklyWindowUnits: "5000000",
-    };
-    mockClerkOrganization(fixture);
-    mockOptionalEnv("STRIPE_WEBHOOK_SECRET", STRIPE_WEBHOOK_SECRET);
-    context.mocks.stripe.customers.retrieve.mockResolvedValueOnce({
-      id: customerId,
-      metadata: { orgId: fixture.orgId },
-    });
-
-    const event = {
-      type: "invoice.paid",
-      data: {
-        object: {
-          id: `in_${randomUUID()}`,
-          customer: customerId,
-          metadata,
-          parent: {
-            subscription_details: { subscription: subscriptionId, metadata },
-          },
-          lines: {
-            has_more: false,
-            data: [
-              {
-                id: `il_${randomUUID()}`,
-                quantity: 1,
-                price: { id: TEST_PRICE_USAGE_ALLOWANCE },
-                parent: { type: "subscription_item_details" },
-                period: { start: periodStartUnix, end: periodEndUnix },
-              },
-              {
-                id: `il_${randomUUID()}`,
-                quantity: args.slots,
-                price: { id: TEST_PRICE_CONCURRENCY },
-                parent: { type: "subscription_item_details" },
-                period: { start: periodStartUnix, end: periodEndUnix },
-              },
-            ],
-          },
-        },
-      },
-    };
-    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
-      id: subscriptionId,
-      customer: customerId,
-      status: "active",
-      cancel_at_period_end: false,
-      schedule: null,
-      metadata: {},
-      items: {
-        data: [
-          {
-            id: allowanceItemId,
-            price: { id: TEST_PRICE_USAGE_ALLOWANCE },
-            quantity: 1,
-          },
-          {
-            id: `si_${TEST_PRICE_CONCURRENCY}`,
-            price: { id: TEST_PRICE_CONCURRENCY },
-            quantity: args.slots,
-            current_period_end: periodEndUnix,
-          },
-        ],
-      },
-    });
-    context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
-    await accept(
-      setupApp({ context, routes: webhooksStripeRoutes })(
-        webhookStripeContract,
-      ).post({
-        body: JSON.stringify(event),
-        extraHeaders: { "stripe-signature": "t=1,v1=checkout-test" },
-      }),
-      [200],
-    );
-    context.mocks.stripe.subscriptions.retrieve.mockClear();
-    return {
-      ...fixture,
-      customerId,
-      subscriptionId,
-      allowanceItemId,
-      concurrencyItemId,
-    };
-  }
-
   async function seedMemberRole(args: {
     readonly orgId: string;
     readonly userId: string;
@@ -973,7 +853,6 @@ export function createBillingCheckoutFixture() {
     authenticateOrg,
     mockClerkOrganization,
     readBillingStatus,
-    createOnboardingPaymentPendingOrg,
     createStripeCustomerOrgForFixture,
     prepareUsagePackCheckoutOrg,
     createSubscriptionOrg,
@@ -982,7 +861,6 @@ export function createBillingCheckoutFixture() {
     createUsagePackAtomGrantOrg,
     createConcurrencySubscriptionOrg,
     createMergedConcurrencySubscriptionOrg,
-    createMergedUsageAllowanceConcurrencySubscriptionOrg,
     seedMemberRole,
   };
 }

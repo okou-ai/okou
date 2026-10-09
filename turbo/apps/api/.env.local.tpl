@@ -6,6 +6,10 @@ CLERK_SECRET_KEY=op://Development/clerk/CLERK_SECRET_KEY
 CLERK_PUBLISHABLE_KEY=op://Development/clerk/CLERK_PUBLISHABLE_KEY
 CLERK_WEBHOOK_SIGNING_SECRET=op://Development/clerk/CLERK_WEBHOOK_SIGNING_SECRET
 
+# Optional: global Desktop compatibility admission. Leave unset during rollout.
+# Activate only after the supported ZIP/DMG and both updater feeds are live.
+# OKOU_DESKTOP_MINIMUM_SUPPORTED_VERSION=0.51.0
+
 # Optional: external MCP resource server.
 # See docs/mcp-server.md; use the exact resource and issuer configured in Clerk.
 # MCP_RESOURCE_URL=https://api.example.test/mcp
@@ -67,13 +71,6 @@ ABLY_API_KEY=op://Development/ably/ABLY_API_KEY
 AXIOM_TOKEN_SESSIONS=op://Development/axiom/AXIOM_TOKEN_SESSIONS
 AXIOM_TOKEN_TELEMETRY=op://Development/axiom/AXIOM_TOKEN_TELEMETRY
 AXIOM_DATASET_SUFFIX=dev
-
-# Optional: isolated Pi Langfuse project. Tracing starts only for runs whose
-# user has explicitly enabled the default-off feature switch.
-LANGFUSE_PUBLIC_KEY=op://Development/langfuse/LANGFUSE_PUBLIC_KEY
-LANGFUSE_SECRET_KEY=op://Development/langfuse/LANGFUSE_SECRET_KEY
-LANGFUSE_BASE_URL=https://us.cloud.langfuse.com
-LANGFUSE_PROJECT_ID=cmu0bvhcu012gad0drbw8ddts
 
 # Required: Secrets encryption
 SECRETS_ENCRYPTION_KEY=op://Development/vm0/SECRETS_ENCRYPTION_KEY

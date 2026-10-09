@@ -2,7 +2,6 @@ import { env, optionalEnv } from "../../lib/env";
 import {
   cliAuthTestCodexOauthContract,
   cliAuthTestConnectorContract,
-  cliAuthTestEnableConnectorContract,
   cliAuthTestTokenContract,
 } from "@okouai/api-contracts/contracts/cli-auth-test";
 import {
@@ -17,12 +16,9 @@ import {
   connectorAuthMethodRuntimeMetadata,
   type ConnectorOutputTarget,
 } from "@okouai/connectors/connector-auth-method";
-import { agents } from "@okouai/db/schema/agent";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
-import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 import { command } from "ccstate";
-import { and, eq, isNull, notExists } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 
 import { bodyResultOf, queryOf } from "../context/request";
 import { request$ } from "../context/hono";
@@ -56,34 +52,11 @@ import { safeSync } from "../utils";
 const testTokenQuery$ = queryOf(cliAuthTestTokenContract.create);
 const testConnectorBody$ = bodyResultOf(cliAuthTestConnectorContract.create);
 const testConnectorQuery$ = queryOf(cliAuthTestConnectorContract.create);
-const testEnableConnectorBody$ = bodyResultOf(
-  cliAuthTestEnableConnectorContract.create,
-);
-const testEnableConnectorQuery$ = queryOf(
-  cliAuthTestEnableConnectorContract.create,
-);
 const testCodexOauthBody$ = bodyResultOf(cliAuthTestCodexOauthContract.create);
 const testCodexOauthQuery$ = queryOf(cliAuthTestCodexOauthContract.create);
 
 function stringError(status: 400 | 404, error: string) {
   return { status, body: { error } };
-}
-
-function parseConnectorSlugs(values: readonly string[]): {
-  readonly connectorSlugs: readonly ConnectorSlug[];
-  readonly invalidConnectorSlugs: readonly string[];
-} {
-  const connectorSlugs: ConnectorSlug[] = [];
-  const invalidConnectorSlugs: string[] = [];
-  for (const value of values) {
-    const result = connectorSlugSchema.safeParse(value);
-    if (result.success) {
-      connectorSlugs.push(result.data);
-    } else {
-      invalidConnectorSlugs.push(value);
-    }
-  }
-  return { connectorSlugs, invalidConnectorSlugs };
 }
 
 function connectorOutputTargetKey(target: ConnectorOutputTarget): string {
@@ -342,160 +315,6 @@ const createTestConnector$ = command(
   },
 );
 
-function excludeDefaultAgentCondition(
-  writeDb: Pick<Db, "select">,
-  orgId: string,
-  agentId: string,
-) {
-  return notExists(
-    writeDb
-      .select({ orgId: orgMetadata.orgId })
-      .from(orgMetadata)
-      .where(
-        and(
-          eq(orgMetadata.orgId, orgId),
-          eq(orgMetadata.defaultAgentId, agentId),
-        ),
-      ),
-  );
-}
-
-const enableTestConnectors$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    if (!testEndpointAllowed(get(request$))) {
-      return testEndpointNotFoundResponse();
-    }
-
-    const bodyResult = await get(testEnableConnectorBody$);
-    signal.throwIfAborted();
-    if (!bodyResult.ok) {
-      if (
-        bodyResult.response.body.error.message ===
-        "Invalid JSON in request body"
-      ) {
-        return stringError(400, "Invalid JSON body");
-      }
-      return stringError(400, "composeId and connectorSlugs are required");
-    }
-
-    const { connectorSlugs, invalidConnectorSlugs } = parseConnectorSlugs(
-      bodyResult.data.connectorSlugs,
-    );
-    if (invalidConnectorSlugs.length > 0) {
-      return stringError(
-        400,
-        `Unknown connector slugs: ${invalidConnectorSlugs.join(", ")}`,
-      );
-    }
-
-    const snapshot = await loadConnectorRuntimeSlugSelection(get(db$), {
-      connectorSlugs,
-    });
-    signal.throwIfAborted();
-    const unknownConnectorSlug = connectorSlugs.find((connectorSlug) => {
-      return (
-        getConnectorRuntimeConnector(snapshot, connectorSlug) === undefined
-      );
-    });
-    if (unknownConnectorSlug !== undefined) {
-      return stringError(
-        400,
-        `Unknown connector slugs: ${unknownConnectorSlug}`,
-      );
-    }
-
-    const query = get(testEnableConnectorQuery$);
-    const userId = await set(
-      testUserId$,
-      { email: query.email ?? DEFAULT_TEST_EMAIL, refresh: false },
-      signal,
-    );
-    signal.throwIfAborted();
-    const orgId = await get(testUserOrgId(userId));
-    signal.throwIfAborted();
-    if (!orgId) {
-      return stringError(400, "Test user has no org — run test-token first");
-    }
-
-    const resolver = await get(connectorActionResolverForSnapshot(snapshot));
-    signal.throwIfAborted();
-    const resolvedSlugs = await resolver.resolveSlugs({
-      connectorSlugs,
-      requireExecutable: true,
-    });
-    signal.throwIfAborted();
-    if (!resolvedSlugs.ok) {
-      return stringError(
-        400,
-        `Unknown connector slugs: ${resolvedSlugs.connectorSlug}`,
-      );
-    }
-
-    const writeDb = set(writeDb$);
-    const [agent] = await writeDb
-      .select({
-        id: agents.id,
-      })
-      .from(agents)
-      .where(
-        and(
-          eq(agents.id, bodyResult.data.composeId),
-          eq(agents.orgId, orgId),
-          eq(agents.owner, userId),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-
-    if (!agent) {
-      return stringError(
-        404,
-        `Compose not found: ${bodyResult.data.composeId}`,
-      );
-    }
-
-    const updated = await writeDb
-      .update(agents)
-      .set({ visibility: "private", updatedAt: nowDate() })
-      .where(
-        and(
-          eq(agents.orgId, orgId),
-          eq(agents.id, agent.id),
-          excludeDefaultAgentCondition(writeDb, orgId, agent.id),
-        ),
-      )
-      .returning({ id: agents.id });
-    signal.throwIfAborted();
-    if (updated.length === 0) {
-      return stringError(
-        400,
-        "Use a custom agent for private connector fixtures; the workspace default Okou agent must remain public.",
-      );
-    }
-
-    await writeDb.insert(userBuiltinConnectors).values(
-      connectorSlugs.map((connectorSlug) => {
-        return {
-          orgId,
-          userId,
-          agentId: agent.id,
-          connectorSlug,
-        };
-      }),
-    );
-    signal.throwIfAborted();
-
-    return {
-      status: 200 as const,
-      body: {
-        ok: true as const,
-        composeId: bodyResult.data.composeId,
-        connectorSlugs,
-      },
-    };
-  },
-);
-
 function seededCodexResponse(
   orgId: string,
   tokenExpiresAt: Date,
@@ -711,9 +530,5 @@ const seedCodexOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
 export const cliAuthTestRoutes: readonly RouteEntry[] = [
   { route: cliAuthTestTokenContract.create, handler: createTestToken$ },
   { route: cliAuthTestConnectorContract.create, handler: createTestConnector$ },
-  {
-    route: cliAuthTestEnableConnectorContract.create,
-    handler: enableTestConnectors$,
-  },
   { route: cliAuthTestCodexOauthContract.create, handler: seedCodexOauth$ },
 ];

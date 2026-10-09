@@ -102,7 +102,7 @@ impl ScanRequest {
         let offset = self
             .shared
             .next_offset
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |offset| {
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |offset| {
                 (offset < self.shared.max_devices).then(|| offset + 1)
             })
             .ok()?;
