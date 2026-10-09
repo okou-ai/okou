@@ -22,8 +22,9 @@ this index does not replace its detailed rules.
 ## Directory Ownership
 
 - `docs/`: cross-surface standards and the unified shared testing guide.
-- `docs/app/`: browser and Desktop application behavior, React/ccstate, styling,
+- `docs/app/`: browser application behavior, React/ccstate, styling,
   and application testing.
+- `docs/desktop/`: native Desktop application behavior, testing, and release contracts.
 - `docs/api/`: server-side ccstate, database policy and lint, and API testing.
 - `docs/runner/`: host/guest infrastructure, MITM addon contracts, and native
   Rust/addon testing.
@@ -71,7 +72,10 @@ owning surface.
   and behavior verification.
 - [Clerk customization](app/clerk-customize.md): public styling ownership and enforcement.
 - [Platform testing](app/app-testing.md): real page setup and user-visible assertions.
-- [Desktop testing](app/desktop-testing.md): native application entry points,
+
+## Desktop
+
+- [Desktop testing](desktop/desktop-testing.md): native application entry points,
   packaged acceptance, and release contracts.
 
 ## API

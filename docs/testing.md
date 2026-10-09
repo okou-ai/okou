@@ -83,7 +83,7 @@ Read only the guides matching the work:
 | Platform pages           | [App testing](app/app-testing.md)                 |
 | CLI commands             | [CLI testing](cli/cli-testing.md)                 |
 | CLI deployed E2E         | [CLI E2E](cli/cli-e2e-testing.md)                 |
-| Desktop                  | [Desktop testing](app/desktop-testing.md)         |
+| Desktop                  | [Desktop testing](desktop/desktop-testing.md)     |
 | Rust                     | [Rust testing](runner/rust-testing.md)            |
 | Python addon             | [Addon testing](runner/mitm-addon-testing.md)     |
 
