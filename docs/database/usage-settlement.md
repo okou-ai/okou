@@ -2,12 +2,12 @@
 
 ## Nonnegative member packages and organization overdraft
 
-A member package is prepaid credit, not a liability account. After allowances,
-consume only the actor's unexpired purchased credits, then bonus credits, using
-earliest expiry and grant ID within each source. A grant cannot be debited below
-zero. All uncovered charges debit the organization wallet, including when that
-wallet is already zero or negative. Organization-only actors use the same rule;
-no captured organization/member funding mode is required.
+A member package is prepaid credit, not a liability account. New usage is
+credit-only: consume only the actor's unexpired purchased credits, then bonus
+credits, using earliest expiry and grant ID within each source. A grant cannot
+be debited below zero. All uncovered charges debit the organization wallet,
+including when that wallet is already zero or negative. Organization-only
+actors use the same rule; no captured organization/member funding mode is required.
 
 New package grants do not repay organization debt. Administrator available-credit
 labels sum `max(org available, 0) + member package credits`. The balance detail
@@ -17,25 +17,24 @@ usage into organization debt does not allow unlimited new work.
 
 ## Transaction and concurrency policy
 
-Prepare prices and allowance allocations before the standalone transaction.
-Claim only pending events; a partial claim rolls back, and a repeated event
-cannot charge twice. Lock the organization wallet before grant/expiry-lot rows,
-then re-read member cash under row locks. Recalculate the member/organization
-split using these current balances rather than a prepared positive-balance
-snapshot. Apply existing organization expiration before uncovered charges or
-legacy debt are debited. Grant debits additionally require the
-locked remainder to cover the deduction. Cash selection, processed receipts and
-all debits commit together. No external I/O runs inside the financial transaction.
+Prepare prices before the standalone transaction. Claim only pending events;
+a partial claim rolls back, and a repeated event cannot charge twice. Lock the
+organization wallet before grant/expiry-lot rows, then re-read member cash under
+row locks. Recalculate the member/organization split using these current balances
+rather than a prepared positive-balance snapshot. Apply existing organization
+expiration before uncovered charges or legacy debt are debited. Grant debits
+additionally require the locked remainder to cover the deduction. Cash selection,
+processed receipts and all debits commit together. No external I/O runs inside
+the financial transaction.
 
 The wallet lock serializes cash allocation within an organization. Concurrent
 requests therefore cannot spend the same package remainder twice. Source order
 and FEFO use PostgreSQL ordering of the locked rows, retaining timestamp precision.
 Shared cash queries and debt-transfer SQL are pure builders; the owning transaction
-executes them without passing its database handle into domain helpers. Organization expiration acquires the wallet first
-as well. Allowance consumption retains its accepted atomic-increment overuse
-policy; this change does not promise a strict allowance cap. Missing rows,
-invalid pricing and database failures remain billing errors. Background Social
-ownership/lease checks remain intact and its financial writes use the same path.
+executes them without passing its database handle into domain helpers. Organization
+expiration acquires the wallet first as well. Missing rows, invalid pricing and
+database failures remain billing errors. Background Social ownership/lease checks
+remain intact and its financial writes use the same path.
 
 ## Legacy package overdrafts
 
@@ -60,10 +59,24 @@ Organization expiration runs before this lazy transfer, never after it in the
 same settlement, so its existing clamp cannot erase the newly moved liability.
 There is no debt forgiveness, cross-member spending or compensation cron.
 
-Concurrent creation of an allowance window is resolved by its unique
-`(entitlement_id, kind, starts_at)` identity. After `INSERT ... ON CONFLICT DO
-NOTHING`, allocations use the persisted window ID instead of a losing creator's
-proposed UUID.
+This independent main migration and debt policy remain intact. The following
+Allowance contraction does not transfer, forgive or otherwise alter these liabilities.
+
+## Allowance data removed
+
+The owner confirmed that only the Okou team received Allowance and requested
+complete deletion of that history. Migration 1356 drops the entitlement, window
+and allocation tables and the hourly Allowance columns. No serving code issues,
+reads, refreshes, reserves or consumes Allowance. Reports sum only recorded
+`creditsCharged`; this contraction does not change wallets or ordinary usage facts, and processed
+history is never repriced or replayed. Compaction conserves quantity and credits
+and preserves billing identity fences and transactional rollback without any
+window reconciliation. Privacy deletion still erases owned raw/hourly usage;
+there is no separate Allowance archive cleanup.
+See [deployment compatibility](../deployment-compatibility.md#organization-usage-allowance-retired)
+for the owner-accepted, non-rolling DB/API cutover, rollback floor and external
+Stripe isolation. Deployment-window errors may affect shared paths for external
+organizations too; risk acceptance does not authorize production execution.
 
 ## Provider-result delivery
 

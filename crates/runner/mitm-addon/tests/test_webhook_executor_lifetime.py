@@ -92,7 +92,9 @@ def test_repeated_start_failure_releases_completed_delivery_data(
             assert outcomes == [(index, "success") for index in range(expected)]
             assert usage.webhook.pending_delivery_payload_count_for_tests() == 0
             assert_pending(control_root, flows=0, buffered=0, reports=0)
-            gc.collect()
+            # Already-dead weakrefs need no whole-suite heap scan.
+            if any(ref() is not None for ref in (*payload_refs, *snapshot_refs)):
+                gc.collect()
             assert all(ref() is None for ref in payload_refs)
             assert all(ref() is None for ref in snapshot_refs)
 
@@ -104,7 +106,8 @@ def test_repeated_start_failure_releases_completed_delivery_data(
             assert all(not thread.is_alive() for pool in observed_pools for thread in pool._threads)
             pool_refs = [weakref.ref(pool) for pool in observed_pools]
             observed_pools.clear()
-            gc.collect()
+            if any(ref() is not None for ref in pool_refs):
+                gc.collect()
             assert all(ref() is None for ref in pool_refs)
 
         # Recovery must not replay completed or rolled-back work.
@@ -112,7 +115,8 @@ def test_repeated_start_failure_releases_completed_delivery_data(
         fresh_usage_executor.shutdown(wait=True)
         assert usage_webhook_server.request_count == expected + 1
         assert outcomes == [(index, "success") for index in range(expected)] + [(64, "success")]
-        gc.collect()
+        if any(ref() is not None for ref in (*payload_refs, *snapshot_refs)):
+            gc.collect()
         assert all(ref() is None for ref in payload_refs)
         assert all(ref() is None for ref in snapshot_refs)
         assert_pending(control_root, flows=0, buffered=0, reports=0)

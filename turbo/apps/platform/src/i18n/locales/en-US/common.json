@@ -1289,17 +1289,6 @@
       "subscriptionChangeConfirmed": "Subscription change confirmed."
     },
     "usage": {
-      "allowance": {
-        "day": "{{value}}d",
-        "hour": "{{value}}h",
-        "left": "{{value}} left",
-        "minute": "{{value}}m",
-        "remainingAria": "Usage allowance {{label}} remaining",
-        "resets": "Resets {{date}}",
-        "resetsRaw": "Resets {{value}}",
-        "title": "Usage allowance",
-        "week": "{{value}}w"
-      },
       "autoRechargeOn": "Auto-recharge on",
       "breakdown": {
         "currentPlanDescription": "Monthly plan credits, resets each billing cycle",

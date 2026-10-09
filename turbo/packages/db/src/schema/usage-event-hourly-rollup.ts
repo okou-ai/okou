@@ -2,7 +2,6 @@ import { sql } from "drizzle-orm";
 import {
   bigint,
   check,
-  foreignKey,
   index,
   pgTable,
   text,
@@ -12,15 +11,8 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { agentRuns } from "./agent-run";
-import { orgUsageAllowanceWindows } from "./org-usage-allowance";
 
-/**
- * Hourly rollups of finalized usage events.
- *
- * Product readers regroup across the nullable allowance-window pair. The pair
- * identifies only the allowance portion of a row and supports reconciliation
- * with retained source allocations before any later physical cleanup.
- */
+/** Hourly fragments of finalized usage, regrouped by product readers. */
 export const usageEventHourlyRollup = pgTable(
   "usage_event_hourly_rollup",
   {
@@ -42,11 +34,8 @@ export const usageEventHourlyRollup = pgTable(
     kind: varchar("kind", { length: 30 }).notNull(),
     provider: text("provider").notNull(),
     category: varchar("category", { length: 100 }).notNull(),
-    shortWindowId: uuid("short_window_id"),
-    weeklyWindowId: uuid("weekly_window_id"),
     quantity: bigint("quantity", { mode: "number" }).notNull(),
     creditsCharged: bigint("credits_charged", { mode: "number" }).notNull(),
-    allowanceUnits: bigint("allowance_units", { mode: "number" }).notNull(),
   },
   (table) => {
     return [
@@ -61,16 +50,6 @@ export const usageEventHourlyRollup = pgTable(
         OR (${table.billingContext} = 'legacy_unknown' AND ${table.billingRunId} IS NULL AND ${table.billingAnchorAt} IS NULL)
       )`,
       ),
-      foreignKey({
-        name: "fk_usage_event_hourly_rollup_short_window",
-        columns: [table.shortWindowId],
-        foreignColumns: [orgUsageAllowanceWindows.id],
-      }),
-      foreignKey({
-        name: "fk_usage_event_hourly_rollup_weekly_window",
-        columns: [table.weeklyWindowId],
-        foreignColumns: [orgUsageAllowanceWindows.id],
-      }),
       index("idx_usage_event_hourly_rollup_org_hour").on(
         table.orgId,
         table.processedHour,
@@ -83,17 +62,9 @@ export const usageEventHourlyRollup = pgTable(
         table.kind,
         table.provider,
         table.category,
-        table.shortWindowId,
-        table.weeklyWindowId,
       ),
       index("idx_usage_event_hourly_rollup_run_id").on(table.runId),
       index("idx_usage_event_hourly_rollup_user_id").on(table.userId),
-      index("idx_usage_event_hourly_rollup_short_window_id").on(
-        table.shortWindowId,
-      ),
-      index("idx_usage_event_hourly_rollup_weekly_window_id").on(
-        table.weeklyWindowId,
-      ),
       check(
         "chk_usage_event_hourly_rollup_processed_hour",
         sql`${table.processedHour} = date_trunc('hour', ${table.processedHour})`,
@@ -105,22 +76,6 @@ export const usageEventHourlyRollup = pgTable(
       check(
         "chk_usage_event_hourly_rollup_credits_charged",
         sql`${table.creditsCharged} >= 0`,
-      ),
-      check(
-        "chk_usage_event_hourly_rollup_allowance_units",
-        sql`${table.allowanceUnits} >= 0`,
-      ),
-      check(
-        "chk_usage_event_hourly_rollup_allowance_window_pair",
-        sql`(
-          ${table.allowanceUnits} = 0
-          AND ${table.shortWindowId} IS NULL
-          AND ${table.weeklyWindowId} IS NULL
-        ) OR (
-          ${table.allowanceUnits} > 0
-          AND ${table.shortWindowId} IS NOT NULL
-          AND ${table.weeklyWindowId} IS NOT NULL
-        )`,
       ),
     ];
   },

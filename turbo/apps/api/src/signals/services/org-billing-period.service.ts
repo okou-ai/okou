@@ -1,44 +1,20 @@
 import { command } from "ccstate";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
-import { orgUsageAllowanceEntitlements } from "@okouai/db/schema/org-usage-allowance";
-import { and, eq, gt, inArray, isNotNull, lte } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 import { writeDb$ } from "../external/db";
 import { getStripeClient } from "../external/stripe-client";
 import { nowDate } from "../../lib/time";
 import { logger } from "../../lib/log";
+import { knownBillingPlanPriceItem } from "./billing-checkout.service";
+import { archivedSubscriptionHasSurvivingPlan } from "./archived-allowance";
 
 const L = logger("OrgBillingPeriod");
-const ACTIVE_USAGE_ALLOWANCE_STATUSES = [
-  "active",
-  "manual_active",
-  "trialing",
-  "past_due",
-  "unpaid",
-] as const;
 
 interface OrgBillingPeriod {
   readonly start: Date;
   readonly end: Date;
-}
-
-function resolveUsageAllowancePeriod(
-  row:
-    | {
-        readonly allowancePeriodStart: Date | null;
-        readonly allowancePeriodEnd: Date | null;
-      }
-    | undefined,
-): OrgBillingPeriod | null {
-  if (!row?.allowancePeriodStart || !row.allowancePeriodEnd) {
-    return null;
-  }
-
-  return {
-    start: row.allowancePeriodStart,
-    end: row.allowancePeriodEnd,
-  };
 }
 
 interface StoredBillingPeriod {
@@ -67,10 +43,8 @@ function resolveStoredBillingPeriod(args: {
 /**
  * Resolve an org's current billing period `{ start, end }`.
  *
- * Reads the exact period stored for an active usage-allowance subscription
- * first because that subscription owns the credit-usage billing cycle across
- * plan tiers. Falls back to `orgPlanEntitlements`, including non-monthly
- * Custom plan grants, and then to
+ * Reads `orgPlanEntitlements`, including non-monthly Custom plan grants,
+ * and then
  * `orgMetadata.currentPeriodEnd`; if missing or expired AND a
  * `stripeSubscriptionId` exists, retrieves the Stripe subscription and writes
  * the refreshed value back to orgMetadata. This API service owns the runtime
@@ -100,8 +74,6 @@ export const getOrgBillingPeriod$ = command(
 
     const [orgRow] = await writeDb
       .select({
-        allowancePeriodStart: orgUsageAllowanceEntitlements.effectiveAt,
-        allowancePeriodEnd: orgUsageAllowanceEntitlements.expiresAt,
         planPeriodStart: orgPlanEntitlements.currentPeriodStart,
         planPeriodEnd: orgPlanEntitlements.currentPeriodEnd,
         currentPeriodEnd: orgMetadata.currentPeriodEnd,
@@ -112,32 +84,9 @@ export const getOrgBillingPeriod$ = command(
         orgPlanEntitlements,
         eq(orgPlanEntitlements.orgId, orgMetadata.orgId),
       )
-      .leftJoin(
-        orgUsageAllowanceEntitlements,
-        and(
-          eq(orgUsageAllowanceEntitlements.orgId, orgMetadata.orgId),
-          inArray(orgUsageAllowanceEntitlements.status, [
-            ...ACTIVE_USAGE_ALLOWANCE_STATUSES,
-          ]),
-          isNotNull(orgUsageAllowanceEntitlements.stripeSubscriptionId),
-          lte(orgUsageAllowanceEntitlements.effectiveAt, now),
-          gt(orgUsageAllowanceEntitlements.expiresAt, now),
-        ),
-      )
       .where(eq(orgMetadata.orgId, orgId))
       .limit(1);
     signal.throwIfAborted();
-
-    const allowancePeriod = resolveUsageAllowancePeriod(orgRow);
-    if (allowancePeriod) {
-      L.debug("billing period resolved", {
-        orgId,
-        source: "usage_allowance",
-        periodStart: allowancePeriod.start,
-        periodEnd: allowancePeriod.end,
-      });
-      return allowancePeriod;
-    }
 
     const storedPeriod = resolveStoredBillingPeriod({
       planStart: orgRow?.planPeriodStart ?? null,
@@ -159,7 +108,12 @@ export const getOrgBillingPeriod$ = command(
         orgRow.stripeSubscriptionId,
       );
       signal.throwIfAborted();
-      const itemPeriodEnd = subscription.items.data[0]?.current_period_end;
+      if (!archivedSubscriptionHasSurvivingPlan(subscription)) {
+        return null;
+      }
+      const itemPeriodEnd = knownBillingPlanPriceItem(
+        subscription.items.data,
+      )?.current_period_end;
       if (itemPeriodEnd) {
         const refreshed = new Date(itemPeriodEnd * 1000);
         // Don't cache a past-dated period. If Stripe returns a past-dated

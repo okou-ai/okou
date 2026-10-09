@@ -37,7 +37,8 @@ import {
   type PiMemoryStage1Evidence,
   projectPiMemoryStage1Evidence,
   redactPiMemoryStage1Secrets,
-  runPiMemoryStage1Extraction,
+  preparePiMemoryStage1Extraction,
+  runPiMemoryStage1PreparedExtraction,
   type PiMemoryStage1ProviderResult,
 } from "@okouai/pi-agent-runtime/api";
 import {
@@ -1010,6 +1011,58 @@ const checkPreparedStage1Request$ = command(
   },
 );
 
+type Stage1ProviderOutcome =
+  | { readonly ok: true; readonly value: PiMemoryStage1ProviderResult }
+  | { readonly ok: false; readonly error: unknown };
+
+interface Stage1ProviderObservation {
+  readonly provider: Stage1ProviderOutcome;
+  readonly requestPrepared: boolean;
+}
+
+/** Preparation/admission failures never reached an admitted provider request. */
+function stage1ProviderObservation(
+  extraction:
+    | { readonly ok: true; readonly value: Stage1ProviderObservation }
+    | { readonly ok: false; readonly error: unknown },
+): Stage1ProviderObservation {
+  return extraction.ok
+    ? extraction.value
+    : { provider: extraction, requestPrepared: false };
+}
+
+/** Measure the complete SDK body, then own admission before provider execution. */
+const extractPreparedStage1Provider$ = command(
+  async (
+    { set },
+    catalogSnapshot: ModelCatalog,
+    args: { readonly prepared: RoutedWork; readonly requestId: string },
+    signal: AbortSignal,
+  ): Promise<Stage1ProviderObservation> => {
+    // This async command returns preparation/admission failures to its finite
+    // parent guard, including abort. It forwards no caller operation callback.
+    const planned = preparePiMemoryStage1Extraction({
+      model: args.prepared.credential.model,
+      evidence: args.prepared.evidence,
+      requestId: args.requestId,
+    });
+    await set(
+      checkPreparedStage1Request$,
+      catalogSnapshot,
+      args.prepared,
+      signal,
+    );
+    // The SDK retains the original abort check immediately before HTTP. Join the
+    // provider outcome so the parent can complete finite usage/result settlement.
+    return {
+      provider: await settleIncludingAbort(
+        runPiMemoryStage1PreparedExtraction(planned, signal),
+      ),
+      requestPrepared: true,
+    };
+  },
+);
+
 const processPreparedWork$ = command(
   async (
     { set },
@@ -1019,43 +1072,24 @@ const processPreparedWork$ = command(
   ): Promise<WorkOutcome> => {
     const startedAt = performance.now();
     const requestId = randomUUID();
-    let requestPrepared = false;
-    // Return the complete irreversible-result reconciliation. The batch owner
-    // joins every provider branch before propagating cancellation, so one
-    // aborted request cannot abandon a sibling's observed usage receipt.
+    // Join every provider branch before propagating cancellation so one aborted
+    // request cannot abandon a sibling's observed usage receipt.
     return await set(settlePreparedWork$, args, {
-      provider: await settleIncludingAbort(
-        runPiMemoryStage1Extraction(
-          {
-            model: args.prepared.credential.model,
-            evidence: args.prepared.evidence,
-            requestId,
-            beforeRequest: async (requestSignal) => {
-              await set(
-                checkPreparedStage1Request$,
-                catalogSnapshot,
-                args.prepared,
-                requestSignal,
-              );
-              requestPrepared = true;
-            },
-          },
-          signal,
+      ...stage1ProviderObservation(
+        await settleIncludingAbort(
+          set(
+            extractPreparedStage1Provider$,
+            catalogSnapshot,
+            { prepared: args.prepared, requestId },
+            signal,
+          ),
         ),
       ),
       requestId,
-      requestPrepared,
       startedAt,
     });
   },
 );
-
-type Stage1ProviderOutcome =
-  | {
-      readonly ok: true;
-      readonly value: Awaited<ReturnType<typeof runPiMemoryStage1Extraction>>;
-    }
-  | { readonly ok: false; readonly error: unknown };
 
 /** Finite reconciliation of an irreversible provider result, even after abort. */
 const settlePreparedWork$ = command(

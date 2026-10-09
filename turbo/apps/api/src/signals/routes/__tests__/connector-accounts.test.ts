@@ -383,6 +383,190 @@ describe("connector account lifecycle routes", () => {
     );
   });
 
+  it("keeps default transitions exact and isolated across custom targets", async () => {
+    await seedFixture();
+    const groups: {
+      readonly target: {
+        readonly kind: "custom";
+        readonly customConnectorId: string;
+      };
+      readonly ids: readonly string[];
+    }[] = [];
+    for (const label of ["Primary", "Separate"]) {
+      const definition = await accept(
+        customConnectorClient().create({
+          headers: authHeaders(),
+          body: {
+            displayName: `Default ${label}`,
+            prefixTemplates: ["https://api.example.com/"],
+            fields: [
+              {
+                key: "secret",
+                label: "Secret",
+                kind: "secret",
+                required: true,
+              },
+            ],
+            headerInjections: [
+              {
+                name: "Authorization",
+                valueTemplate: "Bearer {{secrets.secret}}",
+              },
+            ],
+            queryInjections: [],
+          },
+        }),
+        [201],
+      );
+      const ids: string[] = [];
+      for (const displayName of label === "Primary"
+        ? ["Work", "Personal", "Removed"]
+        : ["Other"]) {
+        const connected = await accept(
+          customConnectorValuesClient().set({
+            headers: authHeaders(),
+            params: { id: definition.body.id },
+            body: {
+              values: [
+                {
+                  key: "secret",
+                  kind: "secret",
+                  value: `token-${label}-${displayName}`,
+                },
+              ],
+              account: { intent: "add", displayName },
+            },
+          }),
+          [200],
+        );
+        expect(connected.body.connected).toBeTruthy();
+        expect(connected.body.connectedAccountId).toStrictEqual(
+          expect.any(String),
+        );
+        if (!connected.body.connectedAccountId) {
+          throw new Error("Public connection did not return an account ID");
+        }
+        ids.push(connected.body.connectedAccountId);
+      }
+      groups.push({
+        target: { kind: "custom", customConnectorId: definition.body.id },
+        ids,
+      });
+    }
+    const [primary, separate] = groups;
+    if (!primary || !separate) {
+      throw new Error("Public custom targets were not created");
+    }
+    const [workId, personalId, removedId] = primary.ids;
+    const [otherId] = separate.ids;
+    if (!workId || !personalId || !removedId || !otherId) {
+      throw new Error("Public custom accounts were not created");
+    }
+    const wrongTarget = await accept(
+      accountClient().setDefault({
+        headers: authHeaders(),
+        params: { connectionId: personalId },
+        body: { target: separate.target },
+      }),
+      [404],
+    );
+    expect(wrongTarget.body.error).toStrictEqual({
+      code: "NOT_FOUND",
+      message: "Connector account not found",
+    });
+    const deleted = await accept(
+      accountClient().delete({
+        headers: authHeaders(),
+        params: { connectionId: removedId },
+        body: { target: primary.target },
+      }),
+      [200],
+    );
+    expect(deleted.body).toStrictEqual({
+      deletedConnectionId: removedId,
+      resolvedSelectionCount: 0,
+      promotedDefaultConnectionId: null,
+    });
+    const missing = await accept(
+      accountClient().setDefault({
+        headers: authHeaders(),
+        params: { connectionId: removedId },
+        body: { target: primary.target },
+      }),
+      [404],
+    );
+    expect(missing.body.error).toStrictEqual({
+      code: "NOT_FOUND",
+      message: "Connector account not found",
+    });
+    const unchanged = await accept(
+      accountClient().connections({
+        headers: authHeaders(),
+        query: primary.target,
+      }),
+      [200],
+    );
+    expect(unchanged.body.connections).toHaveLength(2);
+    expect(
+      unchanged.body.connections
+        .filter((account) => {
+          return account.isDefault;
+        })
+        .map((account) => {
+          return account.id;
+        }),
+    ).toStrictEqual([workId]);
+    for (let selection = 0; selection < 2; selection += 1) {
+      const selected = await accept(
+        accountClient().setDefault({
+          headers: authHeaders(),
+          params: { connectionId: personalId },
+          body: { target: primary.target },
+        }),
+        [200],
+      );
+      expect(selected.body).toMatchObject({
+        id: personalId,
+        target: primary.target,
+        displayName: "Personal",
+        isDefault: true,
+      });
+    }
+    for (const [group, expectedIds, defaultId] of [
+      [primary, [workId, personalId], personalId],
+      [separate, [otherId], otherId],
+    ] as const) {
+      const listed = await accept(
+        accountClient().connections({
+          headers: authHeaders(),
+          query: group.target,
+        }),
+        [200],
+      );
+      expect(
+        listed.body.connections
+          .map((account) => {
+            return account.id;
+          })
+          .sort(),
+      ).toStrictEqual([...expectedIds].sort());
+      expect(
+        listed.body.connections
+          .filter((account) => {
+            return account.isDefault;
+          })
+          .map((account) => {
+            return account.id;
+          }),
+      ).toStrictEqual([defaultId]);
+      for (const account of listed.body.connections) {
+        expect(account.target).toStrictEqual(group.target);
+      }
+      expect(JSON.stringify(listed.body)).not.toContain("token-Primary-");
+      expect(JSON.stringify(listed.body)).not.toContain("token-Separate-");
+    }
+  });
+
   it("adds siblings and manages exact default and deletion lifecycle", async () => {
     await seedFixture();
 

@@ -71,6 +71,29 @@ server-side signing-key ownership are unchanged.
 No database migration, client version floor, feature switch or deployment-order
 fallback is required. This change does not deploy or verify production recovery.
 
+## Video poster extraction retired (2026-10-08)
+
+Video uploads stop scheduling server-side poster extraction. The API removes
+both the public Cloudflare Media Transformations call and the private-video
+capability producer. The host Worker removes the private poster endpoint and
+its `MEDIA` binding. Hosted-page screenshots and image thumbnails keep their
+existing renderers.
+
+- **Old App or CLI → new API:** upload, playback, download and artifact response
+  contracts are unchanged. Videos without a stored poster use the existing
+  playable-video preview; previously stored poster references remain readable.
+- **New API → old Worker:** the API makes no poster requests; the unused Worker
+  endpoint does not affect file delivery.
+- **Old API → new Worker:** a remaining private poster POST receives `405` from
+  the Worker's existing method guard. The old API handles this in its optional
+  background-preview failure path and cleans up its temporary grant. The video
+  and catalog entry are already committed, so upload success and source access
+  are unaffected. In-flight renders may finish during API drain.
+
+No database migration, stored-preview deletion or client-version floor is
+needed. Rolling the API back can resume public poster generation; restoring
+private poster generation also requires the old Worker and `MEDIA` binding.
+
 ## Pi memory Luna routing (2026-10-08)
 
 New Stage 1 extractions and Phase 2 maintenance runs use `gpt-6-luna`.
@@ -622,6 +645,98 @@ protocol during the upgrade window; new Native against an old API stays offline
 and never acquires a host token. Existing installation and chat host identities
 are preserved. Legacy contraction requires the Desktop version floor and API
 serving/rollback drain. See [the full contract](desktop-session-auth.md).
+
+## Organization Usage Allowance retired
+
+Organization Usage Allowance is retired from the App, API contracts, run and
+managed-operation admission, pending launch, Pi memory reserves, settlement,
+billing status, billing reconciliation and Stripe entitlement publication. New
+usage consumes member credit grants and shared credits, retaining the existing
+launch fence, pending-event claim, attribution, atomic debit/expiry writes, Social
+publication and idempotency. A partial pending-event claim still rolls back and
+defers the batch; a missing financial row remains an error. No processed event is
+repriced or charged again.
+
+**Owner decision and destructive scope.** Linghan confirmed on 2026-10-08 that
+Allowance was issued only to the Okou team, not external users, and explicitly
+requested deletion of its historical data rather than archive compatibility.
+Migration `1356_drop_organization_usage_allowance` drops the entitlement, window
+and allocation tables plus the hourly `allowance_units`, `short_window_id` and
+`weekly_window_id` columns and their dependent constraints/indexes. It does not
+convert discarded rights into credits, alter wallets, delete ordinary usage or
+reprice/replay processed events. This is an owner-supplied usage boundary, not a
+new production census. Shipped migrations and snapshots remain immutable.
+
+**Owner-accepted single-release cutover.** On 2026-10-08, Linghan separately
+accepted production errors from the outgoing API during the deployment window
+and selected this single-PR contraction instead of a preparatory release.
+This acceptance is not limited to organizations that received Allowance:
+outgoing billing-status and finalized-usage queries reference the dropped
+tables even for external organizations with no Allowance rows. Shared usage,
+settlement/compaction and other old readers/writers of the retired shape can
+also fail. Errors can include PostgreSQL `42P01` for a missing table.
+
+Stop vm0-atom Allowance issuance before the cutover; its merged retirement PR
+alone does not prove serving deployment or stopped issuance. The existing
+production release runs migrations before updating/promoting the API and does
+not establish an API/cron serving drain. Applying 1356 while the outgoing API
+still serves is therefore an explicitly accepted interruption, not a safe
+rolling deployment. The exposure starts when the contracted schema becomes
+visible and ends only when the matching API is fully serving and incompatible
+API/cron work has drained. A failed or delayed promotion extends it until
+forward recovery completes; there is no guaranteed duration based on nominal
+pipeline timing.
+
+Reversing that order is not supported: the new API's credit-only hourly INSERT
+omits the old required `allowance_units` column, so the new compactor must not
+run before 1356. The rollback floor below only protects later rollback choices;
+it does not prevent the outgoing API's migration-to-promotion errors. This
+recorded risk acceptance permits retaining the single-PR design and merge
+review. It does not authorize immediate production deployment, migration,
+issuance operations or Stripe writes, and is not evidence of their execution.
+
+**Rollback floor.** The production rollback resolver requires the first-parent
+`main` commit that adds 1356. No earlier API is a supported rollback target
+against the contracted DB. Recovery below that floor needs a reviewed forward
+migration; restoring declarations alone cannot recover discarded data.
+
+**App/API.** The old billing schema used a plain Zod object with nullable optional
+`usageAllowance`, so omission by the new API is valid. Old App code conditionally
+renders its card only when the field exists. The new App ignores the old API's
+extra field; response validation strips unknown fields when enabled. Production
+Platform transport does not normally validate responses, but the new view never
+reads that extra field. The new billing response never emits `usageAllowance`.
+Credit balances and personal Claude/Codex subscription limits/Fast semantics
+are unchanged. Usage reports now sum only recorded `creditsCharged`, not the
+discarded team Allowance portion. Runner usage protocols and billing attribution
+are unchanged; no Runner deployment is needed. The authenticated staff
+compaction response also removes `allowanceUnits`, `affectedShortWindows` and
+`affectedWeeklyWindows`; no App or Runner consumes these fields.
+
+**Stripe.** Retired `purpose = usage_allowance` subscriptions/invoices remain
+excluded from ordinary Plan, Atom and purchased-credit grants, even when a price
+ID overlaps a configured grant/Plan price. The existing independently identified
+concurrency add-on on an archive-root subscription still reconciles without
+reactivating Allowance. This does not normalize away the archival root marker or
+invent a live Plan/usage-pack grant under it. Allowance lines mixed into a normal
+main subscription are not a Plan, usage-pack or concurrency line. Surviving line
+processing retains its existing scope and shared subscription operations preserve
+unrelated items/discounts/schedules.
+The API no longer renews, projects, schedules or cancels an Allowance entitlement.
+This code removal does not cancel any existing Stripe subscription, refund a
+payment or convert unused rights to credits. Those are separate owner/operator
+decisions; no production or Stripe writes are part of this PR.
+
+**Credit-only accounting and cleanup.** Finalized usage no longer joins
+Allowance allocations or exposes window IDs/units. Member, organization and
+chat-run totals use only the originally recorded credits. Compaction retains
+bounded raw consumption, billing identity fences, attribution capture,
+quantity/credit conservation and transactional rollback; all Allowance window
+reconciliation is removed. Organization/user privacy deletion still erases
+ordinary raw/hourly usage in its existing order, but has no Allowance archive
+cleanup. Historical engineering records document previous behavior, not a
+serving compatibility contract. The retained Stripe classification above is
+external financial isolation, not a local archive reader or grant fallback.
 
 ## Connector catalog payload contraction (not yet production accepted)
 
@@ -1751,11 +1866,18 @@ does not change production overrides, merge, deploy, or revoke provider grants.
 Input observation reads only native Run ID/status with unchanged run/user/org
 ownership predicates and the native status schema. The public full-Run MCP tool
 and Web/CLI responses are unchanged. Observation and recall may read only the
-origin, immediate predecessor and successor chain when one authorized read-only
-repeatable-read snapshot proves there is no archive. Native retention requires
-archive coverage; live identity/revoke constraints establish completeness in
-that case. Missing origins and all archive-backed conversations retain complete
-canonical archive-plus-tail authority and its integrity/resource errors.
+origin, immediate predecessor and successor chain when one authorized, bounded
+recursive statement snapshot proves there is no archive. The #38277 follow-up
+removes the targeted reader's explicit repeatable-read transaction and per-edge
+round trips. Metadata preflight gates payload transfer; invalid and over-budget
+chains fail explicitly rather than returning partial state. The existing pool's
+exclusively leased client retains the three-second server SQL timeout/read-only
+mode, restores its exact prior settings on success and is discarded on any
+unsuccessful path. No new pool or global connection setting is introduced.
+Native retention requires archive coverage; live identity/revoke constraints
+establish completeness in that case. Missing origins and all archive-backed
+conversations retain complete canonical archive-plus-tail authority and its
+integrity/resource errors.
 
 An origin newer than an archive watermark is not sufficient: Web caller-owned
 IDs can be reused after archived live rows are deleted, so ordering does not
@@ -5131,10 +5253,10 @@ The API no longer accepts or passes a brand for uploads, generations, hosted
 deployments, integration input files or conversation attachment copies.
 Legacy-layout hosted sites keep serving and keep their names reserved; a new
 publication never redeploys a legacy site and, as before, receives a fallback
-name in the current layout when a legacy site holds the requested name. Artifact preview images are new objects and use `current`; the video
-poster transform still runs on the source artifact's CDN origin. The private
-video poster request always uses the current `files.` host, which the Worker
-accepts for both domains.
+name in the current layout when a legacy site holds the requested name. Artifact
+preview images are new objects and use `current`. Video poster extraction is
+[retired](#video-poster-extraction-retired-2026-10-08); existing poster objects
+retain their original layout.
 
 Migration `1235_hosted_artifact_link_layout_okou_default` sets `DEFAULT 'okou'`
 on the four `public_brand` columns, so any writer that omits the column
@@ -8559,15 +8681,22 @@ parent-login deletion. Runner pin/observation continues to acquire its host
 before shared login/configuration authority.
 
 The local optimization in #37975 separates metadata-only rename from that
-fanout protocol. Rename locks only the visible configuration `FOR UPDATE`,
-revalidates current-scope management permission, expected revision and revision
-exhaustion, and updates name/revision/time without changing config generation.
-Its owner-filtered host-ID/name response is a nonlocking MVCC read, not an impact
-or authority check. It never follows configuration authority with a host row
-lock or host write, so it adds no reverse host-lock edge. Host generations,
+fanout protocol. The #38279 follow-up replaces its config-only transaction and
+locking read with one atomic statement: a conditional `UPDATE ... RETURNING`
+CTE plus an owner-filtered host-ID/name response join. The update itself enforces
+visibility, current-scope management permission, expected revision and revision
+exhaustion, and changes only name/revision/time, not config generation. A rejected
+write is classified by a fresh visible-config read without retrying it. The
+response query and write succeed or roll back together; host metadata is now a
+nonlocking statement-snapshot observation rather than a later transaction
+snapshot, never an impact or authority check. Rename takes no explicit config
+or host row lock and writes no host state; ordinary UPDATE row arbitration
+preserves revision conflicts without a reverse host-lock edge. Host generations,
 learned pins, independent login, endpoint, binding and rebind state remain
 unchanged; only the existing configuration metadata invalidation runs after
-commit.
+commit, using the returned scope. Config-only #38003 rename and these atomic
+writers can coexist through the same revision contract without a migration or
+client cutover.
 
 Selected host create/edit rechecks same-organization Organization or same-owner
 Personal visibility with `FOR SHARE` inside the write transaction, before inline

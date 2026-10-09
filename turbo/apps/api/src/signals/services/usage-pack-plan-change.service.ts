@@ -64,10 +64,7 @@ import {
   setStripeSubscriptionPaymentMethod,
   type BillingPurchasePaymentMethod,
 } from "./billing-payment-method.service";
-import {
-  canceledUsageAllowanceScheduleMetadata,
-  subscriptionScheduleHasNoFutureChanges,
-} from "./stripe-subscription-schedules.service";
+import { subscriptionScheduleHasNoFutureChanges } from "./stripe-subscription-schedules.service";
 import {
   activeUsagePackPlanPriceId,
   activeUsagePackPriceId,
@@ -2938,7 +2935,6 @@ function schedulePhaseParamWithItems(
     readonly endDate?: number;
     readonly duration?: StripePriceRecurring;
     readonly items: readonly StripeSchedulePhaseItemParam[];
-    readonly metadataOverlay: Readonly<Record<string, string>> | null;
   },
 ): StripeSchedulePhaseParam {
   if (
@@ -2949,9 +2945,7 @@ function schedulePhaseParamWithItems(
     throw new Error("Stripe subscription schedule has an invalid phase");
   }
   const discounts = schedulePhaseDiscounts(phase.discounts ?? []);
-  const metadata = args.metadataOverlay
-    ? { ...phase.metadata, ...args.metadataOverlay }
-    : phase.metadata;
+  const metadata = phase.metadata;
   return {
     start_date: args.startDate ?? phase.start_date,
     ...(args.endDate === undefined
@@ -3051,9 +3045,6 @@ function deferredUsagePackChangeScheduleParams(args: {
   if (!firstPhase || !finalPhase || args.effectiveAt <= firstPhase.start_date) {
     throw new Error("Stripe subscription schedule cannot change usage packs");
   }
-  const metadataOverlay = canceledUsageAllowanceScheduleMetadata(
-    args.subscription,
-  );
   const updatedPhases = phases.flatMap((phase) => {
     // Stripe may keep the old phase items after a direct subscription update.
     // Rebuild every pre-boundary phase from the paid current configuration so
@@ -3068,7 +3059,6 @@ function deferredUsagePackChangeScheduleParams(args: {
         schedulePhaseParamWithItems(phase, {
           endDate: phase.end_date,
           items: currentItems,
-          metadataOverlay,
         }),
       ];
     }
@@ -3082,7 +3072,6 @@ function deferredUsagePackChangeScheduleParams(args: {
         schedulePhaseParamWithItems(phase, {
           endDate: phase.end_date,
           items: targetItems,
-          metadataOverlay,
         }),
       ];
     }
@@ -3090,13 +3079,11 @@ function deferredUsagePackChangeScheduleParams(args: {
       schedulePhaseParamWithItems(phase, {
         endDate: args.effectiveAt,
         items: currentItems,
-        metadataOverlay,
       }),
       schedulePhaseParamWithItems(phase, {
         startDate: args.effectiveAt,
         endDate: phase.end_date,
         items: targetItems,
-        metadataOverlay,
       }),
     ];
   });
@@ -3110,7 +3097,6 @@ function deferredUsagePackChangeScheduleParams(args: {
           args.currentPlanPriceId,
           args.currentQuantities,
         ),
-        metadataOverlay,
       }),
     );
   }
@@ -3124,7 +3110,6 @@ function deferredUsagePackChangeScheduleParams(args: {
           args.targetPlanPriceId,
           args.quantities,
         ),
-        metadataOverlay,
       }),
     );
   }
@@ -3199,7 +3184,6 @@ function restoredUsagePackScheduleParams(
       },
     ];
   });
-  const metadataOverlay = canceledUsageAllowanceScheduleMetadata(subscription);
   return {
     end_behavior: schedule.end_behavior,
     proration_behavior: "none",
@@ -3221,13 +3205,8 @@ function restoredUsagePackScheduleParams(
           }),
           ...activePackageItems,
         ],
-        ...(phase.metadata || metadataOverlay
-          ? {
-              metadata: retireMarketingMetadata({
-                ...phase.metadata,
-                ...metadataOverlay,
-              }),
-            }
+        ...(phase.metadata
+          ? { metadata: retireMarketingMetadata(phase.metadata) }
           : {}),
         proration_behavior: phase.proration_behavior ?? "none",
         ...(discounts.length > 0 ? { discounts } : {}),
