@@ -59,20 +59,14 @@ const _: () = assert!(
 /// accidental huge fields. Oversized values are truncated on a UTF-8
 /// boundary with a visible marker. The marker is appended after this content
 /// cap, matching the existing bounded Debug-field behavior.
-const TEXT_FIELD_MAX_BYTES: usize = 4 * 1024;
+pub(crate) const TEXT_FIELD_MAX_BYTES: usize = 4 * 1024;
 
 /// Preserve the causal suffix of an already-materialized error independently
 /// of the Axiom field's bounded prefix. Do not format arbitrary Debug values to
 /// obtain a tail: their formatting must still stop at the normal field limit.
+#[cfg(test)]
 pub(crate) fn error_tail(error: &str) -> Option<&str> {
-    if error.len() <= TEXT_FIELD_MAX_BYTES {
-        return None;
-    }
-    let mut start = error.len() - TEXT_FIELD_MAX_BYTES;
-    while !error.is_char_boundary(start) {
-        start += 1;
-    }
-    Some(&error[start..])
+    runner_host::log_file::bounded_error_tail(error, TEXT_FIELD_MAX_BYTES)
 }
 
 /// Max native error sources retained after the top-level error message.

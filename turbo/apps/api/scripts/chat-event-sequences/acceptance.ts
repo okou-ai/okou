@@ -207,6 +207,7 @@ try {
   // A normal control lock must remain compatible with the event FK KEY SHARE.
   const lock = await pool.connect();
   try {
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0001; new non-billing transactions are prohibited.
     await lock.query("BEGIN");
     await lock.query(
       "SELECT id FROM chat_threads WHERE id=$1 FOR NO KEY UPDATE",
@@ -227,6 +228,7 @@ try {
     await lock.query("COMMIT");
     // The stronger retained lock really blocks, demonstrating why controls use
     // NO KEY UPDATE rather than claiming the new sequence table removes all locks.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0002; new non-billing transactions are prohibited.
     await lock.query("BEGIN");
     await lock.query("SELECT id FROM chat_threads WHERE id=$1 FOR UPDATE", [
       second,

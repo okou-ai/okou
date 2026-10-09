@@ -62,6 +62,7 @@ import {
 export const readWorkflowCopySnapshot$ = command(
   async ({ set }, args: WorkflowCopyInput, signal: AbortSignal) => {
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0043; new non-billing transactions are prohibited.
     const snapshotPromise = db.transaction(async (tx) => {
       const p = copySourcePlans(args);
       if (p.official) {
@@ -114,6 +115,7 @@ export const commitWorkflowCopy$ = command(
   async ({ set }, args: CopyArgs, signal: AbortSignal): Promise<CopyResult> => {
     const db = set(writeDb$);
     const p = copyPublicationPlans(args);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0044; new non-billing transactions are prohibited.
     const publication = db.transaction(async (tx) => {
       if (p.official) {
         await tx.select().from(p.catalogLock);

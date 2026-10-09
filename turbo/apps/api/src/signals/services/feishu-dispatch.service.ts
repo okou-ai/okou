@@ -6,7 +6,7 @@ import {
 import { agents } from "@okouai/db/schema/agent";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
-import { sameSelectedModel } from "@okouai/core/auto-run-model";
+import { AUTO_SELECTED_MODEL, sameSelectedModel } from "@okouai/core/auto-run-model";
 import { command } from "ccstate";
 import { and, eq, isNull, or } from "drizzle-orm";
 import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
@@ -636,7 +636,7 @@ const feishuModelPickerState$ = command(
           return {
             model: runModel.model,
             label: runModel.modelLabel,
-            isDefault: runModel.model === null,
+            isDefault: runModel.model === AUTO_SELECTED_MODEL,
           };
         })
         .slice(0, FEISHU_MODEL_PICKER_MAX_OPTIONS),
@@ -667,6 +667,7 @@ async function handleDisconnectCommand(
   args: ConnectedCommandArgs,
   signal: AbortSignal,
 ): Promise<void> {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0164; new non-billing transactions are prohibited.
   await args.db.transaction(async (tx) => {
     await disconnectFeishuCustomConnectorOAuthConnection(
       tx,

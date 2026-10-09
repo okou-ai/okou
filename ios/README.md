@@ -89,8 +89,22 @@ launching an app or simulator:
 swift test --package-path ios/Packages/ChatDomain
 ```
 
-Domain tests construct domain values directly. HTTP decoding and store/UI
-integration remain in `OkouTests`. The CI test script runs both suites.
+Domain tests construct domain values directly. The local
+[ChatData package](Packages/ChatData/Package.swift) owns API requests and DTOs,
+synchronization, commands, model selection, and SQLite storage. It depends on
+ChatDomain and Apple system frameworks; authentication/realtime SDK adapters,
+feature stores, Markdown rendering, and native UI remain in the App.
+
+Run the 31 data tests independently:
+
+```sh
+swift test --package-path ios/Packages/ChatData
+```
+
+They retain real HTTP decoding, loopback snapshot transfers, and temporary SQLite
+files. ChatDataTestSupport shares the existing HTTP fixture with App integration
+tests and is linked only by test targets. Store and UI tests remain in
+`OkouTests`. The CI script runs both package suites and the App suite.
 
 The project uses synchronized folders: adding Swift files beneath `Okou/` or
 `OkouTests/` adds them to the corresponding target. `Resources/Info.plist` is
@@ -190,7 +204,9 @@ long-history performance checks remain outside the completed interactive sample.
 The transcript uses a native `UICollectionView` cell for each message, with
 SwiftUI message content and measured row heights. A bounded batch of temporary
 hosts settles Markdown layout before a snapshot is applied. Cell reuse keeps
-these heights, and pending content changes wait until scrolling ends. Reading
+these heights, and pending content changes wait until scrolling ends. A per-detail
+ConversationScrollCoordinator owns latest/history intent and bottom-button policy;
+the native collection owns motion and the anchor owns offset correction. Reading
 positions update when late message markers become ready, even without a change
 to the list's size or offset. Initial
 positioning targets the latest prepared messages; starting a manual scroll stops
@@ -220,9 +236,9 @@ remain outstanding.
 and manual dispatch. A lightweight Linux job tests change detection and gate
 behavior on every run. Changes to `ios/`, the iOS workflow, or the shared
 changed-base helper trigger Swift formatting, property-list validation, an app
-build, standalone ChatDomain tests, and the simulator tests on macOS 26 with
-Xcode 26.3 and iOS 26.2. Formatting includes the package manifest, sources, and
-tests. Swift
+build, standalone ChatDomain/ChatData tests, and the simulator tests on macOS 26
+with Xcode 26.3 and iOS 26.2. Formatting includes both package manifests, sources,
+and tests. Swift
 packages must match `Package.resolved`; CI checks that it remains unchanged.
 
 The `ci-gate-ios` check succeeds only after the required build/tests pass, or

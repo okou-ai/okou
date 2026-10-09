@@ -208,6 +208,7 @@ export const startUserExport$ = command(
     const db = set(writeDb$);
     signal.throwIfAborted();
     const result = await settle(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0313; new non-billing transactions are prohibited.
       db.transaction(async (tx): Promise<StartUserExportResult> => {
         const jobId = randomUUID();
         // Claim before checking cooldown so a concurrently completed job cannot

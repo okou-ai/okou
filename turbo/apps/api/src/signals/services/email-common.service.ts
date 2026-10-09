@@ -565,6 +565,7 @@ async function prepareNextOutboxItem(
   db: Db,
   currentTimeMs: number,
 ): Promise<PrepareOutcome> {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0156; new non-billing transactions are prohibited.
   return await db.transaction(async (tx) => {
     const [selectedRow] = await tx
       .select(outboxRowSelection())
@@ -587,36 +588,6 @@ async function prepareNextOutboxItem(
       .for("update", { skipLocked: true });
     if (!selectedRow) {
       return { kind: "empty" };
-    }
-    // Retired Native intents never reach parsing, rendering or provider replay,
-    // including malformed payloads and requests committed by an older API.
-    if (
-      z
-        .object({ template: z.literal("morning-brief-result") })
-        .safeParse(selectedRow.template).success
-    ) {
-      await tx
-        .update(emailOutbox)
-        .set({
-          status: "failed",
-          lastError:
-            selectedRow.provider_request === null
-              ? "Native Morning Brief email retired"
-              : "Native Morning Brief email retired with unresolved provider outcome",
-          providerRequest: null,
-          template: {
-            template: "morning-brief-result",
-            props: {
-              title: "",
-              resultMarkdown: "",
-              threadUrl: "",
-              manageUrl: "",
-            },
-          },
-          nextRetryAt: null,
-        })
-        .where(eq(emailOutbox.id, selectedRow.id));
-      return { kind: "resolved" };
     }
     const row = outboxRowSchema.parse(selectedRow);
     const itemId = row.id;
@@ -751,6 +722,7 @@ async function completeOutboxItem(
               nextRetryAt: null,
             };
 
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0157; new non-billing transactions are prohibited.
   const completed = await db.transaction(async (tx) => {
     const [updated] = await tx
       .update(emailOutbox)
@@ -875,6 +847,7 @@ async function cleanupExpiredEmailOutbox(
   signal: AbortSignal,
 ): Promise<number> {
   const cutoff = new Date(context.currentTimeMs - OUTBOX_TTL_MS);
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0158; new non-billing transactions are prohibited.
   const deleted = await db.transaction(async (tx) => {
     const removed = await tx
       .delete(emailOutbox)

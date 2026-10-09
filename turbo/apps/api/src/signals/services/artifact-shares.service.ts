@@ -865,13 +865,14 @@ export const resolveArtifactTargetShare$ = command(
   },
 );
 
-/** Public references disclose only published delivery and preview metadata. */
-export const resolvePublicArtifactUrl$ = command(
-  async (
-    { get, set },
-    args: { readonly id: string; readonly kind?: "file" | "html" | "share" },
-    signal: AbortSignal,
-  ) => {
+interface PublicArtifactLookup {
+  readonly id: string;
+  readonly kind?: "file" | "html" | "share";
+}
+
+/** Resolve ownership without reading publication policy or artifact contents. */
+export const publicArtifactShareIdentity$ = command(
+  async ({ get }, args: PublicArtifactLookup, signal: AbortSignal) => {
     const [direct] =
       args.kind === "html"
         ? []
@@ -915,9 +916,18 @@ export const resolvePublicArtifactUrl$ = command(
         : undefined;
       signal.throwIfAborted();
     }
-    if (!row) {
-      return null;
-    }
+    return row ?? null;
+  },
+);
+
+/** Public references disclose only published delivery and preview metadata. */
+export const resolvePublicArtifactSource$ = command(
+  async (
+    { get, set },
+    args: PublicArtifactLookup,
+    row: ShareIdentity,
+    signal: AbortSignal,
+  ) => {
     const stored = await get(policyFor(row, signal));
     signal.throwIfAborted();
     const policy = stored?.policy;
@@ -938,6 +948,19 @@ export const resolvePublicArtifactUrl$ = command(
       signal,
     );
     signal.throwIfAborted();
-    return target ? publicSharePreview(policy) : null;
+    return target
+      ? { policy, candidate: target, ...publicSharePreview(policy) }
+      : null;
+  },
+);
+
+export const resolvePublicArtifactUrl$ = command(
+  async ({ set }, args: PublicArtifactLookup, signal: AbortSignal) => {
+    const row = await set(publicArtifactShareIdentity$, args, signal);
+    if (!row) {
+      return null;
+    }
+    const source = await set(resolvePublicArtifactSource$, args, row, signal);
+    return source ? { url: source.url, preview: source.preview } : null;
   },
 );

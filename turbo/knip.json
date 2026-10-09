@@ -1,5 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": ["scripts/check-db-transactions.mts"],
   "workspaces": {
     "apps/cli": {
       "entry": [

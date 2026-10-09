@@ -5,7 +5,7 @@ import { agentphoneGroupMessageReceipts } from "@okouai/db/schema/agentphone-gro
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
 import { agentphoneMessageVisibility } from "@okouai/db/schema/agentphone-message-visibility";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
-import { sameSelectedModel } from "@okouai/core/auto-run-model";
+import { AUTO_SELECTED_MODEL, sameSelectedModel } from "@okouai/core/auto-run-model";
 import { command } from "ccstate";
 import { and, desc, eq, isNull, or } from "drizzle-orm";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
@@ -377,6 +377,7 @@ export async function storeInboundAgentPhoneMessage(
   },
 ): Promise<{ readonly inserted: boolean; readonly dispatch: boolean }> {
   const isGroup = isAgentPhoneGroupEvent(params.event);
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0054; new non-billing transactions are prohibited.
   return await db.transaction(async (tx) => {
     let visibilityRecipients: readonly AgentPhoneMessageVisibilityRecipient[] =
       [];
@@ -403,6 +404,7 @@ export async function storeInboundAgentPhoneMessage(
         return { inserted: false, dispatch: false };
       }
 
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0055; new non-billing transactions are prohibited.
       const receiptInserted = await tx.transaction(async (receiptTx) => {
         const [receipt] = await receiptTx
           .insert(agentphoneGroupMessageReceipts)
@@ -1209,7 +1211,7 @@ const handleModelCommand$ = command(
       return {
         model: runModel.model,
         label: runModel.modelLabel,
-        isDefault: runModel.model === null,
+        isDefault: runModel.model === AUTO_SELECTED_MODEL,
       };
     });
 

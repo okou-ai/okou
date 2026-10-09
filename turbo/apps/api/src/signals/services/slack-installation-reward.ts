@@ -169,6 +169,7 @@ export async function settleSlackRewardClaim(
     return;
   }
   const granted = await settle(
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0246; new non-billing transactions are prohibited.
     tx.transaction(async (grantTx) => {
       await grantTx.execute(slackOrgRewardSql(claim, identity.rewardKey, at));
     }),

@@ -578,9 +578,7 @@ pub fn collect_heartbeat_state(
     }
 }
 
-fn duration_ms(duration: Duration) -> u64 {
-    u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
-}
+use crate::duration::duration_ms;
 
 #[cfg(test)]
 mod tests {

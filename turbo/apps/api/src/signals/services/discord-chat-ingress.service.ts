@@ -156,6 +156,7 @@ export const ensureCanonicalDiscordChatThreadRoute$ = command(
   ): Promise<DiscordChatThreadRouteBinding | undefined> => {
     const db = set(writeDb$);
     const defaults = await set(loadNewChatThreadDefaults$, args, signal);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0149; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       const [claim] = await tx
         .select({ routeId: discordChatIngress.routeId })
@@ -335,6 +336,7 @@ export const admitCanonicalDiscordChatEvent$ = command(
       args.applicationId,
       args.messageId,
     );
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0150; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       // This identity-only digest survives connection/chat deletion. Raw payloads
       // still cascade, while a lost ACK cannot launch the same message again

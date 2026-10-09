@@ -114,6 +114,7 @@ export const listMcpAgents$ = command(
       };
     }
     // This transaction is only the scope of SET LOCAL for one bounded SELECT.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0179; new non-billing transactions are prohibited.
     const rows = await set(writeDb$).transaction(
       async (tx) => {
         await tx.execute(sql`SET LOCAL statement_timeout = '3s'`);

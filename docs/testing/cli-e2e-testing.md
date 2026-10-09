@@ -242,6 +242,17 @@ message in the public chat-events API. Network telemetry is uploaded after the
 run completes, so use it only as the final ordered policy assertion, not as a
 live synchronization point.
 
+Run completion does not guarantee that the asynchronously ingested public
+context snapshot is queryable. Mandatory context assertions use
+`runner_e2e_wait_for_run_context`: it observes the requested run's snapshot for
+up to 30 seconds, retrying only the exact `404 / NOT_FOUND / Run context not
+available` response. Other HTTP/transport failures and invalid snapshots fail
+immediately; permanent absence fails at the deadline. The helper returns only
+the matching-run JSON, so existing content and secret-redaction assertions still
+apply. Keep context reads used solely to diagnose an already-failed probe
+single-shot; do not replace readiness observation with run retries or longer
+outer test timeouts.
+
 Body capture must be enabled on the individual chat run. Do not mutate the
 shared runner account's next-run capture preference: runner files execute in
 parallel, so user-scoped mutable preferences are not isolated between shards.

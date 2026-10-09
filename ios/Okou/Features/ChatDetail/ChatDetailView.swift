@@ -5,15 +5,12 @@ struct ChatDetailView: View {
   @Bindable var conversation: ConversationStore
   private var thread: ChatThread { conversation.thread }
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @State private var hasPositionedHistory = false
-  @State private var followsLatestMessage = true
-  @State private var isAwayFromBottom = false
-  @State private var isScrolling = false
-  @State private var isNearTop = false
-  @State private var resetsWindowAtBottom = false
-  @State private var scrollAnchor = ConversationScrollAnchor()
-  @State private var scroll = ConversationCollectionScroll()
-  @State private var previousHeight: CGFloat = 0
+  @State private var scrolling: ConversationScrollCoordinator
+
+  init(conversation: ConversationStore) {
+    self.conversation = conversation
+    _scrolling = State(initialValue: ConversationScrollCoordinator(conversation: conversation))
+  }
 
   private var history: ChatHistory { conversation.history ?? .empty }
   private var rows: [ConversationCollectionRow] {
@@ -40,34 +37,18 @@ struct ChatDetailView: View {
   var body: some View {
     let displayedMessages = conversation.visibleMessages
     ConversationCollectionView(
-      rows: rows, markdown: conversation.messageMarkdown, anchor: scrollAnchor, scroll: scroll,
-      followsBottom: followsLatestMessage,
-      phaseChanged: handleScrollPhase, metricsChanged: handleMetrics,
+      rows: rows, markdown: conversation.messageMarkdown, anchor: scrolling.anchor,
+      scroll: scrolling.scroll,
+      followsBottom: scrolling.followsBottom,
+      phaseChanged: scrolling.phaseChanged, metricsChanged: scrolling.metricsChanged,
       refresh: { await conversation.refresh() }, content: rowContent
     )
-    .onAppear {
-      scrollAnchor.revealRow = { scroll.scrollTo($0, anchor: .top) }
-      scrollAnchor.readingPositionDidChange = { position in
-        guard hasPositionedHistory && !followsLatestMessage && !isScrolling else { return }
-        conversation.rememberReadingPosition(scrollAnchor.preservedPosition ?? position)
-      }
-      scrollAnchor.viewportDidChange = {
-        guard hasPositionedHistory else { return }
-        if followsLatestMessage {
-          scrollAnchor.followBottom()
-        } else if let position = conversation.readingPosition {
-          scrollAnchor.preserve(position)
-        }
-      }
-    }
+    .onAppear { scrolling.activate(reduceMotion: reduceMotion) }
+    .onChange(of: reduceMotion) { _, value in scrolling.setReduceMotion(value) }
     .overlay(alignment: .bottom) {
-      if isAwayFromBottom && hasPositionedHistory && !displayedMessages.isEmpty {
+      if scrolling.showsBottomButton {
         Button {
-          followsLatestMessage = true
-          scrollAnchor.cancel()
-          conversation.rememberReadingPosition(nil)
-          resetsWindowAtBottom = true
-          positionAtBottom(animated: true)
+          scrolling.jumpToLatest()
         } label: {
           Image(systemName: "arrow.down").font(.system(size: 18, weight: .medium))
         }
@@ -79,54 +60,13 @@ struct ChatDetailView: View {
         .padding(.bottom, 16)
       }
     }
-    .task(id: displayedMessages.last) {
-      guard !displayedMessages.isEmpty else { return }
-      if !hasPositionedHistory, let position = conversation.readingPosition {
-        followsLatestMessage = false
-        await Task.yield()
-        guard !Task.isCancelled, !isScrolling else { return }
-        scrollAnchor.restore(position)
-        hasPositionedHistory = true
-        return
-      }
-      guard
-        !hasPositionedHistory || followsLatestMessage
-          || conversation.pending.contains(where: { $0.id == displayedMessages.last?.id })
-      else { return }
-      followsLatestMessage = true
-      scrollAnchor.cancel()
-      conversation.rememberReadingPosition(nil)
-      await Task.yield()
-      guard !Task.isCancelled, followsLatestMessage else { return }
-      positionAtBottom(animated: hasPositionedHistory)
-      hasPositionedHistory = true
-    }
-    .onChange(of: displayedMessages) { _, _ in
-      guard hasPositionedHistory, !isScrolling else { return }
-      if followsLatestMessage {
-        positionAtBottom()
-      } else if let position = conversation.readingPosition {
-        scrollAnchor.restore(position)
-      }
-    }
+    .task(id: displayedMessages.last) { await scrolling.latestMessageChanged() }
+    .onChange(of: displayedMessages) { _, _ in scrolling.messagesChanged() }
     .onChange(of: conversation.readingPosition?.messageID) { previousID, id in
-      if hasPositionedHistory && !followsLatestMessage && !isScrolling,
-        previousID != nil && id == nil
-      {
-        followsLatestMessage = true
-        positionAtBottom()
-      }
+      scrolling.readingPositionChanged(previousID: previousID, currentID: id)
     }
-    .onDisappear {
-      if !followsLatestMessage { saveReadingPosition() }
-      scrollAnchor.readingPositionDidChange = nil
-      scrollAnchor.cancel()
-      scrollAnchor.revealRow = nil
-      scrollAnchor.viewportDidChange = nil
-    }
-    .onChange(of: history.executionState) { _, _ in
-      if hasPositionedHistory && followsLatestMessage { positionAtBottom() }
-    }
+    .onDisappear { scrolling.deactivate() }
+    .onChange(of: history.executionState) { _, _ in scrolling.executionStateChanged() }
     .safeAreaInset(edge: .bottom, spacing: 0) {
       ChatComposerView(
         draft: $conversation.draft, isBusy: conversation.isSending || conversation.isStopping,
@@ -152,51 +92,6 @@ struct ChatDetailView: View {
     }
   }
 
-  private func positionAtBottom(animated: Bool = false) {
-    scrollAnchor.followBottom()
-    scroll.scrollTo("conversation-bottom", anchor: .bottom, animated: animated && !reduceMotion)
-  }
-
-  private func handleScrollPhase(_ phase: ScrollPhase) {
-    isScrolling = phase != .idle
-    scrollAnchor.isScrolling = isScrolling
-    if phase == .tracking || phase == .interacting {
-      followsLatestMessage = false
-      resetsWindowAtBottom = false
-      scrollAnchor.cancel()
-      conversation.rememberReadingPosition(scrollAnchor.capture())
-    }
-    if phase == .idle && hasPositionedHistory && !isAwayFromBottom {
-      followsLatestMessage = true
-      conversation.rememberReadingPosition(nil)
-      if resetsWindowAtBottom {
-        resetsWindowAtBottom = false
-        conversation.resetRenderWindowToLatest()
-      }
-    } else if phase == .idle && hasPositionedHistory && !followsLatestMessage {
-      saveReadingPosition()
-      if isNearTop { Task { await loadEarlierMessages() } }
-    }
-  }
-
-  private func handleMetrics(_ metrics: ConversationCollectionMetrics) {
-    let oldHeight = previousHeight
-    previousHeight = metrics.height
-    isNearTop = metrics.isNearTop
-    isAwayFromBottom = metrics.isAwayFromBottom
-    scrollAnchor.layoutDidChange()
-    if hasPositionedHistory && !followsLatestMessage && !isScrolling { saveReadingPosition() }
-    if resetsWindowAtBottom && !metrics.isAwayFromBottom && !isScrolling {
-      resetsWindowAtBottom = false
-      conversation.resetRenderWindowToLatest()
-    }
-    if hasPositionedHistory && followsLatestMessage && metrics.isAwayFromBottom
-      && metrics.height != oldHeight
-    {
-      positionAtBottom()
-    }
-  }
-
   @ViewBuilder
   private func rowContent(_ row: ConversationCollectionRow, anchor: ConversationScrollAnchor?)
     -> some View
@@ -204,7 +99,7 @@ struct ChatDetailView: View {
     switch row {
     case .earlier(let isLoading):
       Button {
-        Task { await loadEarlierMessages() }
+        scrolling.loadEarlierMessages()
       } label: {
         HStack {
           Spacer()
@@ -247,21 +142,6 @@ struct ChatDetailView: View {
       .frame(maxWidth: .infinity, alignment: .leading)
       .padding(EdgeInsets(top: 24, leading: 20, bottom: 20, trailing: 20))
     }
-  }
-
-  private func saveReadingPosition() {
-    // Recording user scrolling does not start a reading-position correction.
-    if let position = scrollAnchor.preservedPosition ?? scrollAnchor.capture() {
-      conversation.rememberReadingPosition(position)
-    }
-  }
-
-  private func loadEarlierMessages() async {
-    guard hasPositionedHistory, !isScrolling, conversation.hasEarlierMessages else { return }
-    followsLatestMessage = false
-    saveReadingPosition()
-    await conversation.loadEarlierMessages()
-    if !isScrolling, let position = conversation.readingPosition { scrollAnchor.preserve(position) }
   }
 
   private func messageRow(

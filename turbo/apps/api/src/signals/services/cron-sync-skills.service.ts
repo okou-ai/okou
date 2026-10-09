@@ -552,6 +552,7 @@ const commitSkillPublication$ = command(
     const db = set(writeDb$);
     const record = skillRecordValues(args);
     const projection = preparePiResourceIndex(args.upload.archiveBuffer);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0134; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       const [inserted] = await tx
         .insert(storageVersions)
@@ -729,6 +730,7 @@ const removeOrphanedSkills$ = command(
         return id !== null;
       });
 
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0135; new non-billing transactions are prohibited.
     const orphanStorages = await set(writeDb$).transaction(async (tx) => {
       const lockedStorages =
         orphanStorageIds.length > 0

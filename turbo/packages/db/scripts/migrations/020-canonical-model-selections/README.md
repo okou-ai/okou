@@ -6,8 +6,8 @@ adding this tool. It remains usable for one explicitly owned head at a time.
 
 ## Prerequisites
 
-- Verified serving/rollback and installed-consumer gates in
-  [the release-three contract](../../../../../../docs/model-identity-pr3.md).
+- Confirmed serving/rollback, installed-consumer and retained-history gates
+  recorded in the owning PR #38389; confirmation does not execute this tool.
 - Read access to the exact database and object bucket for dry-run. `--migrate`
   additionally requires database UPDATE and object PUT permission.
 - `DATABASE_URL`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`,

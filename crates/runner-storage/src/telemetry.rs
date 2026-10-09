@@ -117,7 +117,7 @@ pub trait StorageTelemetry: Send {
     /// `connection_attempt` metadata alongside the operation; `None` means no
     /// diagnostic observation is supplied, not a zero-valued observation.
     ///
-    /// See the [host archive phase diagnostics guide](https://github.com/okou-ai/okou/blob/main/docs/host-archive-phase-diagnostics.md)
+    /// See the [host archive phase diagnostics guide](https://github.com/okou-ai/okou/blob/9813db4b51faa42c982dcfec1720caf5bd5b1b82/docs/host-archive-phase-diagnostics.md)
     /// for phase boundaries, event-time semantics, and diagnostic interpretation.
     fn record_archive_phase_at(
         &mut self,

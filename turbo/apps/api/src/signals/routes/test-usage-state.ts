@@ -107,6 +107,7 @@ async function seedUsageStateFixture(db: Db): Promise<UsageStateFixture> {
     orgId: `org_${randomUUID()}`,
     userId: `user_${randomUUID()}`,
   };
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0038; new non-billing transactions are prohibited.
   await db.transaction(async (tx) => {
     const metadataRows = await tx
       .insert(orgMetadataCanonicalWrites)
@@ -291,6 +292,7 @@ const seedRun$ = command(
     signal: AbortSignal,
   ): Promise<{ runId: string }> => {
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0039; new non-billing transactions are prohibited.
     const result = await db.transaction(async (tx) => {
       const [session] = await tx
         .insert(agentSessions)
@@ -435,6 +437,7 @@ const insertFixtureUsage$ = command(
     let firstId: string | undefined;
     for (let offset = 0; offset < values.length; offset += 500) {
       const batch = values.slice(offset, offset + 500);
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0040; new non-billing transactions are prohibited.
       const ids = await db.transaction(async (tx) => {
         const runId = body.run_id ?? null;
         if (runId) {
@@ -544,6 +547,7 @@ const materializeHourlyUsage$ = command(
     const db = set(writeDb$);
     // One transaction over the whole finite fixture scope, as on main; no
     // row lock and no paging loop.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0041; new non-billing transactions are prohibited.
     const materialized = await db.transaction(async (tx) => {
       const runPredicate =
         args.runId === null

@@ -343,6 +343,7 @@ const commitMetadata$ = command(
     // Preserve the current model settings and service tier while applying the
     // model change and its ordered events. This is the only metadata write
     // that needs a read/write snapshot; renames use one gated statement.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0094; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       const [current] = await tx
         .select(currentSelection)

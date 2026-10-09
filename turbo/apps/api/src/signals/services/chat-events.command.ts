@@ -1407,6 +1407,7 @@ const appendNormalSendInput$ = command(
     signal: AbortSignal,
   ) => {
     const { thread, event, existingPlan, preferencePlan } = input;
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0091; new non-billing transactions are prohibited.
     const inserted = await set(writeDb$).transaction(async (tx) => {
       if (thread.kind === "new") {
         const createdPlan = newSendThreadInsertPlan(args, thread);

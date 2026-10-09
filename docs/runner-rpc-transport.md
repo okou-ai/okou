@@ -1,18 +1,18 @@
 # Guest-to-Runner RPC
 
 The transport delivered by #32012 is infrastructure under #31932. Its first
-consumer is the [Runner SSH dispatcher](runner-ssh-execution.md), installed by
+consumer is the Runner SSH dispatcher (`crates/runner-remote/src/ssh`), installed by
 #32387 for official API-backed Runs. The shared Runner-side owner now lives in
 `crates/runner-remote/src/guest_rpc`; SSH owns only its business handlers and run-local
 authority/session state. The generic transport itself has no API
 calls or business validators. Local/mock sandbox providers expose no capability.
-The private [run-scoped Guest duplex](runner-guest-duplex.md) has its own
+The private run-scoped Guest duplex (`crates/runner-remote/src/guest_duplex`) has its own
 **52002 listener** and long-lived stream protocol. Guest RPC remains on 52001:
 its request bytes, one-operation lifetime, admission budget and decoder are not
 part of a shared protocol classifier. Both listeners rely on the same sandbox
 assignment and authoritative normal-operation reservation. Idle duplex candidates
 hold no park reservation.
-The [SSH CLI and owner/Agent UI](ssh-access.md) are delivered. SSH is generally
+The SSH CLI and owner/Agent UI are delivered. SSH is generally
 available but still requires current API authority; the transport itself does
 not grant SSH access.
 
@@ -42,7 +42,7 @@ Apply these questions in order:
    duplex listener on **52002**. Its connection is not an RPC request and cannot
    acquire an operation reservation until exact-run attachment; #37027 owns
    ticket admission before any public WSS acknowledgement. See the
-   [duplex contract](runner-guest-duplex.md).
+   [duplex owner](../crates/runner-remote/src/guest_duplex).
 
 Port 52000 has one accepted control connection: the Guest control service owns its
 end, and the host removes the listener after acceptance. Its current reader
@@ -265,14 +265,14 @@ budget, assignment and sandbox cancellation, joined shutdown and
 terminal-plus-EOF rules as the other ordinary methods. It writes exactly one
 result terminal and then closes the stream. Parking, reassignment and sandbox
 cleanup retire the old owner, so an old guest connection or frozen addon reader
-cannot follow the next assignment. See [run usage contract and historical handoff](api-run-usage.md) for the
-current source contract and the retired version-1 history.
+cannot follow the next assignment. Current consumer behavior belongs in the
+Runner's assignment-bound usage handler and its protocol tests.
 
 ## Opt-in binary streaming foundation
 
 #33856 (under #33847) adds `/usr/local/bin/runner-rpc-client --stream` for
 bounded binary consumers. #33857 adds `ssh.file.upload` / `ssh.file.download`,
-Runner-owned SFTP and [CLI file semantics](ssh-access.md#file-upload-and-download).
+Runner-owned SFTP and CLI file semantics.
 Only validated file methods extend the Runner request lifetime; unknown methods
 are rejected before resolving authority. Existing exec, session and no-argument
 helper contracts are unchanged.
@@ -361,8 +361,8 @@ park reservation. A bounded waiting read owns its own stream/reservation until
 that request finishes; it is not attached to the retained session task. No helper
 negotiation, method fallback or automatic replay is added. The SSH reader changed
 its required business parameters before GA without a legacy read payload path;
-the opaque version-1 framing and helper invocation are unchanged. See
-[managed SSH session ownership](runner-ssh-execution.md#managed-sessions-within-one-run).
+the opaque version-1 framing and helper invocation are unchanged. The SSH
+consumer owns its session implementation and business contracts.
 
 #32013 owns explicit `ssh.exec` dispatch, strict business schemas, dynamic JIT
 authorization, credentials, TOFU and execution. Generic events wrap SSH
@@ -398,8 +398,8 @@ Actual fresh/restored KVM boot and packaged-helper execution have separate
 metal-host CI coverage.
 
 The `guest-rpc-firecracker-test` CI job runs the native `guest_rpc` integration
-test against the matching runner-build rootfs and snapshot. It covers a generic
-echo result, an unknown-method rejection, response EOF, and park/reassignment in
+test against the matching rootfs and snapshot supplied by `runner-test-prepare`.
+It covers a generic echo result, an unknown-method rejection, response EOF, and park/reassignment in
 both fresh and snapshot-restored guests. Its test-only consumer does not enable
 methods in local/PAT Runners or establish SSH authorization. Unix parser/helper
 and actual Runner dispatcher tests separately protect bounds, corruption handling

@@ -3456,7 +3456,7 @@ function TemplatePickerCategoryNav({
                   onClick={
                     selected && value === "custom" ? onReopenCustom : undefined
                   }
-                  className="group h-9 w-full justify-start gap-2.5 rounded-lg px-2.5 text-left font-normal leading-5 text-gray-800 data-active:bg-gray-50 data-active:font-medium data-active:text-foreground data-active:shadow-none focus-visible:ring-inset"
+                  className="group h-9 w-full justify-start gap-2.5 rounded-lg px-2.5 text-left font-normal leading-5 text-gray-800 data-active:bg-state-selected data-active:font-medium data-active:text-foreground data-active:!shadow-none focus-visible:ring-inset"
                 >
                   <Icon
                     className={cn(

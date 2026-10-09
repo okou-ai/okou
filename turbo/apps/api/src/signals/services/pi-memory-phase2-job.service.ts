@@ -126,88 +126,6 @@ function selectionMetadata(
   };
 }
 
-export function piMemoryPhase2InputRevisionPlan(
-  args: PiMemoryPhase2OwnerScope & { readonly enqueuedAt: Date },
-) {
-  return {
-    values: {
-      memoryStorageId: args.memoryStorageId,
-      orgId: args.orgId,
-      userId: args.userId,
-      status: "pending",
-      inputRevision: 1,
-      completedRevision: 0,
-      retryCount: 0,
-      updatedAt: args.enqueuedAt,
-    },
-    conflict: {
-      target: piMemoryPhase2Jobs.memoryStorageId,
-      set: {
-        orgId: args.orgId,
-        userId: args.userId,
-        status: sql`CASE
-          WHEN ${piMemoryPhase2Jobs.status} = 'leased' THEN 'leased'
-          ELSE 'pending'
-        END`,
-        inputRevision: sql`${piMemoryPhase2Jobs.inputRevision} + 1`,
-        claimedRevision: sql`CASE
-          WHEN ${piMemoryPhase2Jobs.status} = 'leased'
-          THEN ${piMemoryPhase2Jobs.claimedRevision}
-          ELSE NULL
-        END`,
-        claimedBaseVersionId: sql`CASE
-          WHEN ${piMemoryPhase2Jobs.status} = 'leased'
-          THEN ${piMemoryPhase2Jobs.claimedBaseVersionId}
-          ELSE NULL
-        END`,
-        leaseToken: sql`CASE
-          WHEN ${piMemoryPhase2Jobs.status} = 'leased'
-          THEN ${piMemoryPhase2Jobs.leaseToken}
-          ELSE NULL
-        END`,
-        leaseExpiresAt: sql`CASE
-          WHEN ${piMemoryPhase2Jobs.status} = 'leased'
-          THEN ${piMemoryPhase2Jobs.leaseExpiresAt}
-          ELSE NULL
-        END`,
-        sandboxLeaseToken: sql`CASE
-          WHEN ${piMemoryPhase2Jobs.status} = 'leased'
-          THEN ${piMemoryPhase2Jobs.sandboxLeaseToken}
-          ELSE NULL
-        END`,
-        maintenanceRunId: sql`CASE
-          WHEN ${piMemoryPhase2Jobs.status} = 'leased'
-          THEN ${piMemoryPhase2Jobs.maintenanceRunId}
-          ELSE NULL
-        END`,
-        retryCount: sql`CASE
-          WHEN ${piMemoryPhase2Jobs.status} = 'leased'
-          THEN ${piMemoryPhase2Jobs.retryCount}
-          ELSE 0
-        END`,
-        retryAt: null,
-        lastErrorClass: null,
-        claimedSelectionDigest: sql`CASE
-          WHEN ${piMemoryPhase2Jobs.status} = 'leased'
-          THEN ${piMemoryPhase2Jobs.claimedSelectionDigest}
-          ELSE NULL
-        END`,
-        claimedSelectedCount: sql`CASE
-          WHEN ${piMemoryPhase2Jobs.status} = 'leased'
-          THEN ${piMemoryPhase2Jobs.claimedSelectedCount}
-          ELSE NULL
-        END`,
-        claimedSelectedUtf8Bytes: sql`CASE
-          WHEN ${piMemoryPhase2Jobs.status} = 'leased'
-          THEN ${piMemoryPhase2Jobs.claimedSelectedUtf8Bytes}
-          ELSE NULL
-        END`,
-        updatedAt: args.enqueuedAt,
-      },
-    },
-  } as const;
-}
-
 function claimScopeCondition(scope: PiMemoryPhase2OwnerScope) {
   return and(
     eq(piMemoryPhase2Jobs.memoryStorageId, scope.memoryStorageId),
@@ -409,6 +327,7 @@ export const claimPiMemoryPhase2Job$ = command(
     // This finite SQL claim preserves the worker's post-transaction cancellation.
     // Storage -> candidates -> job keeps the selected set/digest, base HEAD and
     // claimed revision consistent with Stage 1 success and external publication.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0223; new non-billing transactions are prohibited.
     const claimed = await set(writeDb$).transaction(async (tx) => {
       const [claimableStorage] = await tx
         .select(claimableStorageColumns)

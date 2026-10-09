@@ -1,5 +1,5 @@
 -- Release-three contraction. Do not ship until the serving/rollback, installed
--- consumer and retained-history gates in docs/model-identity-pr3.md are closed.
+-- consumer and retained-history gates recorded in the owning PR are closed.
 -- A captured legacy input must finish admission under its original semantics.
 SET LOCAL statement_timeout = '120s';
 --> statement-breakpoint

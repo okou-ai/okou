@@ -201,10 +201,11 @@ export async function backfill(
           head.latest_event_id,
         ],
       );
+  assert(published.rowCount !== null, "missing_publication_row_count");
   return {
     heads: 1,
     changedRows: result.changed,
-    published: published.rowCount ?? 0,
+    published: published.rowCount,
     conflicts: published.rowCount === 0 ? 1 : 0,
   };
 }

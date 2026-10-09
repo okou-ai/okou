@@ -68,13 +68,10 @@ type BackfillOutcome =
   | "source_changed";
 
 type BackfillFailureCode =
-  | "credential_decrypt_failed"
-  | "database_or_internal_failure";
+  "credential_decrypt_failed" | "database_or_internal_failure";
 
 type BackfillFailureStage =
-  | "decrypt_source"
-  | "inspect_target"
-  | "migrate_target";
+  "decrypt_source" | "inspect_target" | "migrate_target";
 
 interface StoredSecretKmsDecryptRequest {
   readonly keyId: string;
@@ -805,6 +802,7 @@ async function migrateCandidate(
   discovered: Candidate,
   plaintext: string | undefined,
 ): Promise<"already_current" | "inserted" | "updated" | "source_changed"> {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0360; new non-billing transactions are prohibited.
   return await db.transaction(async (tx) => {
     const [definition] = await tx
       .select({

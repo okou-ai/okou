@@ -91,7 +91,6 @@ import {
 import { removeUsagePackMemberAllocation } from "./usage-pack-allocation-change.service";
 import { refundUsagePackMemberCredits } from "./usage-pack-credit-refund.service";
 import { eraseVncOwnerData$ } from "./vnc-owner-lifecycle.service";
-import { purgeRetiredMorningBriefEmailSql } from "./retired-morning-brief-email";
 import { eraseMailNotifications$ } from "./mail-notification.service";
 
 const L = logger("WebhookClerkCleanup");
@@ -153,6 +152,7 @@ async function cancelOrgRuns(
   onSlotsReleased: SlotsReleased,
   scope: OrgRunCancellationScope = {},
 ): Promise<void> {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0319; new non-billing transactions are prohibited.
   const { cancelled, releasedSlots } = await db.transaction(async (tx) => {
     const rows = await transitionAgentRunsToTerminal(tx, {
       values: {
@@ -167,7 +167,6 @@ async function cancelOrgRuns(
         inArray(agentRuns.status, ["pending", "running"]),
       ],
     });
-    await tx.execute(purgeRetiredMorningBriefEmailSql());
     const released = await releaseNeverStartedRunSlots(tx, rows);
     return { cancelled: rows, releasedSlots: released };
   });
@@ -228,6 +227,7 @@ async function cancelUserRuns(
   userId: string,
   onSlotsReleased: SlotsReleased,
 ): Promise<void> {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0320; new non-billing transactions are prohibited.
   const { cancelled, releasedSlots } = await db.transaction(async (tx) => {
     const rows = await transitionAgentRunsToTerminal(tx, {
       values: {
@@ -240,7 +240,6 @@ async function cancelUserRuns(
         inArray(agentRuns.status, ["pending", "running"]),
       ],
     });
-    await tx.execute(purgeRetiredMorningBriefEmailSql());
     const released = await releaseNeverStartedRunSlots(tx, rows);
     return { cancelled: rows, releasedSlots: released };
   });
@@ -587,6 +586,7 @@ async function deleteClerkStorageReferences(
   scope: ClerkStorageCleanupScope,
   signal: AbortSignal,
 ): Promise<string[]> {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0321; new non-billing transactions are prohibited.
   return await db.transaction(async (tx) => {
     const rows = await tx
       .select({
@@ -645,6 +645,7 @@ async function deleteClerkExportReferences(
   scope: ClerkStorageCleanupScope,
   signal: AbortSignal,
 ): Promise<string[]> {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0322; new non-billing transactions are prohibited.
   return await db.transaction(async (tx) => {
     const rows = await tx
       .select({
@@ -699,6 +700,7 @@ async function deleteClerkSshResources(
   db: Db,
   scope: ClerkStorageCleanupScope,
 ) {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0323; new non-billing transactions are prohibited.
   await db.transaction(async (tx) => {
     await tx
       .delete(sshConnections)

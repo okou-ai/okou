@@ -357,6 +357,7 @@ const commitPreparedWorkflow$ = command(
     signal: AbortSignal,
   ) => {
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0045; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       // Publication reads Agent permissions without changing the Agent. SHARE
       // keeps them stable while independent workflows publish concurrently.
@@ -1504,6 +1505,7 @@ const applyWorkflowVisibility$ = command(
     signal: AbortSignal,
   ): Promise<boolean> => {
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0046; new non-billing transactions are prohibited.
     const visibilityChanged = await db.transaction(async (tx) => {
       const [agent] = await tx
         .select({ id: agents.id })

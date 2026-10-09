@@ -4,7 +4,7 @@ import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-id
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
 import { publishBuiltinConnectorInvalidationAfterCommit } from "./connector-client-invalidation.service";
 import { updateUserBuiltinConnectors$ } from "./user-connectors.service";
@@ -57,20 +57,9 @@ async function authorizableAgent(
   return agent ?? null;
 }
 
-async function connectorAuthorizationTargetExists(
-  db: Pick<Db, "select">,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly agentId: string;
-  },
-): Promise<boolean> {
-  return (await authorizableAgent(db, args)) !== null;
-}
-
 export const validateConnectorAuthorizationTarget$ = command(
   async (
-    { set },
+    { get },
     args: {
       readonly orgId: string;
       readonly userId: string;
@@ -80,18 +69,28 @@ export const validateConnectorAuthorizationTarget$ = command(
   ): Promise<
     { readonly ok: true } | { readonly ok: false; message: string }
   > => {
-    if (!args.agentId) {
+    const { orgId, userId, agentId } = args;
+    if (!agentId) {
       return { ok: true };
     }
-    const exists = await connectorAuthorizationTargetExists(set(writeDb$), {
-      orgId: args.orgId,
-      userId: args.userId,
-      agentId: args.agentId,
-    });
+    const [agent] = await get(db$)
+      .select({
+        id: agents.id,
+        name: agents.name,
+      })
+      .from(agents)
+      .where(
+        and(
+          eq(agents.orgId, orgId),
+          eq(agents.id, agentId),
+          or(eq(agents.visibility, "public"), eq(agents.owner, userId)),
+        ),
+      )
+      .limit(1);
     signal.throwIfAborted();
-    return exists
+    return agent
       ? { ok: true }
-      : { ok: false, message: agentNotFoundMessage(args.agentId) };
+      : { ok: false, message: agentNotFoundMessage(agentId) };
   },
 );
 
