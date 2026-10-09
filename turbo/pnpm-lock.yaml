@@ -320,6 +320,9 @@ importers:
       '@clerk/backend':
         specifier: ^3.13.1
         version: 3.13.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@okouai/api-contracts':
+        specifier: workspace:*
+        version: link:../../packages/api-contracts
       '@okouai/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -502,6 +505,9 @@ importers:
       '@okouai/api-contracts':
         specifier: workspace:*
         version: link:../../packages/api-contracts
+      '@okouai/core':
+        specifier: workspace:*
+        version: link:../../packages/core
     devDependencies:
       '@okouai/eslint-config':
         specifier: workspace:*
@@ -911,6 +917,9 @@ importers:
       fractional-indexing:
         specifier: ^3.4.0
         version: 3.4.0
+      htmlparser2:
+        specifier: ^10.1.0
+        version: 10.1.0
       signal-timers:
         specifier: ^1.0.5
         version: 1.0.5

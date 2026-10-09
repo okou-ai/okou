@@ -6,6 +6,7 @@ import { agentsRoutes } from "./routes/agents";
 import { artifactCatalogRoutes } from "./routes/artifact-catalog";
 import { artifactDownloadRoutes } from "./routes/artifact-downloads";
 import { artifactReferenceRoutes } from "./routes/artifact-references";
+import { artifactOgRoutes } from "./routes/artifact-og";
 import { artifactShareRoutes } from "./routes/artifact-shares";
 import { authMeRoutes } from "./routes/auth-me";
 import { bankingRoutes } from "./routes/banking";
@@ -338,6 +339,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...hostRoutes,
   ...artifactShareRoutes,
   ...artifactReferenceRoutes,
+  ...artifactOgRoutes,
   ...artifactDownloadRoutes,
   ...builtInGenerationRoutes,
   ...imageIoGenerateRoutes,

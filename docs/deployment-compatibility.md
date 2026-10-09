@@ -5272,6 +5272,18 @@ retain backend screenshots until the separately planned retirement. The
 manifest's optional preview metadata and existing file/catalog image reference
 need no database migration. See [the publishing, storage and rollout contract](sandbox-artifact-previews.md).
 
+The second delivery adds anonymous OG metadata/image routes and Worker HTML
+insertion behind that same switch. Deploy the API, App Worker and Host Worker
+before opting owners in. The Host Worker's `ARTIFACT_OG_API_ORIGIN` is separate
+from the hosted-owner-validation rollout setting. OG never forwards viewer
+credentials: both metadata and image requests evaluate current public authority,
+and image URLs bind to a deployment or share revision. Disabling the switch
+returns neutral OG metadata/images while retaining authenticated cover reads.
+No new persisted shape or CLI writer is introduced. A Worker rollback removes
+automatic OG insertion, and an API rollback can interrupt OG requests; keep the
+switch off during the cutover. Permission/provider errors never authorize image
+delivery, and previously downloaded third-party previews cannot be revoked.
+
 ## Artifact and hosted-site link layouts (2026-09-25)
 
 The retired VM0 brand survives only as the read-only _legacy link layout_

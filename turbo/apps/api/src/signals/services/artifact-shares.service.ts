@@ -866,7 +866,7 @@ export const resolveArtifactTargetShare$ = command(
 );
 
 /** Public references disclose only published delivery and preview metadata. */
-export const resolvePublicArtifactUrl$ = command(
+export const resolvePublicArtifactSource$ = command(
   async (
     { get, set },
     args: { readonly id: string; readonly kind?: "file" | "html" | "share" },
@@ -938,6 +938,19 @@ export const resolvePublicArtifactUrl$ = command(
       signal,
     );
     signal.throwIfAborted();
-    return target ? publicSharePreview(policy) : null;
+    return target
+      ? { policy, candidate: target, ...publicSharePreview(policy) }
+      : null;
+  },
+);
+
+export const resolvePublicArtifactUrl$ = command(
+  async (
+    { set },
+    args: { readonly id: string; readonly kind?: "file" | "html" | "share" },
+    signal: AbortSignal,
+  ) => {
+    const source = await set(resolvePublicArtifactSource$, args, signal);
+    return source ? { url: source.url, preview: source.preview } : null;
   },
 );

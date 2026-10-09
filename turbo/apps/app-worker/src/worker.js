@@ -1,5 +1,11 @@
 import { createClerkClient } from "@clerk/backend";
 import { derivePlatformServiceOrigin } from "@okouai/core/platform-service-origin";
+import {
+  artifactOgHtml,
+  GENERIC_ARTIFACT_TITLE,
+  GENERIC_ARTIFACT_DESCRIPTION,
+} from "@okouai/core/artifact-og";
+import { artifactOgMetadataSchema } from "@okouai/api-contracts/contracts/artifact-og-metadata";
 
 import posthogClientMetadata from "../assets/posthog-metadata.json" with { type: "json" };
 
@@ -823,6 +829,71 @@ function withAppHeaders(response, requestUrl) {
   });
 }
 
+async function artifactPageResponse(
+  request,
+  requestUrl,
+  embeddedShell,
+  apiFetcher,
+) {
+  const shell = await fetchShellAsset(
+    new Request(new URL("/index.html", requestUrl)),
+    embeddedShell,
+  );
+  if (!shell.ok) return shell;
+  const origin = apiOrigin(requestUrl);
+  const reference =
+    /^\/artifacts\/((?:[a-f0-9]{32}|[a-z0-9]{10})(?:\.[a-z0-9]{1,12})?)$/u.exec(
+      requestUrl.pathname,
+    )?.[1] ??
+    /^\/share\/artifacts\/([a-f0-9-]{36})$/u
+      .exec(requestUrl.pathname)?.[1]
+      ?.replaceAll("-", "");
+  let metadata = {
+    title: GENERIC_ARTIFACT_TITLE,
+    description: GENERIC_ARTIFACT_DESCRIPTION,
+    imageUrl: new URL("/api/artifact-og/default.png", origin).href,
+    url: new URL(requestUrl.pathname, requestUrl.origin).href,
+  };
+  if (reference) {
+    const url = new URL("/api/artifact-og/metadata", origin);
+    url.search = new globalThis.URLSearchParams({
+      kind: "reference",
+      id: reference,
+    }).toString();
+    try {
+      // OG always represents anonymous visibility, regardless of the visitor's session.
+      const result = await apiFetcher(url, {
+        headers: metaRequestHeaders(requestUrl, origin),
+        cache: "no-store",
+        redirect: "error",
+        signal: globalThis.AbortSignal.any([
+          request.signal,
+          globalThis.AbortSignal.timeout(3000),
+        ]),
+      });
+      if (result.ok) {
+        const parsed = artifactOgMetadataSchema.parse(await result.json());
+        if (parsed.available) metadata = { ...parsed, url: metadata.url };
+      } else {
+        globalThis.console.error(
+          "Artifact OG metadata unavailable",
+          result.status,
+        );
+      }
+    } catch (error) {
+      if (request.signal.aborted) throw error;
+      globalThis.console.error("Artifact OG metadata unavailable", error);
+    }
+  }
+  const html = previewAppAssetHtml(await shell.text(), requestUrl);
+  return htmlResponse(
+    artifactOgHtml(html, metadata, true),
+    shell,
+    200,
+    "private, no-store",
+  );
+}
+
 async function handleRequest(
   request,
   env,
@@ -831,6 +902,13 @@ async function handleRequest(
   clerkClientFactory,
   apiFetcher,
 ) {
+  if (
+    request.method === "GET" &&
+    (requestUrl.pathname.startsWith("/artifacts/") ||
+      requestUrl.pathname.startsWith("/share/artifacts/"))
+  ) {
+    return artifactPageResponse(request, requestUrl, embeddedShell, apiFetcher);
+  }
   if (
     (request.method === "GET" || request.method === "HEAD") &&
     requestUrl.pathname.startsWith(APP_ASSET_PATH_PREFIX)
@@ -957,6 +1035,8 @@ export function createWorker(
       ) {
         const headers = new Headers(result.headers);
         headers.set("Cache-Control", "private, no-store");
+        headers.set("CDN-Cache-Control", "no-store");
+        headers.set("Cloudflare-CDN-Cache-Control", "no-store");
         headers.set("Referrer-Policy", "no-referrer");
         return new Response(result.body, { status: result.status, headers });
       }

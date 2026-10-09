@@ -2,7 +2,17 @@ import {
   artifactDeliveryKey,
   artifactDeliveryRegistrationKey,
 } from "@okouai/api-contracts/contracts/artifact-delivery";
-import { afterEach, expect, test, vi, onTestFinished } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  afterEach,
+  expect,
+  test,
+  vi,
+  onTestFinished,
+} from "vitest";
+import { http, HttpResponse } from "msw";
+import { setupServer } from "msw/node";
 import { type ArtifactSharePolicy } from "@okouai/api-contracts/contracts/artifact-shares";
 import worker from "./index";
 import { fetchWorker, memoryCache } from "./test-helpers";
@@ -16,6 +26,13 @@ const publicToken = "a".repeat(24);
 const origin = `https://a.okou.io/${publicToken}.pdf`;
 const siteOrigin = `https://${publicToken}.okou.app`;
 const policyKey = `artifact-shares/okou/${id}.json`;
+const server = setupServer();
+beforeAll(() => {
+  return server.listen({ onUnhandledRequest: "error" });
+});
+afterAll(() => {
+  return server.close();
+});
 
 function fixture(html = false, extension = "pdf", token = publicToken) {
   const files = {
@@ -172,6 +189,55 @@ function fixture(html = false, extension = "pdf", token = publicToken) {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  server.resetHandlers();
+});
+
+test("rechecks OG metadata on cached HTML and denies revoked shares before reading the cache", async () => {
+  const f = fixture(true);
+  let enabled = true;
+  let lookups = 0;
+  server.use(
+    http.get(
+      "https://authority.test/api/artifact-og/metadata",
+      ({ request }) => {
+        lookups += 1;
+        const url = new URL(request.url);
+        expect(url.searchParams.get("kind")).toBe("reference");
+        expect(url.searchParams.get("id")).toBe(id.replaceAll("-", ""));
+        expect(request.headers.get("Cookie")).toBeNull();
+        return HttpResponse.json(
+          enabled
+            ? {
+                available: true,
+                title: "Published report",
+                description: "Public summary",
+                imageUrl:
+                  "https://authority.test/api/artifact-og/image?version=published",
+                url: siteOrigin,
+              }
+            : { available: false },
+        );
+      },
+    ),
+  );
+  const env = { ...f.env, ARTIFACT_OG_API_ORIGIN: "https://authority.test" };
+  const first = await fetchWorker(
+    new Request(siteOrigin, { headers: { Cookie: "owner-session" } }),
+    env,
+  );
+  expect(await first.text()).toContain('property="og:image"');
+  const cachedReads = f.cache.match.mock.calls.length;
+  enabled = false;
+  const second = await fetchWorker(new Request(siteOrigin), env);
+  expect(second.status).toBe(200);
+  expect(second.headers.get("Content-Type")).toBe("text/html");
+  expect(await second.text()).not.toContain('property="og:image"');
+  expect(f.cache.match.mock.calls.length).toBeGreaterThan(cachedReads);
+  expect(lookups).toBe(2);
+  f.policy.status = "revoked";
+  f.objects.set(policyKey, JSON.stringify(f.policy));
+  expect((await fetchWorker(new Request(siteOrigin), env)).status).toBe(404);
+  expect(lookups).toBe(2);
 });
 
 function imageFixture(token = publicToken) {

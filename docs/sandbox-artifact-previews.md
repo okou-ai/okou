@@ -2,17 +2,17 @@
 
 The first delivery of [#36205](https://github.com/okou-ai/okou/issues/36205)
 lets the agent produce and inspect one cover locally, upload it with a hosted
-publication, and use it for the HTML artifact's card in Artifacts. OG metadata
-and anonymous image delivery are a separate delivery; this change does not
-make preview storage public.
+publication, and use it for the HTML artifact's card in Artifacts. The second
+delivery reuses that private cover for permission-aware OG metadata and image
+delivery. Preview storage itself remains private.
 
 ## Feature switch
 
 `artifactPreviews` is off by default for every account, including staff. Enable
 it for the testing user in Lab only after the compatible API fleet and CLI
 have shipped. It is independent of `privateArtifacts`; enabling covers never
-changes a site's visibility or grants permission to read an image. Later OG
-work uses this same switch.
+changes a site's visibility or grants permission to read an image. OG metadata
+and anonymous cover delivery use this same switch, evaluated for the owner.
 
 The switch gates the CLI's HTML/presentation authoring packets, selected
 presentation/website prompts in new runs and steered messages, local
@@ -52,8 +52,9 @@ command. A user-selected PNG/JPEG can be passed directly with `--preview`.
 Keep all covers outside the hosted directory. The capture command writes a
 1280-by-800 PNG (16:10, matching the Artifacts card) and an adjacent
 `.okou-preview.json` receipt containing the bundle and image checksums.
-The viewport also matches the existing backend screenshot producer. PR 2
-handles social-specific OG sizing from this same source image.
+The viewport also matches the existing backend screenshot producer. OG keeps
+this source aspect ratio without cropping or padding; a user-selected cover
+keeps its own dimensions.
 It serves a frozen, read-only bundle over loopback
 so root-relative resources and modules behave as HTTP resources, and uses an
 isolated `agent-browser` session with no owner browser profile. It requires the
@@ -132,3 +133,54 @@ function; deployment builds must use the target Linux/glibc architecture.
 
 This seals only the new preview object. It does not change the separate,
 existing hosted-bundle PUT URL/checksum compatibility contract.
+
+## OG metadata and anonymous images
+
+The Host Worker adds missing Open Graph and Twitter tags to public hosted HTML
+and authorized HTML shares. It preserves valid author-provided social metadata,
+does not modify stored HTML, and strips query parameters from generated canonical
+URLs. The App Worker replaces the app shell's marketing metadata on
+`/artifacts/<reference>` and `/share/artifacts/<id>` before returning the HTML;
+the existing authenticated artifact viewer still opens normally.
+
+Workers call `GET /api/artifact-og/metadata` without visitor credentials.
+The API reuses the current hosted-delivery or published-share authority and
+checks the owner's `artifactPreviews` switch. Anonymous readers receive real
+titles and descriptions only for currently public content. Private,
+organization-only, revoked, deleted, disabled and unknown references receive
+neutral metadata. A logged-in owner's session cannot change the anonymous OG
+result. Shared-thread references resolve their published snapshot and copied
+cover, independently of later changes to the source artifact.
+
+`og:image` points to `GET /api/artifact-og/image`, including a publication
+version. That endpoint repeats the same authorization and switch checks before
+reading any image bytes. It returns the neutral 1280-by-800 PNG for unavailable
+or mismatched versions. Hosted covers use the deployment ID and prepared image
+checksum; artifact shares use the policy revision; thread snapshots use their
+immutable target identity. Re-publishing never substitutes new bytes at an old
+image URL. Raw storage keys, signed R2 URLs and session credentials never appear
+in generated OG metadata.
+
+Images are decoded with the same 5 MiB / 16-megapixel bounds as sandbox covers,
+stripped of metadata and returned as single-frame PNGs. PNG/JPEG/WebP file
+artifacts can use their published image; other file types use neutral artwork.
+Missing optional covers need no backfill. Storage and permission-provider errors
+remain errors and cannot return real content. Workers log metadata lookup
+failures: an already-authorized hosted page remains readable, while an app
+artifact shell uses neutral metadata. Metadata lookup has a three-second budget;
+HTML rewriting and title extraction are limited to documents up to 4 MiB.
+
+Metadata, generated HTML and image responses use `private, no-store`, with
+explicit CDN no-store headers. The Host Worker may cache immutable source bytes,
+but checks current publication policy before a cache hit and fetches OG metadata
+again before rewriting. Revocation affects subsequent requests to Okou; social
+platforms can retain previews they downloaded earlier, which Okou cannot purge.
+
+Deploy the API and both Workers with the switch off, then enable it for selected
+owners. Set Host Worker's `ARTIFACT_OG_API_ORIGIN` to that environment's canonical
+API origin (production: `https://api.okou.ai`). Test environments must opt in with
+their matching API origin; never point development storage at production
+authorization. There is no new CLI protocol, database migration, public bucket
+or screenshot producer. Turning the switch off stops new real OG responses;
+saved covers and authenticated Artifacts cards remain readable. Cloudflare
+screenshot retirement is still the third delivery.
