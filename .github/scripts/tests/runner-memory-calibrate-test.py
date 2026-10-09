@@ -287,6 +287,67 @@ sys.exit(namespace['main']())
         self.assertFalse(report["calibrated"])
         self.assertFalse(report["native_vm_exit_confirmed"])
 
+    def test_inventory_read_failure_still_stops_and_waits_owned_driver(self):
+        output = self.root / "inventory-failure"
+        # Fail only the external children read after the real driver is ready.
+        # Keep the CLI, clock, files, captured generation, signal and wait real.
+        wrapper = """
+import os, runpy, signal, sys
+from pathlib import Path
+namespace = runpy.run_path(sys.argv[1], run_name='inventory_fixture')
+original_read = namespace['bounded_read']
+output = Path(sys.argv[sys.argv.index('--output') + 1])
+def kernel_read(path, *args, **kwargs):
+    path = str(path)
+    if (path.endswith('/children') and '/task/' in path
+            and not path.startswith(f'/proc/{os.getpid()}/')
+            and (output / 'driver-ready').exists()):
+        raise OSError(5, 'injected procfs inventory failure')
+    return original_read(path, *args, **kwargs)
+namespace['main'].__globals__['bounded_read'] = kernel_read
+sys.argv = sys.argv[1:]
+try:
+    sys.exit(namespace['main']())
+finally:
+    # The red case must not leak its one real child. This harness cleanup
+    # cannot alter the collector's already written driver-wait/report result.
+    for pid in namespace['child_pids'](os.getpid()):
+        identity = namespace['process_identity'](pid)
+        if identity is not None and identity[2] == os.getpid():
+            namespace['signal_owned']({pid: identity[0]}, signal.SIGTERM)
+            os.waitpid(pid, 0)
+"""
+        program = """
+import signal, sys, time
+from pathlib import Path
+def stop(_signal, _frame):
+    Path('driver-stopped').write_text('term-received')
+    sys.exit(0)
+signal.signal(signal.SIGTERM, stop)
+Path('driver-ready').touch()
+time.sleep(5)
+sys.exit(3)
+"""
+        command = self.command(output, program)
+        result = subprocess.run(
+            [sys.executable, "-c", wrapper, *command[1:]],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+        report = json.loads((output / "report.json").read_text())
+        self.assertEqual(result.returncode, 1, (result.stdout, result.stderr))
+        self.assertTrue(report["driver_wait_confirmed"], report)
+        self.assertEqual(report["driver_exit_code"], 0)
+        self.assertEqual(report["remaining_children"], [])
+        self.assertTrue((output / "driver-stopped").exists())
+        self.assertTrue(report["errors"])
+        self.assertFalse(report["cleanup_confirmed"])
+        self.assertFalse(report["success"])
+        self.assertFalse(report["calibrated"])
+        self.assertFalse(report["native_vm_exit_confirmed"])
+
     def test_parent_exit_does_not_hide_surviving_owned_child(self):
         program = "import subprocess,sys,time; p=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)']); print(p.pid,flush=True); time.sleep(0.1)"
         result, report, output = self.run_case(program)

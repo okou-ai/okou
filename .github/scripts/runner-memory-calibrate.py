@@ -248,6 +248,18 @@ def collect(
     waits = []
     errors = []
     cleanup_errors = []
+
+    def discover_for_cleanup():
+        # Failed inventory cannot authorize new ownership, but it must not skip
+        # cleanup of generations already captured before that external failure.
+        try:
+            discover_owned(owned)
+        except (OSError, ValueError) as error:
+            message = f"cleanup inventory uncertain: {error}"
+            if message not in cleanup_errors:
+                cleanup_errors.append(message)
+                errors.append(message)
+
     timed_out = False
     pressure_stop = False
     cleanup_intervened = False
@@ -354,7 +366,7 @@ def collect(
         # checks prevent a recycled PID from turning cleanup into cross-owner kill.
         if driver is not None:
             try:
-                discover_owned(owned)
+                discover_for_cleanup()
                 if timed_out or pressure_stop or errors:
                     # Give the driver its saving/export grace before signalling
                     # its VMs or accepted-I/O children directly.
@@ -363,7 +375,7 @@ def collect(
                         signal_owned({driver.pid: generation}, signal.SIGTERM)
                 cleanup_deadline = time.monotonic() + grace
                 while time.monotonic() < cleanup_deadline:
-                    discover_owned(owned)
+                    discover_for_cleanup()
                     driver.poll()
                     reap_adopted(driver.pid, waits)
                     if not child_pids(os.getpid()):
@@ -371,7 +383,7 @@ def collect(
                     time.sleep(0.02)
                 if child_pids(os.getpid()):
                     cleanup_intervened = True
-                    discover_owned(owned)
+                    discover_for_cleanup()
                     signal_owned(owned, signal.SIGTERM)
                     descendant_deadline = time.monotonic() + grace
                     while (
@@ -382,12 +394,22 @@ def collect(
                         reap_adopted(driver.pid, waits)
                         time.sleep(0.02)
                     if child_pids(os.getpid()):
-                        discover_owned(owned)
+                        discover_for_cleanup()
                         signal_owned(owned, signal.SIGKILL)
+            except (OSError, ValueError, FixtureCancelled) as error:
+                cleanup_errors.append(str(error))
+                errors.append(f"cleanup uncertain: {error}")
+            # An inventory/signal error cannot skip the independent bounded wait
+            # for the driver Popen already owns. It never proves VM exit or relief.
+            try:
                 driver.wait(timeout=grace)
+            except (OSError, FixtureCancelled, subprocess.TimeoutExpired) as error:
+                cleanup_errors.append(str(error))
+                errors.append(f"driver wait uncertain: {error}")
+            try:
                 reap_deadline = time.monotonic() + grace
                 while child_pids(os.getpid()) and time.monotonic() < reap_deadline:
-                    discover_owned(owned)
+                    discover_for_cleanup()
                     signal_owned(owned, signal.SIGKILL)
                     reap_adopted(driver.pid, waits)
                     time.sleep(0.02)
@@ -404,12 +426,7 @@ def collect(
                         logs[key.data].write(chunk[:remaining])
                         log_sizes[key.data] += min(len(chunk), remaining)
                         truncated |= len(chunk) > remaining
-            except (
-                OSError,
-                ValueError,
-                FixtureCancelled,
-                subprocess.TimeoutExpired,
-            ) as error:
+            except (OSError, ValueError, FixtureCancelled) as error:
                 cleanup_errors.append(str(error))
                 errors.append(f"cleanup uncertain: {error}")
         selector.close()
