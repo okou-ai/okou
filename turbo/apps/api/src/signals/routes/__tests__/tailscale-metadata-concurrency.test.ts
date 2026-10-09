@@ -141,6 +141,95 @@ function metadataBody(
     : { expectedRevision, tags: ["tag:ci", "tag:prod"] };
 }
 
+test.each(["credentials", "tag addition", "tag removal"] as const)(
+  "atomically commits one competing effective %s edit with every retained Host generation",
+  async (kind) => {
+    const admin = owner();
+    authenticate(admin);
+    const shared = await config();
+    const firstHost = await host(shared.id);
+    const secondHost = await host(shared.id);
+    const hostMetadata = [firstHost, secondHost]
+      .sort((a, b) => {
+        return a.id.localeCompare(b.id);
+      })
+      .map(({ id, displayName }) => {
+        return { id, displayName };
+      });
+    // Binding's guard write is not a logical configuration edit.
+    expect(
+      (await accept(configs().list({ headers }), [200])).body.configs,
+    ).toStrictEqual([{ ...shared, sshHosts: hostMetadata }]);
+    const body: UpdateTailscaleRequest =
+      kind === "credentials"
+        ? {
+            expectedRevision: shared.revision,
+            credentials: {
+              clientId: "synthetic-effective-id",
+              clientSecret: "synthetic-effective-secret",
+            },
+          }
+        : {
+            expectedRevision: shared.revision,
+            tags:
+              kind === "tag addition"
+                ? ["tag:prod", "tag:ci", "tag:ops"]
+                : ["tag:prod"],
+          };
+    const request = { headers, params: { configId: shared.id }, body };
+    const results = await joinAll([
+      accept(configs().update(request), [200, 409]),
+      accept(configs().update(request), [200, 409]),
+    ]);
+    expect(
+      results
+        .map((result) => {
+          return result.status;
+        })
+        .sort(),
+    ).toStrictEqual([200, 409]);
+    const winner = results.find((result) => {
+      return result.status === 200;
+    });
+    expect(winner?.body).toStrictEqual({
+      ...shared,
+      tags: body.tags ?? shared.tags,
+      revision: shared.revision + 1,
+      generation: shared.generation + 1,
+      updatedAt: expect.any(String),
+      sshHosts: hostMetadata,
+    });
+    expect(
+      results.find((result) => {
+        return result.status === 409;
+      })?.body,
+    ).toMatchObject({ error: { code: "TAILSCALE_REVISION_CONFLICT" } });
+    expect(
+      (await accept(configs().list({ headers }), [200])).body.configs,
+    ).toStrictEqual([winner?.body]);
+    const [firstChanged, secondChanged] = await joinAll([
+      latest(firstHost.id),
+      latest(secondHost.id),
+    ]);
+    expect(firstChanged).toStrictEqual({
+      ...firstHost,
+      generation: firstHost.generation + 1,
+      updatedAt: secondChanged.updatedAt,
+    });
+    expect(secondChanged).toStrictEqual({
+      ...secondHost,
+      generation: secondHost.generation + 1,
+      updatedAt: firstChanged.updatedAt,
+    });
+    expect(Date.parse(firstChanged.updatedAt)).toBeGreaterThanOrEqual(
+      Math.max(
+        Date.parse(firstHost.updatedAt),
+        Date.parse(secondHost.updatedAt),
+      ),
+    );
+  },
+);
+
 test.each(["name", "tag order"] as const)(
   "commits only one concurrent %s edit for the same revision and returns its decoded state",
   async (kind) => {

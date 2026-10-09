@@ -48,6 +48,7 @@ import { canonicalTailscaleDestination } from "./tailscale-destination";
 import {
   selectedTailscaleBindingId,
   createdInlineTailscaleId,
+  inlineTailscaleValues,
   tailscaleFailure,
   visibleTailscaleConfig,
 } from "./tailscale-config-model";
@@ -389,18 +390,19 @@ const commitSshConnectionCreationAttempt$ = command(
           return cloudflareAccessFailure("notFound");
         }
       }
-      // Binding admission belongs to this host's atomic transaction. Hold
-      // config SHARE through commit; never commit it in another command.
+      // New Tailscale admission guard-writes the visible configuration tuple.
+      // Preserve logical metadata; its MVCC version lets a one-statement
+      // mutation detect an arrival committed after its initial snapshot.
       const selectedTailscaleId = selectedTailscaleBindingId(
         args.tailscaleId,
         args.preparedTailscale !== undefined,
       );
       if (selectedTailscaleId !== null) {
         const [config] = await tx
-          .select({ id: tailscaleConfigs.id })
-          .from(tailscaleConfigs)
+          .update(tailscaleConfigs)
+          .set({ name: tailscaleConfigs.name })
           .where(visibleTailscaleConfig(args, selectedTailscaleId))
-          .for("share");
+          .returning({ id: tailscaleConfigs.id });
         if (!config) {
           return tailscaleFailure("notFound");
         }
@@ -443,12 +445,7 @@ const commitSshConnectionCreationAttempt$ = command(
           ? []
           : await tx
               .insert(tailscaleConfigs)
-              .values({
-                ...args.preparedTailscale,
-                orgId: args.orgId,
-                userId: args.userId,
-                scope: "personal",
-              })
+              .values(inlineTailscaleValues(args, args.preparedTailscale))
               .returning({ id: tailscaleConfigs.id });
       const createdTailscaleId = createdInlineTailscaleId(
         args.preparedTailscale !== undefined,
@@ -640,11 +637,18 @@ const commitSshConnectionUpdateAttempt$ = command(
           args.preparedTailscale !== undefined,
         );
         if (selectedTailscaleId !== null) {
-          const [config] = await tx
-            .select({ id: tailscaleConfigs.id })
-            .from(tailscaleConfigs)
-            .where(visibleTailscaleConfig(args, selectedTailscaleId))
-            .for("share");
+          const [config] =
+            selectedTailscaleId === current.tailscaleId
+              ? await tx
+                  .select({ id: tailscaleConfigs.id })
+                  .from(tailscaleConfigs)
+                  .where(visibleTailscaleConfig(args, selectedTailscaleId))
+                  .for("share")
+              : await tx
+                  .update(tailscaleConfigs)
+                  .set({ name: tailscaleConfigs.name })
+                  .where(visibleTailscaleConfig(args, selectedTailscaleId))
+                  .returning({ id: tailscaleConfigs.id });
           if (!config) {
             return tailscaleFailure("notFound");
           }
@@ -689,12 +693,7 @@ const commitSshConnectionUpdateAttempt$ = command(
             ? []
             : await tx
                 .insert(tailscaleConfigs)
-                .values({
-                  ...args.preparedTailscale,
-                  orgId: args.orgId,
-                  userId: args.userId,
-                  scope: "personal",
-                })
+                .values(inlineTailscaleValues(args, args.preparedTailscale))
                 .returning({ id: tailscaleConfigs.id });
         const createdTailscaleId = createdInlineTailscaleId(
           args.preparedTailscale !== undefined,

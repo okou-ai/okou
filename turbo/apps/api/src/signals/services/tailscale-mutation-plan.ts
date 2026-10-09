@@ -29,31 +29,15 @@ export type TailscaleMutationArgs = TailscaleConfigArgs &
     | { readonly operation: "promote"; readonly expectedRevision: number }
     | { readonly operation: "adopt"; readonly body: ConvertTailscaleRequest }
   );
-type ConfigUpdate = Partial<
-  Pick<
-    typeof tailscaleConfigs.$inferInsert,
-    | "name"
-    | "tags"
-    | "encryptedClientId"
-    | "encryptedClientSecret"
-    | "revision"
-    | "generation"
-    | "scope"
-    | "userId"
-  >
->;
 interface MutationEffects {
   readonly scope: TailscaleMetadata["scope"];
   readonly hosts: ReferencingTailscaleHost[];
-  readonly detachOthers: boolean;
-  readonly advanceHosts: "all" | "own" | "none";
 }
 type MutationPlan = MutationEffects &
   (
     | { readonly kind: "delete" }
     | {
         readonly kind: "write";
-        readonly configUpdate: ConfigUpdate;
         readonly missingRowMessage: string;
       }
   );
@@ -79,18 +63,9 @@ function planUpdate(
     ok: true,
     plan: {
       kind: "write",
-      configUpdate: {
-        name: args.body.name,
-        tags: args.body.tags,
-        ...args.encrypted,
-        revision: config.revision + 1,
-        generation: config.generation + (effective ? 1 : 0),
-      },
       missingRowMessage: "Tailscale update returned no row",
       scope: config.scope,
       hosts: effective ? hosts : [],
-      detachOthers: false,
-      advanceHosts: effective && hosts.length > 0 ? "all" : "none",
     },
   };
 }
@@ -131,8 +106,6 @@ function planDelete(
       kind: "delete",
       scope: config.scope,
       hosts: [],
-      detachOthers: hosts.length > 0,
-      advanceHosts: "none",
     },
   };
 }
@@ -161,17 +134,9 @@ function planPromotion(
     ok: true,
     plan: {
       kind: "write",
-      configUpdate: {
-        scope: "organization",
-        userId: null,
-        revision: config.revision + 1,
-        generation: config.generation + 1,
-      },
       missingRowMessage: "Tailscale promotion returned no row",
       scope: "organization",
       hosts,
-      detachOthers: false,
-      advanceHosts: "all",
     },
   };
 }
@@ -196,17 +161,9 @@ function planAdoption(
     ok: true,
     plan: {
       kind: "write",
-      configUpdate: {
-        scope: "personal",
-        userId: args.owner.userId,
-        revision: config.revision + 1,
-        generation: config.generation + 1,
-      },
       missingRowMessage: "Tailscale conversion returned no row",
       scope: "organization",
       hosts,
-      detachOthers: true,
-      advanceHosts: "own",
     },
   };
 }
@@ -227,8 +184,8 @@ export function committedTailscaleMutation(
   };
 }
 
-// Pure validation and write values only. No handle, query, callback or effect
-// leaves the command that owns the locked metadata and retained Host records.
+// Pure rejection and post-commit notice decisions from captured facts only.
+// SQL owns eligibility and atomic writes; no obsolete write plan is replayed.
 export function planTailscaleMutation(
   args: TailscaleMutationArgs,
   config: TailscaleMetadata,

@@ -4,10 +4,8 @@ import {
   arrayContained,
   arrayContains,
   asc,
-  count,
   eq,
   lt,
-  ne,
   sql,
 } from "drizzle-orm";
 import { tailscaleConfigs } from "@okouai/db/schema/tailscale-config";
@@ -42,11 +40,7 @@ import {
   type TailscaleConfigArgs as ConfigArgs,
   type ReferencingTailscaleHost as ReferencingHost,
 } from "./tailscale-config-model";
-import {
-  planTailscaleMutation,
-  committedTailscaleMutation,
-  type TailscaleMutationArgs,
-} from "./tailscale-mutation-plan";
+import { commitTailscaleMutation$ } from "./tailscale-effective-mutation";
 
 const metadata = Object.freeze({
   id: tailscaleConfigs.id,
@@ -173,12 +167,13 @@ export const createTailscaleConfig$ = command(
       orgId: args.owner.orgId,
       userId: scope === "organization" ? null : args.owner.userId,
     };
-    // The caller-chosen primary key arbitrates concurrent creation atomically.
-    // A conflict never updates/replays credentials; only its owner may reconcile.
+    // Both unique arbiters contain the caller-chosen ID: the primary key and
+    // its org-scoped FK backing key can each win speculative insertion races.
+    // A conflict never updates credentials; only its owner may reconcile.
     const [created] = await db
       .insert(tailscaleConfigs)
       .values({ id: args.body.id, ...owner, scope, ...prepared })
-      .onConflictDoNothing({ target: tailscaleConfigs.id })
+      .onConflictDoNothing()
       .returning(metadata);
     if (!created) {
       const [existing] = await db
@@ -199,142 +194,6 @@ export const createTailscaleConfig$ = command(
   },
 );
 
-// One attempt owns all SQL: retained UUID-ordered Hosts NKU -> config UPDATE.
-// SHARE admission prevents post-fence arrivals; count equality is identity only
-// because the actual returned locking-reader records remain a stable subset.
-const commitTailscaleMutationAttempt$ = command(
-  async ({ set }, args: TailscaleMutationArgs) => {
-    return await set(writeDb$).transaction(async (tx) => {
-      const [initial] = await tx
-        .select(metadata)
-        .from(tailscaleConfigs)
-        .where(visibleTailscaleConfig(args.owner, args.configId));
-      if (!initial) {
-        return {
-          retryBindings: false as const,
-          value: tailscaleFailure("notFound"),
-        };
-      }
-      if (denied(initial, args.owner)) {
-        return {
-          retryBindings: false as const,
-          value: tailscaleFailure("forbidden"),
-        };
-      }
-      const hosts = await tx
-        .select(referencingHostFields)
-        .from(sshConnections)
-        .where(referencingHostPredicate(args))
-        .orderBy(asc(sshConnections.id))
-        .for("no key update");
-      const [config] = await tx
-        .select(metadata)
-        .from(tailscaleConfigs)
-        .where(visibleTailscaleConfig(args.owner, args.configId))
-        .for("update");
-      if (!config) {
-        return {
-          retryBindings: false as const,
-          value: tailscaleFailure("notFound"),
-        };
-      }
-      if (denied(config, args.owner)) {
-        return {
-          retryBindings: false as const,
-          value: tailscaleFailure("forbidden"),
-        };
-      }
-      const [references] = await tx
-        .select({ count: count() })
-        .from(sshConnections)
-        .where(referencingHostPredicate(args));
-      if (!references) {
-        throw new Error("Tailscale reference count returned no row");
-      }
-      if (references.count < hosts.length) {
-        throw new Error("Locked Tailscale reference count decreased");
-      }
-      if (references.count > hosts.length) {
-        return { retryBindings: true as const };
-      }
-      const planned = planTailscaleMutation(args, config, hosts);
-      if (!planned.ok) {
-        return { retryBindings: false as const, value: planned };
-      }
-      const plan = planned.plan;
-      // Adoption and deletion detach other owners before config scope/removal.
-      if (plan.detachOthers) {
-        await tx
-          .update(sshConnections)
-          .set({
-            tailscaleId: null,
-            transport: "tailscale",
-            legacyNeedsRebind: true,
-            generation: sql`${sshConnections.generation} + 1`,
-            updatedAt: nowDate(),
-          })
-          .where(
-            and(
-              eq(sshConnections.orgId, args.owner.orgId),
-              eq(sshConnections.tailscaleId, args.configId),
-              ne(sshConnections.userId, args.owner.userId),
-            ),
-          );
-      }
-      if (plan.kind === "delete") {
-        await tx
-          .delete(tailscaleConfigs)
-          .where(eq(tailscaleConfigs.id, args.configId));
-        return committedTailscaleMutation(config, hosts, plan);
-      }
-      if (plan.advanceHosts === "own") {
-        await tx
-          .update(sshConnections)
-          .set({
-            generation: sql`${sshConnections.generation} + 1`,
-            updatedAt: nowDate(),
-          })
-          .where(
-            and(
-              eq(sshConnections.orgId, args.owner.orgId),
-              eq(sshConnections.tailscaleId, args.configId),
-              eq(sshConnections.userId, args.owner.userId),
-            ),
-          );
-      }
-      const [updated] = await tx
-        .update(tailscaleConfigs)
-        .set({ ...plan.configUpdate, updatedAt: nowDate() })
-        .where(eq(tailscaleConfigs.id, args.configId))
-        .returning(metadata);
-      if (!updated) {
-        throw new Error(plan.missingRowMessage);
-      }
-      // Update/promotion preserve config-before-generation-write statement order.
-      if (plan.advanceHosts === "all") {
-        await tx
-          .update(sshConnections)
-          .set({
-            generation: sql`${sshConnections.generation} + 1`,
-            updatedAt: nowDate(),
-          })
-          .where(referencingHostPredicate(args));
-      }
-      return committedTailscaleMutation(updated, hosts, plan);
-    });
-  },
-);
-const commitTailscaleMutation$ = command(
-  async ({ set }, args: TailscaleMutationArgs) => {
-    const first = await set(commitTailscaleMutationAttempt$, args);
-    // Exactly one fresh known-unwritten attempt. Never repeat preparation/KMS,
-    // retry exceptions, or replay a successful/ambiguous effect.
-    const result = first.retryBindings
-      ? await set(commitTailscaleMutationAttempt$, args)
-      : first;
-    return result.retryBindings ? tailscaleFailure("conflict") : result.value;
-  },
-);
 const publishUpdateInvalidation$ = command(
   async (
     { set },

@@ -159,6 +159,20 @@ export function selectedTailscaleBindingId(
 ) {
   return creatingInline ? null : id;
 }
+export function inlineTailscaleValues(
+  owner: TailscaleOwner,
+  prepared: Pick<
+    typeof tailscaleConfigs.$inferInsert,
+    "name" | "tags" | "encryptedClientId" | "encryptedClientSecret"
+  >,
+) {
+  return {
+    ...prepared,
+    orgId: owner.orgId,
+    userId: owner.userId,
+    scope: "personal" as const,
+  };
+}
 export function createdInlineTailscaleId(
   requested: boolean,
   created: { readonly id: string } | undefined,
