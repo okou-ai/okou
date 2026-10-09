@@ -1,3 +1,4 @@
+import { escapeUTF8 } from "entities/escape";
 import { Parser } from "htmlparser2";
 
 export interface ArtifactOgMetadata {
@@ -10,14 +11,6 @@ export interface ArtifactOgMetadata {
 export const GENERIC_ARTIFACT_TITLE = "Shared artifact";
 export const GENERIC_ARTIFACT_DESCRIPTION =
   "Open in Okou to view this artifact.";
-
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
-}
 
 function inspectHtml(html: string) {
   const tags: { start: number; end: number; name: string; content: string }[] =
@@ -180,11 +173,11 @@ export function artifactOgHtml(
   }
   const tags = [...defaults]
     .map(([name, content]) => {
-      return `<meta ${name.startsWith("og:") ? "property" : "name"}="${name}" content="${escapeHtml(content)}">`;
+      return `<meta ${name.startsWith("og:") ? "property" : "name"}="${name}" content="${escapeUTF8(content)}">`;
     })
     .join("");
   const extra = replace
-    ? `<title>${escapeHtml(metadata.title)}</title><meta name="description" content="${escapeHtml(metadata.description)}"><link rel="canonical" href="${escapeHtml(metadata.url)}">`
+    ? `<title>${escapeUTF8(metadata.title)}</title><meta name="description" content="${escapeUTF8(metadata.description)}"><link rel="canonical" href="${escapeUTF8(metadata.url)}">`
     : "";
   const at = parsed.headEnd ?? parsed.documentStart;
   edits.push({

@@ -914,6 +914,9 @@ importers:
       '@okouai/api-contracts':
         specifier: workspace:*
         version: link:../api-contracts
+      entities:
+        specifier: 7.0.1
+        version: 7.0.1
       fractional-indexing:
         specifier: ^3.4.0
         version: 3.4.0

@@ -36,6 +36,7 @@
   },
   "dependencies": {
     "@okouai/api-contracts": "workspace:*",
+    "entities": "7.0.1",
     "fractional-indexing": "^3.4.0",
     "htmlparser2": "^10.1.0",
     "signal-timers": "^1.0.5",

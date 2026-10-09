@@ -90,4 +90,23 @@ describe("artifact sharing HTML", () => {
     );
     expect(result.match(/property="og:image"/gu)).toHaveLength(1);
   });
+
+  it("keeps tag and attribute injection attempts as metadata text", () => {
+    const malicious = {
+      ...metadata,
+      title: '</title><script>alert("title")</script>',
+      description: '"><img src=x onerror=alert(1)> & &#34;',
+    };
+    const result = artifactOgHtml(
+      "<html><head></head><body>Report</body></html>",
+      malicious,
+      true,
+    );
+    expect(result).not.toContain("<script>");
+    expect(result).not.toContain("<img");
+    expect(artifactHtmlMetadata(result)).toEqual({
+      title: malicious.title,
+      description: malicious.description,
+    });
+  });
 });

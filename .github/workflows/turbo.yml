@@ -1038,6 +1038,9 @@ jobs:
       - name: Test Connectors
         working-directory: turbo
         run: pnpm -F @okouai/connectors exec vitest run --reporter=default
+      - name: Test App Worker
+        working-directory: turbo
+        run: pnpm -F @okouai/app-worker test
       - name: Test ESLint Config
         working-directory: turbo
         run: pnpm -F @okouai/eslint-config test
