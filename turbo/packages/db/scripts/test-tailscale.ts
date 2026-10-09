@@ -16,9 +16,8 @@ async function migrate(name: string) {
   await client.query(sql.replaceAll('"public".', `"${schema}".`));
 }
 async function rejects(query: string, constraint: string, code = "23514") {
-  await client.query("SAVEPOINT invalid_write");
+  // Each rejected statement is atomic; this invocation owns an isolated schema.
   await assert.rejects(client.query(query), { code, constraint });
-  await client.query("ROLLBACK TO SAVEPOINT invalid_write");
 }
 async function assertCarrier(
   id: string,
@@ -36,9 +35,8 @@ async function assertCarrier(
   );
 }
 try {
-  await client.query("BEGIN");
   await client.query(`CREATE SCHEMA "${schema}"`);
-  await client.query(`SET LOCAL search_path TO "${schema}"`);
+  await client.query(`SET search_path TO "${schema}"`);
   await client.query(
     "CREATE TABLE agents (id uuid PRIMARY KEY, org_id text, owner text)",
   );
@@ -84,7 +82,7 @@ try {
   const beforeObservations = await client.query(
     "SELECT to_jsonb(ssh_connection_observations) AS value FROM ssh_connection_observations",
   );
-  await migrate("1358_tailscale_private_ssh");
+  await migrate("1362_tailscale_private_ssh");
   assert.deepEqual(
     (
       await client.query(
@@ -119,7 +117,6 @@ try {
   );
 
   // Outgoing writers must drain: omission fails rather than inventing a carrier.
-  await client.query("SAVEPOINT outgoing_writer");
   await assert.rejects(
     client.query(
       "INSERT INTO ssh_connections (org_id,user_id,display_name,host,port,credential_id) VALUES ('org','user','Old Direct','old-direct.example.com',22,$1)",
@@ -127,7 +124,6 @@ try {
     ),
     { code: "23502", column: "transport" },
   );
-  await client.query("ROLLBACK TO SAVEPOINT outgoing_writer");
   await rejects(
     `UPDATE ssh_connections SET cloudflare_access_id='${accessId}' WHERE id='${directId}'`,
     "chk_ssh_connections_transport_binding",
@@ -207,25 +203,21 @@ try {
     `UPDATE ssh_connections SET transport='unsupported' WHERE id='${directId}'`,
     "chk_ssh_connections_transport",
   );
-  await client.query("SAVEPOINT null_transport");
   await assert.rejects(
     client.query(
       `UPDATE ssh_connections SET transport=NULL WHERE id='${directId}'`,
     ),
     { code: "23502", column: "transport" },
   );
-  await client.query("ROLLBACK TO SAVEPOINT null_transport");
   await client.query(
     "UPDATE ssh_connections SET transport='tailscale',tailscale_id=$1,host='100.64.0.1',port=65535 WHERE id=$2",
     [configId, directId],
   );
   await assertCarrier(directId, "tailscale", false);
-  await client.query("SAVEPOINT referenced_delete");
   await assert.rejects(
     client.query("DELETE FROM tailscale_configs WHERE id=$1", [configId]),
     { code: /^(23503|23001)$/, constraint: "ssh_connections_tailscale_org_fk" },
   );
-  await client.query("ROLLBACK TO SAVEPOINT referenced_delete");
   await client.query(
     "UPDATE tailscale_configs SET tags=ARRAY['tag:next'],generation=generation+1,revision=revision+1 WHERE id=$1",
     [configId],
@@ -277,6 +269,9 @@ try {
     "Tailscale migration, canonical carriers, reader shadow and writer-floor guards passed",
   );
 } finally {
-  await client.query("ROLLBACK");
-  await client.end();
+  await client
+    .query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`)
+    .finally(async () => {
+      await client.end();
+    });
 }

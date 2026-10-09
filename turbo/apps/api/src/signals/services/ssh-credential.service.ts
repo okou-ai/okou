@@ -272,113 +272,14 @@ function ownerHostsUsingCredential(owner: Owner, credentialId: string) {
   );
 }
 
-// Each attempt owns the whole login/Host invariant; only prepared values cross
-// the command boundary. No tx escapes and no encryption runs under the locks.
-const commitSshCredentialUpdate$ = command(
-  async (
-    { set },
-    args: Pick<UpdateSshCredentialArgs, "owner" | "credentialId" | "body"> & {
-      readonly encrypted:
-        Awaited<ReturnType<typeof encryptAuthentication>> | undefined;
-    },
-  ) => {
-    return await set(writeDb$).transaction(async (tx) => {
-      // Serialize Host edits without blocking RESTRICT's FK key-share check.
-      const lockedHosts = await tx
-        .select({ id: sshConnections.id })
-        .from(sshConnections)
-        .where(ownerHostsUsingCredential(args.owner, args.credentialId))
-        .orderBy(asc(sshConnections.id))
-        .for("no key update");
-      const [credential] = await tx
-        .select(sshCredentialMetadata)
-        .from(sshCredentials)
-        .where(ownedSshCredential(args.owner, args.credentialId))
-        .for("update");
-      if (!credential) {
-        return sshCredentialFailure("notFound");
-      }
-      if (credential.revision === MAX_SSH_REVISION) {
-        return sshCredentialFailure("exhausted");
-      }
-      // New FK bindings are fenced now. An expansion is known-unwritten; never
-      // acquire new Host locks behind the credential fence.
-      const currentHosts = await tx
-        .select({
-          id: sshConnections.id,
-          displayName: sshConnections.displayName,
-          generation: sshConnections.generation,
-        })
-        .from(sshConnections)
-        .where(ownerHostsUsingCredential(args.owner, args.credentialId))
-        .orderBy(asc(sshConnections.id));
-      const lockedIds = new Set(
-        lockedHosts.map(({ id }) => {
-          return id;
-        }),
-      );
-      if (
-        currentHosts.some(({ id }) => {
-          return !lockedIds.has(id);
-        })
-      ) {
-        return {
-          ...sshCredentialFailure("conflict"),
-          retryBindings: true as const,
-        };
-      }
-      const currentEffectiveChange =
-        args.body.authentication !== undefined ||
-        (args.body.username !== undefined &&
-          args.body.username !== credential.username);
-      if (
-        currentEffectiveChange &&
-        currentHosts.some(({ generation }) => {
-          return generation === MAX_SSH_REVISION;
-        })
-      ) {
-        return sshCredentialFailure("exhausted");
-      }
-      if (currentEffectiveChange) {
-        await tx
-          .update(sshConnections)
-          .set({
-            generation: sql`${sshConnections.generation} + 1`,
-            updatedAt: nowDate(),
-          })
-          .where(ownerHostsUsingCredential(args.owner, args.credentialId));
-      }
-      const [row] = await tx
-        .update(sshCredentials)
-        .set({
-          name: args.body.name,
-          username: args.body.username,
-          ...args.encrypted,
-          revision: sql`${sshCredentials.revision} + 1`,
-          updatedAt: nowDate(),
-        })
-        .where(ownedSshCredential(args.owner, args.credentialId))
-        .returning(sshCredentialMetadata);
-      if (!row) {
-        throw new Error("Locked SSH credential update returned no row");
-      }
-      return {
-        ok: true as const,
-        value: {
-          row,
-          hosts: currentHosts,
-          invalidate: currentEffectiveChange && currentHosts.length > 0,
-        },
-      };
-    });
-  },
-);
-
-export const updateSshCredential$ = command(
+// Preparation does not own a transaction or return a database executor.
+const prepareSshCredentialUpdate$ = command(
   async (
     { set },
     args: UpdateSshCredentialArgs,
-  ): Promise<SshResult<SshCredentialResponse>> => {
+  ): Promise<
+    SshResult<Awaited<ReturnType<typeof encryptAuthentication>> | undefined>
+  > => {
     const db = set(writeDb$);
     const [initial] = await db
       .select(sshCredentialMetadata)
@@ -421,13 +322,109 @@ export const updateSshCredential$ = command(
             args.body.authentication,
             args.featureContext,
           );
-    const prepared = { ...args, encrypted };
-    let updated = await set(commitSshCredentialUpdate$, prepared);
-    if (!updated.ok && "retryBindings" in updated) {
-      // The first transaction wrote nothing. Re-lock once from a fresh set;
-      // never repeat encryption or a successful/ambiguous mutation.
-      updated = await set(commitSshCredentialUpdate$, prepared);
+    return { ok: true, value: encrypted };
+  },
+);
+
+export const updateSshCredential$ = command(
+  async (
+    { set },
+    args: UpdateSshCredentialArgs,
+  ): Promise<SshResult<SshCredentialResponse>> => {
+    const prepared = await set(prepareSshCredentialUpdate$, args);
+    if (!prepared.ok) {
+      return prepared;
     }
+    const db = set(writeDb$);
+    // This remains main's existing login/Host rotation operation, in its original
+    // owning command. It opens once; no new helper or retry expands this boundary.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0252; new non-billing transactions are prohibited.
+    const updated = await db.transaction(async (tx) => {
+      // Serialize Host edits without blocking RESTRICT's FK key-share check.
+      const lockedHosts = await tx
+        .select({ id: sshConnections.id })
+        .from(sshConnections)
+        .where(ownerHostsUsingCredential(args.owner, args.credentialId))
+        .orderBy(asc(sshConnections.id))
+        .for("no key update");
+      const [credential] = await tx
+        .select(sshCredentialMetadata)
+        .from(sshCredentials)
+        .where(ownedSshCredential(args.owner, args.credentialId))
+        .for("update");
+      if (!credential) {
+        return sshCredentialFailure("notFound");
+      }
+      if (credential.revision === MAX_SSH_REVISION) {
+        return sshCredentialFailure("exhausted");
+      }
+      // New FK bindings are fenced now. Reject expansion before any writes;
+      // never acquire new Host locks behind the credential fence or replay.
+      const currentHosts = await tx
+        .select({
+          id: sshConnections.id,
+          displayName: sshConnections.displayName,
+          generation: sshConnections.generation,
+        })
+        .from(sshConnections)
+        .where(ownerHostsUsingCredential(args.owner, args.credentialId))
+        .orderBy(asc(sshConnections.id));
+      const lockedIds = new Set(
+        lockedHosts.map(({ id }) => {
+          return id;
+        }),
+      );
+      if (
+        currentHosts.some(({ id }) => {
+          return !lockedIds.has(id);
+        })
+      ) {
+        return sshCredentialFailure("conflict");
+      }
+      const currentEffectiveChange =
+        args.body.authentication !== undefined ||
+        (args.body.username !== undefined &&
+          args.body.username !== credential.username);
+      if (
+        currentEffectiveChange &&
+        currentHosts.some(({ generation }) => {
+          return generation === MAX_SSH_REVISION;
+        })
+      ) {
+        return sshCredentialFailure("exhausted");
+      }
+      if (currentEffectiveChange) {
+        await tx
+          .update(sshConnections)
+          .set({
+            generation: sql`${sshConnections.generation} + 1`,
+            updatedAt: nowDate(),
+          })
+          .where(ownerHostsUsingCredential(args.owner, args.credentialId));
+      }
+      const [row] = await tx
+        .update(sshCredentials)
+        .set({
+          name: args.body.name,
+          username: args.body.username,
+          ...prepared.value,
+          revision: sql`${sshCredentials.revision} + 1`,
+          updatedAt: nowDate(),
+        })
+        .where(ownedSshCredential(args.owner, args.credentialId))
+        .returning(sshCredentialMetadata);
+      if (!row) {
+        throw new Error("Locked SSH credential update returned no row");
+      }
+      return {
+        ok: true as const,
+        value: {
+          row,
+          hosts: currentHosts,
+          invalidate: currentEffectiveChange && currentHosts.length > 0,
+        },
+      };
+    });
     if (!updated.ok) {
       return updated;
     }
@@ -470,40 +467,19 @@ export const deleteSshCredential$ = command(
     if (current.revision !== args.expectedRevision) {
       return sshCredentialFailure("conflict");
     }
-    // Fence new bindings, then reject references without acquiring host locks.
+    // DELETE owns the exclusive credential fence; the restrictive FK performs
+    // the reference check without taking Host row locks. Late bindings fail the
+    // statement rather than requiring an application-owned transaction.
     const deletion = await settle(
-      db.transaction<SshResult<undefined>>(async (tx) => {
-        const [locked] = await tx
-          .select({ id: sshCredentials.id })
-          .from(sshCredentials)
-          .where(ownedSshCredential(args.owner, args.credentialId))
-          .for("update");
-        if (!locked) {
-          // Preserve success when another delete removed the early-seen row.
-          return { ok: true, value: undefined };
-        }
-        const [reference] = await tx
-          .select({ id: sshConnections.id })
-          .from(sshConnections)
-          .where(ownerHostsUsingCredential(args.owner, args.credentialId))
-          .limit(1);
-        if (reference) {
-          return sshCredentialFailure("inUse");
-        }
-        await tx
-          .delete(sshCredentials)
-          .where(ownedSshCredential(args.owner, args.credentialId));
-        return { ok: true, value: undefined };
-      }),
+      db
+        .delete(sshCredentials)
+        .where(ownedSshCredential(args.owner, args.credentialId)),
     );
     if (!deletion.ok) {
       if (isSshCredentialReferenceViolation(deletion.error)) {
         return sshCredentialFailure("inUse");
       }
       throw deletion.error;
-    }
-    if (!deletion.value.ok) {
-      return deletion.value;
     }
     await publishSshClientInvalidation(args.owner);
     return { ok: true, value: undefined };

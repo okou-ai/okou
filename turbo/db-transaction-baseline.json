@@ -1017,16 +1017,6 @@
       "owner": "recordRunUploadedFile$"
     },
     {
-      "id": "TX-0238",
-      "file": "turbo/apps/api/src/signals/services/runner-ssh.service.ts",
-      "owner": "pinRunnerSsh"
-    },
-    {
-      "id": "TX-0239",
-      "file": "turbo/apps/api/src/signals/services/runner-ssh.service.ts",
-      "owner": "recordRunnerSshObservation"
-    },
-    {
       "id": "TX-0240",
       "file": "turbo/apps/api/src/signals/services/runner-wss-ticket.service.ts",
       "owner": "issueRunnerWssTicket$"
@@ -1075,11 +1065,6 @@
       "id": "TX-0249",
       "file": "turbo/apps/api/src/signals/services/social-data.service.ts",
       "owner": "createSocialDataJob$/result"
-    },
-    {
-      "id": "TX-0250",
-      "file": "turbo/apps/api/src/signals/services/ssh-connection.service.ts",
-      "owner": "commitSshConnectionCreation$"
     },
     {
       "id": "TX-0253",
@@ -1395,11 +1380,6 @@
       "id": "TX-0322",
       "file": "turbo/apps/api/src/signals/services/webhooks-clerk-cleanup.service.ts",
       "owner": "deleteClerkExportReferences"
-    },
-    {
-      "id": "TX-0323",
-      "file": "turbo/apps/api/src/signals/services/webhooks-clerk-cleanup.service.ts",
-      "owner": "deleteClerkSshResources"
     },
     {
       "id": "TX-0324",
