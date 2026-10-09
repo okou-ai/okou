@@ -132,7 +132,7 @@ async function loadThreadlessRunCandidates(
           ...TERMINAL_RUN_STATUSES,
         ]),
         ...THREADLESS_RUN_PROTECTIONS.flatMap((protection) => {
-          return protection.sweepEligibility(db, { currentTime });
+          return protection.sweepEligibility({ currentTime });
         }),
         or(
           gte(agentRuns.createdAt, forwardCutoff),

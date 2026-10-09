@@ -108,7 +108,7 @@ required for the final archive.
 ## Archive promotion
 
 [Archive promotion](ARCHIVE_PROMOTION.md) defines the exact input fingerprints,
-prior-test evidence, immutable private storage/readiness, and release-target
+prior-test evidence, immutable shared artifact storage/readiness, and release-target
 mapping. Ordinary merge groups run simulator tests and build unsigned Release
 archives. Release-only groups omit tests only with verified, matching prior
 merge-group evidence; missing evidence or mixed groups run full tests. The

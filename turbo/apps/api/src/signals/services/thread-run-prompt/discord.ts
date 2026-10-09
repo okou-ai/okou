@@ -6,12 +6,13 @@ import {
 } from "../chat-user-message.service";
 import type { createDiscordThreadContext } from "../discord-thread-prompt-context.service";
 import { resolveIntegrationNotePrompt } from "../integration-note-prompt.service";
-import type { IntegrationPromptVariables, ThreadPromptSource } from "./types";
+import type { RunPromptAndSkills } from "../run-prompt-and-skills";
+import type { ThreadPromptSource } from "./types";
 
 export function createDiscordThreadPrompt(
   source$: Computed<Promise<ThreadPromptSource | null>>,
   context$: ReturnType<typeof createDiscordThreadContext>,
-): Computed<Promise<IntegrationPromptVariables | null>> {
+): Computed<Promise<RunPromptAndSkills | null>> {
   return computed(async (get) => {
     const source = await get(source$);
     if (source?.event.contextType !== "discord") {
@@ -32,7 +33,6 @@ export function createDiscordThreadPrompt(
     return {
       userPromptVariables: { message: projectUserMessage(message).agentPrompt },
       systemPromptVariables: {
-        channelUserIdentity: "",
         integrationContext: [
           CONVERSATION_GUIDANCE,
           [
@@ -63,6 +63,7 @@ export function createDiscordThreadPrompt(
           })
           .join("\n\n"),
       },
+      skillVolumes: [],
     };
   });
 }

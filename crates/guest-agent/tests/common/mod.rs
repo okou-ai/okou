@@ -358,20 +358,15 @@ impl RecordingServer {
                     } else {
                         200
                     };
-                    push_recorded_event(
-                        &connection_events,
-                        RecordedHttpEvent::Request(request.clone()),
-                    );
-                    if request.path.starts_with("/channels/") && !ably_response_delay.is_zero() {
+                    let path = request.path.clone();
+                    push_recorded_event(&connection_events, RecordedHttpEvent::Request(request));
+                    if path.starts_with("/channels/") && !ably_response_delay.is_zero() {
                         tokio::time::sleep(ably_response_delay).await;
                     }
                     let _ = write_http_response(&mut socket, status).await;
                     push_recorded_event(
                         &connection_events,
-                        RecordedHttpEvent::Response {
-                            path: request.path,
-                            status,
-                        },
+                        RecordedHttpEvent::Response { path, status },
                     );
                 });
             }
@@ -646,26 +641,22 @@ async fn read_http_request(socket: &mut tokio::net::TcpStream) -> Result<Recorde
     let body_end = body_start
         .checked_add(content_length)
         .ok_or_else(|| "request body length overflow".to_string())?;
-    while buffer.len() < body_end {
-        let mut chunk = [0u8; 1024];
-        let read = socket
-            .read(&mut chunk)
+    buffer.truncate(body_end);
+    buffer.drain(..body_start);
+    if buffer.len() < content_length {
+        socket
+            .take((content_length - buffer.len()) as u64)
+            .read_to_end(&mut buffer)
             .await
             .map_err(|e| format!("read request body: {e}"))?;
-        if read == 0 {
+        if buffer.len() < content_length {
             return Err("connection closed before request body".to_string());
         }
-        buffer.extend_from_slice(
-            chunk
-                .get(..read)
-                .ok_or_else(|| "body chunk length out of bounds".to_string())?,
-        );
     }
-
-    let body_bytes = buffer
-        .get(body_start..body_end)
-        .ok_or_else(|| "request body range out of bounds".to_string())?;
-    let body = String::from_utf8_lossy(body_bytes).into_owned();
+    let body = match String::from_utf8(buffer) {
+        Ok(body) => body,
+        Err(error) => String::from_utf8_lossy(error.as_bytes()).into_owned(),
+    };
 
     Ok(RecordedRequest {
         path,

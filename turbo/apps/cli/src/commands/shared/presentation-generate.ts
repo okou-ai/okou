@@ -1,3 +1,4 @@
+import { artifactPreviewsEnabled } from "../../lib/api/domains/artifact-previews";
 import { Command, InvalidArgumentError } from "commander";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { dispatchGenerate } from "../generate/lib/dispatch";
@@ -9,6 +10,7 @@ import {
 import {
   PRESENTATION_IMAGE_BATCH_INSTRUCTION,
   PRESENTATION_STATIC_HTML_INSTRUCTION,
+  PRESENTATION_PREVIEW_INSTRUCTION,
 } from "@okouai/core/presentation-generation-instructions";
 import { canonicalizeRegistryId } from "./resource-listing";
 import {
@@ -113,11 +115,12 @@ ${formatPresentationTemplateListing(templates)}`;
         });
         if (dispatch.outcome === "handled") return;
         const prompt = dispatch.prompt;
+        const previewsEnabled = await artifactPreviewsEnabled();
         const visibilityFlag =
           options.visibility === undefined
             ? ""
             : ` --visibility ${options.visibility}`;
-        const hostCommand = `okou host <output-dir> --site ${options.siteSlug ?? "<slug>"} --artifact-kind presentation-html${visibilityFlag}`;
+        const hostCommand = `okou host <output-dir> --site ${options.siteSlug ?? "<slug>"} --artifact-kind presentation-html${visibilityFlag}${previewsEnabled ? " --preview ./generated/previews/cover.png" : ""}`;
         const deliveryInstructions = [
           options.visibility === undefined
             ? "- With privateArtifacts enabled, new artifacts default to only-me. Otherwise, hosting and upload keep their existing behavior."
@@ -144,6 +147,7 @@ ${formatPresentationTemplateListing(templates)}`;
                 runbookPackage: template,
                 colorSystemToken: template.defaultColorSystem,
                 hostCommand,
+                artifactPreviewsEnabled: previewsEnabled,
               }),
               ...deliveryInstructions,
               "",
@@ -194,6 +198,7 @@ ${formatPresentationTemplateListing(templates)}`;
             "- Check that shapes, charts, images, or decorative graphics do not cover readable text at desktop and mobile viewport sizes.",
             "",
             "## Publish",
+            ...(previewsEnabled ? [PRESENTATION_PREVIEW_INSTRUCTION] : []),
             `- Host the finished deck: ${hostCommand}`,
             ...deliveryInstructions,
           ].join("\n"),

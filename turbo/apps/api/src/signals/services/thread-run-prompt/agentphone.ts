@@ -3,12 +3,13 @@ import { optionalEnv } from "../../../lib/env";
 import { buildAgentPhonePrompt } from "../agentphone-prompt";
 import { resolveIntegrationNotePrompt } from "../integration-note-prompt.service";
 import type { AgentPhoneThreadContext } from "../thread-run-context.service";
-import type { IntegrationPromptVariables, ThreadPromptSource } from "./types";
+import type { RunPromptAndSkills } from "../run-prompt-and-skills";
+import type { ThreadPromptSource } from "./types";
 
 export function createAgentPhoneThreadPrompt(
   source$: Computed<Promise<ThreadPromptSource | null>>,
   context$: Computed<Promise<AgentPhoneThreadContext>>,
-): Computed<Promise<IntegrationPromptVariables | null>> {
+): Computed<Promise<RunPromptAndSkills | null>> {
   return computed(async (get) => {
     const source = await get(source$);
     if (source?.event.contextType !== "agentphone") {
@@ -41,6 +42,7 @@ export function createAgentPhoneThreadPrompt(
           ? `Text message handle: ${context.phoneHandle}`
           : "",
       },
+      skillVolumes: [],
     };
   });
 }

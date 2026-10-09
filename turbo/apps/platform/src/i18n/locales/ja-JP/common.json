@@ -4885,24 +4885,6 @@
           "enabled_other": "次回の {{count}} の実行に対して有効になります",
           "title": "ネットワーク本体をキャプチャする"
         },
-        "connectionDiagnostics": {
-          "activeWaits": "処理中の待機",
-          "channel": "チャネル",
-          "clear": "消去",
-          "connection": "接続",
-          "copyJson": "JSON をコピー",
-          "description": "認証と Ably 接続のシグナルを確認します。",
-          "empty": "診断イベントは記録されていません。",
-          "events": "イベント",
-          "log": "イベントログ",
-          "refresh": "更新",
-          "title": "リアルタイム接続診断",
-          "unavailable": "利用不可",
-          "workerDescription": "リアルタイム接続を保持する共有ワーカーが記録した診断を確認します。",
-          "workerLoading": "読み込み中",
-          "workerTitle": "共有ワーカーの接続診断",
-          "workerUnavailable": "利用不可"
-        },
         "indexedDb": {
           "countExplanation": "件数は読み取り専用トランザクションで取得し、レコード本体は読み取りません。",
           "description": "Shared Worker が管理するローカルチャットキャッシュのレコード件数を確認します。",
@@ -4922,6 +4904,13 @@
           "stores": "オブジェクトストア",
           "title": "IndexedDB ストレージ",
           "unavailable": "IndexedDB ストレージを利用できません。"
+        },
+        "openrouterPreset": {
+          "description": "組織全体の新しい Auto および組み込み Okou 1.0 の実行に適用されます。既存の実行は変更されません。",
+          "loading": "読み込み中…",
+          "systemDefault": "システムの既定値",
+          "title": "OpenRouter プリセット",
+          "unavailable": "利用できません"
         },
         "welcomeThread": {
           "create": "ウェルカムチャットを作成",

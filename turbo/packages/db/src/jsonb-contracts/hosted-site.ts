@@ -1,4 +1,5 @@
 import type { LinkLayoutSegment } from "@okouai/api-contracts/contracts/link-layout";
+import type { HostedSitePreview } from "@okouai/api-contracts/contracts/host";
 
 export interface HostedSiteManifestFile {
   readonly path: string;
@@ -43,4 +44,6 @@ export interface HostedSiteManifest {
   readonly spaFallback: boolean;
   readonly files: Record<string, HostedSiteManifestFile>;
   readonly snapshotDependencies?: HostedSiteSnapshotDependencies;
+  /** Optional for retained deployments and CLIs predating sandbox previews. */
+  readonly preview?: HostedSitePreview;
 }

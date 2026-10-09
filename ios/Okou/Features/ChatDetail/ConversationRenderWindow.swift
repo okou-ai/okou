@@ -1,3 +1,4 @@
+import ChatDomain
 import Foundation
 
 /// A progressively expanded suffix of presentation groups, independent of event replay.

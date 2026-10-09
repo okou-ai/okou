@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.39](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.1.38...runner-lifecycle-v0.1.39) (2026-10-09)
+
+
+### Bug Fixes
+
+* **runner:** reconcile retained state and scrub terminal private files ([#38153](https://github.com/okou-ai/okou/issues/38153)) ([9824493](https://github.com/okou-ai/okou/commit/9824493f88b89ad219b243438d635e6cd085514b))
+
 ## [0.1.38](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.1.37...runner-lifecycle-v0.1.38) (2026-10-09)
 
 ## [0.1.37](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.1.36...runner-lifecycle-v0.1.37) (2026-10-08)

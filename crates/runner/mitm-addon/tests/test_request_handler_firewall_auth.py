@@ -526,27 +526,31 @@ async def test_requestheaders_and_request_share_snapshot_auth_identity(
         host="api.github.com",
         path="/repos",
     )
-    auth_fetch = AsyncMock(return_value=_resolved_firewall_auth())
+    endpoint = FakeAuthEndpoint()
+    endpoint.queue_json_response(
+        firewall_auth_success_response({"Authorization": "Bearer resolved"})
+    )
 
-    with (
-        mitm_ctx(registry_path=str(reg_path), api_url="https://api.okou.ai"),
-        patch.object(auth_cache, "fetch_firewall_headers", auth_fetch),
-        patch.object(
-            auth,
-            "_build_firewall_auth_identity",
-            wraps=auth._build_firewall_auth_identity,
-        ) as build_identity,
-    ):
+    with endpoint.run(), mitm_ctx(registry_path=str(reg_path), api_url=endpoint.api_url):
         requestheaders_result = mitm_addon.requestheaders(streamed_flow)
         await await_requestheaders_result(requestheaders_result)
+
+        assert streamed_flow.metadata[metadata_keys.FIREWALL_API_ID] == "run-conn-1:0"
+        assert (
+            streamed_flow.metadata[metadata_keys.FIREWALL_AUTH_CACHE_KEY].api_id == "run-conn-1:0"
+        )
+        assert streamed_flow.request.headers["Authorization"] == "Bearer resolved"
+        assert callable(streamed_flow.request.stream)
+
         await mitm_addon.request(streamed_flow)
         await mitm_addon.request(normal_flow)
 
     streamed_key = streamed_flow.metadata[metadata_keys.FIREWALL_AUTH_CACHE_KEY]
     normal_key = normal_flow.metadata[metadata_keys.FIREWALL_AUTH_CACHE_KEY]
     assert streamed_key == normal_key
-    assert build_identity.call_count == 1
-    auth_fetch.assert_awaited_once()
+    assert normal_flow.metadata[metadata_keys.FIREWALL_API_ID] == "run-conn-1:0"
+    assert normal_key.api_id == "run-conn-1:0"
+    assert endpoint.request_count == 1
     assert streamed_flow.metadata[metadata_keys.AUTH_CACHE_HIT] is False
     assert normal_flow.metadata[metadata_keys.AUTH_CACHE_HIT] is True
     assert streamed_flow.request.headers["Authorization"] == "Bearer resolved"

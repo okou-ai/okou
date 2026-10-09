@@ -75,8 +75,8 @@ import {
 } from "./connector-data.service";
 import { deleteConnectorOwnerState } from "./connector-owner-cleanup.service";
 import {
-  deleteDiscordOrgData,
-  deleteDiscordUserData,
+  deleteDiscordOrgData$,
+  deleteDiscordUserData$,
 } from "./discord-owner-cleanup.service";
 import { revokeMorningBriefScheduleOwnership } from "./morning-brief-schedule-claim.service";
 import { cancelAndRefundOrgBillingForDeletion } from "./org-deletion-billing.service";
@@ -739,7 +739,7 @@ const deleteOrgData$ = command(
     signal.throwIfAborted();
     await set(eraseMailNotifications$, { orgId }, signal);
     signal.throwIfAborted();
-    await deleteDiscordOrgData(db, orgId);
+    await set(deleteDiscordOrgData$, orgId, signal);
     signal.throwIfAborted();
 
     const installations = await db
@@ -873,7 +873,7 @@ const deleteUserData$ = command(
     signal.throwIfAborted();
     await set(eraseMailNotifications$, { userId }, signal);
     signal.throwIfAborted();
-    await deleteDiscordUserData(db, userId);
+    await set(deleteDiscordUserData$, userId, signal);
     signal.throwIfAborted();
 
     await db

@@ -61,8 +61,8 @@ Firewall and auth context
 - ``FIREWALL_BASE``: ``str`` matched firewall base. Written by firewall match,
   matched firewall block, and auth paths. Read by logging, auth cache
   invalidation, usage dispatch, and local error responses.
-- ``FIREWALL_API_ID``: ``str`` API id or base fallback from the matched
-  firewall. Read by auth handling.
+- ``FIREWALL_API_ID``: non-empty ``str`` API id from the registry-resolved
+  matched firewall. Read by auth handling.
 - ``FIREWALL_AUTH_CACHE_KEY``: opaque typed auth cache key written by matched
   auth handling after the full auth input identity is known. Read by 401 cache
   invalidation; stores only a digest of auth inputs and sandbox token.

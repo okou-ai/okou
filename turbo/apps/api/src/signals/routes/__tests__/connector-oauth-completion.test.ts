@@ -94,6 +94,10 @@ test("exposes a receipt only to its owner and exact current connector target", a
     expect(unavailable.body).toStrictEqual(missing.body);
     expect(unavailable.headers.get("cache-control")).toBe("no-store");
   }
+  const afterDenials = await receipt(actor, id);
+  expect(afterDenials.status).toBe(200);
+  expect(afterDenials.body).toStrictEqual({ connectionId });
+  expect(afterDenials.headers.get("cache-control")).toBe("no-store");
   const anonymous = await accountClient(actor).oauthCompletion({
     params: { attemptId: id },
     query: githubTarget,
@@ -101,7 +105,12 @@ test("exposes a receipt only to its owner and exact current connector target", a
   expect(anonymous.status).toBe(401);
 
   await connectors.deleteBuiltinConnectorAccount(actor, "github", connectionId);
-  expect((await receipt(actor, id)).status).toBe(404);
+  const deleted = await receipt(actor, id);
+  expect(deleted.status).toBe(404);
+  expect(deleted.body).toStrictEqual({
+    error: { code: "NOT_FOUND", message: "OAuth completion not found" },
+  });
+  expect(deleted.headers.get("cache-control")).toBe("no-store");
 });
 
 test("does not complete a denied reconnect after rename or default-account changes and allows retry", async () => {
@@ -266,6 +275,30 @@ test.each(["http", "mcp"] as const)(
       throw new Error("Expected a completed custom account");
     }
     const connectionId = connected.body.connectionId;
+    expect(connected.body).toStrictEqual({ connectionId });
+    expect(connected.headers.get("cache-control")).toBe("no-store");
+    for (const wrongTarget of [
+      githubTarget,
+      { kind: "custom", customConnectorId: randomUUID() } as const,
+    ]) {
+      const rejected = await receipt(
+        actor,
+        started.body.oauthAttemptId,
+        wrongTarget,
+      );
+      expect(rejected.status).toBe(404);
+      expect(rejected.body).toStrictEqual({
+        error: { code: "NOT_FOUND", message: "OAuth completion not found" },
+      });
+      expect(rejected.headers.get("cache-control")).toBe("no-store");
+    }
+    const afterDenials = await receipt(
+      actor,
+      started.body.oauthAttemptId,
+      target,
+    );
+    expect(afterDenials.status).toBe(200);
+    expect(afterDenials.body).toStrictEqual({ connectionId });
     const cancelled = await connectors.requestStartCustomConnectorOAuth2(
       actor,
       connector.id,
@@ -294,6 +327,102 @@ test.each(["http", "mcp"] as const)(
     expect(
       (await receipt(actor, started.body.oauthAttemptId, target)).body,
     ).toStrictEqual({ connectionId });
+    await connectors.deleteCustomConnectorAccount(
+      actor,
+      connector.id,
+      connectionId,
+    );
+    const deleted = await receipt(actor, started.body.oauthAttemptId, target);
+    expect(deleted.status).toBe(404);
+    expect(deleted.body).toStrictEqual({
+      error: { code: "NOT_FOUND", message: "OAuth completion not found" },
+    });
+    expect(deleted.headers.get("cache-control")).toBe("no-store");
+
+    const removedAgent = await bdd.createAgent(actor);
+    const rejected = await connectors.requestStartCustomConnectorOAuth2(
+      actor,
+      connector.id,
+      [200],
+      removedAgent.agentId,
+    );
+    if (rejected.status !== 200 || rejected.body.result !== "authorization") {
+      throw new Error("Expected custom OAuth with agent authorization");
+    }
+    await bdd.deleteAgent(actor, removedAgent.agentId);
+    const rejectedCallback =
+      await connectors.completeCustomConnectorOAuth2CallbackResult({
+        code: "removed-agent",
+        state: state(rejected.body),
+      });
+    expect(rejectedCallback.body).toStrictEqual({
+      status: "error",
+      message: "OAuth connected, but the requested agent was not found",
+    });
+    const rejectedReceipt = await receipt(
+      actor,
+      rejected.body.oauthAttemptId,
+      target,
+    );
+    expect(rejectedReceipt.status).toBe(404);
+    expect(rejectedReceipt.body).toStrictEqual(deleted.body);
+    expect(rejectedReceipt.headers.get("cache-control")).toBe("no-store");
+    const accounts = await connectors.listCustomConnectorAccounts(
+      actor,
+      connector.id,
+    );
+    expect(accounts).toHaveLength(1);
+    const [persistedAccount] = accounts;
+    if (!persistedAccount) {
+      throw new Error("Expected the account connected before agent rejection");
+    }
+
+    const survivingAgent = await bdd.createAgent(actor);
+    const retry = await connectors.requestStartCustomConnectorOAuth2(
+      actor,
+      connector.id,
+      [200],
+      survivingAgent.agentId,
+      { intent: "reconnect", connectionId: persistedAccount.id },
+    );
+    if (retry.status !== 200 || retry.body.result !== "authorization") {
+      throw new Error("Expected custom OAuth retry with agent authorization");
+    }
+    const retriedCallback =
+      await connectors.completeCustomConnectorOAuth2CallbackResult({
+        code: "surviving-agent",
+        state: state(retry.body),
+      });
+    expect(retriedCallback.body).toStrictEqual({
+      status: "success",
+      username: null,
+    });
+    const retriedReceipt = await receipt(
+      actor,
+      retry.body.oauthAttemptId,
+      target,
+    );
+    expect(retriedReceipt.status).toBe(200);
+    expect(retriedReceipt.body).toStrictEqual({
+      connectionId: persistedAccount.id,
+    });
+    expect(retriedReceipt.headers.get("cache-control")).toBe("no-store");
+    await expect(
+      connectors.readAgentCustomConnectors(actor, survivingAgent.agentId),
+    ).resolves.toStrictEqual([connector.id]);
+    const afterRetry = await receipt(
+      actor,
+      rejected.body.oauthAttemptId,
+      target,
+    );
+    expect(afterRetry.status).toBe(404);
+    expect(afterRetry.body).toStrictEqual(rejectedReceipt.body);
+    await connectors.deleteCustomConnectorAccount(
+      actor,
+      connector.id,
+      persistedAccount.id,
+    );
+    await bdd.deleteAgent(actor, survivingAgent.agentId);
     await connectors.deleteCustomConnector(actor, connector.id);
   },
 );

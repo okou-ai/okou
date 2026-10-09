@@ -374,6 +374,38 @@ sockets/streams, detached work, and temporary files. Such cleanup bounds
 residue and resource lifetime; it must not delete, overwrite, or restore
 pre-existing shared state to make an assertion pass.
 
+### Native Database Timezone
+
+API timestamp-without-time-zone columns represent UTC wall-clock values. Node's
+`TZ=UTC` does not configure PostgreSQL sessions: a cluster initialized on an
+`Asia/Shanghai` host can still use that timezone for `now()` defaults and implicit
+timestamp conversions.
+
+Global setup and workers use the same test database URL helper. It appends a
+final `-c timezone=UTC` startup setting, preserving the effective existing URL
+options or inherited `PGOPTIONS`, unrelated connection parameters, and worker
+application names. Startup configuration applies before the first query on every
+physical connection, including pool replacements. The pricing seed checks
+`SHOW TimeZone` before any shared pricing/catalog writes and closes its client if
+the check fails. Production connection configuration is unchanged; isolated
+PGlite sessions already explicitly use UTC.
+
+Initialize a new disposable test cluster with `TZ=UTC initdb ...`, and retain
+`timezone=UTC` in its server configuration or startup options. For an existing
+**test-owned** database, a changed timezone default applies to new sessions;
+close existing pools before reconnecting. A one-off `SET timezone` through psql
+changes only that session. Changing settings does not repair values already
+written with the wrong wall-clock timezone: recreate a disposable fixture rather
+than shifting business rows. Do not alter a shared or production database for a
+local test run.
+
+Direct JavaScript `Date` parameters passed to pg are a separate process-timezone
+boundary. Keep Drizzle's timestamp-column serialization; for UTC-naive raw SQL
+values use the existing `timestampWithoutTimeZone()` helper. Database-owned
+relative deadlines need the appropriate explicit UTC database clock. Do not
+compensate by adding eight hours, changing product timezone preferences, or
+increasing test timeouts.
+
 ### Case-owned Database Selection
 
 All API suites run in one `api` project with one shared setup. Files execute in

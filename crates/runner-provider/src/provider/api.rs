@@ -2638,6 +2638,8 @@ mod tests {
                     workspace_affinity_version: runner_types::types::WORKSPACE_AFFINITY_VERSION,
                 }],
             }],
+            home_affinity_version: None,
+            held_home_states: Vec::new(),
             active_reuse_producers: vec![],
             wss_ingress_service_active: false,
             mode: "running".to_string(),

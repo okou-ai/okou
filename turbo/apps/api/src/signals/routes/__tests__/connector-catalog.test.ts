@@ -135,9 +135,13 @@ describe("GET /api/connector-catalog", () => {
     expect(response.body.error.code).toBe("UNAUTHORIZED");
   });
 
-  it.each(["posthog", "calendly"])(
-    "returns public catalog metadata including %s OAuth",
-    async (connectorSlug) => {
+  it.each([
+    ["posthog", "oauth", "auth-code"],
+    ["calendly", "oauth", "auth-code"],
+    ["monday-mcp", "automatic", "automatic"],
+  ] as const)(
+    "returns public catalog metadata including %s auth methods",
+    async (connectorSlug, authMethodId, grantKind) => {
       mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
 
       const client = setupApp({ context, routes: connectorCatalogRoutes })(
@@ -153,7 +157,7 @@ describe("GET /api/connector-catalog", () => {
         expect.objectContaining({
           slug: connectorSlug,
           authMethods: expect.arrayContaining([
-            expect.objectContaining({ id: "oauth", grantKind: "auth-code" }),
+            expect.objectContaining({ id: authMethodId, grantKind }),
           ]),
         }),
       );

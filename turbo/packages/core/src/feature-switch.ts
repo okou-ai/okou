@@ -44,6 +44,11 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.ArtifactPreviews]: {
+    maintainer: "bingjie@okou.ai",
+    description: "Capture and publish sandbox covers for HTML artifacts.",
+    enabled: false,
+  },
   [FeatureSwitchKey.NotifyMail]: {
     maintainer: "lancy@okou.ai",
     description: "Allow agents to send Okou email notifications to their user",
@@ -85,6 +90,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.ChatComposerLayout]: {
+    maintainer: "bingjie@okou.ai",
+    description:
+      "Keep the chat header and input anchored, with a single bottom safe-area reserve.",
+    enabled: false,
+    enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
+    enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
+  },
   [FeatureSwitchKey.BrowserNativeInput]: {
     maintainer: "liangyou@okou.ai",
     description:
@@ -101,12 +114,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "yuma@okou.ai",
     description: "Enable the Ahrefs SEO connector",
     enabled: false,
-  },
-  [FeatureSwitchKey.MondayConnector]: {
-    maintainer: "liangyou@okou.ai",
-    description: "Enable the Monday.com MCP connector",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.PlaudConnector]: {
     maintainer: "liangyou@okou.ai",
@@ -217,7 +224,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.OkouDebug]: {
     maintainer: "ethan@okou.ai",
     description:
-      "Reveal activity debug surfaces, activity log navigation, appended system prompts, realtime connection diagnostics, and Debug preferences",
+      "Reveal activity debug surfaces, activity log navigation, appended system prompts, and Debug preferences",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -343,6 +350,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.ChatRunningIndicatorWave]: {
+    maintainer: "liangyou@okou.ai",
+    description:
+      "Make running chat indicators breathe in a top-to-bottom wave through the sidebar.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.ChatThreadMuting]: {
     maintainer: "ethan@okou.ai",
     description:
@@ -356,6 +370,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Collapse the composer toolbar's attach, template and create workflow buttons into a single plus menu.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.ComposerAnchoredSuggestions]: {
+    maintainer: "ethan@okou.ai",
+    description:
+      "Anchor slash and mention suggestions above the full composer, with the highest-priority candidate at the bottom and no template preview flyout on mobile.",
+    enabled: false,
   },
   [FeatureSwitchKey.DeliveryFormatGuidance]: {
     maintainer: "bingjie@okou.ai",

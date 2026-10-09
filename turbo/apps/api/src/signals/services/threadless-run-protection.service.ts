@@ -1,5 +1,5 @@
 import type { SQL } from "drizzle-orm";
-import type { ApiDb, Tx } from "../../lib/db-types";
+import type { Tx } from "../../lib/db-types";
 
 /** Identity of a Run that generic cancellation or cleanup is about to touch. */
 export interface ProtectedRunScope {
@@ -18,10 +18,9 @@ export interface ThreadlessRunProtection {
    * Conditions correlated to `agent_runs` that a Run must satisfy to enter a
    * cleanup sweep. They are a cheap pre-filter; the locked checks below decide.
    */
-  readonly sweepEligibility: (
-    db: Pick<ApiDb, "select">,
-    args: { readonly currentTime: Date },
-  ) => readonly SQL[];
+  readonly sweepEligibility: (args: {
+    readonly currentTime: Date;
+  }) => readonly SQL[];
   /** Locks the owner's rows; `true` means the active Run must not be cancelled. */
   readonly lockCancellationProtection: (
     tx: Tx,

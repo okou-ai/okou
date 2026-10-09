@@ -36,6 +36,7 @@ def make_query_inputs(
     if auth_overrides:
         auth_config.update(auth_overrides)
     api_entry = {
+        "id": "run-1:0",
         "base": api_base,
         "auth": auth_config,
     }
@@ -381,6 +382,7 @@ class TestAuthQueryInjection:
         flow = real_flow(with_response=False, host="api.github.com", path="/repos")
         flow.metadata[metadata_keys.SANDBOX_RUN_ID] = "test-run"
         api_entry = {
+            "id": "run-1:0",
             "base": "https://api.github.com",
             "auth": {"headers": {"Authorization": "Bearer ${{ secrets.TOKEN }}"}},
         }

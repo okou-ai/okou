@@ -202,7 +202,7 @@
 //! user cancellation can subsequently override the final guest control
 //! diagnostic, but it does not mutate the public tool-result shape.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -217,6 +217,7 @@ use super::pi_memory_citation::{CitationParser, CitationProjection, project_segm
 use super::pi_session_output::{PiSessionOutputSender, SESSION_OUTPUT_DELTA_MAX_BYTES};
 use crate::active_input::{ActiveInputFrame, ActiveInputWriter};
 use crate::error::AgentError;
+use crate::masker::{SecretMasker, StreamingSecretMasker};
 use crate::upstream_error_text::project_model_error_text;
 
 const PI_RPC_ABORT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
@@ -326,19 +327,23 @@ fn boundary_error(code: &str, message: &str) -> AgentError {
     AgentError::Execution(format!("[{code}] {message}"))
 }
 
-struct PiAssistantStream {
+struct PiAssistantStream<'a> {
     event_id_prefix: String,
     parser: CitationParser,
+    masker: &'a SecretMasker,
+    masking: BTreeMap<usize, StreamingSecretMasker<'a>>,
     started_sources: HashSet<usize>,
     closed_sources: HashSet<usize>,
     output: PiSessionOutputSender,
 }
 
-impl PiAssistantStream {
-    fn new(output: PiSessionOutputSender) -> Self {
+impl<'a> PiAssistantStream<'a> {
+    fn new(output: PiSessionOutputSender, masker: &'a SecretMasker) -> Self {
         Self {
             event_id_prefix: format!("sandbox:{}", uuid::Uuid::new_v4()),
             parser: CitationParser::new(0),
+            masker,
+            masking: BTreeMap::new(),
             started_sources: HashSet::new(),
             closed_sources: HashSet::new(),
             output,
@@ -359,30 +364,41 @@ impl PiAssistantStream {
             if text.is_empty() || self.closed_sources.contains(&source) {
                 continue;
             }
-            let text = if self.started_sources.contains(&source) {
-                text.as_str()
-            } else {
-                text.trim_start()
-            };
-            if text.is_empty() {
-                continue;
-            }
+            // Citation normalization can release text across provider deltas.
+            // Mask each source before trimming or transport chunk boundaries.
+            let masked = self
+                .masking
+                .entry(source)
+                .or_insert_with(|| self.masker.stream())
+                .push(&text);
+            self.emit_masked(source, &masked);
+        }
+    }
 
-            let run_event_id = format!("{}:{source}", self.event_id_prefix);
-            let mut remaining = text;
-            while !remaining.is_empty() {
-                let mut end = remaining.len().min(SESSION_OUTPUT_DELTA_MAX_BYTES);
-                while !remaining.is_char_boundary(end) {
-                    end -= 1;
-                }
-                let delta = remaining[..end].to_string();
-                if !self.output.try_send(&run_event_id, delta) {
-                    self.closed_sources.insert(source);
-                    break;
-                }
-                self.started_sources.insert(source);
-                remaining = &remaining[end..];
+    fn emit_masked(&mut self, source: usize, text: &str) {
+        if self.closed_sources.contains(&source) {
+            return;
+        }
+        let text = if self.started_sources.contains(&source) {
+            text
+        } else {
+            text.trim_start()
+        };
+        let run_event_id = format!("{}:{source}", self.event_id_prefix);
+        let mut remaining = text;
+        while !remaining.is_empty() {
+            let mut end = remaining.len().min(SESSION_OUTPUT_DELTA_MAX_BYTES);
+            while !remaining.is_char_boundary(end) {
+                end -= 1;
             }
+            let delta = remaining[..end].to_string();
+            if !self.output.try_send(&run_event_id, delta) {
+                self.closed_sources.insert(source);
+                self.masking.remove(&source);
+                break;
+            }
+            self.started_sources.insert(source);
+            remaining = &remaining[end..];
         }
     }
 
@@ -390,6 +406,9 @@ impl PiAssistantStream {
         let parser = std::mem::replace(&mut self.parser, CitationParser::new(0));
         let projection = parser.finish();
         self.emit_visible(projection.visible_segments.into_iter().enumerate());
+        for (source, masking) in std::mem::take(&mut self.masking) {
+            self.emit_masked(source, &masking.finish());
+        }
         self.event_id_prefix
     }
 }
@@ -497,19 +516,19 @@ pub(super) fn oversized_record_is_discardable(event_type: &str) -> bool {
     matches!(event_type, "agent_end" | "turn_end")
 }
 
-pub(super) struct PiRpcProjection {
+pub(super) struct PiRpcProjection<'a> {
     run_id: String,
     session_id: String,
     started_at: Instant,
     emitted_session_init: bool,
     assistant_terminal: Option<PiAssistantTerminal>,
-    session_output: Option<PiSessionOutputSender>,
-    assistant_stream: Option<PiAssistantStream>,
+    session_output: Option<(PiSessionOutputSender, &'a SecretMasker)>,
+    assistant_stream: Option<PiAssistantStream<'a>>,
     pending_retry: Option<PiRetryAttempt>,
     terminal_error: bool,
 }
 
-impl PiRpcProjection {
+impl<'a> PiRpcProjection<'a> {
     pub(super) fn new(run_id: &str, session_id: &str) -> Self {
         Self {
             run_id: run_id.to_string(),
@@ -524,8 +543,12 @@ impl PiRpcProjection {
         }
     }
 
-    pub(super) fn with_session_output(mut self, output: PiSessionOutputSender) -> Self {
-        self.session_output = Some(output);
+    pub(super) fn with_session_output(
+        mut self,
+        output: PiSessionOutputSender,
+        masker: &'a SecretMasker,
+    ) -> Self {
+        self.session_output = Some((output, masker));
         self
     }
 
@@ -636,8 +659,7 @@ impl PiRpcProjection {
         self.assistant_stream = self
             .session_output
             .as_ref()
-            .cloned()
-            .map(PiAssistantStream::new);
+            .map(|(output, masker)| PiAssistantStream::new(output.clone(), masker));
     }
 
     fn project_message_update(&mut self, event: &Value) {
@@ -1567,8 +1589,9 @@ mod tests {
             .expect("citation fixture prefix");
         let (output, mut output_rx) = super::super::pi_session_output::test_channel(32, "run-id");
         let (responses, _responses_rx) = response_channel();
+        let masker = SecretMasker::from_raw("");
         let mut projection =
-            PiRpcProjection::new("run-id", "thread-id").with_session_output(output);
+            PiRpcProjection::new("run-id", "thread-id").with_session_output(output, &masker);
 
         assert!(
             projection
@@ -1778,8 +1801,9 @@ mod tests {
     fn streaming_overflow_preserves_the_authoritative_message_and_result() {
         let (output, _output_rx) = super::super::pi_session_output::test_channel(1, "run-id");
         let (responses, _responses_rx) = response_channel();
+        let masker = SecretMasker::from_raw("");
         let mut projection =
-            PiRpcProjection::new("run-id", "thread-id").with_session_output(output);
+            PiRpcProjection::new("run-id", "thread-id").with_session_output(output, &masker);
 
         projection
             .project(
@@ -1841,8 +1865,9 @@ mod tests {
     fn streaming_splits_utf8_deltas_at_the_request_byte_bound() {
         let (output, mut output_rx) = super::super::pi_session_output::test_channel(8, "run-id");
         let (responses, _responses_rx) = response_channel();
+        let masker = SecretMasker::from_raw("");
         let mut projection =
-            PiRpcProjection::new("run-id", "thread-id").with_session_output(output);
+            PiRpcProjection::new("run-id", "thread-id").with_session_output(output, &masker);
         let text = "é".repeat(3000);
 
         projection
@@ -1876,6 +1901,61 @@ mod tests {
         assert!(first.delta.len() <= SESSION_OUTPUT_DELTA_MAX_BYTES);
         assert!(second.delta.len() <= SESSION_OUTPUT_DELTA_MAX_BYTES);
         assert_eq!(format!("{}{}", first.delta, second.delta), "é".repeat(3000));
+    }
+
+    #[test]
+    fn streaming_extension_failure_does_not_flush_a_pending_secret_tail() {
+        use base64::Engine;
+
+        let secret = "audit-secret-12345";
+        let masker =
+            SecretMasker::from_raw(&base64::engine::general_purpose::STANDARD.encode(secret));
+        let (output, mut output_rx) = super::super::pi_session_output::test_channel(8, "run-id");
+        let (responses, _responses_rx) = response_channel();
+        let mut projection =
+            PiRpcProjection::new("run-id", "thread-id").with_session_output(output, &masker);
+        projection
+            .project(
+                json!({"type":"message_start","message":{"role":"assistant"}}),
+                &responses,
+                0,
+            )
+            .expect("message start");
+        projection
+            .project(
+                json!({"type":"message_update","assistantMessageEvent":{
+                    "type":"text_delta","contentIndex":0,
+                    "delta":format!("{} audit-sec", "ordinary ".repeat(10))
+                }}),
+                &responses,
+                0,
+            )
+            .expect("partial secret update");
+        let published = output_rx.try_recv().expect("ordinary text should stream");
+        assert!(!published.delta.contains("audit"));
+        assert!(
+            projection
+                .project(
+                    json!({"type":"extension_error","error":"synthetic failure"}),
+                    &responses,
+                    0
+                )
+                .is_err()
+        );
+        assert!(
+            projection
+                .project(
+                    json!({"type":"message_end","message":{
+                        "role":"assistant","content":[{"type":"text","text":secret}]
+                    }}),
+                    &responses,
+                    0,
+                )
+                .expect("discard post-failure completion")
+                .is_none()
+        );
+        drop(projection);
+        assert!(output_rx.try_recv().is_err());
     }
 
     async fn next_command(reader: &mut BufReader<tokio::process::ChildStdout>) -> Value {

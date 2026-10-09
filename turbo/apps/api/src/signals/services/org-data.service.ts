@@ -35,7 +35,7 @@ import { onRejection, settle } from "../utils";
 import { scheduleReleasedSlotPicks$ } from "./agent-run-slot-scheduling.service";
 import type { ReleasedRunSlot } from "./agent-run-terminal-transition.service";
 import { cancelEmptyUsagePackSubscription$ } from "./billing-downgrade.service";
-import { deleteDiscordOrgData } from "./discord-owner-cleanup.service";
+import { deleteDiscordOrgData$ } from "./discord-owner-cleanup.service";
 import { cancelAndRefundOrgBillingForDeletion } from "./org-deletion-billing.service";
 import { cleanupOrgMemberResources$ } from "./org-member-cleanup.service";
 import {
@@ -663,7 +663,7 @@ export const deleteOrg$ = command(
 
     await client.organizations.deleteOrganization(args.orgId);
     signal.throwIfAborted();
-    await deleteDiscordOrgData(writeDb, args.orgId);
+    await set(deleteDiscordOrgData$, args.orgId, signal);
     signal.throwIfAborted();
 
     return { message: "Organization deleted" };

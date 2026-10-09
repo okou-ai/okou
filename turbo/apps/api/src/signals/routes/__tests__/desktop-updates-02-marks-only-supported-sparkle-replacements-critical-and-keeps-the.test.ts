@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { testContext } from "../../../__tests__/test-context";
-import { mockEnv } from "../../../lib/env";
+import {
+  desktopCompatibility,
+  testContext,
+} from "../../../__tests__/test-context";
 
 import { createDesktopUpdatePublicApi } from "./helpers/desktop-update-public";
 
@@ -16,7 +18,7 @@ const {
 // Default Vitest file isolation gives this scenario a fresh module cache.
 describe("desktop update routes", () => {
   it("marks only supported Sparkle replacements critical and keeps the Electron feed accessible", async () => {
-    mockEnv("OKOU_DESKTOP_MINIMUM_SUPPORTED_VERSION", "0.51.0");
+    desktopCompatibility.minimumSupportedVersion = "0.51.0";
     mockDesktopUpdateManifest(
       stableManifest("0.51.0", {
         "0.50.1": darwinArm64Release("0.50.1", okouZipUrl("0.50.1")),

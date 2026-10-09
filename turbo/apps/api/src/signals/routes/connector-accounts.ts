@@ -11,7 +11,7 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { db$, writeDb$ } from "../external/db";
 import { setResHeader$ } from "../context/hono";
-import { readConnectorOAuthCompletion } from "../services/connector-oauth-completion.service";
+import { connectorOAuthCompletionReceipt } from "../services/connector-oauth-completion.service";
 import type { RouteEntry } from "../route-entry";
 import { bestEffort, settle } from "../utils";
 import {
@@ -44,25 +44,36 @@ function targetFromQuery(
     : { kind: "custom", customConnectorId: query.customConnectorId };
 }
 
+const oauthCompletionScope$ = computed((get) => {
+  const auth = get(organizationAuthContext$);
+  const { attemptId } = get(
+    pathParamsOf(connectorAccountsContract.oauthCompletion),
+  );
+  return { orgId: auth.orgId, userId: auth.userId, attemptId };
+});
+
+const oauthCompletionReceipt$ = connectorOAuthCompletionReceipt(
+  oauthCompletionScope$,
+);
+
 const oauthCompletionInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const auth = get(organizationAuthContext$);
-    const { attemptId } = get(
-      pathParamsOf(connectorAccountsContract.oauthCompletion),
-    );
+    const scope = get(oauthCompletionScope$);
     const target = get(queryOf(connectorAccountsContract.oauthCompletion));
     set(setResHeader$, "Cache-Control", "no-store");
-    const completion = await readConnectorOAuthCompletion(
-      set(writeDb$),
-      {
-        orgId: auth.orgId,
-        userId: auth.userId,
-        attemptId,
-        target,
-      },
-      signal,
-    );
-    return completion
+    const completion = await get(oauthCompletionReceipt$);
+    signal.throwIfAborted();
+    if (!completion) {
+      return notFound("OAuth completion not found");
+    }
+    const account = await getConnectorAccount(get(db$), {
+      orgId: scope.orgId,
+      userId: scope.userId,
+      target: targetFromQuery(target),
+      connectionId: completion.connectionId,
+    });
+    signal.throwIfAborted();
+    return account
       ? { status: 200 as const, body: completion }
       : notFound("OAuth completion not found");
   },

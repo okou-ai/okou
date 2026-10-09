@@ -11,13 +11,14 @@ import {
   exists,
   gt,
   isNotNull,
+  not,
   or,
   sql,
   type SQL,
   type SQLWrapper,
 } from "drizzle-orm";
 import { alias, QueryBuilder } from "drizzle-orm/pg-core";
-import { command } from "ccstate";
+import { command, computed, type Computed } from "ccstate";
 
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { db$ } from "../external/db";
@@ -94,6 +95,114 @@ function capableWorkspaceCondition(args: {
     ${arrayContains(runnerState.heldWorkspaceStates, heldWorkspaceStates)}
     AND ${arrayContains(runnerState.admittableProfiles, admittableProfiles)}
   )`;
+}
+
+type RunnerHomeReader = {
+  readonly runnerId: string;
+  readonly heartbeatGeneration: number;
+};
+
+const homeReaderState = alias(runnerState, "home_affinity_reader");
+
+// Temporary mixed-version guard: outgoing APIs can advance the shared order
+// without touching home observations. PR5/#38139 retires this after a proven
+// reader/writer floor; canonical whole-heartbeat state then uses shared order.
+function currentHomeBridgeCapability(table: {
+  readonly homeAffinityVersion: SQLWrapper;
+  readonly homeAffinityGeneration: SQLWrapper;
+  readonly homeAffinitySequence: SQLWrapper;
+  readonly heartbeatGeneration: SQLWrapper;
+  readonly heartbeatSequence: SQLWrapper;
+}): SQL {
+  return sql`(
+    ${eq(table.homeAffinityVersion, 1)}
+    AND ${eq(table.homeAffinityGeneration, table.heartbeatGeneration)}
+    AND ${eq(table.homeAffinitySequence, table.heartbeatSequence)}
+  )`;
+}
+
+function homeReaderCondition(args: {
+  readonly reader: RunnerHomeReader;
+  readonly runnerGroup: string | SQLWrapper;
+  readonly freshAfter: Date;
+}): SQL {
+  return exists(
+    new QueryBuilder()
+      .select({ runnerId: homeReaderState.runnerId })
+      .from(homeReaderState)
+      .where(
+        and(
+          eq(homeReaderState.runnerId, args.reader.runnerId),
+          eq(homeReaderState.runnerGroup, args.runnerGroup),
+          eq(
+            homeReaderState.heartbeatGeneration,
+            args.reader.heartbeatGeneration,
+          ),
+          eq(homeReaderState.mode, "running"),
+          gt(homeReaderState.lastSeenAt, args.freshAfter),
+          currentHomeBridgeCapability(homeReaderState),
+        ),
+      ),
+  );
+}
+
+function capableHomeCondition(args: {
+  readonly reuseKey: SQLWrapper;
+  readonly profile: SQLWrapper;
+}): SQL {
+  const heldHomeStates = sql`jsonb_build_array(jsonb_build_object(
+    'reuseKey', cast(${args.reuseKey} as text),
+    'homeCaches', jsonb_build_array(jsonb_build_object(
+      'profile', cast(${args.profile} as text), 'homeAffinityVersion', 1
+    ))
+  ))`;
+  return sql`(
+    ${currentHomeBridgeCapability(runnerState)}
+    AND ${arrayContains(runnerState.heldHomeStates, heldHomeStates)}
+    AND ${arrayContains(runnerState.admittableProfiles, sql`jsonb_build_array(cast(${args.profile} as text))`)}
+  )`;
+}
+
+// The owning claim route connects this read-only dependency before commands
+// execute and reads it only after official authentication/queued-job authorization.
+// Claim has no preference response; this projects optional telemetry, not execution.
+export function createClaimRunnerPreferenceProjection(
+  input$: Computed<
+    Promise<
+      | {
+          readonly preference: RunnerPreference | undefined;
+          readonly reader: RunnerHomeReader | undefined;
+          readonly runId: string;
+          readonly currentDate: Date;
+        }
+      | undefined
+    >
+  >,
+) {
+  return computed(async (get): Promise<RunnerPreference | undefined> => {
+    const args = await get(input$);
+    if (
+      args?.preference?.kind !== "preference" ||
+      args.preference.tier !== "homeCache"
+    ) {
+      return args?.preference;
+    }
+    if (!args.reader) {
+      return undefined;
+    }
+    const [observation] = await get(db$)
+      .select({
+        supported: homeReaderCondition({
+          reader: args.reader,
+          runnerGroup: runnerJobQueue.runnerGroup,
+          freshAfter: runnerReuseHolderFreshAfter(args.currentDate),
+        }).mapWith(pgBooleanDecoder),
+      })
+      .from(runnerJobQueue)
+      .where(eq(runnerJobQueue.runId, args.runId))
+      .limit(1);
+    return observation?.supported ? args.preference : undefined;
+  });
 }
 
 function runnerStateHas(args: {
@@ -192,6 +301,7 @@ function runnerStateHasFinalizingPredecessor(args: {
  */
 export function runnerReusePreferencePollPriority(args: {
   readonly runnerId: string;
+  readonly homeReader?: RunnerHomeReader;
   readonly runnerGroup: string;
   readonly currentDate: Date;
 }): SQL {
@@ -214,7 +324,17 @@ export function runnerReusePreferencePollPriority(args: {
     historyGenerationRunId: targetGenerationRunId,
   });
   const reusableCondition = reusableSandboxCondition({ reuseKey, profile });
-  const workspaceCondition = capableWorkspaceCondition({ reuseKey, profile });
+  const canReadHome = args.homeReader
+    ? homeReaderCondition({
+        reader: args.homeReader,
+        runnerGroup: args.runnerGroup,
+        freshAfter,
+      })
+    : sql`false`;
+  const workspaceCondition = sql`(
+    (${not(canReadHome)} AND ${capableWorkspaceCondition({ reuseKey, profile })})
+    OR (${canReadHome} AND ${capableHomeCondition({ reuseKey, profile })})
+  )`;
   const global = (resourceCondition: SQL) => {
     return runnerStateHas({
       runnerGroup: args.runnerGroup,
@@ -309,6 +429,7 @@ const preferenceResolutionByTier = {
   finalizingPredecessor: "finalizing_predecessor",
   reusableSandbox: "matching_reusable_sandbox",
   workspaceCache: "matching_workspace_cache",
+  homeCache: "matching_home_cache",
 } as const satisfies Record<PositiveRunnerPreference["tier"], string>;
 
 const noPreferenceResolutionByReason = {
@@ -357,10 +478,12 @@ interface RunnerReuseHolder {
   readonly isFinalizingPredecessor: boolean;
   readonly hasActiveProducer: boolean;
   readonly hasReusableSandbox: boolean;
+  readonly hasHomeCache: boolean;
   readonly sourceCompletedAt: Date | null;
 }
 
 function runnerReuseHolderPlan(args: {
+  readonly homeReader?: RunnerHomeReader;
   readonly runnerGroup: string;
   readonly profile: string;
   readonly reuseKey: string;
@@ -376,12 +499,26 @@ function runnerReuseHolderPlan(args: {
         profile: sql.param(args.profile),
       })
     : sql`false`;
-  const workspaceCondition = args.shouldLookUpGenericReuse
-    ? capableWorkspaceCondition({
-        reuseKey: sql.param(args.reuseKey),
-        profile: sql.param(args.profile),
+  const canReadHome = args.homeReader
+    ? homeReaderCondition({
+        reader: args.homeReader,
+        runnerGroup: args.runnerGroup,
+        freshAfter: args.freshAfter,
       })
     : sql`false`;
+  const workspaceCondition = args.shouldLookUpGenericReuse
+    ? sql`(${not(canReadHome)} AND ${capableWorkspaceCondition({
+        reuseKey: sql.param(args.reuseKey),
+        profile: sql.param(args.profile),
+      })})`
+    : sql`false`;
+  const homeCondition =
+    args.shouldLookUpGenericReuse && args.homeReader
+      ? sql`(${canReadHome} AND ${capableHomeCondition({
+          reuseKey: sql.param(args.reuseKey),
+          profile: sql.param(args.profile),
+        })})`
+      : sql`false`;
   const exactGenerationCondition =
     args.shouldLookUpExactGeneration &&
     args.historyGenerationRunId !== undefined
@@ -411,7 +548,7 @@ function runnerReuseHolderPlan(args: {
     WHEN ${exactGenerationCondition} THEN 4
     WHEN ${finalizingCondition} THEN 3
     WHEN ${reusableCondition} THEN 2
-    WHEN ${workspaceCondition} THEN 1
+    WHEN ${homeCondition} OR ${workspaceCondition} THEN 1
     ELSE 0
   END`;
   return {
@@ -426,6 +563,9 @@ function runnerReuseHolderPlan(args: {
       ),
       hasActiveProducer: sql`${producerCondition}`.mapWith(pgBooleanDecoder),
       hasReusableSandbox: sql`${reusableCondition}`.mapWith(pgBooleanDecoder),
+      hasHomeCache: sql`coalesce(${homeCondition}, false)`.mapWith(
+        pgBooleanDecoder,
+      ),
       sourceCompletedAt: finalizingSourceRun.completedAt,
     },
     joinCondition: args.historyGenerationRunId
@@ -441,6 +581,7 @@ function runnerReuseHolderPlan(args: {
         finalizingCondition,
         reusableCondition,
         workspaceCondition,
+        homeCondition,
       ),
     ),
     orderBy: [desc(resourceRank), asc(runnerState.runnerId)] as const,
@@ -448,6 +589,7 @@ function runnerReuseHolderPlan(args: {
 }
 
 interface RunnerReusePreferenceArgs {
+  readonly homeReader?: RunnerHomeReader;
   readonly runnerGroup: string;
   readonly profile: string;
   readonly reuseKey: string | null;
@@ -492,6 +634,7 @@ export const resolveRunnerReusePreference$ = command(
       args.currentDate.getTime() - RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
     );
     const plan = runnerReuseHolderPlan({
+      homeReader: args.homeReader,
       runnerGroup: args.runnerGroup,
       profile: args.profile,
       reuseKey: args.reuseKey,
@@ -518,6 +661,7 @@ export const resolveRunnerReusePreference$ = command(
           isFinalizingPredecessor: row.isFinalizingPredecessor,
           hasActiveProducer: row.hasActiveProducer,
           hasReusableSandbox: row.hasReusableSandbox,
+          hasHomeCache: row.hasHomeCache,
           sourceCompletedAt: row.sourceCompletedAt,
         }
       : null;
@@ -593,7 +737,11 @@ function runnerReusePreferenceResult(args: {
     preference: {
       kind: "preference",
       runnerIdentity: holder.runnerIdentity,
-      tier: holder.hasReusableSandbox ? "reusableSandbox" : "workspaceCache",
+      tier: holder.hasReusableSandbox
+        ? "reusableSandbox"
+        : holder.hasHomeCache
+          ? "homeCache"
+          : "workspaceCache",
       expiresAt: matchingReuseExpiresAt.toISOString(),
     },
   };

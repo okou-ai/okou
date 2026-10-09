@@ -62,7 +62,7 @@ async def test_resolved_header_collisions_have_one_final_value_across_auth_paths
         auth_config["base"] = "${{ secrets.BASE }}"
         resolved_base = "https://upstream.example.com"
     allow = make_allow(
-        {"base": "https://api.example.com", "auth": auth_config},
+        {"id": "run-1:0", "base": "https://api.example.com", "auth": auth_config},
         rule="POST /resource",
         rel_path="/resource",
     )
@@ -168,7 +168,7 @@ async def test_invalid_resolved_headers_cannot_be_hidden_by_collision_or_filteri
         auth_config["base"] = "${{ secrets.BASE }}"
         resolved_base = "https://upstream.example.com"
     allow = make_allow(
-        {"base": "https://api.example.com", "auth": auth_config},
+        {"id": "run-1:0", "base": "https://api.example.com", "auth": auth_config},
         rule="GET /resource",
         rel_path="/resource",
     )
@@ -264,6 +264,7 @@ async def test_bulk_headers_preserve_semantics_without_per_header_rebuilds(
     flow.metadata[metadata_keys.SANDBOX_RUN_ID] = "test-run"
     allow = make_allow(
         {
+            "id": "run-1:0",
             "base": "https://api.example.com",
             "auth": {
                 "headers": dict.fromkeys(resolved_headers, "${{ secrets.VALUE }}"),

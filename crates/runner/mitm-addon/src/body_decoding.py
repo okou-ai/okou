@@ -41,6 +41,9 @@ _ZSTD_VALIDATE_INPUT_CHUNK_SIZE = 32
 # Preserve ordinary concatenation with substantial headroom while capping
 # per-frame decoder construction independently of compressed and decoded bytes.
 _ZSTD_VALIDATE_MAX_FRAMES = 64
+# Empty gzip/deflate members consume no decoded-output allowance. Preserve
+# ordinary request concatenation without unbounded capture-only transitions.
+_ZLIB_REQUEST_CAPTURE_MAX_MEMBERS = 64
 INVALID_COMPRESSED_BODY = "invalid compressed body"
 INCOMPLETE_COMPRESSED_BODY = "incomplete compressed body"
 DECODED_BODY_LIMIT_EXCEEDED = "decoded body limit exceeded"
@@ -676,20 +679,22 @@ def _decompress_zlib_json_usage_body(
     data: bytes,
     encoding: Literal["gzip", "deflate"],
     max_output: int,
+    *,
+    max_members: int | None = None,
 ) -> tuple[bytes, str | None]:
     if max_output <= 0:
         return b"", DECODED_BODY_LIMIT_EXCEEDED if data else None
 
     wbits = 16 + zlib.MAX_WBITS if encoding == "gzip" else zlib.MAX_WBITS
-    result = decode_zlib_bounded(data, wbits=wbits, max_output=max_output)
+    result = decode_zlib_bounded(data, wbits=wbits, max_output=max_output, max_members=max_members)
     if result.status == "complete":
         return result.body, None
     if result.status == "incomplete":
         return result.body, INCOMPLETE_COMPRESSED_BODY
     if result.status == "output_limit_exceeded":
         return result.body, DECODED_BODY_LIMIT_EXCEEDED
-    # Unlimited member traversal cannot produce ``trailing_data``. Treat it
-    # defensively like any other structurally invalid compressed body.
+    # An exhausted optional member budget leaves unvalidated trailing input.
+    # Strict callers must not mistake the decoded prefix for a complete body.
     return b"", INVALID_COMPRESSED_BODY
 
 
@@ -793,9 +798,10 @@ def decode_request_body_for_network_log_capture(
     """Decode a request body for persistent network-log capture.
 
     Request capture hides unsupported encodings and supported-codec decode
-    failures instead of keeping best-effort fallback bytes. This helper is
-    intentionally separate from billing inspection, which has a stricter
-    fail-closed policy.
+    failures instead of keeping best-effort fallback bytes. Gzip/deflate member
+    traversal has a capture-only budget independent of decoded output; exhausted
+    input validation hides the body without affecting forwarded wire bytes.
+    This helper is separate from billing inspection and its fail-closed policy.
     """
     encoding = content_encoding.read_folded(headers)
     if encoding is None:
@@ -805,7 +811,12 @@ def decode_request_body_for_network_log_capture(
     if encoding not in _SUPPORTED_ONE_SHOT_BODY_ENCODINGS:
         return None
 
-    body, error = _decode_supported_body_with_complete_status(data, encoding, max_output)
+    if encoding in ("gzip", "deflate"):
+        body, error = _decompress_zlib_json_usage_body(
+            data, encoding, max_output, max_members=_ZLIB_REQUEST_CAPTURE_MAX_MEMBERS
+        )
+    else:
+        body, error = _decode_supported_body_with_complete_status(data, encoding, max_output)
     if error is not None and error != DECODED_BODY_LIMIT_EXCEEDED:
         return None
     return body

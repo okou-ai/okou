@@ -4,7 +4,7 @@
 mod common;
 
 use guest_contracts::diagnostics::{
-    EventDeliveryAcceptanceOutcome, FailureClass, FailureDiagnostic,
+    EventDeliveryAcceptanceOutcome, FailureClass, FailureDiagnostic, HttpAttemptFailureKind,
 };
 use httpmock::prelude::*;
 use serde_json::json;
@@ -17,13 +17,14 @@ const THREAD_ID: &str = "019fac13-2355-74d3-8414-b467fbb80c70";
 struct EventFailureRun {
     process_exit_code: Option<i32>,
     stderr: String,
+    error_message: String,
     diagnostic: FailureDiagnostic,
 }
 
 #[tokio::test]
 async fn successful_cli_with_exhausted_event_delivery_uses_recovery_checkpoint()
 -> Result<(), Box<dyn std::error::Error>> {
-    let run = run_event_failure_case("event-delivery-failure-recovery", 0).await?;
+    let run = run_event_failure_case("event-delivery-failure-recovery", 0, 500).await?;
 
     assert_eq!(
         run.process_exit_code,
@@ -42,7 +43,36 @@ async fn successful_cli_with_exhausted_event_delivery_uses_recovery_checkpoint()
         FailureClass::EventUploadFailed
     );
     assert_eq!(run.diagnostic.cli_exit_code, Some(0));
-    assert_confirmed_event_delivery(&run.diagnostic)?;
+    assert_confirmed_event_delivery(&run.diagnostic, 500, 3)?;
+    assert_failed_batch_message(&run)?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn successful_cli_with_nonretryable_event_rejection_reports_failed_batch()
+-> Result<(), Box<dyn std::error::Error>> {
+    let run = run_event_failure_case("event-delivery-nonretryable-recovery", 0, 400).await?;
+
+    assert_eq!(
+        run.process_exit_code,
+        Some(1),
+        "guest-agent stderr:\n{}",
+        run.stderr
+    );
+    assert!(
+        run.stderr
+            .contains("Attempting best-effort recovery checkpoint")
+    );
+    assert!(run.stderr.contains("Recovery checkpoint created"));
+    assert!(!run.stderr.contains("▷ Checkpoint"));
+    assert_eq!(
+        run.diagnostic.failure_class,
+        FailureClass::EventUploadFailed
+    );
+    assert_eq!(run.diagnostic.cli_exit_code, Some(0));
+    assert_confirmed_event_delivery(&run.diagnostic, 400, 1)?;
+    assert_failed_batch_message(&run)?;
 
     Ok(())
 }
@@ -50,7 +80,7 @@ async fn successful_cli_with_exhausted_event_delivery_uses_recovery_checkpoint()
 #[tokio::test]
 async fn nonzero_cli_remains_primary_when_event_delivery_also_fails()
 -> Result<(), Box<dyn std::error::Error>> {
-    let run = run_event_failure_case("event-delivery-secondary-failure", 1).await?;
+    let run = run_event_failure_case("event-delivery-secondary-failure", 1, 500).await?;
 
     assert_eq!(
         run.process_exit_code,
@@ -61,7 +91,7 @@ async fn nonzero_cli_remains_primary_when_event_delivery_also_fails()
     assert!(run.stderr.contains("mock codex primary failure"));
     assert_eq!(run.diagnostic.failure_class, FailureClass::CliNonzero);
     assert_eq!(run.diagnostic.cli_exit_code, Some(1));
-    assert_confirmed_event_delivery(&run.diagnostic)?;
+    assert_confirmed_event_delivery(&run.diagnostic, 500, 3)?;
 
     Ok(())
 }
@@ -69,6 +99,7 @@ async fn nonzero_cli_remains_primary_when_event_delivery_also_fails()
 async fn run_event_failure_case(
     run_id: &str,
     cli_exit_code: i32,
+    http_status: u16,
 ) -> Result<EventFailureRun, Box<dyn std::error::Error>> {
     common::ensure_canonical_workspace_for_test()?;
     let server = MockServer::start();
@@ -98,7 +129,7 @@ async fn run_event_failure_case(
     });
     let events = server.mock(|when, then| {
         when.method(POST).path("/api/webhooks/agent/events");
-        then.status(500);
+        then.status(http_status);
     });
     let _telemetry = server.mock(|when, then| {
         when.method(POST).path("/api/webhooks/agent/telemetry");
@@ -184,7 +215,6 @@ async fn run_event_failure_case(
     )
     .await?;
 
-    assert!(events.calls_async().await >= 3);
     prepare.assert_calls_async(1).await;
     upload.assert_calls_async(1).await;
     complete.assert_calls_async(1).await;
@@ -192,6 +222,14 @@ async fn run_event_failure_case(
     let paths = guest_agent::paths::GuestPaths::from_runtime_dir(runtime_dir.clone());
     let diagnostic: FailureDiagnostic =
         serde_json::from_slice(&std::fs::read(paths.failure_diagnostic_file())?)?;
+    let event_delivery = diagnostic
+        .event_delivery
+        .as_ref()
+        .ok_or_else(|| io::Error::other("failure omitted event delivery details"))?;
+    let attempts_per_batch = if http_status == 400 { 1 } else { 3 };
+    events
+        .assert_calls_async(usize::try_from(event_delivery.failed_batches)? * attempts_per_batch)
+        .await;
     assert!(
         !runtime_dir.join("event-error").exists(),
         "structured failure propagation must not recreate the boolean event flag"
@@ -200,12 +238,37 @@ async fn run_event_failure_case(
     Ok(EventFailureRun {
         process_exit_code: output.status.code(),
         stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        error_message: std::fs::read_to_string(paths.checkpoint_error_file())?,
         diagnostic,
     })
 }
 
+fn assert_failed_batch_message(run: &EventFailureRun) -> Result<(), Box<dyn std::error::Error>> {
+    let event_delivery = run
+        .diagnostic
+        .event_delivery
+        .as_ref()
+        .ok_or_else(|| io::Error::other("failure omitted event delivery details"))?;
+    assert!(event_delivery.last_acknowledged_sequence.is_none());
+    assert!(event_delivery.drain_timeout.is_none());
+    let failed_batch = event_delivery
+        .first_failed_batch
+        .as_ref()
+        .ok_or_else(|| io::Error::other("failure omitted first failed batch"))?;
+    assert_eq!(
+        run.error_message,
+        format!(
+            "Event delivery failed after acknowledged sequence none: batch {}-{} failed",
+            failed_batch.first_sequence, failed_batch.last_sequence
+        )
+    );
+    Ok(())
+}
+
 fn assert_confirmed_event_delivery(
     diagnostic: &FailureDiagnostic,
+    http_status: u16,
+    attempts_per_batch: usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let event_delivery = diagnostic
         .event_delivery
@@ -216,13 +279,18 @@ fn assert_confirmed_event_delivery(
         event_delivery.failed_batches, event_delivery.total_batches,
         "the mock rejects every event delivery batch"
     );
+    let failed_batch = event_delivery
+        .first_failed_batch
+        .as_ref()
+        .ok_or_else(|| io::Error::other("failure omitted first failed batch"))?;
     assert_eq!(
-        event_delivery
-            .first_failed_batch
-            .as_ref()
-            .ok_or_else(|| io::Error::other("failure omitted first failed batch"))?
-            .outcome,
+        failed_batch.outcome,
         EventDeliveryAcceptanceOutcome::ConfirmedRejection
     );
+    assert_eq!(failed_batch.attempts.len(), attempts_per_batch);
+    assert!(failed_batch.attempts.iter().all(|attempt| {
+        attempt.failure_kind == HttpAttemptFailureKind::HttpStatus
+            && attempt.http_status == Some(http_status)
+    }));
     Ok(())
 }
