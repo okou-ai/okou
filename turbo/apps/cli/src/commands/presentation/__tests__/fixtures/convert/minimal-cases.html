@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Focused DOM renderer baseline cases</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: Arial, "Noto Sans CJK SC", sans-serif;
+      }
+      .slide {
+        position: relative;
+        width: 1600px;
+        height: 900px;
+        background: #fff;
+        color: #172638;
+        overflow: hidden;
+      }
+      .case-label {
+        position: absolute;
+        left: 80px;
+        top: 40px;
+        margin: 0;
+        font-size: 22px;
+        line-height: 1.3;
+        color: #50657a;
+      }
+      .foot {
+        position: absolute;
+        left: 80px;
+        bottom: 34px;
+        margin: 0;
+        font-size: 18px;
+        line-height: 1.3;
+        color: #50657a;
+      }
+      .content {
+        position: absolute;
+        left: 100px;
+        top: 200px;
+        width: 1350px;
+      }
+      h1,
+      h2,
+      p {
+        margin: 0;
+      }
+      h1 {
+        font-size: 72px;
+        line-height: 1.25;
+        font-weight: 400;
+      }
+      p {
+        font-size: 40px;
+        line-height: 1.4;
+      }
+      .reference {
+        position: absolute;
+        left: 100px;
+        top: 730px;
+        width: 1350px;
+        border-top: 2px solid #a8b9c8;
+        padding-top: 12px;
+        font-size: 24px;
+      }
+      .pill {
+        display: inline-block;
+        padding: 4px 16px;
+        background: #ffe766;
+        border-radius: 12px;
+      }
+      .inherited-frame {
+        width: 1600px;
+        height: 900px;
+        background: #173a57;
+      }
+      .inherited-frame .slide {
+        background: transparent;
+        color: #fff;
+      }
+      .inherited-frame .case-label,
+      .inherited-frame .foot {
+        color: #d0e3f2;
+      }
+    </style>
+  </head>
+  <body>
+    <section class="slide" data-case="N01">
+      <p class="case-label">N01 / plain single-line text</p>
+      <div class="content"><h1>Measured text, unchanged font size.</h1></div>
+      <p class="reference">
+        Control: one text frame, no inline styling or automatic source fitting.
+      </p>
+      <p class="foot">N01_PLAIN_TEXT</p>
+    </section>
+    <section class="slide" data-case="N02">
+      <p class="case-label">N02 / naturally wrapped paragraph</p>
+      <div class="content" style="width: 820px">
+        <p>
+          This paragraph is deliberately narrow. The browser decides its line
+          breaks. Compare the last word on each line and the distance to the
+          reference below.
+        </p>
+      </div>
+      <p class="reference">
+        The paragraph must not collide with this reference.
+      </p>
+      <p class="foot">N02_NATURAL_WRAP</p>
+    </section>
+    <section class="slide" data-case="N03">
+      <p class="case-label">N03 / explicit line breaks</p>
+      <div class="content">
+        <p>
+          First authored line.<br />Second authored line.<br />Third authored
+          line.
+        </p>
+      </div>
+      <p class="reference">
+        Exactly three authored lines; compare baseline distance.
+      </p>
+      <p class="foot">N03_EXPLICIT_BREAKS</p>
+    </section>
+    <section class="slide" data-case="N04">
+      <p class="case-label">N04 / mixed rich-text runs</p>
+      <div class="content">
+        <h1>
+          Plain <strong>bold</strong> <em>italic</em>
+          <span style="color: #ce4c35">colored</span> text.
+        </h1>
+        <p style="margin-top: 50px">
+          A <strong>bold phrase</strong> and an <em>italic phrase</em> share one
+          paragraph.
+        </p>
+      </div>
+      <p class="reference">
+        Runs keep their size, baseline, and reading order.
+      </p>
+      <p class="foot">N04_RICH_RUNS</p>
+    </section>
+    <section class="slide" data-case="N05">
+      <p class="case-label">N05 / inline background highlight</p>
+      <div class="content">
+        <h1>Keep <span class="pill">this highlight</span> aligned.</h1>
+        <p style="margin-top: 60px">
+          The background makes the inline span a separate drawing object.
+        </p>
+      </div>
+      <p class="reference">
+        No duplicated words, shrunken fragment, or overlapping neighbor.
+      </p>
+      <p class="foot">N05_INLINE_HIGHLIGHT</p>
+    </section>
+    <section class="slide" data-case="N06">
+      <p class="case-label">N06 / mixed font sizes and nested list</p>
+      <div class="content">
+        <h1>
+          Large <span style="font-size: 38px">smaller inline</span> large.
+        </h1>
+        <ul style="font-size: 34px; line-height: 1.4; margin-top: 55px">
+          <li>
+            First top-level item
+            <ul style="font-size: 28px">
+              <li>First nested item</li>
+              <li>Second nested item</li>
+            </ul>
+          </li>
+          <li>Second top-level item</li>
+        </ul>
+      </div>
+      <p class="reference">
+        Compare the inline baseline and nested-list spacing separately.
+      </p>
+      <p class="foot">N06_MIXED_SIZES_LIST</p>
+    </section>
+    <section class="slide" data-case="N07">
+      <p class="case-label">N07 / mixed Latin and CJK fallback</p>
+      <div class="content">
+        <h1>Browser 浏览器测量 Native 原生文字</h1>
+        <p style="margin-top: 55px; width: 780px">
+          中文没有词间空格，需要保持浏览器实际显示的换行。Mixed Latin words must
+          remain readable beside 中文字符。
+        </p>
+      </div>
+      <p class="reference">
+        Record the referenced fonts; do not infer font portability from one
+        viewer.
+      </p>
+      <p class="foot">N07_CJK_FALLBACK</p>
+    </section>
+    <section class="slide" data-case="N08">
+      <p class="case-label">N08 / preformatted whitespace</p>
+      <div class="content">
+        <pre
+          style="
+            font-family: monospace;
+            font-size: 36px;
+            line-height: 1.5;
+            margin: 0;
+          "
+        >
+COL_A     COL_B     COL_C
+alpha     beta      gamma
+01        02        03</pre>
+        <p style="margin-top: 70px; word-spacing: 18px">
+          Extra word spacing is not character spacing.
+        </p>
+      </div>
+      <p class="reference">
+        Compare column alignment, line height, and word gaps.
+      </p>
+      <p class="foot">N08_WHITESPACE</p>
+    </section>
+    <section class="slide" data-case="N09">
+      <p class="case-label">N09 / measured table row heights</p>
+      <div class="content">
+        <table
+          style="width: 1120px; border-collapse: collapse; font-size: 32px"
+        >
+          <tbody>
+            <tr style="height: 110px; background: #e4eef6">
+              <th style="width: 50%; border: 2px solid #748a9c">Name</th>
+              <th style="border: 2px solid #748a9c">Value</th>
+            </tr>
+            <tr style="height: 130px">
+              <td style="padding: 20px; border: 2px solid #748a9c">Alpha</td>
+              <td style="padding: 20px; border: 2px solid #748a9c">12</td>
+            </tr>
+            <tr style="height: 150px">
+              <td style="padding: 20px; border: 2px solid #748a9c">Beta</td>
+              <td style="padding: 20px; border: 2px solid #748a9c">34</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="reference">The source table is 390 CSS pixels tall.</p>
+      <p class="foot">N09_TABLE_HEIGHTS</p>
+    </section>
+    <div class="inherited-frame">
+      <section class="slide" data-case="N10">
+        <p class="case-label">N10 / background painted by an ancestor</p>
+        <div class="content">
+          <h1>White text needs the dark ancestor.</h1>
+          <p style="margin-top: 60px">
+            The selected slide itself has a transparent background.
+          </p>
+        </div>
+        <p class="reference">
+          Readability requires preserving the background context.
+        </p>
+        <p class="foot">N10_INHERITED_BACKGROUND</p>
+      </section>
+    </div>
+    <section class="slide" data-case="N11">
+      <p class="case-label">N11 / nonuniform highlight corners</p>
+      <div class="content">
+        <h1>
+          <span
+            style="
+              display: inline-block;
+              background: #ffe766;
+              padding: 16px 30px;
+              border-radius: 65% 12% 55% 8% / 12% 65% 18% 80%;
+            "
+            >A shaped highlight</span
+          >
+        </h1>
+      </div>
+      <p class="reference">
+        Separate editable geometry from declared CSS simplification.
+      </p>
+      <p class="foot">N11_COMPLEX_CORNERS</p>
+    </section>
+    <section class="slide" data-case="N12">
+      <p class="case-label">N12 / per-run regional CJK font stacks</p>
+      <div class="content">
+        <p style="font-family: Arial, &quot;Noto Sans CJK SC&quot;, sans-serif">
+          SC: 直 骨 令 中文地区字形
+        </p>
+        <p
+          style="
+            margin-top: 50px;
+            font-family: Arial, &quot;Noto Sans CJK JP&quot;, sans-serif;
+          "
+        >
+          JP: 直 骨 令 日本語の地域字形
+        </p>
+        <p
+          style="
+            margin-top: 50px;
+            font-family: Arial, &quot;Noto Sans CJK KR&quot;, sans-serif;
+          "
+        >
+          KR: 直 骨 令 한국어 지역 글꼴
+        </p>
+      </div>
+      <p class="reference">
+        Inspect font slots per run as well as visible glyphs.
+      </p>
+      <p class="foot">N12_REGIONAL_FONTS</p>
+    </section>
+  </body>
+</html>

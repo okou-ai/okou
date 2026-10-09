@@ -2,9 +2,9 @@
  * Tests for okou presentation convert.
  *
  * Mocks only the external binaries (agent-browser and the npm/tar fetch of the
- * renderer bundle). The fake browser answers the real page scripts and hands
- * back a real .pptx, so slide detection, the capability guard, post-processing,
- * the archive round-trip, and coverage grading all run unchanged.
+ * renderer bundle). Command parsing, the capability guard, artifact transfer,
+ * and coverage grading run unchanged. Browser layout and renderer fidelity need
+ * real-browser comparisons using the focused HTML fixtures beside this test.
  */
 import {
   existsSync,
@@ -21,33 +21,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { presentationCommand } from "../index";
 
-/** Width the fake renderer gives a table frame, in EMU. */
-const TABLE_FRAME_CX = 7_620_000;
-
 /** Named here rather than imported, so the published address stays pinned. */
 const RENDERER_BUNDLE = "dom-to-pptx.bundle.js";
 const RENDERER_CDN = `https://cdn.jsdelivr.net/npm/dom-to-pptx@2.1.2/dist/${RENDERER_BUNDLE}`;
 
-/**
- * A table as the renderer writes one: rows carrying the zero-height placeholder
- * and a frame claiming the one-inch default, which is what post-processing has
- * to replace with the heights the page reported.
- */
-function tableXml(rows: number): string {
-  const body = Array.from({ length: rows }, () => {
-    return '<a:tr h="0"><a:tc><a:txBody><a:bodyPr/><a:p/></a:txBody></a:tc></a:tr>';
-  }).join("");
-  return (
-    `<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="9" name="Table 1"/></p:nvGraphicFramePr>` +
-    `<p:xfrm><a:off x="0" y="0"/><a:ext cx="${TABLE_FRAME_CX}" cy="914400"/></p:xfrm>` +
-    `<a:graphic><a:graphicData uri="table"><a:tbl><a:tblPr/>` +
-    `<a:tblGrid><a:gridCol w="${TABLE_FRAME_CX}"/></a:tblGrid>${body}</a:tbl>` +
-    `</a:graphicData></a:graphic></p:graphicFrame>`
-  );
-}
-
-/** Slide XML shaped like the renderer's output, including what post-processing rewrites. */
-function slideXml(texts: readonly string[], tableRows = 0): string {
+/** Slide XML representing the renderer's artifact, including its text policy. */
+function slideXml(texts: readonly string[]): string {
   const runs = texts
     .map((text) => {
       return (
@@ -62,16 +41,14 @@ function slideXml(texts: readonly string[], tableRows = 0): string {
     `<p:sp><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="100" cy="100"/></a:xfrm></p:spPr>` +
     `<p:txBody><a:bodyPr wrap="square" lIns="0" rIns="0"><a:spAutoFit/></a:bodyPr>` +
     `${runs}</p:txBody></p:sp>` +
-    `${tableRows > 0 ? tableXml(tableRows) : ""}` +
     `</p:spTree></p:cSld></p:sld>`
   );
 }
 
 /**
- * A ZIP written independently of the command's own writer, so a round-trip
- * failure points at the production code rather than at a shared helper. Entries
- * are stored rather than deflated, and a directory entry is included because a
- * real renderer package carries them.
+ * A renderer artifact constructed independently of the command. Include a
+ * directory entry and stored contents so byte-preservation covers ZIP metadata,
+ * not just the slide strings that optional verification reads.
  */
 function storedZip(entries: readonly (readonly [string, string])[]): Buffer {
   const locals: Buffer[] = [];
@@ -146,12 +123,8 @@ const state = {
   deckTexts: undefined as string[] | undefined,
   /** Every expression the command evaluated in the page, in order. */
   evaluated: [] as string[],
-  fontStack: 'Lexend, "PingFang SC", sans-serif',
+  openedUrls: [] as string[],
   slideCount: 2,
-  /** Rows the fake renderer writes into slide 1's table, all at the placeholder. */
-  tableRows: 0,
-  /** What the fake page measures for those tables, per slide, in deck order. */
-  tables: [[], []] as { readonly rows: number[]; readonly width: number }[][],
   /** Base64 the fake page holds for the chunked transfer. */
   transferable: "",
 };
@@ -165,7 +138,7 @@ function deckBase64(): string {
       "ppt/presentation.xml",
       '<p:presentation><p:sldSz cx="12192000" cy="6858000"/></p:presentation>',
     ],
-    ["ppt/slides/slide1.xml", slideXml(texts.slice(0, 1), state.tableRows)],
+    ["ppt/slides/slide1.xml", slideXml(texts.slice(0, 1))],
     ["ppt/slides/slide2.xml", slideXml(texts.slice(1))],
   ];
   return storedZip(entries).toString("base64");
@@ -183,15 +156,6 @@ function fakeEval(expression: string): string {
   // Ordered most specific first: the selector probe also queries and reads
   // `.length`, so a looser branch above it would answer for both.
   if (expression.includes("scored.sort")) return encoded(".stage");
-  if (expression.includes("generic.has")) {
-    const cjk = state.fontStack.split(",").map((entry) => {
-      return entry.trim().replace(/^["']|["']$/gu, "");
-    })[1];
-    return encoded(cjk ?? "");
-  }
-  if (expression.includes('querySelectorAll("table")')) {
-    return encoded(state.tables);
-  }
   if (expression.includes("seen.push")) return encoded(state.pageTexts);
   if (expression.includes("exportToPptx")) {
     state.transferable = deckBase64();
@@ -228,6 +192,9 @@ vi.mock("child_process", () => {
           const verb = args[args.indexOf("--allow-file-access") + 1];
           if (verb === "eval") {
             return fakeEval(args[args.length - 1] ?? "");
+          }
+          if (verb === "open") {
+            state.openedUrls.push(args[args.length - 1] ?? "");
           }
           return "";
         }
@@ -298,10 +265,8 @@ describe("okou presentation convert", () => {
     state.pageTexts = ["Hello deck", "Second line"];
     state.deckTexts = undefined;
     state.evaluated = [];
-    state.fontStack = 'Lexend, "PingFang SC", sans-serif';
+    state.openedUrls = [];
     state.slideCount = 2;
-    state.tableRows = 0;
-    state.tables = [[], []];
     state.transferable = "";
   });
 
@@ -324,45 +289,15 @@ describe("okou presentation convert", () => {
     );
   });
 
-  it("writes a deck whose parts survive the archive round-trip", async () => {
+  it("writes the renderer's original artifact byte for byte", async () => {
     await convert([]);
 
-    const parts = readZip(readFileSync(outPath));
-    expect([...parts.keys()]).toEqual(
-      expect.arrayContaining([
-        "[Content_Types].xml",
-        "ppt/presentation.xml",
-        "ppt/slides/slide1.xml",
-        "ppt/slides/slide2.xml",
-      ]),
-    );
-    // A part name cannot end in a slash, so directory entries must not survive.
-    expect(
-      [...parts.keys()].filter((name) => {
-        return name.endsWith("/");
-      }),
-    ).toEqual([]);
+    const written = readFileSync(outPath);
+    expect(written).toEqual(Buffer.from(state.transferable, "base64"));
+    const parts = readZip(written);
     expect(parts.get("[Content_Types].xml")).toBe("<Types/>");
-  });
-
-  it("keeps the measured geometry and the browser's line breaks", async () => {
-    await convert([]);
-
-    const slide =
-      readZip(readFileSync(outPath)).get("ppt/slides/slide1.xml") ?? "";
-    expect(slide).toContain("<a:normAutofit/>");
-    expect(slide).not.toContain("<a:spAutoFit/>");
-    expect(slide).toContain('wrap="none"');
-    expect(slide).not.toContain('wrap="square"');
-  });
-
-  it("hands wrapping back to the viewer when asked", async () => {
-    await convert(["--wrap"]);
-
-    const slide =
-      readZip(readFileSync(outPath)).get("ppt/slides/slide1.xml") ?? "";
-    expect(slide).toContain('wrap="square"');
-    expect(slide).not.toContain('wrap="none"');
+    expect(parts.get("ppt/slides/slide1.xml")).toBe(slideXml(["Hello deck"]));
+    expect(parts.get("ppt/slides/slide2.xml")).toBe(slideXml(["Second line"]));
   });
 
   it("reads the cached renderer into a local deck", async () => {
@@ -392,44 +327,6 @@ describe("okou presentation convert", () => {
     ).toBe(false);
   });
 
-  it("gives table rows the heights the page painted", async () => {
-    state.tableRows = 3;
-    state.tables = [[{ rows: [30, 20, 20], width: 1000 }], []];
-    await convert([]);
-
-    const slide =
-      readZip(readFileSync(outPath)).get("ppt/slides/slide1.xml") ?? "";
-    // The frame spans 7,620,000 EMU across a table the page painted 1000px
-    // wide, so a pixel is 7,620 EMU and each row keeps its own painted height.
-    expect(slide).toContain('<a:tr h="228600"');
-    expect(slide).toContain('<a:tr h="152400"');
-    expect(slide).not.toContain('<a:tr h="0"');
-    // A viewer grows rows past the frame, so the frame has to own their sum
-    // rather than the renderer's one-inch placeholder.
-    expect(slide).toContain(`cx="${TABLE_FRAME_CX}" cy="533400"`);
-  });
-
-  it("leaves a table alone when the page and the deck disagree on its rows", async () => {
-    state.tableRows = 3;
-    state.tables = [[{ rows: [30, 20], width: 1000 }], []];
-    await convert([]);
-
-    const slide =
-      readZip(readFileSync(outPath)).get("ppt/slides/slide1.xml") ?? "";
-    expect(slide).toContain('<a:tr h="0"');
-    expect(slide).toContain(`cx="${TABLE_FRAME_CX}" cy="914400"`);
-  });
-
-  it("names the East Asian family the deck's own stack asks for", async () => {
-    await convert([]);
-
-    const slide =
-      readZip(readFileSync(outPath)).get("ppt/slides/slide1.xml") ?? "";
-    expect(slide).toContain('<a:ea typeface="PingFang SC"');
-    // Only the East Asian slot moves; Latin keeps the deck's display face.
-    expect(slide).toContain('<a:latin typeface="Lexend"');
-  });
-
   it("passes verification when every source string reaches the deck", async () => {
     await expect(convert(["--verify"])).resolves.toBeUndefined();
   });
@@ -446,5 +343,30 @@ describe("okou presentation convert", () => {
     state.deckTexts = ["Kept heading", ""];
     await expect(convert(["--verify"])).rejects.toThrow(/process\.exit/u);
     expect(stderr()).toContain("coverage");
+    expect(readFileSync(outPath)).toEqual(
+      Buffer.from(state.transferable, "base64"),
+    );
+  });
+
+  it("waits for an explicit selector instead of the built-in candidates", async () => {
+    await convert(["--selector", ".audit-page"]);
+
+    expect(state.evaluated).toContain(
+      'document.querySelectorAll(".audit-page").length',
+    );
+    expect(
+      state.evaluated.some((script) => {
+        return script.includes("scored.sort");
+      }),
+    ).toBe(false);
+  });
+
+  it("encodes spaces and hash characters in local file URLs", async () => {
+    deckPath = join(workDir, "deck #tag.html");
+    writeFileSync(deckPath, "<html></html>");
+    await convert([]);
+
+    expect(state.openedUrls.at(-1)).toContain("deck%20%23tag.html");
+    expect(state.openedUrls.at(-1)).not.toContain("#");
   });
 });

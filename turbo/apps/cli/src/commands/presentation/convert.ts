@@ -1,17 +1,9 @@
 /**
- * okou presentation convert — turn an HTML deck into an editable .pptx.
+ * Convert the browser's current slide DOM with the pinned renderer.
  *
- * The geometry of a generated deck does not exist in its markup: shells size
- * type with a runtime autofit pass and lay out with container-query units, so
- * the only correct source of positions is a browser that has actually painted
- * the page. Conversion therefore happens inside the page itself — the same
- * browser session that settles the deck also emits the deck.
- *
- * A previous in-app exporter shipped this idea into the product bundle and was
- * retired for weight, not for approach: its renderer alone cost 2.7 MB of
- * JavaScript. Running it here removes that cost entirely, and adds the part the
- * browser build structurally could not have — the export can be checked against
- * its own source before anyone downloads it.
+ * The browser owns layout; the renderer owns its PPTX representation. This
+ * command loads the page, transfers the renderer's original artifact, and can
+ * inspect text coverage without rewriting either CSS or presentation XML.
  */
 import { execFileSync } from "child_process";
 import {
@@ -25,7 +17,8 @@ import {
 } from "fs";
 import { homedir, tmpdir } from "os";
 import { basename, extname, join } from "path";
-import { crc32, deflateRawSync, inflateRawSync } from "zlib";
+import { pathToFileURL } from "url";
+import { inflateRawSync } from "zlib";
 
 import chalk from "chalk";
 import { Command, InvalidArgumentError } from "commander";
@@ -37,29 +30,17 @@ import { browser, childPath, operatorPath, SETTLE, TIMEOUT_MS } from "./shared";
 const RENDERER_PACKAGE = "dom-to-pptx@2.1.2";
 const RENDERER_BUNDLE = "dom-to-pptx.bundle.js";
 const RENDERER_CACHE_VERSION = "v1";
-/**
- * The same published artifact as the cached copy, byte for byte. A borrowed
- * session may be driving a remote browser, which cannot read this machine's
- * filesystem, so the bundle has to come from somewhere that browser can reach.
- */
 const RENDERER_CDN = `https://cdn.jsdelivr.net/npm/${RENDERER_PACKAGE}/dist/${RENDERER_BUNDLE}`;
 const DEFAULT_VIEWPORT_WIDTH = 1600;
 const DEFAULT_VIEWPORT_HEIGHT = 900;
 const DEFAULT_SLIDE_WIDTH_IN = 13.333;
 const DEFAULT_SLIDE_HEIGHT_IN = 7.5;
-/** Retrieval chunk for the base64 deck; eval carries far more, this is headroom. */
 const TRANSFER_CHUNK = 200_000;
-/** Below this share of source text present in the deck, the export is broken. */
 const TEXT_COVERAGE_FLOOR = 0.98;
-/** A hosted deck may sit behind a redirect or bot check before it renders. */
 const SLIDE_WAIT_MS = 30_000;
 const SLIDE_POLL_MS = 1_000;
 
-/**
- * Candidate slide containers, most specific first. Carried over from the
- * retired in-app exporter, which learned this order against real decks: a
- * generic `section` or `.slide` often wraps the page rather than being it.
- */
+/** Candidates ordered from explicit slide markers to generic containers. */
 const SLIDE_SELECTORS = [
   "[data-okou-slide]",
   "[data-vm0-slide]",
@@ -75,284 +56,6 @@ const SLIDE_SELECTORS = [
   "section",
 ] as const;
 
-/**
- * Collapses CSS the deck can draw but OOXML cannot express, so the export
- * degrades on our terms instead of the renderer's.
- *
- * A shape in OOXML carries one uniform corner radius. CSS per-corner elliptical
- * radii — the hand-drawn highlight pills these templates favour — have no
- * representation, and the renderer falls back to an ellipse sized to the
- * bounding box, which is both the wrong shape and far too large. Collapsing to
- * the nearest pill loses the wobble and keeps position, size, and editable text.
- */
-const NORMALIZE = `(() => {
-  const uniform = (value) => {
-    const radii = value
-      .split("/")[0]
-      .trim()
-      .split(/\\s+/u)
-      .map((entry) => parseFloat(entry) || 0)
-      .filter((entry) => entry > 0);
-    return radii.length > 0 ? Math.min(...radii) : 0;
-  };
-  for (const element of document.querySelectorAll("*")) {
-    const style = getComputedStyle(element);
-    const radius = style.borderRadius;
-    if (radius && (radius.includes("/") || new Set(radius.split(/\\s+/u)).size > 1)) {
-      const collapsed = uniform(radius);
-      if (collapsed > 0) {
-        element.style.setProperty("border-radius", collapsed + "px", "important");
-      }
-    }
-    // An inline highlight becomes its own shape. Letting it re-wrap inside that
-    // shape is the most visible conversion defect, because the renderer's font
-    // metrics never match the browser's exactly.
-    if (style.display.startsWith("inline") && style.display !== "inline") {
-      const background = style.backgroundColor;
-      if (background && background !== "rgba(0, 0, 0, 0)" && background !== "transparent") {
-        element.style.setProperty("white-space", "nowrap", "important");
-      }
-    }
-  }
-  return 1;
-})()`;
-
-/**
- * Prepares the live deck for export, carrying over the fixes the retired in-app
- * exporter accumulated against real decks. Each step exists because a deck
- * shipped without it lost something visible.
- *
- * Runs after NORMALIZE, because pinning line breaks must observe the wrapping
- * that the normalised styles actually produce.
- */
-const PREPARE = `((selector) => {
-  const slides = Array.from(document.querySelectorAll(selector));
-  const ancestorsUntilBody = (node) => {
-    const chain = [];
-    let ancestor = node.parentElement;
-    while (ancestor && ancestor !== document.body) {
-      chain.push(ancestor);
-      ancestor = ancestor.parentElement;
-    }
-    return chain;
-  };
-
-  // A scroll-snap deck keeps every slide but the active one hidden, and a
-  // hidden slide exports as a blank page.
-  const hidden = (element) => getComputedStyle(element).display === "none";
-  const unhide = (element) => {
-    element.style.setProperty("visibility", "visible", "important");
-    element.style.setProperty("opacity", "1", "important");
-    element.style.setProperty("clip-path", "none", "important");
-    element.removeAttribute("hidden");
-    element.removeAttribute("inert");
-  };
-
-  // The rule that hides a slide is normally paired with the rule that lays the
-  // visible one out — ".slide{display:none}" against
-  // ".slide.active{display:flex;flex-direction:column}". Forcing "display:block"
-  // answers the first rule and discards the second, so every "flex:1" child
-  // stops stretching and the page collapses to the height of its own text,
-  // leaving the lower half of every slide but one empty.
-  //
-  // The visible slide is the specimen. Whatever class it carries that a hidden
-  // slide lacks is the deck's own switch, so wearing that class gives the hidden
-  // slide the layout the deck intended instead of one invented here.
-  const LAYOUT = [
-    "display",
-    "flex-direction",
-    "flex-wrap",
-    "align-items",
-    "align-content",
-    "justify-content",
-    "grid-auto-flow",
-    "grid-template-columns",
-    "grid-template-rows",
-  ];
-  const specimen = slides.find((slide) => !hidden(slide));
-  const activate = (slide) => {
-    if (!specimen || specimen === slide) return false;
-    const own = new Set(slide.classList);
-    for (const name of specimen.classList) {
-      if (own.has(name)) continue;
-      slide.classList.add(name);
-      if (!hidden(slide)) return true;
-      slide.classList.remove(name);
-    }
-    // No class carries the switch — a deck may toggle an attribute or an inline
-    // style instead — so copy the layout the visible slide resolved to.
-    const reference = getComputedStyle(specimen);
-    for (const property of LAYOUT) {
-      slide.style.setProperty(property, reference.getPropertyValue(property), "important");
-    }
-    return !hidden(slide);
-  };
-
-  for (const slide of slides) {
-    if (hidden(slide) && !activate(slide)) {
-      slide.style.setProperty("display", "block", "important");
-    }
-    unhide(slide);
-    for (const ancestor of ancestorsUntilBody(slide)) {
-      if (hidden(ancestor)) {
-        ancestor.style.setProperty("display", "block", "important");
-      }
-      unhide(ancestor);
-    }
-  }
-
-  // A slide that paints no background of its own inherits one from an ancestor
-  // on screen, but exports onto white.
-  const transparent = (color) => {
-    const value = (color || "").trim().toLowerCase();
-    return value === "" || value === "transparent" || value.replace(/\\s/gu, "") === "rgba(0,0,0,0)";
-  };
-  const painted = (style) =>
-    !transparent(style.backgroundColor) ||
-    (style.backgroundImage && style.backgroundImage !== "none");
-  for (const slide of slides) {
-    if (painted(getComputedStyle(slide))) continue;
-    const source = [...ancestorsUntilBody(slide), document.body, document.documentElement]
-      .filter(Boolean)
-      .map((element) => getComputedStyle(element))
-      .find(painted);
-    if (!source) continue;
-    if (!transparent(source.backgroundColor)) {
-      slide.style.setProperty("background-color", source.backgroundColor, "important");
-    }
-    if (source.backgroundImage && source.backgroundImage !== "none") {
-      for (const property of ["image", "position", "repeat", "size"]) {
-        const key = "background" + property.charAt(0).toUpperCase() + property.slice(1);
-        slide.style.setProperty("background-" + property, source[key], "important");
-      }
-    }
-  }
-
-  // Corner rounding and margins on the page element survive into the export as
-  // a shape inset from the slide edge.
-  for (const slide of slides) {
-    slide.style.setProperty("margin", "0", "important");
-    slide.style.setProperty("border-radius", "0", "important");
-    slide.style.setProperty("overflow", "hidden", "important");
-  }
-
-  // Pin the browser's line breaks. A pptx text frame re-wraps with the viewer's
-  // font metrics, which never match the browser's exactly, so a line that just
-  // fits here spills or clips there.
-  const CJK = /[\\u3040-\\u30ff\\u3400-\\u4dbf\\u4e00-\\u9fff\\uac00-\\ud7af]/u;
-  const breakCandidates = (text) => {
-    const offsets = [];
-    // Latin wraps at word starts; CJK has no spaces and wraps between glyphs.
-    const words = /\\S+/gu;
-    let match = words.exec(text);
-    while (match) {
-      offsets.push(match.index);
-      match = words.exec(text);
-    }
-    if (CJK.test(text)) {
-      for (let index = 0; index < text.length; index += 1) {
-        if (CJK.test(text[index])) offsets.push(index);
-      }
-    }
-    return [...new Set(offsets)].sort((left, right) => left - right);
-  };
-  const topAt = (node, offset) => {
-    const range = document.createRange();
-    range.setStart(node, offset);
-    range.setEnd(node, Math.min(offset + 1, node.nodeValue.length));
-    const rect = Array.from(range.getClientRects()).find((box) => box.width > 0 && box.height > 0);
-    return rect ? rect.top : null;
-  };
-
-  const skip = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "TEXTAREA", "SVG"]);
-  const targets = [];
-  for (const slide of slides) {
-    const walker = document.createTreeWalker(slide, NodeFilter.SHOW_TEXT);
-    let node = walker.nextNode();
-    while (node) {
-      const parent = node.parentElement;
-      const text = node.nodeValue || "";
-      if (parent && text.trim().length > 1 && !skip.has(parent.tagName)) {
-        const style = getComputedStyle(parent);
-        if (
-          style.display !== "none" && style.visibility !== "hidden" &&
-          style.whiteSpace !== "nowrap" && style.whiteSpace !== "pre"
-        ) {
-          // Only text that actually wrapped can gain a break, and checking the
-          // rect count first avoids a per-character layout flush on the
-          // single-line labels that make up most of a deck.
-          const range = document.createRange();
-          range.selectNodeContents(node);
-          if (range.getClientRects().length > 1) targets.push(node);
-        }
-      }
-      node = walker.nextNode();
-    }
-  }
-
-  let inserted = 0;
-  for (const node of targets) {
-    const text = node.nodeValue || "";
-    let previousTop = null;
-    const breaks = [];
-    for (const offset of breakCandidates(text)) {
-      const top = topAt(node, offset);
-      if (top === null) continue;
-      if (previousTop !== null && Math.abs(top - previousTop) > 1 && offset > 0) {
-        breaks.push(offset);
-      }
-      previousTop = top;
-    }
-    if (breaks.length === 0) continue;
-    const parent = node.parentNode;
-    if (!parent) continue;
-    const fragment = document.createDocumentFragment();
-    let start = 0;
-    for (const offset of breaks) {
-      fragment.append(document.createTextNode(text.slice(start, offset)));
-      fragment.append(document.createElement("br"));
-      start = offset;
-    }
-    fragment.append(document.createTextNode(text.slice(start)));
-    parent.replaceChild(fragment, node);
-    inserted += breaks.length;
-  }
-  return inserted;
-})`;
-
-/**
- * Measures the tables the renderer is about to export, per slide, in document
- * order.
- *
- * The renderer hands every table row a height of zero and the frame a one-inch
- * placeholder, because pptxgenjs leaves row sizing to the viewer. A viewer
- * treats that height as a minimum and grows each row around its own text, so a
- * table that painted 570px tall is written as 120px and draws straight through
- * whatever the deck placed beneath it. The painted heights are only knowable
- * here, from the page that laid the table out.
- *
- * Runs after PREPARE, because a pinned line break inside a cell adds a line and
- * changes the row it sits in.
- */
-const MEASURE = `((selector) => {
-  const slides = Array.from(document.querySelectorAll(selector));
-  return JSON.stringify(slides.map((slide) =>
-    Array.from(slide.querySelectorAll("table")).map((table) => {
-      const box = table.getBoundingClientRect();
-      return {
-        width: box.width,
-        rows: Array.from(table.rows).map((row) => row.getBoundingClientRect().height),
-      };
-    })
-  ));
-})`;
-
-/** A table as the page painted it: outer width and each row's height, in CSS px. */
-interface TableBox {
-  readonly width: number;
-  readonly rows: readonly number[];
-}
-
 interface Options {
   readonly input: string;
   readonly out?: string;
@@ -362,8 +65,6 @@ interface Options {
   readonly height: number;
   readonly viewportWidth: number;
   readonly viewportHeight: number;
-  readonly normalize: boolean;
-  readonly wrap: boolean;
   readonly verify: boolean;
   readonly json?: boolean;
 }
@@ -376,6 +77,13 @@ interface VerifyReport {
   readonly missing: readonly string[];
 }
 
+interface Rendered {
+  readonly deck: Buffer;
+  readonly selector: string;
+  readonly slides: number;
+  readonly texts: readonly string[];
+}
+
 function positiveNumber(value: string): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -384,28 +92,19 @@ function positiveNumber(value: string): number {
   return parsed;
 }
 
-function rendererRoot(): string {
+/** Fetch only the browser bundle, not another renderer/browser installation. */
+function ensureRenderer(): string {
   const configured = process.env.XDG_CACHE_HOME?.trim();
   const cacheHome =
     configured === undefined || configured === ""
       ? join(homedir(), ".cache")
       : configured;
-  return join(
+  const root = join(
     cacheHome,
     "okou",
     "presentation-convert",
     RENDERER_CACHE_VERSION,
   );
-}
-
-/**
- * Fetches the renderer's browser bundle and nothing else.
- *
- * Installing the package would also pull a second headless browser we already
- * have, so the tarball is unpacked for the single file that runs in the page.
- */
-function ensureRenderer(): string {
-  const root = rendererRoot();
   const bundle = childPath(root, RENDERER_BUNDLE);
   if (existsSync(bundle)) {
     return bundle;
@@ -444,17 +143,21 @@ function ensureRenderer(): string {
   }
 }
 
-/**
- * Waits for slide elements to exist.
- *
- * Settling covers fonts and paint, which a bot check or an error page satisfies
- * just as well as a deck does. Without this the command reports that it could
- * not identify slides, which sends the reader looking for a selector problem
- * when the browser simply never reached the deck.
- */
-function awaitSlides(page: ReturnType<typeof browser>): void {
+function sourceUrl(input: string): string {
+  if (/^https?:\/\//u.test(input)) {
+    return input;
+  }
+  const path = operatorPath(input);
+  if (extname(path).toLowerCase() !== ".html") {
+    throw new Error(`Unsupported input extension: ${extname(path) || "none"}`);
+  }
+  return pathToFileURL(path).href;
+}
+
+/** Wait for the caller's selector, or the candidates used for detection. */
+function awaitSlides(page: ReturnType<typeof browser>, selector: string): void {
   const deadline = Date.now() + SLIDE_WAIT_MS;
-  const probe = `document.querySelectorAll(${JSON.stringify(SLIDE_SELECTORS.join(","))}).length`;
+  const probe = `document.querySelectorAll(${JSON.stringify(selector)}).length`;
   for (;;) {
     const count = page.evaluate(probe);
     if (typeof count === "number" && count > 0) {
@@ -470,14 +173,7 @@ function awaitSlides(page: ReturnType<typeof browser>): void {
   }
 }
 
-/**
- * Picks the selector whose elements are shaped like the page being written.
- *
- * Deck shells nest a scroll container around the printable page, and the
- * container matches the window rather than the slide. Measuring against the
- * requested slide aspect rather than the viewport keeps the choice correct in a
- * borrowed session, whose window is whatever size its owner left it.
- */
+/** Select page-shaped containers rather than their viewport-sized wrappers. */
 function detectSelector(
   page: ReturnType<typeof browser>,
   aspect: number,
@@ -507,24 +203,10 @@ function detectSelector(
   return value;
 }
 
-function sourceUrl(input: string): string {
-  if (/^https?:\/\//u.test(input)) {
-    return input;
-  }
-  const path = operatorPath(input);
-  if (extname(path).toLowerCase() !== ".html") {
-    throw new Error(`Unsupported input extension: ${extname(path) || "none"}`);
-  }
-  return `file://${path}`;
-}
-
-/** Reads the deck back out of the page a slice at a time. */
+/** Read the original renderer artifact without a ZIP/XML write round-trip. */
 function transfer(page: ReturnType<typeof browser>, length: number): Buffer {
   const parts: string[] = [];
   for (let offset = 0; offset < length; offset += TRANSFER_CHUNK) {
-    // evaluate() unwraps two layers of JSON, so the slice is encoded twice.
-    // A bare string would come back still quoted, and only Node's tolerance of
-    // stray characters in base64 would keep the deck readable.
     const slice = page.evaluate(
       `JSON.stringify(window.__okouPptx.slice(${offset.toString()},${(offset + TRANSFER_CHUNK).toString()}))`,
     );
@@ -540,54 +222,7 @@ function transfer(page: ReturnType<typeof browser>, length: number): Buffer {
   return deck;
 }
 
-interface Rendered {
-  readonly deck: Buffer;
-  readonly eastAsianFont: string;
-  readonly selector: string;
-  readonly slides: number;
-  readonly texts: readonly string[];
-}
-
-/**
- * Accepts the measurement only when every field survived the page round-trip,
- * so a deck whose shape the script could not report is left as the renderer
- * wrote it rather than resized against partial numbers.
- */
-function readTableBoxes(value: unknown): readonly (readonly TableBox[])[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  const slides: (readonly TableBox[])[] = [];
-  for (const entry of value) {
-    if (!Array.isArray(entry)) {
-      return [];
-    }
-    const boxes: TableBox[] = [];
-    for (const table of entry) {
-      const candidate = table as { width?: unknown; rows?: unknown };
-      if (
-        typeof candidate.width !== "number" ||
-        !Array.isArray(candidate.rows) ||
-        candidate.rows.some((height) => {
-          return typeof height !== "number";
-        })
-      ) {
-        return [];
-      }
-      boxes.push({ rows: candidate.rows as number[], width: candidate.width });
-    }
-    slides.push(boxes);
-  }
-  return slides;
-}
-
-/**
- * Settles the deck, normalises it, and renders it to a .pptx without ever
- * leaving the page — the geometry that exports is the geometry that painted.
- */
 function render(options: Options): Rendered {
-  // A hosted deck can sit behind a login or a bot check that only the thread's
-  // managed browser clears, so the session is addressable rather than private.
   const borrowed = options.session !== undefined;
   const deckUrl = sourceUrl(options.input);
   const page = browser(
@@ -595,8 +230,6 @@ function render(options: Options): Rendered {
   );
   try {
     if (!borrowed) {
-      // A borrowed session is configured by whoever opened it; resizing it
-      // changes what the page sees and is not ours to do.
       page.call([
         "set",
         "viewport",
@@ -607,15 +240,11 @@ function render(options: Options): Rendered {
     }
     page.call(["open", deckUrl]);
     page.call(["eval", SETTLE]);
-    awaitSlides(page);
-
+    awaitSlides(page, options.selector ?? SLIDE_SELECTORS.join(","));
     const selector =
       options.selector ?? detectSelector(page, options.width / options.height);
-    const eastAsian = page.evaluate(RESOLVE_EAST_ASIAN);
-    const eastAsianFont = typeof eastAsian === "string" ? eastAsian : "";
 
-    // Read the source text before normalising, so verification compares against
-    // what the deck says rather than against our own rewrite of it.
+    // Keep the existing text-only diagnostic independent of renderer output.
     const texts = page.evaluate(`(() => {
       const seen = [];
       const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
@@ -639,23 +268,9 @@ function render(options: Options): Rendered {
       return JSON.stringify(seen);
     })()`);
 
-    if (options.normalize) {
-      page.call(["eval", NORMALIZE]);
-      page.call(["eval", `${PREPARE}(${JSON.stringify(selector)})`]);
-    }
-
-    const tables = readTableBoxes(
-      page.evaluate(`${MEASURE}(${JSON.stringify(selector)})`),
-    );
-
-    // The renderer runs as a script in the deck's own page, so the page has to
-    // be allowed to load it. A file:// deck can read the cached bundle off this
-    // machine; an http(s) deck cannot — a browser refuses a file:// script from
-    // a network origin — and a borrowed session may be driving a browser with
-    // no view of this filesystem at all. Both take the published artifact over
-    // the network, which is the same bytes as the cache.
+    // Network pages and remote borrowed browsers cannot load local scripts.
     const local = !borrowed && deckUrl.startsWith("file://");
-    const source = local ? `file://${ensureRenderer()}` : RENDERER_CDN;
+    const source = local ? pathToFileURL(ensureRenderer()).href : RENDERER_CDN;
     page.call([
       "eval",
       `(async()=>{
@@ -672,7 +287,6 @@ function render(options: Options): Rendered {
         return 1;
       })()`,
     ]);
-
     const meta = page.evaluate(`(async()=>{
       const nodes = Array.from(document.querySelectorAll(${JSON.stringify(selector)}));
       if (nodes.length === 0) throw new Error("No slides matched " + ${JSON.stringify(selector)});
@@ -699,15 +313,8 @@ function render(options: Options): Rendered {
       throw new Error("Renderer returned no deck");
     }
     const { slides, length } = meta as { slides: number; length: number };
-
     return {
-      deck: postProcess(
-        transfer(page, length),
-        eastAsianFont,
-        options.wrap,
-        tables,
-      ),
-      eastAsianFont,
+      deck: transfer(page, length),
       selector,
       slides,
       texts: Array.isArray(texts) ? (texts as string[]) : [],
@@ -719,13 +326,7 @@ function render(options: Options): Rendered {
   }
 }
 
-// --- verification -----------------------------------------------------------
-
-/**
- * Reads the entries of a ZIP container. A .pptx is a ZIP, and Node can inflate
- * it without a dependency, which keeps verification available wherever the
- * command runs rather than only where an archive library is installed.
- */
+/** ZIP reading is needed only for the optional text coverage diagnostic. */
 function zipEntries(archive: Buffer): Map<string, Buffer> {
   const entries = new Map<string, Buffer>();
   const end = archive.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
@@ -747,9 +348,11 @@ function zipEntries(archive: Buffer): Map<string, Buffer> {
     const name = archive
       .subarray(offset + 46, offset + 46 + nameLength)
       .toString("utf8");
-    const localNameLength = archive.readUInt16LE(localOffset + 26);
-    const localExtraLength = archive.readUInt16LE(localOffset + 28);
-    const start = localOffset + 30 + localNameLength + localExtraLength;
+    const start =
+      localOffset +
+      30 +
+      archive.readUInt16LE(localOffset + 26) +
+      archive.readUInt16LE(localOffset + 28);
     const raw = archive.subarray(start, start + compressedSize);
     entries.set(name, method === 8 ? inflateRawSync(raw) : Buffer.from(raw));
     offset += 46 + nameLength + extraLength + commentLength;
@@ -757,35 +360,31 @@ function zipEntries(archive: Buffer): Map<string, Buffer> {
   return entries;
 }
 
-function decodeXmlText(value: string): string {
-  return value
-    .replace(/&lt;/gu, "<")
-    .replace(/&gt;/gu, ">")
-    .replace(/&quot;/gu, '"')
-    .replace(/&apos;/gu, "'")
-    .replace(/&amp;/gu, "&");
-}
-
-/**
- * Strips whitespace entirely rather than collapsing it.
- *
- * Pinning a line break splits one string across two runs, and rejoining the
- * runs reintroduces a separator the source never had — which reads as lost
- * content in languages that do not write spaces between words. A gate that
- * reports intact decks as broken is worse than no gate.
- */
 function normalizeForCompare(value: string): string {
   return value.replace(/\s+/gu, "").toLowerCase();
 }
 
 function deckText(deck: Buffer): { slides: number; text: string } {
   const entries = zipEntries(deck);
-  const slideNames = slideOrder(entries.keys());
+  const slideNames = [...entries.keys()]
+    .filter((name) => {
+      return /^ppt\/slides\/slide\d+\.xml$/u.test(name);
+    })
+    .sort((left, right) => {
+      return Number(/\d+/u.exec(left)?.[0]) - Number(/\d+/u.exec(right)?.[0]);
+    });
   const parts: string[] = [];
   for (const name of slideNames) {
     const xml = entries.get(name)?.toString("utf8") ?? "";
     for (const match of xml.matchAll(/<a:t>([\s\S]*?)<\/a:t>/gu)) {
-      parts.push(decodeXmlText(match[1] ?? ""));
+      parts.push(
+        (match[1] ?? "")
+          .replace(/&lt;/gu, "<")
+          .replace(/&gt;/gu, ">")
+          .replace(/&quot;/gu, '"')
+          .replace(/&apos;/gu, "'")
+          .replace(/&amp;/gu, "&"),
+      );
     }
   }
   return {
@@ -794,245 +393,7 @@ function deckText(deck: Buffer): { slides: number; text: string } {
   };
 }
 
-/**
- * Names the East Asian family the deck itself asks for.
- *
- * A browser resolves `Lexend, "PingFang SC", "Noto Sans CJK SC", sans-serif`
- * per character, so the display face covers Latin and a later family covers
- * CJK. A pptx run carries one typeface per script slot instead, and the
- * renderer copies the first family into all of them, leaving CJK glyphs
- * without a face.
- *
- * The family is taken from the stack's own order rather than from what happens
- * to be installed where conversion runs. Picking a locally available face
- * writes the conversion machine's environment into the file: a Linux sandbox
- * names the Noto entry, and a reader without it substitutes metrics wide
- * enough to overflow every box measured against the original.
- */
-const RESOLVE_EAST_ASIAN = `(() => {
-  const CJK = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]/u;
-  const generic = new Set(["sans-serif", "serif", "monospace", "cursive", "fantasy", "system-ui", "ui-sans-serif", "ui-serif"]);
-  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-  let node = walker.nextNode();
-  while (node) {
-    if (CJK.test(node.nodeValue || "") && node.parentElement) {
-      const families = getComputedStyle(node.parentElement)
-        .fontFamily.split(",")
-        .map((entry) => entry.trim().replace(/^["']|["']$/gu, ""))
-        .filter((entry) => entry && !generic.has(entry.toLowerCase()));
-      // The first entry is the display face chosen for Latin; the next one is
-      // what the deck nominates for the characters the display face lacks.
-      if (families.length > 1) return JSON.stringify(families[1]);
-    }
-    node = walker.nextNode();
-  }
-  return JSON.stringify("");
-})()`;
-
-const CJK =
-  /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uf900-\ufaff]/u;
-
-/**
- * Rebuilds a ZIP from its entries.
- *
- * Directory entries are dropped. An OPC part name cannot end in a slash, and
- * repacking one as an ordinary deflated member produces a zero-byte part with
- * an illegal name, which a strict reader is entitled to reject.
- */
-function packZip(entries: ReadonlyMap<string, Buffer>): Buffer {
-  const locals: Buffer[] = [];
-  const central: Buffer[] = [];
-  let offset = 0;
-  let members = 0;
-  for (const [name, content] of entries) {
-    if (name.endsWith("/")) {
-      continue;
-    }
-    members += 1;
-    const rawName = Buffer.from(name, "utf8");
-    const deflated = deflateRawSync(content);
-    const sum = crc32(content);
-    const local = Buffer.alloc(30);
-    local.writeUInt32LE(0x04034b50, 0);
-    local.writeUInt16LE(20, 4);
-    local.writeUInt16LE(8, 8);
-    local.writeUInt32LE(sum, 14);
-    local.writeUInt32LE(deflated.length, 18);
-    local.writeUInt32LE(content.length, 22);
-    local.writeUInt16LE(rawName.length, 26);
-    locals.push(local, rawName, deflated);
-
-    const entry = Buffer.alloc(46);
-    entry.writeUInt32LE(0x02014b50, 0);
-    entry.writeUInt16LE(20, 4);
-    entry.writeUInt16LE(20, 6);
-    entry.writeUInt16LE(8, 10);
-    entry.writeUInt32LE(sum, 16);
-    entry.writeUInt32LE(deflated.length, 20);
-    entry.writeUInt32LE(content.length, 24);
-    entry.writeUInt16LE(rawName.length, 28);
-    entry.writeUInt32LE(offset, 42);
-    central.push(entry, rawName);
-    offset += local.length + rawName.length + deflated.length;
-  }
-  const directory = Buffer.concat(central);
-  const end = Buffer.alloc(22);
-  end.writeUInt32LE(0x06054b50, 0);
-  end.writeUInt16LE(members, 8);
-  end.writeUInt16LE(members, 10);
-  end.writeUInt32LE(directory.length, 12);
-  end.writeUInt32LE(offset, 16);
-  return Buffer.concat([...locals, directory, end]);
-}
-
-/**
- * Restores one table's painted height.
- *
- * The scale comes from the frame's own width against the width the page
- * measured, so the conversion stays correct whatever slide size was requested
- * and needs no agreement with the renderer about EMU per pixel. A frame whose
- * row count disagrees with the measurement is left alone: the two are then
- * describing different tables, and guessing which is worse than the placeholder.
- */
-function resizeFrame(frame: string, box: TableBox): string {
-  const rows = [...frame.matchAll(/<a:tr h="\d+"/gu)];
-  const extent = /<p:xfrm>[\s\S]*?<a:ext cx="(\d+)" cy="\d+"\/>/u.exec(frame);
-  if (extent === null || rows.length === 0 || rows.length !== box.rows.length) {
-    return frame;
-  }
-  const cx = Number(extent[1]);
-  if (!Number.isFinite(cx) || cx <= 0 || box.width <= 0) {
-    return frame;
-  }
-  const scale = cx / box.width;
-  const heights = box.rows.map((height) => {
-    return Math.max(0, Math.round(height * scale));
-  });
-  let index = 0;
-  const sized = frame.replace(/<a:tr h="\d+"/gu, () => {
-    const height = heights[index] ?? 0;
-    index += 1;
-    return `<a:tr h="${height.toString()}"`;
-  });
-  const total = heights.reduce((sum, height) => {
-    return sum + height;
-  }, 0);
-  return sized.replace(
-    /(<p:xfrm>[\s\S]*?<a:ext cx="\d+" cy=")\d+("\/>)/u,
-    `$1${total.toString()}$2`,
-  );
-}
-
-/** Applies the slide's measurements to its table frames, pairing them in order. */
-function resizeTables(xml: string, boxes: readonly TableBox[]): string {
-  const frames = [
-    ...xml.matchAll(/<p:graphicFrame>[\s\S]*?<\/p:graphicFrame>/gu),
-  ];
-  if (frames.length === 0 || frames.length !== boxes.length) {
-    return xml;
-  }
-  let patched = "";
-  let cursor = 0;
-  for (const [index, frame] of frames.entries()) {
-    const box = boxes[index];
-    const start = frame.index;
-    if (box === undefined || start === undefined) {
-      return xml;
-    }
-    patched += xml.slice(cursor, start) + resizeFrame(frame[0], box);
-    cursor = start + frame[0].length;
-  }
-  return patched + xml.slice(cursor);
-}
-
-/** Orders the slide parts the way the renderer wrote them, which is deck order. */
-function slideOrder(names: Iterable<string>): readonly string[] {
-  return [...names]
-    .filter((name) => {
-      return /^ppt\/slides\/slide\d+\.xml$/u.test(name);
-    })
-    .sort((left, right) => {
-      return left.localeCompare(right, "en", { numeric: true });
-    });
-}
-
-/**
- * Rewrites the parts of the deck the renderer gets to decide for itself.
- *
- * Every edit exists because a .pptx is a set of instructions, not a picture: a
- * viewer follows what the file says rather than what the browser showed.
- */
-function postProcess(
-  deck: Buffer,
-  eastAsianFont: string,
-  wrap: boolean,
-  tables: readonly (readonly TableBox[])[],
-): Buffer {
-  const entries = zipEntries(deck);
-  const slides = slideOrder(entries.keys());
-  let touched = false;
-  for (const [name, content] of entries) {
-    if (
-      !/^ppt\/(slides|slideLayouts|slideMasters|notesSlides)\/[^/]+\.xml$/u.test(
-        name,
-      )
-    ) {
-      continue;
-    }
-    const xml = content.toString("utf8");
-    let patched = xml;
-
-    // A table carries no usable height of its own, so it is restored from what
-    // the page painted before the renderer flattened it.
-    const boxes = tables[slides.indexOf(name)];
-    if (boxes !== undefined && boxes.length > 0) {
-      patched = resizeTables(patched, boxes);
-    }
-
-    // spAutoFit tells the viewer to resize each shape around its own text,
-    // which discards the geometry the browser measured and re-derives it from
-    // whichever font metrics the viewer happens to have. normAutofit keeps the
-    // measured box and adjusts the text instead.
-    patched = patched.replace(/<a:spAutoFit\/>/gu, "<a:normAutofit/>");
-
-    // Line structure is already settled: every break the browser made was
-    // pinned before export and arrives as its own paragraph. Letting the viewer
-    // wrap on top of that re-decides it against different font metrics, and a
-    // line whose text is a few percent wider becomes two — which is how a
-    // heading ends up overlapping whatever sits below it.
-    if (!wrap) {
-      patched = patched.replace(
-        /(<a:bodyPr\b[^>]*?)\swrap="square"/gu,
-        '$1 wrap="none"',
-      );
-    }
-
-    // Only the East Asian slot moves, so Latin runs keep the deck's display
-    // face and a mixed run like "TED 演讲" renders both halves as intended.
-    if (eastAsianFont !== "") {
-      patched = patched.replace(
-        /<a:ea typeface="[^"]*"/gu,
-        `<a:ea typeface="${eastAsianFont}"`,
-      );
-    }
-
-    if (patched !== xml) {
-      entries.set(name, Buffer.from(patched, "utf8"));
-      touched = true;
-    }
-  }
-  return touched ? packZip(entries) : deck;
-}
-
-/**
- * Grades the export on whether the deck's words survived, not on how closely
- * the pixels line up.
- *
- * Pixel distance is the wrong gate: an export that silently drops every
- * headline scores about as well as one that places every headline a few points
- * off, because both differ from the source over a similar area. Text coverage
- * separates them, and missing text is the defect users actually report.
- */
+/** This existing editable-text check does not establish visual fidelity. */
 function verifyDeck(rendered: Rendered): VerifyReport {
   const { slides, text } = deckText(rendered.deck);
   const missing: string[] = [];
@@ -1053,13 +414,6 @@ function verifyDeck(rendered: Rendered): VerifyReport {
   };
 }
 
-// --- command ----------------------------------------------------------------
-
-/**
- * Conversion is still being measured against real decks, so it is held to the
- * accounts the feature switch names. A run whose token predates the switch
- * carries no capabilities to inspect and is left alone.
- */
 function requirePresentationConvertCapability(): void {
   const payload = decodeSandboxTokenPayload();
   if (payload && !payload.capabilities.includes("presentation-convert:write")) {
@@ -1069,15 +423,19 @@ function requirePresentationConvertCapability(): void {
   }
 }
 
+function coverageFailure(report: VerifyReport): string {
+  const percent = (report.coverage * 100).toFixed(1);
+  const floor = (TEXT_COVERAGE_FLOOR * 100).toFixed(0);
+  return `Text coverage ${percent}% is below the ${floor}% floor; the deck lost content the source shows`;
+}
+
 async function convert(options: Options): Promise<void> {
   requirePresentationConvertCapability();
   const rendered = render(options);
-
   const target =
     options.out ?? `${basename(options.input, extname(options.input))}.pptx`;
   const out = operatorPath(target);
   writeFileSync(out, rendered.deck);
-
   const report = options.verify ? verifyDeck(rendered) : undefined;
   const failed = report !== undefined && report.coverage < TEXT_COVERAGE_FLOOR;
 
@@ -1086,7 +444,6 @@ async function convert(options: Options): Promise<void> {
       JSON.stringify({
         output: out,
         selector: rendered.selector,
-        eastAsianFont: rendered.eastAsianFont,
         slides: rendered.slides,
         bytes: rendered.deck.length,
         verify: report,
@@ -1097,10 +454,7 @@ async function convert(options: Options): Promise<void> {
     }
     return;
   }
-
   if (failed) {
-    // The deck is kept for inspection, but this is not a success: the missing
-    // strings go to stderr so they survive a redirect of the failed run.
     process.stderr.write(`Converted deck kept at ${out}\n`);
     process.stderr.write(
       `Slides ${rendered.slides.toString()} via selector ${rendered.selector}\n`,
@@ -1110,19 +464,10 @@ async function convert(options: Options): Promise<void> {
     }
     throw new Error(coverageFailure(report));
   }
-
   console.log(chalk.green("✓ Presentation converted"));
   console.log(chalk.dim(`  Output:   ${out}`));
   console.log(chalk.dim(`  Slides:   ${rendered.slides.toString()}`));
   console.log(chalk.dim(`  Selector: ${rendered.selector}`));
-  if (
-    rendered.eastAsianFont !== "" &&
-    rendered.texts.some((entry) => {
-      return CJK.test(entry);
-    })
-  ) {
-    console.log(chalk.dim(`  CJK font: ${rendered.eastAsianFont}`));
-  }
   if (report !== undefined) {
     const percent = (report.coverage * 100).toFixed(1);
     console.log(
@@ -1140,25 +485,18 @@ async function convert(options: Options): Promise<void> {
   console.log(chalk.cyan(`  okou web upload-file -f ${out}`));
 }
 
-function coverageFailure(report: VerifyReport): string {
-  const percent = (report.coverage * 100).toFixed(1);
-  const floor = (TEXT_COVERAGE_FLOOR * 100).toFixed(0);
-  return `Text coverage ${percent}% is below the ${floor}% floor; the deck lost content the source shows`;
-}
-
 export const presentationConvertCommand = new Command()
   .name("convert")
-  .description("Convert an HTML presentation into an editable .pptx")
+  .description(
+    "Convert an HTML presentation into a .pptx with the DOM renderer",
+  )
   .requiredOption("--input <path>", "HTML deck file or URL")
   .option("--out <path>", "Output .pptx path (default: <input>.pptx)")
   .option(
     "--selector <css>",
-    "Slide element selector (default: detected from the page)",
+    "Slide selector (default: detected from the page)",
   )
-  .option(
-    "--session <name>",
-    "Reuse an existing agent-browser session instead of opening one",
-  )
+  .option("--session <name>", "Reuse an existing agent-browser session")
   .option(
     "--width <inches>",
     "Slide width in inches",
@@ -1184,39 +522,29 @@ export const presentationConvertCommand = new Command()
     DEFAULT_VIEWPORT_HEIGHT,
   )
   .option(
-    "--no-normalize",
-    "Keep CSS that OOXML cannot express instead of collapsing it",
-  )
-  .option(
-    "--wrap",
-    "Let the viewer re-wrap text rather than holding the browser's line breaks",
+    "--verify",
+    "Check editable-text coverage, not visual fidelity",
     false,
   )
-  .option("--verify", "Check the converted deck against the source text", false)
   .option("--json", "Print machine-readable JSON")
   .addHelpText(
     "after",
     `
 Examples:
   Convert a deck:      okou presentation convert --input deck.html
-  Verify the result:   okou presentation convert --input deck.html --verify
-  Name the slides:     okou presentation convert --input deck.html --selector ".stage"
-  Convert a hosted deck: okou presentation convert --input https://example.com/deck
+  Verify text:         okou presentation convert --input deck.html --verify
+  Select slides:       okou presentation convert --input deck.html --selector ".stage"
+  Hosted deck:         okou presentation convert --input https://example.com/deck
   Machine-readable:    okou presentation convert --input deck.html --json
   Deck behind a login: okou browser use && okou presentation convert \\
                          --session okou-browser --input https://example.com/deck
 
-Output:
-  Writes an editable .pptx with real text frames and shapes. Text stays editable
-  in PowerPoint and Keynote; SVG, filters, and masks fall back to pictures.
-
 Notes:
-  - The deck is opened and settled in the same browser session that renders it,
-    because shells size type with a runtime autofit pass
-  - Text keeps the line breaks the browser settled on; --wrap hands wrapping
-    back to the viewer, which may re-flow a line that measures wider there
-  - --verify reads the words back out of the .pptx and fails below ${(TEXT_COVERAGE_FLOOR * 100).toFixed(0)}% coverage
-  - The renderer bundle is fetched on first use into ~/.cache/okou/presentation-convert
-  - Use okou presentation screenshot for page images rather than an editable deck`,
+  - Exports the selected DOM as currently rendered; prepare inactive slides in
+    the source rather than relying on automatic CSS rewrites
+  - Text, fonts, wrapping, tables, and complex effects follow the pinned renderer
+  - The original renderer artifact is written without PPTX XML post-processing
+  - --verify checks editable strings only; image fallback is not text coverage
+  - Use okou presentation screenshot and compare each page before delivery`,
   )
   .action(withErrorHandler(convert));
