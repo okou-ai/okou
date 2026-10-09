@@ -266,7 +266,7 @@ async function finish(
         exitCode: status === "completed" ? 0 : 1,
         ...(status === "completed"
           ? {
-              checkpoint: {
+              completion: {
                 cliAgentType: claim.cliAgentType,
                 cliAgentSessionId: `subscription-${runId}`,
                 cliAgentSessionHistoryHash: createHash("sha256")
@@ -1416,9 +1416,7 @@ describe("personal priority credential and session boundaries", () => {
     const history = Buffer.from(`subscription history ${sent.runId}`);
     const hash = createHash("sha256").update(history).digest("hex");
     context.sessionHistoryBlobs.set(hash, history);
-    await createWebhookCallbackApi(
-      context,
-    ).requestAgentCheckpointPrepareHistory(
+    await createWebhookCallbackApi(context).requestAgentSessionHistoryPrepare(
       {
         runId: sent.runId,
         hash,

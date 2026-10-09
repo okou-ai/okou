@@ -566,7 +566,7 @@ async function completeSandboxRun(args: {
       cliAgentSessionHistory,
       "utf8",
     );
-    await webhooksApi.requestAgentCheckpointPrepareHistory(
+    await webhooksApi.requestAgentSessionHistoryPrepare(
       {
         runId: args.runId,
         hash: cliAgentSessionHistoryHash,
@@ -581,7 +581,7 @@ async function completeSandboxRun(args: {
       {
         runId: args.runId,
         exitCode: args.exitCode,
-        checkpoint: {
+        completion: {
           cliAgentType: "claude-code",
           cliAgentSessionId,
           cliAgentSessionHistoryHash,

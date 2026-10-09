@@ -270,7 +270,7 @@ export function createPublicRemoteAccessRunApi(context: TestContext) {
         }
         return previousStorage(command);
       });
-      await webhooks.requestAgentCheckpointPrepareHistory(
+      await webhooks.requestAgentSessionHistoryPrepare(
         {
           runId: run.runId,
           hash,
@@ -286,7 +286,7 @@ export function createPublicRemoteAccessRunApi(context: TestContext) {
           runId: run.runId,
           exitCode: 0,
           lastEventSequence: 0,
-          checkpoint: {
+          completion: {
             cliAgentType: "claude-code",
             cliAgentSessionId: `remote-access-${run.runId}`,
             cliAgentSessionHistoryHash: hash,

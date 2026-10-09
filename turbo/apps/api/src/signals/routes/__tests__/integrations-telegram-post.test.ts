@@ -449,7 +449,7 @@ async function completeCanonicalChatRun(args: {
     "utf8",
   );
   const headers = { authorization: `Bearer ${args.sandboxToken}` };
-  await webhooksApi.requestAgentCheckpointPrepareHistory(
+  await webhooksApi.requestAgentSessionHistoryPrepare(
     {
       runId: args.runId,
       hash: cliAgentSessionHistoryHash,
@@ -464,7 +464,7 @@ async function completeCanonicalChatRun(args: {
     {
       runId: args.runId,
       exitCode: 0,
-      checkpoint: {
+      completion: {
         cliAgentType: args.cliAgentType ?? "claude-code",
         cliAgentSessionId,
         cliAgentSessionHistoryHash,

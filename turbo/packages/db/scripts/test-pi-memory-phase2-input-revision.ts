@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { Client } from "pg";
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -80,7 +81,28 @@ async function state(memoryStorageId: string) {
 }
 
 try {
-  await applyPendingMigrations(migrationSql);
+  const journal = z
+    .object({
+      entries: z.array(z.object({ tag: z.string(), when: z.number() })),
+    })
+    .parse(
+      JSON.parse(
+        await readFile(
+          new URL("../src/migrations/meta/_journal.json", import.meta.url),
+          "utf8",
+        ),
+      ),
+    );
+  const contraction = journal.entries.find(({ tag }) => {
+    return tag.endsWith("_retire_generic_run_checkpoints");
+  });
+  assert.ok(
+    contraction,
+    "Checkpoint contraction must be present in this release",
+  );
+  await applyPendingMigrations(migrationSql, {
+    beforeMillis: contraction.when,
+  });
   const retained = await seedStorage();
   const fresh = await seedStorage();
   await db.insert(outgoingJobs).values(owner(retained));
@@ -89,9 +111,9 @@ try {
 
   // The actual outgoing ORM emits DEFAULT for its obsolete mapped column.
   // This demonstrates the preparation release is necessary before contraction.
-  await client.query(
-    "ALTER TABLE pi_memory_phase2_jobs DROP COLUMN last_maintenance_checkpoint_id",
-  );
+  await applyPendingMigrations(migrationSql, {
+    beforeMillis: contraction.when + 1,
+  });
   await assert.rejects(
     db.insert(outgoingJobs).values(owner(fresh)),
     (error: unknown) => {

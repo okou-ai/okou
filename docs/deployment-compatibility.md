@@ -639,6 +639,51 @@ release 2 removes adapters and drops the generic table and obsolete ID columns.
 The outgoing release 1 API is already independent of the dropped table, matching
 the repository's migration-before-API-promotion deployment order.
 
+## Generic Run checkpoint retirement: final contraction (#38124)
+
+This final cleanup follows #38147 and the separately deployed explicit-column
+writer preparation in #38380. Migration `1358_retire_generic_run_checkpoints`
+drops only the generic `checkpoints` table and
+`pi_memory_phase2_jobs.last_maintenance_checkpoint_id`. It uses no CASCADE and
+performs no Run/result rewrite, Conversation/Session deletion, blob reclamation
+or memory-publication receipt deletion. `pi_memory_phase2_checkpoints` and the
+maintenance publication version remain owned by memory/Storage.
+
+The API and generated contracts now expose only `/complete.completion` and
+`/api/webhooks/agent/session-history/prepare`. Remove the old payload adapter,
+history URL, standalone endpoint declarations and generic result-ID declarations.
+Historical result JSON may still contain opaque extra keys; retained continuation
+and artifact/version fields remain readable without rewriting those records.
+Guest finalization uses completion-owned DTOs directly; the wire payload of the
+already deployed new Guests is unchanged.
+
+**Entry gate.** Merge and deploy #38380 separately first, then drain
+pre-preparation candidate commits and confirm the serving/rollback inventory.
+The preparation's actual merged first-parent commit is the enforced API rollback
+floor. A raw ORM INSERT from the preceding API still names the obsolete column
+with DEFAULT and cannot serve after contraction. Preparation and contraction
+must not be released together. The migration is safe before this cleanup API is
+promoted only while the prepared table-independent API is already serving.
+
+A read-only production observation on 2026-10-09 (Asia/Shanghai) found first-release
+API/Runner promotion complete at 08:54/08:56. From 10:00:33 through 15:19:08, no
+old history endpoint, Guest 0.104.7 or Runner 0.220.24 request was observed.
+Production also contained new history/finalization successes, warm identity
+reuse and history transfer successes for Pi, Codex and Claude Code, plus memory
+publish/no-diff receipts and no new generic checkpoint rows. This is bounded
+traffic/data evidence; recheck old producers, offline recovery and rollback
+inventory before final promotion. It does not establish deployment of #38380 or
+execute this contraction.
+
+The PostgreSQL transition tests replay the actual contraction and retain full
+historical Run results, native history pointers/blob references, Storage versions,
+lineage and memory receipts. The prepared production revision SQL performs
+first/conflict writes on both sides of that same migration. Existing API/Guest
+completion, exact-retry, continuation and recovery suites exercise retained
+behavior on the contracted schema. Close #38124 only after production contraction
+and retained behavior have been accepted; the network-home/Session migration
+remains in #37970.
+
 ## Generic Run checkpoint column preparation (#38124)
 
 The Stage 1 candidate commit now advances Phase 2 input revisions with an explicit

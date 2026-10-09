@@ -1407,7 +1407,7 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
       },
     );
     const prepared = await webhooksApi
-      .requestAgentCheckpointPrepareHistory(
+      .requestAgentSessionHistoryPrepare(
         {
           runId: args.runId,
           hash: historyHash,
@@ -1469,7 +1469,7 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
       {
         runId: args.runId,
         exitCode: 0,
-        checkpoint: {
+        completion: {
           cliAgentType: "claude-code",
           cliAgentSessionId: args.sessionId,
           cliAgentSessionHistoryHash: historyHash,

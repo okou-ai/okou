@@ -12,7 +12,6 @@ import * as agentSchema from "./schema/agent";
 import * as agentRunSchema from "./runtime/agent-run";
 import * as agentRunConnectorDiagnosticRegistrationSchema from "./schema/agent-run-connector-diagnostic-registration";
 import * as conversationSchema from "./schema/conversation";
-import * as checkpointSchema from "./schema/checkpoint";
 import * as agentSessionSchema from "./schema/agent-session";
 import * as storageSchema from "./schema/storage";
 import * as storagePublicationFenceSchema from "./schema/storage-publication-fence";
@@ -173,7 +172,6 @@ export const schema = {
   ...agentRunSchema,
   ...agentRunConnectorDiagnosticRegistrationSchema,
   ...conversationSchema,
-  ...checkpointSchema,
   ...agentSessionSchema,
   ...storageSchema,
   ...storagePublicationFenceSchema,

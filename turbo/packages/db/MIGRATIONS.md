@@ -112,8 +112,13 @@ are enforced by the integration ingress tests.
 
 ### Active transition validators
 
+- `scripts/test-run-checkpoint-retirement.ts` replays the generic checkpoint
+  contraction against populated historical data and preserves Runs/results,
+  native continuation, blob references, Storage versions/lineage and memory
+  publication receipts. Keep it through production acceptance of the contraction.
+
 - `scripts/test-pi-memory-phase2-input-revision.ts` executes the production Phase 2
-  input-revision SQL before and after a simulated generic-ID column drop. It
+  input-revision SQL before and after the real generic checkpoint contraction. It
   retains the outgoing ORM mapping to prove the preparation boundary and covers
   first insert, conflict revision advancement, active lease preservation and
   unleased retry reset. Keep it until the checkpoint contraction is deployed and
