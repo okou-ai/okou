@@ -122,7 +122,7 @@ allocation/refund-source/change/fulfillment row assertions are intentionally los
 Deferred payment (20/0), scheduled downgrade, last-member refund, no refundable
 amount, fully discounted invitation, and partial-consumption refund remain. The
 partial invitation now confirms the ordinary purchase using a saved card, captures
-the outbound invoice metadata, accepts the real invitation, and consumes 5,200
+the outbound invoice metadata, accepts the real invitation, and consumes 5,000
 credits through ordinary SEO pricing. It preserves remaining 5,000 and the failed
 then successful 500 refund, two distinct retry idempotency keys and no third refund
 across three Clerk deletions. This is no longer a synthetic PaymentIntent-only
@@ -508,3 +508,18 @@ GitHub reported CONFLICTING against main `03c79d9a11fa49dab3f4ddf755a969452a82fe
 ## Final-review whole-chain correction
 
 Independent review of source34147cc3 found the retained Slack App Home/welcome/lifecycle GET caller still reached the fabricated-Run bootstrap through `bootstrapLimitedFreeOnboarding`. It now calls ordinary Clerk-authenticated onboarding status and complete, followed by normal workspace deletion. All Home, welcome-once, disconnect, uninstall and revocation assertions remain. The old displayName option was already ignored by that bootstrap and is not a lost outcome. Other unselected bootstrap callers remain unresolved. This repair adds zero quota and removes no case or parameter row.
+
+## First behavioral CI failure and narrow repair
+
+Source `afe8290c4cc104e646ef5b10b0b9258457617c30`, Turbo37926798890/API8 job113808227462: seven failed,706passed. Cancelled API4 job113808227368 nevertheless finished its test step: nine failed,599passed; API2 job113808227399 recorded one failed Discord native case before cancellation. API1/API5 test steps757/757 and578/578 passed but their jobs are CANCELLED, not green. The source ended81success/28skip/4cancel/2failure. All raw failure evidence is retained in page014; no blind rerun.
+
+Repairs preserve all declarations, parameter rows, exact financial outcomes and time limits:
+
+- Invitation acceptance legitimately grants the inviter100 bonus. Assert five precise grants: the original two unchanged by ID, one owner100 bonus, accepted member20,000+400; repeated acceptance leaves the full snapshot unchanged. This corrects the attempted four-row public expectation, not a production reward change.
+- Stripe checkout orders known pack amounts20/50/100/200; the constructor now expects that exact order and quantities rather than insertion order50/20. Cancellation asserts the actual free active entitlement plus canceled subscription/no subscription, preserving exact unchanged grants and no refunds; entitlement status is not subscription status.
+- A real refund source has an invoice line: assert its2,000 amount in the precise invoice-line credit-note shape and retain2,000 refund/idempotency. Purchased grants are consumed before bonus in production. The partial invitation spends5,000, keeps purchased5,000 and bonus200, then still refunds500 with the same two attempts and replay guards. The two grants are compared by grantType, never random UUID order.
+- Public billing status for Team/Custom reads the configured concurrency Price. Its external Stripe mock now returns a valid active recurring positive USD price; no business price seed or product logic changes.
+- Prior-cash setup delivers the existing Stripe created then updated lifecycle: created binds the subscription, updated activates the Plan. Public pro/canBuyCredits/credits0 is asserted before cash purchase. No Plan invoice, paid-Plan credit grant or lastProcessedInvoiceId is added, preserving the prior-cash-specific premise.
+- Both retained Discord real-claim callers now acknowledge normal Agent storage initialization through the existing S3 mock before create/claim. No fabricated token, internal state insertion or real HTTP PUT claim.
+
+Local/static checks and new-head PR CI must verify these repairs. These source-level explanations are not claims that the rerun has already passed.

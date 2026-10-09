@@ -78,6 +78,7 @@ describe("Discord file authorization and input validation", () => {
   });
   it("requires native read or write capability for sandbox requests", async () => {
     const actor = await actorSession();
+    bdd.acceptAgentStorageWrites();
     await publicPlanLifecycle(context, actor).update("active");
     const claimed = await claimPublicToolRun(context, actor, onTestFinished);
     const headers = { authorization: `Bearer ${claimed.claim.sandboxToken}` };

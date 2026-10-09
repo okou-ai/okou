@@ -1888,13 +1888,39 @@ describe("legacy subscription usage pack migration", () => {
         fixture,
         userId: acceptedUserId,
       });
+      await expect(readMigrationAllocations(fixture)).resolves.toHaveLength(2);
+      const afterAcceptance = await readMigrationCredits(fixture);
+      expect(afterAcceptance).toHaveLength(5);
+      expect(
+        afterAcceptance.filter((grant) => {
+          return committed.some((existing) => {
+            return existing.id === grant.id;
+          });
+        }),
+      ).toStrictEqual(committed);
+      expect(
+        afterAcceptance.filter((grant) => {
+          return (
+            grant.memberId === fixture.userId &&
+            !committed.some((existing) => {
+              return existing.id === grant.id;
+            })
+          );
+        }),
+      ).toStrictEqual([
+        expect.objectContaining({
+          grantType: "bonus",
+          amount: 100,
+          remaining: 100,
+        }),
+      ]);
       await postMigrationInvitationAccepted({
         fixture,
         userId: acceptedUserId,
       });
-      await expect(readMigrationAllocations(fixture)).resolves.toHaveLength(2);
-      const afterAcceptance = await readMigrationCredits(fixture);
-      expect(afterAcceptance).toHaveLength(4);
+      await expect(readMigrationCredits(fixture)).resolves.toStrictEqual(
+        afterAcceptance,
+      );
       expect(
         afterAcceptance.filter((grant) => {
           return grant.memberId === acceptedUserId;
@@ -2349,8 +2375,10 @@ describe("usage pack allocation management", () => {
         },
         line_items: [
           { price: managedUsagePackPlanPriceId(tier), quantity: 1 },
-          ...[...quantities].map(([price, quantity]) => {
-            return { price, quantity };
+          ...([20, 50, 100, 200] as const).flatMap((amount) => {
+            const price = priceIdForManagedUsagePack(amount);
+            const quantity = quantities.get(price);
+            return quantity === undefined ? [] : [{ price, quantity }];
           }),
         ],
       }),
@@ -8996,7 +9024,12 @@ describe("usage pack allocation management", () => {
       );
       const after = await readPurchasedCreditGrants(fixture);
       expect(after).toStrictEqual(before);
-      expect((await readBillingStatus(fixture)).status).toBe("suspended");
+      await expect(readBillingStatus(fixture)).resolves.toMatchObject({
+        tier: "limited-free-1",
+        status: "active",
+        subscriptionStatus: "canceled",
+        hasSubscription: false,
+      });
       expect(context.mocks.stripe.creditNotes.create).not.toHaveBeenCalled();
       expect(context.mocks.stripe.refunds.create).not.toHaveBeenCalled();
     },
@@ -9715,7 +9748,13 @@ describe("usage pack allocation management", () => {
     expect(context.mocks.stripe.creditNotes.create).toHaveBeenCalledWith(
       expect.objectContaining({
         invoice: expect.stringMatching(/^in_/u),
-        amount: 2000,
+        lines: [
+          {
+            type: "invoice_line_item",
+            invoice_line_item: expect.stringMatching(/^il_/u),
+            amount: 2000,
+          },
+        ],
         refunds: [
           {
             refund: "re_last_usage_pack_removal",
@@ -12054,14 +12093,23 @@ describe("usage pack allocation management", () => {
       userId: acceptedUserId,
       orgRole: "org:member",
     });
-    // The normal SEO response consumes 200 bonus credits and 5,000 purchased credits.
-    await chargePublicSeoUsage(context, member, 5200);
+    // Normal usage consumes purchased credits before bonus credits.
+    await chargePublicSeoUsage(context, member, 5000);
     authenticateOrg(purchase.fixture);
     expect(
-      (await readPurchasedCreditGrants(purchase.fixture)).filter((grant) => {
-        return grant.memberId === acceptedUserId;
-      }),
+      (await readPurchasedCreditGrants(purchase.fixture))
+        .filter((grant) => {
+          return grant.memberId === acceptedUserId;
+        })
+        .sort((left, right) => {
+          return left.grantType.localeCompare(right.grantType);
+        }),
     ).toStrictEqual([
+      expect.objectContaining({
+        grantType: "bonus",
+        amount: 200,
+        remaining: 200,
+      }),
       expect.objectContaining({
         grantType: "purchased",
         amount: 10_000,

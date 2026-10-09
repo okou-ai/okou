@@ -20,6 +20,7 @@ describe("Discord native access before OAuth is available", () => {
     }
     const actor = { ...user, orgId: user.orgId };
     configureDiscordApp();
+    createBddApi(context).acceptAgentStorageWrites();
     await publicPlanLifecycle(context, actor).update("active");
     const claimed = await claimPublicToolRun(context, actor, onTestFinished);
     const channelId = uniqueDiscordSnowflake();

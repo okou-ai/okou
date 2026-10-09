@@ -510,6 +510,10 @@ function mockUsagePackPriceCatalog(
     for (const customPriceId of env("OKOU_PRICE_CUSTOM") ?? []) {
       fixedAmounts.set(customPriceId, 0);
     }
+    const concurrencyPriceId = optionalEnv("OKOU_PRICE_CONCURRENCY");
+    if (concurrencyPriceId) {
+      fixedAmounts.set(concurrencyPriceId, 2000);
+    }
     const fixedAmount = fixedAmounts.get(priceId);
     if (fixedAmount !== undefined) {
       return Promise.resolve({
@@ -633,6 +637,15 @@ async function temporaryCashPurchasePlan(fixture: UsagePackLifecycleFixture) {
     stripeEvent("customer.subscription.created", subscription),
     200,
   );
+  await postStripeEvent(
+    stripeEvent("customer.subscription.updated", subscription),
+    200,
+  );
+  await expect(readBillingStatus(fixture)).resolves.toMatchObject({
+    tier: "pro",
+    canBuyCredits: true,
+    credits: 0,
+  });
   return async () => {
     await postStripeEvent(
       stripeEvent("customer.subscription.deleted", {
