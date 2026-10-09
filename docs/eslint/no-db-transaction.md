@@ -16,33 +16,31 @@ SQL boundaries are recognized using PostgreSQL parsing and statement splitting o
 
 There is no billing-directory, test-directory or new migration exemption. The independent CI scan includes historical DB scripts that normal package lint already ignores; an existing ignored path cannot hide a new transaction.
 
-## Frozen Legacy Inventory
+## Deletion-only Legacy Inventory
 
-The initial inventory is frozen at main `9b1bedb5b9a10a930e6a44e1cde479dfb0c31fb8`, on 2026-10-09. `turbo/db-transaction-baseline.json` registers each detected site with a unique ID, repository-relative file, named owner and SHA-256 AST fingerprint.
+`turbo/db-transaction-baseline.json` is a cleanup ledger of existing transaction boundaries. Each entry has a unique ID, repository-relative file and named owner. It does not pin a main revision or fingerprint the transaction's callback, arguments, receiver or SQL body. Existing business code may change while the cleanup proceeds; transaction scope and semantics still require review.
 
 Each existing boundary has this next-line marker:
 
 ```ts
 // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0001; new non-billing transactions are prohibited.
 await db.transaction(async (tx) => {
-  // Existing work, not authorization for expanded transactional behavior.
+  // Existing work; transaction scope and semantics still require review.
 });
 ```
 
 Place the marker immediately above the reported method/property or SQL literal line, including on a multiline method chain. In standalone SQL, use `-- eslint-disable-next-line ...` immediately before the opening statement.
 
-The fingerprint includes the invocation's arguments and inline callback body. It excludes source locations, comments, and literal quoting. Formatting and inserted lines do not invalidate a TypeScript site. Changing the callback AST, receiver, arguments, owner or file does. SQL fingerprints use the parsed file AST without statement/source offsets; formatting and SQL comments do not change the fingerprint. Fingerprints identify static syntax, not semantic equivalence.
-
 The `lint-eslint` CI job runs the independent collector with inline configuration disabled. It checks:
 
 1. Every detected transaction has a valid, single-boundary legacy or billing exemption.
-2. A legacy ID is used once, and its file, owner and fingerprint match.
+2. A legacy ID is used once, and its file and owner match.
 3. Every retained inventory entry is still used; removing or converting a transaction requires deleting its legacy marker and inventory row.
 4. The PR inventory is a subset of the inventory read from the event's **base/main commit**, with no added IDs or modified records. Total transaction counts are not an authorization check.
 
-The enabling PR reconstructs its allowed inventory from the pinned main source revision above, not from its own source or JSON. Once enforcement is present on main, a missing inventory is an error; bootstrap cannot be used to restore deleted IDs. PR and merge-group checks supply their captured base SHA and fetch the required commits, rather than trusting the candidate manifest alone.
+For initial activation only, the collector reads the supplied base/main source and verifies that registrations for each file and owner do not exceed its existing transaction boundaries. It does not trust the candidate ledger to authorize additional boundaries. Once enforcement is present on main, a missing inventory is an error; bootstrap cannot be used to restore deleted IDs. PR and merge-group checks supply their captured base SHA, and the lint checkout uses the event commit so reruns do not silently select a newer merge ref.
 
-The inventory is deletion-only. Do not regenerate it, change IDs, move entries, or update fingerprints to make a change pass. Remove the non-billing transaction using a correct transaction-free design, or replace the legacy waiver with a genuinely necessary billing exception. Inline-body edits that change its AST intentionally require this policy decision rather than automatic grandfathering. Legacy entries include billing and non-billing sites: registration is not a necessity review or a declaration of correctness.
+After activation, the inventory is deletion-only. Do not regenerate it, add or reuse IDs, or change an entry's file or owner to make a change pass. Removing a non-billing transaction or converting a necessary billing transaction requires deleting its legacy marker and ledger row. Callback edits do not require ledger updates. Legacy entries include billing and non-billing sites: registration is not a necessity review or a declaration of correctness.
 
 ## Necessary Billing Exceptions
 
@@ -67,6 +65,6 @@ From `turbo/`, fetch the relevant base/main revision and run:
 pnpm lint:transactions <full-base-main-sha>
 ```
 
-For the enabling PR, also fetch the pinned bootstrap revision. Stage file deletions before running the Git-backed scan. This command is intentionally not a baseline-update command.
+Stage file deletions before running the Git-backed scan. This command is intentionally not a baseline-update command.
 
-This is a static policy guard, not a runtime/data-flow proof. Arbitrary reflection, dynamically generated property names or SQL, cross-file callable aliases, external callback bodies, and new callers of old transaction-opening helpers still require review. Do not evade the policy through those paths. Recreating identical syntax in the same owner or changing surrounding control flow can preserve a fingerprint and also requires review. CI workflow/rule/scanner changes themselves require review; the inventory check is not an immutable security boundary against rewriting its enforcement code. Preserve authorization, concurrency, idempotency, cleanup and financial correctness when removing transactions.
+This is a static policy guard, not a runtime/data-flow proof. It rejects extra detected boundaries and unregistered, copied, moved or resurrected IDs. It intentionally allows an existing callback's business logic to change. Replacing a boundary within the same file and owner while transferring its sole ID cannot be distinguished from an edit; review must reject using that limitation to introduce a new transaction. Expanded transaction scope, external I/O, surrounding control flow, arbitrary reflection, dynamically generated property names or SQL, cross-file callable aliases, external callback bodies and new callers of old transaction-opening helpers also require review. CI workflow/rule/scanner changes themselves require review. Preserve authorization, concurrency, idempotency, cleanup and financial correctness when removing transactions.

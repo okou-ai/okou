@@ -27,7 +27,7 @@ const checker = fileURLToPath(
 );
 const loader = import.meta.resolve("tsx");
 
-async function fixture() {
+async function fixture(enforced = true) {
   const root = mkdtempSync(join(tmpdir(), "transaction-policy-"));
   roots.push(root);
   function write(file: string, code: string): void {
@@ -49,16 +49,24 @@ async function fixture() {
     "  await",
     `  ${legacyTransactionComment("TX-0001")}\n  await`,
   );
-  write(codeFile, marked);
-  write(transactionBaselinePath, JSON.stringify(baseline));
+  write(codeFile, enforced ? marked : legacyCode);
+  if (enforced) write(transactionBaselinePath, JSON.stringify(baseline));
   git(["add", "."]);
-  git(["commit", "-qm", "initial frozen inventory"]);
+  git(["commit", "-qm", "initial transaction source"]);
   const base = git(["rev-parse", "HEAD"]).trim();
-  function check() {
-    return spawnSync(process.execPath, ["--import", loader, checker, base], {
-      cwd: root,
-      encoding: "utf8",
-    });
+  if (!enforced) {
+    write(codeFile, marked);
+    write(transactionBaselinePath, JSON.stringify(baseline));
+  }
+  function check(revision = base) {
+    return spawnSync(
+      process.execPath,
+      ["--import", loader, checker, revision],
+      {
+        cwd: root,
+        encoding: "utf8",
+      },
+    );
   }
   return { root, write, git, check, baseline, marked };
 }
@@ -69,15 +77,66 @@ test("the CLI accepts registered legacy transactions after formatting-only edits
     codeFile,
     `// moved down without changing ownership\n\n${f.marked.replace("async tx => tx.insert(items)", "async (tx) => { /* unchanged */ return tx.insert(items); }")}`,
   );
-  // Braces and a return statement change the AST, unlike whitespace/parentheses.
-  expect(f.check().status).not.toBe(0);
-  f.write(
-    codeFile,
-    `// moved down\n\n${f.marked.replace("async tx", "async (tx)")}`,
-  );
   const result = f.check();
   expect(result.status, result.stderr).toBe(0);
-  expect(result.stdout).toContain("1 frozen legacy sites");
+  expect(result.stdout).toContain("1 legacy sites");
+});
+
+test.each([true, false])(
+  "existing callback edits are allowed with enforcement already active: %s",
+  async (enforced) => {
+    const f = await fixture(enforced);
+    f.write(codeFile, f.marked.replace("tx.insert(items)", "tx.delete(items)"));
+    const result = f.check();
+    expect(result.status, result.stderr).toBe(0);
+  },
+);
+
+test("activation follows the supplied base without a pinned main revision", async () => {
+  const f = await fixture(false);
+  f.write(codeFile, legacyCode.replace("tx.insert(items)", "tx.delete(items)"));
+  f.git(["add", codeFile]);
+  f.git(["commit", "-qm", "change existing transaction before activation"]);
+  const base = f.git(["rev-parse", "HEAD"]).trim();
+  f.write(codeFile, f.marked.replace("tx.insert(items)", "tx.delete(items)"));
+  const result = f.check(base);
+  expect(result.status, result.stderr).toBe(0);
+});
+
+test("activation cannot register an additional transaction in an existing owner", async () => {
+  const f = await fixture(false);
+  f.write(
+    codeFile,
+    f.marked.replace(
+      "tx.insert(items));",
+      `tx.insert(items));\n  ${legacyTransactionComment("TX-0002")}\n  await db.transaction(work);`,
+    ),
+  );
+  f.write(
+    transactionBaselinePath,
+    JSON.stringify({
+      ...f.baseline,
+      sites: [...f.baseline.sites, { ...f.baseline.sites[0], id: "TX-0002" }],
+    }),
+  );
+  const result = f.check();
+  expect(result.status).not.toBe(0);
+  expect(result.stderr).toContain("initial legacy inventory exceeds");
+});
+
+test("a missing enforced inventory cannot reactivate bootstrap", async () => {
+  const f = await fixture(false);
+  f.write(
+    "turbo/scripts/check-db-transactions.mts",
+    "export const active = true;",
+  );
+  f.git(["add", "turbo/scripts/check-db-transactions.mts"]);
+  f.git(["commit", "-qm", "enforcement without its required inventory"]);
+  const result = f.check(f.git(["rev-parse", "HEAD"]).trim());
+  expect(result.status).not.toBe(0);
+  expect(result.stderr).toContain(
+    "bootstrap cannot be reused after activation",
+  );
 });
 
 test.each([
@@ -95,9 +154,9 @@ test.each([
     change: (code: string) => code.replace("TX-0001", "TX-9999"),
   },
   {
-    name: "a different callback",
+    name: "a new nested transaction",
     change: (code: string) =>
-      code.replace("tx.insert(items)", "tx.delete(items)"),
+      code.replace("tx.insert(items)", "tx.transaction(work)"),
   },
   {
     name: "renamed ownership",
@@ -155,7 +214,7 @@ test("PR edits cannot enlarge or rewrite the base/main inventory", async () => {
     transactionBaselinePath,
     JSON.stringify({
       ...f.baseline,
-      sites: [{ ...f.baseline.sites[0], fingerprint: "0".repeat(64) }],
+      sites: [{ ...f.baseline.sites[0], owner: "anotherOwner" }],
     }),
   );
   expect(f.check().stderr).toContain("deletion-only");
@@ -201,7 +260,7 @@ test("a legacy ID deleted from main cannot be resurrected", async () => {
   expect(result.stderr).toContain("deletion-only");
 });
 
-test("a necessary billing reason is separate from the frozen legacy registry", async () => {
+test("a necessary billing reason is separate from the legacy registry", async () => {
   const f = await fixture();
   f.write(
     codeFile,
@@ -234,7 +293,7 @@ test("moving a legacy transaction to another file is not grandfathered", async (
   const f = await fixture();
   f.write(codeFile, "export const result = 1;");
   f.write("turbo/apps/api/scripts/moved.ts", f.marked);
-  expect(f.check().stderr).toContain("moved, or changed");
+  expect(f.check().stderr).toContain("duplicated, or moved");
 });
 
 test("standalone SQL uses a next-line SQL comment and does not confuse quoted directives", async () => {

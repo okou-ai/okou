@@ -3,14 +3,11 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import {
-  createTransactionBaseline,
   parseTransactionBaseline,
   transactionBaselinePath,
-  transactionBootstrapCommit,
   transactionSourceRoots,
   validateTransactionBaseline,
   validateTransactionSites,
-  type TransactionBaseline,
 } from "../packages/eslint-rules/src/api/transaction-policy.ts";
 import { scanTransactionSources } from "../packages/eslint-rules/src/api/transaction-scan.ts";
 
@@ -49,24 +46,23 @@ git(["cat-file", "-e", `${baseRevision}^{commit}`]);
 const current = parseTransactionBaseline(
   JSON.parse(readFileSync(resolve(repo, transactionBaselinePath), "utf8")),
 );
-let base: TransactionBaseline;
 if (existsAt(baseRevision, transactionBaselinePath)) {
-  base = parseTransactionBaseline(
+  const base = parseTransactionBaseline(
     JSON.parse(git(["show", `${baseRevision}:${transactionBaselinePath}`])),
   );
+  validateTransactionBaseline(current, base);
 } else {
   if (existsAt(baseRevision, "turbo/scripts/check-db-transactions.mts"))
     throw new Error(
       "The enforced base/main inventory is missing; bootstrap cannot be reused after activation.",
     );
-  git(["cat-file", "-e", `${transactionBootstrapCommit}^{commit}`]);
   const files = sourceFiles(
     git([
       "ls-tree",
       "-r",
       "--name-only",
       "-z",
-      transactionBootstrapCommit,
+      baseRevision,
       "--",
       ...transactionSourceRoots,
     ]),
@@ -75,18 +71,28 @@ if (existsAt(baseRevision, transactionBaselinePath)) {
     files.map((file) => {
       return {
         file,
-        code: git(["show", `${transactionBootstrapCommit}:${file}`]),
+        code: git(["show", `${baseRevision}:${file}`]),
       };
     }),
     repo,
   );
-  base = createTransactionBaseline(
-    original.map(({ site }) => {
-      return site;
-    }),
-  );
+  // Activation registers existing boundaries by file and owner, without
+  // freezing callback bodies or pinning a particular main revision.
+  const available = new Map<string, number>();
+  for (const { site } of original) {
+    const key = JSON.stringify([site.file, site.owner]);
+    available.set(key, (available.get(key) ?? 0) + 1);
+  }
+  for (const site of current.sites) {
+    const key = JSON.stringify([site.file, site.owner]);
+    const remaining = available.get(key) ?? 0;
+    if (!remaining)
+      throw new Error(
+        `${site.id}: initial legacy inventory exceeds the existing transaction boundaries in base/main for ${site.file} (${site.owner}).`,
+      );
+    available.set(key, remaining - 1);
+  }
 }
-validateTransactionBaseline(current, base);
 const files = sourceFiles(
   git([
     "ls-files",
@@ -106,7 +112,7 @@ const scanned = await scanTransactionSources(
 );
 validateTransactionSites(scanned, current);
 console.log(
-  `Database transaction policy passed: ${current.sites.length} frozen legacy sites, ${
+  `Database transaction policy passed: ${current.sites.length} legacy sites, ${
     scanned.filter(({ exemption }) => {
       return exemption?.kind === "billing";
     }).length

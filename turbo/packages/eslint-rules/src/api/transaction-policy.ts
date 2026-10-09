@@ -1,5 +1,3 @@
-import { createHash } from "node:crypto";
-
 import {
   AST_NODE_TYPES,
   ASTUtils,
@@ -7,22 +5,16 @@ import {
   type TSESLint,
 } from "@typescript-eslint/utils";
 
-import { parsePostgres } from "./sql-analysis/postgres-parser.ts";
 import { transactionStatementOffsets } from "./sql-analysis/transaction-statements.ts";
 
 export const transactionRuleId = "api/no-db-transaction";
 export const legacyTransactionDate = "2026-10-09";
-// The initial inventory is reconstructed from this reviewed main revision, not
-// from the enabling PR's source or a caller-supplied revision.
-export const transactionBootstrapCommit =
-  "9b1bedb5b9a10a930e6a44e1cde479dfb0c31fb8";
 export const transactionBaselinePath = "turbo/db-transaction-baseline.json";
 export const transactionSourceRoots = ["turbo/apps/api", "turbo/packages/db"];
 
 export interface TransactionSite {
   readonly file: string;
   readonly owner: string;
-  readonly fingerprint: string;
   readonly line: number;
   readonly column: number;
 }
@@ -31,12 +23,10 @@ export interface LegacyTransaction {
   readonly id: string;
   readonly file: string;
   readonly owner: string;
-  readonly fingerprint: string;
 }
 
 export interface TransactionBaseline {
   readonly version: 1;
-  readonly frozenAt: string;
   readonly sites: readonly LegacyTransaction[];
 }
 
@@ -138,22 +128,19 @@ function isMethodUse(
 export function transactionVisitors(
   source: TSESLint.SourceCode,
   file: string,
-  report: (node: TSESTree.Node, fingerprintNode?: TSESTree.Node) => void,
+  report: (node: TSESTree.Node) => void,
 ): TSESLint.RuleListener {
   if (file.endsWith(".sql")) {
     return {
       Program(node): void {
         for (const offset of transactionStatementOffsets(source.text)) {
-          report(
-            {
-              ...node,
-              loc: {
-                start: source.getLocFromIndex(offset),
-                end: source.getLocFromIndex(offset + 1),
-              },
+          report({
+            ...node,
+            loc: {
+              start: source.getLocFromIndex(offset),
+              end: source.getLocFromIndex(offset + 1),
             },
-            node,
-          );
+          });
         }
       },
     };
@@ -194,14 +181,7 @@ export function transactionVisitors(
         !isMethodUse(node, source)
       )
         return;
-      // Pin the entire invocation, including its callback. A copied marker must
-      // not grandfather expanded transactional business logic.
-      report(
-        node.property,
-        node.parent?.type === AST_NODE_TYPES.CallExpression
-          ? node.parent
-          : node,
-      );
+      report(node.property);
     },
     Property(node): void {
       if (node.parent.type !== AST_NODE_TYPES.ObjectPattern) return;
@@ -230,10 +210,8 @@ export function transactionVisitors(
 }
 
 export function describeTransactionSite(
-  source: TSESLint.SourceCode,
   file: string,
   node: TSESTree.Node,
-  fingerprintNode = node,
 ): TransactionSite {
   const owners: string[] = [];
   for (let ancestor = node.parent; ancestor; ancestor = ancestor.parent) {
@@ -266,34 +244,9 @@ export function describeTransactionSite(
       }
     }
   }
-  const ignored = new Set([
-    "parent",
-    "range",
-    "loc",
-    "raw",
-    "tokens",
-    "comments",
-    "start",
-    "end",
-    "location",
-    "stmt_location",
-    "stmt_len",
-  ]);
-  const syntax = file.endsWith(".sql")
-    ? parsePostgres(source.text)
-    : fingerprintNode;
-  if (syntax === null)
-    throw new Error(
-      `${file}: transaction SQL must parse completely before it can be fingerprinted.`,
-    );
-  const normalized = JSON.stringify(syntax, (key, value: unknown) => {
-    if (ignored.has(key)) return undefined;
-    return typeof value === "bigint" ? value.toString() : value;
-  });
   return {
     file,
     owner: owners.join("/") || "<module>",
-    fingerprint: createHash("sha256").update(normalized).digest("hex"),
     line: node.loc.start.line,
     column: node.loc.start.column + 1,
   };
@@ -347,23 +300,16 @@ export function createTransactionBaseline(
 ): TransactionBaseline {
   return {
     version: 1,
-    frozenAt: transactionBootstrapCommit,
     sites: sites.map((site, index) => ({
       id: `TX-${String(index + 1).padStart(4, "0")}`,
       file: site.file,
       owner: site.owner,
-      fingerprint: site.fingerprint,
     })),
   };
 }
 
 export function parseTransactionBaseline(value: unknown): TransactionBaseline {
-  if (
-    !isRecord(value) ||
-    value.version !== 1 ||
-    value.frozenAt !== transactionBootstrapCommit ||
-    !Array.isArray(value.sites)
-  )
+  if (!isRecord(value) || value.version !== 1 || !Array.isArray(value.sites))
     throw new Error("Invalid database transaction baseline metadata.");
   const sites: LegacyTransaction[] = [];
   const ids = new Set<string>();
@@ -374,8 +320,6 @@ export function parseTransactionBaseline(value: unknown): TransactionBaseline {
       !/^TX-\d{4}$/u.test(site.id) ||
       typeof site.file !== "string" ||
       typeof site.owner !== "string" ||
-      typeof site.fingerprint !== "string" ||
-      !/^[a-f0-9]{64}$/u.test(site.fingerprint) ||
       ids.has(site.id)
     )
       throw new Error(
@@ -392,10 +336,9 @@ export function parseTransactionBaseline(value: unknown): TransactionBaseline {
       id: site.id,
       file: site.file,
       owner: site.owner,
-      fingerprint: site.fingerprint,
     });
   }
-  return { version: 1, frozenAt: value.frozenAt, sites };
+  return { version: 1, sites };
 }
 
 export function validateTransactionBaseline(
@@ -408,8 +351,7 @@ export function validateTransactionBaseline(
     if (
       !original ||
       original.file !== site.file ||
-      original.owner !== site.owner ||
-      original.fingerprint !== site.fingerprint
+      original.owner !== site.owner
     ) {
       throw new Error(
         `${site.id}: the base/main legacy inventory is deletion-only; additions and edits are prohibited.`,
@@ -436,11 +378,10 @@ export function validateTransactionSites(
       !original ||
       used.has(exemption.id) ||
       original.file !== site.file ||
-      original.owner !== site.owner ||
-      original.fingerprint !== site.fingerprint
+      original.owner !== site.owner
     ) {
       throw new Error(
-        `${location}: ${exemption.id} is unregistered, duplicated, moved, or changed. Do not copy or expand a legacy exemption.`,
+        `${location}: ${exemption.id} is unregistered, duplicated, or moved. Do not copy or expand a legacy exemption.`,
       );
     }
     used.add(exemption.id);

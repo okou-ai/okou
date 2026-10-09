@@ -39,16 +39,11 @@ export async function scanTransactionSources(
       return transactionVisitors(
         context.sourceCode,
         context.filename,
-        (node, fingerprintNode) => {
+        (node) => {
           const file = context.filename
             .slice(cwd.length + 1)
             .replaceAll("\\", "/");
-          const site = describeTransactionSite(
-            context.sourceCode,
-            file,
-            node,
-            fingerprintNode,
-          );
+          const site = describeTransactionSite(file, node);
           const comment = context.sourceCode
             .getAllComments()
             .find((entry) => entry.loc.end.line === site.line - 1);

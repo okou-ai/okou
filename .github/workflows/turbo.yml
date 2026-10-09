@@ -551,11 +551,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 1
       - uses: ./.github/actions/toolchain-init
       - name: Check DB ownership boundary
         run: .github/scripts/check-db-boundary.sh
-      - name: Check frozen database transaction inventory
+      - name: Check deletion-only database transaction inventory
         working-directory: turbo
         shell: bash
         env:
@@ -563,7 +564,7 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$TRANSACTION_BASE_SHA" =~ ^[a-f0-9]{40}$ ]] || { echo 'Missing base/main SHA' >&2; exit 1; }
-          git fetch --no-tags --depth=1 origin "$TRANSACTION_BASE_SHA" 9b1bedb5b9a10a930e6a44e1cde479dfb0c31fb8
+          git fetch --no-tags --depth=1 origin "$TRANSACTION_BASE_SHA"
           pnpm lint:transactions "$TRANSACTION_BASE_SHA"
       - name: Validate oxlintrc.json react allowImportNames
         working-directory: turbo
