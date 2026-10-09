@@ -90,6 +90,7 @@ describe("OPS-01: user data export", () => {
     bdd.acceptAgentStorageWrites();
     const chat = createChatFilesBddApi(context);
     const misc = createMiscRoutesApi(context);
+    const events = createChatEventsFixture(context);
     const runs = createRunsApi(context);
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
@@ -151,9 +152,7 @@ describe("OPS-01: user data export", () => {
         title: "Another user's private thread",
       });
 
-      const ownThread = await createChatEventsFixture(
-        context,
-      ).readThreadProjection(actor, thread.id);
+      const ownThread = await events.readThreadProjection(actor, thread.id);
       expect(ownThread).toMatchObject({
         id: thread.id,
         title: thread.title,
