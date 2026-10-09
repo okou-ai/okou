@@ -101,9 +101,15 @@ export function migrateEventSnapshot(
     assert(payload.userMessage, "missing_user_message");
     let migrated = false;
     const parts = payload.userMessage.parts.map((part) => {
-      if (part.type !== "model" || part.selectedModel !== "okou-1.0")
+      if (
+        part.type !== "model" ||
+        typeof part.selectedModel !== "string" ||
+        !AUTO_KEYS.has(part.selectedModel)
+      )
         return part;
       const { serviceTier: _serviceTier, ...rest } = part;
+      if (part.selectedModel === "auto" && _serviceTier === undefined)
+        return part;
       migrated = true;
       return { ...rest, selectedModel: "auto" };
     });

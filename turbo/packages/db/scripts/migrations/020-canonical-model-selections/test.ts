@@ -256,6 +256,13 @@ try {
           parts: [
             { type: "text", text: "keep" },
             { type: "model", selectedModel: "okou-1.0" },
+            {
+              type: "model",
+              selectedModel: "okou-1.0-pro",
+              serviceTier: "fast",
+            },
+            { type: "model", selectedModel: "okou-1.0-max" },
+            { type: "model", selectedModel: "gpt-6-sol", serviceTier: "fast" },
           ],
         },
       },
@@ -297,6 +304,43 @@ try {
       failPut: false,
     }),
   );
+  const inventory = (extra: string[]) => {
+    return spawnSync(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        "--import",
+        fileURLToPath(new URL("test-storage.ts", import.meta.url)),
+        fileURLToPath(
+          new URL(
+            "../021-model-identity-finalization/snapshots.ts",
+            import.meta.url,
+          ),
+        ),
+        "--kind",
+        "events",
+        "--limit",
+        "1",
+        ...extra,
+      ],
+      { env, encoding: "utf8" },
+    );
+  };
+  const inventoryDry = inventory([]);
+  assert.equal(inventoryDry.status, 0, inventoryDry.stderr);
+  assert.equal(JSON.parse(inventoryDry.stdout).changedRows, 1);
+  assert.equal((await state()).puts, 0);
+  const publishedPage = inventory(["--migrate"]);
+  assert.equal(publishedPage.status, 0, publishedPage.stderr);
+  assert.equal(JSON.parse(publishedPage.stdout).published, 1);
+  const exhausted = inventory([
+    "--after",
+    JSON.parse(publishedPage.stdout).nextCursor,
+  ]);
+  assert.equal(exhausted.status, 0, exhausted.stderr);
+  assert.equal(JSON.parse(exhausted.stdout).scanned, 0);
+  assert.equal(JSON.parse(inventory([]).stdout).changedRows, 0);
   const eventRun = cli(["--thread-id", thread, "--migrate"]);
   assert.equal(eventRun.status, 0, eventRun.stderr);
   const eventHead = (await db.query(`SELECT * FROM chat_event_snapshots`))
@@ -314,6 +358,13 @@ try {
     migratedRows[0].payload.userMessage.parts[1].selectedModel,
     "auto",
   );
+  assert.deepEqual(migratedRows[0].payload.userMessage.parts, [
+    { type: "text", text: "keep" },
+    { type: "model", selectedModel: "auto" },
+    { type: "model", selectedModel: "auto" },
+    { type: "model", selectedModel: "auto" },
+    { type: "model", selectedModel: "gpt-6-sol", serviceTier: "fast" },
+  ]);
   assert.deepEqual(migratedRows[1], rows[1]);
   assert.equal(eventHead.terminal_seq_id, "7");
   assert.equal(eventHead.last_seq_id, "9");

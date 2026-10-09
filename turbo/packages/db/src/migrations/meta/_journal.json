@@ -1989,6 +1989,20 @@
       "when": 1791553159886,
       "tag": "1361_slow_living_mummy",
       "breakpoints": true
+    },
+    {
+      "idx": 1362,
+      "version": "7",
+      "when": 1791562717207,
+      "tag": "1362_capture_model_execution_usage",
+      "breakpoints": true
+    },
+    {
+      "idx": 1363,
+      "version": "7",
+      "when": 1791562728067,
+      "tag": "1363_prepare_canonical_auto_catalog",
+      "breakpoints": true
     }
   ]
 }
