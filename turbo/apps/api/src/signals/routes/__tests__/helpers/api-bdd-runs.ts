@@ -89,7 +89,7 @@ type RunnerJobClaimRequestBody = z.infer<
 >;
 /** Test claims advertise every current Pi model-config generation unless a scenario narrows them. */
 function defaultClaimCapabilities(): RunnerJobClaimRequestBody["capabilities"] {
-  return { piModelConfigGenerations: [1, 2, 3, 5] };
+  return { piModelConfigGenerations: [2, 3, 5] };
 }
 type RunnerJobClaimRequest = Omit<RunnerJobClaimRequestBody, "capabilities"> & {
   readonly capabilities?: RunnerJobClaimRequestBody["capabilities"];

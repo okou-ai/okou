@@ -2,8 +2,6 @@ import {
   PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION,
   PI_MODEL_CONFIG_CURRENT_GENERATION,
   PI_MODEL_CONFIG_DIALECT_TIER_GENERATION,
-  PI_MODEL_CONFIG_LEGACY_GENERATION,
-  piModelConfigLegacySchema,
   piModelConfigSchema,
   piModelConfigV2Schema,
   piModelConfigV3Schema,
@@ -26,7 +24,7 @@ function configuredGeneration(value: unknown): number | null {
     return null;
   }
   if (!("schemaVersion" in value)) {
-    return PI_MODEL_CONFIG_LEGACY_GENERATION;
+    return null;
   }
   const generation = value.schemaVersion;
   return typeof generation === "number" &&
@@ -67,12 +65,6 @@ export function resolvePiModelConfigForClaim(args: {
   }
   if (!supportsGeneration(generation, args.capabilities)) {
     return { status: "unsupported" };
-  }
-  if (generation === PI_MODEL_CONFIG_LEGACY_GENERATION) {
-    const parsed = piModelConfigLegacySchema.safeParse(args.modelConfig);
-    return parsed.success
-      ? { status: "compatible", modelConfig: parsed.data }
-      : { status: "invalid", error: parsed.error };
   }
   if (generation === PI_MODEL_CONFIG_CURRENT_GENERATION) {
     const parsed = piModelConfigV2Schema.safeParse(args.modelConfig);

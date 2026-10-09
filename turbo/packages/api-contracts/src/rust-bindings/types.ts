@@ -2,7 +2,6 @@ import { z } from "zod";
 import {
   artifactMissingRootPolicySchema,
   piLaunchConfigSchema,
-  piModelConfigLegacySchema,
   piModelConfigV2Schema,
   piModelConfigV3Schema,
   piModelConfigV5Schema,
@@ -277,76 +276,6 @@ export const rustTypeBindings = [
         variants: {
           "no-content": ["The launch epoch intentionally contains no memory."],
           ready: ["The launch epoch contains an authenticated summary."],
-        },
-      },
-    ],
-  },
-  {
-    schema: piModelConfigLegacySchema,
-    rustModulePath: ["runners", "runs"],
-    rustTypeName: "PiModelConfig",
-    direction: "response",
-    declarations: [
-      {
-        rustTypeName: "PiModelConfig",
-        rustDoc: ["API-owned non-secret Pi model configuration."],
-        fields: {
-          provider: ["Model provider selected for the Pi runtime."],
-          baseUrl: ["Base URL used for model requests."],
-          model: ["Provider model identifier sent with requests."],
-          catalogModel: [
-            "Optional native Pi catalog model used only for trusted capabilities and limits.",
-          ],
-          thinkingLevel: [
-            "Explicit Pi thinking level. Legacy payloads omit this field and retain Pi's medium default.",
-          ],
-          serviceTier: [
-            "Per-run provider request service tier. Legacy and standard payloads omit this field.",
-          ],
-          apiKeyEnv: ["Environment variable containing the provider key."],
-          credentialSecretName: [
-            "API-owned credential secret backing the environment entry.",
-          ],
-        },
-      },
-      {
-        rustTypeName: "PiModelConfigProvider",
-        rustDoc: ["Model providers supported by the Pi runtime contract."],
-        variants: {
-          openrouter: ["OpenRouter provider."],
-          codex: ["Codex provider."],
-        },
-      },
-      {
-        rustTypeName: "PiModelConfigThinkingLevel",
-        rustDoc: ["Thinking levels supported by Pi sessions."],
-        variants: {
-          off: ["Disable model thinking."],
-          minimal: ["Minimal thinking."],
-          low: ["Low thinking."],
-          medium: ["Medium thinking."],
-          high: ["High thinking."],
-          xhigh: ["Extra-high thinking."],
-          max: ["Maximum thinking."],
-        },
-      },
-      {
-        rustTypeName: "PiModelConfigServiceTier",
-        rustDoc: [
-          "Provider request service tiers supported by the Pi runtime.",
-        ],
-        variants: {
-          priority: ["OpenAI priority service tier."],
-        },
-      },
-      {
-        rustTypeName: "PiModelConfigApiKeyEnv",
-        rustDoc: [
-          "Environment variables supported for Pi provider credentials.",
-        ],
-        variants: {
-          OPENAI_API_KEY: ["OpenAI-compatible API key."],
-          CHATGPT_ACCESS_TOKEN: ["ChatGPT access token."],
         },
       },
     ],
