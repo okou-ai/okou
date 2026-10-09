@@ -1,5 +1,5 @@
 import { command, computed, type Computed } from "ccstate";
-import { and, count, eq, gte, isNotNull, or, type SQL } from "drizzle-orm";
+import { and, count, eq, gte, isNotNull, or, sql, type SQL } from "drizzle-orm";
 import type { DiscordOrgStatus } from "@okouai/api-contracts/contracts/integrations-discord";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -13,7 +13,7 @@ import type { ApiOrgRole } from "../../types/auth";
 import { DiscordIngressFailure } from "../../lib/discord-ingress-failure";
 import { nowDate } from "../../lib/time";
 import { clerk$, isClerkResourceNotFound } from "../external/clerk";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { publishDiscordChanged } from "./discord-realtime.service";
 import { discordOauthStates } from "@okouai/db/schema/discord-oauth-state";
@@ -324,71 +324,53 @@ function savedDiscordDmBinding(discordUserId: string) {
   });
 }
 
-async function selectDiscordDmBinding(
-  db: Db,
-  binding: DiscordVerifiedBinding,
-  discordUserId: string,
-  userIds: readonly string[],
-  signal: AbortSignal,
-): Promise<boolean> {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0151; new non-billing transactions are prohibited.
-  const result = await db.transaction(async (tx) => {
-    // Match guild uninstall's installation -> connection lock order.
-    const [installation] = await tx
-      .select({ guildId: discordOrgInstallations.guildId })
-      .from(discordOrgInstallations)
-      .where(eq(discordOrgInstallations.guildId, binding.guildId))
-      .for("share");
+const commitDiscordDmSelection$ = command(
+  async ({ set }, binding: DiscordVerifiedBinding, signal: AbortSignal) => {
+    const db = set(writeDb$);
     signal.throwIfAborted();
-    if (!installation) {
-      return false;
-    }
-    const [current] = await tx
-      .select(bindingColumns)
-      .from(discordOrgConnections)
-      .innerJoin(
-        discordOrgInstallations,
-        eq(discordOrgInstallations.guildId, discordOrgConnections.guildId),
-      )
-      .where(
-        and(
-          eq(discordOrgConnections.id, binding.connectionId),
-          eq(discordOrgConnections.discordUserId, discordUserId),
-          eq(discordOrgConnections.userId, binding.userId),
-          eq(discordOrgInstallations.orgId, binding.orgId),
-        ),
-      )
-      .for("share");
-    signal.throwIfAborted();
-    if (!current) {
-      return false;
-    }
-    await tx
+    return await db
       .insert(discordUserDmPreferences)
-      .values({
-        discordUserId: discordUserId,
-        connectionId: binding.connectionId,
-        userId: binding.userId,
-        createdAt: nowDate(),
-        updatedAt: nowDate(),
-      })
+      .select(
+        db
+          .select({
+            discordUserId: discordOrgConnections.discordUserId,
+            connectionId: discordOrgConnections.id,
+            userId: discordOrgConnections.userId,
+            createdAt:
+              sql`${sql.param(nowDate(), discordUserDmPreferences.createdAt)}`
+                .mapWith(discordUserDmPreferences.createdAt)
+                .as("created_at"),
+            updatedAt:
+              sql`${sql.param(nowDate(), discordUserDmPreferences.updatedAt)}`
+                .mapWith(discordUserDmPreferences.updatedAt)
+                .as("updated_at"),
+          })
+          .from(discordOrgConnections)
+          .innerJoin(
+            discordOrgInstallations,
+            eq(discordOrgInstallations.guildId, discordOrgConnections.guildId),
+          )
+          .where(
+            and(
+              eq(discordOrgConnections.id, binding.connectionId),
+              eq(discordOrgConnections.guildId, binding.guildId),
+              eq(discordOrgConnections.discordUserId, binding.discordUserId),
+              eq(discordOrgConnections.userId, binding.userId),
+              eq(discordOrgInstallations.orgId, binding.orgId),
+            ),
+          ),
+      )
       .onConflictDoUpdate({
         target: discordUserDmPreferences.discordUserId,
         set: {
-          connectionId: binding.connectionId,
-          userId: binding.userId,
+          connectionId: sql`excluded.connection_id`,
+          userId: sql`excluded.user_id`,
           updatedAt: nowDate(),
         },
-      });
-    signal.throwIfAborted();
-    return true;
-  });
-  if (result) {
-    await publishDiscordChanged(userIds);
-  }
-  signal.throwIfAborted();
-  return result;
-}
+      })
+      .returning({ userId: discordUserDmPreferences.userId });
+  },
+);
 
 export const selectDiscordDmBinding$ = command(
   async (
@@ -420,15 +402,18 @@ export const selectDiscordDmBinding$ = command(
     if (!enabled) {
       return false;
     }
-    return await selectDiscordDmBinding(
-      set(writeDb$),
-      binding,
-      args.discordUserId,
-      bindings.map((candidate) => {
-        return candidate.userId;
-      }),
-      signal,
-    );
+    const [selected] = await set(commitDiscordDmSelection$, binding, signal);
+    if (selected) {
+      // Committed preferences publish before observing post-commit cancellation.
+      await publishDiscordChanged([
+        selected.userId,
+        ...bindings.map((candidate) => {
+          return candidate.userId;
+        }),
+      ]);
+    }
+    signal.throwIfAborted();
+    return selected !== undefined;
   },
 );
 

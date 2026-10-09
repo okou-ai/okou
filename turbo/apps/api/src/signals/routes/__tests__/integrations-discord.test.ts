@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { z } from "zod";
 import { beforeEach, describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
 import { server } from "../../../mocks/server";
@@ -587,11 +588,34 @@ describe("verified Discord integration settings", () => {
       dmSelectionConnectionId: second.connectionId,
     });
 
+    for (const connectionId of [third.connectionId, second.connectionId]) {
+      await accept(
+        client().setDmSelection({
+          headers: authenticate(firstOwner),
+          body: { connectionId },
+        }),
+        [200],
+      );
+      await expect(status(firstOwner)).resolves.toMatchObject({
+        dmSelectionConnectionId: connectionId,
+      });
+    }
+    await expectDiscordChanges([
+      firstOwner.userId,
+      firstOwner.userId,
+      firstOwner.userId,
+    ]);
+
     await accept(
       client().disconnect({ headers: authenticate(secondOwner), query: {} }),
       [200],
     );
-    await expectDiscordChanges([firstOwner.userId, firstOwner.userId]);
+    await expectDiscordChanges([
+      firstOwner.userId,
+      firstOwner.userId,
+      firstOwner.userId,
+      firstOwner.userId,
+    ]);
     const revoked = await status(firstOwner);
     expect(revoked.dmSelectionConnectionId).toBeNull();
     expect(
@@ -608,7 +632,76 @@ describe("verified Discord integration settings", () => {
       }),
       [404],
     );
-    await expectDiscordChanges([firstOwner.userId, firstOwner.userId]);
+    await expectDiscordChanges([
+      firstOwner.userId,
+      firstOwner.userId,
+      firstOwner.userId,
+      firstOwner.userId,
+    ]);
+  });
+
+  it("keeps the previous DM choice when the requested connection is revoked during revalidation", async () => {
+    const { actor } = createActors();
+    const firstOwner = actor();
+    const first = await fixture(firstOwner);
+    const secondOwner = actor({ userId: firstOwner.userId });
+    const second = await fixture(secondOwner, {
+      discordUserId: first.discordUserId,
+    });
+    await accept(
+      client().setDmSelection({
+        headers: authenticate(firstOwner),
+        body: { connectionId: first.connectionId },
+      }),
+      [200],
+    );
+    context.mocks.ably.publish.mockClear();
+    context.mocks.ably.channelGet.mockClear();
+    const membership =
+      context.mocks.clerk.organizations.getOrganizationMembershipList;
+    const currentMembership = membership.getMockImplementation();
+    if (!currentMembership) {
+      throw new Error("Expected the genuine Clerk membership response");
+    }
+    let revoked = false;
+    membership.mockImplementation(async (...args) => {
+      const { organizationId } = z
+        .object({ organizationId: z.string() })
+        .parse(args[0]);
+      const response = await currentMembership(...args);
+      if (!revoked && organizationId === secondOwner.orgId) {
+        revoked = true;
+        await accept(
+          client().disconnect({
+            headers: authenticate(secondOwner),
+            query: {},
+          }),
+          [200],
+        );
+      }
+      return response;
+    });
+
+    await accept(
+      client().setDmSelection({
+        headers: authenticate(firstOwner),
+        body: { connectionId: second.connectionId },
+      }),
+      [404],
+    );
+
+    expect(revoked).toBeTruthy();
+    await expectDiscordChanges([firstOwner.userId]);
+    await expect(status(firstOwner)).resolves.toMatchObject({
+      dmSelectionConnectionId: first.connectionId,
+      dmBindings: [
+        {
+          connectionId: first.connectionId,
+          guildId: first.guildId,
+          guildName: first.guildName,
+        },
+      ],
+    });
   });
 
   it("rejects DM selections for another Discord sender or another Okou user", async () => {
