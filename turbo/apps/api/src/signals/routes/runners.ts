@@ -548,6 +548,9 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const heldWorkspaceStates = canonicalizeHeldWorkspaceStates(
     body.data.heldWorkspaceStates,
   );
+  // Rollout-only advertisement: retire with the independent DB stamps in
+  // PR5/#38139 after all accepted/rollback writers replace home state, including
+  // empty state, under the shared heartbeat order. It is not a permanent field.
   const homeAffinityVersion =
     auth.type === "official-runner" && body.data.homeAffinityVersion === 1
       ? 1

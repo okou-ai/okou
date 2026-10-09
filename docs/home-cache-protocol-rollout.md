@@ -5,7 +5,7 @@ PR2 of [#38002](https://github.com/okou-ai/okou/issues/38002). It does not mount
 publish home images, change disk sizing/cwd, migrate workspace images, activate
 npm persistence, retire sidecars, deploy a reader floor or run production SQL.
 
-## Independent observations
+## Temporary independent-observation bridge
 
 Heartbeat retains the outgoing `heldWorkspaceStates` envelope and adds
 optional/default-empty `heldHomeStates`. Each home state has a reuse key,
@@ -29,6 +29,21 @@ An outgoing API may advance the shared heartbeat generation/sequence while
 leaving the additive columns untouched. Therefore version alone is never
 authority: **both observed stamps must equal the current heartbeat stamps**.
 Unknown, missing or mismatched stamps mean no home affinity, not no execution.
+
+The three standalone home version/order columns are **rollout-only**, not the
+final cache model. The final DB uses only `held_home_states` for image inventory,
+analogous to the former workspace JSONB, plus existing
+`heartbeat_generation` / `heartbeat_sequence`, mode and freshness. Per-cache
+`homeAffinityVersion` remains the workspace-style format discriminator; the
+top-level capability and independently stamped observation are temporary.
+
+That simplification is safe only once every accepted canonical heartbeat
+atomically updates or clears home state, including empty state, under the
+shared order; refresh observations with those writers before relying on that
+order alone. Supported outgoing serving/queued/active/finalizing and rollback
+writers/readers must have exited or be excluded by an enforced compatible
+floor. Do not delete the bridge while an outgoing API can refresh only the
+shared row, or replace it with another permanent column/envelope/table/trigger.
 
 ## Readers, projection and disabled writers
 
@@ -94,6 +109,14 @@ uses a frozen outgoing table mapping from
 outgoing/prepared INSERT, UPSERT, SELECT and implicit RETURNING across expansion,
 checks preserved workspace data/defaults, and advances outgoing generation and
 sequence without updating home columns to verify independent-stamp rejection.
+It also executes real canonical INSERT/UPSERT/SELECT/UPDATE/implicit RETURNING
+against both retained-column and explicitly simulated four-column-absent
+schemas using the test-only prospective
+[`runner-state-after-home-affinity-bridge.ts`](../turbo/packages/db/scripts/fixtures/runner-state-after-home-affinity-bridge.ts)
+mapping. It checks complete decoded projections, preserved home/sandbox/capacity
+data, empty-state replacement, lower-sequence/replay fencing and generation
+reset using only shared order. This is final-shape SQL feasibility evidence,
+**not PR5's actual application integration or a deployment/drain receipt**.
 It runs in `test:migration-consistency`; it never targets production.
 
 ## Exposure, activation and retirement gates
@@ -107,18 +130,33 @@ reader floor or drain.
 - **PR3 / #38137:** establish required Guest helper/image support and coherent
   home cache/mount/format/proof/storage authority before advertising home state
   or enabling home poll/history writers. Preserve captured current inputs and
-  verify live bytes; an image hit is not retained-history authority.
-- **PR5 / #38139:** retire executing application/generated workspace protocol
-  and SQL references after supported serving, queued, active, finalizing and
-  rollback readers/writers are accounted for. Audit implicit column projections
-  and RETURNING, not just explicit text references. Remove bridge branches and
-  their owning tests together; do not retain old-image readers or aliases.
-- **PR6 / #38140:** only a separate later release with deployed SQL/rollback
-  floor and drain receipts may drop the old physical column. Keep the transition
-  validator until its exposure cycle is actually over. Below-floor rollback
-  requires reviewed schema restoration or forward recovery, never home→workspace
-  reinterpretation.
+  verify live bytes; an image hit is not retained-history authority. Its paired
+  writers may use this bridge, but must not make the three standalone columns
+  permanent canonical requirements.
+- **PR5 / #38139:** after supported serving, queued, active, finalizing and
+  rollback readers/writers drain or an enforced compatible floor excludes them,
+  retire the outgoing workspace protocol **and** top-level home capability,
+  recipient/holder stamp and optional-echo bridges. Canonical writers update or
+  clear home state on every accepted heartbeat using shared ordering; refresh
+  observations before relying on that order alone. Remove executing
+  application/ORM/generated SQL references to **all four** retirement columns:
+  `held_workspace_states`, `home_affinity_version`, `home_affinity_generation`,
+  `home_affinity_sequence`. Audit INSERT/UPSERT/SELECT/UPDATE and implicit
+  projections/RETURNING, not just explicit text. Remove bridge branches and
+  owning tests together; retain no old-image readers or aliases. **Retain all
+  four physical columns in this release**, and test actual canonical application
+  SQL on retained and absent physical shapes.
+- **PR6 / #38140:** only a **separate later release**, after the exact
+  column-independent PR5 application actually deploys and preceding SQL/rollback
+  artifacts exit, may drop all four physical columns together. Preserve
+  `held_home_states`, shared heartbeat order and unrelated data. Keep transition
+  validators/fixtures until their exposure cycle is actually over; promote
+  surviving ordering/empty-state invariants to permanent coverage before
+  eligible retirement. Below-floor rollback requires reviewed schema restoration
+  or forward recovery, never home→workspace reinterpretation.
 
 None of those deployment/activation/retirement receipts is established by this
-preparation PR. Parent completion additionally requires runtime/private-byte,
-isolation, crash/publication and fleet resource/latency acceptance.
+preparation PR. Parent completion requires canonical single-inventory running
+code and verified physical absence of all four retirement columns, as well as
+runtime/private-byte, isolation, crash/publication and fleet resource/latency
+acceptance.

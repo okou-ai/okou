@@ -104,7 +104,10 @@ type RunnerHomeReader = {
 
 const homeReaderState = alias(runnerState, "home_affinity_reader");
 
-function currentHomeCapability(table: {
+// Temporary mixed-version guard: outgoing APIs can advance the shared order
+// without touching home observations. PR5/#38139 retires this after a proven
+// reader/writer floor; canonical whole-heartbeat state then uses shared order.
+function currentHomeBridgeCapability(table: {
   readonly homeAffinityVersion: SQLWrapper;
   readonly homeAffinityGeneration: SQLWrapper;
   readonly homeAffinitySequence: SQLWrapper;
@@ -137,7 +140,7 @@ function homeReaderCondition(args: {
           ),
           eq(homeReaderState.mode, "running"),
           gt(homeReaderState.lastSeenAt, args.freshAfter),
-          currentHomeCapability(homeReaderState),
+          currentHomeBridgeCapability(homeReaderState),
         ),
       ),
   );
@@ -154,7 +157,7 @@ function capableHomeCondition(args: {
     ))
   ))`;
   return sql`(
-    ${currentHomeCapability(runnerState)}
+    ${currentHomeBridgeCapability(runnerState)}
     AND ${arrayContains(runnerState.heldHomeStates, heldHomeStates)}
     AND ${arrayContains(runnerState.admittableProfiles, sql`jsonb_build_array(cast(${args.profile} as text))`)}
   )`;
