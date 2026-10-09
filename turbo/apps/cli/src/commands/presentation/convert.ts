@@ -25,7 +25,13 @@ import { Command, InvalidArgumentError } from "commander";
 import { decodeSandboxTokenPayload } from "../../lib/api/sandbox-token";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { applyGeometry, pptxEntries } from "./geometry";
-import { layoutSchema, PREPARE_LAYOUT, type Layout } from "./layout";
+import {
+  layoutSchema,
+  PREPARE_LAYOUT,
+  PREPARE_PAGES,
+  type Layout,
+} from "./layout";
+import { capturePaint, type PaintRegion } from "./paint";
 import { browser, childPath, operatorPath, SETTLE, TIMEOUT_MS } from "./shared";
 
 const RENDERER_PACKAGE = "dom-to-pptx@2.1.2";
@@ -87,6 +93,7 @@ interface Rendered {
   readonly texts: readonly string[];
   readonly pageTexts: readonly (readonly string[])[];
   readonly layout: Layout;
+  readonly paint: readonly PaintRegion[];
 }
 
 function positiveNumber(value: string): number {
@@ -249,9 +256,26 @@ function render(options: Options): Rendered {
     const selector =
       options.selector ?? detectSelector(page, options.width / options.height);
 
-    const layout = layoutSchema.parse(
-      page.evaluate(`${PREPARE_LAYOUT}(${JSON.stringify(selector)})`),
+    const activated = page.evaluate(
+      `${PREPARE_PAGES}(${JSON.stringify(selector)})`,
     );
+    if (typeof activated !== "number" || !Number.isInteger(activated)) {
+      throw new Error("Page activation returned no count");
+    }
+    const paint = capturePaint(page, selector);
+    const measured = layoutSchema.parse(
+      page.evaluate(
+        `${PREPARE_LAYOUT}(${JSON.stringify(selector)},${activated.toString()})`,
+      ),
+    );
+    const layout: Layout = {
+      ...measured,
+      pages: measured.pages.map((page, index) => {
+        const texts = paint.texts[index];
+        if (texts === undefined) throw new Error("Missing original page text");
+        return { ...page, texts: [...texts] };
+      }),
+    };
 
     // Network pages and remote borrowed browsers cannot load local scripts.
     const local = !borrowed && deckUrl.startsWith("file://");
@@ -314,6 +338,7 @@ function render(options: Options): Rendered {
         return page.texts;
       }),
       layout,
+      paint: paint.regions,
     };
   } finally {
     page.quiet(["eval", "window.__okouRestoreLayout?.()"]);
@@ -324,7 +349,7 @@ function render(options: Options): Rendered {
 }
 
 function normalizeForCompare(value: string): string {
-  return value.replace(/\s+/gu, "").toLowerCase();
+  return value.replace(/[\s\u00ad\u200b]/gu, "").toLowerCase();
 }
 
 function deckText(deck: Buffer): { slides: number; pages: readonly string[] } {
@@ -371,13 +396,30 @@ function verifyDeck(rendered: Rendered): VerifyReport {
   let matched = 0;
   for (let index = 0; index < rendered.pageTexts.length; index += 1) {
     const text = pages[index] ?? "";
-    const cursors = new Map<string, number>();
-    for (const entry of rendered.pageTexts[index] ?? []) {
+    const claimed = new Uint8Array(text.length);
+    const expected = [...(rendered.pageTexts[index] ?? [])].sort(
+      (left, right) => {
+        return (
+          normalizeForCompare(right).length - normalizeForCompare(left).length
+        );
+      },
+    );
+    for (const entry of expected) {
       const normalized = normalizeForCompare(entry);
-      const position = text.indexOf(normalized, cursors.get(normalized) ?? 0);
+      let position = text.indexOf(normalized);
+      while (
+        position >= 0 &&
+        claimed
+          .subarray(position, position + normalized.length)
+          .some((used) => {
+            return used !== 0;
+          })
+      ) {
+        position = text.indexOf(normalized, position + 1);
+      }
       if (position >= 0) {
         matched += 1;
-        cursors.set(normalized, position + normalized.length);
+        claimed.fill(1, position, position + normalized.length);
       } else {
         missing.push(`Page ${(index + 1).toString()}: ${entry}`);
       }
@@ -406,7 +448,7 @@ function requirePresentationConvertCapability(): void {
 function coverageFailure(report: VerifyReport): string {
   const percent = (report.coverage * 100).toFixed(1);
   const floor = (TEXT_COVERAGE_FLOOR * 100).toFixed(0);
-  return `Text coverage ${percent}% is below the ${floor}% floor; the deck lost content the source shows`;
+  return `Editable-text coverage ${percent}% is below the ${floor}% floor; listed source text is not native editable text. Browser-painted regions may preserve its appearance; compare page screenshots`;
 }
 
 async function convert(options: Options): Promise<void> {
@@ -431,12 +473,22 @@ async function convert(options: Options): Promise<void> {
           activatedSlides: rendered.layout.activated,
           fragmentedOwners: rendered.layout.fragmented,
         },
+        paint: {
+          regions: rendered.paint,
+          editability:
+            "rasterized regions are images, not native text or shapes",
+        },
       }),
     );
     if (failed) {
       throw new Error(coverageFailure(report));
     }
     return;
+  }
+  if (rendered.paint.length > 0) {
+    process.stderr.write(
+      `Browser paint: ${rendered.paint.length.toString()} regions are PNG images; their content is not editable.\n`,
+    );
   }
   if (failed) {
     process.stderr.write(`Converted deck kept at ${out}\n`);
@@ -472,7 +524,7 @@ async function convert(options: Options): Promise<void> {
 export const presentationConvertCommand = new Command()
   .name("convert")
   .description(
-    "Convert an HTML presentation into a .pptx with the DOM renderer",
+    "Convert an HTML deck with native objects and explicit browser-painted regions",
   )
   .requiredOption("--input <path>", "HTML deck file or URL")
   .option("--out <path>", "Output .pptx path (default: <input>.pptx)")
@@ -528,8 +580,12 @@ Notes:
   - Wrapped inline text is exported as measured native line fragments
   - Fixed geometry preserves font size; the viewer does not resize measured boxes
   - Table row heights and solid cell backgrounds come from browser measurements
+  - Unsupported paint is captured by the browser as explicitly reported PNG regions
+  - Background-only images retain separately measured native text
+  - Text inside a composited region is an image, not editable native text
+  - --json lists each region and the CSS features requiring browser paint
+  - --verify retains the original text denominator; image text does not pass it
   - Complex effects still require rendered-page comparison
-  - --verify checks editable strings only; image fallback is not text coverage
   - Use okou presentation screenshot and compare each page before delivery`,
   )
   .action(withErrorHandler(convert));

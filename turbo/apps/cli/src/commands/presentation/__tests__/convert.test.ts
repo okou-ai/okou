@@ -17,6 +17,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { crc32, inflateRawSync } from "zlib";
 
+import { PNG } from "pngjs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { presentationCommand } from "../index";
@@ -122,6 +123,20 @@ const state = {
   /** Text the fake renderer writes into the deck; differs to force a shortfall. */
   deckTexts: undefined as string[] | undefined,
   sourcePages: undefined as string[][] | undefined,
+  measuredPages: undefined as string[][] | undefined,
+  paintRegions: [] as {
+    id: number;
+    mode: "background" | "content";
+    features: string[];
+    tag: string;
+    textStrings: number;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    padding: number;
+  }[],
+  badScreenshot: false,
   deckPages: undefined as string[][] | undefined,
   slideXml: undefined as string[] | undefined,
   textBoxes: [] as {
@@ -185,9 +200,31 @@ function fakeEval(expression: string): string {
   // Ordered most specific first: the selector probe also queries and reads
   // `.length`, so a looser branch above it would answer for both.
   if (expression.includes("scored.sort")) return encoded(".stage");
+  if (expression.includes("No visible slide supplies")) return "0";
+  if (expression.includes("window.__okouPaintTargets=targets")) {
+    return encoded({
+      pages: (
+        state.sourcePages ?? [
+          state.pageTexts.slice(0, 1),
+          state.pageTexts.slice(1),
+        ]
+      ).map((texts, index) => {
+        return {
+          width: 1600,
+          height: 900,
+          texts,
+          regions: index === 0 ? state.paintRegions : [],
+        };
+      }),
+    });
+  }
+  if (expression.includes("viewportWidth:window.innerWidth")) {
+    return encoded({ x: 0, y: 0, viewportWidth: 1600, viewportHeight: 900 });
+  }
   if (expression.includes("window.__okouRestoreLayout =")) {
     return encoded({
       pages: (
+        state.measuredPages ??
         state.sourcePages ?? [
           state.pageTexts.slice(0, 1),
           state.pageTexts.slice(1),
@@ -243,6 +280,14 @@ vi.mock("child_process", () => {
           }
           if (verb === "open") {
             state.openedUrls.push(args[args.length - 1] ?? "");
+          }
+          if (verb === "screenshot") {
+            const image = new PNG({ width: 1600, height: 900 });
+            image.data.fill(255);
+            writeFileSync(
+              args[args.length - 1] ?? "",
+              state.badScreenshot ? "invalid PNG" : PNG.sync.write(image),
+            );
           }
           return "";
         }
@@ -313,6 +358,9 @@ describe("okou presentation convert", () => {
     state.pageTexts = ["Hello deck", "Second line"];
     state.deckTexts = undefined;
     state.sourcePages = undefined;
+    state.measuredPages = undefined;
+    state.paintRegions = [];
+    state.badScreenshot = false;
     state.deckPages = undefined;
     state.slideXml = undefined;
     state.textBoxes = [];
@@ -383,6 +431,88 @@ describe("okou presentation convert", () => {
   });
 
   it("passes verification when every source string reaches the deck", async () => {
+    await expect(convert(["--verify"])).resolves.toBeUndefined();
+  });
+
+  it("reports browser-painted regions without dropping the original text denominator", async () => {
+    state.paintRegions = [
+      {
+        id: 0,
+        mode: "content",
+        features: ["text-paint"],
+        tag: "P",
+        textStrings: 1,
+        x: 80,
+        y: 120,
+        w: 400,
+        h: 100,
+        padding: 0,
+      },
+    ];
+    state.measuredPages = [[], ["Second line"]];
+    state.deckPages = [[], ["Second line"]];
+    await expect(convert(["--verify", "--json"])).rejects.toThrow(
+      /process\.exit/u,
+    );
+    const output = String(vi.mocked(console.log).mock.calls[0]?.[0]);
+    expect(JSON.parse(output)).toMatchObject({
+      verify: { sourceStrings: 2, matchedStrings: 1, scope: "native-text" },
+      paint: {
+        regions: [
+          {
+            page: 1,
+            mode: "content",
+            features: ["text-paint"],
+            textStrings: 1,
+          },
+        ],
+      },
+    });
+    expect(existsSync(outPath)).toBe(true);
+  });
+
+  it("fails without a deck when the browser returns an invalid screenshot", async () => {
+    state.paintRegions = [
+      {
+        id: 0,
+        mode: "background",
+        features: ["background-image"],
+        tag: "DIV",
+        textStrings: 0,
+        x: 10,
+        y: 10,
+        w: 100,
+        h: 100,
+        padding: 0,
+      },
+    ];
+    state.badScreenshot = true;
+    await expect(convert([])).rejects.toThrow(/process\.exit/u);
+    expect(existsSync(outPath)).toBe(false);
+    expect(stderr()).toContain("Browser did not return a PNG screenshot");
+  });
+
+  it("requires separate native characters for a title and its repeated single-character label", async () => {
+    state.sourcePages = [["Heading includes Q", "Q"], []];
+    state.deckPages = [["Heading includes Q"], []];
+    await expect(convert(["--verify", "--json"])).rejects.toThrow(
+      /process\.exit/u,
+    );
+    const output = String(vi.mocked(console.log).mock.calls[0]?.[0]);
+    expect(JSON.parse(output)).toMatchObject({
+      verify: { missing: ["Page 1: Q"], matchedStrings: 1, sourceStrings: 2 },
+    });
+  });
+
+  it("matches whole entries before their prefixes when native drawing order differs", async () => {
+    state.sourcePages = [["A", "AB"], []];
+    state.deckPages = [["AB", "A"], []];
+    await expect(convert(["--verify"])).resolves.toBeUndefined();
+  });
+
+  it("treats discretionary break markers as layout rather than missing letters", async () => {
+    state.sourcePages = [["inter\u00adnational and zero\u200bwidth"], []];
+    state.deckPages = [["international and zerowidth"], []];
     await expect(convert(["--verify"])).resolves.toBeUndefined();
   });
 

@@ -38,15 +38,15 @@ export const layoutSchema = z.object({
 
 export type Layout = z.infer<typeof layoutSchema>;
 
-/**
- * Capture the browser's geometry instead of inventing a second text layout.
- * A wrapped inline's bounding rectangle is the UNION of several visual lines.
- * Exporting that union as one text frame puts the first word at the wrong x/y.
- * Keep those lines as individually measured native frames, separate from paint.
- */
-export const PREPARE_LAYOUT = String.raw`(async (selector) => {
-  const slides = Array.from(document.querySelectorAll(selector));
+const RESTORABLE = String.raw`
   const undo = [];
+  const scroll = Array.from(document.querySelectorAll('*')).map(element=>({element,left:element.scrollLeft,top:element.scrollTop}));
+  const scrollX=window.scrollX, scrollY=window.scrollY;
+  undo.push(()=>{
+    for (const item of scroll) { item.element.scrollLeft=item.left; item.element.scrollTop=item.top; }
+    window.scrollTo({left:scrollX,top:scrollY,behavior:'instant'});
+  });
+  const previous = window.__okouRestoreLayout;
   const save = (element) => {
     const style = element.getAttribute('style');
     const classes = element.getAttribute('class');
@@ -59,8 +59,17 @@ export const PREPARE_LAYOUT = String.raw`(async (selector) => {
   };
   window.__okouRestoreLayout = () => {
     for (const restore of undo.reverse()) restore();
+    previous?.();
     delete window.__okouRestoreLayout;
-  };
+  };`;
+
+/**
+ * Activate selected pages and settle resources before either pixel capture or
+ * native measurement. Keep this separate from text/paint materialization.
+ */
+export const PREPARE_PAGES = String.raw`(async (selector) => {
+  const slides = Array.from(document.querySelectorAll(selector));
+  ${RESTORABLE}
   const hidden = element => getComputedStyle(element).display === 'none';
   const specimen = slides.find(slide => !hidden(slide));
   let activated = 0;
@@ -92,6 +101,13 @@ export const PREPARE_LAYOUT = String.raw`(async (selector) => {
   // Activation can start additional font loads. Measure only after they settle.
   for (const slide of slides) slide.getBoundingClientRect();
   await ${SETTLE};
+  return activated;
+})`;
+
+/** Measure native text after independently capturing unsupported browser paint. */
+export const PREPARE_LAYOUT = String.raw`((selector, activated) => {
+  const slides = Array.from(document.querySelectorAll(selector));
+  ${RESTORABLE}
   const visible = element => {
     if (getComputedStyle(element).visibility !== 'visible') return false;
     for (let ancestor = element; ancestor; ancestor = ancestor.parentElement) {
@@ -143,7 +159,7 @@ export const PREPARE_LAYOUT = String.raw`(async (selector) => {
       if (!rect || segment.segment === '\n' || segment.segment === '\r' || segment.segment === '\t') { current = null; continue; }
       const value = preserve ? segment.segment : segment.segment.replace(/[\n\r\t]/g,' ');
       if (!current || Math.abs(rect.top - current.top) > 1 || (splitWords && /[ \t\u00a0]/.test(value))) {
-        current = {text:value,left:rect.left,top:rect.top,right:rect.right,bottom:rect.bottom,style};
+        current = {text:value,left:rect.left,top:rect.top,right:rect.right,bottom:rect.bottom,style,href:node.parentElement.closest('a[href]')?.href || ''};
         result.push(current);
       } else {
         current.text += value;
@@ -157,7 +173,7 @@ export const PREPARE_LAYOUT = String.raw`(async (selector) => {
   };
   const inlineTree = owner => Array.from(owner.querySelectorAll('*')).every(child => {
     const style = getComputedStyle(child);
-    return child.tagName === 'BR' || ((style.display === 'inline' || style.display === 'inline-block' || style.display === 'contents') && !child.matches('svg,img,canvas,math,ruby,rt,video,iframe'));
+    return child.hasAttribute('data-okou-raster') || child.tagName === 'BR' || ((style.display === 'inline' || style.display === 'inline-block' || style.display === 'contents') && !child.matches('svg,img,canvas,math,ruby,rt,video,iframe'));
   });
   // visibility is inherited but can be overridden. Unlike display:none, it
   // must not prune visible descendants from the renderer's traversal.
@@ -196,7 +212,7 @@ export const PREPARE_LAYOUT = String.raw`(async (selector) => {
     for (const owner of slide.querySelectorAll('*')) {
       if (!visible(owner) || owner.closest('table,svg,math,pre,ruby,rt') || !inlineTree(owner)) continue;
       const style = getComputedStyle(owner);
-      if (style.display === 'inline' || style.display === 'inline-block' || style.writingMode !== 'horizontal-tb') continue;
+      if (style.display === 'inline' || style.writingMode !== 'horizontal-tb') continue;
       const nodes = textNodes(owner);
       if (!nodes.length) continue;
       let transformed = false;
@@ -211,7 +227,7 @@ export const PREPARE_LAYOUT = String.raw`(async (selector) => {
       // Rotated/scaled bounds are axis-aligned unions too, but require affine
       // composition, not the untransformed line-fragment contract below.
       if (transformed) continue;
-      const decorated = color(style.backgroundColor) || style.backgroundImage !== 'none' || parseFloat(style.borderTopWidth) > 0 || Array.from(owner.querySelectorAll('*')).some(child => {
+      const decorated = owner.querySelector('[data-okou-raster]') || color(style.backgroundColor) || style.backgroundImage !== 'none' || parseFloat(style.borderTopWidth) > 0 || Array.from(owner.querySelectorAll('*')).some(child => {
         const s = getComputedStyle(child);
         return s.backgroundImage !== 'none' || color(s.backgroundColor) || parseFloat(s.borderTopWidth) > 0;
       });
@@ -240,6 +256,7 @@ export const PREPARE_LAYOUT = String.raw`(async (selector) => {
       return color(style.backgroundColor) || style.backgroundImage !== 'none' || parseFloat(style.borderTopWidth) > 0;
     }).map(child => ({style:snapshotStyle(child),opacity:relativeOpacity(child,owner),rects:Array.from(child.getClientRects())}));
     const originalChildren = Array.from(owner.childNodes);
+    const pictures = Array.from(owner.querySelectorAll('img[data-okou-raster]')).map(image => ({image,rect:image.getBoundingClientRect()}));
     save(owner);
     undo.push(() => owner.replaceChildren(...originalChildren));
     owner.replaceChildren();
@@ -250,6 +267,11 @@ export const PREPARE_LAYOUT = String.raw`(async (selector) => {
     // Absolute child coordinates are relative to the padding box, not the border box.
     const originX = root.left + parseFloat(sourceStyle.borderLeftWidth);
     const originY = root.top + parseFloat(sourceStyle.borderTopWidth);
+    for (const {image,rect} of pictures) {
+      image.style.setProperty('left',(rect.left-originX)+'px','important');
+      image.style.setProperty('top',(rect.top-originY)+'px','important');
+      owner.append(image);
+    }
     for (const decoration of decorations) {
       for (const rect of decoration.rects) {
         const paint = document.createElement('span');
@@ -260,7 +282,8 @@ export const PREPARE_LAYOUT = String.raw`(async (selector) => {
       }
     }
     for (const part of parts) {
-      const span = document.createElement('span');
+      const span = document.createElement(part.href ? 'a' : 'span');
+      if (part.href) span.href = part.href;
       for (const property of ['font-family','font-size','font-weight','font-style','font-variant','letter-spacing','text-transform','text-decoration','color','direction']) span.style.setProperty(property,part.style.getPropertyValue(property));
       Object.assign(span.style,{position:'absolute',display:'block',left:(part.left-originX)+'px',top:(part.top-originY)+'px',width:(part.right-part.left)+'px',height:(part.bottom-part.top)+'px',padding:'0',margin:'0',lineHeight:'normal',whiteSpace:'pre',background:'transparent'});
       span.style.opacity = String(part.opacity);
