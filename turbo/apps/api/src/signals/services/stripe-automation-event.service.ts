@@ -914,33 +914,28 @@ const dispatchStripeDeauthorization$ = command(
       });
       return { kind: "bad_request" };
     }
-    // Keep rollback when cancellation arrives during the UPDATE, before commit.
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0256; new non-billing transactions are prohibited.
-    const updated = await db.transaction(async (tx) => {
-      const rows = await tx
-        .update(connectors)
-        .set({
-          needsReconnect: true,
-          reconnectReason: "authorization_expired_or_revoked",
-          updatedAt: nowDate(),
-        })
-        .where(
-          and(
-            eq(connectors.connectorSlug, "stripe"),
-            eq(connectors.authMethod, "oauth"),
-            eq(connectors.externalId, parsed.data.account),
-          ),
-        )
-        .returning({ id: connectors.id });
-      signal.throwIfAborted();
-      return rows.length;
-    });
+    signal.throwIfAborted();
+    const updated = await db
+      .update(connectors)
+      .set({
+        needsReconnect: true,
+        reconnectReason: "authorization_expired_or_revoked",
+        updatedAt: nowDate(),
+      })
+      .where(
+        and(
+          eq(connectors.connectorSlug, "stripe"),
+          eq(connectors.authMethod, "oauth"),
+          eq(connectors.externalId, parsed.data.account),
+        ),
+      )
+      .returning({ id: connectors.id });
     signal.throwIfAborted();
     log.debug("Processed Stripe workflow ingress", {
       eventType: "account.application.deauthorized",
       mode: "live",
       outcome: "deauthorized",
-      deauthorizedConnectors: updated,
+      deauthorizedConnectors: updated.length,
     });
     return {
       kind: "ok",

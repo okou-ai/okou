@@ -1,201 +1,249 @@
 # Deployment Compatibility
 
 This guide defines reusable compatibility rules for independently deployed
-components and persisted state. Keep feature-specific business logic in source
-code, and rollout plans and acceptance evidence in the owning issue or PR, not
-in this guide or other documents at the `docs/` root.
+components and persisted state. Feature-specific rollout plans and production
+receipts belong in their owning issue or PR, not in this guide. Removing a
+historical note does not retire a compatibility obligation or authorize a
+production operation. Existing executable rollback floors remain authoritative.
 
 ## Deployment Model
 
 ### Frontend
 
-An already-open page keeps its loaded JavaScript until navigation or refresh.
-Publishing new assets does not replace that code. Service workers and shared
-browser workers can also outlive the deployment that produced them.
+A frontend deployment publishes new browser assets. An already-open page keeps
+its loaded JavaScript until navigation or refresh; publishing assets does not
+upgrade that page.
 
-The App's API-driven upgrade floor is defined in
-[`web-client-compatibility.json`](../turbo/apps/api/src/lib/web-client-compatibility.json).
-A handled request from an identified build below that floor receives
-`426 Upgrade Required`; the user must accept the update dialog to reload. An
-idle page does not discover the floor, and missing or unparseable advertised
-versions are not excluded by the general floor.
+The force-upgrade mechanism is API-driven. Standard App API clients advertise
+`X-Client-Type: App` and a build-time `X-Client-Version`. The API rejects a
+parseable version below the floor in
+[`web-client-compatibility.json`](../turbo/apps/api/src/lib/web-client-compatibility.json)
+with `426 Upgrade Required` and `Cache-Control: no-store`. The general floor does
+not reject a missing or unparseable version. Shared clients show a
+non-dismissible update dialog whose action reloads the page. An idle page does
+not discover the requirement until its next handled API request.
 
-Raise a client floor only after the replacement frontend is live. First ship
-an API that accepts both contracts and the replacement frontend; raise the floor
-and remove the old contract in a later release. Otherwise, API-first promotion
-can send users into a reload loop while the origin still serves the old build.
-A client floor does not retire non-App callers or persisted data.
+The shared database Worker reports the same force-upgrade requirement to its
+connected tabs. Ordinary Worker transport failures propagate without reloading
+the page. Service-worker code is another browser-resident deployment surface;
+`skipWaiting()` alone does not refresh already-controlled clients.
+
+Raise the client floor only after the replacement App is live. Production
+promotes API before App, so raising the floor in the release that first publishes
+that App can make users reload into the same unsupported build. First deploy
+compatible API and App changes, then raise the floor and remove the old contract
+in a later cleanup release.
 
 ### Backend
 
-Production migrations run before API traffic promotion. App promotion waits
-for the API production lifecycle; Runner promotion waits for API promotion when
-the same release changes the API. This is not an atomic switch for every client.
-Builds, host provisioning and other non-serving preparation can happen earlier.
+The API is the compatibility boundary for frontend and Runner traffic. App
+promotion follows the API production lifecycle, including migration and traffic
+promotion. Runner promotion waits for API promotion when the same release also
+changes the API. Old browser pages and draining Runners can continue to use the
+new API; promotion is not an atomic transition for every caller.
 
-Old API instances can still serve against the migrated schema. Retained rollback
-artifacts must also remain compatible: rolling back code does not restore an old
-database schema. A failed migration must prevent promotion of the new API;
-promote the exact artifact whose required migrations completed.
+Production migrations run before promotion of the exact new API artifact. Old
+API instances can therefore issue SQL against the migrated schema. A failed
+migration stops promotion. Staged builds, host provisioning, and other
+non-serving preparation may finish before migrations; they do not establish
+that traffic has moved.
 
-Non-transactional migrations execute statements independently. Earlier successful
-statements survive a later failure, and retry starts the migration again. Every
-statement must be safe under a full retry from the beginning.
+Migrations marked `-- vm0:non-transactional` execute one statement at a time.
+Earlier successful statements survive a later failure, and a retry starts the
+migration again. Every statement must be idempotent under a full retry.
 
-### Commit-addressed CLI artifacts
+Evaluate all reachable combinations:
 
-Execution contexts capture an immutable CLI package URL when they are created.
-Queued and active work keeps that artifact after later API or Runner deployments.
-Never replace its bytes or redirect its historical URL to a newer package.
+- old App -> new API;
+- new App -> old API when traffic propagation or rollback can expose it;
+- old Runner -> new API;
+- new Runner -> old API when deployment order can expose it.
 
-Use the package commit and required runtime identity for compatibility decisions.
-Package semver is not a sufficient floor unless the release process guarantees
-it advances for every relevant artifact change. An installed bundle must satisfy
-the captured context's compatibility requirements; a newer Runner alone does
-not prove that all work uses a newer CLI.
+### Runner, Guest, and CLI Artifacts
 
-Before removing an API variant consumed by an older CLI, deploy the compatible
-replacement, then account for the maximum queue, execution and finalization
-lifetimes. Verify that no old captured context or supported externally pinned
-caller remains. This gate is separate from Runner process drain.
+Runner and its bundled Guest binaries are one deployment artifact. Each sandbox
+belongs exclusively to the Runner that created it; another Runner does not adopt
+it, and stopping its owner destroys it. Files private to that sandbox lifetime
+need no cross-version reader solely because they cross the Runner/Guest boundary.
+The embedded MITM addon and recreated Runner-private registry share that same
+artifact boundary. This exemption does not cover independently persisted or
+externally consumed data.
 
-### Runner
+CLI packages can be selected separately and captured by queued or active Run
+contexts. Keep the exact captured package available through queueing, execution,
+and finalization. Do not infer the CLI version from the current API or Runner
+version, or remove a protocol merely because a new package has been published.
 
-#### Runner process drain
+Never replace a captured package's bytes or redirect its historical URL to a
+newer package. Use the exact artifact and required runtime identity for
+compatibility decisions. Package semver is a sufficient floor only when the
+release process guarantees it advances for every relevant artifact change.
 
-Promotion starts and verifies the replacement Runner, then requests soft drain
-of older processes. A drain acknowledgement means the process stopped admitting
-new work, not that its claimed work and finalization have completed. Promotion
-warnings or a healthy replacement do not prove that every old process exited.
+A Runner drain acknowledgement means it stopped admitting new work; claimed
+work and finalization can still be running. A healthy replacement or promotion
+warning does not prove that every old process exited.
 
-Old Runners keep calling the API while their work drains. Support those requests
-until the old processes and their finalization have finished. A new Runner must
-also tolerate an old API whenever deployment propagation or a supported rollback
-can expose that pairing.
-
-Runner and bundled Guest binaries ship as one artifact. A Runner does not adopt
-another Runner's sandboxes, and stopping the owner destroys its sandboxes.
-Sandbox-local state private to that artifact does not need cross-version readers.
-Shared host caches, lock identities, workspace images and history sidecars have
-a different lifetime: later artifacts can consume them, so they require a
-compatible format or explicit invalidation before a new reader depends on it.
+Workspace-cache images, metadata, and history sidecars can outlive their producer
+and be consumed by another Runner release. Keep old formats readable or
+explicitly invalidate and purge incompatible disposable entries before the new
+reader depends on the change. Host-local status files and independently deployed
+monitoring collectors also require old/new writer and reader analysis.
 
 ## What Requires Compatibility
 
-Compatibility is required across deployable or durable boundaries:
+Compatibility applies to:
 
-- Frontend and independently deployed API requests and responses.
-- Runner-facing API requests, responses and completion/finalization paths.
-- Data written by one version and read by another during rollout or rollback.
-- Database migrations while outgoing API instances still serve or drain.
-- Queues, persisted job payloads and captured execution/session contexts.
-- Shared caches, workspace images, metadata and sidecars consumed by later
-  artifacts.
+- frontend/API requests and responses;
+- Runner/API poll, claim, heartbeat, completion, artifact, and resume protocols;
+- data written by one API version and read by another;
+- schema migrations overlapping outgoing API instances;
+- queue and persisted job/Run/session payloads;
+- cross-Runner caches, metadata, and independently consumed host files;
+- browser-resident Workers and clients that can outlive a deployment;
+- captured CLI packages and contexts that retain their own execution lifetime.
 
-Compatibility is not required between internals shipped in one artifact:
+Compatibility is not required between package internals in one frontend build,
+API build, or Runner artifact, or for state private to one Runner-owned sandbox
+lifetime. Determine the owner and lifetime before adding version negotiation.
 
-- Packages inside one browser build or API deployment.
-- Runner and its bundled Guest binaries.
-- Files private to one Runner-owned sandbox lifetime.
-
-A non-GA feature does not need compatibility solely for its cutover. Apply the
-[feature-switch and fallback rules](fallback.md#2-features-behind-a-feature-switch-need-no-fallback)
-without removing independently retained data, authorization or recovery
-contracts.
+These requirements protect GA behavior. A feature still behind a non-GA switch
+has no old external client solely because its implementation exists; follow
+[Fallbacks](fallback.md#2-features-behind-a-feature-switch-need-no-fallback).
+A staff-only surface does not make a shared GA billing or credential writer
+non-GA.
 
 ## Required Change Patterns
 
-Prefer additive changes across version boundaries: optional inputs, tolerant
-readers, retained endpoint variants and data that old supported readers can
-still process. An optional field can still break a strict reader. Deploy tolerant
-readers before enabling new writers, and keep those writers disabled until old
-strict readers and incompatible rollback targets have drained or are excluded.
+Prefer additive cross-version changes:
 
-For an incompatible change, separate the work into phases:
+- add optional request fields before requiring them;
+- add response fields without requiring old clients to read them;
+- accept old enum values while reachable clients can send them;
+- retain an endpoint or migrate clients to a new/versioned endpoint first;
+- make readers tolerate missing newly added persisted fields;
+- keep migrations compatible with supported outgoing API statements;
+- emit only data that every reachable reader can ignore or process safely.
 
-1. **Prepare:** accept both protocols and make readers tolerate both persisted
-   representations.
-2. **Migrate:** move producers and consumers to the replacement contract.
-3. **Clean up:** remove compatibility only after unsupported callers, captured
-   contexts and rollback artifacts can no longer exercise it.
+An optional field is not automatically compatible with a strict reader. Deploy
+tolerant readers while writers omit the field, then activate writers after old
+strict readers and rollback targets have drained or an enforced floor excludes
+them.
 
-Do not remove an API field, endpoint or persisted representation in the same
-release that first introduces its replacement consumer. A source merge, green
-pipeline, arbitrary wait or absent sampled traffic does not establish drain.
-Document the actual exposed versions, bounded lifetimes, supported rollback
-set and evidence for closing each gate.
+For an incompatible change, separate the phases:
 
-An explicitly owner-accepted breaking cutover may instead reject an outgoing
-pairing. Record the accepted interruption, affected consumers, migration order
-and rollback boundary in the owning issue or PR. Cleanup itself does not
-establish that acceptance.
+1. **Prepare:** readers and handlers accept both shapes.
+2. **Migrate:** clients and writers start using the replacement.
+3. **Clean up:** remove the bridge only after all affected old consumers are no
+   longer reachable.
 
-Compatibility must be temporary and explicit. Record the protected surface and
-verifiable deletion condition in a short source comment or a follow-up issue.
-Do not add broad defensive fallbacks to hide incompatibility; follow the
-[fallback requirements](fallback.md).
+Separate PRs included in one unreleased deployment do not establish reader-first
+ordering. Verify the actual deployed artifact and consumer population.
+Compatibility branches must name their surface, removal condition, and owning
+follow-up; see [fallback declarations](fallback.md#9-declare-new-fallbacks-in-the-pr-summary-and-the-review).
+Do not add broad defaults to hide corrupt data or incompatible protocols.
+
+An explicitly accepted breaking cutover must record the affected consumers,
+accepted interruption, migration order, and rollback boundary in its owning
+issue or PR. Removing historical notes does not establish that acceptance.
 
 ## Database/API Transitions
 
-Evaluate both directions independently:
+Check two independent directions:
 
-- **Old code after migration:** outgoing and rollback APIs must still issue
-  legal SQL. Include ORM-generated `SELECT`, `RETURNING` and conflict clauses,
-  not only fields explicitly read by application code.
-- **New code before migration:** readers and writers must not require new
-  columns, enum values, relations, constraints or functions before they exist.
-  Migration-before-promotion closes this direction for a normal successful
-  production release, not every preview or alternative deployment path.
+- **Old code after migration:** every outgoing statement remains legal,
+  including columns an ORM generates in `SELECT`, `RETURNING`, and
+  `INSERT ... ON CONFLICT`, even if application logic does not read them.
+- **New code before migration:** new readers and writers cannot require a
+  column, enum value, relation, constraint, or function before it exists.
 
-Use staged schema transitions:
+A successful normal migration-before-promotion release closes the second gate
+for its exact release artifact. It does not close the first gate or establish
+that outgoing or rollback targets have drained. Production rollback promotes
+artifacts; it does not restore the old database schema.
 
-- Add a nullable field before readers require it, backfill existing rows, then
-  enforce the constraint only after all supported writers supply it.
-- Remove a retired column from ORM declarations and all readers/writers in a
-  code-only release; drop the physical column only after the previous API drains.
-- When renaming a relation or column, an explicitly verified, auto-updatable
-  compatibility view can preserve the outgoing statement shape. It does not
-  protect new code before the rename migration.
-- Inventory database functions, existing triggers and column defaults through
-  PostgreSQL catalogs before contraction; a source scan cannot find every
-  persisted consumer. Follow the [database guidance](../.claude/skills/database-development/SKILL.md)
-  and its restrictions on new database objects.
+Persisted functions, triggers, defaults, views, and other database objects are
+consumers too. Query catalog dependencies before contraction; a source search is
+not a complete dependency census. Preserve shipped migration history.
 
-Verify the exact old statements against any permitted compatibility object and
-remove that object after its protected releases drain. Before destructive cleanup,
-confirm the replacement is healthy and exclude rollback artifacts requiring the
-removed schema. Recovery must restore compatibility or roll forward; a code
-rollback alone is insufficient.
+### Add, Backfill, Then Require
+
+Introduce a nullable transition column, populate existing rows, migrate writers,
+and add the constraint only after every supported writer supplies it. New
+readers must not run ahead of the additive migration.
+
+```sql
+-- Expand before readers require the field.
+ALTER TABLE messages ADD COLUMN event_type text;
+
+-- Backfill while the field remains nullable.
+UPDATE messages SET event_type = 'message' WHERE event_type IS NULL;
+
+-- Contract only after supported writers supply the field.
+ALTER TABLE messages ALTER COLUMN event_type SET NOT NULL;
+```
+
+### Drop in a Later Release
+
+First remove the column from the ORM declaration and all explicit readers and
+writers while keeping the physical column. After the preceding API has drained
+and rollback compatibility is enforced, drop the column in a later release.
+Removing only handwritten reads is insufficient if the ORM still names it.
+
+### Rename with a Narrow Compatibility View
+
+An in-place rename and an auto-updatable single-table view can preserve outgoing
+statement shapes. Aliases expose old column names. Test the exact generated
+statements, including writes, and remove the view after its consumers drain.
+The view does not make the new name available before migration.
+
+Temporary compatibility objects require the exact outgoing SQL contract,
+protected release, and removal gate. They are not permission to introduce
+business triggers; follow the [trigger policy](eslint/no-database-trigger.md).
+
+## Drain and Rollback Gates
+
+- **Old App -> API:** the replacement App is live and an enforced client floor
+  excludes the old build.
+- **New App -> old API:** the old API is neither serving nor a supported rollback
+  target.
+- **Runner or sandbox:** old owners finish draining, including bounded
+  finalization, not merely agent execution. Account for captured CLI contexts.
+- **Database/API:** the migration succeeded, outgoing consumers drained, and
+  retained rollback targets work with the contracted schema.
+- **Persisted formats and durable references:** account for retained data and
+  references separately; a client upgrade does not erase old rows or copied
+  links.
+
+Every applicable gate must pass. A merge, nominal deployment duration, or an
+arbitrary elapsed interval is not drain evidence. Keep enforced rollback floors
+in [the main-owned records](../.github/rollback-floors) and their release tooling;
+this document does not reset or replace them. Contracted-schema recovery must
+restore compatibility first or roll forward, not promote an incompatible API.
 
 ## Testing Expectations
 
-Cover the old/new pairs that can actually coexist:
+Select cross-version coverage for the changed boundary:
 
-- Current and previous frontend requests against the new API, plus missing or
-  old response fields that the new frontend can still receive.
-- Old Runner requests against the new API, and new Runner behavior against old
-  API responses wherever that pairing is supported.
-- Persisted rows, queue payloads, session history and captured contexts written
-  by previous versions and read by the replacement.
-- Real outgoing SQL against the migrated schema, including ORM-generated
-  columns, `INSERT ... RETURNING` and `INSERT ... ON CONFLICT`.
-- New writes consumed by a previous reader, or evidence that the old reader
-  cannot observe those writes.
+- current and reachable previous request shapes;
+- missing new response fields or previous responses when clients can receive them;
+- outgoing Runner requests against new handlers and new Runner behavior against
+  old/missing responses when that pairing is reachable;
+- rows and payloads written by the preceding release;
+- previous API statement shapes against the migrated schema, including actual
+  ORM-generated column lists and writes through compatibility views;
+- new writes against every reachable previous reader;
+- rejection of retired shapes once an enforced floor and completed drain replace
+  their compatibility obligation.
 
-Tests establish behavior for their inputs; they do not establish production
-promotion, complete fleet drain or rollback readiness. Record deployment and
-lifecycle evidence separately. Once an old shape is outside the supported
-boundary, follow the [testing anti-pattern guidance](testing/anti-patterns.md)
-rather than keeping tests whose only purpose is to pin retired behavior.
+Name the environment, actual artifact identities, exposure window, and remaining
+acceptance gaps in the owning PR or issue. CI and preview success do not prove
+production deployment, data convergence, or drain. Follow [Testing](testing.md)
+for caller boundaries and meaningful behavior assertions.
 
-## Rollout Records
+## Historical Evidence
 
-Keep specific release matrices, cutover decisions, version/commit floors and
-production receipts in the owning issue or PR. Do not append feature histories,
-implementation inventories or incident timelines to this guide. A historical
-receipt must be refreshed before treating it as evidence of current deployment.
-
-Earlier feature-specific notes remain available in
-[the pre-cleanup Git revision](https://github.com/okou-ai/okou/blob/adbed2f709d35cae7273789ce098569f32421eba/docs/deployment-compatibility.md).
-Removing those notes from this guide does not authorize a deployment, retire an
-active compatibility requirement or remove an enforced rollback floor.
+The former feature-by-feature rollout journal is available at
+[the pre-cleanup revision](https://github.com/okou-ai/okou/blob/9813db4b51faa42c982dcfec1720caf5bd5b1b82/docs/deployment-compatibility.md).
+It is dated evidence, not proof of current deployment state. Revalidate the
+owning source, issue/PR, serving artifact, and executable rollback floor before
+acting on a historical receipt.

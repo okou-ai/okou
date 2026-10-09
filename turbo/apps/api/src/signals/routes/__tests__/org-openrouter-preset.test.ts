@@ -66,6 +66,33 @@ test("lets a Debug administrator persist each allowed preset for the organizatio
   expect(elsewhere.body.openrouterPreset).toBeNull();
 });
 
+test("lets a Debug administrator clear the preset for the organization and select it again", async () => {
+  const orgId = session();
+  await debug(true);
+  await accept(
+    client().update({ headers, body: { openrouterPreset: "@preset/memory" } }),
+    [200],
+  );
+  const cleared = await accept(
+    client().update({ headers, body: { openrouterPreset: null } }),
+    [200],
+  );
+  expect(cleared.body.openrouterPreset).toBeNull();
+  session("org:admin", orgId);
+  await debug(true);
+  const saved = await accept(client().get({ headers }), [200]);
+  expect(saved.body.openrouterPreset).toBeNull();
+  await accept(
+    client().update({
+      headers,
+      body: { openrouterPreset: "@preset/okou-1-0" },
+    }),
+    [200],
+  );
+  const restored = await accept(client().get({ headers }), [200]);
+  expect(restored.body.openrouterPreset).toBe("@preset/okou-1-0");
+});
+
 test.each([
   ["org:member", true],
   ["org:admin", false],
@@ -84,13 +111,12 @@ test.each([
     session(role, orgId);
     await debug(enabled);
     await accept(client().get({ headers }), [403]);
-    await accept(
-      client().update({
-        headers,
-        body: { openrouterPreset: "@preset/memory" },
-      }),
-      [403],
-    );
+    for (const openrouterPreset of ["@preset/memory", null] as const) {
+      await accept(
+        client().update({ headers, body: { openrouterPreset } }),
+        [403],
+      );
+    }
     session("org:admin", orgId);
     await debug(true);
     const saved = await accept(client().get({ headers }), [200]);
@@ -112,9 +138,10 @@ test("rejects unlisted presets and caller-selected organizations without changin
   for (const body of [
     { openrouterPreset: "@preset/not-allowed" },
     { openrouterPreset: "openai/gpt-5" },
-    { openrouterPreset: null },
+    { openrouterPreset: "system-default" },
     {},
     { openrouterPreset: "@preset/memory", orgId: "org_another" },
+    { openrouterPreset: null, orgId: "org_another" },
   ]) {
     const response = await request("/api/org/openrouter-preset", {
       method: "PUT",

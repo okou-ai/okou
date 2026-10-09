@@ -3,7 +3,7 @@
 This is a historical provenance record. The hand-pinned V4.1 model and its
 limit override are retired after memory moved to Luna and captured execution
 and late usage drained. See the
-[retirement contract](https://github.com/okou-ai/okou/blob/efdfb1ce76686698e2446eceb5a439caf88cd854/docs/deployment-compatibility.md#deepseek-memory-execution-retirement-2026-10-08).
+[retirement contract](https://github.com/okou-ai/okou/blob/9813db4b51faa42c982dcfec1720caf5bd5b1b82/docs/deployment-compatibility.md#deepseek-memory-execution-retirement-2026-10-08).
 The sections below describe the former implementation, not current execution
 authority. Historical catalog labels and accounting identities remain.
 

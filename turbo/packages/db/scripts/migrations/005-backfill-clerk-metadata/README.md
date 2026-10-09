@@ -1,9 +1,10 @@
 # 005: Backfill Clerk Metadata to Local DB
 
 > Historical migration: this script preserves its original schema/write
-> contract and Clerk field mappings. For current metadata repairs and the
-> explicit entitlement write required by #33747, follow
-> [Database trigger retirement](../../../../../../docs/database-trigger-retirement.md#repair-and-backfill-writes).
+> contract and Clerk field mappings. The historical metadata repair and
+> explicit entitlement write contract for #33747 is recorded in
+> [Database trigger retirement](https://github.com/okou-ai/okou/blob/9813db4b51faa42c982dcfec1720caf5bd5b1b82/docs/database-trigger-retirement.md#repair-and-backfill-writes).
+> Revalidate current writers and schema before using that dated record.
 
 ## Clerk Metadata Migration Overview
 

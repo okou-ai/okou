@@ -1,3 +1,4 @@
+import ChatData
 import SwiftUI
 
 @main

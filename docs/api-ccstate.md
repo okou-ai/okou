@@ -1,13 +1,8 @@
 # API ccstate Design
 
 This guide covers how API server code under `turbo/apps/api/src/signals/` should
-build ccstate graphs. It records the rules applied in
-[#37421](https://github.com/okou-ai/okou/issues/37421) /
-[#37430](https://github.com/okou-ai/okou/pull/37430), where the chat pick, claim,
-and enqueue path was rewritten from helper-driven orchestration into derived
-graphs. That rewrite reduced the mutable state in the claim graph (then
-`createClaimRunObjects`, now `createThreadClaimRunObjects`) from nine `state`
-atoms to three.
+build ccstate graphs: derived reads, explicit writes, graph-local ownership,
+and entry-owned orchestration.
 
 The general ccstate rules live in the [ccstate skill](../.claude/skills/ccstate/SKILL.md)
 and its [command reference](../.claude/skills/ccstate/references/commands.md).
@@ -221,9 +216,9 @@ tasks; one was dropped and later restored during #37430.
   continue, `?? default` for impossible states, or retry loops. See
   [Fallbacks](./fallback.md) and [Bad code smells](./bad-smell.md).
 - Do not add locks to order the steps of a graph. On the pick path,
-  correctness comes from the claim conditional update, lease, and fencing
-  described in [chat run pick](./chat-run-pick.md). Where a real multi-row
-  invariant needs a lock, follow [advisory locks](./advisory-locks.md). Do not
+  correctness comes from the actual claim predicate and existing ownership
+  fences, not a second orchestration lock. Follow
+  [advisory-lock retirement](./advisory-locks.md) for retained invariants. Do not
   hide unresolved ordering with `NOWAIT`, lock retry loops, or larger timeouts.
 
 ### 9. No test hooks in production code
@@ -351,17 +346,11 @@ Answer these questions when you add or review an API ccstate node:
 
 ## Allowed State
 
-`createThreadClaimRunObjects` allows only these atoms:
-
-- `internalCommittedRunId$`: the run id the commit wrote, read after commit.
-- `queuedAllowanceWriteResult$`: the result of the usage-allowance refresh
-  command, read by the derived queued model resolution. Prompt and automation
-  heads share one queued model graph, so one atom covers both.
-- `internalTargetRevision$`: a revision counter that triggers recomputation
-  after an Official Workflow reconciliation.
-
-When you need a new state atom, check that it is a write result or a revision.
-Anything else should be a factory argument or a `computed`.
+A state atom stores a write result consumed by later computeds or a revision
+that invalidates derived reads. Request inputs, intermediate conclusions, and
+early-exit results belong in factory arguments or computeds, not mutable slots.
+The owning graph and its tests define its actual nodes; do not duplicate a
+business graph's symbol inventory in this standard.
 
 ## Reference Implementation
 
