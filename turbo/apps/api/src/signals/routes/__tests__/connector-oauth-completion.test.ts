@@ -94,6 +94,10 @@ test("exposes a receipt only to its owner and exact current connector target", a
     expect(unavailable.body).toStrictEqual(missing.body);
     expect(unavailable.headers.get("cache-control")).toBe("no-store");
   }
+  const afterDenials = await receipt(actor, id);
+  expect(afterDenials.status).toBe(200);
+  expect(afterDenials.body).toStrictEqual({ connectionId });
+  expect(afterDenials.headers.get("cache-control")).toBe("no-store");
   const anonymous = await accountClient(actor).oauthCompletion({
     params: { attemptId: id },
     query: githubTarget,
@@ -101,7 +105,12 @@ test("exposes a receipt only to its owner and exact current connector target", a
   expect(anonymous.status).toBe(401);
 
   await connectors.deleteBuiltinConnectorAccount(actor, "github", connectionId);
-  expect((await receipt(actor, id)).status).toBe(404);
+  const deleted = await receipt(actor, id);
+  expect(deleted.status).toBe(404);
+  expect(deleted.body).toStrictEqual({
+    error: { code: "NOT_FOUND", message: "OAuth completion not found" },
+  });
+  expect(deleted.headers.get("cache-control")).toBe("no-store");
 });
 
 test("does not complete a denied reconnect after rename or default-account changes and allows retry", async () => {
@@ -266,6 +275,30 @@ test.each(["http", "mcp"] as const)(
       throw new Error("Expected a completed custom account");
     }
     const connectionId = connected.body.connectionId;
+    expect(connected.body).toStrictEqual({ connectionId });
+    expect(connected.headers.get("cache-control")).toBe("no-store");
+    for (const wrongTarget of [
+      githubTarget,
+      { kind: "custom", customConnectorId: randomUUID() } as const,
+    ]) {
+      const rejected = await receipt(
+        actor,
+        started.body.oauthAttemptId,
+        wrongTarget,
+      );
+      expect(rejected.status).toBe(404);
+      expect(rejected.body).toStrictEqual({
+        error: { code: "NOT_FOUND", message: "OAuth completion not found" },
+      });
+      expect(rejected.headers.get("cache-control")).toBe("no-store");
+    }
+    const afterDenials = await receipt(
+      actor,
+      started.body.oauthAttemptId,
+      target,
+    );
+    expect(afterDenials.status).toBe(200);
+    expect(afterDenials.body).toStrictEqual({ connectionId });
     const cancelled = await connectors.requestStartCustomConnectorOAuth2(
       actor,
       connector.id,
@@ -294,6 +327,17 @@ test.each(["http", "mcp"] as const)(
     expect(
       (await receipt(actor, started.body.oauthAttemptId, target)).body,
     ).toStrictEqual({ connectionId });
+    await connectors.deleteCustomConnectorAccount(
+      actor,
+      connector.id,
+      connectionId,
+    );
+    const deleted = await receipt(actor, started.body.oauthAttemptId, target);
+    expect(deleted.status).toBe(404);
+    expect(deleted.body).toStrictEqual({
+      error: { code: "NOT_FOUND", message: "OAuth completion not found" },
+    });
+    expect(deleted.headers.get("cache-control")).toBe("no-store");
     await connectors.deleteCustomConnector(actor, connector.id);
   },
 );
