@@ -45,6 +45,8 @@ interface ImageSource {
   readonly key: string;
 }
 interface OgSource {
+  readonly previewsEnabled: boolean;
+  readonly normalizeImageUrls: boolean;
   readonly version: string;
   readonly title: string;
   readonly url: string;
@@ -52,7 +54,7 @@ interface OgSource {
   readonly image?: ImageSource;
 }
 
-const artifactPreviewsEnabled$ = command(
+const artifactOgFeatures$ = command(
   async ({ set }, orgId: string, ownerId: string, signal: AbortSignal) => {
     const context = await set(
       loadUserFeatureSwitchContext$,
@@ -60,7 +62,16 @@ const artifactPreviewsEnabled$ = command(
       ownerId,
       signal,
     );
-    return isFeatureEnabled(FeatureSwitchKey.ArtifactPreviews, context);
+    return {
+      previewsEnabled: isFeatureEnabled(
+        FeatureSwitchKey.ArtifactPreviews,
+        context,
+      ),
+      normalizeImageUrls: isFeatureEnabled(
+        FeatureSwitchKey.ArtifactOgRelativeImages,
+        context,
+      ),
+    };
   },
 );
 
@@ -78,6 +89,17 @@ function imageSource(
 ): ImageSource | undefined {
   return ["image/png", "image/jpeg", "image/webp"].includes(contentType)
     ? { bucket: privateArtifactsBucket(), key }
+    : undefined;
+}
+
+function hostedHtmlSource(
+  manifest: HostedSiteManifest,
+  prefix: string,
+  previewsEnabled: boolean,
+): ImageSource | undefined {
+  const file = manifest.files["/index.html"];
+  return previewsEnabled && file && file.size <= 4 * 1024 * 1024
+    ? { bucket: hostedBucket(), key: `${prefix}/index.html` }
     : undefined;
 }
 
@@ -130,7 +152,8 @@ const hostedOgSource$ = command(
       return null;
     }
     const d = row.deployment;
-    if (!(await set(artifactPreviewsEnabled$, d.orgId, d.userId, signal))) {
+    const features = await set(artifactOgFeatures$, d.orgId, d.userId, signal);
+    if (!features.previewsEnabled && !features.normalizeImageUrls) {
       return null;
     }
     const allowed = await set(
@@ -150,15 +173,14 @@ const hostedOgSource$ = command(
       return null;
     }
     return {
+      ...features,
       version: `${d.id}:${d.manifest.preview?.sha256 ?? "none"}`,
       title: d.manifest.site ?? d.manifest.publicSlug,
       url: d.url,
-      html:
-        d.manifest.files["/index.html"] &&
-        d.manifest.files["/index.html"].size <= 4 * 1024 * 1024
-          ? { bucket: hostedBucket(), key: `${d.r2Prefix}/index.html` }
-          : undefined,
-      image: await set(hostedCover$, d.manifest, d.userId, d.orgId, signal),
+      html: hostedHtmlSource(d.manifest, d.r2Prefix, features.previewsEnabled),
+      image: features.previewsEnabled
+        ? await set(hostedCover$, d.manifest, d.userId, d.orgId, signal)
+        : undefined,
     };
   },
 );
@@ -188,9 +210,13 @@ const snapshotOgSource$ = command(
     if (owner.orgId === null) {
       throw new Error("Shared artifact snapshot has no owner organization");
     }
-    if (
-      !(await set(artifactPreviewsEnabled$, owner.orgId, owner.userId, signal))
-    ) {
+    const features = await set(
+      artifactOgFeatures$,
+      owner.orgId,
+      owner.userId,
+      signal,
+    );
+    if (!features.previewsEnabled && !features.normalizeImageUrls) {
       return null;
     }
     const snapshot = await set(sharedThreadArtifactSnapshot$, record, signal);
@@ -202,6 +228,8 @@ const snapshotOgSource$ = command(
     }
     const { target, previewTarget } = snapshot;
     return {
+      ...features,
+      normalizeImageUrls: features.normalizeImageUrls && target.kind === "html",
       version: createHash("sha256")
         .update(JSON.stringify([record, target, previewTarget]))
         .digest("hex"),
@@ -209,16 +237,16 @@ const snapshotOgSource$ = command(
         target.kind === "file" ? target.filename : target.manifest.publicSlug,
       url,
       html:
-        target.kind === "html" &&
-        target.manifest.files["/index.html"] &&
-        target.manifest.files["/index.html"].size <= 4 * 1024 * 1024
-          ? {
-              bucket: hostedBucket(),
-              key: `shared-artifacts/${record.publicBrand}/${target.snapshotId}/${target.id}/index.html`,
-            }
+        target.kind === "html"
+          ? hostedHtmlSource(
+              target.manifest,
+              `shared-artifacts/${record.publicBrand}/${target.snapshotId}/${target.id}`,
+              features.previewsEnabled,
+            )
           : undefined,
-      image:
-        previewTarget?.kind === "file"
+      image: !features.previewsEnabled
+        ? undefined
+        : previewTarget?.kind === "file"
           ? imageSource(previewTarget.key, previewTarget.contentType)
           : target.kind === "file"
             ? imageSource(target.key, target.contentType)
@@ -255,10 +283,16 @@ const referenceOgSource$ = command(
       return null;
     }
     const owner = await set(publicArtifactShareIdentity$, target, signal);
-    if (
-      !owner ||
-      !(await set(artifactPreviewsEnabled$, owner.orgId, owner.userId, signal))
-    ) {
+    if (!owner) {
+      return null;
+    }
+    const features = await set(
+      artifactOgFeatures$,
+      owner.orgId,
+      owner.userId,
+      signal,
+    );
+    if (!features.previewsEnabled && !features.normalizeImageUrls) {
       return null;
     }
     const published = await set(
@@ -273,21 +307,23 @@ const referenceOgSource$ = command(
     const { policy, candidate } = published;
     const shared = policy.target;
     return {
+      ...features,
+      normalizeImageUrls: features.normalizeImageUrls && shared.kind === "html",
       version: policy.revision,
       title:
         shared.kind === "file" ? shared.filename : shared.manifest.publicSlug,
       url,
       html:
-        shared.kind === "html" &&
-        shared.manifest.files["/index.html"] &&
-        shared.manifest.files["/index.html"].size <= 4 * 1024 * 1024
-          ? {
-              bucket: hostedBucket(),
-              key: `shared-artifacts/${policy.publicBrand}/${shared.snapshotId}/${shared.id}/index.html`,
-            }
+        shared.kind === "html"
+          ? hostedHtmlSource(
+              shared.manifest,
+              `shared-artifacts/${policy.publicBrand}/${shared.snapshotId}/${shared.id}`,
+              features.previewsEnabled,
+            )
           : undefined,
-      image:
-        shared.kind === "file"
+      image: !features.previewsEnabled
+        ? undefined
+        : shared.kind === "file"
           ? imageSource(shared.key, shared.contentType)
           : candidate.target.kind === "html"
             ? await set(
@@ -302,7 +338,7 @@ const referenceOgSource$ = command(
   },
 );
 
-/** Each resolver gates its owner's switch before loading OG policy or content. */
+/** Each resolver gates its owner's switches and verifies the publication policy. */
 const authorizedOgSource$ = command(
   async ({ set }, target: ArtifactOgTarget, signal: AbortSignal) => {
     return target.kind === "host"
@@ -330,6 +366,12 @@ export const artifactOgMetadata$ = command(
     if (!source) {
       return { available: false as const };
     }
+    const normalization = source.normalizeImageUrls
+      ? { normalizeImageUrls: true as const }
+      : {};
+    if (!source.previewsEnabled) {
+      return { available: false as const, ...normalization };
+    }
     const metadata = source.html
       ? artifactHtmlMetadata(
           (
@@ -355,6 +397,7 @@ export const artifactOgMetadata$ = command(
     }).toString();
     return {
       available: true as const,
+      ...normalization,
       title: metadata?.title || source.title,
       description: metadata?.description || GENERIC_ARTIFACT_DESCRIPTION,
       url: source.url,

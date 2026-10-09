@@ -1,4 +1,7 @@
-import { artifactOgHtml } from "@okouai/core/artifact-og";
+import {
+  artifactOgHtml,
+  normalizeArtifactImageUrls,
+} from "@okouai/core/artifact-og";
 import type { ArtifactOgTarget } from "@okouai/api-contracts/contracts/artifact-og";
 import { artifactOgMetadataSchema } from "@okouai/api-contracts/contracts/artifact-og-metadata";
 
@@ -42,15 +45,24 @@ export async function withArtifactOg(
     console.error("Artifact OG metadata unavailable", error);
     return response;
   }
-  if (!metadata.available) return response;
+  if (!metadata.available && !metadata.normalizeImageUrls) return response;
+  const originalBytes = await response.arrayBuffer();
+  const original = new TextDecoder().decode(originalBytes);
+  let html = metadata.normalizeImageUrls
+    ? normalizeArtifactImageUrls(original, request.url)
+    : original;
   const canonical = new URL(request.url);
   canonical.search = "";
   canonical.hash = "";
-  const html = artifactOgHtml(
-    await response.text(),
-    { ...metadata, url: canonical.href },
-    false,
-  );
+  if (metadata.available) {
+    html = artifactOgHtml(html, { ...metadata, url: canonical.href }, false);
+  }
+  if (html === original) {
+    return new Response(originalBytes, {
+      status: response.status,
+      headers: response.headers,
+    });
+  }
   const headers = new Headers(response.headers);
   headers.delete("ETag");
   headers.delete("Content-Length");
