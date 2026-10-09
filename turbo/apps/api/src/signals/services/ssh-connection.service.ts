@@ -952,10 +952,22 @@ export const resetSshConnectionHostKey$ = command(
         generation: sql`${sshConnections.generation} + 1`,
         updatedAt: nowDate(),
       })
-      .where(ownedSshConnection(args))
+      .where(
+        and(
+          ownedSshConnection(args),
+          eq(sshConnections.generation, args.expectedGeneration),
+        ),
+      )
       .returning();
     if (!updated) {
-      return failure("notFound");
+      // The conditional write lost without changing trust. Distinguish deletion
+      // from a stale generation; never replay the reset against a newer Host.
+      const [remaining] = await db
+        .select({ id: sshConnections.id })
+        .from(sshConnections)
+        .where(ownedSshConnection(args))
+        .limit(1);
+      return failure(remaining ? "generationConflict" : "notFound");
     }
     await set(publishSshRuntimeInvalidation$, {
       orgId: args.orgId,
