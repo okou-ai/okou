@@ -292,13 +292,6 @@ export {
   type TestCronCleanupSandboxesStateContract,
 } from "./test-cron-cleanup-sandboxes-state";
 export {
-  testSlackStateContract,
-  testSlackStateErrorSchema,
-  testSlackStateResponseSchema,
-  type TestSlackStateContract,
-  type TestSlackStateResponse,
-} from "./test-slack-state";
-export {
   testTelegramStateContract,
   testTelegramStateErrorSchema,
   type TestTelegramStateContract,

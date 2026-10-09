@@ -139,5 +139,14 @@ export function createPublicSlackOrgApi(context: TestContext) {
     return { slackUserId };
   }
 
-  return { installOrg, installForOrg, connectMember };
+  /** Slack's signed uninstall event removes the OAuth-created binding. */
+  async function uninstallWorkspace(slackWorkspaceId: string): Promise<void> {
+    integrations.configureSlackAppMocks();
+    await integrations.postSlackEvent(slackWorkspaceId, {
+      type: "app_uninstalled",
+    });
+    await flushWaitUntilForTest();
+  }
+
+  return { installOrg, installForOrg, connectMember, uninstallWorkspace };
 }

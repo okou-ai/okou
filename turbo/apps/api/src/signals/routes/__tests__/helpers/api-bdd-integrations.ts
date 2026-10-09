@@ -39,7 +39,6 @@ import {
   type GithubOauthConnectQuery,
   type GithubOauthInstallQuery,
 } from "@okouai/api-contracts/contracts/github-oauth";
-import { testSlackStateContract } from "@okouai/api-contracts/contracts/test-slack-state";
 import {
   integrationsAgentPhoneContract,
   type AgentPhoneConnectRequest,
@@ -65,7 +64,6 @@ import { sessionHistoryBlobBodyForKey } from "./api-bdd-session-history";
 import { createRouteMocks } from "./route-test";
 import { githubOauthRoutes } from "../../github-oauth";
 import { integrationsGithubRoutes } from "../../integrations-github";
-import { testSlackStateRoutes } from "../../slack-state-preview";
 import { featureSwitchesRoutes } from "../../feature-switches";
 import { integrationsAgentPhoneRoutes } from "../../integrations-agentphone";
 import { integrationsGithubUploadCompleteRoutes } from "../../integrations-github-upload-complete";
@@ -93,7 +91,6 @@ import { userModelPreferenceRoutes } from "../../user-model-preference";
 const TEST_APP_ROUTES = Object.freeze([
   ...githubOauthRoutes,
   ...integrationsGithubRoutes,
-  ...testSlackStateRoutes,
   ...featureSwitchesRoutes,
   ...integrationsAgentPhoneRoutes,
   ...integrationsGithubUploadCompleteRoutes,
@@ -1219,24 +1216,6 @@ export function createBddIntegrationApi(context: TestContext) {
         "model_select",
         args,
       );
-    },
-
-    async readSlackTestState(teamId: string) {
-      const client = setupApp({ context, routes: testSlackStateRoutes })(
-        testSlackStateContract,
-      );
-      const response = await accept(
-        client.get({ query: { team_id: teamId } }),
-        [200],
-      );
-      return response.body;
-    },
-
-    async deleteSlackTestState(teamId: string): Promise<void> {
-      const client = setupApp({ context, routes: testSlackStateRoutes })(
-        testSlackStateContract,
-      );
-      await accept(client.delete({ query: { team_id: teamId } }), [200]);
     },
 
     async readUserModelPreference(actor: ApiTestUser) {

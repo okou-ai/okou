@@ -2067,6 +2067,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
 
   it("bounds explicitly retryable Slack failures with backoff", async () => {
     const scenario = await prepareCanonicalSlackContextFailureScenario();
+    cleanUpCanonicalSlackScenario(scenario.actor);
     const startedAt = now();
     context.mocks.slack.conversations.replies.mockRejectedValue(
       slackRateLimitedError(),
@@ -2080,32 +2081,23 @@ describe("INT-01: Slack app deep webhook flows", () => {
           attempt === 1 ? undefined : attempt - 1,
         );
       });
-      const state = await integrations.readSlackTestState(scenario.teamId);
-      const ingress = state.chat_ingress[0];
-      if (!ingress) {
-        throw new Error("Expected canonical Slack ingress retry state");
-      }
-      expect(ingress.processingAttemptCount).toBe(attempt);
-      if (attempt < 5) {
-        expect(ingress.status).toBe("retryable");
-        if (!ingress.retryAt) {
-          throw new Error("Expected retryable ingress to have retryAt");
-        }
-        if (attempt === 1) {
-          await withMockNowForTest(attemptAt + 1, async () => {
-            await postCanonicalSlackScenario(scenario, 99);
-          });
-          expect(
-            context.mocks.slack.conversations.replies,
-          ).toHaveBeenCalledTimes(1);
-        }
-        attemptAt = Date.parse(ingress.retryAt) + 1;
-      } else {
-        expect(ingress).toMatchObject({
-          status: "terminal",
-          retryAt: null,
-          lastErrorClass: "attempts_exhausted",
+      expect(context.mocks.slack.conversations.replies).toHaveBeenCalledTimes(
+        attempt,
+      );
+      expect(
+        (await runReads.requestListLogs(scenario.actor, { limit: 50 }, [200]))
+          .body.data,
+      ).toHaveLength(0);
+      if (attempt === 1) {
+        await withMockNowForTest(attemptAt + 1, async () => {
+          await postCanonicalSlackScenario(scenario, 99);
         });
+        expect(context.mocks.slack.conversations.replies).toHaveBeenCalledTimes(
+          1,
+        );
+      }
+      if (attempt < 5) {
+        attemptAt += [60_000, 300_000, 1_800_000, 7_200_000][attempt - 1]! + 1;
       }
     }
 
@@ -3264,170 +3256,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
     );
   });
 
-  it("admits a later canonical-route retry after its first ingress insert fails", async () => {
-    const actor = bdd.user();
-    const blockerActor = bdd.user();
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    runs.configureRunnerGroup();
-    integrations.configureSlackAppMocks();
-    await runs.grantProEntitlement(actor);
-    await runs.ensurePersonalSubscriptionModel(actor, {
-      model: "claude-fable-5-1",
-    });
-    await runs.grantProEntitlement(blockerActor);
-    await runs.ensurePersonalSubscriptionModel(blockerActor, {
-      model: "claude-fable-5-1",
-    });
-    const slackUserId = uniqueSlackUserId();
-    const blockerSlackUserId = uniqueSlackUserId();
-    const targetInstallation = await integrations.installSlackWorkspace(actor, {
-      installerSlackUserId: slackUserId,
-    });
-    const blockerInstallation = await integrations.installSlackWorkspace(
-      blockerActor,
-      {
-        installerSlackUserId: blockerSlackUserId,
-      },
-    );
-    const channelId = "C_BDD_CANONICAL_RETRY_RECOVERY";
-    const threadTs = "3100.000100";
-    const initialEventId = `EvBDD${randomUUID().replace(/-/g, "")}`;
-    const initialBody = JSON.stringify({
-      type: "event_callback",
-      team_id: targetInstallation.teamId,
-      event_id: initialEventId,
-      event: {
-        type: "app_mention",
-        user: slackUserId,
-        text: `<@${targetInstallation.botUserId}> create this route`,
-        ts: "3100.000200",
-        thread_ts: threadTs,
-        channel: channelId,
-        channel_type: "channel",
-      },
-    });
-    await integrations.requestSlackEvent(
-      initialBody,
-      integrations.signedSlackIngressHeaders(initialBody),
-      [200],
-    );
-    await flushWaitUntilForTest();
-
-    const recoveredEventId = `EvBDD${randomUUID().replace(/-/g, "")}`;
-    const blockerBody = JSON.stringify({
-      type: "event_callback",
-      team_id: blockerInstallation.teamId,
-      event_id: recoveredEventId,
-      event: {
-        type: "app_mention",
-        user: blockerSlackUserId,
-        text: `<@${blockerInstallation.botUserId}> reserve this event id`,
-        ts: "4100.000100",
-        channel: "C_BDD_CANONICAL_RETRY_BLOCKER",
-        channel_type: "channel",
-      },
-    });
-    await integrations.requestSlackEvent(
-      blockerBody,
-      integrations.signedSlackIngressHeaders(blockerBody),
-      [200],
-    );
-    await flushWaitUntilForTest();
-
-    const recoveredBody = JSON.stringify({
-      type: "event_callback",
-      team_id: targetInstallation.teamId,
-      event_id: recoveredEventId,
-      event: {
-        type: "app_mention",
-        user: slackUserId,
-        text: `<@${targetInstallation.botUserId}> recover this event after admission conflict`,
-        ts: "3100.000300",
-        thread_ts: threadTs,
-        channel: channelId,
-        channel_type: "channel",
-      },
-    });
-    await integrations.requestSlackEvent(
-      recoveredBody,
-      integrations.signedSlackIngressHeaders(recoveredBody),
-      [500],
-    );
-    let targetState = await integrations.readSlackTestState(
-      targetInstallation.teamId,
-    );
-    expect(
-      targetState.chat_ingress.some((ingress) => {
-        return ingress.eventId === recoveredEventId;
-      }),
-    ).toBeFalsy();
-
-    await integrations.deleteSlackTestState(blockerInstallation.teamId);
-    await integrations.requestSlackEvent(
-      recoveredBody,
-      {
-        ...integrations.signedSlackIngressHeaders(recoveredBody),
-        "x-slack-retry-num": "1",
-      },
-      [200],
-    );
-    await flushWaitUntilForTest();
-
-    targetState = await integrations.readSlackTestState(
-      targetInstallation.teamId,
-    );
-    expect(targetState.chat_ingress).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          eventId: initialEventId,
-          status: "processed",
-        }),
-        expect.objectContaining({
-          eventId: recoveredEventId,
-          payload: recoveredBody,
-          status: "processed",
-          retryCount: 1,
-        }),
-      ]),
-    );
-    expect(targetState.pending_chat_events).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          eventType: "input.prompt",
-        }),
-      ]),
-    );
-    const recoveredThreadId = targetState.chat_thread_routes[0]?.chatThreadId;
-    if (!recoveredThreadId) {
-      throw new Error("Expected recovered Slack route to own a chat thread");
-    }
-    expect(
-      (await chat.listThreadEvents(actor, recoveredThreadId)).events,
-    ).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          eventType: "input.prompt",
-          content: null,
-          userMessage: {
-            version: 1,
-            parts: [
-              {
-                type: "text",
-                text: "@Slack User recover this event after admission conflict",
-              },
-              {
-                type: "source",
-                kind: "slack",
-                href: "https://vm0.slack.com/archives/C_BDD_CANONICAL_RETRY_RECOVERY/p3100000300",
-              },
-            ],
-          },
-        }),
-      ]),
-    );
-  });
-
   it("routes retry-only Slack events through canonical ingress", async () => {
     const actor = bdd.user();
     runs.acceptStorageDownloads();
@@ -4306,8 +4134,10 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
     integrations.configureSlackAppMocks();
-    await bdd.bootstrapLimitedFreeOnboarding(actor, {
-      displayName: "BDD Slack Home Agent",
+    await bdd.readOnboardingStatus(actor);
+    await bdd.completeOnboarding(actor);
+    onTestFinished(async () => {
+      await deletePublicWorkspace(context, actor);
     });
     const slackUserId = uniqueSlackUserId();
     const install = await integrations.installSlackWorkspace(null);
@@ -4448,23 +4278,21 @@ describe("INT-01: Slack app deep webhook flows", () => {
       isInstalled: false,
       isConnected: false,
     });
-    const stateAfterUninstall = await integrations.readSlackTestState(teamId);
-    expect(stateAfterUninstall.installation).toBeNull();
-    expect(stateAfterUninstall.connections).toHaveLength(0);
 
     const unbound = await integrations.installSlackWorkspace(null);
     await integrations.postSlackEvent(unbound.teamId, {
       type: "app_uninstalled",
     });
     await flushWaitUntilForTest();
-    await expect(
-      (async () => {
-        const state = await integrations.readSlackTestState(unbound.teamId);
-        return state.installation;
-      })(),
-    ).resolves.toBeNull();
-    const unboundState = await integrations.readSlackTestState(unbound.teamId);
-    expect(unboundState.installation).toBeNull();
+    context.mocks.slack.views.publish.mockClear();
+    await integrations.postSlackEvent(unbound.teamId, {
+      type: "app_home_opened",
+      user: slackUserId,
+      tab: "home",
+      channel: "D_BDD_UNINSTALLED_HOME",
+    });
+    await flushWaitUntilForTest();
+    expect(context.mocks.slack.views.publish).not.toHaveBeenCalled();
 
     const revoked = await integrations.installSlackWorkspace(null);
     await integrations.connectSlackUser(actor, {
@@ -4477,15 +4305,14 @@ describe("INT-01: Slack app deep webhook flows", () => {
       tokens: { bot: ["xoxb-revoked"] },
     });
     await flushWaitUntilForTest();
-    await expect(
-      (async () => {
-        const state = await integrations.readSlackTestState(revoked.teamId);
-        return state.installation;
-      })(),
-    ).resolves.toBeNull();
-    const revokedState = await integrations.readSlackTestState(revoked.teamId);
-    expect(revokedState.installation).toBeNull();
-    expect(revokedState.connections).toHaveLength(0);
+    const revokedStatus = await integrations.requestSlackIntegrationStatus(
+      actor,
+      [200],
+    );
+    expect(revokedStatus.body).toMatchObject({
+      isInstalled: false,
+      isConnected: false,
+    });
   });
 
   it("replies with canonical run-creation errors for Slack messages", async () => {

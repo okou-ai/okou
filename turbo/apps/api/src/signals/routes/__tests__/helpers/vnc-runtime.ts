@@ -4,24 +4,16 @@ import {
   runnerVncContract,
   type RunnerVncResolveRequest,
 } from "@okouai/api-contracts/contracts/runner-vnc";
-import {
-  testSshConnectionStateContract,
-  type TestSshConnectionStateActionBody,
-} from "@okouai/api-contracts/contracts/test-ssh-connection-state";
 import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
 import { vncCredentialsContract } from "@okouai/api-contracts/contracts/vnc-credentials";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import { mockEnv } from "../../../../lib/env";
 import { chatRemoteAccessRoutes } from "../../chat-remote-access";
 import { runnerVncRoutes } from "../../runner-vnc";
-import { testSshConnectionStateRoutes } from "../../test-ssh-connection-state";
 import { vncConnectionsRoutes } from "../../vnc-connections";
-import { updateFeatureSwitchesForUser } from "./feature-switches";
 import { createRouteMocks } from "./route-test";
 import { useSecretKmsProbe } from "./secret-kms-probe";
-import { requireVncCredentialId } from "./vnc-response";
 
 export const vncSessionHeaders = Object.freeze({
   authorization: "Bearer clerk-session",
@@ -56,10 +48,6 @@ export const vncProfiles = Object.freeze([
 ]);
 export const vncPassword = " secret ";
 type Owner = { readonly orgId: string; readonly userId: string };
-type RuntimeBody = Extract<
-  TestSshConnectionStateActionBody,
-  { action: "create-runtime" }
->;
 
 export function initializeVncRuntimeTest() {
   mockEnv("OFFICIAL_RUNNER_SECRET", runnerSecret);
@@ -126,44 +114,6 @@ export function createVncRuntimeApi(context: TestContext) {
       },
     );
   }
-  async function runtime(owner: Owner, overrides: Partial<RuntimeBody> = {}) {
-    const runnerIdentity = {
-      runnerId: randomUUID(),
-      heartbeatGeneration: 5_000_000_000,
-    };
-    // Winning process attribution and historical Run shapes have no owner API.
-    const result = await accept(
-      setupApp({ context, routes: testSshConnectionStateRoutes })(
-        testSshConnectionStateContract,
-      ).action({
-        body: {
-          action: "create-runtime",
-          orgId: owner.orgId,
-          userId: owner.userId,
-          ...runnerIdentity,
-          triggerSource: "web",
-          status: "running",
-          chat: true,
-          ...overrides,
-        },
-      }),
-      [200],
-    );
-    if (
-      !result.body.runId ||
-      !result.body.agentId ||
-      !result.body.sandboxToken
-    ) {
-      throw new Error("Missing VNC runtime fixture identity");
-    }
-    return {
-      runId: result.body.runId,
-      threadId: result.body.threadId,
-      agentId: result.body.agentId,
-      sandboxToken: result.body.sandboxToken,
-      runnerIdentity,
-    };
-  }
   async function setDefault(
     owner: Owner,
     protocol: "ssh" | "vnc",
@@ -190,44 +140,8 @@ export function createVncRuntimeApi(context: TestContext) {
   ) {
     await setDefault(owner, protocol, connectionId, true);
   }
-  async function fixture(
-    options: {
-      readonly defaultEnabled?: boolean;
-      readonly runtime?: Partial<RuntimeBody>;
-    } = {},
-  ) {
-    const owner = {
-      orgId: `org_vnc_runtime_${randomUUID()}`,
-      userId: `user_vnc_runtime_${randomUUID()}`,
-    };
-    await updateFeatureSwitchesForUser(context, owner, {
-      [FeatureSwitchKey.VncAccess]: true,
-    });
-    authenticate(owner);
-    const connection = await accept(
-      connections().create({
-        headers: vncSessionHeaders,
-        body: vncConnectionBody(),
-      }),
-      [201],
-    );
-    if (options.defaultEnabled !== false) {
-      await enableDefault(owner, "vnc", connection.body.id);
-    }
-    const running = await runtime(owner, options.runtime);
-    const result = {
-      ...owner,
-      ...running,
-      connectionId: connection.body.id,
-      credentialId: requireVncCredentialId(connection.body),
-    };
-    return result;
-  }
   async function resolve(
-    f: Pick<
-      Awaited<ReturnType<typeof fixture>>,
-      "runId" | "connectionId" | "runnerIdentity"
-    >,
+    f: Pick<VncRuntimeFixture, "runId" | "connectionId" | "runnerIdentity">,
     override: Partial<RunnerVncResolveRequest> = {},
   ) {
     return (
@@ -258,14 +172,22 @@ export function createVncRuntimeApi(context: TestContext) {
     connections,
     credentials,
     authenticate,
-    runtime,
     setDefault,
     enableDefault,
-    fixture,
     resolve,
     resolved,
   };
 }
 
-export type VncRuntimeApi = ReturnType<typeof createVncRuntimeApi>;
-export type VncRuntimeFixture = Awaited<ReturnType<VncRuntimeApi["fixture"]>>;
+export interface VncRuntimeFixture extends Owner {
+  readonly runId: string;
+  readonly threadId?: string;
+  readonly agentId: string;
+  readonly sandboxToken: string;
+  readonly runnerIdentity: {
+    runnerId: ReturnType<typeof randomUUID>;
+    heartbeatGeneration: number;
+  };
+  readonly connectionId: string;
+  readonly credentialId: string;
+}

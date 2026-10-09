@@ -227,7 +227,11 @@ export function createPublicRemoteAccessRunApi(context: TestContext) {
       status: "running",
     });
     await flushWaitUntilForTest();
-    return { ...run, runnerIdentity, sandboxToken };
+    const agentToken = response.body.platformEnvironment.OKOU_TOKEN;
+    if (!agentToken) {
+      throw new Error("Expected the claim's real Agent credential");
+    }
+    return { ...run, runnerIdentity, sandboxToken, agentToken };
   }
 
   async function finish(
