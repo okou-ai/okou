@@ -102,11 +102,6 @@
       "owner": "failPoisonQueuedJob"
     },
     {
-      "id": "TX-0024",
-      "file": "turbo/apps/api/src/signals/routes/test-connector-credential-storage-state.ts",
-      "owner": "seedAutomaticOAuthBinding"
-    },
-    {
       "id": "TX-0033",
       "file": "turbo/apps/api/src/signals/routes/test-official-workflow-catalog-state.ts",
       "owner": "seedPreviousSchemaRelease$"
