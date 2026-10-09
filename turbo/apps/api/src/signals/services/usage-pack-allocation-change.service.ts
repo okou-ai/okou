@@ -550,8 +550,8 @@ async function loadUsagePackChangeContextBySubscriptionId(
         inArray(usagePackAllocationChanges.status, [...OPEN_CHANGE_STATUSES]),
       ),
     );
-  // Allocation replacement and change completion commit together. Read them
-  // in one statement so concurrent webhooks cannot observe opposite snapshots.
+  // Allocation replacement and its change-status transition commit together.
+  // One statement prevents mixing child rows from either side of that commit.
   const [context] = await db
     .select({
       subscription: usagePackSubscriptions,
