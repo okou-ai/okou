@@ -183,19 +183,17 @@ function artifactSidebarSyncTargetForItem({
   agentId,
   item,
   onSyncSuccess,
-  threadId,
 }: {
   agentId?: string | null;
   item?: ArtifactSidebarItem;
   onSyncSuccess: () => void;
   threadId?: string;
 }): ArtifactDownloadSyncTarget | undefined {
-  return item && threadId
+  return item
     ? artifactSidebarSyncTarget({
         agentId,
         item,
         onSyncSuccess,
-        threadId,
       })
     : undefined;
 }
@@ -366,8 +364,11 @@ function artifactSidebarSyncTarget(params: {
   agentId: string | null | undefined;
   item: ArtifactSidebarItem;
   onSyncSuccess: () => void;
-  threadId: string;
-}): ArtifactDownloadSyncTarget {
+}): ArtifactDownloadSyncTarget | undefined {
+  const artifactId = params.item.file.artifactId;
+  if (!artifactId) {
+    return undefined;
+  }
   return {
     accountReady:
       params.item.file.googleDriveSync?.status !== "disconnected" &&
@@ -378,12 +379,11 @@ function artifactSidebarSyncTarget(params: {
       params.item.file.googleDriveSync?.status === "disconnected"
         ? params.item.file.googleDriveSync.recovery
         : undefined,
-    fileId: params.item.file.id,
+    artifactId,
+    connectionId: params.item.file.googleDriveConnectionId,
     filename: params.item.file.filename,
     onSyncSuccess: params.onSyncSuccess,
-    runId: params.item.runId,
     synced: params.item.file.googleDriveSync?.status === "synced",
-    threadId: params.threadId,
   };
 }
 

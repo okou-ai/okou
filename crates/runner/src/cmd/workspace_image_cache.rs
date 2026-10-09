@@ -1,13 +1,13 @@
 use clap::{Args, Subcommand};
 use serde::Serialize;
 
-use crate::byte_size::human_bytes;
 use crate::error::{RunnerError, RunnerResult};
 use crate::workspace_image_cache::{
     CacheBudget, FsStats, WorkspaceImageCache, WorkspaceImageCacheInspection,
     WorkspaceImageCacheInspectionEntry, WorkspaceImageCacheInspectionStatus,
     WorkspaceImageCacheInspectionSummary,
 };
+use runner_host::byte_size::human_bytes;
 use runner_host::paths::{HomePaths, RunnerPaths};
 
 #[derive(Args)]

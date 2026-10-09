@@ -246,7 +246,7 @@ async fn scan_version_artifacts(
 ) -> RunnerResult<VersionArtifactScan> {
     let Some(mut entries) = (match read_dir_or_missing(root).await {
         Ok(entries) => entries,
-        Err(error) if kind == VersionArtifactKind::Binary => return Err(error),
+        Err(error) if kind == VersionArtifactKind::Binary => return Err(error.into()),
         Err(error) => {
             warn!(
                 "gc_versions: cannot scan {} root {} ({error}), marking inventory incomplete",
@@ -390,7 +390,8 @@ pub(super) async fn analyze_version_gc_with_injected_scan_error(
     keep_latest: Option<usize>,
     successful_entries: usize,
 ) -> RunnerResult<VersionGcAnalysis> {
-    let mut binary_reader = GcDirEntryReader::failing_after(successful_entries);
+    let mut binary_reader =
+        runner_host::gc::test_support::dir_entry_reader_failing_after(successful_entries);
     let mut config_reader = GcDirEntryReader::new();
     analyze_version_gc_with_readers(
         home,
@@ -410,7 +411,8 @@ pub(super) async fn analyze_version_gc_with_injected_config_scan_error(
     successful_entries: usize,
 ) -> RunnerResult<VersionGcAnalysis> {
     let mut binary_reader = GcDirEntryReader::new();
-    let mut config_reader = GcDirEntryReader::failing_after(successful_entries);
+    let mut config_reader =
+        runner_host::gc::test_support::dir_entry_reader_failing_after(successful_entries);
     analyze_version_gc_with_readers(
         home,
         protect,

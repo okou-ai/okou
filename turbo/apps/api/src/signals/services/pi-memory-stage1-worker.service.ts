@@ -71,7 +71,7 @@ import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 
 import {
-  downloadS3BufferWithMaxBytes,
+  downloadS3BufferWithMaxBytes$,
   S3ObjectSizeLimitError,
 } from "../external/s3";
 import {
@@ -502,7 +502,7 @@ async function decodeHistory(
 
 const loadAndProjectHistory$ = command(
   async (
-    { get },
+    { set },
     args: {
       readonly work: ClaimedPiMemoryStage1Work;
     },
@@ -514,13 +514,14 @@ const loadAndProjectHistory$ = command(
       encoding,
     );
     const downloaded = await settle(
-      get(
-        downloadS3BufferWithMaxBytes(
-          env("R2_USER_STORAGES_BUCKET_NAME"),
+      set(
+        downloadS3BufferWithMaxBytes$,
+        {
+          bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
           key,
-          args.work.blobEncodedSize,
-          signal,
-        ),
+          maxBytes: args.work.blobEncodedSize,
+        },
+        signal,
       ),
       signal,
     );

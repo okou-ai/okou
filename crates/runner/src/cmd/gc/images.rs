@@ -4,8 +4,8 @@ use std::time::SystemTime;
 
 use tracing::{info, warn};
 
-use crate::byte_size::human_bytes;
 use crate::error::{RunnerError, RunnerResult};
+use runner_host::byte_size::human_bytes;
 use runner_host::paths::HomePaths;
 
 use super::GC_MIN_AGE;
@@ -639,7 +639,8 @@ async fn gc_nested_images_with_injected_snapshot_scan_error(
     protected_image_refs: &ProtectedImageRefs,
     successful_entries: usize,
 ) -> RunnerResult<GcReport> {
-    let mut inventory_entry_reader = GcDirEntryReader::failing_after(successful_entries);
+    let mut inventory_entry_reader =
+        runner_host::gc::test_support::dir_entry_reader_failing_after(successful_entries);
     let mut action_entry_reader = GcDirEntryReader::new();
     gc_nested_images_with_protected_refs_and_readers(
         home,
@@ -661,7 +662,8 @@ async fn gc_nested_images_with_injected_action_scan_error(
     successful_entries: usize,
 ) -> RunnerResult<GcReport> {
     let mut inventory_entry_reader = GcDirEntryReader::new();
-    let mut action_entry_reader = GcDirEntryReader::failing_after(successful_entries);
+    let mut action_entry_reader =
+        runner_host::gc::test_support::dir_entry_reader_failing_after(successful_entries);
     gc_nested_images_with_protected_refs_and_readers(
         home,
         keep_latest,

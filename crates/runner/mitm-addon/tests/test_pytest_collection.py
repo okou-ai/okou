@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.pytest_sharding import COLLECTED_NODE_IDS
+
 
 @pytest.mark.parametrize(
     "paths",
@@ -76,9 +78,9 @@ def test_directory_fixture_is_available_to_all_consumers(
 def test_collected_test_node_ids_are_bounded(request: pytest.FixtureRequest) -> None:
     # Large payloads belong in test inputs, not verbose progress or failure summaries.
     oversized = [
-        f"{item.nodeid[:160]}... ({len(item.nodeid)} characters)"
-        for item in request.session.items
-        if len(item.nodeid) > 1024
+        f"{node_id[:160]}... ({len(node_id)} characters)"
+        for node_id in request.config.stash[COLLECTED_NODE_IDS]
+        if len(node_id) > 1024
     ]
     assert not oversized, "Use short, semantic IDs for large test parameters:\n" + "\n".join(
         oversized

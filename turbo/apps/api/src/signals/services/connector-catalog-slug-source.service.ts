@@ -359,6 +359,69 @@ export function createConnectorRuntimeAuthSelection(args: {
   });
 }
 
+export function connectorRuntimeSlugSelectionReadPlan(args: {
+  readonly connectorSlugs: readonly ConnectorSlug[];
+  readonly metadataConnectorSlugs?: readonly ConnectorSlug[];
+}) {
+  const metadataConnectorSlugs = args.metadataConnectorSlugs ?? [];
+  return {
+    columns: {
+      current: {
+        schemaVersion: connectorCatalog.schemaVersion,
+        hash: connectorCatalog.hash,
+      },
+      entry: {
+        slug: connectorCatalogRuntimeColumns.slug,
+        label: connectorCatalogRuntimeColumns.label,
+        description: connectorCatalogRuntimeColumns.description,
+        category: connectorCatalogRuntimeColumns.category,
+        icon: connectorCatalogRuntimeColumns.icon,
+        tags: connectorCatalogRuntimeColumns.tags,
+        generation: connectorCatalogRuntimeColumns.generation,
+        authMethods: connectorCatalogRuntimeColumns.authMethods,
+        mcp: connectorCatalogRuntimeColumns.mcp,
+        skill: connectorCatalogRuntimeColumns.skill,
+        firewall: connectorCatalogRuntimeColumns.firewall,
+      },
+    },
+    join: connectorCatalogSlugJoin([
+      ...args.connectorSlugs,
+      ...metadataConnectorSlugs,
+    ]),
+    selection: {
+      connectorSlugs: args.connectorSlugs,
+      metadataConnectorSlugs,
+    },
+  };
+}
+
+export function connectorRuntimeSlugSelectionFromRows(
+  args: {
+    readonly connectorSlugs: readonly ConnectorSlug[];
+    readonly metadataConnectorSlugs: readonly ConnectorSlug[];
+  },
+  rows: readonly {
+    readonly current: { readonly schemaVersion: number; readonly hash: string };
+    readonly entry:
+      Parameters<typeof materializeConnectorCatalogRuntimeRow>[0] | null;
+  }[],
+): ConnectorRuntimeSelection {
+  const materialized = rows.map(({ current, entry }) => {
+    return {
+      current,
+      entry:
+        entry === null ? null : materializeConnectorCatalogRuntimeRow(entry),
+    };
+  });
+  return {
+    ...connectorCatalogSlugRuntimeFromRows(materialized, {
+      runtimeConnectorSlugs: args.connectorSlugs,
+      metadataConnectorSlugs: args.metadataConnectorSlugs,
+    }),
+    catalogIdentity: connectorCatalogSlugIdentityFromRows(materialized),
+  };
+}
+
 /**
  * Runtime connectors for the named slugs, captured with the pointer in one
  * statement. Missing entries are omitted, as they are absent from a
@@ -372,49 +435,11 @@ export async function loadConnectorRuntimeSlugSelection(
     readonly metadataConnectorSlugs?: readonly ConnectorSlug[];
   },
 ): Promise<ConnectorRuntimeSelection> {
-  const metadataConnectorSlugs = args.metadataConnectorSlugs ?? [];
-  const rows = (
-    await db
-      .select({
-        current: {
-          schemaVersion: connectorCatalog.schemaVersion,
-          hash: connectorCatalog.hash,
-        },
-        entry: {
-          slug: connectorCatalogRuntimeColumns.slug,
-          label: connectorCatalogRuntimeColumns.label,
-          description: connectorCatalogRuntimeColumns.description,
-          category: connectorCatalogRuntimeColumns.category,
-          icon: connectorCatalogRuntimeColumns.icon,
-          tags: connectorCatalogRuntimeColumns.tags,
-          generation: connectorCatalogRuntimeColumns.generation,
-          authMethods: connectorCatalogRuntimeColumns.authMethods,
-          mcp: connectorCatalogRuntimeColumns.mcp,
-          skill: connectorCatalogRuntimeColumns.skill,
-          firewall: connectorCatalogRuntimeColumns.firewall,
-        },
-      })
-      .from(connectorCatalog)
-      .leftJoin(
-        connectorCatalogEntries,
-        connectorCatalogSlugJoin([
-          ...args.connectorSlugs,
-          ...metadataConnectorSlugs,
-        ]),
-      )
-      .where(connectorCatalogCurrentWhere())
-  ).map(({ current, entry }) => {
-    return {
-      current,
-      entry:
-        entry === null ? null : materializeConnectorCatalogRuntimeRow(entry),
-    };
-  });
-  return {
-    ...connectorCatalogSlugRuntimeFromRows(rows, {
-      runtimeConnectorSlugs: args.connectorSlugs,
-      metadataConnectorSlugs,
-    }),
-    catalogIdentity: connectorCatalogSlugIdentityFromRows(rows),
-  };
+  const plan = connectorRuntimeSlugSelectionReadPlan(args);
+  const rows = await db
+    .select(plan.columns)
+    .from(connectorCatalog)
+    .leftJoin(connectorCatalogEntries, plan.join)
+    .where(connectorCatalogCurrentWhere());
+  return connectorRuntimeSlugSelectionFromRows(plan.selection, rows);
 }

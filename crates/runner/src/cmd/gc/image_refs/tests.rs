@@ -469,7 +469,7 @@ async fn enabled_service_directory_scan_reports_iteration_error() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("unrelated-a.service"), "").unwrap();
     std::fs::write(dir.path().join("unrelated-b.service"), "").unwrap();
-    let mut entry_reader = GcDirEntryReader::failing_after(1);
+    let mut entry_reader = runner_host::gc::test_support::dir_entry_reader_failing_after(1);
 
     let scan = enabled_runner_service_config_paths_with_reader(dir.path(), &mut entry_reader).await;
 

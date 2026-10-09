@@ -31,6 +31,8 @@ import { createZoomableImageCanvasSignals } from "../zoomable-image-canvas.ts";
 // ---------------------------------------------------------------------------
 
 export type AttachmentArtifactMetadata = {
+  readonly artifactId?: string;
+  readonly googleDriveConnectionId?: string;
   readonly googleDriveAccountReady: boolean;
   readonly agentId?: string | null;
   /** Public address of a hosted site; absent while the site is private. */

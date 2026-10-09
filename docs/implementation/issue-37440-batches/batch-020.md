@@ -146,3 +146,13 @@ The next repair follows the already-existing `docs/testing/api-testing.md` datab
 The Run owner now restores the captured bucket/KMS/Runner environment in a reverse-ordered finished callback **before** the existing operation-owner drain. The previous afterEach already clears environment before finished callbacks; restoring only after the drain was too late for accepted background work. Foreground abort still prevents later batches, and the real Run cancel/ACK lifecycle still precedes resource deletion. No timeout/retry change. Runtime outcome remains pending until the new SHA's CI completes.
 
 Static repair evidence: an initial type check rejected using the required-environment setter for optional RUNNER_DEFAULT_GROUP; the correction uses mockOptionalEnv. No test or CI retry occurred for this local type error.
+
+## Actual main integration conflict
+
+GitHub reported source `50e4f8feaf56e8a2684018aedf95d96ac6f251fe` as CONFLICTING/DIRTY against newly advanced main; normal PR workflows had not started (only CodeQL checks existed). This is a real merge conflict, not an action_required approval gate. The implementation merges fetched main `e34e3319db` normally in the same branch, with no force push.
+
+The sole content conflict is the already-selected free-plan Built-in admission case: upstream #38270 renamed it to “launches a free-plan Auto run on its captured Built-in route” and changed its selected model to Auto, while this batch removed its private managed-key/entitlement construction. The conflict resolution retains that documented one-case deletion; it does not delete an additional case or resurrect the retired entitlement fixture. All other upstream changes, including captured runtime billing, bounded S3 Stage1 history, artifact identity, Runner cache GC and CI environment/test sharding, remain upstream work and earn no batch credit. The earlier source50e4 received no API validation; the integrated new SHA requires fresh independent review and full PR CI.
+
+The integrated Run owner also releases its restored optional Runner configuration after settleIncludingAbort captures the cleanup outcome, restoring the value captured immediately before its finished callback. This covers failed cleanup and owners already cleaned during the scenario, without clearing another owner's environment.
+
+The integrated scoped ESLint check rejected local try/finally syntax. The finalizer uses the existing settleIncludingAbort utility, restores its optional key, and rethrows the preserved error; no exception is swallowed.

@@ -9,6 +9,7 @@ import {
   optionalEnv,
 } from "../../../../lib/env";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
+import { settleIncludingAbort } from "../../../utils";
 import type { ApiTestUser } from "./api-bdd";
 import { createRunsApi } from "./api-bdd-runs";
 import { createRunReadsApi } from "./api-bdd-run-reads";
@@ -77,10 +78,22 @@ export function publicRunOwner(
     await options.afterRuns?.();
     cleaned = true;
   }
-  const operations = createFixtureOperationOwner(cleanup);
+  let previousCleanupRunnerGroup: string | undefined;
+  const operations = createFixtureOperationOwner(async () => {
+    const result = await settleIncludingAbort(cleanup);
+    if (runnerGroup) {
+      mockOptionalEnv("RUNNER_DEFAULT_GROUP", previousCleanupRunnerGroup);
+    }
+    if (!result.ok) {
+      throw result.error;
+    }
+  });
   // Finished callbacks run in reverse order, after testContext clears env in
   // afterEach. Restore the accepted requests' environment before draining them.
-  onTestFinished(restoreEnvironment);
+  onTestFinished(() => {
+    previousCleanupRunnerGroup = optionalEnv("RUNNER_DEFAULT_GROUP");
+    restoreEnvironment();
+  });
   return {
     run: operations.run,
     cleanup,
