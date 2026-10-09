@@ -112,6 +112,13 @@ are enforced by the integration ingress tests.
 
 ### Active transition validators
 
+- `scripts/test-pi-memory-phase2-input-revision.ts` executes the production Phase 2
+  input-revision SQL before and after a simulated generic-ID column drop. It
+  retains the outgoing ORM mapping to prove the preparation boundary and covers
+  first insert, conflict revision advancement, active lease preservation and
+  unleased retry reset. Keep it until the checkpoint contraction is deployed and
+  the retained invariants have permanent coverage.
+
 - `scripts/test-runner-home-affinity-preparation.ts` protects migration
   `1357_prepare_home_affinity`: default-empty home observations, preservation of
   outgoing workspace data, real outgoing/prepared ORM INSERT/UPSERT/SELECT and

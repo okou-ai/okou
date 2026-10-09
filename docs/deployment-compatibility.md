@@ -639,6 +639,33 @@ release 2 removes adapters and drops the generic table and obsolete ID columns.
 The outgoing release 1 API is already independent of the dropped table, matching
 the repository's migration-before-API-promotion deployment order.
 
+## Generic Run checkpoint column preparation (#38124)
+
+The Stage 1 candidate commit now advances Phase 2 input revisions with an explicit
+INSERT column list. An omitted value in the previous Drizzle ORM INSERT still
+named every mapped column with DEFAULT, including `last_maintenance_checkpoint_id`.
+Release 1 therefore retired explicit generic-ID access but was not yet safe for
+physical removal of that column. Its generic `checkpoints` table retirement
+remains valid.
+
+This preparation changes no schema, wire protocol, model selection or memory
+content. First inserts and conflict updates keep the same revision advancement,
+leased claim preservation and unleased retry reset. The returned Storage identity
+is decoded before the surrounding candidate/watermark transaction commits.
+
+Deploy this API and drain pre-preparation candidate commits before dropping the
+obsolete column. Both outgoing and incoming APIs must use the explicit-column
+writer during migration-before-promotion. The column can remain on rollback;
+after contraction, pre-preparation APIs are unsupported rollback targets.
+
+The real PostgreSQL transition validator uses the frozen outgoing ORM mapping
+from `2a41db0dcba3c3f4be50e6ea61e03104caebb563`. It demonstrates the old INSERT
+failure after a simulated drop and verifies current first/conflict writes,
+active lease preservation and retry reset on both shapes. This additional
+preparation makes the checkpoint retirement three production releases: runtime
+retirement, this writer preparation, then protocol/schema contraction. Do not
+merge preparation and contraction into the same production release.
+
 ## Dynamic Run inputs without Agent execution configuration
 
 The first delivery of [#37970](https://github.com/okou-ai/okou/issues/37970)
