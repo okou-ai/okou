@@ -8392,9 +8392,13 @@ describe("usage pack allocation management", () => {
     context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
       managedUsagePackSubscription(fixture, newQuantities),
     );
-    await Promise.all([
+    const deliveries = await Promise.allSettled([
       postManagedUsagePackEvent("invoice.paid", paidInvoice),
       postManagedUsagePackEvent("invoice.paid", paidInvoice),
+    ]);
+    expect(deliveries).toStrictEqual([
+      { status: "fulfilled", value: undefined },
+      { status: "fulfilled", value: undefined },
     ]);
     await postManagedUsagePackEvent("invoice.paid", paidInvoice);
 
@@ -8437,6 +8441,214 @@ describe("usage pack allocation management", () => {
         stripeInvoiceId: pendingInvoiceId,
       }),
     ]);
+  });
+
+  it("applies a paid upgrade once with the preview proration date across eight concurrent deliveries", async () => {
+    const concurrentDeliveries = 8;
+    mockNow(new Date("2035-01-16T00:00:00.000Z"));
+    const actor = createOrgFixture();
+    const sourceUserId = actor.userId;
+    authenticateOrg(actor);
+    mockClerkOrganization(actor);
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+      {
+        data: [
+          {
+            role: "org:admin",
+            publicUserData: { userId: sourceUserId },
+            createdAt: now(),
+          },
+        ],
+      },
+    );
+    context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
+      { data: [] },
+    );
+    const customerId = `cus_${randomUUID()}`;
+    const subscriptionId = `sub_${randomUUID()}`;
+    const checkoutSessionId = `cs_${randomUUID()}`;
+    context.mocks.stripe.customers.create.mockResolvedValueOnce({
+      id: customerId,
+    });
+    context.mocks.stripe.checkout.sessions.create.mockResolvedValueOnce({
+      id: checkoutSessionId,
+      url: `https://checkout.stripe.test/${checkoutSessionId}`,
+    });
+    await accept(
+      setupApp({ context, routes: billingCheckoutRoutes })(
+        billingUsagePackCheckoutContract,
+      ).create({
+        headers: { authorization: "Bearer clerk-session" },
+        body: { ...usagePackCheckoutBody(sourceUserId), tier: "pro" },
+      }),
+      [200],
+    );
+    const metadata = stripeInputMetadata(
+      context.mocks.stripe.checkout.sessions.create.mock.calls.at(-1)?.[0],
+    );
+    if (!metadata.usagePackSubscriptionId) {
+      throw new Error("Checkout did not identify its usage pack subscription");
+    }
+    const fixture: ManagedUsagePackFixture = {
+      ...actor,
+      customerId,
+      subscriptionId,
+      usagePackSubscriptionId: metadata.usagePackSubscriptionId,
+      tier: "pro",
+      billingPeriod: {
+        start: currentSecond() - 15 * 86_400,
+        end: currentSecond() + 15 * 86_400,
+      },
+    };
+    const oldQuantities = new Map([[TEST_PRICE_USAGE_PACK_20, 1]]);
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+      managedUsagePackSubscription(fixture, oldQuantities),
+    );
+    await postManagedUsagePackEvent(
+      "invoice.paid",
+      managedUsagePackInvoice(fixture, {
+        invoiceId: `in_${randomUUID()}`,
+        quantities: oldQuantities,
+      }),
+    );
+    const newQuantities = new Map([[TEST_PRICE_USAGE_PACK_50, 1]]);
+    const oldSubscription = managedUsagePackSubscription(
+      fixture,
+      oldQuantities,
+    );
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+      oldSubscription,
+    );
+    mockUsagePackChangePreviews(1500, 5000);
+    const client = setupApp({ context, routes: billingCheckoutRoutes })(
+      billingUsagePackManagementContract,
+    );
+
+    const preview = await accept(
+      client.previewChange({
+        headers: { authorization: "Bearer clerk-session" },
+        body: { memberId: sourceUserId, targetUsagePackUsd: 50 },
+      }),
+      [200],
+    );
+    const prorationTimestamp = Math.floor(
+      new Date(preview.body.prorationDate).getTime() / 1000,
+    );
+    const pendingInvoiceId = `in_${randomUUID()}`;
+    context.mocks.stripe.subscriptions.update.mockResolvedValue({
+      ...oldSubscription,
+      pending_update: { expires_at: prorationTimestamp + 300 },
+      latest_invoice: {
+        id: pendingInvoiceId,
+        status: "open",
+        hosted_invoice_url: `https://invoice.stripe.test/${pendingInvoiceId}`,
+      },
+    });
+
+    const confirmed = await accept(
+      client.confirmChange({
+        params: { changeId: preview.body.changeId },
+        headers: { authorization: "Bearer clerk-session" },
+        body: {},
+      }),
+      [200],
+    );
+    expect(confirmed.body.status).toBe("pending_payment");
+    const reopened = await accept(
+      client.previewChange({
+        headers: { authorization: "Bearer clerk-session" },
+        body: { memberId: sourceUserId, targetUsagePackUsd: 50 },
+      }),
+      [200],
+    );
+    expect(reopened.body.changeId).toBe(preview.body.changeId);
+    const duplicateConfirmation = await accept(
+      client.confirmChange({
+        params: { changeId: reopened.body.changeId },
+        headers: { authorization: "Bearer clerk-session" },
+        body: {},
+      }),
+      [200],
+    );
+    expect(duplicateConfirmation.body.status).toBe("pending_payment");
+    expect(context.mocks.stripe.subscriptions.update).toHaveBeenCalledTimes(1);
+    expect(context.mocks.stripe.subscriptions.update).toHaveBeenCalledWith(
+      fixture.subscriptionId,
+      expect.objectContaining({
+        payment_behavior: "pending_if_incomplete",
+        proration_behavior: "always_invoice",
+        proration_date: prorationTimestamp,
+      }),
+      { idempotencyKey: `usage-pack-change:${preview.body.changeId}:apply` },
+    );
+    const beforePayment = await readManagedUsagePacks(fixture);
+    expect(beforePayment.allocations).toStrictEqual([
+      expect.objectContaining({
+        memberId: sourceUserId,
+        usagePackUsd: 20,
+        pendingChange: expect.objectContaining({
+          id: preview.body.changeId,
+          status: "pending_payment",
+        }),
+      }),
+    ]);
+    const creditsBeforePayment = await readDeferredReplayCredits(fixture);
+    expect(creditsBeforePayment).toMatchObject({
+      purchasedCredits: 20_000,
+      bonusCredits: 400,
+      totalCredits: 20_400,
+    });
+    expect(creditsBeforePayment.creditGrants).toHaveLength(2);
+
+    const paidInvoice = managedUsagePackUpgradeInvoice(fixture, {
+      invoiceId: pendingInvoiceId,
+      sourcePriceId: TEST_PRICE_USAGE_PACK_20,
+      targetPriceId: TEST_PRICE_USAGE_PACK_50,
+      prorationTimestamp,
+    });
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+      managedUsagePackSubscription(fixture, newQuantities),
+    );
+    // Drain every delivery before asserting, even if one returns an error.
+    const deliveries = await Promise.allSettled(
+      Array.from({ length: concurrentDeliveries }, () => {
+        return postManagedUsagePackEvent("invoice.paid", paidInvoice);
+      }),
+    );
+    expect(deliveries).toStrictEqual(
+      Array.from({ length: concurrentDeliveries }, () => {
+        return { status: "fulfilled", value: undefined };
+      }),
+    );
+    const upgraded = await readManagedUsagePacks(fixture);
+    expect(upgraded.allocations).toStrictEqual([
+      expect.objectContaining({
+        memberId: sourceUserId,
+        usagePackUsd: 50,
+        pendingChange: null,
+      }),
+    ]);
+    const credits = await readDeferredReplayCredits(fixture);
+    expect(credits).toMatchObject({
+      purchasedCredits: 35_000,
+      bonusCredits: 1500,
+      totalCredits: 36_500,
+    });
+    expect(credits.creditGrants).toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ grantType: "purchased", amount: 15_000 }),
+        expect.objectContaining({ grantType: "bonus", amount: 1100 }),
+      ]),
+    );
+    expect(credits.creditGrants).toHaveLength(4);
+
+    await postManagedUsagePackEvent("invoice.paid", paidInvoice);
+    await expect(readManagedUsagePacks(fixture)).resolves.toStrictEqual(
+      upgraded,
+    );
+    await expect(readDeferredReplayCredits(fixture)).resolves.toStrictEqual(
+      credits,
+    );
   });
 
   async function confirmPendingUsagePackUpgrade() {
