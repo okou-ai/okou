@@ -522,7 +522,6 @@
     "src/signals/services/workflow-schedule-failure.service.ts",
     "src/signals/services/workflow-stripe-queue.service.ts",
     "src/types/auth.ts",
-    "src/signals/services/retired-morning-brief-email.ts",
     "src/signals/services/automation-event-watch-lifecycle.service.ts",
     "src/signals/services/github-webhook-automation-config.ts",
     "src/signals/services/gmail-automation-watch.service.ts",
