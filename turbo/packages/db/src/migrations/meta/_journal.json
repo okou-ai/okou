@@ -1982,6 +1982,13 @@
       "when": 1791550108308,
       "tag": "1360_retire_generic_run_checkpoints",
       "breakpoints": true
+    },
+    {
+      "idx": 1361,
+      "version": "7",
+      "when": 1791553028440,
+      "tag": "1361_worried_squirrel_girl",
+      "breakpoints": true
     }
   ]
 }

@@ -440,42 +440,74 @@ function listS3ObjectsWithClient(
 
 /**
  * One bounded, lexicographically ordered object page. Callers that perform
- * maintenance must supply their own durable or deterministic partitioning;
- * this helper never follows continuation tokens implicitly.
+ * maintenance own their durable scan position. StartAfter can resume even if
+ * the previous key was deleted; this helper never fetches additional pages.
  */
 export function listS3ObjectsPage(
   bucket: string,
   prefix: string,
   maxKeys: number,
   signal?: AbortSignal,
+  startAfter?: string,
 ): Computed<Promise<S3ObjectPage>> {
   if (!Number.isInteger(maxKeys) || maxKeys <= 0 || maxKeys > 1000) {
     throw new Error("S3 list page size must be an integer between 1 and 1000");
   }
+  if (
+    startAfter !== undefined &&
+    (!startAfter || !startAfter.startsWith(prefix))
+  ) {
+    throw new Error("S3 list cursor must belong to its prefix");
+  }
   return computed(async (get): Promise<S3ObjectPage> => {
+    signal?.throwIfAborted();
     const client = get(s3ClientForBucket(bucket));
     const response = await client.send(
       new ListObjectsV2Command({
         Bucket: bucket,
         Prefix: prefix,
         MaxKeys: maxKeys,
+        ...(startAfter === undefined ? {} : { StartAfter: startAfter }),
       }),
       { abortSignal: signal },
     );
     signal?.throwIfAborted();
-    const objects = (response.Contents ?? []).flatMap((item) => {
-      if (!item.Key || item.Size === undefined || !item.LastModified) {
-        return [];
+    let previousKey = startAfter;
+    const objects = (response.Contents ?? []).map((item): S3Object => {
+      if (
+        !item.Key ||
+        item.Size === undefined ||
+        !Number.isSafeInteger(item.Size) ||
+        item.Size < 0 ||
+        !item.LastModified ||
+        !Number.isFinite(item.LastModified.getTime())
+      ) {
+        throw new Error(
+          "S3 object listing returned incomplete object metadata",
+        );
       }
-      return [
-        {
-          key: item.Key,
-          size: item.Size,
-          lastModified: item.LastModified,
-        },
-      ];
+      if (!item.Key.startsWith(prefix)) {
+        throw new Error("S3 object listing escaped its prefix");
+      }
+      // S3 orders keys by UTF-8 bytes, not JavaScript's UTF-16 string ordering.
+      if (
+        previousKey !== undefined &&
+        Buffer.compare(Buffer.from(item.Key), Buffer.from(previousKey)) <= 0
+      ) {
+        throw new Error("S3 object listing did not advance its cursor");
+      }
+      previousKey = item.Key;
+      return {
+        key: item.Key,
+        size: item.Size,
+        lastModified: item.LastModified,
+      };
     });
-    return { objects, isTruncated: response.IsTruncated === true };
+    const isTruncated = response.IsTruncated === true;
+    if (objects.length > maxKeys || (isTruncated && objects.length === 0)) {
+      throw new Error("S3 object listing returned an invalid bounded page");
+    }
+    return { objects, isTruncated };
   });
 }
 

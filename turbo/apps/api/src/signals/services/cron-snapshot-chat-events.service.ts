@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { promisify } from "node:util";
 import { gunzip, gzip } from "node:zlib";
 
@@ -24,6 +24,7 @@ import { alias } from "drizzle-orm/pg-core";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatEventSearchMessageWatermarks } from "@okouai/db/schema/chat-event-search";
 import {
+  chatEventSnapshotGcState,
   chatEventSnapshotScanState,
   chatEventSnapshots,
 } from "@okouai/db/schema/chat-event-snapshot";
@@ -42,7 +43,12 @@ import {
   putImmutableS3Object,
   type S3Object,
 } from "../external/s3";
-import { awaitWithSignal, settle, settleIncludingAbort } from "../utils";
+import {
+  awaitWithSignal,
+  isAbortError,
+  settle,
+  settleIncludingAbort,
+} from "../utils";
 import {
   NO_DUPLICATE_EVENT_ID_NORMALIZATION,
   prepareChatEventArchiveWithNormalizedIds,
@@ -84,6 +90,10 @@ interface ChatEventSnapshotStats {
   readonly r2BytesDeleted: number;
   readonly r2GcShardsScanned: number;
   readonly r2GcSubpartitionedShards: number;
+  readonly r2GcPagesScanned: number;
+  readonly r2GcDeferred: boolean;
+  readonly r2GcFailed: boolean;
+  readonly r2GcCycleCompleted: boolean;
 }
 
 interface SnapshotCandidate {
@@ -132,16 +142,11 @@ const SNAPSHOT_THREAD_START_BUDGET_MS = 2 * 60 * 1000;
 const GLOBAL_SNAPSHOT_SCAN_SCOPE = "global";
 const EVENT_PAGE_SIZE = 1000;
 const R2_GC_GRACE_HOURS = 24 * 7;
-const R2_GC_SHARDS_PER_RUN = 16;
-const R2_GC_SHARD_COUNT = 16 ** 3;
+const R2_GC_PREFIX = "chat-events/";
 const R2_GC_PAGE_SIZE = 1000;
+const R2_GC_PAGES_PER_RUN = 16;
+const R2_GC_WORK_BUDGET_MS = 30 * 1000;
 const SNAPSHOT_GC_DELETE_QUOTA = 1000;
-/**
- * Matches the cron cadence so every invocation advances to the next shard
- * window; the 4096 shards are swept in about 1.8 days.
- */
-const R2_GC_SLOT_MS = 10 * 60 * 1000;
-const HEX_DIGITS = "0123456789abcdef";
 const currentSnapshot = alias(
   chatEventSnapshots,
   "current_chat_event_snapshot",
@@ -1020,49 +1025,113 @@ interface R2GcStats {
   readonly bytesDeleted: number;
   readonly shardsScanned: number;
   readonly subpartitionedShards: number;
+  readonly pagesScanned: number;
+  readonly deferred: boolean;
+  readonly failed: boolean;
+  readonly cycleCompleted: boolean;
 }
 
 interface R2GcOptions {
   readonly deleteQuota: number;
 }
 
-function chatEventSnapshotGcPrefixes(now: Date): readonly string[] {
-  const slot = Math.floor(now.getTime() / R2_GC_SLOT_MS);
-  const first = (slot * R2_GC_SHARDS_PER_RUN) % R2_GC_SHARD_COUNT;
-  return Array.from({ length: R2_GC_SHARDS_PER_RUN }, (_, offset) => {
-    const shard = (first + offset) % R2_GC_SHARD_COUNT;
-    return `chat-events/${shard.toString(16).padStart(3, "0")}`;
-  });
-}
-
-function boundedGcObjectPages(
-  bucket: string,
-  prefix: string,
-): Computed<Promise<readonly (readonly S3Object[])[]>> {
-  return computed(async (get) => {
-    const page = await get(listS3ObjectsPage(bucket, prefix, R2_GC_PAGE_SIZE));
-    if (!page.isTruncated) {
-      return [page.objects];
-    }
-    const pages: (readonly S3Object[])[] = [];
-    for (const suffix of HEX_DIGITS) {
-      const child = await get(
-        listS3ObjectsPage(bucket, `${prefix}${suffix}`, R2_GC_PAGE_SIZE),
+const deleteUnreferencedR2SnapshotPage$ = command(
+  async function deleteUnreferencedR2SnapshotPage(
+    { get },
+    args: {
+      readonly db: Db;
+      readonly bucket: string;
+      readonly objects: readonly S3Object[];
+      readonly olderThan: Date;
+      readonly stats: {
+        measured: number;
+        bytesMeasured: number;
+        deleted: number;
+        bytesDeleted: number;
+      };
+    },
+    signal: AbortSignal,
+  ): Promise<number> {
+    const { db, bucket, objects, olderThan, stats } = args;
+    signal.throwIfAborted();
+    // Listing the whole namespace must not broaden deletion to unknown keys.
+    const oldObjects = objects.filter((object) => {
+      return (
+        object.lastModified < olderThan &&
+        /^chat-events\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\//u.test(
+          object.key,
+        ) &&
+        (isCurrentChatEventSnapshotObjectKey(object.key) ||
+          isLegacyChatEventSnapshotObjectKey(object.key))
       );
-      if (child.isTruncated) {
-        throw new Error(
-          `chat event snapshot GC partition ${prefix}${suffix} exceeds ${R2_GC_PAGE_SIZE.toString()} objects`,
-        );
-      }
-      pages.push(child.objects);
+    });
+    if (oldObjects.length === 0) {
+      return 0;
     }
-    return pages;
-  });
+    const keys = oldObjects.map((object) => {
+      return object.key;
+    });
+    const references = await db
+      .select({ objectKey: chatEventSnapshots.objectKey })
+      .from(chatEventSnapshots)
+      .where(inArray(chatEventSnapshots.objectKey, keys));
+    signal.throwIfAborted();
+    const exportReferences = await db
+      .selectDistinct({ objectKey: userExportEntries.sourceKey })
+      .from(userExportEntries)
+      .where(inArray(userExportEntries.sourceKey, keys));
+    signal.throwIfAborted();
+    const protectedKeys = new Set(
+      [...references, ...exportReferences].map((reference) => {
+        return reference.objectKey;
+      }),
+    );
+    const garbage = oldObjects.filter((object) => {
+      return !protectedKeys.has(object.key);
+    });
+    const garbageBytes = garbage.reduce((total, object) => {
+      return total + object.size;
+    }, 0);
+    stats.measured += garbage.length;
+    stats.bytesMeasured += garbageBytes;
+    if (garbage.length === 0) {
+      return 0;
+    }
+    await get(
+      deleteS3Objects(
+        bucket,
+        garbage.map((object) => {
+          return object.key;
+        }),
+        signal,
+      ),
+    );
+    signal.throwIfAborted();
+    stats.deleted += garbage.length;
+    stats.bytesDeleted += garbageBytes;
+    return garbage.length;
+  },
+);
+
+function exactSnapshotGcState(
+  bucket: string,
+  state: {
+    readonly cursorObjectKey: string | null;
+    readonly cycleId: string;
+  },
+) {
+  return and(
+    eq(chatEventSnapshotGcState.bucket, bucket),
+    eq(chatEventSnapshotGcState.cycleId, state.cycleId),
+    state.cursorObjectKey === null
+      ? isNull(chatEventSnapshotGcState.cursorObjectKey)
+      : eq(chatEventSnapshotGcState.cursorObjectKey, state.cursorObjectKey),
+  );
 }
 
 const collectR2SnapshotGarbage$ = command(
   async function collectR2SnapshotGarbage(
-    { get },
+    { get, set },
     args: {
       readonly db: Db;
       readonly bucket: string;
@@ -1071,105 +1140,126 @@ const collectR2SnapshotGarbage$ = command(
     signal: AbortSignal,
   ): Promise<R2GcStats> {
     const { db, bucket, options } = args;
-    const now = nowDate();
-    const olderThan = hoursBefore(now, R2_GC_GRACE_HOURS);
-    let scanned = 0;
-    let measured = 0;
-    let deleted = 0;
-    let bytesMeasured = 0;
-    let bytesDeleted = 0;
-    let shardsScanned = 0;
-    let subpartitionedShards = 0;
-    let remainingDeleteQuota = options.deleteQuota;
-
-    if (remainingDeleteQuota === 0) {
-      return {
-        scanned,
-        measured,
-        deleted,
-        bytesMeasured,
-        bytesDeleted,
-        shardsScanned,
-        subpartitionedShards,
-      };
-    }
-
-    gcPrefixes: for (const prefix of chatEventSnapshotGcPrefixes(now)) {
-      const pages = await get(boundedGcObjectPages(bucket, prefix));
-      signal.throwIfAborted();
-      shardsScanned += 1;
-      if (pages.length > 1) {
-        subpartitionedShards += 1;
-      }
-      for (const objects of pages) {
-        scanned += objects.length;
-        const oldObjects = objects.filter((object) => {
-          return object.lastModified < olderThan;
-        });
-        if (oldObjects.length === 0) {
-          continue;
-        }
-        const keys = oldObjects.map((object) => {
-          return object.key;
-        });
-        const references = await db
-          .select({
-            objectKey: chatEventSnapshots.objectKey,
-          })
-          .from(chatEventSnapshots)
-          .where(inArray(chatEventSnapshots.objectKey, keys));
-        signal.throwIfAborted();
-        const exportReferences = await db
-          .selectDistinct({ objectKey: userExportEntries.sourceKey })
-          .from(userExportEntries)
-          .where(inArray(userExportEntries.sourceKey, keys));
-        signal.throwIfAborted();
-        const referencesByKey = new Map(
-          [...references, ...exportReferences].map((reference) => {
-            return [reference.objectKey, reference] as const;
-          }),
-        );
-        const garbage = oldObjects.filter((object) => {
-          return referencesByKey.get(object.key) === undefined;
-        });
-        measured += garbage.length;
-        bytesMeasured += garbage.reduce((total, object) => {
-          return total + object.size;
-        }, 0);
-        if (garbage.length === 0) {
-          continue;
-        }
-
-        const deletionBatch = garbage.slice(0, remainingDeleteQuota);
-        const garbageKeys = deletionBatch.map((object) => {
-          return object.key;
-        });
-        const objectDeletion = settle(
-          get(deleteS3Objects(bucket, garbageKeys)),
-        );
-        const objectDeletionResult = await objectDeletion;
-        signal.throwIfAborted();
-        remainingDeleteQuota -= deletionBatch.length;
-        if (objectDeletionResult.ok) {
-          deleted += deletionBatch.length;
-          bytesDeleted += deletionBatch.reduce((total, object) => {
-            return total + object.size;
-          }, 0);
-        }
-        if (remainingDeleteQuota === 0) {
-          break gcPrefixes;
-        }
-      }
-    }
-    return {
-      scanned,
-      measured,
-      deleted,
-      bytesMeasured,
-      bytesDeleted,
-      shardsScanned,
-      subpartitionedShards,
+    const olderThan = hoursBefore(nowDate(), R2_GC_GRACE_HOURS);
+    const stats = {
+      scanned: 0,
+      measured: 0,
+      deleted: 0,
+      bytesMeasured: 0,
+      bytesDeleted: 0,
+      shardsScanned: 0,
+      subpartitionedShards: 0,
+      pagesScanned: 0,
+      deferred: true,
+      failed: false,
+      cycleCompleted: false,
     };
+    let remainingDeleteQuota = options.deleteQuota;
+    if (remainingDeleteQuota === 0) {
+      return stats;
+    }
+    const workSignal = AbortSignal.any([
+      signal,
+      AbortSignal.timeout(R2_GC_WORK_BUDGET_MS),
+    ]);
+    const shards = new Set<string>();
+    const attempt = await settleIncludingAbort(async () => {
+      workSignal.throwIfAborted();
+      await db
+        .insert(chatEventSnapshotGcState)
+        .values({ bucket })
+        .onConflictDoNothing();
+      workSignal.throwIfAborted();
+      const [loadedState] = await db
+        .select({
+          cursorObjectKey: chatEventSnapshotGcState.cursorObjectKey,
+          cycleId: chatEventSnapshotGcState.cycleId,
+        })
+        .from(chatEventSnapshotGcState)
+        .where(eq(chatEventSnapshotGcState.bucket, bucket));
+      workSignal.throwIfAborted();
+      if (!loadedState) {
+        throw new Error("Chat Event Snapshot GC progress is missing");
+      }
+      let state = loadedState;
+      while (
+        stats.pagesScanned < R2_GC_PAGES_PER_RUN &&
+        remainingDeleteQuota > 0
+      ) {
+        workSignal.throwIfAborted();
+        // Every eligible key on this page fits the remaining delete allowance.
+        const page = await get(
+          listS3ObjectsPage(
+            bucket,
+            R2_GC_PREFIX,
+            Math.min(R2_GC_PAGE_SIZE, remainingDeleteQuota),
+            workSignal,
+            state.cursorObjectKey ?? undefined,
+          ),
+        );
+        workSignal.throwIfAborted();
+        stats.pagesScanned++;
+        stats.scanned += page.objects.length;
+        for (const object of page.objects) {
+          const shard = object.key.slice(
+            R2_GC_PREFIX.length,
+            R2_GC_PREFIX.length + 3,
+          );
+          if (/^[0-9a-f]{3}$/u.test(shard)) {
+            shards.add(shard);
+          }
+        }
+        // Partial failures do not publish a checkpoint past the failed page.
+        remainingDeleteQuota -= await set(
+          deleteUnreferencedR2SnapshotPage$,
+          { db, bucket, objects: page.objects, olderThan, stats },
+          workSignal,
+        );
+        workSignal.throwIfAborted();
+        const nextCursor = page.isTruncated ? page.objects.at(-1)?.key : null;
+        if (nextCursor === undefined) {
+          throw new Error("Chat Event Snapshot GC page has no resume position");
+        }
+        const nextState = {
+          cursorObjectKey: nextCursor,
+          cycleId: page.isTruncated ? state.cycleId : randomUUID(),
+        };
+        workSignal.throwIfAborted();
+        // Fence only progress publication, not idempotent external deletion.
+        const [advanced] = await db
+          .update(chatEventSnapshotGcState)
+          .set(nextState)
+          .where(exactSnapshotGcState(bucket, state))
+          .returning({ bucket: chatEventSnapshotGcState.bucket });
+        workSignal.throwIfAborted();
+        if (!advanced) {
+          break;
+        }
+        state = nextState;
+        if (!page.isTruncated) {
+          stats.cycleCompleted = true;
+          stats.deferred = false;
+          break;
+        }
+      }
+    });
+    signal.throwIfAborted();
+    if (!attempt.ok) {
+      // Do not hide an unrelated provider/DB failure merely because the deadline
+      // expired before the continuation observed that failure.
+      const deadlineCancellation =
+        workSignal.aborted &&
+        (attempt.error === workSignal.reason || isAbortError(attempt.error));
+      if (!deadlineCancellation) {
+        stats.failed = true;
+        log.error("Failed Chat Event Snapshot garbage collection", {
+          type: "chat_event_snapshot_gc_failed",
+          error: attempt.error,
+        });
+      }
+    }
+    stats.shardsScanned = shards.size;
+    return stats;
   },
 );
 
@@ -1634,6 +1724,14 @@ export const snapshotChatEvents$ = command(
     signal.throwIfAborted();
 
     const outcomeStats = summarizeSnapshotCandidateOutcomes(processed.outcomes);
+    // Completed archive progress must not depend on independent GC maintenance.
+    const scanCursorAdvanced = await finalizeGlobalSnapshotScanState(
+      db,
+      globalCandidatePage,
+      processed.attemptedCandidates,
+      signal,
+    );
+    signal.throwIfAborted();
     const r2Gc = await set(
       collectR2SnapshotGarbage$,
       {
@@ -1646,12 +1744,6 @@ export const snapshotChatEvents$ = command(
       signal,
     );
     signal.throwIfAborted();
-    const scanCursorAdvanced = await finalizeGlobalSnapshotScanState(
-      db,
-      globalCandidatePage,
-      processed.attemptedCandidates,
-      signal,
-    );
     return {
       ...outcomeStats,
       selectedCandidates: candidates.length,
@@ -1667,6 +1759,10 @@ export const snapshotChatEvents$ = command(
       r2BytesDeleted: r2Gc.bytesDeleted,
       r2GcShardsScanned: r2Gc.shardsScanned,
       r2GcSubpartitionedShards: r2Gc.subpartitionedShards,
+      r2GcPagesScanned: r2Gc.pagesScanned,
+      r2GcDeferred: r2Gc.deferred,
+      r2GcFailed: r2Gc.failed,
+      r2GcCycleCompleted: r2Gc.cycleCompleted,
     };
   },
 );

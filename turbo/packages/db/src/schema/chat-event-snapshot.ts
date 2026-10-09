@@ -78,6 +78,28 @@ export const chatEventSnapshots = pgTable(
 );
 
 /**
+ * Independent progress through the ordered R2 object namespace. The cycle ID
+ * fences stale page checkpoints after a sweep wraps; it is not a deletion lease.
+ * Failed or uncertain external work leaves the position replayable.
+ */
+export const chatEventSnapshotGcState = pgTable(
+  "chat_event_snapshot_gc_state",
+  {
+    bucket: text("bucket").primaryKey(),
+    cursorObjectKey: text("cursor_object_key"),
+    cycleId: uuid("cycle_id").defaultRandom().notNull(),
+  },
+  (table) => {
+    return [
+      check(
+        "chat_event_snapshot_gc_cursor_check",
+        sql`${table.cursorObjectKey} IS NULL OR starts_with(${table.cursorObjectKey}, 'chat-events/')`,
+      ),
+    ];
+  },
+);
+
+/**
  * Durable cycle state for the global Snapshot candidate scan. The time fence
  * keeps new activity out of an in-progress cycle, while the stable thread-ID
  * cursor guarantees every fixed cohort is exhausted before wrapping. Snapshot

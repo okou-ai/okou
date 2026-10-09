@@ -141,6 +141,10 @@ const cronSnapshotChatEventsResponseSchema = z.object({
   r2BytesDeleted: z.number().int().nonnegative(),
   r2GcShardsScanned: z.number().int().nonnegative(),
   r2GcSubpartitionedShards: z.number().int().nonnegative(),
+  r2GcPagesScanned: z.number().int().nonnegative(),
+  r2GcDeferred: z.boolean(),
+  r2GcFailed: z.boolean(),
+  r2GcCycleCompleted: z.boolean(),
 });
 
 const cronRetainChatEventsResponseSchema = z.object({

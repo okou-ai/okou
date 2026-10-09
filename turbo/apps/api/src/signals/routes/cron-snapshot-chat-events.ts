@@ -29,6 +29,17 @@ interface ChatEventSnapshotCompletionCounters {
   readonly duplicateEventIdConflicts: number;
   readonly duplicateEventIdsRemapped: number;
   readonly duplicateEventReferencesRemapped: number;
+  readonly r2ObjectsScanned: number;
+  readonly r2ObjectsMeasured: number;
+  readonly r2ObjectsDeleted: number;
+  readonly r2BytesMeasured: number;
+  readonly r2BytesDeleted: number;
+  readonly r2GcShardsScanned: number;
+  readonly r2GcSubpartitionedShards: number;
+  readonly r2GcPagesScanned: number;
+  readonly r2GcDeferred: boolean;
+  readonly r2GcFailed: boolean;
+  readonly r2GcCycleCompleted: boolean;
 }
 
 function recordChatEventSnapshotCompleted(
@@ -62,6 +73,17 @@ function recordChatEventSnapshotCompleted(
       duplicateEventIdsRemapped: counters.duplicateEventIdsRemapped,
       duplicateEventReferencesRemapped:
         counters.duplicateEventReferencesRemapped,
+      r2ObjectsScanned: counters.r2ObjectsScanned,
+      r2ObjectsMeasured: counters.r2ObjectsMeasured,
+      r2ObjectsDeleted: counters.r2ObjectsDeleted,
+      r2BytesMeasured: counters.r2BytesMeasured,
+      r2BytesDeleted: counters.r2BytesDeleted,
+      r2GcShardsScanned: counters.r2GcShardsScanned,
+      r2GcSubpartitionedShards: counters.r2GcSubpartitionedShards,
+      r2GcPagesScanned: counters.r2GcPagesScanned,
+      r2GcDeferred: counters.r2GcDeferred,
+      r2GcFailed: counters.r2GcFailed,
+      r2GcCycleCompleted: counters.r2GcCycleCompleted,
     },
   ]);
 }
