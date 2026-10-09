@@ -148,6 +148,32 @@ os._exit(3)
         self.assertEqual(result.returncode, 0)
         self.assertIn("isolated-environment", (output / "stdout.log").read_text())
 
+    def test_ignored_sigchld_is_rejected_before_fixture_launch(self):
+        output = self.root / "unwaitable"
+        marker = self.root / "launched"
+        command = self.command(
+            output,
+            f"from pathlib import Path; import sys; Path({str(marker)!r}).touch(); sys.exit(7)",
+        )
+        # Ignored dispositions survive exec. Popen can otherwise turn ECHILD
+        # into returncode 0, falsely reporting a failed fixture as positively waited.
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import os,signal,sys; signal.signal(signal.SIGCHLD,signal.SIG_IGN); os.execv(sys.executable,[sys.executable,*sys.argv[1:]])",
+                *command[1:],
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 1, (result.stdout, result.stderr))
+        self.assertIn("SIGCHLD", result.stderr)
+        self.assertFalse(marker.exists())
+        self.assertFalse(output.exists())
+
     def test_nonzero_exit_is_not_native_or_measurement_success(self):
         result, report, _ = self.run_case("import sys; sys.exit(7)")
         self.assertEqual(result.returncode, 1)

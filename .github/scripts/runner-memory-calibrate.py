@@ -224,6 +224,10 @@ def collect(
         or not hasattr(signal, "pidfd_send_signal")
     ):
         raise ValueError("fixture requires Linux pidfd support")
+    # SIG_IGN survives exec and auto-reaps children; Popen treats ECHILD as
+    # returncode 0, which is not a positive wait or the fixture's actual status.
+    if signal.getsignal(signal.SIGCHLD) != signal.SIG_DFL:
+        raise ValueError("fixture requires default SIGCHLD handling for positive waits")
     if child_pids(os.getpid()):
         raise ValueError("collector must run in a process without existing children")
     initial = available_bytes(bounded_read("/proc/meminfo"))

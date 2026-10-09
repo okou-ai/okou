@@ -40,8 +40,10 @@ production defaults and performs no admission or reclamation.
 ## Owned collector
 
 The Linux collector `.github/scripts/runner-memory-calibrate.py` requires pidfd
-support and starts only its own command. Do not attach it to an existing Runner
-or supply another owner's VM state. It has bounded duration, sample count,
+support and default `SIGCHLD` handling, and starts only its own command. An
+inherited ignored child signal auto-reaps exit status, so the collector rejects
+it before output creation or launch instead of claiming a positive child wait.
+Do not attach it to an existing Runner or supply another owner's VM state. It has bounded duration, sample count,
 interval, logs and descendant inventory. Its unique output directory must not
 exist and must have no symlink component or replaceable non-sticky parent.
 Metadata must contain no credentials,
