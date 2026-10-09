@@ -472,8 +472,14 @@ export function listS3ObjectsPage(
       { abortSignal: signal },
     );
     signal?.throwIfAborted();
+    const contents = response.Contents ?? [];
+    const isTruncated = response.IsTruncated === true;
+    // Reject an oversized response before allocating/normalizing another array.
+    if (contents.length > maxKeys || (isTruncated && contents.length === 0)) {
+      throw new Error("S3 object listing returned an invalid bounded page");
+    }
     let previousKey = startAfter;
-    const objects = (response.Contents ?? []).map((item): S3Object => {
+    const objects = contents.map((item): S3Object => {
       if (
         !item.Key ||
         item.Size === undefined ||
@@ -503,10 +509,6 @@ export function listS3ObjectsPage(
         lastModified: item.LastModified,
       };
     });
-    const isTruncated = response.IsTruncated === true;
-    if (objects.length > maxKeys || (isTruncated && objects.length === 0)) {
-      throw new Error("S3 object listing returned an invalid bounded page");
-    }
     return { objects, isTruncated };
   });
 }

@@ -248,6 +248,10 @@ describe("bounded S3 object listing provider contract", () => {
         IsTruncated: false,
       },
     },
+    {
+      label: "oversized page before metadata normalization",
+      response: { Contents: [{}, {}], IsTruncated: false },
+    },
   ])("rejects a $label", async ({ response }) => {
     context.mocks.s3.send.mockResolvedValue(response);
     await expect(
