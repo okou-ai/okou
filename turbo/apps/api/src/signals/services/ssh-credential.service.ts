@@ -13,7 +13,7 @@ import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { command } from "ccstate";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, count, eq, gte, sql } from "drizzle-orm";
 import { isForeignKeyViolation, isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
@@ -320,30 +320,37 @@ export const updateSshCredential$ = command(
             args.featureContext,
           );
     const invalidate = effectiveChange && hosts.length > 0;
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0252; new non-billing transactions are prohibited.
-    const updated = await db.transaction(async (tx) => {
-      if (invalidate) {
-        await tx
-          .update(sshConnections)
-          .set({
-            generation: sql`${sshConnections.generation} + 1`,
-            updatedAt: nowDate(),
-          })
-          .where(ownerHostsUsingCredential(args.owner, args.credentialId));
-      }
-      const [row] = await tx
-        .update(sshCredentials)
+    const rotatedHosts = db.$with("rotated_hosts").as(
+      db
+        .update(sshConnections)
         .set({
-          name: args.body.name,
-          username: args.body.username,
-          ...encrypted,
-          revision: sql`${sshCredentials.revision} + 1`,
+          generation: sql`${sshConnections.generation} + 1`,
           updatedAt: nowDate(),
         })
-        .where(ownedSshCredential(args.owner, args.credentialId))
-        .returning(sshCredentialMetadata);
-      return row;
-    });
+        .where(ownerHostsUsingCredential(args.owner, args.credentialId))
+        .returning({ id: sshConnections.id }),
+    );
+    const [updated] = await db
+      .with(...(invalidate ? [rotatedHosts] : []))
+      .update(sshCredentials)
+      .set({
+        name: args.body.name,
+        username: args.body.username,
+        ...encrypted,
+        revision: sql`${sshCredentials.revision} + 1`,
+        updatedAt: nowDate(),
+      })
+      .where(
+        and(
+          ownedSshCredential(args.owner, args.credentialId),
+          // Consume every host update before publishing the credential, including
+          // when all initially observed hosts have disappeared or rebound.
+          invalidate
+            ? gte(db.select({ count: count() }).from(rotatedHosts), 0)
+            : undefined,
+        ),
+      )
+      .returning(sshCredentialMetadata);
     if (!updated) {
       return sshCredentialFailure("notFound");
     }
