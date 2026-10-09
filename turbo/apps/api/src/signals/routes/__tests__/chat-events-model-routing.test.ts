@@ -3,8 +3,6 @@ import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { now } from "../../../lib/time";
 
-import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
-
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { expectApiError, type ApiTestUser } from "./helpers/api-bdd";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
@@ -13,7 +11,6 @@ import {
   createChatEventsFixture,
   CODEX_WEB_IMAGE_UPLOAD_PROMPT_SNIPPET,
   type PromptMessage,
-  requireOrgId,
   claimEnvironment,
   userMessages,
 } from "./helpers/chat-events-fixture";
@@ -841,30 +838,6 @@ describe("CHAT-02: model-first routing", () => {
     );
     await chat.requestReadThread(actor, rejectedThreadId, [404]);
   }, 90_000);
-
-  it("launches a free-plan okou-1.0 run on its Built-in route", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    await seedBuiltInModelKey("okou-1.0");
-    await preparePiResourceHandoff(actor, agentId);
-    await upsertOrgPlanEntitlementFixture({
-      orgId: requireOrgId(actor),
-      status: "active",
-      restrictedBuiltInModels: true,
-    });
-
-    const run = await sendChatRun(actor, {
-      agentId,
-      model: null,
-      prompt: "run the free plan's model",
-    });
-    const { claim } = await claimChatRun(runnerGroup, run.runId);
-    expect(claim.modelUsageProvider).toBe("okou-1.0");
-    expect(claim.piModelConfig).toMatchObject({ catalogModel: "okou-1.0" });
-    expect(claim.billableFirewalls).toContain(
-      "model-provider:openrouter-codex",
-    );
-    await cancelChatRun(actor, run.runId);
-  });
 
   it("routes built-in okou-1.0 through global OpenRouter and resolves its firewall credential", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();

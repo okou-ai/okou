@@ -241,28 +241,6 @@ export async function setWorkflowAutomationAutonomyBudgetFixture(
   });
 }
 
-export async function readLatestWorkflowAutomationRunFixture(
-  context: TestContext,
-  automationId: string,
-): Promise<{
-  readonly runId: string;
-  readonly autonomyBudget: number;
-} | null> {
-  const response = await postAction(context, {
-    action: "read-latest-workflow-automation-run",
-    automation_id: automationId,
-  });
-  if (!("workflow_automation_run" in response)) {
-    throw new Error(
-      "readLatestWorkflowAutomationRunFixture missing workflow_automation_run",
-    );
-  }
-  const run = response.workflow_automation_run;
-  return run
-    ? { runId: run.run_id, autonomyBudget: run.autonomy_budget }
-    : null;
-}
-
 export async function stageOfficialWorkflowAutomationFixture(
   context: TestContext,
   automationId: string,

@@ -57,7 +57,6 @@ import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { createAppWithRoutes } from "../../../../app-factory-core";
 import { mockEnv, mockOptionalEnv } from "../../../../lib/env";
 import { now, withNowScopeForTest } from "../../../../lib/time";
-import { listAgentRunsFixture } from "../../../../test-fixtures/agent-runs";
 import {
   generateSandboxToken,
   signSandboxJwtForTests,
@@ -85,13 +84,6 @@ import { createBddApi, type ApiTestUser } from "./api-bdd";
 import { createRouteMocks } from "./route-test";
 
 type AuthHeaders = { readonly authorization?: string };
-interface RunsListQuery {
-  readonly status?: string;
-  readonly agent?: string;
-  readonly since?: string;
-  readonly until?: string;
-  readonly limit?: number;
-}
 type RunnerJobClaimRequestBody = z.infer<
   (typeof runnersJobClaimContract.claim)["body"]
 >;
@@ -895,25 +887,6 @@ export function createRunsApi(
         iat: seconds,
         exp: seconds + 3600,
       });
-    },
-
-    async listAgentRuns(actor: ApiTestUser, query: RunsListQuery) {
-      if (!actor.orgId) {
-        throw new Error("Agent run list service requires an organization");
-      }
-      const result = await listAgentRunsFixture({
-        userId: actor.userId,
-        orgId: actor.orgId,
-        status: query.status,
-        agent: query.agent,
-        since: query.since,
-        until: query.until,
-        limit: query.limit,
-      });
-      if (result.kind === "bad-request") {
-        throw new Error(result.message);
-      }
-      return result.body;
     },
 
     async applyUserPermissionGrant(

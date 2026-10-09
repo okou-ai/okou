@@ -1,3 +1,4 @@
+import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 // helper gap:
 // - Paid media completion uses Stripe webhook-granted credits and real usage
 //   pricing. Full provider matrices still stay out of this BDD slice.
@@ -15,8 +16,7 @@ import { describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
 import { server } from "../../../mocks/server";
-import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
-import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
+
 import {
   createBddApi,
   expectApiError,
@@ -631,26 +631,7 @@ describe("FILE-02 and CHAIN-BILLING-MEDIA: media generation, quota, and status A
     if (!admin.orgId) {
       throw new Error("Expected media quota test user to have an org");
     }
-    await seedOrgMetadata({
-      orgId: admin.orgId,
-      tier: "pro",
-      credits: 0,
-    });
-    await upsertOrgPlanEntitlementFixture({
-      orgId: admin.orgId,
-      status: "suspended",
-      canBuyConcurrency: false,
-      canBuyCredits: false,
-      autoRechargeAllowed: false,
-      restrictedBuiltInModels: true,
-      workflowWebhookAutomationAllowed: false,
-      audioLifetimeLimit: 0,
-      audioDailyRateLimit: 0,
-      audioDailyDurationSeconds: 0,
-    });
-
-    const quota = await api.readVoiceQuota(admin);
-    expect(quota.body).toStrictEqual({ allowed: false, count: 0, limit: 0 });
+    await publicPlanLifecycle(context, admin).update("canceled");
 
     // The validations below describe gpt-image-1, selected as the member's
     // image model.

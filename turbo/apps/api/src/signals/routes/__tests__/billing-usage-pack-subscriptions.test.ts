@@ -1,3 +1,5 @@
+import { createBddApi } from "./helpers/api-bdd";
+import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 import { randomUUID } from "node:crypto";
 import { mockClerkUsers } from "./helpers/clerk-users";
 import { readGetStartedStatus } from "./helpers/get-started";
@@ -27,7 +29,6 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
@@ -9983,19 +9984,14 @@ describe("usage pack allocation management", () => {
   );
 
   it("keeps suspended plans from inviting members", async () => {
-    const fixture = await purchaseManagedUsagePack([
-      { userId: `user_${randomUUID()}`, usagePackUsd: 20 },
-    ]);
+    const actor = createBddApi(context).user();
+    await createBddApi(context).completeOnboarding(actor);
     const client = setupApp({ context, routes: orgInviteRoutes })(
       orgInviteContract,
     );
 
     for (const tier of ["pro"] as const) {
-      await seedOrgMetadata({ orgId: fixture.orgId, tier, credits: 0 });
-      await upsertOrgPlanEntitlementFixture({
-        orgId: fixture.orgId,
-        status: "suspended",
-      });
+      await publicPlanLifecycle(context, actor).update("canceled");
       const blocked = await accept(
         client.invite({
           headers: { authorization: "Bearer clerk-session" },

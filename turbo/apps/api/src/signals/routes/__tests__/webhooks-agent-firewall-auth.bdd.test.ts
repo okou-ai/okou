@@ -1,3 +1,5 @@
+import { claimPublicToolRun } from "./helpers/public-tool-actor";
+import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 import { randomUUID } from "node:crypto";
 import { completePublicCodexHistory } from "./helpers/public-pi-history";
 
@@ -16,8 +18,7 @@ import {
   type SecretKmsGenerateDataKeyRequest,
 } from "../../../lib/secret-kms-client";
 import { now } from "../../../lib/time";
-import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
-import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
+
 import { testContext } from "../../../__tests__/test-context";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -711,7 +712,11 @@ describe("FW-3: billable firewall lease", () => {
 
   it("does not refresh an expired connector when billable auth is denied", async () => {
     const fw = createFirewallApi(context);
-    const { actor, headers } = await publicConnections.run();
+    const actor = createBddApi(context).user();
+    const subscription =
+      await createRunsApi(context).grantProEntitlement(actor);
+    const { claim } = await claimPublicToolRun(context, actor, onTestFinished);
+    const headers = { authorization: `Bearer ${claim.sandboxToken}` };
     await publicConnections.testOAuth(actor, {
       accessToken: "stale-access",
       refreshToken: "refresh-1",
@@ -728,15 +733,9 @@ describe("FW-3: billable firewall lease", () => {
     if (!actor.orgId) {
       throw new Error("Expected firewall actor to have an org");
     }
-    await seedOrgMetadata({
-      orgId: actor.orgId,
-      tier: "pro",
-      credits: 20_000,
-    });
-    await upsertOrgPlanEntitlementFixture({
-      orgId: actor.orgId,
-      status: "suspended",
-    });
+    await publicPlanLifecycle(context, actor, "pro", subscription).update(
+      "canceled",
+    );
 
     const denied = await fw.requestFirewallAuth(
       headers,
