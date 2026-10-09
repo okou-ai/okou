@@ -56,16 +56,6 @@ fn pi_launch_config_for_test() -> serde_json::Value {
     json!({ "schemaVersion": 2 })
 }
 
-fn pi_model_config_for_test() -> serde_json::Value {
-    json!({
-        "provider": "openrouter",
-        "baseUrl": "https://openrouter.ai/api/v1",
-        "model": "openai/gpt-6-luna",
-        "apiKeyEnv": "OPENAI_API_KEY",
-        "credentialSecretName": "OPENROUTER_API_KEY"
-    })
-}
-
 fn pi_model_config_v2_for_test(dialect: &str) -> serde_json::Value {
     if dialect == "openai-codex-responses" {
         return json!({
@@ -128,7 +118,7 @@ fn pi_context_for_test() -> ExecutionContext {
     context.cli_agent_type = "pi".to_string();
     context.pi_session_id = Some("22222222-2222-4222-8222-222222222222".to_string());
     context.pi_launch_config = Some(pi_launch_config_for_test());
-    context.pi_model_config = Some(pi_model_config_for_test());
+    context.pi_model_config = Some(pi_model_config_v5_for_test());
     context
 }
 
@@ -1080,12 +1070,11 @@ fn non_pi_execution_contexts_do_not_require_pi_resources() {
 }
 
 #[test]
-fn pi_execution_context_preserves_additive_fields_in_run_payload() {
+fn pi_execution_context_preserves_additive_launch_fields_in_run_payload() {
     let mut ctx = pi_context_for_test();
     ctx.pi_launch_config.as_mut().unwrap()["futureLaunchField"] = json!("launch-root");
     ctx.pi_installed_cli_requirement = Some(json!({ "minCliVersion": "9.352.7" }));
     ctx.pi_model_config.as_mut().unwrap()["catalogModel"] = json!("gpt-6-luna");
-    ctx.pi_model_config.as_mut().unwrap()["futureModelField"] = json!("model-root");
     let sandbox_id = SandboxId::new_v4().to_string();
     let payload = validate_execution_context_before_sandbox(
         &ctx,
@@ -1109,10 +1098,8 @@ fn pi_execution_context_preserves_additive_fields_in_run_payload() {
     assert_eq!(requirement["minCliVersion"], "9.352.7");
     let model: serde_json::Value = serde_json::from_str(&payload.pi_model_config).unwrap();
     assert_eq!(model["provider"], "openrouter");
-    assert_eq!(model["apiKeyEnv"], "OPENAI_API_KEY");
-    assert_eq!(model["credentialSecretName"], "OPENROUTER_API_KEY");
     assert_eq!(model["catalogModel"], "gpt-6-luna");
-    assert_eq!(model["futureModelField"], "model-root");
+    assert_eq!(&model, ctx.pi_model_config.as_ref().unwrap());
 }
 
 #[test]
@@ -1213,69 +1200,6 @@ fn pi_execution_context_rejects_an_unsupported_launch_schema_before_sandbox() {
 }
 
 #[test]
-fn pi_execution_context_rejects_invalid_model_fields_before_sandbox() {
-    let cases = [
-        (
-            "/provider",
-            json!("future-provider"),
-            "Pi legacy model config is invalid",
-        ),
-        (
-            "/apiKeyEnv",
-            json!("FUTURE_API_KEY"),
-            "Pi legacy model config is invalid",
-        ),
-        ("/baseUrl", json!("not a URL"), "baseUrl is invalid"),
-        ("/model", json!(""), "model must not be empty"),
-        (
-            "/credentialSecretName",
-            json!("lowercase-secret"),
-            "credentialSecretName is invalid",
-        ),
-    ];
-
-    for (pointer, value, expected) in cases {
-        let mut context = pi_context_for_test();
-        *context
-            .pi_model_config
-            .as_mut()
-            .unwrap()
-            .pointer_mut(pointer)
-            .unwrap() = value;
-
-        let error = validate_context_for_test(&context).unwrap_err();
-
-        assert!(
-            error.contains(expected),
-            "{pointer} produced unexpected error: {error}"
-        );
-    }
-
-    let mut context = pi_context_for_test();
-    context.pi_model_config.as_mut().unwrap()["serviceTier"] = json!("fast");
-    let error = validate_context_for_test(&context).unwrap_err();
-    assert!(
-        error.contains("Pi legacy model config is invalid"),
-        "serviceTier produced unexpected error: {error}"
-    );
-}
-
-#[test]
-fn pi_execution_context_rejects_invalid_legacy_shared_model_fields_before_sandbox() {
-    for (case, catalog_model) in [("empty", json!("")), ("null", json!(null))] {
-        let mut context = pi_context_for_test();
-        context.pi_model_config.as_mut().unwrap()["catalogModel"] = catalog_model;
-
-        let error = validate_context_for_test(&context).unwrap_err();
-
-        assert!(
-            error.contains("Pi model config catalogModel is invalid"),
-            "{case} catalogModel produced unexpected error: {error}"
-        );
-    }
-}
-
-#[test]
 fn pi_execution_context_restricts_model_base_url_schemes_before_sandbox() {
     let v2_public = pi_model_config_v2_for_test("openai-responses");
     let v2_codex = pi_model_config_v2_for_test("openai-codex-responses");
@@ -1284,7 +1208,7 @@ fn pi_execution_context_restricts_model_base_url_schemes_before_sandbox() {
     let mut v3_codex = v2_codex.clone();
     v3_codex["schemaVersion"] = json!(3);
     let configs = [
-        pi_model_config_for_test(),
+        pi_model_config_v5_for_test(),
         v2_public,
         v2_codex,
         v3_public,

@@ -1,14 +1,14 @@
 import {
   piModelConfigSchema,
   type PiModelConfig,
-  type PiModelConfigLegacy,
+  type PiModelConfigV2,
 } from "@okouai/api-contracts/contracts/runners";
 
 import type { PiAgentCredentialReference } from "./types";
 
-type ResponsesRoute = Omit<
-  PiModelConfigLegacy,
-  "apiKeyEnv" | "credentialSecretName"
+type ModelRouteFields = Pick<
+  PiModelConfigV2,
+  "baseUrl" | "model" | "catalogModel" | "thinkingLevel"
 >;
 
 type CredentialBinding<K extends PiAgentCredentialReference["kind"]> =
@@ -16,21 +16,20 @@ type CredentialBinding<K extends PiAgentCredentialReference["kind"]> =
 
 /** In-process captured intent. Never persist this in place of the original wire. */
 export type PiExecutionRoute =
-  | (ResponsesRoute & {
+  | (ModelRouteFields & {
+      readonly provider: "openrouter";
+      readonly serviceTier?: "priority";
       readonly dialect: "openai-responses";
       readonly transport: "sse";
       readonly credentialBindings: readonly [CredentialBinding<"api-key">];
     })
-  | (Pick<
-      ResponsesRoute,
-      "baseUrl" | "model" | "catalogModel" | "thinkingLevel"
-    > & {
+  | (ModelRouteFields & {
       readonly provider: "openrouter";
       readonly dialect: "openai-completions";
       readonly transport: "sse";
       readonly credentialBindings: readonly [CredentialBinding<"api-key">];
     })
-  | (Pick<ResponsesRoute, "baseUrl" | "model" | "thinkingLevel"> & {
+  | (Pick<ModelRouteFields, "baseUrl" | "model" | "thinkingLevel"> & {
       readonly provider: "openai-codex";
       readonly dialect: "openai-codex-responses";
       readonly transport: "sse";
@@ -50,21 +49,6 @@ export function normalizePiExecutionRoute(
   wire: PiModelConfig,
 ): PiExecutionRoute {
   const config = piModelConfigSchema.parse(wire);
-  if (!("schemaVersion" in config)) {
-    const { apiKeyEnv, credentialSecretName, ...route } = config;
-    return {
-      ...route,
-      dialect: "openai-responses",
-      transport: "sse",
-      credentialBindings: [
-        {
-          kind: "api-key",
-          environment: apiKeyEnv,
-          secretName: credentialSecretName,
-        },
-      ],
-    };
-  }
   if (config.dialect === "openai-completions") {
     const {
       schemaVersion: _schemaVersion,

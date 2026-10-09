@@ -6113,12 +6113,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
       // Historical persisted-state exception (docs/testing.md rollout coexistence;
       // testing-external-behavior.md historical states): current admission no
-      // longer writes these stored Pi generations, which
-      // pi-model-config-claim-capability.ts still reads and negotiates. Delete with
-      // that reader once older generations can no longer be pending.
-      // Current admission cannot produce generation 3 or future/invalid rows.
-      // The explicit stored-writer fixture exercises claim/read API behavior first.
-      it.each([1, 2, 3] as const)(
+      // longer writes OpenRouter Responses routes. The versioned readers in
+      // pi-model-config-claim-capability.ts still negotiate captured generations
+      // 2 and 3; delete these cases with those readers after their cutover.
+      // Future/invalid rows also need the explicit stored-writer fixture, which
+      // exercises claim/read API behavior first.
+      it.each([2, 3] as const)(
         "claims stored Pi generation %s only with compatible capabilities",
         async (generation) => {
           const api = createRunsApi(context);
@@ -6128,51 +6128,43 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             prompt: "claim a dialect-aware Pi route",
           });
           const piModelConfig: PiModelConfig =
-            generation === 1
+            generation === 3
               ? {
+                  schemaVersion: 3,
+                  dialect: "openai-codex-responses",
+                  transport: "sse",
+                  provider: "openai-codex",
+                  baseUrl: "https://chatgpt.com/backend-api",
+                  model: "gpt-6-luna",
+                  serviceTier: "fast",
+                  credentialBindings: [
+                    {
+                      kind: "access-token",
+                      environment: "CHATGPT_ACCESS_TOKEN",
+                      secretName: "CHATGPT_ACCESS_TOKEN",
+                    },
+                    {
+                      kind: "account-id",
+                      environment: "CHATGPT_ACCOUNT_ID",
+                      secretName: "CHATGPT_ACCOUNT_ID",
+                    },
+                  ],
+                }
+              : {
+                  schemaVersion: 2,
+                  dialect: "openai-responses",
+                  transport: "sse",
                   provider: "openrouter",
                   baseUrl: "https://openrouter.ai/api/v1",
-                  model: "gpt-6-luna",
-                  apiKeyEnv: "OPENAI_API_KEY",
-                  credentialSecretName: "OPENROUTER_API_KEY",
-                }
-              : generation === 3
-                ? {
-                    schemaVersion: 3,
-                    dialect: "openai-codex-responses",
-                    transport: "sse",
-                    provider: "openai-codex",
-                    baseUrl: "https://chatgpt.com/backend-api",
-                    model: "gpt-6-luna",
-                    serviceTier: "fast",
-                    credentialBindings: [
-                      {
-                        kind: "access-token",
-                        environment: "CHATGPT_ACCESS_TOKEN",
-                        secretName: "CHATGPT_ACCESS_TOKEN",
-                      },
-                      {
-                        kind: "account-id",
-                        environment: "CHATGPT_ACCOUNT_ID",
-                        secretName: "CHATGPT_ACCOUNT_ID",
-                      },
-                    ],
-                  }
-                : {
-                    schemaVersion: 2,
-                    dialect: "openai-responses",
-                    transport: "sse",
-                    provider: "openrouter",
-                    baseUrl: "https://openrouter.ai/api/v1",
-                    model: "gpt-5.4",
-                    credentialBindings: [
-                      {
-                        kind: "api-key",
-                        environment: "OPENAI_API_KEY",
-                        secretName: "OPENROUTER_API_KEY",
-                      },
-                    ],
-                  };
+                  model: "gpt-5.4",
+                  credentialBindings: [
+                    {
+                      kind: "api-key",
+                      environment: "OPENAI_API_KEY",
+                      secretName: "OPENROUTER_API_KEY",
+                    },
+                  ],
+                };
           await setRunnerJobPiContextAsVersionedWriter(
             context,
             run.runId,

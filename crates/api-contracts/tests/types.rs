@@ -3,9 +3,8 @@ use std::collections::BTreeMap;
 use api_contracts::generated::types::{
     runners::{
         runs::{
-            CodexRuntimeConfig, PiLaunchConfig, PiLaunchConfigMemoryRecall, PiModelConfig,
-            PiModelConfigApiKeyEnv, PiModelConfigProvider, PiModelConfigServiceTier,
-            PiModelConfigV2, PiModelConfigV3, cancellation,
+            CodexRuntimeConfig, PiLaunchConfig, PiLaunchConfigMemoryRecall, PiModelConfigV2,
+            PiModelConfigV3, cancellation,
         },
         storage as runner_storage,
     },
@@ -183,80 +182,17 @@ fn generated_codex_runtime_config_omits_absent_options_and_accepts_legacy_null()
 }
 
 #[test]
-fn generated_pi_runtime_configs_round_trip_full_wire_shapes() {
+fn generated_pi_launch_config_round_trips_minimal_shape() {
     let launch = PiLaunchConfig {
         schema_version: 2,
         memory_recall: None,
         maintenance: None,
     };
-    let model = PiModelConfig {
-        provider: PiModelConfigProvider::Openrouter,
-        base_url: "https://openrouter.ai/api/v1".to_string(),
-        model: "openai/gpt-6-luna".to_string(),
-        catalog_model: None,
-        thinking_level: None,
-        service_tier: None,
-        api_key_env: PiModelConfigApiKeyEnv::OPENAIAPIKEY,
-        credential_secret_name: "OPENROUTER_API_KEY".to_string(),
-    };
-
     let launch_value = serde_json::to_value(&launch).unwrap();
     assert_eq!(launch_value, json!({ "schemaVersion": 2 }));
     assert_eq!(
         serde_json::from_value::<PiLaunchConfig>(launch_value).unwrap(),
         launch
-    );
-
-    let model_value = serde_json::to_value(&model).unwrap();
-    assert_eq!(
-        model_value,
-        json!({
-            "provider": "openrouter",
-            "baseUrl": "https://openrouter.ai/api/v1",
-            "model": "openai/gpt-6-luna",
-            "apiKeyEnv": "OPENAI_API_KEY",
-            "credentialSecretName": "OPENROUTER_API_KEY",
-        })
-    );
-    assert_eq!(
-        serde_json::from_value::<PiModelConfig>(model_value).unwrap(),
-        model
-    );
-
-    // Unknown wire fields keep serde's existing policy: discard them on decode.
-    for api in [
-        "openai-responses",
-        "openai-completions",
-        "openai-codex-responses",
-    ] {
-        let mut legacy_value = serde_json::to_value(&model).unwrap();
-        legacy_value["api"] = json!(api);
-        let decoded: PiModelConfig = serde_json::from_value(legacy_value).unwrap();
-        assert_eq!(decoded, model);
-        assert_eq!(
-            serde_json::to_value(decoded).unwrap(),
-            serde_json::to_value(&model).unwrap()
-        );
-    }
-
-    let priority_model_value = json!({
-        "provider": "openrouter",
-        "baseUrl": "https://openrouter.ai/api/v1",
-        "model": "openai/gpt-6-luna",
-        "thinkingLevel": "low",
-        "serviceTier": "priority",
-        "apiKeyEnv": "OPENAI_API_KEY",
-        "credentialSecretName": "OPENROUTER_API_KEY",
-    });
-    let priority_model: PiModelConfig =
-        serde_json::from_value(priority_model_value.clone()).unwrap();
-    assert_eq!(
-        priority_model.service_tier,
-        Some(PiModelConfigServiceTier::Priority)
-    );
-    assert_eq!(
-        serde_json::to_value(priority_model).unwrap(),
-        priority_model_value
     );
 }
 
@@ -288,29 +224,6 @@ fn generated_pi_launch_config_round_trips_frozen_memory() {
             && content == "bounded memory"
     ));
     assert_eq!(serde_json::to_value(launch).unwrap(), value);
-}
-
-#[test]
-fn generated_pi_model_config_rejects_unknown_enums() {
-    for (field, value) in [
-        ("provider", "future-provider"),
-        ("apiKeyEnv", "FUTURE_API_KEY"),
-        ("serviceTier", "fast"),
-    ] {
-        let mut config = json!({
-            "provider": "openrouter",
-            "baseUrl": "https://openrouter.ai/api/v1",
-            "model": "openai/gpt-6-luna",
-            "apiKeyEnv": "OPENAI_API_KEY",
-            "credentialSecretName": "OPENROUTER_API_KEY",
-        });
-        config[field] = json!(value);
-
-        assert!(
-            serde_json::from_value::<PiModelConfig>(config).is_err(),
-            "{field} should reject {value}"
-        );
-    }
 }
 
 #[test]
@@ -354,7 +267,6 @@ fn generated_pi_model_config_v2_round_trips_both_dialects() {
     for value in [public_responses, codex_responses] {
         let decoded: PiModelConfigV2 = serde_json::from_value(value.clone()).unwrap();
         assert_eq!(serde_json::to_value(decoded).unwrap(), value);
-        assert!(serde_json::from_value::<PiModelConfig>(value).is_err());
     }
 }
 

@@ -13,7 +13,6 @@ import {
 import { modelProviderCodexRuntimeConfigSchema } from "../../contracts/model-providers";
 import {
   piLaunchConfigSchema,
-  piModelConfigLegacySchema,
   piModelConfigV2Schema,
   sessionHistoryEncodingSchema,
   storageMountEntrySchema,
@@ -79,11 +78,6 @@ const expectedBindings = [
   {
     rustModulePath: ["runners", "runs"],
     rustTypeName: "PiLaunchConfig",
-    direction: "response",
-  },
-  {
-    rustModulePath: ["runners", "runs"],
-    rustTypeName: "PiModelConfig",
     direction: "response",
   },
   {
@@ -414,13 +408,9 @@ describe("Rust type bindings", () => {
     expect(firstRender).toContain("pub struct StorageMountEntry {");
     expect(firstRender).toContain("pub struct CodexRuntimeConfig {");
     expect(firstRender).toContain("pub struct PiLaunchConfig {");
-    expect(firstRender).toContain("pub struct PiModelConfig {");
-    expect(firstRender).toContain("pub enum PiModelConfigProvider {");
-    expect(firstRender).toContain("pub enum PiModelConfigThinkingLevel {");
-    expect(firstRender).toContain("pub enum PiModelConfigServiceTier {");
-    expect(firstRender).toContain("pub enum PiModelConfigApiKeyEnv {");
     expect(firstRender).toContain("pub struct PiModelConfigV2 {");
     expect(firstRender).toContain("pub enum PiModelConfigV3 {");
+    expect(firstRender).toContain("pub struct PiModelConfigV5 {");
     expect(firstRender).toContain(
       "pub enum PiModelConfigV3OpenaiCodexResponsesServiceTier {",
     );
@@ -535,14 +525,6 @@ describe("Rust type bindings", () => {
         );
       },
     );
-    const modelBinding: RustTypeBinding | undefined = rustTypeBindings.find(
-      ({ rustModulePath, rustTypeName }) => {
-        return (
-          rustTypeName === "PiModelConfig" &&
-          rustModulePath.join("/") === "runners/runs"
-        );
-      },
-    );
     const modelV2Binding: RustTypeBinding | undefined = rustTypeBindings.find(
       ({ rustModulePath, rustTypeName }) => {
         return (
@@ -558,35 +540,10 @@ describe("Rust type bindings", () => {
     expect(z.toJSONSchema(launchBinding.schema)).toEqual(
       z.toJSONSchema(piLaunchConfigSchema.unwrap()),
     );
-    expect(modelBinding?.schema).toBe(piModelConfigLegacySchema);
     expect(modelV2Binding?.schema).toBe(piModelConfigV2Schema);
     expect(z.toJSONSchema(piLaunchConfigSchema.unwrap())).toMatchObject({
       required: ["schemaVersion"],
       properties: { schemaVersion: { const: 2 } },
-    });
-    expect(z.toJSONSchema(piModelConfigLegacySchema)).toMatchObject({
-      required: [
-        "provider",
-        "baseUrl",
-        "model",
-        "apiKeyEnv",
-        "credentialSecretName",
-      ],
-      properties: {
-        provider: {
-          enum: ["openrouter", "codex"],
-        },
-        apiKeyEnv: {
-          enum: ["OPENAI_API_KEY", "CHATGPT_ACCESS_TOKEN"],
-        },
-        thinkingLevel: {
-          enum: ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
-        },
-        catalogModel: { type: "string", minLength: 1 },
-        serviceTier: {
-          enum: ["priority"],
-        },
-      },
     });
     expect(z.toJSONSchema(piModelConfigV2Schema)).toMatchObject({
       required: [
