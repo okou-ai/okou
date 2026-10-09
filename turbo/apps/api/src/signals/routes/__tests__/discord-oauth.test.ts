@@ -503,6 +503,36 @@ describe("Discord product OAuth", () => {
     await status(admin);
     expect(f.messages).toHaveLength(1);
   });
+  it("retains a completed personal grant when a later attempt reaps expired opener capabilities", async () => {
+    const f = fixture();
+    const actor = await f.actor();
+    const initial = now();
+    const installed = await start(actor, "install", f.guildId);
+    expect((await finish(f, installed)).status).toBe("installed");
+    const before = await status(actor);
+    expect(before.isConnected).toBe(true);
+    expect(before.dmBindings).toHaveLength(1);
+    mockNow(initial + 601_000);
+    const pending = await start(actor, "connect", f.guildId);
+    const after = await status(actor);
+    expect(after.isConnected).toBe(true);
+    expect(after.dmBindings).toEqual(before.dmBindings);
+    expect(after.discordUserId).toBe(f.discordUserId);
+    expect((await complete(installed)).status).toBe(400);
+    authenticate(actor);
+    await accept(
+      clients()(integrationsDiscordContract).disconnect({ headers, query: {} }),
+      [200],
+    );
+    expect((await status(actor)).isConnected).toBeFalsy();
+    expect((await complete(pending)).status).toBe(400);
+    const member = await f.actor(actor.orgId, "org:member");
+    expect(
+      (await finish(f, await start(member, "connect", f.guildId))).status,
+    ).toBe("connected");
+    expect((await status(member)).discordUserId).toBe(f.discordUserId);
+  });
+
   it("lets an ordinary current org member connect only their verified Discord identity", async () => {
     const f = await fixture();
     const admin = await f.actor();

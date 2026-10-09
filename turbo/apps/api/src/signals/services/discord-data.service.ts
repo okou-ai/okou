@@ -1,6 +1,5 @@
 import { command, computed, type Computed } from "ccstate";
-import { and, asc, eq, or, type SQL } from "drizzle-orm";
-import { discordUserIdentities } from "@okouai/db/schema/discord-user-identity";
+import { and, asc, count, eq, gte, isNotNull, or, type SQL } from "drizzle-orm";
 import type { DiscordOrgStatus } from "@okouai/api-contracts/contracts/integrations-discord";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -17,10 +16,6 @@ import { clerk$, isClerkResourceNotFound } from "../external/clerk";
 import { db$, writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
 import { publishDiscordChanged } from "./discord-realtime.service";
-import {
-  discordIdentityOwnersWhere,
-  unusedDiscordIdentityOwnersWhere,
-} from "./discord-identity-ownership.service";
 import { discordOauthStates } from "@okouai/db/schema/discord-oauth-state";
 import {
   discordIntegrationEnabledForOwner,
@@ -444,10 +439,9 @@ interface DiscordBindingDisconnect {
 const commitDiscordBindingDisconnect$ = command(
   async ({ set }, args: DiscordBindingDisconnect, signal: AbortSignal) => {
     const db = set(writeDb$);
-    // Attempt cancellation, child revocation and unused-parent release commit together.
-    return await db.transaction(async (tx) => {
-      signal.throwIfAborted();
-      const [candidate] = await tx
+    signal.throwIfAborted();
+    const candidate = db.$with("disconnect_discord_candidate").as(
+      db
         .select({
           guildId: discordOrgConnections.guildId,
           userId: discordOrgConnections.userId,
@@ -466,68 +460,47 @@ const commitDiscordBindingDisconnect$ = command(
               ? eq(discordOrgInstallations.orgId, args.orgId)
               : undefined,
           ),
-        );
-      signal.throwIfAborted();
-      if (!candidate) {
-        return [];
-      }
-      await tx
+        ),
+    );
+    const revoked = db.$with("cancelled_discord_disconnect_attempts").as(
+      db
         .delete(discordOauthStates)
         .where(
           and(
-            eq(discordOauthStates.userId, candidate.userId),
-            eq(discordOauthStates.orgId, candidate.orgId),
-          ),
-        );
-      signal.throwIfAborted();
-      const [installation] = await tx
-        .select({ guildId: discordOrgInstallations.guildId })
-        .from(discordOrgInstallations)
-        .where(
-          and(
-            eq(discordOrgInstallations.guildId, candidate.guildId),
-            eq(discordOrgInstallations.orgId, candidate.orgId),
+            eq(
+              discordOauthStates.userId,
+              db.select({ userId: candidate.userId }).from(candidate),
+            ),
+            eq(
+              discordOauthStates.orgId,
+              db.select({ orgId: candidate.orgId }).from(candidate),
+            ),
+            isNotNull(discordOauthStates.completionTokenHash),
           ),
         )
-        .for("update");
-      signal.throwIfAborted();
-      if (!installation) {
-        return [];
-      }
-      const identities = await tx
-        .select({ discordUserId: discordUserIdentities.discordUserId })
-        .from(discordUserIdentities)
-        .where(discordIdentityOwnersWhere([args.discordUserId]))
-        .orderBy(asc(discordUserIdentities.discordUserId))
-        .for("update");
-      signal.throwIfAborted();
-      const removed = await tx
-        .delete(discordOrgConnections)
-        .where(
-          and(
-            eq(discordOrgConnections.id, args.connectionId),
-            eq(discordOrgConnections.discordUserId, args.discordUserId),
-            eq(discordOrgConnections.userId, candidate.userId),
-            eq(discordOrgConnections.guildId, candidate.guildId),
-            args.orgId
-              ? eq(
-                  discordOrgConnections.guildId,
-                  tx
-                    .select({ guildId: discordOrgInstallations.guildId })
-                    .from(discordOrgInstallations)
-                    .where(eq(discordOrgInstallations.orgId, args.orgId)),
-                )
-              : undefined,
+        .returning({ id: discordOauthStates.id }),
+    );
+    // Consumed consent receipts are not pending attempts. Revoke only this exact
+    // connection; the exclusion index releases ownership with that same DELETE.
+    return await db
+      .with(candidate, revoked)
+      .delete(discordOrgConnections)
+      .where(
+        and(
+          eq(discordOrgConnections.id, args.connectionId),
+          eq(discordOrgConnections.discordUserId, args.discordUserId),
+          eq(
+            discordOrgConnections.userId,
+            db.select({ userId: candidate.userId }).from(candidate),
           ),
-        )
-        .returning({ userId: discordOrgConnections.userId });
-      signal.throwIfAborted();
-      await tx
-        .delete(discordUserIdentities)
-        .where(unusedDiscordIdentityOwnersWhere(identities));
-      signal.throwIfAborted();
-      return removed;
-    });
+          eq(
+            discordOrgConnections.guildId,
+            db.select({ guildId: candidate.guildId }).from(candidate),
+          ),
+          gte(db.select({ count: count() }).from(revoked), 0),
+        ),
+      )
+      .returning({ userId: discordOrgConnections.userId });
   },
 );
 

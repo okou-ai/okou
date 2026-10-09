@@ -61,17 +61,12 @@ export async function validatePermanentDiscordFoundation(
       "23505",
       "uq_discord_org_installations_org",
     );
-    await client.query(
-      `INSERT INTO discord_user_identities (discord_user_id, user_id)
-       VALUES ($1, $2), ($3, $4)`,
-      [senderA, userA, senderB, userB],
-    );
     await rejectWrite(
-      `INSERT INTO discord_org_connections (guild_id, discord_user_id, user_id)
-       VALUES ($1, 'unowned-sender', 'unowned-user')`,
-      [guildA],
+      `INSERT INTO discord_org_connections (guild_id, discord_user_id, user_id, oauth_grant_id)
+       VALUES ($1, 'unowned-sender', 'unowned-user', $2)`,
+      [guildA, randomUUID()],
       "23503",
-      "fk_discord_connection_identity_owner",
+      "fk_discord_connection_oauth_grant",
     );
     await client.query(
       `INSERT INTO discord_org_connections (id, guild_id, discord_user_id, user_id)
@@ -103,11 +98,10 @@ export async function validatePermanentDiscordFoundation(
       "uq_discord_org_connections_guild_user",
     );
     await rejectWrite(
-      `DELETE FROM discord_user_identities WHERE discord_user_id = $1`,
-      [senderA],
-      // PostgreSQL 18 reports restrict_violation; PostgreSQL 17 reports foreign_key_violation.
-      /^(?:23001|23503)$/u,
-      "fk_discord_connection_identity_owner",
+      `UPDATE discord_org_connections SET user_id = $1 WHERE id = $2`,
+      [userB, connections[2]],
+      "23P01",
+      "ex_discord_connections_global_sender_owner",
     );
     await client.query(
       `INSERT INTO discord_user_dm_preferences (discord_user_id, connection_id, user_id)
@@ -325,6 +319,30 @@ export async function validatePermanentDiscordFoundation(
     assert.equal(await countIds("discord_chat_ingress", ingress), 0);
     assert.equal(await countIds("chat_discord_context", contexts), 0);
     assert.equal(await countIds("discord_org_connections", connections), 1);
+    // Ownership remains reserved by the surviving other-guild connection.
+    await rejectWrite(
+      `INSERT INTO discord_org_connections (guild_id, discord_user_id, user_id) VALUES ($1, $2, $3)`,
+      [guildB, senderA, userB],
+      "23505",
+      "uq_discord_org_connections_guild_sender",
+    );
+    await client.query("DELETE FROM discord_org_connections WHERE id = $1", [
+      connections[2],
+    ]);
+    // Deleting the last actual connection releases authority in that same write.
+    await client.query(
+      `INSERT INTO discord_org_connections (guild_id, discord_user_id, user_id) VALUES ($1, $2, $3)`,
+      [guildB, senderA, userB],
+    );
+    assert.deepEqual(
+      (
+        await client.query(
+          `SELECT user_id FROM discord_org_connections WHERE guild_id = $1 AND discord_user_id = $2`,
+          [guildB, senderA],
+        )
+      ).rows,
+      [{ user_id: userB }],
+    );
     console.log(
       "Discord foundation ownership, dedupe, claim and deletion invariants passed",
     );

@@ -4,7 +4,8 @@ import {
   connectorOauthStates,
   connectorOauthCompletions,
 } from "@okouai/db/schema/connector-oauth-state";
-import { asc, inArray, lte } from "drizzle-orm";
+import { and, asc, inArray, isNotNull, isNull, lte } from "drizzle-orm";
+import { discordOrgGrants } from "@okouai/db/schema/discord-org-grant";
 
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
@@ -18,7 +19,8 @@ const cleanupExpiredOAuthRows$ = command(
     table:
       | typeof connectorOauthStates
       | typeof connectorOauthCompletions
-      | typeof discordOauthStates,
+      | typeof discordOauthStates
+      | typeof discordOrgGrants,
     args: {
       readonly cutoff: Date;
       readonly batchSize: number;
@@ -27,7 +29,15 @@ const cleanupExpiredOAuthRows$ = command(
   ): Promise<number> => {
     const db = set(writeDb$);
     const { cutoff, batchSize } = args;
-    const expiredWhere = lte(table.expiresAt, cutoff);
+    const expiredWhere = and(
+      lte(table.expiresAt, cutoff),
+      table === discordOauthStates
+        ? isNotNull(discordOauthStates.completionTokenHash)
+        : undefined,
+      table === discordOrgGrants
+        ? isNull(discordOrgGrants.approvedAt)
+        : undefined,
+    );
     let totalDeleted = 0;
 
     for (let batch = 0; batch < MAX_BATCHES; batch += 1) {
@@ -74,6 +84,12 @@ export const cleanupConnectorOauthStates$ = command(
       args,
       signal,
     );
-    return states + completions + discord;
+    const installationConsents = await set(
+      cleanupExpiredOAuthRows$,
+      discordOrgGrants,
+      args,
+      signal,
+    );
+    return states + completions + discord + installationConsents;
   },
 );

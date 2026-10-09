@@ -123,7 +123,10 @@ test("stages only the requesting owner's OAuth export content without capabiliti
   // the new source projection independently of the unchanged ZIP assembly.
   const documents = emitted.flatMap((bytes) => {
     const parsed: unknown = JSON.parse(bytes.startsWith("{") ? bytes : "null");
-    return parsed !== null && typeof parsed === "object" && "flow" in parsed
+    return parsed !== null &&
+      typeof parsed === "object" &&
+      "flow" in parsed &&
+      "phase" in parsed
       ? [parsed]
       : [];
   });
@@ -145,6 +148,35 @@ test("stages only the requesting owner's OAuth export content without capabiliti
     userId: owner.userId,
     orgId: owner.orgId,
     guildId: binding.guildId,
+  });
+  const consents = emitted.flatMap((bytes) => {
+    const parsed: unknown = JSON.parse(bytes.startsWith("{") ? bytes : "null");
+    return parsed !== null &&
+      typeof parsed === "object" &&
+      "flow" in parsed &&
+      !("phase" in parsed)
+      ? [parsed]
+      : [];
+  });
+  expect(consents).toHaveLength(1);
+  const consent = z
+    .object({
+      id: z.uuid(),
+      orgId: z.string(),
+      userId: z.string(),
+      flow: z.literal("install"),
+      guildId: z.string(),
+      discordUserId: z.string(),
+      botUserId: z.string(),
+      createdAt: z.iso.datetime(),
+    })
+    .strict()
+    .parse(consents[0]);
+  expect(consent).toMatchObject({
+    orgId: owner.orgId,
+    userId: owner.userId,
+    guildId: binding.guildId,
+    discordUserId: binding.discordUserId,
   });
   const contents = emitted.join("\n");
   const ownState = new URL(ownAttempt.body.authorizationUrl).searchParams.get(

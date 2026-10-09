@@ -1,101 +1,66 @@
-# Discord OAuth atomic binding
+# Atomic Discord OAuth binding and revocation
 
-PR #37968 replaces the new OAuth binding transaction with one schema-aware
-Drizzle statement. This follows main's no-new-non-billing-transaction rule
-introduced by #38288. It does not change the OAuth endpoints, proof protocol,
-feature containment, or production activation boundary.
+PR #37968 follows the API rule introduced by #38288: the new Discord operations execute one SQL statement inside their owning ccstate command, with no explicit non-billing transaction. OAuth endpoints, opener/consent-browser proofs, current membership checks, one guild per organization, user-isolated sessions and default-off activation remain unchanged.
 
-## Statement ownership
+## Business authorization records, not coordination state
 
-`commitDiscordOauthBinding$` owns the database handle and constructs these CTEs:
+Personal authorization and a shared bot installation have different owners and lifetimes. The authenticated start creates the real personal OAuth attempt; an install start also creates organization-owned installation consent with that same originating attempt ID. It contains the requesting organization, initiator, actual requested guild, expiry and later independently verified guild/bot evidence. It contains no personal Discord sender, capability hash, provider code or provider OAuth token.
 
-1. `claimed_discord_oauth` deletes and returns only the exact approved,
-   unexpired attempt owned by the originating user and organization and matching
-   its completion hash. Without this row, every dependent write is empty.
-2. `installed_discord_guild` runs only for an install attempt. The guild-key
-   upsert returns a new installation or the incumbent only when organization and
-   bot match. Its no-op update preserves incumbent name, installer and timestamps.
-   An occupied organization with a different guild hits the real organization
-   unique key. The upsert's native row/index arbitration replaces the previous
-   insert-plus-later-read; no additional coordination lock is introduced.
-3. `connected_discord_guild` runs only for a connect attempt. It reads the exact
-   current guild/org/bot and retains the existing parent `FOR SHARE` protection.
-   It cannot create or revive an uninstalled guild.
-4. `authorized_discord_guild` combines those mutually exclusive returned parent
-   rows, rather than reading a sibling CTE's inserted data from a base-table
-   snapshot. A rejected installation authorizes no identity or child write.
-5. `claimed_discord_identity` performs the existing owner-qualified upsert over
-   the global Discord-user key. It never transfers a different account's owner.
-6. `committed_discord_connection` inserts the connection or returns its exact
-   same-sender/same-owner incumbent. Its conflict target is the guild/sender key;
-   a different sender already bound to this guild/user hits the other unique
-   constraint and rolls the whole statement back.
+The callback writes verified personal and installation evidence in one statement. It still creates no installation or connection. Consent-browser approval remains independent of the opener. The original opener's final completion freshly revalidates membership and provider evidence.
 
-The connection's user expression consumes the identity CTE's returned owner.
-A rejected conditional upsert has no returned owner; the expression then retains
-**the authenticated attempt's actual user ID**, not a fabricated owner or a
-borrowed account. A new child with that rejected owner fails the existing owner
-FK. This data dependency forces identity arbitration before the child even when
-ownership is rejected, so failure cannot leave a new installation or identity
-behind. It is fail-closed SQL input selection, not an authorization fallback.
+A completed personal consent retains its actual approved evidence, but its completion hash is set to NULL. Equality against a supplied hash cannot match it; callback and approval phase guards also reject reuse. Its original TTL is not extended. Expired-attempt cleanup selects only unconsumed capabilities; it never expires an active personal authorization or an approved shared installation consent. These authorization records are also exported as owner-scoped `personal-consents` and `installation-consents`, without capabilities.
 
-All write sources use schema decoders and explicit aliases. Date parameters use
-the owning timestamp encoders. The statement captures one application timestamp
-for its expiry predicate and new rows; it adds no expiry grace or retry budget.
-No raw-result generic, result assertion, new schema field, trigger, database
-function, advisory lock, application mutex, or explicit transaction is added.
+These are persistent authorization/provenance records, not generic lock rows, epochs, sentinels, retry counters or artificial coordination fields. The new nullable lineage columns name actual authorizations; existing verified records are not assigned fabricated OAuth evidence.
 
-## Outcomes and publication
+## Atomic binding
 
-- An empty claimed result means an expired/consumed attempt and returns the
-  existing invalid-attempt outcome.
-- A claimed attempt without an authorized connection returns the existing
-  conflict outcome. No rejected parent authorizes an identity write.
-- Only `23505` for `uq_discord_org_installations_org` or
-  `uq_discord_org_connections_guild_user`, and `23503` for
-  `fk_discord_connection_identity_owner`, are converted into binding conflict.
-  All unrelated failures propagate. After a constraint rollback, the existing
-  exact owned-proof deletion preserves the non-replayable conflict outcome.
-- A fresh proposed connection UUID is compared with the returned connection ID
-  to identify the insert winner. Incumbent IDs and creation timestamps remain
-  unchanged; no PostgreSQL system-column heuristic determines welcome delivery.
-- The private command returns its settled statement outcome without discarding
-  successful commit facts on a post-commit request cancellation. The entry point
-  captures recipient facts from the statement, publishes the existing best-effort
-  change notification, then checks cancellation. Welcome delivery remains
-  independently authorized and runs only for the actual insert winner.
+`commitDiscordOauthBinding$` owns one schema-aware Drizzle statement:
 
-The new statement deliberately has one statement snapshot instead of the old
-multi-statement READ COMMITTED sequence. Parent/connection upsert `RETURNING`
-provides current incumbent outcomes after native unique-key arbitration; a
-base-table snapshot is not used to rediscover an inserted or waited-on winner.
-Admin recipients are captured in that statement's snapshot, and the private
-notification still contains no binding content or credentials. Provider work
-and realtime/welcome I/O remain outside the database operation.
+1. `claimed_discord_oauth` burns exactly the approved, unexpired originating user's completion hash. An empty claim permits no dependent binding write.
+2. Installation consent must match the originating ID, organization, initiator and freshly verified guild/bot. Install upserts accept an incumbent only for the same organization/bot. Connect reads the exact existing parent under the previously established parent-share protection; it cannot recreate an uninstalled guild.
+3. Only a returned new installation activates its organization consent. Its original `created_at` and the consent's actual approval timestamp use the same captured application time. A repeated installation preserves its original grant, installer, name and timestamps. Immediate PostgreSQL RI checks run at statement end and observe the dependent consent update; the permanent schema validator executes this exact child-before-final-approval pattern on PostgreSQL.
+4. `committed_discord_connection` references the exact personal consent's ID, user, independently verified Discord sender and guild. An idempotent same-owner upsert preserves connection ID/creation time while recording the newly completed genuine consent.
+5. Native uniqueness arbitrates guild/org and guild/user conflicts. The global ownership exclusion constraint below arbitrates sender ownership, including concurrent writes not visible to an ordinary SELECT's statement snapshot.
 
-## Public regression coverage
+Only exact `23505` failures for the two expected business keys and `23P01` for `ex_discord_connections_global_sender_owner` become binding conflicts. Unrelated failures propagate. Constraint rejection rolls back every CTE write; exact owned-proof deletion then preserves the existing non-replayable conflict outcome. Empty authorization still grants no access.
 
-All scenarios use genuine start, provider callback, consent approval, completion
-and status/disconnect APIs with only external Clerk/Discord dependencies mocked.
-No business-row fixtures, private worker, test-only route or SQL pause point is
-used.
+The proposed fresh connection UUID versus returned connection ID identifies the actual insert winner. No system-column heuristic is used. Returned successful facts publish before post-commit cancellation is observed; only the actual insert winner attempts an independently authorized, best-effort welcome.
 
-The existing suite covers cross-org guild ownership, global identity theft,
-same-owner concurrent convergence, one-use approval/completion, request
-cancellation during provider verification, last-old-guild disconnect versus a
-new-guild claim, uninstall revocation and independently authorized welcome.
+## Global ownership and release
 
-Three additional cases protect the new constraint arbitration:
+The canonical PostgreSQL contract is:
 
-- `does not reserve a replacement Discord identity after an occupied-user binding fails`:
-  another account can subsequently authorize that candidate sender in a different
-  guild, while the original connection is unchanged and the failed proof is spent.
-- `does not reserve the losing identity when two verified senders race for one workspace member`:
-  one sender wins; another account can authorize the losing sender normally.
-- `keeps one guild per workspace when two approved installations race without reserving the losing guild`:
-  the organization unique key selects one guild; another organization can then
-  install the losing guild normally.
+```sql
+EXCLUDE USING gist (discord_user_id WITH =, user_id WITH <>)
+```
 
-This focused repair does not complete the whole PR's final review, restore
-completed ZIP/download coverage, activate Discord/Gateway or establish live-guild
-acceptance. Those claims remain separate.
+`btree_gist` enforces that an active Discord sender can have many guild connections for the same Okou user, but cannot belong to different Okou users. Existing guild/sender and guild/user unique constraints still apply. This is native business-key arbitration, not an application lock or retry protocol.
+
+There is no separately committed identity reservation to squat on a sender. Deleting the last actual connection releases the exclusion-index entry in that same write. A same-owner connection in another guild retains its own entry and is not deleted by an identity-parent cascade. Failed or losing bindings reserve neither an identity nor a guild. The previous standalone identity table and its antijoin/parent-lock cleanup are replaced by this equivalent active-ownership invariant, not by omitting release.
+
+## Six atomic revocations
+
+| Operation             | One-statement work                                                                                                                                                                                                         |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Binding disconnect    | Cancel still-unconsumed attempts for the captured user/org; delete only the exact connection/sender/user/guild. Consumed audit records are not pending attempts and cannot cause another replacement sender to be deleted. |
+| Workspace uninstall   | Revoke personal authorizations, revoke organization installation consent, and delete genuinely historical parents lacking OAuth lineage.                                                                                   |
+| Gateway guild removal | Claim the exact replay receipt and perform the same guild-scoped revocation. Every revocation is gated by the new receipt; a duplicate does no deletion. A failure cannot commit a receipt without its cleanup.            |
+| Member removal        | Revoke that user's personal authorizations in that organization; remove only historical unlineaged personal connections. Shared installation consent survives.                                                             |
+| Organization erasure  | Revoke personal authorizations and organization-owned installation consent in that organization, plus historical parents.                                                                                                  |
+| Account erasure       | Revoke all personal authorizations, anonymize the user's installation-consent initiator, remove historical personal connections and clear historical installer metadata. Shared installations and peers survive.           |
+
+The personal-grant FK cascades only its exact owner/sender/guild connection. The organization-grant FK cascades only its installed guild. Updating an erased initiator to NULL cascades to the installation's installer field, not to the guild's existence. PostgreSQL RI actions handle children committed while a matching authorization-row deletion/update waited; ordinary sibling-CTE antijoins are not used as a substitute for fresh-after-lock visibility. Dependent CTE cardinality expressions preserve the established personal-authorization → shared-authorization ordering without new locks.
+
+Direct deletes/updates cover only historical NULL-lineage rows, which are disjoint from the new authorization cascades. Every new production binding supplies genuine lineage. Existing verified rows remain usable under the same native global-ownership constraint; no historical grant is invented. This supported historical state is not an expiring rollout bridge.
+
+Removal acknowledgments and scoped recipients come from real returned authorization/parent facts. Recipient branches use `UNION ALL`, not a grants × members × administrators Cartesian product. Raw projected booleans have an explicit PostgreSQL boolean cast and runtime decoder; user IDs have a nullable text decoder. The pure recipient helper executes no query. Publication remains post-commit and best-effort, not durable delivery.
+
+## Migration and verification boundaries
+
+Drizzle generated migration 1358 and its snapshot/journal. Shipped main history and PR migration 1357 remain unchanged. Its fail-closed historical ownership backfill still rejects ambiguous existing senders; the new exclusion constraint independently validates active ownership. The generated SQL required demonstrated dependency-order corrections: remove the old FK before dropping its table, and install the personal-grant unique key before referencing it. New existing-table FKs use separate NOT VALID/VALIDATE statements. The exclusion contract is checked in independently because Drizzle does not model it, and is applied to the freshly generated schema as well as historical replay. Application-defined trigger/function inventories remain empty.
+
+PGlite loads its actual supported `btree_gist` extension rather than ignoring the new invariant. User regressions remain genuine public OAuth/start/callback/approval/completion/status/disconnect flows with external Clerk/Discord mocks only. The existing four-iteration same-owner new-guild/last-old-guild disconnect case remains intact. A new public case proves that reaping expired opener capabilities does not revoke a completed binding, and that last disconnect releases its sender for another legitimate member even while a historical consent receipt remains.
+
+The permanent PostgreSQL validator is physical schema verification, not public-user lifecycle evidence. It checks provenance rejection, dependent statement-end RI, exact installer anonymization, peer preservation and scoped cascades against both replayed and freshly generated schemas.
+
+The export regression independently observes owner-only attempts and consumed personal-consent documents at the external S3 boundary. It does not complete the ZIP/download lifecycle. No operator cron, private worker driver, private binding constructor or enlarged work budget closes that remaining archive-coverage gap. Review, CI, protected merge, deployment and live Discord acceptance remain separate receipts; this implementation activates none of them.

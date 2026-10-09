@@ -1961,6 +1961,13 @@
       "when": 1791516395955,
       "tag": "1357_discord_oauth_onboarding",
       "breakpoints": true
+    },
+    {
+      "idx": 1358,
+      "version": "7",
+      "when": 1791528957779,
+      "tag": "1358_discord_native_grant_lifecycle",
+      "breakpoints": true
     }
   ]
 }

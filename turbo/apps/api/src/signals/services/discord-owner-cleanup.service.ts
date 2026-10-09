@@ -1,197 +1,139 @@
 import { command } from "ccstate";
 import { discordOauthStates } from "@okouai/db/schema/discord-oauth-state";
+import { discordOrgGrants } from "@okouai/db/schema/discord-org-grant";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
 import { discordOrgInstallations } from "@okouai/db/schema/discord-org-installation";
-import { discordUserIdentities } from "@okouai/db/schema/discord-user-identity";
-import { and, asc, eq, inArray, or } from "drizzle-orm";
-import {
-  discordIdentityOwnersWhere,
-  unusedDiscordIdentityOwnersWhere,
-} from "./discord-identity-ownership.service";
+import { and, count, eq, gte, inArray, isNull } from "drizzle-orm";
 import { writeDb$ } from "../external/db";
 
-/** Remove local authorization only; the bot credential is shared by all guilds. */
+/** Personal grants revoke children by FK; shared installation consent survives. */
 export const deleteDiscordOrgMemberData$ = command(
   async (
     { set },
     args: { readonly orgId: string; readonly userId: string },
     signal: AbortSignal,
   ): Promise<void> => {
-    // Pending proofs, member connections and unused identity parents revoke atomically.
-    await set(writeDb$).transaction(async (tx) => {
-      await tx
+    signal.throwIfAborted();
+    const db = set(writeDb$);
+    const revoked = db.$with("revoked_discord_member_grants").as(
+      db
         .delete(discordOauthStates)
         .where(
           and(
             eq(discordOauthStates.userId, args.userId),
             eq(discordOauthStates.orgId, args.orgId),
           ),
-        );
-      signal.throwIfAborted();
-      const installations = await tx
-        .select({ guildId: discordOrgInstallations.guildId })
-        .from(discordOrgInstallations)
-        .where(eq(discordOrgInstallations.orgId, args.orgId))
-        .orderBy(asc(discordOrgInstallations.guildId))
-        .for("update");
-      signal.throwIfAborted();
-      const guildIds = installations.map((installation) => {
-        return installation.guildId;
-      });
-      if (guildIds.length === 0) {
-        return;
-      }
-      const connections = await tx
-        .select({ discordUserId: discordOrgConnections.discordUserId })
-        .from(discordOrgConnections)
-        .where(
-          and(
-            eq(discordOrgConnections.userId, args.userId),
-            inArray(discordOrgConnections.guildId, guildIds),
-          ),
-        );
-      signal.throwIfAborted();
-      const identities = await tx
-        .select({ discordUserId: discordUserIdentities.discordUserId })
-        .from(discordUserIdentities)
-        .where(
-          discordIdentityOwnersWhere(
-            connections.map((connection) => {
-              return connection.discordUserId;
-            }),
-          ),
         )
-        .orderBy(asc(discordUserIdentities.discordUserId))
-        .for("update");
-      signal.throwIfAborted();
-      await tx
-        .delete(discordOrgConnections)
-        .where(
-          and(
-            eq(discordOrgConnections.userId, args.userId),
-            inArray(discordOrgConnections.guildId, guildIds),
+        .returning({ id: discordOauthStates.id }),
+    );
+    await db
+      .with(revoked)
+      .delete(discordOrgConnections)
+      .where(
+        and(
+          eq(discordOrgConnections.userId, args.userId),
+          isNull(discordOrgConnections.oauthGrantId),
+          inArray(
+            discordOrgConnections.guildId,
+            db
+              .select({ guildId: discordOrgInstallations.guildId })
+              .from(discordOrgInstallations)
+              .where(eq(discordOrgInstallations.orgId, args.orgId)),
           ),
-        );
-      signal.throwIfAborted();
-      await tx
-        .delete(discordUserIdentities)
-        .where(unusedDiscordIdentityOwnersWhere(identities));
-      signal.throwIfAborted();
-    });
+          gte(db.select({ count: count() }).from(revoked), 0),
+        ),
+      );
     signal.throwIfAborted();
   },
 );
 
 export const deleteDiscordOrgData$ = command(
   async ({ set }, orgId: string, signal: AbortSignal): Promise<void> => {
-    // Guild removal, proof cancellation and unused-parent release must commit together.
-    await set(writeDb$).transaction(async (tx) => {
-      await tx
-        .delete(discordOauthStates)
-        .where(eq(discordOauthStates.orgId, orgId));
-      signal.throwIfAborted();
-      const installations = await tx
-        .select({ guildId: discordOrgInstallations.guildId })
-        .from(discordOrgInstallations)
-        .where(eq(discordOrgInstallations.orgId, orgId))
-        .orderBy(asc(discordOrgInstallations.guildId))
-        .for("update");
-      signal.throwIfAborted();
-      const guildIds = installations.map((installation) => {
-        return installation.guildId;
-      });
-      if (guildIds.length === 0) {
-        return;
-      }
-      const connections = await tx
-        .select({ discordUserId: discordOrgConnections.discordUserId })
-        .from(discordOrgConnections)
-        .where(inArray(discordOrgConnections.guildId, guildIds));
-      signal.throwIfAborted();
-      const identities = await tx
-        .select({ discordUserId: discordUserIdentities.discordUserId })
-        .from(discordUserIdentities)
+    signal.throwIfAborted();
+    const db = set(writeDb$);
+    const revoked = db
+      .$with("revoked_discord_org_member_grants")
+      .as(
+        db
+          .delete(discordOauthStates)
+          .where(eq(discordOauthStates.orgId, orgId))
+          .returning({ id: discordOauthStates.id }),
+      );
+    const uninstalled = db.$with("revoked_discord_org_installation_grants").as(
+      db
+        .delete(discordOrgGrants)
         .where(
-          discordIdentityOwnersWhere(
-            connections.map((connection) => {
-              return connection.discordUserId;
-            }),
+          and(
+            eq(discordOrgGrants.orgId, orgId),
+            gte(db.select({ count: count() }).from(revoked), 0),
           ),
         )
-        .orderBy(asc(discordUserIdentities.discordUserId))
-        .for("update");
-      signal.throwIfAborted();
-      await tx
-        .delete(discordOrgInstallations)
-        .where(eq(discordOrgInstallations.orgId, orgId));
-      signal.throwIfAborted();
-      await tx
-        .delete(discordUserIdentities)
-        .where(unusedDiscordIdentityOwnersWhere(identities));
-      signal.throwIfAborted();
-    });
+        .returning({ id: discordOrgGrants.id }),
+    );
+    await db
+      .with(revoked, uninstalled)
+      .delete(discordOrgInstallations)
+      .where(
+        and(
+          eq(discordOrgInstallations.orgId, orgId),
+          isNull(discordOrgInstallations.orgGrantId),
+          gte(db.select({ count: count() }).from(uninstalled), 0),
+        ),
+      );
     signal.throwIfAborted();
   },
 );
 
 export const deleteDiscordUserData$ = command(
   async ({ set }, userId: string, signal: AbortSignal): Promise<void> => {
-    // Account proof/connection revocation and identity release have one transaction owner.
-    await set(writeDb$).transaction(async (tx) => {
-      await tx
-        .delete(discordOauthStates)
-        .where(eq(discordOauthStates.userId, userId));
-      signal.throwIfAborted();
-      const connectionGuilds = tx
-        .select({ guildId: discordOrgConnections.guildId })
-        .from(discordOrgConnections)
-        .where(eq(discordOrgConnections.userId, userId));
-      // Stable installation -> identity -> connection ordering also applies to
-      // account cleanup. The surviving org installation is not account data.
-      await tx
-        .select({ guildId: discordOrgInstallations.guildId })
-        .from(discordOrgInstallations)
+    signal.throwIfAborted();
+    const db = set(writeDb$);
+    const revoked = db
+      .$with("revoked_discord_account_grants")
+      .as(
+        db
+          .delete(discordOauthStates)
+          .where(eq(discordOauthStates.userId, userId))
+          .returning({ id: discordOauthStates.id }),
+      );
+    const anonymized = db.$with("anonymized_discord_installation_consent").as(
+      db
+        .update(discordOrgGrants)
+        .set({ initiatedByUserId: null })
         .where(
-          or(
-            inArray(discordOrgInstallations.guildId, connectionGuilds),
-            eq(discordOrgInstallations.installedByUserId, userId),
+          and(
+            eq(discordOrgGrants.initiatedByUserId, userId),
+            gte(db.select({ count: count() }).from(revoked), 0),
           ),
         )
-        .orderBy(asc(discordOrgInstallations.guildId))
-        .for("update");
-      signal.throwIfAborted();
-      const owned = await tx
-        .select({ discordUserId: discordUserIdentities.discordUserId })
-        .from(discordUserIdentities)
-        .where(eq(discordUserIdentities.userId, userId));
-      signal.throwIfAborted();
-      const identities = await tx
-        .select({ discordUserId: discordUserIdentities.discordUserId })
-        .from(discordUserIdentities)
-        .where(
-          discordIdentityOwnersWhere(
-            owned.map((identity) => {
-              return identity.discordUserId;
-            }),
-          ),
-        )
-        .orderBy(asc(discordUserIdentities.discordUserId))
-        .for("update");
-      signal.throwIfAborted();
-      await tx
-        .update(discordOrgInstallations)
-        .set({ installedByUserId: null })
-        .where(eq(discordOrgInstallations.installedByUserId, userId));
-      signal.throwIfAborted();
-      await tx
-        .delete(discordOrgConnections)
-        .where(eq(discordOrgConnections.userId, userId));
-      signal.throwIfAborted();
-      await tx
-        .delete(discordUserIdentities)
-        .where(unusedDiscordIdentityOwnersWhere(identities));
-      signal.throwIfAborted();
-    });
+        .returning({ id: discordOrgGrants.id }),
+    );
+    const legacyConnections = db
+      .$with("revoked_legacy_discord_account_connections")
+      .as(
+        db
+          .delete(discordOrgConnections)
+          .where(
+            and(
+              eq(discordOrgConnections.userId, userId),
+              isNull(discordOrgConnections.oauthGrantId),
+            ),
+          )
+          .returning({ id: discordOrgConnections.id }),
+      );
+    // The grant-installer FK clears even an installation committed while the
+    // first DELETE waited. Only genuinely historical rows need a direct UPDATE.
+    await db
+      .with(revoked, anonymized, legacyConnections)
+      .update(discordOrgInstallations)
+      .set({ installedByUserId: null })
+      .where(
+        and(
+          eq(discordOrgInstallations.installedByUserId, userId),
+          isNull(discordOrgInstallations.orgGrantId),
+          gte(db.select({ count: count() }).from(anonymized), 0),
+        ),
+      );
     signal.throwIfAborted();
   },
 );

@@ -10,7 +10,7 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { discordOrgInstallations } from "./discord-org-installation";
-import { discordUserIdentities } from "./discord-user-identity";
+import { discordOauthStates } from "./discord-oauth-state";
 
 /** A verified Discord sender binding; organization ownership comes from its guild. */
 export const discordOrgConnections = pgTable(
@@ -27,18 +27,27 @@ export const discordOrgConnections = pgTable(
       ),
     discordUserId: varchar("discord_user_id", { length: 255 }).notNull(),
     userId: text("user_id").notNull(),
+    // Historical verified connections predate OAuth; new bindings record the real grant.
+    oauthGrantId: uuid("oauth_grant_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => {
     return [
       foreignKey({
-        name: "fk_discord_connection_identity_owner",
-        columns: [table.discordUserId, table.userId],
-        foreignColumns: [
-          discordUserIdentities.discordUserId,
-          discordUserIdentities.userId,
+        name: "fk_discord_connection_oauth_grant",
+        columns: [
+          table.oauthGrantId,
+          table.userId,
+          table.discordUserId,
+          table.guildId,
         ],
-      }).onDelete("restrict"),
+        foreignColumns: [
+          discordOauthStates.id,
+          discordOauthStates.userId,
+          discordOauthStates.verifiedDiscordUserId,
+          discordOauthStates.verifiedGuildId,
+        ],
+      }).onDelete("cascade"),
       unique("uq_discord_org_connections_guild_sender").on(
         table.guildId,
         table.discordUserId,

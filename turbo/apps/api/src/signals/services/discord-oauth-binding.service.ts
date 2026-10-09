@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { command } from "ccstate";
-import { and, eq, gt, sql, type SQL } from "drizzle-orm";
+import { and, eq, gt, sql } from "drizzle-orm";
 import { discordOauthStates } from "@okouai/db/schema/discord-oauth-state";
-import { discordUserIdentities } from "@okouai/db/schema/discord-user-identity";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
 import { discordOrgInstallations } from "@okouai/db/schema/discord-org-installation";
+import { discordOrgGrants } from "@okouai/db/schema/discord-org-grant";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { nowDate } from "../../lib/time";
-import { isForeignKeyViolation, isUniqueViolation } from "../../lib/pg-errors";
+import { isUniqueViolation } from "../../lib/pg-errors";
 import { writeDb$ } from "../external/db";
 import { publishDiscordChanged } from "./discord-realtime.service";
 import { notifyDiscordConnection$ } from "./discord-oauth-welcome.service";
@@ -33,7 +33,10 @@ function approvedAttemptWhere(attempt: DiscordOauthAttempt) {
     eq(discordOauthStates.id, attempt.id),
     eq(discordOauthStates.userId, attempt.userId),
     eq(discordOauthStates.orgId, attempt.orgId),
-    eq(discordOauthStates.completionTokenHash, attempt.completionTokenHash),
+    eq(
+      discordOauthStates.completionTokenHash,
+      sql`${attempt.completionTokenHash}`,
+    ),
     eq(discordOauthStates.phase, "approved"),
   );
 }
@@ -56,6 +59,9 @@ function installationValues(args: DiscordOauthBindingArgs, createdAt: Date) {
     installedByUserId: sql`${attempt.userId}`
       .mapWith(discordOrgInstallations.installedByUserId)
       .as("installed_by_user_id"),
+    orgGrantId: sql`${attempt.id}`
+      .mapWith(discordOrgInstallations.orgGrantId)
+      .as("org_grant_id"),
     createdAt: sql`${sql.param(createdAt, discordOrgInstallations.createdAt)}`
       .mapWith(discordOrgInstallations.createdAt)
       .as("created_at"),
@@ -65,11 +71,7 @@ function installationValues(args: DiscordOauthBindingArgs, createdAt: Date) {
   };
 }
 
-function connectionValues(
-  args: DiscordOauthCommitArgs,
-  createdAt: Date,
-  ownerUserId: SQL,
-) {
+function connectionValues(args: DiscordOauthCommitArgs, createdAt: Date) {
   return {
     id: sql`${args.connectionId}`.mapWith(discordOrgConnections.id).as("id"),
     guildId: sql`${args.evidence.guildId}`
@@ -78,11 +80,12 @@ function connectionValues(
     discordUserId: sql`${args.evidence.discordUserId}`
       .mapWith(discordOrgConnections.discordUserId)
       .as("discord_user_id"),
-    // A rejected upsert has no RETURNING row. Retain the authenticated caller's
-    // real identity for the FK check, never invent or adopt a different owner.
-    userId: sql`COALESCE(${ownerUserId}, ${args.attempt.userId})`
+    userId: sql`${args.attempt.userId}`
       .mapWith(discordOrgConnections.userId)
       .as("user_id"),
+    oauthGrantId: sql`${args.attempt.id}`
+      .mapWith(discordOrgConnections.oauthGrantId)
+      .as("oauth_grant_id"),
     createdAt: sql`${sql.param(createdAt, discordOrgConnections.createdAt)}`
       .mapWith(discordOrgConnections.createdAt)
       .as("created_at"),
@@ -97,12 +100,13 @@ function isBindingConflict(error: unknown): boolean {
     return true;
   }
   return (
-    isForeignKeyViolation(error) &&
     error instanceof Error &&
     typeof error.cause === "object" &&
     error.cause !== null &&
+    "code" in error.cause &&
+    error.cause.code === "23P01" &&
     "constraint" in error.cause &&
-    error.cause.constraint === "fk_discord_connection_identity_owner"
+    error.cause.constraint === "ex_discord_connections_global_sender_owner"
   );
 }
 
@@ -130,7 +134,8 @@ const commitDiscordOauthBinding$ = command(
     const db = set(writeDb$);
     const claimed = db.$with("claimed_discord_oauth").as(
       db
-        .delete(discordOauthStates)
+        .update(discordOauthStates)
+        .set({ completionTokenHash: null })
         .where(
           and(
             approvedAttemptWhere(attempt),
@@ -142,14 +147,35 @@ const commitDiscordOauthBinding$ = command(
           flow: discordOauthStates.flow,
         }),
     );
+    const installationConsent = db
+      .$with("eligible_discord_installation_consent")
+      .as(
+        db
+          .select({ id: discordOrgGrants.id })
+          .from(discordOrgGrants)
+          .where(
+            and(
+              eq(
+                discordOrgGrants.id,
+                db
+                  .select({ id: claimed.id })
+                  .from(claimed)
+                  .where(eq(claimed.flow, "install")),
+              ),
+              eq(discordOrgGrants.orgId, attempt.orgId),
+              eq(discordOrgGrants.initiatedByUserId, attempt.userId),
+              eq(discordOrgGrants.verifiedGuildId, evidence.guildId),
+              eq(discordOrgGrants.verifiedBotUserId, evidence.botUserId),
+            ),
+          ),
+      );
     const installed = db.$with("installed_discord_guild").as(
       db
         .insert(discordOrgInstallations)
         .select(
           db
             .select(installationValues(args, createdAt))
-            .from(claimed)
-            .where(eq(claimed.flow, "install")),
+            .from(installationConsent),
         )
         .onConflictDoUpdate({
           target: discordOrgInstallations.guildId,
@@ -161,7 +187,27 @@ const commitDiscordOauthBinding$ = command(
             eq(discordOrgInstallations.botUserId, evidence.botUserId),
           ),
         })
-        .returning({ guildId: discordOrgInstallations.guildId }),
+        .returning({
+          guildId: discordOrgInstallations.guildId,
+          orgGrantId: discordOrgInstallations.orgGrantId,
+        }),
+    );
+    // Only a returned new installation activates this organization consent.
+    // Immediate FK checks run at statement end, after these dependent CTEs.
+    const approvedGrant = db.$with("approved_discord_installation_consent").as(
+      db
+        .update(discordOrgGrants)
+        .set({ approvedAt: createdAt })
+        .where(
+          eq(
+            discordOrgGrants.id,
+            db
+              .select({ id: installed.orgGrantId })
+              .from(installed)
+              .where(eq(installed.orgGrantId, attempt.id)),
+          ),
+        )
+        .returning({ id: discordOrgGrants.id }),
     );
     const existing = db.$with("connected_discord_guild").as(
       db
@@ -183,55 +229,37 @@ const commitDiscordOauthBinding$ = command(
         .from(installed)
         .unionAll(db.select({ guildId: existing.guildId }).from(existing)),
     );
-    const identity = db.$with("claimed_discord_identity").as(
-      db
-        .insert(discordUserIdentities)
-        .select(
-          db
-            .select({
-              discordUserId: sql`${evidence.discordUserId}`
-                .mapWith(discordUserIdentities.discordUserId)
-                .as("discord_user_id"),
-              userId: sql`${attempt.userId}`
-                .mapWith(discordUserIdentities.userId)
-                .as("user_id"),
-            })
-            .from(installation),
-        )
-        .onConflictDoUpdate({
-          target: discordUserIdentities.discordUserId,
-          set: { userId: attempt.userId },
-          setWhere: eq(discordUserIdentities.userId, attempt.userId),
-        })
-        .returning({ userId: discordUserIdentities.userId }),
-    );
     const connection = db.$with("committed_discord_connection").as(
       db
         .insert(discordOrgConnections)
-        // Keep the identity CTE dependency even on a rejected owner. The actual
-        // owner FK rejects that child and rolls back every preceding CTE write.
-        .select(
-          db
-            .select(connectionValues(args, createdAt, sql`${identity.userId}`))
-            .from(installation)
-            .leftJoin(identity, sql`true`),
-        )
+        // The global exclusion constraint arbitrates active ownership, including
+        // rows committed after this statement's snapshot. The grant FK ties the
+        // child to the exact consent evidence and makes revocation cascade atomic.
+        .select(db.select(connectionValues(args, createdAt)).from(installation))
         .onConflictDoUpdate({
           target: [
             discordOrgConnections.guildId,
             discordOrgConnections.discordUserId,
           ],
-          set: { userId: attempt.userId },
+          set: { oauthGrantId: attempt.id },
           setWhere: eq(discordOrgConnections.userId, attempt.userId),
         })
         .returning({ id: discordOrgConnections.id }),
     );
     // A different sender for this guild/user hits the other real unique key and
-    // rolls back, instead of leaving newly claimed identity ownership behind.
+    // rolls back, instead of reserving a guild or transferring sender ownership.
     // Capture the settled commit before any post-commit cancellation check.
     return await settle(
       db
-        .with(claimed, installed, existing, installation, identity, connection)
+        .with(
+          claimed,
+          installationConsent,
+          installed,
+          approvedGrant,
+          existing,
+          installation,
+          connection,
+        )
         .select({
           attemptId: claimed.id,
           connectionId: connection.id,

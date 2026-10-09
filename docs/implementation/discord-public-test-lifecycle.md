@@ -94,8 +94,8 @@ the demonstrated snapshot/journal collision by retaining main's generated histor
 and regenerating the unreleased Discord schema as
 `1346_discord_oauth_onboarding`. The four earlier PR-only Discord migrations were
 never a production release and are not a supported historical deployment.
-The generated final schema preserves separate proof hashes, phase checks and the
-RESTRICT identity owner FK; its data-only ownership backfill remains fail-closed.
+That revision's generated schema preserved separate proof hashes, phase checks and the
+RESTRICT identity owner FK; its data-only ownership backfill remained fail-closed.
 The earlier revision-specific receipts below remain historical, not evidence for
 the consolidated migration. On 2026-10-09, main's migration frontier advanced to
 1355, so the same unreleased schema was regenerated again as
@@ -104,8 +104,12 @@ same fail-closed data-only backfill. A later demonstrated collision with main's
 `1356_drop_organization_usage_allowance` required retaining that main migration
 and regenerating the still-unreleased Discord schema as
 `1357_discord_oauth_onboarding`, again with Drizzle metadata and the identical
-fail-closed backfill. This is the current migration; earlier 1346/1356 Discord
-receipts are historical.
+fail-closed backfill. Migration 1357 remains intact in the current chain; earlier
+1346/1356 Discord receipts are historical. Drizzle-generated migration 1358 adds
+real personal/organization authorization lineage and replaces the separate
+identity reservation with a native active-connection ownership exclusion constraint.
+It adds no fabricated historical OAuth grants, coordinator field, custom database
+function or trigger. See [atomic binding and revocation](discord-oauth-atomic-binding.md).
 
 ## Final export-boundary correction
 
@@ -138,6 +142,10 @@ OAuth-attempt fields. It verifies the requesting owner's guild/org/user, peer
 exclusion, and absence of issued state/completion capabilities and their hashes.
 This is meaningful execution coverage for the new source projection: it fails
 if selection crosses ownership or serialization exposes extra capability fields.
+The final consent model also stages one strictly decoded eight-field personal
+consent document for the same requester, separately from the pending attempt.
+Its evidence is the owner's real completed OAuth flow, not a private constructor.
+The consent adds no issued capability, hash or redirect URI to exported content.
 It is **not** a completed ZIP/download test, and does not restore the historical
 ingress/context/notice archive coverage. ZIP assembly/download code is unchanged
 by this PR. The external-storage assertion follows the provider-boundary rules

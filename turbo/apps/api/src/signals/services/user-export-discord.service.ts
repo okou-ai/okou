@@ -1,11 +1,22 @@
 import { discordOauthStates } from "@okouai/db/schema/discord-oauth-state";
+import { discordOrgGrants } from "@okouai/db/schema/discord-org-grant";
 import { chatDiscordContext } from "@okouai/db/schema/chat-discord-context";
 import { discordChatIngress } from "@okouai/db/schema/discord-chat-ingress";
 import { discordChatThreadRoutes } from "@okouai/db/schema/discord-chat-thread-route";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
 import { discordOrgInstallations } from "@okouai/db/schema/discord-org-installation";
 import { discordUserDmPreferences } from "@okouai/db/schema/discord-user-dm-preference";
-import { and, asc, eq, getTableColumns, gt, inArray, lte } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  getTableColumns,
+  gt,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+} from "drizzle-orm";
 import { z } from "zod";
 
 import { command } from "ccstate";
@@ -19,6 +30,8 @@ export const discordExportKindSchema = z.enum([
   "ingress",
   "contexts",
   "oauth-attempts",
+  "installation-consents",
+  "personal-consents",
 ]);
 
 type DiscordExportKind = z.infer<typeof discordExportKindSchema>;
@@ -55,6 +68,7 @@ const readDiscordOauthAttemptsPage$ = command(
       .where(
         and(
           eq(discordOauthStates.userId, userId),
+          isNotNull(discordOauthStates.completionTokenHash),
           lte(discordOauthStates.createdAt, startedAt),
           cursor ? gt(discordOauthStates.id, cursor) : undefined,
         ),
@@ -126,6 +140,50 @@ export const readDiscordUserExportPage$ = command(
 
     const read = async () => {
       switch (args.kind) {
+        case "personal-consents": {
+          return await db
+            .select({
+              key: discordOauthStates.id,
+              row: {
+                id: discordOauthStates.id,
+                orgId: discordOauthStates.orgId,
+                userId: discordOauthStates.userId,
+                flow: discordOauthStates.flow,
+                guildId: discordOauthStates.verifiedGuildId,
+                discordUserId: discordOauthStates.verifiedDiscordUserId,
+                botUserId: discordOauthStates.verifiedBotUserId,
+                createdAt: discordOauthStates.createdAt,
+              },
+            })
+            .from(discordOauthStates)
+            .where(
+              and(
+                eq(discordOauthStates.userId, userId),
+                isNull(discordOauthStates.completionTokenHash),
+                lte(discordOauthStates.createdAt, startedAt),
+                cursor ? gt(discordOauthStates.id, cursor) : undefined,
+              ),
+            )
+            .orderBy(asc(discordOauthStates.id))
+            .limit(PAGE_SIZE);
+        }
+        case "installation-consents": {
+          return await db
+            .select({
+              key: discordOrgGrants.id,
+              row: getTableColumns(discordOrgGrants),
+            })
+            .from(discordOrgGrants)
+            .where(
+              and(
+                eq(discordOrgGrants.initiatedByUserId, userId),
+                lte(discordOrgGrants.createdAt, startedAt),
+                cursor ? gt(discordOrgGrants.id, cursor) : undefined,
+              ),
+            )
+            .orderBy(asc(discordOrgGrants.id))
+            .limit(PAGE_SIZE);
+        }
         case "oauth-attempts": {
           return await set(readDiscordOauthAttemptsPage$, args, signal);
         }

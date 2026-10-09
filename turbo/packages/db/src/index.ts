@@ -71,7 +71,7 @@ import * as slackOrgInstallationSchema from "./schema/slack-org-installation";
 import * as slackOrgConnectionSchema from "./schema/slack-org-connection";
 import * as slackChatThreadRouteSchema from "./schema/slack-chat-thread-route";
 import * as slackChatIngressSchema from "./schema/slack-chat-ingress";
-import * as discordUserIdentitySchema from "./schema/discord-user-identity";
+import * as discordOrgGrantSchema from "./schema/discord-org-grant";
 import * as discordOauthStateSchema from "./schema/discord-oauth-state";
 import * as discordOrgInstallationSchema from "./schema/discord-org-installation";
 import * as discordOrgConnectionSchema from "./schema/discord-org-connection";
@@ -205,7 +205,7 @@ export const schema = {
   ...slackOrgConnectionSchema,
   ...slackChatThreadRouteSchema,
   ...slackChatIngressSchema,
-  ...discordUserIdentitySchema,
+  ...discordOrgGrantSchema,
   ...discordOauthStateSchema,
   ...discordOrgInstallationSchema,
   ...discordOrgConnectionSchema,

@@ -6,6 +6,7 @@ import {
   pgTable,
   text,
   timestamp,
+  unique,
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
@@ -31,13 +32,13 @@ export const discordOauthFailure = pgEnum("discord_oauth_failure", [
   "bot_missing",
 ]);
 
-/** Expiring capabilities and bounded provider evidence; never OAuth codes/tokens. */
+/** One-use capabilities and verified consent grants; never OAuth codes/tokens. */
 export const discordOauthStates = pgTable(
   "discord_oauth_states",
   {
     id: uuid("id").defaultRandom().primaryKey(),
     stateHash: text("state_hash").notNull().unique(),
-    completionTokenHash: text("completion_token_hash").notNull(),
+    completionTokenHash: text("completion_token_hash"),
     approvalTokenHash: text("approval_token_hash"),
     phase: discordOauthPhase("phase").default("pending").notNull(),
     failureCode: discordOauthFailure("failure_code"),
@@ -55,6 +56,12 @@ export const discordOauthStates = pgTable(
   },
   (table) => {
     return [
+      unique("uq_discord_oauth_grant_owner").on(
+        table.id,
+        table.userId,
+        table.verifiedDiscordUserId,
+        table.verifiedGuildId,
+      ),
       index("idx_discord_oauth_states_expiry").on(table.expiresAt),
       index("idx_discord_oauth_states_owner").on(table.userId, table.orgId),
       check(

@@ -1,13 +1,15 @@
 import { createHash, randomBytes } from "node:crypto";
 import { command } from "ccstate";
-import { and, eq, gt, lte } from "drizzle-orm";
+import { and, eq, gt, isNotNull, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 import { discordOauthContract } from "@okouai/api-contracts/contracts/discord-oauth";
 import { discordOauthStates } from "@okouai/db/schema/discord-oauth-state";
 import { discordOrgInstallations } from "@okouai/db/schema/discord-org-installation";
+import { discordOrgGrants } from "@okouai/db/schema/discord-org-grant";
 import { env } from "../../lib/env";
 import { getOAuthApiOrigin } from "../../lib/oauth-origin";
 import { now, nowDate } from "../../lib/time";
+import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { request$, requestSignal$, setResHeader$ } from "../context/hono";
@@ -206,24 +208,71 @@ const startDiscordOauth$ = command(
             eq(discordOauthStates.userId, auth.userId),
             eq(discordOauthStates.orgId, auth.orgId),
             lte(discordOauthStates.expiresAt, nowDate()),
+            isNotNull(discordOauthStates.completionTokenHash),
           ),
         )
         .returning({ id: discordOauthStates.id }),
     );
+    const createdAt = nowDate();
+    const expiresAt = new Date(now() + TTL_SECONDS * 1000);
+    const started = db.$with("started_discord_oauth_attempt").as(
+      db
+        .insert(discordOauthStates)
+        .values({
+          stateHash: hash(state),
+          completionTokenHash: hash(completionToken),
+          userId: auth.userId,
+          orgId: auth.orgId,
+          flow: body.data.flow,
+          guildId,
+          redirectUri,
+          createdAt,
+          expiresAt,
+        })
+        .returning({
+          id: discordOauthStates.id,
+          flow: discordOauthStates.flow,
+        }),
+    );
     await db
-      .with(expiredAttempts)
-      .insert(discordOauthStates)
-      .values({
-        stateHash: hash(state),
-        completionTokenHash: hash(completionToken),
-        userId: auth.userId,
-        orgId: auth.orgId,
-        flow: body.data.flow,
-        guildId,
-        redirectUri,
-        createdAt: nowDate(),
-        expiresAt: new Date(now() + TTL_SECONDS * 1000),
-      });
+      .with(expiredAttempts, started)
+      .insert(discordOrgGrants)
+      .select(
+        db
+          .select({
+            id: started.id,
+            orgId: sql`${auth.orgId}`
+              .mapWith(discordOrgGrants.orgId)
+              .as("org_id"),
+            initiatedByUserId: sql`${auth.userId}`
+              .mapWith(discordOrgGrants.initiatedByUserId)
+              .as("initiated_by_user_id"),
+            requestedGuildId: sql`${guildId}`
+              .mapWith(discordOrgGrants.requestedGuildId)
+              .as("requested_guild_id"),
+            verifiedGuildId: sql`NULL`
+              .mapWith(
+                nullableDriverValueDecoder(discordOrgGrants.verifiedGuildId),
+              )
+              .as("verified_guild_id"),
+            verifiedBotUserId: sql`NULL`
+              .mapWith(
+                nullableDriverValueDecoder(discordOrgGrants.verifiedBotUserId),
+              )
+              .as("verified_bot_user_id"),
+            approvedAt: sql`NULL`
+              .mapWith(nullableDriverValueDecoder(discordOrgGrants.approvedAt))
+              .as("approved_at"),
+            createdAt: sql`${sql.param(createdAt, discordOrgGrants.createdAt)}`
+              .mapWith(discordOrgGrants.createdAt)
+              .as("created_at"),
+            expiresAt: sql`${sql.param(expiresAt, discordOrgGrants.expiresAt)}`
+              .mapWith(discordOrgGrants.expiresAt)
+              .as("expires_at"),
+          })
+          .from(started)
+          .where(eq(started.flow, "install")),
+      );
     signal.throwIfAborted();
     set(setResHeader$, "Cache-Control", "no-store");
     const url = new URL("https://discord.com/oauth2/authorize");
@@ -314,24 +363,46 @@ const verifyCallback$ = command(
       return await set(failCallback$, attempt, verified.error, signal);
     }
     const approvalProof = secret();
-    const [saved] = await set(writeDb$)
-      .update(discordOauthStates)
-      .set({
-        phase: "verified",
-        approvalTokenHash: hash(approvalProof),
-        verifiedGuildId: verified.data.guildId,
-        verifiedGuildName: verified.data.guildName,
-        verifiedDiscordUserId: verified.data.discordUserId,
-        verifiedBotUserId: verified.data.botUserId,
-      })
-      .where(
-        and(
-          eq(discordOauthStates.id, attempt.id),
-          eq(discordOauthStates.phase, "processing"),
-          gt(discordOauthStates.expiresAt, nowDate()),
-        ),
-      )
-      .returning({ id: discordOauthStates.id });
+    const db = set(writeDb$);
+    const verifiedAttempt = db.$with("verified_discord_oauth_attempt").as(
+      db
+        .update(discordOauthStates)
+        .set({
+          phase: "verified",
+          approvalTokenHash: hash(approvalProof),
+          verifiedGuildId: verified.data.guildId,
+          verifiedGuildName: verified.data.guildName,
+          verifiedDiscordUserId: verified.data.discordUserId,
+          verifiedBotUserId: verified.data.botUserId,
+        })
+        .where(
+          and(
+            eq(discordOauthStates.id, attempt.id),
+            eq(discordOauthStates.phase, "processing"),
+            gt(discordOauthStates.expiresAt, nowDate()),
+          ),
+        )
+        .returning({ id: discordOauthStates.id }),
+    );
+    const verifiedGrant = db.$with("verified_discord_installation_consent").as(
+      db
+        .update(discordOrgGrants)
+        .set({
+          verifiedGuildId: verified.data.guildId,
+          verifiedBotUserId: verified.data.botUserId,
+        })
+        .where(
+          eq(
+            discordOrgGrants.id,
+            db.select({ id: verifiedAttempt.id }).from(verifiedAttempt),
+          ),
+        )
+        .returning({ id: discordOrgGrants.id }),
+    );
+    const [saved] = await db
+      .with(verifiedAttempt, verifiedGrant)
+      .select({ id: verifiedAttempt.id })
+      .from(verifiedAttempt);
     signal.throwIfAborted();
     return saved
       ? callbackApproval(state, approvalProof)
