@@ -286,6 +286,9 @@ def collect(
             deadline = next_sample + duration
             while True:
                 now = time.monotonic()
+                if now >= deadline:
+                    timed_out = True
+                    break
                 discover_owned(owned)
                 if now >= next_sample:
                     read_start = time.monotonic_ns()
@@ -324,11 +327,14 @@ def collect(
                         now + interval
                     )  # Coalesce delayed sampling; never replay a backlog.
                 reap_adopted(driver.pid, waits)
-                code = driver.poll()
-                if code is not None:
-                    break
+                # Inventory and kernel sampling can cross the deadline. Recheck
+                # current time before accepting exit or waiting on stale input.
+                now = time.monotonic()
                 if now >= deadline:
                     timed_out = True
+                    break
+                code = driver.poll()
+                if code is not None:
                     break
                 for key, _ in selector.select(
                     min(interval, max(0, next_sample - time.monotonic()))

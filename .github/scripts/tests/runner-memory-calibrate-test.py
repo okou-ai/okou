@@ -244,6 +244,49 @@ os._exit(3)
             any(wait["pid"] == child for wait in report["adopted_child_waits"])
         )
 
+    def test_slow_kernel_sample_cannot_hide_an_expired_driver_deadline(self):
+        output = self.root / "slow-sample-deadline"
+        # Delay only the external procfs read. Keep the real CLI, clock, driver,
+        # kernel reads, logs and positive waits; do not fabricate an exit result.
+        wrapper = """
+import runpy, sys, time
+namespace = runpy.run_path(sys.argv[1], run_name='deadline_fixture')
+original_read = namespace['bounded_read']
+reads = 0
+def kernel_read(path, *args, **kwargs):
+    global reads
+    if str(path) == '/proc/meminfo':
+        reads += 1
+        if reads > 1:
+            time.sleep(0.35)
+    return original_read(path, *args, **kwargs)
+namespace['main'].__globals__['bounded_read'] = kernel_read
+sys.argv = sys.argv[1:]
+sys.exit(namespace['main']())
+"""
+        command = self.command(
+            output,
+            "import time; print('owned-driver-ready',flush=True); time.sleep(0.18)",
+            "--duration-seconds",
+            "0.1",
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", wrapper, *command[1:]],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+        report = json.loads((output / "report.json").read_text())
+        self.assertEqual(result.returncode, 1, (result.stdout, result.stderr))
+        self.assertTrue(report["timed_out"], report)
+        self.assertFalse(report["success"])
+        self.assertTrue(report["driver_wait_confirmed"])
+        self.assertTrue(report["cleanup_confirmed"])
+        self.assertEqual(report["remaining_children"], [])
+        self.assertFalse(report["calibrated"])
+        self.assertFalse(report["native_vm_exit_confirmed"])
+
     def test_parent_exit_does_not_hide_surviving_owned_child(self):
         program = "import subprocess,sys,time; p=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)']); print(p.pid,flush=True); time.sleep(0.1)"
         result, report, output = self.run_case(program)
