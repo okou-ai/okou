@@ -82,11 +82,6 @@
       "owner": "seedDiscordState$"
     },
     {
-      "id": "TX-0017",
-      "file": "turbo/apps/api/src/signals/routes/discord-state-preview.ts",
-      "owner": "deleteDiscordState$"
-    },
-    {
       "id": "TX-0018",
       "file": "turbo/apps/api/src/signals/routes/feishu-oauth.ts",
       "owner": "persistFeishuOAuthConnection"
