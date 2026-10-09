@@ -9,15 +9,19 @@ use std::path::{Component, Path};
 /// Maximum encoded files payload, including metadata.
 pub const MAX_PAYLOAD_BYTES: usize = 15 * 1024 * 1024;
 /// Maximum files in one admitted storage.
-pub const MAX_FILES: usize = 32;
+pub const MAX_FILES: usize = 1024;
 /// Maximum bytes in one file.
 pub const MAX_FILE_BYTES: usize = 256 * 1024;
 /// Maximum relative path length in bytes.
 pub const MAX_PATH_BYTES: usize = 4096;
+/// Preserve the original 32-file worst-case path envelope independently of count.
+pub const MAX_TOTAL_PATH_BYTES: usize = 128 * 1024;
 /// Maximum decoded content bytes in one storage.
-pub const MAX_STORAGE_BYTES: usize = 1024 * 1024;
+pub const MAX_STORAGE_BYTES: usize = 4 * 1024 * 1024;
 /// Maximum mount groups in one operation.
 pub const MAX_MOUNTS: usize = 1024;
+/// Retain the original 32-files-per-mount whole-input allocation envelope.
+pub const MAX_TOTAL_FILES: usize = 32 * MAX_MOUNTS;
 /// Prefix identifying binary input to the fixed storage helper.
 pub const INPUT_MAGIC: &[u8; 8] = b"VM0FILE1";
 /// Manifest limit within binary input; generic exec stdin is unchanged.
@@ -256,8 +260,9 @@ pub fn validate_files(files: &[StorageFile]) -> io::Result<()> {
     if files.is_empty() || files.len() > MAX_FILES {
         return Err(invalid());
     }
-    let mut paths = Vec::new();
+    let mut paths = Vec::with_capacity(files.len());
     let mut total = 0usize;
+    let mut path_bytes = 0usize;
     for file in files {
         let path = Path::new(&file.path);
         if file.path.is_empty()
@@ -274,17 +279,28 @@ pub fn validate_files(files: &[StorageFile]) -> io::Result<()> {
             || file.mode & !0o777 != 0
             || file.mtime > i64::MAX as u64
             || file.content.len() > MAX_FILE_BYTES
-            || paths
-                .iter()
-                .any(|other: &&Path| path.starts_with(other) || other.starts_with(path))
         {
             return Err(invalid());
         }
         total = total.checked_add(file.content.len()).ok_or_else(invalid)?;
-        if total > MAX_STORAGE_BYTES {
+        path_bytes = path_bytes
+            .checked_add(file.path.len())
+            .ok_or_else(invalid)?;
+        if total > MAX_STORAGE_BYTES || path_bytes > MAX_TOTAL_PATH_BYTES {
             return Err(invalid());
         }
         paths.push(path);
+    }
+    // Path ordering compares components, keeping an ancestor adjacent to its first
+    // descendant even when a lexical distractor (such as "a-b") is present.
+    // Sort borrowed paths only: the caller's file/write order remains unchanged.
+    paths.sort_unstable();
+    if paths
+        .iter()
+        .zip(paths.iter().skip(1))
+        .any(|(ancestor, descendant)| descendant.starts_with(ancestor))
+    {
+        return Err(invalid());
     }
     Ok(())
 }
@@ -317,10 +333,15 @@ pub fn encoded_payload_len(groups: &[(&str, &[StorageFile])]) -> io::Result<usiz
         return Err(invalid());
     }
     let mut size = 4usize;
+    let mut file_count = 0usize;
     let mut mounts = HashSet::new();
     for (mount, files) in groups {
         validate_mount(mount)?;
         validate_files(files)?;
+        file_count = file_count.checked_add(files.len()).ok_or_else(invalid)?;
+        if file_count > MAX_TOTAL_FILES {
+            return Err(invalid());
+        }
         if !mounts.insert(*mount) {
             return Err(invalid());
         }
@@ -380,6 +401,7 @@ pub fn decode(mut input: &[u8]) -> io::Result<Vec<StorageFiles>> {
         return Err(invalid());
     }
     let mut groups = Vec::with_capacity(count);
+    let mut total_files = 0usize;
     let mut mounts = HashSet::new();
     for _ in 0..count {
         let mount_path = string(&mut input)?;
@@ -388,16 +410,35 @@ pub fn decode(mut input: &[u8]) -> io::Result<Vec<StorageFiles>> {
             return Err(invalid());
         }
         let file_count = u32::from_be_bytes(number(&mut input)?) as usize;
-        if file_count == 0 || file_count > MAX_FILES {
+        total_files = total_files.checked_add(file_count).ok_or_else(invalid)?;
+        if file_count == 0 || file_count > MAX_FILES || total_files > MAX_TOTAL_FILES {
             return Err(invalid());
         }
         let mut files = Vec::with_capacity(file_count);
+        let mut path_bytes = 0usize;
+        let mut content_bytes = 0usize;
         for _ in 0..file_count {
+            let path = bytes(&mut input, MAX_PATH_BYTES)?;
+            path_bytes = path_bytes.checked_add(path.len()).ok_or_else(invalid)?;
+            if path_bytes > MAX_TOTAL_PATH_BYTES {
+                return Err(invalid());
+            }
+            let mode = u32::from_be_bytes(number(&mut input)?);
+            let mtime = u64::from_be_bytes(number(&mut input)?);
+            let content = bytes(&mut input, MAX_FILE_BYTES)?;
+            content_bytes = content_bytes
+                .checked_add(content.len())
+                .ok_or_else(invalid)?;
+            if content_bytes > MAX_STORAGE_BYTES {
+                return Err(invalid());
+            }
+            // Enforce each group's allocation envelope before copying borrowed
+            // wire bytes. The final validation still owns all semantic checks.
             files.push(StorageFile {
-                path: string(&mut input)?,
-                mode: u32::from_be_bytes(number(&mut input)?),
-                mtime: u64::from_be_bytes(number(&mut input)?),
-                content: bytes(&mut input, MAX_FILE_BYTES)?.to_vec(),
+                path: String::from_utf8(path.to_vec()).map_err(|_| invalid())?,
+                mode,
+                mtime,
+                content: content.to_vec(),
             });
         }
         validate_files(&files)?;
@@ -599,6 +640,121 @@ mod tests {
         files[0].mtime = 1;
         assert!(encode_input(&vec![b' '; MAX_MANIFEST_BYTES], &[("/mount", &files)]).is_ok());
         assert!(encode_input(&vec![b' '; MAX_MANIFEST_BYTES + 1], &[("/mount", &files)]).is_err());
+    }
+
+    #[test]
+    fn aggregate_paths_remain_bounded_and_sorted_checks_preserve_order() {
+        let make = |path: String| StorageFile {
+            path,
+            mode: 0o640,
+            mtime: 1,
+            content: Vec::new(),
+        };
+        let mut files: Vec<_> = (0..MAX_FILES)
+            .map(|index| make(format!("{index:04}-{}", "a".repeat(123))))
+            .collect();
+        assert_eq!(
+            files.iter().map(|f| f.path.len()).sum::<usize>(),
+            MAX_TOTAL_PATH_BYTES
+        );
+        validate_files(&files).unwrap();
+        files[0].path.push('a');
+        assert!(validate_files(&files).is_err());
+
+        for paths in [
+            vec!["a/b", "a-b", "a"],
+            vec!["a", "a-b", "a/b"],
+            vec!["a/b", "a/b"],
+        ] {
+            let entries: Vec<_> = paths.iter().map(|path| make((*path).into())).collect();
+            assert!(validate_files(&entries).is_err(), "{paths:?}");
+        }
+        let entries: Vec<_> = ["z", "a/b", "a-b"]
+            .into_iter()
+            .map(|p| make(p.into()))
+            .collect();
+        validate_files(&entries).unwrap();
+        assert_eq!(
+            entries.iter().map(|f| f.path.as_str()).collect::<Vec<_>>(),
+            ["z", "a/b", "a-b"]
+        );
+    }
+
+    #[test]
+    fn whole_input_file_count_retains_original_allocation_envelope() {
+        let files: Vec<_> = (0..MAX_FILES)
+            .map(|index| StorageFile {
+                path: format!("file-{index}"),
+                mode: 0o640,
+                mtime: 1,
+                content: Vec::new(),
+            })
+            .collect();
+        let mounts: Vec<_> = (0..33).map(|index| format!("/mount-{index}")).collect();
+        let groups: Vec<_> = mounts
+            .iter()
+            .map(|mount| (mount.as_str(), files.as_slice()))
+            .collect();
+        let encoded = encode(&groups[..32]).unwrap();
+        assert_eq!(
+            decode(&encoded)
+                .unwrap()
+                .iter()
+                .map(|g| g.files.len())
+                .sum::<usize>(),
+            MAX_TOTAL_FILES
+        );
+        assert!(encoded_payload_len(&groups).is_err());
+        let mut unchecked = Vec::new();
+        encode_groups_into(&mut unchecked, &groups);
+        assert!(unchecked.len() < MAX_PAYLOAD_BYTES);
+        assert!(decode(&unchecked).is_err());
+    }
+
+    #[test]
+    fn decoding_enforces_each_groups_content_and_path_envelopes() {
+        let mut files: Vec<_> = (0..16)
+            .map(|index| StorageFile {
+                path: format!("file-{index}"),
+                mode: 0o640,
+                mtime: 1,
+                content: vec![0; MAX_FILE_BYTES],
+            })
+            .collect();
+        let encoded = encode(&[("/mount", &files)]).unwrap();
+        assert_eq!(decode(&encoded).unwrap().remove(0).files, files);
+        files.push(StorageFile {
+            path: "overflow".into(),
+            mode: 0o640,
+            mtime: 1,
+            content: vec![0],
+        });
+        let mut unchecked = Vec::new();
+        encode_groups_into(&mut unchecked, &[("/mount", &files)]);
+        assert!(unchecked.len() < MAX_PAYLOAD_BYTES);
+        assert_eq!(
+            decode(&unchecked).unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
+
+        let mut files: Vec<_> = (0..MAX_FILES)
+            .map(|index| StorageFile {
+                path: format!("{index:04}-{}", "a".repeat(123)),
+                mode: 0o640,
+                mtime: 1,
+                content: Vec::new(),
+            })
+            .collect();
+        let encoded = encode(&[("/mount", &files)]).unwrap();
+        assert_eq!(decode(&encoded).unwrap().remove(0).files, files);
+        files[0].path.push('a');
+        let mut unchecked = Vec::new();
+        encode_groups_into(&mut unchecked, &[("/mount", &files)]);
+        assert!(unchecked.len() < MAX_PAYLOAD_BYTES);
+        assert_eq!(
+            decode(&unchecked).unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
     }
 
     #[test]
