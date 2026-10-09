@@ -108,6 +108,7 @@
     "src/signals/services/pi-memory-stage1-admission-plan.ts",
     "src/signals/services/pi-memory-stage1-selection-plan.ts",
     "src/signals/services/pi-memory-stage1-candidate.service.ts",
+    "src/signals/services/pi-memory-stage1-schedule-plan.ts",
     "src/signals/services/pi-memory-stage1-schedule.service.ts",
     "src/signals/services/pi-memory-stage1-watermark.service.ts",
     "src/signals/services/run-thread-remote-access.service.ts",

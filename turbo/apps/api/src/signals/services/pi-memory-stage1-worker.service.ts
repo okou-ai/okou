@@ -1,4 +1,10 @@
 import {
+  dueCondition,
+  piMemoryStage1ClaimCandidatePlan,
+  piMemoryStage1ClaimTerminalPlan,
+  piMemoryStage1ClaimLeasePlan,
+} from "./pi-memory-stage1-claim-plan";
+import {
   piMemoryStage1SelectionLockPlans,
   piMemoryStage1SelectionSourcePlans,
   piMemoryStage1SelectionThreadEligible,
@@ -43,8 +49,7 @@ import {
 } from "./pi-memory-stage1-credential.service";
 import { piMemoryStage1Selections } from "@okouai/db/schema/pi-memory-stage1-schedule";
 import {
-  consumePiMemoryStage1Days,
-  validatePiMemoryStage1Selection,
+  consumePiMemoryStage1Days$,
   piMemoryStage1UtcDay,
   type PiMemoryStage1Selection,
 } from "./pi-memory-stage1-schedule.service";
@@ -62,13 +67,13 @@ import { blobs } from "@okouai/db/schema/blob";
 import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-candidate";
 import { storages } from "@okouai/db/schema/storage";
 import { command } from "ccstate";
-import { and, asc, eq, getTableColumns, gt, lte, or } from "drizzle-orm";
+import { and, asc, eq, getTableColumns, gt } from "drizzle-orm";
 import { z } from "zod";
 
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 
 import {
   downloadS3BufferWithMaxBytes,
@@ -207,235 +212,252 @@ class DisabledWorkError extends Error {
   }
 }
 
-function dueCondition(currentTime: Date) {
-  return or(
-    and(
-      eq(piMemoryStage1Candidates.status, "pending"),
-      lte(piMemoryStage1Candidates.eligibleAt, currentTime),
-    ),
-    and(
-      eq(piMemoryStage1Candidates.status, "retryable_failure"),
-      lte(piMemoryStage1Candidates.retryAt, currentTime),
-    ),
-    and(
-      eq(piMemoryStage1Candidates.status, "leased"),
-      lte(piMemoryStage1Candidates.leaseExpiresAt, currentTime),
-    ),
-  );
-}
-
-async function markLockedTerminal(
-  db: Db,
-  row: Pick<
-    ClaimedPiMemoryStage1Work,
-    "memoryStorageId" | "piSessionId" | "sourceHistoryHash"
-  >,
-  currentTime: Date,
-  errorClass: string,
-): Promise<boolean> {
-  const [updated] = await db
-    .update(piMemoryStage1Candidates)
-    .set({
-      status: "terminal_failure",
-      leaseToken: null,
-      leaseExpiresAt: null,
-      retryAt: null,
-      lastErrorClass: errorClass,
-      rawMemory: null,
-      rolloutSummary: null,
-      rolloutSlug: null,
-      generatedAt: null,
-      lastSelectedSourceHistoryHash: null,
-      updatedAt: currentTime,
-    })
-    .where(
-      and(
-        eq(piMemoryStage1Candidates.memoryStorageId, row.memoryStorageId),
-        eq(piMemoryStage1Candidates.piSessionId, row.piSessionId),
-        eq(piMemoryStage1Candidates.sourceHistoryHash, row.sourceHistoryHash),
-      ),
-    )
-    .returning({ memoryStorageId: piMemoryStage1Candidates.memoryStorageId });
-  return updated !== undefined;
-}
-
-async function selectDueCandidateRows(
-  db: Db,
-  input: PiMemoryStage1WorkerInput,
-) {
-  return await db
-    .select({
-      selection: getTableColumns(piMemoryStage1Selections),
-      memoryStorageId: piMemoryStage1Candidates.memoryStorageId,
-      piSessionId: piMemoryStage1Candidates.piSessionId,
-      orgId: piMemoryStage1Candidates.orgId,
-      userId: piMemoryStage1Candidates.userId,
-      sourceHistoryHash: piMemoryStage1Candidates.sourceHistoryHash,
-      sourceCompletedAt: piMemoryStage1Candidates.sourceCompletedAt,
-      status: piMemoryStage1Candidates.status,
-      retryCount: piMemoryStage1Candidates.retryCount,
-      blobEncoding: blobs.encoding,
-      blobRawSize: blobs.rawSize,
-      blobEncodedSize: blobs.encodedSize,
-    })
-    .from(piMemoryStage1Candidates)
-    .innerJoin(
-      piMemoryStage1Selections,
-      and(
-        eq(
-          piMemoryStage1Selections.memoryStorageId,
-          piMemoryStage1Candidates.memoryStorageId,
-        ),
-        eq(
-          piMemoryStage1Selections.piSessionId,
-          piMemoryStage1Candidates.piSessionId,
-        ),
-        eq(piMemoryStage1Selections.orgId, piMemoryStage1Candidates.orgId),
-        eq(piMemoryStage1Selections.userId, piMemoryStage1Candidates.userId),
-        eq(
-          piMemoryStage1Selections.sourceRunId,
-          piMemoryStage1Candidates.sourceRunId,
-        ),
-        eq(
-          piMemoryStage1Selections.sourceHistoryHash,
-          piMemoryStage1Candidates.sourceHistoryHash,
-        ),
-        eq(
-          piMemoryStage1Selections.sourceCompletedAt,
-          piMemoryStage1Candidates.sourceCompletedAt,
-        ),
-        eq(
-          piMemoryStage1Selections.day,
-          piMemoryStage1UtcDay(input.currentTime),
-        ),
-      ),
-    )
-    .innerJoin(
-      storages,
-      and(
-        eq(storages.id, piMemoryStage1Candidates.memoryStorageId),
-        eq(storages.orgId, piMemoryStage1Candidates.orgId),
-        eq(storages.userId, piMemoryStage1Candidates.userId),
-        eq(storages.name, MEMORY_ARTIFACT_NAME),
-      ),
-    )
-    .innerJoin(
-      blobs,
-      eq(blobs.hash, piMemoryStage1Candidates.sourceHistoryHash),
-    )
-    .where(dueCondition(input.currentTime))
-    .orderBy(
-      asc(piMemoryStage1Candidates.eligibleAt),
-      asc(piMemoryStage1Candidates.memoryStorageId),
-      asc(piMemoryStage1Candidates.piSessionId),
-    )
-    .limit(PI_MEMORY_STAGE1_SCAN_LIMIT);
-}
-
-async function claimPiMemoryStage1Work(
-  db: Db,
-  input: PiMemoryStage1WorkerInput,
-): Promise<ClaimResult> {
-  await consumePiMemoryStage1Days(db, input.currentTime);
-  const rows = await selectDueCandidateRows(db, input);
-  let staleDiscarded = 0;
-  let terminalFailure = 0;
-  const claimed: ClaimedPiMemoryStage1Work[] = [];
-  for (const row of rows) {
-    if (claimed.length >= PI_MEMORY_STAGE1_CLAIM_LIMIT) {
-      break;
-    }
-    await db.transaction(async (tx) => {
-      if (
-        !(await validatePiMemoryStage1Selection(
-          tx,
-          row.selection,
-          input.currentTime,
-        ))
-      ) {
-        staleDiscarded += 1;
-        log.debug("Pi memory Stage 1 claim skipped", {
-          userId: row.userId,
-          day: row.selection.day,
-          chatThreadId: row.selection.chatThreadId,
-          outcome: "stale_selection",
-        });
-        return;
-      }
-      const [current] = await tx
-        .select()
-        .from(piMemoryStage1Candidates)
-        .where(
-          and(
-            eq(piMemoryStage1Candidates.memoryStorageId, row.memoryStorageId),
-            eq(piMemoryStage1Candidates.piSessionId, row.piSessionId),
-            eq(piMemoryStage1Candidates.sourceRunId, row.selection.sourceRunId),
-            eq(
-              piMemoryStage1Candidates.sourceHistoryHash,
-              row.sourceHistoryHash,
-            ),
-            eq(
-              piMemoryStage1Candidates.sourceCompletedAt,
-              row.selection.sourceCompletedAt,
-            ),
-            dueCondition(input.currentTime),
+const selectDueCandidateRows$ = command(
+  async ({ get }, input: PiMemoryStage1WorkerInput) => {
+    const db = get(db$);
+    return await db
+      .select({
+        selection: getTableColumns(piMemoryStage1Selections),
+        memoryStorageId: piMemoryStage1Candidates.memoryStorageId,
+        piSessionId: piMemoryStage1Candidates.piSessionId,
+        orgId: piMemoryStage1Candidates.orgId,
+        userId: piMemoryStage1Candidates.userId,
+        sourceHistoryHash: piMemoryStage1Candidates.sourceHistoryHash,
+        sourceCompletedAt: piMemoryStage1Candidates.sourceCompletedAt,
+        status: piMemoryStage1Candidates.status,
+        retryCount: piMemoryStage1Candidates.retryCount,
+        blobEncoding: blobs.encoding,
+        blobRawSize: blobs.rawSize,
+        blobEncodedSize: blobs.encodedSize,
+      })
+      .from(piMemoryStage1Candidates)
+      .innerJoin(
+        piMemoryStage1Selections,
+        and(
+          eq(
+            piMemoryStage1Selections.memoryStorageId,
+            piMemoryStage1Candidates.memoryStorageId,
           ),
-        )
-        .for("update", { skipLocked: true });
-      if (!current) {
-        return;
-      }
-      const reclaimedFailureCount =
-        current.retryCount + (current.status === "leased" ? 1 : 0);
-      if (reclaimedFailureCount >= PI_MEMORY_STAGE1_MAX_ATTEMPTS) {
-        if (
-          await markLockedTerminal(
-            tx,
-            row,
-            input.currentTime,
-            "attempts_exhausted",
-          )
-        ) {
-          terminalFailure += 1;
+          eq(
+            piMemoryStage1Selections.piSessionId,
+            piMemoryStage1Candidates.piSessionId,
+          ),
+          eq(piMemoryStage1Selections.orgId, piMemoryStage1Candidates.orgId),
+          eq(piMemoryStage1Selections.userId, piMemoryStage1Candidates.userId),
+          eq(
+            piMemoryStage1Selections.sourceRunId,
+            piMemoryStage1Candidates.sourceRunId,
+          ),
+          eq(
+            piMemoryStage1Selections.sourceHistoryHash,
+            piMemoryStage1Candidates.sourceHistoryHash,
+          ),
+          eq(
+            piMemoryStage1Selections.sourceCompletedAt,
+            piMemoryStage1Candidates.sourceCompletedAt,
+          ),
+          eq(
+            piMemoryStage1Selections.day,
+            piMemoryStage1UtcDay(input.currentTime),
+          ),
+        ),
+      )
+      .innerJoin(
+        storages,
+        and(
+          eq(storages.id, piMemoryStage1Candidates.memoryStorageId),
+          eq(storages.orgId, piMemoryStage1Candidates.orgId),
+          eq(storages.userId, piMemoryStage1Candidates.userId),
+          eq(storages.name, MEMORY_ARTIFACT_NAME),
+        ),
+      )
+      .innerJoin(
+        blobs,
+        eq(blobs.hash, piMemoryStage1Candidates.sourceHistoryHash),
+      )
+      .where(dueCondition(input.currentTime))
+      .orderBy(
+        asc(piMemoryStage1Candidates.eligibleAt),
+        asc(piMemoryStage1Candidates.memoryStorageId),
+        asc(piMemoryStage1Candidates.piSessionId),
+      )
+      .limit(PI_MEMORY_STAGE1_SCAN_LIMIT);
+  },
+);
+
+type DueCandidate = Omit<
+  ClaimedPiMemoryStage1Work,
+  "leaseToken" | "attemptCount"
+>;
+type SelectionClaim =
+  | { readonly kind: "stale" | "unavailable" }
+  | { readonly kind: "terminal"; readonly updated: boolean }
+  | { readonly kind: "claimed"; readonly work: ClaimedPiMemoryStage1Work };
+const claimPiMemoryStage1Selection$ = command(
+  async (
+    { set },
+    row: DueCandidate,
+    currentTime: Date,
+  ): Promise<SelectionClaim> => {
+    // Frozen selection/source authority and lease publication commit together,
+    // taking Thread -> Storage -> day -> candidate locks in order.
+    return await set(writeDb$).transaction(
+      async (tx): Promise<SelectionClaim> => {
+        const selection = row.selection;
+        let selectionValid = false;
+        selectionValidation: {
+          if (selection.day !== piMemoryStage1UtcDay(currentTime)) {
+            break selectionValidation;
+          }
+          const locks = piMemoryStage1SelectionLockPlans(selection);
+          const [lockedThread] = await tx.select().from(locks.thread);
+          if (!lockedThread) {
+            break selectionValidation;
+          }
+          await tx.select().from(locks.storage);
+          const [day] = await tx.select().from(locks.day);
+          if (
+            !day?.consumedAt ||
+            day.triggerThreadId === selection.chatThreadId
+          ) {
+            break selectionValidation;
+          }
+          const [frozen] = await tx.select().from(locks.frozen);
+          // A blocked lock acquisition may cross midnight after the initial check.
+          if (!frozen || selection.day !== piMemoryStage1UtcDay(nowDate())) {
+            break selectionValidation;
+          }
+          const features = await tx.select().from(locks.features);
+          const context = featureSwitchContextFromRows(
+            selection.orgId,
+            selection.userId,
+            features,
+          );
+          if (!isFeatureEnabled(FeatureSwitchKey.PiMemory, context)) {
+            break selectionValidation;
+          }
+          const sourcePlans = piMemoryStage1SelectionSourcePlans(selection);
+          const [thread] = await tx.select().from(sourcePlans.thread);
+          if (!thread) {
+            break selectionValidation;
+          }
+          const [active] = await tx.select().from(sourcePlans.active);
+          if (
+            !piMemoryStage1SelectionThreadEligible(
+              thread,
+              !!active,
+              currentTime,
+            )
+          ) {
+            break selectionValidation;
+          }
+          const [latest] = await tx.select().from(sourcePlans.latest);
+          if (
+            !piMemoryStage1SelectionRunEligible(latest, selection, currentTime)
+          ) {
+            break selectionValidation;
+          }
+          const [source] = await tx
+            .select()
+            .from(piMemoryStage1SelectionConversationPlan(selection, latest));
+          if (
+            !piMemoryStage1SelectionSourceMatches(
+              selection,
+              latest,
+              thread,
+              source,
+            )
+          ) {
+            break selectionValidation;
+          }
+
+          selectionValid = true;
         }
-        return;
-      }
-      const leaseToken = randomUUID();
-      await tx
-        .update(piMemoryStage1Candidates)
-        .set({
-          status: "leased",
+        if (!selectionValid) {
+          log.debug("Pi memory Stage 1 claim skipped", {
+            userId: row.userId,
+            day: row.selection.day,
+            chatThreadId: row.selection.chatThreadId,
+            outcome: "stale_selection",
+          });
+          return { kind: "stale" };
+        }
+        const [current] = await tx
+          .select()
+          .from(piMemoryStage1ClaimCandidatePlan(row, currentTime));
+        if (!current) {
+          return { kind: "unavailable" };
+        }
+        const reclaimedFailureCount =
+          current.retryCount + (current.status === "leased" ? 1 : 0);
+        if (reclaimedFailureCount >= PI_MEMORY_STAGE1_MAX_ATTEMPTS) {
+          const terminal = piMemoryStage1ClaimTerminalPlan(row, currentTime);
+          const [updated] = await tx
+            .update(piMemoryStage1Candidates)
+            .set(terminal.values)
+            .where(terminal.condition)
+            .returning(terminal.returning);
+          return { kind: "terminal", updated: !!updated };
+        }
+        const leaseToken = randomUUID();
+        const lease = piMemoryStage1ClaimLeasePlan(
+          row,
+          currentTime,
           leaseToken,
-          leaseExpiresAt: new Date(
-            input.currentTime.getTime() + PI_MEMORY_STAGE1_LEASE_MS,
-          ),
-          retryAt: null,
-          retryCount: reclaimedFailureCount,
-          lastErrorClass: null,
-          updatedAt: input.currentTime,
-        })
-        .where(
-          and(
-            eq(piMemoryStage1Candidates.memoryStorageId, row.memoryStorageId),
-            eq(piMemoryStage1Candidates.piSessionId, row.piSessionId),
-          ),
+          reclaimedFailureCount,
+          PI_MEMORY_STAGE1_LEASE_MS,
         );
-      claimed.push({
-        ...row,
-        leaseToken,
-        attemptCount: reclaimedFailureCount + 1,
-      });
-    });
-  }
-  return {
-    scanned: rows.length,
-    sourceActive: 0,
-    staleDiscarded,
-    sourceExpired: 0,
-    terminalFailure,
-    claimed,
-  };
-}
+        await tx
+          .update(piMemoryStage1Candidates)
+          .set(lease.values)
+          .where(lease.condition);
+        return {
+          kind: "claimed",
+          work: { ...row, leaseToken, attemptCount: reclaimedFailureCount + 1 },
+        };
+      },
+    );
+  },
+);
+const claimPiMemoryStage1Work$ = command(
+  async ({ set }, input: PiMemoryStage1WorkerInput): Promise<ClaimResult> => {
+    // Preserve DB initialization before scheduling and the original whole-claim
+    // cancellation boundary owned by executePiMemoryStage1Work$.
+    set(writeDb$);
+    await set(consumePiMemoryStage1Days$, input.currentTime);
+    const rows = await set(selectDueCandidateRows$, input);
+    let staleDiscarded = 0,
+      terminalFailure = 0;
+    const claimed: ClaimedPiMemoryStage1Work[] = [];
+    for (const row of rows) {
+      if (claimed.length >= PI_MEMORY_STAGE1_CLAIM_LIMIT) {
+        break;
+      }
+      const result = await set(
+        claimPiMemoryStage1Selection$,
+        row,
+        input.currentTime,
+      );
+      if (result.kind === "stale") {
+        staleDiscarded += 1;
+      }
+      if (result.kind === "terminal" && result.updated) {
+        terminalFailure += 1;
+      }
+      if (result.kind === "claimed") {
+        claimed.push(result.work);
+      }
+    }
+    return {
+      scanned: rows.length,
+      sourceActive: 0,
+      staleDiscarded,
+      sourceExpired: 0,
+      terminalFailure,
+      claimed,
+    };
+  },
+);
 
 function validatedBlobEncoding(
   work: ClaimedPiMemoryStage1Work,
@@ -1183,8 +1205,7 @@ export const executePiMemoryStage1Work$ = command(
     signal: AbortSignal,
   ): Promise<PiMemoryStage1WorkerResult> => {
     const startedAt = performance.now();
-    const db = set(writeDb$);
-    const claim = await claimPiMemoryStage1Work(db, input);
+    const claim = await set(claimPiMemoryStage1Work$, input);
     if (signal.aborted) {
       await set(
         retryOwnedWorkAfterAbort$,
