@@ -1,3 +1,4 @@
+import { PI_MEMORY_STAGE1_RESPONSE_SCHEMA } from "./stage1-provider";
 import { zstdDecompressSync } from "node:zlib";
 import {
   fauxAssistantMessage,
@@ -21,7 +22,6 @@ import {
 
 import { MemoryPiSession } from "./session-memory";
 import {
-  PI_MEMORY_STAGE1_RESPONSE_SCHEMA,
   projectPiMemoryStage1Evidence,
   runPiMemoryStage1Extraction,
 } from "./stage1-memory";
@@ -664,7 +664,7 @@ describe("Stage 1 evidence and complete request admission", () => {
     ["over_budget", "openai-responses"],
     ["over_budget", "openai-completions"],
   ] as const)(
-    "retains terminal %s through the %s SDK callback with zero HTTP",
+    "rejects terminal %s in the complete %s SDK body with zero HTTP",
     async (failure, dialect) => {
       const bodies = captureBodies(
         dialect === "openai-completions"

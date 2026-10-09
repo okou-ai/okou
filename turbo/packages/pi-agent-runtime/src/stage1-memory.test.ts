@@ -1,3 +1,4 @@
+import { PI_MEMORY_STAGE1_RESPONSE_SCHEMA } from "./stage1-provider";
 import { redactPiMemoryStage1Secrets } from "./stage1-secrets";
 import { createHash } from "node:crypto";
 import { zstdDecompressSync } from "node:zlib";
@@ -13,7 +14,6 @@ import {
 
 import { PI_MEMORY_STAGE1_BUILT_IN_MODEL } from "./memory-background-config";
 import {
-  PI_MEMORY_STAGE1_RESPONSE_SCHEMA,
   projectPiMemoryStage1Evidence as projectEvidence,
   runPiMemoryStage1Extraction,
 } from "./stage1-memory";

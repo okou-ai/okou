@@ -32,6 +32,24 @@ tools without emitting or appending that assistant or its original user again.
 It retains argument preparation, hooks, sequential/parallel execution, partial
 updates, result metadata, persistence, turn preparation, and the length guard.
 
+## Stage 1 request projectors
+
+The pi-ai patch adds `preparePayload` to the Responses, Completions and Codex
+Responses modules, with matching declarations. Each function resolves the
+transcript exactly as its stream does and calls that stream's existing body
+builder. Codex also retains its existing cache-key normalization. These pure
+functions perform no credential lookup or HTTP and do not modify the ordinary
+stream paths.
+
+Stage 1 uses them to measure the complete provider body before API-owned
+admission. Its prepared execution supplies that measured body to the existing
+stream adapter, preserving transport, cancellation, status observation and
+usage handling. The [HTTP contract suite](../packages/pi-agent-runtime/src/stage1-provider-request.test.ts)
+covers all three dialects, exact serialized bodies, affinity/account headers,
+pre-HTTP cancellation and usage-bearing versus usage-free failures. Frozen
+installation and runtime/API/CLI consumers must be checked after patch changes;
+the queue-timeout and diagnostic-retry patches remain independent.
+
 ## Cancellation convergence on 0.86.1
 
 Through 0.85.1 this integration threaded an explicit signal through the shared
