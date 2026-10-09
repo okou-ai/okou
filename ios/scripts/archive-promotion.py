@@ -278,9 +278,8 @@ def github_record(record, required_step):
     pages = json.loads(
         command("gh", "api", f"{route}/jobs?per_page=100", "--paginate", "--slurp")
     )
-    jobs = [
-        job for page in pages for job in page["jobs"] if job["name"] == "build-test"
-    ]
+    job_name = "build-archive" if required_step == ARCHIVE_STEP else "build-test"
+    jobs = [job for page in pages for job in page["jobs"] if job["name"] == job_name]
     if (
         len(jobs) != 1
         or jobs[0]["conclusion"] != "success"
@@ -341,6 +340,8 @@ def resolve_tests(work):
 
 def publish(work):
     target = read_json(work / "inputs.json")
+    if read_json(work / "test-inputs.json") != target:
+        raise ValueError("Native archive and simulator inputs differ")
     if os.environ["GITHUB_EVENT_NAME"] != "merge_group":
         raise ValueError("Only main merge groups can publish canonical archives")
     record = provenance()

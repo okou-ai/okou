@@ -95,22 +95,32 @@ for event in ['pull_request', 'merge_group', 'push', 'workflow_dispatch']:
     for needed in ['true', 'false']:
         for name, expected in [
             ('build-test', needed == 'true' and event != 'push'),
+            ('build-archive', needed == 'true' and event == 'merge_group'),
             ('publish-archive', needed == 'true' and event == 'merge_group'),
         ]:
             condition = ios['jobs'][name]['if']
             expression = (condition.replace('needs.detect.outputs.needed', repr(needed))
                 .replace('github.event_name', repr(event)).replace('&&', 'and'))
             assert eval(expression, {'__builtins__': {}}, {}) is expected
-for name in ['build-test', 'publish-archive']:
+for name in ['build-test', 'build-archive', 'publish-archive']:
     assert 'environment' not in ios['jobs'][name]
     assert 'IOS_DISTRIBUTION' not in json.dumps(ios['jobs'][name])
     assert 'APP_STORE_CONNECT_API' not in json.dumps(ios['jobs'][name])
 native = ios['jobs']['build-test']['steps']
 simulator = next(step for step in native if step.get('name') == 'Build app and run isolated simulator tests')
 assert "steps.evidence.outputs.run_tests == 'true'" in simulator['if']
-archive = next(step for step in native if step.get('name') == 'Build unsigned device Release archive')
-assert archive['if'] == "github.event_name == 'merge_group'"
+test_job = ios['jobs']['build-test']
+archive_job = ios['jobs']['build-archive']
+assert test_job['needs'] == archive_job['needs'] == 'detect'
+assert test_job['timeout-minutes'] == archive_job['timeout-minutes'] == 15
+assert test_job['env'] == archive_job['env']
+assert ios['jobs']['publish-archive']['needs'] == ['detect', 'build-test', 'build-archive']
+assert 'build-archive' in ios['jobs']['ci-gate-ios']['needs']
+assert all(step.get('name') != 'Build unsigned device Release archive' for step in native)
+archive = next(step for step in archive_job['steps'] if step.get('name') == 'Build unsigned device Release archive')
 assert 'build-archive.sh' in archive['run']
+aws = next(step for step in native if step.get('name') == 'Install AWS CLI')
+assert "steps.release-only.outputs.release_only == 'true'" in aws['if']
 PY
 # Fail before touching the keychain when release identity is wrong.
 work=$(mktemp -d)

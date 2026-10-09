@@ -9,9 +9,20 @@ runs simulator tests to recover a missing archive.
 `.github/workflows/ios.yml` runs simulator checks on ordinary PRs and dispatches.
 A main merge group with changed iOS inputs also builds an **unsigned device
 Release archive**, with locked Swift packages and no production credentials.
-Both checks must succeed before the Ubuntu publisher writes canonical objects.
-The publisher also verifies the tar checksum produced on macOS before transfer.
-The required `ci-gate-ios` includes publication, not just compilation.
+Simulator validation and device compilation run in **parallel macOS jobs**, each
+with a 15-minute limit, rather than serializing them past the live merge queue's
+15-minute check-response window. The simulator checkout retains bounded queue
+ancestry (32 commits; the current squash queue merges at most five entries); the
+archive builder needs only its own commit. Only release-only groups install an
+R2 client on macOS to resolve potential prior evidence.
+
+Both native jobs must succeed before the Ubuntu publisher writes canonical
+objects. The publisher compares their independently captured **complete input
+fingerprints and toolchains**, rejecting a missing or mismatched simulator
+record. It verifies the tar checksum produced on macOS before transfer and
+checks archive provenance against `build-archive`, test provenance against
+`build-test`, in the same exact run attempt. The required `ci-gate-ios` includes
+both native jobs and publication, not just compilation.
 
 A release-only merge group can omit simulator tests only when an existing test
 record matches its complete test input fingerprint. The classifier examines the
@@ -133,6 +144,6 @@ bash .github/scripts/tests/ios-testflight-workflow-test.sh
 Promotion tests invoke the real CLI with temporary Git repositories and files;
 only external R2/GitHub commands are replaced. They cover differing builder/main
 SHAs, metadata-only test reuse, missing evidence/full tests, mixed groups, input
-invalidation, passing test provenance, immutable readiness, checksums, missing
-objects, and safe extraction. Generated archive placeholders test the protocol,
+invalidation, independent native-job provenance and input agreement, bounded
+queue ancestry, immutable readiness, checksums, missing objects, and safe extraction. Generated archive placeholders test the protocol,
 not native compilation, signing, or TestFlight availability.

@@ -170,12 +170,18 @@ class PromotionTest(unittest.TestCase):
                             "name": "Build app and run isolated simulator tests",
                             "conclusion": "success",
                         },
+                    ],
+                },
+                {
+                    "name": "build-archive",
+                    "conclusion": "success",
+                    "steps": [
                         {
                             "name": "Build unsigned device Release archive",
                             "conclusion": "success",
                         },
                     ],
-                }
+                },
             ],
         }
         self.save_records()
@@ -207,6 +213,7 @@ class PromotionTest(unittest.TestCase):
             "--output",
             self.work / "inputs.json",
         )
+        shutil.copyfile(self.work / "inputs.json", self.work / "test-inputs.json")
         return json.loads((self.work / "inputs.json").read_bytes())
 
     def archive(self):
@@ -384,6 +391,61 @@ class PromotionTest(unittest.TestCase):
         self.records["123"]["run"]["event"] = "pull_request"
         self.save_records()
         self.cli("publish", self.work, error="exact main merge-group")
+
+    def test_failed_or_skipped_native_jobs_cannot_publish(self):
+        for job_index in (0, 1):
+            for conclusion in ("failure", "skipped", "cancelled"):
+                with self.subTest(job_index=job_index, conclusion=conclusion):
+                    self.record()
+                    self.records["123"]["jobs"][job_index]["conclusion"] = conclusion
+                    self.save_records()
+                    self.cli("publish", self.work, error="did not pass")
+                    self.assertFalse(self.ready().exists())
+
+    def test_native_jobs_must_observe_identical_source_and_toolchain_inputs(self):
+        target = self.capture()
+        for field, mismatch in [
+            ("archiveInputSha256", "0" * 64),
+            ("testInputSha256", "0" * 64),
+            ("toolchain", target["toolchain"] | {"simulatorSDK": "another SDK build"}),
+        ]:
+            with self.subTest(field=field):
+                (self.work / "test-inputs.json").write_text(
+                    json.dumps(target | {field: mismatch})
+                )
+                self.cli(
+                    "publish", self.work, error="archive and simulator inputs differ"
+                )
+                self.assertFalse(self.ready().exists())
+        (self.work / "test-inputs.json").unlink()
+        self.cli("publish", self.work, error="test-inputs.json")
+        self.assertFalse(self.ready().exists())
+
+    def test_bounded_checkout_still_classifies_the_whole_squashed_merge_group(self):
+        # The live queue merges at most five entries. Preserve its complete base
+        # ancestry while avoiding the repository's full history on macOS.
+        self.file("ios/CHANGELOG.md", "Before the merge group\n")
+        self.commit()
+        for index in range(32):
+            self.git("commit", "--allow-empty", "-qm", f"older main commit {index}")
+        self.base = self.git("rev-parse", "HEAD")
+        self.release()
+        for index in range(4):
+            self.file("ios/CHANGELOG.md", f"Release note {index}\n")
+            self.commit()
+        clone = self.root / "shallow-checkout"
+        subprocess.run(
+            ["git", "clone", "-q", "--depth=32", self.repo.as_uri(), str(clone)],
+            check=True,
+        )
+        self.repo = clone
+        self.git("config", "user.name", "Promotion Test")
+        self.git("config", "user.email", "test@example.invalid")
+        self.assertEqual(self.git("rev-parse", "--is-shallow-repository"), "true")
+        self.assertEqual(self.cli("release-only", "--base", self.base), "true")
+        self.file("ios/App.swift", "let application = 2\n")
+        self.commit()
+        self.assertEqual(self.cli("release-only", "--base", self.base), "false")
 
     def test_tampered_prior_test_evidence_is_not_a_cache_miss(self):
         self.cli("publish", self.work)
