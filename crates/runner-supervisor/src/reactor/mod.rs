@@ -1257,13 +1257,28 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         return Err(e);
     }
 
-    let factory_result = if let Some(task) = wss_task.as_mut() {
+    let (factory_result, startup_listener_error) = if let Some(task) = wss_task.as_mut() {
+        let startup = start_factories(&runner.profiles, runtime.as_mut());
+        tokio::pin!(startup);
         tokio::select! {
-            result = start_factories(&runner.profiles, runtime.as_mut()) => result,
-            result = task.wait() => Err(RunnerError::Internal(format!("required Runner WSS accept loop stopped during factory startup: {result:?}"))),
+            result = &mut startup => (result, None),
+            result = task.wait() => {
+                let error = RunnerError::Internal(format!(
+                    "required Runner WSS accept loop stopped during factory startup: {result:?}"
+                ));
+                // Listener failure already closes admission and changes lifecycle.
+                // Keep the external factory work owned until it returns: dropping
+                // it would bypass partial-factory shutdown and detach physical IO
+                // over shared runtime resources. The failed-ready path below then
+                // joins every completed factory before runtime teardown.
+                (startup.await, Some(error))
+            }
         }
     } else {
-        start_factories(&runner.profiles, runtime.as_mut()).await
+        (
+            start_factories(&runner.profiles, runtime.as_mut()).await,
+            None,
+        )
     };
     let mut factories = match factory_result {
         Ok(factories) => factories,
@@ -1291,9 +1306,10 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         }
     };
     // A dead listener cannot be followed by healthy status, heartbeat or claims.
-    if wss_failed
-        .as_ref()
-        .is_some_and(|flag| flag.load(std::sync::atomic::Ordering::SeqCst))
+    if startup_listener_error.is_some()
+        || wss_failed
+            .as_ref()
+            .is_some_and(|flag| flag.load(std::sync::atomic::Ordering::SeqCst))
         || wss_task
             .as_ref()
             .is_some_and(runner_wss::AcceptTask::is_finished)
@@ -1320,9 +1336,9 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         if let Some(task) = signal_handler_task.take() {
             abort_signal_handler_task(task, "wss_accept_startup_failure").await;
         }
-        return Err(RunnerError::Internal(
-            "required Runner WSS accept loop exited during startup".into(),
-        ));
+        return Err(startup_listener_error.unwrap_or_else(|| {
+            RunnerError::Internal("required Runner WSS accept loop exited during startup".into())
+        }));
     }
     let startup_mode = lifecycle.mark_startup_ready();
     if let Err(error) = shared.status.set_mode(startup_mode).await {

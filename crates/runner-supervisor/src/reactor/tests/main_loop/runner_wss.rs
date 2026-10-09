@@ -1,7 +1,8 @@
 use super::super::super::*;
 use super::super::support::{
     TEST_HEARTBEAT_GENERATION, minimal_context, mock_run_config, mock_run_config_with_overrides,
-    push_job, shutdown, test_profiles, wait_cancel_token, wait_status_mode,
+    mock_run_config_with_runtime, push_job, shutdown, test_profiles, wait_cancel_token,
+    wait_status_mode,
 };
 use std::sync::Arc;
 use tokio::net::UnixStream;
@@ -246,4 +247,143 @@ async fn accept_loop_failure_is_fatal_during_readiness_and_after_running() {
             assert_eq!(env.handle.discover_started_count(), 0);
         }
     }
+}
+
+#[tokio::test]
+async fn accept_failure_joins_factory_startup_and_cleans_factories_before_runtime() {
+    use async_trait::async_trait;
+    use std::sync::Mutex;
+
+    struct Factory {
+        resource: PathBuf,
+        shutdowns: Arc<Mutex<Vec<String>>>,
+    }
+
+    #[async_trait]
+    impl sandbox::SandboxFactory for Factory {
+        fn name(&self) -> &str {
+            "startup-resource"
+        }
+        fn config_hash(&self) -> String {
+            "startup-resource".into()
+        }
+        async fn create(
+            &self,
+            _config: sandbox::SandboxConfig,
+        ) -> sandbox::Result<Box<dyn sandbox::Sandbox>> {
+            panic!("failed startup must not create a sandbox")
+        }
+        async fn destroy(&self, _sandbox: Box<dyn sandbox::Sandbox>) {}
+        async fn shutdown(&mut self) {
+            std::fs::remove_dir(&self.resource).unwrap();
+            self.shutdowns
+                .lock()
+                .unwrap()
+                .push(self.resource.file_name().unwrap().to_str().unwrap().into());
+        }
+    }
+
+    struct Runtime {
+        root: PathBuf,
+        entered: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+        release: Mutex<Option<tokio::sync::oneshot::Receiver<()>>>,
+        shutdowns: Arc<Mutex<Vec<String>>>,
+    }
+
+    #[async_trait]
+    impl sandbox::SandboxRuntime for Runtime {
+        async fn create_factory(
+            &self,
+            config: sandbox::FactoryConfig,
+        ) -> sandbox::Result<Box<dyn sandbox::SandboxFactory>> {
+            let resource = self.root.join(config.profile.replace('/', "-"));
+            std::fs::create_dir(&resource).unwrap();
+            if config.profile == "vm0/later" {
+                self.entered
+                    .lock()
+                    .unwrap()
+                    .take()
+                    .unwrap()
+                    .send(())
+                    .unwrap();
+                let release = self.release.lock().unwrap().take().unwrap();
+                release.await.unwrap();
+            }
+            Ok(Box::new(Factory {
+                resource,
+                shutdowns: Arc::clone(&self.shutdowns),
+            }))
+        }
+        async fn shutdown(&mut self) {
+            self.shutdowns.lock().unwrap().push("runtime".into());
+        }
+    }
+
+    let resources = tempfile::tempdir().unwrap();
+    let shutdowns = Arc::new(Mutex::new(Vec::new()));
+    let (entered, started) = tokio::sync::oneshot::channel();
+    let (release, resume) = tokio::sync::oneshot::channel();
+    let runtime = Runtime {
+        root: resources.path().to_owned(),
+        entered: Mutex::new(Some(entered)),
+        release: Mutex::new(Some(resume)),
+        shutdowns: Arc::clone(&shutdowns),
+    };
+    let mut profiles = test_profiles();
+    profiles.insert("vm0/later".into(), profiles["vm0/default"].clone());
+    let (mut config, env) = mock_run_config_with_runtime(profiles, 8, 32768, 4, Box::new(runtime));
+    let dir = env._temp_dir.path().join("wss");
+    std::fs::create_dir(&dir).unwrap();
+    std::fs::set_permissions(&dir, std::os::unix::fs::PermissionsExt::from_mode(0o710)).unwrap();
+    let path = dir.join(format!("{}.sock", config.runner.identity.runner_id()));
+    enable_wss(&mut config, dir);
+    let (fail, failed) = tokio::sync::oneshot::channel();
+    config.wss.as_mut().unwrap().fail_accept = Some(failed);
+    let status_path = env._temp_dir.path().join("status.json");
+    let mut run_handle = tokio::spawn(run(config));
+    tokio::time::timeout(Duration::from_secs(5), started)
+        .await
+        .unwrap()
+        .unwrap();
+    fail.send(()).unwrap();
+    tokio::time::timeout(Duration::from_secs(5), env.cancel.cancelled())
+        .await
+        .unwrap();
+
+    // Required listener failure must cancel admission immediately, but it cannot
+    // declare startup cleanup complete while the external factory still owns IO.
+    // This retained JoinHandle survives the bounded observation on either path.
+    let premature = tokio::time::timeout(Duration::from_secs(1), &mut run_handle).await;
+    let startup_retained = premature.is_err();
+    let result = match premature {
+        Ok(result) => result.unwrap(),
+        Err(_) => {
+            release
+                .send(())
+                .expect("in-flight factory must remain owned");
+            tokio::time::timeout(Duration::from_secs(5), run_handle)
+                .await
+                .unwrap()
+                .unwrap()
+        }
+    };
+    assert!(result.is_err(), "required listener failure must be fatal");
+    wait_status_mode(&status_path, "stopped", Duration::from_secs(5)).await;
+    assert_eq!(env.handle.discover_started_count(), 0);
+    assert!(!path.exists());
+    assert_eq!(
+        *shutdowns.lock().unwrap(),
+        ["vm0-default", "vm0-later", "runtime"],
+        "every completed factory must shut down before shared runtime resources"
+    );
+    assert!(
+        std::fs::read_dir(resources.path())
+            .unwrap()
+            .next()
+            .is_none()
+    );
+    assert!(
+        startup_retained,
+        "listener failure must not discard factory startup"
+    );
 }
