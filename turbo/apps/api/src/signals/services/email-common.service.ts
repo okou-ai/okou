@@ -3,7 +3,10 @@ import crypto from "node:crypto";
 import { emailOutbox } from "@okouai/db/schema/email-outbox";
 import { mailNotifications } from "@okouai/db/schema/mail-notification";
 import { notifyMailBodySchema } from "@okouai/api-contracts/contracts/notifications";
-import { renderAgentNotificationEmail } from "../../lib/agent-notification-email-renderer";
+import {
+  renderAgentMorningBriefEmail,
+  renderAgentNotificationEmail,
+} from "../../lib/agent-notification-email-renderer";
 import { emailSuppressions } from "@okouai/db/schema/email-suppression";
 import { userCache } from "@okouai/db/schema/user-cache";
 import { users } from "@okouai/db/schema/user";
@@ -94,6 +97,19 @@ function boundedUnicodeString(maxCharacters: number) {
 }
 
 const emailTemplateSchema = z.discriminatedUnion("template", [
+  z
+    .object({
+      template: z.literal("agent-morning-brief"),
+      props: z
+        .object({
+          subject: notifyMailBodySchema.shape.subject,
+          text: notifyMailBodySchema.shape.text,
+          runUrl: z.url().max(1024),
+          manageUrl: z.url().max(1024),
+        })
+        .strict(),
+    })
+    .strict(),
   z
     .object({
       template: z.literal("agent-notification"),
@@ -299,6 +315,12 @@ function renderTemplate(
   headers: Readonly<Record<string, string>> | undefined,
 ): RenderedEmailTemplate {
   switch (template.template) {
+    case "agent-morning-brief": {
+      return renderAgentMorningBriefEmail(
+        template.props,
+        officialAutomationResultUnsubscribeUrl(headers),
+      );
+    }
     case "agent-notification": {
       return renderAgentNotificationEmail(
         template.props,
@@ -340,6 +362,7 @@ function fromAddressForTemplate(template: EmailTemplate): string {
       return buildTeamFromAddress();
     }
     case "data-export-ready":
+    case "agent-morning-brief":
     case "agent-notification":
     case "official-automation-result": {
       return buildFromAddress();
@@ -519,7 +542,10 @@ function notificationIsUnsubscribed(
   template: EmailTemplate,
   notification: { readonly unsubscribed: boolean | null } | undefined,
 ): boolean {
-  if (template.template !== "agent-notification") {
+  if (
+    template.template !== "agent-notification" &&
+    template.template !== "agent-morning-brief"
+  ) {
     return false;
   }
   if (!notification || notification.unsubscribed === null) {

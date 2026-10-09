@@ -68,7 +68,7 @@ export async function scanTransactionSources(
     allowInlineConfig: false,
     overrideConfig: [
       {
-        files: ["**/*.{ts,tsx,js,mjs,cjs}"],
+        files: ["**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}"],
         languageOptions: {
           parser: tseslint.parser,
           parserOptions: { ecmaFeatures: { jsx: true } },
@@ -79,7 +79,7 @@ export async function scanTransactionSources(
         languageOptions: { parser: transactionSqlParser },
       },
       {
-        files: ["**/*.{ts,tsx,js,mjs,cjs,sql}"],
+        files: ["**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs,sql}"],
         plugins: {
           api: {
             rules: {

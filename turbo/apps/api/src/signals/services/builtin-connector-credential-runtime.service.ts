@@ -268,7 +268,7 @@ export function builtinConnectorCredentialRuntimeValueRef(
   return typeof binding === "string" ? binding : binding.valueRef;
 }
 
-function builtinConnectorCredentialValuesReadPlan(args: {
+export function builtinConnectorCredentialValuesReadPlan(args: {
   readonly connection: BuiltinConnectorCredentialConnection;
   readonly featureSwitchContext?: FeatureSwitchContext;
   readonly valueRefs: readonly string[];
@@ -301,6 +301,24 @@ function builtinConnectorCredentialValuesReadPlan(args: {
       groups: [{ access: args.connection.access, names: variableNames }],
     }),
   };
+}
+
+export function builtinConnectorVariableValuesFromRows(
+  rows: readonly {
+    readonly kind: string;
+    readonly name: string;
+    readonly value: string;
+  }[],
+): ReadonlyMap<string, string> {
+  const values = new Map<string, string>();
+  for (const row of rows) {
+    // Variable-only plans cannot select a secret; no KMS runs here.
+    if (row.kind !== "variable") {
+      throw new Error("Invalid connector credential value kind");
+    }
+    values.set(`$vars.${row.name}`, row.value);
+  }
+  return values;
 }
 
 async function builtinConnectorCredentialValuesFromRows(

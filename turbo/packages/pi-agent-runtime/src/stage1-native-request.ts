@@ -7,7 +7,11 @@ import {
   normalizeContext,
   type Context,
 } from "@earendil-works/pi-ai";
-import { PI_MEMORY_STAGE1_REASONING } from "./memory-background-config";
+import {
+  PI_MEMORY_PRESET,
+  PI_MEMORY_STAGE1_REASONING,
+  memoryPresetPayload,
+} from "./memory-background-config";
 import { resolvePiAgentModel } from "./model";
 import {
   PI_MEMORY_STAGE1_SYSTEM_PROMPT,
@@ -118,10 +122,11 @@ function stage1ChatPayloadInput(
   if (
     !Array.isArray(messages) ||
     messages.length !== 2 ||
-    normalized.max_tokens !== PI_MEMORY_STAGE1_OUTPUT_TOKENS ||
-    normalized.max_completion_tokens !== undefined ||
-    JSON.stringify(normalized.response_format) !==
-      JSON.stringify(PI_MEMORY_STAGE1_CHAT_RESPONSE_FORMAT)
+    (normalized.model !== PI_MEMORY_PRESET &&
+      (normalized.max_tokens !== PI_MEMORY_STAGE1_OUTPUT_TOKENS ||
+        normalized.max_completion_tokens !== undefined ||
+        JSON.stringify(normalized.response_format) !==
+          JSON.stringify(PI_MEMORY_STAGE1_CHAT_RESPONSE_FORMAT)))
   ) {
     throw new PiMemoryStage1BudgetError("input_payload_unmeasurable");
   }
@@ -149,7 +154,11 @@ function shapePiMemoryStage1NativePayload(
   model: NonNullable<ReturnType<typeof resolvePiAgentModel>>,
 ): unknown {
   // Normalize once so the exact object returned to the SDK is plain JSON.
-  const normalized: unknown = JSON.parse(serializeStage1Payload(payload));
+  const normalized: unknown = JSON.parse(
+    serializeStage1Payload(
+      model.id === PI_MEMORY_PRESET ? memoryPresetPayload(payload) : payload,
+    ),
+  );
   const native = model.api === "openai-codex-responses";
   if (
     !isRecord(normalized) ||
@@ -179,8 +188,9 @@ function shapePiMemoryStage1NativePayload(
   if (allowance <= 0)
     throw new PiMemoryStage1BudgetError("input_budget_exceeded");
   if (
-    !isRecord(normalized.reasoning) ||
-    normalized.reasoning.effort !== PI_MEMORY_STAGE1_REASONING
+    model.id !== PI_MEMORY_PRESET &&
+    (!isRecord(normalized.reasoning) ||
+      normalized.reasoning.effort !== PI_MEMORY_STAGE1_REASONING)
   ) {
     throw new PiMemoryStage1BudgetError("input_payload_unmeasurable");
   }
@@ -229,26 +239,29 @@ export function preparePiMemoryStage1NativeRequest(config: PiAgentModelConfig) {
     context,
     options: {
       apiKey: config.apiKey,
-      reasoning: PI_MEMORY_STAGE1_REASONING,
+      reasoning:
+        model.id === PI_MEMORY_PRESET ? undefined : PI_MEMORY_STAGE1_REASONING,
       samplingParams:
-        model.api === "openai-completions"
-          ? {
-              // Override the SDK's catalog-ceiling default with the fixed cap.
-              max_completion_tokens: undefined,
-              max_tokens: PI_MEMORY_STAGE1_OUTPUT_TOKENS,
-              response_format: PI_MEMORY_STAGE1_CHAT_RESPONSE_FORMAT,
-            }
-          : {
-              max_output_tokens: PI_MEMORY_STAGE1_OUTPUT_TOKENS,
-              text: {
-                format: {
-                  type: "json_schema",
-                  name: "pi_memory_stage1",
-                  strict: true,
-                  schema: PI_MEMORY_STAGE1_RESPONSE_SCHEMA,
+        model.id === PI_MEMORY_PRESET
+          ? undefined
+          : model.api === "openai-completions"
+            ? {
+                // Override the SDK's catalog-ceiling default with the fixed cap.
+                max_completion_tokens: undefined,
+                max_tokens: PI_MEMORY_STAGE1_OUTPUT_TOKENS,
+                response_format: PI_MEMORY_STAGE1_CHAT_RESPONSE_FORMAT,
+              }
+            : {
+                max_output_tokens: PI_MEMORY_STAGE1_OUTPUT_TOKENS,
+                text: {
+                  format: {
+                    type: "json_schema",
+                    name: "pi_memory_stage1",
+                    strict: true,
+                    schema: PI_MEMORY_STAGE1_RESPONSE_SCHEMA,
+                  },
                 },
               },
-            },
     } satisfies PiAgentStreamOptions,
   };
 }
@@ -272,7 +285,10 @@ export function preparePiMemoryStage1NativePayload(args: {
     },
     args.model.apiKey,
   );
-  const reasoning = clampThinkingLevel(plan.model, plan.options.reasoning);
+  const reasoning =
+    plan.options.reasoning === undefined
+      ? undefined
+      : clampThinkingLevel(plan.model, plan.options.reasoning);
   const options = {
     ...base,
     reasoningEffort: reasoning === "off" ? undefined : reasoning,

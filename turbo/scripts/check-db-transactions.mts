@@ -32,7 +32,8 @@ function sourceFiles(list: string): string[] {
     ...new Set(
       list.split("\0").filter((file) => {
         return (
-          /\.(?:ts|tsx|js|mjs|cjs|sql)$/u.test(file) && !file.endsWith(".d.ts")
+          /\.(?:ts|tsx|mts|cts|js|jsx|mjs|cjs|sql)$/u.test(file) &&
+          !/\.d\.(?:ts|mts|cts)$/u.test(file)
         );
       }),
     ),

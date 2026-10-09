@@ -399,7 +399,7 @@ describe("public selections of replaced models", () => {
     ).toStrictEqual(before.events);
     await expect(
       chat.readThreadMetadata(actor, thread.id),
-    ).resolves.toMatchObject({ selectedModel: null });
+    ).resolves.toMatchObject({ selectedModel: "auto" });
   }, 90_000);
 
   it("accepts a pinned model whose retained subscription was disconnected and reports the reconnect error", async () => {
@@ -505,7 +505,7 @@ describe("public selections of replaced models", () => {
     await flushWaitUntilForTest();
     await cancelChatRun(actor, active.runId);
     const runId = await pickedRunId(actor, active.threadId, clientEventId);
-    expect((await api.readRun(actor, runId)).source.model).toBe("okou-1.0");
+    expect((await api.readRun(actor, runId)).source.model).toBe("auto");
     await cancelChatRun(actor, runId);
   }, 90_000);
 

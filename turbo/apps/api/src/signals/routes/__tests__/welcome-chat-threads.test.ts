@@ -324,7 +324,7 @@ describe("POST /api/welcome-chat-threads", () => {
       }),
       [200],
     );
-    expect(metadata.body.selectedModel).toBeNull();
+    expect(metadata.body.selectedModel).toBe("auto");
     expect((await runs.readBillingStatus(actor)).credits).toBe(0);
     await expect(
       chat.listThreadEventRows(actor, body.id),

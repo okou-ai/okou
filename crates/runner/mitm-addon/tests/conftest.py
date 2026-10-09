@@ -48,6 +48,8 @@ from tests.process_log_helpers import capture_addon_process_events
 from tests.usage_helpers import UsageWebhookServer, fresh_usage_executor_context
 from usage.providers import connectors as _usage_connectors
 
+pytest_plugins = ["tests.pytest_sharding"]
+
 
 @pytest.fixture(autouse=True)
 def _reset_module_state() -> Iterator[None]:

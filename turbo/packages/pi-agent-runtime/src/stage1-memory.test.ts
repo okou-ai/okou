@@ -12,7 +12,6 @@ import {
   PI_MEMORY_CITATION_CLOSE,
 } from "@okouai/api-contracts/contracts/pi-memory-citations";
 
-import { PI_MEMORY_STAGE1_BUILT_IN_MODEL } from "./memory-background-config";
 import {
   projectPiMemoryStage1Evidence as projectEvidence,
   runPiMemoryStage1Extraction,
@@ -369,7 +368,7 @@ describe("Pi memory Stage 1 runtime", () => {
                   provider: "openrouter",
                   baseUrl: `http://127.0.0.1:${address.port}/v1`,
                   apiKey: "test-key",
-                  model: `openai/${PI_MEMORY_STAGE1_BUILT_IN_MODEL}`,
+                  model: "openai/gpt-6-luna",
                   dialect: "openai-responses",
                   transport: "sse",
                 }
@@ -392,10 +391,7 @@ describe("Pi memory Stage 1 runtime", () => {
         });
         expect(requests).toHaveLength(1);
         expect(requests[0]).toMatchObject({
-          model:
-            route === "builtin"
-              ? `openai/${PI_MEMORY_STAGE1_BUILT_IN_MODEL}`
-              : "gpt-6-luna",
+          model: route === "builtin" ? "openai/gpt-6-luna" : "gpt-6-luna",
           text: {
             format: {
               type: "json_schema",
@@ -413,118 +409,156 @@ describe("Pi memory Stage 1 runtime", () => {
     },
   );
 
-  it("sends the fixed Stage 1 request through OpenRouter Chat Completions", async () => {
-    const requests: unknown[] = [];
-    const server = createServer((request, response) => {
-      void (async () => {
-        const chunks: Buffer[] = [];
-        for await (const chunk of request) {
-          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-        }
-        const bytes = Buffer.concat(chunks);
-        requests.push(
-          JSON.parse(
-            (request.headers["content-encoding"] === "zstd"
-              ? zstdDecompressSync(bytes)
-              : bytes
-            ).toString("utf8"),
-          ) as unknown,
-        );
-        const text = JSON.stringify({
-          raw_memory: "memory",
-          rollout_summary: "summary",
-          rollout_slug: "slug",
-        });
-        const chunk = (body: unknown) => {
-          return `data: ${JSON.stringify(body)}\n\n`;
-        };
-        const base = {
-          id: "chatcmpl_stage1",
-          object: "chat.completion.chunk",
-          model: "openai/gpt-6-luna",
-        };
-        response.writeHead(200, { "content-type": "text/event-stream" });
-        response.end(
-          chunk({
-            ...base,
-            choices: [
-              { index: 0, delta: { content: text }, finish_reason: null },
-            ],
-          }) +
+  it.each(["openai/gpt-6-luna", "@preset/memory"])(
+    "extracts Stage 1 through OpenRouter Chat Completions with %s",
+    async (modelId) => {
+      const requests: unknown[] = [];
+      const sessions: unknown[] = [];
+      const server = createServer((request, response) => {
+        void (async () => {
+          const chunks: Buffer[] = [];
+          for await (const chunk of request) {
+            chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+          }
+          const bytes = Buffer.concat(chunks);
+          sessions.push(request.headers["x-session-id"]);
+          requests.push(
+            JSON.parse(
+              (request.headers["content-encoding"] === "zstd"
+                ? zstdDecompressSync(bytes)
+                : bytes
+              ).toString("utf8"),
+            ) as unknown,
+          );
+          const text = JSON.stringify({
+            raw_memory: "memory",
+            rollout_summary: "summary",
+            rollout_slug: "slug",
+          });
+          const chunk = (body: unknown) => {
+            return `data: ${JSON.stringify(body)}\n\n`;
+          };
+          const base = {
+            id: "chatcmpl_stage1",
+            object: "chat.completion.chunk",
+            model: "openai/gpt-6-luna",
+          };
+          response.writeHead(200, { "content-type": "text/event-stream" });
+          response.end(
             chunk({
               ...base,
-              choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
-              usage: {
-                prompt_tokens: 11,
-                completion_tokens: 7,
-                prompt_tokens_details: { cached_tokens: 2 },
-              },
+              choices: [
+                { index: 0, delta: { content: text }, finish_reason: null },
+              ],
             }) +
-            "data: [DONE]\n\n",
-        );
-      })().catch((error: unknown) => {
-        response.destroy(error instanceof Error ? error : new Error("test"));
+              chunk({
+                ...base,
+                choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+                usage: {
+                  prompt_tokens: 11,
+                  completion_tokens: 7,
+                  prompt_tokens_details: { cached_tokens: 2 },
+                },
+              }) +
+              "data: [DONE]\n\n",
+          );
+        })().catch((error: unknown) => {
+          response.destroy(error instanceof Error ? error : new Error("test"));
+        });
       });
-    });
-    await new Promise<void>((resolve, reject) => {
-      server.once("error", reject);
-      server.listen(0, "127.0.0.1", () => {
-        server.off("error", reject);
-        resolve();
+      await new Promise<void>((resolve, reject) => {
+        server.once("error", reject);
+        server.listen(0, "127.0.0.1", () => {
+          server.off("error", reject);
+          resolve();
+        });
       });
-    });
-    const address = server.address();
-    if (address === null || typeof address === "string") {
-      throw new Error("Stage 1 test server has no TCP address");
-    }
-    try {
-      const result = await runPiMemoryStage1Extraction({
-        model: {
-          provider: "openrouter",
-          baseUrl: `http://127.0.0.1:${address.port}/v1`,
-          apiKey: "test-key",
-          model: "openai/gpt-6-luna",
-          dialect: "openai-completions",
-          transport: "sse",
-        },
-        evidence: [{ kind: "human", content: "work" }],
-        requestId: "00000000-0000-4000-8000-000000000999",
-      });
+      const address = server.address();
+      if (address === null || typeof address === "string") {
+        throw new Error("Stage 1 test server has no TCP address");
+      }
+      try {
+        const result = await runPiMemoryStage1Extraction({
+          model: {
+            provider: "openrouter",
+            baseUrl: `http://127.0.0.1:${address.port}/v1`,
+            apiKey: "test-key",
+            model: modelId,
+            dialect: "openai-completions",
+            transport: "sse",
+            sessionAffinityKey: "MEMORY-user-1-org-1",
+          },
+          evidence: [{ kind: "human", content: "work" }],
+          requestId: "00000000-0000-4000-8000-000000000999",
+        });
 
-      expect(result).toMatchObject({
-        responseText: expect.stringContaining("raw_memory"),
-        usage: { input: 9, output: 7, cacheRead: 2 },
-      });
-      expect(requests).toHaveLength(1);
-      expect(requests[0]).toMatchObject({
-        model: "openai/gpt-6-luna",
-        max_tokens: 32_768,
-        response_format: {
-          type: "json_schema",
-          json_schema: {
-            name: "pi_memory_stage1",
-            strict: true,
-            schema: PI_MEMORY_STAGE1_RESPONSE_SCHEMA,
-          },
-        },
-        messages: [
-          { role: "developer" },
-          {
-            role: "user",
-            content: [
-              expect.objectContaining({
-                type: "text",
-                text: expect.stringContaining("work"),
-              }),
+        expect(result).toMatchObject({
+          responseText: expect.stringContaining("raw_memory"),
+          usage: { input: 9, output: 7, cacheRead: 2 },
+        });
+        expect(requests).toHaveLength(1);
+        expect(sessions).toStrictEqual(["MEMORY-user-1-org-1"]);
+        if (modelId === "@preset/memory") {
+          expect(Object.keys(requests[0] as object).sort()).toStrictEqual([
+            "messages",
+            "model",
+            "stream",
+            "stream_options",
+          ]);
+          expect(requests[0]).toMatchObject({
+            model: modelId,
+            messages: [
+              {
+                role: "system",
+                content: [
+                  expect.objectContaining({
+                    cache_control: { type: "ephemeral" },
+                  }),
+                ],
+              },
+              {
+                role: "user",
+                content: [
+                  expect.objectContaining({
+                    text: expect.stringContaining("work"),
+                    cache_control: { type: "ephemeral" },
+                  }),
+                ],
+              },
             ],
+          });
+          return;
+        }
+        expect(requests[0]).toMatchObject({
+          model: modelId,
+          max_tokens: 32_768,
+          response_format: {
+            type: "json_schema",
+            json_schema: {
+              name: "pi_memory_stage1",
+              strict: true,
+              schema: PI_MEMORY_STAGE1_RESPONSE_SCHEMA,
+            },
           },
-        ],
-      });
-      expect(requests[0]).not.toHaveProperty("tools");
-      expect(requests[0]).toMatchObject({ reasoning: { effort: "low" } });
-      expect(requests[0]).not.toHaveProperty("input");
-    } finally {
-      server.close();
-    }
-  });
+          messages: [
+            { role: "developer" },
+            {
+              role: "user",
+              content: [
+                expect.objectContaining({
+                  type: "text",
+                  text: expect.stringContaining("work"),
+                }),
+              ],
+            },
+          ],
+        });
+        expect(requests[0]).not.toHaveProperty("tools");
+        expect(requests[0]).toMatchObject({ reasoning: { effort: "low" } });
+        expect(requests[0]).not.toHaveProperty("input");
+      } finally {
+        server.close();
+      }
+    },
+  );
 });

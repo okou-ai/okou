@@ -29,6 +29,7 @@ import {
 import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
 import { loadModelCatalog$, type ModelCatalog } from "./model-catalog.service";
 import {
+  autoSelectionPin,
   resolveModelSelectionPin$,
   validateCodexServiceTier,
   type ModelFirstPin,
@@ -170,15 +171,7 @@ function resolveModelColumns(
   if (!hasModel(args.patch)) {
     return { kind: "ok", columns: undefined };
   }
-  const pin =
-    args.patch.model === null
-      ? {
-          modelProviderId: null,
-          modelProviderType: null,
-          modelProviderCredentialScope: null,
-          selectedModel: null,
-        }
-      : preparedPin;
+  const pin = args.patch.model === null ? autoSelectionPin() : preparedPin;
   if (pin === null) {
     throw new Error("Prepared model selection is missing");
   }

@@ -191,6 +191,38 @@ ID as 17–20 decimal digits, the Ed25519 public key as 32-byte hex, and the
 Gateway secret as at least 32 characters. The shared feature gate reads actual
 DB overrides independently of configuration and verified identity checks.
 
+### API deployment inputs
+
+The shared `.github/actions/web-api-env` action forwards these settings only to
+API deployments, for both preview and production. GitHub inputs come from the
+workflow's resolved Variables and Secrets, including its selected environment;
+Doppler inputs come from `vm0/dev` for previews and `vm0/prd` for production.
+
+| API setting                       | Configuration source                                 |
+| --------------------------------- | ---------------------------------------------------- |
+| `DISCORD_APPLICATION_ID`          | GitHub Variable                                      |
+| `DISCORD_PUBLIC_KEY`              | GitHub Variable                                      |
+| `DISCORD_BOT_TOKEN`               | GitHub Secret                                        |
+| `DISCORD_GATEWAY_SECRET`          | GitHub Secret; must match the relay's HMAC secret    |
+| `DISCORD_OAUTH_CLIENT_SECRET`     | Doppler secret only; no legacy GitHub OAuth fallback |
+| `DISCORD_MESSAGE_CONTENT_ENABLED` | GitHub Variable; `true` or `false`, default `false`  |
+
+The Doppler OAuth client ID must identify the same application as
+`DISCORD_APPLICATION_ID`; it is not emitted as a second runtime application-ID
+alias. OAuth-secret forwarding prepares the separate OAuth-onboarding
+implementation; it does not replace the deferred onboarding flow on current
+main. Missing settings retain the optional unconfigured state rather than
+making disabled Discord a deployment prerequisite. Malformed message-content
+flags fail rendering before an environment file is created.
+
+Updating GitHub configuration does not update an already-running API: a
+subsequent API deployment must render the new inputs. The signed interaction
+PING needs the application ID and public key, while commands also need the bot
+token and Gateway HMAC secret. Neither forwarding settings nor validating the
+interaction endpoint starts the Gateway or enables `discordIntegration`.
+`DISCORD_GATEWAY_ENABLED` and `DISCORD_GATEWAY_CONTROL_SECRET` are relay-only
+settings and are not passed to the API or Web. Do not commit credential values.
+
 The agreed Gateway endpoint is `POST /api/internal/discord/gateway`, with a
 version-1 envelope containing `applicationId`, `eventType` (`MESSAGE_CREATE` or
 `GUILD_DELETE`), stable `eventId`, and raw Discord event `payload`. Its

@@ -5,6 +5,13 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import type { PiPreheatedResourceSnapshot } from "./api-types";
 import { PI_MODEL_LIMIT_OVERRIDES } from "./model-limits";
 import { createPiAgentSessionForRuntime } from "./session-runtime";
+import { resolvePiAgentModel } from "./model";
+import {
+  PI_MEMORY_PRESET,
+  PI_MEMORY_STAGE1_BUILT_IN_MODEL,
+  PI_MEMORY_PRESET_REQUEST_FIELDS,
+  piMemorySessionAffinityKey,
+} from "./memory-background-config";
 import type { PiAgentModelConfig } from "./types";
 
 /** Fixed inputs: only the code that turns them into a session may vary. */
@@ -57,8 +64,13 @@ export interface PiSessionConstructionProfileDocument {
 }
 
 export interface PiSessionConstructionDocument {
-  readonly version: 2;
+  readonly version: 3;
   readonly modelLimitOverrides: typeof PI_MODEL_LIMIT_OVERRIDES;
+  readonly memoryPreset: {
+    readonly model: NonNullable<ReturnType<typeof resolvePiAgentModel>>;
+    readonly requestFields: typeof PI_MEMORY_PRESET_REQUEST_FIELDS;
+    readonly sessionAffinityExample: string;
+  };
   readonly profiles: readonly PiSessionConstructionProfileDocument[];
 }
 
@@ -99,9 +111,24 @@ export async function computePiSessionConstructionDocument(): Promise<PiSessionC
       created.session.dispose();
     }
   }
+  const memoryModel = resolvePiAgentModel({
+    provider: "openrouter",
+    baseUrl: "https://openrouter.ai/api/v1",
+    apiKey: "session-construction-digest",
+    model: PI_MEMORY_PRESET,
+    catalogModel: PI_MEMORY_STAGE1_BUILT_IN_MODEL,
+    dialect: "openai-completions",
+    transport: "sse",
+  });
+  if (!memoryModel) throw new Error("Memory preset model must be supported");
   return {
-    version: 2,
+    version: 3,
     modelLimitOverrides: structuredClone(PI_MODEL_LIMIT_OVERRIDES),
+    memoryPreset: {
+      model: structuredClone(memoryModel),
+      requestFields: structuredClone(PI_MEMORY_PRESET_REQUEST_FIELDS),
+      sessionAffinityExample: piMemorySessionAffinityKey("user", "org"),
+    },
     profiles,
   };
 }

@@ -21,6 +21,12 @@ import {
 
 const log = logger("PiMemoryStage1Cost");
 
+function unpricedCreditValue(receipt: PiMemoryStage1UsageReceipt | null) {
+  return receipt?.disposition === "free"
+    ? { grossCreditValueUsd: 0, grossCreditValueNanoUsd: "0" }
+    : { grossCreditValueUsd: null, grossCreditValueNanoUsd: null };
+}
+
 /** Best-effort observation only: callers must record canonical usage first. */
 export const observePiMemoryStage1Cost$ = command(
   async (
@@ -64,8 +70,7 @@ export const observePiMemoryStage1Cost$ = command(
             pricingStatus: !("ok" in entries)
               ? "invalid_usage"
               : (receipt?.disposition ?? "persistence_error"),
-            grossCreditValueUsd: null,
-            grossCreditValueNanoUsd: null,
+            ...unpricedCreditValue(receipt),
             priceBasis: null,
           });
           return;
@@ -131,7 +136,7 @@ export const observePiMemoryStage1Cost$ = command(
 
 /** No usable response usage: unknown vendor cost, never a zero-valued response. */
 export async function observePiMemoryStage1MissingUsage(
-  billingMode: "builtin" | "subscription",
+  billingMode: "builtin" | "subscription" | "free",
   model: PiMemoryStage1Model,
 ): Promise<void> {
   await settleIncludingAbort(() => {

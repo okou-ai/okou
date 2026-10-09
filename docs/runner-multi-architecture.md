@@ -88,6 +88,21 @@ Jobs that need one representative host use the deterministic selector:
 Runner image production resolves architecture groups, builds one runner image per
 configured group, and validates the manifest under that group's target triple.
 
+Image builds and native behavior tests use the immutable revision captured in the
+workflow event's `github.sha`. For pull requests, CLI, Runner, and Guest builds
+therefore use the synthetic merge commit, and previews represent main plus the
+PR rather than the bare PR branch. Push and merge-group builds use their captured
+event revision as well. CLI bundling, binary input planning, compilation, image
+preparation, asset publication, and dependency-cache prewarming share this build
+revision; they do not resolve a newer mutable merge ref mid-run.
+
+Actions producer provenance is a separate identity. A pull-request run's API
+`head_sha` is the PR head, not its checkout merge commit. The image workflow keeps
+that value as `producer-head-sha` for reusable-binary producer metadata, and image
+waiters retain PR-head run lookup. Image manifests use the event build revision
+as `headSha`. Do not replace producer provenance with the merge SHA: cache trust
+still compares producer metadata with the Actions API response.
+
 Runner binary cache reuse is target-specific. Prepare resolves small references
 for the current build-input digest; each image-build job downloads its own
 binary directly from the trusted R2 cache. GitHub cache metadata is a lookup

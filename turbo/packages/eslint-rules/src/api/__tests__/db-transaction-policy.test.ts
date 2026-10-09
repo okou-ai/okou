@@ -133,6 +133,22 @@ test.each([
   },
 );
 
+test.each(["ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs"])(
+  "the CLI rejects new transactions in untracked .%s source files",
+  async (extension) => {
+    const f = await fixture();
+    f.write(
+      `turbo/apps/api/scripts/added.${extension}`,
+      "export const result = db.transaction(work);",
+    );
+    const result = f.check();
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain(
+      "a new database transaction requires a necessary billing exception",
+    );
+  },
+);
+
 test("PR edits cannot enlarge or rewrite the base/main inventory", async () => {
   const f = await fixture();
   f.write(
@@ -270,6 +286,18 @@ test.each([
     cwd: new URL("../../../../db/", import.meta.url),
     file: "src/migrations/9999_new_transaction.sql",
   },
+  ...["mts", "cts", "jsx"].flatMap((extension) => {
+    return [
+      {
+        cwd: new URL("../../../../../apps/api/", import.meta.url),
+        file: `scripts/new-transaction.${extension}`,
+      },
+      {
+        cwd: new URL("../../../../db/", import.meta.url),
+        file: `scripts/new-transaction.${extension}`,
+      },
+    ];
+  }),
 ])(
   "the real package config rejects transactions in $file",
   async ({ cwd, file }) => {

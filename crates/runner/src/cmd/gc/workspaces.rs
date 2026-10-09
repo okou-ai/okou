@@ -9,8 +9,8 @@ use std::time::SystemTime;
 use nix::fcntl::Flock;
 use tracing::{info, warn};
 
-use crate::byte_size::human_bytes;
 use crate::error::{RunnerError, RunnerResult};
+use runner_host::byte_size::human_bytes;
 use runner_host::paths::{HomePaths, base_dir_lock_name};
 
 use super::GC_MIN_AGE;

@@ -277,7 +277,7 @@ export default [
     rules: { "api/no-new-advisory-lock": "error" },
   },
   {
-    files: ["**/*.{ts,tsx,js,mjs,cjs}"],
+    files: ["**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}"],
     plugins: { api: apiLintPlugin },
     linterOptions: { reportUnusedDisableDirectives: "error" },
     rules: {
@@ -517,17 +517,6 @@ export default [
       "api/no-logger-info": [
         "error",
         { allowedMessages: ["Pi memory Stage 1 cost observed"] },
-      ],
-    },
-  },
-  {
-    files: ["src/signals/services/pi-memory-quota.service.ts"],
-    rules: {
-      // Quota admission is a bounded production decision, including expected
-      // denials and unknowns. Debug never reaches Axiom's info-level transport.
-      "api/no-logger-info": [
-        "error",
-        { allowedMessages: ["Pi memory quota admission"] },
       ],
     },
   },

@@ -4,12 +4,8 @@ import {
 } from "@okouai/api-contracts/contracts/model-providers";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
-import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant";
-import { command } from "ccstate";
-import { and, eq, gt, isNull, lte, sql, sum } from "drizzle-orm";
-import { QueryBuilder } from "drizzle-orm/pg-core";
+import { and, eq, gt, lte, sql, sum } from "drizzle-orm";
 import {
   nullableDriverValueDecoder,
   pgInt8ToSafeIntegerDecoder,
@@ -20,17 +16,12 @@ import {
   paidPlanRequired,
 } from "../../lib/error";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import type { Db } from "../external/db";
 import {
   loadOrgPlanCapabilities,
-  loadOrgPlanCapabilities$,
   type OrgPlanCapabilities,
 } from "./org-plan-entitlement-read.service";
 import { getSpendableUsagePackCredits } from "./usage-pack-credit.service";
-import {
-  isMemberSubscriptionRoute,
-  memberModelRouteContextFromAccounts,
-} from "./effective-model-route.service";
 import {
   catalogModelForSelectedId,
   catalogRunModelRouteAccess,
@@ -72,210 +63,6 @@ export interface RunAdmissionInput {
   readonly selectedModel: string | null | undefined;
   readonly enforceBuiltInCredits: boolean;
 }
-
-function creditBalanceQuery(orgId: string, at: Date) {
-  const builder = new QueryBuilder();
-  const expired = builder.$with("expired").as(
-    builder
-      .select({
-        total: sum(creditExpiresRecord.remaining)
-          .mapWith(nullableDriverValueDecoder(pgInt8ToSafeIntegerDecoder))
-          .as("total"),
-      })
-      .from(creditExpiresRecord)
-      .where(
-        and(
-          eq(creditExpiresRecord.orgId, orgId),
-          lte(creditExpiresRecord.expiresAt, at),
-          gt(creditExpiresRecord.remaining, 0),
-        ),
-      ),
-  );
-  return builder
-    .with(expired)
-    .select({
-      credits: sql`${orgMetadata.credits}`
-        .mapWith(nullableDriverValueDecoder(pgInt8ToSafeIntegerDecoder))
-        .as("credits"),
-      unsettledExpired: expired.total,
-    })
-    .from(expired)
-    .leftJoin(orgMetadata, eq(orgMetadata.orgId, orgId))
-    .as("admission_credit_balance");
-}
-
-function memberCreditsQuery(orgId: string, userId: string, at: Date) {
-  return new QueryBuilder()
-    .select({
-      total: sum(usagePackCreditGrants.remainingAmount)
-        .mapWith(nullableDriverValueDecoder(pgInt8ToSafeIntegerDecoder))
-        .as("total"),
-    })
-    .from(usagePackCreditGrants)
-    .where(
-      and(
-        eq(usagePackCreditGrants.orgId, orgId),
-        eq(usagePackCreditGrants.userId, userId),
-        gt(usagePackCreditGrants.remainingAmount, 0),
-        gt(usagePackCreditGrants.expiresAt, at),
-      ),
-    )
-    .as("admission_member_credits");
-}
-
-function memberAccountsQuery(
-  input: Pick<RunAdmissionInput, "orgId" | "userId">,
-) {
-  return new QueryBuilder()
-    .select({
-      type: modelProviderAccounts.type,
-      providerId: modelProviderAccounts.modelProviderId,
-      isActive: modelProviderAccounts.isActive,
-      needsReconnect: modelProviderAccounts.needsReconnect,
-    })
-    .from(modelProviderAccounts)
-    .where(
-      and(
-        eq(modelProviderAccounts.orgId, input.orgId),
-        eq(modelProviderAccounts.userId, input.userId),
-        isNull(modelProviderAccounts.disconnectedAt),
-      ),
-    )
-    .as("admission_member_accounts");
-}
-
-function needsPersonalSubscription(input: RunAdmissionInput) {
-  return (
-    Boolean(input.selectedModel) &&
-    (input.modelProviderType === "claude-code-oauth-token" ||
-      input.modelProviderType === "codex-oauth-token")
-  );
-}
-
-function personalSubscriptionFromAccounts(
-  input: RunAdmissionInput,
-  accounts: readonly {
-    readonly type: string;
-    readonly providerId: string;
-    readonly isActive: boolean;
-    readonly needsReconnect: boolean;
-  }[],
-) {
-  return isMemberSubscriptionRoute({
-    catalog: input.catalog,
-    member: memberModelRouteContextFromAccounts(accounts),
-    model: input.selectedModel,
-    providerType: input.modelProviderType,
-  });
-}
-
-function creditAvailability(
-  capabilities: OrgPlanCapabilities | null,
-  balance:
-    | {
-        readonly credits: number | null;
-        readonly unsettledExpired: number | null;
-      }
-    | undefined,
-  usagePackCredits: number,
-): OrgCreditAvailability | null {
-  return capabilities && balance?.credits !== null && balance !== undefined
-    ? {
-        status: capabilities.status,
-        restrictedBuiltInModels: capabilities.restrictedBuiltInModels,
-        spendableCredits: balance.credits - (balance.unsettledExpired ?? 0),
-        usagePackCredits,
-      }
-    : null;
-}
-
-function creditOnlyAdmission(
-  input: RunAdmissionInput,
-  availability: OrgCreditAvailability | null,
-  personalSubscription: boolean,
-): RunAdmissionFailure | null {
-  const routeFailure = checkCatalogRunRoute(input.catalog, input);
-  if (routeFailure) {
-    return routeFailure;
-  }
-  const planFailure = checkOrgPlanRunAdmission({
-    ...input,
-    capabilities: availability,
-    personalSubscription,
-  });
-  if (planFailure) {
-    return planFailure;
-  }
-  return !isBuiltInModelProviderType(input.modelProviderType) ||
-    (availability &&
-      (availability.usagePackCredits > 0 || availability.spendableCredits > 0))
-    ? null
-    : insufficientCredits();
-}
-
-/** Runtime input is a plain captured snapshot; this command owns all reads. */
-export const checkRunAdmission$ = command(
-  async (
-    { set },
-    input: RunAdmissionInput,
-    signal: AbortSignal,
-  ): Promise<RunAdmissionFailure | null> => {
-    const db = set(writeDb$);
-    const at = nowDate();
-    const capabilities = await set(
-      loadOrgPlanCapabilities$,
-      input.orgId,
-      signal,
-    );
-    let personalSubscription = false;
-    if (needsPersonalSubscription(input)) {
-      const accounts = await db.select().from(memberAccountsQuery(input));
-      signal.throwIfAborted();
-      personalSubscription = personalSubscriptionFromAccounts(input, accounts);
-    }
-    if (!input.enforceBuiltInCredits) {
-      return (
-        checkOrgPlanRunAdmission({
-          ...input,
-          capabilities,
-          personalSubscription,
-        }) ?? null
-      );
-    }
-    const [[balance], [memberCredits]] = await Promise.all([
-      db.select().from(creditBalanceQuery(input.orgId, at)),
-      db.select().from(memberCreditsQuery(input.orgId, input.userId, at)),
-    ]);
-    signal.throwIfAborted();
-    return creditOnlyAdmission(
-      input,
-      creditAvailability(capabilities, balance, memberCredits?.total ?? 0),
-      personalSubscription,
-    );
-  },
-);
-
-export const checkOrgCreditsForRunAdmission$ = command(
-  async (
-    { set },
-    input: Omit<
-      RunAdmissionInput,
-      "enforceBuiltInCredits" | "selectedModel"
-    > & { readonly selectedModel?: string | null },
-    signal: AbortSignal,
-  ): Promise<RunAdmissionFailure | undefined> => {
-    const failure = await set(
-      checkRunAdmission$,
-      {
-        ...input,
-        selectedModel: input.selectedModel,
-        enforceBuiltInCredits: true,
-      },
-      signal,
-    );
-    return failure ?? undefined;
-  },
-);
 
 export function isFreePlanForCreditAdmission(
   planKey: string | null | undefined,

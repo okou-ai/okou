@@ -3,10 +3,7 @@ import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
-import {
-  PI_MEMORY_STAGE1_BUILT_IN_MODEL,
-  PI_MEMORY_STAGE1_PERSONAL_MODEL,
-} from "./memory-background-config";
+import { PI_MEMORY_STAGE1_PERSONAL_MODEL } from "./memory-background-config";
 import { PI_MEMORY_STAGE1_OUTPUT_TOKENS } from "./stage1-input";
 import {
   preparePiMemoryStage1Extraction,
@@ -28,7 +25,7 @@ afterAll(() => {
 });
 
 const REQUEST_ID = "00000000-0000-4000-8000-000000000999";
-const AFFINITY_ID = "00000000-0000-4000-8000-000000000456";
+const AFFINITY_ID = "MEMORY-user-1-org-1";
 const RESPONSE_TEXT = JSON.stringify({
   raw_memory: "memory",
   rollout_summary: "summary",
@@ -48,7 +45,7 @@ const routes: readonly {
     responseId: "resp_stage1",
     model: {
       provider: "openrouter",
-      model: `openai/${PI_MEMORY_STAGE1_BUILT_IN_MODEL}`,
+      model: "openai/gpt-6-luna",
       baseUrl: "https://stage1.test/v1",
       apiKey: "test-key",
       dialect: "openai-responses",
@@ -61,7 +58,21 @@ const routes: readonly {
     responseId: "chatcmpl_stage1",
     model: {
       provider: "openrouter",
-      model: `openai/${PI_MEMORY_STAGE1_BUILT_IN_MODEL}`,
+      model: "openai/gpt-6-luna",
+      baseUrl: "https://stage1.test/v1",
+      apiKey: "test-key",
+      dialect: "openai-completions",
+      transport: "sse",
+      sessionAffinityKey: AFFINITY_ID,
+    },
+  },
+  {
+    name: "OpenRouter memory preset",
+    url: "https://stage1.test/v1/chat/completions",
+    responseId: "chatcmpl_stage1",
+    model: {
+      provider: "openrouter",
+      model: "@preset/memory",
       baseUrl: "https://stage1.test/v1",
       apiKey: "test-key",
       dialect: "openai-completions",
@@ -223,15 +234,50 @@ describe.each(routes)(
       expect(requests).toHaveLength(0);
       expect(prepared.payload).toMatchObject({
         model: model.model,
-        reasoning: { effort: "low" },
       });
+      if (model.model !== "@preset/memory") {
+        expect(prepared.payload).toMatchObject({
+          reasoning: { effort: "low" },
+        });
+      }
       const format = {
         type: "json_schema",
         name: "pi_memory_stage1",
         strict: true,
         schema: PI_MEMORY_STAGE1_RESPONSE_SCHEMA,
       };
-      if (model.dialect === "openai-completions") {
+      if (model.model === "@preset/memory") {
+        expect(Object.keys(prepared.payload as object).sort()).toStrictEqual([
+          "messages",
+          "model",
+          "stream",
+          "stream_options",
+        ]);
+        expect(prepared.payload).toMatchObject({
+          messages: [
+            {
+              role: "system",
+              content: [
+                {
+                  type: "text",
+                  text: PI_MEMORY_STAGE1_SYSTEM_PROMPT,
+                  cache_control: { type: "ephemeral" },
+                },
+              ],
+            },
+            {
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text: expect.stringContaining("Retain this human request."),
+                  cache_control: { type: "ephemeral" },
+                },
+              ],
+            },
+          ],
+        });
+      } else if (model.dialect === "openai-completions") {
         expect(prepared.payload).toMatchObject({
           max_tokens: PI_MEMORY_STAGE1_OUTPUT_TOKENS,
           response_format: {

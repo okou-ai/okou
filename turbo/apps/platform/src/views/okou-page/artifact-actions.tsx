@@ -98,13 +98,12 @@ export type ArtifactDownloadSyncTarget = {
   readonly accountReady: boolean;
   readonly agentId: string | null | undefined;
   readonly disconnected: boolean;
-  readonly fileId: string;
+  readonly artifactId: string;
+  readonly connectionId: string | undefined;
   readonly filename: string;
   readonly onSyncSuccess: () => void;
   readonly recovery: ChatThreadArtifactGoogleDriveRecovery | undefined;
-  readonly runId: string;
   readonly synced: boolean;
-  readonly threadId: string;
 };
 
 async function shareArtifactUrl(url: string): Promise<void> {
@@ -397,13 +396,19 @@ function useGoogleDriveMenuAction(
     if (!syncTarget) {
       return;
     }
-    const run = async (signal: AbortSignal) => {
+    const run = async (
+      signal: AbortSignal,
+      connectedAccountId = syncTarget.connectionId,
+    ) => {
+      if (!syncTarget.agentId) {
+        return;
+      }
       const success = await syncArtifactFileToGoogleDrive(
         {
           createClient,
-          threadId: syncTarget.threadId,
-          runId: syncTarget.runId,
-          fileId: syncTarget.fileId,
+          agentId: syncTarget.agentId,
+          artifactId: syncTarget.artifactId,
+          ...(connectedAccountId ? { connectionId: connectedAccountId } : {}),
           filename: syncTarget.filename,
         },
         signal,
@@ -461,8 +466,8 @@ function useGoogleDriveMenuAction(
         {
           connectorSlug: GOOGLE_DRIVE_CONNECTOR_SLUG,
           method: availability.googleDriveAuthMethod,
-          onSuccess: (_connectionId, signal) => {
-            return run(signal);
+          onSuccess: (connectionId, signal) => {
+            return run(signal, connectionId ?? syncTarget.connectionId);
           },
           options: {
             account: action.account,

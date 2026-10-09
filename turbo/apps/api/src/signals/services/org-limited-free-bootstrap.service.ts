@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { StorageVersionIdentityConflictError } from "./storage-version-registration.service";
 import { preparedVolumePublicationSql } from "./storage-volume-publication-sql";
 
+import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
 import { SEED_INSTRUCTIONS } from "@okouai/core/seed-instructions";
 import {
   getInstructionsStorageName,
@@ -364,6 +365,7 @@ async function upsertBootstrapOwnerMembership(
     .values({
       orgId: args.orgId,
       userId: args.ownerUserId,
+      selectedModel: AUTO_SELECTED_MODEL,
       createdAt: cachedAt,
       updatedAt: cachedAt,
     })

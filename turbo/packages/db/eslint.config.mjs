@@ -62,7 +62,7 @@ export default [
     rules: { "api/no-database-trigger": "off" },
   },
   {
-    files: ["**/*.{ts,tsx,js,mjs,cjs}"],
+    files: ["**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}"],
     plugins: { api: apiLintPlugin },
     linterOptions: { reportUnusedDisableDirectives: "error" },
     rules: {

@@ -1,5 +1,6 @@
 import type { McpChatThread } from "@okouai/api-contracts/contracts/mcp-chat-threads";
 import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
+import { isAutoSelectedModel } from "@okouai/core/auto-run-model";
 import { command } from "ccstate";
 import { db$ } from "../external/db";
 import { listAvailableRunModels$ } from "./run-models.service";
@@ -53,7 +54,7 @@ export const mcpChatThreadModels$ = command(
         }
         finalModel = replacement;
       }
-      if (finalModel === null) {
+      if (finalModel === null || isAutoSelectedModel(finalModel)) {
         // Auto resolves its run model on send.
         result.set(selectedModel, {
           selectedModel,

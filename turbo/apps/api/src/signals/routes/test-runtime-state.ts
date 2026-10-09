@@ -28,7 +28,7 @@ import {
 } from "../services/model-catalog.service";
 import { saveRunSummary$ } from "../services/run-summary.service";
 import { resolveRunnerWssTarget$ } from "../services/runner-wss-target.service";
-import { reconcileSocialKitDownloads$ } from "../services/socialkit-download.service";
+
 import {
   isTestEndpointAllowed,
   testEndpointNotFoundResponse,
@@ -558,17 +558,6 @@ const specializedRuntimeFixtureAction$ = command(
         body,
         signal,
       );
-    }
-    if (body.action === "reconcile-socialkit-downloads") {
-      const processed = await set(
-        reconcileSocialKitDownloads$,
-        { candidateIds: body.download_ids },
-        signal,
-      );
-      return {
-        status: 200 as const,
-        body: { ok: true as const, processed },
-      };
     }
     if (body.action === "resolve-runner-wss-target") {
       const target = await set(

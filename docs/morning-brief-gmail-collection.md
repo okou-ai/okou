@@ -48,8 +48,9 @@ derives the `MorningBriefCollectionScope` — owner, installation, exact
 automation, Agent, nullable bound thread, anchor, timezone and the immutable
 membership id — from
 `FeatureSwitchKey.NativeMorningBrief`, the canonical
-[migration state](./morning-brief-migration-state.md), the member's current
-Clerk membership. Nothing in a request body contributes to it.
+[Morning Brief ownership state](./morning-brief.md#canonical-state-reader),
+and the member's current Clerk membership. Nothing in a request body contributes
+to it.
 
 ### What "authorized" means here
 

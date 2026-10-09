@@ -4,7 +4,7 @@ The API [database policy](../api-ccstate.md#10-keep-database-handles-local-and-p
 
 ## Enforcement
 
-`api/no-db-transaction` is an error in the API and DB package configurations. It covers production source, scripts, tests and fixtures, and standalone SQL. `api/db-transaction-exemptions` checks exemption syntax and ownership of one detected boundary on the next line. Package lint retains `--max-warnings 0`, with unused directives reported as errors.
+`api/no-db-transaction` is an error in the API and DB package configurations. It covers production source, scripts, tests and fixtures (`.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.mjs`, `.cjs`), and standalone SQL. `api/db-transaction-exemptions` checks exemption syntax and ownership of one detected boundary on the next line. Package lint retains `--max-warnings 0`, with unused directives reported as errors.
 
 Detection includes:
 
@@ -18,7 +18,7 @@ There is no billing-directory, test-directory or new migration exemption. The in
 
 ## Frozen Legacy Inventory
 
-The initial inventory is frozen at main `1df16c8c112a1c43fdfd426578b3179512fec129`, on 2026-10-09. `turbo/db-transaction-baseline.json` registers each detected site with a unique ID, repository-relative file, named owner and SHA-256 AST fingerprint.
+The initial inventory is frozen at main `5712d9550317d811e0e2e66f2611f835a619ec7b`, on 2026-10-09. `turbo/db-transaction-baseline.json` registers each detected site with a unique ID, repository-relative file, named owner and SHA-256 AST fingerprint.
 
 Each existing boundary has this next-line marker:
 

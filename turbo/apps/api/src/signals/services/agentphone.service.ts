@@ -5,6 +5,7 @@ import { agentphoneGroupMessageReceipts } from "@okouai/db/schema/agentphone-gro
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
 import { agentphoneMessageVisibility } from "@okouai/db/schema/agentphone-message-visibility";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
+import { sameSelectedModel } from "@okouai/core/auto-run-model";
 import { command } from "ccstate";
 import { and, desc, eq, isNull, or } from "drizzle-orm";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
@@ -1135,7 +1136,7 @@ function formatAgentPhoneModelOptionsMessage(
 ): string {
   const optionLines = options.map((option) => {
     const markers = [
-      option.model === currentSelectedModel ? "current" : null,
+      sameSelectedModel(option.model, currentSelectedModel) ? "current" : null,
       option.isDefault ? "default" : null,
     ].filter((marker): marker is string => {
       return marker !== null;
@@ -1146,7 +1147,7 @@ function formatAgentPhoneModelOptionsMessage(
 
   const current =
     options.find((option) => {
-      return option.model === currentSelectedModel;
+      return sameSelectedModel(option.model, currentSelectedModel);
     })?.label ?? integrationModelOptionValue(currentSelectedModel);
   return [
     "Available models",

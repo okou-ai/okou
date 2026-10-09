@@ -670,9 +670,11 @@ function requestedThreadRunSettings(
   // An explicit null selects Auto; omission keeps the current selection.
   const requestedModel =
     body.model === undefined ? current.selectedModel : body.model;
-  const selectedModel = isAutoSelectedModel(requestedModel)
-    ? null
-    : requestedModel;
+  const selectedModel =
+    body.model !== undefined &&
+    (requestedModel === null || isAutoSelectedModel(requestedModel))
+      ? AUTO_SELECTED_MODEL
+      : requestedModel;
   const effort = resolveChatReasoningEffort({
     catalog,
     selectedModel,

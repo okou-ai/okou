@@ -24,7 +24,7 @@ describe("Pi session construction digest", () => {
 
   it("covers verified limit corrections as well as prompt and tool profiles", async () => {
     const document = await computePiSessionConstructionDocument();
-    expect(document.version).toBe(2);
+    expect(document.version).toBe(3);
     expect(document.modelLimitOverrides).toStrictEqual(
       PI_MODEL_LIMIT_OVERRIDES,
     );

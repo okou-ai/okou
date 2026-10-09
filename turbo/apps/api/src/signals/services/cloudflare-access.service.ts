@@ -471,105 +471,99 @@ export const updateCloudflareAccessConfig$ = command(
       args.body.credentials,
       args.featureContext,
     );
-    // Only an explicitly unwritten reference-set expansion can start a second
-    // transaction. Exceptions and successful/ambiguous effects are never replayed.
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0104; new non-billing transactions are prohibited.
-      const result = await db.transaction(async (tx) => {
-        const hosts = await tx
-          .select()
-          .from(referencingHostsQuery(args.owner, args.configId));
-        const [config] = await tx
-          .select(metadata)
-          .from(cloudflareAccessConfigs)
-          .where(visibleConfig(args.owner, args.configId))
-          .for("update");
-        if (!config) {
-          return cloudflareAccessFailure("notFound");
-        }
-        const denied = managementFailure(config, args.owner);
-        if (denied) {
-          return denied;
-        }
-        const [references] = await tx
-          .select({ count: count() })
-          .from(sshConnections)
-          .where(referencingHosts(args.owner, args.configId));
-        if (referenceSetExpanded(hosts.length, references)) {
-          return null;
-        }
-        if (config.revision !== args.body.expectedRevision) {
-          return cloudflareAccessFailure("conflict");
-        }
-        if (
-          config.revision === 2_147_483_647 ||
-          config.generation === 2_147_483_647 ||
-          hosts.some((host) => {
-            return host.generation === 2_147_483_647;
-          })
-        ) {
-          return cloudflareAccessFailure("exhausted");
-        }
-        const [updated] = await tx
-          .update(cloudflareAccessConfigs)
+    // Credentials and all bound-host generations must commit together. The
+    // reference count needs a fresh statement snapshot after the config fence.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0104; new non-billing transactions are prohibited.
+    const result = await db.transaction(async (tx) => {
+      const hosts = await tx
+        .select()
+        .from(referencingHostsQuery(args.owner, args.configId));
+      const [config] = await tx
+        .select(metadata)
+        .from(cloudflareAccessConfigs)
+        .where(visibleConfig(args.owner, args.configId))
+        .for("update");
+      if (!config) {
+        return cloudflareAccessFailure("notFound");
+      }
+      const denied = managementFailure(config, args.owner);
+      if (denied) {
+        return denied;
+      }
+      const [references] = await tx
+        .select({ count: count() })
+        .from(sshConnections)
+        .where(referencingHosts(args.owner, args.configId));
+      if (referenceSetExpanded(hosts.length, references)) {
+        return cloudflareAccessFailure("conflict");
+      }
+      if (config.revision !== args.body.expectedRevision) {
+        return cloudflareAccessFailure("conflict");
+      }
+      if (
+        config.revision === 2_147_483_647 ||
+        config.generation === 2_147_483_647 ||
+        hosts.some((host) => {
+          return host.generation === 2_147_483_647;
+        })
+      ) {
+        return cloudflareAccessFailure("exhausted");
+      }
+      const [updated] = await tx
+        .update(cloudflareAccessConfigs)
+        .set({
+          name: args.body.name,
+          ...encrypted,
+          revision: config.revision + 1,
+          generation: config.generation + 1,
+          updatedAt: nowDate(),
+        })
+        .where(visibleConfig(args.owner, args.configId))
+        .returning(metadata);
+      if (!updated) {
+        throw new Error("Cloudflare Access update returned no row");
+      }
+      if (hosts.length > 0) {
+        await tx
+          .update(sshConnections)
           .set({
-            name: args.body.name,
-            ...encrypted,
-            revision: config.revision + 1,
-            generation: config.generation + 1,
+            generation: sql`${sshConnections.generation} + 1`,
             updatedAt: nowDate(),
           })
-          .where(visibleConfig(args.owner, args.configId))
-          .returning(metadata);
-        if (!updated) {
-          throw new Error("Cloudflare Access update returned no row");
-        }
-        if (hosts.length > 0) {
-          await tx
-            .update(sshConnections)
-            .set({
-              generation: sql`${sshConnections.generation} + 1`,
-              updatedAt: nowDate(),
+          .where(
+            and(
+              eq(sshConnections.orgId, args.owner.orgId),
+              eq(sshConnections.cloudflareAccessId, args.configId),
+              config.scope === "personal"
+                ? eq(sshConnections.userId, args.owner.userId)
+                : undefined,
+            ),
+          );
+      }
+      return {
+        ok: true as const,
+        value: response(
+          updated,
+          hosts
+            .filter((host) => {
+              return host.userId === args.owner.userId;
             })
-            .where(
-              and(
-                eq(sshConnections.orgId, args.owner.orgId),
-                eq(sshConnections.cloudflareAccessId, args.configId),
-                config.scope === "personal"
-                  ? eq(sshConnections.userId, args.owner.userId)
-                  : undefined,
-              ),
-            );
-        }
-        return {
-          ok: true as const,
-          value: response(
-            updated,
-            hosts
-              .filter((host) => {
-                return host.userId === args.owner.userId;
-              })
-              .map(({ id, displayName }) => {
-                return { id, displayName };
-              }),
-          ),
-          affectedHosts: hosts,
-          scope: config.scope,
-        };
+            .map(({ id, displayName }) => {
+              return { id, displayName };
+            }),
+        ),
+        affectedHosts: hosts,
+        scope: config.scope,
+      };
+    });
+    if (result.ok) {
+      await set(publishUpdateInvalidation$, {
+        actor: args.owner,
+        scope: result.scope,
+        affectedHosts: result.affectedHosts,
       });
-      if (result === null) {
-        continue;
-      }
-      if (result.ok) {
-        await set(publishUpdateInvalidation$, {
-          actor: args.owner,
-          scope: result.scope,
-          affectedHosts: result.affectedHosts,
-        });
-      }
-      return result;
     }
-    return cloudflareAccessFailure("conflict");
+    return result;
   },
 );
 interface DeleteCloudflareAccessConfigArgs {
@@ -581,91 +575,84 @@ export const deleteCloudflareAccessConfig$ = command(
   async ({ set }, args: DeleteCloudflareAccessConfigArgs) => {
     const db = set(writeDb$);
 
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0105; new non-billing transactions are prohibited.
-      const result = await db.transaction(async (tx) => {
-        const hosts = await tx
-          .select()
-          .from(referencingHostsQuery(args.owner, args.configId));
-        const [config] = await tx
-          .select(metadata)
-          .from(cloudflareAccessConfigs)
-          .where(visibleConfig(args.owner, args.configId))
-          .for("update");
-        if (!config) {
-          return cloudflareAccessFailure("notFound");
-        }
-        const denied = managementFailure(config, args.owner);
-        if (denied) {
-          return denied;
-        }
-        const [references] = await tx
-          .select({ count: count() })
-          .from(sshConnections)
-          .where(referencingHosts(args.owner, args.configId));
-        if (referenceSetExpanded(hosts.length, references)) {
-          return null;
-        }
-        if (config.revision !== args.body.expectedRevision) {
-          return cloudflareAccessFailure("conflict");
-        }
-        if (
-          hosts.some((host) => {
-            return host.userId === args.owner.userId;
-          })
-        ) {
-          return cloudflareAccessFailure("inUse");
-        }
-        if (
-          (args.body.impactSnapshot !== undefined &&
-            args.body.impactSnapshot !== impactSnapshot(config, hosts)) ||
-          (hosts.length > 0 &&
-            (config.scope !== "organization" ||
-              args.body.impactSnapshot === undefined))
-        ) {
-          return cloudflareAccessFailure("impactConflict");
-        }
-        if (
-          hosts.some((host) => {
-            return host.generation === 2_147_483_647;
-          })
-        ) {
-          return cloudflareAccessFailure("exhausted");
-        }
-        if (hosts.length > 0) {
-          await tx
-            .update(sshConnections)
-            .set({
-              cloudflareAccessId: null,
-              needsRebind: true,
-              generation: sql`${sshConnections.generation} + 1`,
-              updatedAt: nowDate(),
-            })
-            .where(
-              and(
-                eq(sshConnections.orgId, args.owner.orgId),
-                eq(sshConnections.cloudflareAccessId, args.configId),
-                ne(sshConnections.userId, args.owner.userId),
-              ),
-            );
-        }
+    // Protected detachment and config deletion must commit together under the
+    // restrictive FK, with a fresh reference count after the config fence.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0105; new non-billing transactions are prohibited.
+    const result = await db.transaction(async (tx) => {
+      const hosts = await tx
+        .select()
+        .from(referencingHostsQuery(args.owner, args.configId));
+      const [config] = await tx
+        .select(metadata)
+        .from(cloudflareAccessConfigs)
+        .where(visibleConfig(args.owner, args.configId))
+        .for("update");
+      if (!config) {
+        return cloudflareAccessFailure("notFound");
+      }
+      const denied = managementFailure(config, args.owner);
+      if (denied) {
+        return denied;
+      }
+      const [references] = await tx
+        .select({ count: count() })
+        .from(sshConnections)
+        .where(referencingHosts(args.owner, args.configId));
+      if (referenceSetExpanded(hosts.length, references)) {
+        return cloudflareAccessFailure("conflict");
+      }
+      if (config.revision !== args.body.expectedRevision) {
+        return cloudflareAccessFailure("conflict");
+      }
+      if (
+        hosts.some((host) => {
+          return host.userId === args.owner.userId;
+        })
+      ) {
+        return cloudflareAccessFailure("inUse");
+      }
+      if (
+        (args.body.impactSnapshot !== undefined &&
+          args.body.impactSnapshot !== impactSnapshot(config, hosts)) ||
+        (hosts.length > 0 &&
+          (config.scope !== "organization" ||
+            args.body.impactSnapshot === undefined))
+      ) {
+        return cloudflareAccessFailure("impactConflict");
+      }
+      if (
+        hosts.some((host) => {
+          return host.generation === 2_147_483_647;
+        })
+      ) {
+        return cloudflareAccessFailure("exhausted");
+      }
+      if (hosts.length > 0) {
         await tx
-          .delete(cloudflareAccessConfigs)
-          .where(visibleConfig(args.owner, args.configId));
-        return { ok: true as const, value: undefined, scope: config.scope };
-      });
-      if (result === null) {
-        continue;
+          .update(sshConnections)
+          .set({
+            cloudflareAccessId: null,
+            needsRebind: true,
+            generation: sql`${sshConnections.generation} + 1`,
+            updatedAt: nowDate(),
+          })
+          .where(
+            and(
+              eq(sshConnections.orgId, args.owner.orgId),
+              eq(sshConnections.cloudflareAccessId, args.configId),
+              ne(sshConnections.userId, args.owner.userId),
+            ),
+          );
       }
-      if (result.ok) {
-        await publishCloudflareAccessClientInvalidation(
-          args.owner,
-          result.scope,
-        );
-      }
-      return result;
+      await tx
+        .delete(cloudflareAccessConfigs)
+        .where(visibleConfig(args.owner, args.configId));
+      return { ok: true as const, value: undefined, scope: config.scope };
+    });
+    if (result.ok) {
+      await publishCloudflareAccessClientInvalidation(args.owner, result.scope);
     }
-    return cloudflareAccessFailure("conflict");
+    return result;
   },
 );
 
@@ -758,101 +745,97 @@ export const convertCloudflareAccessToOrganization$ = command(
     if (args.owner.orgRole !== "admin") {
       return cloudflareAccessFailure("forbidden");
     }
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0106; new non-billing transactions are prohibited.
-      const result = await db.transaction(async (tx) => {
-        const hosts = await tx
-          .select()
-          .from(referencingHostsQuery(args.owner, args.configId));
-        const [config] = await tx
-          .select(metadata)
-          .from(cloudflareAccessConfigs)
-          .where(ownedConfig(args.owner, args.configId))
-          .for("update");
-        if (!config) {
-          return cloudflareAccessFailure("notFound");
-        }
-        const [references] = await tx
-          .select({ count: count() })
-          .from(sshConnections)
-          .where(referencingHosts(args.owner, args.configId));
-        if (referenceSetExpanded(hosts.length, references)) {
-          return null;
-        }
-        if (config.revision !== args.expectedRevision) {
-          return cloudflareAccessFailure("conflict");
-        }
-        if (
-          config.revision === 2_147_483_647 ||
-          config.generation === 2_147_483_647 ||
-          hosts.some((host) => {
-            return host.generation === 2_147_483_647;
-          })
-        ) {
-          return cloudflareAccessFailure("exhausted");
-        }
-        // The count fence proved these locked records are the complete set.
-        // Reject retained incompatible bindings before changing scope.
-        if (
-          hosts.some((host) => {
-            return host.userId !== args.owner.userId;
-          })
-        ) {
-          return cloudflareAccessFailure("inUse");
-        }
-        const [converted] = await tx
-          .update(cloudflareAccessConfigs)
+    // Scope/owner and bound-host generations must commit together. Validate
+    // the complete reference set in a fresh snapshot after the config fence.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0106; new non-billing transactions are prohibited.
+    const result = await db.transaction(async (tx) => {
+      const hosts = await tx
+        .select()
+        .from(referencingHostsQuery(args.owner, args.configId));
+      const [config] = await tx
+        .select(metadata)
+        .from(cloudflareAccessConfigs)
+        .where(ownedConfig(args.owner, args.configId))
+        .for("update");
+      if (!config) {
+        return cloudflareAccessFailure("notFound");
+      }
+      const [references] = await tx
+        .select({ count: count() })
+        .from(sshConnections)
+        .where(referencingHosts(args.owner, args.configId));
+      if (referenceSetExpanded(hosts.length, references)) {
+        return cloudflareAccessFailure("conflict");
+      }
+      if (config.revision !== args.expectedRevision) {
+        return cloudflareAccessFailure("conflict");
+      }
+      if (
+        config.revision === 2_147_483_647 ||
+        config.generation === 2_147_483_647 ||
+        hosts.some((host) => {
+          return host.generation === 2_147_483_647;
+        })
+      ) {
+        return cloudflareAccessFailure("exhausted");
+      }
+      // The count fence proved these locked records are the complete set.
+      // Reject retained incompatible bindings before changing scope.
+      if (
+        hosts.some((host) => {
+          return host.userId !== args.owner.userId;
+        })
+      ) {
+        return cloudflareAccessFailure("inUse");
+      }
+      const [converted] = await tx
+        .update(cloudflareAccessConfigs)
+        .set({
+          scope: "organization",
+          userId: null,
+          revision: config.revision + 1,
+          generation: config.generation + 1,
+          updatedAt: nowDate(),
+        })
+        .where(ownedConfig(args.owner, args.configId))
+        .returning(metadata);
+      if (!converted) {
+        throw new Error("Cloudflare Access promotion returned no row");
+      }
+      if (hosts.length > 0) {
+        await tx
+          .update(sshConnections)
           .set({
-            scope: "organization",
-            userId: null,
-            revision: config.revision + 1,
-            generation: config.generation + 1,
+            generation: sql`${sshConnections.generation} + 1`,
             updatedAt: nowDate(),
           })
-          .where(ownedConfig(args.owner, args.configId))
-          .returning(metadata);
-        if (!converted) {
-          throw new Error("Cloudflare Access promotion returned no row");
-        }
-        if (hosts.length > 0) {
-          await tx
-            .update(sshConnections)
-            .set({
-              generation: sql`${sshConnections.generation} + 1`,
-              updatedAt: nowDate(),
-            })
-            .where(
-              and(
-                eq(sshConnections.orgId, args.owner.orgId),
-                eq(sshConnections.cloudflareAccessId, args.configId),
-                eq(sshConnections.userId, args.owner.userId),
-              ),
-            );
-        }
-        return {
-          ok: true as const,
-          value: response(
-            converted,
-            hosts.map(({ id, displayName }) => {
-              return { id, displayName };
-            }),
-          ),
-          affectedHosts: hosts,
-        };
+          .where(
+            and(
+              eq(sshConnections.orgId, args.owner.orgId),
+              eq(sshConnections.cloudflareAccessId, args.configId),
+              eq(sshConnections.userId, args.owner.userId),
+            ),
+          );
+      }
+      return {
+        ok: true as const,
+        value: response(
+          converted,
+          hosts.map(({ id, displayName }) => {
+            return { id, displayName };
+          }),
+        ),
+        affectedHosts: hosts,
+      };
+    });
+    if (result.ok) {
+      await set(publishUpdateInvalidation$, {
+        actor: args.owner,
+        scope: "organization",
+        affectedHosts: result.affectedHosts,
       });
-      if (result === null) {
-        continue;
-      }
-      if (result.ok) {
-        await set(publishUpdateInvalidation$, {
-          actor: args.owner,
-          scope: "organization",
-          affectedHosts: result.affectedHosts,
-        });
-      }
-      return result;
     }
-    return cloudflareAccessFailure("conflict");
+    return result;
   },
 );
 
@@ -930,66 +913,53 @@ export const convertCloudflareAccessToPersonal$ = command(
     if (args.owner.orgRole !== "admin") {
       return cloudflareAccessFailure("forbidden");
     }
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0107; new non-billing transactions are prohibited.
-      const result = await db.transaction(async (tx) => {
-        const hosts = await tx
-          .select()
-          .from(referencingHostsQuery(args.owner, args.configId));
-        const [config] = await tx
-          .select(metadata)
-          .from(cloudflareAccessConfigs)
-          .where(organizationConfig(args.owner, args.configId))
-          .for("update");
-        if (!config) {
-          return cloudflareAccessFailure("notFound");
-        }
-        const [references] = await tx
-          .select({ count: count() })
-          .from(sshConnections)
-          .where(referencingHosts(args.owner, args.configId));
-        if (referenceSetExpanded(hosts.length, references)) {
-          return null;
-        }
-        if (config.revision !== args.body.expectedRevision) {
-          return cloudflareAccessFailure("conflict");
-        }
-        if (impactSnapshot(config, hosts) !== args.body.impactSnapshot) {
-          return cloudflareAccessFailure("impactConflict");
-        }
-        if (
-          config.revision === 2_147_483_647 ||
-          config.generation === 2_147_483_647 ||
-          hosts.some((host) => {
-            return host.generation === 2_147_483_647;
-          })
-        ) {
-          return cloudflareAccessFailure("exhausted");
-        }
-        if (
-          hosts.some((host) => {
-            return host.userId !== args.owner.userId;
-          })
-        ) {
-          await tx
-            .update(sshConnections)
-            .set({
-              cloudflareAccessId: null,
-              needsRebind: true,
-              generation: sql`${sshConnections.generation} + 1`,
-              updatedAt: nowDate(),
-            })
-            .where(
-              and(
-                eq(sshConnections.orgId, args.owner.orgId),
-                eq(sshConnections.cloudflareAccessId, args.configId),
-                ne(sshConnections.userId, args.owner.userId),
-              ),
-            );
-        }
+    // Other-owner detachment, own-host generations and adoption must commit
+    // together, using a fresh post-fence count for the reviewed impact.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0107; new non-billing transactions are prohibited.
+    const result = await db.transaction(async (tx) => {
+      const hosts = await tx
+        .select()
+        .from(referencingHostsQuery(args.owner, args.configId));
+      const [config] = await tx
+        .select(metadata)
+        .from(cloudflareAccessConfigs)
+        .where(organizationConfig(args.owner, args.configId))
+        .for("update");
+      if (!config) {
+        return cloudflareAccessFailure("notFound");
+      }
+      const [references] = await tx
+        .select({ count: count() })
+        .from(sshConnections)
+        .where(referencingHosts(args.owner, args.configId));
+      if (referenceSetExpanded(hosts.length, references)) {
+        return cloudflareAccessFailure("conflict");
+      }
+      if (config.revision !== args.body.expectedRevision) {
+        return cloudflareAccessFailure("conflict");
+      }
+      if (impactSnapshot(config, hosts) !== args.body.impactSnapshot) {
+        return cloudflareAccessFailure("impactConflict");
+      }
+      if (
+        config.revision === 2_147_483_647 ||
+        config.generation === 2_147_483_647 ||
+        hosts.some((host) => {
+          return host.generation === 2_147_483_647;
+        })
+      ) {
+        return cloudflareAccessFailure("exhausted");
+      }
+      if (
+        hosts.some((host) => {
+          return host.userId !== args.owner.userId;
+        })
+      ) {
         await tx
           .update(sshConnections)
           .set({
+            cloudflareAccessId: null,
+            needsRebind: true,
             generation: sql`${sshConnections.generation} + 1`,
             updatedAt: nowDate(),
           })
@@ -997,50 +967,59 @@ export const convertCloudflareAccessToPersonal$ = command(
             and(
               eq(sshConnections.orgId, args.owner.orgId),
               eq(sshConnections.cloudflareAccessId, args.configId),
-              eq(sshConnections.userId, args.owner.userId),
+              ne(sshConnections.userId, args.owner.userId),
             ),
           );
-        const [converted] = await tx
-          .update(cloudflareAccessConfigs)
-          .set({
-            scope: "personal",
-            userId: args.owner.userId,
-            revision: config.revision + 1,
-            generation: config.generation + 1,
-            updatedAt: nowDate(),
-          })
-          .where(organizationConfig(args.owner, args.configId))
-          .returning(metadata);
-        if (!converted) {
-          throw new Error("Cloudflare Access conversion returned no row");
-        }
-        return {
-          ok: true as const,
-          value: response(
-            converted,
-            hosts
-              .filter((host) => {
-                return host.userId === args.owner.userId;
-              })
-              .map(({ id, displayName }) => {
-                return { id, displayName };
-              }),
+      }
+      await tx
+        .update(sshConnections)
+        .set({
+          generation: sql`${sshConnections.generation} + 1`,
+          updatedAt: nowDate(),
+        })
+        .where(
+          and(
+            eq(sshConnections.orgId, args.owner.orgId),
+            eq(sshConnections.cloudflareAccessId, args.configId),
+            eq(sshConnections.userId, args.owner.userId),
           ),
-          affectedHosts: hosts,
-        };
+        );
+      const [converted] = await tx
+        .update(cloudflareAccessConfigs)
+        .set({
+          scope: "personal",
+          userId: args.owner.userId,
+          revision: config.revision + 1,
+          generation: config.generation + 1,
+          updatedAt: nowDate(),
+        })
+        .where(organizationConfig(args.owner, args.configId))
+        .returning(metadata);
+      if (!converted) {
+        throw new Error("Cloudflare Access conversion returned no row");
+      }
+      return {
+        ok: true as const,
+        value: response(
+          converted,
+          hosts
+            .filter((host) => {
+              return host.userId === args.owner.userId;
+            })
+            .map(({ id, displayName }) => {
+              return { id, displayName };
+            }),
+        ),
+        affectedHosts: hosts,
+      };
+    });
+    if (result.ok) {
+      await set(publishUpdateInvalidation$, {
+        actor: args.owner,
+        scope: "organization",
+        affectedHosts: result.affectedHosts,
       });
-      if (result === null) {
-        continue;
-      }
-      if (result.ok) {
-        await set(publishUpdateInvalidation$, {
-          actor: args.owner,
-          scope: "organization",
-          affectedHosts: result.affectedHosts,
-        });
-      }
-      return result;
     }
-    return cloudflareAccessFailure("conflict");
+    return result;
   },
 );
