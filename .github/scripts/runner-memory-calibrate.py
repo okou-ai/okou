@@ -187,8 +187,12 @@ def create_output(path):
     for part in [path, *path.parents]:
         if part.is_symlink():
             raise ValueError("fixture output path contains a symlink")
+    trusted_owners = {0, os.geteuid()}
     for parent in path.parents:
-        mode = parent.stat().st_mode
+        metadata = parent.stat()
+        if metadata.st_uid not in trusted_owners:
+            raise ValueError("fixture output parent is owned by another user")
+        mode = metadata.st_mode
         if mode & (stat.S_IWGRP | stat.S_IWOTH) and not mode & stat.S_ISVTX:
             raise ValueError("fixture output parent is replaceable by another owner")
     # Exclusive creation; never reuse or recursively remove another run's files.

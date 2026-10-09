@@ -324,6 +324,52 @@ os._exit(3)
         self.assertEqual(result.returncode, 1)
         self.assertFalse(marker.exists())
 
+    def test_foreign_owned_output_parent_rejected_before_launch(self):
+        parent = self.root / "foreign-owner"
+        parent.mkdir()
+        # Control only external UID/mode facts; execute the real CLI and files.
+        wrapper = """
+import os, runpy, sys
+from pathlib import Path
+parent = Path(sys.argv[1])
+mode = int(sys.argv[2])
+original_stat = Path.stat
+def kernel_stat(path, *args, **kwargs):
+    result = original_stat(path, *args, **kwargs)
+    if path == parent and kwargs.get('follow_symlinks', True):
+        fields = list(result)
+        fields[0] = mode
+        fields[4] = os.geteuid() + 1
+        return os.stat_result(fields)
+    return result
+Path.stat = kernel_stat
+sys.argv = sys.argv[3:]
+runpy.run_path(sys.argv[0], run_name='__main__')
+"""
+        for mode in (0o40755, 0o41777):
+            with self.subTest(mode=oct(mode)):
+                output = parent / f"output-{mode:o}"
+                marker = self.root / f"launched-{mode:o}"
+                command = self.command(output, f"open({str(marker)!r},'w').close()")
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        "-c",
+                        wrapper,
+                        str(parent),
+                        str(mode),
+                        *command[1:],
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    check=False,
+                )
+                self.assertEqual(result.returncode, 1, (result.stdout, result.stderr))
+                self.assertIn("owned by another user", result.stderr)
+                self.assertFalse(marker.exists())
+                self.assertFalse(output.exists())
+
     def test_invalid_limits_rejected_without_launch(self):
         for limit in ("nan", "inf", "-1", "601"):
             result = subprocess.run(

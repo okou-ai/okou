@@ -45,7 +45,10 @@ inherited ignored child signal auto-reaps exit status, so the collector rejects
 it before output creation or launch instead of claiming a positive child wait.
 Do not attach it to an existing Runner or supply another owner's VM state. It has bounded duration, sample count,
 interval, logs and descendant inventory. Its unique output directory must not
-exist and must have no symlink component or replaceable non-sticky parent.
+exist, and every parent must be owned by root or the collector's effective user.
+A different directory owner can replace entries even with safe-looking permissions
+or the sticky bit. Symlink components and group/other-writable non-sticky parents
+are rejected before output creation or command launch.
 Metadata must contain no credentials,
 private prompts or real provider tokens. The fixture receives a minimal system
 PATH and private HOME/TMPDIR, not the caller's provider/API environment. Use
@@ -195,6 +198,8 @@ cargo test --manifest-path crates/Cargo.toml --profile local --locked -j 1 \
 ```
 
 The tests use real files/processes for parsing, generation pinning, bounds,
-nonzero/timeout/cancellation and adopted-child waits. Mock/fake time is reserved
-for internal freshness/scheduling. Prepare the locked addon environment before
+nonzero/timeout/cancellation and adopted-child waits. Controlled external procfs
+identity and filesystem UID/mode facts cover ownership races and rejection;
+they do not replace real signalling, child waits or native continuation evidence.
+Fake time is reserved for internal freshness/scheduling. Prepare the locked addon environment before
 running Runner's complete suite, as described in [Rust testing](rust-testing.md).
