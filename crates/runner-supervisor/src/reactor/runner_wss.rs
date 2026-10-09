@@ -258,6 +258,94 @@ impl Admission {
     }
 }
 
+pub(super) struct StartedListener {
+    pub task: AcceptTask,
+    pub failed: Arc<std::sync::atomic::AtomicBool>,
+    pub started: tokio::sync::oneshot::Receiver<()>,
+}
+
+/// Start only from the owning reactor, using its exact executor registry.
+/// This one supervised task owns both accepting and bounded admission before
+/// startup readiness; no raw-socket queue or caller-instantiated reactor exists.
+pub(super) fn start(
+    config: super::WssConfig,
+    runner_id: Uuid,
+    guest: RunGuestChannels,
+    shared: &super::RunnerSharedState,
+    provider: &super::ProviderState,
+    lifecycle: &super::LifecycleController,
+) -> io::Result<StartedListener> {
+    let socket =
+        runner_host::runner_wss_socket::RunnerWssSocket::bind(&config.socket_dir, runner_id)?;
+    #[cfg(test)]
+    let mut fail_accept = config.fail_accept;
+    let mut admission = Admission::new(
+        runner_id,
+        config.hostname.as_deref(),
+        config.consumer,
+        guest,
+        shared.active_runs.clone(),
+        Arc::clone(&shared.status),
+    );
+    let (started_tx, started) = tokio::sync::oneshot::channel();
+    let stop = CancellationToken::new();
+    let stop_in_task = stop.clone();
+    let failed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let failed_in_task = Arc::clone(&failed);
+    let failure_cancel = provider.cancel.clone();
+    let failure_tokens = provider.cancel_tokens.clone();
+    let failure_lifecycle = lifecycle.clone();
+    let task = tokio::spawn(async move {
+        let _ = started_tx.send(());
+        let result = loop {
+            let event = tokio::select! {
+                biased;
+                _ = stop_in_task.cancelled() => break Ok(()),
+                result = admission.reap(), if admission.has_tasks() => {
+                    result.map(|()| None).map_err(io::Error::other)
+                }
+                result = async {
+                    #[cfg(not(test))]
+                    { socket.accept().await }
+                    #[cfg(test)]
+                    {
+                        if let Some(fail) = fail_accept.as_mut() {
+                            tokio::select! {
+                                result = socket.accept() => result,
+                                _ = fail => Err(io::Error::other("injected WSS accept failure")),
+                            }
+                        } else {
+                            socket.accept().await
+                        }
+                    }
+                } => result.map(Some),
+            };
+            match event {
+                Ok(Some(stream)) => admission.accept(stream),
+                Ok(None) => {}
+                Err(error) => {
+                    failed_in_task.store(true, std::sync::atomic::Ordering::SeqCst);
+                    super::signals::handle_stopping_signal(
+                        "wss-accept-failure",
+                        &failure_cancel,
+                        &failure_tokens,
+                        &failure_lifecycle,
+                    )
+                    .await;
+                    break Err(error);
+                }
+            }
+        };
+        admission.stop().await;
+        result
+    });
+    Ok(StartedListener {
+        task: AcceptTask::new(task, stop),
+        failed,
+        started,
+    })
+}
+
 /// Own the supervised listener through startup and teardown. Normal stop
 /// cancels admission and joins its connections before releasing the socket;
 /// the drop guard prevents an unexpected return from detaching the task.

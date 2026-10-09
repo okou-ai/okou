@@ -16,7 +16,7 @@ pub(super) const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::fro
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(in crate::cmd::start) struct Key {
+pub(in crate::reactor) struct Key {
     pub run_id: RunId,
     pub authorization_epoch: Uuid,
 }

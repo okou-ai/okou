@@ -22,7 +22,6 @@ serde_yaml_ng = { workspace = true }
 thiserror = { workspace = true, features = ["std"] }
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-util = { workspace = true, features = ["io", "io-util", "rt"] }
-tokio-tungstenite = { workspace = true, features = ["handshake"] }
 tracing = { workspace = true, features = ["attributes", "std"] }
 tracing-appender = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["ansi", "fmt", "smallvec", "std", "tracing-log"] }

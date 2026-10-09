@@ -18,13 +18,18 @@ runner-host.workspace = true
 runner-lifecycle.workspace = true
 runner-network.workspace = true
 runner-provider.workspace = true
+runner-remote.workspace = true
 runner-storage.workspace = true
 runner-types.workspace = true
 sandbox.workspace = true
+serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
-futures-util = { workspace = true, features = ["async-await", "std"] }
+url = { workspace = true, features = ["std"] }
+uuid = { workspace = true, features = ["serde", "std", "v4"] }
+tokio-tungstenite = { workspace = true, features = ["handshake"] }
+futures-util = { workspace = true, features = ["async-await", "sink", "std"] }
 thiserror = { workspace = true, features = ["std"] }
-tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+tokio = { workspace = true, features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-util = { workspace = true, features = ["rt"] }
 tracing = { workspace = true, features = ["std"] }
 
@@ -35,8 +40,6 @@ zstd = { workspace = true, features = ["zstdmt"] }
 hex = { workspace = true, features = ["std"] }
 httpmock = { workspace = true, features = ["cookies"] }
 runner-host = { workspace = true, features = ["test-support"] }
-runner-remote.workspace = true
-serde = { workspace = true, features = ["derive", "std"] }
 runner-executor = { workspace = true, features = ["test-support"] }
 runner-lifecycle = { workspace = true, features = ["test-support"] }
 runner-network = { workspace = true, features = ["test-support"] }
@@ -47,7 +50,6 @@ tempfile = { workspace = true, features = ["getrandom"] }
 tokio = { workspace = true, features = ["test-util"] }
 tracing-subscriber = { workspace = true, features = ["fmt", "std"] }
 tracing-test-support.workspace = true
-uuid = { workspace = true, features = ["v4"] }
 
 [lints]
 workspace = true

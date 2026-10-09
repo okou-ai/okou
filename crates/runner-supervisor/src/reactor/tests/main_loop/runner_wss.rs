@@ -14,7 +14,6 @@ fn enable_wss(config: &mut RunConfig, dir: PathBuf) {
             config.exec_config.http.clone(),
             "test-official-token".to_owned(),
         )),
-        guest: config.exec_config.guest_duplex.clone(),
         fail_accept: None,
     });
 }
