@@ -1,3 +1,4 @@
+import { isAutoRunPreset } from "@okouai/core/auto-run-model";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import { logger } from "../../lib/log";
 import { usageUnderbillingFields } from "../usage-underbilling";
@@ -93,6 +94,13 @@ export function priceUsageEvents(
     );
 
     if (!lookup) {
+      // Canonical Auto observations must remain pending rather than settle free.
+      // Restoring authoritative runtime-key prices lets normal settlement retry.
+      if (record.kind === "model" && isAutoRunPreset(record.provider)) {
+        throw new Error(
+          `Missing captured runtime pricing: ${record.provider} ${record.category}`,
+        );
+      }
       if (reportErrors) {
         L.error("Missing usage_pricing — charged zero", {
           ...usageUnderbillingFields("missing_pricing", "confirmed"),

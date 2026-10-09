@@ -8,6 +8,7 @@ import {
   AUTO_RUN_MODEL,
   AUTO_RUN_PRICING_PROVIDER,
   autoRunBillingProvider,
+  explicitModelSettings,
   isAutoSelectedModel,
   sameSelectedModel,
   isAutoRunPreset,
@@ -85,6 +86,20 @@ describe("selected and runtime Auto identities", () => {
       );
     },
   );
+  it("copies only explicit effort preferences without mutating retained history", () => {
+    const settings = {
+      auto: { effort: "high" },
+      "okou-1.0": { effort: "max" },
+      "@preset/okou-1-0": { effort: "high" },
+      "claude-sonnet-5-5": { effort: "extra" },
+      "gpt-6.1-sol": { effort: "medium" },
+    };
+    expect(explicitModelSettings(settings)).toEqual({
+      "claude-sonnet-5-5": { effort: "extra" },
+      "gpt-6.1-sol": { effort: "medium" },
+    });
+    expect(settings.auto).toEqual({ effort: "high" });
+  });
   it("bounds executable runtime identity to the captured SQL column", () => {
     expect(isAutoRunPreset(`@preset/${"x".repeat(247)}`)).toBe(true);
     expect(isAutoRunPreset(`@preset/${"x".repeat(248)}`)).toBe(false);

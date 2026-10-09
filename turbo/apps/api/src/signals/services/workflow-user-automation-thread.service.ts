@@ -16,6 +16,7 @@ import {
   type ModelSettings,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { explicitModelSettings } from "@okouai/core/auto-run-model";
 import { command } from "ccstate";
 import { randomUUID } from "node:crypto";
 import { writeDb$, type ReadonlyDb } from "../external/db";
@@ -228,7 +229,7 @@ export function preparedWorkflowThreadValues(
     title: preparation.title,
     selectedModel: pin.selectedModel,
     codexServiceTier: pin.serviceTier === "priority" ? ("fast" as const) : null,
-    modelSettings: preparation.modelSettings,
+    modelSettings: explicitModelSettings(preparation.modelSettings),
     cloudBrowserEnabled: preparation.cloudBrowserEnabled,
     lastMessageAt: args.currentTime,
     createdAt: args.currentTime,

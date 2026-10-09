@@ -369,7 +369,7 @@ export function catalogAutoRoute(
         ...autoCatalogRoute(),
         model,
         upstreamModel: catalog.autoUpstreamModel,
-        // Only future persisted decisions use runtime pricing. PR1 captures the legacy ID.
+        // Canonical decisions use runtime pricing; retained PR1 captures keep the legacy key.
         pricingProvider: autoRunBillingProvider(
           model,
           catalog.autoUpstreamModel,

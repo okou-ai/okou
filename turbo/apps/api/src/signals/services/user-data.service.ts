@@ -1,5 +1,9 @@
 import { storages } from "@okouai/db/schema/storage";
 import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
+import {
+  AUTO_SELECTED_MODEL,
+  isAutoSelectedModel,
+} from "@okouai/core/auto-run-model";
 import { command, computed, type Computed } from "ccstate";
 import {
   colorThemeSchema,
@@ -311,6 +315,7 @@ export const updateUserPreferences$ = command(
       .values({
         orgId: args.orgId,
         userId: args.userId,
+        selectedModel: AUTO_SELECTED_MODEL,
         timezone: merged.timezone,
         locale: merged.locale,
         pinnedAgentIds: merged.pinnedAgentIds,
@@ -346,9 +351,10 @@ function userModelPreferenceColumns(
   preference: UpdateUserModelPreferenceRequest,
 ): Partial<typeof orgMembersMetadata.$inferInsert> {
   return {
-    // A null run model clears its tier too: the tier only qualifies a model.
-    ...(preference.selectedModel === null
-      ? { selectedModel: null, serviceTier: null }
+    // Nullable PR1 intents and canonical Auto both write the explicit selection.
+    ...(preference.selectedModel === null ||
+    isAutoSelectedModel(preference.selectedModel)
+      ? { selectedModel: AUTO_SELECTED_MODEL, serviceTier: null }
       : {
           selectedModel: preference.selectedModel,
           serviceTier: preference.serviceTier,

@@ -34,6 +34,8 @@ surface; the index does not replace their detailed rules.
   requirements for independently deployed components and persisted state.
 - [Agent mail notifications](./agent-mail-notifications.md): CLI notification
   receipts, idempotency, opt-out handling, and the staged Morning Brief rollout.
+- [Model identity PR2](./model-identity-pr2.md): canonical new writes,
+  captured-runtime billing, mixed-version support and activation prerequisites.
 - [Run models and subscription metadata](./model-catalog.md): fixed Auto,
   personal subscription metadata, selection and billing.
 - [Run models API](./run-models-api.md): the `GET /api/run-models` response
