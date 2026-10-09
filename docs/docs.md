@@ -95,6 +95,8 @@ self-explanatory source code rather than separate documents.
   billing identity, writer inventory, bounded backfill and activation boundaries.
 - [X resource observations](./x-resource-observations.md): atomic daily
   deduplication, two-date cleanup, transient remainder and activation gates.
+- [Database transaction lint](./eslint/no-db-transaction.md): default prohibition,
+  deletion-only legacy call-site inventory, and necessary billing waivers.
 - [Database trigger retirement](./database-trigger-retirement.md): explicit API
   entitlement writers, repair paths, and the serving/rollback removal gate.
 - [Hosted publication version retirement](./database/hosted-publication-retirement.md):

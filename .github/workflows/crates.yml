@@ -675,7 +675,7 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: crates -> target
-          # Separate key from runner-build to avoid cache reservation race (#9447)
+          # Use a dedicated key to avoid cache reservation races (#9447).
           shared-key: ${{ matrix.cacheSuffix }}-nbd
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
@@ -811,7 +811,8 @@ jobs:
         continue-on-error: true
         uses: ./.github/actions/report-memory-peak
 
-  runner-build:
+  # Prepare test inputs from the shared runner-image workflow; no compilation here.
+  runner-test-prepare:
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -892,7 +893,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # runner-build validates every host in the selected target's group.
+        # runner-test-prepare validates every host in the selected target's group.
         include: ${{ fromJSON(needs.runner-host-groups.outputs.validation-matrix || '[]') }}
     timeout-minutes: 20
     steps:
@@ -941,15 +942,15 @@ jobs:
   # and caps deliberate Guest pressure allocation at 512 MiB.
   runner-behavior-lane-a:
     runs-on: ubuntu-latest
-    needs: [runner-build]
+    needs: [runner-test-prepare]
     timeout-minutes: 35
     env:
       METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
-      HOST: ${{ needs.runner-build.outputs.host }}
-      JOB_REF: ${{ needs.runner-build.outputs.job-ref }}
-      BIN_DIR: ${{ needs.runner-build.outputs.bin-dir }}
-      DEFAULT_ROOTFS_HASH: ${{ needs.runner-build.outputs.default-rootfs-hash }}
-      DEFAULT_SNAPSHOT_HASH: ${{ needs.runner-build.outputs.default-snapshot-hash }}
+      HOST: ${{ needs.runner-test-prepare.outputs.host }}
+      JOB_REF: ${{ needs.runner-test-prepare.outputs.job-ref }}
+      BIN_DIR: ${{ needs.runner-test-prepare.outputs.bin-dir }}
+      DEFAULT_ROOTFS_HASH: ${{ needs.runner-test-prepare.outputs.default-rootfs-hash }}
+      DEFAULT_SNAPSHOT_HASH: ${{ needs.runner-test-prepare.outputs.default-snapshot-hash }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -976,15 +977,15 @@ jobs:
 
   runner-behavior-lane-b:
     runs-on: ubuntu-latest
-    needs: [runner-build]
+    needs: [runner-test-prepare]
     timeout-minutes: 35
     env:
       METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
-      HOST: ${{ needs.runner-build.outputs.host }}
-      JOB_REF: ${{ needs.runner-build.outputs.job-ref }}
-      BIN_DIR: ${{ needs.runner-build.outputs.bin-dir }}
-      DEFAULT_ROOTFS_HASH: ${{ needs.runner-build.outputs.default-rootfs-hash }}
-      DEFAULT_SNAPSHOT_HASH: ${{ needs.runner-build.outputs.default-snapshot-hash }}
+      HOST: ${{ needs.runner-test-prepare.outputs.host }}
+      JOB_REF: ${{ needs.runner-test-prepare.outputs.job-ref }}
+      BIN_DIR: ${{ needs.runner-test-prepare.outputs.bin-dir }}
+      DEFAULT_ROOTFS_HASH: ${{ needs.runner-test-prepare.outputs.default-rootfs-hash }}
+      DEFAULT_SNAPSHOT_HASH: ${{ needs.runner-test-prepare.outputs.default-snapshot-hash }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -1011,15 +1012,15 @@ jobs:
 
   runner-behavior-lane-c:
     runs-on: ubuntu-latest
-    needs: [runner-build]
+    needs: [runner-test-prepare]
     timeout-minutes: 35
     env:
       METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
-      HOST: ${{ needs.runner-build.outputs.host }}
-      JOB_REF: ${{ needs.runner-build.outputs.job-ref }}
-      BIN_DIR: ${{ needs.runner-build.outputs.bin-dir }}
-      DEFAULT_ROOTFS_HASH: ${{ needs.runner-build.outputs.default-rootfs-hash }}
-      DEFAULT_SNAPSHOT_HASH: ${{ needs.runner-build.outputs.default-snapshot-hash }}
+      HOST: ${{ needs.runner-test-prepare.outputs.host }}
+      JOB_REF: ${{ needs.runner-test-prepare.outputs.job-ref }}
+      BIN_DIR: ${{ needs.runner-test-prepare.outputs.bin-dir }}
+      DEFAULT_ROOTFS_HASH: ${{ needs.runner-test-prepare.outputs.default-rootfs-hash }}
+      DEFAULT_SNAPSHOT_HASH: ${{ needs.runner-test-prepare.outputs.default-snapshot-hash }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -1052,15 +1053,15 @@ jobs:
 
   runner-behavior-lane-d:
     runs-on: ubuntu-latest
-    needs: [runner-build]
+    needs: [runner-test-prepare]
     timeout-minutes: 35
     env:
       METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
-      HOST: ${{ needs.runner-build.outputs.host }}
-      JOB_REF: ${{ needs.runner-build.outputs.job-ref }}
-      BIN_DIR: ${{ needs.runner-build.outputs.bin-dir }}
-      DEFAULT_ROOTFS_HASH: ${{ needs.runner-build.outputs.default-rootfs-hash }}
-      DEFAULT_SNAPSHOT_HASH: ${{ needs.runner-build.outputs.default-snapshot-hash }}
+      HOST: ${{ needs.runner-test-prepare.outputs.host }}
+      JOB_REF: ${{ needs.runner-test-prepare.outputs.job-ref }}
+      BIN_DIR: ${{ needs.runner-test-prepare.outputs.bin-dir }}
+      DEFAULT_ROOTFS_HASH: ${{ needs.runner-test-prepare.outputs.default-rootfs-hash }}
+      DEFAULT_SNAPSHOT_HASH: ${{ needs.runner-test-prepare.outputs.default-snapshot-hash }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
@@ -1154,11 +1155,11 @@ jobs:
       image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261008
     needs:
       - detect
-      - runner-build
+      - runner-test-prepare
       - host-cpu-fairness-build
     if: |
       !cancelled() &&
-      needs.runner-build.result == 'success' &&
+      needs.runner-test-prepare.result == 'success' &&
       needs.host-cpu-fairness-build.result == 'success' && (
         needs.detect.outputs.sandbox-firecracker-changed == 'true' ||
         needs.detect.outputs.ci-changed == 'true'
@@ -1168,14 +1169,14 @@ jobs:
       run:
         shell: bash
     env:
-      TARGET_TRIPLE: ${{ needs.runner-build.outputs.target }}
+      TARGET_TRIPLE: ${{ needs.runner-test-prepare.outputs.target }}
       TEST_NAME: host_cpu_fairness
       ARTIFACT_DIR: native-test-artifact
       PRODUCER_ATTEMPT: ${{ needs.host-cpu-fairness-build.outputs.producer-attempt }}
       METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
-      HOST: ${{ needs.runner-build.outputs.host }}
-      JOB_REF: ${{ needs.runner-build.outputs.job-ref }}
-      DEFAULT_ROOTFS_HASH: ${{ needs.runner-build.outputs.default-rootfs-hash }}
+      HOST: ${{ needs.runner-test-prepare.outputs.host }}
+      JOB_REF: ${{ needs.runner-test-prepare.outputs.job-ref }}
+      DEFAULT_ROOTFS_HASH: ${{ needs.runner-test-prepare.outputs.default-rootfs-hash }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
@@ -1257,21 +1258,21 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261008
-    needs: [runner-build, guest-rpc-firecracker-build]
+    needs: [runner-test-prepare, guest-rpc-firecracker-build]
     timeout-minutes: 15
     defaults:
       run:
         shell: bash
     env:
-      TARGET_TRIPLE: ${{ needs.runner-build.outputs.target }}
+      TARGET_TRIPLE: ${{ needs.runner-test-prepare.outputs.target }}
       TEST_NAME: guest_rpc
       ARTIFACT_DIR: native-test-artifact
       PRODUCER_ATTEMPT: ${{ needs.guest-rpc-firecracker-build.outputs.producer-attempt }}
       METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
-      HOST: ${{ needs.runner-build.outputs.host }}
-      JOB_REF: ${{ needs.runner-build.outputs.job-ref }}
-      DEFAULT_ROOTFS_HASH: ${{ needs.runner-build.outputs.default-rootfs-hash }}
-      DEFAULT_SNAPSHOT_HASH: ${{ needs.runner-build.outputs.default-snapshot-hash }}
+      HOST: ${{ needs.runner-test-prepare.outputs.host }}
+      JOB_REF: ${{ needs.runner-test-prepare.outputs.job-ref }}
+      DEFAULT_ROOTFS_HASH: ${{ needs.runner-test-prepare.outputs.default-rootfs-hash }}
+      DEFAULT_SNAPSHOT_HASH: ${{ needs.runner-test-prepare.outputs.default-snapshot-hash }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -1315,7 +1316,7 @@ jobs:
       - mitm-addon-test
       - mitm-addon-packaged-control
       - runner-host-groups
-      - runner-build
+      - runner-test-prepare
       - runner-image-architecture-manifest
       - runner-behavior-lane-a
       - runner-behavior-lane-b
@@ -1394,7 +1395,7 @@ jobs:
           check_result "mitm-addon-test" "${{ needs.mitm-addon-test.result }}" "true"
           check_result "mitm-addon-packaged-control" "${{ needs.mitm-addon-packaged-control.result }}" "true"
           check_result "runner-host-groups" "${{ needs.runner-host-groups.result }}" "$RUNNER_IMAGE_ALLOW_SKIP"
-          check_result "runner-build" "${{ needs.runner-build.result }}" "$RUNNER_IMAGE_ALLOW_SKIP"
+          check_result "runner-test-prepare" "${{ needs.runner-test-prepare.result }}" "$RUNNER_IMAGE_ALLOW_SKIP"
           check_result "runner-image-architecture-manifest" "${{ needs.runner-image-architecture-manifest.result }}" "$OTHER_TARGETS_ALLOW_SKIP"
           check_result "runner-behavior-lane-a" "${{ needs.runner-behavior-lane-a.result }}" "true"
           check_result "runner-behavior-lane-b" "${{ needs.runner-behavior-lane-b.result }}" "true"

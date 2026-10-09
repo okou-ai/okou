@@ -31,6 +31,7 @@ export async function validatePermanentDiscordFoundation(
     code: string | RegExp,
     constraint: string,
   ) {
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0384; new non-billing transactions are prohibited.
     await client.query("SAVEPOINT rejected_discord_write");
     await assert.rejects(client.query(query, [...values]), {
       code,
@@ -48,6 +49,7 @@ export async function validatePermanentDiscordFoundation(
   }
 
   try {
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0385; new non-billing transactions are prohibited.
     await client.query("BEGIN");
     await client.query(
       `INSERT INTO discord_org_installations (guild_id, org_id, bot_user_id)

@@ -1204,6 +1204,7 @@ function recordIngressFailure(
 ): Promise<RecordedIngressFailure | null> {
   const retry = args.failure.retryable && args.attemptCount < MAX_ATTEMPTS;
   const currentTime = nowDate();
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0088; new non-billing transactions are prohibited.
   return db.transaction(async (tx) => {
     const [claimed] = await tx
       .select({

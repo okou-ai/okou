@@ -6676,6 +6676,7 @@ export function createThreadClaimRunObjects(
       const rejectedAt = new Date(
         Math.max(nowDate().getTime(), source.createdAt.getTime() + 1),
       );
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0261; new non-billing transactions are prohibited.
       return await set(writeDb$).transaction(async (tx) => {
         const rejected =
           parseRawRows(
@@ -7966,6 +7967,7 @@ export function createThreadClaimRunObjects(
           signal.throwIfAborted();
           // Only journaled occurrences require this post-commit lock. Read
           // supersession after acquiring it so a concurrent claim is visible.
+          // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0262; new non-billing transactions are prohibited.
           await database.transaction(async (tx) => {
             const [locked] = await tx
               .select({ id: workflowAutomations.id })
@@ -15680,6 +15682,7 @@ export const commitPreparedPendingLaunch$ = command(
     signal.throwIfAborted();
     const { admissionTiming, timing } = args;
     assertPendingLaunchClaim(args, claim);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0263; new non-billing transactions are prohibited.
     return await set(writeDb$).transaction(
       async (tx): Promise<AtomicLaunchCommitAttempt> => {
         admissionTiming.transactionStarted();

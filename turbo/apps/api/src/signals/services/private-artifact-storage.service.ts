@@ -329,6 +329,7 @@ export const completePrivateArtifact$ = command(
   ) => {
     const db = set(writeDb$);
     // A completed file and its durable catalog handoff must commit together.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0233; new non-billing transactions are prohibited.
     const changed = await db.transaction(async (tx) => {
       const [row] = await tx
         .update(runUploadedFiles)

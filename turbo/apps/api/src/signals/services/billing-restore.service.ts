@@ -116,6 +116,7 @@ export const restoreSubscription$ = command(
     const restoredAt = nowDate();
     // Stripe has applied the restore; record it as main did, without a
     // row-version guard that a concurrent debit or webhook rewrite would trip.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0064; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       await tx
         .update(orgMetadata)

@@ -176,7 +176,6 @@ runs:
         api_backend_url="$INPUT_API_BACKEND_URL"
         pi_memory_background_workers_enabled=""
         if [[ "$INPUT_APP" == "api" ]]; then
-          discord_message_content_enabled="$(boolean_repo_var DISCORD_MESSAGE_CONTENT_ENABLED)"
           if [[ "$INPUT_ENVIRONMENT" == "production" ]]; then
             pi_memory_background_workers_enabled="$(boolean_repo_var PI_MEMORY_BACKGROUND_WORKERS_ENABLED)"
           else
@@ -336,7 +335,6 @@ runs:
           add_secret DISCORD_BOT_TOKEN DISCORD_BOT_TOKEN
           add_secret DISCORD_GATEWAY_SECRET DISCORD_GATEWAY_SECRET
           add_env DISCORD_OAUTH_CLIENT_SECRET "$(doppler_secret DISCORD_OAUTH_CLIENT_SECRET)"
-          add_env DISCORD_MESSAGE_CONTENT_ENABLED "$discord_message_content_enabled"
           add_var MICROSOFT_TEAMS_BOT_APP_ID MICROSOFT_TEAMS_BOT_APP_ID
           add_secret MICROSOFT_TEAMS_BOT_APP_PASSWORD MICROSOFT_TEAMS_BOT_APP_PASSWORD
           add_var MICROSOFT_TEAMS_APP_TENANT_ID MICROSOFT_TEAMS_APP_TENANT_ID

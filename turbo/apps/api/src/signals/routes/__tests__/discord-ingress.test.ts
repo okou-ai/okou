@@ -29,6 +29,7 @@ import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
 import {
   removePublicDiscordBinding,
+  mockDiscordApplication,
   mockDiscordMemberships,
   createPublicDiscordBinding,
   uniqueDiscordSnowflake,
@@ -1185,7 +1186,7 @@ describe("canonical Discord ingress", () => {
       { userId: second.userId, orgId: second.orgId, orgRole: "org:admin" },
     ]);
     // DM content never depends on the guild MESSAGE_CONTENT intent.
-    mockEnv("DISCORD_MESSAGE_CONTENT_ENABLED", "true");
+    mockDiscordApplication(1 << 19);
     await selectDmOrganization(first);
     const firstDm = discordMessageForTest(first, {
       channelId: provider.dmChannelId,
@@ -1398,7 +1399,7 @@ describe("canonical Discord ingress", () => {
   it("imports refreshed attachment metadata while keeping context and signed URLs private", async () => {
     const actor = await connected();
     const provider = mockDiscordProvider(actor);
-    mockEnv("DISCORD_MESSAGE_CONTENT_ENABLED", "true");
+    mockDiscordApplication(1 << 19);
     await updateFeatureSwitchesForUser(context, actor, {
       [FeatureSwitchKey.DiscordIntegration]: true,
       [FeatureSwitchKey.PrivateArtifacts]: true,
@@ -1641,7 +1642,7 @@ describe("canonical Discord ingress", () => {
       await release.promise;
       return undefined;
     };
-    mockEnv("DISCORD_MESSAGE_CONTENT_ENABLED", "true");
+    mockDiscordApplication(1 << 19);
     const message = discordMessageForTest(actor, {
       channelId: provider.guildChannelId,
       content: `<@${actor.botUserId}> do not launch after disconnect`,

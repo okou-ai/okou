@@ -374,6 +374,7 @@ export const recordManagedUsage$ = command(
       ...args,
       idempotencyKey: args.idempotencyKey ?? randomUUID(),
     };
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0178; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       const [run] = args.actor.runId
         ? await tx.select().from(managedBillingRunQuery(args.actor.runId))

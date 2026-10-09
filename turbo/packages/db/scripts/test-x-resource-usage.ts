@@ -11,10 +11,12 @@ export async function validateXResourceUsageSchema(
   const client = new Client({ connectionString: databaseUrl });
   await client.connect();
   try {
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0438; new non-billing transactions are prohibited.
     await client.query("BEGIN");
     await client.query("SET LOCAL TIME ZONE 'Asia/Shanghai'");
 
     async function rejects(query: string, parameters: unknown[], code: string) {
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0439; new non-billing transactions are prohibited.
       await client.query("SAVEPOINT invalid_x_write");
       await assert.rejects(client.query(query, parameters), { code });
       await client.query("ROLLBACK TO SAVEPOINT invalid_x_write");
@@ -42,6 +44,7 @@ export async function validateXResourceUsageSchema(
     await rejects(readSql, ["infinity", "post", "1"], "23514");
 
     // Resource writes roll back with their surrounding transaction.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0440; new non-billing transactions are prohibited.
     await client.query("SAVEPOINT failed_x_observation");
     const rolledBack = ["2026-09-17", "post", "3"];
     assert.equal((await client.query(readSql, rolledBack)).rowCount, 1);

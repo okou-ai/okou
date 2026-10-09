@@ -7,7 +7,6 @@ import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -18,6 +17,7 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
 import {
   removePublicDiscordBinding,
+  mockDiscordApplication,
   uniqueDiscordSnowflake,
 } from "./helpers/discord";
 import {
@@ -129,7 +129,7 @@ const sendBodySchema = z.object({
 async function nativeFixture() {
   const actor = await connected();
   const provider = mockDiscordProvider(actor);
-  mockEnv("DISCORD_MESSAGE_CONTENT_ENABLED", "true");
+  mockDiscordApplication(1 << 18);
   provider.state.everyonePermissions = String(VIEW | SEND | READ | THREAD_SEND);
   const { token } = await runsApi.createCliToken(actor.actor);
   const headers = { authorization: `Bearer ${token}` };
@@ -227,7 +227,7 @@ describe("Discord context parity through public OAuth bindings", () => {
   it("combines parent context, the thread starter, an older quoted message and attachment-only history within one bounded snapshot", async () => {
     const actor = await connected();
     const provider = mockDiscordProvider(actor);
-    mockEnv("DISCORD_MESSAGE_CONTENT_ENABLED", "true");
+    mockDiscordApplication(1 << 18);
     const threadId = uniqueDiscordSnowflake();
     const nextId = (BigInt(threadId) + 1000n).toString();
     provider.channels.set(threadId, {
@@ -343,7 +343,7 @@ describe("Discord context parity through public OAuth bindings", () => {
   it("omits unavailable parent history and never follows a reference into another channel", async () => {
     const actor = await connected();
     const provider = mockDiscordProvider(actor);
-    mockEnv("DISCORD_MESSAGE_CONTENT_ENABLED", "true");
+    mockDiscordApplication(1 << 18);
     const threadId = uniqueDiscordSnowflake();
     provider.channels.set(threadId, {
       id: threadId,
@@ -405,7 +405,7 @@ describe("Discord context parity through public OAuth bindings", () => {
   it("keeps an explicit DM reference out of the Agent's context", async () => {
     const actor = await connected();
     const provider = mockDiscordProvider(actor);
-    mockEnv("DISCORD_MESSAGE_CONTENT_ENABLED", "true");
+    mockDiscordApplication(1 << 18);
     const message = {
       ...discordMessageForTest(actor, {
         channelId: provider.dmChannelId,

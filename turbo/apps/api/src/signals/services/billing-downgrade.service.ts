@@ -630,6 +630,7 @@ const publishDowngrade$ = command(
     );
     const at = nowDate();
     const publication = await settle(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0063; new non-billing transactions are prohibited.
       db.transaction(async (tx) => {
         // Stripe has applied the schedule; record it as main did. Debits and
         // webhooks rewrite these rows, so no row-version guard applies here.

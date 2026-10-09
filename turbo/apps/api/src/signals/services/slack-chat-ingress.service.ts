@@ -67,6 +67,7 @@ export const findSlackChatThreadRoute$ = command(
     signal: AbortSignal,
   ): Promise<SlackChatThreadRouteBinding | undefined> => {
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0243; new non-billing transactions are prohibited.
     const result = await db.transaction(async (tx) => {
       const [route] = await tx
         .select(ROUTE_COLUMNS)
@@ -196,6 +197,7 @@ export const ensureCanonicalSlackChatThreadRoute$ = command(
     );
     const candidateId = randomUUID();
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0244; new non-billing transactions are prohibited.
     const result = await db.transaction(async (tx) => {
       const existing = await loadSlackChatThreadRoute(tx, args);
       if (existing) {
@@ -269,6 +271,7 @@ export const admitCanonicalSlackChatEvent$ = command(
     signal: AbortSignal,
   ): Promise<SlackChatIngressAdmission> => {
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0245; new non-billing transactions are prohibited.
     const result = await db.transaction(async (tx) => {
       const [inserted] = await tx
         .insert(slackChatIngress)

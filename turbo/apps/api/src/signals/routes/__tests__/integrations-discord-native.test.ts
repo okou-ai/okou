@@ -72,10 +72,6 @@ async function fixture(
   mockEnv("DISCORD_APPLICATION_ID", botUserId);
   mockEnv("DISCORD_PUBLIC_KEY", "ab".repeat(32));
   mockEnv("DISCORD_GATEWAY_SECRET", "discord-gateway-test-secret-at-least-32");
-  mockEnv(
-    "DISCORD_MESSAGE_CONTENT_ENABLED",
-    (options.messageContent ?? true) ? "true" : "false",
-  );
   await updateFeatureSwitchesForUser(
     context,
     { orgId, userId, orgRole: "org:admin" },
@@ -157,6 +153,12 @@ async function fixture(
   };
   messages.set(channelId, [message()]);
   server.use(
+    http.get(`${API}/applications/@me`, () => {
+      return HttpResponse.json({
+        id: botUserId,
+        flags: (options.messageContent ?? true) ? 1 << 19 : 0,
+      });
+    }),
     http.get(`${API}/users/@me`, () => {
       return HttpResponse.json(botAuthor);
     }),
@@ -482,6 +484,61 @@ describe("Discord native authorization and reads", () => {
     expect((await accept(history(f), [200])).body.contextMode).toBe(
       "mentions_only",
     );
+  });
+
+  it("rechecks provider grants instead of retaining a prior content capability", async () => {
+    const f = await fixture();
+    expect((await accept(history(f), [200])).body.contextMode).toBe("full");
+    server.use(
+      http.get(`${API}/applications/@me`, () => {
+        return HttpResponse.json({ id: f.botUserId, flags: 0 });
+      }),
+    );
+    expect((await accept(history(f), [200])).body.contextMode).toBe(
+      "mentions_only",
+    );
+  });
+
+  it.each([401, 403, 404, 500, "invalid", "mismatch"])(
+    "fails guild history closed on application discovery failure %s without blocking sends",
+    async (failure) => {
+      const f = await fixture();
+      server.use(
+        http.get(`${API}/applications/@me`, () => {
+          if (typeof failure === "number") {
+            return new HttpResponse(null, { status: failure });
+          }
+          return HttpResponse.json(
+            failure === "mismatch"
+              ? { id: snowflake(), flags: 1 << 19 }
+              : { id: f.botUserId },
+          );
+        }),
+      );
+      expect((await accept(history(f), [502])).body.error.code).toBe(
+        "DISCORD_ERROR",
+      );
+      await accept(
+        send(f, f.channelId, "writes do not require message content"),
+        [200],
+      );
+    },
+  );
+
+  it("preserves application-discovery rate limits for history callers", async () => {
+    const f = await fixture();
+    server.use(
+      http.get(`${API}/applications/@me`, () => {
+        return HttpResponse.json(
+          { retry_after: 2, global: false },
+          { status: 429 },
+        );
+      }),
+    );
+    expect((await accept(history(f), [429])).body.error).toMatchObject({
+      code: "DISCORD_RATE_LIMITED",
+      retryAfterSeconds: 2,
+    });
   });
 
   it("denies bot DM content to every organization's run token while keeping DM sends", async () => {

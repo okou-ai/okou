@@ -5,7 +5,6 @@ import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { mockNow, now } from "../../../lib/time";
-import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -15,6 +14,7 @@ import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
 import {
   removePublicDiscordBinding,
   mockDiscordMemberships,
+  mockDiscordApplication,
 } from "./helpers/discord";
 import {
   discordChatThreads,
@@ -518,54 +518,65 @@ describe("canonical Discord terminal replies", () => {
     },
   );
 
-  it("drops previously read history when current history permission is revoked", async () => {
-    const started = await startDiscordRun();
-    const claim = await claimRun(started.actor, started.runId);
-    mockEnv("DISCORD_MESSAGE_CONTENT_ENABLED", "true");
-    const followup = discordMessageForTest(started.actor, {
-      channelId: started.channelId,
-      content: `<@${started.actor.botUserId}> Continue with the current message.`,
-    });
-    const history = discordMessageForTest(started.actor, {
-      id: (BigInt(followup.id) - 1n).toString(),
-      channelId: started.channelId,
-      content: "History that is no longer readable.",
-    });
-    started.provider.messages.set(history.id, history);
-    started.provider.messages.set(followup.id, followup);
-    await postDiscordMessage(context, followup);
-    await flushWaitUntilForTest();
-    const initial = await runs.nextSteerableInput(
-      claim.sandboxToken,
-      started.runId,
-    );
-    expect(initial.input?.prompt).toContain(history.content);
-    started.provider.state.everyonePermissions = (
-      (1n << 10n) |
-      (1n << 11n) |
-      (1n << 38n)
-    ).toString();
-    const { input: narrowed } = await runs.nextSteerableInput(
-      claim.sandboxToken,
-      started.runId,
-    );
-    if (!narrowed) {
-      throw new Error("Current Discord input should remain steerable");
-    }
-    expect(narrowed.prompt).toContain("Continue with the current message.");
-    expect(narrowed.prompt).not.toContain(history.content);
-    expect(narrowed.prompt).toContain("current Discord permissions");
-    await runs.declareSteeredInput(
-      claim.sandboxToken,
-      started.runId,
-      narrowed.eventId,
-    );
-    await completeRun({
-      runId: started.runId,
-      sandboxToken: claim.sandboxToken,
-      text: "The current task is complete.",
-    });
-  });
+  it.each(["history permission", "message-content grant"])(
+    "drops previously read history when the current %s is revoked",
+    async (revoked) => {
+      const started = await startDiscordRun();
+      const claim = await claimRun(started.actor, started.runId);
+      mockDiscordApplication(1 << 19);
+      const followup = discordMessageForTest(started.actor, {
+        channelId: started.channelId,
+        content: `<@${started.actor.botUserId}> Continue with the current message.`,
+      });
+      const history = discordMessageForTest(started.actor, {
+        id: (BigInt(followup.id) - 1n).toString(),
+        channelId: started.channelId,
+        content: "History that is no longer readable.",
+      });
+      started.provider.messages.set(history.id, history);
+      started.provider.messages.set(followup.id, followup);
+      await postDiscordMessage(context, followup);
+      await flushWaitUntilForTest();
+      const initial = await runs.nextSteerableInput(
+        claim.sandboxToken,
+        started.runId,
+      );
+      expect(initial.input?.prompt).toContain(history.content);
+      if (revoked === "message-content grant") {
+        mockDiscordApplication(0);
+      } else {
+        started.provider.state.everyonePermissions = (
+          (1n << 10n) |
+          (1n << 11n) |
+          (1n << 38n)
+        ).toString();
+      }
+      const { input: narrowed } = await runs.nextSteerableInput(
+        claim.sandboxToken,
+        started.runId,
+      );
+      if (!narrowed) {
+        throw new Error("Current Discord input should remain steerable");
+      }
+      expect(narrowed.prompt).toContain("Continue with the current message.");
+      expect(narrowed.prompt).not.toContain(history.content);
+      expect(narrowed.prompt).toContain(
+        revoked === "message-content grant"
+          ? "MESSAGE_CONTENT is unavailable"
+          : "current Discord permissions",
+      );
+      await runs.declareSteeredInput(
+        claim.sandboxToken,
+        started.runId,
+        narrowed.eventId,
+      );
+      await completeRun({
+        runId: started.runId,
+        sandboxToken: claim.sandboxToken,
+        text: "The current task is complete.",
+      });
+    },
+  );
 
   it("does not retry a reply that Discord rate-limits", async () => {
     const started = await startDiscordRun();

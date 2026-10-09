@@ -263,6 +263,7 @@ export async function verifyBusinessCanary(
     plaintext: string,
   ): Promise<void> {
     const before = await webhook();
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0361; new non-billing transactions are prohibited.
     await db.query("BEGIN READ WRITE");
     try {
       const changed = await rows(

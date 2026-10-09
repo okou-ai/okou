@@ -69,6 +69,7 @@
     "src/signals/services/connector-runtime-preparation.service.ts",
     "src/signals/services/discord-access.service.ts",
     "src/signals/services/discord-api-response.ts",
+    "src/signals/services/discord-application-capability.service.ts",
     "src/signals/services/discord-chat-callback-payload.ts",
     "src/signals/services/discord-chat-route-access.service.ts",
     "src/signals/services/discord-config.ts",

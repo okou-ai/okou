@@ -1,5 +1,9 @@
 import { z } from "zod";
 import { discordSnowflakeSchema } from "@okouai/api-contracts/contracts/integrations-discord-read";
+import {
+  discordApplicationSchema,
+  type DiscordApplication,
+} from "@okouai/api-contracts/contracts/discord-application";
 import { safeJsonParse, settle } from "../utils";
 
 export { discordSnowflakeSchema };
@@ -273,6 +277,29 @@ function fetchDiscordCurrentUser(
     { ...args, path: "/users/@me", method: "GET", schema: discordUserSchema },
     signal,
   );
+}
+
+async function fetchDiscordCurrentApplication(
+  args: DiscordBotCredentials & { readonly applicationId: string },
+  signal?: AbortSignal,
+): Promise<DiscordApiResult<DiscordApplication>> {
+  const result = await requestDiscord(
+    {
+      ...args,
+      path: "/applications/@me",
+      method: "GET",
+      schema: discordApplicationSchema,
+    },
+    signal,
+  );
+  if (result.kind === "unavailable") {
+    // App metadata failure is not evidence that a bound conversation is missing.
+    return discordError(result.status, "Discord application lookup failed");
+  }
+  if (result.kind === "ok" && result.data.id !== args.applicationId) {
+    return discordError(502, "Discord application identity does not match");
+  }
+  return result;
 }
 
 function fetchDiscordChannel(
@@ -720,6 +747,7 @@ function editDiscordOriginalInteractionResponse(
 /** Shared REST surface for native tools, ingress, interactions, and delivery. */
 export const discordClient = Object.freeze({
   fetchDiscordCurrentUser,
+  fetchDiscordCurrentApplication,
   fetchDiscordChannel,
   fetchDiscordGuild,
   fetchDiscordGuildMember,

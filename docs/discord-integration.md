@@ -114,7 +114,6 @@ separate requirement.
 | `DISCORD_BOT_TOKEN`                                          | Application REST/Gateway authentication, never per-guild/browser/Agent data.                 |
 | `DISCORD_PUBLIC_KEY`                                         | Ed25519 interaction verification over timestamp and exact raw body.                          |
 | `DISCORD_GATEWAY_SECRET`                                     | Worker-to-API HMAC; separate from Gateway management credentials.                            |
-| `DISCORD_MESSAGE_CONTENT_ENABLED`                            | Defaults false; status discloses context availability without granting authority.            |
 | `DISCORD_GATEWAY_ENABLED`                                    | Worker startup gate; defaults disabled.                                                      |
 | Configured App/API origins                                   | Trusted callback and return destinations; never caller-supplied redirects.                   |
 
@@ -154,15 +153,49 @@ Doppler inputs come from `vm0/dev` for previews and `vm0/prd` for production.
 | `DISCORD_BOT_TOKEN`               | GitHub Secret                                        |
 | `DISCORD_GATEWAY_SECRET`          | GitHub Secret; must match the relay's HMAC secret    |
 | `DISCORD_OAUTH_CLIENT_SECRET`     | Doppler secret only; no legacy GitHub OAuth fallback |
-| `DISCORD_MESSAGE_CONTENT_ENABLED` | GitHub Variable; `true` or `false`, default `false`  |
 
 The Doppler OAuth client ID must identify the same application as
 `DISCORD_APPLICATION_ID`; it is not emitted as a second runtime application-ID
 alias. The authenticated OAuth protocol consumes the forwarded secret; forwarding
 alone neither registers the callback nor installs a bot or establishes a binding.
 Missing settings retain the optional unconfigured state rather than
-making disabled Discord a deployment prerequisite. Malformed message-content
-flags fail rendering before an environment file is created.
+making disabled Discord a deployment prerequisite.
+
+### Provider-derived message content
+
+The API and Gateway both read `GET /applications/@me` using the configured bot
+credential and verify the returned application ID. Discord's
+`GATEWAY_MESSAGE_CONTENT` (`1 << 18`) or `GATEWAY_MESSAGE_CONTENT_LIMITED`
+(`1 << 19`) application flag grants ordinary guild content. The string
+`flags_new` bitset is authoritative when present; otherwise the legacy numeric
+`flags` field is used. Neither API nor Gateway has a message-content environment
+switch. Configure or obtain approval for the intent in the Discord Developer
+Portal, not GitHub Variables or Wrangler.
+
+Guild read boundaries report `full` only for a verified grant and
+`mentions_only` for a verified application without it. Failed, malformed or
+mismatched discovery reports `unavailable` in settings and denies guild content
+reads with the existing provider error/rate-limit response; it does not grant
+access or block content-independent sends. Capability snapshots are scoped to
+the current read/status graph, not a process-global cache. Existing guild,
+channel, member and thread permission checks still apply, and shared bot DM
+history remains unavailable to runs even when the application has this intent.
+
+Before each new Identify, the Gateway discovers the application capability and
+adds the privileged Intent only when granted. Discovery failure cannot emit an
+unverified Identify; existing authentication, rate-limit and transient-error
+recovery remains in force. A resumed session retains its original intents, so
+Portal changes affect Gateway events at the next Identify. Neither discovery
+nor an intent grant enables startup, changes bindings, or makes ordinary guild
+chatter trigger a task: guild tasks still require a bot mention.
+
+The HTTP responses, Gateway envelopes and durable session format are unchanged,
+so API and Worker revisions can roll out independently. An older API keeps its
+previous context setting until redeployed; an older Worker keeps its configured
+session intents until updated and identified again. Leftover message-content
+Variables/bindings are ignored by the new versions and do not need coordinated
+credential changes. Normal rollout and the separate Gateway activation approval
+remain required; this change does not dispatch a deployment or start the bot.
 
 Updating GitHub configuration does not update an already-running API: a
 subsequent API deployment must render the new inputs. The signed interaction

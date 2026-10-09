@@ -40,7 +40,19 @@ export function configureDiscordApp(): void {
   mockEnv("DISCORD_BOT_TOKEN", "discord-test-bot-token");
   mockEnv("DISCORD_PUBLIC_KEY", "a".repeat(64));
   mockEnv("DISCORD_GATEWAY_SECRET", "discord-gateway-test-secret-32-bytes");
-  mockEnv("DISCORD_MESSAGE_CONTENT_ENABLED", "false");
+  mockDiscordApplication(0);
+}
+
+export function mockDiscordApplication(flags: number, flagsNew?: string): void {
+  server.use(
+    http.get("https://discord.com/api/v10/applications/@me", () => {
+      return HttpResponse.json({
+        id: env("DISCORD_APPLICATION_ID"),
+        flags,
+        ...(flagsNew !== undefined && { flags_new: flagsNew }),
+      });
+    }),
+  );
 }
 
 export function mockDiscordMemberships(

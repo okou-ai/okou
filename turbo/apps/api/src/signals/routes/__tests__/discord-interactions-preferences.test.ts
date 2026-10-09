@@ -40,6 +40,7 @@ import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import {
   removePublicDiscordBinding,
+  mockDiscordApplication,
   mockDiscordMemberships,
   createPublicDiscordBinding,
   uniqueDiscordSnowflake,
@@ -540,6 +541,7 @@ beforeEach(() => {
   mockEnv("DISCORD_PUBLIC_KEY", publicKey);
   mockEnv("DISCORD_BOT_TOKEN", randomBytes(32).toString("hex"));
   mockEnv("DISCORD_GATEWAY_SECRET", randomBytes(32).toString("hex"));
+  mockDiscordApplication(0);
   accountApi.acceptAgentStorageWrites();
 });
 

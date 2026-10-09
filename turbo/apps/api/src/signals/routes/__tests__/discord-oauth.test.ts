@@ -84,7 +84,6 @@ function fixture() {
   mockEnv("DISCORD_OAUTH_CLIENT_SECRET", "test-discord-client-secret");
   mockEnv("DISCORD_PUBLIC_KEY", "a".repeat(64));
   mockEnv("DISCORD_GATEWAY_SECRET", "discord-test-gateway-secret-32-bytes");
-  mockEnv("DISCORD_MESSAGE_CONTENT_ENABLED", "false");
   mockEnv("APP_URL", "https://app.okou.ai");
   context.mocks.clerk.organizations.getOrganizationMembershipList.mockImplementation(
     (input) => {
@@ -125,6 +124,9 @@ function fixture() {
     return { id, username: bot ? "Okou" : "member", bot };
   }
   server.use(
+    http.get(`${API}/applications/@me`, () => {
+      return HttpResponse.json({ id: provider.botApplicationId, flags: 0 });
+    }),
     http.post(`${API}/oauth2/token`, async ({ request }) => {
       if (provider.tokenFailure) {
         return HttpResponse.json(

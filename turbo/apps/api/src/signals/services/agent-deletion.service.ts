@@ -68,6 +68,7 @@ const agentWatchColumns = Object.freeze({
 
 const deleteAgentRows$ = command(
   async ({ set }, args: DeleteAgentArgs, signal: AbortSignal) => {
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0047; new non-billing transactions are prohibited.
     return await set(writeDb$).transaction(async (tx) => {
       await tx.execute(
         sql`SELECT set_config('lock_timeout', ${DELETE_AGENT_LOCK_TIMEOUT}, true)`,

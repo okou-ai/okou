@@ -37,6 +37,7 @@ export const issueRunnerWssTicket$ = command(
   ): Promise<{ wssUrl: string; ticket: string; expiresAt: string } | null> => {
     const ticket = randomBytes(32).toString("base64url");
     const digest = digestOf(ticket);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0240; new non-billing transactions are prohibited.
     return await set(writeDb$).transaction(async (tx) => {
       // Serialize issue, consume and revoke with the run's terminal transition.
       const [run] = await tx
@@ -151,6 +152,7 @@ export const consumeRunnerWssTicket$ = command(
     (RunOwner & { runId: string; runnerId: string; origin: string }) | null
   > => {
     const digest = digestOf(args.ticket);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0241; new non-billing transactions are prohibited.
     return await set(writeDb$).transaction(async (tx) => {
       // Digest lookup reveals no ticket or owner to the caller on failure.
       const [candidate] = await tx
@@ -236,6 +238,7 @@ export const revokeRunnerWssTickets$ = command(
     { set },
     args: { readonly runId: string; readonly owner: RunOwner },
   ): Promise<boolean> => {
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0242; new non-billing transactions are prohibited.
     return await set(writeDb$).transaction(async (tx) => {
       const [run] = await tx
         .select({ id: agentRuns.id })

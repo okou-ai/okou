@@ -28,6 +28,7 @@ export const readSharedThreadChatEventHistory$ = command(
     chatThreadId: string,
     signal: AbortSignal,
   ): Promise<readonly ChatEventRow[]> => {
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0090; new non-billing transactions are prohibited.
     const captured = await set(writeDb$).transaction(
       async (tx) => {
         const [head] = await tx

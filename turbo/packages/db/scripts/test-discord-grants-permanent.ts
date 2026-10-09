@@ -22,7 +22,6 @@ export async function validatePermanentDiscordGrants(
   const peerSender = "700000000000000003";
   const createdAt = new Date();
   try {
-    await client.query("BEGIN");
     assert.deepEqual(
       (
         await client.query(
@@ -51,7 +50,6 @@ export async function validatePermanentDiscordGrants(
       SELECT $1, $7, $4, id FROM approved`,
       [guild, org, bot, actor, id, createdAt, sender],
     );
-    await client.query("SAVEPOINT foreign_grant");
     await assert.rejects(
       client.query(
         `INSERT INTO discord_org_connections (guild_id, discord_user_id, user_id, oauth_grant_id) VALUES ($1, $2, $3, $4)`,
@@ -59,7 +57,6 @@ export async function validatePermanentDiscordGrants(
       ),
       { code: "23503", constraint: "fk_discord_connection_oauth_grant" },
     );
-    await client.query("ROLLBACK TO SAVEPOINT foreign_grant");
     await client.query(
       `INSERT INTO discord_oauth_states (id, state_hash, completion_token_hash, phase, user_id, org_id, flow, redirect_uri, verified_guild_id, verified_guild_name, verified_discord_user_id, verified_bot_user_id, expires_at) VALUES ($1::uuid, $1::text, NULL, 'approved', $2, $3, 'connect', 'https://example.test/callback', $4, 'guild', $5, $6, now() + interval '10 minutes')`,
       [peerGrant, peer, org, guild, peerSender, bot],
@@ -114,7 +111,16 @@ export async function validatePermanentDiscordGrants(
       "Discord consent provenance, installer anonymization and scoped cascades passed",
     );
   } finally {
-    await client.query("ROLLBACK");
-    await client.end();
+    // Physical-schema fixtures have unique real identities and clean up through
+    // their native cascades; no explicit non-billing transaction or savepoint.
+    try {
+      await client.query(
+        `DELETE FROM discord_oauth_states WHERE id = ANY($1::uuid[])`,
+        [[id, peerGrant]],
+      );
+      await client.query(`DELETE FROM discord_org_grants WHERE id = $1`, [id]);
+    } finally {
+      await client.end();
+    }
   }
 }
