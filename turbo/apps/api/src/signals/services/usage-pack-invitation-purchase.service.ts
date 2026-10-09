@@ -979,38 +979,34 @@ const claimInvitationCreation$ = command(
   ): Promise<UsagePackInvitationPurchaseRow | null> => {
     signal?.throwIfAborted();
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0276; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      const staleBefore = new Date(
-        nowDate().getTime() - RECONCILIATION_DELAY_MS,
-      );
-      const [claimed] = await tx
-        .update(usagePackInvitationPurchases)
-        .set({ status: "creating_invitation", updatedAt: nowDate() })
-        .where(
-          and(
-            eq(usagePackInvitationPurchases.id, purchaseId),
-            isNull(usagePackInvitationPurchases.clerkInvitationId),
-            isNull(usagePackInvitationPurchases.allocationId),
-            or(
-              eq(usagePackInvitationPurchases.status, "payment_succeeded"),
-              ...(allowRecovery
-                ? [
-                    and(
-                      eq(
-                        usagePackInvitationPurchases.status,
-                        "creating_invitation",
-                      ),
-                      lte(usagePackInvitationPurchases.updatedAt, staleBefore),
+    const staleBefore = new Date(nowDate().getTime() - RECONCILIATION_DELAY_MS);
+    const [claimed] = await db
+      .update(usagePackInvitationPurchases)
+      .set({ status: "creating_invitation", updatedAt: nowDate() })
+      .where(
+        and(
+          eq(usagePackInvitationPurchases.id, purchaseId),
+          isNull(usagePackInvitationPurchases.clerkInvitationId),
+          isNull(usagePackInvitationPurchases.allocationId),
+          or(
+            eq(usagePackInvitationPurchases.status, "payment_succeeded"),
+            ...(allowRecovery
+              ? [
+                  and(
+                    eq(
+                      usagePackInvitationPurchases.status,
+                      "creating_invitation",
                     ),
-                  ]
-                : []),
-            ),
+                    lte(usagePackInvitationPurchases.updatedAt, staleBefore),
+                  ),
+                ]
+              : []),
           ),
-        )
-        .returning();
-      return claimed ?? null;
-    });
+        ),
+      )
+      .returning();
+    signal?.throwIfAborted();
+    return claimed ?? null;
   },
 );
 
