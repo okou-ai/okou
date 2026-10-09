@@ -14,10 +14,17 @@ import {
   User,
 } from "lucide-react";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
   Button,
   buttonVariants,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -51,10 +58,13 @@ import {
 } from "./custom-template-preview-dialog.tsx";
 import { FilePreviewIcon } from "./file-preview-icon.tsx";
 import {
+  cancelDeleteCustomTemplate$,
   customTemplateSearchQuery$,
   customTemplateCatalog$,
   deleteCustomTemplate$,
   openCustomTemplate$,
+  pendingDeleteCustomTemplateId$,
+  requestDeleteCustomTemplate$,
   setCustomTemplateSearchQuery$,
   projectCustomTemplatePicker$,
   setCustomTemplateKindFilter$,
@@ -297,7 +307,7 @@ function CustomTemplateCard({
   const pageSignal = useGet(pageSignal$);
   const openTemplate = useSet(openCustomTemplate$);
   const updateTemplate = useSet(updateCustomTemplate$);
-  const deleteTemplate = useSet(deleteCustomTemplate$);
+  const requestDelete = useSet(requestDeleteCustomTemplate$);
   const open = () => {
     openTemplate({ templateId: template.id, kind: template.kind });
   };
@@ -388,10 +398,7 @@ function CustomTemplateCard({
               );
             }}
             onDelete={() => {
-              detach(
-                deleteTemplate(template.id, pageSignal),
-                Reason.DomCallback,
-              );
+              requestDelete(template.id);
             }}
           />
         ) : null}
@@ -532,14 +539,10 @@ function CustomTemplatesEmpty({
   kind,
   isEmptyCatalog,
   hasQuery,
-  signals,
-  onImported,
 }: {
   readonly kind: UserTemplateKind;
   readonly isEmptyCatalog: boolean;
   readonly hasQuery: boolean;
-  readonly signals: ComposerSignals;
-  readonly onImported: () => void;
 }) {
   const { t } = useTranslation();
   const setQuery = useSet(setCustomTemplateSearchQuery$);
@@ -612,15 +615,95 @@ function CustomTemplatesEmpty({
             return $.templates.clearSearch;
           })}
         </Button>
-      ) : !isEmptyCatalog ? (
-        <div className="mt-6">
-          <CustomTemplateImportButton
-            signals={signals}
-            onImported={onImported}
-          />
-        </div>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * Asks once before a template is removed, because removal cannot be undone.
+ *
+ * Both the tile menu and the open template's column request a deletion, so the
+ * confirmation lives beside the picker rather than inside either of them. The
+ * dialog stays open while the delete is in flight and closes only on success.
+ */
+function CustomTemplateDeleteConfirm() {
+  const { t } = useTranslation();
+  const pageSignal = useGet(pageSignal$);
+  const pendingId = useGet(pendingDeleteCustomTemplateId$);
+  const cancel = useSet(cancelDeleteCustomTemplate$);
+  const [deleteLoadable, deleteTemplate] = useLoadableSet(
+    deleteCustomTemplate$,
+  );
+  const deleting = deleteLoadable.state === "loading";
+  const catalog = useLastLoadable(customTemplateCatalog$);
+  const title =
+    catalog.state === "hasData"
+      ? catalog.data.find((template) => {
+          return template.id === pendingId;
+        })?.title
+      : undefined;
+  return (
+    <Dialog
+      open={pendingId !== null}
+      onOpenChange={(next) => {
+        if (!next && !deleting) {
+          cancel();
+        }
+      }}
+    >
+      <DialogContent smMaxWidth={420}>
+        <DialogHeader className="min-w-0 pr-8">
+          <DialogTitle className="break-words leading-tight">
+            {t(($) => {
+              return $.templates.delete.title;
+            })}
+          </DialogTitle>
+          <DialogDescription className="break-words">
+            {t(
+              ($) => {
+                return $.templates.delete.description;
+              },
+              { title: title ?? "" },
+            )}
+          </DialogDescription>
+        </DialogHeader>
+        {deleteLoadable.state === "hasError" ? (
+          <p role="alert" className="text-sm text-destructive">
+            {t(($) => {
+              return $.templates.delete.failed;
+            })}
+          </p>
+        ) : null}
+        <DialogFooter className="min-w-0">
+          <Button variant="outline" disabled={deleting} onClick={cancel}>
+            {t(($) => {
+              return $.templates.delete.cancel;
+            })}
+          </Button>
+          <Button
+            variant="destructive"
+            disabled={deleting || pendingId === null}
+            onClick={() => {
+              if (pendingId !== null) {
+                detach(
+                  deleteTemplate(pendingId, pageSignal),
+                  Reason.DomCallback,
+                );
+              }
+            }}
+          >
+            {deleting
+              ? t(($) => {
+                  return $.templates.delete.deleting;
+                })
+              : t(($) => {
+                  return $.templates.delete.confirm;
+                })}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -641,45 +724,44 @@ export function CustomTemplatePickerPane({
   const projectPicker = useGet(projectCustomTemplatePicker$);
   const view = catalog.state === "hasData" ? projectPicker(catalog.data) : null;
   const hasQuery = query.trim().length > 0;
-  const showToolbar = view !== null && (view.templates.length > 0 || hasQuery);
-  const showHeaderImport = showToolbar || view?.isEmptyCatalog === true;
+  // A non-empty catalog always shows its kind filters, including when the
+  // selected kind is empty, so a member can leave an empty kind from here.
+  // Search only applies to what is listed, so it stays with a populated kind.
+  const showSearch = view !== null && (view.templates.length > 0 || hasQuery);
+  const showFilters = view !== null && !view.isEmptyCatalog;
+  const showHeaderImport = showFilters || view?.isEmptyCatalog === true;
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       {showHeaderImport ? (
-        <div
-          className={cn(
-            "relative shrink-0 pb-5 sm:pt-[68px] lg:flex lg:items-center lg:gap-4",
-            !showToolbar && "pb-0",
-          )}
-        >
-          {showToolbar && view ? (
-            <>
-              <div className="mb-3.5 w-full min-w-0 lg:mb-0 lg:w-56 lg:shrink">
-                <div className="relative">
-                  <Search
-                    className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-                    aria-hidden
-                  />
-                  <Input
-                    aria-label={t(($) => {
-                      return $.artifacts.templates.searchConnectors;
-                    })}
-                    placeholder={t(($) => {
-                      return $.artifacts.templates.searchConnector;
-                    })}
-                    className="h-9 pl-9 text-sm"
-                    value={query}
-                    onChange={(event) => {
-                      setQuery(event.target.value);
-                    }}
-                  />
-                </div>
-              </div>
-              <CustomTemplateKindFilters kind={view.kind} />
-            </>
+        // The same 68px band the workflow search uses, so the search sits on
+        // the same axis in both categories and clears the dialog's close button.
+        <div className="relative flex h-[68px] shrink-0 items-center gap-3 px-6 pr-14">
+          {showSearch && view ? (
+            <div className="relative w-56 shrink-0">
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden
+              />
+              <Input
+                aria-label={t(($) => {
+                  return $.artifacts.templates.searchConnectors;
+                })}
+                placeholder={t(($) => {
+                  return $.artifacts.templates.searchConnector;
+                })}
+                className="h-9 pl-9 text-sm"
+                value={query}
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                }}
+              />
+            </div>
           ) : null}
-          <div className="absolute -top-[50px] right-0 shrink-0 sm:right-9 sm:top-[18px]">
+          {showFilters && view ? (
+            <CustomTemplateKindFilters kind={view.kind} />
+          ) : null}
+          <div className="ml-auto shrink-0">
             <CustomTemplateImportButton
               signals={signals}
               onImported={onImported}
@@ -692,7 +774,7 @@ export function CustomTemplatePickerPane({
         aria-label={t(($) => {
           return $.templates.detail.back;
         })}
-        className="relative flex min-h-0 flex-1 flex-col overflow-y-auto"
+        className="relative flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-6"
       >
         {catalog.state === "hasError" ? (
           <CustomTemplatesLoadError />
@@ -701,8 +783,6 @@ export function CustomTemplatePickerPane({
             kind={view.kind}
             isEmptyCatalog={view.isEmptyCatalog}
             hasQuery={hasQuery}
-            signals={signals}
-            onImported={onImported}
           />
         ) : (
           <div
@@ -725,6 +805,7 @@ export function CustomTemplatePickerPane({
         )}
       </div>
       <CustomTemplatePreviewDialog onSelect={onSelect} />
+      <CustomTemplateDeleteConfirm />
     </div>
   );
 }

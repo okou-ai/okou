@@ -5338,6 +5338,14 @@
     },
     "clearSearch": "Clear search",
     "custom": "Custom",
+    "delete": {
+      "cancel": "Cancel",
+      "confirm": "Delete template",
+      "deleting": "Deleting...",
+      "description": "\"{{title}}\" will be removed for everyone who can see it. This action cannot be undone.",
+      "failed": "Couldn't delete the template. Try again.",
+      "title": "Delete template?"
+    },
     "detail": {
       "back": "Custom templates",
       "page": "Page {{number}}"

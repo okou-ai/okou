@@ -5508,7 +5508,7 @@ function TemplatePickerCategoryContent({
 }) {
   if (selectedCategory === "custom") {
     return (
-      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col px-5 pb-6 sm:px-7">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         <CustomTemplatePickerPane
           signals={signals}
           onSelect={onSelectCustom}

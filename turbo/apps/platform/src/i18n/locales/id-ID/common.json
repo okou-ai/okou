@@ -5322,6 +5322,14 @@
     },
     "clearSearch": "Hapus pencarian",
     "custom": "Kustom",
+    "delete": {
+      "cancel": "Batal",
+      "confirm": "Hapus templat",
+      "deleting": "Menghapus...",
+      "description": "\"{{title}}\" akan dihapus untuk semua orang yang dapat melihatnya. Tindakan ini tidak dapat dibatalkan.",
+      "failed": "Templat tidak dapat dihapus. Coba lagi.",
+      "title": "Hapus templat?"
+    },
     "detail": {
       "back": "Templat kustom",
       "page": "Halaman {{number}}"

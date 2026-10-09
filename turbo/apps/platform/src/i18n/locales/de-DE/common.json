@@ -5346,6 +5346,14 @@
     },
     "clearSearch": "Suche löschen",
     "custom": "Eigene",
+    "delete": {
+      "cancel": "Abbrechen",
+      "confirm": "Vorlage löschen",
+      "deleting": "Wird gelöscht...",
+      "description": "\"{{title}}\" wird für alle entfernt, die sie sehen können. Diese Aktion kann nicht rückgängig gemacht werden.",
+      "failed": "Die Vorlage konnte nicht gelöscht werden. Versuchen Sie es erneut.",
+      "title": "Vorlage löschen?"
+    },
     "detail": {
       "back": "Eigene Vorlagen",
       "page": "Seite {{number}}"

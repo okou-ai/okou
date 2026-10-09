@@ -19,7 +19,7 @@ import type {
 } from "@okouai/api-contracts/contracts/user-templates";
 
 import {
-  deleteCustomTemplate$,
+  requestDeleteCustomTemplate$,
   updateCustomTemplate$,
 } from "../../signals/okou-page/custom-template-library.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -303,8 +303,7 @@ export function CustomTemplateDetailSidebar({
   readonly onSelect: (template: UserTemplateCatalogEntry) => void;
 }) {
   const { t } = useTranslation();
-  const pageSignal = useGet(pageSignal$);
-  const deleteTemplate = useSet(deleteCustomTemplate$);
+  const requestDelete = useSet(requestDeleteCustomTemplate$);
   return (
     // The imported deck panel's column, which this now shares: the name, what
     // it means to share it, then the action, then the way to be rid of it.
@@ -351,7 +350,7 @@ export function CustomTemplateDetailSidebar({
             size="sm"
             className="mt-2 w-full text-destructive hover:text-destructive"
             onClick={() => {
-              detach(deleteTemplate(detail.id, pageSignal), Reason.DomCallback);
+              requestDelete(detail.id);
             }}
           >
             {t(($) => {

@@ -438,7 +438,7 @@ test("Kind filters combine with search without an All option", async () => {
   expect(buttonByName("All", filters)).toBeUndefined();
 });
 
-test("An empty kind hides filters and Custom reopens the available catalog", async () => {
+test("An empty kind keeps the kind filters so another kind can be chosen", async () => {
   mockCustomTemplates([customTemplate()]);
   const { dialog } = await openCustomPanel();
   const filters = await within(dialog).findByRole("group", {
@@ -448,21 +448,24 @@ test("An empty kind hides filters and Custom reopens the available catalog", asy
   await expect(
     within(dialog).findByText("No images yet"),
   ).resolves.toBeInTheDocument();
+  // Search has nothing to match in an empty kind, so it stays hidden; the kind
+  // filters remain so the member can leave the empty kind from here.
   expect(
     within(dialog).queryByLabelText("Search templates"),
   ).not.toBeInTheDocument();
-  expect(
-    within(dialog).queryByRole("group", { name: "Template categories" }),
-  ).not.toBeInTheDocument();
+  const emptyKindFilters = within(dialog).getByRole("group", {
+    name: "Template categories",
+  });
+  expect(buttonByName("Image", emptyKindFilters)).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
   expect(within(dialog).getAllByLabelText("Import template")).toHaveLength(1);
-  click(tabByText("Custom"));
+  click(buttonByName("Presentation", emptyKindFilters)!);
   await expect(
     within(dialog).findByText("Q3 board review"),
   ).resolves.toBeInTheDocument();
-  const restoredFilters = within(dialog).getByRole("group", {
-    name: "Template categories",
-  });
-  expect(buttonByName("Presentation", restoredFilters)).toHaveAttribute(
+  expect(buttonByName("Presentation", emptyKindFilters)).toHaveAttribute(
     "aria-pressed",
     "true",
   );
@@ -882,11 +885,41 @@ test("Deleting a template removes only its card", async () => {
     expect(menuItemByName("Delete")).toBeInTheDocument();
   });
   click(menuItemByName("Delete"));
+  // Removal cannot be undone, so the menu asks first and changes nothing yet.
+  const confirm = await screen.findByRole("dialog", {
+    name: "Delete template?",
+  });
+  expect(within(dialog).getByText(board.title)).toBeInTheDocument();
+  click(buttonByName("Delete template", confirm)!);
 
   await waitFor(() => {
     expect(within(dialog).queryByText(board.title)).not.toBeInTheDocument();
   });
   expect(within(dialog).getByText(renewal.title)).toBeInTheDocument();
+});
+
+test("Cancelling the delete confirmation keeps the template", async () => {
+  mockCustomTemplateStore([customTemplate()]);
+
+  const { dialog } = await openCustomPanel();
+  await within(dialog).findByText("Q3 board review");
+
+  click(buttonByName("Actions for Q3 board review", dialog)!);
+  await waitFor(() => {
+    expect(menuItemByName("Delete")).toBeInTheDocument();
+  });
+  click(menuItemByName("Delete"));
+  const confirm = await screen.findByRole("dialog", {
+    name: "Delete template?",
+  });
+  click(buttonByName("Cancel", confirm)!);
+
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: "Delete template?" }),
+    ).not.toBeInTheDocument();
+  });
+  expect(within(dialog).getByText("Q3 board review")).toBeInTheDocument();
 });
 
 test.each(["visibility change", "deletion"] as const)(
@@ -908,6 +941,10 @@ test.each(["visibility change", "deletion"] as const)(
       await shareWithOrganization();
     } else {
       click(buttonByName("Delete")!);
+      const confirm = await screen.findByRole("dialog", {
+        name: "Delete template?",
+      });
+      click(buttonByName("Delete template", confirm)!);
     }
 
     await expect(

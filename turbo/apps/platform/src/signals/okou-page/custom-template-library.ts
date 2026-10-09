@@ -312,6 +312,26 @@ export const updateCustomTemplate$ = command(
 );
 
 /**
+ * The template whose removal is waiting for the member to confirm it. Deleting
+ * is not undoable, so every entry point asks here and the picker confirms once.
+ */
+const internalPendingDeleteId$ = state<string | null>(null);
+
+export const pendingDeleteCustomTemplateId$ = computed((get) => {
+  return get(internalPendingDeleteId$);
+});
+
+export const requestDeleteCustomTemplate$ = command(
+  ({ set }, templateId: string) => {
+    set(internalPendingDeleteId$, templateId);
+  },
+);
+
+export const cancelDeleteCustomTemplate$ = command(({ set }) => {
+  set(internalPendingDeleteId$, null);
+});
+
+/**
  * Deleting drops the record only. The source file and its page images are
  * ordinary uploads that may be referenced elsewhere, so the API deliberately
  * leaves them in storage.
@@ -334,6 +354,7 @@ export const deleteCustomTemplate$ = command(
     if (get(openCustomTemplateId$) === templateId) {
       set(internalOpenTemplate$, null);
     }
+    set(internalPendingDeleteId$, null);
     set(reloadCustomTemplates$);
   },
 );
