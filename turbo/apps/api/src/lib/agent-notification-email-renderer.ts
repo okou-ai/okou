@@ -4,6 +4,7 @@ import { renderEmailLayout } from "../signals/services/email-layout";
 import {
   markdownRenderer,
   plainTextFromHtml,
+  renderOfficialAutomationResultEmail,
 } from "../signals/services/official-automation-result-email-renderer";
 
 export function renderAgentNotificationEmail(
@@ -33,4 +34,25 @@ export function renderAgentNotificationEmail(
     );
   }
   return { html, text: plainTextFromHtml(html) };
+}
+
+export function renderAgentMorningBriefEmail(
+  props: {
+    readonly subject: string;
+    readonly text: string;
+    readonly runUrl: string;
+    readonly manageUrl: string;
+  },
+  unsubscribeUrl: string,
+) {
+  const { html, text } = renderOfficialAutomationResultEmail(
+    {
+      title: props.subject,
+      resultText: props.text,
+      runUrl: props.runUrl,
+      manageUrl: props.manageUrl,
+    },
+    unsubscribeUrl,
+  );
+  return { html, text };
 }

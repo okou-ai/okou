@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { notificationsContract } from "@okouai/api-contracts/contracts/notifications";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { emailSubscriptionContract } from "@okouai/api-contracts/contracts/email-subscription";
+import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
@@ -10,12 +11,15 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { notificationsRoutes } from "../notifications";
 import { featureSwitchesRoutes } from "../feature-switches";
 import { emailSubscriptionRoutes } from "../email-subscription";
+import { workflowAutomationsRoutes } from "../workflow-automations";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
 import { mockClerkUsers } from "./helpers/clerk-users";
 import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
+import { createPublicAutomationResultEmailApi } from "./helpers/public-automation-result-email";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -104,6 +108,113 @@ const body = () => {
 };
 
 describe("agent mail notifications", () => {
+  it("rejects Morning Brief purpose from an ordinary run without consuming the key or silently downgrading", async () => {
+    const fixture = await runningAgent();
+    const input = { ...body(), subject: "Morning Brief" };
+    const rejected = await accept(
+      client().mail({
+        headers: fixture.headers,
+        body: { ...input, kind: "morning-brief" },
+      }),
+      [403],
+    );
+    expect(rejected.body.error).toMatchObject({
+      code: "FORBIDDEN",
+      message: expect.stringContaining("official Morning Brief automation"),
+    });
+    const ordinary = await accept(
+      client().mail({ headers: fixture.headers, body: input }),
+      [200],
+    );
+    expect(ordinary.body).toMatchObject({
+      status: "queued",
+      deduplicated: false,
+    });
+    expect(
+      (
+        await accept(
+          client().mail({
+            headers: fixture.headers,
+            body: { ...input, kind: "notification" },
+          }),
+          [200],
+        )
+      ).body,
+    ).toMatchObject({
+      notificationId: ordinary.body.notificationId,
+      deduplicated: true,
+    });
+    await accept(
+      client().mail({
+        headers: fixture.headers,
+        body: { ...input, kind: "morning-brief" },
+      }),
+      [409],
+    );
+  });
+
+  it("does not authorize a custom automation merely named morning-brief", async () => {
+    const workflows = createWorkflowsBddApi(context);
+    const runs = createRunsApi(context);
+    const publicResults = createPublicAutomationResultEmailApi(context);
+    const runnerGroup = runs.configureRunnerGroup();
+    const { actor } = await workflows.setupWorkflowOrg({
+      model: "claude-fable-5-1",
+    });
+    const { agentId } = await workflows.createAgent(actor);
+    const workflowId = await workflows.createWorkflow(actor, {
+      agentId,
+      name: "morning-brief",
+    });
+    await feature(actor, true);
+    const automation = await accept(
+      setupApp({ context, routes: workflowAutomationsRoutes })(
+        workflowAutomationsContract,
+      ).create({
+        headers: humanHeaders,
+        params: { workflowId },
+        body: { schedule: { type: "loop", intervalSeconds: 3600 } },
+      }),
+      [201],
+    );
+    publicResults.configureDelivery(actor);
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    await runs.heartbeatRunner(runnerGroup);
+    const { runId } = await publicResults.start(
+      actor,
+      automation.body.id,
+      runnerGroup,
+    );
+    const claim = await runs.claimRunnerJob(runId);
+    publicResults.track(actor, runId, runnerGroup).sandboxToken =
+      claim.sandboxToken;
+    const headers = { authorization: `Bearer ${okouTokenFromClaim(claim)}` };
+    const input = body();
+    await accept(
+      client().mail({ headers, body: { ...input, kind: "morning-brief" } }),
+      [403],
+    );
+    expect(
+      (await accept(client().mail({ headers, body: input }), [200])).body,
+    ).toMatchObject({ status: "queued", deduplicated: false });
+  });
+
+  it("rejects caller-supplied presentation and source URLs", async () => {
+    const fixture = await runningAgent();
+    const input = {
+      ...body(),
+      manageUrl: "https://example.com/manage",
+      runUrl: "https://example.com/run",
+      heroUrl: "https://example.com/image.png",
+    };
+    const rejected = await accept(
+      client().mail({ headers: fixture.headers, body: input }),
+      [400],
+    );
+    expect(rejected.body.error.code).toBe("BAD_REQUEST");
+  });
+
   it("does not turn a recipient-provider failure into a no-email skip", async () => {
     const fixture = await runningAgent();
     const input = body();

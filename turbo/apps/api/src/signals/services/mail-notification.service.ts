@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { MORNING_BRIEF_PREFERENCES_PATH } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import type {
   NotificationResponse,
   NotifyMailBody,
@@ -10,6 +11,7 @@ import { emailOutbox } from "@okouai/db/schema/email-outbox";
 import { emailSuppressions } from "@okouai/db/schema/email-suppression";
 import { mailNotifications } from "@okouai/db/schema/mail-notification";
 import { users } from "@okouai/db/schema/user";
+import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import { command, computed } from "ccstate";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import {
@@ -19,6 +21,7 @@ import {
   resourceUnavailable,
 } from "../../lib/error";
 import { env, optionalEnv } from "../../lib/env";
+import { isMorningBriefNotificationSource } from "../../lib/morning-brief-notification-source";
 import { db$, writeDb$ } from "../external/db";
 import { userFeatureSwitchOverrides } from "./feature-switches.service";
 import { emailSubscription$ } from "./email-subscription.service";
@@ -26,6 +29,7 @@ import {
   buildFromAddress,
   buildOneClickUnsubscribeUrl,
   buildUnsubscribeHeaders,
+  type EmailTemplate,
 } from "./email-common.service";
 
 interface Owner {
@@ -84,24 +88,81 @@ function replay(receipt: Receipt, payloadHash: string) {
       );
 }
 
+function notificationTemplate(
+  body: NotifyMailBody,
+  runId: string,
+): EmailTemplate {
+  const props = {
+    subject: body.subject,
+    text: body.text,
+    runUrl: `${env("APP_URL")}/activities/${runId}`,
+  };
+  return body.kind === "morning-brief"
+    ? {
+        template: "agent-morning-brief",
+        props: {
+          ...props,
+          manageUrl: `${env("APP_URL")}${MORNING_BRIEF_PREFERENCES_PATH}`,
+        },
+      }
+    : { template: "agent-notification", props };
+}
+
+function notificationSkipReason(
+  unsubscribed: boolean,
+  email: string | null,
+  suppressed: boolean,
+) {
+  return unsubscribed
+    ? ("unsubscribed" as const)
+    : !email
+      ? ("no-email" as const)
+      : suppressed
+        ? ("suppressed" as const)
+        : null;
+}
+
+function notificationAdmissionReadPlan() {
+  return {
+    run: {
+      id: agentRuns.id,
+      workflowAutomationId: agentRuns.workflowAutomationId,
+      officialWorkflowProvenance: agentRuns.officialWorkflowProvenance,
+    },
+    source: {
+      automationId: workflowAutomations.id,
+      automationOrgId: workflowAutomations.orgId,
+      automationOwnerUserId: workflowAutomations.ownerUserId,
+      workflowOrgId: workflows.orgId,
+      workflowOwnerUserId: workflows.ownerUserId,
+      officialDefinitionName: workflows.officialDefinitionName,
+      officialBlueprintKey: workflowAutomations.officialBlueprintKey,
+    },
+    sourceJoin: eq(workflows.id, workflowAutomations.workflowId),
+  };
+}
+
+interface NotificationDelivery {
+  readonly payloadHash: string;
+  readonly email: string | null;
+}
+
 const commitMailNotification$ = command(
   async (
     { set },
     owner: Owner & { readonly runId: string },
     body: NotifyMailBody,
-    {
-      payloadHash,
-      email,
-    }: { readonly payloadHash: string; readonly email: string | null },
+    { payloadHash, email }: NotificationDelivery,
     signal: AbortSignal,
   ) => {
     const db = set(writeDb$);
     const keyScope = notificationKeyScope(owner, body.idempotencyKey);
     const runScope = activeRunScope(owner);
+    const plan = notificationAdmissionReadPlan();
     return await db.transaction(async (tx) => {
       // Serialize admission with run termination and the user's opt-out writes.
       const [activeRun] = await tx
-        .select({ id: agentRuns.id })
+        .select(plan.run)
         .from(agentRuns)
         .where(runScope)
         .for("update");
@@ -129,6 +190,22 @@ const commitMailNotification$ = command(
       if (winner) {
         return replay(winner, payloadHash);
       }
+      if (body.kind === "morning-brief") {
+        const [source] = activeRun.workflowAutomationId
+          ? await tx
+              .select(plan.source)
+              .from(workflowAutomations)
+              .innerJoin(workflows, plan.sourceJoin)
+              .where(eq(workflowAutomations.id, activeRun.workflowAutomationId))
+              .limit(1)
+          : [];
+        signal.throwIfAborted();
+        if (!isMorningBriefNotificationSource(owner, activeRun, source)) {
+          return resourceUnavailable(
+            "morning-brief notifications require a run from your official Morning Brief automation. Use --kind notification for ordinary updates.",
+          );
+        }
+      }
       const [suppression] = email
         ? await tx
             .select({ id: emailSuppressions.id })
@@ -141,13 +218,11 @@ const commitMailNotification$ = command(
             )
             .limit(1)
         : [];
-      const reason = user.unsubscribed
-        ? ("unsubscribed" as const)
-        : !email
-          ? ("no-email" as const)
-          : suppression
-            ? ("suppressed" as const)
-            : null;
+      const reason = notificationSkipReason(
+        user.unsubscribed,
+        email,
+        suppression !== undefined,
+      );
       if (!reason && !optionalEnv("RESEND_API_KEY")) {
         return notConfigured(
           "Okou email delivery is not configured. Retry with the same key after configuration is restored.",
@@ -194,14 +269,7 @@ const commitMailNotification$ = command(
           headers: buildUnsubscribeHeaders(
             buildOneClickUnsubscribeUrl(owner.userId),
           ),
-          template: {
-            template: "agent-notification",
-            props: {
-              subject: body.subject,
-              text: body.text,
-              runUrl: `${env("APP_URL")}/activities/${owner.runId}`,
-            },
-          },
+          template: notificationTemplate(body, owner.runId),
           status: "pending",
           attempts: 0,
         });
@@ -221,8 +289,17 @@ export const queueMailNotification$ = command(
   ) => {
     const db = set(writeDb$);
     const keyScope = notificationKeyScope(owner, body.idempotencyKey);
+    // The default purpose keeps its established byte encoding. An explicit
+    // Morning Brief purpose adds a discriminator, so changing kind conflicts.
     const payloadHash = createHash("sha256")
-      .update(JSON.stringify([body.to, body.subject, body.text]))
+      .update(
+        JSON.stringify([
+          body.to,
+          body.subject,
+          body.text,
+          ...(body.kind === "morning-brief" ? [body.kind] : []),
+        ]),
+      )
       .digest("hex");
     const [existing] = await db
       .select()

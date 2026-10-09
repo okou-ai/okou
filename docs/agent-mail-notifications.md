@@ -8,7 +8,9 @@ instructions, model selection, and billing policy do not change in this stage.
 ## CLI and API
 
 ```bash
-okou notify mail --to me --subject "Your brief" \
+okou notify mail --to me --subject "Useful update" \
+  --file update.md --idempotency-key update:2026-10-08 --json
+okou notify mail --kind morning-brief --subject "Morning Brief" \
   --file brief.md --idempotency-key morning-brief:2026-10-08 --json
 okou notify get <notification-id> --json
 ```
@@ -50,14 +52,44 @@ JSON, with exit code 1 for rejected actions. Standard Commander argument errors
 use its normal error output. Querying a failed receipt exits successfully because
 the query succeeded.
 
+## Notification purpose and presentation
+
+`--kind notification` is the default; omitting `kind` in the API is equivalent.
+It keeps the generic subject heading, agent footer and Unsubscribe link.
+`--kind morning-brief` explicitly identifies a finished brief, rather than an
+error or progress update, and reuses the existing Official result-email renderer:
+original Morning Brief artwork, automation footer, Open in Okou, Manage and
+Unsubscribe. The agent still controls the subject and Markdown body.
+
+The server authorizes Morning Brief purpose against the current run's persisted
+source automation, its owner's workspace/user, the official `morning-brief`
+installation and `daily-delivery` blueprint, and the run's accepted Official
+provenance. A matching subject, a custom workflow called `morning-brief`, or a
+mounted Official skill in an unrelated run is not sufficient. Missing or
+unrelated source returns `403`; the request is not silently downgraded and does
+not consume the key. Ordinary notifications remain available within a Morning
+Brief run. Manage is server-derived and targets the Morning Brief preference
+section; callers cannot supply a template, artwork, Manage or source URL.
+
+Changing kind under the same key conflicts. Omitted and explicit `notification`
+share the established default payload encoding, including existing receipts.
+The resolved presentation and management URL are captured in the outbox intent;
+retries reuse the intent/provider snapshot rather than reevaluating the source.
+
+This adds a presentation option, not the stage-two delivery cutover. It does
+not change the Official instruction or disable `resultEmail`. Do not instruct
+Morning Brief to send through Notify until the separate revision changes its
+instructions and automatic result-email setting together; otherwise both
+paths can send an email. Already-accepted callbacks retain their contract.
+
 ## Idempotency and delivery ownership
 
 The durable `mail_notifications` table has a unique `(org_id, user_id,
 idempotency_key)` claim. It stores a hash of the exact recipient selector,
-subject, and body, plus delivery metadata; body content stays in the existing
+purpose, subject, and body, plus delivery metadata; body content stays in the existing
 outbox. Same key and content returns the original ID and current status, even
-across runs or outbox cleanup. Same key with different content returns `409`.
-After a timeout, retry the same key and content or query the returned ID. A new
+across runs or outbox cleanup. Same key with different content or purpose returns
+`409`. After a timeout, retry the same key and content or query the returned ID. A new
 key explicitly requests a new notification. A skipped or failed claim is never
 silently requeued; intentional resending needs a new key.
 
@@ -81,8 +113,8 @@ accepted by the provider.
 ## Rollout and acceptance
 
 Apply the additive migration, deploy API and every outbox drain worker with the
-new template reader, then release the CLI. Keep `notifyMail` disabled until all
-old drain instances are gone; old workers cannot read the new template. See
+new template readers (`agent-notification` and `agent-morning-brief`), then release
+the CLI. Keep `notifyMail` disabled until all old drain instances are gone; old workers cannot read the new template. See
 [deployment compatibility](deployment-compatibility.md#agent-mail-notifications-stage-one).
 
 Before stage two, enable only the acceptance cohort, start a real authorized

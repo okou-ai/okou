@@ -10067,6 +10067,29 @@ rollout controls, so operational readiness must precede any enablement.
 Membership/user/organization cleanup removes these receipts and their outbox
 content. In-flight provider calls cannot be recalled.
 
+### Explicit Morning Brief notification purpose
+
+`kind` is an optional mail request field with a permanent `notification` default.
+`morning-brief` requires a server-owned official source automation and accepted
+run provenance; it writes the new `agent-morning-brief` outbox template with a
+server-derived Manage URL. It reuses the original Official result-email
+renderer. Existing `agent-notification` and `official-automation-result` payloads
+and receipt responses are unchanged; no database migration is needed.
+
+- **Old CLI / new API:** omitted kind remains an ordinary notification with
+  identical default idempotency encoding and presentation.
+- **New CLI / old API:** old strict request readers reject the new kind field.
+  Report the error; never retry without the purpose or through another transport.
+- **New producer / old drainer:** unsupported for `agent-morning-brief`. Deploy
+  every drainer reader before releasing the CLI or enabling new production.
+  The feature remains behind default-off `notifyMail`; no dual reader or
+  staff-shape migration is added.
+- **Pending intent / retry:** the outbox captures its resolved template and
+  management URL. The existing committed provider request/key is replayed
+  unchanged, even after the source changes or disappears.
+- **Rollback:** stop new production and drain the new template with compatible
+  workers before restoring an API/drainer that cannot read it.
+
 Morning Brief retains `resultEmail: true` and its existing accepted callback
 snapshots throughout stage one. The later Official revision must change the
 instructions and `resultEmail` together, update Morning Brief readiness checks,
