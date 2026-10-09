@@ -54,7 +54,7 @@ async function capture(dir: string, options: ScreenshotOptions) {
   const out = resolve(options.out);
   if (extname(out).toLowerCase() !== ".png")
     throw new Error("--out must name a PNG file");
-  assertPreviewOutsideSite(dir, out);
+  await assertPreviewOutsideSite(dir, out);
   const scan = await scanStaticSite(dir);
   const fingerprint = bundleFingerprint(scan.files);
   const files = new Map(

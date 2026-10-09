@@ -6,7 +6,9 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -277,6 +279,43 @@ describe("hosted artifact previews", () => {
     );
   });
 
+  it.each(["site", "site parent", "cover", "cover parent"])(
+    "rejects a public cover reached through a symlinked %s before preparing uploads",
+    async (alias) => {
+      const publicCover = join(site, "cover-12345678.png");
+      writeFileSync(publicCover, png);
+      const directoryAlias = join(root, "directory-alias");
+      if (alias === "site") {
+        symlinkSync(site, directoryAlias, "dir");
+        site = directoryAlias;
+        cover = publicCover;
+      } else if (alias === "site parent") {
+        symlinkSync(root, directoryAlias, "dir");
+        site = join(directoryAlias, "site");
+        cover = publicCover;
+      } else if (alias === "cover") {
+        rmSync(cover);
+        symlinkSync(publicCover, cover);
+      } else {
+        symlinkSync(site, directoryAlias, "dir");
+        cover = join(directoryAlias, "cover-12345678.png");
+      }
+      let prepared = false;
+      server.use(
+        http.post("*/api/host/deployments/prepare", () => {
+          prepared = true;
+          return new HttpResponse(null, { status: 400 });
+        }),
+      );
+
+      await expect(publish()).rejects.toThrow("process.exit");
+      expect(prepared).toBe(false);
+      expect(errors.mock.calls.flat().join("\n")).toContain(
+        "outside the hosted directory",
+      );
+    },
+  );
+
   it("retries completion using the same deployment identity", async () => {
     server.use(
       http.post(
@@ -329,45 +368,105 @@ const args = process.argv.slice(4);
     vi.stubEnv("OKOU_TEST_PREVIEW_DIR", root);
   }
 
-  it("captures served bundle bytes and refuses publishing a stale screenshot", async () => {
-    installBrowser();
-    vi.stubEnv("AGENT_BROWSER_PROFILE", "/owner/browser-profile");
-    vi.stubEnv("AGENT_BROWSER_CDP", "http://owner-browser.invalid");
-    vi.stubEnv("AGENT_BROWSER_STATE", "/owner/browser-state.json");
-    await new Command("okou")
-      .addCommand(hostCommand)
-      .parseAsync([
-        "node",
-        "okou",
-        "host",
-        "screenshot",
-        site,
-        "--out",
-        cover,
-        "--json",
-      ]);
-    expect(
-      JSON.parse(readFileSync(join(root, "observed.json"), "utf8")),
-    ).toMatchObject({
-      protocol: "http:",
-      html: expect.stringContaining("Final bundle"),
-      asset: 'console.log("bundle asset")',
-    });
-    expect(existsSync(`${cover}.okou-preview.json`)).toBe(true);
-    expect(JSON.parse(logs.mock.calls.flat().join("\n"))).toMatchObject({
-      path: cover,
-      width: 1280,
-      height: 800,
-    });
-    writeFileSync(
-      join(site, "index.html"),
-      "<main>Changed after capture</main>",
-    );
-    await expect(publish()).rejects.toThrow("process.exit");
-    expect(errors.mock.calls.flat().join("\n")).toContain(
-      "changed after capture",
-    );
-  });
+  it.each(["direct paths", "outside symlinks"])(
+    "captures served bundle bytes with %s and refuses publishing a stale screenshot",
+    async (paths) => {
+      installBrowser();
+      if (paths === "outside symlinks") {
+        const siteAlias = join(root, "site-alias");
+        symlinkSync(site, siteAlias, "dir");
+        site = siteAlias;
+        const coverDirectory = join(root, "site-covers");
+        mkdirSync(coverDirectory);
+        const coverAlias = join(root, "covers-alias");
+        symlinkSync(coverDirectory, coverAlias, "dir");
+        cover = join(coverAlias, "new", "nested", "cover.png");
+      }
+      vi.stubEnv("AGENT_BROWSER_PROFILE", "/owner/browser-profile");
+      vi.stubEnv("AGENT_BROWSER_CDP", "http://owner-browser.invalid");
+      vi.stubEnv("AGENT_BROWSER_STATE", "/owner/browser-state.json");
+      await new Command("okou")
+        .addCommand(hostCommand)
+        .parseAsync([
+          "node",
+          "okou",
+          "host",
+          "screenshot",
+          site,
+          "--out",
+          cover,
+          "--json",
+        ]);
+      expect(
+        JSON.parse(readFileSync(join(root, "observed.json"), "utf8")),
+      ).toMatchObject({
+        protocol: "http:",
+        html: expect.stringContaining("Final bundle"),
+        asset: 'console.log("bundle asset")',
+      });
+      expect(existsSync(`${cover}.okou-preview.json`)).toBe(true);
+      expect(JSON.parse(logs.mock.calls.flat().join("\n"))).toMatchObject({
+        path: cover,
+        width: 1280,
+        height: 800,
+      });
+      writeFileSync(
+        join(site, "index.html"),
+        "<main>Changed after capture</main>",
+      );
+      await expect(publish()).rejects.toThrow("process.exit");
+      expect(errors.mock.calls.flat().join("\n")).toContain(
+        "changed after capture",
+      );
+    },
+  );
+
+  it.each([
+    "site",
+    "output parent",
+    "output file",
+    "dangling output file",
+    "dangling output parent",
+  ])(
+    "rejects capture through a symlinked %s into the site before writing or starting the browser",
+    async (alias) => {
+      installBrowser();
+      const originalSite = site;
+      const directoryAlias = join(root, "directory-alias");
+      if (alias === "site") {
+        symlinkSync(site, directoryAlias, "dir");
+        site = directoryAlias;
+        cover = join(originalSite, "new", "nested", "cover-12345678.png");
+      } else if (alias === "output parent") {
+        symlinkSync(site, directoryAlias, "dir");
+        cover = join(directoryAlias, "new", "nested", "cover-12345678.png");
+      } else if (alias === "dangling output parent") {
+        symlinkSync(join(site, "missing"), directoryAlias, "dir");
+        cover = join(directoryAlias, "new", "cover-12345678.png");
+      } else {
+        const publicCover = join(site, "cover-12345678.png");
+        if (alias === "output file") writeFileSync(publicCover, png);
+        rmSync(cover);
+        symlinkSync(publicCover, cover);
+      }
+      const originalEntries = readdirSync(originalSite, { recursive: true });
+
+      await expect(
+        screenshotHostedSiteCommand.parseAsync([
+          "node",
+          "okou",
+          site,
+          "--out",
+          cover,
+        ]),
+      ).rejects.toThrow("process.exit");
+      expect(existsSync(join(root, "viewport.json"))).toBe(false);
+      expect(readdirSync(originalSite, { recursive: true })).toEqual(
+        originalEntries,
+      );
+      expect(existsSync(`${cover}.okou-preview.json`)).toBe(false);
+    },
+  );
 
   it("reports capture failure and leaves no usable screenshot or receipt", async () => {
     installBrowser();

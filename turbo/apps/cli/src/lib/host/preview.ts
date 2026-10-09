@@ -1,6 +1,15 @@
 import { createHash } from "node:crypto";
-import { readFile, stat } from "node:fs/promises";
-import { extname, isAbsolute, relative, resolve, sep } from "node:path";
+import { lstat, readFile, realpath, stat } from "node:fs/promises";
+import {
+  basename,
+  dirname,
+  extname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
 import { z } from "zod";
 import {
   hostedSitePreviewSchema,
@@ -28,15 +37,41 @@ export function bundleFingerprint(
   return createHash("sha256").update(JSON.stringify(entries)).digest("hex");
 }
 
-export function assertPreviewOutsideSite(
+async function resolvePreviewPath(path: string): Promise<string> {
+  try {
+    // A dangling symlink exists: realpath below must reject it, not treat it as new output.
+    await lstat(path);
+  } catch (error) {
+    const parent = dirname(path);
+    if (
+      !(error instanceof Error && "code" in error && error.code === "ENOENT") ||
+      parent === path
+    ) {
+      throw error;
+    }
+    // Capture may create the output file and several parent directories later.
+    return join(await resolvePreviewPath(parent), basename(path));
+  }
+  return realpath(path);
+}
+
+export async function assertPreviewOutsideSite(
   root: string,
   imagePath: string,
-): void {
-  const path = relative(resolve(root), resolve(imagePath));
-  if (path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path)) {
-    throw new Error(
-      "Keep the preview outside the hosted directory so its image and receipt are not published as public site assets",
-    );
+): Promise<void> {
+  const [realRoot, realImage] = await Promise.all([
+    realpath(resolve(root)),
+    resolvePreviewPath(imagePath),
+  ]);
+  for (const path of [
+    relative(resolve(root), resolve(imagePath)),
+    relative(realRoot, realImage),
+  ]) {
+    if (path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path)) {
+      throw new Error(
+        "Keep the preview outside the hosted directory so its image and receipt are not published as public site assets",
+      );
+    }
   }
 }
 
@@ -45,7 +80,7 @@ export async function readHostedPreview(
   fingerprint: string,
   siteRoot: string,
 ) {
-  assertPreviewOutsideSite(siteRoot, path);
+  await assertPreviewOutsideSite(siteRoot, path);
   const size = (await stat(path)).size;
   if (size <= 0 || size > MAX_HOSTED_PREVIEW_BYTES) {
     throw new Error("Preview must be a PNG or JPEG of at most 5 MiB");
