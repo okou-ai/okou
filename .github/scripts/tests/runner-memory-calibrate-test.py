@@ -94,7 +94,32 @@ class CollectorTests(unittest.TestCase):
         self.assertIn("active-owned-smoke", (output / "stdout.log").read_text())
 
     def test_worker_thread_children_are_sampled_and_reaped(self):
-        program = "import subprocess,sys,time,threading,os\ndef worker():\n p=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)']); print(p.pid,flush=True); time.sleep(60)\nthreading.Thread(target=worker).start(); time.sleep(0.3); os._exit(0)"
+        # Wait for the externally written sample, not a guessed scheduling delay.
+        program = """
+import json, os, subprocess, sys, threading, time
+from pathlib import Path
+ready = threading.Event()
+child = []
+def worker():
+    process = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
+    child.append(process.pid)
+    print(process.pid, flush=True)
+    ready.set()
+    time.sleep(60)
+threading.Thread(target=worker).start()
+if not ready.wait(2):
+    os._exit(2)
+deadline = time.monotonic() + 2
+while time.monotonic() < deadline:
+    for line in Path('samples.jsonl').read_text().splitlines(keepends=True):
+        if not line.endswith('\\n'):
+            continue
+        sample = json.loads(line)
+        if any(p['pid'] == child[0] and p['rss_bytes'] is not None for p in sample['processes']):
+            os._exit(0)
+    time.sleep(0.01)
+os._exit(3)
+"""
         _, report, output = self.run_case(program)
         child = int((output / "stdout.log").read_text().strip())
         samples = [
