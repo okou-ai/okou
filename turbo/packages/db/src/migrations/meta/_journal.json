@@ -1947,13 +1947,6 @@
       "when": 1791503441636,
       "tag": "1355_expand_runtime_billing_identity",
       "breakpoints": true
-    },
-    {
-      "idx": 1356,
-      "version": "7",
-      "when": 1791512647345,
-      "tag": "1356_price_canonical_auto_presets",
-      "breakpoints": true
     }
   ]
 }

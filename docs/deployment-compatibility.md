@@ -286,15 +286,12 @@ this writer cutover does not complete the parent issue.
 
 [PR2's writer, billing, mixed-version and deployment contract](model-identity-pr2.md)
 switches new resolved selections to `auto` by deployed code version, retaining
-PR1 null/legacy readers and captured executions. Pricing authority, serving and
-rollback readiness, actual installed runtime/client readers, and mixed native
-history restoration are explicit pre-promotion gates. The inspected preset-key
-price inventory originally lacked preset-key rates; the owner-approved Haiku
-and DSF tariff is now supplied by migration 1356, which must run before the
-writer promotes. New canonical Auto captures the Haiku 100001-token billing
-boundary; legacy captures retain 272001. There is no database switch or schema
-tightening; release
-3 and compatibility retirement remain owned by #38114.
+PR1 null/legacy readers and captured executions. Serving/rollback readiness,
+actual installed runtime/client readers and mixed native-history restoration
+remain explicit pre-promotion gates. New canonical Auto captures the
+100001-token billing boundary; legacy captures retain 272001. There is no
+database switch or schema tightening. Release 3 and compatibility retirement
+remain owned by #38114.
 
 ## Model identity PR1: compatibility preparation (2026-10-08)
 
