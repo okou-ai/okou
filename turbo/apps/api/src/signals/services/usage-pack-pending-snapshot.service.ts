@@ -205,26 +205,3 @@ export async function writeUsagePackPendingSnapshots<T>(
     return result;
   });
 }
-
-/** Explicit repair/backfill entry point; preserves grandfathered pending rows. */
-export async function repairUsagePackPendingSnapshotGuards(
-  db: Pick<ApiDb, "transaction">,
-  orgIds: readonly string[],
-): Promise<void> {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0285; new non-billing transactions are prohibited.
-  await db.transaction(async (tx) => {
-    const { guards, snapshots } = await preparePendingSnapshotScope(
-      tx,
-      orgIds,
-      [],
-    );
-    for (const guard of guards) {
-      await publishUsagePackPendingSnapshotCount(
-        tx,
-        guard.orgId,
-        guard.pendingSnapshotCount,
-        pendingRows(snapshots, guard.orgId).length,
-      );
-    }
-  });
-}

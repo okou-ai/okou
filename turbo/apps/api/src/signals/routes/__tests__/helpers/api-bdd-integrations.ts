@@ -220,6 +220,7 @@ interface ForwardedInternalCallback {
 }
 
 interface SlackAppInstallOptions {
+  readonly run?: <T>(operation: () => Promise<T>) => Promise<T>;
   readonly teamId?: string;
   readonly installerSlackUserId?: string;
   /** Bot token Slack returns from the install exchange. */
@@ -1034,6 +1035,11 @@ export function createBddIntegrationApi(context: TestContext) {
       actor: ApiTestUser | null,
       options: SlackAppInstallOptions = {},
     ): Promise<SlackAppInstallation> {
+      const run =
+        options.run ??
+        (<T>(operation: () => Promise<T>) => {
+          return operation();
+        });
       const teamId =
         options.teamId ??
         `T_BDD_${randomUUID().replace(/-/g, "").slice(0, 10).toUpperCase()}`;
@@ -1050,7 +1056,7 @@ export function createBddIntegrationApi(context: TestContext) {
         options.botScopes === undefined
           ? SLACK_APP_BOT_SCOPES
           : options.botScopes;
-      context.mocks.slack.oauth.v2.access.mockResolvedValueOnce({
+      const exchange = {
         ok: true,
         access_token: options.botToken ?? `xoxb-bdd-${teamId}`,
         bot_user_id: botUserId,
@@ -1060,27 +1066,54 @@ export function createBddIntegrationApi(context: TestContext) {
         },
         authed_user: { id: installerSlackUserId },
         ...(botScopes === null ? {} : { scope: botScopes }),
-      });
+      };
+      if (options.run) {
+        let consumed = false;
+        context.mocks.slack.oauth.v2.access.mockImplementation(
+          (...args: unknown[]) => {
+            const request = args[0];
+            if (
+              consumed ||
+              typeof request !== "object" ||
+              request === null ||
+              !("code" in request) ||
+              request.code !== `bdd-install-${teamId}`
+            ) {
+              throw new Error("Unexpected Slack installation exchange");
+            }
+            consumed = true;
+            return Promise.resolve(exchange);
+          },
+        );
+      } else {
+        context.mocks.slack.oauth.v2.access.mockResolvedValueOnce(exchange);
+      }
       const client = setupApp({ context, routes: slackOauthRoutes })(
         slackOauthContract,
       );
-      const started = await accept(
-        client.install({
-          query: actor?.orgId
-            ? { orgId: actor.orgId, userId: actor.userId }
-            : {},
-        }),
-        [307],
-      );
-      await accept(
-        client.callback({
-          query: {
-            code: `bdd-install-${teamId}`,
-            state: slackOauthStateFromRedirect(started.headers.get("location")),
-          },
-        }),
-        [307],
-      );
+      const started = await run(() => {
+        return accept(
+          client.install({
+            query: actor?.orgId
+              ? { orgId: actor.orgId, userId: actor.userId }
+              : {},
+          }),
+          [307],
+        );
+      });
+      await run(() => {
+        return accept(
+          client.callback({
+            query: {
+              code: `bdd-install-${teamId}`,
+              state: slackOauthStateFromRedirect(
+                started.headers.get("location"),
+              ),
+            },
+          }),
+          [307],
+        );
+      });
       return { teamId, botUserId, installerSlackUserId };
     },
 

@@ -107,16 +107,6 @@
       "owner": "seedPreviousSchemaRelease$"
     },
     {
-      "id": "TX-0036",
-      "file": "turbo/apps/api/src/signals/routes/test-usage-pack-subscription-state.ts",
-      "owner": "seedUsagePackState"
-    },
-    {
-      "id": "TX-0037",
-      "file": "turbo/apps/api/src/signals/routes/test-usage-pack-subscription-state.ts",
-      "owner": "seedLegacyMigrationState"
-    },
-    {
       "id": "TX-0038",
       "file": "turbo/apps/api/src/signals/routes/test-usage-state.ts",
       "owner": "seedUsageStateFixture"
@@ -1295,11 +1285,6 @@
       "id": "TX-0284",
       "file": "turbo/apps/api/src/signals/services/usage-pack-pending-snapshot.service.ts",
       "owner": "writeUsagePackPendingSnapshots"
-    },
-    {
-      "id": "TX-0285",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-pending-snapshot.service.ts",
-      "owner": "repairUsagePackPendingSnapshotGuards"
     },
     {
       "id": "TX-0286",

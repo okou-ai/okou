@@ -1,3 +1,7 @@
+import {
+  createPublicBillingScenario,
+  retainBillingSequence,
+} from "./helpers/public-billing-scenario";
 import { randomUUID } from "node:crypto";
 import {
   USAGE_PACKS_USD,
@@ -17,7 +21,6 @@ import { createBillingCheckoutFixture } from "./helpers/billing-checkout-fixture
 
 const {
   context,
-  usagePackStateAction,
   APP_ORIGIN,
   TEST_PRICE_USAGE_PACK_PLAN_PRO,
   TEST_PRICE_USAGE_PACK_PLAN_TEAM,
@@ -129,8 +132,268 @@ describe("POST /api/billing/usage-pack-checkout", () => {
   it.each(["pro", "team"] as const)(
     "checks out %s with both paid and no-package members",
     async (tier) => {
-      const fixture = createOrgFixture();
-      const freeMemberId = `user_${randomUUID()}`;
+      const lifecycle = createPublicBillingScenario(context);
+      return await lifecycle.run(async () => {
+        const fixture = lifecycle.own(createOrgFixture());
+        const freeMemberId = `user_${randomUUID()}`;
+        authenticateOrg(fixture);
+        context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+          {
+            data: [
+              {
+                role: "org:admin",
+                publicUserData: { userId: fixture.userId },
+                createdAt: now(),
+              },
+              {
+                role: "org:member",
+                publicUserData: { userId: freeMemberId },
+                createdAt: now(),
+              },
+            ],
+          },
+        );
+        lifecycle?.captureExternalState();
+        context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
+          { data: [] },
+        );
+        lifecycle?.captureExternalState();
+        context.mocks.stripe.customers.create.mockResolvedValue({
+          id: `cus_${randomUUID()}`,
+        });
+        lifecycle?.captureExternalState();
+        let snapshotId: string | null = null;
+        context.mocks.stripe.checkout.sessions.create.mockImplementation(
+          (input) => {
+            const metadata = stripeInputMetadata(input);
+            snapshotId = metadata.usagePackSubscriptionId ?? null;
+            if (!snapshotId) {
+              throw new Error("Expected a subscription snapshot");
+            }
+            return Promise.resolve({
+              id: `cs_${randomUUID()}`,
+              url: "https://checkout.stripe.com/session/no-package-member",
+            });
+          },
+        );
+        lifecycle?.captureExternalState();
+        await lifecycle.run(() => {
+          return accept(
+            setupApp({ context, routes: billingCheckoutRoutes })(
+              billingUsagePackCheckoutContract,
+            ).create({
+              headers: { authorization: "Bearer clerk-session" },
+              body: {
+                tier,
+                memberUsagePacks: [
+                  { memberId: fixture.userId, usagePackUsd: 20 },
+                  { memberId: freeMemberId, usagePackUsd: 0 },
+                ],
+                successUrl: `${APP_ORIGIN}/billing?billing=success`,
+                cancelUrl: `${APP_ORIGIN}/billing?billing=canceled`,
+              },
+            }),
+            [200],
+          );
+        });
+        const createdSnapshotId = snapshotId;
+        if (!createdSnapshotId) {
+          throw new Error("Checkout did not create a snapshot");
+        }
+        expect(
+          context.mocks.stripe.checkout.sessions.create,
+        ).toHaveBeenCalledWith(
+          expect.objectContaining({
+            line_items: [
+              {
+                price:
+                  tier === "pro"
+                    ? TEST_PRICE_USAGE_PACK_PLAN_PRO
+                    : TEST_PRICE_USAGE_PACK_PLAN_TEAM,
+                quantity: 1,
+              },
+              { price: TEST_PRICE_USAGE_PACK_20, quantity: 1 },
+            ],
+          }),
+          expect.any(Object),
+        );
+      });
+    },
+  );
+
+  it("checks out the new plan", async () => {
+    const lifecycle = createPublicBillingScenario(context);
+    return await lifecycle.run(async () => {
+      const fixture = lifecycle.own(createOrgFixture());
+      authenticateOrg(fixture);
+      const memberIds = Array.from({ length: 101 }, (_, index) => {
+        return index === 0 ? fixture.userId : `user_${randomUUID()}`;
+      });
+      const invitationId = `inv_${randomUUID()}`;
+      const customerId = `cus_${randomUUID()}`;
+      context.mocks.clerk.organizations.getOrganizationMembershipList.mockImplementation(
+        (args) => {
+          const offset =
+            typeof args === "object" &&
+            args !== null &&
+            "offset" in args &&
+            typeof args.offset === "number"
+              ? args.offset
+              : 0;
+          const limit =
+            typeof args === "object" &&
+            args !== null &&
+            "limit" in args &&
+            typeof args.limit === "number"
+              ? args.limit
+              : 100;
+          return Promise.resolve({
+            data: memberIds.slice(offset, offset + limit).map((userId) => {
+              return {
+                role: "org:member",
+                publicUserData: { userId },
+                createdAt: now(),
+              };
+            }),
+          });
+        },
+      );
+      lifecycle?.captureExternalState();
+      context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
+        {
+          data: [
+            {
+              id: invitationId,
+              emailAddress: "pending@example.com",
+              role: "org:member",
+              createdAt: now(),
+            },
+          ],
+        },
+      );
+      lifecycle?.captureExternalState();
+      (() => {
+        retainBillingSequence(context.mocks.stripe.customers.create, [
+          () => {
+            return Promise.resolve({
+              id: customerId,
+            });
+          },
+        ]);
+        lifecycle?.captureExternalState();
+      })();
+      lifecycle?.captureExternalState();
+      let createdUsagePackSubscriptionId: string | null = null;
+      const checkoutSessionId = `cs_${randomUUID()}`;
+      (() => {
+        retainBillingSequence(context.mocks.stripe.checkout.sessions.create, [
+          (input) => {
+            if (
+              typeof input !== "object" ||
+              input === null ||
+              !("metadata" in input) ||
+              typeof input.metadata !== "object" ||
+              input.metadata === null ||
+              !("usagePackSubscriptionId" in input.metadata) ||
+              typeof input.metadata.usagePackSubscriptionId !== "string"
+            ) {
+              throw new Error("Expected usage pack subscription metadata");
+            }
+            createdUsagePackSubscriptionId =
+              input.metadata.usagePackSubscriptionId;
+            return Promise.resolve({
+              id: checkoutSessionId,
+              url: "https://checkout.stripe.com/session/usage-pack",
+            });
+          },
+        ]);
+        lifecycle?.captureExternalState();
+      })();
+      lifecycle?.captureExternalState();
+      const response = await lifecycle.run(() => {
+        return accept(
+          setupApp({ context, routes: billingCheckoutRoutes })(
+            billingUsagePackCheckoutContract,
+          ).create({
+            body: {
+              tier: "team",
+              memberUsagePacks: [
+                ...memberIds.map((memberId, index) => {
+                  return {
+                    memberId,
+                    usagePackUsd: USAGE_PACKS_USD[index] ?? 20,
+                  };
+                }),
+                { memberId: invitationId, usagePackUsd: 20 },
+              ],
+              successUrl: `${APP_ORIGIN}/billing?billing=success`,
+              cancelUrl: `${APP_ORIGIN}/billing?billing=canceled`,
+            },
+            headers: { authorization: "Bearer clerk-session" },
+          }),
+          [200],
+        );
+      });
+      expect(response.body).toStrictEqual({
+        url: "https://checkout.stripe.com/session/usage-pack",
+      });
+      if (!createdUsagePackSubscriptionId) {
+        throw new Error(
+          "Checkout did not expose its usage pack subscription ID",
+        );
+      }
+      const createdSnapshotId = createdUsagePackSubscriptionId;
+      const metadata = {
+        orgId: fixture.orgId,
+        tier: "team",
+        priceId: TEST_PRICE_USAGE_PACK_PLAN_TEAM,
+        purpose: "usage_pack_subscription",
+        usagePackSubscriptionId: createdSnapshotId,
+      };
+      expect(
+        context.mocks.stripe.checkout.sessions.create,
+      ).toHaveBeenCalledWith(
+        {
+          mode: "subscription",
+          customer: expect.any(String),
+          line_items: [
+            { price: TEST_PRICE_USAGE_PACK_PLAN_TEAM, quantity: 1 },
+            { price: TEST_PRICE_USAGE_PACK_20, quantity: 99 },
+            { price: TEST_PRICE_USAGE_PACK_50, quantity: 1 },
+            { price: TEST_PRICE_USAGE_PACK_100, quantity: 1 },
+            { price: TEST_PRICE_USAGE_PACK_200, quantity: 1 },
+          ],
+          allow_promotion_codes: true,
+          success_url: `${APP_ORIGIN}/billing?billing=success`,
+          cancel_url: `${APP_ORIGIN}/billing?billing=canceled`,
+          metadata,
+          subscription_data: { metadata },
+        },
+        { idempotencyKey: `usage-pack-checkout:${createdSnapshotId}` },
+      );
+      expect(
+        context.mocks.clerk.organizations.getOrganizationMembershipList,
+      ).toHaveBeenNthCalledWith(1, {
+        organizationId: fixture.orgId,
+        limit: 100,
+        offset: 0,
+      });
+      expect(
+        context.mocks.clerk.organizations.getOrganizationMembershipList,
+      ).toHaveBeenNthCalledWith(2, {
+        organizationId: fixture.orgId,
+        limit: 100,
+        offset: 100,
+      });
+    });
+  });
+
+  it("separates the immediate balance-adjusted charge from the recurring amount", async () => {
+    const lifecycle = createPublicBillingScenario(context);
+    return await lifecycle.run(async () => {
+      const fixture = lifecycle.own(createOrgFixture());
+      const customerId = `cus_${randomUUID()}`;
+      const paymentMethodId = `pm_${randomUUID()}`;
       authenticateOrg(fixture);
       context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
         {
@@ -140,497 +403,283 @@ describe("POST /api/billing/usage-pack-checkout", () => {
               publicUserData: { userId: fixture.userId },
               createdAt: now(),
             },
-            {
-              role: "org:member",
-              publicUserData: { userId: freeMemberId },
-              createdAt: now(),
-            },
           ],
         },
       );
+      lifecycle?.captureExternalState();
       context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
         { data: [] },
       );
+      lifecycle?.captureExternalState();
       context.mocks.stripe.customers.create.mockResolvedValue({
-        id: `cus_${randomUUID()}`,
+        id: customerId,
       });
-      let snapshotId: string | null = null;
-      context.mocks.stripe.checkout.sessions.create.mockImplementation(
+      lifecycle?.captureExternalState();
+      context.mocks.stripe.customers.retrieve.mockResolvedValue({
+        id: customerId,
+        invoice_settings: { default_payment_method: paymentMethodId },
+      });
+      lifecycle?.captureExternalState();
+      context.mocks.stripe.invoices.createPreview.mockImplementation(
         (input) => {
-          const metadata = stripeInputMetadata(input);
-          snapshotId = metadata.usagePackSubscriptionId ?? null;
-          if (!snapshotId) {
-            throw new Error("Expected a subscription snapshot");
+          if (
+            typeof input !== "object" ||
+            input === null ||
+            !("preview_mode" in input)
+          ) {
+            throw new Error("Expected a usage pack invoice preview mode");
           }
           return Promise.resolve({
-            id: `cs_${randomUUID()}`,
-            url: "https://checkout.stripe.com/session/no-package-member",
+            id: `in_preview_${randomUUID()}`,
+            customer: customerId,
+            amount_due: input.preview_mode === "next" ? 2000 : 4000,
+            currency: "usd",
+            status: null,
+            metadata: {},
+            hosted_invoice_url: null,
+            lines: { has_more: false, data: [] },
+            parent: null,
           });
         },
       );
-      await accept(
-        setupApp({ context, routes: billingCheckoutRoutes })(
-          billingUsagePackCheckoutContract,
-        ).create({
-          headers: { authorization: "Bearer clerk-session" },
-          body: {
-            tier,
-            memberUsagePacks: [
-              { memberId: fixture.userId, usagePackUsd: 20 },
-              { memberId: freeMemberId, usagePackUsd: 0 },
-            ],
-            successUrl: `${APP_ORIGIN}/billing?billing=success`,
-            cancelUrl: `${APP_ORIGIN}/billing?billing=canceled`,
-          },
-        }),
-        [200],
-      );
-      const createdSnapshotId = snapshotId;
-      if (!createdSnapshotId) {
-        throw new Error("Checkout did not create a snapshot");
-      }
-      onTestFinished(async () => {
-        await usagePackStateAction({
-          action: "cleanup",
-          orgId: fixture.orgId,
-          usagePackSubscriptionId: createdSnapshotId,
-          deleteGrants: false,
-          deleteOrgMetadata: false,
-        });
-      });
-      expect(
-        context.mocks.stripe.checkout.sessions.create,
-      ).toHaveBeenCalledWith(
-        expect.objectContaining({
-          line_items: [
-            {
-              price:
-                tier === "pro"
-                  ? TEST_PRICE_USAGE_PACK_PLAN_PRO
-                  : TEST_PRICE_USAGE_PACK_PLAN_TEAM,
-              quantity: 1,
+      lifecycle?.captureExternalState();
+      const response = await lifecycle.run(() => {
+        return accept(
+          setupApp({ context, routes: billingCheckoutRoutes })(
+            billingUsagePackCheckoutContract,
+          ).create({
+            body: {
+              tier: "pro",
+              supportsInAppPreview: true,
+              memberUsagePacks: [
+                { memberId: fixture.userId, usagePackUsd: 20 },
+              ],
+              successUrl: `${APP_ORIGIN}/billing?billing=success`,
+              cancelUrl: `${APP_ORIGIN}/billing?billing=canceled`,
             },
-            { price: TEST_PRICE_USAGE_PACK_20, quantity: 1 },
-          ],
-        }),
-        expect.any(Object),
-      );
-    },
-  );
-
-  it("checks out the new plan", async () => {
-    const fixture = createOrgFixture();
-    authenticateOrg(fixture);
-    const memberIds = Array.from({ length: 101 }, (_, index) => {
-      return index === 0 ? fixture.userId : `user_${randomUUID()}`;
-    });
-    const invitationId = `inv_${randomUUID()}`;
-    const customerId = `cus_${randomUUID()}`;
-    context.mocks.clerk.organizations.getOrganizationMembershipList.mockImplementation(
-      (args) => {
-        const offset =
-          typeof args === "object" &&
-          args !== null &&
-          "offset" in args &&
-          typeof args.offset === "number"
-            ? args.offset
-            : 0;
-        const limit =
-          typeof args === "object" &&
-          args !== null &&
-          "limit" in args &&
-          typeof args.limit === "number"
-            ? args.limit
-            : 100;
-        return Promise.resolve({
-          data: memberIds.slice(offset, offset + limit).map((userId) => {
-            return {
-              role: "org:member",
-              publicUserData: { userId },
-              createdAt: now(),
-            };
+            headers: { authorization: "Bearer clerk-session" },
           }),
-        });
-      },
-    );
-    context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
-      {
-        data: [
-          {
-            id: invitationId,
-            emailAddress: "pending@example.com",
-            role: "org:member",
-            createdAt: now(),
-          },
-        ],
-      },
-    );
-    context.mocks.stripe.customers.create.mockResolvedValueOnce({
-      id: customerId,
-    });
-    let createdUsagePackSubscriptionId: string | null = null;
-    const checkoutSessionId = `cs_${randomUUID()}`;
-    context.mocks.stripe.checkout.sessions.create.mockImplementationOnce(
-      (input) => {
-        if (
-          typeof input !== "object" ||
-          input === null ||
-          !("metadata" in input) ||
-          typeof input.metadata !== "object" ||
-          input.metadata === null ||
-          !("usagePackSubscriptionId" in input.metadata) ||
-          typeof input.metadata.usagePackSubscriptionId !== "string"
-        ) {
-          throw new Error("Expected usage pack subscription metadata");
-        }
-        createdUsagePackSubscriptionId = input.metadata.usagePackSubscriptionId;
-        return Promise.resolve({
-          id: checkoutSessionId,
-          url: "https://checkout.stripe.com/session/usage-pack",
-        });
-      },
-    );
-
-    const response = await accept(
-      setupApp({ context, routes: billingCheckoutRoutes })(
-        billingUsagePackCheckoutContract,
-      ).create({
-        body: {
-          tier: "team",
-          memberUsagePacks: [
-            ...memberIds.map((memberId, index) => {
-              return {
-                memberId,
-                usagePackUsd: USAGE_PACKS_USD[index] ?? 20,
-              };
-            }),
-            { memberId: invitationId, usagePackUsd: 20 },
-          ],
-          successUrl: `${APP_ORIGIN}/billing?billing=success`,
-          cancelUrl: `${APP_ORIGIN}/billing?billing=canceled`,
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({
-      url: "https://checkout.stripe.com/session/usage-pack",
-    });
-    if (!createdUsagePackSubscriptionId) {
-      throw new Error("Checkout did not expose its usage pack subscription ID");
-    }
-    const createdSnapshotId = createdUsagePackSubscriptionId;
-    onTestFinished(async () => {
-      await usagePackStateAction({
-        action: "cleanup",
-        orgId: fixture.orgId,
-        usagePackSubscriptionId: createdSnapshotId,
-        deleteGrants: false,
-        deleteOrgMetadata: false,
+          [200],
+        );
       });
-    });
-    const metadata = {
-      orgId: fixture.orgId,
-      tier: "team",
-      priceId: TEST_PRICE_USAGE_PACK_PLAN_TEAM,
-      purpose: "usage_pack_subscription",
-      usagePackSubscriptionId: createdSnapshotId,
-    };
-    expect(context.mocks.stripe.checkout.sessions.create).toHaveBeenCalledWith(
-      {
-        mode: "subscription",
-        customer: expect.any(String),
-        line_items: [
-          { price: TEST_PRICE_USAGE_PACK_PLAN_TEAM, quantity: 1 },
-          { price: TEST_PRICE_USAGE_PACK_20, quantity: 99 },
-          { price: TEST_PRICE_USAGE_PACK_50, quantity: 1 },
-          { price: TEST_PRICE_USAGE_PACK_100, quantity: 1 },
-          { price: TEST_PRICE_USAGE_PACK_200, quantity: 1 },
-        ],
-        allow_promotion_codes: true,
-        success_url: `${APP_ORIGIN}/billing?billing=success`,
-        cancel_url: `${APP_ORIGIN}/billing?billing=canceled`,
-        metadata,
-        subscription_data: { metadata },
-      },
-      { idempotencyKey: `usage-pack-checkout:${createdSnapshotId}` },
-    );
-    expect(
-      context.mocks.clerk.organizations.getOrganizationMembershipList,
-    ).toHaveBeenNthCalledWith(1, {
-      organizationId: fixture.orgId,
-      limit: 100,
-      offset: 0,
-    });
-    expect(
-      context.mocks.clerk.organizations.getOrganizationMembershipList,
-    ).toHaveBeenNthCalledWith(2, {
-      organizationId: fixture.orgId,
-      limit: 100,
-      offset: 100,
-    });
-  });
-
-  it("separates the immediate balance-adjusted charge from the recurring amount", async () => {
-    const fixture = createOrgFixture();
-    const customerId = `cus_${randomUUID()}`;
-    const paymentMethodId = `pm_${randomUUID()}`;
-    authenticateOrg(fixture);
-    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
-      {
-        data: [
-          {
-            role: "org:admin",
-            publicUserData: { userId: fixture.userId },
-            createdAt: now(),
-          },
-        ],
-      },
-    );
-    context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
-      { data: [] },
-    );
-    context.mocks.stripe.customers.create.mockResolvedValue({ id: customerId });
-    context.mocks.stripe.customers.retrieve.mockResolvedValue({
-      id: customerId,
-      invoice_settings: { default_payment_method: paymentMethodId },
-    });
-    context.mocks.stripe.invoices.createPreview.mockImplementation((input) => {
-      if (
-        typeof input !== "object" ||
-        input === null ||
-        !("preview_mode" in input)
-      ) {
-        throw new Error("Expected a usage pack invoice preview mode");
-      }
-      return Promise.resolve({
-        id: `in_preview_${randomUUID()}`,
-        customer: customerId,
-        amount_due: input.preview_mode === "next" ? 2000 : 4000,
+      expect(response.body).toStrictEqual({
+        status: "preview",
+        purchaseType: "usage_pack",
+        tier: "pro",
+        immediateAmountCents: 2000,
+        nextRecurringAmountCents: 4000,
         currency: "usd",
-        status: null,
-        metadata: {},
-        hosted_invoice_url: null,
-        lines: { has_more: false, data: [] },
-        parent: null,
+        expiresAt: expect.any(String),
+        previewToken: expect.any(String),
       });
-    });
-
-    const response = await accept(
-      setupApp({ context, routes: billingCheckoutRoutes })(
-        billingUsagePackCheckoutContract,
-      ).create({
-        body: {
-          tier: "pro",
-          supportsInAppPreview: true,
-          memberUsagePacks: [{ memberId: fixture.userId, usagePackUsd: 20 }],
-          successUrl: `${APP_ORIGIN}/billing?billing=success`,
-          cancelUrl: `${APP_ORIGIN}/billing?billing=canceled`,
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({
-      status: "preview",
-      purchaseType: "usage_pack",
-      tier: "pro",
-      immediateAmountCents: 2000,
-      nextRecurringAmountCents: 4000,
-      currency: "usd",
-      expiresAt: expect.any(String),
-      previewToken: expect.any(String),
-    });
-    expect(context.mocks.stripe.invoices.createPreview).toHaveBeenCalledWith(
-      expect.objectContaining({ preview_mode: "next" }),
-    );
-    expect(context.mocks.stripe.invoices.createPreview).toHaveBeenCalledWith(
-      expect.objectContaining({ preview_mode: "recurring" }),
-    );
-    if (!("previewToken" in response.body)) {
-      throw new Error("Expected a usage pack purchase preview");
-    }
-
-    const subscriptionId = `sub_${randomUUID()}`;
-    const invoiceId = `in_${randomUUID()}`;
-    const billingPeriod = {
-      start: currentSecond(),
-      end: currentSecond() + 30 * 86_400,
-    };
-    let usagePackSubscriptionId: string | undefined;
-    context.mocks.stripe.subscriptions.list.mockResolvedValue({
-      data: [],
-      has_more: false,
-    });
-    context.mocks.stripe.subscriptions.create.mockImplementation((input) => {
-      const metadata = stripeInputMetadata(input);
-      usagePackSubscriptionId = metadata.usagePackSubscriptionId;
-      const paidInvoice = {
-        id: invoiceId,
-        customer: customerId,
-        metadata,
-        status: "paid" as const,
-        paid: true,
-        amount_due: 2000,
-        amount_paid: 2000,
-        currency: "usd",
-        hosted_invoice_url: null,
-        parent: {
-          subscription_details: { subscription: subscriptionId, metadata },
-        },
-        lines: {
-          has_more: false,
-          data: [
-            {
-              id: `il_${randomUUID()}`,
-              amount: 2000,
-              subtotal: 2000,
-              quantity: 1,
-              price: { id: TEST_PRICE_USAGE_PACK_20 },
-              period: billingPeriod,
-              parent: {
-                type: "subscription_item_details" as const,
-                subscription_item_details: { proration: false },
-              },
-            },
-          ],
-        },
-      };
-      const subscription = {
-        id: subscriptionId,
-        customer: customerId,
-        status: "active",
-        cancel_at: null,
-        cancel_at_period_end: false,
-        schedule: null,
-        metadata,
-        items: {
-          data: [
-            {
-              id: `si_${randomUUID()}`,
-              price: {
-                id: TEST_PRICE_USAGE_PACK_PLAN_PRO,
-                recurring: { interval: "month", interval_count: 1 },
-              },
-              quantity: 1,
-              current_period_start: billingPeriod.start,
-              current_period_end: billingPeriod.end,
-            },
-            {
-              id: `si_${randomUUID()}`,
-              price: {
-                id: TEST_PRICE_USAGE_PACK_20,
-                recurring: { interval: "month", interval_count: 1 },
-              },
-              quantity: 1,
-              current_period_start: billingPeriod.start,
-              current_period_end: billingPeriod.end,
-            },
-          ],
-        },
-        latest_invoice: paidInvoice,
-      };
-      context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
-        subscription,
+      expect(context.mocks.stripe.invoices.createPreview).toHaveBeenCalledWith(
+        expect.objectContaining({ preview_mode: "next" }),
       );
-      return Promise.resolve(subscription);
-    });
-
-    const confirmation = await accept(
-      setupApp({ context, routes: billingCheckoutRoutes })(
-        billingUsagePackCheckoutContract,
-      ).confirm({
-        body: { previewToken: response.body.previewToken },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(confirmation.body).toStrictEqual({
-      status: "completed",
-      hostedInvoiceUrl: null,
-    });
-    if (!usagePackSubscriptionId) {
-      throw new Error("Expected the confirmed usage pack subscription ID");
-    }
-    const confirmedUsagePackSubscriptionId = usagePackSubscriptionId;
-    onTestFinished(async () => {
-      await usagePackStateAction({
-        action: "cleanup",
-        orgId: fixture.orgId,
-        usagePackSubscriptionId: confirmedUsagePackSubscriptionId,
-        deleteGrants: true,
-        deleteOrgMetadata: true,
+      expect(context.mocks.stripe.invoices.createPreview).toHaveBeenCalledWith(
+        expect.objectContaining({ preview_mode: "recurring" }),
+      );
+      if (!("previewToken" in response.body)) {
+        throw new Error("Expected a usage pack purchase preview");
+      }
+      const previewToken = response.body.previewToken;
+      const subscriptionId = `sub_${randomUUID()}`;
+      const invoiceId = `in_${randomUUID()}`;
+      const billingPeriod = {
+        start: currentSecond(),
+        end: currentSecond() + 30 * 86_400,
+      };
+      let usagePackSubscriptionId: string | undefined;
+      context.mocks.stripe.subscriptions.list.mockResolvedValue({
+        data: [],
+        has_more: false,
       });
+      lifecycle?.captureExternalState();
+      context.mocks.stripe.subscriptions.create.mockImplementation((input) => {
+        const metadata = stripeInputMetadata(input);
+        usagePackSubscriptionId = metadata.usagePackSubscriptionId;
+        const paidInvoice = {
+          id: invoiceId,
+          customer: customerId,
+          metadata,
+          status: "paid" as const,
+          paid: true,
+          amount_due: 2000,
+          amount_paid: 2000,
+          currency: "usd",
+          hosted_invoice_url: null,
+          parent: {
+            subscription_details: { subscription: subscriptionId, metadata },
+          },
+          lines: {
+            has_more: false,
+            data: [
+              {
+                id: `il_${randomUUID()}`,
+                amount: 2000,
+                subtotal: 2000,
+                quantity: 1,
+                price: { id: TEST_PRICE_USAGE_PACK_20 },
+                period: billingPeriod,
+                parent: {
+                  type: "subscription_item_details" as const,
+                  subscription_item_details: { proration: false },
+                },
+              },
+            ],
+          },
+        };
+        const subscription = {
+          id: subscriptionId,
+          customer: customerId,
+          status: "active",
+          cancel_at: null,
+          cancel_at_period_end: false,
+          schedule: null,
+          metadata,
+          items: {
+            data: [
+              {
+                id: `si_${randomUUID()}`,
+                price: {
+                  id: TEST_PRICE_USAGE_PACK_PLAN_PRO,
+                  recurring: { interval: "month", interval_count: 1 },
+                },
+                quantity: 1,
+                current_period_start: billingPeriod.start,
+                current_period_end: billingPeriod.end,
+              },
+              {
+                id: `si_${randomUUID()}`,
+                price: {
+                  id: TEST_PRICE_USAGE_PACK_20,
+                  recurring: { interval: "month", interval_count: 1 },
+                },
+                quantity: 1,
+                current_period_start: billingPeriod.start,
+                current_period_end: billingPeriod.end,
+              },
+            ],
+          },
+          latest_invoice: paidInvoice,
+        };
+        context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+          subscription,
+        );
+        lifecycle?.captureExternalState();
+        return Promise.resolve(subscription);
+      });
+      lifecycle?.captureExternalState();
+      const confirmation = await lifecycle.run(() => {
+        return accept(
+          setupApp({ context, routes: billingCheckoutRoutes })(
+            billingUsagePackCheckoutContract,
+          ).confirm({
+            body: { previewToken },
+            headers: { authorization: "Bearer clerk-session" },
+          }),
+          [200],
+        );
+      });
+      expect(confirmation.body).toStrictEqual({
+        status: "completed",
+        hostedInvoiceUrl: null,
+      });
+      if (!usagePackSubscriptionId) {
+        throw new Error("Expected the confirmed usage pack subscription ID");
+      }
     });
   });
 
   it("recovers usage pack checkout from a transient Clerk server failure", async () => {
-    const fixture = createOrgFixture();
-    authenticateOrg(fixture);
-    const checkoutSessionId = `cs_${randomUUID()}`;
-    context.mocks.signalTimers.delay.mockResolvedValue(undefined);
-    context.mocks.clerk.organizations.getOrganizationMembershipList
-      .mockRejectedValueOnce(new ClerkApiResponseTestError(2, 521))
-      .mockResolvedValue({
-        data: [
-          {
-            role: "org:admin",
-            publicUserData: { userId: fixture.userId },
-            createdAt: now(),
+    const lifecycle = createPublicBillingScenario(context);
+    return await lifecycle.run(async () => {
+      const fixture = lifecycle.own(createOrgFixture());
+      authenticateOrg(fixture);
+      const checkoutSessionId = `cs_${randomUUID()}`;
+      context.mocks.signalTimers.delay.mockResolvedValue(undefined);
+      lifecycle?.captureExternalState();
+      (() => {
+        retainBillingSequence(
+          context.mocks.clerk.organizations.getOrganizationMembershipList,
+          [
+            () => {
+              return Promise.reject(new ClerkApiResponseTestError(2, 521));
+            },
+          ],
+          () => {
+            return Promise.resolve({
+              data: [
+                {
+                  role: "org:admin",
+                  publicUserData: { userId: fixture.userId },
+                  createdAt: now(),
+                },
+              ],
+            });
           },
-        ],
+        );
+        lifecycle?.captureExternalState();
+      })();
+      lifecycle?.captureExternalState();
+      context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
+        { data: [] },
+      );
+      lifecycle?.captureExternalState();
+      (() => {
+        retainBillingSequence(context.mocks.stripe.customers.create, [
+          () => {
+            return Promise.resolve({
+              id: `cus_${randomUUID()}`,
+            });
+          },
+        ]);
+        lifecycle?.captureExternalState();
+      })();
+      lifecycle?.captureExternalState();
+      (() => {
+        retainBillingSequence(context.mocks.stripe.checkout.sessions.create, [
+          () => {
+            return Promise.resolve({
+              id: checkoutSessionId,
+              url: "https://checkout.stripe.com/session/usage-pack-recovered",
+            });
+          },
+        ]);
+        lifecycle?.captureExternalState();
+      })();
+      lifecycle?.captureExternalState();
+      const response = await lifecycle.run(() => {
+        return accept(
+          setupApp({ context, routes: billingCheckoutRoutes })(
+            billingUsagePackCheckoutContract,
+          ).create({
+            body: usagePackCheckoutBody(fixture.userId),
+            headers: { authorization: "Bearer clerk-session" },
+          }),
+          [200],
+        );
       });
-    context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
-      { data: [] },
-    );
-    context.mocks.stripe.customers.create.mockResolvedValueOnce({
-      id: `cus_${randomUUID()}`,
-    });
-    context.mocks.stripe.checkout.sessions.create.mockResolvedValueOnce({
-      id: checkoutSessionId,
-      url: "https://checkout.stripe.com/session/usage-pack-recovered",
-    });
-
-    const response = await accept(
-      setupApp({ context, routes: billingCheckoutRoutes })(
-        billingUsagePackCheckoutContract,
-      ).create({
-        body: usagePackCheckoutBody(fixture.userId),
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    const checkoutCall =
-      context.mocks.stripe.checkout.sessions.create.mock.calls[0];
-    const usagePackSubscriptionId = checkoutCall
-      ? stripeInputMetadata(checkoutCall[0]).usagePackSubscriptionId
-      : undefined;
-    if (!usagePackSubscriptionId) {
-      throw new Error("Checkout did not expose its usage pack subscription ID");
-    }
-    onTestFinished(async () => {
-      await usagePackStateAction({
-        action: "cleanup",
-        orgId: fixture.orgId,
-        usagePackSubscriptionId,
-        deleteGrants: true,
-        deleteOrgMetadata: true,
+      const checkoutCall =
+        context.mocks.stripe.checkout.sessions.create.mock.calls[0];
+      const usagePackSubscriptionId = checkoutCall
+        ? stripeInputMetadata(checkoutCall[0]).usagePackSubscriptionId
+        : undefined;
+      if (!usagePackSubscriptionId) {
+        throw new Error(
+          "Checkout did not expose its usage pack subscription ID",
+        );
+      }
+      expect(response.body).toStrictEqual({
+        url: "https://checkout.stripe.com/session/usage-pack-recovered",
       });
+      expect(
+        context.mocks.clerk.organizations.getOrganizationMembershipList,
+      ).toHaveBeenCalledTimes(2);
+      expect(context.mocks.signalTimers.delay).toHaveBeenCalledTimes(1);
+      expect(
+        context.mocks.stripe.checkout.sessions.create,
+      ).toHaveBeenCalledTimes(1);
     });
-
-    expect(response.body).toStrictEqual({
-      url: "https://checkout.stripe.com/session/usage-pack-recovered",
-    });
-    expect(
-      context.mocks.clerk.organizations.getOrganizationMembershipList,
-    ).toHaveBeenCalledTimes(2);
-    expect(context.mocks.signalTimers.delay).toHaveBeenCalledTimes(1);
-    expect(context.mocks.stripe.checkout.sessions.create).toHaveBeenCalledTimes(
-      1,
-    );
   });
 
   it("returns a non-cacheable 503 on the first Clerk rate limit", async () => {
@@ -1034,144 +1083,158 @@ describe("POST /api/billing/usage-pack-checkout", () => {
   );
 
   it("keeps only one payable Checkout across concurrent different configurations", async () => {
-    const fixture = createOrgFixture();
-    const customerId = `cus_${randomUUID()}`;
-    await createStripeCustomerOrgForFixture(fixture, customerId);
-    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
-      {
-        data: [
-          {
-            role: "org:admin",
-            publicUserData: { userId: fixture.userId },
-            createdAt: now(),
-          },
-        ],
-      },
-    );
-    context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
-      { data: [] },
-    );
-    const sessionStates = mockStatefulUsagePackCheckoutSessions();
-    const client = setupApp({ context, routes: billingCheckoutRoutes })(
-      billingUsagePackCheckoutContract,
-    );
-    const before = await readBillingStatus(fixture);
-    const body = (usagePackUsd: 20 | 50 | 100) => {
-      return {
-        tier: "pro" as const,
-        memberUsagePacks: [{ memberId: fixture.userId, usagePackUsd }],
-        successUrl: `${APP_ORIGIN}/billing?billing=success`,
-        cancelUrl: `${APP_ORIGIN}/billing?billing=canceled`,
+    const lifecycle = createPublicBillingScenario(context);
+    return await lifecycle.run(async () => {
+      const fixture = lifecycle.own(createOrgFixture());
+      const customerId = `cus_${randomUUID()}`;
+      await lifecycle.run(() => {
+        return createStripeCustomerOrgForFixture(
+          fixture,
+          customerId,
+          lifecycle,
+        );
+      });
+      context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+        {
+          data: [
+            {
+              role: "org:admin",
+              publicUserData: { userId: fixture.userId },
+              createdAt: now(),
+            },
+          ],
+        },
+      );
+      lifecycle?.captureExternalState();
+      context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
+        { data: [] },
+      );
+      lifecycle?.captureExternalState();
+      const sessionStates = mockStatefulUsagePackCheckoutSessions();
+      const client = setupApp({ context, routes: billingCheckoutRoutes })(
+        billingUsagePackCheckoutContract,
+      );
+      const before = await lifecycle.run(() => {
+        return readBillingStatus(fixture);
+      });
+      const body = (usagePackUsd: 20 | 50 | 100) => {
+        return {
+          tier: "pro" as const,
+          memberUsagePacks: [{ memberId: fixture.userId, usagePackUsd }],
+          successUrl: `${APP_ORIGIN}/billing?billing=success`,
+          cancelUrl: `${APP_ORIGIN}/billing?billing=canceled`,
+        };
       };
-    };
-
-    const responses = await Promise.all([
-      accept(
-        client.create({
-          body: body(20),
-          headers: { authorization: "Bearer clerk-session" },
+      const responses = await Promise.all([
+        lifecycle.run(() => {
+          return accept(
+            lifecycle.run(() => {
+              return client.create({
+                body: body(20),
+                headers: { authorization: "Bearer clerk-session" },
+              });
+            }),
+            [200, 409],
+          );
         }),
-        [200, 409],
-      ),
-      accept(
-        client.create({
-          body: body(50),
-          headers: { authorization: "Bearer clerk-session" },
+        lifecycle.run(() => {
+          return accept(
+            lifecycle.run(() => {
+              return client.create({
+                body: body(50),
+                headers: { authorization: "Bearer clerk-session" },
+              });
+            }),
+            [200, 409],
+          );
         }),
-        [200, 409],
-      ),
-    ]);
-
-    expect(responses).toHaveLength(2);
-    expect(
-      responses.some((response) => {
-        return response.status === 200;
-      }),
-    ).toBeTruthy();
-    const createdSessions =
-      context.mocks.stripe.checkout.sessions.create.mock.calls.length;
-    expect(createdSessions).toBeOneOf([1, 2]);
-    if (createdSessions === 2) {
-      // A request that already created a known Session must expire its
-      // noncanonical object. An earlier local conflict creates none.
-      for (const price of [
-        TEST_PRICE_USAGE_PACK_20,
-        TEST_PRICE_USAGE_PACK_50,
-      ]) {
+      ]);
+      expect(responses).toHaveLength(2);
+      expect(
+        responses.some((response) => {
+          return response.status === 200;
+        }),
+      ).toBeTruthy();
+      const createdSessions =
+        context.mocks.stripe.checkout.sessions.create.mock.calls.length;
+      expect(createdSessions).toBeOneOf([1, 2]);
+      if (createdSessions === 2) {
+        // A request that already created a known Session must expire its
+        // noncanonical object. An earlier local conflict creates none.
+        for (const price of [
+          TEST_PRICE_USAGE_PACK_20,
+          TEST_PRICE_USAGE_PACK_50,
+        ]) {
+          expect(
+            context.mocks.stripe.checkout.sessions.create,
+          ).toHaveBeenCalledWith(
+            expect.objectContaining({
+              line_items: expect.arrayContaining([{ price, quantity: 1 }]),
+            }),
+            expect.any(Object),
+          );
+        }
+      } else {
         expect(
           context.mocks.stripe.checkout.sessions.create,
         ).toHaveBeenCalledWith(
           expect.objectContaining({
-            line_items: expect.arrayContaining([{ price, quantity: 1 }]),
+            line_items: expect.arrayContaining([
+              {
+                price: expect.toBeOneOf([
+                  TEST_PRICE_USAGE_PACK_20,
+                  TEST_PRICE_USAGE_PACK_50,
+                ]),
+                quantity: 1,
+              },
+            ]),
           }),
           expect.any(Object),
         );
       }
-    } else {
       expect(
-        context.mocks.stripe.checkout.sessions.create,
-      ).toHaveBeenCalledWith(
-        expect.objectContaining({
-          line_items: expect.arrayContaining([
-            {
-              price: expect.toBeOneOf([
-                TEST_PRICE_USAGE_PACK_20,
-                TEST_PRICE_USAGE_PACK_50,
-              ]),
-              quantity: 1,
-            },
-          ]),
+        [...sessionStates.values()].filter((status) => {
+          return status === "open";
         }),
-        expect.any(Object),
-      );
-    }
-    expect(
-      [...sessionStates.values()].filter((status) => {
-        return status === "open";
-      }),
-    ).toHaveLength(1);
-    expect(context.mocks.stripe.checkout.sessions.expire).toHaveBeenCalledTimes(
-      createdSessions - 1,
-    );
-
-    // Replacing the winner changes the purchase, but not the number of pending
-    // purchases. It must remain usable without activating any unpaid credits.
-    const replacement = await accept(
-      client.create({
-        body: body(100),
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    expect(replacement.body).toStrictEqual({
-      url: expect.stringMatching(/^https:\/\/checkout\.stripe\.test\//),
-    });
-    expect(
-      [...sessionStates.values()].filter((status) => {
-        return status === "open";
-      }),
-    ).toHaveLength(1);
-    const after = await readBillingStatus(fixture);
-    expect(after.tier).toBe(before.tier);
-    expect(after.credits).toBe(before.credits);
-
-    for (const [input] of context.mocks.stripe.checkout.sessions.create.mock
-      .calls) {
-      const usagePackSubscriptionId =
-        stripeInputMetadata(input).usagePackSubscriptionId;
-      if (!usagePackSubscriptionId) {
-        throw new Error("Checkout did not expose a usage pack subscription ID");
-      }
-      onTestFinished(async () => {
-        await usagePackStateAction({
-          action: "cleanup",
-          orgId: fixture.orgId,
-          usagePackSubscriptionId,
-          deleteGrants: false,
-          deleteOrgMetadata: false,
-        });
+      ).toHaveLength(1);
+      expect(
+        context.mocks.stripe.checkout.sessions.expire,
+      ).toHaveBeenCalledTimes(createdSessions - 1);
+      const replacement = await lifecycle.run(() => {
+        return accept(
+          lifecycle.run(() => {
+            return client.create({
+              body: body(100),
+              headers: { authorization: "Bearer clerk-session" },
+            });
+          }),
+          [200],
+        );
       });
-    }
+      expect(replacement.body).toStrictEqual({
+        url: expect.stringMatching(/^https:\/\/checkout\.stripe\.test\//),
+      });
+      expect(
+        [...sessionStates.values()].filter((status) => {
+          return status === "open";
+        }),
+      ).toHaveLength(1);
+      const after = await lifecycle.run(() => {
+        return readBillingStatus(fixture);
+      });
+      expect(after.tier).toBe(before.tier);
+      expect(after.credits).toBe(before.credits);
+      for (const [input] of context.mocks.stripe.checkout.sessions.create.mock
+        .calls) {
+        const usagePackSubscriptionId =
+          stripeInputMetadata(input).usagePackSubscriptionId;
+        if (!usagePackSubscriptionId) {
+          throw new Error(
+            "Checkout did not expose a usage pack subscription ID",
+          );
+        }
+      }
+    });
   });
 
   it("renews the expiry of a reused purchase preview", async () => {
@@ -1348,146 +1411,179 @@ describe("POST /api/billing/usage-pack-checkout", () => {
   });
 
   it("rejects a replacement usage pack purchase while a confirmation owns the claim", async () => {
-    const fixture = createOrgFixture();
-    authenticateOrg(fixture);
-    const customerId = `cus_${randomUUID()}`;
-    const paymentMethodId = `pm_${randomUUID()}`;
-    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
-      {
-        data: [
-          {
-            role: "org:admin",
-            publicUserData: { userId: fixture.userId },
-            createdAt: now(),
-          },
+    const lifecycle = createPublicBillingScenario(context);
+    return await lifecycle.run(async () => {
+      const fixture = lifecycle.own(createOrgFixture());
+      authenticateOrg(fixture);
+      const customerId = `cus_${randomUUID()}`;
+      const paymentMethodId = `pm_${randomUUID()}`;
+      context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+        {
+          data: [
+            {
+              role: "org:admin",
+              publicUserData: { userId: fixture.userId },
+              createdAt: now(),
+            },
+          ],
+        },
+      );
+      lifecycle?.captureExternalState();
+      context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
+        { data: [] },
+      );
+      lifecycle?.captureExternalState();
+      context.mocks.stripe.customers.create.mockResolvedValue({
+        id: customerId,
+      });
+      lifecycle?.captureExternalState();
+      context.mocks.stripe.customers.retrieve.mockResolvedValue({
+        id: customerId,
+        invoice_settings: { default_payment_method: paymentMethodId },
+      });
+      lifecycle?.captureExternalState();
+      context.mocks.stripe.invoices.createPreview.mockResolvedValue({
+        id: `in_preview_${randomUUID()}`,
+        customer: customerId,
+        amount_due: 4000,
+        currency: "usd",
+        status: null,
+        metadata: {},
+        hosted_invoice_url: null,
+        lines: { has_more: false, data: [] },
+        parent: null,
+      });
+      lifecycle?.captureExternalState();
+      context.mocks.stripe.subscriptions.list.mockResolvedValue({
+        data: [],
+        has_more: false,
+      });
+      lifecycle?.captureExternalState();
+      const client = setupApp({ context, routes: billingCheckoutRoutes })(
+        billingUsagePackCheckoutContract,
+      );
+      const purchaseBody = {
+        tier: "pro" as const,
+        supportsInAppPreview: true,
+        memberUsagePacks: [
+          { memberId: fixture.userId, usagePackUsd: 20 as const },
         ],
-      },
-    );
-    context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
-      { data: [] },
-    );
-    context.mocks.stripe.customers.create.mockResolvedValue({ id: customerId });
-    context.mocks.stripe.customers.retrieve.mockResolvedValue({
-      id: customerId,
-      invoice_settings: { default_payment_method: paymentMethodId },
-    });
-    context.mocks.stripe.invoices.createPreview.mockResolvedValue({
-      id: `in_preview_${randomUUID()}`,
-      customer: customerId,
-      amount_due: 4000,
-      currency: "usd",
-      status: null,
-      metadata: {},
-      hosted_invoice_url: null,
-      lines: { has_more: false, data: [] },
-      parent: null,
-    });
-    context.mocks.stripe.subscriptions.list.mockResolvedValue({
-      data: [],
-      has_more: false,
-    });
-
-    const client = setupApp({ context, routes: billingCheckoutRoutes })(
-      billingUsagePackCheckoutContract,
-    );
-    const purchaseBody = {
-      tier: "pro" as const,
-      supportsInAppPreview: true,
-      memberUsagePacks: [
-        { memberId: fixture.userId, usagePackUsd: 20 as const },
-      ],
-      successUrl: `${APP_ORIGIN}/billing?billing=success`,
-      cancelUrl: `${APP_ORIGIN}/billing?billing=canceled`,
-    };
-    const preview = await accept(
-      client.create({
-        body: purchaseBody,
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    if (!("previewToken" in preview.body)) {
-      throw new Error("Expected a usage pack purchase preview");
-    }
-
-    // The confirmation claimed its snapshot before calling Stripe. A
-    // replacement purchase started while the subscription is being created
-    // cannot retire that claim; it is a deterministic conflict instead.
-    const subscriptionId = `sub_${randomUUID()}`;
-    let confirmedSnapshotId: string | undefined;
-    let replacementStatus: number | undefined;
-    let confirmedMetadata: Record<string, string> | undefined;
-    context.mocks.stripe.subscriptions.create.mockImplementation(
-      async (input) => {
-        const metadata = stripeInputMetadata(input);
-        confirmedSnapshotId = metadata.usagePackSubscriptionId;
-        confirmedMetadata = metadata;
-        const replacement = await client.create({
-          body: {
-            ...purchaseBody,
-            memberUsagePacks: [{ memberId: fixture.userId, usagePackUsd: 50 }],
-          },
-          headers: { authorization: "Bearer clerk-session" },
-        });
-        replacementStatus = replacement.status;
-        return {
+        successUrl: `${APP_ORIGIN}/billing?billing=success`,
+        cancelUrl: `${APP_ORIGIN}/billing?billing=canceled`,
+      };
+      const preview = await lifecycle.run(() => {
+        return accept(
+          lifecycle.run(() => {
+            return client.create({
+              body: purchaseBody,
+              headers: { authorization: "Bearer clerk-session" },
+            });
+          }),
+          [200],
+        );
+      });
+      if (!("previewToken" in preview.body)) {
+        throw new Error("Expected a usage pack purchase preview");
+      }
+      const previewToken = preview.body.previewToken;
+      const subscriptionId = `sub_${randomUUID()}`;
+      let confirmedSnapshotId: string | undefined;
+      let replacementStatus: number | undefined;
+      let confirmedMetadata: Record<string, string> | undefined;
+      context.mocks.stripe.subscriptions.create.mockImplementation(
+        async (input) => {
+          const metadata = stripeInputMetadata(input);
+          confirmedSnapshotId = metadata.usagePackSubscriptionId;
+          confirmedMetadata = metadata;
+          const replacement = await lifecycle.run(() => {
+            return client.create({
+              body: {
+                ...purchaseBody,
+                memberUsagePacks: [
+                  { memberId: fixture.userId, usagePackUsd: 50 },
+                ],
+              },
+              headers: { authorization: "Bearer clerk-session" },
+            });
+          });
+          replacementStatus = replacement.status;
+          const subscription = {
+            id: subscriptionId,
+            customer: customerId,
+            status: "active",
+            metadata,
+            items: {
+              data: [{ price: { id: TEST_PRICE_USAGE_PACK_PLAN_PRO } }],
+            },
+            latest_invoice: null,
+          };
+          context.mocks.stripe.subscriptions.retrieve.mockImplementation(
+            (id) => {
+              expect(id).toBe(subscriptionId);
+              return Promise.resolve(subscription);
+            },
+          );
+          lifecycle.captureExternalState();
+          return subscription;
+        },
+      );
+      lifecycle?.captureExternalState();
+      const confirmation = await lifecycle.run(() => {
+        return accept(
+          lifecycle.run(() => {
+            return client.confirm({
+              body: { previewToken },
+              headers: { authorization: "Bearer clerk-session" },
+            });
+          }),
+          [200],
+        );
+      });
+      expect(replacementStatus).toBe(409);
+      expect(context.mocks.stripe.subscriptions.create).toHaveBeenCalledOnce();
+      expect(context.mocks.stripe.subscriptions.cancel).not.toHaveBeenCalled();
+      if (!confirmedSnapshotId) {
+        throw new Error("Expected the confirmed usage pack snapshot ID");
+      }
+      expect(confirmation.body).toStrictEqual({
+        status: "completed",
+        hostedInvoiceUrl: null,
+      });
+      const publishedMetadata = confirmedMetadata;
+      if (!publishedMetadata) {
+        throw new Error("Expected the published Stripe correlation metadata");
+      }
+      context.mocks.stripe.subscriptions.retrieve.mockImplementation((id) => {
+        expect(id).toBe(subscriptionId);
+        return Promise.resolve({
           id: subscriptionId,
           customer: customerId,
           status: "active",
-          metadata,
+          metadata: publishedMetadata,
           items: { data: [{ price: { id: TEST_PRICE_USAGE_PACK_PLAN_PRO } }] },
           latest_invoice: null,
-        };
-      },
-    );
-
-    const confirmation = await accept(
-      client.confirm({
-        body: { previewToken: preview.body.previewToken },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(replacementStatus).toBe(409);
-    expect(context.mocks.stripe.subscriptions.create).toHaveBeenCalledOnce();
-    expect(context.mocks.stripe.subscriptions.cancel).not.toHaveBeenCalled();
-    if (!confirmedSnapshotId) {
-      throw new Error("Expected the confirmed usage pack snapshot ID");
-    }
-    expect(confirmation.body).toStrictEqual({
-      status: "completed",
-      hostedInvoiceUrl: null,
-    });
-    const publishedMetadata = confirmedMetadata;
-    if (!publishedMetadata) {
-      throw new Error("Expected the published Stripe correlation metadata");
-    }
-    context.mocks.stripe.subscriptions.retrieve.mockImplementation((id) => {
-      expect(id).toBe(subscriptionId);
-      return Promise.resolve({
-        id: subscriptionId,
-        customer: customerId,
-        status: "active",
-        metadata: publishedMetadata,
-        items: { data: [{ price: { id: TEST_PRICE_USAGE_PACK_PLAN_PRO } }] },
-        latest_invoice: null,
+        });
       });
+      lifecycle?.captureExternalState();
+      const repeated = await lifecycle.run(() => {
+        return accept(
+          lifecycle.run(() => {
+            return client.confirm({
+              body: { previewToken },
+              headers: { authorization: "Bearer clerk-session" },
+            });
+          }),
+          [200],
+        );
+      });
+      expect(repeated.body).toStrictEqual(confirmation.body);
+      expect(context.mocks.stripe.subscriptions.retrieve).toHaveBeenCalledWith(
+        subscriptionId,
+        { expand: ["latest_invoice"] },
+      );
+      expect(context.mocks.stripe.subscriptions.create).toHaveBeenCalledOnce();
+      expect(context.mocks.stripe.subscriptions.cancel).not.toHaveBeenCalled();
     });
-    const repeated = await accept(
-      client.confirm({
-        body: { previewToken: preview.body.previewToken },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    expect(repeated.body).toStrictEqual(confirmation.body);
-    expect(context.mocks.stripe.subscriptions.retrieve).toHaveBeenCalledWith(
-      subscriptionId,
-      { expand: ["latest_invoice"] },
-    );
-    expect(context.mocks.stripe.subscriptions.create).toHaveBeenCalledOnce();
-    expect(context.mocks.stripe.subscriptions.cancel).not.toHaveBeenCalled();
   });
 
   it("attempts the saved card for an open usage pack invoice", async () => {

@@ -1,3 +1,7 @@
+import {
+  retainBillingSequence,
+  type PublicBillingScenario,
+} from "./public-billing-scenario";
 import { randomUUID } from "node:crypto";
 import type { Mock } from "vitest";
 import { captureConnectorExternalState } from "./public-connector-actor";
@@ -16,12 +20,7 @@ import { now } from "../../../../lib/time";
 import { signSandboxJwtForTests } from "../../../auth/tokens";
 import { billingCheckoutRoutes } from "../../billing-checkout";
 import { billingStatusRoutes } from "../../billing-status";
-import {
-  testUsagePackSubscriptionStateContract,
-  testUsagePackSubscriptionStateRoutes,
-  type TestUsagePackSubscriptionStateAction,
-  type TestUsagePackSubscriptionStateResponse,
-} from "../../test-usage-pack-subscription-state";
+
 import { webhooksStripeRoutes } from "../../webhooks-stripe";
 import { seedOrgMembership$ } from "./org-membership";
 import { createPublicBillingZeroFixture } from "./public-billing-zero-fixture";
@@ -46,19 +45,6 @@ export function createBillingCheckoutFixture() {
   const store = createStore();
 
   const mocks = createRouteMocks(context);
-
-  async function usagePackStateAction(
-    body: TestUsagePackSubscriptionStateAction,
-  ): Promise<TestUsagePackSubscriptionStateResponse> {
-    const response = await accept(
-      setupApp({
-        context,
-        routes: testUsagePackSubscriptionStateRoutes,
-      })(testUsagePackSubscriptionStateContract).action({ body }),
-      [200],
-    );
-    return response.body;
-  }
 
   const APP_ORIGIN = "http://localhost:3002";
 
@@ -343,28 +329,51 @@ export function createBillingCheckoutFixture() {
   async function createStripeCustomerOrgForFixture(
     fixture: BillingOrgFixture,
     customerId: string,
+    lifecycle?: PublicBillingScenario,
   ): Promise<void> {
     authenticateOrg(fixture);
-    context.mocks.stripe.customers.create.mockResolvedValueOnce({
-      id: customerId,
-    });
-    context.mocks.stripe.checkout.sessions.create.mockResolvedValueOnce({
-      url: "https://checkout.stripe.com/session/setup-customer",
-    });
-
-    await accept(
-      setupApp({ context, routes: billingCheckoutRoutes })(
-        billingCheckoutContract,
-      ).create({
-        headers: { authorization: "Bearer clerk-session" },
-        body: {
-          tier: "pro",
-          successUrl: `${APP_ORIGIN}/billing?billing=success`,
-          cancelUrl: `${APP_ORIGIN}/billing?billing=canceled`,
+    if (lifecycle) {
+      retainBillingSequence(context.mocks.stripe.customers.create, [
+        () => {
+          return Promise.resolve({ id: customerId });
         },
-      }),
-      [200],
-    );
+      ]);
+      retainBillingSequence(context.mocks.stripe.checkout.sessions.create, [
+        () => {
+          return Promise.resolve({
+            url: "https://checkout.stripe.com/session/setup-customer",
+          });
+        },
+      ]);
+    } else {
+      context.mocks.stripe.customers.create.mockResolvedValueOnce({
+        id: customerId,
+      });
+      context.mocks.stripe.checkout.sessions.create.mockResolvedValueOnce({
+        url: "https://checkout.stripe.com/session/setup-customer",
+      });
+    }
+
+    const run =
+      lifecycle?.run ??
+      ((operation: () => Promise<unknown>) => {
+        return operation();
+      });
+    await run(() => {
+      return accept(
+        setupApp({ context, routes: billingCheckoutRoutes })(
+          billingCheckoutContract,
+        ).create({
+          headers: { authorization: "Bearer clerk-session" },
+          body: {
+            tier: "pro",
+            successUrl: `${APP_ORIGIN}/billing?billing=success`,
+            cancelUrl: `${APP_ORIGIN}/billing?billing=canceled`,
+          },
+        }),
+        [200],
+      );
+    });
   }
 
   async function createSubscriptionOrg(args: {
@@ -845,7 +854,6 @@ export function createBillingCheckoutFixture() {
   return {
     context,
     mocks,
-    usagePackStateAction,
     APP_ORIGIN,
     TEST_STAFF_ORG_ID,
     TEST_PRICE_PRO,
