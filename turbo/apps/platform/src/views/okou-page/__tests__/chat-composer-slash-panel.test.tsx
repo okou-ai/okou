@@ -2,7 +2,14 @@ import { workflowsCollectionContract } from "@okouai/api-contracts";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import {
@@ -22,6 +29,7 @@ import {
   tabByText,
 } from "./chat-composer-test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
+import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
 
 const WORKFLOW_NAME = "axiom-red";
 const SECOND_WORKFLOW_NAME = "axiom-status";
@@ -49,12 +57,18 @@ function setupModels(): void {
   });
 }
 
-async function openSlashMenu(query = ""): Promise<void> {
+async function openSlashMenu(
+  query = "",
+  composerAnchored = false,
+): Promise<void> {
   setupModels();
   mockChatLifecycle(context);
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: {
+      [FeatureSwitchKey.ComposerAnchoredSuggestions]: composerAnchored,
+    },
   });
   const editor = await findComposerEditor();
   await fill(editor, `Draft /${query}`);
@@ -351,4 +365,142 @@ test("Choosing a cover consumes the slash token that opened the panel", async ()
   // The whole token goes, not only its slash, and the prose before it stays.
   expect(editor).not.toHaveTextContent("/");
   expect(editor).toHaveTextContent("Draft");
+});
+
+function slashMenuButtonNames(): (string | undefined)[] {
+  return queryAllByRoleFast(
+    "button",
+    screen.getByTestId("slash-workflow-menu"),
+  ).map((button) => {
+    return button.textContent?.trim();
+  });
+}
+
+test("Composer-anchored slash suggestions default to the bottom candidate and navigate visually", async () => {
+  const user = userEvent.setup();
+  await openSlashMenu("", true);
+  const editor = await findComposerEditor();
+  await waitFor(() => {
+    expect(slashMenuButtonNames()).toStrictEqual([
+      "Browse all templates",
+      `/${THIRD_WORKFLOW_NAME}`,
+      `/${SECOND_WORKFLOW_NAME}`,
+      `/${WORKFLOW_NAME}`,
+      "Website",
+      "Illustration",
+      "Presentation",
+    ]);
+  });
+  expect(slashButton("Presentation")).toHaveAttribute("data-active", "true");
+  expect(editor).toHaveFocus();
+
+  await user.keyboard("{ArrowDown}");
+  expect(slashButton("Presentation")).toHaveAttribute("data-active", "true");
+  await user.keyboard("{ArrowUp}");
+  expect(slashButton("Illustration")).toHaveAttribute("data-active", "true");
+  await user.keyboard("{ArrowDown}{Enter}");
+  await screen.findByRole("dialog");
+  expect(tabByText("Presentation")).toHaveAttribute("aria-selected", "true");
+  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+});
+
+test("Composer-anchored slash suggestions keep the strongest match at the bottom and reset on a new query", async () => {
+  setupModels();
+  context.mocks.api(workflowsCollectionContract.composer, ({ respond }) => {
+    return respond(200, [
+      composerWorkflow("daily-axi", "Substring match"),
+      composerWorkflow("a-x-i", "Fuzzy match"),
+      composerWorkflow("axiom-red", "Prefix match"),
+      composerWorkflow("axi", "Exact match"),
+    ]);
+  });
+  mockChatLifecycle(context);
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.ComposerAnchoredSuggestions]: true },
+  });
+  const editor = await findComposerEditor();
+  await fill(editor, "Draft /axi");
+  await screen.findByTestId("slash-workflow-menu");
+  await waitFor(() => {
+    expect(slashMenuButtonNames()).toStrictEqual([
+      "Browse all templates",
+      "/a-x-i",
+      "/daily-axi",
+      "/axiom-red",
+      "/axi",
+    ]);
+  });
+  expect(slashButton("/axi")).toHaveAttribute("data-active", "true");
+  const user = userEvent.setup();
+  await user.keyboard("{ArrowUp}{ArrowUp}");
+  expect(slashButton("/daily-axi")).toHaveAttribute("data-active", "true");
+  await fill(editor, "Draft /axiom");
+  await waitFor(() => {
+    expect(slashButton("/axiom-red")).toHaveAttribute("data-active", "true");
+  });
+  await user.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(editor).toHaveTextContent("Draft /axiom-red");
+  });
+  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+  expect(editor).toHaveFocus();
+});
+
+test("Composer-anchored keyboard navigation crosses from categories into workflows", async () => {
+  await openSlashMenu("", true);
+  await waitFor(() => {
+    return slashButton(`/${WORKFLOW_NAME}`);
+  });
+  const user = userEvent.setup();
+  await user.keyboard("{ArrowUp}{ArrowUp}{ArrowUp}");
+  expect(slashButton(`/${WORKFLOW_NAME}`)).toHaveAttribute(
+    "data-active",
+    "true",
+  );
+  await user.keyboard("{Tab}");
+  const editor = await findComposerEditor();
+  expect(editor).toHaveTextContent(`Draft /${WORKFLOW_NAME}`);
+  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+});
+
+test("Composer-anchored slash suggestions hide the template flyout at the mobile breakpoint and retain the picker", async () => {
+  const viewport = context.mocks.browser.matchMedia((query) => {
+    return query === SIDEBAR_DESKTOP_MEDIA_QUERY;
+  });
+  await openSlashMenu("", true);
+  await waitFor(() => {
+    expect(detailPane()).toHaveAttribute("data-category", "slides");
+  });
+  act(() => {
+    viewport.setMatches(false);
+  });
+  await waitFor(() => {
+    expect(detailPane()).toBeNull();
+  });
+  expect(flyout()).toBeNull();
+  expect(slashButton("Presentation")).toHaveAttribute("data-active", "true");
+  const user = userEvent.setup();
+  await user.click(slashButton("Illustration"));
+  await screen.findByRole("dialog");
+  expect(tabByText("Illustration")).toHaveAttribute("aria-selected", "true");
+});
+
+test("Disabling composer-anchored suggestions retains the original menu and mobile preview", async () => {
+  context.mocks.browser.matchMedia(false);
+  await openSlashMenu("", false);
+  await waitFor(() => {
+    expect(slashMenuButtonNames()).toStrictEqual([
+      "Presentation",
+      "Illustration",
+      "Website",
+      `/${WORKFLOW_NAME}`,
+      `/${SECOND_WORKFLOW_NAME}`,
+      `/${THIRD_WORKFLOW_NAME}`,
+      "Browse all templates",
+    ]);
+  });
+  expect(slashButton("Presentation")).toHaveAttribute("data-active", "true");
+  expect(detailPane()).toHaveAttribute("data-category", "slides");
 });
