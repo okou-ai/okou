@@ -504,3 +504,7 @@ expanded parameter rows; one row is one ordinary execution.
 ## Evidenced main integration
 
 GitHub reported CONFLICTING against main `03c79d9a11fa49dab3f4ddf755a969452a82fe2d`. The branch merged that main once. Upstream removed the DELETE Discord fixture transaction (TX-0017), while this batch removes the complete fixture operation. Resolution retains operation deletion and both branches' baseline removals, including upstream TX-0103/TX-0251. Upstream production transaction cleanup is not batch021 credit. No speculative main update. The stale preview-only comment beside normal Slack OAuth registration was also removed after independent review identified it as orphan text.
+
+## Final-review whole-chain correction
+
+Independent review of source34147cc3 found the retained Slack App Home/welcome/lifecycle GET caller still reached the fabricated-Run bootstrap through `bootstrapLimitedFreeOnboarding`. It now calls ordinary Clerk-authenticated onboarding status and complete, followed by normal workspace deletion. All Home, welcome-once, disconnect, uninstall and revocation assertions remain. The old displayName option was already ignored by that bootstrap and is not a lost outcome. Other unselected bootstrap callers remain unresolved. This repair adds zero quota and removes no case or parameter row.

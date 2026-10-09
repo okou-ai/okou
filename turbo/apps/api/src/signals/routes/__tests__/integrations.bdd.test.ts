@@ -4134,8 +4134,10 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
     integrations.configureSlackAppMocks();
-    await bdd.bootstrapLimitedFreeOnboarding(actor, {
-      displayName: "BDD Slack Home Agent",
+    await bdd.readOnboardingStatus(actor);
+    await bdd.completeOnboarding(actor);
+    onTestFinished(async () => {
+      await deletePublicWorkspace(context, actor);
     });
     const slackUserId = uniqueSlackUserId();
     const install = await integrations.installSlackWorkspace(null);
