@@ -22,7 +22,7 @@
     "check-types": "tsc -p tsconfig.production.json --noEmit --checkers $(node ../../scripts/tsc-checkers.mjs) && tsc -p tsconfig.tests.json --noEmit --checkers $(node ../../scripts/tsc-checkers.mjs) && tsc -p tsconfig.build-config.json --noEmit --checkers $(node ../../scripts/tsc-checkers.mjs)"
   },
   "dependencies": {
-    "@axiomhq/js": "^1.5.0",
+    "@axiomhq/js": "^2.0.0",
     "@base-ui/react": "^1.7.0",
     "@clerk/localizations": "^4.17.1",
     "@clerk/react": "^6.17.4",

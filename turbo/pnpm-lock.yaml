@@ -107,11 +107,11 @@ importers:
         specifier: ^3.1144.0
         version: 3.1144.0
       '@axiomhq/js':
-        specifier: ^1.5.0
-        version: 1.5.0
+        specifier: ^2.0.0
+        version: 2.0.0
       '@axiomhq/logging':
         specifier: ^0.1.6
-        version: 0.1.7(@axiomhq/js@1.5.0)
+        version: 0.1.7(@axiomhq/js@2.0.0)
       '@clerk/backend':
         specifier: ^3.13.1
         version: 3.13.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -528,8 +528,8 @@ importers:
   apps/platform:
     dependencies:
       '@axiomhq/js':
-        specifier: ^1.5.0
-        version: 1.5.0
+        specifier: ^2.0.0
+        version: 2.0.0
       '@base-ui/react':
         specifier: ^1.7.0
         version: 1.7.0(patch_hash=d42895527c59749f3f45c3d6629493f134abfa3b5afe045ad93ca025466841c6)(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -1366,8 +1366,8 @@ packages:
     resolution: {integrity: sha512-sl4Bm6yiMNYrZKkqqDFWN0UfnWhlS8ivKxrYl+6t0gCLrqr8y3B2IqZZbFRkfaVVp7C/baApyh71P+LeE1A2sQ==}
     engines: {node: '>=18.0.0'}
 
-  '@axiomhq/js@1.5.0':
-    resolution: {integrity: sha512-7SkfgnrKpjRs86h4TIcoZQ1TltKG0+WcQtMkBa5N3iSuGT5+aIpnbLFrRfbfhwhxzysQkF01qNW4fNUtePqjDg==}
+  '@axiomhq/js@2.0.0':
+    resolution: {integrity: sha512-mhDH0KLFkDko9ytoltgmch2gOiwE6kY6VWhCmTux9lzL9hmjTej68JeQKwq9GGqOY7xwDsya88bNiTnp/zc8+Q==}
     engines: {node: '>=20'}
 
   '@axiomhq/logging@0.1.7':
@@ -9406,13 +9406,13 @@ snapshots:
 
   '@aws/lambda-invoke-store@0.3.0': {}
 
-  '@axiomhq/js@1.5.0':
+  '@axiomhq/js@2.0.0':
     dependencies:
       fetch-retry: 6.0.0
 
-  '@axiomhq/logging@0.1.7(@axiomhq/js@1.5.0)':
+  '@axiomhq/logging@0.1.7(@axiomhq/js@2.0.0)':
     optionalDependencies:
-      '@axiomhq/js': 1.5.0
+      '@axiomhq/js': 2.0.0
 
   '@babel/code-frame@7.29.0':
     dependencies:
