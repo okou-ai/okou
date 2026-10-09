@@ -92,8 +92,6 @@ import {
   pendingDeleteThreadId$,
   renameDialogAgentId$,
   renameDialogOpen$,
-  renameMenuFinalFocus$,
-  handleRenameMenuOpenChange$,
   setPendingDeleteThreadId$,
   renameDialogThreadId$,
   renameDialogInput$,
@@ -362,7 +360,6 @@ function ChatThreadMenu({
   const indicatorState = useLastResolved(signals.indicatorState$) ?? null;
   const openRename = useSet(signals.openRename$);
   const requestDelete = useSet(signals.requestDelete$);
-  const onMenuOpenChange = useSet(handleRenameMenuOpenChange$);
   const pageSignal = useGet(pageSignal$);
   const renameLabel = t(($) => {
     return $.chat.sidebar.rename;
@@ -378,7 +375,7 @@ function ChatThreadMenu({
 
   return (
     <TooltipProvider delay={200}>
-      <DropdownMenu onOpenChange={onMenuOpenChange}>
+      <DropdownMenu>
         <DropdownMenuTrigger
           render={
             <Button
@@ -446,7 +443,6 @@ function ChatThreadMenu({
           align="end"
           className={cn("w-56", touch && "[&_[role=menuitem]]:min-h-11")}
           data-chat-thread-menu-thread-id={signals.threadId}
-          finalFocus={useGet(renameMenuFinalFocus$)}
         >
           <ChatThreadPinMenuItems signals={signals} />
           <ChatThreadMarkUnreadMenuItem signals={signals} />
@@ -466,7 +462,9 @@ function ChatThreadMenu({
             />
           </DropdownMenuItem>
           <DropdownMenuItem
-            onClick={requestDelete}
+            onClick={() => {
+              requestDelete();
+            }}
             className="text-destructive focus:text-destructive"
           >
             <Trash size={16} className="mr-2" />

@@ -67,17 +67,6 @@ export const renameDialogOpen$ = computed((get) => {
   return get(internalRenameDialogOpen$);
 });
 
-const internalRenameMenuHandoff$ = state(false);
-export const renameMenuFinalFocus$ = computed((get) => {
-  return get(internalRenameMenuHandoff$) ? false : undefined;
-});
-export const handleRenameMenuOpenChange$ = command(
-  ({ get, set }, open: boolean) => {
-    // Only suppress a menu that closes while handing off to Rename.
-    set(internalRenameMenuHandoff$, !open && get(internalRenameDialogOpen$));
-  },
-);
-
 const internalRenameDialogThreadId$ = state<string | null>(null);
 export const renameDialogThreadId$ = computed((get) => {
   return get(internalRenameDialogThreadId$);

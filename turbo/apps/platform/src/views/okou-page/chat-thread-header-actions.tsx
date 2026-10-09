@@ -30,10 +30,6 @@ import { setChatThreadArchivedFromHeader$ } from "../../signals/chat-page/chat-t
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import {
-  handleRenameMenuOpenChange$,
-  renameMenuFinalFocus$,
-} from "../../signals/okou-page/sidebar-state.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import { useOpenThreadArtifacts } from "./thread-sidebar.tsx";
 
@@ -93,29 +89,6 @@ export function ChatThreadPinButton({
   );
 }
 
-function MobileChatThreadMoreMenuTrigger() {
-  const { t } = useTranslation();
-  return (
-    <DropdownMenuTrigger
-      render={
-        <Button
-          showTooltip
-          type="button"
-          variant="quiet"
-          size="icon-sm"
-          iconSize="md"
-          className="size-11 shrink-0"
-          aria-label={t(($) => {
-            return $.chat.actions.more;
-          })}
-        />
-      }
-    >
-      <Ellipsis size={18} />
-    </DropdownMenuTrigger>
-  );
-}
-
 export function MobileChatThreadMoreMenu({
   thread,
 }: {
@@ -127,8 +100,6 @@ export function MobileChatThreadMoreMenu({
   const pinned = useGet(thread.pin.pinned$);
   const setPinned = useSet(thread.pin.setPinned$);
   const openRename = useSet(openRenameChatThreadDialogForThreadId$);
-  const menuFinalFocus = useGet(renameMenuFinalFocus$);
-  const onMenuOpenChange = useSet(handleRenameMenuOpenChange$);
   const archiveEnabled =
     useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
   const archived = useGet(thread.threadMeta$)?.archived === true;
@@ -143,13 +114,25 @@ export function MobileChatThreadMoreMenu({
   const openArtifacts = useOpenThreadArtifacts(thread);
 
   return (
-    <DropdownMenu onOpenChange={onMenuOpenChange}>
-      <MobileChatThreadMoreMenuTrigger />
-      <DropdownMenuContent
-        align="end"
-        className="min-w-48"
-        finalFocus={menuFinalFocus}
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            showTooltip
+            type="button"
+            variant="quiet"
+            size="icon-sm"
+            iconSize="md"
+            className="size-11 shrink-0"
+            aria-label={t(($) => {
+              return $.chat.actions.more;
+            })}
+          />
+        }
       >
+        <Ellipsis size={18} />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-48">
         <DropdownMenuItem
           className="min-h-11"
           onClick={() => {
