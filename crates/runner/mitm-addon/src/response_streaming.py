@@ -153,7 +153,7 @@ def _log_response_encoding_fail_closed(
         firewall_billable=flow_metadata.is_firewall_billable(flow.metadata),
         status_code=response.status_code,
         inspection_disposition="fail_closed",
-        request_encoding_negotiation=flow.metadata[metadata_keys.RESPONSE_ENCODING_NEGOTIATION],
+        request_encoding_negotiation=flow.metadata.get(metadata_keys.RESPONSE_ENCODING_NEGOTIATION),
         decode_skip_reason=skip_reason,
     )
 
@@ -499,8 +499,10 @@ def configure_response_stream(
         websocket_header_work_limit=websocket_header_work_limit,
     )
     if setup.reject_uninspectable:
-        _log_response_encoding_fail_closed(flow, flow.response)
+        upstream_response = flow.response
+        # Diagnostics must not prevent rejection; keep the upstream response for their context.
         _reject_uninspectable_response(flow)
+        _log_response_encoding_fail_closed(flow, upstream_response)
         return
 
     response_parser = setup.parser
