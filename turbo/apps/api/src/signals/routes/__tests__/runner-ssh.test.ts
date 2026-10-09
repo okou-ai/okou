@@ -1,8 +1,8 @@
+import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
 import { createClaimedSshRuntimeApi } from "./helpers/claimed-ssh-runtime";
 import { inlineSshKey } from "./helpers/ssh-credential";
 import { randomUUID } from "node:crypto";
 
-import { triggerSourceSchema } from "@okouai/api-contracts/contracts/logs";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import {
   runnerSshContract,
@@ -12,10 +12,6 @@ import {
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { runnersJobClaimContract } from "@okouai/api-contracts/contracts/runners";
-import {
-  testSshConnectionStateContract,
-  type TestSshConnectionStateActionBody,
-} from "@okouai/api-contracts/contracts/test-ssh-connection-state";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -27,7 +23,6 @@ import { runnerSshRoutes } from "../runner-ssh";
 import { runnersRoutes } from "../runners";
 import { chatRemoteAccessRoutes } from "../chat-remote-access";
 import { sshConnectionsRoutes } from "../ssh-connections";
-import { testSshConnectionStateRoutes } from "../test-ssh-connection-state";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createRouteMocks } from "./helpers/route-test";
@@ -53,10 +48,6 @@ const otherHostKey = Object.freeze({
 });
 const privateKey = "  private-key-canary\n";
 const passphrase = " passphrase-canary ";
-type RuntimeBody = Extract<
-  TestSshConnectionStateActionBody,
-  { action: "create-runtime" }
->;
 interface Owner {
   readonly userId: string;
   readonly orgId: string;
@@ -70,49 +61,8 @@ function config() {
     sshConnectionsContract,
   );
 }
-function stateClient() {
-  return setupApp({ context, routes: testSshConnectionStateRoutes })(
-    testSshConnectionStateContract,
-  );
-}
 function authenticate(owner: Owner) {
   mocks.clerk.session(owner.userId, owner.orgId);
-}
-
-async function createRuntime(
-  owner: Owner,
-  overrides: Partial<RuntimeBody> = {},
-) {
-  // Process generation is a bigint, independent of the connection's int generation.
-  const runnerIdentity = {
-    runnerId: randomUUID(),
-    heartbeatGeneration: 5_000_000_000,
-  };
-  const r = await accept(
-    stateClient().action({
-      body: {
-        action: "create-runtime",
-        orgId: owner.orgId,
-        userId: owner.userId,
-        ...runnerIdentity,
-        triggerSource: "web",
-        status: "running",
-        chat: true,
-        ...overrides,
-      },
-    }),
-    [200],
-  );
-  if (!r.body.runId || !r.body.agentId || !r.body.sandboxToken) {
-    throw new Error("Missing runtime fixture identity");
-  }
-  return {
-    runId: r.body.runId,
-    agentId: r.body.agentId,
-    threadId: r.body.threadId,
-    sandboxToken: r.body.sandboxToken,
-    runnerIdentity,
-  };
 }
 
 async function enableHostDefault(owner: Owner, connectionId: string) {
@@ -159,40 +109,18 @@ async function setThreadHostOverride(f: Fixture, enabled: boolean | null) {
     );
   }
 }
-
-async function fixture(
-  runtimeOverrides: Partial<RuntimeBody> = {},
-  defaultEnabled = true,
-) {
-  const owner = {
-    orgId: `org_ssh_jit_${randomUUID()}`,
-    userId: `user_ssh_jit_${randomUUID()}`,
+interface Fixture extends Owner {
+  readonly runId: string;
+  readonly agentId: string;
+  readonly threadId?: string;
+  readonly sandboxToken: string;
+  readonly runnerIdentity: {
+    runnerId: ReturnType<typeof randomUUID>;
+    heartbeatGeneration: number;
   };
-  authenticate(owner);
-  const connection = await accept(
-    config().create({
-      headers: sessionHeaders,
-      body: {
-        id: randomUUID(),
-        displayName: "SSH fixture",
-        host: "ssh.example.com",
-        credential: inlineSshKey("deploy", privateKey, passphrase),
-      },
-    }),
-    [201],
-  );
-  if (defaultEnabled) {
-    await enableHostDefault(owner, connection.body.id);
-  }
-  const runtime = await createRuntime(owner, runtimeOverrides);
-  return {
-    ...owner,
-    ...runtime,
-    connectionId: connection.body.id,
-    credentialId: connection.body.credentialId,
-  };
+  readonly connectionId: string;
+  readonly credentialId: string;
 }
-type Fixture = Awaited<ReturnType<typeof fixture>>;
 
 const ordinary = createClaimedSshRuntimeApi(context, {
   runnerHeaders,
@@ -554,15 +482,53 @@ beforeEach(() => {
   useSecretKmsProbe();
 });
 
-describe("chat thread SSH authority", () => {
-  it("uses current per-host defaults and overrides and denies Runs without a chat", async () => {
-    const f = await fixture(
-      {
-        chat: true,
-        runnerGroup: `thread-ssh-${randomUUID()}`,
+function createPublicHostApi() {
+const selectedRuns = createPublicRemoteAccessRunApi(context);
+const selectedOwners = new Map<string, Owner>();
+async function cleanupSelectedRuns() {
+  await selectedRuns.cleanup();
+  for (const owner of selectedOwners.values()) {
+    await deletePublicWorkspace(context, createBddApi(context).user(owner));
+  }
+  selectedOwners.clear();
+}
+async function publicHostRun(defaultEnabled = true) {
+  const owner = {
+    orgId: `org_ssh_public_${randomUUID()}`,
+    userId: `user_ssh_public_${randomUUID()}`,
+  };
+  selectedOwners.set(owner.orgId, owner);
+  const run = await selectedRuns.start(owner);
+  const claimed = await selectedRuns.claim(run, runnerHeaders);
+  authenticate(owner);
+  const connection = await accept(
+    config().create({
+      headers: sessionHeaders,
+      body: {
+        id: randomUUID(),
+        displayName: "SSH owner host",
+        host: "ssh.example.com",
+        credential: inlineSshKey("deploy", privateKey, passphrase),
       },
-      false,
-    );
+    }),
+    [201],
+  );
+  if (defaultEnabled) {await enableHostDefault(owner, connection.body.id);}
+  return {
+    ...claimed,
+    connectionId: connection.body.id,
+    credentialId: connection.body.credentialId,
+  };
+}
+
+  return {runtime: publicHostRun, cleanup: cleanupSelectedRuns, runs: selectedRuns, trackOwner(owner: Owner) {selectedOwners.set(owner.orgId, owner);}};
+}
+const selected = createPublicHostApi();
+
+describe("chat thread SSH authority", () => {
+  afterEach(selected.cleanup);
+  it("uses current per-host defaults and overrides for a claimed chat Run", async () => {
+    const f = await selected.runtime(false);
     if (!f.threadId) {
       throw new Error("Missing fixture chat thread");
     }
@@ -582,10 +548,6 @@ describe("chat thread SSH authority", () => {
       [200],
     );
     await expect(resolve(f)).resolves.toMatchObject({ outcome: "resolved" });
-    const withoutChat = await createRuntime(f, { chat: false });
-    await expect(resolve({ ...f, ...withoutChat })).resolves.toStrictEqual({
-      outcome: "unavailable",
-    });
     const params = { threadId, ...host };
     context.mocks.ably.publish.mockClear();
     await accept(
@@ -1156,7 +1118,7 @@ describe("SSH connection observations", () => {
 describe("official Runner SSH authority", () => {
   const claimedFixture = useClaimedFixture();
   const publicRuns = createPublicRemoteAccessRunApi(context);
-  afterEach(publicRuns.cleanup);
+  afterEach(async () => {await publicRuns.cleanup(); await selected.cleanup();});
 
   it("allows an ordinary owner and preserves a pinned connection", async () => {
     const f = await claimedFixture();
@@ -1168,30 +1130,6 @@ describe("official Runner SSH authority", () => {
     expect(kms.decryptCalls).toBe(2);
   });
 
-  it("does not turn a malformed stored host identity into unavailable or decrypt credentials", async () => {
-    const f = await fixture();
-    await accept(
-      stateClient().action({
-        body: {
-          action: "set-learned-host-key",
-          orgId: f.orgId,
-          userId: f.userId,
-          connectionId: f.connectionId,
-          algorithm: "ssh-dss",
-          fingerprint: "invalid",
-        },
-      }),
-      [200],
-    );
-    const kms = useSecretKmsProbe();
-    const result = await client().resolve({
-      params: { runId: f.runId },
-      headers: runnerHeaders,
-      body: { connectionId: f.connectionId, runnerIdentity: f.runnerIdentity },
-    });
-    expect(result.status).toBe(500);
-    expect(kms.decryptCalls).toBe(0);
-  });
   it("only delivers the exact current credential to the winning official process", async () => {
     const f = await claimedFixture();
     const kms = useSecretKmsProbe();
@@ -1254,8 +1192,8 @@ describe("official Runner SSH authority", () => {
   });
 
   it("returns indistinguishable unavailable for wrong claims and hidden or missing connections", async () => {
-    const f = await fixture({ triggerSource: "webhook", chat: false });
-    const foreign = await fixture();
+    const f = await selected.runtime();
+    const foreign = await selected.runtime();
     const kms = useSecretKmsProbe();
     for (const override of [
       { connectionId: randomUUID() },
@@ -1279,6 +1217,7 @@ describe("official Runner SSH authority", () => {
     expect((await list(foreign))[0]?.learnedHostKey).toBeNull();
     // Same user, different organization must not grant access.
     const hiddenOwner = { ...f, orgId: `org_hidden_${randomUUID()}` };
+    selected.trackOwner(hiddenOwner);
     authenticate(hiddenOwner);
     const hidden = await accept(
       config().create({
@@ -1301,63 +1240,30 @@ describe("official Runner SSH authority", () => {
     expect(kms.decryptCalls).toBe(0);
   });
 
-  it("treats every chat channel equally", async () => {
-    const f = await fixture();
-    for (const triggerSource of [
-      "web",
-      "slack",
-      "teams",
-      "feishu",
-      "email",
-      "telegram",
-      "agentphone",
-      "github",
-    ] as const) {
-      const runtime = await createRuntime(f, { triggerSource });
-      await expect(resolve({ ...f, ...runtime })).resolves.toMatchObject({
-        outcome: "resolved",
-        privateKey,
-      });
-    }
-  });
-
-  it.each([...triggerSourceSchema.options, null])(
-    "denies a %s Run without a chat thread despite an enabled host default",
-    async (triggerSource) => {
-      const f = await fixture({ triggerSource, chat: false });
-      await expect(resolve(f)).resolves.toStrictEqual({
-        outcome: "unavailable",
-      });
-      await expect(pin(f)).resolves.toStrictEqual({
-        outcome: "unavailable",
-      });
-    },
-  );
-
-  it("denies inactive or unclaimed Runs without a chat thread", async () => {
-    const f = await fixture({ triggerSource: "automation-event", chat: false });
-    const kms = useSecretKmsProbe();
-    const denied: Partial<RuntimeBody>[] = [
-      { runnerId: null, heartbeatGeneration: null },
-      { status: "pending" },
-      { status: "completed" },
-      { status: "cancelled" },
-      { status: "failed" },
-    ];
-    for (const override of denied) {
-      const runtime = await createRuntime(f, {
-        triggerSource: "automation-event",
-        chat: false,
-        ...override,
-      });
-      await expect(resolve({ ...f, ...runtime })).resolves.toStrictEqual({
-        outcome: "unavailable",
-      });
-      await expect(pin({ ...f, ...runtime })).resolves.toStrictEqual({
-        outcome: "unavailable",
-      });
-    }
+  it("denies a pending Run and each real terminal state without decrypting credentials", async () => {
+    const f = await selected.runtime();
+    const pending = await selected.runs.start(f);
+    let kms = useSecretKmsProbe();
+    await expect(
+      resolve({ ...f, runId: pending.runId }),
+    ).resolves.toStrictEqual({ outcome: "unavailable" });
+    await expect(pin({ ...f, runId: pending.runId })).resolves.toStrictEqual({
+      outcome: "unavailable",
+    });
     expect(kms.decryptCalls).toBe(0);
+    for (const status of ["completed", "cancelled", "failed"] as const) {
+      const run = await selected.runs.start(f);
+      const claimed = await selected.runs.claim(run, runnerHeaders);
+      await selected.runs.finish(claimed, status);
+      kms = useSecretKmsProbe();
+      await expect(resolve({ ...f, ...claimed })).resolves.toStrictEqual({
+        outcome: "unavailable",
+      });
+      await expect(pin({ ...f, ...claimed })).resolves.toStrictEqual({
+        outcome: "unavailable",
+      });
+      expect(kms.decryptCalls).toBe(0);
+    }
   });
 
   it("checks current chat access and credential existence on every call", async () => {

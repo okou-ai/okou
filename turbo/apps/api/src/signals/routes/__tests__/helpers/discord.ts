@@ -1,27 +1,15 @@
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { http, HttpResponse } from "msw";
-import { testDiscordStateContract } from "@okouai/api-contracts/contracts/test-discord-state";
 
-import { accept, type TestContext } from "../../../../__tests__/test-context";
-import { setupApp } from "../../../../__tests__/test-helpers";
+import type { TestContext } from "../../../../__tests__/test-context";
 import { env, mockEnv } from "../../../../lib/env";
 import { server } from "../../../../mocks/server";
-import { discordStatePreviewRoutes } from "../../discord-state-preview";
-import { createRouteMocks } from "./route-test";
 
-export interface DiscordActor {
+interface DiscordActor {
   readonly orgId: string;
   readonly userId: string;
   readonly orgRole?: "org:admin" | "org:member";
-}
-
-export interface DiscordFixture extends DiscordActor {
-  readonly guildId: string;
-  readonly guildName: string;
-  readonly botUserId: string;
-  readonly discordUserId: string;
-  readonly connectionId: string;
 }
 
 export function uniqueDiscordSnowflake(): string {
@@ -39,7 +27,7 @@ export function configureDiscordApp(): void {
   mockDiscordApplication(0);
 }
 
-export function mockDiscordApplication(flags: number, flagsNew?: string): void {
+function mockDiscordApplication(flags: number, flagsNew?: string): void {
   server.use(
     http.get("https://discord.com/api/v10/applications/@me", () => {
       return HttpResponse.json({
@@ -81,74 +69,5 @@ export function mockDiscordMemberships(
         totalCount: matches.length,
       });
     },
-  );
-}
-
-export async function seedDiscordFixture(
-  context: TestContext,
-  args: DiscordActor & {
-    readonly guildId?: string;
-    readonly guildName?: string;
-    readonly botUserId?: string;
-    readonly discordUserId?: string;
-    readonly history?: {
-      readonly chatThreadId: string;
-      readonly channelId: string;
-      readonly messageId: string;
-      readonly messageText: string;
-    };
-  },
-): Promise<DiscordFixture> {
-  mockEnv("ENV", "development");
-  createRouteMocks(context).clerk.session(
-    args.userId,
-    args.orgId,
-    args.orgRole,
-  );
-  const fixture = {
-    orgId: args.orgId,
-    userId: args.userId,
-    orgRole: args.orgRole,
-    guildId: args.guildId ?? uniqueDiscordSnowflake(),
-    guildName: args.guildName ?? "Discord test guild",
-    botUserId: args.botUserId ?? "123456789012345678",
-    discordUserId: args.discordUserId ?? uniqueDiscordSnowflake(),
-  };
-  const response = await accept(
-    setupApp({ context, routes: discordStatePreviewRoutes })(
-      testDiscordStateContract,
-    ).post({
-      headers: { authorization: "Bearer clerk-session" },
-      body: {
-        guildId: fixture.guildId,
-        guildName: fixture.guildName,
-        botUserId: fixture.botUserId,
-        discordUserId: fixture.discordUserId,
-        ...(args.history ? { history: args.history } : {}),
-      },
-    }),
-    [200],
-  );
-  return { ...fixture, connectionId: response.body.connectionId };
-}
-
-export async function deleteDiscordFixture(
-  context: TestContext,
-  fixture: DiscordFixture,
-): Promise<void> {
-  mockEnv("ENV", "development");
-  createRouteMocks(context).clerk.session(
-    fixture.userId,
-    fixture.orgId,
-    "org:admin",
-  );
-  await accept(
-    setupApp({ context, routes: discordStatePreviewRoutes })(
-      testDiscordStateContract,
-    ).delete({
-      headers: { authorization: "Bearer clerk-session" },
-      query: { guildId: fixture.guildId },
-    }),
-    [200],
   );
 }

@@ -77,16 +77,6 @@
       "owner": "startBuiltinConnectorOpenIdInner$"
     },
     {
-      "id": "TX-0016",
-      "file": "turbo/apps/api/src/signals/routes/discord-state-preview.ts",
-      "owner": "seedDiscordState$"
-    },
-    {
-      "id": "TX-0017",
-      "file": "turbo/apps/api/src/signals/routes/discord-state-preview.ts",
-      "owner": "deleteDiscordState$"
-    },
-    {
       "id": "TX-0018",
       "file": "turbo/apps/api/src/signals/routes/feishu-oauth.ts",
       "owner": "persistFeishuOAuthConnection"
@@ -110,11 +100,6 @@
       "id": "TX-0022",
       "file": "turbo/apps/api/src/signals/routes/runners.ts",
       "owner": "failPoisonQueuedJob"
-    },
-    {
-      "id": "TX-0023",
-      "file": "turbo/apps/api/src/signals/routes/slack-state-preview.ts",
-      "owner": "commitSlackStarterDefault$"
     },
     {
       "id": "TX-0024",
@@ -165,11 +150,6 @@
       "id": "TX-0033",
       "file": "turbo/apps/api/src/signals/routes/test-official-workflow-catalog-state.ts",
       "owner": "seedPreviousSchemaRelease$"
-    },
-    {
-      "id": "TX-0034",
-      "file": "turbo/apps/api/src/signals/routes/test-ssh-connection-state.ts",
-      "owner": "createRuntime"
     },
     {
       "id": "TX-0035",
@@ -500,11 +480,6 @@
       "id": "TX-0100",
       "file": "turbo/apps/api/src/signals/services/clerk-agent-lifecycle.service.ts",
       "owner": "deletePublicationFencesAfterAuthorityRemoval$"
-    },
-    {
-      "id": "TX-0101",
-      "file": "turbo/apps/api/src/signals/services/cli-auth.service.ts",
-      "owner": "testUserId$"
     },
     {
       "id": "TX-0103",

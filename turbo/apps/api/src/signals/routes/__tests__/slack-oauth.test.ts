@@ -9,7 +9,7 @@ import { readGetStartedStatus } from "./helpers/get-started";
 import { randomBytes, randomUUID } from "node:crypto";
 
 import { createStore } from "ccstate";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
@@ -17,14 +17,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { mockNow, withMockNowForTest } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { slackOauthRoutes } from "../slack-oauth";
-import {
-  countSlackOrgConnections$,
-  deleteSlackConnectOrg$,
-  findSlackOrgInstallation$,
-  seedSlackConnectOrg$,
-  type SlackConnectFixture,
-} from "./helpers/slack-connect";
-import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
+import { createRouteMocks } from "./helpers/route-test";
 import {
   createPublicSlackOrgApi,
   type PublicSlackOrgOptions,
@@ -173,10 +166,6 @@ async function seedMembership(
 }
 
 describe("Slack OAuth API routes", () => {
-  const track = createFixtureTracker<SlackConnectFixture>(async (fixture) => {
-    await store.set(deleteSlackConnectOrg$, fixture, context.signal);
-  });
-
   function applyOAuthTestEnv(): void {
     mockEnv("OKOU_WEB_URL", WEB_ORIGIN);
     mockEnv("OKOU_API_BACKEND_URL", undefined);
@@ -205,6 +194,9 @@ describe("Slack OAuth API routes", () => {
    */
   async function installPublicOrg(options: PublicSlackOrgOptions = {}) {
     const fixture = await slackOrgs.installOrg(options);
+    onTestFinished(() =>
+      {return slackOrgs.uninstallWorkspace(fixture.slackWorkspaceId)},
+    );
     await flushWaitUntilForTest();
     applyOAuthTestEnv();
     context.mocks.slack.chat.postMessage.mockClear();
@@ -938,9 +930,7 @@ describe("Slack OAuth API routes", () => {
     });
 
     it("updates token and scopes for a same-org platform reinstall", async () => {
-      const fixture = await track(
-        store.set(seedSlackConnectOrg$, {}, context.signal),
-      );
+      const fixture = await installPublicOrg({ withConnection: true });
       await seedMembership(fixture.orgId, fixture.userId, "admin");
       mockOAuthSuccess({
         teamId: fixture.slackWorkspaceId,
@@ -963,32 +953,28 @@ describe("Slack OAuth API routes", () => {
       expect(response.headers.get("location")).toContain(
         `${APP_ORIGIN}/settings/slack?status=connected`,
       );
-      const installation = await store.set(
-        findSlackOrgInstallation$,
-        fixture.slackWorkspaceId,
-        context.signal,
-      );
-      expect(installation).toMatchObject({
-        orgId: fixture.orgId,
-        slackWorkspaceName: "Renamed Workspace",
-        botUserId: "B_REFRESHED",
-        botScopes: JSON.stringify([
-          "chat:write",
-          "channels:read",
-          "users:read",
-        ]),
+      await expect(
+        readIntegrationStatus(fixture.orgId, fixture.userId),
+      ).resolves.toMatchObject({
+        isInstalled: true,
+        isConnected: true,
+        workspaceName: "Renamed Workspace",
+        scopeMismatch: true,
       });
+      await flushWaitUntilForTest();
+      expect(context.mocks.slack.createClient.mock.calls.map(([token]) => {return token})).toContain(
+        "xoxb-refreshed-token",
+      );
+      expect(
+        JSON.stringify(context.mocks.slack.chat.postMessage.mock.calls),
+      ).toContain("<@B_REFRESHED>");
     });
 
-    it("creates a single connection across duplicate platform installs", async () => {
-      const fixture = await track(
-        store.set(
-          seedSlackConnectOrg$,
-          { installationOrgId: null },
-          context.signal,
-        ),
+    it("keeps duplicate platform installs connected and rewards them once", async () => {
+      const fixture = unseededIdentity();
+      onTestFinished(() =>
+        {return slackOrgs.uninstallWorkspace(fixture.slackWorkspaceId)},
       );
-      await store.set(deleteSlackConnectOrg$, fixture, context.signal);
       await seedMembership(fixture.orgId, fixture.userId, "admin");
       const state = await installStateFor({
         orgId: fixture.orgId,
@@ -1011,12 +997,9 @@ describe("Slack OAuth API routes", () => {
       );
 
       expect(response.status).toBe(307);
-      const count = await store.set(
-        countSlackOrgConnections$,
-        fixture.slackWorkspaceId,
-        context.signal,
-      );
-      expect(count).toBe(1);
+      await expect(
+        readIntegrationStatus(fixture.orgId, fixture.userId),
+      ).resolves.toMatchObject({ isInstalled: true, isConnected: true });
       const rewards = await readGetStartedStatus(context, fixture);
       expect(
         rewards.quests.find((q) => {

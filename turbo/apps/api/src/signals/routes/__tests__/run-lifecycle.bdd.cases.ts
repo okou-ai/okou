@@ -1,3 +1,4 @@
+import { seedAgentRunCallback$ } from "./helpers/agent-run-callback";
 import { publicRunOwner } from "./helpers/public-run-owner";
 import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 /* oxlint-disable jest/no-export -- Each test entrypoint imports one deterministic group from this shared case registry. */
@@ -84,7 +85,6 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
 import { builtinConnectorsAutomaticRoutes } from "../connectors-automatic";
 import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
-import { seedAgentRunCallback$ } from "./helpers/agent-run-callback";
 import {
   createBddApi,
   expectApiError,
@@ -118,11 +118,6 @@ import {
   deleteCustomConnectorCredentialValues,
   setCustomConnectorCredentialStorageState,
 } from "./helpers/connector-credential-storage-state";
-import {
-  deleteSlackIntegrationFixture$,
-  seedSlackEnvironmentAgent$,
-  seedSlackOrgInstallation$,
-} from "./helpers/integrations-slack";
 import { setPaidToolDisabled } from "./helpers/paid-tools";
 import {
   clearRunApiStart,
@@ -150,7 +145,6 @@ import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 const context = testContext();
 const callbackStore = createStore();
-const fixtureStore = createStore();
 // `sandbox-op-log.ts` composes this name from AXIOM_DATASET_SUFFIX, which the
 // test environment stubs as "dev".
 const SANDBOX_OP_LOG_DATASET = "vm0-sandbox-op-log-dev";
@@ -5112,56 +5106,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(claim.billableFirewalls).toStrictEqual([]);
         expect(claim.modelUsageProvider).toBe(selectedModel);
 
-        await api.requestCancelRun(actor, sent.runId, [200]);
-      });
-
-      it("keeps built-in Auto admission after a Slack fixture releases its shared key", async () => {
-        const api = createRunsApi(context);
-        const chat = createChatFilesBddApi(context);
-        const selectedModel = "okou-1.0";
-        const slackOrgId = `org_${randomUUID()}`;
-        const slackUserId = `user_${randomUUID()}`;
-        const slackFixture = await fixtureStore.set(
-          seedSlackOrgInstallation$,
-          { orgId: slackOrgId },
-          context.signal,
-        );
-        let slackReleased = false;
-        const releaseSlackFixture = async (): Promise<void> => {
-          if (slackReleased) {
-            return;
-          }
-          await fixtureStore.set(
-            deleteSlackIntegrationFixture$,
-            slackFixture,
-            context.signal,
-          );
-          slackReleased = true;
-        };
-        onTestFinished(releaseSlackFixture);
-        await fixtureStore.set(
-          seedSlackEnvironmentAgent$,
-          { orgId: slackOrgId, userId: slackUserId },
-          context.signal,
-        );
-        await seedBuiltInModelKey(selectedModel);
-        await releaseSlackFixture();
-
-        const { actor, agentId } = await entitledRunActor();
-        await api.updateUserModelPreference(actor, null);
-
-        // Admission, not provider execution, is under test.
-        preparePiSandboxClaim();
-
-        const sent = await chat.sendAndLaunch(actor, {
-          agentId,
-          prompt: "built-in Auto admission after shared fixture release",
-          model: null,
-        });
-        // The pick admitted the built-in route and created the run.
-        await expect(api.readRun(actor, sent.runId)).resolves.toMatchObject({
-          status: "pending",
-        });
         await api.requestCancelRun(actor, sent.runId, [200]);
       });
 

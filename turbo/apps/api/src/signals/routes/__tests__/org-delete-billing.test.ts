@@ -1,15 +1,15 @@
+import { createPublicSlackOrgApi } from "./helpers/slack-public-install";
+import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
+import { integrationsSlackRoutes } from "../integrations-slack";
 import { randomUUID } from "node:crypto";
 
-import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
 import { orgDeleteContract } from "@okouai/api-contracts/contracts/org-routes";
-import { createStore } from "ccstate";
 import type StripeSDK from "stripe";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, onTestFinished, test } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { clearMockNow, mockNow } from "../../../lib/time";
-import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
   mockStripeClient,
@@ -18,16 +18,11 @@ import {
   type StripeInvoiceLine,
   type StripeSubscription,
 } from "../../external/stripe-client";
-import { agentsRoutes } from "../agents";
 import { orgDeleteRoutes } from "../org-delete";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import {
-  findSlackOrgConnection$,
-  seedSlackConnectOrg$,
-} from "./helpers/slack-connect";
 import { createRouteMocks } from "./helpers/route-test";
 import {
   createBillingWebhookFixture,
@@ -40,7 +35,7 @@ import {
 } from "./helpers/stripe-billing-webhook";
 
 const context = testContext();
-const store = createStore();
+const slackOrgs = createPublicSlackOrgApi(context);
 const mocks = createRouteMocks(context);
 
 interface OrgDeleteBillingFixture extends BillingWebhookFixture {
@@ -869,18 +864,6 @@ test("does not delete the org when its proportional refund fails", async () => {
     orgRole: "org:admin",
     email: "org-delete-refund-failure@example.test",
   };
-  const okouToken = signSandboxJwtForTests({
-    scope: "okou",
-    userId: fixture.userId,
-    orgId: fixture.orgId,
-    runId: "run_org_delete_refund_failure",
-    capabilities: ["agent:read"],
-    iat: deletionTimestamp,
-    exp: deletionTimestamp + 60,
-  });
-  const agents = setupApp({ context, routes: agentsRoutes })(
-    agentsMainContract,
-  );
   const misc = createMiscRoutesApi(context);
 
   mockNow(deletionTimestamp * 1000);
@@ -894,25 +877,17 @@ test("does not delete the org when its proportional refund fails", async () => {
       },
     ],
   });
-  await accept(
-    agents.list({
-      headers: { authorization: `Bearer ${okouToken}` },
-    }),
-    [200],
-  );
   await misc.updatePreferences(
     actor,
     { timezone: "Asia/Shanghai", locale: "en-US" },
     [200],
   );
-  const slackFixture = await store.set(
-    seedSlackConnectOrg$,
-    {
-      orgId: fixture.orgId,
-      userId: fixture.userId,
-      withConnection: true,
-    },
-    context.signal,
+  const slackFixture = await slackOrgs.installOrg({
+    actor,
+    withConnection: true,
+  });
+  onTestFinished(() =>
+    {return slackOrgs.uninstallWorkspace(slackFixture.slackWorkspaceId)},
   );
   mockOrgDeletion(fixture);
   context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
@@ -949,34 +924,18 @@ test("does not delete the org when its proportional refund fails", async () => {
     timezone: "Asia/Shanghai",
     locale: "en-US",
   });
-  context.mocks.clerk.users.getOrganizationMembershipList.mockClear();
-  context.mocks.clerk.users.getOrganizationMembershipList.mockRejectedValue(
-    new Error("Clerk membership lookup unavailable"),
-  );
-  await accept(
-    agents.list({
-      headers: { authorization: `Bearer ${okouToken}` },
-    }),
+  mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+  const slackStatus = await accept(
+    setupApp({ context, routes: integrationsSlackRoutes })(
+      integrationsSlackContract,
+    ).getStatus({ headers: { authorization: "Bearer clerk-session" } }),
     [200],
   );
-  expect(
-    context.mocks.clerk.users.getOrganizationMembershipList,
-  ).not.toHaveBeenCalled();
-  await expect(
-    store.set(
-      findSlackOrgConnection$,
-      {
-        slackWorkspaceId: slackFixture.slackWorkspaceId,
-        slackUserId: slackFixture.slackUserId,
-      },
-      context.signal,
-    ),
-  ).resolves.toStrictEqual(
-    expect.objectContaining({
-      userId: fixture.userId,
-      slackWorkspaceId: slackFixture.slackWorkspaceId,
-    }),
-  );
+  expect(slackStatus.body).toMatchObject({
+    isInstalled: true,
+    isConnected: true,
+    workspaceName: slackFixture.slackWorkspaceName,
+  });
 });
 
 test("fails closed when a Stripe page has no continuation cursor", async () => {

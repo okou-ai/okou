@@ -85,7 +85,6 @@ import { desktopAuthRoutes } from "./routes/desktop-auth";
 import { desktopUpdateRoutes } from "./routes/desktop-updates";
 import { discordGatewayRoutes } from "./routes/discord-gateway";
 import { discordInteractionsRoutes } from "./routes/discord-interactions";
-import { discordStatePreviewRoutes } from "./routes/discord-state-preview";
 import { emailInboundRoutes } from "./routes/email-inbound";
 import { emailSubscriptionRoutes } from "./routes/email-subscription";
 import { debugMorningBriefEmailRoutes } from "./routes/debug-morning-brief-email";
@@ -183,7 +182,6 @@ import { slackConnectRoutes } from "./routes/slack-connect";
 import { slackEventsRoutes } from "./routes/slack-events";
 import { slackInteractiveRoutes } from "./routes/slack-interactive";
 import { slackOauthRoutes } from "./routes/slack-oauth";
-import { slackStatePreviewRoutes } from "./routes/slack-state-preview";
 import { socialRoutes } from "./routes/social";
 import { socialDataRoutes } from "./routes/social-data";
 import { sshAccessRoutes } from "./routes/ssh-access";
@@ -414,7 +412,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...slackConnectRoutes,
   // Registered for protected preview QA; the route's environment gate keeps
   // production indistinguishable from an unregistered endpoint.
-  ...slackStatePreviewRoutes,
   ...slackOauthRoutes,
   ...discordInteractionsRoutes,
   ...slackCommandsRoutes,
@@ -441,7 +438,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...integrationsDiscordFileRoutes,
   ...integrationsSlackRoutes,
   ...integrationsDiscordRoutes,
-  ...discordStatePreviewRoutes,
   ...integrationsSlackMessageRoutes,
   ...integrationsSlackReadRoutes,
   ...integrationsDiscordReadRoutes,
