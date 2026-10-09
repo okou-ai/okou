@@ -50,6 +50,7 @@ export enum FeatureSwitchKey {
   VncAccess = "vncAccess",
   PiMemory = "piMemory",
   ComposerTaskChips = "composerTaskChips",
+  ChatComposerLayout = "chatComposerLayout",
   ChatThreadArchiving = "chatThreadArchiving",
   ChatThreadMuting = "chatThreadMuting",
   ComposerAddMenu = "composerAddMenu",

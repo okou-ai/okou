@@ -85,6 +85,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.ChatComposerLayout]: {
+    maintainer: "bingjie@okou.ai",
+    description:
+      "Keep the chat header and input anchored, with a single bottom safe-area reserve.",
+    enabled: false,
+    enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
+    enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
+  },
   [FeatureSwitchKey.BrowserNativeInput]: {
     maintainer: "liangyou@okou.ai",
     description:

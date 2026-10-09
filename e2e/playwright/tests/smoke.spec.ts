@@ -2,13 +2,19 @@ import type { Locator } from "@playwright/test";
 
 import { resolveApiBackendUrl } from "../api-backend-url";
 import { expect, test } from "../fixtures";
-import { signInWithClerkEmailCode } from "../lib/auth";
+import {
+  refreshClerkSessionToken,
+  signInWithClerkEmailCode,
+} from "../lib/auth";
 import {
   createOrganization,
   createUser,
   generateTestEmail,
 } from "../lib/clerk-api";
-import { completePromptOnboarding } from "../lib/onboarding";
+import {
+  authHeadersForToken,
+  completePromptOnboarding,
+} from "../lib/onboarding";
 import { deriveAppUrl } from "../playwright.config";
 
 async function expectChatShellInPlace(workspace: Locator): Promise<void> {
@@ -78,6 +84,26 @@ test("send a message and receive the assistant reply", async ({ page }) => {
       .first(),
   ).toContainText(expectedAnswer, { timeout: 90_000 });
 
+  const chatUrl = page.url();
+  await test.step("opt into the composer layout from Lab", async () => {
+    const token = await refreshClerkSessionToken(page);
+    const response = await page.request.post(
+      new URL("/api/feature-switches", apiUrl).toString(),
+      {
+        headers: authHeadersForToken(token),
+        data: { switches: { _lab: true } },
+      },
+    );
+    expect(response.status()).toBe(200);
+    await page.goto(new URL("/_/lab", appUrl).toString());
+    const control = page.getByRole("switch", { name: /^chatComposerLayout\b/ });
+    await expect(control).not.toBeChecked();
+    await control.click();
+    await expect(control).toBeChecked();
+    await expect(control).toBeEnabled();
+    await page.goto(chatUrl);
+  });
+
   await test.step("keep the chat shell fixed while editing and resizing", async () => {
     const workspace = page.getByTestId("workspace-inset");
     const editor = workspace.locator(
@@ -146,6 +172,41 @@ test("send a message and receive the assistant reply", async ({ page }) => {
         })
         .toBe(Math.max(16, inset));
     }
+    await page.evaluate(() => {
+      document.documentElement.style.removeProperty("--sab");
+    });
+  });
+
+  await test.step("restore the original layout when opted out", async () => {
+    await page.goto(new URL("/_/lab", appUrl).toString());
+    const control = page.getByRole("switch", { name: /^chatComposerLayout\b/ });
+    await expect(control).toBeChecked();
+    await control.click();
+    await expect(control).not.toBeChecked();
+    await expect(control).toBeEnabled();
+    await page.goto(chatUrl);
+    const workspace = page.getByTestId("workspace-inset");
+    await expect(
+      workspace.locator('[data-slot="chat-composer-card"]'),
+    ).toBeVisible();
+    await page.evaluate(() => {
+      document.documentElement.style.setProperty("--sab", "24px");
+    });
+    await expect
+      .poll(() =>
+        workspace.evaluate((pane) => {
+          const footer = pane.querySelector("[data-chat-composer]");
+          const card = footer?.querySelector(
+            '[data-slot="chat-composer-card"]',
+          );
+          if (!footer || !card) throw new Error("Expected the chat composer");
+          return Math.round(
+            footer.getBoundingClientRect().bottom -
+              card.getBoundingClientRect().bottom,
+          );
+        }),
+      )
+      .toBe(32);
     await page.evaluate(() => {
       document.documentElement.style.removeProperty("--sab");
     });

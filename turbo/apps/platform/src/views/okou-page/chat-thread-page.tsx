@@ -4235,6 +4235,8 @@ function splitQueuedEventsForThinkingIndicator(groups: ChatEventGroup[]): {
 
 function ChatThreadComposer({ thread }: { thread: ChatPanelSignals }) {
   const composerLayoutRef = useSet(thread.composerLayoutOnRef$);
+  const fixedLayout =
+    useGet(featureSwitch$)[FeatureSwitchKey.ChatComposerLayout];
   const standalonePwa = isStandalonePwa();
 
   // The pane's canvas runs behind the composer the way it runs behind the
@@ -4245,15 +4247,15 @@ function ChatThreadComposer({ thread }: { thread: ChatPanelSignals }) {
     <footer
       data-chat-composer
       ref={composerLayoutRef}
-      className="relative shrink-0"
+      className={cn("relative shrink-0", !fixedLayout && "pb-safe-or-2")}
     >
-      {/* The gutter and safe area share one bottom reserve. Adding padding
-          on the content as well makes the gap grow beyond the safe area
-          when a mobile browser restores it after dismissing the keyboard.
-          Keep that reserve inside the scrollport without negative margins. */}
+      {/* The enabled layout keeps the gutter and safe area in one reserve,
+          without a negative margin extending beyond the footer. Keep the
+          original layout while the rollout is disabled. */}
       <div
         className={cn(
-          "overflow-y-auto [scrollbar-gutter:stable] pb-safe-or-4 pl-4 pr-4 pt-3 sm:pl-6 sm:pr-6",
+          "overflow-y-auto [scrollbar-gutter:stable] pl-4 pr-4 pt-3 sm:pl-6 sm:pr-6",
+          fixedLayout ? "pb-safe-or-4" : "-mb-8 pb-10",
           standalonePwa && "overscroll-contain",
         )}
       >

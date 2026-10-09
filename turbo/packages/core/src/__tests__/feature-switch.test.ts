@@ -26,6 +26,24 @@ describe("FeatureSwitchKey", () => {
 });
 
 describe("isFeatureEnabled", () => {
+  it("limits the chat composer layout rollout to Bingjie and honors opt-out", () => {
+    const key = FeatureSwitchKey.ChatComposerLayout;
+    expect(isFeatureEnabled(key, {})).toBe(false);
+    expect(
+      isFeatureEnabled(key, {
+        email: "ethan@okou.ai",
+        orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+      }),
+    ).toBe(false);
+    expect(isFeatureEnabled(key, { email: "BINGJIE@OKOU.AI" })).toBe(true);
+    expect(
+      isFeatureEnabled(key, {
+        email: "bingjie@okou.ai",
+        overrides: { [key]: false },
+      }),
+    ).toBe(false);
+  });
+
   it("enables presentation conversion for Bingjie across workspaces", () => {
     for (const orgId of [
       undefined,
