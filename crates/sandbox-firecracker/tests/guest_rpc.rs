@@ -53,7 +53,7 @@ async fn exercise_factories(runtime: &FirecrackerRuntime, base: PathBuf) -> Test
                 snapshot,
             })
             .await?;
-        // Match the vm0/default image selected by runner-build in metal CI.
+        // Match the vm0/default image selected by runner-test-prepare in metal CI.
         let created = factory
             .create(SandboxConfig {
                 id: sandbox::SandboxId::new_v4(),
