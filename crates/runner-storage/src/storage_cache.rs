@@ -1793,7 +1793,7 @@ fn reuse_decoded(
     };
     // Reader capability can exceed the active producer policy during rollout.
     // The positive entry was validated; do not select a wider outbound shape yet.
-    if !decoded::admitted_for_delivery(&files.files) {
+    if !decoded::admitted_for_delivery(&files) {
         return Ok(false);
     }
     // An archive may still be required by another target sharing this key,

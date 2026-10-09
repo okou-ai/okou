@@ -32,6 +32,7 @@ pub(super) const REJECTION_BATCH_SIZE: usize = 16;
 #[derive(Debug)]
 pub struct CachedFiles {
     pub files: Vec<StorageFile>,
+    compressed_bytes: usize,
     pub(crate) archive_retirement_candidate: bool,
     _memory: OwnedSemaphorePermit,
 }
@@ -214,7 +215,7 @@ impl DecodedCache {
                         result.push(None);
                         continue;
                     };
-                    let files = disk::read_with_budget(
+                    let files = disk::read_with_source_size(
                         &inner.home,
                         &name,
                         &version,
@@ -223,11 +224,19 @@ impl DecodedCache {
                         &inner.cancel,
                     )?
                     .flatten();
-                    if let Some(files) = &files {
-                        ready_bytes += files.iter().map(|file| file.content.len()).sum::<usize>();
-                        ready_files += files.len();
+                    if let Some(entry) = &files {
+                        ready_bytes += entry
+                            .files
+                            .iter()
+                            .map(|file| file.content.len())
+                            .sum::<usize>();
+                        ready_files += entry.files.len();
                     }
-                    result.push(files.map(|files| {
+                    result.push(files.map(|entry| {
+                        let disk::ReadFiles {
+                            files,
+                            compressed_bytes,
+                        } = entry;
                         // Only a scheduling hint, not authority to delete. An
                         // absent archive must not repeatedly consume the bounded
                         // background queue. Errors are handled by retirement,
@@ -238,7 +247,7 @@ impl DecodedCache {
                             .join("archive.tar.gz");
                         let candidate = !matches!(std::fs::symlink_metadata(archive),
                             Err(error) if error.kind() == io::ErrorKind::NotFound);
-                        cached_files(files, memory, candidate)
+                        cached_files(files, memory, candidate, compressed_bytes)
                     }));
                 }
                 Ok(result)
@@ -356,7 +365,7 @@ impl DecodedCache {
                 files.as_deref(),
                 &inner.cancel,
             )?;
-            Ok(files.map(|files| cached_files(files, memory, false)))
+            Ok(files.map(|files| cached_files(files, memory, false, bytes.len())))
         })
         .await
         .map(Option::flatten)
@@ -367,6 +376,7 @@ fn cached_files(
     files: Vec<StorageFile>,
     mut memory: OwnedSemaphorePermit,
     archive_retirement_candidate: bool,
+    compressed_bytes: usize,
 ) -> Arc<CachedFiles> {
     let charged = files.capacity() * std::mem::size_of::<StorageFile>()
         + files
@@ -379,14 +389,21 @@ fn cached_files(
     }
     Arc::new(CachedFiles {
         files,
+        compressed_bytes,
         archive_retirement_candidate,
         _memory: memory,
     })
 }
 
-pub(super) fn admitted_for_delivery(files: &[StorageFile]) -> bool {
-    files.len() <= MAX_ADMITTED_FILES
-        && files.iter().map(|file| file.content.len()).sum::<usize>() <= MAX_ADMITTED_STORAGE_BYTES
+pub(super) fn admitted_for_delivery(files: &CachedFiles) -> bool {
+    files.compressed_bytes <= MAX_ADMITTED_COMPRESSED_BYTES
+        && files.files.len() <= MAX_ADMITTED_FILES
+        && files
+            .files
+            .iter()
+            .map(|file| file.content.len())
+            .sum::<usize>()
+            <= MAX_ADMITTED_STORAGE_BYTES
 }
 
 fn decode(bytes: &[u8], cancel: &CancellationToken) -> io::Result<Option<Vec<StorageFile>>> {

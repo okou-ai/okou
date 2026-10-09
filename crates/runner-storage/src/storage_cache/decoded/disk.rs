@@ -242,6 +242,23 @@ pub(super) fn read_with_budget(
     file_budget: usize,
     cancel: &CancellationToken,
 ) -> io::Result<Option<Option<Vec<StorageFile>>>> {
+    read_with_source_size(home, name, version, content_budget, file_budget, cancel)
+        .map(|entry| entry.map(|files| files.map(|entry| entry.files)))
+}
+
+pub(super) struct ReadFiles {
+    pub(super) files: Vec<StorageFile>,
+    pub(super) compressed_bytes: usize,
+}
+
+pub(super) fn read_with_source_size(
+    home: &HomePaths,
+    name: &str,
+    version: &str,
+    content_budget: usize,
+    file_budget: usize,
+    cancel: &CancellationToken,
+) -> io::Result<Option<Option<ReadFiles>>> {
     read_entry(
         home,
         name,
@@ -312,7 +329,7 @@ fn read_entry(
     content_budget: usize,
     file_budget: usize,
     cancel: &CancellationToken,
-) -> io::Result<Option<Option<Vec<StorageFile>>>> {
+) -> io::Result<Option<Option<ReadFiles>>> {
     check_cancel(cancel)?;
     let key = EntryKey::new(name, version, rejected);
     let path = key.directory(home);
@@ -361,7 +378,7 @@ fn read_locked_entry(
     content_budget: usize,
     file_budget: usize,
     cancel: &CancellationToken,
-) -> io::Result<Option<Option<Vec<StorageFile>>>> {
+) -> io::Result<Option<Option<ReadFiles>>> {
     let path = EntryKey::new(name, version, rejected).directory(home);
     let root = match open_entry(home, name, version, rejected) {
         Ok(root) => root,
@@ -441,7 +458,10 @@ fn read_locked_entry(
     }
     check_cancel(cancel)?;
     touch_mtime(&path);
-    Ok(Some(Some(files)))
+    Ok(Some(Some(ReadFiles {
+        files,
+        compressed_bytes: index.compressed_bytes,
+    })))
 }
 
 pub(super) fn retire_archive(

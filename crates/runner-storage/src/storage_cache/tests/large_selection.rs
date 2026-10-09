@@ -97,7 +97,9 @@ async fn preparation_keeps_small_delivery_policy_for_valid_larger_v1_positives()
     for (name, count, bytes, selected) in [
         ("small", 32, 64, true),
         ("count", 33, 64, false),
-        ("content-boundary", 4, 256 * 1024, true),
+        ("small-content", 3, 256 * 1024, true),
+        // Stored gzip framing exceeds 1 MiB despite decoded content fitting.
+        ("gzip-overflow", 4, 256 * 1024, false),
         ("content-overflow", 5, 256 * 1024, false),
     ] {
         seed_later_writer(&home, name, count, bytes);
