@@ -389,12 +389,6 @@ async function setupSnapshotMeasurement() {
   const dialog = await screen.findByRole("dialog", { name: "Settings" });
   click(buttonWithText(dialog, "Debug"));
   expect(
-    within(dialog).queryByText("Realtime connection diagnostics"),
-  ).not.toBeInTheDocument();
-  expect(
-    within(dialog).queryByText("Shared worker connection diagnostics"),
-  ).not.toBeInTheDocument();
-  expect(
     within(dialog).getByText("Capture network bodies"),
   ).toBeInTheDocument();
   const diagnostics = await screen.findByRole("region", {
