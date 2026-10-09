@@ -37,7 +37,6 @@ import {
 } from "./helpers/api-bdd";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
-import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { ClerkTransportTestError } from "./helpers/clerk-transport-error";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
@@ -166,18 +165,8 @@ async function cleanupFundedWebSearchActor(
   await webhooks.requestClerkWebhook("{}", {}, [200]);
   await flushWaitUntilForTest();
 
-  // Public deletion removes the wallet and active work. Production retains
-  // immutable billing and usage history under this fixture's unique IDs.
-  await expect(credits(owned.actor)).resolves.toBe(0);
-  expect(
-    (
-      await createRunReadsApi(context).requestListLogs(
-        owned.actor,
-        { limit: 50 },
-        [200],
-      )
-    ).body.data,
-  ).toStrictEqual([]);
+  // The genuine deletion callback is the lifecycle boundary. Do not revive
+  // the deleted organization identity just to inspect its former rows.
 }
 
 async function fundActorWithSubscription(

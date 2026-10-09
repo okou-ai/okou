@@ -9,10 +9,14 @@ import {
   createAuthOrgAgentsBddApi,
   type ApiTestUser,
 } from "./helpers/api-bdd-auth-org";
-import { createBddApi, expectApiError } from "./helpers/api-bdd";
+import { expectApiError } from "./helpers/api-bdd";
 import { createUserConfigBddApi } from "./helpers/api-bdd-user-config";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createPublicFirewallFixture } from "./helpers/public-firewall-fixture";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { env, mockEnv } from "../../../lib/env";
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 /*
@@ -639,29 +643,70 @@ describe("AUTH-02 public CLI PAT identity", () => {
 
 describe("AUTH-01 sandbox and agent bearers", () => {
   it("reads identity with actual Runner-issued sandbox and agent credentials", async () => {
-    const owned = createPublicFirewallFixture(context);
-    await owned.run(async () => {
-      const bdd = createBddApi(context);
-      const runs = createRunsApi(context);
-      bdd.acceptAgentStorageWrites();
+    const fixture = createChatEventsFixture(context);
+    const runs = createRunsApi(context);
+    let carrier:
+      | {
+          actor: ApiTestUser;
+          agentId: string;
+          kmsKeyId: string | undefined;
+          storageBucket: string;
+          runId?: string;
+          sandboxToken?: string;
+        }
+      | undefined;
+    const owner = createFixtureOperationOwner(async () => {
+      if (!carrier) {
+        return;
+      }
+      mockEnv("SECRETS_KMS_KEY_ID", carrier.kmsKeyId);
+      mockEnv("R2_USER_STORAGES_BUCKET_NAME", carrier.storageBucket);
       runs.acceptStorageDownloads();
       runs.acceptTelemetryIngest();
-      runs.configureRunnerGroup();
-      await owned.fund();
-      await runs.ensurePersonalSubscriptionModel(owned.actor, {
-        model: "claude-fable-5-1",
-      });
-      const agent = await bdd.createAgent(owned.actor, {
-        visibility: "private",
-      });
-      owned.registerAgent(agent.agentId);
-      const run = await runs.createThreadRun(owned.actor, {
-        agentId: agent.agentId,
+      if (carrier.runId) {
+        const current = await runs.readRun(carrier.actor, carrier.runId);
+        if (current.status === "pending" || current.status === "running") {
+          await runs.requestCancelRun(carrier.actor, carrier.runId, [200]);
+        }
+        if (
+          carrier.sandboxToken &&
+          ["pending", "running", "cancelled"].includes(current.status)
+        ) {
+          await createWebhookCallbackApi(context).requestAgentComplete(
+            {
+              runId: carrier.runId,
+              exitCode: 1,
+              error: "Identity carrier cancelled",
+            },
+            { authorization: `Bearer ${carrier.sandboxToken}` },
+            [200],
+          );
+        }
+      }
+      await flushWaitUntilForTest();
+      await api.deleteAgent(carrier.actor, carrier.agentId);
+      await flushWaitUntilForTest();
+    });
+    await owner.run(async () => {
+      const owned = await fixture.entitledNativeChatActor();
+      const activeCarrier: NonNullable<typeof carrier> = {
+        actor: owned.actor,
+        agentId: owned.agentId,
+        kmsKeyId: env("SECRETS_KMS_KEY_ID"),
+        storageBucket: env("R2_USER_STORAGES_BUCKET_NAME"),
+      };
+      carrier = activeCarrier;
+      const run = await fixture.sendChatRun(owned.actor, {
+        agentId: owned.agentId,
         prompt: "read the identity issued to this Run",
         model: "claude-fable-5-1",
       });
-      const claim = await runs.claimRunnerJob(run.runId);
-      owned.registerClaim(run.runId, claim.sandboxToken);
+      activeCarrier.runId = run.runId;
+      const { claim } = await fixture.claimChatRun(
+        owned.runnerGroup,
+        run.runId,
+      );
+      activeCarrier.sandboxToken = claim.sandboxToken;
       cfg.mockSession(null);
       cfg.mockClerkUsers([owned.actor]);
       cfg.mockMembership(owned.actor, "org:admin");
