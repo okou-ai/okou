@@ -43,12 +43,13 @@ pub enum RunnerPreferenceTier {
     FinalizingPredecessor,
     ReusableSandbox,
     WorkspaceCache,
+    HomeCache,
 }
 
 impl RunnerPreferenceTier {
     pub fn rank(self) -> u8 {
         match self {
-            Self::WorkspaceCache => 1,
+            Self::WorkspaceCache | Self::HomeCache => 1,
             Self::ReusableSandbox => 2,
             Self::FinalizingPredecessor => 3,
             Self::ExactSandbox => 4,

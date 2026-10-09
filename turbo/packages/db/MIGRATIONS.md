@@ -112,6 +112,18 @@ are enforced by the integration ingress tests.
 
 ### Active transition validators
 
+- `scripts/test-runner-home-affinity-preparation.ts` protects migration
+  `1357_prepare_home_affinity`: default-empty home observations, preservation of
+  outgoing workspace data, real outgoing/prepared ORM INSERT/UPSERT/SELECT and
+  implicit RETURNING, independently stamped capability, outgoing API generation
+  and sequence advancement without updating home columns, replay fencing and
+  capable empty state. Its frozen outgoing mapping is from
+  `3dcf096997cdd5448a74df524afba9a2ac46df91`. Retain it through #38139's deployed
+  application-SQL retirement and #38140's later physical contraction/drain gate;
+  merge or elapsed time does not satisfy those gates. Run only on disposable
+  databases. Migration precedes prepared API promotion; no production migration
+  is performed by this validator.
+
 - `scripts/test-usage-allowance-retirement.ts` protects migration
   `1356_drop_organization_usage_allowance`: positive team Allowance rows are
   discarded while ordinary usage quantities, original credit charges and wallets

@@ -1954,6 +1954,13 @@
       "when": 1791512015016,
       "tag": "1356_drop_organization_usage_allowance",
       "breakpoints": true
+    },
+    {
+      "idx": 1357,
+      "version": "7",
+      "when": 1791517702020,
+      "tag": "1357_prepare_home_affinity",
+      "breakpoints": true
     }
   ]
 }

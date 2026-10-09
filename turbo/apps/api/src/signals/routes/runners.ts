@@ -16,6 +16,7 @@ import {
   STEERED_INPUT_RUN_NOT_RUNNING_ERROR_CODE,
   type ExecutionContext,
   type HeldSandboxState,
+  type HeldHomeState,
   type HeldWorkspaceState,
   type RunnerClaimCapabilities,
   type RunnerInstalledVersions,
@@ -37,9 +38,10 @@ import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import {
   runnerState,
   type RunnerHeldSandboxState as PersistedRunnerHeldSandboxState,
+  type RunnerHeldHomeState as PersistedRunnerHeldHomeState,
   type RunnerHeldWorkspaceState as PersistedRunnerHeldWorkspaceState,
 } from "@okouai/db/schema/runner-state";
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import {
   and,
   desc,
@@ -110,6 +112,7 @@ import { historyGenerationRunIdForStoredExecutionContext } from "../services/his
 import { resolvePiModelConfigForClaim } from "../services/pi-model-config-claim-capability";
 import {
   resolveRunnerReusePreference$,
+  createClaimRunnerPreferenceProjection,
   runnerPreferenceTelemetryDimensions,
   runnerPreferenceTelemetryResolution,
   runnerReuseKeyTelemetryKind,
@@ -493,6 +496,33 @@ function canonicalizeHeldWorkspaceStates(
   });
 }
 
+function canonicalizeHeldHomeStates(
+  states: readonly HeldHomeState[],
+): PersistedRunnerHeldHomeState[] {
+  return states.map((state) => {
+    const [first, ...remaining] = state.homeCaches;
+    if (!first) {
+      throw new Error("Held home state requires a home cache");
+    }
+    return {
+      reuseKey: state.reuseKey,
+      lastCompletedAt: new Date(state.lastCompletedAt).toISOString(),
+      homeCaches: [
+        {
+          profile: first.profile,
+          homeAffinityVersion: first.homeAffinityVersion,
+        },
+        ...remaining.map((cache) => {
+          return {
+            profile: cache.profile,
+            homeAffinityVersion: cache.homeAffinityVersion,
+          };
+        }),
+      ],
+    };
+  });
+}
+
 const heartbeatBody$ = bodyResultOf(runnersHeartbeatContract.heartbeat);
 
 const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -518,6 +548,14 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const heldWorkspaceStates = canonicalizeHeldWorkspaceStates(
     body.data.heldWorkspaceStates,
   );
+  const homeAffinityVersion =
+    auth.type === "official-runner" && body.data.homeAffinityVersion === 1
+      ? 1
+      : null;
+  const heldHomeStates =
+    homeAffinityVersion === 1
+      ? canonicalizeHeldHomeStates(body.data.heldHomeStates)
+      : [];
   const admittableProfiles = body.data.admittableProfiles;
   const currentDate = nowDate();
   // User PAT heartbeats are valid for their existing Runner flows, but cannot
@@ -546,6 +584,12 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       admittableProfiles,
       heldSandboxStates,
       heldWorkspaceStates,
+      heldHomeStates,
+      homeAffinityVersion,
+      homeAffinityGeneration:
+        homeAffinityVersion === 1 ? snapshotOrder.generation : null,
+      homeAffinitySequence:
+        homeAffinityVersion === 1 ? snapshotOrder.sequence : null,
       activeReuseProducers: body.data.activeReuseProducers,
       mode: body.data.mode,
       wssIngressServiceActive,
@@ -569,6 +613,12 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         admittableProfiles: sql`CASE WHEN ${runnerState.admittableProfiles} IS DISTINCT FROM excluded.admittable_profiles THEN excluded.admittable_profiles ELSE ${runnerState.admittableProfiles} END`,
         heldSandboxStates: sql`CASE WHEN ${runnerState.heldSandboxStates} IS DISTINCT FROM excluded.held_sandbox_states THEN excluded.held_sandbox_states ELSE ${runnerState.heldSandboxStates} END`,
         heldWorkspaceStates: sql`CASE WHEN ${runnerState.heldWorkspaceStates} IS DISTINCT FROM excluded.held_workspace_states THEN excluded.held_workspace_states ELSE ${runnerState.heldWorkspaceStates} END`,
+        heldHomeStates: sql`CASE WHEN ${runnerState.heldHomeStates} IS DISTINCT FROM excluded.held_home_states THEN excluded.held_home_states ELSE ${runnerState.heldHomeStates} END`,
+        homeAffinityVersion,
+        homeAffinityGeneration:
+          homeAffinityVersion === 1 ? snapshotOrder.generation : null,
+        homeAffinitySequence:
+          homeAffinityVersion === 1 ? snapshotOrder.sequence : null,
         activeReuseProducers: sql`CASE WHEN ${runnerState.activeReuseProducers} IS DISTINCT FROM excluded.active_reuse_producers THEN excluded.active_reuse_producers ELSE ${runnerState.activeReuseProducers} END`,
         mode: body.data.mode,
         wssIngressServiceActive,
@@ -664,6 +714,7 @@ function recordPollTimingMetrics(args: {
 
 function runnerPollPriorityOrder(args: {
   readonly runnerId: string | undefined;
+  readonly homeReader: RunnerClaimIdentity | undefined;
   readonly runnerGroup: string;
   readonly currentDate: Date;
 }): SQL[] {
@@ -674,6 +725,7 @@ function runnerPollPriorityOrder(args: {
     desc(
       runnerReusePreferencePollPriority({
         runnerId: args.runnerId,
+        homeReader: args.homeReader,
         runnerGroup: args.runnerGroup,
         currentDate: args.currentDate,
       }),
@@ -686,6 +738,7 @@ const resolvePollRunnerReusePreference$ = command(
     { set },
     args: {
       readonly runId: string;
+      readonly homeReader: RunnerClaimIdentity | undefined;
       readonly runnerGroup: string;
       readonly profile: string;
       readonly reuseKey: string | null;
@@ -784,8 +837,18 @@ const pollInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(writeDb$);
   const pendingJobLookupStartedAtMs = now();
   const currentDate = nowDate();
+  const homeReader =
+    auth.type === "official-runner" &&
+    body.data.runnerId &&
+    body.data.heartbeatGeneration
+      ? {
+          runnerId: body.data.runnerId,
+          heartbeatGeneration: body.data.heartbeatGeneration,
+        }
+      : undefined;
   const reusePreferencePriorityOrder = runnerPollPriorityOrder({
     runnerId: body.data.runnerId,
+    homeReader,
     runnerGroup: group,
     currentDate,
   });
@@ -801,6 +864,7 @@ const pollInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const runnerPreference = await set(resolvePollRunnerReusePreference$, {
     runId: pendingJob.runId,
+    homeReader,
     runnerGroup: group,
     profile: pendingJob.profile,
     reuseKey: pendingJob.reuseKey,
@@ -844,6 +908,20 @@ const pollInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 const claimBody$ = bodyResultOf(runnersJobClaimContract.claim);
+const claimRunnerPreference$ = createClaimRunnerPreferenceProjection(
+  computed(async (get) => {
+    const body = await get(claimBody$);
+    if (!body.ok) {
+      return undefined;
+    }
+    return {
+      preference: body.data.telemetry?.runnerPreference,
+      reader: body.data.runnerIdentity,
+      runId: get(pathParamsOf(runnersJobClaimContract.claim)).id,
+      currentDate: nowDate(),
+    };
+  }),
+);
 const connectorRuntimeSyncBody$ = bodyResultOf(
   runnersConnectorRuntimeSyncContract.sync,
 );
@@ -2608,6 +2686,21 @@ const claimInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return authError;
   }
 
+  const echoedPreference = body.data.telemetry?.runnerPreference;
+  const runnerPreference =
+    auth.type === "official-runner"
+      ? await tapError(get(claimRunnerPreference$), (error) => {
+          L.warn("Failed to project optional claim preference telemetry", {
+            runId,
+            error,
+          });
+        })
+      : echoedPreference?.kind === "preference" &&
+          echoedPreference.tier === "homeCache"
+        ? undefined
+        : echoedPreference;
+  signal.throwIfAborted();
+
   return await set(
     claimAuthorizedJob$,
     {
@@ -2617,7 +2710,9 @@ const claimInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       runnerAttribution,
       capabilities: body.data.capabilities,
       jobWithRun,
-      telemetry: body.data.telemetry,
+      telemetry: body.data.telemetry
+        ? { ...body.data.telemetry, runnerPreference }
+        : undefined,
       claimRequestStartedAtMs,
       claimRouteTiming,
     },
