@@ -1,7 +1,13 @@
 import { createRouteMocks } from "./route-test";
 import { createFixtureOperationOwner } from "./fixture-operation-owner";
+import { onTestFinished } from "vitest";
 import type { TestContext } from "../../../../__tests__/test-context";
-import { env, mockEnv } from "../../../../lib/env";
+import {
+  env,
+  mockEnv,
+  mockOptionalEnv,
+  optionalEnv,
+} from "../../../../lib/env";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
 import type { ApiTestUser } from "./api-bdd";
 import { createRunsApi } from "./api-bdd-runs";
@@ -20,13 +26,20 @@ export function publicRunOwner(
   const tokens = new Map<string, string>();
   const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
   const kmsKey = env("SECRETS_KMS_KEY_ID");
+  const runnerGroup = optionalEnv("RUNNER_DEFAULT_GROUP");
   let cleaned = false;
+  function restoreEnvironment() {
+    mockEnv("R2_USER_STORAGES_BUCKET_NAME", bucket);
+    mockEnv("SECRETS_KMS_KEY_ID", kmsKey);
+    if (runnerGroup) {
+      mockOptionalEnv("RUNNER_DEFAULT_GROUP", runnerGroup);
+    }
+  }
   async function cleanup() {
     if (cleaned) {
       return;
     }
-    mockEnv("R2_USER_STORAGES_BUCKET_NAME", bucket);
-    mockEnv("SECRETS_KMS_KEY_ID", kmsKey);
+    restoreEnvironment();
     context.mocks.ably.publish.mockResolvedValue(undefined);
     await flushWaitUntilForTest();
     createRouteMocks(context).clerk.session(
@@ -65,6 +78,9 @@ export function publicRunOwner(
     cleaned = true;
   }
   const operations = createFixtureOperationOwner(cleanup);
+  // Finished callbacks run in reverse order, after testContext clears env in
+  // afterEach. Restore the accepted requests' environment before draining them.
+  onTestFinished(restoreEnvironment);
   return {
     run: operations.run,
     cleanup,

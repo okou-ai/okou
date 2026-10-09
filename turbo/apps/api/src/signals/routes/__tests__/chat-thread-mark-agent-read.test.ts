@@ -1,5 +1,8 @@
 import { publicRunOwner } from "./helpers/public-run-owner";
 import { randomUUID } from "node:crypto";
+import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
+import { agentsRoutes } from "../agents";
+import { mockClerkUsers } from "./helpers/clerk-users";
 import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
@@ -188,16 +191,37 @@ async function createUnreadAgentThreads(
   const orgId = `org_${randomUUID()}`;
   const owner = bdd.user({ orgId });
   const actor = bdd.user({ orgId });
-  await runs.grantProEntitlement(actor, {
-    tier: threadCount > 3 ? "team" : "pro",
-  });
-  await runs.ensurePersonalSubscriptionModel(actor, {
-    model: "claude-fable-5-1",
-  });
-  const agent = await bdd.createAgent(owner, {
-    displayName: `Shared ${randomUUID().slice(0, 8)}`,
-    visibility: "public",
-  });
+  createRouteMocks(context).clerk.session(
+    owner.userId,
+    owner.orgId,
+    owner.orgRole,
+  );
+  mockClerkUsers(context, [
+    {
+      id: owner.userId,
+      emailAddresses: [
+        { id: `email_${owner.userId}`, emailAddress: owner.email },
+      ],
+      primaryEmailAddressId: `email_${owner.userId}`,
+      firstName: "Unread",
+      lastName: "Owner",
+    },
+  ]);
+  // Select the existing case-local transport in the first real API request.
+  // All decisive business state below still comes from ordinary public routes.
+  const client = (
+    await setupApp({ context, routes: agentsRoutes, isolatePg: true })
+  )(agentsMainContract);
+  const { body: agent } = await accept(
+    client.create({
+      headers: { authorization: "Bearer clerk-session" },
+      body: {
+        displayName: `Shared ${randomUUID().slice(0, 8)}`,
+        visibility: "public",
+      },
+    }),
+    [201],
+  );
   const owned = publicRunOwner(context, actor, {
     afterRuns: async () => {
       context.mocks.s3.send.mockResolvedValue({
@@ -209,6 +233,15 @@ async function createUnreadAgentThreads(
     },
   });
   return await owned.run(async () => {
+    signal.throwIfAborted();
+    await runs.grantProEntitlement(actor, {
+      tier: threadCount > 3 ? "team" : "pro",
+    });
+    signal.throwIfAborted();
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
+
     const threadIds: string[] = [];
     // Team's ten real admission slots accommodate eight concurrent sends.
     const batchSize = threadCount > 3 ? 8 : 2;
