@@ -23,7 +23,7 @@ guidance only for the surface being changed.
   compatibility contracts when removing unused code.
 - Keep TypeScript type safe: no `any` or lint/type suppression comments, except
   the CI-validated next-line transaction waivers documented in
-  [database transaction lint](docs/eslint/no-db-transaction.md). Use static
+  [database transaction lint](docs/database.md#transaction-lint). Use static
   production imports and fix violations at their source. See
   [code quality](docs/bad-smell.md) for the project's specific boundaries.
 - Write repository artifacts, comments, commits, issues, and PRs in English.
@@ -35,18 +35,20 @@ guidance only for the surface being changed.
 ## Task Routing
 
 Use [the documentation index](docs/docs.md) to select relevant guidance.
+For Platform requests, async ownership, module state, or runtime loading, read
+[Platform ccstate](docs/platform-ccstate.md).
 
-| Changed surface                            | Read                                                                                                        |
-| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
-| Tests or test failures                     | [Testing](docs/testing.md), then the matching application guide                                             |
-| React, signals, async ownership            | [ccstate](.claude/skills/ccstate/SKILL.md), [effects](docs/effect.md), [cache](docs/cache.md) as applicable |
-| App/shared UI styling or interactions      | [Styles](docs/styles.md), [UI interaction contracts](#ui-interaction-contracts)                             |
-| Database schema or queries                 | [Database development](.claude/skills/database-development/SKILL.md)                                        |
-| New user-facing features or switch changes | [Feature switches](.claude/skills/feature-switch/SKILL.md)                                                  |
-| CLI commands                               | [CLI design](.claude/skills/cli-design/SKILL.md)                                                            |
-| Fallbacks or compatibility removal         | [Fallbacks](docs/fallback.md)                                                                               |
-| Persistent or optimistic events            | [Event sourcing](docs/event-sourcing.md)                                                                    |
-| PR review                                  | [Review instructions](REVIEW.md)                                                                            |
+| Changed surface                            | Read                                                                                                          |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| Tests or test failures                     | [Testing](docs/testing.md), then the matching application guide                                               |
+| React, signals, async ownership            | [ccstate](.claude/skills/ccstate/SKILL.md), [effects](docs/effect.md), [cache](docs/cache.md) as applicable   |
+| App/shared UI styling or interactions      | [Styles](docs/styles.md), [UI interaction contracts](#ui-interaction-contracts)                               |
+| Database schema or queries                 | [Database guide](docs/database.md), then [database development](.claude/skills/database-development/SKILL.md) |
+| New user-facing features or switch changes | [Feature switches](.claude/skills/feature-switch/SKILL.md)                                                    |
+| CLI commands                               | [CLI design](.claude/skills/cli-design/SKILL.md)                                                              |
+| Fallbacks or compatibility removal         | [Fallbacks](docs/fallback.md)                                                                                 |
+| Persistent or optimistic events            | [Event sourcing](docs/event-sourcing.md)                                                                      |
+| PR review                                  | [Review instructions](REVIEW.md)                                                                              |
 
 Business UI uses Tailwind utilities and shared semantic tokens. First-party
 selectors, CSS modules, runtime stylesheets, and CSS-in-JS are prohibited in

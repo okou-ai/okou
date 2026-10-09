@@ -1,4 +1,12 @@
-# Platform lint boundaries
+# Platform ccstate and Runtime Boundaries
+
+This guide defines Platform-specific request, asynchronous ownership, module
+state, and runtime import boundaries. Read the shared
+[ccstate references](../.claude/skills/ccstate/SKILL.md) for reactive values,
+commands, lifecycle, HTTP, and React/DOM patterns; use [effects](effect.md),
+[cache](cache.md), and [Platform testing](testing/app-testing.md) when relevant.
+It complements [API ccstate](api-ccstate.md), which owns server-side graph and
+database rules, rather than applying those API rules to browser code.
 
 Platform uses error severity throughout its ESLint policy. `--max-warnings 0`
 remains a guard against warnings introduced by dependencies. Oxlint owns the

@@ -218,7 +218,7 @@ tasks; one was dropped and later restored during #37430.
 - Do not add locks to order the steps of a graph. On the pick path,
   correctness comes from the actual claim predicate and existing ownership
   fences, not a second orchestration lock. Follow
-  [advisory-lock retirement](./advisory-locks.md) for retained invariants. Do not
+  [database concurrency rules](./database.md#concurrency-and-coordination) for retained invariants. Do not
   hide unresolved ordering with `NOWAIT`, lock retry loops, or larger timeouts.
 
 ### 9. No test hooks in production code
@@ -244,56 +244,17 @@ runtime objects, handles copied into state, and callbacks or returned closures
 that hide access to them. Reads obtain `get(db$)` inside their node; writes obtain
 `set(writeDb$)` inside their command.
 
-[Database transaction lint](eslint/no-db-transaction.md) enforces the default
+[Database transaction lint](database.md#transaction-lint) enforces the default
 prohibition and deletion-only legacy inventory. A legacy ID is not approval to
 expand a transaction; new necessary billing exceptions still require review.
 
-Do not introduce new explicit database transactions except for necessary
-billing-related atomicity. The exception is limited to operations that directly
-protect financial correctness, such as charges, refunds, credit or balance
-accounting, and usage settlement. All new non-billing transactions are
-prohibited, even for short multi-statement writes, consistent read snapshots,
-or transaction-local settings.
-
-This rule covers ORM and driver transactions, handwritten SQL transaction
-boundaries, and new execution paths through transaction-opening helpers.
-Aliases, wrappers, or nested transactions do not create an exemption. Existing
-non-billing transactions are cleanup work, not patterns to copy or extend into
-new operations.
-
-Billing is not a blanket exemption. Document the financial invariant and why a
-simpler atomic SQL operation cannot reasonably preserve it. A billing filename,
-Stripe integration, or paid-entitlement check alone does not justify a
-transaction. Do not include unrelated application writes in a billing
-transaction.
-
-A single SQL statement is already atomic. Remove its transaction wrapper, even
-for billing. Remove read-only transactions unless a demonstrated necessary
-billing snapshot or transaction-local setting requires them. Prefer conditional
-writes, upserts, business-key uniqueness, atomic arithmetic, and gated CTEs over
-read-then-write in application code. Preserve authorization, idempotency,
-returned outcomes, snapshot and clock boundaries, and material query cost;
-fewer transaction call sites alone do not prove correctness.
-
-When a billing invariant requires multiple statements to commit together and
-one statement cannot reasonably preserve it, keep a short, lightweight
-transaction inside one owning command. A necessary billing snapshot or
-transaction-local setting must meet the same documented necessity requirement.
-Use `tx` only in that transaction callback and write its database statements
-inline. Never pass it to a helper or sub-command, capture it in a returned
-closure, or store it. Do not run external I/O such as fetch, Stripe, KMS, S3, or
-Ably inside the transaction: prepare before it and publish after it. Do not
-split one atomic business operation into independently committing sub-commands
-merely to remove a transaction or `tx` parameters; use a transaction-free design
-that preserves its required guarantees instead.
-
-Shared transaction logic becomes pure builders that return values, conditions,
-or SQL fragments, never functions that execute queries. Document the financial
-invariant, billing snapshot, or billing transaction-local setting that requires
-each remaining billing transaction. Follow
-[query contracts](../.claude/skills/database-development/references/query-contracts.md)
-for SQL rewrites; do not add locks, retries, or timeouts to compensate for a
-changed transaction boundary.
+Follow the [database transaction boundaries](database.md#transaction-boundaries):
+no new non-billing transactions; necessary billing atomicity requires a concrete
+financial invariant and an insufficient single-statement alternative. Keep any
+necessary transaction inside one owning command, with inline SQL and no external
+I/O. Pure shared builders return values or SQL fragments, not query executors.
+The database guide owns the full policy, recovery contracts, and verification
+requirements; reading this summary does not replace it.
 
 ### 11. Keep a small public surface and a closed internal graph
 

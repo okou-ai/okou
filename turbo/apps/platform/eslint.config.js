@@ -254,7 +254,7 @@ export default [
     files: ["src/signals/utils.ts"],
     rules: {},
   },
-  // Active transport and lifecycle boundaries are documented in docs/platform-lint.md.
+  // Active transport and lifecycle boundaries are documented in docs/platform-ccstate.md.
   {
     files: ["src/lib/resource-fetch.ts"],
     rules: { "ccstate/no-direct-fetch": "off" },

@@ -30,14 +30,10 @@ this index does not replace its detailed rules.
   persisted state, schema transitions, drain, and rollback requirements.
 - [API ccstate](api-ccstate.md): derived reads, explicit writes, graph construction,
   database ownership, cancellation, and entry-owned orchestration.
-- [Database development](../.claude/skills/database-development/SKILL.md): migration
-  workflows, transaction boundaries, decoding, and SQL construction.
-- [Advisory-lock retirement](advisory-locks.md) and
-  [transaction and recovery constraints](advisory-lock-terminal-state.md).
-- [Signal-owner file limits](eslint/max-signal-owner-lines.md) and
-  [database trigger policy](eslint/no-database-trigger.md).
-- [Database transaction lint](eslint/no-db-transaction.md): default prohibition,
-  deletion-only legacy call-site inventory, and necessary billing waivers.
+- [Database guide](database.md): concurrency, atomic SQL, transaction ownership,
+  external effects, recovery, and transaction lint, with routes to migration
+  workflows, decoding, and SQL construction.
+- [Database trigger policy](eslint/no-database-trigger.md).
 
 ## React and Platform
 
@@ -52,7 +48,8 @@ this index does not replace its detailed rules.
   signal registration, and lifecycle ownership, not a feature catalog.
 - [React measurements](react-commit.md): reproducible commit attribution and
   behavior verification, not historical benchmark results.
-- [Platform lint](platform-lint.md): transport, lifecycle, and import boundaries.
+- [Platform ccstate](platform-ccstate.md): transport, lifecycle, module state,
+  and import boundaries.
 - [Clerk customization](clerk-customize.md): public styling ownership and enforcement.
 
 ## Testing

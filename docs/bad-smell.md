@@ -20,7 +20,7 @@ scope and with their documented replacement enforcement.
 The narrow exception is a next-line waiver disabling only
 `api/no-db-transaction`: a registered legacy ID or a reviewed necessary
 billing invariant and single-statement justification. The independent CI scan
-must validate it under [database transaction lint](eslint/no-db-transaction.md).
+must validate it under [database transaction lint](database.md#transaction-lint).
 This does not permit unrelated suppressions or inventory expansion.
 
 ## 3. Error Handling
