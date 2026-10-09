@@ -12,6 +12,34 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1006.0](https://github.com/okou-ai/okou/compare/app-v0.1005.0...app-v0.1006.0) (2026-10-09)
+
+
+### Features
+
+* add sandbox covers for hosted artifacts ([#38149](https://github.com/okou-ai/okou/issues/38149)) ([f4a3140](https://github.com/okou-ai/okou/commit/f4a3140275a8c3334135080ed2427e837bc9fc89))
+* **platform:** gate composer-anchored suggestion menus ([#38331](https://github.com/okou-ai/okou/issues/38331)) ([80aee42](https://github.com/okou-ai/okou/commit/80aee42a4cf92772b0d8b193df68089588a3b39f))
+* **ui:** add a top-to-bottom wave to running chat indicators ([#37657](https://github.com/okou-ai/okou/issues/37657)) ([cfeeb01](https://github.com/okou-ai/okou/commit/cfeeb01c713cb8c44365f23448b418789ad712e8))
+
+
+### Bug Fixes
+
+* **platform:** stop retrying failed realtime handlers and use ably retry defaults ([#38375](https://github.com/okou-ai/okou/issues/38375)) ([9813db4](https://github.com/okou-ai/okou/commit/9813db4b51faa42c982dcfec1720caf5bd5b1b82))
+
+
+### Refactoring
+
+* **platform:** simplify transcript-local stacking ([#38360](https://github.com/okou-ai/okou/issues/38360)) ([e278a3e](https://github.com/okou-ai/okou/commit/e278a3e460f0f958a5607f7d935d465392bcb2e0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.545.0
+    * @okouai/core bumped to 8.738.0
+    * @okouai/ui bumped to 1.13.0
+
 ## [0.1005.0](https://github.com/okou-ai/okou/compare/app-v0.1004.2...app-v0.1005.0) (2026-10-09)
 
 

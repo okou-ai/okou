@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.13](https://github.com/okou-ai/okou/compare/runner-network-v0.2.12...runner-network-v0.2.13) (2026-10-09)
+
+
+### Performance Improvements
+
+* **test:** remove redundant http fixture body work ([#38320](https://github.com/okou-ai/okou/issues/38320)) ([b3e8b7c](https://github.com/okou-ai/okou/commit/b3e8b7c95fe75585247a972177e22d04d7f7639c))
+
 ## [0.2.12](https://github.com/okou-ai/okou/compare/runner-network-v0.2.11...runner-network-v0.2.12) (2026-10-09)
 
 
