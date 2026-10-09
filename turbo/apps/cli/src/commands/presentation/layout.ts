@@ -173,7 +173,10 @@ export const PREPARE_LAYOUT = String.raw`(async (selector) => {
       const clone = element.cloneNode(true);
       const style = snapshotStyle(element);
       for (const property of Array.from(style)) clone.style.setProperty(property,style.getPropertyValue(property),'important');
-      Object.assign(clone.style,{position:'absolute',boxSizing:'border-box',left:(rect.left-root.left)+'px',top:(rect.top-root.top)+'px',width:rect.width+'px',height:rect.height+'px',margin:'0'});
+      // Physical coordinates must win over copied logical inset declarations.
+      // CSS setters without priority otherwise lose to the computed snapshot.
+      const rootStyle = getComputedStyle(slide);
+      for (const [property,value] of Object.entries({position:'absolute','box-sizing':'border-box',inset:'auto',left:(rect.left-root.left-parseFloat(rootStyle.borderLeftWidth))+'px',top:(rect.top-root.top-parseFloat(rootStyle.borderTopWidth))+'px',width:rect.width+'px',height:rect.height+'px',margin:'0'})) clone.style.setProperty(property,value,'important');
       clone.removeAttribute('id');
       save(element);
       element.style.setProperty('visibility','hidden','important');
@@ -183,6 +186,8 @@ export const PREPARE_LAYOUT = String.raw`(async (selector) => {
       }
       slide.append(clone);
       undo.push(() => clone.remove());
+      const actual = clone.getBoundingClientRect();
+      if (Math.abs(actual.left-rect.left)>0.5 || Math.abs(actual.top-rect.top)>0.5 || Math.abs(actual.width-rect.width)>0.5 || Math.abs(actual.height-rect.height)>0.5) throw new Error('Visible descendant geometry disagrees with the measured source');
       exposed.push(element);
     }
   }
