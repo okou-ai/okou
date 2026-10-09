@@ -18,6 +18,8 @@ import { testDesktopUpdateManifestStateRoutes } from "../test-desktop-update-man
 const TEST_APP_ROUTES = Object.freeze([...desktopUpdateRoutes]);
 
 const context = testContext();
+const shippedDesktopMinimumVersion =
+  desktopCompatibility.minimumSupportedVersion;
 const OKOU_DESKTOP_UPDATE_MANIFEST_URL =
   "https://github.com/okou-ai/okou/releases/download/ai-okou-desktop-updates/ai-okou-desktop-update-manifest.json";
 const LEGACY_OKOU_DESKTOP_UPDATE_MANIFEST_URL =
@@ -112,6 +114,13 @@ describe("desktop update routes", () => {
   });
 
   it("exposes the source-controlled floor without authentication and supports disabling it", async () => {
+    desktopCompatibility.minimumSupportedVersion = shippedDesktopMinimumVersion;
+    const shipped = await appRequest("/api/desktop/compatibility");
+    expect(shipped.status).toBe(200);
+    expect(shipped.headers.get("cache-control")).toBe("no-store");
+    await expect(shipped.json()).resolves.toStrictEqual({
+      minimumSupportedVersion: "0.51.0",
+    });
     desktopCompatibility.minimumSupportedVersion = null;
     const disabled = await appRequest("/api/desktop/compatibility");
     expect(disabled.status).toBe(200);

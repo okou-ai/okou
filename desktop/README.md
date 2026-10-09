@@ -80,8 +80,11 @@ input is never replayed after a timeout. Background updates also wait until the
 host has been idle for 30 minutes. Required upgrades bypass that grace while
 still waiting for claimed commands, completion reports, and host cleanup.
 
-See [the minimum version policy](https://github.com/okou-ai/okou/blob/9813db4b51faa42c982dcfec1720caf5bd5b1b82/docs/desktop-version-policy.md) for the
-default-disabled deployment floor, visible upgrade states, and activation gates.
+The current admission floor is owned by
+[the API policy](../turbo/apps/api/src/lib/desktop-compatibility.json).
+[The historical policy guide](https://github.com/okou-ai/okou/blob/97be706f45fc34d0ae9f9f408b9c48a58da03b19/docs/desktop-version-policy.md)
+records rollout and acceptance rationale; revalidate the live policy before
+applying those instructions.
 
 ## Release
 

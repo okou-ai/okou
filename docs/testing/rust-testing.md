@@ -189,6 +189,13 @@ failures and response gates. Repeated JSONL budget fixtures may reuse one owned
 entry while writing every canonical line; keep map ordering, full source files,
 request counts and exact overflow diagnostics unchanged.
 
+`json!` borrows and serializes expressions, including already-owned `Value`s.
+Move large owned content into a `Map` envelope instead of rebuilding it through
+the macro. Retain the original field insertion order for `preserve_order` builds
+without unchecked indexing or new panic paths. Consume a parsed event when
+normalizing it for an exact comparison; keep independent expected snapshots and complete canonical
+byte oracles in both map-order configurations.
+
 Keep real process/socket deadlines, full payload/file/pixel boundaries, key/KDF
 strengths, every assertion and actual retained image buffers. Compare complete
 unchanged target selections with matching profile/instrumentation/thread settings;
