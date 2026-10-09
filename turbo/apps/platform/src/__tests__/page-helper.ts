@@ -96,6 +96,8 @@ interface SetupPageOptions {
   readonly context: TestContext;
   readonly path: string;
   readonly host?: string;
+  /** The deployment-owned HTML marker emitted by the PR preview Worker. */
+  readonly prPreview?: boolean;
   readonly locale?: SupportedLocale;
   readonly auth?: SetupPageAuth;
   readonly debugLoggers?: string[];
@@ -235,6 +237,22 @@ async function setupPageAsync(
 ): Promise<PageStartup> {
   ensureTestLocalStorage();
   applyPageEnvironment(options.env, signal);
+  if (options.prPreview !== undefined) {
+    const html = document.documentElement;
+    const previous = html.dataset.appPrPreview;
+    html.dataset.appPrPreview = String(options.prPreview);
+    signal.addEventListener(
+      "abort",
+      () => {
+        if (previous === undefined) {
+          delete html.dataset.appPrPreview;
+        } else {
+          html.dataset.appPrPreview = previous;
+        }
+      },
+      { once: true },
+    );
+  }
   installBootstrapSkeleton(signal);
   await initializeI18nWithResources(
     await loadInitialLocaleResources(options.locale ?? DEFAULT_LOCALE, signal),

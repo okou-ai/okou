@@ -68,6 +68,7 @@ import {
   setupOnboardingSlackPage$,
   setupOnboardingTeamPage$,
 } from "./onboarding/onboarding-sources-first-page-setup.ts";
+import { setupPreviewOnboardingPageWrapper } from "./onboarding/onboarding-preview-page-setup.ts";
 import { setupIdeationPage$ } from "./okou-page/ideation-page-setup.ts";
 import { setupConnectorsPage$ } from "./connectors-page/connectors-page-setup.ts";
 import { setupComputerUseAuthorizationPage$ } from "./computer-use-authorization/computer-use-authorization-page-setup.ts";
@@ -444,31 +445,45 @@ const ROUTE_CONFIG = [
   },
   {
     path: ROUTES.onboarding,
-    setup: setupAuthPageWrapper(setupOnboardingEntryPage$),
+    setup: setupAuthPageWrapper(
+      setupPreviewOnboardingPageWrapper(setupOnboardingEntryPage$),
+    ),
   },
   {
     path: ROUTES.onboardingSources,
-    setup: setupAuthPageWrapper(setupOnboardingSourcesPage$),
+    setup: setupAuthPageWrapper(
+      setupPreviewOnboardingPageWrapper(setupOnboardingSourcesPage$),
+    ),
   },
   {
     path: ROUTES.onboardingTeam,
-    setup: setupAuthPageWrapper(setupOnboardingTeamPage$),
+    setup: setupAuthPageWrapper(
+      setupPreviewOnboardingPageWrapper(setupOnboardingTeamPage$),
+    ),
   },
   {
     path: ROUTES.onboardingExperience,
-    setup: setupAuthPageWrapper(setupOnboardingExperiencePage$),
+    setup: setupAuthPageWrapper(
+      setupPreviewOnboardingPageWrapper(setupOnboardingExperiencePage$),
+    ),
   },
   {
     path: ROUTES.onboardingSkills,
-    setup: setupAuthPageWrapper(setupOnboardingSkillsPage$),
+    setup: setupAuthPageWrapper(
+      setupPreviewOnboardingPageWrapper(setupOnboardingSkillsPage$),
+    ),
   },
   {
     path: ROUTES.onboardingSlack,
-    setup: setupAuthPageWrapper(setupOnboardingSlackPage$),
+    setup: setupAuthPageWrapper(
+      setupPreviewOnboardingPageWrapper(setupOnboardingSlackPage$),
+    ),
   },
   {
     path: ROUTES.onboardingReady,
-    setup: setupAuthPageWrapper(setupOnboardingReadyPage$),
+    setup: setupAuthPageWrapper(
+      setupPreviewOnboardingPageWrapper(setupOnboardingReadyPage$),
+    ),
   },
   {
     path: ROUTES.signInToken,

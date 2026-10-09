@@ -630,6 +630,7 @@ assert.equal(
 );
 assert.equal(documentTitle(okouPage.html), okouTitle);
 assert.equal(htmlAttribute(okouPage.html, "data-app-brand-name"), "Okou");
+assert.equal(htmlAttribute(okouPage.html, "data-app-pr-preview"), "false");
 assert.equal(metaContent(okouPage.html, "name", "application-name"), "Okou");
 assert.equal(
   metaContent(okouPage.html, "name", "description"),
@@ -682,6 +683,7 @@ const okouPreview = await requestAppPage(
   "https://pr-25304-app-okou-app-preview.vm0.workers.dev",
 );
 assert.equal(htmlAttribute(okouPreview.html, "data-app-brand-name"), "Okou");
+assert.equal(htmlAttribute(okouPreview.html, "data-app-pr-preview"), "false");
 assert.equal(
   tagAttribute(okouPreview.html, "link", "rel", "canonical", "href"),
   "https://app.okou.ai/",
@@ -809,6 +811,37 @@ assert.equal(
   "private, no-store",
 );
 assert.equal(failingClerkClientFactoryCalls, 1);
+
+// Only an HTTPS PR origin authorized by this deployed Worker gets the marker.
+// Neither a query parameter nor a matching-looking hostname can opt itself in.
+for (const [origin, configuredOrigin, expected] of [
+  [edgePreviewOrigin, edgePreviewOrigin, "true"],
+  [
+    edgePreviewOrigin,
+    "https://pr-25305-app-okou-app-preview.vm0.workers.dev",
+    "false",
+  ],
+  ["https://app.okou.ai", "https://app.okou.ai", "false"],
+  [
+    "https://staging-app-okou-app-preview.vm0.workers.dev",
+    "https://staging-app-okou-app-preview.vm0.workers.dev",
+    "false",
+  ],
+  [
+    "http://pr-25304-app-okou-app-preview.vm0.workers.dev",
+    "http://pr-25304-app-okou-app-preview.vm0.workers.dev",
+    "false",
+  ],
+]) {
+  const previewMarkerPage = await embeddedWorker.fetch(
+    new Request(`${origin}/onboarding?skipOnboarding=true`),
+    { CLERK_EDGE_AUTHORIZED_PARTY: configuredOrigin },
+  );
+  assert.equal(
+    htmlAttribute(await previewMarkerPage.text(), "data-app-pr-preview"),
+    expected,
+  );
+}
 
 function clerkClientReturning(requestState) {
   return () => ({

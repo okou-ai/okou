@@ -423,10 +423,16 @@ function rewriteAppPage(
   request,
   requestUrl,
   apiFetcher,
+  isPrPreview,
 ) {
   const prefetchState = { stream: null };
   const rewriter = new HTMLRewriter()
     .on("html", setBrandContext(OKOU_APP_METADATA.brandName))
+    .on("html", {
+      element(element) {
+        element.setAttribute("data-app-pr-preview", String(isPrPreview));
+      },
+    })
     .on("title", {
       element(element) {
         element.setInnerContent(OKOU_APP_METADATA.documentTitle);
@@ -1010,6 +1016,7 @@ async function handleRequest(
     request,
     requestUrl,
     apiFetcher,
+    authorizedParty !== null && requestUrl.hostname !== PRODUCTION_APP_HOSTNAME,
   );
 }
 
