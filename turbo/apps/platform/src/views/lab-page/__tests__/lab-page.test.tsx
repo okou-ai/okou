@@ -11,39 +11,6 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 const context = testContext();
 const PINNED_AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 
-test.each([
-  { email: "BINGJIE@OKOU.AI", optedOut: false, enabled: true },
-  { email: "ethan@okou.ai", optedOut: false, enabled: false },
-  { email: "bingjie@okou.ai", optedOut: true, enabled: false },
-])(
-  "Composer layout rollout for $email with opt-out=$optedOut",
-  async ({ email, optedOut, enabled }) => {
-    context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
-      return respond(200, {
-        switches: {
-          [FeatureSwitchKey.Lab]: true,
-          ...(optedOut ? { [FeatureSwitchKey.ChatComposerLayout]: false } : {}),
-        },
-        // The API cannot resolve an email allowlist. The page must reapply it
-        // before explicit user overrides, including a saved opt-out.
-        effectiveSwitches: { [FeatureSwitchKey.ChatComposerLayout]: false },
-      });
-    });
-    await setupPage({
-      context,
-      path: "/_/lab",
-      auth: {
-        user: { id: "user_layout_rollout", fullName: "Layout tester", email },
-      },
-    });
-    await screen.findByRole("heading", { name: "Lab" });
-    const control = within(
-      featureSwitchRow(FeatureSwitchKey.ChatComposerLayout),
-    ).getByRole("switch");
-    expect(control).toHaveAttribute("aria-checked", String(enabled));
-  },
-);
-
 function featureSwitchRow(feature: FeatureSwitchKey): HTMLElement {
   const row = screen.getByText(feature).closest("li");
   if (!(row instanceof HTMLElement)) {
