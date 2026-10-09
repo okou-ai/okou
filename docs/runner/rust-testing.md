@@ -29,18 +29,15 @@ cargo test --manifest-path crates/Cargo.toml --profile local
 cargo test --manifest-path crates/Cargo.toml --profile local -p guest-agent
 
 # Extracted Runner host primitives and their owner tests
-# Nine process-identity persistence tests moved from runner/src/cmd/start/identity.rs
-# into runner-host/src/runner_process_identity/persistence.rs, plus a partial
-# failure test (10 persistence tests total); none removed. Runner's start
-# integration test checks identity allocation precedes later setup failure.
+# Host covers process-identity persistence. Runner's start integration checks
+# identity allocation before later setup failure.
 cargo test --manifest-path crates/Cargo.toml --profile local \
   -j 1 -p runner-host -- --test-threads=1
 
 # Host-owned systemd primitives and retained Runner command composition
-# All 97 identity/query/config/diagnostic cases moved into runner-host/src/service.
-# Reload, stop, drain/resume, unit generation and output composition tests remain
-# in Runner. Three private state fixtures use host's non-default test-support
-# feature, requested by Runner only as a dev-dependency. No cases were removed.
+# Runner covers reload, stop, drain/resume, unit generation and output composition.
+# Private Host fixtures use its non-default test-support feature, requested by
+# Runner only as a dev-dependency.
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-host -p runner -- --test-threads=1
 
@@ -49,9 +46,7 @@ cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-provider -- --test-threads=1
 
 # Extracted Runner network behavior, mitmdump recovery, and owner tests
-# Seven focused mitmdump restart tests moved from runner/src/cmd/start/mitm_restart.rs
-# into runner-network/src/proxy/recovery.rs, plus fatal cleanup and cancelled
-# wait coverage (9 recovery tests total); none intentionally removed.
+# Recovery includes fatal cleanup and cancelled wait coverage.
 # Main-loop crash/panic/shutdown coverage belongs to the Supervisor reactor;
 # select that ordinary owner target separately below.
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
@@ -66,16 +61,14 @@ cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-storage -- --test-threads=1
 
 # Storage-cache GC and retained Runner policy/report composition
-# All 34 archive/decoded-cache GC cases moved into Storage; filesystem (4),
-# lock cleanup (8), and byte formatting (1) cases moved into Host. None removed.
-# Four new boundary regressions cover explicit age propagation and Runner's
-# defaults, grace, dry-run, zero-byte/allocated-byte activity, reports and errors.
+# Exercise explicit age propagation and Runner's defaults, grace, dry-run,
+# zero-byte/allocated-byte activity, reports and errors.
 # The low-NOFILE ordinary parent invokes exactly one guarded ignored child:
 # cache_gc::tests::gc_storage_cache_many_candidates_low_fd_child,
-# with OKOU_RUNNER_STORAGE_LOW_FD_STORAGE_GC_CHILD=1 and its existing 60s bound.
+# with OKOU_RUNNER_STORAGE_LOW_FD_STORAGE_GC_CHILD=1 and its 60s bound.
 # Private directory iteration faults use Host's non-default test-support feature;
-# normal production builds do not enable it. Warm scoped tests are correctness
-# evidence, not the complete ten-package cold-memory acceptance gate below.
+# normal production builds do not enable it. Warm scoped tests do not replace
+# the complete native target selection below.
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-host -p runner-storage -p runner -- --test-threads=1
 
@@ -100,13 +93,11 @@ cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-executor -- --test-threads=1
 
 # Extracted Runner idle, pre-claim admission/rollback and pending-candidate state, finalizing-successor arbitration, claimed activation, post-executor finalizing/report ordering/sandbox finalization/settlement, heartbeat, and orphan-recovery owner tests
-# Policy and cross-domain runtime coverage both run in Supervisor's ordinary unit
-# target. 317 start cases follow their actual reactor/factory/dispatch/maintenance
-# entry; three shared provider-fixture cases follow their one private owner.
-# The 13 boot/config/CPU-placement/early-signal declarations remain in Runner,
-# including four guarded ignored children invoked by their ordinary parent.
-# New Root projection/error and Host UTF-8 budget regressions cover the seams.
-# No test=false, source inclusion, filtering or copied provider fixture is used.
+# Supervisor's ordinary unit target covers policy and cross-domain runtime through
+# the actual reactor/factory/dispatch/maintenance entries, without test=false,
+# source inclusion, filtering or copied provider fixtures. Runner retains boot,
+# configuration, CPU-placement and early-signal coverage, including guarded ignored
+# children invoked by their ordinary parents. Root/Host tests cover the seams.
 # Explicitly gated signal/shutdown controls use non-default test-support; default
 # production dependencies do not enable that feature.
 # Run both Supervisor and retained Root/Host coverage for this boundary.
@@ -344,13 +335,18 @@ For inline runner tests, reuse `run_ignored_child_test` from `crates/runner-host
 Use `tempfile` crate (auto-cleanup via `Drop`):
 
 ```rust
-let dir = tempfile::tempdir().unwrap();
-let config_path = dir.path().join("runner.yaml");
-tokio::fs::write(&config_path, yaml).await.unwrap();
+#[tokio::test]
+async fn reads_written_fixture() {
+    let dir = tempfile::tempdir().unwrap();
+    let fixture_path = dir.path().join("fixture.txt");
+    tokio::fs::write(&fixture_path, "fixture contents")
+        .await
+        .unwrap();
 
-let config = load(&config_path).await.unwrap();
-assert_eq!(config.name, "test-runner");
-// dir is cleaned up when dropped
+    let contents = tokio::fs::read_to_string(&fixture_path).await.unwrap();
+    assert_eq!(contents, "fixture contents");
+    // dir is cleaned up when dropped
+}
 ```
 
 ### Test Harness for Complex Setup

@@ -183,170 +183,53 @@ and checks the returned grants. Neither path needs a private DB seed or a forced
 worker visit. Apply that same standard to usage reports, storage, and automation
 lifecycles instead of using a private driver to manufacture their prerequisites.
 
-For a mixed historical test, inspect what the current writer can actually do.
-The `preserves history and aliases across out-of-order completion [HOST-A]`
-case in
-[`host-maps.bdd.test.ts`](../../turbo/apps/api/src/signals/routes/__tests__/host-maps.bdd.test.ts)
-prepares two versions through the host API and completes the newer one first.
-It checks both versions through files/history responses and emitted S3 manifests;
-it needs no historical deployment rows. The same suite obtains a Runner's
-`OKOU_TOKEN` through normal chat send and authenticated heartbeat/claim before
-publishing. A helper that signs a token for an invented Run does not establish
-that lifecycle.
+### Apply the Boundary to the Complete Lifecycle
 
-When testing overlapping requests, use identifiers a real client knows. The
-pending-title matrix in
-[`shared-thread-artifacts.test.ts`](../../turbo/apps/api/src/signals/routes/__tests__/shared-thread-artifacts.test.ts)
-supplies the share ID in the normal create request before attempting deletion.
-Reading a server-selected ID from a storage key before the response arrives
-would grant the test knowledge its caller does not have. Observe publication
-through the public shared response/catalog and revocation through access denial,
-not application-owned policy JSON stored behind those APIs.
+Use the construction and observation rules together:
 
-When a private writer test submits input the request contract rejects, preserve
-its actual client behavior at that earlier boundary. In
-[`agent-draft.test.ts`](../../turbo/apps/api/src/signals/routes/__tests__/agent-draft.test.ts),
-a normal PATCH saves a draft, an attachment-only PATCH returns 400, and GET
-confirms the saved draft is unchanged. This covers client validation and
-preservation; it does not claim the SQL 23514 rollback or selectable physical/view
-schema guarantees of the removed service case. The existing simultaneous PATCH
-case remains meaningful public concurrency without a private row-count probe.
+- Obtain Runner credentials through normal chat send, authenticated heartbeat
+  and claim. A locally signed token for an invented Run does not establish that
+  lifecycle or a real caller's permission combination. Preserve genuine provider
+  ingress, upload preparation, checkpoint and completion protocols. Upload only
+  to keys returned by the normal protocol.
+- In overlapping requests, use caller-supplied or already returned identifiers.
+  Reading a server-selected identity from an internal write before the response
+  arrives gives the test knowledge its caller does not have. Observe publication
+  through public responses and revocation through access denial, not stored
+  application policy.
+- After account deletion, observe through a genuinely surviving production
+  credential. Authenticating a deleted identity does not create a public read
+  path. Another owner's unchanged resources prove isolation, not physical
+  deletion of the erased owner's rows.
+- Mock provider-owned requests and responses, not application-owned catalog
+  entries, pricing aliases, flags, grants or stored credentials. Construct those
+  through the normal lifecycle and use the configured baseline. Private
+  corruption of application state is not an external provider failure.
+- For billing concurrency and replay, use actual public purchases and provider
+  callbacks with the metadata sent by the application. Preserve exact charges,
+  credits, refunds, ownership and provider idempotency assertions where reachable.
+  Concurrent public requests are valid; SQL pauses, guard counts and private
+  settlement dispatchers are not their construction boundary.
+- Assert the guarantee the interface actually exposes. Validation rejection and
+  preserved state do not establish an internal SQL rollback or schema guarantee.
+  Public expiry does not prove physical sweeping; URL reuse does not prove an
+  exact cache lookup count; a cold read does not prove a background generator's
+  lease, recovery or selection behavior.
+- Keep clock control inside the case and follow the real signal owner when
+  naming cancellation behavior. Advancing application time does not authorize
+  backdating rows, privately forcing retries or workers, or skipping terminal effects.
+  Application-lifetime cancellation is not automatically HTTP-caller cancellation.
+- Follow nested helpers and teardown as part of the same boundary. A public
+  response cannot certify unrelated private methods in its fixture factory.
+  A benchmark that seeds API-owned rows and calls private services is not an
+  owning-package library contract.
 
-For purchase concurrency, the `rejects competing Plan previews and stale
-purchase replays` case in
-[`billing-checkout.test.ts`](../../turbo/apps/api/src/signals/routes/__tests__/billing-checkout.test.ts)
-creates normal Plan previews and confirms two concurrently, observing 200/409,
-stale-preview rejection and one Stripe subscription creation. Its identity
-factory only supplies random IDs; Clerk and Stripe mocks supply provider-owned
-responses. This is an existing public request race, without a SQL pause or guard
-count assertion. It does not establish exact internal transaction/repair
-guarantees or certify unrelated private methods in the same fixture factory.
-
-For provider deletion failures, see the three public user-deletion cases in
-[`storage-object-cleanup.test.ts`](../../turbo/apps/api/src/signals/routes/__tests__/storage-object-cleanup.test.ts).
-They publish Memory through a real Runner claim and storage prepare/commit,
-then deliver a genuine Clerk deletion event and observe S3 rejection, partial
-deletion or a lost response. Upload only to keys returned by the normal protocol.
-A retired export row and a private retry command do not become public merely
-because the final observation is an S3 object. These cases use the first real
-billing-status request to own per-case isolation; teardown never authenticates
-the deleted user to assert Run/Agent absence. Batch 007 retired the neighboring
-private listing/retry matrix and its forced retry endpoint. Other
-`api-bdd-storages` prepare/commit/list/download consumers still use the private
-storage-fixture route and remain unprocessed; they are not compliant examples.
-
-For mixed scenarios, remove the unsupported private phase and keep the independent
-public behavior. In `integrations.bdd.test.ts`, an unonboarded member installs Slack
-through its OAuth flow and sends signed channel/DM ingress to receive setup
-guidance; deleting a default Agent directly is unnecessary. Its queued Web/Slack
-session case uses actual Runner claims/completion and public session/event reads,
-without a SQL trigger rewriting callback branding. In
-`chat-events-model-source-context.test.ts`, ordinary sends prove 404/400 and
-external attachment-request cancellation without cancelling database queries.
-
-The bulk read notification matrix in `chat-thread-mark-agent-read.test.ts` still
-uses synthetic terminal events/private readbacks for its large cases. Batch 008's
-attempted public rewrite failed CI and was restored without credit; this matrix
-remains unprocessed, and its retained helpers are not compliant examples.
-
-Model metadata is also an owned boundary. `model-catalog.test.ts` submits an
-existing retired model name through normal thread creation or a chat send and
-observes the canonical successor through public reads. Its disconnected-account
-cases select a model while connected and then use the normal provider DELETE;
-they do not overwrite a thread with an unavailable model. Similarly,
-`model-route-capabilities.test.ts` connects Codex through device authorization
-and checks Luna effort and connected Fable/Astra Fast capabilities through
-`PUT /api/user-model-preference`. Creating or editing operator-owned catalog
-rows would test a different, private construction. These public requests do
-not prove repair of corrupted legacy rows or an arbitrary replacement graph.
-
-For queued integration messages, retain the real ingress and Runner lifecycle.
-The queued Telegram case in `integrations-telegram-post.test.ts` calls the
-onboarding status and completion APIs with ordinary Clerk authentication,
-links its user through the signed Telegram API, observes Runs through public
-logs and verifies the claimed conversation context. It avoids the shared
-bootstrap shortcut that signs a Runner token for an invented Run. It does not inject a
-thinking-message ID into a private context or use test-route seed/read/teardown.
-The queued preview case in `chat-events-shared-queue.test.ts` uses normal upload
-prepare/complete and the client event ID from its original send, without an
-internal SQL replay.
-
-For deletion, a surviving observer must own a genuine production credential.
-`conversation-history-deletion.test.ts` obtains the sandbox token through a
-Runner claim, completes its checkpoint and sends a verified Clerk deletion.
-A late completion with that same token returns 404; it does not authenticate a
-deleted Clerk identity. The Agent-delete case observes Run 404 and repeated
-DELETE 404 while its owner still exists. These outcomes do not prove the exact
-physical history-blob reference counts removed with batch 010.
-
-For the full reasoning, see
-[Testing External Behavior](../testing.md#external-behavior).
-
-For storage URL reuse, see `workflow-skill-storage-presigned-url-cache.suite.ts`:
-create a workflow or custom connector through its normal API, associate it with
-an Agent, and compare the archive URLs delivered by authenticated Runner claims.
-The readonly case checks the returned two-day lifetime. Observe external signing
-at the provider mock when useful; do not discover object prefixes through DB
-helpers, download through a storage fixture, or inspect/expire cache rows. A
-private teardown is still part of the construction chain. Use ordinary case
-isolation and normal resource deletion instead of a cache mutation endpoint.
-This proves normal issuance and reuse, not an injected four-hour refresh threshold
-or an exact SQL lookup count. A benchmark that seeds API-owned cache rows and
-calls private services does not become an owning-package library contract.
-
-For mixed Runner checkpoint cases, `chat-events-pi-handoff.test.ts` preserves the
-identity/gzip/zstd resume-reference matrix through personal subscription OAuth,
-chat send, authenticated Runner claim, checkpoint prepare and completion. It no
-longer forces private Pi memory admission or checks candidate rows. The native
-checkpoint matrix in `run-lifecycle.bdd.cases.ts` similarly observes completion,
-duplicates, conflicts and resumed references; those public responses do not prove
-physical blob reference counts or private failure-reason columns. A manufactured
-timeout that skips normal terminal effects is not an external failure trigger.
-
-For billing, `billing-checkout-complete.test.ts` creates its customer through a
-normal checkout and models Stripe-owned trialing, incomplete and open-session
-responses. A legacy application-owned onboarding-payment flag is not a Stripe
-mock: setting it privately to enable a retired trial path is unsupported. Likewise,
-a test-selected pricing alias with no configured row is application state, not an
-external provider failure. Deleting those cases does not establish missing-price
-fail-closed coverage; neighboring pricing fixtures remain unprocessed.
-
-For expiration, distinguish public access from physical cleanup. In
-`connector-oauth-completion.test.ts`, normal OAuth start/callback creates a
-receipt; advancing application time makes that receipt return 404 while the
-connector account still returns 200. This proves access expiry and account
-preservation. It does not prove an operator sweep deleted two physical rows.
-Do not add owner selectors, smaller test batch sizes or a private cron driver to
-retain that internal assertion. Similarly, a valid Stripe OAuth connection
-followed by private corruption of its storage version or identity is not a
-provider failure; keep actual provider Test-mode/reconnect behavior separately.
-
-For purchase balances, `billing-usage-pack-credits.test.ts` creates member
-allocations through the normal Usage Pack checkout, then delivers a Stripe
-invoice containing the metadata actually sent to Stripe. Public credits reads
-prove member isolation and admin visibility. Check-in creates the independent
-bonus and its expiry through the normal reward API. Do not manufacture grant
-rows, selected remaining balances or private cleanup. In `weather.test.ts`, the
-five zero-price entries already exist in the production baseline migration;
-normal requests use that catalog directly, without a test-selected pricing alias.
-
-The SEO suites likewise use migration1078's existing DataForSEO price through
-normal requests. Paid actors enter through Stripe invoice/onboarding; the
-insufficient-credit actor activates a subscription without payment. Keep the
-provider retry, cancellation and cost assertions without a private pricing
-namespace. A fabricated Runner token with an empty capability list does not
-establish a real caller's permission combination.
-
-The selected Automation failed/cancelled matrix sends an actual duplicate
-authenticated Runner terminal callback and reads the public thread events and
-charges. It no longer invokes the callback dispatcher privately after settlement.
-That preserves public terminal idempotency, not forced internal redelivery.
-
-A pending reward submission is separate from operator review. The share cases
-in `get-started.test.ts` retain canonical URLs, idempotency and pending claims;
-they do not prove the removed private review's author verdicts, lease recovery
-or award lifetime. Likewise, public Runner completion and FIFO promotion do not
-prove a privately kicked115-minute budget warning. Keep those losses explicit.
+Keep independently public behavior in mixed scenarios and record lost or
+retained coverage precisely in the owning issue or PR. A request, completion or
+pending claim does not establish later operator review, physical cleanup or
+internal recovery. See
+[Testing External Behavior](../testing.md#external-behavior) for the complete
+scenario decision procedure.
 
 ## Shared Persistent State
 
@@ -648,9 +531,10 @@ changing membership: use `check-types:tests`.
 Compare the baseline and candidate on identical production/test sources and a
 locked `pnpm install --frozen-lockfile`. Record exact base/candidate SHAs,
 lockfile hash, Node/pnpm/compiler versions, CPU quota, `memory.max`, swap state,
-command, exit status and before/after `memory.events`. Use the issue's resource
-limits (`memory.max <= 3996565504`, two vCPU equivalent, no swap),
-`TSC_CHECKERS=2` and the existing outer Turbo concurrency of one.
+command, exit status and before/after `memory.events`. Use matching CPU quotas,
+memory limits and swap settings for paired samples, with `TSC_CHECKERS=2` and
+the existing outer Turbo concurrency of one. Record investigation-specific
+resource limits and acceptance targets in the owning issue or PR.
 
 Measure these three subjects separately, serially:
 
@@ -672,75 +556,8 @@ descendants have exited before starting another subject. An OOM, timeout or
 protective stop is censored evidence: report sampled time and RSS as lower
 bounds, never as a completed baseline. Diagnose an OOM before any further run.
 
-The acceptance targets are peak process-tree RSS at most 2858.6 MiB for each
-subject and a full cold wall time at most 300 seconds, with no OOM event delta.
-Also validate clean/incremental checks, source and declaration edits, file
-addition/deletion/rename, and representative seeded errors across the declaration
-boundary and in all three test groups. Inspect compiler `--listFilesOnly` output to
-confirm downstream programs consume upstream declarations.
-
-For one-time provider verification, `webhooks-notion.test.ts` initializes the
-existing case-owned database in the first real webhook request with
-`setupApp({ isolatePg: true })` and uses the returned `webhookNotionContract`
-client. The provider verification handshake precedes Workflow/OAuth setup;
-the invalid-JSON case first posts its malformed body through that same typed
-string-body contract. Subsequent signed events use the case's database. Isolation
-is opt-in; `testContext()` alone does not enable it. Resetting
-verification-secret rows is unnecessary and would control application state.
-Its normal OAuth/Workflow setup and signature, debounce and account-selection
-assertions stay at the production boundary.
-
-For an operator-generated cache, distinguish the user's read/touch contract from
-the generator. `home-task-recommendations.test.ts` uses ordinary onboarding,
-GET, POST touch and GET to verify the cold response remains unchanged. It does
-not prove generated-card selection, lease expiry, corrupt-cache recovery or
-permission changes during a cron run. An owner-scoped test version of the cron
-is still a private driver. Batch 011 removes that driver while preserving the
-production cron. Likewise, the public Workflow A-B-A content case keeps normal
-create/update/GET and external storage effects; it does not claim exact index
-rows, storage-version identity or internal worker queue counts.
-
-For delegated Computer Use authorization, follow the selected public case in
-`computer-use.bdd.test.ts`: paid onboarding and a personal model connection,
-Agent creation, chat send, Runner heartbeat/claim, then the claim-issued Okou
-token creates the authorization request. Apply a real registered host and read
-the result through authorization and thread metadata APIs. A fabricated Run
-with a null launch snapshot or a locally signed token is not the same setup.
-The neighboring forged-token cases remain unprocessed.
-
-The screenshot case keeps normal host command completion, S3 upload bytes,
-public download and cross-owner404. Removing its operator-only cleanup phase
-loses retention tombstones, exact sweep counts and physical deletion guarantees.
-Likewise, the selected `get-started.test.ts` check-in case proves public bonus
-visibility and expiry; private admission-service booleans are not evidence that
-a user can spend the credits. Other settlement fixtures remain unprocessed.
-
-### Fixed catalog, public account selection and activity summaries
-
-`run-lifecycle-automatic.bdd.test.ts` looks up an existing fixed Automatic
-connector, uses paid onboarding and personal model APIs, connects through real
-OAuth/no-auth routes, then obtains credentials from Runner heartbeat/claim. It
-checks both normal user and Runner access and acknowledges cancellation with the
-actual claim token. A catalog publisher protected by `CRON_SECRET` is an operator
-boundary; changing its storage version or inventing a method is not user setup.
-
-`chat-events-bootstrap-prefetch.test.ts` selects an account through the normal
-connector API, sends and claims a Run, then selects another account for the next
-Run. That proves successive selections. It does not prove which SQL snapshot wins
-when selection changes during an internally paused query.
-
-`chat-activity-summary.test.ts` constructs a real claimed Run, delivers activity
-through authenticated callbacks and observes the summary API and external Google
-request. Test provider failures on an initial request, and test bounded payloads
-with fresh activity. Do not alter persisted attempt/claim timestamps to force a
-second attempt. First-attempt and cached-result checks do not establish lease
-fencing, recovery after cooldown or stale-summary preservation across a later
-failure. Application lifetime cancellation is not automatically HTTP caller
-cancellation: follow the actual signal ownership before naming the behavior.
-
-The retired email-outbox state operation is not a teardown model. Cleanup does
-not authorize arbitrary SQL deletion of application rows. Its removed export
-cases also relied on private worker/cleanup commands and fabricated history;
-ordinary export request/status checks do not prove the removed physical inventory,
-multipart grace-period or expired-download guarantees. Remaining export worker
-and onboarding-storage fixtures are unprocessed, not approved examples.
+A sample with an OOM event delta is not a completed acceptance pass. Also validate
+clean/incremental checks, source and declaration edits, file addition/deletion/rename,
+and representative seeded errors across the declaration boundary and in all three
+test groups. Inspect compiler `--listFilesOnly` output to confirm downstream
+programs consume upstream declarations.
