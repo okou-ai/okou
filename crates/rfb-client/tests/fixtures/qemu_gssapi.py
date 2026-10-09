@@ -516,7 +516,9 @@ def run_tests(argv, *, env=None, timeout):
     process = subprocess.Popen(argv, env=env, cwd=REPO, start_new_session=True)
 
     def finish_owned_group():
-        previous = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT})
+        # Both executable interruption handlers raise; defer them until the
+        # retained leader and its owned group have completed bounded cleanup.
+        previous = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT, signal.SIGTERM})
         try:
             # WNOWAIT has not released the leader PID. Even an exited Cargo
             # leader remains reserved while its same-group descendants are killed.

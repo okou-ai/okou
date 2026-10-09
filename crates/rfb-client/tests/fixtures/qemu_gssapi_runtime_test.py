@@ -729,6 +729,121 @@ else:
                                     env={'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8'})
             self.assertEqual(result.returncode, 0, result.stderr)
 
+    def check_actual_sigterm_cleanup(self, seam):
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            base = pathlib.Path(directory)
+            driver = '''
+import os, pathlib, signal, subprocess, sys, time
+import unittest.mock as mock
+sys.path.insert(0, sys.argv[1])
+import qemu_gssapi
+qemu_gssapi.own_test_descendants()
+record, seam = pathlib.Path(sys.argv[2]), sys.argv[3]
+real_mask, real_wait, real_spawn = signal.pthread_sigmask, subprocess.Popen._try_wait, subprocess.Popen
+real_signal, real_waitid = os.killpg, os.waitid
+previous_mask = real_mask(signal.SIG_BLOCK, set())
+processes, injected, destructive = [], [], []
+signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(TimeoutError("bounded independent fixture interrupted")))
+
+def spawn(*args, **kwargs):
+    process = real_spawn(*args, **kwargs)
+    processes.append(process)
+    return process
+
+def block_and_interrupt(how, values):
+    previous = real_mask(how, values)
+    if seam == 'before-kill' and how == signal.SIG_BLOCK and not injected:
+        injected.append(seam)
+        signal.raise_signal(signal.SIGTERM)
+    return previous
+
+def reap_and_interrupt(process, flags):
+    result = real_wait(process, flags)
+    if seam == 'after-reap' and result[0] == process.pid and not injected:
+        injected.append(seam)
+        signal.raise_signal(signal.SIGTERM)
+    return result
+
+def observe_signal(group, value):
+    if value:
+        # Only a genuinely retained child leader authorizes a destructive signal.
+        # Refuse an unsafe negative request without signalling a recycled group.
+        real_waitid(os.P_PID, group, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+        destructive.append(group)
+    return real_signal(group, value)
+
+child = "import subprocess,sys,pathlib; p=subprocess.Popen([sys.executable,'-I','-S','-B','-c','import time;time.sleep(60)']); pathlib.Path(sys.argv[1]).write_text(str(p.pid))"
+descriptors = len(os.listdir('/proc/self/fd'))
+try:
+    with mock.patch.object(qemu_gssapi.subprocess, 'Popen', side_effect=spawn), \\
+            mock.patch.object(qemu_gssapi.signal, 'pthread_sigmask', side_effect=block_and_interrupt), \\
+            mock.patch.object(real_spawn, '_try_wait', reap_and_interrupt), \\
+            mock.patch.object(qemu_gssapi.os, 'killpg', side_effect=observe_signal):
+        try:
+            qemu_gssapi.run_tests([sys.executable, '-I', '-S', '-B', '-c', child, str(record)], timeout=10)
+        except TimeoutError as error:
+            assert str(error) == 'bounded independent fixture interrupted'
+        else:
+            raise AssertionError('actual SIGTERM was lost')
+    assert injected == [seam]
+    pid = int(record.read_text())
+    for owned in (processes[0].pid, pid):
+        try:
+            real_waitid(os.P_PID, owned, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+        except ChildProcessError:
+            pass
+        else:
+            raise AssertionError('owned leader/adopted child remained after SIGTERM')
+        try:
+            os.kill(owned, 0)
+        except ProcessLookupError:
+            pass
+        else:
+            raise AssertionError('owned child remained live or unreaped after SIGTERM')
+    try:
+        real_signal(processes[0].pid, 0)
+    except ProcessLookupError:
+        pass
+    else:
+        raise AssertionError('owned process group remained after SIGTERM')
+    assert destructive == [processes[0].pid]
+    assert len(os.listdir('/proc/self/fd')) == descriptors
+finally:
+    # Independent bounded owner cleans actual dummy children even for old-source
+    # negatives. It never signals a PID after waitid says ownership was lost.
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    real_mask(signal.SIG_SETMASK, previous_mask)
+    pids = [process.pid for process in processes]
+    if record.exists():
+        pids.append(int(record.read_text()))
+    for pid in pids:
+        try:
+            real_waitid(os.P_PID, pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+        except ChildProcessError:
+            continue
+        os.kill(pid, signal.SIGKILL)
+        until = time.monotonic() + 5
+        while real_waitid(os.P_PID, pid, os.WEXITED | os.WNOHANG | os.WNOWAIT) is None:
+            if time.monotonic() >= until:
+                raise AssertionError('independent dummy cleanup unavailable')
+            time.sleep(0.01)
+        os.waitpid(pid, 0)
+    print('independent owned dummy cleanup complete', flush=True)
+'''
+            result = subprocess.run([sys.executable, '-I', '-S', '-B', '-c', driver,
+                                     str(pathlib.Path(qemu_gssapi.__file__).parent),
+                                     str(base / 'descendant.pid'), seam],
+                                    capture_output=True, text=True, timeout=20,
+                                    env={'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8'})
+            self.assertIn('independent owned dummy cleanup complete', result.stdout)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_sigterm_before_group_kill_reaps_actual_leader_and_adopted_child(self):
+        self.check_actual_sigterm_cleanup('before-kill')
+
+    def test_sigterm_after_leader_reap_finishes_actual_adopted_child_cleanup(self):
+        self.check_actual_sigterm_cleanup('after-reap')
+
     def test_ignored_sigchld_refuses_before_starting_a_real_child(self):
         with tempfile.TemporaryDirectory(dir=self.parent) as directory:
             base = pathlib.Path(directory)
