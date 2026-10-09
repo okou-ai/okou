@@ -792,6 +792,37 @@ describe("personal subscription run identity", () => {
     ).toMatchObject({ modelProviders: [{ id: accountB }] });
   }, 20_000);
 
+  it.each(["claude-code-oauth-token", "codex-oauth-token"] as const)(
+    "rejects reactivation of a retained disconnected %s account",
+    async (type) => {
+      const f = await fixture(type);
+      const runId = await f.start();
+      const claim = await f.claim(runId);
+      const captured = accountId(claim, type);
+      onTestFinished(async () => {
+        await runs.requestCancelRun(f.actor, runId, [200]);
+      });
+      const replacement = await connect(f.actor, type, "identity-b");
+      await support.activatePersonalModelProviderAccount(
+        f.actor,
+        captured,
+        [404],
+      );
+      const listed = await support.listPersonalModelProviders(f.actor, [200]);
+      expect(listed.body).toMatchObject({
+        modelProviders: [{ id: replacement.id, isActive: true }],
+      });
+      // The real authenticated Runner still owns its captured retained bundle.
+      await expect(resolve(claim, type)).resolves.toMatchObject({
+        Authorization: `Bearer ${f.connected.token}`,
+      });
+      await support.activatePersonalModelProviderAccount(
+        f.actor,
+        replacement.id,
+      );
+    },
+  );
+
   it("reuses the same Claude identity across a reconnect", async () => {
     const f = await fixture("claude-code-oauth-token");
     const runId = await f.start();
