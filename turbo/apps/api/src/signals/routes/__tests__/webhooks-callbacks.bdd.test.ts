@@ -752,13 +752,13 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
     expectExpiresAboutThirtyDaysFromNow(
       personalCredits.creditGrants[0]?.expiresAt,
     );
-    // A new organization starts in Auto, the null selection.
+    // A new organization discovers Auto as the sole canonical route.
     const available = await createMiscRoutesApi(context).listRunModels(admin);
     expect(
       available.models.map((model) => {
         return model.model;
       }),
-    ).toStrictEqual([null]);
+    ).toStrictEqual(["auto"]);
   });
 
   it("keeps Clerk membership creation from duplicating bootstrap state", async () => {

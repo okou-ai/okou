@@ -94,6 +94,10 @@ export const chatThreadEvents = pgTable(
   (table) => {
     return [
       check(
+        "chat_thread_events_selected_model_check",
+        sql`${table.selectedModel} IS NULL OR char_length(${table.selectedModel}) > 0`,
+      ),
+      check(
         "chat_thread_events_computer_access_check",
         sql`NOT (${table.cloudBrowserEnabled} AND ${table.computerUseHostId} IS NOT NULL)`,
       ),

@@ -1968,6 +1968,13 @@
       "when": 1791532512730,
       "tag": "1358_furry_wind_dancer",
       "breakpoints": true
+    },
+    {
+      "idx": 1359,
+      "version": "7",
+      "when": 1791541894946,
+      "tag": "1359_canonical_selected_model_history",
+      "breakpoints": true
     }
   ]
 }
