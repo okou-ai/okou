@@ -30,14 +30,9 @@ runs:
       shell: bash
       run: |
         command -v sccache >/dev/null || {
-          echo "sccache 0.18.0 must be preinstalled in the toolchain image" >&2
+          echo "sccache must be preinstalled in the toolchain image" >&2
           exit 1
         }
-        version=$(sccache --version)
-        if [ "$version" != "sccache 0.18.0" ]; then
-          echo "Expected sccache 0.18.0, found: $version" >&2
-          exit 1
-        fi
 
     - name: Configure R2 sccache
       id: configure

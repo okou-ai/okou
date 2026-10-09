@@ -41,32 +41,18 @@ fixture.mkdir()
 program = fixture / "sccache"
 program.write_text('''#!/usr/bin/env bash
 set -euo pipefail
-[ "$#" = 1 ]
-case "$1" in
-  --version)
-    [ -z "${AWS_ACCESS_KEY_ID:-}${AWS_SECRET_ACCESS_KEY:-}${R2_ACCOUNT_ID:-}${SCCACHE_BUCKET:-}" ]
-    [ "$FIXTURE_MODE" != broken-version ] || exit 19
-    if [ "$FIXTURE_MODE" = wrong-version ]; then
-      echo 'sccache 0.17.0'
-    else
-      echo 'sccache 0.18.0'
-    fi
-    ;;
-  --start-server)
-    [ "$AWS_ACCESS_KEY_ID" = fixture-access ]
-    [ "$AWS_SECRET_ACCESS_KEY" = fixture-secret ]
-    [ "$SCCACHE_BUCKET" = fixture-bucket ]
-    [ "$SCCACHE_ENDPOINT" = https://fixture-account.r2.cloudflarestorage.com ]
-    [ "$SCCACHE_REGION" = auto ]
-    [ "$SCCACHE_S3_KEY_PREFIX" = "$EXPECTED_PREFIX" ]
-    [ "$SCCACHE_GHA_ENABLED" = false ]
-    [ "$SCCACHE_IDLE_TIMEOUT" = 0 ]
-    grep -qx 'server_startup_timeout_ms = 60000' "$SCCACHE_CONF"
-    [ "$FIXTURE_MODE" != failed-start ] || exit 23
-    touch "$SERVER_STARTED"
-    ;;
-  *) exit 24 ;;
-esac
+[ "$#" = 1 ] && [ "$1" = --start-server ]
+[ "$AWS_ACCESS_KEY_ID" = fixture-access ]
+[ "$AWS_SECRET_ACCESS_KEY" = fixture-secret ]
+[ "$SCCACHE_BUCKET" = fixture-bucket ]
+[ "$SCCACHE_ENDPOINT" = https://fixture-account.r2.cloudflarestorage.com ]
+[ "$SCCACHE_REGION" = auto ]
+[ "$SCCACHE_S3_KEY_PREFIX" = "$EXPECTED_PREFIX" ]
+[ "$SCCACHE_GHA_ENABLED" = false ]
+[ "$SCCACHE_IDLE_TIMEOUT" = 0 ]
+grep -qx 'server_startup_timeout_ms = 60000' "$SCCACHE_CONF"
+[ "$FIXTURE_MODE" != failed-start ] || exit 23
+touch "$SERVER_STARTED"
 ''')
 program.chmod(0o755)
 
@@ -119,7 +105,7 @@ for architecture in ["arm64", "x86_64"]:
         "CARGO_INCREMENTAL=0", f"SCCACHE_CONF={directory}/sccache.toml", "RUSTC_WRAPPER=sccache",
     ]
 
-for mode in ["missing-binary", "wrong-version", "broken-version", "failed-start"]:
+for mode in ["missing-binary", "failed-start"]:
     result, directory, env_file, output = run_case(mode, mode=mode)
     assert result.returncode != 0, mode
     assert not (directory / "started").exists(), mode

@@ -199,10 +199,11 @@ job-local lifetime. Missing R2 configuration fails cache startup explicitly.
 Jobs that use the shared compiler cache call
 `.github/actions/setup-r2-sccache` once after checkout. The published
 `vm0-toolchain-rust:20261009` and `vm0-dev:20261009` images include sccache 0.18.0
-for both native host architectures. The action requires that exact preinstalled
-version before credentialed startup; it does not download a binary. It validates
-the architecture and R2 configuration, starts the job-local server, and exports
-only the compiler settings needed by later steps:
+for both native host architectures. Version pinning and verification belong to
+the image build; the action only checks executable availability before
+credentialed startup and does not download a binary. It validates the architecture
+and R2 configuration, starts the job-local server, and exports only the compiler
+settings needed by later steps:
 
 ```yaml
 - uses: actions/checkout@v7.0.1
@@ -237,8 +238,8 @@ job summary, including when compilation fails:
 ```
 
 Reporting receives no R2 credentials and is skipped when setup fails or is skipped,
-so it cannot start an unconfigured cache in those paths. Missing/wrong preinstalled
-versions or missing R2 configuration fail selected setup explicitly. All fixed
+so it cannot start an unconfigured cache in those paths. A missing executable,
+failed startup, or missing R2 configuration fails selected setup explicitly. All fixed
 base/Rust/development image references and the runner binary's hashed toolchain
 contract use the same published release; a contract change rotates binary inputs.
 
