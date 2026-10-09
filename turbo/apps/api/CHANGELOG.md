@@ -9,6 +9,44 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.721.1](https://github.com/okou-ai/okou/compare/api-v1.721.0...api-v1.721.1) (2026-10-09)
+
+
+### Documentation
+
+* reorganize engineering guides and align testing policies ([#38421](https://github.com/okou-ai/okou/issues/38421)) ([60f5783](https://github.com/okou-ai/okou/commit/60f57836b2877b5e065bf27b7adf75c2f633b95d))
+
+
+### Refactoring
+
+* **api:** extract prompt and skill preparation factories ([#38367](https://github.com/okou-ai/okou/issues/38367)) ([10449a5](https://github.com/okou-ai/okou/commit/10449a5252a831ec40127dd38118e96da9401a48))
+* **api:** own connected connector agent resolution ([#38433](https://github.com/okou-ai/okou/issues/38433)) ([5e26e9b](https://github.com/okou-ai/okou/commit/5e26e9b9bb3dba915412ba8a33ba84ccce9fd548))
+* **api:** read stored connector diagnostics in one statement ([#38458](https://github.com/okou-ai/okou/issues/38458)) ([6ea7ed1](https://github.com/okou-ai/okou/commit/6ea7ed14c1b88377c38dfd3bd6b08cc94dd67b15))
+* **api:** remove cloudflare access creation transaction ([#38443](https://github.com/okou-ai/okou/issues/38443)) ([139d5cf](https://github.com/okou-ai/okou/commit/139d5cfcd2dbd947d1a1d3ef773bb1c488475bdb))
+* **api:** remove connector account rename transaction ([#38452](https://github.com/okou-ai/okou/issues/38452)) ([d791969](https://github.com/okou-ai/okou/commit/d791969aec0763e83a86233e76d3f4dd92ace5a1))
+* **api:** remove discord preview deletion transaction ([#38445](https://github.com/okou-ai/okou/issues/38445)) ([03c79d9](https://github.com/okou-ai/okou/commit/03c79d9a11fa49dab3f4ddf755a969452a82fe2d))
+* **api:** remove invitation creation claim transaction ([#38447](https://github.com/okou-ai/okou/issues/38447)) ([a0eca50](https://github.com/okou-ai/okou/commit/a0eca5092d174ae91f178cf981c837dc4d4eecc7))
+* **api:** remove late invitation acceptance transaction ([#38457](https://github.com/okou-ai/okou/issues/38457)) ([3051ccf](https://github.com/okou-ai/okou/commit/3051ccf67a27b042a712f729dd82605df07450ad))
+* **api:** remove queued automation launch revalidation ([#38429](https://github.com/okou-ai/okou/issues/38429)) ([0cd4407](https://github.com/okou-ai/okou/commit/0cd44075ce114059e644713562e1fc3aca6e6710))
+* **api:** remove unreachable legacy desktop manifest reader ([#38441](https://github.com/okou-ai/okou/issues/38441)) ([b6ce3d8](https://github.com/okou-ai/okou/commit/b6ce3d830f65c026632f5058e514e5653ce90763))
+* **api:** retire chat thread provenance from runtime sql ([#38431](https://github.com/okou-ai/okou/issues/38431)) ([9fa8da0](https://github.com/okou-ai/okou/commit/9fa8da0d3d25e75e0dcfdd3292e1e2bbe6fe262f))
+* **api:** save ssh connection edits atomically without a transaction ([#38434](https://github.com/okou-ai/okou/issues/38434)) ([d40df43](https://github.com/okou-ai/okou/commit/d40df43bed417d3a76abe077c4869594094c1ec9))
+* canonicalize historical model selections and constrain runtime captures ([#38389](https://github.com/okou-ai/okou/issues/38389)) ([1ab1fc2](https://github.com/okou-ai/okou/commit/1ab1fc21a3aabe940ee044cc6f4226faee2a668f))
+
+
+### Performance Improvements
+
+* **api:** use firecrawl default scrape caching ([#38451](https://github.com/okou-ai/okou/issues/38451)) ([79ae38f](https://github.com/okou-ai/okou/commit/79ae38f82141678c93c881c6bdf6cccbc82de442))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.739.1
+    * @okouai/db bumped to 1.328.1
+    * @okouai/pi-agent-runtime bumped to 1.49.1
+
 ## [1.721.0](https://github.com/okou-ai/okou/compare/api-v1.720.1...api-v1.721.0) (2026-10-09)
 
 

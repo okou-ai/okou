@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.4](https://github.com/okou-ai/okou/compare/ios-v0.7.3...ios-v0.7.4) (2026-10-09)
+
+
+### Refactoring
+
+* **api:** remove unreachable legacy desktop manifest reader ([#38441](https://github.com/okou-ai/okou/issues/38441)) ([b6ce3d8](https://github.com/okou-ai/okou/commit/b6ce3d830f65c026632f5058e514e5653ce90763))
+
 ## [0.7.3](https://github.com/okou-ai/okou/compare/ios-v0.7.2...ios-v0.7.3) (2026-10-09)
 
 
