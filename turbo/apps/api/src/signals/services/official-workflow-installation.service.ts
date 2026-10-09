@@ -921,6 +921,7 @@ interface InstallationCompletion {
 }
 const activateInstallation$ = command(
   async ({ set }, args: InstallationCompletion, signal: AbortSignal) => {
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0198; new non-billing transactions are prohibited.
     return await set(writeDb$).transaction(async (tx) => {
       // SHARE conflicts with catalog pointer publication until activation commits.
       await tx

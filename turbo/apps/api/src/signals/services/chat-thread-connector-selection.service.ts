@@ -502,6 +502,7 @@ export const updateChatThreadConnectorSelection$ = command(
       return prepared;
     }
     const result = await settle(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0092; new non-billing transactions are prohibited.
       db.transaction(
         async (tx): Promise<UpdateChatThreadConnectorSelectionResult> => {
           // No parent row lock: the selection upsert's FK check on the thread
@@ -567,6 +568,7 @@ export async function clearChatThreadConnectorSelection(
   },
   signal: AbortSignal,
 ): Promise<ClearChatThreadConnectorSelectionResult> {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0093; new non-billing transactions are prohibited.
   return await db.transaction(async (tx) => {
     const thread = await loadOwnedChatThread(tx, args);
     if (!thread) {

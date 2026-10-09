@@ -77,6 +77,7 @@ export const observePiMemoryStage1Cost$ = command(
         );
         // The transaction scopes SET LOCAL to this best-effort read.
         const prices = await settleIncludingAbort(
+          // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0228; new non-billing transactions are prohibited.
           get(rawSqlReadDb$).transaction(async (tx) => {
             await tx.execute(sql`SET LOCAL statement_timeout = '1s'`);
             return await tx

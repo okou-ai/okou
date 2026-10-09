@@ -17,6 +17,12 @@ Do not add suppression comments (`eslint-disable`, `oxlint-disable`,
 make a change pass. Assess existing configuration overrides in their actual
 scope and with their documented replacement enforcement.
 
+The narrow exception is a next-line waiver disabling only
+`api/no-db-transaction`: a registered frozen legacy ID or a reviewed necessary
+billing invariant and single-statement justification. The independent CI scan
+must validate it under [database transaction lint](eslint/no-db-transaction.md).
+This does not permit unrelated suppressions or inventory expansion.
+
 ## 3. Error Handling
 
 Catch errors only at a boundary that meaningfully handles them. Remove redundant

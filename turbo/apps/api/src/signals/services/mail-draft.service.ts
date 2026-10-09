@@ -1185,6 +1185,7 @@ const persistLinkedDraft$ = command(
     const db = set(writeDb$);
     const mailDraftId = randomUUID();
     const createdAt = nowDate();
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0177; new non-billing transactions are prohibited.
     const result = await db.transaction(async (tx) => {
       const [inserted] = await tx
         .insert(mailDrafts)

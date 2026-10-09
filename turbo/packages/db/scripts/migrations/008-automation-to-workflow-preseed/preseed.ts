@@ -391,6 +391,7 @@ async function preseedAutomationVolume(
   );
   await verifyObjectExists(client, bucket, `${s3Key}/archive.tar.gz`);
 
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0360; new non-billing transactions are prohibited.
   await db.transaction(async (tx) => {
     await tx
       .insert(storageVersions)

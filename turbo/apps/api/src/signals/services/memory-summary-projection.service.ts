@@ -213,6 +213,7 @@ const claimProjectionWork$ = command(
     const db = set(writeDb$);
     // Claim selection and lease assignment are one atomic worker admission.
     // The existing row locks prevent duplicate live leases across workers.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0186; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       const rows = await tx
         .select({

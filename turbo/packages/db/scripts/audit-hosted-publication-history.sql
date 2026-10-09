@@ -1,6 +1,7 @@
 -- #35240: preservation preflight observations, never a migration manifest.
 -- Run the whole file in a fresh psql -X session with ON_ERROR_STOP=1.
 -- Includes every status and deleted site; an unavailable relation fails the audit.
+-- eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0355; new non-billing transactions are prohibited.
 BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
 SET LOCAL statement_timeout = '30s';
 SET LOCAL lock_timeout = '3s';

@@ -533,6 +533,7 @@ const commitVerifiedStorageVersion$ = command(
     },
     signal: AbortSignal,
   ): Promise<CommitStorageResponse> => {
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0256; new non-billing transactions are prohibited.
     return await set(writeDb$).transaction(async (tx) => {
       // The plan contains only bound SQL and ordinary data. This command alone
       // executes every statement and owns the transaction through completion.

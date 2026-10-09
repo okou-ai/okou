@@ -98,6 +98,7 @@ const commitMailNotification$ = command(
     const db = set(writeDb$);
     const keyScope = notificationKeyScope(owner, body.idempotencyKey);
     const runScope = activeRunScope(owner);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0178; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       // Serialize admission with run termination and the user's opt-out writes.
       const [activeRun] = await tx
@@ -285,6 +286,7 @@ export const eraseMailNotifications$ = command(
     if (!owner.userId && !owner.orgId) {
       throw new Error("Mail notification erasure requires an owner");
     }
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0179; new non-billing transactions are prohibited.
     await set(writeDb$).transaction(async (tx) => {
       const scope = and(
         owner.userId ? eq(mailNotifications.userId, owner.userId) : undefined,

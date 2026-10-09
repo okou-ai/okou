@@ -812,6 +812,7 @@ const dispatchStripeDeauthorization$ = command(
       return { kind: "bad_request" };
     }
     // Keep rollback when cancellation arrives during the UPDATE, before commit.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0257; new non-billing transactions are prohibited.
     const updated = await db.transaction(async (tx) => {
       const rows = await tx
         .update(connectors)
@@ -880,6 +881,7 @@ async function dispatchStripeInvoice(
   }
   await repairMissingStripeIngressProjections(db, parsed.data.account, signal);
   signal.throwIfAborted();
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0258; new non-billing transactions are prohibited.
   const fanout = await db.transaction(async (tx) => {
     return await recordInvoiceFanout(
       {
@@ -1157,6 +1159,7 @@ const finishDelivery$ = command(
   ): Promise<boolean> => {
     signal.throwIfAborted();
     // Fence the terminal outcome and commit its health together, delivery first.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0259; new non-billing transactions are prohibited.
     const finished = await set(writeDb$).transaction(async (tx) => {
       const currentTime = nowDate();
       const [updated] = await tx

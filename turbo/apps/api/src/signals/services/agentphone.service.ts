@@ -376,6 +376,7 @@ export async function storeInboundAgentPhoneMessage(
   },
 ): Promise<{ readonly inserted: boolean; readonly dispatch: boolean }> {
   const isGroup = isAgentPhoneGroupEvent(params.event);
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0054; new non-billing transactions are prohibited.
   return await db.transaction(async (tx) => {
     let visibilityRecipients: readonly AgentPhoneMessageVisibilityRecipient[] =
       [];
@@ -402,6 +403,7 @@ export async function storeInboundAgentPhoneMessage(
         return { inserted: false, dispatch: false };
       }
 
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0055; new non-billing transactions are prohibited.
       const receiptInserted = await tx.transaction(async (receiptTx) => {
         const [receipt] = await receiptTx
           .insert(agentphoneGroupMessageReceipts)

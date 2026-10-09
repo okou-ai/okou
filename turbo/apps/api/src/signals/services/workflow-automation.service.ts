@@ -2099,6 +2099,7 @@ const insertEventAutomation$ = command(
     const owner = eventAutomationThreadOwner(args);
     const connectorSlug = eventAutomationConnectorSlug(args.input);
     const inserted = await settle(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0336; new non-billing transactions are prohibited.
       db.transaction(async (tx) => {
         // Publish the selected account, shared thread/created event and
         // automation together; a failed account FK must roll back the binding.
@@ -2478,6 +2479,7 @@ const commitWebhookEventAutomation$ = command(
     signal: AbortSignal,
   ): Promise<AutomationResult> => {
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0337; new non-billing transactions are prohibited.
     const result = await db.transaction(
       async (tx): Promise<AutomationResult> => {
         // The entitlement/access checks, shared thread binding and signed webhook
@@ -3864,6 +3866,7 @@ const createStripeInvoicePaidEventAutomationForWorkflow$ = command(
       binding: bindingPlan,
     } = stripeAutomationCreationPlans(args, currentTime);
     const settled = await settle(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0338; new non-billing transactions are prohibited.
       db.transaction(async (tx): Promise<AutomationResult> => {
         // Keep the shared thread/event/automation publication and FK rollback.
         // Readiness stays after the binding statement, and a business failure
@@ -4263,6 +4266,7 @@ const persistOfficialAutomationMetadata$ = command(
   ) => {
     const db = set(writeDb$);
     const { automationId, metadata } = args;
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0339; new non-billing transactions are prohibited.
     const result = await db.transaction(async (tx) => {
       const [plain] = await tx
         .select()
@@ -6150,6 +6154,7 @@ const restoreDisabledWorkflowAutomation$ = command(
       throw new Error("Official Workflow automation state is incomplete");
     }
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0340; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       const [restored] = await tx
         .update(workflowAutomations)
@@ -6622,7 +6627,8 @@ const persistEnabledWorkflowAutomation$ = command(
       PersistEnabledWorkflowAutomationResult | AutomationRow[]
     >(
       isWebhook || resetsFormsCursor
-        ? db.transaction(
+        ? // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0341; new non-billing transactions are prohibited.
+          db.transaction(
             async (tx): Promise<PersistEnabledWorkflowAutomationResult> => {
               // Publish the webhook tier decision/configuration or Forms cursor reset
               // atomically with the enabled automation. All provider preparation is complete.
@@ -7367,6 +7373,7 @@ const persistDisabledWorkflowAutomation$ = command(
     signal: AbortSignal,
   ): Promise<AutomationRow | undefined> => {
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0342; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       const [row] = await tx
         .update(workflowAutomations)

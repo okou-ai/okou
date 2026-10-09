@@ -215,6 +215,7 @@ UPDATE migration_probe SET value = 1, annotation = 'applied';`,
     });
     await blocker.connect();
     try {
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0403; new non-billing transactions are prohibited.
       await blocker.query("BEGIN");
       try {
         await blocker.query(

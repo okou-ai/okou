@@ -331,6 +331,7 @@ const commitSshConnectionCreation$ = command(
     const db = set(writeDb$);
     const accessId = args.accessId;
     const transaction = await settle(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0252; new non-billing transactions are prohibited.
       db.transaction(async (tx) => {
         const [existing] = await tx
           .select({
@@ -514,6 +515,7 @@ const commitSshConnectionUpdate$ = command(
   ): Promise<SshConnectionMutationResult<SshConnectionResponse>> => {
     const db = set(writeDb$);
     const committed = await settle(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0253; new non-billing transactions are prohibited.
       db.transaction<SshConnectionMutationResult<SshConnectionResponse>>(
         async (tx) => {
           // An existing host must precede protected configuration authority,

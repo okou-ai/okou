@@ -1262,6 +1262,7 @@ const grantAtomMemberCredits$ = command(
       amount: details.credits,
       expiresAt: details.creditsExpiresAt,
     });
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0326; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       const [wallet] = await tx
         .select({ customerId: orgMetadata.stripeCustomerId })
@@ -1499,6 +1500,7 @@ const publishAtomPlanInvoice$ = command(
   ) => {
     const db = set(writeDb$);
     const { invoice, details } = input;
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0327; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       const [inserted] = await tx
         .insert(orgMetadataCanonicalWrites)
@@ -2338,6 +2340,7 @@ async function bindStripeCustomerFromMetadata(
     return false;
   }
 
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0328; new non-billing transactions are prohibited.
   const bound = await db.transaction(async (tx) => {
     // Bootstrap may create the row after the existence check. Let the upsert
     // decide binding atomically without replacing another customer's ownership.
@@ -2610,6 +2613,7 @@ const publishConcurrencyInvoice$ = command(
     if (!projectionState) {
       return { handled: true, drainOrgId: orgId };
     }
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0329; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       // Payment evidence remains valid even after the renewable subscription or
       // concurrency item disappears. Record its immutable invoice identity without
@@ -3561,6 +3565,7 @@ const publishConcurrencySubscription$ = command(
     // renewal and schedule can change independently. Read Stripe for every
     // projection and publish only against the database snapshot it started from.
     const state = await retrieveConcurrencySubscriptionState(subscription.id);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0330; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       if (!state) {
         const rows = await tx
@@ -3785,6 +3790,7 @@ const publishLegacyPlanSubscription$ = command(
     const lotIds = lots.map((row) => {
       return row.id;
     });
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0331; new non-billing transactions are prohibited.
     const result = await db.transaction(async (tx) => {
       // No row lock: publish the plan projection as a conditional write on the
       // subscription binding first; the wallet row it writes then orders the
@@ -3982,6 +3988,7 @@ async function handleSubscriptionScheduleReleased(
   releasedAt: Date,
 ): Promise<readonly string[]> {
   const updatedAt = nowDate();
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0332; new non-billing transactions are prohibited.
   const { rows, usagePackOrgIds } = await db.transaction(async (tx) => {
     const usagePackOrgIds =
       await failScheduledUsagePackAllocationChangesForSchedule(tx, {
@@ -4071,6 +4078,7 @@ async function handleSubscriptionDeletedLegacy(
       return row.orgId;
     });
   }
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0333; new non-billing transactions are prohibited.
   const planRows = await db.transaction(async (tx) => {
     const downgraded = await writeOrgMetadataWithPlanEntitlements(tx, {
       writeOrgMetadata: async (writeTx) => {

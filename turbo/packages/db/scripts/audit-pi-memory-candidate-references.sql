@@ -1,6 +1,7 @@
 -- Content-free diagnostic for #33975 / #33748, with no locks or row repair.
 -- Run with psql -X --set ON_ERROR_STOP=1 on an authorized read-only connection.
 -- Only candidate hashes are reconciled; this is not a global ledger repair.
+-- eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0356; new non-billing transactions are prohibited.
 BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
 SET LOCAL statement_timeout = '30s';
 SET LOCAL lock_timeout = '3s';

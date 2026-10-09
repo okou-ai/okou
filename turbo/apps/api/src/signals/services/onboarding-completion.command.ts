@@ -40,6 +40,7 @@ export const markOrgOnboardingComplete$ = command(
     const industry =
       args.industry === undefined ? {} : { onboardingIndustry: args.industry };
     signal.throwIfAborted();
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0215; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       // No row lock: the INSERT ... ON CONFLICT DO NOTHING result tells this
       // writer whether it created the organization's metadata row, which is

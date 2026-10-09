@@ -93,6 +93,7 @@ const commitPreparedVolumeUpload$ = command(
             nowDate(),
           )
         : undefined;
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0255; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       // The version insert's FK check keeps the Storage parent from being
       // deleted, and the HEAD UPDATE below then owns that row implicitly.

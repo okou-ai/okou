@@ -12,6 +12,7 @@ const schema = `plan_capability_${randomUUID().replaceAll("-", "")}`;
 const originalUpdatedAt = "2026-01-01 00:00:00";
 
 try {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0421; new non-billing transactions are prohibited.
   await client.query("BEGIN");
   await client.query(`CREATE SCHEMA "${schema}"`);
   await client.query(`SET LOCAL search_path TO "${schema}"`);

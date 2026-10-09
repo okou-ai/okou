@@ -732,6 +732,7 @@ async function devSeed() {
   // --- built_in_model_keys (transactional replace) ---
   writeLine("Seeding built_in_model_keys");
   const apiKeys = buildBuiltInModelKeys();
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0005; new non-billing transactions are prohibited.
   await database.transaction(async (tx) => {
     await tx.delete(builtInModelKeys);
     if (apiKeys.length > 0) {
@@ -761,6 +762,7 @@ async function devSeed() {
       return getSkillStorageName(skill.fullPath);
     });
     let insertedCount = 0;
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0006; new non-billing transactions are prohibited.
     await database.transaction(async (tx) => {
       const inserted = await tx
         .insert(skills)

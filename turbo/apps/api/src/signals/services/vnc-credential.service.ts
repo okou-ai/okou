@@ -377,6 +377,7 @@ export const updateVncCredential$ = command(
     signal.throwIfAborted();
     // The profile FK pins each bound host to its credential's auth method.
     const written = await settle(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0319; new non-billing transactions are prohibited.
       db.transaction(async (tx) => {
         if (encrypted !== undefined && hosts.length > 0) {
           await tx

@@ -187,6 +187,7 @@ const enqueueResultEmail$ = command(
     args: ResultEmailEnqueueArgs,
     signal: AbortSignal,
   ): Promise<boolean> => {
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0175; new non-billing transactions are prohibited.
     const enqueued = await set(writeDb$).transaction(async (tx) => {
       // Linearize the final preference decision with enqueue. Both explicit
       // unsubscribe and complaint handling upsert this same row, so their write

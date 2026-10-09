@@ -26,6 +26,7 @@ async function uninstallDiscordGuild(
   const eventDigest = createHash("sha256")
     .update(JSON.stringify([args.applicationId, args.eventId]))
     .digest("hex");
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0153; new non-billing transactions are prohibited.
   const result = await db.transaction(async (tx) => {
     const [receipt] = await tx
       .insert(discordGatewayReceipts)

@@ -118,6 +118,7 @@ export async function validatePiMemoryStage1Cost(
       return Math.round(performance.now() - started);
     };
     await client.query(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0418; new non-billing transactions are prohibited.
       "BEGIN; SET LOCAL lock_timeout='1s'; SET LOCAL statement_timeout='10s'",
     );
     const expandMs = await apply("1141_pi_memory_stage1_billing_context");
@@ -131,6 +132,7 @@ export async function validatePiMemoryStage1Cost(
     );
     await client.query("COMMIT");
     await client.query(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0419; new non-billing transactions are prohibited.
       "BEGIN; SET LOCAL lock_timeout='1s'; SET LOCAL statement_timeout='10s'",
     );
     const validateMs = await apply(
@@ -186,6 +188,7 @@ export async function validatePiMemoryStage1Cost(
       [org, model],
     );
     await client.query(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0420; new non-billing transactions are prohibited.
       "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY; SET LOCAL statement_timeout='5s'",
     );
     const report = (await client.query(query, ["2026-09-15", org, "user", {}]))

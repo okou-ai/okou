@@ -115,6 +115,7 @@ async function validateCanonicalRowLock(
   const contender = new Client({ connectionString: databaseUrl });
   await contender.connect();
   try {
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0373; new non-billing transactions are prohibited.
     await client.query("BEGIN");
     try {
       const locked = await client.query<BuiltInModelKeyRow>(
@@ -132,6 +133,7 @@ async function validateCanonicalRowLock(
       );
       assert.deepEqual(locked.rows, [row]);
 
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0374; new non-billing transactions are prohibited.
       await contender.query("BEGIN");
       try {
         await contender.query("SET LOCAL lock_timeout = '100ms'");

@@ -111,6 +111,7 @@ export const enqueueIntegrationChatInput$ = command(
     }
     const { createdAt, chatThreadId } = prepared.row;
     const currentTime = nowDate();
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0174; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       if (args.ingress?.kind === "discord") {
         const [claimed] = await tx

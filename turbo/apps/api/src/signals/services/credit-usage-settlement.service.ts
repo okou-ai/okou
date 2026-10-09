@@ -110,6 +110,7 @@ const commitUsageBatch$ = command(
   async ({ set }, args: SettlementBatchArgs, signal: AbortSignal) => {
     const { orgId, batch, at } = args;
     const { startedAt, work } = settlementObservation(batch.prices.length);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0122; new non-billing transactions are prohibited.
     const result = await set(writeDb$).transaction(async (tx) => {
       work.lockWaitMs = 0;
       const [job] = args.social

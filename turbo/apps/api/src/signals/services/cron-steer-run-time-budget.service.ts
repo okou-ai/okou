@@ -79,6 +79,7 @@ const persistRunTimeBudgetInput$ = command(
   ): Promise<boolean> => {
     const db = set(writeDb$);
 
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0133; new non-billing transactions are prohibited.
     const inserted = await db.transaction(async (tx) => {
       // The run row lock and running recheck serialize against completion and
       // timeout, which expire pending budget input before the run ends.

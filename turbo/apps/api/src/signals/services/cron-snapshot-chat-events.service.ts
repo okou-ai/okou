@@ -596,6 +596,7 @@ async function publishSnapshotVersion(
 ): Promise<boolean> {
   const { lastSeqId, lastEventId, terminalSeqId, terminalEventId, objectKey } =
     pointer;
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0132; new non-billing transactions are prohibited.
   return await db.transaction(async (tx) => {
     if (source !== null) {
       const updated = await tx

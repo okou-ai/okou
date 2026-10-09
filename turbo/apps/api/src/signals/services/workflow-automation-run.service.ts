@@ -583,6 +583,7 @@ const commitWorkflowInput$ = command(
     // one rollback authority.
     // The finite callback performs only SQL, never commands or external I/O.
     const eventId = await set(writeDb$)
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0335; new non-billing transactions are prohibited.
       .transaction(async (tx) => {
         signal.throwIfAborted();
         // Event sequence precedes the context FK's thread KEY SHARE, matching

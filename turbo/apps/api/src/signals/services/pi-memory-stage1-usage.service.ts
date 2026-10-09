@@ -131,6 +131,7 @@ export const recordPiMemoryStage1Usage$ = command(
     if (expected.length === 0) {
       return { disposition: "zero_usage", accountingAt: null };
     }
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0230; new non-billing transactions are prohibited.
     return await set(writeDb$).transaction(async (tx) => {
       const inserted = await tx
         .insert(usageEvent)

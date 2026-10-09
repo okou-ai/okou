@@ -27,6 +27,7 @@ async function snapshot(table: "org_metadata" | "org_plan_entitlements") {
 }
 
 try {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0396; new non-billing transactions are prohibited.
   await client.query("BEGIN");
   await client.query(`CREATE SCHEMA "${schema}"`);
   await client.query(`SET LOCAL search_path TO "${schema}"`);
@@ -107,6 +108,7 @@ try {
      VALUES ('unsafe', 'free', 'schedule_linked');
      INSERT INTO org_plan_entitlements (org_id, plan_key) VALUES ('unsafe', 'free')`,
   ]) {
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0397; new non-billing transactions are prohibited.
     await client.query("SAVEPOINT unsafe_migration");
     await client.query(setup);
     await assert.rejects(client.query(migration), (error: unknown) => {

@@ -52,6 +52,7 @@ async function tableRows(tables: readonly string[]): Promise<unknown[][]> {
 }
 
 try {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0407; new non-billing transactions are prohibited.
   await client.query("BEGIN");
   await client.query(`CREATE SCHEMA "${testSchema}"`);
   await client.query(`SET LOCAL search_path TO "${testSchema}"`);
@@ -130,6 +131,7 @@ try {
   await client.query(
     "CREATE VIEW unexpected_consumer AS SELECT * FROM morning_brief_installed_preferences",
   );
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0408; new non-billing transactions are prohibited.
   await client.query("SAVEPOINT blocked_contraction");
   await assert.rejects(client.query(dropSql), (error: unknown) => {
     return error instanceof Error && "code" in error && error.code === "2BP01";

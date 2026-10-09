@@ -267,6 +267,7 @@ try {
   // A rerun finds nothing left to clear.
   const afterThreads = await threads();
   const afterOwnerEvents = await events(ownerId);
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0432; new non-billing transactions are prohibited.
   await sql.begin(async (tx) => {
     for (const statement of migration.sql) await tx.unsafe(statement);
   });

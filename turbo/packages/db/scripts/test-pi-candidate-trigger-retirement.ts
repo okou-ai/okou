@@ -492,6 +492,7 @@ SELECT 1 / 0;`,
   await scenario(
     "migration waits then audits a fresh writer commit",
     async (client, url) => {
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0413; new non-billing transactions are prohibited.
       await client.query("BEGIN");
       await client.query(
         "LOCK TABLE pi_memory_stage1_candidates IN ROW EXCLUSIVE MODE",
@@ -524,6 +525,7 @@ SELECT 1 / 0;`,
     "one-second relation lock timeout preserves B",
     async (client, url) => {
       const before = await snapshot(client);
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0414; new non-billing transactions are prohibited.
       await client.query("BEGIN");
       await client.query(
         "LOCK TABLE pi_memory_stage1_candidates IN ROW EXCLUSIVE MODE",

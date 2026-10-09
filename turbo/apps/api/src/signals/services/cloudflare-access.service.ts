@@ -208,6 +208,7 @@ export const createCloudflareAccessConfig$ = command(
       userId: scope === "organization" ? null : args.owner.userId,
     };
     const transaction = await settle(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0103; new non-billing transactions are prohibited.
       db.transaction(async (tx) => {
         const [existing] = await tx
           .select({
@@ -473,6 +474,7 @@ export const updateCloudflareAccessConfig$ = command(
     // Only an explicitly unwritten reference-set expansion can start a second
     // transaction. Exceptions and successful/ambiguous effects are never replayed.
     for (let attempt = 0; attempt < 2; attempt += 1) {
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0104; new non-billing transactions are prohibited.
       const result = await db.transaction(async (tx) => {
         const hosts = await tx
           .select()
@@ -580,6 +582,7 @@ export const deleteCloudflareAccessConfig$ = command(
     const db = set(writeDb$);
 
     for (let attempt = 0; attempt < 2; attempt += 1) {
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0105; new non-billing transactions are prohibited.
       const result = await db.transaction(async (tx) => {
         const hosts = await tx
           .select()
@@ -756,6 +759,7 @@ export const convertCloudflareAccessToOrganization$ = command(
       return cloudflareAccessFailure("forbidden");
     }
     for (let attempt = 0; attempt < 2; attempt += 1) {
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0106; new non-billing transactions are prohibited.
       const result = await db.transaction(async (tx) => {
         const hosts = await tx
           .select()
@@ -927,6 +931,7 @@ export const convertCloudflareAccessToPersonal$ = command(
       return cloudflareAccessFailure("forbidden");
     }
     for (let attempt = 0; attempt < 2; attempt += 1) {
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0107; new non-billing transactions are prohibited.
       const result = await db.transaction(async (tx) => {
         const hosts = await tx
           .select()

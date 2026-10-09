@@ -205,8 +205,10 @@ export async function recoverGoalArchiveSearch(
 ): Promise<RecoveryOutcome> {
   await client.query(
     migrate
-      ? "BEGIN ISOLATION LEVEL REPEATABLE READ"
-      : "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY",
+      ? // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0364; new non-billing transactions are prohibited.
+        "BEGIN ISOLATION LEVEL REPEATABLE READ"
+      : // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0365; new non-billing transactions are prohibited.
+        "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY",
   );
   try {
     await client.query("SET LOCAL lock_timeout = '1s'");

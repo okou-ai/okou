@@ -555,6 +555,7 @@ async function writePersonalAccount(
   },
   expiryBindings: Set<string | null>,
 ): Promise<UpsertPersonalAccountResult> {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0187; new non-billing transactions are prohibited.
   return await db.transaction(async (tx) => {
     const provider = await logicalProvider(tx, args);
     const accounts = await applyClaudeIdentities(
@@ -773,6 +774,7 @@ export const activatePersonalModelProviderAccount$ = command(
     const db = set(writeDb$);
     // Deactivating siblings and activating the target must commit together.
     const result = await withAccountConflict(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0188; new non-billing transactions are prohibited.
       db.transaction(async (tx) => {
         const [row] = await tx
           .select({ account: modelProviderAccounts, provider: providerColumns })
@@ -869,6 +871,7 @@ export const disconnectPersonalModelProviderAccounts$ = command(
         : null;
     signal.throwIfAborted();
     const result = await withAccountConflict(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0189; new non-billing transactions are prohibited.
       db.transaction(async (tx) => {
         for (const account of await applyClaudeIdentities(
           tx,

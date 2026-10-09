@@ -220,6 +220,7 @@ export const ensureTelegramChatThreadRoute$ = command(
     );
     const candidateId = randomUUID();
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0261; new non-billing transactions are prohibited.
     const result = await db.transaction(async (tx) => {
       const existing = await loadRoute(tx, args);
       if (existing) {
@@ -278,6 +279,7 @@ export const createTelegramChatThread$ = command(
     );
     const thread = integrationChatThreadValues(args, randomUUID(), defaults);
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0262; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
       await tx.insert(chatThreads).values(thread);
       await tx.execute(integrationThreadCreatedEventSql(args.orgId, thread));

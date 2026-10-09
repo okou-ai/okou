@@ -48,6 +48,7 @@ export const usageMembers$ = command(
     }
 
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0309; new non-billing transactions are prohibited.
     const { rows, breakdownByUser } = await db.transaction(
       async (tx) => {
         const rows = await tx

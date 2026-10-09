@@ -33,6 +33,7 @@ const commitSlackInstallation$ = command(
     signal: AbortSignal,
   ): Promise<SlackInstallation> => {
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0249; new non-billing transactions are prohibited.
     const installation = await db.transaction(async (tx) => {
       const orgId = args.orgId;
       if (orgId && args.userId) {

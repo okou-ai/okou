@@ -34,6 +34,7 @@ const query = await readFile(
 const client = new Client({ connectionString: process.env.DATABASE_URL });
 await client.connect();
 try {
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0369; new non-billing transactions are prohibited.
   await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
   await client.query(
     "SET LOCAL TIME ZONE 'UTC'; SET LOCAL lock_timeout = '1s'; SET LOCAL statement_timeout = '5s'",

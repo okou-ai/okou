@@ -448,6 +448,7 @@ const publishGmailWatch$ = command(
     const expiration = watchExpirationDate(watch.expiration);
     // Rolling-version watch interruptions are accepted. No users.stop,
     // compatibility acquisition or compensating rollout renewal is added.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0167; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
       // The unique upsert publishes only while the account is usable and a
       // consumer is enabled; no source row is locked. The connector FK check

@@ -551,6 +551,16 @@ jobs:
       - uses: ./.github/actions/toolchain-init
       - name: Check DB ownership boundary
         run: .github/scripts/check-db-boundary.sh
+      - name: Check frozen database transaction inventory
+        working-directory: turbo
+        shell: bash
+        env:
+          TRANSACTION_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$TRANSACTION_BASE_SHA" =~ ^[a-f0-9]{40}$ ]] || { echo 'Missing base/main SHA' >&2; exit 1; }
+          git fetch --no-tags --depth=1 origin "$TRANSACTION_BASE_SHA" 1df16c8c112a1c43fdfd426578b3179512fec129
+          pnpm lint:transactions "$TRANSACTION_BASE_SHA"
       - name: Validate oxlintrc.json react allowImportNames
         working-directory: turbo
         run: |
@@ -1037,6 +1047,9 @@ jobs:
       - name: Test ESLint Config
         working-directory: turbo
         run: pnpm -F @okouai/eslint-config test
+      - name: Test database transaction policy
+        working-directory: turbo
+        run: pnpm -F @okouai/eslint-rules exec vitest run src/api/__tests__/no-db-transaction.test.ts src/api/__tests__/db-transaction-policy.test.ts --maxWorkers=1
       - name: Upload coverage to Codecov
         if: success() || failure()
         continue-on-error: true

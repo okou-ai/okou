@@ -262,6 +262,7 @@ const cleanupBootstrapCandidate$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0218; new non-billing transactions are prohibited.
     const jobId = await db.transaction(async (tx) => {
       // Bound recovery SQL independently of the cancelled request. Publication
       // may still be settling for this exact candidate; a timeout is not proof
@@ -514,6 +515,7 @@ export const ensureOrgLimitedFreeBootstrap$ = command(
   ): Promise<EnsureOrgLimitedFreeBootstrapResult> => {
     const writeDb = set(writeDb$);
     const agentId = randomUUID();
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0219; new non-billing transactions are prohibited.
     const reservation = await writeDb.transaction(async (tx) => {
       return await reserveBootstrapAgent(tx, {
         ...args,
@@ -541,6 +543,7 @@ export const ensureOrgLimitedFreeBootstrap$ = command(
         },
         signal,
       );
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0220; new non-billing transactions are prohibited.
       return await writeDb.transaction(
         async (tx) => {
           return await publishBootstrap(

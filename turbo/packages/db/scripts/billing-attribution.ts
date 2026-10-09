@@ -183,6 +183,7 @@ async function timeout() {
 await client.connect();
 try {
   if (!values.migrate) {
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0357; new non-billing transactions are prohibited.
     await client.query("BEGIN READ ONLY");
     await timeout();
     const union = phases
@@ -249,6 +250,7 @@ try {
       scannedThisInvocation < maxRows &&
       performance.now() - startedAt < maxMs
     ) {
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0358; new non-billing transactions are prohibited.
       await client.query("BEGIN");
       try {
         await timeout();
