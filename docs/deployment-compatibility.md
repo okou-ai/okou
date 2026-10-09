@@ -5118,6 +5118,9 @@ is safe; an older API resumes serving the routes with the same signing key.
 Hosted deployment requests may include a separately uploaded private preview
 when the default-off `artifactPreviews` switch is enabled. The same switch gates
 CLI capture, generation guidance and server prepare/complete admission.
+When disabled, capture is a silent no-op and supplied previews are ignored;
+hosting continues normally. Prepare/complete use `previewSkipped: true` to
+acknowledge an ignored cover, including disabling between those requests.
 Published covers remain readable after disabling the switch.
 Deploy and drain API readers before the new CLI/generation instructions; a
 mixed completion fleet must not ignore the preview requirement. Old requests

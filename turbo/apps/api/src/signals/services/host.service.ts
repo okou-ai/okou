@@ -230,16 +230,15 @@ type PrepareDeploymentResult =
           readonly uploadUrl: string;
           readonly sha256: string;
         };
+        readonly previewSkipped?: true;
       };
     }
   | { readonly status: "forbidden" }
-  | { readonly status: "preview_unavailable" }
   | { readonly status: "bad_request"; readonly message: string }
   | { readonly status: "conflict"; readonly message: string }
   | { readonly status: "config_error"; readonly message: string };
 
 type CompleteDeploymentResult =
-  | { readonly status: "preview_unavailable" }
   | {
       readonly status: "ok";
       readonly body: {
@@ -254,6 +253,7 @@ type CompleteDeploymentResult =
         readonly activeDeploymentVersion?: number;
         readonly status: "ready";
         readonly previewImageUrl?: string;
+        readonly previewSkipped?: true;
       };
     }
   | { readonly status: "not_found"; readonly message: string }
@@ -730,7 +730,8 @@ export const prepareHostedSiteDeployment$ = command(
     if (args.body.requirePrivateArtifact) {
       return { status: "forbidden" };
     }
-    if (args.body.preview) {
+    let previewRequest = args.body.preview;
+    if (previewRequest) {
       const features = await set(
         loadUserFeatureSwitchContext$,
         args.orgId,
@@ -739,15 +740,17 @@ export const prepareHostedSiteDeployment$ = command(
       );
       signal.throwIfAborted();
       if (!isFeatureEnabled(FeatureSwitchKey.ArtifactPreviews, features)) {
-        return { status: "preview_unavailable" };
+        previewRequest = undefined;
+      } else {
+        // Fail before creating a deployment if private preview storage is absent.
+        privateArtifactsBucket();
       }
-      // Fail before creating a deployment if private preview storage is absent.
-      privateArtifactsBucket();
     }
-    const siteAndDeployment = await set(createHostedSiteDeployment$, args, {
-      now: nowDate(),
-      deploymentId: crypto.randomUUID(),
-    });
+    const siteAndDeployment = await set(
+      createHostedSiteDeployment$,
+      { ...args, body: { ...args.body, preview: previewRequest } },
+      { now: nowDate(), deploymentId: crypto.randomUUID() },
+    );
     // Allocation commits one SQL unit before request cancellation is observed.
     signal.throwIfAborted();
     if (
@@ -788,11 +791,11 @@ export const prepareHostedSiteDeployment$ = command(
     );
     signal.throwIfAborted();
 
-    const preview = args.body.preview
+    const preview = previewRequest
       ? await set(
           prepareHostedPreview$,
           siteAndDeployment.deployment.id,
-          args.body.preview,
+          previewRequest,
           signal,
         )
       : undefined;
@@ -806,6 +809,9 @@ export const prepareHostedSiteDeployment$ = command(
         ...deploymentVersionResponseFields(siteAndDeployment.deployment),
         uploads,
         ...(preview ? { preview } : {}),
+        ...(args.body.preview && !previewRequest
+          ? { previewSkipped: true }
+          : {}),
       },
     };
   },
@@ -1144,7 +1150,8 @@ const publishHostedSiteDeploymentPointers$ = command(
 function completedHostedSiteResponse(
   deployment: HostedDeploymentRow,
   promotion: HostedSitePromotion,
-  previewImageUrl: string | undefined,
+  preview:
+    { readonly status: "ok" | "skipped"; readonly url?: string } | undefined,
 ): CompleteDeploymentResult {
   const deploymentVersion = legacyHostedDeploymentVersion(deployment.manifest);
   return {
@@ -1166,7 +1173,8 @@ function completedHostedSiteResponse(
                 }),
           }),
       status: "ready",
-      ...(previewImageUrl ? { previewImageUrl } : {}),
+      ...(preview?.url ? { previewImageUrl: preview.url } : {}),
+      ...(preview?.status === "skipped" ? { previewSkipped: true } : {}),
     },
   };
 }
@@ -1230,7 +1238,7 @@ export const completeHostedSiteDeployment$ = command(
         )
       : undefined;
     signal.throwIfAborted();
-    if (preview && preview.status !== "ok") {
+    if (preview?.status === "bad_request") {
       return preview;
     }
 
@@ -1303,15 +1311,15 @@ export const completeHostedSiteDeployment$ = command(
     // via waitUntil so it survives the response; failures leave the preview
     // empty without blocking the deployment.
     // Retain the old-client producer until the sandbox rollout drains (PR 3 of #36205).
-    // A supplied preview never falls back to remote rendering.
-    if (!deployment.manifest.preview) {
+    // Disabled previews use ordinary hosting; enabled preview failures remain errors.
+    if (!preview || preview.status === "skipped") {
       set(
         scheduleArtifactPreviewRender$,
         artifactPreviewArgs(deployment, artifactRow),
       );
     }
 
-    return completedHostedSiteResponse(deployment, promotion, preview?.url);
+    return completedHostedSiteResponse(deployment, promotion, preview);
   },
 );
 

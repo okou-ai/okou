@@ -16,11 +16,3 @@ export async function artifactPreviewsEnabled(): Promise<boolean> {
     response.body.effectiveSwitches[FeatureSwitchKey.ArtifactPreviews] === true
   );
 }
-
-export async function requireArtifactPreviews(): Promise<void> {
-  if (!(await artifactPreviewsEnabled())) {
-    throw new Error(
-      "Artifact previews are disabled. Enable artifactPreviews in Lab before capturing or publishing a cover.",
-    );
-  }
-}

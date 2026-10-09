@@ -107,7 +107,7 @@ export const completeHostedPreview$ = command(
   ): Promise<
     | { readonly status: "ok"; readonly url: string }
     | { readonly status: "bad_request"; readonly message: string }
-    | { readonly status: "preview_unavailable" }
+    | { readonly status: "skipped"; readonly url?: never }
   > => {
     const features = await set(
       loadUserFeatureSwitchContext$,
@@ -117,7 +117,7 @@ export const completeHostedPreview$ = command(
     );
     signal.throwIfAborted();
     if (!isFeatureEnabled(FeatureSwitchKey.ArtifactPreviews, features)) {
-      return { status: "preview_unavailable" };
+      return { status: "skipped" };
     }
     const id = previewId(args.deploymentId, args.preview);
     const existing = await set(privateArtifactRecord$, id, signal);

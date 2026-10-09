@@ -22,12 +22,16 @@ The CLI reads the authenticated caller's effective state from
 but cannot use that endpoint to update or delete overrides. Unauthenticated
 source-selection packets contain the existing publishing instructions.
 
-With the switch off, ordinary hosting without `--preview` keeps the existing
-backend screenshot path. Explicit previews fail visibly; they are never
-silently discarded. Switching off after prepare rejects completion before
-activating the new deployment, preserving the old active version. Already
-issued upload URLs expire normally and grant access only to staged bytes;
-re-enable the switch and retry `host complete` to finish the original deployment.
+With the switch off, `host screenshot` exits successfully without output or
+file changes, and `host --preview` ignores the cover before reading its file.
+The API also ignores supplied previews and publishes normally through the
+existing backend screenshot path. Prepare acknowledges an ignored cover with
+`previewSkipped: true` instead of issuing a preview upload URL. If the switch
+is disabled after prepare, completion skips image processing, publishes the
+page and returns `previewSkipped: true`; the CLI emits no warning or error.
+Already issued upload URLs expire normally and grant access only to staged
+bytes. The prepared metadata remains available, so re-enabling the switch and
+retrying `host complete` can attach the originally prepared cover after upload.
 The check happens at request admission; it does not cancel an already admitted
 completion or an already running local capture.
 
@@ -81,7 +85,8 @@ fit the 5 MiB limit. Completion deletes the staging object; cleanup failure is
 retryable with the same deployment. This delivery does not introduce a worker
 to collect abandoned staging uploads or backfill historical previews.
 
-The image must complete before the site's manifest/active pointer is published.
+When enabled, the image must complete before the site's manifest/active pointer
+is published.
 Invalid or missing images leave the deployment uploading and leave the existing
 site active. Provider failures remain errors. Completion returns a stable
 `previewImageUrl`; `run_uploaded_files.preview_image_url` and the artifact
@@ -103,16 +108,19 @@ okou host complete <deployment-id> --json
   screenshot producer remains. Removing it is PR 3 after producer coverage and
   old-run drain, not part of this PR.
 - New CLI with a cover / old API: missing acknowledgement fails before any
-  file uploads or activation. It never silently omits the cover.
-- New CLI / new API: completion requires and registers the supplied cover;
-  neither validation nor rendering failures invoke Browser Rendering.
+  file uploads or activation. Only explicit `previewSkipped: true` permits
+  ignoring a requested cover.
+- New CLI / new API: enabled completion requires and registers the supplied
+  cover; neither validation nor rendering failures invoke Browser Rendering.
+  Disabled prepare/completion skips the cover and uses ordinary hosting.
 - Old Platform / new API: the existing private `previewImageUrl` and catalog
   thumbnail shapes are reused. No client or database migration is required.
 
 Deploy and drain the API readers (including authenticated feature-state reads)
 before releasing the new CLI and generation instructions, then opt in through
-`artifactPreviews`. Keep the switch off during the deployment. A new CLI must not prepare against a new API and complete against
-an older API that ignores `manifest.preview`. Keep API rollback targets capable
+`artifactPreviews`. Keep the switch off during the deployment. A new CLI must
+not prepare against a new API and complete against an older API that ignores
+`manifest.preview`. Keep API rollback targets capable
 of enforcing this requirement once new writers are active. Disabling new
 writers does not remove the obligation to read already-prepared deployments.
 CLI `host complete` retries use the original deployment's current authorization.

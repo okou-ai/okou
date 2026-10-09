@@ -18,7 +18,6 @@ import {
   artifactVisibilityUnavailable,
   badRequestMessage,
   conflict,
-  resourceUnavailable,
   notFound,
 } from "../../lib/error";
 import type { RouteEntry } from "../route-entry";
@@ -68,11 +67,6 @@ const prepareInner$ = command(
     );
     signal.throwIfAborted();
 
-    if (result.status === "preview_unavailable") {
-      return resourceUnavailable(
-        "Artifact previews are disabled. Enable artifactPreviews before publishing a cover.",
-      );
-    }
     if (result.status === "forbidden") {
       return artifactVisibilityUnavailable();
     }
@@ -129,11 +123,6 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
   signal.throwIfAborted();
 
-  if (result.status === "preview_unavailable") {
-    return resourceUnavailable(
-      "Artifact previews are disabled. Re-enable artifactPreviews, then retry completing this deployment.",
-    );
-  }
   if (result.status === "bad_request") {
     return badRequestMessage(result.message);
   }

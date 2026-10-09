@@ -150,65 +150,81 @@ async function upload(prepared: HostedSitePrepareResponse, bytes: Buffer) {
 }
 
 describe("sandbox hosted previews", () => {
-  it("keeps ordinary hosting available and suspends cover completion until re-enabled", async () => {
-    const owner = createBddApi(context).user();
-    if (!owner.orgId) {
-      throw new Error("Expected an organization");
-    }
-    const actor = { ...owner, orgId: owner.orgId };
-    previewStorage();
-    const bytes = await image();
-    const body = {
-      site: `preview-switch-${randomUUID().slice(0, 8)}`,
-      artifactKind: "hosted-site" as const,
-      spaFallback: false,
-      files: [hostedTextFile("/index.html", "<main>Website</main>")],
-    };
-    const denied = await host.requestPrepareHostedSite(
-      actor,
-      { ...body, preview: preview(bytes) },
-      [403],
-    );
-    expect(denied.body).toMatchObject({
-      error: { message: expect.stringContaining("artifactPreviews") },
-    });
-    const original = await host.prepareHostedSite(actor, body);
-    await host.completeHostedSite(actor, original.deploymentId);
-    await updateFeatureSwitchesForUser(context, actor, {
-      artifactPreviews: true,
-    });
-    const prepared = await host.prepareHostedSite(actor, {
-      ...body,
-      preview: preview(bytes),
-    });
-    await upload(prepared, bytes);
-    await updateFeatureSwitchesForUser(context, actor, {
-      artifactPreviews: false,
-    });
-    await host.requestCompleteHostedSite(actor, prepared.deploymentId, [403]);
-    const pending = await host.readHostedSiteDeployments(actor, body.site);
-    expect(pending.activeDeploymentId).toBe(original.deploymentId);
-    expect(
-      pending.deployments.find((entry) => {
-        return entry.deploymentId === prepared.deploymentId;
-      })?.status,
-    ).toBe("uploading");
-    await updateFeatureSwitchesForUser(context, actor, {
-      artifactPreviews: true,
-    });
-    const completed = await host.completeHostedSite(
-      actor,
-      prepared.deploymentId,
-    );
-    expect(completed.previewImageUrl).toBeDefined();
-    await updateFeatureSwitchesForUser(context, actor, {
-      artifactPreviews: false,
-    });
-    expect(
-      (await host.readHostedSiteDeployments(actor, body.site))
-        .activeDeploymentId,
-    ).toBe(prepared.deploymentId);
-  });
+  it.each(["missing", "corrupt"])(
+    "publishes normally with a %s cover when previews are disabled",
+    async (coverState) => {
+      const owner = createBddApi(context).user();
+      if (!owner.orgId) {
+        throw new Error("Expected an organization");
+      }
+      const actor = { ...owner, orgId: owner.orgId };
+      previewStorage();
+      const bytes = await image();
+      const body = {
+        site: `preview-switch-${randomUUID().slice(0, 8)}`,
+        artifactKind: "hosted-site" as const,
+        spaFallback: false,
+        files: [hostedTextFile("/index.html", "<main>Website</main>")],
+      };
+      const ignored = await host.prepareHostedSite(actor, {
+        ...body,
+        preview: preview(bytes),
+      });
+      expect(ignored.previewSkipped).toBeTruthy();
+      expect(ignored.preview).toBeUndefined();
+      const original = await host.completeHostedSite(
+        actor,
+        ignored.deploymentId,
+      );
+      expect(original.previewImageUrl).toBeUndefined();
+      await updateFeatureSwitchesForUser(context, actor, {
+        artifactPreviews: true,
+      });
+      const prepared = await host.prepareHostedSite(actor, {
+        ...body,
+        preview: preview(bytes),
+      });
+      if (coverState === "corrupt") {
+        await upload(prepared, Buffer.from("not an image"));
+      }
+      await updateFeatureSwitchesForUser(context, actor, {
+        artifactPreviews: false,
+      });
+      const skipped = await host.completeHostedSite(
+        actor,
+        prepared.deploymentId,
+      );
+      expect(skipped).toMatchObject({
+        status: "ready",
+        isActive: true,
+        previewSkipped: true,
+      });
+      expect(skipped.previewImageUrl).toBeUndefined();
+      expect(
+        (await host.readHostedSiteDeployments(actor, body.site))
+          .activeDeploymentId,
+      ).toBe(prepared.deploymentId);
+      await expect(
+        host.completeHostedSite(actor, prepared.deploymentId),
+      ).resolves.toMatchObject({ previewSkipped: true });
+      await updateFeatureSwitchesForUser(context, actor, {
+        artifactPreviews: true,
+      });
+      await upload(prepared, bytes);
+      const completed = await host.completeHostedSite(
+        actor,
+        prepared.deploymentId,
+      );
+      expect(completed.previewImageUrl).toBeDefined();
+      await updateFeatureSwitchesForUser(context, actor, {
+        artifactPreviews: false,
+      });
+      expect(
+        (await host.readHostedSiteDeployments(actor, body.site))
+          .activeDeploymentId,
+      ).toBe(prepared.deploymentId);
+    },
+  );
   it("keeps the active HTML cover in the catalog across late completions and retries", async () => {
     const fixture = createChatEventsFixture(context);
     const entitled = await fixture.entitledNativeChatActor();
@@ -278,6 +294,13 @@ describe("sandbox hosted previews", () => {
         title: body.site,
         thumbnail: { url: latest.previewImageUrl },
       }),
+    ]);
+    await updateFeatureSwitchesForUser(context, actor, {
+      artifactPreviews: false,
+    });
+    await host.completeHostedSite(runner, second.deploymentId);
+    expect((await chat.listArtifactCatalog(actor)).artifacts).toMatchObject([
+      { title: body.site, thumbnail: { url: latest.previewImageUrl } },
     ]);
 
     // A leaked reference is not a credential, even though its parent site is public.

@@ -197,6 +197,8 @@ export const hostedSitePrepareResponseSchema = z.object({
   preview: z
     .object({ uploadUrl: z.string().url(), sha256: z.string() })
     .optional(),
+  /** The supplied preview was ignored because artifactPreviews is disabled. */
+  previewSkipped: z.literal(true).optional(),
 });
 
 export const hostedSiteCompleteResponseSchema = z.object({
@@ -211,6 +213,8 @@ export const hostedSiteCompleteResponseSchema = z.object({
   activeDeploymentVersion: z.number().int().positive().optional(),
   status: z.literal("ready"),
   previewImageUrl: artifactUrlSchema.optional(),
+  /** Publication continued without processing the disabled preview. */
+  previewSkipped: z.literal(true).optional(),
 });
 
 export const hostedSiteFilesResponseSchema = z.object({

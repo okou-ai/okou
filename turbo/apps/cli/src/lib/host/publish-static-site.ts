@@ -38,6 +38,22 @@ interface PublishStaticSiteOptions {
   readonly onProgress?: (progress: PublishStaticSiteProgress) => void;
 }
 
+async function uploadHostedFile(
+  uploadUrl: string,
+  contentType: string,
+  bytes: Uint8Array,
+  label: string,
+): Promise<void> {
+  const response = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: { "Content-Type": contentType },
+    body: new Uint8Array(bytes),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to upload ${label} (HTTP ${response.status})`);
+  }
+}
+
 export async function publishStaticSite(
   options: PublishStaticSiteOptions,
 ): Promise<PublishStaticSiteResult> {
@@ -49,7 +65,7 @@ export async function publishStaticSite(
   const totalSize = scan.files.reduce((sum, file) => {
     return sum + file.size;
   }, 0);
-  const preview = options.preview
+  let preview = options.preview
     ? await readHostedPreview(
         options.preview,
         bundleFingerprint(scan.files),
@@ -79,6 +95,7 @@ export async function publishStaticSite(
     }),
   });
 
+  if (prepared.previewSkipped) preview = undefined;
   if (preview && prepared.preview?.sha256 !== preview.metadata.sha256) {
     throw new Error(
       "This API did not acknowledge the supplied preview. Deploy the compatible API before publishing; no files were uploaded or activated",
@@ -98,29 +115,17 @@ export async function publishStaticSite(
     }
     options.onProgress?.({ phase: "uploading", path: file.path });
     const bytes = await readStaticSiteFile(file);
-    const response = await fetch(uploadUrl, {
-      method: "PUT",
-      headers: { "Content-Type": file.contentType },
-      body: new Uint8Array(bytes),
-    });
-    if (!response.ok) {
-      throw new Error(
-        `Failed to upload ${file.path} (HTTP ${response.status})`,
-      );
-    }
+    await uploadHostedFile(uploadUrl, file.contentType, bytes, file.path);
   }
 
   if (preview && prepared.preview) {
     options.onProgress?.({ phase: "uploading", path: "artifact preview" });
-    const response = await fetch(prepared.preview.uploadUrl, {
-      method: "PUT",
-      headers: { "Content-Type": preview.metadata.contentType },
-      body: new Uint8Array(preview.bytes),
-    });
-    if (!response.ok)
-      throw new Error(
-        `Failed to upload artifact preview (HTTP ${response.status})`,
-      );
+    await uploadHostedFile(
+      prepared.preview.uploadUrl,
+      preview.metadata.contentType,
+      preview.bytes,
+      "artifact preview",
+    );
   }
 
   const completed = await completeHostedSite(prepared.deploymentId).catch(
@@ -134,7 +139,7 @@ export async function publishStaticSite(
       );
     },
   );
-  if (preview && !completed.previewImageUrl) {
+  if (preview && !completed.previewSkipped && !completed.previewImageUrl) {
     throw new Error(
       `API did not confirm the preview for deployment ${prepared.deploymentId}. Retry completion against the compatible API with: okou host complete ${prepared.deploymentId}`,
     );
