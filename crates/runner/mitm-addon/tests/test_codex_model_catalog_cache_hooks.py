@@ -6,12 +6,13 @@ import urllib.parse
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Literal
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from mitmproxy import connection, http
 from mitmproxy.flow import Error
 
+import auth
 import codex_model_catalog_cache as catalog_cache
 import flow_metadata_keys as metadata_keys
 import mitm_addon
@@ -27,6 +28,7 @@ from tests.codex_model_catalog_cache_helpers import (
     prepare_prefetch_miss,
     responses_flow,
 )
+from tests.firewall_auth_helpers import firewall_auth_response
 from tests.flow_helpers import header_map, response_stream
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 from tests.pending_helpers import assert_pending
@@ -797,6 +799,114 @@ async def test_catalog_wait_revalidates_only_provider_continuation(
     assert mitm_addon._FIREWALL_AUTH_APPLIED_IN_REQUESTHEADERS not in follower.metadata
     assert metadata_keys.REQUEST_STREAM_BUFFER not in follower.metadata
     assert metadata_keys.REQUEST_STREAM_BUFFER_STATE not in follower.metadata
+
+
+@pytest.mark.parametrize("entry_point", ["request", "requestheaders"])
+@pytest.mark.parametrize("upstream_closed", [False, True])
+async def test_catalog_wait_authority_denial_keeps_pre_auth_network_log_target(
+    tmp_path,
+    real_flow,
+    mitm_ctx,
+    monkeypatch: pytest.MonkeyPatch,
+    entry_point: Literal["request", "requestheaders"],
+    upstream_closed: bool,
+):
+    secret = "synthetic-managed-query-secret"
+    registry_path = _write_codex_registry(tmp_path, capture=entry_point == "requestheaders")
+    sandbox = json.loads(registry_path.read_text())["sandboxes"]["10.200.0.5"]
+    sandbox["firewalls"][0]["firewall"]["apis"][0]["auth"]["query"] = {
+        "opaqueCredential": "${{ secrets.CHATGPT_ACCESS_TOKEN }}"
+    }
+    _write_registry(tmp_path, sandbox_info=sandbox)
+    owner = catalog_flow(real_flow, auth_value="resolved-token", account="resolved-account")
+    await prepare_miss(owner)
+    headers = {"Host": "chatgpt.com", "Accept-Encoding": "identity"}
+    if entry_point == "request":
+        headers["Content-Length"] = "0"
+    original_url = "https://chatgpt.com/backend-api/codex/models?client_version=0.145.0"
+    follower = real_flow(
+        with_response=False,
+        client_ip="10.200.0.5",
+        host="chatgpt.com",
+        method="GET",
+        path="/backend-api/codex/models?client_version=0.145.0",
+        request_headers=header_map(headers),
+    )
+    follower.metadata["_request_end_stream"] = True
+    mark_connected_tls_upstream(
+        follower,
+        sni="chatgpt.com",
+        server_address=("203.0.113.10", 443),
+        peername=("203.0.113.10", 443),
+    )
+    entered = asyncio.Event()
+
+    async def resolve(*_args, **_kwargs):
+        entered.set()
+        return firewall_auth_response(
+            headers={
+                "Authorization": "Bearer resolved-token",
+                "ChatGPT-Account-ID": "resolved-account",
+            },
+            query={"opaqueCredential": secret},
+        )
+
+    fetch = AsyncMock(side_effect=resolve)
+    monkeypatch.setattr(auth, "get_firewall_headers", fetch)
+    follower_task: asyncio.Task[None] | None = None
+    try:
+        with mitm_ctx(registry_path=str(registry_path), api_url="https://api.okou.ai"):
+            hook = (
+                mitm_addon.request(follower)
+                if entry_point == "request"
+                else await_requestheaders_result(mitm_addon.requestheaders(follower))
+            )
+            follower_task = asyncio.create_task(hook)
+            await asyncio.wait_for(entered.wait(), timeout=2)
+            assert not follower_task.done()
+            assert follower.request.query["opaqueCredential"] == secret
+            assert follower.metadata[metadata_keys.ORIGINAL_URL] == original_url
+            if upstream_closed:
+                follower.server_conn.state = connection.ConnectionState.CLOSED
+                mitm_addon.server_disconnected(SimpleNamespace(server=follower.server_conn))
+            follower.request.headers["Host"] = "other.example"
+            owner.error = Error("synthetic upstream reset")
+            catalog_cache.handle_error(owner)
+            await asyncio.wait_for(follower_task, timeout=2)
+            if entry_point == "requestheaders":
+                await mitm_addon.request(follower)
+
+            fetch.assert_awaited_once()
+            assert follower.response is not None
+            assert follower.response.status_code == 403
+            assert secret not in follower.response.get_text()
+            assert not callable(follower.request.stream)
+            assert follower.metadata[metadata_keys.ORIGINAL_URL] == original_url
+            network_path = Path(follower.metadata[metadata_keys.SANDBOX_NETWORK_LOG_PATH])
+            proxy_path = Path(follower.metadata[metadata_keys.SANDBOX_PROXY_LOG_PATH])
+            mitm_addon.responseheaders(follower)
+            completion = mitm_addon.response(follower)
+            if completion is not None:
+                await completion
+
+            network_entries = read_jsonl_entries_after_flush(network_path)
+            proxy_entries = read_jsonl_entries_after_flush(proxy_path)
+            [entry] = network_entries
+            assert entry["url"] == original_url
+            assert entry["host"] == "chatgpt.com"
+            assert entry["port"] == 443
+            assert entry["status"] == 403
+            assert secret not in json.dumps(network_entries)
+            assert secret not in json.dumps(proxy_entries)
+    finally:
+        if follower_task is not None:
+            if not follower_task.done():
+                follower_task.cancel()
+            _ = await asyncio.gather(follower_task, return_exceptions=True)
+        catalog_cache.handle_error(owner)
+        mitm_addon.error(follower)
+    assert "_usage_flow_tracked" not in follower.metadata
+    assert "_codex_model_catalog_cache_state" not in follower.metadata
 
 
 async def test_cancelled_requestheaders_catalog_follower_releases_usage_tracking(

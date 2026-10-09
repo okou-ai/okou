@@ -524,7 +524,7 @@ def _connector_auth_destination_is_current(
     if flow.error is not None or flow.request.scheme != "https" or ctx.options.ssl_insecure:
         return False
     if flow.server_conn.connected:
-        return _admit_connector_auth_request(
+        return not flow.server_conn.error and _admit_connector_auth_request(
             flow,
             platform_connector_auth=current.platform_connector_auth,
         )
@@ -1351,14 +1351,21 @@ def _block_current_firewall_authorization(
     flow: http.HTTPFlow,
     classification: request_classification.RequestClassification,
 ) -> None:
-    _clear_stale_firewall_authorization_metadata(flow)
-    if isinstance(classification, request_classification.BlockingRequestClassification):
-        _block_request_classification(flow, classification)
-        return
-    _block_firewall_authorization_changed(
-        flow,
-        current_decision=classification.kind,
-    )
+    original_url, host, port = http_network_log.target(flow)
+    try:
+        _clear_stale_firewall_authorization_metadata(flow)
+        if isinstance(classification, request_classification.BlockingRequestClassification):
+            _block_request_classification(flow, classification)
+            return
+        _block_firewall_authorization_changed(
+            flow,
+            current_decision=classification.kind,
+        )
+    finally:
+        # Initial authority denial owns its diagnostic target. Post-auth denial
+        # must retain the pre-injection target, not an injected query credential.
+        flow.metadata[metadata_keys.ORIGINAL_URL] = original_url
+        http_network_log.set_target(flow, url=original_url, host=host, port=port)
 
 
 async def _prepare_codex_catalog_request_with_upstream_revalidation(

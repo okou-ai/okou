@@ -27,6 +27,7 @@ _INTERRUPTIONS = (
     "connected-replacement",
     "closed-server-error",
     "connected-server-error",
+    "retained-binding-server-error",
     "flow-error",
     "streamed",
     "streamed-without-flag",
@@ -113,7 +114,7 @@ async def test_auth_wait_checks_request_identity_not_socket_lifetime(
         try:
             await asyncio.wait_for(entered.wait(), timeout=2)
             assert "Authorization" not in flow.request.headers
-            if interruption != "none":
+            if interruption not in {"none", "retained-binding-server-error"}:
                 original_server.state = connection.ConnectionState.CLOSED
                 if interruption != "public-failed-acquisition":
                     mitm_addon.server_disconnected(SimpleNamespace(server=original_server))
@@ -129,6 +130,10 @@ async def test_auth_wait_checks_request_identity_not_socket_lifetime(
                     peername=("104.18.32.47", 443),
                 )
                 original_server.error = "synthetic transport error"
+            elif interruption == "retained-binding-server-error":
+                assert original_server.connected
+                assert upstream_destination_binding.has_server_binding(original_server)
+                original_server.error = "synthetic live admission failure"
             elif interruption == "flow-error":
                 flow.error = Error("synthetic HTTP flow failure")
             elif interruption == "unconnected-replacement":
