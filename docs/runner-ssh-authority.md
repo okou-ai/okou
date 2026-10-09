@@ -240,7 +240,7 @@ Guest inventory and CLI terminal enums are unchanged. Unauthorized protected
 hosts are omitted from inventory. DB/KMS failures and broken local references
 remain errors.
 
-See the [Cloudflare Access activation gate](deployment-compatibility.md#cloudflare-access-for-ssh)
+See the [Cloudflare Access activation gate](https://github.com/okou-ai/okou/blob/efdfb1ce76686698e2446eceb5a439caf88cd854/docs/deployment-compatibility.md#cloudflare-access-for-ssh)
 before writing protected configuration in any deployed environment.
 
 The observation table and endpoints are additive. Old Runners and clients do not

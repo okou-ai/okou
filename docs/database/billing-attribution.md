@@ -2,7 +2,7 @@
 
 > The Allowance-specific readers, window grains and archive references in this
 > historical A1 record are superseded by
-> [organization Usage Allowance retirement](../deployment-compatibility.md#organization-usage-allowance-retired).
+> [organization Usage Allowance retirement](https://github.com/okou-ai/okou/blob/efdfb1ce76686698e2446eceb5a439caf88cd854/docs/deployment-compatibility.md#organization-usage-allowance-retired).
 > Migration 1356 deletes team-only Allowance history; current attribution keeps
 > ordinary usage identities and recorded credits, without Allowance tables.
 

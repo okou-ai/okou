@@ -75,7 +75,7 @@ plan backfill and retirement of older generations.
 
 The `pi_resource_snapshot_prepare` operation below came from the retired Pi
 resource snapshot preparation, which the API no longer runs (see
-[deployment compatibility](deployment-compatibility.md#pi-stable-context-tables-retired-2026-10-07)).
+[deployment compatibility](https://github.com/okou-ai/okou/blob/efdfb1ce76686698e2446eceb5a439caf88cd854/docs/deployment-compatibility.md#pi-stable-context-tables-retired-2026-10-07)).
 The paragraph is kept as the historical acceptance record.
 
 Production `pi_resource_snapshot_prepare` operations in the existing sandbox

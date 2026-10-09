@@ -34,8 +34,9 @@ self-explanatory source code rather than separate documents.
   write-result-only state, entry-owned orchestration, and no production test
   hooks for API signal graphs.
 - [Testing](./testing.md): testing strategy, patterns, and anti-patterns.
-- [Deployment compatibility](./deployment-compatibility.md): compatibility
-  requirements for independently deployed components and persisted state.
+- [Deployment compatibility](./deployment-compatibility.md): reusable rollout,
+  schema-transition and drain rules for independently deployed components and
+  persisted state; feature-specific release records belong in their issues or PRs.
 - [Home-cache protocol rollout](./home-cache-protocol-rollout.md): independent
   capability stamps, recipient-safe preparation and later activation/SQL drain gates.
 - [Agent mail notifications](./agent-mail-notifications.md): CLI notification

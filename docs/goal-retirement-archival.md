@@ -333,7 +333,7 @@ remains separate; Codex `features.goals=false` stays intact.
 
 The accepted combined S4 release is `4a4881bf84cb1d79723fd38c83e00f2215bb1e31`
 (API 1.580.0). The current-main rollback resolver now requires both original S4
-and its ordinary-write repair; see [the compatibility boundary](deployment-compatibility.md#okou-goal-retirement-rollback-floor).
+and its ordinary-write repair; see [the compatibility boundary](https://github.com/okou-ai/okou/blob/efdfb1ce76686698e2446eceb5a439caf88cd854/docs/deployment-compatibility.md#okou-goal-retirement-rollback-floor).
 Implementation merge is not production contraction or EPIC acceptance.
 
 ### Ordered migration and retry contract
