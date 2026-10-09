@@ -330,6 +330,11 @@ describe("GET /api/billing/status", () => {
   it("returns Team capabilities and the current Stripe concurrency price", async () => {
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "3");
     const concurrencyPriceId = `price_concurrency_${randomUUID()}`;
+    const userId = `user_${randomUUID()}`;
+    const orgId = `org_${randomUUID()}`;
+    const actor = createBddApi(context).user({ userId, orgId });
+    await createBddApi(context).completeOnboarding(actor);
+    await publicPlanLifecycle(context, actor, "team").update("active");
     mockEnv("OKOU_PRICE_CONCURRENCY", concurrencyPriceId);
     mockOptionalEnv("STRIPE_SECRET_KEY", "sk_test_billing_status");
     mockStripeClient(context.mocks.stripe as unknown as StripeSDK);
@@ -342,12 +347,6 @@ describe("GET /api/billing/status", () => {
       recurring: { interval: "month", interval_count: 1 },
       product: "prod_concurrency",
     });
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    const actor = createBddApi(context).user({ userId, orgId });
-    await createBddApi(context).completeOnboarding(actor);
-    await publicPlanLifecycle(context, actor, "team").update("active");
-    mockEnv("OKOU_PRICE_CONCURRENCY", concurrencyPriceId);
     mocks.clerk.session(userId, orgId);
 
     const response = await accept(

@@ -3,7 +3,12 @@ import { randomUUID } from "node:crypto";
 import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
 import { agentsRoutes } from "../agents";
 import { mockClerkUsers } from "./helpers/clerk-users";
-import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import {
+  chatEventsContract,
+  chatThreadByIdContract,
+  chatThreadEventsContract,
+} from "@okouai/api-contracts/contracts/chat-threads";
+import { runsCancelContract } from "@okouai/api-contracts/contracts/run-routes";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { describe, expect, it } from "vitest";
@@ -12,6 +17,8 @@ import { z } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { chatThreadRoutes } from "../chat-threads";
+import { chatEventsRoutes } from "../chat-events";
+import { runsCancelRoutes } from "../runs-cancel";
 import { createRouteMocks } from "./helpers/route-test";
 import { projectChatEventRows } from "./helpers/chat-event-test-reader";
 import { mockOptionalEnv } from "../../../lib/env";
@@ -30,6 +37,12 @@ const runs = createRunsApi(context);
 const chatCallbacks = createChatCallbacksApi(context);
 /** The route's notification budget; one more id than this overflows it. */
 const NOTIFIED_THREAD_ID_BUDGET = 100;
+const threadReadRoutes = chatThreadRoutes.filter(({ route }) => {
+  return (
+    route === chatThreadByIdContract.get ||
+    route === chatThreadEventsContract.catchUp
+  );
+});
 
 interface AgentReadFixture {
   /** Owns the threads and calls the endpoint; never owns the Agent. */
@@ -60,7 +73,7 @@ async function threadEvents(actor: ApiTestUser, threadIds: readonly string[]) {
     actor.orgRole,
   );
   const response = await accept(
-    setupApp({ context, routes: chatThreadRoutes })(
+    setupApp({ context, routes: threadReadRoutes })(
       chatThreadEventsContract,
     ).catchUp({
       headers: { authorization: "Bearer clerk-session" },
@@ -104,25 +117,36 @@ async function appendCancelledRuns(
   signal: AbortSignal,
 ): Promise<string[]> {
   signal.throwIfAborted();
+  createRouteMocks(context).clerk.session(
+    args.actor.userId,
+    args.actor.orgId,
+    args.actor.orgRole,
+  );
+  const send = setupApp({ context, routes: chatEventsRoutes, signal })(
+    chatEventsContract,
+  );
   const sent = await settledValues(
     Array.from({ length: count }, async () => {
       const clientEventId = randomUUID();
-      const response = await chat.requestSendEvent(
-        args.actor,
-        {
-          agentId: args.agentId,
-          prompt: `agent read ${randomUUID()}`,
-          model: "claude-fable-5-1",
-          clientEventId,
-          ...(args.threadId === undefined ? {} : { threadId: args.threadId }),
-        },
+      const prompt = `agent read ${randomUUID()}`;
+      const response = await accept(
+        send.send({
+          headers: { authorization: "Bearer clerk-session" },
+          body: {
+            agentId: args.agentId,
+            prompt,
+            model: "claude-fable-5-1",
+            clientEventId,
+            userMessage: {
+              version: 1,
+              parts: [{ type: "text", text: prompt }],
+            },
+            hasTextContent: true,
+            ...(args.threadId === undefined ? {} : { threadId: args.threadId }),
+          },
+        }),
         [201],
-        {},
-        signal,
       );
-      if (response.status !== 201) {
-        throw new Error("Expected a normal chat send");
-      }
       return { threadId: response.body.threadId, clientEventId };
     }),
   );
@@ -146,9 +170,18 @@ async function appendCancelledRuns(
     return prompt.runId;
   });
   signal.throwIfAborted();
+  const cancel = setupApp({ context, routes: runsCancelRoutes, signal })(
+    runsCancelContract,
+  );
   await settledValues(
     runIds.map((runId) => {
-      return runs.requestCancelRun(args.actor, runId, [200]);
+      return accept(
+        cancel.cancel({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { id: runId },
+        }),
+        [200],
+      );
     }),
   );
   signal.throwIfAborted();
@@ -207,11 +240,9 @@ async function createUnreadAgentThreads(
       lastName: "Owner",
     },
   ]);
-  // Select the existing case-local transport in the first real API request.
-  // All decisive business state below still comes from ordinary public routes.
-  const client = (
-    await setupApp({ context, routes: agentsRoutes, isolatePg: true })
-  )(agentsMainContract);
+  const client = setupApp({ context, routes: agentsRoutes })(
+    agentsMainContract,
+  );
   const { body: agent } = await accept(
     client.create({
       headers: { authorization: "Bearer clerk-session" },
@@ -293,12 +324,23 @@ async function unreadThreadIds(
   return await fixture.run(async () => {
     fixture.signal.throwIfAborted();
     const eventsByThread = await threadEvents(fixture.actor, fixture.threadIds);
+    const client = setupApp({
+      context,
+      routes: threadReadRoutes,
+      signal: fixture.signal,
+    })(chatThreadByIdContract);
     const unread = new Set<string>();
     for (let start = 0; start < fixture.threadIds.length; start += 8) {
       fixture.signal.throwIfAborted();
       await settledValues(
         fixture.threadIds.slice(start, start + 8).map(async (threadId) => {
-          const detail = await chat.readThread(fixture.actor, threadId);
+          const { body: detail } = await accept(
+            client.get({
+              headers: { authorization: "Bearer clerk-session" },
+              params: { id: threadId },
+            }),
+            [200],
+          );
           const terminal = (eventsByThread.get(threadId) ?? []).filter(
             (event) => {
               return ["run.completed", "run.cancelled", "run.failed"].includes(
