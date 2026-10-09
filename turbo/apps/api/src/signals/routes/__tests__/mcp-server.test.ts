@@ -801,7 +801,7 @@ describe("MCP Web parity", () => {
     // A send without a model on an unconfigured member creates an Auto thread;
     // Auto resolves its run model on send.
     expect(read.thread.model).toStrictEqual({
-      selectedModel: null,
+      selectedModel: "auto",
       effectiveModel: null,
       source: "org_default",
       admission: "checked_on_send",

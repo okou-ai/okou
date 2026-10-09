@@ -4994,6 +4994,13 @@
           "title": "Armazenamento do IndexedDB",
           "unavailable": "O armazenamento do IndexedDB não está disponível."
         },
+        "openrouterPreset": {
+          "description": "Aplica-se às novas execuções de Auto e Okou 1.0 integrado em toda a organização. As execuções existentes não mudam.",
+          "loading": "Carregando…",
+          "systemDefault": "Padrão do sistema",
+          "title": "Preset do OpenRouter",
+          "unavailable": "Indisponível"
+        },
         "welcomeThread": {
           "create": "Criar conversa de boas-vindas",
           "creating": "Criando…",

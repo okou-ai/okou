@@ -7,6 +7,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { builtinConnectorsAutomaticRoutes } from "../connectors-automatic";
@@ -184,6 +185,8 @@ describe("builtin Automatic firewall credential destinations", () => {
     });
 
     await runs.requestCancelRun(actor, run.runId, [200]);
+    // Cancellation callbacks must release lifecycle locks before deletion.
+    await flushWaitUntilForTest();
     await connectors.deleteBuiltinConnectorAccount(
       actor,
       catalog.slug,
@@ -391,6 +394,8 @@ describe("builtin Automatic firewall credential destinations", () => {
         })(),
       );
       await runs.requestCancelRun(actor, run.runId, [200]);
+      // Cancellation callbacks must release lifecycle locks before deletion.
+      await flushWaitUntilForTest();
       await connectors.deleteBuiltinConnectorAccount(
         actor,
         catalog.slug,

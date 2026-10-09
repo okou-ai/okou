@@ -4926,6 +4926,13 @@
           "title": "IndexedDB स्टोरेज",
           "unavailable": "IndexedDB स्टोरेज उपलब्ध नहीं है।"
         },
+        "openrouterPreset": {
+          "description": "पूरे संगठन के नए Auto और बिल्ट-इन Okou 1.0 रन पर लागू होता है। मौजूदा रन नहीं बदलते।",
+          "loading": "लोड हो रहा है…",
+          "systemDefault": "सिस्टम डिफ़ॉल्ट",
+          "title": "OpenRouter प्रीसेट",
+          "unavailable": "अनुपलब्ध"
+        },
         "welcomeThread": {
           "create": "स्वागत चैट बनाएँ",
           "creating": "बनाई जा रही है…",

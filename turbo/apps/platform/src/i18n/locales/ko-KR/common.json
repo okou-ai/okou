@@ -4905,6 +4905,13 @@
           "title": "IndexedDB 저장소",
           "unavailable": "IndexedDB 저장소를 사용할 수 없습니다."
         },
+        "openrouterPreset": {
+          "description": "조직 전체의 새 Auto 및 기본 제공 Okou 1.0 실행에 적용됩니다. 기존 실행은 변경되지 않습니다.",
+          "loading": "불러오는 중…",
+          "systemDefault": "시스템 기본값",
+          "title": "OpenRouter 프리셋",
+          "unavailable": "사용할 수 없음"
+        },
         "welcomeThread": {
           "create": "환영 채팅 만들기",
           "creating": "만드는 중…",

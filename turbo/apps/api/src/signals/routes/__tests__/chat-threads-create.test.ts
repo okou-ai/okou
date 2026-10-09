@@ -659,7 +659,7 @@ describe("POST /api/chat-threads", () => {
       );
       expect(denied.body.error).toStrictEqual({
         code: "BAD_REQUEST",
-        message: "Connector target is not authorized for this chat thread",
+        message: "Connector target is not authorized for this agent",
       });
     }
     const preserved = await accept(

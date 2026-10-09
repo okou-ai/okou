@@ -21,7 +21,7 @@ import {
   isBuiltInModelProviderType,
   modelProviderTypeSchema,
 } from "@okouai/api-contracts/contracts/model-providers";
-import { AUTO_RUN_MODEL } from "@okouai/core/auto-run-model";
+import { isAutoSelectedModel } from "@okouai/core/auto-run-model";
 import { isPiExecutionRoute, piCatalogModel } from "@okouai/core/pi-execution";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
@@ -93,10 +93,9 @@ function currentSessionIdentity(
   ) {
     return null;
   }
-  const codexServiceTier =
-    pin.selectedModel === AUTO_RUN_MODEL
-      ? undefined
-      : (selection.codexServiceTier ?? undefined);
+  const codexServiceTier = isAutoSelectedModel(pin.selectedModel)
+    ? undefined
+    : (selection.codexServiceTier ?? undefined);
   const cliAgentType = isPiExecutionRoute({
     catalogModel: piCatalogModel(catalog, pin.selectedModel),
     modelProviderType: providerType.data,

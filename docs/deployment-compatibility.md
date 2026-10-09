@@ -338,6 +338,17 @@ legacy-marker prompts across both IDs and every queue position, and current
 queue recovery evidence. Keep strict claim validation and immutable history;
 this writer cutover does not complete the parent issue.
 
+## Model identity PR2: new writer cutover (2026-10-09)
+
+[PR2's writer, billing, mixed-version and deployment contract](model-identity-pr2.md)
+switches new resolved selections to `auto` by deployed code version, retaining
+PR1 null/legacy readers and captured executions. Serving/rollback readiness,
+actual installed runtime/client readers and mixed native-history restoration
+remain explicit pre-promotion gates. New canonical Auto captures the
+100001-token billing boundary; legacy captures retain 272001. There is no
+database switch or schema tightening. Release 3 and compatibility retirement
+remain owned by #38114.
+
 ## Model identity PR1: compatibility preparation (2026-10-08)
 
 This is **release 1 of three**, not the final model-identity cutover. The
@@ -376,9 +387,10 @@ thread creation. Event replay/snapshot schemas retain nonempty model annotations
 and optional model fields on unrelated events.
 
 Pi accepts old catalog metadata, selected `auto`, and preset-only configuration
-on the existing platform-owned OpenRouter Auto capability class, for both
-Responses and the independently gated generation 5 Chat Completions dialect.
-This PR does not change or activate that transport switch.
+on the existing platform-owned OpenRouter Auto capability class. Captured
+Responses configurations remain readable; current main permanently uses
+generation 5 Chat Completions for new OpenRouter launches after #38096. There
+is no independently gated transport switch to activate or restore.
 The captured runtime model, dialect, transport, credential bindings, and key
 remain authoritative; catalog selection metadata does not reroute a captured
 job. This does not declare arbitrary presets to have different capabilities or

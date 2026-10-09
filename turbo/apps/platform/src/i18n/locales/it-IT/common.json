@@ -4994,6 +4994,13 @@
           "title": "Spazio IndexedDB",
           "unavailable": "Lo spazio IndexedDB non è disponibile."
         },
+        "openrouterPreset": {
+          "description": "Si applica alle nuove esecuzioni di Auto e Okou 1.0 integrato per tutta l’organizzazione. Le esecuzioni esistenti non cambiano.",
+          "loading": "Caricamento…",
+          "systemDefault": "Predefinito di sistema",
+          "title": "Preset OpenRouter",
+          "unavailable": "Non disponibile"
+        },
         "welcomeThread": {
           "create": "Crea chat di benvenuto",
           "creating": "Creazione…",

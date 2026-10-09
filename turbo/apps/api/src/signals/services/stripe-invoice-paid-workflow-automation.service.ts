@@ -167,41 +167,6 @@ async function loadReadyStripeConnection(
   return { kind: "ok", connection, stripeAccountId };
 }
 
-export async function validateStripeInvoicePaidAutomationBinding(
-  args: {
-    readonly db: ReadonlyDb;
-    readonly eventConfig: StripeInvoicePaidEventConfig;
-    readonly orgId: string;
-    readonly userId: string;
-  },
-  signal: AbortSignal,
-): Promise<StripeInvoicePaidAutomationReadinessResult> {
-  const ready = await loadReadyStripeConnection(
-    {
-      db: args.db,
-      orgId: args.orgId,
-      userId: args.userId,
-      connectorId: args.eventConfig.connectorId,
-      missingMessage: STRIPE_BINDING_MISMATCH_MESSAGE,
-    },
-    signal,
-  );
-  if (ready.kind === "bad_request") {
-    return ready;
-  }
-  if (ready.stripeAccountId !== args.eventConfig.stripeAccountId) {
-    return { kind: "bad_request", message: STRIPE_BINDING_MISMATCH_MESSAGE };
-  }
-  return {
-    kind: "ok",
-    binding: {
-      connectorId: ready.connection.connectorId,
-      stripeAccountId: ready.stripeAccountId,
-      mode: "live",
-    },
-  };
-}
-
 interface StripeAutomationProjectionRow {
   readonly id: string;
   readonly workflowId: string;

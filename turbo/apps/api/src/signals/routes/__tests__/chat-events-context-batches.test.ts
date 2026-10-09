@@ -157,7 +157,7 @@ describe("shared context statement projections through normal sends", () => {
         threadId = run.threadId;
         const claimed = await claimChatRun(runnerGroup, run.runId);
         expect(claimed.claim.modelUsageProvider).toBe(
-          hasProviders ? MODEL : "okou-1.0",
+          hasProviders ? MODEL : "@preset/okou-1-0",
         );
         const targets = claimed.claim.connectorRuntimeTargets;
         if (customId) {

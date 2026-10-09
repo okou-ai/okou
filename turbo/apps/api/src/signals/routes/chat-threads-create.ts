@@ -296,7 +296,7 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   return chatThreadCreateResponse(thread, {
     title: body.data.title ?? null,
-    selectedModel,
+    selectedModel: pin.selectedModel,
     codexServiceTier,
   });
 });

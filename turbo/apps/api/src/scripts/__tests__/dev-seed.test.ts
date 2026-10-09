@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import rawDevSeedSkillVolumes from "../dev-seed-skill-volumes.json";
 import {
   buildBuiltInModelKeys,
+  devSeedUsagePricing,
   getMetadataOnlySeedSkillNames,
   USAGE_PRICING,
 } from "../dev-seed";
@@ -73,6 +74,50 @@ describe("buildBuiltInModelKeys", () => {
 });
 
 describe("usage pricing", () => {
+  it.each(["development", "preview"])(
+    "provides synthetic Auto runtime rates in %s only",
+    (environment) => {
+      const rows = devSeedUsagePricing(environment);
+      for (const provider of ["@preset/okou-1-0", "@preset/okou-1-0-dsf"]) {
+        const categories = [
+          "tokens.input",
+          "tokens.output",
+          "tokens.cache_read",
+          "tokens.cache_creation",
+        ];
+        expect(
+          rows.filter((row) => {
+            return row.kind === "model" && row.provider === provider;
+          }),
+        ).toStrictEqual(
+          [
+            ...categories,
+            ...categories.map((category) => {
+              return `${category}.long_context`;
+            }),
+          ].map((category) => {
+            return {
+              kind: "model",
+              provider,
+              category,
+              unitPrice: 1000,
+              unitSize: 1_000_000,
+            };
+          }),
+        );
+      }
+    },
+  );
+
+  it.each(["production", "test", undefined])(
+    "rejects development seed for environment %s",
+    (environment) => {
+      expect(() => {
+        return devSeedUsagePricing(environment);
+      }).toThrow("restricted to development/preview");
+    },
+  );
+
   it("seeds the Claude Opus 5.5 public token schedule", () => {
     expect(
       USAGE_PRICING.filter((row) => {

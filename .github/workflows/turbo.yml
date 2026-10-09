@@ -39,6 +39,10 @@ on:
         required: false
       CRON_SECRET:
         required: false
+      DISCORD_BOT_TOKEN:
+        required: false
+      DISCORD_GATEWAY_SECRET:
+        required: false
       FAL_KEY:
         required: false
       FINICITY_APP_KEY:

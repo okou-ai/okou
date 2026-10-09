@@ -2,7 +2,7 @@ import {
   chatInputModelSelectionSchema,
   type ChatInputModelSelection,
 } from "@okouai/api-contracts/contracts/chat-input-model";
-import { AUTO_RUN_MODEL } from "@okouai/core/auto-run-model";
+import { isAutoSelectedModel } from "@okouai/core/auto-run-model";
 import {
   MODEL_FIRST_SELECTION_PROVIDER_ID,
   type CodexServiceTier,
@@ -26,7 +26,7 @@ import {
   chatThreadServiceTierFromCodex,
 } from "./chat-thread-event.service";
 import {
-  autoModelPin,
+  autoSelectionPin,
   resolveModelSelectionPin$,
   isReplacedModelSelection,
   replacementSubscriptionRequired,
@@ -194,7 +194,7 @@ export const resolveChatInputModelSelection$ = command(
       selectedModel = pin.selectedModel;
       modelProviderType = pin.modelProviderType;
     } else {
-      const auto = autoModelPin();
+      const auto = autoSelectionPin();
       selectedModel = auto.selectedModel;
       modelProviderType = auto.modelProviderType;
       codexServiceTier = null;
@@ -207,7 +207,7 @@ export const resolveChatInputModelSelection$ = command(
     const selectedIsReplacement =
       pin !== null &&
       selectedModel !== args.selectedModel &&
-      selectedModel !== AUTO_RUN_MODEL;
+      !isAutoSelectedModel(selectedModel);
     const effort = resolveChatReasoningEffort({
       catalog,
       selectedModel,

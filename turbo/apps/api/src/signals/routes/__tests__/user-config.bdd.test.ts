@@ -305,17 +305,17 @@ describe("AUTH-03 agent user connectors", () => {
 });
 
 describe("AUTH-03 user model preference", () => {
-  it("defaults to Auto, rejects the Auto run model, and stores Auto as null", async () => {
+  it("defaults to canonical Auto and rejects the legacy capture ID", async () => {
     const admin = api.user();
     await onboardAdmin(admin, { slug: slug("bdd-uc-b2") });
 
     const defaults = await cfg.readModelPreference(admin);
     expect(defaults).toStrictEqual({
-      selectedModel: null,
+      selectedModel: "auto",
       serviceTier: null,
       modelSettings: {},
       selectedImageModel: null,
-      updatedAt: null,
+      updatedAt: expect.any(String),
     });
 
     // Nullable and explicit Auto are request intents; the legacy capture ID is
@@ -336,20 +336,14 @@ describe("AUTH-03 user model preference", () => {
       serviceTier: null,
     });
     expect(cleared).toStrictEqual({
-      selectedModel: null,
+      selectedModel: "auto",
       serviceTier: null,
       modelSettings: {},
       selectedImageModel: null,
-      updatedAt: null,
+      updatedAt: expect.any(String),
     });
     const readCleared = await cfg.readModelPreference(admin);
-    expect(readCleared).toStrictEqual({
-      selectedModel: null,
-      serviceTier: null,
-      modelSettings: {},
-      selectedImageModel: null,
-      updatedAt: null,
-    });
+    expect(readCleared).toStrictEqual(cleared);
   });
 
   it("stores independent model effort preferences without deleting prior entries", async () => {
@@ -403,17 +397,17 @@ describe("AUTH-03 user model preference", () => {
       selectedModel: "gpt-6-luna",
       modelSettings: luna.modelSettings,
     });
-    // Selecting Auto stores the null selection and keeps model settings.
+    // Selecting Auto stores its canonical identity and keeps model settings.
     const auto = await cfg.updateModelPreference(admin, {
       selectedModel: null,
       serviceTier: null,
     });
     expect(auto).toMatchObject({
-      selectedModel: null,
+      selectedModel: "auto",
       modelSettings: luna.modelSettings,
     });
     await expect(cfg.readModelPreference(admin)).resolves.toMatchObject({
-      selectedModel: null,
+      selectedModel: "auto",
     });
   });
 

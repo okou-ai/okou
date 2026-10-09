@@ -4905,6 +4905,13 @@
           "title": "IndexedDB ストレージ",
           "unavailable": "IndexedDB ストレージを利用できません。"
         },
+        "openrouterPreset": {
+          "description": "組織全体の新しい Auto および組み込み Okou 1.0 の実行に適用されます。既存の実行は変更されません。",
+          "loading": "読み込み中…",
+          "systemDefault": "システムの既定値",
+          "title": "OpenRouter プリセット",
+          "unavailable": "利用できません"
+        },
         "welcomeThread": {
           "create": "ウェルカムチャットを作成",
           "creating": "作成中…",

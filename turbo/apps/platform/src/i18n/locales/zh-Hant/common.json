@@ -4905,6 +4905,13 @@
           "title": "IndexedDB儲存",
           "unavailable": "IndexedDB儲存不可用。"
         },
+        "openrouterPreset": {
+          "description": "對整個組織後續新建的 Auto 和 Okou 1.0 內建模型執行生效，不影響既有執行。",
+          "loading": "載入中…",
+          "systemDefault": "系統預設",
+          "title": "OpenRouter 預設",
+          "unavailable": "無法使用"
+        },
         "welcomeThread": {
           "create": "建立歡迎會話",
           "creating": "建立中…",

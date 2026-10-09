@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.221.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.221.1...runner-rs-v0.221.2) (2026-10-09)
+
+
+### Bug Fixes
+
+* **runner:** reconcile retained state and scrub terminal private files ([#38153](https://github.com/okou-ai/okou/issues/38153)) ([9824493](https://github.com/okou-ai/okou/commit/9824493f88b89ad219b243438d635e6cd085514b))
+
+
+### Refactoring
+
+* **runner:** move storage-cache gc into runner-storage ([#38285](https://github.com/okou-ai/okou/issues/38285)) ([ed47c2a](https://github.com/okou-ai/okou/commit/ed47c2aabb22c37ac87804de7f7c8206f8995794))
+
+
+### Performance Improvements
+
+* **ci:** reduce mitm-addon test logging overhead ([#38274](https://github.com/okou-ai/okou/issues/38274)) ([602d9cb](https://github.com/okou-ai/okou/commit/602d9cb62a85374eac02fb10b3b660ca12c3153c))
+* **ci:** shard mitm-addon tests without reducing coverage ([#38315](https://github.com/okou-ai/okou/issues/38315)) ([ce1af07](https://github.com/okou-ai/okou/commit/ce1af073c4925132514b3166407c1a0de2ca3065))
+* **mitm-addon:** remove polling and redundant heap scans from tests ([#38289](https://github.com/okou-ai/okou/issues/38289)) ([261e7df](https://github.com/okou-ai/okou/commit/261e7dfaca310b1a3e1e2fa6ec99965e2cf3c232))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.221.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.221.0...runner-rs-v0.221.1) (2026-10-09)
 
 ### Release Dependencies

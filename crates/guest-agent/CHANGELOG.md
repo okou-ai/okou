@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.104.9](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.8...guest-agent-v0.104.9) (2026-10-09)
+
+
+### Bug Fixes
+
+* **guest-agent:** classify expired authentication tokens as invalid credentials ([#38298](https://github.com/okou-ai/okou/issues/38298)) ([1df16c8](https://github.com/okou-ai/okou/commit/1df16c8c112a1c43fdfd426578b3179512fec129))
+* **runner:** reconcile retained state and scrub terminal private files ([#38153](https://github.com/okou-ai/okou/issues/38153)) ([9824493](https://github.com/okou-ai/okou/commit/9824493f88b89ad219b243438d635e6cd085514b))
+
+
+### Performance Improvements
+
+* **test:** reduce remaining crates fixture overhead ([#38283](https://github.com/okou-ai/okou/issues/38283)) ([80ea1e5](https://github.com/okou-ai/okou/commit/80ea1e5381b35f4ca152d4ffbf387915d8f3d1cc))
+
 ## [0.104.8](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.7...guest-agent-v0.104.8) (2026-10-09)
 
 
