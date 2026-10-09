@@ -1737,10 +1737,10 @@ generation and connectors retain their existing storage. See
 > legacy tables, pointer metadata and entry projection columns described
 > below no longer exist.
 
-`deploy-api` still runs `db:dev-seed --preview-onboarding-catalog` and then
-calls `/api/cron/seed-preview-onboarding-catalog`; the flag and path keep their
-historical names so the workflow is unchanged. Both now initialize the complete
-validated official R2 publication. This replaces the former onboarding/Runner
+`deploy-api` runs `db:dev-seed --preview-onboarding-catalog` before deployment
+to initialize the complete validated official R2 publication. The historical
+preview-only HTTP seed endpoint and its redundant post-deploy call are removed
+by #37440 batch020; the existing CLI initializer remains unchanged. This replaces the former onboarding/Runner
 E2E projection (32 connectors), which left every other official connector
 absent once business readers moved to immutable entries. There is no subset,
 slug allowlist or legacy gzip/R2 read fallback, and readers are unchanged.
@@ -1754,8 +1754,9 @@ the legacy compressed snapshot, synchronization state and compatibility row
 that older API instances still read. The previous generation keeps serving if
 download, byte-digest validation, skill registration or an entry write fails.
 Each deploy resets the preview Neon branch from its parent, so dev-seed performs
-a cold initialization. The post-deploy call finds the generation complete and
-only repeats download, validation and the pointer transaction. Pi invalidation
+a cold initialization. There is no second HTTP initialization after deployment; the catalog remains
+the publication accepted during pre-deploy initialization even if the official
+pointer changes before deployment completes. The normal API health check remains. Pi invalidation
 and runtime wakeups remain production-synchronizer behavior.
 
 Entry preparation, for both production synchronization and preview, writes

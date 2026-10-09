@@ -1,33 +1,25 @@
-import { publicRunOwner } from "./helpers/public-run-owner";
 import { randomUUID } from "node:crypto";
-import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
-import { agentsRoutes } from "../agents";
-import { mockClerkUsers } from "./helpers/clerk-users";
-import {
-  chatEventsContract,
-  chatThreadByIdContract,
-  chatThreadEventsContract,
-} from "@okouai/api-contracts/contracts/chat-threads";
-import { runsCancelContract } from "@okouai/api-contracts/contracts/run-routes";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
-import { describe, expect, it, onTestFinished } from "vitest";
+import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { chatThreadRoutes } from "../chat-threads";
-import { chatEventsRoutes } from "../chat-events";
-import { runsCancelRoutes } from "../runs-cancel";
-import { createRouteMocks } from "./helpers/route-test";
-import { projectChatEventRows } from "./helpers/chat-event-test-reader";
 import { mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
+import {
+  appendTerminalChatEventsFixture,
+  readSeededUnreadThreadIdsFixture,
+} from "../../../test-fixtures/chat-thread-agent-read";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { chatThreadCreateRoutes } from "../chat-threads-create";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createRouteMocks } from "./helpers/route-test";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
@@ -37,12 +29,6 @@ const runs = createRunsApi(context);
 const chatCallbacks = createChatCallbacksApi(context);
 /** The route's notification budget; one more id than this overflows it. */
 const NOTIFIED_THREAD_ID_BUDGET = 100;
-const threadReadRoutes = chatThreadRoutes.filter(({ route }) => {
-  return (
-    route === chatThreadByIdContract.get ||
-    route === chatThreadEventsContract.catchUp
-  );
-});
 
 interface AgentReadFixture {
   /** Owns the threads and calls the endpoint; never owns the Agent. */
@@ -52,53 +38,72 @@ interface AgentReadFixture {
   readonly agentId: string;
   readonly orgId: string;
   readonly threadIds: readonly string[];
-  readonly signal: AbortSignal;
-  readonly run: ReturnType<typeof publicRunOwner>["run"];
-  readonly phase: (name: string) => void;
 }
 
-/** Temporary phase-only CI diagnosis; no timing assertion or production telemetry. */
-function unreadPhaseProfile(threadCount: number, signal: AbortSignal) {
-  const startedAt = performance.now();
-  let phase = "identity";
-  let phaseStartedAt = startedAt;
-  const elapsed = new Map<string, number>();
-  const visits = new Map<string, number>();
-  const enter = (name: string) => {
-    const at = performance.now();
-    elapsed.set(phase, (elapsed.get(phase) ?? 0) + at - phaseStartedAt);
-    phase = name;
-    phaseStartedAt = at;
-    visits.set(name, (visits.get(name) ?? 0) + 1);
-  };
-  if (threadCount > 3) {
-    let foreground = "";
-    signal.addEventListener(
-      "abort",
-      () => {
-        const at = performance.now();
-        foreground = JSON.stringify({
-          threadCount,
-          phase,
-          phaseElapsedMs: Math.round(at - phaseStartedAt),
-          totalMs: Math.round(at - startedAt),
-          phaseVisits: Object.fromEntries(visits),
-          completedPhaseMs: Object.fromEntries(
-            [...elapsed].map(([name, ms]) => {
-              return [name, Math.round(ms)];
+/**
+ * One shared Agent owned by another member of the caller's organization, with
+ * `threadCount` threads that belong to the caller. The distinct Agent owner
+ * exists before any request runs, so a test never has to transfer the
+ * Agent first; the test exercises the actor's read cursor for a shared Agent.
+ */
+async function createAgentReadFixture(
+  threadCount: number,
+): Promise<AgentReadFixture> {
+  const signal = context.signal;
+  const orgId = `org_${randomUUID()}`;
+  const owner = bdd.user({ orgId });
+  const actor = bdd.user({ orgId });
+  bdd.acceptAgentStorageWrites();
+  const agent = await bdd.createAgent(owner, {
+    displayName: `Shared ${randomUUID().slice(0, 8)}`,
+    visibility: "public",
+  });
+  const model = await chat.getDefaultCreateThreadModel(actor);
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.orgRole,
+  );
+  // Reuse the creation route app instead of rebuilding it for every thread.
+  const client = setupApp({ context, signal, routes: chatThreadCreateRoutes })(
+    chatThreadsContract,
+  );
+  const threadIds: string[] = [];
+  // Keep one batch below the ten-connection API pool and drain it before
+  // propagating errors or changing identities. Eight leaves capacity for the
+  // fixture's other database work while keeping high-cardinality cases within
+  // the ordinary test budget under shared-runner load.
+  const batchSize = 8;
+  for (let start = 0; start < threadCount; start += batchSize) {
+    signal.throwIfAborted();
+    const batch = await Promise.allSettled(
+      Array.from(
+        { length: Math.min(batchSize, threadCount - start) },
+        (_, index) => {
+          return accept(
+            client.create({
+              headers: { authorization: "Bearer clerk-session" },
+              body: {
+                agentId: agent.agentId,
+                title: `Bulk ${start + index}`,
+                model,
+              },
             }),
-          ),
-        });
-      },
-      { once: true },
+            [201],
+          );
+        },
+      ),
     );
-    onTestFinished(() => {
-      if (foreground) {
-        throw new Error(`Unread foreground phase diagnosis: ${foreground}`);
+    for (const result of batch) {
+      if (result.status === "rejected") {
+        throw result.reason;
       }
-    });
+      threadIds.push(result.value.body.id);
+    }
   }
-  return enter;
+  signal.throwIfAborted();
+  await appendTerminalChatEventsFixture({ threadIds });
+  return { actor, owner, agentId: agent.agentId, orgId, threadIds };
 }
 
 function prepareChatRuntime(): void {
@@ -110,251 +115,58 @@ function prepareChatRuntime(): void {
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
 }
 
-/** The normal SharedWorker batch reader returns every fresh thread's full tail. */
-async function threadEvents(actor: ApiTestUser, threadIds: readonly string[]) {
-  createRouteMocks(context).clerk.session(
-    actor.userId,
-    actor.orgId,
-    actor.orgRole,
-  );
-  const response = await accept(
-    setupApp({ context, routes: threadReadRoutes })(
-      chatThreadEventsContract,
-    ).catchUp({
-      headers: { authorization: "Bearer clerk-session" },
-      body: threadIds.map((threadId): [string, number] => {
-        return [threadId, 0];
-      }),
-    }),
-    [200],
-  );
-  expect(response.body.notFoundThreads).toStrictEqual([]);
-  expect(Object.keys(response.body.events).sort()).toStrictEqual(
-    [...threadIds].sort(),
-  );
-  return new Map(
-    Object.entries(response.body.events).map(([id, rows]) => {
-      return [id, projectChatEventRows(rows)];
-    }),
-  );
-}
-
-async function settledValues<T>(
-  operations: readonly Promise<T>[],
-): Promise<T[]> {
-  const results = await Promise.allSettled(operations);
-  return results.map((result) => {
-    if (result.status === "rejected") {
-      throw result.reason;
-    }
-    return result.value;
-  });
-}
-
-/** Normal chat sends and cancellations; batch only their public observations. */
-async function appendCancelledRuns(
-  args: {
-    readonly actor: ApiTestUser;
-    readonly agentId: string;
-    readonly threadId?: string;
-    readonly phase?: (name: string) => void;
-  },
-  count: number,
-  signal: AbortSignal,
-): Promise<string[]> {
-  const phase = args.phase ?? (() => {});
-  signal.throwIfAborted();
-  createRouteMocks(context).clerk.session(
-    args.actor.userId,
-    args.actor.orgId,
-    args.actor.orgRole,
-  );
-  const send = setupApp({ context, routes: chatEventsRoutes, signal })(
-    chatEventsContract,
-  );
-  phase("send");
-  const sent = await settledValues(
-    Array.from({ length: count }, async () => {
-      const clientEventId = randomUUID();
-      const prompt = `agent read ${randomUUID()}`;
-      const response = await accept(
-        send.send({
-          headers: { authorization: "Bearer clerk-session" },
-          body: {
-            agentId: args.agentId,
-            prompt,
-            model: "claude-fable-5-1",
-            clientEventId,
-            userMessage: {
-              version: 1,
-              parts: [{ type: "text", text: prompt }],
-            },
-            hasTextContent: true,
-            ...(args.threadId === undefined ? {} : { threadId: args.threadId }),
-          },
-        }),
-        [201],
-      );
-      return { threadId: response.body.threadId, clientEventId };
-    }),
-  );
-  signal.throwIfAborted();
-  phase("launch-drain");
-  await flushWaitUntilForTest();
-  signal.throwIfAborted();
-  const threadIds = sent.map(({ threadId }) => {
-    return threadId;
-  });
-  phase("launch-read");
-  const launched = await threadEvents(args.actor, threadIds);
-  const runIds = sent.map(({ threadId, clientEventId }) => {
-    const prompt = launched.get(threadId)?.find((event) => {
-      return (
-        event.eventType === "input.prompt" &&
-        event.revokesEventId === clientEventId
-      );
-    });
-    if (!prompt?.runId) {
-      throw new Error("Expected the public chat send to launch its Run");
-    }
-    return prompt.runId;
-  });
-  signal.throwIfAborted();
-  const cancel = setupApp({ context, routes: runsCancelRoutes, signal })(
-    runsCancelContract,
-  );
-  phase("cancel");
-  await settledValues(
-    runIds.map((runId) => {
-      return accept(
-        cancel.cancel({
-          headers: { authorization: "Bearer clerk-session" },
-          params: { id: runId },
-        }),
-        [200],
-      );
-    }),
-  );
-  signal.throwIfAborted();
-  phase("cancel-drain");
-  await flushWaitUntilForTest();
-  signal.throwIfAborted();
-  phase("terminal-read");
-  const terminal = await threadEvents(args.actor, threadIds);
-  for (const [index, threadId] of threadIds.entries()) {
-    expect(terminal.get(threadId)).toContainEqual(
-      expect.objectContaining({
-        eventType: "run.cancelled",
-        runId: runIds[index],
-      }),
-    );
-  }
-  return threadIds;
-}
-
+/**
+ * Appends one terminal Run event to a caller thread the way a user does: a
+ * chat send launches a Run, which the caller then cancels. Without
+ * `threadId` the send creates a new thread. The Run must still be active when
+ * it is cancelled, so the caller selects Fable, whose personal Claude
+ * subscription route keeps it queued for the native Runner instead of Pi.
+ */
 async function appendCancelledRun(args: {
   readonly actor: ApiTestUser;
   readonly agentId: string;
   readonly threadId?: string;
 }): Promise<string> {
-  const [threadId] = await appendCancelledRuns(args, 1, context.signal);
-  if (!threadId) {
-    throw new Error("Expected one cancelled thread");
-  }
+  const { runId, threadId } = await chat.sendAndLaunch(args.actor, {
+    agentId: args.agentId,
+    prompt: `agent read ${randomUUID()}`,
+    ...(args.threadId === undefined ? {} : { threadId: args.threadId }),
+  });
+  await runs.requestCancelRun(args.actor, runId, [200]);
+  await flushWaitUntilForTest();
+
+  await flushWaitUntilForTest();
+  await expect(chat.listUnreadChatThreadIds(args.actor)).resolves.toContain(
+    threadId,
+  );
   return threadId;
 }
 
 /**
- * A shared Agent owned by another member, using only production APIs.
- * Each thread is created by a chat send and made
+ * The same shared-Agent shape as {@link createAgentReadFixture}, built only
+ * through production APIs: each thread is created by a chat send and made
  * unread by the cancelled Run's terminal event.
  */
 async function createUnreadAgentThreads(
   threadCount: number,
 ): Promise<AgentReadFixture> {
-  const signal = context.signal;
-  const phase = unreadPhaseProfile(threadCount, signal);
   prepareChatRuntime();
   const orgId = `org_${randomUUID()}`;
   const owner = bdd.user({ orgId });
   const actor = bdd.user({ orgId });
-  createRouteMocks(context).clerk.session(
-    owner.userId,
-    owner.orgId,
-    owner.orgRole,
-  );
-  mockClerkUsers(context, [
-    {
-      id: owner.userId,
-      emailAddresses: [
-        { id: `email_${owner.userId}`, emailAddress: owner.email },
-      ],
-      primaryEmailAddressId: `email_${owner.userId}`,
-      firstName: "Unread",
-      lastName: "Owner",
-    },
-  ]);
-  const client = setupApp({ context, routes: agentsRoutes })(
-    agentsMainContract,
-  );
-  const { body: agent } = await accept(
-    client.create({
-      headers: { authorization: "Bearer clerk-session" },
-      body: {
-        displayName: `Shared ${randomUUID().slice(0, 8)}`,
-        visibility: "public",
-      },
-    }),
-    [201],
-  );
-  const owned = publicRunOwner(context, actor, {
-    afterRuns: async () => {
-      phase("cleanup-agent");
-      context.mocks.s3.send.mockResolvedValue({
-        Contents: [],
-        IsTruncated: false,
-      });
-      await bdd.deleteAgent(owner, agent.agentId);
-      await flushWaitUntilForTest();
-    },
+  await runs.grantProEntitlement(actor);
+  await runs.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
   });
-  return await owned.run(async () => {
-    signal.throwIfAborted();
-    phase("billing");
-    await runs.grantProEntitlement(actor, {
-      tier: threadCount > 3 ? "team" : "pro",
-    });
-    signal.throwIfAborted();
-    phase("subscription");
-    await runs.ensurePersonalSubscriptionModel(actor, {
-      model: "claude-fable-5-1",
-    });
-
-    const threadIds: string[] = [];
-    // Team's ten real admission slots accommodate eight concurrent sends.
-    const batchSize = threadCount > 3 ? 8 : 2;
-    for (let start = 0; start < threadCount; start += batchSize) {
-      signal.throwIfAborted();
-      threadIds.push(
-        ...(await appendCancelledRuns(
-          { actor, agentId: agent.agentId, phase },
-          Math.min(batchSize, threadCount - start),
-          signal,
-        )),
-      );
-    }
-    phase("mark-read");
-    return {
-      actor,
-      owner,
-      agentId: agent.agentId,
-      orgId,
-      threadIds,
-      signal,
-      run: owned.run,
-      phase,
-    };
+  const agent = await bdd.createAgent(owner, {
+    displayName: `Shared ${randomUUID().slice(0, 8)}`,
+    visibility: "public",
   });
+  const threadIds: string[] = [];
+  for (let index = 0; index < threadCount; index += 1) {
+    threadIds.push(await appendCancelledRun({ actor, agentId: agent.agentId }));
+  }
+  return { actor, owner, agentId: agent.agentId, orgId, threadIds };
 }
 
 /** Each thread's read cursor as the production thread reader returns it. */
@@ -376,56 +188,15 @@ async function visibleUnreadThreadIds(
   return new Set(await chat.listUnreadChatThreadIds(fixture.actor));
 }
 
-/** Observe every known thread, without the sidebar's 50-thread cap. */
+/**
+ * Complete seeded unread state for this bulk-write fixture. The public
+ * indicators return at most 50 unread threads, so they cannot read back the
+ * 100+ thread cases.
+ */
 async function unreadThreadIds(
   fixture: AgentReadFixture,
 ): Promise<ReadonlySet<string>> {
-  return await fixture.run(async () => {
-    fixture.signal.throwIfAborted();
-    fixture.phase("final-events");
-    const eventsByThread = await threadEvents(fixture.actor, fixture.threadIds);
-    const client = setupApp({
-      context,
-      routes: threadReadRoutes,
-      signal: fixture.signal,
-    })(chatThreadByIdContract);
-    const unread = new Set<string>();
-    fixture.phase("cursors");
-    for (let start = 0; start < fixture.threadIds.length; start += 8) {
-      fixture.signal.throwIfAborted();
-      await settledValues(
-        fixture.threadIds.slice(start, start + 8).map(async (threadId) => {
-          const { body: detail } = await accept(
-            client.get({
-              headers: { authorization: "Bearer clerk-session" },
-              params: { id: threadId },
-            }),
-            [200],
-          );
-          const terminal = (eventsByThread.get(threadId) ?? []).filter(
-            (event) => {
-              return ["run.completed", "run.cancelled", "run.failed"].includes(
-                event.eventType,
-              );
-            },
-          );
-          expect(terminal.length).toBeGreaterThan(0);
-          if (
-            terminal.some((event) => {
-              return (
-                detail.lastReadAt === null ||
-                Date.parse(event.createdAt) > Date.parse(detail.lastReadAt)
-              );
-            })
-          ) {
-            unread.add(threadId);
-          }
-        }),
-      );
-    }
-    fixture.phase("cleanup-runs");
-    return unread;
-  });
+  return await readSeededUnreadThreadIdsFixture(fixture.threadIds);
 }
 
 function clearPublishedNotifications(): void {
@@ -451,7 +222,7 @@ const readCursorPayloadThreadIdsSchema = z.object({
 describe("bulk Agent read-cursor notifications stay bounded", () => {
   it("updates all unread rows and publishes Agent scope above the notification budget", async () => {
     // 128 is the unread candidate bound the route shares with the indicators.
-    const fixture = await createUnreadAgentThreads(
+    const fixture = await createAgentReadFixture(
       NOTIFIED_THREAD_ID_BUDGET + 28,
     );
     clearPublishedNotifications();
@@ -493,7 +264,7 @@ describe("bulk Agent read-cursor notifications stay bounded", () => {
 
   it("publishes the exact thread ids for 100 unread Agent threads within the budget", async () => {
     const threadCount = NOTIFIED_THREAD_ID_BUDGET;
-    const fixture = await createUnreadAgentThreads(threadCount);
+    const fixture = await createAgentReadFixture(threadCount);
     clearPublishedNotifications();
     await chat.markAgentThreadsRead(fixture.actor, fixture.agentId);
     const payloads = publishedReadCursorPayloads();
@@ -510,9 +281,7 @@ describe("bulk Agent read-cursor notifications stay bounded", () => {
   });
 
   it("publishes Agent scope and updates every row one thread above the notification budget", async () => {
-    const fixture = await createUnreadAgentThreads(
-      NOTIFIED_THREAD_ID_BUDGET + 1,
-    );
+    const fixture = await createAgentReadFixture(NOTIFIED_THREAD_ID_BUDGET + 1);
     clearPublishedNotifications();
     await chat.markAgentThreadsRead(fixture.actor, fixture.agentId);
     expect(publishedReadCursorPayloads()).toStrictEqual([

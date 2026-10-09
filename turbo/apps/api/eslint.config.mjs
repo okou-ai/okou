@@ -754,7 +754,6 @@ export default [
     ignores: [
       "src/**/__tests__/**/*.ts",
       "src/signals/routes/test-*.ts",
-      "src/signals/routes/cli-auth-test.ts",
       "src/signals/route.ts",
     ],
     rules: {
@@ -764,10 +763,6 @@ export default [
           patterns: [
             {
               group: ["**/routes/test-*", "**/routes/test-*/**"],
-              message: productionRouteTestImportMessage,
-            },
-            {
-              group: ["**/routes/cli-auth-test"],
               message: productionRouteTestImportMessage,
             },
           ],
@@ -784,10 +779,6 @@ export default [
           patterns: [
             {
               group: ["**/routes/test-*", "**/routes/test-*/**"],
-              message: productionRouteTestImportMessage,
-            },
-            {
-              group: ["**/routes/cli-auth-test"],
               message: productionRouteTestImportMessage,
             },
           ],

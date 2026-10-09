@@ -1,3 +1,6 @@
+import { http, HttpResponse } from "msw";
+import { server } from "../../../mocks/server";
+import { env, mockEnv } from "../../../lib/env";
 import { randomUUID } from "node:crypto";
 
 import {
@@ -7,7 +10,7 @@ import {
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
-import { afterEach } from "vitest";
+import { afterEach, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -25,7 +28,6 @@ import {
   createConnectorBddApi,
   mockGitHubConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
-import { createAuthDeviceApiActions } from "./helpers/api-bdd-auth-device";
 import { connectorCatalogRoutes } from "../connector-catalog";
 import { featureSwitchesRoutes } from "../feature-switches";
 
@@ -33,7 +35,6 @@ const context = testContext();
 const mocks = createRouteMocks(context);
 const bdd = createBddApi(context);
 const connectorsApi = createConnectorBddApi(context);
-const authDevice = createAuthDeviceApiActions(context);
 const store = createStore();
 
 async function enableFeatureSwitches(
@@ -717,19 +718,49 @@ describe("GET /api/connector-catalog", () => {
     expect(github?.connection).not.toHaveProperty("oauthScopes");
   });
 
-  it("returns scope mismatch status for connectors with missing stored scopes", async () => {
+  it("reports a normal empty provider grant without exposing scope storage", async () => {
     const actor = bdd.user();
-    await authDevice.provisionTestOrg(actor);
-    await authDevice.requestTestConnector(
-      { email: actor.email },
-      {
-        connectorSlug: "github",
-        authMethod: "oauth",
-        accessToken: "github-access-token",
-        expiresIn: 3600,
-      },
-      [200],
+    mockGitHubConnectorOAuth();
+    server.use(
+      http.post("https://github.com/login/oauth/access_token", () => {
+        return HttpResponse.json({
+          access_token: "github-access-token",
+          scope: "",
+          expires_in: 3600,
+        });
+      }),
     );
+    const kmsKey = env("SECRETS_KMS_KEY_ID");
+    onTestFinished(async () => {
+      mockEnv("SECRETS_KMS_KEY_ID", kmsKey);
+      for (const account of await connectorsApi.listBuiltinConnectorAccounts(
+        actor,
+        "github",
+      )) {
+        await connectorsApi.deleteBuiltinConnectorAccount(
+          actor,
+          "github",
+          account.id,
+        );
+      }
+    });
+    const started = await connectorsApi.requestOauthStart(
+      actor,
+      "github",
+      "oauth",
+      { statuses: [200] },
+    );
+    if (started.status !== 200) {
+      throw new Error("Expected OAuth authorization");
+    }
+    const completed = await connectorsApi.completeOauthCallbackResult(
+      "github",
+      {
+        code: `github-${randomUUID()}`,
+        state: stateFromAuthorizationUrl(started.body.authorizationUrl),
+      },
+    );
+    expect(completed.body.status).toBe("success");
     mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
 
     const client = setupApp({ context, routes: connectorCatalogRoutes })(
@@ -747,8 +778,8 @@ describe("GET /api/connector-catalog", () => {
     expect(github).toMatchObject({
       slug: "github",
       connected: true,
-      connectionStatus: "scope-mismatch",
-      scopeMismatch: true,
+      connectionStatus: "connected",
+      scopeMismatch: false,
       authMethodSupportsRefresh: false,
     });
     expect(github?.connection).toMatchObject({
@@ -760,17 +791,47 @@ describe("GET /api/connector-catalog", () => {
 
   it("returns reconnect-required status for expired non-refreshable connectors", async () => {
     const actor = bdd.user();
-    await authDevice.provisionTestOrg(actor);
-    await authDevice.requestTestConnector(
-      { email: actor.email },
-      {
-        connectorSlug: "github",
-        authMethod: "oauth",
-        accessToken: "expired-github-access-token",
-        expiresIn: -60,
-      },
-      [200],
+    mockGitHubConnectorOAuth();
+    server.use(
+      http.post("https://github.com/login/oauth/access_token", () => {
+        return HttpResponse.json({
+          access_token: "expired-github-access-token",
+          scope: "",
+          expires_in: -60,
+        });
+      }),
     );
+    const kmsKey = env("SECRETS_KMS_KEY_ID");
+    onTestFinished(async () => {
+      mockEnv("SECRETS_KMS_KEY_ID", kmsKey);
+      for (const account of await connectorsApi.listBuiltinConnectorAccounts(
+        actor,
+        "github",
+      )) {
+        await connectorsApi.deleteBuiltinConnectorAccount(
+          actor,
+          "github",
+          account.id,
+        );
+      }
+    });
+    const started = await connectorsApi.requestOauthStart(
+      actor,
+      "github",
+      "oauth",
+      { statuses: [200] },
+    );
+    if (started.status !== 200) {
+      throw new Error("Expected OAuth authorization");
+    }
+    const completed = await connectorsApi.completeOauthCallbackResult(
+      "github",
+      {
+        code: `github-${randomUUID()}`,
+        state: stateFromAuthorizationUrl(started.body.authorizationUrl),
+      },
+    );
+    expect(completed.body.status).toBe("success");
     mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
 
     const client = setupApp({ context, routes: connectorCatalogRoutes })(
@@ -789,7 +850,7 @@ describe("GET /api/connector-catalog", () => {
       slug: "github",
       connected: true,
       connectionStatus: "reconnect-required",
-      scopeMismatch: true,
+      scopeMismatch: false,
       authMethodSupportsRefresh: false,
     });
     expect(github?.connection).toMatchObject({

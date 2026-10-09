@@ -82,6 +82,7 @@ import {
   type ApiTestUserOptions,
 } from "./helpers/api-bdd";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
+import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import {
@@ -727,6 +728,7 @@ async function entitledRunActor(
   readonly actor: ApiTestUser;
   readonly agentId: string;
   readonly runnerGroup: string;
+  readonly personalProviderId: string;
   readonly granted: {
     readonly customerId: string;
     readonly subscriptionId: string;
@@ -740,13 +742,19 @@ async function entitledRunActor(
   api.acceptTelemetryIngest();
   const runnerGroup = api.configureRunnerGroup();
   const granted = await api.grantProEntitlement(actor);
-  await api.ensurePersonalSubscriptionModel(actor, route);
+  const personal = await api.ensurePersonalSubscriptionModel(actor, route);
   const agent = await bdd.createAgent(actor, {
     displayName: "BDD lifecycle agent",
     description: "Exercises the full run lifecycle.",
     visibility: "private",
   });
-  return { actor, agentId: agent.agentId, runnerGroup, granted };
+  return {
+    actor,
+    agentId: agent.agentId,
+    runnerGroup,
+    personalProviderId: personal.providerId,
+    granted,
+  };
 }
 
 type OrdinaryRunOAuthSlug =
@@ -873,6 +881,7 @@ function useOrdinaryOAuthRuns() {
   return function createOrdinaryOAuthRunApi() {
     const runs = createRunsApi(context);
     const agents = new Map<string, ApiTestUser>();
+    const personalAccounts = new Map<string, ApiTestUser>();
     const ownedRuns = new Map<
       string,
       { actor: ApiTestUser; sandboxToken?: string; acknowledged: boolean }
@@ -918,6 +927,11 @@ function useOrdinaryOAuthRuns() {
         await cleanupAgents.deleteAgent(actor, agentId);
         await flushWaitUntilForTest();
       }
+      for (const [id, actor] of personalAccounts) {
+        await createAuthDeviceSupportApi(
+          context,
+        ).deletePersonalModelProviderAccount(actor, id);
+      }
     });
 
     return {
@@ -945,6 +959,7 @@ function useOrdinaryOAuthRuns() {
       async entitledRunActor(...args: Parameters<typeof entitledRunActor>) {
         const entitled = await entitledRunActor(...args);
         agents.set(entitled.agentId, entitled.actor);
+        personalAccounts.set(entitled.personalProviderId, entitled.actor);
         return entitled;
       },
       async createAgent(
@@ -1478,13 +1493,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       });
 
       it("reuses current validator package authority", async () => {
-        const api = createRunsApi(context);
-        const fw = createFirewallApi(context);
+        const oauth = createOrdinaryOAuthRunApi();
+        const api = oauth.api;
         mockEnv("GIT_COMMIT_SHA", "a".repeat(40));
-        const { actor, agentId, runnerGroup } = await entitledRunActor();
-        await fw.seedTestConnector(actor, {
+        const { actor, agentId, runnerGroup } = await oauth.entitledRunActor();
+        await oauth.connect(actor, {
           connectorSlug: "x",
-          authMethod: "oauth",
           accessToken: "x-reusable-authority-access",
           refreshToken: "x-reusable-authority-refresh",
         });
@@ -5292,19 +5306,18 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       });
 
       it("injects oauth connector tokens with billable firewalls and resolvable secrets", async () => {
-        const api = createRunsApi(context);
+        const oauth = createOrdinaryOAuthRunApi();
+        const api = oauth.api;
         const fw = createFirewallApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor();
+        const { actor, agentId, runnerGroup } = await oauth.entitledRunActor();
 
-        await fw.seedTestConnector(actor, {
+        await oauth.connect(actor, {
           connectorSlug: "x",
-          authMethod: "oauth",
           accessToken: "x-bdd-access",
           refreshToken: "x-bdd-refresh",
         });
-        await fw.seedTestConnector(actor, {
+        await oauth.connect(actor, {
           connectorSlug: "slack",
-          authMethod: "oauth",
           accessToken: "xoxb-bdd-unenabled-access",
         });
         const enabled = await api.enableAgentConnectors(actor, agentId, ["x"]);

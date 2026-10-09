@@ -1,3 +1,5 @@
+import { publicRunOwner } from "./helpers/public-run-owner";
+import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { claimPublicToolRun } from "./helpers/public-tool-actor";
 import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 import { randomUUID } from "node:crypto";
@@ -54,12 +56,12 @@ import {
 
 import {
   createAuthDeviceApiActions,
+  makeCodexAuthJson,
   mockCodexDeviceAuthProvider,
 } from "./helpers/api-bdd-auth-device";
 import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
 import type { TestTerminalRunStatus } from "./helpers/api-bdd-run-timeout";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { setBuiltinOAuthScopeFacts } from "./helpers/connector-credential-storage-state";
 
 const TEST_DATA_KEY = Buffer.from("0123456789abcdef0123456789abcdef", "utf8");
 
@@ -87,35 +89,154 @@ const TERMINAL_RUN_STATUSES = [
   "cancelled",
 ] as const satisfies readonly TestTerminalRunStatus[];
 
-async function firewallRun(existingActor?: ApiTestUser): Promise<{
+function createCodexAccountOwnership() {
+  return {
+    receipts: new Map<string, string>(),
+    owned: new Map<string, Set<string>>(),
+  };
+}
+const codexAccounts = createCodexAccountOwnership();
+
+async function connectCodexAccount(
+  actor: ApiTestUser,
+  input: {
+    readonly accessToken: string;
+    readonly refreshToken: string;
+    readonly accountId: string;
+    readonly expiresIn: number;
+  },
+) {
+  const response = await createMiscRoutesApi(
+    context,
+  ).upsertPersonalModelProvider(
+    actor,
+    {
+      type: "codex-oauth-token",
+      authMethod: "auth_json",
+      secrets: {
+        CODEX_AUTH_JSON: makeCodexAuthJson({
+          accessToken: input.accessToken,
+          refreshToken: input.refreshToken,
+          accountId: input.accountId,
+          idTokenExpiresAt: Math.floor(now() / 1000) + input.expiresIn,
+        }),
+      },
+    },
+    [200, 201],
+  );
+  if (response.status !== 200 && response.status !== 201) {
+    throw new Error("Expected normal Codex paste to succeed");
+  }
+  const id = response.body.provider.id;
+  codexAccounts.receipts.set(actor.userId, id);
+  const owned = codexAccounts.owned.get(actor.userId);
+  if (!owned) {
+    throw new Error("Expected the real Run owner before connecting Codex");
+  }
+  owned.add(id);
+}
+
+async function firewallRun(): Promise<{
   readonly actor: ApiTestUser;
   readonly runId: string;
   readonly headers: { readonly authorization: string };
 }> {
   const bdd = createBddApi(context);
-  const runsApi = createRunsApi(context);
-  const fw = createFirewallApi(context);
-  const actor = existingActor ?? bdd.user();
+  const runs = createRunsApi(context);
+  const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
-  runsApi.acceptStorageDownloads();
-  runsApi.acceptTelemetryIngest();
-  runsApi.configureRunnerGroup();
-  await fw.provisionRunReadyOrg(actor);
-  await runsApi.ensurePersonalSubscriptionModel(actor);
-  const agent = await bdd.createAgent(actor, {
-    displayName: "BDD firewall agent",
-    description: "Exercises firewall auth resolution.",
-    visibility: "private",
+  runs.acceptStorageDownloads();
+  runs.acceptTelemetryIngest();
+  const runnerGroup = runs.configureRunnerGroup();
+  const agents: string[] = [];
+  const modelAccounts = new Set<string>();
+  codexAccounts.owned.set(actor.userId, modelAccounts);
+  const owner = publicRunOwner(context, actor, {
+    afterRuns: async () => {
+      for (const agentId of agents) {
+        await bdd.deleteAgent(actor, agentId);
+      }
+      const support = createAuthDeviceSupportApi(context);
+      for (const id of modelAccounts) {
+        await support.deletePersonalModelProviderAccount(actor, id);
+      }
+      const connectors = createConnectorBddApi(context);
+      for (const account of await connectors.listBuiltinConnectorAccounts(
+        actor,
+        "test-oauth",
+      )) {
+        await connectors.deleteBuiltinConnectorAccount(
+          actor,
+          "test-oauth",
+          account.id,
+        );
+      }
+      codexAccounts.receipts.delete(actor.userId);
+      codexAccounts.owned.delete(actor.userId);
+    },
   });
-  const run = await runsApi.createThreadRun(actor, {
-    agentId: agent.agentId,
-    prompt: "resolve firewall auth",
+  return await owner.run(async () => {
+    await publicPlanLifecycle(context, actor).update("active");
+    await bdd.completeOnboarding(actor);
+    const provider = await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
+    modelAccounts.add(provider.providerId);
+    const agent = await bdd.createAgent(actor, {
+      displayName: "BDD firewall agent",
+      visibility: "private",
+    });
+    agents.push(agent.agentId);
+    const run = await runs.createThreadRun(actor, {
+      agentId: agent.agentId,
+      model: "claude-fable-5-1",
+      prompt: "resolve firewall auth",
+    });
+    await runs.heartbeatRunner(runnerGroup);
+    const claim = await owner.claim(run.runId);
+    return {
+      actor,
+      runId: run.runId,
+      headers: { authorization: `Bearer ${claim.sandboxToken}` },
+    };
   });
-  return {
-    actor,
-    runId: run.runId,
-    headers: fw.sandboxHeaders(actor, run.runId),
-  };
+}
+
+async function recordUnclassifiedCodexFailure(
+  actor: ApiTestUser,
+  headers: { readonly authorization: string },
+) {
+  const fw = codexFirewallApi;
+  fw.mockCodexTokenRefresh(() => {
+    return HttpResponse.json(
+      {
+        error: {
+          code: "refresh_token_other",
+          message: "unclassified refresh failure",
+        },
+      },
+      { status: 401 },
+    );
+  });
+  const failed = await fw.requestFirewallAuth(
+    headers,
+    {
+      forceRefresh: true,
+      encryptedSecrets: fw.encryptedSecretsBody({}),
+      authHeaders: {
+        Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
+      },
+      secretConnectorMap: { CHATGPT_ACCESS_TOKEN: "codex-oauth-token" },
+      secretConnectorMetadataMap: {
+        CHATGPT_ACCESS_TOKEN: ownedCodexMetadata(actor),
+      },
+    },
+    [502],
+  );
+  expect(failed.body).toMatchObject({
+    error: { code: "TOKEN_REFRESH_FAILED" },
+  });
+  expect(failed.body).not.toHaveProperty("error.failureReason");
 }
 
 async function withPublicFirewallRun(
@@ -1528,14 +1649,37 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
     );
     expect(preservedConnector.oauthScopes).toStrictEqual(["provider-added"]);
 
-    await setBuiltinOAuthScopeFacts(context, {
-      orgId: actor.orgId,
-      userId: actor.userId,
-      connectorSlug: "test-oauth",
-      connectorId: connected.id,
-      oauthScopes: ["legacy-requested"],
-      oauthGrantedScopes: null,
+    mockTestOAuthAuthCodeProvider({
+      accessToken: "unknown-scoped-access",
+      refreshToken: "unknown-scoped-refresh",
+      scope: null,
     });
+    const reconnect = await connectors.requestOauthStart(
+      actor,
+      "test-oauth",
+      "oauth",
+      {
+        statuses: [200],
+        account: { intent: "reconnect", connectionId: connected.id },
+      },
+    );
+    if (reconnect.status !== 200) {
+      throw new Error("Expected real OAuth reconnect");
+    }
+    const reconnectState = new URL(
+      reconnect.body.authorizationUrl,
+    ).searchParams.get("state");
+    if (!reconnectState) {
+      throw new Error("Expected issued reconnect state");
+    }
+    const reconnected = await connectors.completeOauthCallbackResult(
+      "test-oauth",
+      { state: reconnectState, code: "unknown-grant-reconnect" },
+    );
+    expect(reconnected.body.status).toBe("success");
+    expect(
+      (await connectors.readConnectorBySlug(actor, "test-oauth")).oauthScopes,
+    ).toBeNull();
     fw.mockTestOauthTokenRefresh(() => {
       return fw.oauthTokenResponse({
         accessToken: "legacy-unknown-access",
@@ -1543,7 +1687,7 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
         expiresIn: 3600,
       });
     });
-    await forceRefresh("omitted-scope-access");
+    await forceRefresh("unknown-scoped-access");
     const legacyUnknownConnector = await connectors.readConnectorBySlug(
       actor,
       "test-oauth",
@@ -2660,8 +2804,11 @@ describe("FW-8: static access tokens and unavailable sources", () => {
   });
 });
 
-async function ownedCodexMetadata(actor: ApiTestUser) {
-  const sourceId = await codexFirewallApi.seededPersonalCodexAccountId(actor);
+function ownedCodexMetadata(actor: ApiTestUser) {
+  const sourceId = codexAccounts.receipts.get(actor.userId);
+  if (!sourceId) {
+    throw new Error("Expected the normal Codex account receipt");
+  }
   return {
     sourceType: "model-provider" as const,
     sourceUserId: actor.userId,
@@ -2674,11 +2821,10 @@ describe("FW-9: codex model-provider access", () => {
   it("refreshes the exact owned Codex account and serves its stored token afterwards", async () => {
     const fw = codexFirewallApi;
     const { actor, headers } = await firewallRun();
-    await fw.seedPersonalCodexProvider(actor, {
+    await connectCodexAccount(actor, {
       accessToken: "stale-chatgpt-token",
       refreshToken: "chatgpt-refresh",
       accountId: "acct-bdd",
-      idToken: "id-token-bdd",
       expiresIn: -60,
     });
     fw.mockCodexTokenRefresh(() => {
@@ -2698,7 +2844,7 @@ describe("FW-9: codex model-provider access", () => {
       },
       secretConnectorMap: { CHATGPT_ACCESS_TOKEN: "codex-oauth-token" },
       secretConnectorMetadataMap: {
-        CHATGPT_ACCESS_TOKEN: await ownedCodexMetadata(actor),
+        CHATGPT_ACCESS_TOKEN: ownedCodexMetadata(actor),
       },
     };
 
@@ -2729,11 +2875,10 @@ describe("FW-9: codex model-provider access", () => {
   it("rejects Codex access when concrete account metadata is omitted", async () => {
     const fw = codexFirewallApi;
     const { actor, headers } = await firewallRun();
-    await fw.seedPersonalCodexProvider(actor, {
+    await connectCodexAccount(actor, {
       accessToken: "stale-chatgpt-token",
       refreshToken: "chatgpt-refresh",
       accountId: "acct-bdd",
-      idToken: "id-token-bdd",
       expiresIn: -60,
     });
     fw.mockCodexTokenRefresh(() => {
@@ -2764,11 +2909,10 @@ describe("FW-9: codex model-provider access", () => {
   it("rejects cross-user model-provider sources and unknown aliases", async () => {
     const fw = codexFirewallApi;
     const { actor, headers } = await firewallRun();
-    await fw.seedPersonalCodexProvider(actor, {
+    await connectCodexAccount(actor, {
       accessToken: "stale-chatgpt-token",
       refreshToken: "chatgpt-refresh",
       accountId: "acct-bdd",
-      idToken: "id-token-bdd",
       expiresIn: -60,
     });
 
@@ -2801,7 +2945,7 @@ describe("FW-9: codex model-provider access", () => {
         },
         secretConnectorMap: { CHATGPT_REFRESH_TOKEN: "codex-oauth-token" },
         secretConnectorMetadataMap: {
-          CHATGPT_REFRESH_TOKEN: await ownedCodexMetadata(actor),
+          CHATGPT_REFRESH_TOKEN: ownedCodexMetadata(actor),
         },
       },
       [424],
@@ -2836,15 +2980,13 @@ describe("FW-9: codex model-provider access", () => {
   it("recovers an unclassified reconnect-flagged codex provider after a successful refresh", async () => {
     const fw = codexFirewallApi;
     const { actor, headers } = await firewallRun();
-    await fw.seedPersonalCodexProvider(actor, {
+    await connectCodexAccount(actor, {
       accessToken: "stale-chatgpt-token",
       refreshToken: "chatgpt-refresh",
       accountId: "acct-bdd",
-      idToken: "id-token-bdd",
       expiresIn: -60,
-      needsReconnect: true,
-      lastRefreshErrorCode: "refresh_token_other",
     });
+    await recordUnclassifiedCodexFailure(actor, headers);
     fw.mockCodexTokenRefresh(() => {
       return HttpResponse.json({
         access_token: "recovered-chatgpt-token",
@@ -2864,7 +3006,7 @@ describe("FW-9: codex model-provider access", () => {
         },
         secretConnectorMap: { CHATGPT_ACCESS_TOKEN: "codex-oauth-token" },
         secretConnectorMetadataMap: {
-          CHATGPT_ACCESS_TOKEN: await ownedCodexMetadata(actor),
+          CHATGPT_ACCESS_TOKEN: ownedCodexMetadata(actor),
         },
       },
       [200],
@@ -2880,15 +3022,13 @@ describe("FW-9: codex model-provider access", () => {
   it("re-refreshes unclassified reconnect-flagged codex providers before their token expires", async () => {
     const fw = codexFirewallApi;
     const { actor, headers } = await firewallRun();
-    await fw.seedPersonalCodexProvider(actor, {
+    await connectCodexAccount(actor, {
       accessToken: "current-chatgpt-token",
       refreshToken: "chatgpt-refresh",
       accountId: "acct-bdd",
-      idToken: "id-token-bdd",
       expiresIn: 3600,
-      needsReconnect: true,
-      lastRefreshErrorCode: "refresh_token_other",
     });
+    await recordUnclassifiedCodexFailure(actor, headers);
     fw.mockCodexTokenRefresh(() => {
       return HttpResponse.json({
         access_token: "reauthorized-chatgpt-token",
@@ -2908,7 +3048,7 @@ describe("FW-9: codex model-provider access", () => {
         },
         secretConnectorMap: { CHATGPT_ACCESS_TOKEN: "codex-oauth-token" },
         secretConnectorMetadataMap: {
-          CHATGPT_ACCESS_TOKEN: await ownedCodexMetadata(actor),
+          CHATGPT_ACCESS_TOKEN: ownedCodexMetadata(actor),
         },
       },
       [200],
@@ -2961,11 +3101,10 @@ describe("FW-9: codex model-provider access", () => {
       "refresh_token_invalidated",
     ] as const;
     for (const errorCode of terminalErrorCodes) {
-      await fw.seedPersonalCodexProvider(actor, {
+      await connectCodexAccount(actor, {
         accessToken: "stale-chatgpt-token",
         refreshToken: `chatgpt-refresh-${errorCode}`,
         accountId: "acct-bdd",
-        idToken: "id-token-bdd",
         expiresIn: -60,
       });
       const body = {
@@ -2977,7 +3116,7 @@ describe("FW-9: codex model-provider access", () => {
         },
         secretConnectorMap: { CHATGPT_ACCESS_TOKEN: "codex-oauth-token" },
         secretConnectorMetadataMap: {
-          CHATGPT_ACCESS_TOKEN: await ownedCodexMetadata(actor),
+          CHATGPT_ACCESS_TOKEN: ownedCodexMetadata(actor),
         },
       };
       let refreshCalls = 0;
@@ -3045,6 +3184,7 @@ describe("FW-9: codex model-provider access", () => {
         throw new Error("Expected Codex account connection to complete");
       }
       accounts.push(completed.body.provider.id);
+      codexAccounts.owned.get(actor.userId)?.add(completed.body.provider.id);
     }
     const [expiredAccountId, healthyAccountId] = accounts;
     if (!expiredAccountId || !healthyAccountId) {
@@ -3151,11 +3291,10 @@ describe("FW-9: codex model-provider access", () => {
   it("retries a transient codex refresh failure", async () => {
     const fw = codexFirewallApi;
     const { actor, headers } = await firewallRun();
-    await fw.seedPersonalCodexProvider(actor, {
+    await connectCodexAccount(actor, {
       accessToken: "stale-chatgpt-token",
       refreshToken: "chatgpt-refresh",
       accountId: "acct-bdd",
-      idToken: "id-token-bdd",
       expiresIn: -60,
     });
     let refreshCalls = 0;
@@ -3179,7 +3318,7 @@ describe("FW-9: codex model-provider access", () => {
       },
       secretConnectorMap: { CHATGPT_ACCESS_TOKEN: "codex-oauth-token" },
       secretConnectorMetadataMap: {
-        CHATGPT_ACCESS_TOKEN: await ownedCodexMetadata(actor),
+        CHATGPT_ACCESS_TOKEN: ownedCodexMetadata(actor),
       },
     };
 
@@ -3202,11 +3341,10 @@ describe("FW-9: codex model-provider access", () => {
   it("omits the failure reason for unknown chatgpt refresh error codes", async () => {
     const fw = codexFirewallApi;
     const { actor, headers } = await firewallRun();
-    await fw.seedPersonalCodexProvider(actor, {
+    await connectCodexAccount(actor, {
       accessToken: "stale-chatgpt-token",
       refreshToken: "chatgpt-refresh",
       accountId: "acct-bdd",
-      idToken: "id-token-bdd",
       expiresIn: -60,
     });
     fw.mockCodexTokenRefresh(() => {
@@ -3232,7 +3370,7 @@ describe("FW-9: codex model-provider access", () => {
         },
         secretConnectorMap: { CHATGPT_ACCESS_TOKEN: "codex-oauth-token" },
         secretConnectorMetadataMap: {
-          CHATGPT_ACCESS_TOKEN: await ownedCodexMetadata(actor),
+          CHATGPT_ACCESS_TOKEN: ownedCodexMetadata(actor),
         },
       },
       [502],
