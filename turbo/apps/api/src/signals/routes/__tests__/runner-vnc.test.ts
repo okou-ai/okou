@@ -1950,9 +1950,30 @@ describe("private Runner VNC authority", () => {
     expect(kms.decryptCalls).toBe(0);
   });
 
-  it("checks the current generation through rotation, deletion and recreation with the same connection UUID", async () => {
+  it("preserves a rejected profile edit and checks generation through rotation, deletion and recreation", async () => {
     const f = await claimedFixture();
     const original = await api.resolved(f);
+    const rejected = await accept(
+      api.credentials().update({
+        headers: vncSessionHeaders,
+        params: { credentialId: f.credentialId },
+        body: {
+          expectedRevision: 1,
+          authentication: {
+            method: "client_certificate_vnc_password",
+            password: "rejected",
+            certificateChain,
+            privateKey,
+          },
+        },
+      }),
+      [400],
+    );
+    expect(rejected.body.error.code).toBe("VNC_PROFILE_MISMATCH");
+    await expect(api.resolved(f)).resolves.toStrictEqual(original);
+    expect((await check(f, original.generation)).body).toStrictEqual({
+      outcome: "valid",
+    });
     await accept(
       api.credentials().update({
         headers: vncSessionHeaders,
