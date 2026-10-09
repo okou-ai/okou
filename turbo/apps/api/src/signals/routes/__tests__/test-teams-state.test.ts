@@ -112,6 +112,7 @@ async function deletePublicTeamsFixture(
     id: owned.subscriptionId,
     status: "active",
     metadata: {},
+    items: { data: [{ price: { id: "price_bdd_pro" } }] },
   });
   context.mocks.stripe.subscriptions.update.mockResolvedValue({
     id: owned.subscriptionId,

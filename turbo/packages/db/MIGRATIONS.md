@@ -112,6 +112,22 @@ are enforced by the integration ingress tests.
 
 ### Active transition validators
 
+- `scripts/test-usage-allowance-retirement.ts` protects migration
+  `1356_drop_organization_usage_allowance`: positive team Allowance rows are
+  discarded while ordinary usage quantities, original credit charges and wallets
+  remain unchanged; lock timeout and journal failures roll back all DDL/data,
+  new credit-only hourly writes work, and a completed retry is a no-op. The owner
+  explicitly requested removal of team-only history and separately accepted the
+  outgoing API's deployment-window errors, including external organizations'
+  shared billing/usage paths, for this single-release contraction. The API/DB
+  cutover is not rolling-compatible; migration precedes API promotion, and a
+  failed promotion can extend the interruption. This design/risk acceptance is
+  not authorization to execute a production rollout. The production rollback
+  resolver enforces the canonical migration commit as its API floor, not a
+  migration-to-promotion serving boundary. Keep the validator until the production contraction
+  and serving/rollback drain satisfy the transition gates above. Shipped SQL and
+  snapshots remain immutable. See
+  [deployment compatibility](../../../docs/deployment-compatibility.md#organization-usage-allowance-retired).
 - `scripts/test-oauth-contract-hash-retirement.ts` protects migration
   `1354_retire_oauth_contract_hash`: both physical hash columns disappear,
   multiple historical registrations for the same method/issuer and their exact

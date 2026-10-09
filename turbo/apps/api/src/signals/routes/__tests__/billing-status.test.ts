@@ -264,42 +264,6 @@ describe("GET /api/billing/status", () => {
     { status: "active", hasSubscription: true },
     { status: "canceled", hasSubscription: false },
   ])(
-    "reports $status usage allowance subscription availability",
-    async ({ status, hasSubscription }) => {
-      const fixture = await track(
-        store.set(
-          seedBillingStatusOrg$,
-          {
-            usageAllowance: {
-              status,
-              shortWindowSeconds: 18_000,
-              shortWindowUnits: 5000,
-              weeklyWindowUnits: 50_000,
-              expiresAt: new Date("2099-04-20T00:00:00Z"),
-            },
-          },
-          context.signal,
-        ),
-      );
-      mocks.clerk.session(fixture.userId, fixture.orgId);
-
-      const response = await accept(
-        setupApp({ context, routes: billingStatusRoutes })(
-          billingStatusContract,
-        ).get({
-          headers: { authorization: "Bearer clerk-session" },
-        }),
-        [200],
-      );
-
-      expect(response.body.hasSubscription).toBe(hasSubscription);
-    },
-  );
-
-  it.each([
-    { status: "active", hasSubscription: true },
-    { status: "canceled", hasSubscription: false },
-  ])(
     "reports $status concurrency subscription availability",
     async ({ status, hasSubscription }) => {
       const fixture = await track(

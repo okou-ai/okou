@@ -1,7 +1,6 @@
 import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
-import { orgUsageAllowanceEntitlements } from "@okouai/db/schema/org-usage-allowance";
 import { usagePackSubscriptions } from "@okouai/db/schema/usage-pack-subscription";
 import { eq } from "drizzle-orm";
 
@@ -19,6 +18,13 @@ import {
   type StripeSubscription,
 } from "../external/stripe-client";
 import { settle } from "../utils";
+import {
+  archivedSubscriptionHasSurvivingComponents,
+  isArchivedUsageAllowanceMetadata,
+  isExcludedStripeBillingPrice,
+  survivingStripeBillingInvoiceLines,
+} from "./archived-allowance";
+import { isConcurrencyPriceId } from "./org-concurrency-entitlements.service";
 
 const ORG_DELETE_ORG_METADATA_KEY = "vm0_org_delete_org_id";
 const ORG_DELETE_AT_METADATA_KEY = "vm0_org_delete_at";
@@ -54,49 +60,37 @@ async function loadOrgBillingReferences(
   db: ReadonlyDb,
   orgId: string,
 ): Promise<OrgBillingReferences> {
-  const [
-    metadataRows,
-    planRows,
-    allowanceRows,
-    concurrencyRows,
-    usagePackRows,
-  ] = await Promise.all([
-    db
-      .select({
-        customerId: orgMetadata.stripeCustomerId,
-        subscriptionId: orgMetadata.stripeSubscriptionId,
-      })
-      .from(orgMetadata)
-      .where(eq(orgMetadata.orgId, orgId)),
-    db
-      .select({ subscriptionId: orgPlanEntitlements.stripeSubscriptionId })
-      .from(orgPlanEntitlements)
-      .where(eq(orgPlanEntitlements.orgId, orgId)),
-    db
-      .select({
-        customerId: orgUsageAllowanceEntitlements.stripeCustomerId,
-        subscriptionId: orgUsageAllowanceEntitlements.stripeSubscriptionId,
-      })
-      .from(orgUsageAllowanceEntitlements)
-      .where(eq(orgUsageAllowanceEntitlements.orgId, orgId)),
-    db
-      .select({
-        subscriptionId: orgConcurrencySubscriptions.stripeSubscriptionId,
-      })
-      .from(orgConcurrencySubscriptions)
-      .where(eq(orgConcurrencySubscriptions.orgId, orgId)),
-    db
-      .select({
-        customerId: usagePackSubscriptions.stripeCustomerId,
-        subscriptionId: usagePackSubscriptions.stripeSubscriptionId,
-      })
-      .from(usagePackSubscriptions)
-      .where(eq(usagePackSubscriptions.orgId, orgId)),
-  ]);
+  const [metadataRows, planRows, concurrencyRows, usagePackRows] =
+    await Promise.all([
+      db
+        .select({
+          customerId: orgMetadata.stripeCustomerId,
+          subscriptionId: orgMetadata.stripeSubscriptionId,
+        })
+        .from(orgMetadata)
+        .where(eq(orgMetadata.orgId, orgId)),
+      db
+        .select({ subscriptionId: orgPlanEntitlements.stripeSubscriptionId })
+        .from(orgPlanEntitlements)
+        .where(eq(orgPlanEntitlements.orgId, orgId)),
+      db
+        .select({
+          subscriptionId: orgConcurrencySubscriptions.stripeSubscriptionId,
+        })
+        .from(orgConcurrencySubscriptions)
+        .where(eq(orgConcurrencySubscriptions.orgId, orgId)),
+      db
+        .select({
+          customerId: usagePackSubscriptions.stripeCustomerId,
+          subscriptionId: usagePackSubscriptions.stripeSubscriptionId,
+        })
+        .from(usagePackSubscriptions)
+        .where(eq(usagePackSubscriptions.orgId, orgId)),
+    ]);
 
   const customerIds = new Set<string>();
   const subscriptionIds = new Set<string>();
-  for (const row of [...metadataRows, ...allowanceRows, ...usagePackRows]) {
+  for (const row of [...metadataRows, ...usagePackRows]) {
     addIfPresent(customerIds, row.customerId);
     addIfPresent(subscriptionIds, row.subscriptionId);
   }
@@ -162,7 +156,41 @@ async function loadOrgSubscriptions(
       subscriptions.set(subscription.id, subscription);
     }
   }
-  return [...subscriptions.values()];
+  const live: StripeSubscription[] = [];
+  for (const subscription of subscriptions.values()) {
+    if (await subscriptionHasLiveBillingItems(stripe, subscription, signal)) {
+      live.push(subscription);
+    }
+  }
+  return live;
+}
+
+async function subscriptionHasLiveBillingItems(
+  stripe: StripeClient,
+  subscription: StripeSubscription,
+  signal: AbortSignal,
+): Promise<boolean> {
+  if (!archivedSubscriptionHasSurvivingComponents(subscription)) {
+    return false;
+  }
+  if (subscription.items.data.length === 0) {
+    return !isArchivedUsageAllowanceMetadata(subscription.metadata);
+  }
+  for (const item of subscription.items.data) {
+    if (subscription.metadata?.allowancePriceId === item.price.id) {
+      continue;
+    }
+    if (
+      isArchivedUsageAllowanceMetadata(subscription.metadata) &&
+      !isConcurrencyPriceId(item.price.id)
+    ) {
+      continue;
+    }
+    if (!(await isExcludedStripeBillingPrice(item.price, stripe, signal))) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function markedDeletionTimestamp(
@@ -280,7 +308,10 @@ function proratedLineAmount(
   line: StripeInvoiceLine,
   deletionTimestamp: number,
 ): number {
-  if (line.parent?.type !== "subscription_item_details") {
+  if (
+    line.parent?.type !== "subscription_item_details" ||
+    isArchivedUsageAllowanceMetadata(line.metadata)
+  ) {
     return 0;
   }
   const start = line.period.start;
@@ -575,6 +606,7 @@ async function refundSubscriptionProration(
   args: {
     readonly orgId: string;
     readonly subscriptionId: string;
+    readonly subscriptionMetadata: StripeSubscription["metadata"];
     readonly deletionTimestamp: number;
   },
   signal: AbortSignal,
@@ -586,7 +618,21 @@ async function refundSubscriptionProration(
   );
   const prorations: InvoiceProration[] = [];
   for (const invoice of invoices) {
-    const lines = await listCompleteInvoiceLines(stripe, invoice, signal);
+    const completeLines = await listCompleteInvoiceLines(
+      stripe,
+      invoice,
+      signal,
+    );
+    const lines = await survivingStripeBillingInvoiceLines(
+      completeLines,
+      [
+        invoice.metadata,
+        invoice.parent?.subscription_details?.metadata,
+        args.subscriptionMetadata,
+      ],
+      stripe,
+      signal,
+    );
     prorations.push({
       invoice,
       amount: proratedInvoiceAdjustment(invoice, lines, args.deletionTimestamp),
@@ -640,6 +686,7 @@ async function cancelAndRefundSubscription(
     {
       orgId: args.orgId,
       subscriptionId: args.subscription.id,
+      subscriptionMetadata: args.subscription.metadata,
       deletionTimestamp,
     },
     signal,
@@ -647,9 +694,11 @@ async function cancelAndRefundSubscription(
 }
 
 /**
- * Cancels every Stripe subscription associated with an organization and
- * refunds only unused, paid subscription time. One-time purchases are not
- * subscription invoice lines and are intentionally excluded.
+ * Cancels live billing subscriptions associated with an organization and
+ * refunds only unused, paid subscription time. Archived standalone Allowance
+ * subscriptions are not automatically cancelled or refunded. Historical local
+ * records are erased by the separate organization privacy-cleanup lifecycle.
+ * One-time purchases are intentionally excluded.
  */
 export async function cancelAndRefundOrgBillingForDeletion(
   db: ReadonlyDb,
