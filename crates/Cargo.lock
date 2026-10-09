@@ -3703,6 +3703,8 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "tracing-subscriber",
+ "tracing-test-support",
  "uuid",
 ]
 

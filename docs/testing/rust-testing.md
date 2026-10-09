@@ -64,6 +64,20 @@ cargo test --manifest-path crates/Cargo.toml --profile local --locked \
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-storage -- --test-threads=1
 
+# Storage-cache GC and retained Runner policy/report composition
+# All 34 archive/decoded-cache GC cases moved into Storage; filesystem (4),
+# lock cleanup (8), and byte formatting (1) cases moved into Host. None removed.
+# Four new boundary regressions cover explicit age propagation and Runner's
+# defaults, grace, dry-run, zero-byte/allocated-byte activity, reports and errors.
+# The low-NOFILE ordinary parent invokes exactly one guarded ignored child:
+# cache_gc::tests::gc_storage_cache_many_candidates_low_fd_child,
+# with OKOU_RUNNER_STORAGE_LOW_FD_STORAGE_GC_CHILD=1 and its existing 60s bound.
+# Private directory iteration faults use Host's non-default test-support feature;
+# normal production builds do not enable it. Warm scoped tests are correctness
+# evidence, not the complete ten-package cold-memory acceptance gate below.
+cargo test --manifest-path crates/Cargo.toml --profile local --locked \
+  -j 1 -p runner-host -p runner-storage -p runner -- --test-threads=1
+
 # Extracted Runner active-run, idle sandbox, workspace and cache snapshot owner tests
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-lifecycle -- --test-threads=1

@@ -1,4 +1,4 @@
-use crate::byte_size::human_bytes;
+use runner_host::byte_size::human_bytes;
 use tracing::info;
 
 #[derive(Debug, Default, Eq, PartialEq)]

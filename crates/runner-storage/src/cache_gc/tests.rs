@@ -2,14 +2,71 @@ use std::time::Duration;
 
 use nix::fcntl::{Flock, FlockArg};
 
+use super::CacheGcReport as GcReport;
 use super::*;
-use crate::cmd::gc::test_support::{
-    assert_is_symlink, old_gc_time, set_soft_nofile_limit_for_child, test_home,
-};
 use crate::test_fixtures::ignored_child::{
     ignored_child_test_env_guard_enabled, run_ignored_child_test,
 };
+use runner_host::gc::test_support::{
+    assert_is_symlink, old_gc_time, set_soft_nofile_limit_for_child, test_home,
+};
 use runner_host::lock;
+
+async fn gc_storage_cache(home: &HomePaths, dry_run: bool) -> StorageResult<CacheGcReport> {
+    super::gc_storage_cache(
+        home,
+        CacheGcLimits {
+            max_bytes: STORAGE_CACHE_MAX_BYTES,
+            max_entries: STORAGE_CACHE_MAX_ENTRIES,
+            min_age: GC_MIN_AGE,
+        },
+        dry_run,
+    )
+    .await
+}
+
+#[tokio::test]
+async fn gc_storage_cache_explicit_age_policy_reaches_staging_and_eviction_revalidation() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = test_home(dir.path());
+    let now = SystemTime::now();
+    let completed = make_storage_entry(&home, "age-policy", "completed", b"archive", now);
+    let staging = make_storage_staging_entry(&home, "age-policy", "staging", b"staging", now);
+    let bytes = dir_stats(&completed).await.0 + dir_stats(&staging).await.0;
+    assert!(bytes > 0);
+    let conservative = CacheGcLimits {
+        max_bytes: 0,
+        max_entries: 0,
+        min_age: Duration::from_secs(600),
+    };
+    assert_eq!(
+        super::gc_storage_cache(&home, conservative, false)
+            .await
+            .unwrap(),
+        CacheGcReport::default()
+    );
+    assert!(completed.exists() && staging.exists());
+    let immediate = CacheGcLimits {
+        min_age: Duration::ZERO,
+        ..conservative
+    };
+    let dry = super::gc_storage_cache(&home, immediate, true)
+        .await
+        .unwrap();
+    assert_eq!(
+        dry,
+        CacheGcReport {
+            activity_count: 2,
+            freed_bytes: bytes
+        }
+    );
+    assert!(completed.exists() && staging.exists());
+    let real = super::gc_storage_cache(&home, immediate, false)
+        .await
+        .unwrap();
+    assert_eq!(real, dry);
+    assert!(!completed.exists() && !staging.exists());
+}
 
 fn make_storage_entry_at(dir: PathBuf, archive_bytes: &[u8], mtime: SystemTime) -> PathBuf {
     std::fs::create_dir_all(&dir).unwrap();
@@ -901,12 +958,12 @@ async fn gc_storage_cache_delete_recheck_keeps_candidate_that_became_recent() {
     );
 }
 
-const LOW_FD_STORAGE_GC_CHILD_ENV: &str = "OKOU_RUNNER_LOW_FD_STORAGE_GC_CHILD";
+const LOW_FD_STORAGE_GC_CHILD_ENV: &str = "OKOU_RUNNER_STORAGE_LOW_FD_STORAGE_GC_CHILD";
 
 #[tokio::test]
 async fn gc_storage_cache_many_candidates_does_not_exhaust_lock_fds() {
     run_ignored_child_test(
-        "cmd::gc::storage::tests::gc_storage_cache_many_candidates_low_fd_child",
+        "cache_gc::tests::gc_storage_cache_many_candidates_low_fd_child",
         (LOW_FD_STORAGE_GC_CHILD_ENV, "1"),
         &[],
         Duration::from_secs(60),

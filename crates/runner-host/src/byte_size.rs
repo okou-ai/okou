@@ -1,5 +1,5 @@
 /// Format a byte count using the runner's binary units for human-readable output.
-pub(crate) fn human_bytes(bytes: u64) -> String {
+pub fn human_bytes(bytes: u64) -> String {
     const KIB: f64 = 1024.0;
     const MIB: f64 = KIB * 1024.0;
     const GIB: f64 = MIB * 1024.0;
