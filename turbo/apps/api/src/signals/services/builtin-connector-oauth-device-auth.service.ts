@@ -37,7 +37,7 @@ import { and, eq, inArray, lt, or } from "drizzle-orm";
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { optionalEnv } from "../../lib/env";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
 import {
   decryptPersistentSecretValue,
@@ -479,43 +479,6 @@ async function markClaimAwaiting(
     .returning({ id: builtinConnectorOauthDeviceAuthorizationSessions.id });
   signal.throwIfAborted();
   return Boolean(session);
-}
-
-async function loadOwnedSession(
-  args: {
-    readonly writeDb: Db;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connectorSlug: ConnectorSlug;
-    readonly sessionId: string;
-    readonly sessionToken: string;
-  },
-  signal: AbortSignal,
-): Promise<BuiltinConnectorDeviceAuthSessionRow | null> {
-  const [session] = await args.writeDb
-    .select(deviceAuthSessionSelection)
-    .from(builtinConnectorOauthDeviceAuthorizationSessions)
-    .where(
-      and(
-        eq(builtinConnectorOauthDeviceAuthorizationSessions.id, args.sessionId),
-        eq(builtinConnectorOauthDeviceAuthorizationSessions.orgId, args.orgId),
-        eq(
-          builtinConnectorOauthDeviceAuthorizationSessions.userId,
-          args.userId,
-        ),
-        eq(
-          builtinConnectorOauthDeviceAuthorizationSessions.connectorSlug,
-          args.connectorSlug,
-        ),
-        eq(
-          builtinConnectorOauthDeviceAuthorizationSessions.sessionTokenHash,
-          sessionTokenHash(args.sessionToken),
-        ),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  return session ?? null;
 }
 
 async function expireSession(
@@ -1310,17 +1273,27 @@ export const pollBuiltinConnectorOauthDeviceAuthSession$ = command(
     signal: AbortSignal,
   ) => {
     const writeDb = set(writeDb$);
-    const session = await loadOwnedSession(
-      {
-        writeDb,
-        orgId: args.orgId,
-        userId: args.userId,
-        connectorSlug: args.connectorSlug,
-        sessionId: args.sessionId,
-        sessionToken: args.sessionToken,
-      },
-      signal,
-    );
+    const { orgId, userId, connectorSlug, sessionId, sessionToken } = args;
+    const [session] = await get(db$)
+      .select(deviceAuthSessionSelection)
+      .from(builtinConnectorOauthDeviceAuthorizationSessions)
+      .where(
+        and(
+          eq(builtinConnectorOauthDeviceAuthorizationSessions.id, sessionId),
+          eq(builtinConnectorOauthDeviceAuthorizationSessions.orgId, orgId),
+          eq(builtinConnectorOauthDeviceAuthorizationSessions.userId, userId),
+          eq(
+            builtinConnectorOauthDeviceAuthorizationSessions.connectorSlug,
+            connectorSlug,
+          ),
+          eq(
+            builtinConnectorOauthDeviceAuthorizationSessions.sessionTokenHash,
+            sessionTokenHash(sessionToken),
+          ),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
     if (!session) {
       return notFound("OAuth device authorization session not found");
     }
