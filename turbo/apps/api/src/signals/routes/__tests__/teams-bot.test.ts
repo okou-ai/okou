@@ -2731,7 +2731,7 @@ describe("POST /api/webhooks/teams/bot", () => {
       expect.objectContaining({
         kind: "model_selection_updated",
         chatThreadId: dmThread.chatThreadId,
-        selectedModel: null,
+        selectedModel: "auto",
       }),
     );
   });

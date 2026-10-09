@@ -12572,7 +12572,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
             status: "failed",
             error,
-            source: { providerType: modelProvider, model: selectedModel },
+            source: {
+              providerType: modelProvider,
+              model: modelProvider === "built-in" ? "auto" : selectedModel,
+            },
           });
           const projected = await chat.listThreadEvents(actor, run.threadId);
           const failures = projected.events
