@@ -42,7 +42,6 @@ import {
   agentRunConnectorDiagnosticRegistrationPayloadSchema,
   type ConnectorRuntimeSyncResult,
   type ExecutionContext,
-  type PiModelConfig,
   type Job as RunnerJob,
 } from "@okouai/api-contracts/contracts/runners";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
@@ -124,7 +123,6 @@ import {
   seedBuiltInDefaultModelKey as seedBuiltInDefaultModelKeyState,
   seedBuiltInModelKey as seedBuiltInModelKeyState,
   setRunnerJobContextProfileAsPreviousApi,
-  setRunnerJobPiContextAsVersionedWriter,
 } from "./helpers/runtime-state";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 
@@ -6055,152 +6053,94 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(cancelled.status).toBe("cancelled");
       });
 
-      // Historical persisted-state exception (docs/testing.md rollout coexistence;
-      // testing-external-behavior.md historical states): current admission no
-      // longer writes these stored Pi generations, which
-      // pi-model-config-claim-capability.ts still reads and negotiates. Delete with
-      // that reader once older generations can no longer be pending.
-      // Current admission cannot produce generation 3 or future/invalid rows.
-      // The explicit stored-writer fixture exercises claim/read API behavior first.
-      it.each([1, 2, 3] as const)(
-        "claims stored Pi generation %s only with compatible capabilities",
-        async (generation) => {
+      it.each([
+        {
+          generation: 2,
+          serviceTier: undefined,
+          olderRunnerGenerations: [1],
+        },
+        {
+          generation: 3,
+          serviceTier: "fast" as const,
+          olderRunnerGenerations: [1, 2],
+        },
+      ])(
+        "claims a public Codex subscription generation $generation only with compatible capabilities",
+        async ({ generation, serviceTier, olderRunnerGenerations }) => {
           const api = createRunsApi(context);
           const { actor, agentId, runnerGroup } = await entitledRunActor();
-          const run = await api.createThreadRun(actor, {
-            agentId,
-            prompt: "claim a dialect-aware Pi route",
-          });
-          const piModelConfig: PiModelConfig =
-            generation === 1
-              ? {
-                  provider: "openrouter",
-                  baseUrl: "https://openrouter.ai/api/v1",
-                  model: "gpt-6-luna",
-                  apiKeyEnv: "OPENAI_API_KEY",
-                  credentialSecretName: "OPENROUTER_API_KEY",
-                }
-              : generation === 3
-                ? {
-                    schemaVersion: 3,
-                    dialect: "openai-codex-responses",
-                    transport: "sse",
-                    provider: "openai-codex",
-                    baseUrl: "https://chatgpt.com/backend-api",
-                    model: "gpt-6-luna",
-                    serviceTier: "fast",
-                    credentialBindings: [
-                      {
-                        kind: "access-token",
-                        environment: "CHATGPT_ACCESS_TOKEN",
-                        secretName: "CHATGPT_ACCESS_TOKEN",
-                      },
-                      {
-                        kind: "account-id",
-                        environment: "CHATGPT_ACCOUNT_ID",
-                        secretName: "CHATGPT_ACCOUNT_ID",
-                      },
-                    ],
-                  }
-                : {
-                    schemaVersion: 2,
-                    dialect: "openai-responses",
-                    transport: "sse",
-                    provider: "openrouter",
-                    baseUrl: "https://openrouter.ai/api/v1",
-                    model: "gpt-5.4",
-                    credentialBindings: [
-                      {
-                        kind: "api-key",
-                        environment: "OPENAI_API_KEY",
-                        secretName: "OPENROUTER_API_KEY",
-                      },
-                    ],
-                  };
-          await setRunnerJobPiContextAsVersionedWriter(
-            context,
-            run.runId,
-            piModelConfig,
-          );
-          await api.heartbeatRunner(runnerGroup);
+          preparePiSandboxClaim();
+          const ownedRuns = publicRunOwner(context, actor);
 
-          if (generation === 3) {
-            const legacyClaim = await api.requestClaimRunnerJob(
+          await ownedRuns.run(async () => {
+            await piClaimFixture.configureSubscriptionPiModel(actor);
+            const run = await createChatFilesBddApi(context).sendAndLaunch(
+              actor,
+              {
+                agentId,
+                model: "gpt-6-luna",
+                prompt: "claim a captured Codex subscription route",
+                runOptions: {
+                  reasoningEffort: "high",
+                  ...(serviceTier === undefined
+                    ? {}
+                    : { codexServiceTier: serviceTier }),
+                },
+              },
+            );
+            await api.heartbeatRunner(runnerGroup);
+
+            const olderClaim = await api.requestClaimRunnerJob(
               true,
               run.runId,
               [404],
-              { capabilities: { piModelConfigGenerations: [1, 2] } },
+              {
+                capabilities: {
+                  piModelConfigGenerations: olderRunnerGenerations,
+                },
+              },
             );
-            expectApiError(legacyClaim.body);
-            expect(legacyClaim.body.error.message).toBe(
+            expectApiError(olderClaim.body);
+            expect(olderClaim.body.error.message).toBe(
               "Job not found in queue",
             );
             await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
               status: "pending",
             });
-          }
 
-          const capableClaim = await api.claimRunnerJob(run.runId, {
-            capabilities: { piModelConfigGenerations: [1, 2, 3] },
-          });
-          expect(capableClaim).toMatchObject({
-            cliAgentType: "pi",
-            piSessionId: run.runId,
-            piModelConfig,
-          });
+            const capableClaim = await api.claimRunnerJob(run.runId, {
+              capabilities: { piModelConfigGenerations: [2, 3, 5] },
+            });
+            ownedRuns.rememberClaim(run.runId, capableClaim.sandboxToken);
+            expect(capableClaim).toMatchObject({
+              cliAgentType: "pi",
+              piSessionId: run.threadId,
+            });
+            expect(capableClaim.piModelConfig).toStrictEqual({
+              schemaVersion: generation,
+              dialect: "openai-codex-responses",
+              transport: "sse",
+              provider: "openai-codex",
+              baseUrl: "https://chatgpt.com/backend-api",
+              model: "gpt-6-luna",
+              thinkingLevel: "high",
+              credentialBindings: [
+                {
+                  kind: "access-token",
+                  environment: "CHATGPT_ACCESS_TOKEN",
+                  secretName: "CHATGPT_ACCESS_TOKEN",
+                },
+                {
+                  kind: "account-id",
+                  environment: "CHATGPT_ACCOUNT_ID",
+                  secretName: "CHATGPT_ACCOUNT_ID",
+                },
+              ],
+              ...(serviceTier === undefined ? {} : { serviceTier }),
+            });
 
-          await api.requestCancelRun(actor, run.runId, [200]);
-        },
-      );
-
-      it.each([
-        {
-          schemaVersion: 6,
-          serviceTier: "priority",
-          status: 404,
-          runStatus: "pending",
-        },
-        {
-          schemaVersion: 3,
-          serviceTier: "fast",
-          status: 400,
-          runStatus: "failed",
-        },
-      ] as const)(
-        "handles stored Pi generation $schemaVersion with $serviceTier without downgrading",
-        async (route) => {
-          const api = createRunsApi(context);
-          const { actor, agentId, runnerGroup } = await entitledRunActor();
-          const run = await api.createThreadRun(actor, {
-            agentId,
-            prompt: "claim only a supported exact Pi route",
-          });
-          await setRunnerJobPiContextAsVersionedWriter(context, run.runId, {
-            schemaVersion: route.schemaVersion,
-            serviceTier: route.serviceTier,
-            dialect: "openai-responses",
-            transport: "sse",
-            provider: "openai",
-            baseUrl: "https://api.openai.com/v1",
-            model: "gpt-6-luna",
-            credentialBindings: [
-              {
-                kind: "api-key",
-                environment: "OPENAI_API_KEY",
-                secretName: "OPENAI_API_KEY",
-              },
-            ],
-          });
-          await api.heartbeatRunner(runnerGroup);
-          await api.requestClaimRunnerJob(true, run.runId, [route.status], {
-            capabilities: { piModelConfigGenerations: [1, 2, 3, 4, 5, 6] },
-          });
-          await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
-            status: route.runStatus,
-          });
-          if (route.runStatus === "pending") {
             await api.requestCancelRun(actor, run.runId, [200]);
-          }
+          });
         },
       );
     });

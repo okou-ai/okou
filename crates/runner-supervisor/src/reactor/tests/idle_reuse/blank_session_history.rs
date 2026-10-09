@@ -277,11 +277,17 @@ async fn workspace_history_staging_overlaps_storage_and_preserves_restore() {
             context.pi_session_id = Some(session_id.into());
             context.pi_launch_config = Some(serde_json::json!({ "schemaVersion": 2 }));
             context.pi_model_config = Some(serde_json::json!({
+                "schemaVersion": 5,
+                "dialect": "openai-completions",
+                "transport": "sse",
                 "provider": "openrouter",
                 "baseUrl": server.url(),
                 "model": "openai/gpt-6-luna",
-                "apiKeyEnv": "OPENAI_API_KEY",
-                "credentialSecretName": "OPENROUTER_API_KEY"
+                "credentialBindings": [{
+                    "kind": "api-key",
+                    "environment": "OPENAI_API_KEY",
+                    "secretName": "OPENROUTER_API_KEY"
+                }]
             }));
         }
         context.reuse_key = Some(reuse_key);

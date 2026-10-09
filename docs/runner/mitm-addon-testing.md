@@ -110,6 +110,26 @@ uv run --no-sync python -m pytest tests/test_auth_base_forwarder_protocol.py
 uv run --no-sync python -m pytest tests/test_auth_base_forwarder_lifecycle.py
 ```
 
+Auth-wait connection-lifetime changes must exercise production HTTP hooks and
+native dependency-owned acquisition for buffered and header-streamed requests.
+Run the focused transport and authorization regressions:
+
+```bash
+uv run --no-sync python -m pytest \
+  tests/test_request_handler_auth_wait_disconnect.py \
+  tests/test_mitmproxy_auth_wait_disconnect.py \
+  tests/test_mitmproxy_auth_wait_tls.py \
+  tests/test_request_handler_firewall_auth_revalidation.py \
+  tests/test_request_handler_public_destination.py \
+  tests/test_codex_model_catalog_cache_hooks.py
+```
+
+Native state tests control TCP completion and use synthetic credentials. TLS
+coverage drives the normal factory/TlsConfig with real in-memory cryptographic
+peers: correct CA/hostname succeeds, and wrong-host or untrusted certificates
+fail before credentials/body. HTTP/1.1 and HTTP/2 checks preserve wire authority,
+body and one send. These are not live-provider or production-recovery tests.
+
 Run the same static checks used by CI:
 
 ```bash

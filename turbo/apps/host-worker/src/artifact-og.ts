@@ -1,4 +1,7 @@
-import { artifactOgHtml } from "@okouai/core/artifact-og";
+import {
+  artifactOgHtml,
+  normalizeArtifactImageUrls,
+} from "@okouai/core/artifact-og";
 import type { ArtifactOgTarget } from "@okouai/api-contracts/contracts/artifact-og";
 import { artifactOgMetadataSchema } from "@okouai/api-contracts/contracts/artifact-og-metadata";
 
@@ -47,7 +50,7 @@ export async function withArtifactOg(
   canonical.search = "";
   canonical.hash = "";
   const html = artifactOgHtml(
-    await response.text(),
+    normalizeArtifactImageUrls(await response.text(), request.url),
     { ...metadata, url: canonical.href },
     false,
   );

@@ -274,18 +274,6 @@ export async function clearWorkflowAutomationEventConnectorAsPreviousApi(
   });
 }
 
-export async function setRunnerJobPiContextAsVersionedWriter(
-  context: TestContext,
-  runId: string,
-  piModelConfig: Readonly<Record<string, unknown>>,
-): Promise<void> {
-  await postAction(context, {
-    action: "set-runner-job-pi-context-as-versioned-writer",
-    run_id: runId,
-    pi_model_config: piModelConfig,
-  });
-}
-
 export async function setRunnerJobContextProfileAsPreviousApi(
   context: TestContext,
   runId: string,

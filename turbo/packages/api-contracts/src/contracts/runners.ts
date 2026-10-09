@@ -76,7 +76,6 @@ export const CANCELLATION_RECOVERY_STALE_AFTER_MS =
   RUNNER_CANCELLATION_RECOVERY_GRACE_MS + 30_000;
 export const BUILTIN_FIREWALL_CATALOG_CACHE_SCHEMA_VERSION = 1;
 export const RUNNER_BUILTIN_FIREWALL_RESOLVE_NAMES_MAX = 512;
-export const PI_MODEL_CONFIG_LEGACY_GENERATION = 1;
 // Existing versioned writers stay on generation 2 until their activation slice.
 export const PI_MODEL_CONFIG_CURRENT_GENERATION = 2;
 export const PI_MODEL_CONFIG_DIALECT_TIER_GENERATION = 3;
@@ -847,30 +846,6 @@ export const piInstalledCliRequirementSchema = z
   .strict()
   .readonly();
 
-/**
- * Non-secret Pi model metadata forwarded to the Sandbox. `apiKeyEnv` names the
- * runtime environment entry used by the Sandbox, while `credentialSecretName`
- * names the API-owned encrypted secret that backs that entry.
- */
-
-export const piModelConfigLegacySchema = z
-  .object({
-    provider: z.enum(["openrouter", "codex"]),
-    baseUrl: z.url(),
-    model: z.string().min(1),
-    catalogModel: z.string().min(1).optional(),
-    thinkingLevel: z
-      .enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"])
-      .optional(),
-    // Per-run provider request policy. This is not Pi session identity or
-    // persisted Pi JSONL metadata.
-    serviceTier: z.enum(["priority"]).optional(),
-    apiKeyEnv: z.enum(["OPENAI_API_KEY", "CHATGPT_ACCESS_TOKEN"]),
-    credentialSecretName: z.string().regex(/^[A-Z_][A-Z0-9_]*$/),
-  })
-  .strict()
-  .readonly();
-
 const piApiKeyCredentialSecretNameSchema = z.enum(["OPENROUTER_API_KEY"]);
 
 const piModelCredentialBindingSchema = z.discriminatedUnion("kind", [
@@ -1045,7 +1020,6 @@ export const piModelConfigV5Schema = z
   .readonly();
 
 export const piModelConfigSchema = z.union([
-  piModelConfigLegacySchema,
   piModelConfigV2Schema,
   piModelConfigV3Schema,
   piModelConfigV5Schema,
@@ -1695,7 +1669,6 @@ export type StoredExecutionContext = z.infer<
   typeof storedExecutionContextSchema
 >;
 export type PiModelConfig = z.infer<typeof piModelConfigSchema>;
-export type PiModelConfigLegacy = z.infer<typeof piModelConfigLegacySchema>;
 export type PiModelConfigV2 = z.infer<typeof piModelConfigV2Schema>;
 export type PiModelConfigV3 = z.infer<typeof piModelConfigV3Schema>;
 export type PiModelConfigV5 = z.infer<typeof piModelConfigV5Schema>;

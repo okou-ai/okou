@@ -4,6 +4,7 @@ import {
   index,
   integer,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -72,6 +73,34 @@ export const chatEventSnapshots = pgTable(
           AND ${table.terminalSeqId} > 0
           AND ${table.terminalSeqId} <= ${table.lastSeqId}
         )`,
+      ),
+    ];
+  },
+);
+
+/**
+ * One reusable pagination position per bucket/shard in the existing GC rotation.
+ * The cycle ID fences stale checkpoints after that shard wraps; it is not a
+ * deletion lease. Failed work does not block another shard's progress.
+ */
+export const chatEventSnapshotGcState = pgTable(
+  "chat_event_snapshot_gc_state",
+  {
+    bucket: text("bucket").notNull(),
+    prefix: text("prefix").notNull(),
+    cursorObjectKey: text("cursor_object_key"),
+    cycleId: uuid("cycle_id").defaultRandom().notNull(),
+  },
+  (table) => {
+    return [
+      primaryKey({ columns: [table.bucket, table.prefix] }),
+      check(
+        "chat_event_snapshot_gc_prefix_check",
+        sql`${table.prefix} ~ '^chat-events/[0-9a-f]{3}$'`,
+      ),
+      check(
+        "chat_event_snapshot_gc_cursor_check",
+        sql`${table.cursorObjectKey} IS NULL OR starts_with(${table.cursorObjectKey}, ${table.prefix})`,
       ),
     ];
   },

@@ -40,30 +40,23 @@ describe("captured Pi execution intent", () => {
     >().not.toMatchTypeOf<PiAgentModelConfig>();
   });
 
-  it.each([1, 2, 3] as const)(
+  it.each([2, 3] as const)(
     "owns the generation %s Auto route before credential resolution",
     async (generation) => {
       const config = {
         provider: "openrouter",
         baseUrl: "https://openrouter.ai/api/v1",
         model: "okou-1.0",
-        ...(generation === 1
-          ? {
-              apiKeyEnv: "OPENAI_API_KEY",
-              credentialSecretName: "OPENROUTER_API_KEY",
-            }
-          : {
-              schemaVersion: generation,
-              dialect: "openai-responses",
-              transport: "sse",
-              credentialBindings: [
-                {
-                  kind: "api-key",
-                  environment: "OPENAI_API_KEY",
-                  secretName: "OPENROUTER_API_KEY",
-                },
-              ],
-            }),
+        schemaVersion: generation,
+        dialect: "openai-responses",
+        transport: "sse",
+        credentialBindings: [
+          {
+            kind: "api-key",
+            environment: "OPENAI_API_KEY",
+            secretName: "OPENROUTER_API_KEY",
+          },
+        ],
       } satisfies PiModelConfig;
       const wire = piModelConfigSchema.parse(config);
       const before = JSON.stringify(wire);
