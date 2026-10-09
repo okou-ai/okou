@@ -1193,8 +1193,8 @@ const collectR2SnapshotGarbage$ = command(
             bucket,
             R2_GC_PREFIX,
             Math.min(R2_GC_PAGE_SIZE, remainingDeleteQuota),
-            workSignal,
             state.cursorObjectKey ?? undefined,
+            workSignal,
           ),
         );
         workSignal.throwIfAborted();

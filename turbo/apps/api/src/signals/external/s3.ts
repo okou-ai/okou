@@ -447,8 +447,8 @@ export function listS3ObjectsPage(
   bucket: string,
   prefix: string,
   maxKeys: number,
-  signal?: AbortSignal,
   startAfter?: string,
+  signal?: AbortSignal,
 ): Computed<Promise<S3ObjectPage>> {
   if (!Number.isInteger(maxKeys) || maxKeys <= 0 || maxKeys > 1000) {
     throw new Error("S3 list page size must be an integer between 1 and 1000");

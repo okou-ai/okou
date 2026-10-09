@@ -37,7 +37,7 @@ describe("bounded S3 object listing provider contract", () => {
 
     await expect(
       createStore().get(
-        listS3ObjectsPage(bucket, prefix, 1000, context.signal),
+        listS3ObjectsPage(bucket, prefix, 1000, undefined, context.signal),
       ),
     ).resolves.toStrictEqual({
       objects: [{ key: object.Key, size: 0, lastModified: new Date(modified) }],
@@ -85,7 +85,7 @@ describe("bounded S3 object listing provider contract", () => {
     });
     const store = createStore();
     const first = await store.get(
-      listS3ObjectsPage(bucket, prefix, 1000, context.signal),
+      listS3ObjectsPage(bucket, prefix, 1000, undefined, context.signal),
     );
     expect(first.objects).toHaveLength(1000);
     expect(first.isTruncated).toBeTruthy();
@@ -96,7 +96,7 @@ describe("bounded S3 object listing provider contract", () => {
       throw new Error("Expected the first page's resume key");
     }
     const second = await store.get(
-      listS3ObjectsPage(bucket, prefix, 1000, context.signal, cursor),
+      listS3ObjectsPage(bucket, prefix, 1000, cursor, context.signal),
     );
     expect(second.isTruncated).toBeFalsy();
     expect(
@@ -128,7 +128,7 @@ describe("bounded S3 object listing provider contract", () => {
     // The later provider response contains no cursor object. StartAfter is a
     // key position, not an offset into the surviving object count.
     const next = await store.get(
-      listS3ObjectsPage(bucket, prefix, 1, context.signal, cursor),
+      listS3ObjectsPage(bucket, prefix, 1, cursor, context.signal),
     );
     expect(
       next.objects.map((object) => {
@@ -165,8 +165,8 @@ describe("bounded S3 object listing provider contract", () => {
         bucket,
         prefix,
         1000,
-        context.signal,
         "other/key",
+        context.signal,
       );
     }).toThrow("S3 list cursor must belong to its prefix");
     expect(context.mocks.s3.send).not.toHaveBeenCalled();
@@ -230,7 +230,7 @@ describe("bounded S3 object listing provider contract", () => {
       context.mocks.s3.send.mockResolvedValue({ Contents: keys.map(metadata) });
       await expect(
         createStore().get(
-          listS3ObjectsPage(bucket, prefix, 1000, context.signal, startAfter),
+          listS3ObjectsPage(bucket, prefix, 1000, startAfter, context.signal),
         ),
       ).rejects.toThrow("S3 object listing did not advance its cursor");
     },
@@ -272,7 +272,9 @@ describe("bounded S3 object listing provider contract", () => {
     const reason = new DOMException("Owner cancelled", "AbortError");
     const signal = AbortSignal.abort(reason);
     await expect(
-      createStore().get(listS3ObjectsPage(bucket, prefix, 1000, signal)),
+      createStore().get(
+        listS3ObjectsPage(bucket, prefix, 1000, undefined, signal),
+      ),
     ).rejects.toBe(reason);
     expect(context.mocks.s3.send).not.toHaveBeenCalled();
   });
@@ -287,7 +289,9 @@ describe("bounded S3 object listing provider contract", () => {
       return response.promise;
     });
     const listing = settleIncludingAbort(
-      createStore().get(listS3ObjectsPage(bucket, prefix, 1000, signal)),
+      createStore().get(
+        listS3ObjectsPage(bucket, prefix, 1000, undefined, signal),
+      ),
     );
     await started.promise;
     const reason = new DOMException("Owner cancelled", "AbortError");
