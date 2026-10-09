@@ -81,9 +81,7 @@ export async function survivingStripeBillingInvoiceLines<
 >(
   lines: readonly T[],
   metadataCandidates: readonly (
-    | Readonly<Record<string, string>>
-    | null
-    | undefined
+    Readonly<Record<string, string>> | null | undefined
   )[],
   stripe: StripeClient,
   signal: AbortSignal,
