@@ -319,7 +319,7 @@ describe("CHAT-02: run-level model overrides", () => {
       );
 
       mockPiResourceArchiveDownloads();
-      const checkpointObjects = mockPiCheckpointObjectStore();
+      const historyObjects = mockPiCheckpointObjectStore();
 
       const prompt = "use the Okou CLI through native subscription Luna";
       const run = await sendChatRun(actor, {
@@ -426,13 +426,13 @@ describe("CHAT-02: run-level model overrides", () => {
         `Bearer ${refreshedAccessToken}`,
       );
 
-      const h0Text = piSandboxBaseSession(claim, checkpointObjects).toString(
+      const h0Text = piSandboxBaseSession(claim, historyObjects).toString(
         "utf8",
       );
       const h2 = completedSubscriptionHistory(h0Text, prompt, selectedModel);
       expect(h2).not.toMatch(/serviceTier|service_tier/);
       const h2Hash = createHash("sha256").update(h2).digest("hex");
-      await webhooks.requestAgentCheckpointPrepareHistory(
+      await webhooks.requestAgentSessionHistoryPrepare(
         {
           runId: run.runId,
           hash: h2Hash,
@@ -443,7 +443,7 @@ describe("CHAT-02: run-level model overrides", () => {
         sandboxHeaders,
         [200],
       );
-      checkpointObjects.set(
+      historyObjects.set(
         `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${h2Hash}.blob`,
         Buffer.from(h2, "utf8"),
       );
@@ -457,7 +457,7 @@ describe("CHAT-02: run-level model overrides", () => {
           ...(outcome === "failed"
             ? { error: "Subscription Sandbox failed" }
             : {}),
-          checkpoint: {
+          completion: {
             cliAgentType: "pi",
             cliAgentSessionId: run.threadId,
             cliAgentSessionHistoryHash: h2Hash,

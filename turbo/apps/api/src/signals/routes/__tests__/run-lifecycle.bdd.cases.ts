@@ -1156,7 +1156,7 @@ async function setupSameThreadReuseScenario(
       runId: first.runId,
       exitCode: 0,
       lastEventSequence: 0,
-      checkpoint: {
+      completion: {
         cliAgentType: "claude-code",
         cliAgentSessionId,
         cliAgentSessionHistoryHash: historyHash,
@@ -1671,7 +1671,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           {
             runId: initialRun.runId,
             exitCode: 0,
-            checkpoint: {
+            completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId: `bdd-storage-overlap-${initialRun.runId}`,
               cliAgentSessionHistoryDisposition: "discarded_oversized",
@@ -2193,7 +2193,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           {
             runId: initialRun.runId,
             exitCode: 0,
-            checkpoint: {
+            completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId: `bdd-storage-cli-${initialRun.runId}`,
               cliAgentSessionHistoryDisposition: "discarded_oversized",
@@ -2215,7 +2215,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const completedInitialRun = await api.readRun(actor, initialRun.runId);
         const conversationId = completedInitialRun.result?.conversationId;
         if (!conversationId) {
-          throw new Error("Expected the canonical checkpoint to persist");
+          throw new Error("Expected the canonical native history to persist");
         }
 
         const sessionRun = await api.createThreadRun(actor, {
@@ -2442,7 +2442,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         const first = await api.createThreadRun(actor, {
           agentId,
-          prompt: "start a checkpointed timing session",
+          prompt: "start a finalized timing session",
         });
         const claim = await api.claimRunnerJob(first.runId);
         const history = `bdd timing session history ${first.runId}`;
@@ -2454,7 +2454,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             runId: first.runId,
             exitCode: 0,
             lastEventSequence: 0,
-            checkpoint: {
+            completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId: `bdd-timing-cli-${first.runId}`,
               cliAgentSessionHistoryHash: historyHash,
@@ -2464,11 +2464,11 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           [200],
         );
         // Continuing the thread resumes its Agent session: the claim carries the
-        // first run's checkpointed CLI session.
+        // first run's finalized CLI session.
         const resumed = await api.createThreadRun(actor, {
           agentId,
           threadId: first.threadId,
-          prompt: "continue checkpointed timing session",
+          prompt: "continue finalized timing session",
         });
         const resumedClaim = await api.claimRunnerJob(resumed.runId);
         expect(resumedClaim.resumeSession).toMatchObject({
@@ -2571,7 +2571,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             runId: created.runId,
             exitCode: 0,
             lastEventSequence: 0,
-            checkpoint: {
+            completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId: `bdd-cli-${created.runId}`,
               cliAgentSessionHistoryHash: historyHash,
@@ -2999,7 +2999,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "start a session",
         });
-        const checkpointed = async (
+        const finalized = async (
           runId: string,
           sandboxToken: string,
         ): Promise<{
@@ -3015,7 +3015,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               runId,
               exitCode: 0,
               lastEventSequence: 0,
-              checkpoint: {
+              completion: {
                 cliAgentType: "claude-code",
                 cliAgentSessionId: cliSessionId,
                 cliAgentSessionHistoryHash: hash,
@@ -3027,7 +3027,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           return { cliSessionId, hash };
         };
         const firstClaim = await api.claimRunnerJob(first.runId);
-        const firstCheckpoint = await checkpointed(
+        const firstCheckpoint = await finalized(
           first.runId,
           firstClaim.sandboxToken,
         );
@@ -3042,7 +3042,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           sessionId: firstCheckpoint.cliSessionId,
           historyRef: { kind: "blob", hash: firstCheckpoint.hash },
         });
-        await checkpointed(resumed.runId, resumedClaim.sandboxToken);
+        await finalized(resumed.runId, resumedClaim.sandboxToken);
         await flushWaitUntilForTest();
         // Both runs complete in the thread's single Agent session.
         const firstSession = (await api.readRun(actor, first.runId)).result
@@ -3152,7 +3152,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             runId: first.runId,
             exitCode: 0,
             lastEventSequence: 0,
-            checkpoint: {
+            completion: {
               cliAgentType: firstClaim.cliAgentType,
               cliAgentSessionId,
               cliAgentSessionHistoryHash: firstHistoryHash,
@@ -4104,7 +4104,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             runId: first.runId,
             exitCode: 0,
             lastEventSequence: 0,
-            checkpoint: {
+            completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId,
               cliAgentSessionHistoryHash: historyHash,
@@ -4314,7 +4314,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             runId: first.runId,
             exitCode: 0,
             lastEventSequence: 0,
-            checkpoint: {
+            completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId,
               cliAgentSessionHistoryHash: historyHash,
@@ -4482,7 +4482,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             runId: first.runId,
             exitCode: 0,
             lastEventSequence: 0,
-            checkpoint: {
+            completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId,
               cliAgentSessionHistoryHash: historyHash,
@@ -7595,7 +7595,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             runId: first.runId,
             exitCode: 0,
             lastEventSequence: 0,
-            checkpoint: {
+            completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId: `bdd-mcp-awareness-${first.runId}`,
               cliAgentSessionHistoryHash: historyHash,
@@ -10517,7 +10517,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             runId: run.runId,
             exitCode: 0,
             lastEventSequence: 0,
-            checkpoint: {
+            completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId: `terminal-refresh-${run.runId}`,
               cliAgentSessionHistoryHash: historyHash,
@@ -10650,7 +10650,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             runId: first.runId,
             exitCode: 0,
             lastEventSequence: 0,
-            checkpoint: {
+            completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId: `bdd-combined-cli-${first.runId}`,
               cliAgentSessionHistoryHash: historyHash,
@@ -11804,7 +11804,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             runId: source.runId,
             exitCode: 0,
             lastEventSequence: 0,
-            checkpoint: {
+            completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId: `bdd-failed-claim-${source.runId}`,
               cliAgentSessionHistoryHash: historyHash,
@@ -12429,7 +12429,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             runId: created.runId,
             exitCode: 0,
             lastEventSequence: 3,
-            checkpoint: {
+            completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId: `bdd-snapshot-cli-${created.runId}`,
               cliAgentSessionHistoryHash: historyHash,
@@ -12480,7 +12480,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       });
     });
 
-    describe("RUN-03: sandbox completion reports against missing checkpoints and settled runs", () => {
+    describe("RUN-03: sandbox completion reports against missing completion outputs and settled runs", () => {
       describe("completion failure reasons", () => {
         const terminalFailureReasons = [
           "insufficient_credits",
@@ -12682,7 +12682,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       );
 
       it.each(["claude-code", "codex"] as const)(
-        "completes and resumes a run with a %s checkpoint",
+        "completes and resumes a run with %s native history",
         async (cliAgentType) => {
           const api = createRunsApi(context);
           const webhooks = createWebhookCallbackApi(context);
@@ -12716,7 +12716,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           const sandboxHeaders = {
             authorization: `Bearer ${claim.sandboxToken}`,
           };
-          await webhooks.requestAgentCheckpointPrepareHistory(
+          await webhooks.requestAgentSessionHistoryPrepare(
             {
               runId: run.runId,
               hash: historyHash,
@@ -12733,7 +12733,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             exitCode: 0,
             failureReason: "provider_overloaded",
             lastEventSequence: 0,
-            checkpoint: {
+            completion: {
               cliAgentType,
               cliAgentSessionId,
               cliAgentSessionHistoryHash: historyHash,
@@ -12775,8 +12775,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           const conflictingCheckpoint = await webhooks.requestAgentComplete(
             {
               ...body,
-              checkpoint: {
-                ...body.checkpoint,
+              completion: {
+                ...body.completion,
                 cliAgentSessionId: `${cliAgentSessionId}-conflict`,
               },
             },
@@ -12818,7 +12818,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             .update(successorHistory)
             .digest("hex");
           const successorCliAgentSessionId = `bdd-successor-${cliAgentType}-${continued.runId}`;
-          await webhooks.requestAgentCheckpointPrepareHistory(
+          await webhooks.requestAgentSessionHistoryPrepare(
             {
               runId: continued.runId,
               hash: successorHistoryHash,
@@ -12834,7 +12834,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             {
               runId: continued.runId,
               exitCode: 0,
-              checkpoint: {
+              completion: {
                 cliAgentType,
                 cliAgentSessionId: successorCliAgentSessionId,
                 cliAgentSessionHistoryHash: successorHistoryHash,
@@ -12896,7 +12896,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           {
             runId: run.runId,
             exitCode: 1,
-            checkpoint: {
+            completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId,
               cliAgentSessionHistoryHash: historyHash,
@@ -13062,7 +13062,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.requestCancelRun(actor, continued.runId, [200]);
       });
 
-      it("acknowledges a clean exit whose missing checkpoint fails the run", async () => {
+      it("acknowledges a clean exit whose missing outputs fails the run", async () => {
         const api = createRunsApi(context);
         const webhooks = createWebhookCallbackApi(context);
         const { actor, agentId } = await entitledRunActor();
@@ -13088,7 +13088,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
         if (missing.status !== 200) {
           throw new Error(
-            "Expected the missing checkpoint failure to be acknowledged",
+            "Expected the missing outputs failure to be acknowledged",
           );
         }
         expect(missing.body).toStrictEqual({ success: true, status: "failed" });
@@ -13106,7 +13106,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
       });
 
-      it("reports the settled status when a checkpoint-less completion races a cancellation", async () => {
+      it("reports the settled status when a metadata-free completion races a cancellation", async () => {
         const api = createRunsApi(context);
         const webhooks = createWebhookCallbackApi(context);
         const { actor, agentId } = await entitledRunActor();
@@ -13167,7 +13167,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(retainedRunner.body).toStrictEqual(runner.body);
       });
 
-      it("keeps a cancelled run settled when its checkpointed completion arrives late", async () => {
+      it("keeps a cancelled run settled when its finalized completion arrives late", async () => {
         const api = createRunsApi(context);
         const webhooks = createWebhookCallbackApi(context);
         const { actor, agentId } = await entitledRunActor(
@@ -13192,7 +13192,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             runId: run.runId,
             exitCode: 0,
             lastEventSequence: 0,
-            checkpoint: {
+            completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId: `bdd-cancelled-cli-${run.runId}`,
               cliAgentSessionHistoryHash: historyHash,
@@ -13203,7 +13203,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
         if (late.status !== 200) {
           throw new Error(
-            "Expected the checkpointed completion to be acknowledged",
+            "Expected the finalized completion to be acknowledged",
           );
         }
         expect(late.body).toStrictEqual({ success: true, status: "failed" });
@@ -13741,7 +13741,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             runId,
             exitCode: 0,
             lastEventSequence: 0,
-            checkpoint: {
+            completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId: `bdd-cleanup-first-${runId}`,
               cliAgentSessionHistoryHash: historyHash,

@@ -130,7 +130,7 @@ async function completeRun(args: {
   const history = `Discord conversation history ${args.runId}`;
   const hash = createHash("sha256").update(history).digest("hex");
   const size = Buffer.byteLength(history);
-  await webhooks.requestAgentCheckpointPrepareHistory(
+  await webhooks.requestAgentSessionHistoryPrepare(
     {
       runId: args.runId,
       hash,
@@ -145,7 +145,7 @@ async function completeRun(args: {
     {
       runId: args.runId,
       exitCode: 0,
-      checkpoint: {
+      completion: {
         cliAgentType: "claude-code",
         cliAgentSessionId: `discord-session-${args.runId}`,
         cliAgentSessionHistoryHash: hash,

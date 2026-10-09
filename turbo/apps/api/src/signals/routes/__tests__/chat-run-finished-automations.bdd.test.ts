@@ -1,5 +1,5 @@
 import { publicRunOwner } from "./helpers/public-run-owner";
-import { prepareRunnerCheckpointHistory } from "./helpers/runner-checkpoint-history";
+import { prepareRunnerSessionHistory } from "./helpers/runner-session-history";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { randomUUID } from "node:crypto";
 
@@ -220,7 +220,7 @@ async function completeChatRunOk(
       [200],
     );
   }
-  const historyHash = await prepareRunnerCheckpointHistory(
+  const historyHash = await prepareRunnerSessionHistory(
     context,
     runId,
     sandboxHeaders,
@@ -230,7 +230,7 @@ async function completeChatRunOk(
     {
       runId,
       exitCode: 0,
-      checkpoint: {
+      completion: {
         cliAgentType: "claude-code",
         cliAgentSessionId: `bdd-cli-${runId}`,
         cliAgentSessionHistoryHash: historyHash,

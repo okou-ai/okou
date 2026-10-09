@@ -6,7 +6,7 @@ import type { TestContext } from "../../../../__tests__/test-context";
 import { createWebhookCallbackApi } from "./api-bdd-webhooks";
 
 /** Serve matching external S3 bytes only at the real Runner prepare's authorized key. */
-export async function prepareRunnerCheckpointHistory(
+export async function prepareRunnerSessionHistory(
   context: TestContext,
   runId: string,
   headers: { readonly authorization: string },
@@ -29,7 +29,7 @@ export async function prepareRunnerCheckpointHistory(
     },
   );
   const prepared = await createWebhookCallbackApi(context)
-    .requestAgentCheckpointPrepareHistory(
+    .requestAgentSessionHistoryPrepare(
       {
         runId,
         hash,
@@ -44,7 +44,7 @@ export async function prepareRunnerCheckpointHistory(
       context.mocks.s3.getSignedUrl.mockImplementation(presign);
     });
   if (prepared.status !== 200) {
-    throw new Error("Expected authorized checkpoint prepare to succeed");
+    throw new Error("Expected authorized session history prepare to succeed");
   }
   expect(prepared.body.existing).toBeFalsy();
   expect(prepared.body.presignedUrl).toBeTruthy();

@@ -85,7 +85,7 @@ describe("thread-bound Pi Automation execution", () => {
     await configureSubscriptionPiModel(actor);
     await chat.updateThreadModelSelection(actor, threadId, "gpt-6-luna");
     mockPiResourceArchiveDownloads();
-    const checkpointObjects = mockPiCheckpointObjectStore();
+    const historyObjects = mockPiCheckpointObjectStore();
     const event = {
       ...eventRoute,
       payload: "pi-event",
@@ -108,7 +108,7 @@ describe("thread-bound Pi Automation execution", () => {
       actor,
       run: { runId: piRunId, threadId },
       claim: piClaim,
-      checkpointObjects,
+      historyObjects,
       prompt: piClaim.claim.prompt,
       answer: "owned event answer",
       responsesModel: { provider: "openai-codex", model: "gpt-6-luna" },
@@ -132,7 +132,7 @@ describe("thread-bound Pi Automation execution", () => {
       actor,
       run: user,
       claim: userClaim,
-      checkpointObjects,
+      historyObjects,
       prompt: "continue this Automation conversation",
       answer: "owned user answer",
       responsesModel: { provider: "openai-codex", model: "gpt-6-luna" },

@@ -141,7 +141,7 @@ describe("CHAT-02: model-first routing", () => {
       { [FeatureSwitchKey.PiMemory]: true },
     );
     mockPiResourceArchiveDownloads();
-    const checkpointObjects = mockPiCheckpointObjectStore();
+    const historyObjects = mockPiCheckpointObjectStore();
 
     const firstPrompt = "complete the first Pi turn in the Sandbox";
     const first = await sendChatRun(actor, {
@@ -162,7 +162,7 @@ describe("CHAT-02: model-first routing", () => {
     await completeSandboxFirstPiRun({
       actor,
       answer: "First Pi turn completed",
-      checkpointObjects,
+      historyObjects,
       claim: firstClaim,
       prompt: firstPrompt,
       run: first,
@@ -314,7 +314,7 @@ describe("CHAT-02: model-first routing", () => {
       },
     );
     mockPiResourceArchiveDownloads();
-    const checkpointObjects = mockPiCheckpointObjectStore();
+    const historyObjects = mockPiCheckpointObjectStore();
     const prompt = "publish memory while preserving this Run's recall snapshot";
     const first = await sendChatRun(actor, {
       agentId,
@@ -337,7 +337,7 @@ describe("CHAT-02: model-first routing", () => {
     await completeSandboxFirstPiRun({
       actor,
       answer: "First Pi turn published memory",
-      checkpointObjects,
+      historyObjects,
       claim: claimed,
       prompt,
       run: first,
@@ -457,7 +457,7 @@ describe("CHAT-02: model-first routing", () => {
       },
     );
     mockPiResourceArchiveDownloads();
-    const checkpointObjects = mockPiCheckpointObjectStore();
+    const historyObjects = mockPiCheckpointObjectStore();
 
     const delegatedEventId = randomUUID();
     const delegatedPrompt = "learn this stable preference from delegated work";
@@ -507,7 +507,7 @@ describe("CHAT-02: model-first routing", () => {
     await completeSandboxFirstPiRun({
       actor,
       answer: "delegated memory admission answer",
-      checkpointObjects,
+      historyObjects,
       claim: await claimChatRun(runnerGroup, delegatedRunId),
       prompt: delegatedPrompt,
       run: delegatedRun,

@@ -481,7 +481,7 @@ async function completeSlackTriggeredRun(args: {
     {
       runId: args.runId,
       exitCode: 0,
-      checkpoint: {
+      completion: {
         cliAgentType: args.cliAgentType,
         cliAgentSessionId: `bdd-slack-cli-${args.runId}`,
         cliAgentSessionHistoryHash: createHash("sha256")
@@ -593,7 +593,7 @@ function mockPiCheckpointObjectStore(): Map<string, Buffer> {
 }
 
 function mockPiResourceArchiveDownloads(
-  checkpointObjects: ReadonlyMap<string, Buffer>,
+  historyObjects: ReadonlyMap<string, Buffer>,
 ): void {
   server.use(
     http.get("https://r2.example.com/storage/archive.tar.gz", ({ request }) => {
@@ -603,7 +603,7 @@ function mockPiResourceArchiveDownloads(
       }
       const bucketPrefix = `${env("R2_USER_STORAGES_BUCKET_NAME")}/`;
       const bytes =
-        checkpointObjects.get(objectKey) ??
+        historyObjects.get(objectKey) ??
         (objectKey.startsWith(bucketPrefix)
           ? seededSystemSkillArchive(objectKey.slice(bucketPrefix.length))
           : undefined);
@@ -687,8 +687,8 @@ async function establishCanonicalSlackHistory(args: SlackPiActorSetup) {
     assistantText: "Historical Claude answer",
   });
   await flushWaitUntilForTest();
-  const checkpointObjects = mockPiCheckpointObjectStore();
-  mockPiResourceArchiveDownloads(checkpointObjects);
+  const historyObjects = mockPiCheckpointObjectStore();
+  mockPiResourceArchiveDownloads(historyObjects);
 
   const { chatThreadId } = await ownedThreadWhere(
     args.actor,
@@ -719,7 +719,7 @@ async function establishCanonicalSlackHistory(args: SlackPiActorSetup) {
     threadTs,
     chatThreadId,
     historicalSessionId,
-    checkpointObjects,
+    historyObjects,
   };
 }
 
@@ -754,7 +754,7 @@ function readSlackPiSandboxBaseSession(
   expect(resume.historyRef.encoding).toBe("identity");
   const objectKey = new URL(resume.historyRef.url).searchParams.get("object");
   const sessionBytes = objectKey
-    ? scenario.checkpointObjects.get(objectKey)
+    ? scenario.historyObjects.get(objectKey)
     : undefined;
   if (!sessionBytes) {
     throw new Error("Expected the referenced Slack Pi session bytes");
@@ -794,7 +794,7 @@ async function completeSlackPiTurnInSandbox(args: {
   const history = session.toJsonl();
   const historyHash = createHash("sha256").update(history).digest("hex");
   const sandboxHeaders = { authorization: `Bearer ${args.claim.sandboxToken}` };
-  await webhooks.requestAgentCheckpointPrepareHistory(
+  await webhooks.requestAgentSessionHistoryPrepare(
     {
       runId: args.runId,
       hash: historyHash,
@@ -805,7 +805,7 @@ async function completeSlackPiTurnInSandbox(args: {
     sandboxHeaders,
     [200],
   );
-  args.scenario.checkpointObjects.set(
+  args.scenario.historyObjects.set(
     `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${historyHash}.blob`,
     Buffer.from(history, "utf8"),
   );
@@ -833,7 +833,7 @@ async function completeSlackPiTurnInSandbox(args: {
       runId: args.runId,
       exitCode: 0,
       lastEventSequence: 2,
-      checkpoint: {
+      completion: {
         cliAgentType: "pi",
         cliAgentSessionId: args.scenario.chatThreadId,
         cliAgentSessionHistoryHash: historyHash,
@@ -992,7 +992,7 @@ async function claimContinuedSlackPiTurn(args: {
     throw new Error("Expected the continued Pi run to restore native JSONL");
   }
   expect(
-    args.scenario.checkpointObjects.has(
+    args.scenario.historyObjects.has(
       `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${history.historyRef.hash}.blob`,
     ),
   ).toBeTruthy();

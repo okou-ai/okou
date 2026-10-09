@@ -11,7 +11,7 @@ import {
 import { RESUME_SESSION_HISTORY_MAX_BYTES } from "@okouai/api-contracts/contracts/runners";
 import {
   runCompletionMetadataSchema,
-  webhookCheckpointsPrepareHistoryContract,
+  webhookSessionHistoryPrepareContract,
 } from "@okouai/api-contracts/contracts/webhooks";
 import {
   inspectPiSessionJsonl,
@@ -58,7 +58,7 @@ export type AgentRunOutputBody = z.infer<typeof runCompletionMetadataSchema> & {
   readonly runId: string;
 };
 type PrepareHistoryBody = z.infer<
-  typeof webhookCheckpointsPrepareHistoryContract.prepare.body
+  typeof webhookSessionHistoryPrepareContract.prepare.body
 >;
 
 export interface AgentRunOutputInput {

@@ -229,7 +229,7 @@ describe("CHAT-02: model-first routing", () => {
       });
 
     mockPiResourceArchiveDownloads();
-    const checkpointObjects = mockPiCheckpointObjectStore();
+    const historyObjects = mockPiCheckpointObjectStore();
     const seedPrompt = "seed the canonical Pi binding";
     const first = await sendChatRun(
       actor,
@@ -304,7 +304,7 @@ describe("CHAT-02: model-first routing", () => {
     });
     const legacyJsonl = legacy.toJsonl();
     const legacyHash = createHash("sha256").update(legacyJsonl).digest("hex");
-    await webhooks.requestAgentCheckpointPrepareHistory(
+    await webhooks.requestAgentSessionHistoryPrepare(
       {
         runId: first.runId,
         hash: legacyHash,
@@ -315,7 +315,7 @@ describe("CHAT-02: model-first routing", () => {
       firstClaim.sandboxHeaders,
       [200],
     );
-    checkpointObjects.set(
+    historyObjects.set(
       `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${legacyHash}.blob`,
       Buffer.from(legacyJsonl, "utf8"),
     );
@@ -338,7 +338,7 @@ describe("CHAT-02: model-first routing", () => {
         runId: first.runId,
         exitCode: 0,
         lastEventSequence: 1,
-        checkpoint: {
+        completion: {
           cliAgentType: "pi",
           cliAgentSessionId: first.threadId,
           cliAgentSessionHistoryHash: legacyHash,
@@ -382,7 +382,7 @@ describe("CHAT-02: model-first routing", () => {
       new URL(resumeSession.historyRef.url).searchParams.get("object"),
     ).toBe(`${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${legacyHash}.blob`);
     expect(
-      piSandboxBaseSession(claim.claim, checkpointObjects).toString("utf8"),
+      piSandboxBaseSession(claim.claim, historyObjects).toString("utf8"),
     ).toBe(legacyJsonl);
     for (const marker of [
       "legacy API user context",
@@ -408,7 +408,7 @@ describe("CHAT-02: model-first routing", () => {
       });
 
     mockPiResourceArchiveDownloads();
-    const checkpointObjects = mockPiCheckpointObjectStore();
+    const historyObjects = mockPiCheckpointObjectStore();
     const prompts = [
       "start standard Luna in the canonical Pi session",
       "continue fast Luna in the same Pi session",
@@ -438,7 +438,7 @@ describe("CHAT-02: model-first routing", () => {
     await completeSandboxFirstPiRun({
       actor,
       answer: answers[0],
-      checkpointObjects,
+      historyObjects,
       claim: firstClaim,
       prompt: prompts[0],
       run: first,
@@ -471,7 +471,7 @@ describe("CHAT-02: model-first routing", () => {
     await completeSandboxFirstPiRun({
       actor,
       answer: answers[1],
-      checkpointObjects,
+      historyObjects,
       claim: fastClaim,
       prompt: prompts[1],
       run: fast,
@@ -504,7 +504,7 @@ describe("CHAT-02: model-first routing", () => {
     await completeSandboxFirstPiRun({
       actor,
       answer: answers[2],
-      checkpointObjects,
+      historyObjects,
       claim: returnedClaim,
       prompt: prompts[2],
       run: returned,
@@ -585,7 +585,7 @@ describe("CHAT-02: model-first routing", () => {
         ];
       }),
     );
-    const sessionBlobs = [...checkpointObjects.entries()].filter(([key]) => {
+    const sessionBlobs = [...historyObjects.entries()].filter(([key]) => {
       return key.includes("/blobs/");
     });
     expect(sessionBlobs.length).toBeGreaterThan(0);
@@ -611,7 +611,7 @@ describe("CHAT-02: model-first routing", () => {
     await configureSubscriptionPiModel(actor, {}, selectedModel);
 
     mockPiResourceArchiveDownloads();
-    const checkpointObjects = mockPiCheckpointObjectStore();
+    const historyObjects = mockPiCheckpointObjectStore();
     const prompt = "promote queued fast Luna through the callback";
     const answer = "queued fast Luna Sandbox answer";
 
@@ -668,7 +668,7 @@ describe("CHAT-02: model-first routing", () => {
     await completeSandboxFirstPiRun({
       actor,
       answer,
-      checkpointObjects,
+      historyObjects,
       claim: promotedClaim,
       prompt,
       run: { runId: promotedRunId, threadId: anchor.threadId },

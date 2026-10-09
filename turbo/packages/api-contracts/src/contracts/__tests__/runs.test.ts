@@ -238,7 +238,7 @@ describe("Run result generations", () => {
     agentSessionId: "agent-session",
     conversationId: "conversation",
   };
-  it("accepts current outputs and historical checkpoint identities", () => {
+  it("reads continuation and file outputs from current and historical results", () => {
     for (const result of [
       {
         ...identity,
@@ -257,7 +257,15 @@ describe("Run result generations", () => {
         ],
       },
     ]) {
-      expect(runResultSchema.parse(result)).toStrictEqual(result);
+      expect(runResultSchema.parse(result)).toMatchObject(identity);
+      if ("storageOutputs" in result)
+        expect(runResultSchema.parse(result).storageOutputs).toStrictEqual(
+          result.storageOutputs,
+        );
+      if ("artifact" in result)
+        expect(runResultSchema.parse(result).artifact).toStrictEqual(
+          result.artifact,
+        );
     }
   });
 });

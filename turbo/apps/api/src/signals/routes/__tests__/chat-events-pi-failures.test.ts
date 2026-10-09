@@ -54,7 +54,7 @@ describe("CHAT-02: model-first routing", () => {
     await completeSandboxFirstPiRun({
       actor,
       answer,
-      checkpointObjects: objects,
+      historyObjects: objects,
       claim: firstClaim,
       prompt: firstPrompt,
       run: first,
@@ -101,7 +101,7 @@ describe("CHAT-02: model-first routing", () => {
       accountId: "model-handoff-account",
     });
     const usagePricingResolution = await createGptUsagePricingResolution();
-    const checkpointObjects = mockPiCheckpointObjectStore();
+    const historyObjects = mockPiCheckpointObjectStore();
     const firstPrompt = "establish original subscription history";
     const first = await sendChatRun(actor, {
       agentId,
@@ -112,7 +112,7 @@ describe("CHAT-02: model-first routing", () => {
     await completeSandboxFirstPiRun({
       actor,
       answer: "previous settled subscription answer",
-      checkpointObjects,
+      historyObjects,
       claim: firstClaim,
       prompt: firstPrompt,
       responsesModel: { provider: "openai-codex", model: "gpt-6-luna" },
@@ -153,7 +153,7 @@ describe("CHAT-02: model-first routing", () => {
       sessionId: first.threadId,
       historyRef: { kind: "blob", hash: expect.any(String) },
     });
-    const h0 = piSandboxBaseSession(claim, checkpointObjects).toString("utf8");
+    const h0 = piSandboxBaseSession(claim, historyObjects).toString("utf8");
     expect(h0).toContain("previous settled subscription answer");
     expect(h0).not.toContain(prompt);
     await expect(

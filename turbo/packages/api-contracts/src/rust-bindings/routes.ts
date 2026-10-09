@@ -11,8 +11,6 @@ import {
   runnersSteerContract,
 } from "../contracts/runners";
 import {
-  webhookCheckpointsContract,
-  webhookCheckpointsPrepareHistoryContract,
   webhookSessionHistoryPrepareContract,
   webhookCompleteContract,
   webhookEventsContract,
@@ -131,16 +129,6 @@ export const rustRouteBindings = [
     route: webhookSessionOutputContract.send,
     rustModulePath: ["webhooks", "agent", "session_output"],
     rustConstName: "SEND",
-  },
-  {
-    route: webhookCheckpointsContract.create,
-    rustModulePath: ["webhooks", "agent", "checkpoints"],
-    rustConstName: "CREATE",
-  },
-  {
-    route: webhookCheckpointsPrepareHistoryContract.prepare,
-    rustModulePath: ["webhooks", "agent", "checkpoints", "prepare_history"],
-    rustConstName: "PREPARE",
   },
   {
     route: webhookSessionHistoryPrepareContract.prepare,

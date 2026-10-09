@@ -738,7 +738,7 @@ async function completeRunThroughSandbox(
     {
       runId,
       exitCode: 0,
-      checkpoint: {
+      completion: {
         cliAgentType: "claude-code",
         cliAgentSessionId: `gmail-workflow-cli-${runId}`,
         cliAgentSessionHistoryHash: createHash("sha256")

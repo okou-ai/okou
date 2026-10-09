@@ -127,7 +127,7 @@ async function completeRun(args: {
     {
       runId: args.runId,
       exitCode: 0,
-      checkpoint: {
+      completion: {
         cliAgentType: "claude-code",
         cliAgentSessionId: `canonical-slack-${args.runId}`,
         cliAgentSessionHistoryHash: historyHash,
