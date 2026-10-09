@@ -2,6 +2,7 @@ import {
   stripeInvoiceBillingReasonSchema,
   stripeInvoicePaidEventConfigSchema,
   type StripeInvoiceBillingReason,
+  type StripeInvoicePaidEventConfig,
 } from "@okouai/api-contracts/contracts/workflows";
 import type {
   StripeAutomationEventSnapshot,
@@ -30,7 +31,7 @@ import { and, asc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
-import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { settle } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import {
@@ -39,7 +40,6 @@ import {
   builtinConnectorVariableValuesFromRows,
 } from "./builtin-connector-credential-runtime.service";
 import {
-  stripeInvoicePaidWorkflowAutomationEnabledForOwnerInDb,
   stripeInvoicePaidFeatureReadPlan,
   stripeInvoicePaidFeatureEnabledFromRows,
 } from "./stripe-invoice-paid-workflow-automation-feature-switch.service";
@@ -48,7 +48,6 @@ import {
   stripeBindingConnectionReadiness,
   stripeLiveBindingMatches,
   stripeLiveModeValuesPlan,
-  validateStripeInvoicePaidAutomationBinding,
 } from "./stripe-invoice-paid-workflow-automation.service";
 import { workflowAutomationCanFire$ } from "./workflow-automation-access.service";
 import { storedWorkflowAutomationContext } from "./workflow-automation-context.service";
@@ -63,7 +62,8 @@ import {
   connectorRuntimeAuthSelectionFromRows,
   connectorRuntimeAuthSelectionReadPlan,
   type ConnectorRuntimeAuthSelection,
-  loadConnectorRuntimeSlugSelection,
+  connectorRuntimeSlugSelectionFromRows,
+  connectorRuntimeSlugSelectionReadPlan,
 } from "./connector-catalog-slug-source.service";
 
 const log = logger("api:stripe-automation-event");
@@ -1098,105 +1098,222 @@ const claimDueDelivery$ = command(
   },
 );
 
-async function loadDeliveryTarget(
-  db: ReadonlyDb,
-  delivery: StripeWorkflowDeliveryRow,
-  signal: AbortSignal,
-): Promise<StripeDeliveryValidation> {
-  const [row] = await db
-    .select({
-      automation: workflowAutomationColumns(),
-      agentId: workflows.agentId,
-      workflowName: workflows.name,
-      chatThreadId: workflowUserAutomationThreads.chatThreadId,
-      connectorId: connectors.id,
-      connectorNeedsReconnect: connectors.needsReconnect,
-      connectorExternalId: connectors.externalId,
-    })
-    .from(workflowAutomations)
-    .innerJoin(workflows, eq(workflows.id, workflowAutomations.workflowId))
-    .leftJoin(
-      workflowUserAutomationThreads,
-      and(
-        eq(workflowUserAutomationThreads.orgId, workflowAutomations.orgId),
-        eq(
-          workflowUserAutomationThreads.userId,
-          workflowAutomations.ownerUserId,
-        ),
-        eq(
-          workflowUserAutomationThreads.workflowId,
-          workflowAutomations.workflowId,
-        ),
-      ),
-    )
-    .leftJoin(
-      connectors,
-      and(
-        eq(connectors.id, delivery.connectorId),
-        eq(connectors.orgId, workflowAutomations.orgId),
-        eq(connectors.userId, workflowAutomations.ownerUserId),
-        eq(connectors.connectorSlug, "stripe"),
-        eq(connectors.authMethod, "oauth"),
-      ),
-    )
-    .where(eq(workflowAutomations.id, delivery.automationId))
-    .limit(1);
-  signal.throwIfAborted();
-  if (!row || !row.chatThreadId || !row.connectorId) {
-    return { kind: "skip", reason: "automation_target_unavailable" };
-  }
-  const config = stripeInvoicePaidEventConfigSchema.safeParse(
-    row.automation.eventConfig,
-  );
-  const billingReason = knownBillingReason(delivery.billingReason);
-  if (
-    !config.success ||
-    row.automation.kind !== "event" ||
-    row.automation.eventType !== "stripe-invoice-paid" ||
-    !row.automation.enabled ||
-    !delivery.livemode ||
-    row.automation.eventConnectorId !== delivery.connectorId ||
-    config.data.connectorId !== delivery.connectorId ||
-    config.data.stripeAccountId !== delivery.stripeAccountId ||
-    row.connectorExternalId !== delivery.stripeAccountId ||
-    row.connectorNeedsReconnect ||
-    !filterMatches(config.data.billingReasons, billingReason)
-  ) {
-    return { kind: "skip", reason: "automation_no_longer_matches" };
-  }
-  if (
-    !(await stripeInvoicePaidWorkflowAutomationEnabledForOwnerInDb(
-      db,
-      row.automation.orgId,
-      row.automation.ownerUserId,
-    ))
-  ) {
+const stripeDeliveryBindingMatches$ = command(
+  async (
+    { get },
+    args: {
+      readonly eventConfig: StripeInvoicePaidEventConfig;
+      readonly orgId: string;
+      readonly userId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = get(db$);
+    const catalogPlan = connectorRuntimeAuthSelectionReadPlan({
+      connectorSlugs: ["stripe"],
+    });
+    const catalogRows = await db
+      .select(catalogPlan.columns)
+      .from(connectorCatalog)
+      .leftJoin(connectorCatalogEntries, catalogPlan.join)
+      .where(connectorCatalogCurrentWhere());
+    if (signal.aborted) {
+      // Keep catalog materialization errors ahead of cancellation.
+      connectorRuntimeAuthSelectionFromRows(
+        catalogRows,
+        catalogPlan.requestedConnectorSlugs,
+        catalogPlan.firewallConnectorSlugs,
+      );
+      signal.throwIfAborted();
+    }
+    const snapshot = connectorRuntimeAuthSelectionFromRows(
+      catalogRows,
+      catalogPlan.requestedConnectorSlugs,
+      catalogPlan.firewallConnectorSlugs,
+    );
     signal.throwIfAborted();
-    return { kind: "skip", reason: "feature_disabled" };
-  }
-  signal.throwIfAborted();
-  const binding = await validateStripeInvoicePaidAutomationBinding(
-    {
-      db,
-      eventConfig: config.data,
+    const connectionInput = {
+      snapshot,
+      orgId: args.orgId,
+      userId: args.userId,
+      connectorSlug: "stripe",
+      connectorId: args.eventConfig.connectorId,
+    };
+    const connectionPlan =
+      builtinConnectorCredentialConnectionReadPlan(connectionInput);
+    const [connectionRow] = await db
+      .select(connectionPlan.columns)
+      .from(connectors)
+      .where(connectionPlan.condition)
+      .limit(1);
+    if (signal.aborted) {
+      // Keep stored credential decoding ahead of cancellation.
+      builtinConnectorCredentialConnectionFromRow(
+        connectionInput,
+        connectionRow,
+      );
+      signal.throwIfAborted();
+    }
+    const loaded = builtinConnectorCredentialConnectionFromRow(
+      connectionInput,
+      connectionRow,
+    );
+    signal.throwIfAborted();
+    const ready = stripeBindingConnectionReadiness(loaded);
+    if (ready.kind !== "ok") {
+      return false;
+    }
+    const valuesPlan = stripeLiveModeValuesPlan(ready.connection);
+    const valueRows =
+      valuesPlan === null
+        ? []
+        : await db
+            .select(valuesPlan.secretColumns)
+            .from(secrets)
+            .where(valuesPlan.secretCondition)
+            .unionAll(
+              db
+                .select(valuesPlan.variableColumns)
+                .from(variables)
+                .where(valuesPlan.variableCondition),
+            );
+    const values = builtinConnectorVariableValuesFromRows(valueRows);
+    signal.throwIfAborted();
+    return stripeLiveBindingMatches(ready, args.eventConfig, values);
+  },
+);
+
+const loadStripeDeliveryTarget$ = command(
+  async (
+    { get, set },
+    delivery: StripeWorkflowDeliveryRow,
+    signal: AbortSignal,
+  ): Promise<StripeDeliveryValidation> => {
+    const db = get(db$);
+    const [row] = await db
+      .select({
+        automation: workflowAutomationColumns(),
+        agentId: workflows.agentId,
+        workflowName: workflows.name,
+        chatThreadId: workflowUserAutomationThreads.chatThreadId,
+        connectorId: connectors.id,
+        connectorNeedsReconnect: connectors.needsReconnect,
+        connectorExternalId: connectors.externalId,
+      })
+      .from(workflowAutomations)
+      .innerJoin(workflows, eq(workflows.id, workflowAutomations.workflowId))
+      .leftJoin(
+        workflowUserAutomationThreads,
+        and(
+          eq(workflowUserAutomationThreads.orgId, workflowAutomations.orgId),
+          eq(
+            workflowUserAutomationThreads.userId,
+            workflowAutomations.ownerUserId,
+          ),
+          eq(
+            workflowUserAutomationThreads.workflowId,
+            workflowAutomations.workflowId,
+          ),
+        ),
+      )
+      .leftJoin(
+        connectors,
+        and(
+          eq(connectors.id, delivery.connectorId),
+          eq(connectors.orgId, workflowAutomations.orgId),
+          eq(connectors.userId, workflowAutomations.ownerUserId),
+          eq(connectors.connectorSlug, "stripe"),
+          eq(connectors.authMethod, "oauth"),
+        ),
+      )
+      .where(eq(workflowAutomations.id, delivery.automationId))
+      .limit(1);
+    signal.throwIfAborted();
+    if (!row || !row.chatThreadId || !row.connectorId) {
+      return { kind: "skip", reason: "automation_target_unavailable" };
+    }
+    const config = stripeInvoicePaidEventConfigSchema.safeParse(
+      row.automation.eventConfig,
+    );
+    const billingReason = knownBillingReason(delivery.billingReason);
+    if (
+      !config.success ||
+      row.automation.kind !== "event" ||
+      row.automation.eventType !== "stripe-invoice-paid" ||
+      !row.automation.enabled ||
+      !delivery.livemode ||
+      row.automation.eventConnectorId !== delivery.connectorId ||
+      config.data.connectorId !== delivery.connectorId ||
+      config.data.stripeAccountId !== delivery.stripeAccountId ||
+      row.connectorExternalId !== delivery.stripeAccountId ||
+      row.connectorNeedsReconnect ||
+      !filterMatches(config.data.billingReasons, billingReason)
+    ) {
+      return { kind: "skip", reason: "automation_no_longer_matches" };
+    }
+    const owner = {
       orgId: row.automation.orgId,
       userId: row.automation.ownerUserId,
-    },
-    signal,
-  );
-  if (binding.kind !== "ok") {
-    return { kind: "skip", reason: "connector_unavailable" };
-  }
-  return {
-    kind: "ok",
-    target: {
-      automation: row.automation,
-      agentId: row.agentId,
-      workflowName: row.workflowName,
-      chatThreadId: row.chatThreadId,
-    },
-  };
-}
+    };
+    const featurePlan = stripeInvoicePaidFeatureReadPlan(owner);
+    const featureRows = await db
+      .select(featurePlan.columns)
+      .from(userFeatureSwitches)
+      .where(featurePlan.condition);
+    if (signal.aborted) {
+      // The former reader evaluated feature rows before its abort barrier.
+      stripeInvoicePaidFeatureEnabledFromRows(owner, featureRows);
+      signal.throwIfAborted();
+    }
+    if (!stripeInvoicePaidFeatureEnabledFromRows(owner, featureRows)) {
+      signal.throwIfAborted();
+      return { kind: "skip", reason: "feature_disabled" };
+    }
+    signal.throwIfAborted();
+    const bindingMatches = await set(
+      stripeDeliveryBindingMatches$,
+      { ...owner, eventConfig: config.data },
+      signal,
+    );
+    if (!bindingMatches) {
+      return { kind: "skip", reason: "connector_unavailable" };
+    }
+    return {
+      kind: "ok",
+      target: {
+        automation: row.automation,
+        agentId: row.agentId,
+        workflowName: row.workflowName,
+        chatThreadId: row.chatThreadId,
+      },
+    };
+  },
+);
+
+const loadStripeDeliveryRuntimeSelection$ = command(
+  async ({ get }, signal: AbortSignal) => {
+    const db = get(db$);
+    const plan = connectorRuntimeSlugSelectionReadPlan({
+      connectorSlugs: ["stripe"],
+    });
+    const rows = await db
+      .select(plan.columns)
+      .from(connectorCatalog)
+      .leftJoin(connectorCatalogEntries, plan.join)
+      .where(connectorCatalogCurrentWhere());
+    if (signal.aborted) {
+      // Keep catalog decode and identity failures ahead of cancellation.
+      connectorRuntimeSlugSelectionFromRows(plan.selection, rows);
+      signal.throwIfAborted();
+    }
+    const snapshot = connectorRuntimeSlugSelectionFromRows(
+      plan.selection,
+      rows,
+    );
+    signal.throwIfAborted();
+    return snapshot;
+  },
+);
 
 async function repairMissingStripeDeliveryProjection(
   db: Db,
@@ -1394,7 +1511,11 @@ const processClaimedDelivery$ = command(
   ): Promise<"executed" | "skipped" | "failed" | "retried" | "lost"> => {
     const db = set(writeDb$);
     await repairMissingStripeDeliveryProjection(db, args.delivery, signal);
-    const prepared = await loadDeliveryTarget(db, args.delivery, signal);
+    const prepared = await set(
+      loadStripeDeliveryTarget$,
+      args.delivery,
+      signal,
+    );
     const validation: StripeDeliveryValidation =
       prepared.kind === "ok" &&
       !(await set(
@@ -1428,10 +1549,7 @@ const processClaimedDelivery$ = command(
       return "lost";
     }
     const target = validation.target;
-    const snapshot = await loadConnectorRuntimeSlugSelection(db, {
-      connectorSlugs: ["stripe"],
-    });
-    signal.throwIfAborted();
+    const snapshot = await set(loadStripeDeliveryRuntimeSelection$, signal);
     const started = await settle(
       set(
         runWorkflowAutomationNow$,
