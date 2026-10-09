@@ -490,7 +490,7 @@ async fn handshake_capacity_and_pre_auth_deadline_are_bounded() {
         0
     );
     drop(peers);
-    admission.stop();
+    admission.stop().await;
     let (client, task) = fixture.connect(&format!("/ws/{}", fixture.runner)).await;
     let mut ws = client.unwrap();
     let result = tokio::time::timeout(Duration::from_secs(7), ws.next())

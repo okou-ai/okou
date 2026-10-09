@@ -83,6 +83,46 @@ async fn listener_starts_before_ready_and_is_removed_after_stop() {
 }
 
 #[tokio::test]
+async fn unauthenticated_socket_times_out_while_startup_readiness_is_blocked() {
+    use tokio::io::AsyncReadExt;
+
+    let (mut config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
+    let dir = env._temp_dir.path().join("wss");
+    std::fs::create_dir(&dir).unwrap();
+    std::fs::set_permissions(&dir, std::os::unix::fs::PermissionsExt::from_mode(0o710)).unwrap();
+    let path = dir.join(format!("{}.sock", config.runner.identity.runner_id()));
+    enable_wss(&mut config, dir);
+    env.handle.block_startup_readiness();
+    let status_path = env._temp_dir.path().join("status.json");
+    let run_handle = tokio::spawn(run(config));
+    assert!(
+        env.handle
+            .wait_startup_readiness_entered(Duration::from_secs(2))
+            .await
+    );
+    let mut peer = UnixStream::connect(&path).await.unwrap();
+    let mut byte = [0; 1];
+    let closed = tokio::time::timeout(Duration::from_secs(7), peer.read(&mut byte)).await;
+    let state: serde_json::Value =
+        serde_json::from_slice(&tokio::fs::read(&status_path).await.unwrap()).unwrap();
+    assert_eq!(state["mode"], "starting");
+    assert_eq!(env.handle.discover_started_count(), 0);
+    // Always release readiness and join Runner before asserting the deadline,
+    // including on the pre-fix timeout path.
+    env.handle.release_startup_readiness();
+    wait_status_mode(&status_path, "running", Duration::from_secs(5)).await;
+    shutdown(&env, run_handle).await;
+    assert_eq!(
+        closed
+            .expect("pre-auth timeout must not wait for Runner startup readiness")
+            .unwrap(),
+        0,
+        "an unauthenticated peer must be closed without a response"
+    );
+    assert!(!path.exists());
+}
+
+#[tokio::test]
 async fn two_runner_ids_coexist_and_remove_only_their_own_socket() {
     let root = tempfile::tempdir().unwrap();
     let dir = root.path().join("wss");

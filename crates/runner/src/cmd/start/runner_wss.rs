@@ -23,6 +23,7 @@ use tokio_tungstenite::tungstenite::{
     handshake::server::{Callback, ErrorResponse, Request, Response},
     protocol::{Message, WebSocketConfig},
 };
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 const PRE_AUTH_TIMEOUT: Duration = Duration::from_secs(5);
@@ -224,22 +225,25 @@ impl Admission {
         Ok(())
     }
 
-    pub fn stop(&mut self) {
-        self.tasks.abort_all();
+    pub async fn stop(&mut self) {
+        self.tasks.shutdown().await;
     }
 }
 
-/// Abort the pre-readiness accept loop on any startup/teardown return path.
-/// Dropping a bare JoinHandle would detach the listener and strand its socket.
+/// Own the supervised listener through startup and teardown. Normal stop
+/// cancels admission and joins its connections before releasing the socket;
+/// the drop guard prevents an unexpected return from detaching the task.
 pub(super) struct AcceptTask {
     task: tokio::task::JoinHandle<io::Result<()>>,
+    stop: CancellationToken,
     joined: bool,
 }
 
 impl AcceptTask {
-    pub fn new(task: tokio::task::JoinHandle<io::Result<()>>) -> Self {
+    pub fn new(task: tokio::task::JoinHandle<io::Result<()>>, stop: CancellationToken) -> Self {
         Self {
             task,
+            stop,
             joined: false,
         }
     }
@@ -253,7 +257,7 @@ impl AcceptTask {
     }
     pub async fn stop(mut self) {
         if !self.joined {
-            self.task.abort();
+            self.stop.cancel();
             let _ = (&mut self.task).await;
             self.joined = true;
         }
@@ -263,6 +267,7 @@ impl AcceptTask {
 impl Drop for AcceptTask {
     fn drop(&mut self) {
         if !self.joined {
+            self.stop.cancel();
             self.task.abort();
         }
     }
