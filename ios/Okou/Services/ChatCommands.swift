@@ -1,3 +1,4 @@
+import ChatDomain
 import Foundation
 
 /// Workspace-scoped mutations. Read synchronization belongs to ChatSync.

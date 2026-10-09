@@ -1,7 +1,7 @@
 import Foundation
 
-enum ChatEventProjection {
-  static func history(rows: [ChatEvent], recovering: Bool) throws -> ChatHistory {
+public enum ChatEventProjection {
+  public static func history(rows: [ChatEvent], recovering: Bool) throws -> ChatHistory {
     let revoked = Set(rows.compactMap(\.revokesEventId))
     let terminated = Set(rows.filter { $0.eventType.isTerminal }.compactMap(\.runId))
     let interrupted = Set(rows.filter { $0.eventType == .controlInterrupt }.compactMap(\.runId))
