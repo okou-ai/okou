@@ -1075,11 +1075,11 @@ describe("member-effective model contract", () => {
     const misc = createMiscRoutesApi(context);
     const ownerModels = await misc.listRunModels(f.actor);
     const memberModels = await misc.listRunModels(member);
-    expect(availableModel(ownerModels, null)).toMatchObject({
+    expect(availableModel(ownerModels, "auto")).toMatchObject({
       modelLabel: "Auto",
     });
-    expect(availableModel(ownerModels, null)).toStrictEqual(
-      availableModel(memberModels, null),
+    expect(availableModel(ownerModels, "auto")).toStrictEqual(
+      availableModel(memberModels, "auto"),
     );
     expect(availableModel(ownerModels, f.model)).toMatchObject({
       memberEffective: {
@@ -1123,7 +1123,7 @@ describe("member-effective model contract", () => {
         models.models.map((entry) => {
           return entry.model;
         }),
-      ).toStrictEqual([null]);
+      ).toStrictEqual(["auto"]);
     },
   );
 });
