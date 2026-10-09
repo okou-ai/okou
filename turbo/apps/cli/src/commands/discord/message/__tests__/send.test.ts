@@ -64,6 +64,12 @@ describe("okou discord message send stdin", () => {
     });
   });
 
+  it("rejects explicit empty --text without substituting piped content", () => {
+    expect(() => {
+      sendWithStdin("This piped text must not be sent", ["--text", ""]);
+    }).toThrow("text:");
+  });
+
   it("fails empty piped input with actionable guidance", () => {
     expect(() => {
       sendWithStdin(" \n ");

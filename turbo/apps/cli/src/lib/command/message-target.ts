@@ -74,7 +74,7 @@ export function unsupportedTargetError(
  * terminal.
  */
 export function readMessageText(text: string | undefined): string | undefined {
-  if (text || process.stdin.isTTY) {
+  if (text !== undefined || process.stdin.isTTY) {
     return text;
   }
   try {
