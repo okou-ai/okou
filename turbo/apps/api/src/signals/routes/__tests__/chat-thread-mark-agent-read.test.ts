@@ -11,7 +11,7 @@ import {
 import { runsCancelContract } from "@okouai/api-contracts/contracts/run-routes";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 import { z } from "zod";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -54,6 +54,60 @@ interface AgentReadFixture {
   readonly threadIds: readonly string[];
   readonly signal: AbortSignal;
   readonly run: ReturnType<typeof publicRunOwner>["run"];
+  readonly phase: (name: string) => void;
+}
+
+/** Temporary phase-only CI diagnosis; no timing assertion or production telemetry. */
+function unreadPhaseProfile(threadCount: number, signal: AbortSignal) {
+  const startedAt = performance.now();
+  let phase = "identity";
+  let phaseStartedAt = startedAt;
+  const elapsed = new Map<string, number>();
+  const visits = new Map<string, number>();
+  const enter = (name: string) => {
+    const at = performance.now();
+    elapsed.set(phase, (elapsed.get(phase) ?? 0) + at - phaseStartedAt);
+    phase = name;
+    phaseStartedAt = at;
+    visits.set(name, (visits.get(name) ?? 0) + 1);
+  };
+  if (threadCount > 3) {
+    let foreground = "";
+    signal.addEventListener(
+      "abort",
+      () => {
+        const at = performance.now();
+        foreground = JSON.stringify({
+          threadCount,
+          phase,
+          phaseElapsedMs: Math.round(at - phaseStartedAt),
+          totalMs: Math.round(at - startedAt),
+          phaseVisits: Object.fromEntries(visits),
+          completedPhaseMs: Object.fromEntries(
+            [...elapsed].map(([name, ms]) => {
+              return [name, Math.round(ms)];
+            }),
+          ),
+        });
+      },
+      { once: true },
+    );
+    onTestFinished(async (test) => {
+      enter("finished");
+      await test.annotate(`Unread foreground abort: ${foreground}`);
+      await test.annotate(
+        `Unread completed phases: ${JSON.stringify({
+          threadCount,
+          elapsedMs: Object.fromEntries(
+            [...elapsed].map(([name, ms]) => {
+              return [name, Math.round(ms)];
+            }),
+          ),
+        })}`,
+      );
+    });
+  }
+  return enter;
 }
 
 function prepareChatRuntime(): void {
@@ -112,10 +166,12 @@ async function appendCancelledRuns(
     readonly actor: ApiTestUser;
     readonly agentId: string;
     readonly threadId?: string;
+    readonly phase?: (name: string) => void;
   },
   count: number,
   signal: AbortSignal,
 ): Promise<string[]> {
+  const phase = args.phase ?? (() => {});
   signal.throwIfAborted();
   createRouteMocks(context).clerk.session(
     args.actor.userId,
@@ -125,6 +181,7 @@ async function appendCancelledRuns(
   const send = setupApp({ context, routes: chatEventsRoutes, signal })(
     chatEventsContract,
   );
+  phase("send");
   const sent = await settledValues(
     Array.from({ length: count }, async () => {
       const clientEventId = randomUUID();
@@ -151,11 +208,13 @@ async function appendCancelledRuns(
     }),
   );
   signal.throwIfAborted();
+  phase("launch-drain");
   await flushWaitUntilForTest();
   signal.throwIfAborted();
   const threadIds = sent.map(({ threadId }) => {
     return threadId;
   });
+  phase("launch-read");
   const launched = await threadEvents(args.actor, threadIds);
   const runIds = sent.map(({ threadId, clientEventId }) => {
     const prompt = launched.get(threadId)?.find((event) => {
@@ -173,6 +232,7 @@ async function appendCancelledRuns(
   const cancel = setupApp({ context, routes: runsCancelRoutes, signal })(
     runsCancelContract,
   );
+  phase("cancel");
   await settledValues(
     runIds.map((runId) => {
       return accept(
@@ -185,8 +245,10 @@ async function appendCancelledRuns(
     }),
   );
   signal.throwIfAborted();
+  phase("cancel-drain");
   await flushWaitUntilForTest();
   signal.throwIfAborted();
+  phase("terminal-read");
   const terminal = await threadEvents(args.actor, threadIds);
   for (const [index, threadId] of threadIds.entries()) {
     expect(terminal.get(threadId)).toContainEqual(
@@ -220,6 +282,7 @@ async function createUnreadAgentThreads(
   threadCount: number,
 ): Promise<AgentReadFixture> {
   const signal = context.signal;
+  const phase = unreadPhaseProfile(threadCount, signal);
   prepareChatRuntime();
   const orgId = `org_${randomUUID()}`;
   const owner = bdd.user({ orgId });
@@ -255,6 +318,7 @@ async function createUnreadAgentThreads(
   );
   const owned = publicRunOwner(context, actor, {
     afterRuns: async () => {
+      phase("cleanup-agent");
       context.mocks.s3.send.mockResolvedValue({
         Contents: [],
         IsTruncated: false,
@@ -265,10 +329,12 @@ async function createUnreadAgentThreads(
   });
   return await owned.run(async () => {
     signal.throwIfAborted();
+    phase("billing");
     await runs.grantProEntitlement(actor, {
       tier: threadCount > 3 ? "team" : "pro",
     });
     signal.throwIfAborted();
+    phase("subscription");
     await runs.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
@@ -280,12 +346,13 @@ async function createUnreadAgentThreads(
       signal.throwIfAborted();
       threadIds.push(
         ...(await appendCancelledRuns(
-          { actor, agentId: agent.agentId },
+          { actor, agentId: agent.agentId, phase },
           Math.min(batchSize, threadCount - start),
           signal,
         )),
       );
     }
+    phase("mark-read");
     return {
       actor,
       owner,
@@ -294,6 +361,7 @@ async function createUnreadAgentThreads(
       threadIds,
       signal,
       run: owned.run,
+      phase,
     };
   });
 }
@@ -323,6 +391,7 @@ async function unreadThreadIds(
 ): Promise<ReadonlySet<string>> {
   return await fixture.run(async () => {
     fixture.signal.throwIfAborted();
+    fixture.phase("final-events");
     const eventsByThread = await threadEvents(fixture.actor, fixture.threadIds);
     const client = setupApp({
       context,
@@ -330,6 +399,7 @@ async function unreadThreadIds(
       signal: fixture.signal,
     })(chatThreadByIdContract);
     const unread = new Set<string>();
+    fixture.phase("cursors");
     for (let start = 0; start < fixture.threadIds.length; start += 8) {
       fixture.signal.throwIfAborted();
       await settledValues(
@@ -362,6 +432,7 @@ async function unreadThreadIds(
         }),
       );
     }
+    fixture.phase("cleanup-runs");
     return unread;
   });
 }
