@@ -269,9 +269,9 @@ try {
     "Tailscale migration, canonical carriers, reader shadow and writer-floor guards passed",
   );
 } finally {
-  await client
-    .query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`)
-    .finally(async () => {
-      await client.end();
-    });
+  try {
+    await client.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+  } finally {
+    await client.end();
+  }
 }
