@@ -19,13 +19,14 @@ import {
   sshConnectionNeedsRebind,
   sshConnections,
 } from "@okouai/db/schema/ssh-connection";
-import { sshConnectionObservations } from "@okouai/db/schema/ssh-connection-observation";
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
-import { and, eq, lt, ne, or, sql } from "drizzle-orm";
+import { and, eq, or } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$ } from "../external/db";
+import { db$ } from "../external/db";
 import { decryptStoredSecretValue } from "./crypto.utils";
+import { commitRunnerSshPinAttempt$ } from "./runner-ssh-pin.service";
+import { commitRunnerSshObservationAttempt$ } from "./runner-ssh-observation.service";
 import { runThreadSshAccess } from "./run-thread-remote-access.service";
 
 type SshResolveInput = RunnerSshResolveRequest & {
@@ -176,40 +177,6 @@ function availableConnection(row: Connection | null | undefined) {
   }
   return row;
 }
-function currentTailscaleAuthority(row: Connection) {
-  if (row.tailscale === null || row.tailscaleId === null) {
-    throw new Error("SSH Tailscale configuration is missing");
-  }
-  return and(
-    eq(tailscaleConfigs.id, row.tailscaleId),
-    eq(tailscaleConfigs.orgId, row.orgId),
-    or(
-      eq(tailscaleConfigs.scope, "organization"),
-      and(
-        eq(tailscaleConfigs.scope, "personal"),
-        eq(tailscaleConfigs.userId, row.userId),
-      ),
-    ),
-    eq(tailscaleConfigs.generation, row.tailscale.generation),
-  );
-}
-function currentCloudflareAuthority(row: Connection) {
-  if (row.access === null || row.accessId === null) {
-    throw new Error("SSH Cloudflare Access is missing");
-  }
-  return and(
-    eq(cloudflareAccessConfigs.id, row.accessId),
-    eq(cloudflareAccessConfigs.orgId, row.orgId),
-    or(
-      eq(cloudflareAccessConfigs.scope, "organization"),
-      and(
-        eq(cloudflareAccessConfigs.scope, "personal"),
-        eq(cloudflareAccessConfigs.userId, row.userId),
-      ),
-    ),
-    eq(cloudflareAccessConfigs.generation, row.access.generation),
-  );
-}
 function learnedHostKey(row: {
   readonly algorithm: string | null;
   readonly fingerprint: string | null;
@@ -329,28 +296,6 @@ export const resolveRunnerSsh$ = command(
   },
 );
 
-function pinDecision(
-  row: Connection,
-  input: SshPinInput,
-): RunnerSshPinResponse | null {
-  const existing = learnedHostKey(row);
-  if (existing) {
-    if (
-      existing.algorithm !== input.observedHostKey.algorithm ||
-      existing.fingerprint !== input.observedHostKey.fingerprint
-    ) {
-      return { outcome: "host_key_mismatch" };
-    }
-    return row.generation === input.expectedGeneration + 1
-      ? { outcome: "matched", generation: row.generation }
-      : { outcome: "configuration_changed" };
-  }
-  return row.generation !== input.expectedGeneration ||
-    row.generation === 2_147_483_647
-    ? { outcome: "configuration_changed" }
-    : null;
-}
-
 export const pinRunnerSsh$ = command(
   async (
     { set },
@@ -362,92 +307,31 @@ export const pinRunnerSsh$ = command(
     if (!initial) {
       return unavailable;
     }
-    const { input } = args;
-    // Pinning must fence the Host, current Run/permission/credential, protected
-    // config, and trust generation through the same transaction's commit.
-    const result = await set(writeDb$).transaction<RunnerSshPinResponse>(
-      async (tx) => {
-        const [locked] = await tx
-          .select({ id: sshConnections.id })
-          .from(sshConnections)
-          .where(
-            and(
-              eq(sshConnections.id, initial.id),
-              eq(sshConnections.orgId, initial.orgId),
-              eq(sshConnections.userId, initial.userId),
-            ),
-          )
-          .for("update");
-        signal.throwIfAborted();
-        if (!locked) {
-          return unavailable;
-        }
-        const [current] = await tx
-          .select(connectionFields)
-          .from(agentRuns)
-          .innerJoin(agentSessions, sessionAuthority)
-          .innerJoin(agents, agentAuthority)
-          .innerJoin(sshConnections, connectionAuthority(input))
-          .innerJoin(sshCredentials, credentialAuthority)
-          .leftJoin(cloudflareAccessConfigs, cloudflareAuthority)
-          .leftJoin(tailscaleConfigs, tailscaleAuthority)
-          .where(runAuthority(input))
-          .for("share", {
-            of: [agentRuns, agentSessions, agents, sshCredentials],
-          });
-        signal.throwIfAborted();
-        const row = availableConnection(current);
-        if (!row) {
-          return unavailable;
-        }
-        // Nullable joined configurations cannot be locked in the outer join.
-        if (row.transport === "tailscale") {
-          const [authority] = await tx
-            .select({ id: tailscaleConfigs.id })
-            .from(tailscaleConfigs)
-            .where(currentTailscaleAuthority(row))
-            .for("share");
-          signal.throwIfAborted();
-          if (!authority) {
-            return unavailable;
-          }
-        } else if (row.transport === "cloudflare_access") {
-          const [authority] = await tx
-            .select({ id: cloudflareAccessConfigs.id })
-            .from(cloudflareAccessConfigs)
-            .where(currentCloudflareAuthority(row))
-            .for("share");
-          signal.throwIfAborted();
-          if (!authority) {
-            return unavailable;
-          }
-        }
-        const decision = pinDecision(row, input);
-        if (decision) {
-          return decision;
-        }
-        await tx
-          .update(sshConnections)
-          .set({
-            learnedHostKeyAlgorithm: input.observedHostKey.algorithm,
-            learnedHostKeyFingerprint: input.observedHostKey.fingerprint,
-            generation: sql`${sshConnections.generation} + 1`,
-            updatedAt: nowDate(),
-          })
-          .where(eq(sshConnections.id, row.id));
-        signal.throwIfAborted();
-        return { outcome: "pinned", generation: row.generation + 1 };
-      },
+    let attempt = await set(
+      commitRunnerSshPinAttempt$,
+      args.input,
+      initial,
+      signal,
     );
+    if (attempt.retry) {
+      // Drift gated off every effect. Only this known-unwritten case gets one
+      // fresh statement; exceptions and uncertain effects are never replayed.
+      attempt = await set(
+        commitRunnerSshPinAttempt$,
+        args.input,
+        initial,
+        signal,
+      );
+    }
     signal.throwIfAborted();
-    if (result.outcome === "pinned") {
+    if (attempt.result.outcome === "pinned") {
       await publishSshClientInvalidation({
         orgId: initial.orgId,
         userId: initial.userId,
       });
     }
     signal.throwIfAborted();
-    return result;
+    return attempt.result;
   },
 );
 
@@ -480,110 +364,26 @@ export const recordRunnerSshObservation$ = command(
     if (!initial) {
       return unavailable;
     }
-    const { input } = args;
-    const observedAt = observationTime(initial, input);
+    const observedAt = observationTime(initial, args.input);
     if (!observedAt) {
       return { outcome: "ignored" };
     }
-    // Preserve the Host/authority fence and generation/clock ordering together
-    // with the prior observation read and conditional upsert; publish afterward.
-    const result = await set(writeDb$).transaction<{
-      readonly outcome: "recorded" | "ignored" | "unavailable";
-      readonly notify: boolean;
-    }>(async (tx) => {
-      const [locked] = await tx
-        .select({ id: sshConnections.id })
-        .from(sshConnections)
-        .where(
-          and(
-            eq(sshConnections.id, initial.id),
-            eq(sshConnections.orgId, initial.orgId),
-            eq(sshConnections.userId, initial.userId),
-          ),
-        )
-        .for("update");
-      signal.throwIfAborted();
-      if (!locked) {
-        return { ...unavailable, notify: false };
-      }
-      const [current] = await tx
-        .select(connectionFields)
-        .from(agentRuns)
-        .innerJoin(agentSessions, sessionAuthority)
-        .innerJoin(agents, agentAuthority)
-        .innerJoin(sshConnections, connectionAuthority(input))
-        .innerJoin(sshCredentials, credentialAuthority)
-        .leftJoin(cloudflareAccessConfigs, cloudflareAuthority)
-        .leftJoin(tailscaleConfigs, tailscaleAuthority)
-        .where(runAuthority(input))
-        .for("share", {
-          of: [agentRuns, agentSessions, agents, sshCredentials],
-        });
-      signal.throwIfAborted();
-      const row = availableConnection(current);
-      if (!row) {
-        return { ...unavailable, notify: false };
-      }
-      if (row.transport === "tailscale") {
-        const [authority] = await tx
-          .select({ id: tailscaleConfigs.id })
-          .from(tailscaleConfigs)
-          .where(currentTailscaleAuthority(row))
-          .for("share");
-        signal.throwIfAborted();
-        if (!authority) {
-          return { ...unavailable, notify: false };
-        }
-      } else if (row.transport === "cloudflare_access") {
-        const [authority] = await tx
-          .select({ id: cloudflareAccessConfigs.id })
-          .from(cloudflareAccessConfigs)
-          .where(currentCloudflareAuthority(row))
-          .for("share");
-        signal.throwIfAborted();
-        if (!authority) {
-          return { ...unavailable, notify: false };
-        }
-      }
-      if (row.generation !== input.expectedGeneration) {
-        return { outcome: "ignored", notify: false };
-      }
-      const [previous] = await tx
-        .select({ failureReason: sshConnectionObservations.failureReason })
-        .from(sshConnectionObservations)
-        .where(
-          and(
-            eq(sshConnectionObservations.connectionId, row.id),
-            eq(sshConnectionObservations.generation, row.generation),
-          ),
-        );
-      const values = {
-        connectionId: row.id,
-        generation: row.generation,
+    let result = await set(
+      commitRunnerSshObservationAttempt$,
+      args.input,
+      initial,
+      observedAt,
+      signal,
+    );
+    if (result.retry) {
+      result = await set(
+        commitRunnerSshObservationAttempt$,
+        args.input,
+        initial,
         observedAt,
-        failureReason: input.failureReason,
-      };
-      const [written] = await tx
-        .insert(sshConnectionObservations)
-        .values(values)
-        .onConflictDoUpdate({
-          target: sshConnectionObservations.connectionId,
-          set: values,
-          setWhere: or(
-            ne(sshConnectionObservations.generation, row.generation),
-            lt(sshConnectionObservations.observedAt, observedAt),
-          ),
-        })
-        .returning({ connectionId: sshConnectionObservations.connectionId });
-      signal.throwIfAborted();
-      return {
-        outcome: written ? "recorded" : "ignored",
-        notify:
-          Boolean(written) &&
-          (input.failureReason !== null ||
-            (previous !== undefined && previous.failureReason !== null)),
-      };
-    });
+        signal,
+      );
+    }
     signal.throwIfAborted();
     if (result.notify) {
       await publishSshClientInvalidation({
