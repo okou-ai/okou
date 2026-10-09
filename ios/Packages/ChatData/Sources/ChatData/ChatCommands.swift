@@ -2,17 +2,17 @@ import ChatDomain
 import Foundation
 
 /// Workspace-scoped mutations. Read synchronization belongs to ChatSync.
-actor ChatCommands {
+public actor ChatCommands {
   private let client: APIClient
   private let sync: ChatSync
   private var sendingThreads = Set<String>()
 
-  init(client: APIClient, sync: ChatSync) {
+  public init(client: APIClient, sync: ChatSync) {
     self.client = client
     self.sync = sync
   }
 
-  func createThread(agentID: String? = nil) async throws -> ChatThread {
+  public func createThread(agentID: String? = nil) async throws -> ChatThread {
     async let agentsRequest: [AgentRecord] = client.request("/api/agents")
     async let preferenceRequest: ModelPreference = client.request("/api/user-model-preference")
     async let modelsRequest: AvailableRunModels = client.request("/api/run-models")
@@ -44,7 +44,7 @@ actor ChatCommands {
       pinnedAt: nil, pinOrder: nil, indicator: nil)
   }
 
-  func send(thread: ChatThread, text: String, clientEventID: String = UUID().uuidString)
+  public func send(thread: ChatThread, text: String, clientEventID: String = UUID().uuidString)
     async throws -> SendReceipt
   {
     let prompt = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -78,7 +78,7 @@ actor ChatCommands {
     }
   }
 
-  func stop(thread: ChatThread) async throws {
+  public func stop(thread: ChatThread) async throws {
     let current = try await sync.history(threadID: thread.id)
     // Stop is explicit. Changing saved settings does not revoke an admitted run.
     for eventID in current.queuedEventIDs {
@@ -97,21 +97,21 @@ actor ChatCommands {
     }
   }
 
-  func markRead(threadID: String) async throws {
+  public func markRead(threadID: String) async throws {
     try await client.data("/api/chat-threads/\(threadID)/mark-read", method: "POST")
   }
 
-  func setPinned(threadID: String, pinned: Bool) async throws {
+  public func setPinned(threadID: String, pinned: Bool) async throws {
     let action = pinned ? "pin" : "unpin"
     try await client.data("/api/chat-threads/\(threadID)/\(action)", method: "POST")
   }
 
-  func setArchived(threadID: String, archived: Bool) async throws {
+  public func setArchived(threadID: String, archived: Bool) async throws {
     let action = archived ? "archive" : "unarchive"
     try await client.data("/api/chat-threads/\(threadID)/\(action)", method: "POST")
   }
 
-  func rename(threadID: String, title: String) async throws {
+  public func rename(threadID: String, title: String) async throws {
     let body = try JSONEncoder().encode(["title": title])
     try await client.data("/api/chat-threads/\(threadID)/rename", method: "POST", body: body)
   }

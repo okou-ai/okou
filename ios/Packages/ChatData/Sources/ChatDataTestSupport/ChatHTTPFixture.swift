@@ -1,23 +1,31 @@
+import ChatData
 import Foundation
 import Synchronization
 
-@testable import Okou
+public struct ChatHTTPResponse: Sendable {
+  public var status = 200
+  public var body: String
+  public var headers = ["Content-Type": "application/json"]
 
-struct ChatHTTPResponse: Sendable {
-  var status = 200
-  var body: String
-  var headers = ["Content-Type": "application/json"]
+  public init(
+    status: Int = 200, body: String,
+    headers: [String: String] = ["Content-Type": "application/json"]
+  ) {
+    self.status = status
+    self.body = body
+    self.headers = headers
+  }
 }
 
 /// HTTP boundary fixture. Production decoding, pagination, and commands remain real.
-final class ChatHTTPFixture: Sendable {
-  typealias Handler = @Sendable (URLRequest) async throws -> ChatHTTPResponse
-  let baseURL: URL
-  let client: APIClient
+public final class ChatHTTPFixture: Sendable {
+  public typealias Handler = @Sendable (URLRequest) async throws -> ChatHTTPResponse
+  public let baseURL: URL
+  public let client: APIClient
   private let host: String
   private let session: URLSession
 
-  init(handler: @escaping Handler) {
+  public init(handler: @escaping Handler) {
     let fixtureHost = UUID().uuidString.lowercased() + ".example.invalid"
     host = fixtureHost
     baseURL = URL(string: "https://" + fixtureHost)!
@@ -86,7 +94,7 @@ private final class ChatFixtureURLProtocol: URLProtocol, @unchecked Sendable {
   }
 }
 
-func chatRequestBody(_ request: URLRequest) -> Data {
+public func chatRequestBody(_ request: URLRequest) -> Data {
   if let data = request.httpBody { return data }
   guard let stream = request.httpBodyStream else { return Data() }
   stream.open()
@@ -102,7 +110,7 @@ func chatRequestBody(_ request: URLRequest) -> Data {
 }
 
 /// `/api/model-catalog` fixture with one retired model.
-func modelCatalogResponse() -> ChatHTTPResponse {
+public func modelCatalogResponse() -> ChatHTTPResponse {
   let entries: [(model: String, displayName: String, replacedBy: String?)] = [
     ("okou-1.0", "Auto", nil),
     ("gpt-5.6-sol", "GPT-5.6 Sol", nil),
@@ -124,15 +132,25 @@ func modelCatalogResponse() -> ChatHTTPResponse {
 }
 
 /// A connected personal-subscription row in a `/api/run-models` response.
-struct SubscriptionRunModel {
-  let model: String
-  let providerType: String
-  var serviceTier: String?
-  var availability = "available"
+public struct SubscriptionRunModel {
+  public let model: String
+  public let providerType: String
+  public var serviceTier: String?
+  public var availability = "available"
+
+  public init(
+    model: String, providerType: String, serviceTier: String? = nil,
+    availability: String = "available"
+  ) {
+    self.model = model
+    self.providerType = providerType
+    self.serviceTier = serviceTier
+    self.availability = availability
+  }
 }
 
 /// `/api/run-models` fixture: Auto plus the member's connected subscription rows.
-func runModelsResponse(_ subscriptions: [SubscriptionRunModel] = []) -> ChatHTTPResponse {
+public func runModelsResponse(_ subscriptions: [SubscriptionRunModel] = []) -> ChatHTTPResponse {
   let auto = """
     {"model":null,"modelLabel":"Auto","modelProviderId":null,\
     "memberEffective":{"providerType":"built-in","runtimeProviderType":"openrouter-codex",\

@@ -1,9 +1,10 @@
+import ChatDataTestSupport
 import ChatDomain
 import Foundation
 import Synchronization
 import XCTest
 
-@testable import Okou
+@testable import ChatData
 
 private let fixtureThread = "10000000-0000-4000-8000-000000000001"
 private let fixtureAgent = "10000000-0000-4000-8000-000000000002"

@@ -1,7 +1,7 @@
 import Foundation
 import XCTest
 
-@testable import Okou
+@testable import ChatData
 
 @MainActor
 final class ChatCacheTests: XCTestCase {

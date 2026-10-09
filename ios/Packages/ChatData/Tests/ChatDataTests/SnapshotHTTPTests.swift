@@ -1,9 +1,10 @@
+import ChatDataTestSupport
 import Foundation
 import Network
 import Synchronization
 import XCTest
 
-@testable import Okou
+@testable import ChatData
 
 @MainActor
 final class SnapshotHTTPTests: XCTestCase {

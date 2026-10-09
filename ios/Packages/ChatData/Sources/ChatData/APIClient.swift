@@ -2,23 +2,23 @@ import Foundation
 import OSLog
 import Synchronization
 
-enum APIClientError: LocalizedError, Sendable {
+public enum APIClientError: LocalizedError, Sendable {
   case http(status: Int, message: String, code: String? = nil)
   case invalidResponse
   case incompatibleData
   case invalidURL
 
-  var statusCode: Int? {
+  public var statusCode: Int? {
     if case .http(let status, _, _) = self { return status }
     return nil
   }
 
-  var serverCode: String? {
+  public var serverCode: String? {
     if case .http(_, _, let code) = self { return code }
     return nil
   }
 
-  var errorDescription: String? {
+  public var errorDescription: String? {
     switch self {
     case .http(401, _, _): "Your session expired. Sign in again."
     case .http(426, _, _): "Update Okou in TestFlight to continue."
@@ -34,19 +34,19 @@ enum APIClientError: LocalizedError, Sendable {
   }
 }
 
-struct APIResponse: Sendable {
-  let data: Data
-  let response: HTTPURLResponse
+public struct APIResponse: Sendable {
+  public let data: Data
+  public let response: HTTPURLResponse
 }
 
 /// Calls the canonical API using a fresh, organization-scoped session token.
 /// Requests are never automatically resubmitted by this client.
-struct APIClient: Sendable {
-  let baseURL: URL
+public struct APIClient: Sendable {
+  public let baseURL: URL
   private let bearerToken: @Sendable () async throws -> String
   private let session: URLSession
 
-  init(
+  public init(
     baseURL: URL,
     session: URLSession = .shared,
     bearerToken: @escaping @Sendable () async throws -> String
@@ -56,7 +56,7 @@ struct APIClient: Sendable {
     self.bearerToken = bearerToken
   }
 
-  func request<Response: Decodable & Sendable>(
+  public func request<Response: Decodable & Sendable>(
     _ path: String,
     method: String = "GET",
     query: [URLQueryItem] = [],
@@ -92,7 +92,7 @@ struct APIClient: Sendable {
   }
 
   @discardableResult
-  func data(
+  public func data(
     _ path: String,
     method: String = "GET",
     query: [URLQueryItem] = [],
@@ -123,7 +123,7 @@ struct APIClient: Sendable {
   }
 
   /// Snapshot URLs are signed separately. Never forward the user's bearer token.
-  func downloadSnapshot(_ url: URL) async throws -> Data {
+  public func downloadSnapshot(_ url: URL) async throws -> Data {
     guard
       url.scheme == "https"
         || (url.scheme == "http" && ["localhost", "127.0.0.1", "::1"].contains(url.host ?? ""))
@@ -152,7 +152,7 @@ struct APIClient: Sendable {
     return APIResponse(data: data, response: response)
   }
 
-  static func decoder() -> JSONDecoder {
+  public static func decoder() -> JSONDecoder {
     let decoder = JSONDecoder()
     let fractional = ISO8601DateFormatter()
     fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]

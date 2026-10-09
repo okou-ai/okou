@@ -106,8 +106,8 @@ struct ThreadDetail: Decodable, Sendable {
   let cancellationRecoveryPending: Bool
 }
 
-struct Indicators: Decodable, Sendable {
-  let threads: [String: ChatIndicator]
+public struct Indicators: Decodable, Sendable {
+  public let threads: [String: ChatIndicator]
 }
 
 struct EventCursor: Decodable, Equatable, Sendable {
@@ -148,18 +148,18 @@ struct ChatEventRow: Decodable, Sendable {
   }
 }
 
-struct AgentRecord: Decodable, Sendable {
-  let agentId: String
-  let isDefaultAgent: Bool
-  let displayName: String?
+public struct AgentRecord: Decodable, Sendable {
+  public let agentId: String
+  public let isDefaultAgent: Bool
+  public let displayName: String?
 }
 
-struct SidebarPreferences: Decodable, Sendable {
-  let pinnedAgentIds: [String]
+public struct SidebarPreferences: Decodable, Sendable {
+  public let pinnedAgentIds: [String]
 }
 
-struct SidebarFeatureSwitches: Decodable, Sendable {
-  let effectiveSwitches: [String: Bool]
+public struct SidebarFeatureSwitches: Decodable, Sendable {
+  public let effectiveSwitches: [String: Bool]
 }
 
 struct ModelPreference: Decodable, Sendable {

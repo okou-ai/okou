@@ -2,7 +2,7 @@ import ChatDomain
 import Foundation
 import OSLog
 
-actor ChatSync {
+public actor ChatSync {
   private let client: APIClient
   private let chatEventSchemaVersion = 8
   private let threadEventRebaseThreshold = 100
@@ -11,13 +11,13 @@ actor ChatSync {
   private var readingHistories = Set<String>()
   private var historyWaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
 
-  init(client: APIClient, cache: ChatCache? = nil) {
+  public init(client: APIClient, cache: ChatCache? = nil) {
     self.client = client
     self.cache = cache
   }
 
   /// Dirty rows survive a failed write until a later catch-up persists them.
-  func releaseHistory(threadID: String) -> Bool {
+  public func releaseHistory(threadID: String) -> Bool {
     guard !readingHistories.contains(threadID) else { return false }
     if cache != nil, let history = histories[threadID], history.replaced || !history.newRows.isEmpty
     {
@@ -27,19 +27,19 @@ actor ChatSync {
     return true
   }
 
-  func cachedThreads() async -> [ChatThread]? {
+  public func cachedThreads() async -> [ChatThread]? {
     guard let cached = await readCachedThreadList() else { return nil }
     return ChatThreadReplay.sidebarOrder(
       ChatThreadReplay.replay(
         snapshot: cached.snapshot.map(\.thread), events: cached.events.map(\.change)))
   }
 
-  func cachedHistory(threadID: String) async -> ChatHistory? {
+  public func cachedHistory(threadID: String) async -> ChatHistory? {
     guard let cached = await readCachedHistory(threadID: threadID) else { return nil }
     return try? ChatEventProjection.history(rows: cached.rows.map(\.event), recovering: false)
   }
 
-  func threads() async throws -> [ChatThread] {
+  public func threads() async throws -> [ChatThread] {
     let cached = await readCachedThreadList()
     var state: ThreadListState
     if let cached {
@@ -97,7 +97,7 @@ actor ChatSync {
     }
   }
 
-  func indicators() async throws -> Indicators {
+  public func indicators() async throws -> Indicators {
     try await client.request("/api/indicators")
   }
 
@@ -250,7 +250,7 @@ actor ChatSync {
     }
   }
 
-  func history(threadID: String) async throws -> ChatHistory {
+  public func history(threadID: String) async throws -> ChatHistory {
     // Actor methods can interleave at every network/cache await. Serialize each
     // thread's catch-up and durable cursor update, including calls from Stop.
     if !readingHistories.insert(threadID).inserted {

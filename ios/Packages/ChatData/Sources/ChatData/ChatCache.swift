@@ -2,36 +2,84 @@ import CryptoKit
 import Foundation
 import SQLite3
 
-struct ChatCacheScope: Sendable {
-  let apiBaseURL: URL
-  let userID: String
-  let workspaceID: String
+public struct ChatCacheScope: Sendable {
+  public let apiBaseURL: URL
+  public let userID: String
+  public let workspaceID: String
+
+  public init(
+    apiBaseURL: URL,
+    userID: String,
+    workspaceID: String
+  ) {
+    self.apiBaseURL = apiBaseURL
+    self.userID = userID
+    self.workspaceID = workspaceID
+  }
 }
 
-struct ChatCacheCursor: Equatable, Sendable {
-  let eventID: String?
-  let seqID: Int
+public struct ChatCacheCursor: Equatable, Sendable {
+  public let eventID: String?
+  public let seqID: Int
+
+  public init(
+    eventID: String?,
+    seqID: Int
+  ) {
+    self.eventID = eventID
+    self.seqID = seqID
+  }
 }
 
-struct ChatCacheEvent: Equatable, Sendable {
-  let id: String
-  let seqID: Int
-  let data: Data
+public struct ChatCacheEvent: Equatable, Sendable {
+  public let id: String
+  public let seqID: Int
+  public let data: Data
+
+  public init(
+    id: String,
+    seqID: Int,
+    data: Data
+  ) {
+    self.id = id
+    self.seqID = seqID
+    self.data = data
+  }
 }
 
-struct CachedThreadList: Sendable {
-  let snapshot: Data
-  let snapshotCursor: ChatCacheCursor
-  let events: [ChatCacheEvent]
+public struct CachedThreadList: Sendable {
+  public let snapshot: Data
+  public let snapshotCursor: ChatCacheCursor
+  public let events: [ChatCacheEvent]
+
+  public init(
+    snapshot: Data,
+    snapshotCursor: ChatCacheCursor,
+    events: [ChatCacheEvent]
+  ) {
+    self.snapshot = snapshot
+    self.snapshotCursor = snapshotCursor
+    self.events = events
+  }
 }
 
-struct CachedChatHistory: Sendable {
-  let rows: [ChatCacheEvent]
-  let cursor: ChatCacheCursor
-  let schemaVersion: Int
+public struct CachedChatHistory: Sendable {
+  public let rows: [ChatCacheEvent]
+  public let cursor: ChatCacheCursor
+  public let schemaVersion: Int
+
+  public init(
+    rows: [ChatCacheEvent],
+    cursor: ChatCacheCursor,
+    schemaVersion: Int
+  ) {
+    self.rows = rows
+    self.cursor = cursor
+    self.schemaVersion = schemaVersion
+  }
 }
 
-enum ChatCacheError: Error {
+public enum ChatCacheError: Error {
   case missingThreadList
   case missingHistory
   case invalidCursor
@@ -44,13 +92,13 @@ enum ChatCacheError: Error {
 // Only server-confirmed snapshots and events enter this store. Presentation and
 // optimistic state are reconstructed outside it, so a retry cannot persist a
 // local guess as if it were an authoritative event.
-actor ChatCache {
+public actor ChatCache {
   private static let version = 1
 
   private let fileURL: URL
   private var connection: CacheDatabase?
 
-  init(scope: ChatCacheScope, directory: URL? = nil) {
+  public init(scope: ChatCacheScope, directory: URL? = nil) {
     let root =
       directory
       ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -63,7 +111,7 @@ actor ChatCache {
       .appendingPathComponent(filename)
   }
 
-  func loadThreadList() throws -> CachedThreadList? {
+  public func loadThreadList() throws -> CachedThreadList? {
     try withDatabase { database in
       let snapshot = try database.prepare(
         "SELECT snapshot, snapshot_event_id, snapshot_seq_id FROM thread_list WHERE id = 1")
@@ -86,7 +134,7 @@ actor ChatCache {
     }
   }
 
-  func replaceThreadList(
+  public func replaceThreadList(
     snapshot: Data, cursor: ChatCacheCursor, events: [ChatCacheEvent]
   ) throws {
     guard Self.validListCursor(cursor) else { throw ChatCacheError.invalidCursor }
@@ -107,7 +155,7 @@ actor ChatCache {
     }
   }
 
-  func appendThreadEvents(_ events: [ChatCacheEvent]) throws {
+  public func appendThreadEvents(_ events: [ChatCacheEvent]) throws {
     guard !events.isEmpty else { return }
     try Self.validate(events, after: 0)
     try withDatabase { database in
@@ -133,7 +181,7 @@ actor ChatCache {
     }
   }
 
-  func loadHistory(threadID: String) throws -> CachedChatHistory? {
+  public func loadHistory(threadID: String) throws -> CachedChatHistory? {
     try withDatabase { database in
       let history = try database.prepare(
         "SELECT cursor_event_id, cursor_seq_id, schema_version FROM histories WHERE thread_id = ?")
@@ -167,7 +215,7 @@ actor ChatCache {
     }
   }
 
-  func replaceHistory(
+  public func replaceHistory(
     threadID: String, rows: [ChatCacheEvent], cursor: ChatCacheCursor, schemaVersion: Int
   ) throws {
     try Self.validateHistory(rows: rows, cursor: cursor, schemaVersion: schemaVersion)
@@ -191,7 +239,7 @@ actor ChatCache {
     }
   }
 
-  func appendHistory(
+  public func appendHistory(
     threadID: String, rows: [ChatCacheEvent], cursor: ChatCacheCursor, schemaVersion: Int
   ) throws {
     try Self.validateHistory(
@@ -233,7 +281,7 @@ actor ChatCache {
     }
   }
 
-  func deleteHistory(threadID: String) throws {
+  public func deleteHistory(threadID: String) throws {
     try withDatabase { database in
       let delete = try database.prepare("DELETE FROM histories WHERE thread_id = ?")
       try delete.bind(threadID, at: 1)
