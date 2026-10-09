@@ -36,6 +36,8 @@ describe("agentRuns circular foreign keys", () => {
 
     const { agentRuns: runtimeAgentRuns } =
       await import("../runtime/agent-run");
+    const { chatThreads: runtimeChatThreads } =
+      await import("../runtime/chat-thread");
     expect(schema.agentRuns).toBe(runtimeAgentRuns);
     const runtimeSession = foreignKeyReference(runtimeAgentRuns, "session_id");
     expect(runtimeSession.foreignKey.onDelete).toBe("cascade");
@@ -50,7 +52,7 @@ describe("agentRuns circular foreign keys", () => {
     expect(runtimeThread.foreignKey.onDelete).toBe("set null");
     expect(runtimeThread.reference.foreignTable).toBe(chatThreads);
     expect(runtimeThread.reference.foreignColumns).toEqual([chatThreads.id]);
-    expect(schema.chatThreads).toBe(chatThreads);
+    expect(schema.chatThreads).toBe(runtimeChatThreads);
 
     const chatThread = foreignKeyReference(agentRuns, "chat_thread_id");
     expect(chatThread.foreignKey.getName()).toBe(
