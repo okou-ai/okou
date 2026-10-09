@@ -1,5 +1,5 @@
 import { command, computed, type Computed } from "ccstate";
-import { and, eq, or, type SQL } from "drizzle-orm";
+import { and, count, eq, gte, isNotNull, or, type SQL } from "drizzle-orm";
 import type { DiscordOrgStatus } from "@okouai/api-contracts/contracts/integrations-discord";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -16,6 +16,7 @@ import { clerk$, isClerkResourceNotFound } from "../external/clerk";
 import { db$, writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
 import { publishDiscordChanged } from "./discord-realtime.service";
+import { discordOauthStates } from "@okouai/db/schema/discord-oauth-state";
 import {
   discordIntegrationEnabledForOwner,
   discordIntegrationEnabledForOwner$,
@@ -431,59 +432,91 @@ export const selectDiscordDmBinding$ = command(
   },
 );
 
-async function deleteDiscordBinding(
-  db: Db,
-  args: {
-    readonly connectionId: string;
-    readonly discordUserId: string;
-    readonly orgId?: string;
-  },
-  signal: AbortSignal,
-): Promise<boolean> {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0152; new non-billing transactions are prohibited.
-  const rows = await db.transaction(async (tx) => {
+interface DiscordBindingDisconnect {
+  readonly connectionId: string;
+  readonly discordUserId: string;
+  readonly orgId?: string;
+}
+
+const commitDiscordBindingDisconnect$ = command(
+  async ({ set }, args: DiscordBindingDisconnect, signal: AbortSignal) => {
+    const db = set(writeDb$);
     signal.throwIfAborted();
-    const removed = await tx
+    const candidate = db.$with("disconnect_discord_candidate").as(
+      db
+        .select({
+          guildId: discordOrgConnections.guildId,
+          userId: discordOrgConnections.userId,
+          orgId: discordOrgInstallations.orgId,
+        })
+        .from(discordOrgConnections)
+        .innerJoin(
+          discordOrgInstallations,
+          eq(discordOrgInstallations.guildId, discordOrgConnections.guildId),
+        )
+        .where(
+          and(
+            eq(discordOrgConnections.id, args.connectionId),
+            eq(discordOrgConnections.discordUserId, args.discordUserId),
+            args.orgId
+              ? eq(discordOrgInstallations.orgId, args.orgId)
+              : undefined,
+          ),
+        ),
+    );
+    const revoked = db.$with("cancelled_discord_disconnect_attempts").as(
+      db
+        .delete(discordOauthStates)
+        .where(
+          and(
+            eq(
+              discordOauthStates.userId,
+              db.select({ userId: candidate.userId }).from(candidate),
+            ),
+            eq(
+              discordOauthStates.orgId,
+              db.select({ orgId: candidate.orgId }).from(candidate),
+            ),
+            isNotNull(discordOauthStates.completionTokenHash),
+          ),
+        )
+        .returning({ id: discordOauthStates.id }),
+    );
+    // Consumed consent receipts are not pending attempts. Revoke only this exact
+    // connection; the exclusion index releases ownership with that same DELETE.
+    return await db
+      .with(candidate, revoked)
       .delete(discordOrgConnections)
       .where(
         and(
           eq(discordOrgConnections.id, args.connectionId),
           eq(discordOrgConnections.discordUserId, args.discordUserId),
-          args.orgId
-            ? eq(
-                discordOrgConnections.guildId,
-                tx
-                  .select({ guildId: discordOrgInstallations.guildId })
-                  .from(discordOrgInstallations)
-                  .where(eq(discordOrgInstallations.orgId, args.orgId)),
-              )
-            : undefined,
+          eq(
+            discordOrgConnections.userId,
+            db.select({ userId: candidate.userId }).from(candidate),
+          ),
+          eq(
+            discordOrgConnections.guildId,
+            db.select({ guildId: candidate.guildId }).from(candidate),
+          ),
+          gte(db.select({ count: count() }).from(revoked), 0),
         ),
       )
       .returning({ userId: discordOrgConnections.userId });
-    signal.throwIfAborted();
-    return removed;
-  });
-  await publishDiscordChanged(
-    rows.map((row) => {
-      return row.userId;
-    }),
-  );
-  signal.throwIfAborted();
-  return rows.length > 0;
-}
+  },
+);
 
 export const disconnectDiscordBinding$ = command(
-  async (
-    { set },
-    args: {
-      readonly connectionId: string;
-      readonly discordUserId: string;
-      readonly orgId?: string;
-    },
-    signal: AbortSignal,
-  ): Promise<boolean> => {
-    return await deleteDiscordBinding(set(writeDb$), args, signal);
+  async ({ set }, args: DiscordBindingDisconnect, signal: AbortSignal) => {
+    const rows = await set(commitDiscordBindingDisconnect$, args, signal);
+    // Committed changes publish before observing a post-commit cancellation.
+    await publishDiscordChanged(
+      rows.map((row) => {
+        return row.userId;
+      }),
+    );
+    signal.throwIfAborted();
+    return rows.length > 0;
   },
 );
 
@@ -541,7 +574,7 @@ export function discordOrgStatus(args: {
       defaultAgentId: null,
       defaultAgentName: null,
       contextMode: "unavailable",
-      onboarding: "oauth_deferred",
+      onboarding: "oauth",
       dmSelectionConnectionId: null,
       dmBindings: [],
     };

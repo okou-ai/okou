@@ -1989,6 +1989,13 @@
       "when": 1791553159886,
       "tag": "1361_slow_living_mummy",
       "breakpoints": true
+    },
+    {
+      "idx": 1362,
+      "version": "7",
+      "when": 1791563852629,
+      "tag": "1362_discord_oauth_onboarding",
+      "breakpoints": true
     }
   ]
 }

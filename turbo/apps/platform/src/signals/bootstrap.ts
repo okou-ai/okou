@@ -110,6 +110,7 @@ import {
 } from "./external/feature-switch.ts";
 import { checkUnifiedSettingsParam$ } from "./okou-page/settings/settings-dialog.ts";
 import { captureInvitationRedirect$ } from "./invitation-redirect.ts";
+import { captureDiscordApprovalFragment$ } from "./okou-page/discord-oauth-approval.ts";
 import {
   pwaNavigationEnabled$,
   setupPwaNavigation$,
@@ -637,6 +638,7 @@ export const bootstrap$ = command(
     render: () => void,
     signal: AbortSignal,
   ): Promise<void> => {
+    set(captureDiscordApprovalFragment$, signal);
     set(initializeAppVersion$, appVersion);
     set(initBootstrapPhaseTiming$);
     set(captureInvitationRedirect$);

@@ -3,10 +3,14 @@ import { discordChannelCommand } from "./channel";
 import { discordMessageCommand } from "./message";
 import { uploadFileCommand } from "./upload-file";
 import { downloadFileCommand } from "./download-file";
+import { connectCommand } from "./connect";
 
 export const discordCommand = new Command()
   .name("discord")
-  .description("Read Discord conversations, send messages, and transfer files")
+  .description(
+    "Connect Discord, read conversations, and transfer messages or files",
+  )
+  .addCommand(connectCommand)
   .addCommand(discordChannelCommand)
   .addCommand(discordMessageCommand)
   .addCommand(uploadFileCommand)
@@ -15,6 +19,8 @@ export const discordCommand = new Command()
     "after",
     `
 Examples:
+  Connect account:  okou discord connect
+  Install server:   okou discord connect --install
   List channels:    okou discord channel list --json
   Read history:     okou discord message history --channel-id <id> --json
   Read a thread:    okou discord message replies --channel-id <parent-channel-id> --message-id <root-message-id> --json
@@ -23,8 +29,8 @@ Examples:
   Download a file:  okou discord download-file <attachment-id> --channel <id> --message <id> --out report.pdf
 
 Notes:
-  - Uses an existing verified Discord binding; OAuth onboarding is not available.
-  - Your binding is resolved from the current organization. --guild-id is optional; when given, it must match that binding's guild.
+  - Use okou discord connect to open App Works, sign in, and start official Discord consent in your browser.
+  - Read, send, and file commands require a verified binding resolved from the current organization. Their optional --guild-id must match that binding's guild.
   - Attachment URLs are not returned; use download-file with the attachment ID.
   - All Discord IDs are decimal strings. Copy IDs from Discord with Developer Mode enabled.`,
   );

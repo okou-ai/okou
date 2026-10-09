@@ -75,6 +75,7 @@
     "src/signals/services/discord-chat-route-access.service.ts",
     "src/signals/services/discord-config.ts",
     "src/signals/services/discord-data.service.ts",
+    "src/signals/services/discord-identity-ownership.service.ts",
     "src/signals/services/discord-permissions.ts",
     "src/signals/services/discord-provider-access.ts",
     "src/signals/services/discord-queued-launch-context.service.ts",

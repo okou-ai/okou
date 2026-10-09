@@ -154,6 +154,7 @@ const SCHEMA = {
   TELEGRAM_OFFICIAL_BOT_USERNAME: z.string().optional(),
   TELEGRAM_OFFICIAL_WEBHOOK_SECRET: z.string().optional(),
   SLACK_OAUTH_CLIENT_ID: z.string().optional(),
+  DISCORD_OAUTH_CLIENT_SECRET: z.string().min(1).optional(),
   DISCORD_BOT_TOKEN: z.string().min(1).optional(),
   DISCORD_APPLICATION_ID: z
     .string()

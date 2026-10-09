@@ -60,8 +60,10 @@ import {
 } from "./integration-chat-thread-model.service";
 import { listAvailableRunModels$ } from "./run-models.service";
 
-const SETUP_GUIDANCE =
-  "Discord account onboarding is not available yet. An administrator must configure a verified connection before you can use Okou. This command does not connect or verify an account.";
+function discordSetupGuidance(): string {
+  const worksUrl = new URL("/works", env("APP_URL")).toString();
+  return `Open [Works](${worksUrl}) and sign in to Okou to connect your Discord account. If your organization has no server installed, ask an organization admin to install Okou there first. Complete official Discord browser consent; this command does not connect or verify an account.`;
+}
 const UNCONFIRMED_REQUEST =
   "Discord could not confirm this request in time, so no changes were made. Run the command again.";
 // Discord's 3 s initial-response deadline plus a margin for in-flight delivery.
@@ -70,16 +72,19 @@ const STALE_CONTROL =
   "This control has expired or your access has changed. Run the command again.";
 const NO_MODEL_CONVERSATION =
   "Start or enter an existing Okou conversation before using `/okou model`.";
-const HELP = [
-  "**Okou in Discord**",
-  "Mention Okou in a server channel to start a conversation, or message the bot directly.",
-  "`/okou connect` — connection status and setup guidance",
-  "`/okou disconnect` — disconnect your account from this workspace",
-  "`/okou switch` — show the workspace default agent used in Discord",
-  "`/okou model` — choose an allowed model for this conversation",
-  "`/okou org` — choose the workspace for bot DMs",
-  "Existing server threads keep their agent and model unless you run `/okou model` inside them. Long task replies arrive from the bot.",
-].join("\n");
+function discordHelp(): string {
+  return [
+    "**Okou in Discord**",
+    "Mention Okou in a server channel to start a conversation, or message the bot directly.",
+    "`/okou connect` — connect your account through authenticated App Works",
+    "`/okou disconnect` — disconnect your account from this workspace",
+    "`/okou switch` — show the workspace default agent used in Discord",
+    "`/okou model` — choose an allowed model for this conversation",
+    "`/okou org` — choose the workspace for bot DMs",
+    "Existing server threads keep their agent and model unless you run `/okou model` inside them. Long task replies arrive from the bot.",
+    discordSetupGuidance(),
+  ].join("\n");
+}
 
 type AccountInteraction =
   DiscordCommandInteraction | DiscordComponentInteraction;
@@ -150,7 +155,7 @@ const discordOrgPicker$ = command(
     const bindings = await get(discordSenderBindings(args.actor.discordUserId));
     signal.throwIfAborted();
     if (bindings.length === 0) {
-      return discordAccountMessage(SETUP_GUIDANCE);
+      return discordAccountMessage(discordSetupGuidance());
     }
     if (args.selection !== undefined) {
       const selected = bindings.find((binding) => {
@@ -420,7 +425,7 @@ const discordBoundAccountAction$ = command(
         ? `Current agent: ${discordAccountLabel(agent.displayName || agent.name)}.`
         : "No accessible workspace default agent is configured. Ask a workspace admin to set one in Okou.";
       return discordAccountMessage(
-        `Your account already has a verified connection to this workspace. ${agentStatus} Mention Okou in a server channel or message the bot to start chatting.`,
+        `Your account already has a verified connection to this workspace. ${agentStatus} Mention Okou in a server channel or message the bot to start chatting. Manage your connection in [Works](${new URL("/works", env("APP_URL")).toString()}).`,
       );
     }
     if (args.action === "disconnect") {
@@ -483,7 +488,7 @@ const discordAccountAction$ = command(
       interaction.type === 2 ? interaction.data.options[0].name : undefined;
     const action = subcommand ?? control?.action;
     if (action === "help") {
-      return discordAccountMessage(HELP);
+      return discordAccountMessage(discordHelp());
     }
     if (action === "org") {
       return set(
@@ -500,7 +505,7 @@ const discordAccountAction$ = command(
       return set(discordOrgPicker$, { actor, botToken }, signal);
     }
     if (current.kind !== "connected") {
-      return discordAccountMessage(SETUP_GUIDANCE);
+      return discordAccountMessage(discordSetupGuidance());
     }
     if (control && control.connectionId !== current.binding.connectionId) {
       return discordAccountMessage(STALE_CONTROL);

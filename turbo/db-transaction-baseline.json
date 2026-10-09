@@ -87,11 +87,6 @@
       "owner": "sendAgentPhoneVerificationText$"
     },
     {
-      "id": "TX-0020",
-      "file": "turbo/apps/api/src/signals/routes/integrations-discord.ts",
-      "owner": "uninstallDiscordOrganization"
-    },
-    {
       "id": "TX-0021",
       "file": "turbo/apps/api/src/signals/routes/presentation-templates.ts",
       "owner": "updateInner$"
@@ -710,21 +705,6 @@
       "id": "TX-0151",
       "file": "turbo/apps/api/src/signals/services/discord-data.service.ts",
       "owner": "selectDiscordDmBinding"
-    },
-    {
-      "id": "TX-0152",
-      "file": "turbo/apps/api/src/signals/services/discord-data.service.ts",
-      "owner": "deleteDiscordBinding"
-    },
-    {
-      "id": "TX-0153",
-      "file": "turbo/apps/api/src/signals/services/discord-gateway-lifecycle.service.ts",
-      "owner": "commitDiscordGuildRemoval$"
-    },
-    {
-      "id": "TX-0154",
-      "file": "turbo/apps/api/src/signals/services/discord-owner-cleanup.service.ts",
-      "owner": "deleteDiscordUserData$"
     },
     {
       "id": "TX-0155",
@@ -1820,21 +1800,6 @@
       "id": "TX-0382",
       "file": "turbo/packages/db/scripts/test-connector-permission-baseline-retirement.ts",
       "owner": "<module>"
-    },
-    {
-      "id": "TX-0383",
-      "file": "turbo/packages/db/scripts/test-discord-chat-permanent.ts",
-      "owner": "validatePermanentDiscordChat"
-    },
-    {
-      "id": "TX-0384",
-      "file": "turbo/packages/db/scripts/test-discord-foundation-permanent.ts",
-      "owner": "validatePermanentDiscordFoundation/rejectWrite"
-    },
-    {
-      "id": "TX-0385",
-      "file": "turbo/packages/db/scripts/test-discord-foundation-permanent.ts",
-      "owner": "validatePermanentDiscordFoundation"
     },
     {
       "id": "TX-0386",

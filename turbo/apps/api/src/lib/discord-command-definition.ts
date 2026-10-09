@@ -25,12 +25,12 @@ export const DISCORD_OKOU_COMMAND = {
     {
       type: 1,
       name: "switch",
-      description: "Choose an agent for new conversations",
+      description: "Show the workspace default agent used in Discord",
     },
     {
       type: 1,
       name: "model",
-      description: "Choose a model for new conversations",
+      description: "Choose a model for the current Okou conversation",
     },
     {
       type: 1,

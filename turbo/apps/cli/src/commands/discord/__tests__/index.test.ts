@@ -59,7 +59,9 @@ describe("okou discord", () => {
         "channelId",
         "messageId",
         "before",
+        "to",
         "text",
+        "replyTo",
         "json",
       ]) {
         command.setOptionValue(option, undefined);
@@ -263,6 +265,51 @@ describe("okou discord", () => {
     expect(printed).toContain(`${before}  ${secondUrl}`);
   });
 
+  it("sends an exact reply reference without changing the destination", async () => {
+    let body: unknown;
+    server.use(
+      http.post(`${baseUrl}/message`, async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json({
+          messages: [{ id: messageId, channelId, url: messageUrl }],
+        });
+      }),
+    );
+    await runDiscordCommand([
+      "message",
+      "send",
+      "--to",
+      channelId,
+      "--reply-to",
+      before,
+      "--text",
+      "A reply",
+    ]);
+    expect(body).toStrictEqual({
+      channelId,
+      replyToMessageId: before,
+      text: "A reply",
+    });
+    expect(output.mock.calls.flat().join("\n")).toContain(messageUrl);
+  });
+
+  it("prints reference metadata alongside a history message", async () => {
+    server.use(
+      http.get(`${baseUrl}/messages`, () => {
+        return HttpResponse.json({
+          channelId,
+          contextMode: "full",
+          messages: [{ ...message, replyTo: { messageId: before, channelId } }],
+          nextBefore: null,
+        });
+      }),
+    );
+    await runDiscordCommand(["message", "history", "--channel-id", channelId]);
+    expect(output.mock.calls.flat().join("\n")).toContain(
+      `Reply to: ${before} (channel: ${channelId})`,
+    );
+  });
+
   it("prints the message envelope with --json", async () => {
     server.use(
       http.post(`${baseUrl}/message`, () => {
@@ -373,6 +420,19 @@ describe("okou discord", () => {
     {
       args: ["message", "history", "--channel-id", channelId, "--limit", "101"],
       error: "limit",
+    },
+    {
+      args: [
+        "message",
+        "send",
+        "--to",
+        channelId,
+        "--reply-to",
+        "18446744073709551616",
+        "--text",
+        "Reply",
+      ],
+      error: "unsigned 64-bit range",
     },
     {
       args: ["message", "send", "--to", channelId, "--text", "   "],
