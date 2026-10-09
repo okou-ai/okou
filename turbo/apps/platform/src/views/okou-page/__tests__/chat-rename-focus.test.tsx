@@ -359,6 +359,48 @@ test("Keep focus deliberately moved elsewhere while Rename is closing", async ()
   expect(composer).toHaveFocus();
 });
 
+test("Keep F2 blocked until Rename finishes closing, then allow a fresh opening", async () => {
+  const { main, side } = await setupRenamePage();
+  const user = userEvent.setup({ delay: null });
+  threadContainer(side.id).focus();
+  await user.keyboard("{F2}");
+  const dialog = await renameDialog();
+  const finishAnimation = holdElementAnimations(dialog);
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(dialog).toHaveAttribute("data-closed");
+  });
+
+  const mainContainer = threadContainer(main.id);
+  mainContainer.focus();
+  await user.keyboard("{F2}");
+  expect(dialog).toHaveAttribute("data-closed");
+  expect(within(dialog).getByPlaceholderText("Chat title")).toHaveValue(
+    "Side focus chat",
+  );
+
+  await act(() => {
+    finishAnimation();
+    return Promise.resolve();
+  });
+  await waitFor(() => {
+    expect(dialog).not.toBeInTheDocument();
+    expect(mainContainer).toHaveFocus();
+  });
+  await user.keyboard("{F2}");
+  const reopened = await renameDialog();
+  expect(within(reopened).getByPlaceholderText("Chat title")).toHaveValue(
+    "Main focus chat",
+  );
+
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(reopened).not.toBeInTheDocument();
+    expect(mainContainer).toHaveFocus();
+  });
+  expect(threadContainer(side.id)).not.toHaveFocus();
+});
+
 test("Do not restore an old rename session after browser navigation", async () => {
   const { main, side, undisplayed } = await setupRenamePage();
   const user = userEvent.setup({ delay: null });

@@ -85,47 +85,40 @@ export const handleRenameMenuOpenChange$ = command(
   },
 );
 
-export const restoreRenameChatThreadDialogFocus$ = command(({ get, set }) => {
-  const origin = get(internalRenameDialogFocusOrigin$);
-  if (!origin) {
-    return false;
-  }
-  // Base UI resolves a non-tabbable return target to its first tabbable child.
-  // Restore the exact original element after teardown instead.
-  queueMicrotask(() => {
-    if (
-      get(internalRenameDialogFocusOrigin$) !== origin ||
-      get(internalRenameDialogOpen$)
-    ) {
+export const handleRenameDialogOpenChangeComplete$ = command(
+  ({ get, set }, open: boolean) => {
+    if (open) {
       return;
     }
+    const origin = get(internalRenameDialogFocusOrigin$);
     set(internalRenameDialogFocusOrigin$, null);
-    const previousFocus = origin.element;
-    const doc = document;
+    const previousFocus = origin?.element;
+    const active = document.activeElement;
     if (
+      !origin ||
       origin.signal.aborted ||
       !(previousFocus instanceof HTMLElement) ||
-      previousFocus === doc.body ||
+      previousFocus === document.body ||
       !previousFocus.isConnected ||
       previousFocus.closest("[data-closed]") ||
-      doc.querySelector('[role="dialog"]:not([data-closed])') ||
-      (doc.activeElement !== doc.body &&
-        doc.activeElement !== doc.documentElement &&
-        doc.activeElement !== previousFocus)
+      document.querySelector('[role="dialog"]:not([data-closed])') ||
+      (active !== document.body &&
+        active !== document.documentElement &&
+        active !== previousFocus &&
+        !active?.closest("[data-chat-rename-dialog]"))
     ) {
       return;
     }
     previousFocus.focus({ preventScroll: true });
-    // F2 can open Rename without closing its source menu.
+    // F2 can leave its source menu open; its next Escape must behave normally.
     if (
-      doc.activeElement === previousFocus &&
+      document.activeElement === previousFocus &&
       previousFocus.closest('[role="menu"]')
     ) {
       set(internalRenameMenuHandoff$, false);
     }
-  });
-  return false;
-});
+  },
+);
 
 const internalRenameDialogThreadId$ = state<string | null>(null);
 export const renameDialogThreadId$ = computed((get) => {
