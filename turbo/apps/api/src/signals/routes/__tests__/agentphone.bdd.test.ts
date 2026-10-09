@@ -1296,6 +1296,9 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(metadata.selectedModel).toBe("auto");
     await send("/model");
     expect(lastSend(sends).body).toContain("Current: Auto");
+    expect(lastSend(sends).body).toContain(
+      "/model auto - Auto (current, default)",
+    );
   });
 
   it("rejects unavailable personal DM input without silently billing Auto", async () => {

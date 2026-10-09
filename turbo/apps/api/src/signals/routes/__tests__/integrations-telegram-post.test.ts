@@ -955,7 +955,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       };
     }
     const main = await completeDm("start the main DM", 3501);
-    return { actor, sendDm, completeDm, main };
+    return { actor, sendDm, completeDm, main, telegram };
   }
 
   describe.each([
@@ -1092,6 +1092,13 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         },
       );
       expect(autoThread?.selectedModel).toBe("auto");
+      await sendDm("/model", 3513);
+      expect(dm.telegram.sentMessages.at(-1)?.text).toContain(
+        "Current: <b>Auto</b>",
+      );
+      expect(dm.telegram.sentMessages.at(-1)?.text).toContain(
+        "Auto (current, default)",
+      );
     });
   });
 
