@@ -590,7 +590,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
   it("snapshots thread reuse inputs before a CLI session exists", async () => {
     const runnerGroup = configureCanonicalTelegramRunner();
     const fixture = await createTelegramPostFixture({ linkOfficial: true });
-    await useNativeFableSubscription(fixture);
     telegramApiMocks();
     const prompt = "reuse this Telegram thread";
     expect(
@@ -1126,7 +1125,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
   ) {
     const runnerGroup = configureCanonicalTelegramRunner();
     const fixture = await createTelegramPostFixture({ linkOfficial: true });
-    await useNativeFableSubscription(fixture);
     const telegramMocks = telegramApiMocks();
     const botUsername = OFFICIAL_BOT_USERNAME;
     const chatId = -77_201;
@@ -1529,7 +1527,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
     const runnerGroup = configureCanonicalTelegramRunner();
     const fixture = await createTelegramPostFixture({ linkOfficial: true });
-    await useNativeFableSubscription(fixture);
     const telegramMocks = telegramApiMocks();
 
     const response = await postWebhook({
@@ -1572,7 +1569,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
 
   it("preserves a mention-only Telegram request with the preceding group task", async () => {
     const fixture = await createTelegramPostFixture({ linkOfficial: true });
-    await useNativeFableSubscription(fixture);
     const botUsername = OFFICIAL_BOT_USERNAME;
     telegramApiMocks();
 
@@ -1649,7 +1645,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     // dataset; mock that external query like the Runner-backed cases do.
     runsApi.acceptTelemetryIngest();
     const fixture = await createTelegramPostFixture({ linkOfficial: true });
-    await useNativeFableSubscription(fixture);
     telegramApiMocks(OFFICIAL_BOT_TOKEN);
 
     const response = await postWebhook({
