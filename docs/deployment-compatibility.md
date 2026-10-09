@@ -720,6 +720,26 @@ such as `message_end` remain fatal above the 16 MiB line limit. Rolling back
 both components restores the previous oversized-turn failure. No stored data
 migration or API change is required.
 
+## Desktop minimum version 0.51.0 activation
+
+The source-controlled Desktop policy now configures `0.51.0`, the first
+session-authenticated Native release. It becomes active when this API is
+published. Older serving APIs retain their captured disabled policy during
+rollout; the new API rejects legacy host-token registration/claims regardless
+of a claimed version, and rejects Native session hosts below the floor. Native
+`0.51.0` and `0.52.0` remain supported. Heartbeat, authenticated completion/stop,
+sign-in, update feeds, and downloads retain their current contracts.
+
+The published `0.52.0` ZIP is offered by both Squirrel and Sparkle feeds. Sparkle
+marks replacements at or above the floor critical for installed versions below
+it. Keep the Electron ShipIt relaunch bridge. Review an API rollback's bundled
+policy: an older disabled-policy API can restore old admission. Do not retire
+host-token routes or storage until the active policy, claimed-work drain, and
+serving/rollback conditions in [#37997](https://github.com/okou-ai/okou/issues/37997)
+are satisfied. Merge is not evidence that the production floor is active; verify
+the public policy and admission after the API release under
+[#38098](https://github.com/okou-ai/okou/issues/38098).
+
 ## Desktop compatibility policy is source controlled
 
 The API's `src/lib/desktop-compatibility.json` owns the global minimum Desktop
