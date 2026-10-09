@@ -139,6 +139,59 @@ fn malformed_bulk_or_invalid_binding_does_not_run_cleanup() {
 }
 
 #[test]
+fn over_budget_groups_are_rejected_before_guest_cleanup() {
+    let root = tempfile::tempdir().unwrap();
+    let target = root.path().join("mount");
+    fs::create_dir(&target).unwrap();
+    fs::write(target.join("stale"), b"keep").unwrap();
+    let manifest = serde_json::to_vec(&json!({
+        "storageMounts": [{"mountPath": target, "archiveUrl": "file:///unused"}],
+        "cleanupPaths": [target]
+    }))
+    .unwrap();
+    let mount = target.to_str().unwrap();
+    let make = |path: String, content: Vec<u8>| StorageFile {
+        path,
+        mode: 0o640,
+        mtime: 1,
+        content,
+    };
+    for (files, extra) in [
+        (
+            (0..16)
+                .map(|i| make(format!("file-{i}"), vec![0; storage_files::MAX_FILE_BYTES]))
+                .collect::<Vec<_>>(),
+            make("overflow".into(), vec![0]),
+        ),
+        (
+            (0..storage_files::MAX_FILES - 1)
+                .map(|i| make(format!("{i:04}-{}", "a".repeat(123)), Vec::new()))
+                .collect::<Vec<_>>(),
+            make(format!("last-{}", "a".repeat(124)), Vec::new()),
+        ),
+    ] {
+        let mut payload = storage_files::encode(&[(mount, &files)]).unwrap();
+        let extra = storage_files::encode(&[(mount, &[extra])]).unwrap();
+        // One group, a length-prefixed mount, and its file count. Append the
+        // separately valid file to forge an over-budget group below wire limits.
+        let count_offset = 4 + 4 + mount.len();
+        let files_offset = count_offset + 4;
+        payload[count_offset..files_offset]
+            .copy_from_slice(&((files.len() + 1) as u32).to_be_bytes());
+        payload.extend_from_slice(&extra[files_offset..]);
+        assert!(payload.len() < storage_files::MAX_PAYLOAD_BYTES);
+        let mut input = storage_files::INPUT_MAGIC.to_vec();
+        input.extend_from_slice(&(manifest.len() as u32).to_be_bytes());
+        input.extend_from_slice(&manifest);
+        input.extend_from_slice(&(payload.len() as u32).to_be_bytes());
+        input.extend_from_slice(&payload);
+        assert!(!guest_storage_apply::run_storage_files_bytes(&input));
+        assert_eq!(fs::read(target.join("stale")).unwrap(), b"keep");
+        assert_eq!(fs::read_dir(&target).unwrap().count(), 1);
+    }
+}
+
+#[test]
 fn existing_hardlink_is_replaced_without_modifying_its_other_name() {
     let root = tempfile::tempdir().unwrap();
     let target = root.path().join("mount");

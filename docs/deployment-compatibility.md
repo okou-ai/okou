@@ -89,6 +89,22 @@ explicitly invalidate and purge incompatible disposable entries before the new
 reader depends on the change. Host-local status files and independently deployed
 monitoring collectors also require old/new writer and reader analysis.
 
+The extracted storage cache is a separate, host-local cross-version boundary.
+Reader capability must precede producer admission when widening an existing
+cache format. The preparation release accepts the larger bounded v1 shape in
+persisted reads and its bundled Guest, while archive warming and outbound
+selection retain the prior smaller policy. A separate activation release may
+widen those producers only after incompatible readers sharing the cache homes
+have exited, including their active and background work. A healthy replacement
+or drain acknowledgement is not proof of that exit. After enlarged entries can
+exist, rollback tags must contain the preparation release; stopping the new
+writer does not make retained entries readable by earlier versions. The marker
+`.github/rollback-floors/decoded-storage-large-reader` identifies the merged
+preparation commit, not a branch SHA. Preparation alone installs no rollback
+restriction; activation enforces that floor against the selected Runner tag.
+No cache schema adapter, migration, cleanup, or retry after Guest mutation is
+introduced by this sequence.
+
 ## What Requires Compatibility
 
 Compatibility applies to:
