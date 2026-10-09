@@ -14,7 +14,7 @@ fn enable_wss(config: &mut RunConfig, dir: PathBuf) {
             config.exec_config.http.clone(),
             "test-official-token".to_owned(),
         )),
-        guest: Arc::new(runner_wss::UnavailableGuest),
+        guest: runner_remote::guest_duplex::RunGuestChannels::default(),
         fail_accept: None,
     });
 }

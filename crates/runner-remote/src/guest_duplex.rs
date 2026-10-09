@@ -88,14 +88,39 @@ impl RunGuestChannels {
         }
     }
 
+    /// Non-authorizing preflight before spending a one-use ticket. Opening still
+    /// rechecks this same executor-owned assignment and its cancellation epoch.
+    pub fn contains_live_assignment(&self, run_id: RunId, sandbox_id: &str) -> bool {
+        self.entries
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&run_id)
+            .is_some_and(|entry| entry.sandbox_id == sandbox_id && !entry.cancelled.is_cancelled())
+    }
+
     /// Exact in-process lookup; no DB, status file, guessed sandbox or idle cache.
     /// Success requires the provider to confirm Guest worker readiness, not just activation.
     pub async fn open(&self, run_id: RunId) -> io::Result<Channel> {
+        self.open_assignment(run_id, None).await
+    }
+
+    /// Open only the current executor assignment matching the independently
+    /// checked Running sandbox. The optional preflight never grants a channel.
+    pub async fn open_for_sandbox(&self, run_id: RunId, sandbox_id: &str) -> io::Result<Channel> {
+        self.open_assignment(run_id, Some(sandbox_id)).await
+    }
+
+    async fn open_assignment(
+        &self,
+        run_id: RunId,
+        sandbox_id: Option<&str>,
+    ) -> io::Result<Channel> {
         let entry = self
             .entries
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .get(&run_id)
+            .filter(|entry| sandbox_id.is_none_or(|expected| entry.sandbox_id == expected))
             .cloned()
             .ok_or_else(unavailable)?;
         let permit = entry.permits.clone().try_acquire_owned().map_err(|_| {

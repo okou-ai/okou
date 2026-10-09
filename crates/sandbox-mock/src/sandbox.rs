@@ -36,6 +36,7 @@ pub struct MockSandbox {
     source_ip: String,
     run_control_id: Option<String>,
     backing_process: Option<Arc<dyn SandboxBackingProcess>>,
+    guest_duplex: Option<Arc<dyn GuestDuplexAcceptor>>,
     exec_results: Mutex<VecDeque<Result<ExecResult>>>,
     exec_calls: Mutex<Vec<ExecCall>>,
     storage_manifest_calls: Mutex<Vec<StorageManifestCall>>,
@@ -89,6 +90,7 @@ impl MockSandbox {
             source_ip: "10.0.0.1".into(),
             run_control_id: None,
             backing_process: None,
+            guest_duplex: None,
             exec_results: Mutex::new(VecDeque::new()),
             exec_calls: Mutex::new(Vec::new()),
             storage_manifest_calls: Mutex::new(Vec::new()),
@@ -133,6 +135,13 @@ impl MockSandbox {
     /// not affect queued behavior or call observations.
     pub fn with_source_ip(mut self, ip: impl Into<String>) -> Self {
         self.source_ip = ip.into();
+        self
+    }
+
+    /// Provide an external Guest duplex boundary for the explicitly bound Run.
+    /// This does not register or authorize a Runner channel on its own.
+    pub fn with_guest_duplex(mut self, acceptor: Arc<dyn GuestDuplexAcceptor>) -> Self {
+        self.guest_duplex = Some(acceptor);
         self
     }
 
@@ -707,6 +716,12 @@ impl Sandbox for MockSandbox {
 
     fn source_ip(&self) -> &str {
         &self.source_ip
+    }
+
+    fn guest_duplex(&self, expected_run_id: &str) -> Option<Arc<dyn GuestDuplexAcceptor>> {
+        (self.run_control_id.as_deref() == Some(expected_run_id))
+            .then(|| self.guest_duplex.clone())
+            .flatten()
     }
 
     fn bind_run_control(&mut self, run_id: &str) -> Result<()> {

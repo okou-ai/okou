@@ -1,7 +1,7 @@
 //! Ticket admission on the owning Runner. Caddy's URL chooses a process; only
 //! the API ticket AND an exact local live run-to-sandbox assignment grant data.
-//! #37026 supplies the private Guest attachment; until then runtime attachment
-//! deliberately fails closed rather than acknowledging a ticket without a Guest.
+//! The executor's shared registry supplies the exact live Guest attachment;
+//! unavailable or cancelled assignments fail closed before any acknowledgement.
 
 use std::io;
 use std::sync::Arc;
@@ -13,11 +13,12 @@ use futures_util::{SinkExt, StreamExt};
 use runner_lifecycle::active_runs::{ActiveRunReuseState, ActiveRuns};
 use runner_lifecycle::status::StatusTracker;
 use runner_provider::http::HttpClient;
+use runner_remote::guest_duplex::RunGuestChannels;
 use runner_types::ids::RunId;
 use sandbox::SandboxId;
 use serde::{Deserialize, Serialize};
 use tokio::net::UnixStream;
-use tokio::sync::{Semaphore, mpsc};
+use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 use tokio_tungstenite::tungstenite::{
     handshake::server::{Callback, ErrorResponse, Request, Response},
@@ -30,7 +31,6 @@ const PRE_AUTH_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_FRAME: usize = 64 * 1024;
 const MAX_CONNECTIONS: usize = 32;
 const MAX_HANDSHAKES: usize = 16;
-const MAX_QUEUE_FRAMES: usize = 16; // At most 1 MiB per direction.
 const CONSUME_ROUTE: Route = Route::new(Method::Post, "/api/runners/wss/tickets/consume");
 
 #[derive(Deserialize)]
@@ -119,48 +119,11 @@ impl TicketConsumer for ApiTicketConsumer {
     }
 }
 
-/// #37026 must provide a channel whose attachment atomically verifies the
-/// same live sandbox; bounded channels retain per-direction frame ordering.
-pub(super) struct GuestConnection {
-    pub incoming: mpsc::Sender<Vec<u8>>,
-    pub outgoing: mpsc::Receiver<Vec<u8>>,
-}
-
-#[async_trait]
-pub(super) trait GuestAttach: Send + Sync {
-    fn available(&self) -> bool {
-        true
-    }
-    async fn attach(
-        &self,
-        run: RunId,
-        sandbox: SandboxId,
-        max_queue_frames: usize,
-    ) -> Option<GuestConnection>;
-}
-
-pub(super) struct UnavailableGuest;
-
-#[async_trait]
-impl GuestAttach for UnavailableGuest {
-    fn available(&self) -> bool {
-        false
-    }
-    async fn attach(
-        &self,
-        _run: RunId,
-        _sandbox: SandboxId,
-        _max_queue_frames: usize,
-    ) -> Option<GuestConnection> {
-        None
-    }
-}
-
 pub(super) struct Admission {
     pub runner_id: Uuid,
     pub origin: Option<String>,
     pub consumer: Arc<dyn TicketConsumer>,
-    pub guest: Arc<dyn GuestAttach>,
+    pub guest: RunGuestChannels,
     pub active_runs: ActiveRuns,
     pub status: Arc<StatusTracker>,
     connections: Arc<Semaphore>,
@@ -173,7 +136,7 @@ impl Admission {
         runner_id: Uuid,
         hostname: Option<&str>,
         consumer: Arc<dyn TicketConsumer>,
-        guest: Arc<dyn GuestAttach>,
+        guest: RunGuestChannels,
         active_runs: ActiveRuns,
         status: Arc<StatusTracker>,
     ) -> Self {
@@ -205,7 +168,7 @@ impl Admission {
             runner_id: self.runner_id,
             origin: self.origin.clone(),
             consumer: Arc::clone(&self.consumer),
-            guest: Arc::clone(&self.guest),
+            guest: self.guest.clone(),
             active_runs: self.active_runs.clone(),
             status: Arc::clone(&self.status),
         };
@@ -291,7 +254,7 @@ struct ConnectionContext {
     runner_id: Uuid,
     origin: Option<String>,
     consumer: Arc<dyn TicketConsumer>,
-    guest: Arc<dyn GuestAttach>,
+    guest: RunGuestChannels,
     active_runs: ActiveRuns,
     status: Arc<StatusTracker>,
 }
@@ -363,11 +326,15 @@ async fn handle(
         }
         // Validate local ownership before spending a single-use ticket; repeat
         // immediately after consumption to close the run-end/API-call race.
-        if !ctx.guest.available() {
-            return None;
-        }
         let live = ctx.active_runs.watch_live_run(first.run_id)?;
         let sandbox_id = ctx.status.running_sandbox(first.run_id).await?;
+        let sandbox_key = sandbox_id.to_string();
+        if !ctx
+            .guest
+            .contains_live_assignment(first.run_id, &sandbox_key)
+        {
+            return None;
+        }
         let origin = ctx.origin.as_deref()?;
         if !ctx
             .consumer
@@ -383,33 +350,49 @@ async fn handle(
         }
         let guest = ctx
             .guest
-            .attach(first.run_id, sandbox_id, MAX_QUEUE_FRAMES)
-            .await?;
+            .open_for_sandbox(first.run_id, &sandbox_key)
+            .await
+            .ok()?;
+        let guest_cancelled = guest.cancellation();
         if *live.borrow() == ActiveRunReuseState::Released
             || ctx.status.running_sandbox(first.run_id).await != Some(sandbox_id)
         {
             return None;
         }
-        if ws
-            .send(Message::Text(r#"{"type":"auth.ok"}"#.into()))
-            .await
-            .is_err()
-        {
-            return None;
+        tokio::select! {
+            biased;
+            () = guest_cancelled.cancelled() => return None,
+            result = ws.send(Message::Text(r#"{"type":"auth.ok"}"#.into())) => {
+                if result.is_err() { return None; }
+            }
         }
         Some((ws, first.run_id, sandbox_id, live, guest))
     })
     .await;
-    let Ok(Some((mut ws, run_id, sandbox_id, mut live, mut guest))) = admitted else {
+    let Ok(Some((mut ws, run_id, sandbox_id, mut live, guest))) = admitted else {
         return;
     };
     drop(handshake);
-    // No detached reader/writer tasks, no unbounded queue. The adapter owns
-    // channels of MAX_QUEUE_FRAMES at most; a slow receiver backpressures both
-    // directions rather than allocating while a peer stalls.
+    let observer = guest.cancellation();
+    let mut guest_cancelled = Box::pin(observer.cancelled());
+    let (mut incoming, outgoing) = guest.split();
+    // Native frame reads are not cancellation-safe partway through a header.
+    // Unfold owns the in-flight receive across next() cancellations caused by
+    // status ticks or client writes. Never resume a discarded partial read.
+    let frames = futures_util::stream::unfold(outgoing, |mut receiver| async move {
+        match receiver.recv().await {
+            Ok(Some(frame)) => Some((Ok(frame), receiver)),
+            Ok(None) => None,
+            Err(error) => Some((Err(error), receiver)),
+        }
+    });
+    tokio::pin!(frames);
+    // No bridge tasks or application staging queues. Each direction owns at
+    // most one bounded frame while native Unix/vsock IO applies backpressure.
     let mut run_check = tokio::time::interval(Duration::from_millis(250));
     let peer_closed = 'connection: loop {
         tokio::select! {
+            () = &mut guest_cancelled => break false,
             changed = live.changed() => {
                 if changed.is_err() || *live.borrow() == ActiveRunReuseState::Released { break false }
             }
@@ -418,8 +401,8 @@ async fn handle(
             }
             inbound = ws.next() => match inbound {
                 Some(Ok(Message::Binary(bytes))) if bytes.len() <= MAX_FRAME => {
-                    if !forward_while_live(guest.incoming.send(bytes.to_vec()), &ctx,
-                        run_id, sandbox_id, &mut live, &mut run_check).await {
+                    if !forward_while_live(incoming.send(&bytes), &ctx,
+                        run_id, sandbox_id, &mut live, &mut run_check, &mut guest_cancelled).await {
                         break 'connection false;
                     }
                 }
@@ -427,10 +410,10 @@ async fn handle(
                 Some(Ok(Message::Close(_))) => break true,
                 None | Some(_) => break false,
             },
-            outbound = guest.outgoing.recv() => match outbound {
-                Some(bytes) if bytes.len() <= MAX_FRAME => {
+            outbound = frames.next() => match outbound {
+                Some(Ok(bytes)) if bytes.len() <= MAX_FRAME => {
                     if !forward_while_live(ws.send(Message::Binary(bytes.into())), &ctx,
-                        run_id, sandbox_id, &mut live, &mut run_check).await {
+                        run_id, sandbox_id, &mut live, &mut run_check, &mut guest_cancelled).await {
                         break 'connection false;
                     }
                 }
@@ -449,16 +432,18 @@ async fn handle(
     drop(ws);
 }
 
-async fn forward_while_live<F, E>(
+async fn forward_while_live<F, E, C>(
     forward: F,
     ctx: &ConnectionContext,
     run_id: RunId,
     sandbox_id: SandboxId,
     live: &mut tokio::sync::watch::Receiver<ActiveRunReuseState>,
     run_check: &mut tokio::time::Interval,
+    guest_cancelled: &mut C,
 ) -> bool
 where
     F: std::future::Future<Output = Result<(), E>>,
+    C: std::future::Future<Output = ()> + Unpin,
 {
     if *live.borrow() == ActiveRunReuseState::Released {
         return false;
@@ -471,6 +456,7 @@ where
     loop {
         tokio::select! {
             biased;
+            () = &mut *guest_cancelled => return false,
             _ = live.changed() => return false,
             _ = &mut deadline => return false,
             _ = run_check.tick() => {

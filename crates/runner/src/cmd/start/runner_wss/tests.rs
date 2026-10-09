@@ -4,8 +4,12 @@ use std::sync::Mutex;
 
 use futures_util::{SinkExt, StreamExt};
 use runner_lifecycle::active_runs::ActiveRunGuard;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use runner_remote::guest_duplex::Registration;
+use sandbox::{AcceptedGuestDuplex, GuestDuplexAcceptor, Sandbox};
+use sandbox_mock::MockSandbox;
+use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
 use tokio::net::{UnixListener, UnixStream};
+use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::protocol::Message;
 
 struct MockTickets {
@@ -43,32 +47,49 @@ impl TicketConsumer for HeldTickets {
     }
 }
 
-struct EchoGuest {
-    run: RunId,
+struct GuestBoundary {
     sandbox: SandboxId,
+    echo: bool,
+    peers: mpsc::Sender<DuplexStream>,
+    cancelled: CancellationToken,
+    tasks: Mutex<JoinSet<()>>,
 }
 
 #[async_trait]
-impl GuestAttach for EchoGuest {
-    async fn attach(
-        &self,
-        run: RunId,
-        sandbox: SandboxId,
-        max_queue_frames: usize,
-    ) -> Option<GuestConnection> {
-        if run != self.run || sandbox != self.sandbox || max_queue_frames != MAX_QUEUE_FRAMES {
-            return None;
-        }
-        let (incoming, mut to_guest) = mpsc::channel(max_queue_frames);
-        let (from_guest, outgoing) = mpsc::channel(max_queue_frames);
-        tokio::spawn(async move {
-            while let Some(frame) = to_guest.recv().await {
-                if from_guest.send(frame).await.is_err() {
-                    break;
+impl GuestDuplexAcceptor for GuestBoundary {
+    async fn accept(&self) -> io::Result<AcceptedGuestDuplex> {
+        let (host, mut guest) = tokio::io::duplex(if self.echo { 128 * 1024 } else { 1 });
+        if self.echo {
+            self.tasks.lock().unwrap().spawn(async move {
+                loop {
+                    let mut header = [0; 4];
+                    if guest.read_exact(&mut header).await.is_err() {
+                        break;
+                    }
+                    let size = u32::from_be_bytes(header) as usize;
+                    if size > MAX_FRAME {
+                        break;
+                    }
+                    let mut bytes = vec![0; size];
+                    if guest.read_exact(&mut bytes).await.is_err()
+                        || guest.write_all(&header).await.is_err()
+                        || guest.write_all(&bytes).await.is_err()
+                    {
+                        break;
+                    }
                 }
-            }
-        });
-        Some(GuestConnection { incoming, outgoing })
+            });
+        } else {
+            self.peers
+                .send(guest)
+                .await
+                .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "test Guest peer closed"))?;
+        }
+        Ok(AcceptedGuestDuplex {
+            sandbox_id: self.sandbox.to_string(),
+            stream: Box::new(host),
+            cancelled: self.cancelled.clone(),
+        })
     }
 }
 
@@ -78,11 +99,18 @@ struct Fixture {
     run: RunId,
     sandbox: SandboxId,
     guard: ActiveRunGuard,
+    registration: Option<Registration>,
+    assignment_cancelled: CancellationToken,
+    peers: tokio::sync::Mutex<mpsc::Receiver<DuplexStream>>,
     ctx: ConnectionContext,
 }
 
 impl Fixture {
     async fn new() -> Self {
+        Self::with_echo(true).await
+    }
+
+    async fn with_echo(echo: bool) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let runner = Uuid::new_v4();
         let run = RunId::new_v4();
@@ -91,6 +119,20 @@ impl Fixture {
         let guard = active_runs.register(run, None, "test".to_owned());
         let status = Arc::new(StatusTracker::new(dir.path().join("status"), 1, None, None));
         status.add_run(run, sandbox).await.unwrap();
+        let guest = RunGuestChannels::default();
+        let assignment_cancelled = CancellationToken::new();
+        let (peers_tx, peers_rx) = mpsc::channel(8);
+        let acceptor = Arc::new(GuestBoundary {
+            sandbox,
+            echo,
+            peers: peers_tx,
+            cancelled: assignment_cancelled.clone(),
+            tasks: Mutex::new(JoinSet::new()),
+        });
+        let mut provider = MockSandbox::new(sandbox.to_string()).with_guest_duplex(acceptor);
+        provider.bind_run_control(&run.to_string()).unwrap();
+        let registration = guest.register(run, &provider, &CancellationToken::new());
+        assert!(registration.is_some());
         let ctx = ConnectionContext {
             runner_id: runner,
             origin: canonical_origin("runner.okou.ai"),
@@ -98,7 +140,7 @@ impl Fixture {
                 run,
                 seen: Mutex::new(HashSet::new()),
             }),
-            guest: Arc::new(EchoGuest { run, sandbox }),
+            guest,
             active_runs,
             status,
         };
@@ -108,6 +150,9 @@ impl Fixture {
             run,
             sandbox,
             guard,
+            registration,
+            assignment_cancelled,
+            peers: tokio::sync::Mutex::new(peers_rx),
             ctx,
         }
     }
@@ -128,7 +173,7 @@ impl Fixture {
             runner_id: self.ctx.runner_id,
             origin: self.ctx.origin.clone(),
             consumer: Arc::clone(&self.ctx.consumer),
-            guest: Arc::clone(&self.ctx.guest),
+            guest: self.ctx.guest.clone(),
             active_runs: self.ctx.active_runs.clone(),
             status: Arc::clone(&self.ctx.status),
         };
@@ -372,9 +417,9 @@ async fn absent_local_run_does_not_redeem_ticket() {
 }
 
 #[tokio::test]
-async fn unavailable_production_guest_rejects_before_consuming_ticket() {
+async fn absent_executor_registration_rejects_before_consuming_ticket() {
     let mut fixture = Fixture::new().await;
-    fixture.ctx.guest = Arc::new(UnavailableGuest);
+    drop(fixture.registration.take());
     let ticket = "A".repeat(43);
     let (client, task) = fixture.connect(&format!("/ws/{}", fixture.runner)).await;
     let mut ws = client.unwrap();
@@ -382,7 +427,7 @@ async fn unavailable_production_guest_rejects_before_consuming_ticket() {
     denied(&mut ws).await;
     task.await.unwrap();
 
-    // The currently inert production adapter must not spend a one-use ticket.
+    // A Running status/guard alone must not spend a one-use ticket.
     assert!(
         fixture
             .ctx
@@ -532,6 +577,7 @@ async fn blocked_forward_observes_status_removal_without_run_guard_release() {
             sandbox,
             &mut live,
             &mut run_check,
+            &mut std::future::pending(),
         )
         .await
     });
@@ -551,6 +597,58 @@ async fn blocked_forward_observes_status_removal_without_run_guard_release() {
         !result
             .expect("status loss must cancel a blocked send without waiting 15 seconds")
             .unwrap()
+    );
+    drop(fixture.guard);
+}
+
+#[tokio::test]
+async fn blocked_forward_observes_native_guest_cancellation_with_live_run() {
+    let fixture = Fixture::new().await;
+    let mut channel = fixture
+        .ctx
+        .guest
+        .open_for_sandbox(fixture.run, &fixture.sandbox.to_string())
+        .await
+        .unwrap();
+    let observer = channel.cancellation();
+    let ctx = fixture.ctx;
+    let run = fixture.run;
+    let sandbox = fixture.sandbox;
+    let mut live = ctx.active_runs.watch_live_run(run).unwrap();
+    let (sender, _held_receiver) = mpsc::channel(1);
+    sender.send(vec![0]).await.unwrap();
+    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+    let task = tokio::spawn(async move {
+        let mut guest_cancelled = Box::pin(observer.cancelled());
+        let mut run_check = tokio::time::interval(Duration::from_millis(250));
+        forward_while_live(
+            async {
+                started_tx.send(()).unwrap();
+                sender.send(vec![1]).await
+            },
+            &ctx,
+            run,
+            sandbox,
+            &mut live,
+            &mut run_check,
+            &mut guest_cancelled,
+        )
+        .await
+    });
+    tokio::time::timeout(Duration::from_secs(2), started_rx)
+        .await
+        .unwrap()
+        .unwrap();
+    fixture.assignment_cancelled.cancel();
+    assert!(
+        !tokio::time::timeout(Duration::from_secs(2), task)
+            .await
+            .unwrap()
+            .unwrap()
+    );
+    assert_eq!(
+        channel.send(b"cancelled").await.err().unwrap().kind(),
+        io::ErrorKind::NotConnected
     );
     drop(fixture.guard);
 }
@@ -580,7 +678,16 @@ async fn blocked_forward_keeps_its_frame_across_live_status_checks() {
             result
         });
         let mut run_check = tokio::time::interval(Duration::from_millis(250));
-        forward_while_live(forward, &ctx, run, sandbox, &mut live, &mut run_check).await
+        forward_while_live(
+            forward,
+            &ctx,
+            run,
+            sandbox,
+            &mut live,
+            &mut run_check,
+            &mut std::future::pending(),
+        )
+        .await
     });
     // No channel capacity or Run-watch event can wake this blocked send. Its
     // second poll follows the periodic status check; do not add an active sleep.
@@ -604,13 +711,161 @@ async fn blocked_forward_keeps_its_frame_across_live_status_checks() {
 }
 
 #[tokio::test]
+async fn real_guest_partial_header_survives_interleaved_client_forwarding() {
+    let fixture = Fixture::with_echo(false).await;
+    let (client, task) = fixture.connect(&format!("/ws/{}", fixture.runner)).await;
+    let mut ws = client.unwrap();
+    ws.send(first(fixture.run, &"A".repeat(43))).await.unwrap();
+    assert_eq!(
+        ws.next().await.unwrap().unwrap().into_text().unwrap(),
+        r#"{"type":"auth.ok"}"#
+    );
+    let mut peer = fixture.peers.lock().await.recv().await.unwrap();
+    // Capacity one means the second byte can only be written after the first
+    // was consumed. The native receive is now pending partway through a header.
+    tokio::time::timeout(Duration::from_secs(2), peer.write_all(&[0, 0]))
+        .await
+        .unwrap()
+        .unwrap();
+    ws.send(Message::Binary(b"other".to_vec().into()))
+        .await
+        .unwrap();
+    let mut sent = [0; 9];
+    tokio::time::timeout(Duration::from_secs(2), peer.read_exact(&mut sent))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(&sent, b"\0\0\0\x05other");
+    tokio::time::timeout(Duration::from_secs(2), peer.write_all(b"\0\x03abc"))
+        .await
+        .unwrap()
+        .unwrap();
+    let received = tokio::time::timeout(Duration::from_secs(2), ws.next())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert_eq!(received.into_data(), b"abc".as_slice());
+    ws.close(None).await.unwrap();
+    task.await.unwrap();
+}
+
+#[tokio::test]
+async fn real_guest_assignment_cancel_closes_idle_wss_without_run_status_loss() {
+    let fixture = Fixture::new().await;
+    let (client, task) = fixture.connect(&format!("/ws/{}", fixture.runner)).await;
+    let mut ws = client.unwrap();
+    ws.send(first(fixture.run, &"A".repeat(43))).await.unwrap();
+    assert_eq!(
+        ws.next().await.unwrap().unwrap().into_text().unwrap(),
+        r#"{"type":"auth.ok"}"#
+    );
+    assert_eq!(
+        fixture.ctx.status.running_sandbox(fixture.run).await,
+        Some(fixture.sandbox)
+    );
+    assert!(
+        fixture
+            .ctx
+            .active_runs
+            .watch_live_run(fixture.run)
+            .is_some()
+    );
+    fixture.assignment_cancelled.cancel();
+    denied(&mut ws).await;
+    tokio::time::timeout(Duration::from_secs(2), task)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        fixture.ctx.status.running_sandbox(fixture.run).await,
+        Some(fixture.sandbox)
+    );
+}
+
+#[tokio::test]
+async fn running_sandbox_must_match_executor_assignment_before_consumption() {
+    let fixture = Fixture::new().await;
+    let replacement = SandboxId::new_v4();
+    fixture
+        .ctx
+        .status
+        .remove_run_if_matching(fixture.run, fixture.sandbox)
+        .await
+        .unwrap();
+    fixture
+        .ctx
+        .status
+        .add_run(fixture.run, replacement)
+        .await
+        .unwrap();
+    let (client, task) = fixture.connect(&format!("/ws/{}", fixture.runner)).await;
+    let mut ws = client.unwrap();
+    let ticket = "A".repeat(43);
+    ws.send(first(fixture.run, &ticket)).await.unwrap();
+    denied(&mut ws).await;
+    task.await.unwrap();
+    assert!(
+        fixture
+            .ctx
+            .consumer
+            .consume(
+                fixture.run,
+                fixture.runner,
+                "wss://runner.okou.ai:443",
+                &ticket
+            )
+            .await
+    );
+}
+
+#[tokio::test]
+async fn real_registry_eight_stream_cap_and_close_release_are_preserved() {
+    let fixture = Fixture::new().await;
+    let mut clients = Vec::new();
+    for token in b'A'..=b'H' {
+        let (client, task) = fixture.connect(&format!("/ws/{}", fixture.runner)).await;
+        let mut ws = client.unwrap();
+        ws.send(first(fixture.run, &(token as char).to_string().repeat(43)))
+            .await
+            .unwrap();
+        assert_eq!(
+            ws.next().await.unwrap().unwrap().into_text().unwrap(),
+            r#"{"type":"auth.ok"}"#
+        );
+        clients.push((ws, task));
+    }
+    let (client, task) = fixture.connect(&format!("/ws/{}", fixture.runner)).await;
+    let mut ws = client.unwrap();
+    ws.send(first(fixture.run, &"I".repeat(43))).await.unwrap();
+    denied(&mut ws).await;
+    task.await.unwrap();
+    let (mut released, task) = clients.pop().unwrap();
+    released.close(None).await.unwrap();
+    task.await.unwrap();
+    let (client, task) = fixture.connect(&format!("/ws/{}", fixture.runner)).await;
+    let mut ws = client.unwrap();
+    ws.send(first(fixture.run, &"J".repeat(43))).await.unwrap();
+    assert_eq!(
+        ws.next().await.unwrap().unwrap().into_text().unwrap(),
+        r#"{"type":"auth.ok"}"#
+    );
+    ws.close(None).await.unwrap();
+    task.await.unwrap();
+    for (mut ws, task) in clients {
+        ws.close(None).await.unwrap();
+        task.await.unwrap();
+    }
+}
+
+#[tokio::test]
 async fn handshake_capacity_and_pre_auth_deadline_are_bounded() {
     let fixture = Fixture::new().await;
     let mut admission = Admission::new(
         fixture.runner,
         Some("runner.okou.ai"),
         Arc::clone(&fixture.ctx.consumer),
-        Arc::clone(&fixture.ctx.guest),
+        fixture.ctx.guest.clone(),
         fixture.ctx.active_runs.clone(),
         Arc::clone(&fixture.ctx.status),
     );

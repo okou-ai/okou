@@ -13,7 +13,7 @@ runner-types.workspace = true
 chrono = { workspace = true, features = ["now", "serde"] }
 hex = { workspace = true, features = ["std"] }
 libc = { workspace = true, features = ["std"] }
-nix = { workspace = true, features = ["fs", "process", "signal", "user"] }
+nix = { workspace = true, features = ["fs", "process", "signal", "socket", "user"] }
 rustix = { workspace = true, features = ["fs", "process", "std"] }
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
