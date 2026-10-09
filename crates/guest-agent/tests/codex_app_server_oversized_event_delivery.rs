@@ -15,6 +15,41 @@ const SECRET: &str = "delivery-secret-value";
 const DELIVERY_MARKER: &str = "bytes truncated for delivery";
 const FALLBACK_MARKER: &str = "[event content truncated for delivery]";
 
+#[derive(Clone, Copy, serde::Serialize)]
+#[serde(tag = "type")]
+enum CodexOutput<'a> {
+    #[serde(rename = "input_image")]
+    Image { image_url: &'a str },
+    #[serde(rename = "input_text")]
+    Text { text: &'a str },
+}
+
+fn image(url: &str) -> CodexOutput<'_> {
+    CodexOutput::Image { image_url: url }
+}
+
+#[test]
+fn borrowed_codex_output_fixtures_preserve_canonical_bytes() {
+    for url in ["", "data:image/png;base64,AA==", "你好\"\\\n\0"] {
+        for count in [0, 1, 11] {
+            let actual = std::iter::once(image(url))
+                .chain(std::iter::repeat_n(CodexOutput::Text { text: url }, count))
+                .collect::<Vec<_>>();
+            let expected =
+                std::iter::once(serde_json::json!({"type":"input_image", "image_url":url}))
+                    .chain(std::iter::repeat_n(
+                        serde_json::json!({"type":"input_text", "text":url}),
+                        count,
+                    ))
+                    .collect::<Vec<_>>();
+            assert_eq!(
+                serde_json::json!(actual).to_string(),
+                serde_json::json!(expected).to_string()
+            );
+        }
+    }
+}
+
 #[tokio::test]
 async fn codex_app_server_reduces_oversized_events_before_delivery()
 -> Result<(), Box<dyn std::error::Error>> {
@@ -59,7 +94,6 @@ async fn codex_app_server_reduces_oversized_events_before_delivery()
         "data:image/png;base64,{}",
         delivery_image::png_base64(1024, 1024)?
     );
-    let image = |url: &str| serde_json::json!({"type":"input_image","image_url":url});
     // A few thousand entries still exceed the reducer's candidate bound;
     // long content keeps the event oversized without allocating 100,000 objects.
     let structure_text = "bounded-content".repeat(80);
@@ -67,7 +101,7 @@ async fn codex_app_server_reduces_oversized_events_before_delivery()
         {"type":"functionCallOutput","id":"small-image","name":"read","output":[image(&small_image)]},
         {"type":"functionCallOutput","id":"large-image","name":"read","namespace":"tools","output":[image(&large_image)]},
         {"type":"functionCallOutput","id":"aggregate-images","name":"read","output":[image(&half_image),image(&half_image),image(&small_image)]},
-        {"type":"functionCallOutput","id":"structure-output","name":"read","namespace":"tools","output":std::iter::once(image(&half_image)).chain(std::iter::repeat_n(serde_json::json!({"type":"input_text","text":structure_text}),4_100)).collect::<Vec<_>>()},
+        {"type":"functionCallOutput","id":"structure-output","name":"read","namespace":"tools","output":std::iter::once(image(&half_image)).chain(std::iter::repeat_n(CodexOutput::Text { text: &structure_text },4_100)).collect::<Vec<_>>()},
         {"type":"commandExecution","id":"failed-command","command":"false","status":"failed","exitCode":7,"durationMs":42,"aggregatedOutput":format!("failed-output-head-{}-failed-output-tail", "x".repeat(MAX_REQUEST_BYTES))}
     ]);
     let collaboration_items = [

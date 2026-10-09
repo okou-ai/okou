@@ -194,7 +194,10 @@ Move large owned content into a `Map` envelope instead of rebuilding it through
 the macro. Retain the original field insertion order for `preserve_order` builds
 without unchecked indexing or new panic paths. Consume a parsed event when
 normalizing it for an exact comparison; keep independent expected snapshots and complete canonical
-byte oracles in both map-order configurations.
+byte oracles in both map-order configurations. When a fixture exists only to be
+serialized, borrow its fields in a serializable descriptor rather than building
+an intermediate owned `Value`. Share invariant compressed fixture bytes within
+a test, while retaining every independent source file, lock and actual decode.
 
 Keep real process/socket deadlines, full payload/file/pixel boundaries, key/KDF
 strengths, every assertion and actual retained image buffers. Compare complete
