@@ -1,4 +1,5 @@
-import { createHash, randomUUID } from "node:crypto";
+import { publicChatActor } from "./helpers/public-chat-actor";
+import { randomUUID } from "node:crypto";
 import { PI_MEMORY_ROOT } from "@okouai/api-contracts/contracts/runners";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it } from "vitest";
@@ -11,7 +12,6 @@ import {
   createChatEventsFixture,
   type PromptMessage,
   requireOrgId,
-  createGptUsagePricingResolution,
   okouTokenFromClaim,
   userMessages,
 } from "./helpers/chat-events-fixture";
@@ -20,7 +20,6 @@ const context = testContext();
 const {
   bdd,
   api,
-  webhooks,
   chat,
   entitledChatActor,
   configureSubscriptionPiModel,
@@ -35,61 +34,57 @@ const {
   mockPiResourceArchiveDownloads,
 } = createChatEventsFixture(context);
 
-// Completion-webhook carriers are claimed through the native Runner protocol
-// before their launch snapshot is replaced. The fixture's default Sonnet
-// policy is Pi-eligible, so select the Fable native route for those carriers.
-async function entitledNativeCarrierActor(): Promise<
-  Awaited<ReturnType<typeof entitledChatActor>>
-> {
-  const fixture = await entitledChatActor();
-  await api.updateUserModelPreference(fixture.actor, "claude-fable-5-1");
-  return fixture;
-}
-
 async function expectAgentTokenThreadOwnershipBoundaries(args: {
+  readonly own: Awaited<ReturnType<typeof publicChatActor>>["run"];
   readonly agentId: string;
   readonly orgId: string;
   readonly sourceToken: string;
 }): Promise<void> {
   const crossUser = bdd.user({ orgId: args.orgId });
-  const crossUserThread = await chat.createThread(crossUser, {
-    agentId: args.agentId,
+  const crossUserThread = await args.own(() => {
+    return chat.createThread(crossUser, { agentId: args.agentId });
   });
-  const crossUserSend = await requestSendEventWithBearer(
-    args.sourceToken,
-    {
-      agentId: args.agentId,
-      threadId: crossUserThread.id,
-      prompt: "reject cross-user delegated memory admission",
-    },
-    [404],
-  );
+  const crossUserSend = await args.own(() => {
+    return requestSendEventWithBearer(
+      args.sourceToken,
+      {
+        agentId: args.agentId,
+        threadId: crossUserThread.id,
+        prompt: "reject cross-user delegated memory admission",
+      },
+      [404],
+    );
+  });
   expect(crossUserSend.status).toBe(404);
 
-  const crossOrg = await entitledChatActor();
-  const crossOrgThread = await chat.createThread(crossOrg.actor, {
-    agentId: crossOrg.agentId,
+  const crossOrg = await publicChatActor(context);
+  const crossOrgThread = await crossOrg.run(() => {
+    return chat.createThread(crossOrg.actor, { agentId: crossOrg.agentId });
   });
-  const crossOrgSend = await requestSendEventWithBearer(
-    args.sourceToken,
-    {
-      agentId: crossOrg.agentId,
-      threadId: crossOrgThread.id,
-      prompt: "reject cross-org delegated memory admission",
-    },
-    [404],
-  );
+  const crossOrgSend = await crossOrg.run(() => {
+    return requestSendEventWithBearer(
+      args.sourceToken,
+      {
+        agentId: crossOrg.agentId,
+        threadId: crossOrgThread.id,
+        prompt: "reject cross-org delegated memory admission",
+      },
+      [404],
+    );
+  });
   expect(crossOrgSend.status).toBe(404);
 
-  const unownedThreadSend = await requestSendEventWithBearer(
-    args.sourceToken,
-    {
-      agentId: args.agentId,
-      threadId: randomUUID(),
-      prompt: "reject unowned-thread delegated memory admission",
-    },
-    [404],
-  );
+  const unownedThreadSend = await args.own(() => {
+    return requestSendEventWithBearer(
+      args.sourceToken,
+      {
+        agentId: args.agentId,
+        threadId: randomUUID(),
+        prompt: "reject unowned-thread delegated memory admission",
+      },
+      [404],
+    );
+  });
   expect(unownedThreadSend.status).toBe(404);
 }
 
@@ -131,15 +126,25 @@ async function expectAgentChatProvenance(args: {
 
 describe("CHAT-02: model-first routing", () => {
   it("refreshes user memory from another Thread while resuming native Pi history", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const {
+      run: own,
+      actor,
+      agentId,
+      runnerGroup,
+      claimChatRun,
+      sendChatRun,
+    } = await publicChatActor(context);
     const orgId = requireOrgId(actor);
-    const usagePricingResolution = await createGptUsagePricingResolution();
-    await configureSubscriptionPiModel(actor, {}, "gpt-6-luna");
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId },
-      { [FeatureSwitchKey.PiMemory]: true },
-    );
+    await own(async () => {
+      return await configureSubscriptionPiModel(actor, {}, "gpt-6-luna");
+    });
+    await own(async () => {
+      return await updateFeatureSwitchesForUser(
+        context,
+        { ...actor, orgId },
+        { [FeatureSwitchKey.PiMemory]: true },
+      );
+    });
     mockPiResourceArchiveDownloads();
     const historyObjects = mockPiCheckpointObjectStore();
 
@@ -159,14 +164,15 @@ describe("CHAT-02: model-first routing", () => {
     if (!initialMemory) {
       throw new Error("Expected user memory in the first Pi Run");
     }
-    await completeSandboxFirstPiRun({
-      actor,
-      answer: "First Pi turn completed",
-      historyObjects,
-      claim: firstClaim,
-      prompt: firstPrompt,
-      run: first,
-      usagePricingResolution,
+    await own(async () => {
+      return await completeSandboxFirstPiRun({
+        actor,
+        answer: "First Pi turn completed",
+        historyObjects,
+        claim: firstClaim,
+        prompt: firstPrompt,
+        run: first,
+      });
     });
 
     const publisher = await sendChatRun(actor, {
@@ -176,54 +182,31 @@ describe("CHAT-02: model-first routing", () => {
     });
     const publisherClaim = await claimChatRun(runnerGroup, publisher.runId);
     const content = "Use the latest user memory on the next Run.";
-    const files = [
-      {
-        path: "MEMORY.md",
-        hash: createHash("sha256").update(content).digest("hex"),
-        size: Buffer.byteLength(content),
-      },
-    ];
-    const prepared = await webhooks.requestAgentStoragePrepare(
-      {
-        runId: publisher.runId,
-        storageId: initialMemory.storageId,
-        parentVersionId: initialMemory.versionId,
-        files,
-      },
-      publisherClaim.sandboxHeaders,
-      [200],
-    );
-    if (prepared.status !== 200) {
-      throw new Error("Expected Run-authorized memory upload preparation");
-    }
-    context.mocks.s3.send.mockResolvedValueOnce({ ContentLength: 1024 });
-    context.mocks.s3.send.mockResolvedValueOnce({ ContentLength: 1024 });
-    const committed = await webhooks.requestAgentStorageCommit(
-      {
-        runId: publisher.runId,
-        storageId: initialMemory.storageId,
-        parentVersionId: initialMemory.versionId,
-        versionId: prepared.body.versionId,
-        files,
-      },
-      publisherClaim.sandboxHeaders,
-      [200],
-    );
-    if (committed.status !== 200) {
-      throw new Error("Expected Run-authorized memory publication");
-    }
-    await cancelChatRun(actor, publisher.runId, publisherClaim.sandboxHeaders);
+    const committed = await own(async () => {
+      return await commitMemoryVersion(
+        context,
+        {
+          runId: publisher.runId,
+          sandboxHeaders: publisherClaim.sandboxHeaders,
+          storageManifest: publisherClaim.claim.storageManifest,
+        },
+        [{ path: "MEMORY.md", content }],
+      );
+    });
+    await own(async () => {
+      return await cancelChatRun(
+        actor,
+        publisher.runId,
+        publisherClaim.sandboxHeaders,
+      );
+    });
 
-    const second = await sendChatRun(
-      actor,
-      {
-        agentId,
-        threadId: first.threadId,
-        prompt: "continue with current user memory",
-        model: "gpt-6-luna",
-      },
-      usagePricingResolution,
-    );
+    const second = await sendChatRun(actor, {
+      agentId,
+      threadId: first.threadId,
+      prompt: "continue with current user memory",
+      model: "gpt-6-luna",
+    });
     const claimed = await claimChatRun(runnerGroup, second.runId);
     expect(claimed.claim.resumeSession).toMatchObject({
       sessionId: first.threadId,
@@ -237,16 +220,18 @@ describe("CHAT-02: model-first routing", () => {
     expect(mounts).toHaveLength(1);
     expect(mounts?.[0]).toMatchObject({
       storageId: initialMemory.storageId,
-      versionId: committed.body.versionId,
+      versionId: committed.versionId,
       mountPath: PI_MEMORY_ROOT,
       writeback: true,
     });
-    expect(committed.body.versionId).not.toBe(initialMemory.versionId);
+    expect(committed.versionId).not.toBe(initialMemory.versionId);
     expect(claimed.claim.piLaunchConfig?.memoryRecall).toMatchObject({
-      storageVersionId: committed.body.versionId,
+      storageVersionId: committed.versionId,
       status: "no-content",
     });
-    await cancelChatRun(actor, second.runId, claimed.sandboxHeaders);
+    await own(async () => {
+      return await cancelChatRun(actor, second.runId, claimed.sandboxHeaders);
+    });
   });
 
   it("keeps an empty recall-enabled Pi memory mount valid", async () => {
@@ -434,9 +419,24 @@ describe("CHAT-02: model-first routing", () => {
   }, 90_000);
 
   it("preserves delegated Pi provenance and rejects foreign thread writes", async () => {
-    const { actor, agentId, runnerGroup } = await entitledNativeCarrierActor();
+    const {
+      run: own,
+      actor,
+      agentId,
+      runnerGroup,
+      claimChatRun,
+      sendChatRun,
+      requestSendEventWithBearer,
+    } = await publicChatActor(context);
+    await own(async () => {
+      return await api.updateUserModelPreference(actor, "claude-fable-5-1");
+    });
     const orgId = requireOrgId(actor);
-    await bdd.updateAgentMetadata(actor, agentId, { visibility: "public" });
+    await own(async () => {
+      return await bdd.updateAgentMetadata(actor, agentId, {
+        visibility: "public",
+      });
+    });
     const source = await sendChatRun(actor, {
       agentId,
       prompt: "delegate a non-interactive Pi turn",
@@ -444,18 +444,22 @@ describe("CHAT-02: model-first routing", () => {
     });
     const sourceClaim = await claimChatRun(runnerGroup, source.runId);
     const sourceToken = okouTokenFromClaim(sourceClaim.claim);
-    const targetThread = await chat.createThread(actor, { agentId });
+    const targetThread = await own(async () => {
+      return await chat.createThread(actor, { agentId });
+    });
 
-    const usagePricingResolution = await createGptUsagePricingResolution();
-
-    await configureSubscriptionPiModel(actor, {}, "gpt-6-luna");
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId },
-      {
-        [FeatureSwitchKey.PiMemory]: true,
-      },
-    );
+    await own(async () => {
+      return await configureSubscriptionPiModel(actor, {}, "gpt-6-luna");
+    });
+    await own(async () => {
+      return await updateFeatureSwitchesForUser(
+        context,
+        { ...actor, orgId },
+        {
+          [FeatureSwitchKey.PiMemory]: true,
+        },
+      );
+    });
     mockPiResourceArchiveDownloads();
     const historyObjects = mockPiCheckpointObjectStore();
 
@@ -471,7 +475,6 @@ describe("CHAT-02: model-first routing", () => {
         model: "gpt-6-luna",
       },
       [201],
-      usagePricingResolution,
     );
     expect(delegated.status).toBe(201);
     if (delegated.status !== 201) {
@@ -504,14 +507,15 @@ describe("CHAT-02: model-first routing", () => {
       throw new Error("Expected the delegated Pi prompt to launch a run");
     }
     const delegatedRun = { runId: delegatedRunId, threadId: targetThread.id };
-    await completeSandboxFirstPiRun({
-      actor,
-      answer: "delegated memory admission answer",
-      historyObjects,
-      claim: await claimChatRun(runnerGroup, delegatedRunId),
-      prompt: delegatedPrompt,
-      run: delegatedRun,
-      usagePricingResolution,
+    await own(async () => {
+      return await completeSandboxFirstPiRun({
+        actor,
+        answer: "delegated memory admission answer",
+        historyObjects,
+        claim: await claimChatRun(runnerGroup, delegatedRunId),
+        prompt: delegatedPrompt,
+        run: delegatedRun,
+      });
     });
     await expectAgentChatProvenance({
       actor,
@@ -523,11 +527,18 @@ describe("CHAT-02: model-first routing", () => {
       targetThreadId: targetThread.id,
     });
     await expectAgentTokenThreadOwnershipBoundaries({
+      own,
       agentId,
       orgId,
       sourceToken,
     });
 
-    await cancelChatRun(actor, source.runId, sourceClaim.sandboxHeaders);
+    await own(async () => {
+      return await cancelChatRun(
+        actor,
+        source.runId,
+        sourceClaim.sandboxHeaders,
+      );
+    });
   }, 90_000);
 });

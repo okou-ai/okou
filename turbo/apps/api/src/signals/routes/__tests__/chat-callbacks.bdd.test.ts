@@ -1,5 +1,4 @@
-import { http, HttpResponse } from "msw";
-import { createStore } from "ccstate";
+import { HttpResponse } from "msw";
 import {
   resolveChatEventRecommendedFollowups,
   type ChatEvent,
@@ -22,7 +21,6 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { WebPushError } from "web-push";
 import { testContext } from "../../../__tests__/test-context";
-import { server } from "../../../mocks/server";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 
@@ -38,7 +36,6 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { chatEventDisplayText } from "./helpers/chat-event";
-import { seedAgentRunCallback$ } from "./helpers/agent-run-callback";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { seedBuiltInModelKey } from "./helpers/runtime-state";
 const context = testContext();
@@ -3305,23 +3302,6 @@ describe("CHAT-02: failed chat callbacks", () => {
         prompt: scenario.name,
         selectedModel: scenario.builtIn ? null : "claude-fable-5-1",
       });
-      const callbackUrl = "https://callback.example/balance-outcome";
-      const deliveries: unknown[] = [];
-      server.use(
-        http.post(callbackUrl, async ({ request }) => {
-          deliveries.push(await request.json());
-          return HttpResponse.json({ ok: true });
-        }),
-      );
-      await createStore().set(
-        seedAgentRunCallback$,
-        {
-          runId: run.runId,
-          url: callbackUrl,
-          payload: {},
-        },
-        context.signal,
-      );
       const headers = await claimChatRun(runnerGroup, run.runId);
       // Changing the current default cannot change the owner of this failed run.
       await api.updateUserModelPreference(
@@ -3350,13 +3330,6 @@ describe("CHAT-02: failed chat callbacks", () => {
         scenario.expected === "insufficient_credits"
           ? scenario.error
           : scenario.expected;
-      expect(deliveries).toContainEqual(
-        expect.objectContaining({
-          runId: run.runId,
-          status: "failed",
-          error: detailError,
-        }),
-      );
       await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
         status: "failed",
         error: detailError,

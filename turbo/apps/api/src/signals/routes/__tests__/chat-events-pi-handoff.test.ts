@@ -1,3 +1,4 @@
+import { publicChatActor } from "./helpers/public-chat-actor";
 import { createHash, randomUUID } from "node:crypto";
 import { gzipSync, zstdCompressSync } from "node:zlib";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
@@ -430,14 +431,24 @@ describe("CHAT-02: model-first routing", () => {
   it.each(["okou-1.0", "gpt-6-luna"] as const)(
     "claims %s with Sandbox credentials and bills duplicate Sandbox usage once",
     async (selectedModel) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const {
+        run: own,
+        actor,
+        agentId,
+        runnerGroup,
+        claimChatRun,
+        sendChatRun,
+      } = await publicChatActor(context);
       const builtIn = selectedModel === "okou-1.0";
-      const usagePricingResolution =
-        await createPiUsagePricingResolution(selectedModel);
+      const usagePricingResolution = builtIn
+        ? await createPiUsagePricingResolution(selectedModel)
+        : undefined;
       if (builtIn) {
         await configureBuiltInPiModel(actor, selectedModel);
       } else {
-        await configureSubscriptionPiModel(actor, {}, selectedModel);
+        await own(async () => {
+          return await configureSubscriptionPiModel(actor, {}, selectedModel);
+        });
       }
       const upstreamModel = builtIn ? "@preset/okou-1-0" : selectedModel;
 
@@ -477,32 +488,44 @@ describe("CHAT-02: model-first routing", () => {
         quantity: 2,
       };
       const sandboxUsageReceipts = await Promise.all([
-        webhooks.requestAgentUsageEvent(
-          { runId: run.runId, events: [sandboxUsageEvent] },
-          claimed.sandboxHeaders,
-          [200],
-          usagePricingResolution,
-        ),
-        webhooks.requestAgentUsageEvent(
-          { runId: run.runId, events: [sandboxUsageEvent] },
-          claimed.sandboxHeaders,
-          [200],
-          usagePricingResolution,
-        ),
+        own(async () => {
+          return await webhooks.requestAgentUsageEvent(
+            { runId: run.runId, events: [sandboxUsageEvent] },
+            claimed.sandboxHeaders,
+            [200],
+            usagePricingResolution,
+          );
+        }),
+        own(async () => {
+          return await webhooks.requestAgentUsageEvent(
+            { runId: run.runId, events: [sandboxUsageEvent] },
+            claimed.sandboxHeaders,
+            [200],
+            usagePricingResolution,
+          );
+        }),
       ]);
       expect(
         sandboxUsageReceipts.map((receipt) => {
           return receipt.body;
         }),
       ).toStrictEqual([{ success: true }, { success: true }]);
-      await api.requestCancelRun(
-        actor,
-        run.runId,
-        [200],
-        usagePricingResolution,
-      );
+      await own(async () => {
+        return await api.requestCancelRun(
+          actor,
+          run.runId,
+          [200],
+          usagePricingResolution,
+        );
+      });
       await waitForRunStatus(actor, run.runId, "cancelled");
-      await failChatRun(run.runId, claimed.sandboxHeaders, "Run cancelled");
+      await own(async () => {
+        return await failChatRun(
+          run.runId,
+          claimed.sandboxHeaders,
+          "Run cancelled",
+        );
+      });
       await flushWaitUntilForTest();
       // Metered Auto records the guest output once. Personal subscription
       // model traffic is not admitted to the platform billing ledger.

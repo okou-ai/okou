@@ -67,7 +67,7 @@ import {
   mockCodexDeviceAuthProvider,
 } from "./helpers/api-bdd-auth-device";
 import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
-import type { TestTerminalRunStatus } from "./helpers/api-bdd-run-timeout";
+import type { TestTerminalRunStatus } from "./helpers/run-terminal-status";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 
 const TEST_DATA_KEY = Buffer.from("0123456789abcdef0123456789abcdef", "utf8");
