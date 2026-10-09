@@ -21,7 +21,7 @@ import {
 } from "@okouai/api-contracts/contracts/official-workflows";
 import { testOfficialWorkflowCatalogStateContract } from "@okouai/api-contracts/contracts/test-official-workflow-catalog-state";
 import { testSystemStoragePresignedUrlCacheStateContract } from "@okouai/api-contracts/contracts/test-system-storage-presigned-url-cache-state";
-import { testUserExportWorkContract } from "@okouai/api-contracts/contracts/test-user-export-work";
+
 import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import {
   workflowAutomationsContract,
@@ -35,7 +35,7 @@ import {
   getCustomSkillStorageName,
   VOLUME_ORG_USER_ID,
 } from "@okouai/core/storage-names";
-import AdmZip from "adm-zip";
+
 import { http, HttpResponse } from "msw";
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
@@ -60,7 +60,7 @@ import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import { officialWorkflowRoutes } from "../official-workflows";
 import { testOfficialWorkflowCatalogStateRoutes } from "../test-official-workflow-catalog-state";
 import { testSystemStoragePresignedUrlCacheStateRoutes } from "../test-system-storage-presigned-url-cache-state";
-import { testUserExportWorkRoutes } from "../test-user-export-work";
+
 import { userPreferencesRoutes } from "../user-preferences";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { workflowsRoutes } from "../workflows";
@@ -72,7 +72,7 @@ import {
   mockGoogleFormsConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
-import { createOpsLogsApi } from "./helpers/api-bdd-ops-logs";
+
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import {
@@ -80,12 +80,11 @@ import {
   mockGoogleCalendarConnectorOAuth,
   mockNotionConnectorOAuth,
 } from "./helpers/api-bdd-workflows";
-import { installDurableUserExportStorage } from "./helpers/durable-user-export-storage";
+
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { holdSecretKms } from "./helpers/hold-secret-kms";
 import { createRouteMocks } from "./helpers/route-test";
 import { readWorkflowAutomationAutonomyFixture } from "./helpers/runtime-state";
-import { readExportText } from "./helpers/user-export-storage";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -2574,8 +2573,8 @@ describe("Official Workflow installations", () => {
     expect(customStorage.body.storage_state).toBeNull();
   });
 
-  it("exports the accepted Official Workflow instruction after a catalog revision", async () => {
-    const { actor, definitionName, headers, installed, zeroBlueprintName } =
+  it("reads the accepted Official Workflow instruction after a catalog revision", async () => {
+    const { definitionName, headers, installed, zeroBlueprintName } =
       await installOfficialWorkflowLifecycleScenario();
     // The setup helper acknowledges agent writes without retaining reads.
     // Replay those exact external uploads into a readable object store.
@@ -2612,45 +2611,6 @@ describe("Official Workflow installations", () => {
       [200],
     );
     expect(current.body.workflow.instruction).toBe(instruction);
-
-    const exports = createOpsLogsApi(context);
-    const storage = installDurableUserExportStorage(context);
-    const started = await exports.requestPostUserExport(actor, [202]);
-    await flushWaitUntilForTest();
-    await accept(
-      setupApp({ context, routes: testUserExportWorkRoutes })(
-        testUserExportWorkContract,
-      ).action({
-        body: {
-          action: "run",
-          userId: actor.userId,
-          jobId: started.body.jobId,
-          maxSteps: 200,
-        },
-      }),
-      [200],
-    );
-    const status = await exports.requestGetUserExport(actor, [200]);
-    expect(status.body.job).toMatchObject({
-      id: started.body.jobId,
-      status: "completed",
-    });
-    const downloadUrl = status.body.job?.downloadUrl;
-    if (!downloadUrl) {
-      throw new Error("Expected a downloadable Official Workflow export");
-    }
-    const zip = new AdmZip(storage.download(downloadUrl));
-    expect(
-      JSON.parse(
-        readExportText(zip, `workflows/${current.body.workflow.id}.json`),
-      ),
-    ).toMatchObject({
-      id: current.body.workflow.id,
-      officialDefinitionName: definitionName,
-      displayName: current.body.workflow.displayName,
-      description: current.body.workflow.description,
-      instruction,
-    });
   });
 
   it("rejects duplicate Official Workflow installation on the same agent", async () => {

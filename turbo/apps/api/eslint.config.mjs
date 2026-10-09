@@ -502,17 +502,6 @@ export default [
     },
   },
   {
-    files: ["src/signals/services/pi-memory-quota.service.ts"],
-    rules: {
-      // Quota admission is a bounded production decision, including expected
-      // denials and unknowns. Debug never reaches Axiom's info-level transport.
-      "api/no-logger-info": [
-        "error",
-        { allowedMessages: ["Pi memory quota admission"] },
-      ],
-    },
-  },
-  {
     files: ["src/signals/services/agent-run-failure-log.service.ts"],
     rules: {
       // Guest root filesystem exhaustion is already a classified, bounded

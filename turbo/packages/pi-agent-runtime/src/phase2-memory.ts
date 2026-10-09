@@ -49,7 +49,10 @@ import {
   type PiMemoryPhase2FailureCounts,
   type PiMemoryPhase2ProviderUsage,
 } from "./phase2-memory-types";
-import { PI_MEMORY_PHASE2_MAINTENANCE_REASONING } from "./memory-background-config";
+import {
+  PI_MEMORY_PRESET,
+  PI_MEMORY_PHASE2_MAINTENANCE_REASONING,
+} from "./memory-background-config";
 import { resolvePiAgentModel } from "./model";
 import {
   createPiModelRuntime,
@@ -479,7 +482,10 @@ async function createMaintenanceSession(args: {
       id: randomUUID(),
     }),
     model,
-    thinkingLevel: PI_MEMORY_PHASE2_MAINTENANCE_REASONING,
+    thinkingLevel:
+      model.id === PI_MEMORY_PRESET
+        ? "off"
+        : PI_MEMORY_PHASE2_MAINTENANCE_REASONING,
     tools: [...PI_MEMORY_PHASE2_TOOL_NAMES],
     customTools,
   });

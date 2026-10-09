@@ -3,7 +3,8 @@ import sessionConstruction from "../session-construction-digest.json";
 /**
  * Build-time digest of the code-determined Pi session construction: the
  * system prompt template and the ordered tool schemas the runtime produces
- * for fixed synthetic inputs, plus verified model-limit corrections.
+ * for fixed synthetic inputs, verified model-limit corrections and the
+ * platform memory preset request policy.
  *
  * The API records it in every Pi launch config and the sandbox compares it
  * before starting a session, so installed and captured builds agree on

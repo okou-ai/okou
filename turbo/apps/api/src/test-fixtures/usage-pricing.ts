@@ -134,7 +134,7 @@ const TEST_ONLY_MODEL_PRICING = [
 });
 
 /**
- * Built-in admission and web-search settlement require their normal product
+ * Built-in admission and paid-tool settlement require their normal product
  * pricing, but API tests migrate without the development seed. Seed those
  * development prices into the test database once per run; rows
  * a test already owns are left untouched.
@@ -151,7 +151,13 @@ export async function seedIsolatedModelPricingForTests<
     .insert(usagePricing)
     .values([
       ...USAGE_PRICING.filter((row) => {
-        return row.kind === "model" || row.kind === "web-search";
+        return [
+          "model",
+          "web-search",
+          "scrape",
+          "social",
+          "people-search",
+        ].includes(row.kind);
       }),
       ...TEST_ONLY_MODEL_PRICING,
     ])
@@ -167,7 +173,13 @@ export async function seedDevelopmentModelPricingForTests(): Promise<void> {
     .insert(usagePricing)
     .values([
       ...USAGE_PRICING.filter((row) => {
-        return row.kind === "model" || row.kind === "web-search";
+        return [
+          "model",
+          "web-search",
+          "scrape",
+          "social",
+          "people-search",
+        ].includes(row.kind);
       }),
       ...TEST_ONLY_MODEL_PRICING,
     ])

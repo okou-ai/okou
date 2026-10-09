@@ -42,7 +42,7 @@ State, approval proof and completion token are separate cryptographically random
 
 The attempt phases are `pending → processing → verified → approved`, or bounded `failed` outcomes. Database checks tie phases to nullable proof hashes and bounded verified guild/user/bot evidence. Credentials, provider codes, raw state and approval/completion secrets are not persisted. A successful installation grant is **not revoked**: provider revocation can remove the installed authorization, rather than merely clean up one transient token.
 
-The approved capability is consumed in the same transaction as final binding. Existing guild/org and guild/user constraints remain; a global identity owner and owner-qualified composite connection FK prevent stealing a Discord identity across guilds. An installation cannot silently move organizations. Repeated legitimate linking leaves one connection and does not resend a welcome.
+The approved capability is consumed in the same atomic SQL statement as final binding; no explicit non-billing transaction is opened. Existing guild/org and guild/user constraints remain; a global identity owner and owner-qualified composite connection FK prevent stealing a Discord identity across guilds. An installation cannot silently move organizations. Repeated legitimate linking leaves one connection and does not resend a welcome. The CTE dependencies, exact constraint outcomes and public regression cases are documented in [atomic binding](implementation/discord-oauth-atomic-binding.md).
 
 ## Concurrency and cleanup
 

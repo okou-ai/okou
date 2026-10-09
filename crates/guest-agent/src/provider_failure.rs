@@ -92,6 +92,11 @@ fn text_failure_reason(message: &str) -> Option<FailureReason> {
     {
         return Some(FailureReason::UsageLimit);
     }
+    if normalized == "your authentication token has expired. please try refreshing it."
+        || normalized == "provided authentication token is expired."
+    {
+        return Some(FailureReason::InvalidCredentials);
+    }
     if normalized == "terminated" {
         return Some(FailureReason::ResponseConnectionLost);
     }

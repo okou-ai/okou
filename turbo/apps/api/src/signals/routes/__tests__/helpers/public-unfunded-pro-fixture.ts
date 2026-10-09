@@ -106,6 +106,7 @@ export function createPublicUnfundedProFixture(
   });
 
   return {
+    customerId,
     run: owner.run,
     async initialize(): Promise<void> {
       await owner.run(async () => {

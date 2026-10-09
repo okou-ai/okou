@@ -854,6 +854,31 @@ describe("Discord product OAuth", () => {
     );
     expect((await status(member)).discordUserId).toBe(f.discordUserId);
   });
+  it("does not reserve a replacement Discord identity after an occupied-user binding fails", async () => {
+    const f = await fixture();
+    const owner = await f.actor();
+    await installed(f, owner);
+    const replacement = snowflake();
+    const started = await start(owner, "connect");
+    const landing = await verified(f, started, { discordUserId: replacement });
+    expect((await approve(started, landing)).status).toBe(200);
+    expect((await complete(started)).status).toBe(409);
+    expect((await complete(started)).status).toBe(400);
+    expect((await status(owner)).discordUserId).toBe(f.discordUserId);
+    const otherOwner = await f.actor();
+    const otherGuild = snowflake();
+    await installed(f, otherOwner, {
+      guildId: otherGuild,
+      discordUserId: replacement,
+    });
+    await expect(status(otherOwner)).resolves.toMatchObject({
+      isConnected: true,
+      guildId: otherGuild,
+      discordUserId: replacement,
+    });
+    expect((await status(owner)).discordUserId).toBe(f.discordUserId);
+    expect(f.messages).toHaveLength(2);
+  });
   it("keeps separate attempts correlated to independent consent and completion proofs", async () => {
     const f = await fixture();
     const actor = await f.actor();
@@ -911,6 +936,51 @@ describe("Discord product OAuth", () => {
     ).toHaveLength(1);
     expect(f.messages).toHaveLength(1);
   });
+  it("keeps one guild per workspace when two approved installations race without reserving the losing guild", async () => {
+    const f = await fixture();
+    const owner = await f.actor();
+    const secondGuild = snowflake();
+    const cases = [
+      { attempt: await start(owner, "install", f.guildId), guildId: f.guildId },
+      {
+        attempt: await start(owner, "install", secondGuild),
+        guildId: secondGuild,
+      },
+    ];
+    const results = await Promise.all(
+      cases.map(async ({ attempt, guildId }) => {
+        return await finish(f, attempt, { guildId });
+      }),
+    );
+    expect(
+      results
+        .map((result) => {
+          return result.status;
+        })
+        .sort(),
+    ).toStrictEqual(["error", "installed"]);
+    const loser =
+      cases[
+        results.findIndex((result) => {
+          return result.status === "error";
+        })
+      ];
+    if (!loser) {
+      throw new Error("Expected one conflicting guild installation");
+    }
+    expect((await complete(loser.attempt)).status).toBe(400);
+    const bound = await status(owner);
+    expect(bound.isConnected).toBeTruthy();
+    expect(bound.guildId).not.toBe(loser.guildId);
+    const otherOwner = await f.actor();
+    await installed(f, otherOwner, {
+      guildId: loser.guildId,
+      discordUserId: snowflake(),
+    });
+    expect((await status(otherOwner)).guildId).toBe(loser.guildId);
+    expect((await status(owner)).guildId).toBe(bound.guildId);
+    expect(f.messages).toHaveLength(2);
+  });
   it("allows only one account to win concurrent Discord identity claims across guilds", async () => {
     const f = await fixture();
     const firstOwner = await f.actor();
@@ -941,6 +1011,53 @@ describe("Discord product OAuth", () => {
       }),
     ).toHaveLength(1);
     expect(f.messages).toHaveLength(1);
+  });
+  it("does not reserve the losing identity when two verified senders race for one workspace member", async () => {
+    const f = await fixture();
+    const admin = await f.actor();
+    await installed(f, admin);
+    const member = await f.actor(admin.orgId, "org:member");
+    const cases = [
+      { attempt: await start(member, "connect"), sender: snowflake() },
+      { attempt: await start(member, "connect"), sender: snowflake() },
+    ];
+    const results = await Promise.all(
+      cases.map(async ({ attempt, sender }) => {
+        return await finish(f, attempt, { discordUserId: sender });
+      }),
+    );
+    expect(
+      results
+        .map((result) => {
+          return result.status;
+        })
+        .sort(),
+    ).toStrictEqual(["connected", "error"]);
+    const losingIndex = results.findIndex((result) => {
+      return result.status === "error";
+    });
+    const loser = cases[losingIndex];
+    if (!loser) {
+      throw new Error("Expected one conflicting verified sender");
+    }
+    expect((await complete(loser.attempt)).status).toBe(400);
+    const bound = await status(member);
+    expect(bound.isConnected).toBeTruthy();
+    expect(
+      cases.map(({ sender }) => {
+        return sender;
+      }),
+    ).toContain(bound.discordUserId);
+    expect(bound.discordUserId).not.toBe(loser.sender);
+    const otherOwner = await f.actor();
+    const otherGuild = snowflake();
+    await installed(f, otherOwner, {
+      guildId: otherGuild,
+      discordUserId: loser.sender,
+    });
+    expect((await status(otherOwner)).discordUserId).toBe(loser.sender);
+    expect((await status(member)).discordUserId).toBe(bound.discordUserId);
+    expect(f.messages).toHaveLength(3);
   });
   it("commits one connection and welcome for simultaneous legitimate same-owner attempts", async () => {
     const f = await fixture();

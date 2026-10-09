@@ -41,6 +41,39 @@ literal; rollback must be coordinated rather than silently downgrade consent or
 relax ownership. Preserve canonical Discord readers/source data after feature-off.
 Live guild/browser/Gateway acceptance remains separately authorized and unclaimed.
 
+## Free memory preset routing (2026-10-09)
+
+New Stage 1 extraction and Phase 2 consolidation use the platform OpenRouter key
+with `@preset/memory` over Chat Completions. They do not select personal accounts
+or depend on foreground Auto/organization preset overrides. The internal model
+identity is `okou-memory`, not a user-selectable catalog model or a priced route.
+
+Both stages send `x-session-id: MEMORY-${userId}-${orgId}` and Auto-style ephemeral
+cache breakpoints. Client reasoning, service tier, sampling, output ceilings and
+response-format overrides are omitted, including SDK defaults. Model, messages,
+tools, stream and stream usage options remain protocol inputs. Stage 1 retains
+local evidence budgets and validates the returned JSON; the preset must support
+those budgets and the Phase 2 tool contract. Configuring the remote preset is an
+operator prerequisite, not an action performed by this code change.
+
+Preset memory is free. Stage 1 observes token usage without creating charge
+rows. Phase 2 captures an empty billable-firewall list and no pricing provider;
+no credit admission or allowance activation is performed. Feature, source-owner,
+storage/lease, credential, cancellation and publication fences are unchanged.
+Captured older contexts retain their original model, billable firewalls and
+pricing. Historical usage and model identities are not rewritten or removed.
+
+Publish the new commit-addressed CLI with the API rollout before admitting new
+maintenance jobs. The new CLI reads the API-owned `OKOU_MEMORY_SESSION_ID` from
+platform environment and materializes `okou-memory` / `@preset/memory` on Gen5.
+The updated session-construction digest prevents an older installed CLI from
+being selected for new contexts; the guest uses the captured `CLI_PKG_URL` when
+installed parity does not match. Old API contexts keep their Luna/Codex binding
+and captured CLI package. Runner wire schemas and the captured payload
+generations do not change. Rollback
+must keep the new CLI available for already queued preset contexts; old captured
+Luna/Codex contexts remain supported by the new CLI and their original accounting.
+
 ## Automatic OAuth contract hash retirement (migration 1354)
 
 Builtin Automatic OAuth no longer computes, writes, reads or compares a local
@@ -1907,11 +1940,18 @@ does not change production overrides, merge, deploy, or revoke provider grants.
 Input observation reads only native Run ID/status with unchanged run/user/org
 ownership predicates and the native status schema. The public full-Run MCP tool
 and Web/CLI responses are unchanged. Observation and recall may read only the
-origin, immediate predecessor and successor chain when one authorized read-only
-repeatable-read snapshot proves there is no archive. Native retention requires
-archive coverage; live identity/revoke constraints establish completeness in
-that case. Missing origins and all archive-backed conversations retain complete
-canonical archive-plus-tail authority and its integrity/resource errors.
+origin, immediate predecessor and successor chain when one authorized, bounded
+recursive statement snapshot proves there is no archive. The #38277 follow-up
+removes the targeted reader's explicit repeatable-read transaction and per-edge
+round trips. Metadata preflight gates payload transfer; invalid and over-budget
+chains fail explicitly rather than returning partial state. The existing pool's
+exclusively leased client retains the three-second server SQL timeout/read-only
+mode, restores its exact prior settings on success and is discarded on any
+unsuccessful path. No new pool or global connection setting is introduced.
+Native retention requires archive coverage; live identity/revoke constraints
+establish completeness in that case. Missing origins and all archive-backed
+conversations retain complete canonical archive-plus-tail authority and its
+integrity/resource errors.
 
 An origin newer than an archive watermark is not sufficient: Web caller-owned
 IDs can be reused after archived live rows are deleted, so ordering does not

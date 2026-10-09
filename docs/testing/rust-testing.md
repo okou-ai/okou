@@ -159,6 +159,13 @@ cloning them, and reuse canonical fixture bytes for exact-original checks.
 Textual JSON observations must include member names and preserve the caller's
 search domain; they are not arbitrary serialized-JSON substring searches.
 
+Keep one canonical serialized fixture for writing and exact-byte verification,
+and consume already-owned observation snapshots instead of immediately cloning
+another. Response gates may borrow raw JSON when extracting sequence metadata;
+retain complete parsed-body assertions and reject missing or invalid sequences.
+Reuse periodic synthetic pixel rows only when all original dimensions, pixel
+values, compression settings and actual encoded/retained buffers remain intact.
+
 Keep real process/socket deadlines, full payload/file/pixel boundaries, key/KDF
 strengths, every assertion and actual retained image buffers. Compare complete
 unchanged target selections with matching profile/instrumentation/thread settings;

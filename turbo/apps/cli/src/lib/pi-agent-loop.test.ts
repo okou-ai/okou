@@ -1039,6 +1039,44 @@ describe("sandbox Pi agent loop", () => {
     expect(resolved.model).not.toHaveProperty("sessionAffinityKey");
   });
 
+  it("keeps memory owner affinity independent of run and thread IDs", async () => {
+    const config = {
+      schemaVersion: 5,
+      dialect: "openai-completions",
+      transport: "sse",
+      provider: "openrouter",
+      baseUrl: "https://openrouter.ai/api/v1",
+      model: "@preset/memory",
+      catalogModel: "okou-memory",
+      credentialBindings: [
+        {
+          kind: "api-key",
+          environment: "OPENAI_API_KEY",
+          secretName: "OPENROUTER_API_KEY",
+        },
+      ],
+    };
+    for (const thread of ["thread-a", "thread-b"]) {
+      const env = piEnv({
+        OKOU_RUN_ID: RUN_ID,
+        OKOU_CHAT_THREAD_ID: thread,
+        OKOU_MEMORY_SESSION_ID: "MEMORY-user-1-org-1",
+      });
+      env.OKOU_PI_MODEL_CONFIG = JSON.stringify(config);
+      await expect(piSandboxAgentConfigFromEnv(env)).resolves.toMatchObject({
+        model: {
+          model: "@preset/memory",
+          sessionAffinityKey: "MEMORY-user-1-org-1",
+        },
+      });
+    }
+    const missing = piEnv({ OKOU_RUN_ID: RUN_ID });
+    missing.OKOU_PI_MODEL_CONFIG = JSON.stringify(config);
+    await expect(piSandboxAgentConfigFromEnv(missing)).rejects.toThrow(
+      "OKOU_MEMORY_SESSION_ID",
+    );
+  });
+
   it.each([2, 3] as const)(
     "materializes exact subscription bindings from generation %s",
     async (schemaVersion) => {

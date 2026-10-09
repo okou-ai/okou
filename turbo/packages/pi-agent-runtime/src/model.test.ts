@@ -337,6 +337,7 @@ describe("Pi agent model adapter", () => {
     { catalogModel: "okou-1.0", runtimeModel: "@preset/okou-1-0" },
     { catalogModel: "auto", runtimeModel: "@preset/okou-experimental" },
     { catalogModel: undefined, runtimeModel: "@preset/okou-1-0-dsf" },
+    { catalogModel: "okou-memory", runtimeModel: "@preset/memory" },
   ])(
     "sends captured $catalogModel / $runtimeModel to Gen5 Chat Completions with Preset-owned policy",
     async ({ catalogModel, runtimeModel }) => {
@@ -384,7 +385,22 @@ describe("Pi agent model adapter", () => {
             systemPrompt: "You are Okou.",
             messages: [{ role: "user", content: "hello", timestamp: 1 }],
           }),
-          { apiKey: config.apiKey, sessionId: "pi-session" },
+          {
+            apiKey: config.apiKey,
+            sessionId: "pi-session",
+            ...(runtimeModel === "@preset/memory"
+              ? {
+                  temperature: 0.8,
+                  maxTokens: 100,
+                  samplingParams: {
+                    top_p: 0.7,
+                    reasoning: { effort: "high" },
+                    service_tier: "priority",
+                    response_format: { type: "json_object" },
+                  },
+                }
+              : {}),
+          },
         ).result();
 
         expect(provider.requests.length).toBeGreaterThan(0);
@@ -422,6 +438,14 @@ describe("Pi agent model adapter", () => {
             ],
           },
         });
+        if (runtimeModel === "@preset/memory") {
+          expect(Object.keys(request?.body ?? {}).sort()).toStrictEqual([
+            "messages",
+            "model",
+            "stream",
+            "stream_options",
+          ]);
+        }
         expect(request?.body).not.toHaveProperty("reasoning");
         expect(request?.body).not.toHaveProperty("reasoning_effort");
         expect(request?.body).not.toHaveProperty("input");

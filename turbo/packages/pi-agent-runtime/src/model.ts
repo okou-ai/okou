@@ -27,6 +27,11 @@ import { clampThinkingLevel } from "@earendil-works/pi-ai";
 
 import type { PiAgentModelConfig, PiAgentStreamConfig } from "./types";
 import { piModelLimitOverride } from "./model-limits";
+import {
+  PI_MEMORY_PRESET,
+  PI_MEMORY_STAGE1_BUILT_IN_MODEL,
+  memoryPresetPayload,
+} from "./memory-background-config";
 import { streamWithModelRequestDiagnostics } from "./model-request-diagnostics";
 import {
   observePiResponseStatus,
@@ -136,6 +141,16 @@ function catalogSourceModel(
   provider: string,
   model: string,
 ): Model<Api> | undefined {
+  if (provider === "openrouter" && model === PI_MEMORY_STAGE1_BUILT_IN_MODEL) {
+    const source = okouSourceModel(provider, AUTO_RUN_MODEL);
+    if (!source) return undefined;
+    return {
+      ...source,
+      id: model,
+      name: "Memory",
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    };
+  }
   const okouModel = okouSourceModel(provider, model);
   if (okouModel) {
     return okouModel;
@@ -290,6 +305,17 @@ export function piAgentStreamForConfig(
         }
         return streamSimpleCompletions(model, context, {
           ...responseOptions,
+          ...(model.id === PI_MEMORY_PRESET
+            ? {
+                onPayload: async (payload: unknown) => {
+                  const shaped = responseOptions.onPayload
+                    ? ((await responseOptions.onPayload(payload, model)) ??
+                      payload)
+                    : payload;
+                  return memoryPresetPayload(shaped);
+                },
+              }
+            : {}),
           ...(config.sessionAffinityKey === undefined
             ? {}
             : { sessionId: config.sessionAffinityKey }),
@@ -332,6 +358,15 @@ export function piAgentStreamForConfig(
 }
 
 function capturedAutoCatalogIdentity(config: PiAgentModelConfig): string {
+  if (
+    config.provider === "openrouter" &&
+    config.model === PI_MEMORY_PRESET &&
+    config.dialect === "openai-completions" &&
+    (config.catalogModel === undefined ||
+      config.catalogModel === PI_MEMORY_STAGE1_BUILT_IN_MODEL)
+  ) {
+    return PI_MEMORY_STAGE1_BUILT_IN_MODEL;
+  }
   const identity = config.catalogModel ?? config.model;
   // Auto's capability class is platform-owned, not a second route.
   // The request still sends the immutable runtime model below.
