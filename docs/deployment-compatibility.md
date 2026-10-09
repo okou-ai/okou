@@ -1751,11 +1751,18 @@ does not change production overrides, merge, deploy, or revoke provider grants.
 Input observation reads only native Run ID/status with unchanged run/user/org
 ownership predicates and the native status schema. The public full-Run MCP tool
 and Web/CLI responses are unchanged. Observation and recall may read only the
-origin, immediate predecessor and successor chain when one authorized read-only
-repeatable-read snapshot proves there is no archive. Native retention requires
-archive coverage; live identity/revoke constraints establish completeness in
-that case. Missing origins and all archive-backed conversations retain complete
-canonical archive-plus-tail authority and its integrity/resource errors.
+origin, immediate predecessor and successor chain when one authorized, bounded
+recursive statement snapshot proves there is no archive. The #38277 follow-up
+removes the targeted reader's explicit repeatable-read transaction and per-edge
+round trips. Metadata preflight gates payload transfer; invalid and over-budget
+chains fail explicitly rather than returning partial state. The existing pool's
+exclusively leased client retains the three-second server SQL timeout/read-only
+mode, restores its exact prior settings on success and is discarded on any
+unsuccessful path. No new pool or global connection setting is introduced.
+Native retention requires archive coverage; live identity/revoke constraints
+establish completeness in that case. Missing origins and all archive-backed
+conversations retain complete canonical archive-plus-tail authority and its
+integrity/resource errors.
 
 An origin newer than an archive watermark is not sufficient: Web caller-owned
 IDs can be reused after archived live rows are deleted, so ordering does not
