@@ -8559,15 +8559,22 @@ parent-login deletion. Runner pin/observation continues to acquire its host
 before shared login/configuration authority.
 
 The local optimization in #37975 separates metadata-only rename from that
-fanout protocol. Rename locks only the visible configuration `FOR UPDATE`,
-revalidates current-scope management permission, expected revision and revision
-exhaustion, and updates name/revision/time without changing config generation.
-Its owner-filtered host-ID/name response is a nonlocking MVCC read, not an impact
-or authority check. It never follows configuration authority with a host row
-lock or host write, so it adds no reverse host-lock edge. Host generations,
+fanout protocol. The #38279 follow-up replaces its config-only transaction and
+locking read with one atomic statement: a conditional `UPDATE ... RETURNING`
+CTE plus an owner-filtered host-ID/name response join. The update itself enforces
+visibility, current-scope management permission, expected revision and revision
+exhaustion, and changes only name/revision/time, not config generation. A rejected
+write is classified by a fresh visible-config read without retrying it. The
+response query and write succeed or roll back together; host metadata is now a
+nonlocking statement-snapshot observation rather than a later transaction
+snapshot, never an impact or authority check. Rename takes no explicit config
+or host row lock and writes no host state; ordinary UPDATE row arbitration
+preserves revision conflicts without a reverse host-lock edge. Host generations,
 learned pins, independent login, endpoint, binding and rebind state remain
 unchanged; only the existing configuration metadata invalidation runs after
-commit.
+commit, using the returned scope. Config-only #38003 rename and these atomic
+writers can coexist through the same revision contract without a migration or
+client cutover.
 
 Selected host create/edit rechecks same-organization Organization or same-owner
 Personal visibility with `FOR SHARE` inside the write transaction, before inline

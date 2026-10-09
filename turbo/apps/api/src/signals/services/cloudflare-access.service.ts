@@ -13,7 +13,7 @@ import { CLOUDFLARE_ACCESS_ERROR_CODES } from "@okouai/api-contracts/contracts/c
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
-import { and, asc, count, eq, ne, or, sql } from "drizzle-orm";
+import { and, asc, count, eq, lt, ne, or, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
@@ -352,62 +352,87 @@ interface RenameCloudflareAccessConfigArgs {
 const renameCloudflareAccessConfig$ = command(
   async ({ set }, args: RenameCloudflareAccessConfigArgs) => {
     const db = set(writeDb$);
-    const result = await db.transaction(async (tx) => {
-      // Metadata-only: never follow configuration authority with a host lock or
-      // write. The owner-filtered response below is a nonlocking MVCC read.
-      const [config] = await tx
-        .select(metadata)
-        .from(cloudflareAccessConfigs)
-        .where(visibleConfig(args.owner, args.configId))
-        .for("update");
-      if (!config) {
-        return cloudflareAccessFailure("notFound");
-      }
-      const denied = managementFailure(config, args.owner);
-      if (denied) {
-        return denied;
-      }
-      if (config.revision !== args.body.expectedRevision) {
-        return cloudflareAccessFailure("conflict");
-      }
-      if (config.revision === 2_147_483_647) {
-        return cloudflareAccessFailure("exhausted");
-      }
-      const [updated] = await tx
+    const renamed = db.$with("renamed_cloudflare_access_config").as(
+      db
         .update(cloudflareAccessConfigs)
         .set({
           name: args.body.name,
-          revision: config.revision + 1,
+          revision: sql`${cloudflareAccessConfigs.revision} + 1`,
           updatedAt: nowDate(),
         })
-        .where(visibleConfig(args.owner, args.configId))
-        .returning(metadata);
-      if (!updated) {
-        throw new Error("Cloudflare Access rename returned no row");
-      }
-      const hosts = await tx
-        .select({
-          id: sshConnections.id,
-          displayName: sshConnections.displayName,
-        })
-        .from(sshConnections)
         .where(
           and(
-            referencingHosts(args.owner, args.configId),
-            eq(sshConnections.userId, args.owner.userId),
+            visibleConfig(args.owner, args.configId),
+            args.owner.orgRole === "admin"
+              ? undefined
+              : eq(cloudflareAccessConfigs.scope, "personal"),
+            eq(cloudflareAccessConfigs.revision, args.body.expectedRevision),
+            lt(cloudflareAccessConfigs.revision, 2_147_483_647),
           ),
         )
-        .orderBy(asc(sshConnections.id));
-      return {
-        ok: true as const,
-        value: response(updated, hosts),
-        scope: config.scope,
-      };
-    });
-    if (result.ok) {
-      await publishCloudflareAccessClientInvalidation(args.owner, result.scope);
+        .returning({ ...metadata }),
+    );
+    // Keep the write and response read atomic, without an explicit transaction.
+    // Hosts are a nonlocking statement-snapshot observation, not authority.
+    const rows = await db
+      .with(renamed)
+      .select({
+        config: {
+          id: renamed.id,
+          name: renamed.name,
+          revision: renamed.revision,
+          generation: renamed.generation,
+          scope: renamed.scope,
+          createdAt: renamed.createdAt,
+          updatedAt: renamed.updatedAt,
+        },
+        host: {
+          id: sshConnections.id,
+          displayName: sshConnections.displayName,
+        },
+      })
+      .from(renamed)
+      .leftJoin(
+        sshConnections,
+        and(
+          referencingHosts(args.owner, args.configId),
+          eq(sshConnections.userId, args.owner.userId),
+        ),
+      )
+      .orderBy(asc(sshConnections.id));
+    const [first] = rows;
+    if (!first) {
+      // Classify the rejected write; this read never authorizes or retries it.
+      const [current] = await db
+        .select(metadata)
+        .from(cloudflareAccessConfigs)
+        .where(visibleConfig(args.owner, args.configId));
+      if (!current) {
+        return cloudflareAccessFailure("notFound");
+      }
+      const denied = managementFailure(current, args.owner);
+      if (denied) {
+        return denied;
+      }
+      return cloudflareAccessFailure(
+        current.revision === args.body.expectedRevision &&
+          current.revision === 2_147_483_647
+          ? "exhausted"
+          : "conflict",
+      );
     }
-    return result;
+    const hosts = rows.flatMap(({ host }) => {
+      return host ? [host] : [];
+    });
+    await publishCloudflareAccessClientInvalidation(
+      args.owner,
+      first.config.scope,
+    );
+    return {
+      ok: true as const,
+      value: response(first.config, hosts),
+      scope: first.config.scope,
+    };
   },
 );
 interface UpdateCloudflareAccessConfigArgs {
