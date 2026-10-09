@@ -1,5 +1,8 @@
 import { randomUUID } from "node:crypto";
 
+import { authContract } from "@okouai/api-contracts/contracts/auth";
+import { authMeRoutes } from "../auth-me";
+import { createUserConfigBddApi } from "./helpers/api-bdd-user-config";
 import { buildInfoContract } from "@okouai/api-contracts/contracts/build-info";
 import { healthContract } from "@okouai/api-contracts/contracts/health";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
@@ -15,10 +18,6 @@ import {
   expectApiError,
   type ApiTestUser,
 } from "./helpers/api-bdd";
-import {
-  testAuthProbeContract,
-  testAuthProbeRoutes,
-} from "./helpers/auth-probe";
 import { createRouteMocks } from "./helpers/route-test";
 import { buildInfoRoutes } from "../build-info";
 import { healthRoutes } from "../health";
@@ -43,10 +42,8 @@ function buildInfoClient() {
   return setupApp({ context, routes: buildInfoRoutes })(buildInfoContract);
 }
 
-function authProbeClient() {
-  return setupApp({ context, routes: testAuthProbeRoutes })(
-    testAuthProbeContract,
-  );
+function authClient() {
+  return setupApp({ context, routes: authMeRoutes })(authContract);
 }
 
 function featureSwitchesClient() {
@@ -105,14 +102,14 @@ describe("OPS-02: API health and auth boundary", () => {
 
   it("checks public health and the auth boundary through HTTP routes", async () => {
     const admin = api.user();
+    createUserConfigBddApi(context).mockClerkUsers([admin]);
 
     const health = await accept(healthClient().check(), [200]);
     expect(health.body).toStrictEqual({ status: "ok" });
 
     const unauthorized = await accept(
-      authProbeClient().check({
+      authClient().me({
         headers: headersFor(null),
-        query: {},
       }),
       [401],
     );
@@ -120,16 +117,15 @@ describe("OPS-02: API health and auth boundary", () => {
     expect(unauthorized.body.error.code).toBe("UNAUTHORIZED");
 
     const authenticated = await accept(
-      authProbeClient().check({
+      authClient().me({
         headers: headersFor(admin),
-        query: {},
       }),
       [200],
     );
     expectRecord(authenticated.body);
     expect(authenticated.body.userId).toBe(admin.userId);
     expect(authenticated.body.orgId).toBe(admin.orgId);
-    expect(authenticated.body.tokenType).toBe("session");
+    expect(authenticated.body.email).toBe(admin.email);
   });
 });
 

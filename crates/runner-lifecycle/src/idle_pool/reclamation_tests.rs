@@ -5,7 +5,7 @@ use guest_contracts::session_history_identity::{
     SessionHistorySidecarExportMetadata, SessionHistorySidecarRepresentation,
 };
 use sandbox::{ExecResult, SandboxError, SandboxId};
-use sandbox_mock::{MockLifecycleGate, MockSandbox, MockSandboxOverrides};
+use sandbox_mock::{MockLifecycleGate, MockSandboxOverrides};
 
 use super::destroy_tests::{make_idle_destroy_job_for, make_idle_destroy_payload_for};
 use super::entry::WorkspacePromotionPolicy;
@@ -14,7 +14,8 @@ use crate::resource_budget::ResourceBudget;
 use crate::workspace_image_cache::WorkspaceCacheCheckoutResult;
 use crate::workspace_promotion::prepare_workspace_image_from_active_sandbox;
 use crate::workspace_promotion::test_support::{
-    WorkspacePromotionFixture, test_restored_session_identity,
+    WorkspacePromotionFixture, mock_sandbox_ready_for_cache_preparation as cache_sandbox,
+    test_restored_session_identity,
 };
 
 const WAIT: Duration = Duration::from_secs(5);
@@ -101,9 +102,13 @@ async fn idle_reclamation_holds_from_terminal_unpark_through_kill_but_not_host_d
     assert!(matches!(futures_util::poll!(&mut queued), Poll::Pending));
     assert_eq!(second_overrides.unpark_call_count(), 0);
     copy.release_one();
-    // Workspace freeze remains admitted work; guest sidecar cleanup is left
-    // to sandbox destruction.
+    // After the last host sidecar copy, cleanup and freeze are both admitted
+    // terminal work. Neither releases the reclamation capacity early.
     exec.wait_entered(2, WAIT).await.unwrap();
+    assert!(matches!(futures_util::poll!(&mut queued), Poll::Pending));
+    assert_eq!(second_overrides.unpark_call_count(), 0);
+    exec.release_one();
+    exec.wait_entered(3, WAIT).await.unwrap();
     assert!(matches!(futures_util::poll!(&mut queued), Poll::Pending));
     assert_eq!(second_overrides.unpark_call_count(), 0);
     exec.release_one();
@@ -376,7 +381,7 @@ async fn idle_reclamation_admission_does_not_block_bypass_or_active_promotion() 
     assert_eq!(bypass_overrides.unpark_call_count(), 0);
     assert_eq!(bypass_overrides.destroy_call_count(), 2);
 
-    let sandbox = MockSandbox::new(active.sandbox_id.to_string());
+    let sandbox = cache_sandbox(active.sandbox_id.to_string());
     sandbox.push_exec_result(Ok(ExecResult::new(
         0,
         serde_json::to_vec(&SessionHistorySidecarExportMetadata {

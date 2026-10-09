@@ -157,6 +157,9 @@ async fn seed_idle_pool_with_overrides_and_generation(
     overrides: &Arc<sandbox_mock::MockSandboxOverrides>,
     spec: IdlePoolSeedSpec<'_>,
 ) -> SandboxId {
+    runner_lifecycle::workspace_promotion::test_support::add_healthy_cache_preparation_matcher(
+        overrides,
+    );
     let IdlePoolSeedSpec {
         reuse_key,
         profile_name,

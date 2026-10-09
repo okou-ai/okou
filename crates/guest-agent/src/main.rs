@@ -141,13 +141,18 @@ fn helper_exit_code_from_args() -> Option<i32> {
                 },
             )
         }
-        "prepare-for-reuse" => {
+        "prepare-for-reuse" | "prepare-for-cache" => {
             if args.next().is_some() {
                 return Some(
                     guest_contracts::reuse_preparation::REUSE_PREPARATION_EXIT_INVALID_REQUEST,
                 );
             }
-            Some(match reuse_preparation::prepare_from_stdin() {
+            let result = if command == "prepare-for-cache" {
+                reuse_preparation::prepare_for_cache_from_stdin()
+            } else {
+                reuse_preparation::prepare_from_stdin()
+            };
+            Some(match result {
                 Ok(report) => match serde_json::to_string(&report) {
                     Ok(json) => {
                         println!("{json}");

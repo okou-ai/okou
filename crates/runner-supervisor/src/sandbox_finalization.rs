@@ -1425,6 +1425,10 @@ mod tests {
         WorkspaceImagePromotionOutcome, WorkspaceImagePromotionRequest,
         WorkspaceSessionHistorySidecarRepresentation,
     };
+    use runner_lifecycle::workspace_promotion::test_support::{
+        add_healthy_cache_preparation_matcher,
+        mock_sandbox_ready_for_cache_preparation as cache_sandbox,
+    };
     use runner_network::network_log_drain::NetworkLogDrainCoordinator;
     use runner_network::network_log_manager::NetworkLogManager;
     use runner_storage::storage_fingerprints::StorageFingerprint;
@@ -1828,6 +1832,7 @@ mod tests {
         sandbox_id: SandboxId,
         overrides: Arc<sandbox_mock::MockSandboxOverrides>,
     ) -> (Arc<Box<dyn SandboxFactory>>, Box<dyn Sandbox>) {
+        add_healthy_cache_preparation_matcher(&overrides);
         let factory: Arc<Box<dyn SandboxFactory>> =
             Arc::new(Box::new(MockSandboxFactory::with_overrides(overrides)));
         let sandbox = factory
@@ -2199,7 +2204,7 @@ mod tests {
         let lease =
             prepare_test_workspace_image_lease(&paths, &cache, run_id, sandbox_id, "sess-promote")
                 .await;
-        let sandbox = MockSandbox::new("workspace-promotion");
+        let sandbox = cache_sandbox("workspace-promotion");
         let promotion = test_promotion_context(
             lease,
             run_id,
@@ -2215,10 +2220,11 @@ mod tests {
         assert_eq!(states.len(), 1);
         assert_eq!(states[0].reuse_key, "sess-promote");
         let exec_calls = sandbox.exec_calls();
-        assert_eq!(exec_calls.len(), 1);
+        assert_eq!(exec_calls.len(), 2);
+        assert!(exec_calls[0].cmd.contains("prepare-for-cache"));
         assert!(exec_calls[0].sudo);
         assert!(
-            exec_calls[0]
+            exec_calls[1]
                 .cmd
                 .contains("\"$workspace_fsfreeze_path\" --freeze")
         );
@@ -2274,7 +2280,7 @@ mod tests {
                 let (sandbox_id, lease) = if publish_seed {
                     assert!(
                         prepare_and_publish_workspace_image(
-                            &MockSandbox::new(format!("workspace-seed-{session_id}")),
+                            &cache_sandbox(format!("workspace-seed-{session_id}")),
                             seed_promotion,
                         )
                         .await
@@ -2307,7 +2313,7 @@ mod tests {
                 };
                 assert_eq!(lease.previous_storage(), Some(&previous_storage));
 
-                let sandbox = MockSandbox::new(format!("workspace-promotion-{session_id}"));
+                let sandbox = cache_sandbox(format!("workspace-promotion-{session_id}"));
                 let current_manifest = StorageManifest {
                     storages: vec![StorageEntry {
                         name: "current-storage".into(),
@@ -2341,9 +2347,10 @@ mod tests {
 
                 assert!(promoted);
                 let exec_calls = sandbox.exec_calls();
-                assert_eq!(exec_calls.len(), 1);
+                assert_eq!(exec_calls.len(), 2);
+                assert!(exec_calls[0].cmd.contains("prepare-for-cache"));
                 assert!(
-                    exec_calls[0]
+                    exec_calls[1]
                         .cmd
                         .contains("\"$workspace_fsfreeze_path\" --freeze")
                 );
@@ -2418,7 +2425,7 @@ mod tests {
         let lease =
             prepare_test_workspace_image_lease(&paths, &cache, run_id, sandbox_id, "sess-failed")
                 .await;
-        let sandbox = MockSandbox::new("workspace-promotion-fail");
+        let sandbox = cache_sandbox("workspace-promotion-fail");
         sandbox.push_exec_result(Ok(ExecResult::new(64, Vec::new(), b"not mounted".to_vec())));
         let promotion = test_promotion_context(
             lease,
@@ -2436,7 +2443,7 @@ mod tests {
             cache.held_workspace_states().await.is_empty(),
             "freeze failure must not advertise an inconsistent workspace image"
         );
-        assert_eq!(sandbox.exec_calls().len(), 1);
+        assert_eq!(sandbox.exec_calls().len(), 2);
     }
 
     #[tokio::test]
@@ -2794,7 +2801,7 @@ mod tests {
             next_session_id,
             next_history,
         );
-        let sandbox = MockSandbox::new(sandbox_id.to_string());
+        let sandbox = cache_sandbox(sandbox_id.to_string());
         sandbox.push_exec_result(Ok(ExecResult::new(
             0,
             serde_json::to_vec(&SessionHistorySidecarExportMetadata {
@@ -2909,7 +2916,7 @@ mod tests {
         let workspace_cache_snapshot = context.workspace_cache_snapshot.clone();
 
         let _finalization_ready = finalize_sandbox_for_completion(
-            Some(Box::new(MockSandbox::new("reuse-key-promotion"))),
+            Some(Box::new(cache_sandbox("reuse-key-promotion"))),
             ActiveBudgetLease::new(lease),
             context,
         )
@@ -3064,9 +3071,10 @@ mod tests {
                 .await;
 
         let exec_calls = overrides.exec_calls();
-        assert_eq!(exec_calls.len(), 1);
+        assert_eq!(exec_calls.len(), 2);
+        assert!(exec_calls[0].cmd.contains("prepare-for-cache"));
         assert!(
-            exec_calls[0]
+            exec_calls[1]
                 .cmd
                 .contains("\"$workspace_fsfreeze_path\" --freeze")
         );
@@ -3133,9 +3141,12 @@ mod tests {
         context.workspace_image_size_bytes = b"image".len() as u64;
 
         let _finalization_ready = finalize_sandbox_for_completion(
-            Some(Box::new(mock_sandbox_ready_for_idle_reuse(
-                "rejected-workspace-promotion",
-            ))),
+            Some(Box::new({
+                let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+                add_healthy_reuse_preparation_matcher(&overrides);
+                add_healthy_cache_preparation_matcher(&overrides);
+                MockSandbox::with_overrides("rejected-workspace-promotion", overrides)
+            })),
             ActiveBudgetLease::new(lease),
             context,
         )
@@ -3178,6 +3189,7 @@ mod tests {
         let destroy_gate = MockLifecycleGate::new();
         let existing_overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
         add_healthy_reuse_preparation_matcher(&existing_overrides);
+        add_healthy_cache_preparation_matcher(&existing_overrides);
         existing_overrides.set_destroy_lifecycle_gate(destroy_gate.clone());
         existing_overrides.push_destroy_panic("simulated replaced idle destroy panic");
         let existing_factory: Arc<Box<dyn SandboxFactory>> = Arc::new(Box::new(

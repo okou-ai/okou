@@ -10,6 +10,7 @@ import sys
 # Upgrade this allowlist and every workflow/composite reference in the same PR.
 # Action subpaths are explicit so a new action needs approval, even in a known repo.
 APPROVED_ACTIONS = {
+    "actions/cache": "cdf6c1fa76f9f475f3d7449005a359c84ca0f306",  # v5.0.3
     "actions/checkout": "3d3c42e5aac5ba805825da76410c181273ba90b1",  # v7.0.1
     "actions/create-github-app-token": "bcd2ba49218906704ab6c1aa796996da409d3eb1",  # v3.2.0
     "actions/download-artifact": "3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",  # v8.0.1

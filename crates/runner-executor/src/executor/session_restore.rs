@@ -158,6 +158,21 @@ impl FreshSessionRestorePlan {
         &self.final_path
     }
 
+    /// Prepare the live destination only after storage reconciliation, never during staging.
+    pub(super) async fn prepare_destination(
+        &mut self,
+        sandbox: &dyn Sandbox,
+        context: &ExecutionContext,
+        session: &MaterializedResumeSession,
+    ) -> RunnerResult<()> {
+        if effective_cli_framework(&context.cli_agent_type) == EffectiveCliFramework::Codex {
+            self.final_path =
+                codex::prepare_codex_session_target(sandbox, context, session, &self.final_path)
+                    .await?;
+        }
+        Ok(())
+    }
+
     pub(super) async fn write_to(
         &self,
         sandbox: &dyn Sandbox,
@@ -184,7 +199,14 @@ impl FreshSessionRestorePlan {
         context: &ExecutionContext,
         session: &MaterializedResumeSession,
     ) -> RunnerResult<SessionRestoreDiagnostics> {
-        let transfer = self.write_to(sandbox, &self.final_path, session).await?;
+        let final_path = if effective_cli_framework(&context.cli_agent_type)
+            == EffectiveCliFramework::Codex
+        {
+            codex::prepare_codex_session_target(sandbox, context, session, &self.final_path).await?
+        } else {
+            self.final_path.clone()
+        };
+        let transfer = self.write_to(sandbox, &final_path, session).await?;
         Ok(self.complete(context, session, transfer))
     }
 
@@ -269,7 +291,6 @@ pub(super) async fn restore_session(
     sandbox: &dyn Sandbox,
     context: &ExecutionContext,
     session: &MaterializedResumeSession,
-    sandbox_reuse_result: SandboxReuseResult,
 ) -> RunnerResult<SessionRestoreDiagnostics> {
     // Validate the CLI agent session id to prevent path traversal.
     // Only allow alnum, dash, and underscore.
@@ -291,7 +312,7 @@ pub(super) async fn restore_session(
             restore_claude_session(sandbox, context, session).await
         }
         EffectiveCliFramework::Codex => {
-            codex::restore_codex_session(sandbox, context, session, sandbox_reuse_result).await
+            codex::restore_codex_session(sandbox, context, session).await
         }
         EffectiveCliFramework::Pi => restore_pi_session(sandbox, context, session).await,
     }

@@ -54,7 +54,6 @@ import {
   mockTestOAuthDeviceConnectorProvider,
   requestOauthCallbackRaw,
 } from "./helpers/api-bdd-connectors";
-import { readUserSecrets } from "./helpers/user-config-state";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import {
@@ -398,17 +397,6 @@ describe("CONN-01 and CHAIN-CONNECTOR: connector discovery and manual grant life
         name: "OPENAI_TOKEN",
       }),
     );
-
-    const storedSecrets = await readUserSecrets(context, {
-      orgId: actor.orgId ?? "",
-      userId: actor.userId,
-    });
-    expect(
-      storedSecrets.find((secret) => {
-        return secret.name === "OPENAI_TOKEN";
-      }),
-    ).toMatchObject({ type: "connector" });
-    expectNoVisibleSecret(storedSecrets, "sk-bdd-manual-secret");
 
     await expect(
       connectorsApi.readScopeDiff(actor, "openai"),

@@ -14,7 +14,7 @@ const materializeMemorySummariesRoute$ = command(
 
     const result = await set(
       executeMemorySummaryProjectionWork$,
-      { scope: undefined, currentTime: nowDate() },
+      { currentTime: nowDate() },
       signal,
     );
     signal.throwIfAborted();

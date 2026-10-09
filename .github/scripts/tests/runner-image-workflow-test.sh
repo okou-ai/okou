@@ -15,6 +15,27 @@ command -v yq >/dev/null || fail "yq is required"
 workflow_json=$(yq -o=json '.' "$WORKFLOW")
 action_json=$(yq -o=json '.' "$ACTION")
 
+jq -e '
+  .jobs.prepare.steps as $steps |
+  ($steps | map(.id // "") | index("identity")) as $identity |
+  ($steps | map(.id // "") | index("turbo-cache")) as $cache |
+  ($steps | map(.id // "") | index("turbo")) as $detect |
+  ($identity < $cache and $cache < $detect) and
+  ($steps[$cache].uses | startswith("actions/cache@")) and
+  $steps[$cache].if == $steps[$detect].if and
+  $steps[$cache].if == "steps.identity.outputs.release-skip != '\''true'\''" and
+  $steps[$cache].with.path ==
+    "${{ runner.temp }}/runner-image-turbo-npm/_cacache\n${{ runner.temp }}/runner-image-turbo-npm/_npx\n" and
+  $steps[$cache].with.key ==
+    "runner-image-turbo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('\''scripts/changed.sh'\'') }}" and
+  ($steps[$cache].with | has("restore-keys") | not) and
+  $steps[$detect].env.npm_config_cache == "${{ runner.temp }}/runner-image-turbo-npm" and
+  $steps[$detect].env.npm_config_prefer_offline == "true" and
+  ($steps[$detect].env | has("npm_config_offline") | not) and
+  ($steps[$detect].run | contains("CHANGES_JSON=$(./scripts/changed.sh")) and
+  (.jobs.prepare.env // {} | has("npm_config_cache") | not)
+' <<<"$workflow_json" >/dev/null || fail "Turbo detection must use its pinned tool cache without changing CLI cache ownership or release skips"
+
 # Exercise the workflow's input detector with a transport-only Git change.
 test_root=$(mktemp -d)
 trap 'rm -rf "$test_root"' EXIT

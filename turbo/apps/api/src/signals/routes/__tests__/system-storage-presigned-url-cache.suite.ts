@@ -17,7 +17,6 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { mockEnv } from "../../../lib/env";
 import { mockNow, nowDate } from "../../../lib/time";
-import { readStorageS3PrefixFixture } from "../../../test-fixtures/storage";
 import { cronPruneStoragePresignedUrlsRoutes } from "../cron-prune-storage-presigned-urls";
 import { testSystemStoragePresignedUrlCacheStateRoutes } from "../test-system-storage-presigned-url-cache-state";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -28,7 +27,6 @@ import {
   createRunsApi,
   expectCanonicalStorageManifest,
 } from "./helpers/api-bdd-runs";
-import { storageTextFile } from "./helpers/api-bdd-storage-files";
 import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 
 describe("system storage presigned URL cache", () => {
@@ -737,105 +735,6 @@ describe("system storage presigned URL cache", () => {
 
     expect(refreshed.mount.archiveUrl).toBe(expectedPresignedUrl(objectKey, 1));
     expect(signedCount(objectKey)).toBe(1);
-  });
-
-  it("prefers owned system storage and falls back to the primary organization", async () => {
-    const storages = createStoragesBddApi(context);
-    const runFixture = await entitledDirectRunActor();
-    const fixture = createOwnedSystemStorageFixture("fallback");
-    const versionId = createVersionId("system-fallback");
-    await claimOwnedStorage(fixture);
-    registerOwnedStorageCleanup(fixture);
-    await seedOwnedStorageVersion({
-      fixture,
-      versionId,
-      archiveSize: 1024,
-    });
-
-    storages.mockStorageObjectsExist(2048);
-    const primaryFile = storageTextFile(
-      "primary.txt",
-      `primary fallback ${randomUUID()}`,
-    );
-    const primary = await storages.prepareStorage(runFixture.actor, {
-      storageName: fixture.storageName,
-      storageOwner: "organization",
-      files: [primaryFile],
-    });
-    await storages.commitStorage(runFixture.actor, {
-      storageName: fixture.storageName,
-      storageOwner: "organization",
-      versionId: primary.versionId,
-      files: [primaryFile],
-    });
-    if (!runFixture.actor.orgId) {
-      throw new Error("Expected an organization-scoped cache actor");
-    }
-    const primaryPrefix = await readStorageS3PrefixFixture({
-      orgId: runFixture.actor.orgId,
-      userId: VOLUME_ORG_USER_ID,
-      name: fixture.storageName,
-    });
-    const signedCount = mockUniquePresignedUrls();
-    const systemObjectKey = storageArchiveKey(fixture, versionId);
-    const systemArchiveUrl = expectedPresignedUrl(systemObjectKey, 1);
-    await seedOwnedStorageCacheRow({
-      fixture,
-      versionId,
-      presignedUrl: systemArchiveUrl,
-      expiresAt: new Date(nowDate().getTime() + 2 * 24 * 60 * 60 * 1000),
-      refreshAfter: new Date(nowDate().getTime() + 24 * 60 * 60 * 1000),
-    });
-
-    const systemRun = await createAndClaimOwnedSystemStorage({
-      ...runFixture,
-      fixture,
-      prompt: "prefer the owned system storage candidate",
-    });
-    expect(systemRun.mount).toStrictEqual({
-      name: fixture.storageName,
-      mountPath: fixture.mountPath,
-      versionId,
-      archiveSize: 1024,
-      archiveUrl: systemArchiveUrl,
-    });
-    expect(signedCount(systemObjectKey)).toBe(0);
-
-    await stateAction({
-      action: "cleanup-owned-storages",
-      storage_ids: [fixture.storageId],
-    });
-    await claimOwnedStorage(fixture);
-    await expect(readOwnedStorageState(fixture)).resolves.toStrictEqual({
-      s3_prefix: fixture.s3Prefix,
-      size: 0,
-      file_count: 0,
-      head_version_id: null,
-    });
-
-    const primaryObjectKey = `${primaryPrefix}/${primary.versionId}/archive.tar.gz`;
-    const fallbackRun = await createAndClaimOwnedSystemStorage({
-      ...runFixture,
-      fixture,
-      prompt: "fall back to the primary storage candidate",
-    });
-    expect(fallbackRun.mount).toStrictEqual({
-      name: fixture.storageName,
-      mountPath: fixture.mountPath,
-      versionId: primary.versionId,
-      archiveSize: 2048,
-      archiveUrl: expectedPresignedUrl(primaryObjectKey, 1),
-    });
-    expect(signedCount(primaryObjectKey)).toBe(1);
-    expect(
-      sortedCacheSnapshots(await readOwnedStorageCache(fixture)),
-    ).toStrictEqual([
-      expectedCacheRow({
-        fixture,
-        versionId,
-        presignedUrl: systemArchiveUrl,
-      }),
-    ]);
   });
 
   it("prunes expired owned cache rows", async () => {

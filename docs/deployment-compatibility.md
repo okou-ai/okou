@@ -71,6 +71,29 @@ server-side signing-key ownership are unchanged.
 No database migration, client version floor, feature switch or deployment-order
 fallback is required. This change does not deploy or verify production recovery.
 
+## Video poster extraction retired (2026-10-08)
+
+Video uploads stop scheduling server-side poster extraction. The API removes
+both the public Cloudflare Media Transformations call and the private-video
+capability producer. The host Worker removes the private poster endpoint and
+its `MEDIA` binding. Hosted-page screenshots and image thumbnails keep their
+existing renderers.
+
+- **Old App or CLI → new API:** upload, playback, download and artifact response
+  contracts are unchanged. Videos without a stored poster use the existing
+  playable-video preview; previously stored poster references remain readable.
+- **New API → old Worker:** the API makes no poster requests; the unused Worker
+  endpoint does not affect file delivery.
+- **Old API → new Worker:** a remaining private poster POST receives `405` from
+  the Worker's existing method guard. The old API handles this in its optional
+  background-preview failure path and cleans up its temporary grant. The video
+  and catalog entry are already committed, so upload success and source access
+  are unaffected. In-flight renders may finish during API drain.
+
+No database migration, stored-preview deletion or client-version floor is
+needed. Rolling the API back can resume public poster generation; restoring
+private poster generation also requires the old Worker and `MEDIA` binding.
+
 ## Pi memory Luna routing (2026-10-08)
 
 New Stage 1 extractions and Phase 2 maintenance runs use `gpt-6-luna`.
@@ -5223,10 +5246,10 @@ The API no longer accepts or passes a brand for uploads, generations, hosted
 deployments, integration input files or conversation attachment copies.
 Legacy-layout hosted sites keep serving and keep their names reserved; a new
 publication never redeploys a legacy site and, as before, receives a fallback
-name in the current layout when a legacy site holds the requested name. Artifact preview images are new objects and use `current`; the video
-poster transform still runs on the source artifact's CDN origin. The private
-video poster request always uses the current `files.` host, which the Worker
-accepts for both domains.
+name in the current layout when a legacy site holds the requested name. Artifact
+preview images are new objects and use `current`. Video poster extraction is
+[retired](#video-poster-extraction-retired-2026-10-08); existing poster objects
+retain their original layout.
 
 Migration `1235_hosted_artifact_link_layout_okou_default` sets `DEFAULT 'okou'`
 on the four `public_brand` columns, so any writer that omits the column

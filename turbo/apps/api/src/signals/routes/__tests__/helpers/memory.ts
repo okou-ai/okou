@@ -1,127 +1,130 @@
 import { createHash } from "node:crypto";
+import { gzipSync } from "node:zlib";
 
-import type {
-  TestMemorySummaryProjectionStateActionBody,
-  TestMemorySummaryProjectionStateActionResponse,
-} from "@okouai/api-contracts/contracts/test-memory-summary-projection-state";
+import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
+import type { StorageManifest } from "@okouai/api-contracts/contracts/runners";
 import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
+import { Header } from "tar";
 
-import { createAppWithRoutes } from "../../../../app-factory-core";
 import type { TestContext } from "../../../../__tests__/test-context";
-import {
-  readStorageIdentityFixture,
-  readStorageS3PrefixFixture,
-} from "../../../../test-fixtures/storage";
-import { testMemorySummaryProjectionStateRoutes } from "../../test-memory-summary-projection-state";
-import type { ApiTestUser } from "./api-bdd";
-import { createStoragesBddApi } from "./api-bdd-storages";
+import { expectCanonicalStorageManifest } from "./api-bdd-runs";
+import { createWebhookCallbackApi } from "./api-bdd-webhooks";
 
 interface MemoryFile {
   readonly path: string;
   readonly content: string | Buffer;
 }
 
-interface CommittedMemoryVersion {
-  readonly storageId: string;
-  readonly versionId: string;
-  readonly s3Key: string;
-}
-
-/**
- * Create (or dedupe onto) a memory artifact version through the in-process
- * Storage fixture. Returns the content-addressed version id and the S3 key
- * assigned to it.
- */
+/** Publish only to the writable memory mount issued by an actual Runner claim. */
 export async function commitMemoryVersion(
   context: TestContext,
-  actor: ApiTestUser,
+  run: {
+    readonly runId: string;
+    readonly sandboxHeaders: { readonly authorization: string };
+    readonly storageManifest: StorageManifest | null | undefined;
+  },
   files: readonly MemoryFile[],
-  archiveSize = 1024,
-): Promise<CommittedMemoryVersion> {
-  if (!actor.orgId) {
-    throw new Error("commitMemoryVersion requires an actor with an org");
+): Promise<{ readonly storageId: string; readonly versionId: string }> {
+  const memory = expectCanonicalStorageManifest(
+    run.storageManifest,
+  )?.storageMounts.find((mount) => {
+    return mount.name === MEMORY_ARTIFACT_NAME && mount.writeback;
+  });
+  if (!memory) {
+    throw new Error("Expected the claimed Run's writable memory mount");
   }
-  const storagesApi = createStoragesBddApi(context);
+  const blocks: Buffer[] = [];
   const entries = files.map((file) => {
-    const content =
-      typeof file.content === "string"
-        ? Buffer.from(file.content, "utf8")
-        : file.content;
+    const content = Buffer.from(file.content);
+    const header = Buffer.alloc(512);
+    new Header({
+      path: file.path,
+      size: content.length,
+      type: "File",
+      mode: 0o644,
+    }).encode(header);
+    blocks.push(
+      header,
+      content,
+      Buffer.alloc((512 - (content.length % 512)) % 512),
+    );
     return {
       path: file.path,
       hash: createHash("sha256").update(content).digest("hex"),
       size: content.length,
     };
   });
-
-  const prepared = await storagesApi.prepareStorage(actor, {
-    storageName: MEMORY_ARTIFACT_NAME,
-    storageOwner: "user",
-    files: entries,
-  });
-  storagesApi.mockStorageObjectExistsOnce();
-  storagesApi.mockStorageObjectExistsOnce(archiveSize);
-  await storagesApi.commitStorage(actor, {
-    storageName: MEMORY_ARTIFACT_NAME,
-    storageOwner: "user",
-    versionId: prepared.versionId,
-    files: entries,
-  });
-
-  const s3Prefix = await readStorageS3PrefixFixture({
-    orgId: actor.orgId,
-    userId: actor.userId,
-    name: MEMORY_ARTIFACT_NAME,
-  });
-  const identity = await readStorageIdentityFixture({
-    orgId: actor.orgId,
-    userId: actor.userId,
-    name: MEMORY_ARTIFACT_NAME,
-  });
-  return {
-    storageId: identity.id,
-    versionId: prepared.versionId,
-    s3Key: `${s3Prefix}/${prepared.versionId}`,
-  };
-}
-
-export async function seedReadyMemorySummaryProjection(
-  context: TestContext,
-  actor: ApiTestUser,
-  version: CommittedMemoryVersion,
-  content: string,
-): Promise<void> {
-  if (!actor.orgId) {
-    throw new Error("seedReadyMemorySummaryProjection requires an org actor");
-  }
-  const body: TestMemorySummaryProjectionStateActionBody = {
-    action: "seed-ready",
-    org_id: actor.orgId,
-    user_id: actor.userId,
-    memory_storage_id: version.storageId,
-    storage_version_id: version.versionId,
-    content,
-  };
-  const app = createAppWithRoutes({
-    signal: context.signal,
-    routes: testMemorySummaryProjectionStateRoutes,
-  });
-  const response = await app.request(
-    "/api/test/memory-summary-projection-state/action",
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    },
+  blocks.push(Buffer.alloc(1024));
+  const archive = gzipSync(Buffer.concat(blocks));
+  const manifest = Buffer.from(
+    JSON.stringify({
+      version: 1,
+      files: entries,
+      createdAt: new Date(0).toISOString(),
+    }),
   );
-  if (!response.ok) {
-    throw new Error(
-      `Projection seed-ready action failed with ${response.status.toString()}`,
-    );
+  const webhooks = createWebhookCallbackApi(context);
+  const prepared = await webhooks.requestAgentStoragePrepare(
+    {
+      runId: run.runId,
+      storageId: memory.storageId,
+      parentVersionId: memory.versionId,
+      files: entries,
+    },
+    run.sandboxHeaders,
+    [200],
+  );
+  if (prepared.status !== 200 || !prepared.body.uploads) {
+    throw new Error("Expected actual memory upload authorization");
   }
-  const result =
-    (await response.json()) as TestMemorySummaryProjectionStateActionResponse;
-  if (!result.ok) {
-    throw new Error("Projection seed-ready action did not succeed");
+  // Model the external object store at the exact keys authorized by prepare.
+  // These are SHA-matching manifest/archive bytes, not arbitrary row identities.
+  const objects = new Map([
+    [prepared.body.uploads.archive.key, archive],
+    [prepared.body.uploads.manifest.key, manifest],
+  ]);
+  const fallback = context.mocks.s3.send.getMockImplementation();
+  context.mocks.s3.send.mockImplementation((command: unknown) => {
+    if (
+      command instanceof HeadObjectCommand ||
+      command instanceof GetObjectCommand
+    ) {
+      const bytes = objects.get(command.input.Key ?? "");
+      if (bytes) {
+        if (command instanceof HeadObjectCommand) {
+          return Promise.resolve({ ContentLength: bytes.length });
+        }
+        return Promise.resolve({
+          ContentLength: bytes.length,
+          Body: {
+            async *[Symbol.asyncIterator]() {
+              yield bytes;
+            },
+            transformToByteArray: () => {
+              return Promise.resolve(bytes);
+            },
+          },
+        });
+      }
+    }
+    if (!fallback) {
+      throw new Error("Expected the existing object store boundary mock");
+    }
+    return fallback(command);
+  });
+  const committed = await webhooks.requestAgentStorageCommit(
+    {
+      runId: run.runId,
+      storageId: memory.storageId,
+      parentVersionId: memory.versionId,
+      versionId: prepared.body.versionId,
+      files: entries,
+    },
+    run.sandboxHeaders,
+    [200],
+  );
+  if (committed.status !== 200) {
+    throw new Error("Expected Run-authorized memory publication");
   }
+  return { storageId: memory.storageId, versionId: committed.body.versionId };
 }
