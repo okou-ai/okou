@@ -34,9 +34,9 @@ I/O under a lock ties database contention to network latency.
 Do not replace advisory locks with new coordination tables, persisted fields,
 coordination state hidden in JSON, business triggers, explicit row locks, retry
 loops, `NOWAIT`, `lock_timeout`, a generic mutex, or a claim/lease framework.
-An earlier KEEP classification is not a permanent exemption; the proposed
-subscription-table exception was withdrawn. No application-defined business
-triggers may remain in the final schema; express transitions in the owning SQL.
+An earlier KEEP classification is not a permanent exemption. No
+application-defined business triggers may remain in the final schema; express
+transitions in the owning SQL.
 Indexes or constraints over existing fields are allowed when the actual business
 contract requires them. For narrowly scoped outgoing-schema trigger
 compatibility, follow the
@@ -187,6 +187,55 @@ Do not introduce duplicate financial effects, stale credential publication,
 permission resurrection, or a generic compensation framework as a prerequisite
 for retirement. A final database CAS cannot undo a remote request that already
 took effect.
+
+### Recovery and Consistency
+
+Do not add revision/generation CAS, savepoint arbitration, or ordering solely to
+serialize nonfinancial operations when another save, reconnect, or scheduled
+task is the accepted recovery. Preserve authorization, natural constraints,
+normal delivery, current resource identity, explicit enabled state, and basic
+deduplication. Delayed preparation must not revive revoked authority or disabled
+work. Direct nonfinancial lock removal has no additional serving/in-flight/rollback
+gate solely for that lock; independent schema and protocol transitions retain
+their actual compatibility gates.
+
+Accepted notification gaps, display delays, or best-effort cleanup are specific
+contracts, not universal defaults. Do not impose gap-free handover or stronger
+teardown solely because an implementation previously used a lock. Display and
+configuration drift cannot justify lost or duplicate charges, missing settled
+amounts, weaker access checks, or stale paid entitlements. Ambiguous ownership
+requires explicit valid selection or fail-closed rejection, never the first
+matching account or arbitrary credentials.
+
+### Reconciliation
+
+Derive desired provider configuration from authoritative existing local data,
+not a new coordination table or second stored snapshot. Keep current intent,
+observed provider facts, and confirmed financial outcomes distinct. Immediate
+and scheduled synchronization reload the latest committed projection and use
+the same derivation outside transactions, not replayed older imperative changes.
+
+Process independent owners in bounded batches without a transaction across
+owners or remote calls. Frequency, permitted drift, and recovery deadlines
+belong to the existing product contract. After changes stop, outstanding stale
+work finishes, and reconciliation succeeds, configuration must converge to latest
+intent. A periodic attempt is not a guaranteed recovery deadline during an outage.
+
+Late provider events must not replace current desired intent with an older
+snapshot. Configuration repair cannot undo an issued invoice, refund, credit,
+duplicate charge, or extra payable resource. Preserve their independent
+deduplication, authorization, and financial recovery contracts.
+
+### Historical Scope
+
+Concrete recovery decisions and earlier
+[acceptance scope](https://github.com/okou-ai/okou/blob/f10a803827977b44971d437045f9b252d18a7ac0/docs/advisory-lock-terminal-state.md#transaction-boundaries)
+remain [recoverable in Git history](https://github.com/okou-ai/okou/blob/f10a803827977b44971d437045f9b252d18a7ac0/docs/advisory-lock-terminal-state.md#accepted-product-tradeoffs--2026-09-29).
+Keep new feature decisions and receipts in their owning issue or PR. Removing
+prose does not change those contracts or turn previously excluded handle
+propagation into an extra release gate. New work still follows the current
+transaction policy. A historical note is not proof of current deployment or
+completed retirement.
 
 ## Verification and Cleanup
 
