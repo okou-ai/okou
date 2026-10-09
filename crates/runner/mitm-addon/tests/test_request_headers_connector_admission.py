@@ -456,8 +456,7 @@ async def test_firewall_allow_header_auth_revalidates_connection_after_auth_wait
         peername=("93.184.216.34", 443),
     )
     flow.metadata["preexisting"] = "keep"
-    original_headers = flow.request.headers.fields
-    original_path = flow.request.path
+    original_server = flow.server_conn
     auth_resolution_entered = asyncio.Event()
     release_auth_resolution = asyncio.Event()
 
@@ -492,18 +491,20 @@ async def test_firewall_allow_header_auth_revalidates_connection_after_auth_wait
     assert flow.response is None
     assert flow.error is None
     assert flow.metadata["preexisting"] == "keep"
+    assert callable(flow.request.stream)
+    assert flow.request.headers["Authorization"] == "Bearer resolved"
+    assert dict(flow.request.query) == {"client": "visible", "api_key": "resolved"}
+    assert flow.server_conn.id in upstream_destination_binding.binding_snapshot_for_tests()
     if disconnect_during_auth:
-        _assert_no_request_stream(flow)
-        assert flow.request.headers.fields == original_headers
-        assert flow.request.path == original_path
-        for key in request_classification.REQUEST_HEADERS_PROBE_METADATA_KEYS:
-            assert key not in flow.metadata
-        assert flow.server_conn.id not in upstream_destination_binding.binding_snapshot_for_tests()
+        assert flow.server_conn is not original_server
+        assert flow.request.host == "service.example.com"
+        assert flow.server_conn.address == ("service.example.com", 443)
+        assert original_server.id not in upstream_destination_binding.binding_snapshot_for_tests()
+        assert metadata_keys.RECOVERED_FIREWALL_REQUEST in flow.metadata
+        assert metadata_keys.RECOVERED_UPSTREAM_ADMITTED not in flow.metadata
     else:
-        assert callable(flow.request.stream)
-        assert flow.request.headers["Authorization"] == "Bearer resolved"
-        assert dict(flow.request.query) == {"client": "visible", "api_key": "resolved"}
-        assert flow.server_conn.id in upstream_destination_binding.binding_snapshot_for_tests()
+        assert flow.server_conn is original_server
+        assert metadata_keys.RECOVERED_FIREWALL_REQUEST not in flow.metadata
 
 
 async def test_firewall_allow_header_auth_blocks_without_verified_connected_tls(

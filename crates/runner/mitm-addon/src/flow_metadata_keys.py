@@ -127,6 +127,21 @@ Firewall and auth context
   auth phases while the raw URL/header identity is unchanged, restored with an
   abandoned header probe, consumed after signing, and removed by request or
   terminal cleanup when signing does not consume it.
+- ``UPSTREAM_REQUEST_STARTED``: ``bool`` conservatively set by the pinned
+  connection-selection bridge before it permits the first upstream request
+  headers. ``upstream_admission`` rejects auth-wait recovery once this is set,
+  even if another addon changed streaming flags. Terminal cleanup removes it.
+- ``RECOVERED_FIREWALL_REQUEST``: opaque process-local, resolved-credential-free
+  recovery context written by pre-forward auth re-admission in ``mitm_addon``.
+  ``mitmproxy_compat`` dispatches the actual-connection guard only while it is
+  present; ``okou_upstream_ready`` consumes it. Request failures and terminal
+  cleanup remove abandoned context and any unopened placeholder binding. It is
+  not a durable destination proof.
+- ``RECOVERED_UPSTREAM_ADMITTED``: ``bool`` written only after the actual
+  recovered connection passes current authorization, verified TLS and endpoint
+  admission in ``okou_upstream_ready``. The compatibility bridge clears it
+  before the hook and consumes an exact ``True`` before forwarding. Terminal
+  cleanup also removes it; handler failures cannot authorize a send.
 - ``TRUSTED_AUTHORITY_HOST``: ``str`` host from authority validation. Read by
   auth-base URL rewrite logic when reconstructing trusted request authority.
 
@@ -248,6 +263,9 @@ AUTH_REFRESHED_SECRETS: Final = "auth_refreshed_secrets"
 AUTH_CACHE_HIT: Final = "auth_cache_hit"
 AUTH_URL_REWRITE: Final = "auth_url_rewrite"
 AUTH_BASE_FORWARD_ADMISSION: Final = "auth_base_forward_admission"
+UPSTREAM_REQUEST_STARTED: Final = "upstream_request_started"
+RECOVERED_FIREWALL_REQUEST: Final = "recovered_firewall_request"
+RECOVERED_UPSTREAM_ADMITTED: Final = "recovered_upstream_admitted"
 AWS_SIGV4_BODY_ADMISSION: Final = "aws_sigv4_body_admission"
 AWS_SIGV4_REQUEST_INSPECTION: Final = "aws_sigv4_request_inspection"
 TRUSTED_AUTHORITY_HOST: Final = "trusted_authority_host"

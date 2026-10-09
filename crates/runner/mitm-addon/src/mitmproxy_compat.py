@@ -9,9 +9,10 @@ from mitmproxy import http, version
 from mitmproxy.proxy import commands, events, layer
 from mitmproxy.proxy.layers.http import HttpStream
 from mitmproxy.proxy.layers.http._events import RequestHeaders
-from mitmproxy.proxy.layers.http._hooks import HttpRequestHeadersHook
+from mitmproxy.proxy.layers.http._hooks import HttpRequestHeadersHook, HttpResponseHeadersHook
 from mitmproxy.proxy.server import ConnectionHandler
 
+import flow_metadata_keys as metadata_keys
 import response_streaming
 import websocket_framing
 
@@ -27,6 +28,7 @@ _RESPONSE_INSPECTION_BRIDGE = "_response_inspection_bridge"
 _INSPECTION_CHECKPOINTS: ContextVar[list["ResponseInspectionHook"] | None] = ContextVar(
     "response_inspection_checkpoints", default=None
 )
+_UPSTREAM_READY_BRIDGE = "_okou_upstream_ready_bridge"
 
 
 @dataclass
@@ -39,6 +41,14 @@ class ResponseInspectionHook(commands.StartHook):
 
     def args(self) -> list[http.HTTPFlow]:
         return [self.flow]
+
+
+@dataclass
+class OkouUpstreamReadyHook(commands.StartHook):
+    """Runner-only admission hook at the actual connection/pre-send boundary."""
+
+    name = "okou_upstream_ready"
+    flow: http.HTTPFlow
 
 
 def install_runtime_compatibility() -> None:
@@ -56,6 +66,7 @@ def install_runtime_compatibility() -> None:
 
     _install_request_end_stream_bridge()
     _install_response_inspection_bridge()
+    _install_upstream_ready_bridge()
     websocket_framing.install_websocket_framing()
 
 
@@ -164,6 +175,44 @@ def _install_response_inspection_bridge() -> None:
     HttpStream.state_stream_response_body = state_stream_response_body
     ConnectionHandler.server_event = server_event
     ConnectionHandler.hook_task = hook_task
+
+
+def _install_upstream_ready_bridge() -> None:
+    """Guard recovered streams after connection selection and before SendHttp.
+
+    Both buffered requests and stream startup await make_server_connection()
+    before sending headers. Normal flows are unchanged. Rejections follow the
+    pinned layer's existing local-response lifecycle, not a second forwarder.
+    """
+    current_handler = HttpStream.make_server_connection
+    if hasattr(current_handler, _UPSTREAM_READY_BRIDGE):
+        return
+
+    def make_server_connection(self: HttpStream) -> layer.CommandGenerator[bool]:
+        connected = yield from current_handler(self)
+        if not connected:
+            return False
+        if metadata_keys.RECOVERED_FIREWALL_REQUEST not in self.flow.metadata:
+            self.flow.metadata[metadata_keys.UPSTREAM_REQUEST_STARTED] = True
+            return True
+        self.flow.metadata.pop(metadata_keys.RECOVERED_UPSTREAM_ADMITTED, None)
+        yield OkouUpstreamReadyHook(self.flow)
+        admitted = self.flow.metadata.pop(metadata_keys.RECOVERED_UPSTREAM_ADMITTED, None) is True
+        if (yield from self.check_killed(True)):
+            return False
+        if not admitted and self.flow.response is None:
+            # Missing/throwing handlers must never silently approve forwarding.
+            self.flow.response = http.Response.make(500, b"Upstream admission failed")
+        if self.flow.response is not None:
+            yield HttpResponseHeadersHook(self.flow)
+            if not (yield from self.check_killed(False)):
+                yield from self.send_response()
+            return False
+        self.flow.metadata[metadata_keys.UPSTREAM_REQUEST_STARTED] = True
+        return True
+
+    setattr(make_server_connection, _UPSTREAM_READY_BRIDGE, True)
+    HttpStream.make_server_connection = make_server_connection
 
 
 def take_request_end_stream(flow: http.HTTPFlow) -> bool | None:

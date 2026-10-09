@@ -18,7 +18,11 @@ import public_destination
 import request_classification
 import upstream_destination_binding
 from body_limits import STREAM_BUFFER_LIMIT
-from tests.aws_sigv4_helpers import resolved_aws_sigv4_credentials
+from tests.aws_sigv4_helpers import (
+    RESOLVED_AWS_ACCESS_KEY_ID,
+    aws_sigv4_header_auth_headers,
+    resolved_aws_sigv4_credentials,
+)
 from tests.firewall_auth_helpers import firewall_auth_response
 from tests.firewall_helpers import cancel_pending_task
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
@@ -245,7 +249,7 @@ async def test_public_destination_allows_public_runtime_destination(
         pytest.param("peer-changed", id="connected-peer-changed"),
     ],
 )
-async def test_public_destination_upstream_change_during_auth_prevents_credential_application(
+async def test_public_destination_auth_wait_recovers_only_completed_disconnect(
     tmp_path,
     real_flow,
     mitm_ctx,
@@ -259,10 +263,16 @@ async def test_public_destination_upstream_change_during_auth_prevents_credentia
         tmp_path,
         auth_config=auth_config,
     )
+    signing_headers = (
+        tuple(aws_sigv4_header_auth_headers(host="service.example.com"))[1:]
+        if "awsSigv4" in auth_config
+        else ()
+    )
     flow = _public_destination_flow(
         real_flow,
         headers,
         destination_host="93.184.216.34",
+        extra_headers=signing_headers,
     )
     mark_connected_tls_upstream(
         flow,
@@ -270,6 +280,7 @@ async def test_public_destination_upstream_change_during_auth_prevents_credentia
         server_address=("93.184.216.34", 443),
         peername=("93.184.216.34", 443),
     )
+    original_server = flow.server_conn
     original_headers = flow.request.headers.fields
     original_path = flow.request.path
     auth_resolution_entered = asyncio.Event()
@@ -300,16 +311,31 @@ async def test_public_destination_upstream_change_during_auth_prevents_credentia
             await cancel_pending_task(request_task)
 
     auth_fetch.assert_awaited_once()
-    assert flow.response is not None
-    assert flow.response.status_code == 403
-    assert flow.metadata[metadata_keys.FIREWALL_ERROR] == "upstream_destination_unbound"
-    assert flow.request.headers.fields == original_headers
-    assert flow.request.path == original_path
     binding_snapshot = upstream_destination_binding.binding_snapshot_for_tests()
     if upstream_change == "completed":
-        assert flow.server_conn.id not in binding_snapshot
-    else:
+        assert flow.response is None
+        assert flow.server_conn is not original_server
+        assert flow.server_conn.address == ("service.example.com", 443)
+        assert flow.request.host == "service.example.com"
+        assert flow.request.headers["Host"] == "service.example.com"
+        assert original_server.id not in binding_snapshot
         assert flow.server_conn.id in binding_snapshot
+        assert metadata_keys.RECOVERED_FIREWALL_REQUEST in flow.metadata
+        assert metadata_keys.RECOVERED_UPSTREAM_ADMITTED not in flow.metadata
+        if "awsSigv4" in auth_config:
+            assert RESOLVED_AWS_ACCESS_KEY_ID in flow.request.headers["Authorization"]
+        elif "headers" in auth_config:
+            assert flow.request.headers["Authorization"] == "Bearer resolved"
+        else:
+            assert flow.request.query["api_key"] == "resolved"
+    else:
+        assert flow.response is not None
+        assert flow.response.status_code == 403
+        assert flow.metadata[metadata_keys.FIREWALL_ERROR] == "upstream_destination_unbound"
+        assert flow.request.headers.fields == original_headers
+        assert flow.request.path == original_path
+        assert flow.server_conn.id in binding_snapshot
+        assert metadata_keys.RECOVERED_FIREWALL_REQUEST not in flow.metadata
 
 
 async def test_public_destination_policy_allow_classifies_public_runtime_destination_once(

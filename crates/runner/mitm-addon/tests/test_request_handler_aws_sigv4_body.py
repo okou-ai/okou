@@ -576,7 +576,7 @@ async def test_sigv4_request_hook_header_field_count_fails_closed(
     assert aws_sigv4_body_admission.state_for_tests() == (0, 0)
 
 
-async def test_payload_independent_sigv4_disconnect_during_auth_falls_back_without_credentials(
+async def test_payload_independent_sigv4_disconnect_during_auth_is_readmitted_before_streaming(
     tmp_path,
     real_flow,
     headers,
@@ -608,8 +608,7 @@ async def test_payload_independent_sigv4_disconnect_during_auth_falls_back_witho
         server_address=("93.184.216.34", 443),
         peername=("93.184.216.34", 443),
     )
-    original_headers = flow.request.headers.fields
-    original_url = flow.request.url
+    original_server = flow.server_conn
     auth_resolution_entered = asyncio.Event()
     release_auth_resolution = asyncio.Event()
 
@@ -637,15 +636,18 @@ async def test_payload_independent_sigv4_disconnect_during_auth_falls_back_witho
             release_auth_resolution.set()
             await cancel_pending_task(requestheaders_task)
 
-        assert flow.request.stream is False
-        assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
-        assert metadata_keys.REQUEST_STREAM_BUFFER_STATE not in flow.metadata
-        assert flow.request.headers.fields == original_headers
-        assert flow.request.url == original_url
+        assert callable(flow.request.stream)
+        assert flow.server_conn is not original_server
+        assert flow.server_conn.address == (STS_HOST, 443)
+        assert flow.request.url == f"https://{STS_HOST}/"
+        assert RESOLVED_AWS_ACCESS_KEY_ID in flow.request.headers["Authorization"]
         assert RESOLVED_AWS_ACCESS_KEY_ID not in flow.request.url
-        assert aws_sigv4_body_admission.state_for_tests() == (1, 4)
-        assert metadata_keys.AWS_SIGV4_REQUEST_INSPECTION in flow.metadata
+        assert aws_sigv4_body_admission.state_for_tests() == (0, 0)
+        assert metadata_keys.AWS_SIGV4_REQUEST_INSPECTION not in flow.metadata
+        assert metadata_keys.RECOVERED_FIREWALL_REQUEST in flow.metadata
+        assert metadata_keys.RECOVERED_UPSTREAM_ADMITTED not in flow.metadata
         mitm_addon.error(flow)
+        assert metadata_keys.RECOVERED_FIREWALL_REQUEST not in flow.metadata
 
     get_headers.assert_awaited_once()
     assert aws_sigv4_body_admission.state_for_tests() == (0, 0)

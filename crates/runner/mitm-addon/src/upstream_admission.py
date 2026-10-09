@@ -8,10 +8,13 @@ from mitmproxy import connection, ctx, http, tls
 
 import connection_endpoints
 import flow_metadata
+import flow_metadata_keys as metadata_keys
 import matching
 import path_security
 import platform_api_url
 import registry
+import request_authority
+import request_streaming
 import upstream_destination_binding
 from host_normalization import normalize_hostname
 from runtime_url_parsing import strip_url_query_and_fragment
@@ -43,6 +46,131 @@ class TlsAdmission:
     kind: TlsAdmissionKind
     run_id: str | None = None
     sni: str | None = None
+
+
+@dataclass
+class RequestAuthAdmission:
+    """Request-scoped admission carried only across pre-forward auth waits."""
+
+    server: connection.Server
+    require_connected: bool
+    authority: request_authority.TrustedAuthority
+    method: str
+    can_recover: bool
+
+
+def capture_request_auth_admission(flow: http.HTTPFlow) -> RequestAuthAdmission:
+    return RequestAuthAdmission(
+        server=flow.server_conn,
+        require_connected=flow.server_conn.connected,
+        authority=request_authority.get_trusted_authority(flow),
+        method=flow.request.method,
+        can_recover=not flow.request.stream
+        and request_streaming.streamed_request_size(flow) is None
+        and flow.metadata.get(metadata_keys.UPSTREAM_REQUEST_STARTED, False) is False,
+    )
+
+
+def can_recover_closed_request_destination(
+    flow: http.HTTPFlow,
+    admission: RequestAuthAdmission,
+) -> bool:
+    """Never substitute an active, replaced, errored or already-streamed socket."""
+    try:
+        authority = request_authority.get_trusted_authority(flow)
+    except request_authority.AuthorityValidationError:
+        return False
+    return (
+        admission.can_recover
+        and admission.require_connected
+        and flow.server_conn is admission.server
+        and flow.server_conn.state == connection.ConnectionState.CLOSED
+        and not flow.server_conn.error
+        and flow.error is None
+        and flow.response is None
+        and flow.request.scheme == "https"
+        and not flow.request.stream
+        and request_streaming.streamed_request_size(flow) is None
+        and flow.metadata.get(metadata_keys.UPSTREAM_REQUEST_STARTED, False) is False
+        and flow.request.method == admission.method
+        and authority == admission.authority
+        and not upstream_destination_binding.has_server_binding(flow.server_conn)
+    )
+
+
+def recover_closed_request_destination(
+    flow: http.HTTPFlow,
+    admission: RequestAuthAdmission,
+    *,
+    api_url: str,
+    platform_connector_auth: bool,
+) -> bool:
+    """Select one fresh authority target; caller must first revalidate authorization.
+
+    This is not live endpoint proof. Recovered requests must pass the final
+    connected/TLS admission hook before their first upstream request bytes.
+    """
+    if not can_recover_closed_request_destination(flow, admission):
+        return False
+    original_server = flow.server_conn
+    original_host = flow.request.host
+    original_authority = flow.request.authority
+    original_headers = flow.request.headers.fields
+    flow.server_conn = connection.Server(
+        address=(admission.authority.host, admission.authority.port),
+        sni=admission.authority.host,
+        tls=True,
+        transport_protocol=original_server.transport_protocol,
+        via=original_server.via,
+    )
+    # HttpStream acquires by request.host/port, not server_conn.address. Preserve
+    # the already validated wire Host/:authority while changing that pool key.
+    flow.request.host = admission.authority.host
+    flow.request.authority = original_authority
+    flow.request.headers.fields = original_headers
+    if not ensure_bound_destination(
+        flow,
+        kind="connector_auth",
+        api_url=api_url,
+        platform_connector_auth=platform_connector_auth,
+    ):
+        forget_server_binding(flow.server_conn)
+        flow.server_conn = original_server
+        flow.request.host = original_host
+        flow.request.authority = original_authority
+        flow.request.headers.fields = original_headers
+        return False
+    admission.server = flow.server_conn
+    admission.require_connected = False
+    admission.can_recover = False
+    return True
+
+
+def admit_recovered_connected_destination(
+    flow: http.HTTPFlow,
+    *,
+    host: str,
+    port: int,
+    api_url: str,
+    platform_connector_auth: bool,
+) -> bool:
+    """Require fresh verified TLS/endpoint proof even if a direct binding exists."""
+    if (
+        not flow.server_conn.connected
+        or _connected_verified_tls_destination_endpoint(
+            flow.server_conn,
+            host=host,
+            port=port,
+        )
+        is None
+    ):
+        return False
+    return ensure_bound_destination(
+        flow,
+        kind="connector_auth",
+        api_url=api_url,
+        platform_connector_auth=platform_connector_auth,
+    )
 
 
 _api_destination_cache: tuple[str, platform_api_url.PlatformApiUrl | None] | None = None

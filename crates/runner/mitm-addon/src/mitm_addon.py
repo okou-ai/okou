@@ -166,6 +166,107 @@ class _BufferedRequestBodyCheck:
     reason: str = ""
 
 
+@dataclass(frozen=True)
+class _RecoveredFirewallRequest:
+    allow: matching.FirewallAllow
+    run_id: str
+    authority: TrustedAuthority
+    method: str
+    pending_server: connection.Server
+
+
+def _take_recovered_firewall_request(flow: http.HTTPFlow) -> _RecoveredFirewallRequest | None:
+    recovered = flow.metadata.pop(metadata_keys.RECOVERED_FIREWALL_REQUEST, None)
+    if not isinstance(recovered, _RecoveredFirewallRequest):
+        return None
+    # HttpLayer may choose a different pool/factory connection. The unopened
+    # request placeholder has no transport disconnect event to clean its binding.
+    if not recovered.pending_server.connected:
+        upstream_admission.forget_server_binding(recovered.pending_server)
+    return recovered
+
+
+def _try_recover_firewall_destination(
+    flow: http.HTTPFlow,
+    allow: matching.FirewallAllow,
+    *,
+    expected_run_id: str,
+    admission: upstream_admission.RequestAuthAdmission | None,
+) -> bool:
+    if admission is None or not upstream_admission.can_recover_closed_request_destination(
+        flow, admission
+    ):
+        return False
+    current = _equivalent_current_firewall_allow(
+        _current_firewall_authorization_classification(flow),
+        expected_allow=allow,
+        expected_run_id=expected_run_id,
+    )
+    if (
+        current is None
+        or _builtin_host_policy_error_for_firewall_allow(flow, current.firewall_allow) is not None
+    ):
+        return False
+    if not upstream_admission.recover_closed_request_destination(
+        flow,
+        admission,
+        api_url=ctx.options.okou_api_url,
+        platform_connector_auth=current.platform_connector_auth,
+    ):
+        return False
+    flow.metadata[metadata_keys.RECOVERED_FIREWALL_REQUEST] = _RecoveredFirewallRequest(
+        allow=allow,
+        run_id=expected_run_id,
+        authority=admission.authority,
+        method=admission.method,
+        pending_server=admission.server,
+    )
+    return True
+
+
+def okou_upstream_ready(flow: http.HTTPFlow) -> None:
+    """Validate the actual recovered connection before mitmproxy sends headers."""
+    recovered = _take_recovered_firewall_request(flow)
+    if recovered is None:
+        _block_upstream_destination_unbound(flow, reason="connector_auth")
+        return
+    current_classification = _current_firewall_authorization_classification(
+        flow, original_authority=recovered.authority
+    )
+    current = _equivalent_current_firewall_allow(
+        current_classification,
+        expected_allow=recovered.allow,
+        expected_run_id=recovered.run_id,
+    )
+    if current is None:
+        _block_current_firewall_authorization(flow, current_classification)
+        return
+    authority = get_trusted_authority(flow)
+    if (
+        authority.host != recovered.authority.host
+        or authority.port != recovered.authority.port
+        or flow.request.host != recovered.authority.host
+        or flow.request.scheme != "https"
+        or flow.request.method != recovered.method
+        or not upstream_admission.admit_recovered_connected_destination(
+            flow,
+            host=recovered.authority.host,
+            port=recovered.authority.port,
+            api_url=ctx.options.okou_api_url,
+            platform_connector_auth=current.platform_connector_auth,
+        )
+    ):
+        _block_upstream_destination_unbound(flow, reason="connector_auth")
+        return
+    host_policy_error = _builtin_host_policy_error_for_firewall_allow(flow, current.firewall_allow)
+    if host_policy_error is not None:
+        _block_builtin_host_policy_denied(
+            flow, allow=current.firewall_allow, error=host_policy_error
+        )
+        return
+    flow.metadata[metadata_keys.RECOVERED_UPSTREAM_ADMITTED] = True
+
+
 # ============================================================================
 # Addon Configuration
 # ============================================================================
@@ -1037,6 +1138,7 @@ async def _try_firewall_request_stream_from_headers(
     request_url_snapshot = flow.request.url
 
     def restore_request_state() -> None:
+        _take_recovered_firewall_request(flow)
         flow.request.url = request_url_snapshot
         flow.request.headers = http.Headers(request_headers_snapshot.fields)
 
@@ -1066,8 +1168,7 @@ async def _try_firewall_request_stream_from_headers(
     _maybe_normalize_accept_encoding_for_body_inspection(flow, allow, sandbox_info)
     _start_request_timing(flow)
     expected_run_id = flow_metadata.run_id(flow.metadata)
-    admitted_server = flow.server_conn
-    require_connected = flow.server_conn.connected
+    admission = upstream_admission.capture_request_auth_admission(flow)
     try:
         result = await try_apply_stream_safe_firewall_auth_for_requestheaders(
             flow,
@@ -1078,8 +1179,9 @@ async def _try_firewall_request_stream_from_headers(
                     flow,
                     allow,
                     expected_run_id=expected_run_id,
-                    admitted_server=admitted_server,
-                    require_connected=require_connected,
+                    admitted_server=admission.server,
+                    require_connected=admission.require_connected,
+                    recovery_admission=admission,
                 )
             ),
         )
@@ -1101,6 +1203,7 @@ async def _try_firewall_request_stream_from_headers(
         fall_back()
         return
 
+    admission.can_recover = False
     terminal_usage.track_flow_if_needed(
         flow,
         is_billable_firewall(allow.name, sandbox_info),
@@ -1112,8 +1215,8 @@ async def _try_firewall_request_stream_from_headers(
             flow,
             allow,
             expected_run_id=expected_run_id,
-            admitted_server=admitted_server,
-            require_connected=require_connected,
+            admitted_server=admission.server,
+            require_connected=admission.require_connected,
             request_end_stream=request_end_stream is True,
         )
         if flow.response is None:
@@ -1160,6 +1263,7 @@ def _revalidate_current_firewall_authorization_for_request(
     expected_run_id: str,
     admitted_server: connection.Server,
     require_connected: bool,
+    recovery_admission: upstream_admission.RequestAuthAdmission | None = None,
 ) -> bool:
     if _firewall_allow_injects_ordinary_upstream_credentials(
         allow
@@ -1168,6 +1272,15 @@ def _revalidate_current_firewall_authorization_for_request(
         admitted_server=admitted_server,
         require_connected=require_connected,
     ):
+        if _try_recover_firewall_destination(
+            flow,
+            allow,
+            expected_run_id=expected_run_id,
+            admission=recovery_admission,
+        ):
+            # The fresh DNS target is pending, not a live endpoint. Its actual
+            # policy/TLS admission is mandatory at okou_upstream_ready.
+            return True
         _block_upstream_destination_unbound(flow, reason="connector_auth")
         return False
 
@@ -1198,6 +1311,8 @@ def _revalidate_current_firewall_authorization_for_request(
 
 def _current_firewall_authorization_classification(
     flow: http.HTTPFlow,
+    *,
+    original_authority: TrustedAuthority | None = None,
 ) -> request_classification.RequestClassification:
     preserved_probe_metadata = {
         key: flow.metadata[key]
@@ -1213,7 +1328,26 @@ def _current_firewall_authorization_classification(
         flow,
         preserved_probe_metadata,
     )
-    return _classify_request_for_flow(flow)
+    recovered = flow.metadata.get(metadata_keys.RECOVERED_FIREWALL_REQUEST)
+    has_recovery = isinstance(recovered, _RecoveredFirewallRequest)
+    if has_recovery:
+        original_authority = recovered.authority
+    classification = _classify_request_for_flow(
+        flow,
+        # A pending DNS target may defer until the mandatory connected hook.
+        defer_unresolved_public_destination=has_recovery and not flow.server_conn.connected,
+    )
+    if original_authority is not None:
+        # Reclassify the actual request, but never copy injected query secrets
+        # into the original network-log target during a recovered/catalog wait.
+        flow.metadata[metadata_keys.ORIGINAL_URL] = original_authority.url
+        http_network_log.set_target(
+            flow,
+            url=original_authority.url,
+            host=original_authority.host,
+            port=original_authority.port,
+        )
+    return classification
 
 
 def _equivalent_current_firewall_allow(
@@ -1239,13 +1373,19 @@ def _firewall_authorization_is_current_for_requestheaders(
     expected_run_id: str,
     admitted_server: connection.Server,
     require_connected: bool,
+    recovery_admission: upstream_admission.RequestAuthAdmission | None = None,
 ) -> bool:
     if not _has_current_direct_connector_auth_binding(
         flow,
         admitted_server=admitted_server,
         require_connected=require_connected,
     ):
-        return False
+        return _try_recover_firewall_destination(
+            flow,
+            allow,
+            expected_run_id=expected_run_id,
+            admission=recovery_admission,
+        )
     current_classification = _current_firewall_authorization_classification(flow)
     current_allow = _equivalent_current_firewall_allow(
         current_classification,
@@ -1476,8 +1616,7 @@ async def request(flow: http.HTTPFlow) -> None:
                 is_billable_firewall(allow.name, sandbox_info),
             )
             expected_run_id = flow_metadata.run_id(flow.metadata)
-            admitted_server = flow.server_conn
-            require_connected = flow.server_conn.connected
+            admission = upstream_admission.capture_request_auth_admission(flow)
             auth_result = await handle_firewall_request(
                 flow,
                 allow,
@@ -1487,12 +1626,15 @@ async def request(flow: http.HTTPFlow) -> None:
                         flow,
                         allow,
                         expected_run_id=expected_run_id,
-                        admitted_server=admitted_server,
-                        require_connected=require_connected,
+                        admitted_server=admission.server,
+                        require_connected=admission.require_connected,
+                        recovery_admission=admission,
                     )
                 ),
             )
+            admission.can_recover = False
             if auth_result is FirewallAuthHandlingResult.LOCAL_RESPONSE:
+                _take_recovered_firewall_request(flow)
                 # Local firewall/auth errors never reach a provider. They only
                 # need pre-tracking to keep shutdown from racing while auth is
                 # resolving, so release as soon as the local response exists.
@@ -1503,8 +1645,8 @@ async def request(flow: http.HTTPFlow) -> None:
                     flow,
                     allow,
                     expected_run_id=expected_run_id,
-                    admitted_server=admitted_server,
-                    require_connected=require_connected,
+                    admitted_server=admission.server,
+                    require_connected=admission.require_connected,
                     request_end_stream=True,
                 )
             return
@@ -1526,6 +1668,7 @@ async def request(flow: http.HTTPFlow) -> None:
                 },
             )
         flow.metadata.pop(metadata_keys.HTTP_REQUEST_START_MONOTONIC, None)
+        _take_recovered_firewall_request(flow)
         auth_base_forwarder.release_forward_request_admission_from_flow(flow)
         aws_sigv4_body_admission.release_from_flow(flow)
         terminal_usage.release_tracked_flow(flow)
@@ -1703,6 +1846,9 @@ def _release_terminal_flow_state(
         terminal_usage.release_model_websocket_terminal_state(flow)
     request_classification.pop_cached_classification(flow)
     flow.metadata.pop(_FIREWALL_AUTH_APPLIED_IN_REQUESTHEADERS, None)
+    _take_recovered_firewall_request(flow)
+    flow.metadata.pop(metadata_keys.RECOVERED_UPSTREAM_ADMITTED, None)
+    flow.metadata.pop(metadata_keys.UPSTREAM_REQUEST_STARTED, None)
     release_aws_sigv4_request_inspection(flow)
     flow.metadata.pop(metadata_keys.WEBSOCKET_UPGRADE_REQUEST, None)
     flow.metadata.pop(metadata_keys.RESPONSE_ENCODING_NEGOTIATION, None)
