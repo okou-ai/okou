@@ -410,8 +410,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...skillImportRoutes,
   ...integrationsGithubRoutes,
   ...slackConnectRoutes,
-  // Registered for protected preview QA; the route's environment gate keeps
-  // production indistinguishable from an unregistered endpoint.
   ...slackOauthRoutes,
   ...discordInteractionsRoutes,
   ...slackCommandsRoutes,

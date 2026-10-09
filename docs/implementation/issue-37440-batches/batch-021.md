@@ -500,3 +500,7 @@ expanded parameter rows; one row is one ordinary execution.
 - returns 404 outside allowed test environments — 1 execution(s).
 - requires team_id — 1 execution(s).
 - clears API-visible default Slack agent state after delete — 1 execution(s).
+
+## Evidenced main integration
+
+GitHub reported CONFLICTING against main `03c79d9a11fa49dab3f4ddf755a969452a82fe2d`. The branch merged that main once. Upstream removed the DELETE Discord fixture transaction (TX-0017), while this batch removes the complete fixture operation. Resolution retains operation deletion and both branches' baseline removals, including upstream TX-0103/TX-0251. Upstream production transaction cleanup is not batch021 credit. No speculative main update. The stale preview-only comment beside normal Slack OAuth registration was also removed after independent review identified it as orphan text.
