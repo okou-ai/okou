@@ -946,13 +946,15 @@ jobs:
           --health-start-period 3s
         env:
           POSTGRES_HOST_AUTH_METHOD: trust
+          # Test bootstrap must establish UTC, not inherit the server timezone.
+          TZ: Asia/Shanghai
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
       - name: Run Database Migrations
         working-directory: turbo
         env:
-          DATABASE_URL: postgresql://postgres@postgres:5432/postgres
+          DATABASE_URL: postgresql://postgres@postgres:5432/postgres?options=-c%20timezone%3DUTC
         run: pnpm --filter @okouai/db db:migrate
       - name: Test API
         working-directory: turbo
