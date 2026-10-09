@@ -787,7 +787,9 @@ async def test_catalog_wait_revalidates_only_provider_continuation(
             _ = await asyncio.gather(follower_task, return_exceptions=True)
         catalog_cache.handle_error(owner)
         if follower.metadata.get("_usage_flow_tracked"):
-            mitm_addon.response(follower)
+            completion = mitm_addon.response(follower)
+            if completion is not None:
+                await completion
 
     assert "_usage_flow_tracked" not in follower.metadata
     assert "_codex_model_catalog_cache_state" not in follower.metadata

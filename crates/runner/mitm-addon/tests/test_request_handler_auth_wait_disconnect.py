@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from mitmproxy import connection, ctx, http
+from mitmproxy.flow import Error
 
 import auth
 import mitm_addon
@@ -24,7 +25,9 @@ _INTERRUPTIONS = (
     "half-closed",
     "unconnected-replacement",
     "connected-replacement",
-    "errored",
+    "closed-server-error",
+    "connected-server-error",
+    "flow-error",
     "streamed",
     "streamed-without-flag",
     "revoked",
@@ -39,6 +42,7 @@ _INTERRUPTIONS = (
     "wrong-connected-sni",
     "insecure",
     "public-lost-binding",
+    "public-failed-acquisition",
 )
 
 
@@ -49,7 +53,8 @@ _INTERRUPTIONS = (
         for phase in ("request", "requestheaders")
         for interruption in _INTERRUPTIONS
         # publicDestination does not perform header-phase auth/stream preparation.
-        if phase == "request" or interruption != "public-lost-binding"
+        if phase == "request"
+        or interruption not in {"public-lost-binding", "public-failed-acquisition"}
     ],
 )
 async def test_auth_wait_checks_request_identity_not_socket_lifetime(
@@ -58,7 +63,7 @@ async def test_auth_wait_checks_request_identity_not_socket_lifetime(
     registry_path = _write_github_firewall_registry(
         tmp_path, sandbox_fields={"captureNetworkBodies": True}
     )
-    if interruption == "public-lost-binding":
+    if interruption in {"public-lost-binding", "public-failed-acquisition"}:
         sandbox = json.loads(registry_path.read_text())["sandboxes"]["10.200.0.5"]
         sandbox["firewalls"][0]["firewall"]["apis"][0]["hostPolicy"] = {"kind": "publicDestination"}
         _write_registry(tmp_path, sandbox_info=sandbox)
@@ -110,11 +115,22 @@ async def test_auth_wait_checks_request_identity_not_socket_lifetime(
             assert "Authorization" not in flow.request.headers
             if interruption != "none":
                 original_server.state = connection.ConnectionState.CLOSED
-                mitm_addon.server_disconnected(SimpleNamespace(server=original_server))
+                if interruption != "public-failed-acquisition":
+                    mitm_addon.server_disconnected(SimpleNamespace(server=original_server))
             if interruption == "half-closed":
                 original_server.state = connection.ConnectionState.CAN_WRITE
-            elif interruption == "errored":
+            elif interruption in {"closed-server-error", "public-failed-acquisition"}:
                 original_server.error = "synthetic transport error"
+            elif interruption == "connected-server-error":
+                mark_connected_tls_upstream(
+                    flow,
+                    sni="api.github.com",
+                    server_address=("104.18.32.47", 443),
+                    peername=("104.18.32.47", 443),
+                )
+                original_server.error = "synthetic transport error"
+            elif interruption == "flow-error":
+                flow.error = Error("synthetic HTTP flow failure")
             elif interruption == "unconnected-replacement":
                 flow.server_conn = connection.Server(address=("other.example", 443))
             elif interruption in {"connected-replacement", "wrong-connected-sni"}:
@@ -177,6 +193,7 @@ async def test_auth_wait_checks_request_identity_not_socket_lifetime(
             "none",
             "closed",
             "half-closed",
+            "closed-server-error",
             "unconnected-replacement",
             "connected-replacement",
         }
@@ -192,7 +209,12 @@ async def test_auth_wait_checks_request_identity_not_socket_lifetime(
         assert flow.request.headers["Authorization"] == "Bearer synthetic-secret"
         assert flow.request.headers["Host"] == "API.GITHUB.COM.:443"
         assert flow.request.raw_content == body
-        if interruption in {"closed", "half-closed", "unconnected-replacement"}:
+        if interruption in {
+            "closed",
+            "half-closed",
+            "closed-server-error",
+            "unconnected-replacement",
+        }:
             assert flow.request.host == "api.github.com"
             assert not flow.server_conn.connected
             assert not upstream_destination_binding.has_server_binding(flow.server_conn)
@@ -200,3 +222,50 @@ async def test_auth_wait_checks_request_identity_not_socket_lifetime(
                 assert flow.server_conn is original_server
         if phase == "requestheaders":
             assert callable(flow.request.stream)
+
+
+@pytest.mark.parametrize("phase", ["request", "requestheaders"])
+async def test_initial_unconnected_error_preserves_authorized_preparation(
+    tmp_path, real_flow, mitm_ctx, monkeypatch, phase: str
+) -> None:
+    registry_path = _write_github_firewall_registry(tmp_path)
+    body = b'{"name":"synthetic"}'
+    flow = real_flow(
+        with_response=False,
+        client_ip="10.200.0.5",
+        host="104.18.32.47",
+        sni="api.github.com",
+        method="POST",
+        path="/repos/okou-ai/okou",
+        request_headers=http.Headers(((b"Host", b"API.GITHUB.COM.:443"),)),
+    )
+    flow.request.content = body
+    flow.request.headers["Content-Length"] = str(len(body))
+    original_server = flow.server_conn
+    original_server.state = connection.ConnectionState.CLOSED
+    original_server.error = "synthetic original acquisition failure"
+    fetch = AsyncMock(
+        return_value=firewall_auth_response(headers={"Authorization": "Bearer synthetic-secret"})
+    )
+    monkeypatch.setattr(auth, "get_firewall_headers", fetch)
+
+    with mitm_ctx(registry_path=str(registry_path), api_url="https://api.okou.ai"):
+        try:
+            if phase == "requestheaders":
+                preparation = mitm_addon.requestheaders(flow)
+                if preparation is not None:
+                    await preparation
+                assert "Authorization" not in flow.request.headers
+            await mitm_addon.request(flow)
+            fetch.assert_awaited_once()
+            assert flow.response is None
+            assert flow.error is None
+            assert flow.request.host == "api.github.com"
+            assert flow.request.headers["Authorization"] == "Bearer synthetic-secret"
+            assert flow.request.headers["Host"] == "API.GITHUB.COM.:443"
+            assert flow.request.raw_content == body
+            assert flow.server_conn is original_server
+            assert original_server.error == "synthetic original acquisition failure"
+            assert not original_server.connected
+        finally:
+            mitm_addon.error(flow)

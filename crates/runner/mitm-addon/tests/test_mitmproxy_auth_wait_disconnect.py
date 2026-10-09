@@ -76,6 +76,7 @@ async def _pause_native_stream(
     *,
     alpn: bytes,
     phase: Phase,
+    original_transport_error: bool = False,
 ) -> tuple[HttpStream, http.HTTPFlow, GetHttpConnection, list[commands.Command], AsyncMock]:
     _, http_layer = start_http_layer(
         addon_context, alpn=alpn, host=_HOST, server_host="104.18.32.47", mode=HTTPMode.transparent
@@ -109,6 +110,8 @@ async def _pause_native_stream(
         assert upstream_destination_binding.has_server_binding(original_server)
         assert "Authorization" not in flow.request.headers
         original_server.state = connection.ConnectionState.CLOSED
+        if original_transport_error:
+            original_server.error = "synthetic original acquisition failure"
         mitm_addon.server_disconnected(SimpleNamespace(server=original_server))
         return firewall_auth_response(
             headers={"Authorization": _TOKEN}, query={"managed": "synthetic-query"}
@@ -129,6 +132,10 @@ async def _pause_native_stream(
         history.extend(pending)
     assert flow.response is None, flow.response.get_text() if flow.response else ""
     assert flow.server_conn is original_server
+    assert flow.error is None
+    assert original_server.error == (
+        "synthetic original acquisition failure" if original_transport_error else None
+    )
     assert not upstream_destination_binding.has_server_binding(original_server)
     get_connection = next(cmd for cmd in pending if isinstance(cmd, GetHttpConnection))
     assert get_connection.address == (_HOST, 443)
@@ -140,8 +147,13 @@ async def _pause_native_stream(
 
 @pytest.mark.parametrize("alpn", [b"http/1.1", b"h2"])
 @pytest.mark.parametrize("phase", ["buffered", "headers"])
+@pytest.mark.parametrize("original_transport_error", [False, True])
 async def test_native_acquisition_preserves_request_and_sends_once(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, alpn: bytes, phase: Phase
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    alpn: bytes,
+    phase: Phase,
+    original_transport_error: bool,
 ) -> None:
     registry_path = _write_recovery_registry(tmp_path)
     with (
@@ -152,7 +164,11 @@ async def test_native_acquisition_preserves_request_and_sends_once(
             okou_api_url="https://api.okou.ai", okou_proxy_registry_path=str(registry_path)
         )
         stream, flow, get_connection, history, fetch = await _pause_native_stream(
-            addon_context, monkeypatch, alpn=alpn, phase=phase
+            addon_context,
+            monkeypatch,
+            alpn=alpn,
+            phase=phase,
+            original_transport_error=original_transport_error,
         )
         replacement = connection.Server(address=(_HOST, 443), tls=True)
         proof_flow = http.HTTPFlow(flow.client_conn, replacement)
@@ -204,8 +220,13 @@ async def test_native_acquisition_preserves_request_and_sends_once(
 
 @pytest.mark.parametrize("alpn", [b"http/1.1", b"h2"])
 @pytest.mark.parametrize("pool_case", ["empty", "unrelated", "closed", "verified"])
+@pytest.mark.parametrize("original_transport_error", [False, True])
 async def test_normal_factory_selects_authorized_tls_destination(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, alpn: bytes, pool_case: str
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    alpn: bytes,
+    pool_case: str,
+    original_transport_error: bool,
 ) -> None:
     registry_path = _write_recovery_registry(tmp_path)
     with (
@@ -216,7 +237,11 @@ async def test_normal_factory_selects_authorized_tls_destination(
             okou_api_url="https://api.okou.ai", okou_proxy_registry_path=str(registry_path)
         )
         stream, flow, get_connection, _, _ = await _pause_native_stream(
-            addon_context, monkeypatch, alpn=alpn, phase="headers"
+            addon_context,
+            monkeypatch,
+            alpn=alpn,
+            phase="headers",
+            original_transport_error=original_transport_error,
         )
         parent = stream.context.layers[-2]
         assert isinstance(parent, HttpLayer)

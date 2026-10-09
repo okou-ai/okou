@@ -521,12 +521,7 @@ def _connector_auth_destination_is_current(
     flow: http.HTTPFlow,
     current: request_classification.FirewallAllow,
 ) -> bool:
-    if (
-        flow.error is not None
-        or flow.server_conn.error
-        or flow.request.scheme != "https"
-        or ctx.options.ssl_insecure
-    ):
+    if flow.error is not None or flow.request.scheme != "https" or ctx.options.ssl_insecure:
         return False
     if flow.server_conn.connected:
         return _admit_connector_auth_request(
@@ -535,14 +530,16 @@ def _connector_auth_destination_is_current(
         )
     if flow.request.stream or request_streaming.streamed_request_size(flow) is not None:
         return False
+    # An unavailable original Server may retain an acquisition error. The current
+    # HTTP flow is still pre-forward; normal acquisition owns its transport outcome.
     direct_binding_matches = upstream_destination_binding.flow_matches_direct_bound_destination(
         flow,
         allowed_kinds=frozenset(("connector_auth",)),
     )
     if request_classification.firewall_allow_uses_public_destination(current.firewall_allow):
         # TLS authenticates a host, not its public routability. Keep the existing
-        # pending-binding path, but never substitute DNS for a lost endpoint.
-        return direct_binding_matches
+        # pending-binding path, but never substitute DNS for a lost/failed endpoint.
+        return direct_binding_matches and not flow.server_conn.error
 
     authority = get_trusted_authority(flow)
     wire_authority = flow.request.authority
