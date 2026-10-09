@@ -712,14 +712,14 @@ fn event_delivery_failure_message(diagnostic: &EventDeliveryDiagnostic) -> Strin
 
     match (first_failed, drain_active) {
         (Some(failed), Some(active)) => format!(
-            "Event delivery failed after acknowledged sequence {last_acknowledged}: batch {}-{} exhausted retries and the global drain deadline interrupted batch {}-{}",
+            "Event delivery failed after acknowledged sequence {last_acknowledged}: batch {}-{} failed and the global drain deadline interrupted batch {}-{}",
             failed.first_sequence,
             failed.last_sequence,
             active.first_sequence,
             active.last_sequence
         ),
         (Some(failed), None) => format!(
-            "Event delivery failed after acknowledged sequence {last_acknowledged}: batch {}-{} exhausted retries",
+            "Event delivery failed after acknowledged sequence {last_acknowledged}: batch {}-{} failed",
             failed.first_sequence, failed.last_sequence
         ),
         (None, Some(active)) => format!(

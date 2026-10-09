@@ -8,6 +8,8 @@ import type { Editor } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { useEditorState } from "@tiptap/react";
 import { Popover, type KeyboardEventLike } from "@okouai/ui";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n/index.ts";
 import type { ComposerAgentSuggestion } from "../../signals/okou-page/composer-agent-suggestion-domain.ts";
@@ -203,6 +205,7 @@ interface ComposerKeyDownContext {
   readonly suggestionCount: number;
   readonly selectedSuggestionIndex: number;
   readonly showSuggestionMenu: boolean;
+  readonly reversedSuggestions: boolean;
   readonly setSelectedSuggestionIndex: (index: number) => void;
   readonly closeSuggestionMenu: () => void;
   readonly selectSuggestion: (index: number) => void;
@@ -273,7 +276,9 @@ function handleComposerKeyDownCapture(
   }
   if (event.key === "ArrowDown" || event.key === "ArrowUp") {
     event.preventDefault();
-    const delta = event.key === "ArrowDown" ? 1 : -1;
+    // Indices retain relevance order; only the rendered order is reversed.
+    const direction = event.key === "ArrowDown" ? 1 : -1;
+    const delta = context.reversedSuggestions ? -direction : direction;
     const next = Math.max(
       0,
       Math.min(
@@ -540,9 +545,11 @@ function suggestionRowScrollTarget(
 
 function useComposerSuggestionMenu({
   composer,
+  reversedSuggestions,
   onKeyDown,
 }: {
   readonly composer: ComposerSignals;
+  readonly reversedSuggestions: boolean;
   readonly onKeyDown: (event: KeyboardEventLike) => void;
 }): ComposerSuggestionMenuState {
   const slashRange = useGet(composer.suggestion.activeSlashRange$);
@@ -615,6 +622,7 @@ function useComposerSuggestionMenu({
       suggestionCount,
       selectedSuggestionIndex: selectedIndex,
       showSuggestionMenu: open,
+      reversedSuggestions,
       setSelectedSuggestionIndex: setSelectedIndex,
       closeSuggestionMenu: close,
       selectSuggestion,
@@ -693,10 +701,25 @@ export function TiptapWorkflowComposer({
   onPaste,
 }: TiptapWorkflowComposerProps) {
   const composer = signals;
+  const features = useLastResolved(featureSwitch$);
+  const composerAnchored =
+    features?.[FeatureSwitchKey.ComposerAnchoredSuggestions] ?? false;
   const suggestionMenu = useComposerSuggestionMenu({
     composer,
+    reversedSuggestions: composerAnchored,
     onKeyDown,
   });
+  const suggestionAnchor = composerAnchored
+    ? () => {
+        // Resolve the card belonging to this editor, not another chat's composer.
+        return composer.editor.editor.view.dom.closest(
+          '[data-slot="chat-composer-card"]',
+        );
+      }
+    : composerSuggestionCaretAnchor(
+        composer.editor.editor,
+        suggestionMenu.range,
+      );
   const handlePaste = useComposerPasteHandler(composer, onPaste);
   const setContainerRef = useSet(composer.editor.setContainerRef$);
   const setSuggestionMenuRef = useSet(
@@ -775,14 +798,13 @@ export function TiptapWorkflowComposer({
       {suggestionMenu.showWorkflows && (
         <SlashWorkflowMenu
           menuRef={setSuggestionMenuRef}
-          anchor={composerSuggestionCaretAnchor(
-            composer.editor.editor,
-            suggestionMenu.range,
-          )}
+          anchor={suggestionAnchor}
+          composerAnchored={composerAnchored}
         >
           <SlashTemplatePanel
             menuRef={setSuggestionMenuRef}
             categories={suggestionMenu.panelCategories}
+            reversed={composerAnchored}
             workflows={suggestionMenu.workflows}
             workflowsLoading={suggestionMenu.workflowsLoading}
             selectedIndex={suggestionMenu.selectedIndex}
@@ -803,10 +825,8 @@ export function TiptapWorkflowComposer({
       {suggestionMenu.showMentions && (
         <ComposerMentionSuggestionMenu
           menuRef={setSuggestionMenuRef}
-          anchor={composerSuggestionCaretAnchor(
-            composer.editor.editor,
-            suggestionMenu.range,
-          )}
+          anchor={suggestionAnchor}
+          composerAnchored={composerAnchored}
           agents={suggestionMenu.agents}
           chatThreads={suggestionMenu.chatThreads}
           selectedIndex={suggestionMenu.selectedIndex}

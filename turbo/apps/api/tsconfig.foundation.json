@@ -12,7 +12,9 @@
     "tsBuildInfoFile": "./.typecheck/foundation.tsbuildinfo"
   },
   "include": [
+    "src/lib/desktop-compatibility.json",
     "src/lib/desktop-compatibility.ts",
+    "src/lib/desktop-version.ts",
     "src/lib/db-instrumentation.ts",
     "src/lib/db-raw-rows.ts",
     "src/lib/db-structured-result.ts",

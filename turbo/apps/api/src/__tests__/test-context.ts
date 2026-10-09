@@ -7,6 +7,7 @@ import {
 } from "vitest";
 
 import { closeDbPool } from "../lib/db";
+import desktopCompatibilityConfig from "../lib/desktop-compatibility.json";
 import { clearMockedEnv } from "../lib/env";
 import { clearMockListStripeInvoices } from "../signals/external/stripe-client";
 import { clearAllDetached, settleIncludingAbort } from "../signals/utils";
@@ -19,6 +20,11 @@ export interface TestContext {
   readonly mocks: ApiTestMocks;
   readonly sessionHistoryBlobs: Map<string, Uint8Array>;
 }
+
+export const desktopCompatibility: { minimumSupportedVersion: string | null } =
+  desktopCompatibilityConfig;
+const shippedDesktopMinimumVersion =
+  desktopCompatibility.minimumSupportedVersion;
 
 function formatBody(body: unknown): string {
   if (typeof body === "string") {
@@ -92,6 +98,7 @@ export function testContext(): TestContext {
     context.sessionHistoryBlobs.clear();
     clearMockedEnv();
     clearMockListStripeInvoices();
+    desktopCompatibility.minimumSupportedVersion = shippedDesktopMinimumVersion;
   });
 
   afterAll(async () => {

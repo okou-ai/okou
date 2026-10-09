@@ -329,7 +329,7 @@ stored contexts can no longer be pending.
 (off by default) returns new launches to Responses. A release before #37987
 cannot read generation 5 and leaves those jobs unclaimable.
 
-## Official Workflow canonical queue contexts (#29908, writer cutover)
+## Official Workflow canonical queue contexts (#29908)
 
 Official `input.prompt` events from both Web and Agent callers now use the
 normal Web context ID. Their `context_type` remains `web` or `agent_run`, and
@@ -339,30 +339,45 @@ their source Run and inherited autonomy budget from the server-owned document
 annotation, as before. Final Official admission and exact artifact mounts are
 unchanged; the private claim stays out of public event and snapshot payloads.
 
-- **Prepared reader with new writer:** the reader preparation in #32533 accepts
-  the normal Web ID plus a strict Official claim for both origins. New and
-  prepared-reader APIs can consume each other's queued inputs.
-- **New reader with previous writer:** both reserved Official marker IDs remain
-  readable. The writer helper is removed, but marker constants and decoding
-  remain until the later retirement release.
-- **API before reader preparation:** it cannot safely consume canonical Official
-  inputs. Exclude it from serving and supported rollback before promoting this
-  writer. The current rollback resolver requires the unified chat queue commit
-  `553fc566b7e9be2cd4a8c1de314d55939b99490a`, which contains #32533. Refresh the
-  actual serving and rollback inventory before production promotion; source
-  ancestry alone does not prove deployed enforcement or outgoing-instance drain.
+- **Canonical writer with either reader:** #38049 switched both origins to the
+  normal Web ID. The prepared reader from #32533, the cutover reader, and the
+  marker-free reader all accept that encoding with the same strict claim rules.
+- **Marker writer with marker-free reader:** unsupported. Marker-writing APIs
+  are excluded from serving and supported rollback before decoder retirement.
+  The current rollback resolver loads from `main` and requires the introduction
+  of migration `1345_outstanding_the_hood.sql`, commit
+  `5080d026e68f10f41285570f52a9b655fb562052`. That commit contains the canonical
+  writer `76c17bcc4048d9aff4907477012172c364a66e5c`; no additional floor is needed.
+- **Retained history:** raw events, snapshots and archives keep opaque context
+  IDs. Removing launch decoding does not rewrite or delete history. Both the
+  current and VM0-era normal Web IDs remain recognized; only the two reserved
+  Official launch markers retire.
 
-This stage needs no migration or historical event rewrite. Retained context IDs
-remain opaque in raw events, snapshots and archives. After promotion, record
-canonical Official writes and successful admission from both origins, including
-Agent source and budget preservation, and record the last marker-writing API
-cutoff. An origin without traffic remains unverified.
+Read-only retirement evidence refreshed on 2026-10-09:
 
-The later decoder retirement in #29908 requires excluding every marker writer
-from serving and supported rollback, a complete census of all unrevoked runless
-legacy-marker prompts across both IDs and every queue position, and current
-queue recovery evidence. Keep strict claim validation and immutable history;
-this writer cutover does not complete the parent issue.
+- The last marker-writing API deployment was marked inactive on 2026-10-08 at
+  11:15:19 UTC. The canonical writer's production promotion completed at
+  11:15:44 UTC in [release #38074](https://github.com/okou-ai/okou/pull/38074).
+  Subsequent releases retain that writer; the observed production API is
+  `1.718.0`, commit `c86a5342c2d8f7869aecb3fe8568c746db675035`. The outgoing
+  marker writer is past the API's 300-second invocation bound.
+- MaskDB schema/index discovery and a complete aggregate over `chat_events`
+  found zero `input.prompt` rows with `run_id IS NULL` for either marker
+  (`3f713f81-d611-47ec-a427-5a4844078890` or
+  `d4f079af-190a-4a32-bf49-73175aa2d727`). There was no time cutoff or FIFO-head
+  restriction. The query includes revoked rows, so the unrevoked subset is also
+  empty; grouped results fit in one page.
+- The positive control found 2,465 normal-context Web inputs since the writer
+  promotion, including 1,221 inputs bound to Runs. These are input-row counts,
+  not distinct Run counts or proof of Official traffic. MaskDB does not expose
+  the private claim or exact Official provenance; Agent-origin production
+  samples remain unverified.
+
+This cleanup needs no migration or historical event rewrite. Strict claim
+validation, source annotations, autonomy budgets, final admission and queue
+recovery remain on their existing paths. Refresh serving/rollback and pending
+marker evidence before promotion if that state changes. #29908 remains open
+until decoder retirement is released and final production acceptance is recorded.
 
 ## Model identity PR2: new writer cutover (2026-10-09)
 
@@ -704,6 +719,24 @@ and supported rollback packages have drained; track that verification in
 such as `message_end` remain fatal above the 16 MiB line limit. Rolling back
 both components restores the previous oversized-turn failure. No stored data
 migration or API change is required.
+
+## Desktop compatibility policy is source controlled
+
+The API's `src/lib/desktop-compatibility.json` owns the global minimum Desktop
+version. `null` keeps enforcement disabled; a stable version at least `0.51.0`
+requires a reviewed PR and API release to activate. Public policy responses,
+host registration/claim admission, and Sparkle metadata use that same value.
+Desktop clients and HTTP contracts are unchanged by the configuration-source
+change. Old environment-based APIs and new code-configured APIs both remain
+disabled during this release; the previously unset environment variable is
+removed without a second configuration reader.
+
+Activation is separate. Verify the policy embedded in every serving and intended
+rollback API before enabling it; an API rollback restores that release's floor
+as well as its code. Preserve authenticated completion/stop for draining hosts,
+and retain the Electron update feed and ShipIt relaunch bridge. See
+[Desktop version policy](desktop-version-policy.md) and activation issue
+[#38098](https://github.com/okou-ai/okou/issues/38098).
 
 ## Native Desktop session authentication (expand release)
 
@@ -2962,9 +2995,6 @@ Kept compatibility, with the unmet condition:
   is a separate Runner/Guest protocol change without a documented deadline.
 - `GET /api/integrations/telegram/bots` for older CLIs: deployed CLIs have no
   version floor.
-- Official Workflow queue marker decoding (#29908): previous APIs can still
-  write markers, and pending marker inputs have not been proven drained. See
-  the [canonical writer cutover](#official-workflow-canonical-queue-contexts-29908-writer-cutover).
 
 ## Direct PUT checksum removal and Browser file uploads (#37241)
 
@@ -5133,9 +5163,10 @@ unknown keys through, and the value is ignored. Provider delivery callback
 payloads keep the fixed value until their provider slices retire the field.
 Queued Feishu launches no longer require a run-level brand.
 
-A queued Web input whose context ID is the VM0-era Web ID now decodes exactly
-like the Okou Web ID. Writers still emit the Okou ID. Official Workflow queue
-markers, their IDs and their claim rules are unchanged (#29908).
+A queued Web input whose context ID is the VM0-era Web ID decodes exactly like
+the Okou Web ID. Writers still emit the Okou ID. Official Workflow inputs use
+that normal identity with a private claim; the separate launch markers are
+[retired by #29908](#official-workflow-canonical-queue-contexts-29908).
 
 The internal custom connector OAuth start no longer takes a brand; the brand
 was never part of the persisted OAuth state, so no in-flight flow is affected.

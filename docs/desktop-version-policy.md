@@ -1,11 +1,25 @@
 # Desktop minimum version policy
 
-The API owns the global Computer Use compatibility floor. Configure
-`OKOU_DESKTOP_MINIMUM_SUPPORTED_VERSION` in the API deployment to a stable
-three-component version at least `0.51.0`. Leaving it unset disables enforcement;
-normal Desktop releases do not raise the floor. This deployment switch must not
-be a per-user Lab override: an unsupported host cannot opt out of admission.
+The API owns the global Computer Use compatibility floor in
+[`turbo/apps/api/src/lib/desktop-compatibility.json`](../turbo/apps/api/src/lib/desktop-compatibility.json).
+Its `minimumSupportedVersion` is either `null` to disable enforcement or a stable
+three-component version at least `0.51.0`. Every adjustment requires a reviewed
+PR and an API release; the API serves the policy bundled with that release.
+Normal Desktop releases do not raise the floor. This global policy must not be
+a per-user Lab override: an unsupported host cannot opt out of admission.
 Implementation and activation are tracked by [#38098](https://github.com/okou-ai/okou/issues/38098).
+
+The initial configuration remains:
+
+```json
+{
+  "minimumSupportedVersion": null
+}
+```
+
+No CI, GitHub Environment, or Vercel variable sets the floor. The public policy
+endpoint, host admission, and Sparkle critical-update metadata read the same
+source-controlled configuration.
 
 ## Admission and draining
 
@@ -48,18 +62,22 @@ path instead. Optional updates retain Sparkle's standard interaction.
    replacement at or above the proposed floor. Perform the isolated signed
    native upgrade acceptance in [Desktop testing](./testing/desktop-testing.md).
 2. Ensure every serving API and every API rollback candidate supports this
-   policy and preserves completion/stop. Leave the environment variable unset
-   until those prerequisites hold. Do not raise the minimum as a side effect of
-   Release Please or publishing a new latest version.
-3. Set the API deployment variable to `0.51.0` for the first activation. Check the
-   public policy, 426 admission, supported registration, and both feeds. Sparkle
+   policy and preserves completion/stop. Keep `minimumSupportedVersion` as `null`
+   until those prerequisites hold. Review the bundled floor of every intended
+   rollback target: rolling back the API also restores that release's policy.
+   Do not raise the minimum as a side effect of Release Please or publishing a
+   new latest version.
+3. Change `minimumSupportedVersion` to `"0.51.0"` in a separate reviewed PR and
+   publish the API for the first activation. Check the public policy, 426
+   admission, supported registration, and both feeds. Sparkle
    items meeting the floor gain `criticalUpdate` metadata limited to installed
    versions below the floor. Older native releases receive their existing 426
    handling and Sparkle prompt; this cannot retrofit the new status page or
    automatic installation behavior into an already installed binary. Electron
    uses its existing automatic updater and the retained ShipIt relaunch bridge.
 4. On a bad release, first restore an available supported candidate in the feeds.
-   Lower or unset the floor when restoring compatibility is needed. Blocked
+   Lower the floor or set it to `null` through a PR and API release when restoring
+   compatibility is needed. Blocked
    releases must never be the only candidate meeting the floor. Do not roll back
    to an API without the policy route while a restriction is active: clients
    deliberately retain their last confirmed restriction across a 404.

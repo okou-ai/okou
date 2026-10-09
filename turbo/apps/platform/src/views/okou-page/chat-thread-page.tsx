@@ -3744,7 +3744,7 @@ function ChatThreadSkeletonOverlay({ thread }: { thread: ChatPanelSignals }) {
   return (
     <div
       data-chat-skeleton
-      className="absolute inset-0 z-10 overflow-hidden pointer-events-none"
+      className="absolute inset-0 overflow-hidden pointer-events-none"
     >
       <main className={CHAT_THREAD_CONTENT_MAIN_CLASS}>
         <div
@@ -3775,6 +3775,10 @@ function ChatThreadEventsPane({ thread }: { thread: ChatPanelSignals }) {
     detach(loadMoreRenderedChatGroups(pageSignal), Reason.DomCallback);
   };
 
+  // This scroll area isolates its local overlays. The masked viewport contains
+  // transcript layers; the later skeleton and locator use DOM paint order.
+  // Raise only scroll-to-bottom above the expanded locator's hit area, which
+  // can overlap the button in narrow split panes.
   return (
     <ScrollArea.Root className="flex-1 min-h-0 isolate">
       <ScrollArea.Viewport
