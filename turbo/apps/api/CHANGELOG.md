@@ -9,6 +9,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.720.1](https://github.com/okou-ai/okou/compare/api-v1.720.0...api-v1.720.1) (2026-10-09)
+
+
+### Refactoring
+
+* **discord:** derive message content from application grants ([#38377](https://github.com/okou-ai/okou/issues/38377)) ([a69a248](https://github.com/okou-ai/okou/commit/a69a2485e449109886f80bf37d49ece61f750230))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.545.1
+    * @okouai/core bumped to 8.738.1
+    * @okouai/db bumped to 1.327.1
+    * @okouai/pi-agent-runtime bumped to 1.48.3
+
 ## [1.720.0](https://github.com/okou-ai/okou/compare/api-v1.719.0...api-v1.720.0) (2026-10-09)
 
 
