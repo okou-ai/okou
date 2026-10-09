@@ -12,6 +12,26 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1005.0](https://github.com/okou-ai/okou/compare/app-v0.1004.2...app-v0.1005.0) (2026-10-09)
+
+
+### Features
+
+* allow debug admins to switch organization openrouter presets ([#38327](https://github.com/okou-ai/okou/issues/38327)) ([3ab4dfc](https://github.com/okou-ai/okou/commit/3ab4dfc68ffdf7afe085c52e3cf9040354c117d9))
+
+
+### Bug Fixes
+
+* **platform:** gate anchored composer layout for initial rollout ([#37976](https://github.com/okou-ai/okou/issues/37976)) ([80770f9](https://github.com/okou-ai/okou/commit/80770f9736da88ef673a21eba968bdb7349874a6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.544.0
+    * @okouai/core bumped to 8.737.3
+
 ## [0.1004.2](https://github.com/okou-ai/okou/compare/app-v0.1004.1...app-v0.1004.2) (2026-10-09)
 
 
