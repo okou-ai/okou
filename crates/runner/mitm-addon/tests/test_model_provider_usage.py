@@ -8,12 +8,15 @@ from mitmproxy.test import tutils
 import flow_metadata_keys as metadata_keys
 import mitm_addon
 import usage
-from tests.flow_helpers import header_map
+from tests.flow_helpers import header_map, response_stream
 from tests.jsonl_log_helpers import (
     jsonl_exists_after_flush,
     read_jsonl_entries_after_flush,
 )
-from tests.model_provider_flow_helpers import make_model_provider_usage_reporting_flow
+from tests.model_provider_flow_helpers import (
+    make_model_provider_sse_flow,
+    make_model_provider_usage_reporting_flow,
+)
 
 
 class TestReportModelProviderUsage:
@@ -754,6 +757,126 @@ class TestReportModelProviderUsage:
 
 class TestModelProviderResponseHookUsage:
     """Tests for response hook wiring into model-provider usage reporting."""
+
+    def test_output_without_input_skips_unclassifiable_terminal_billing(
+        self, tmp_path, real_flow, fresh_usage_executor, usage_webhook_api
+    ):
+        flow = make_model_provider_sse_flow(
+            real_flow,
+            tmp_path,
+            host="openrouter.ai",
+            original_url="https://openrouter.ai/api/v1/responses",
+            firewall_name="model-provider:openrouter-codex",
+            model_usage_provider="gpt-5.5",
+        )
+        flow.metadata[metadata_keys.MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS] = 272_001
+
+        with usage_webhook_api() as webhook:
+            mitm_addon.responseheaders(flow)
+            response_stream(flow)(
+                b"event: response.completed\n"
+                b'data: {"response":{"model":"gpt-5.5","usage":{"output_tokens":12}}}\n\n'
+            )
+            mitm_addon.response(flow)
+            usage.flush_usage_events(trigger="test")
+            fresh_usage_executor.shutdown(wait=True)
+
+        assert webhook.request_count == 0
+        assert webhook.usage_events() == []
+        [entry] = [
+            entry
+            for entry in read_jsonl_entries_after_flush(tmp_path / "proxy.jsonl")
+            if entry.get("type") == "usage_underbilling"
+        ]
+        assert entry["reason"] == "model_long_context_tier_unresolved"
+        assert entry["underbilling_class"] == "risk"
+        assert entry["run_id"] == "run-abc-123"
+        assert entry["provider"] == "gpt-5.5"
+
+    def test_output_without_input_bills_explicit_single_tier(
+        self, tmp_path, real_flow, fresh_usage_executor, usage_webhook_api
+    ):
+        flow = make_model_provider_sse_flow(
+            real_flow,
+            tmp_path,
+            host="openrouter.ai",
+            original_url="https://openrouter.ai/api/v1/responses",
+            firewall_name="model-provider:openrouter-codex",
+            model_usage_provider="gpt-5.5",
+        )
+        flow.metadata[metadata_keys.MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS] = 0
+
+        with usage_webhook_api() as webhook:
+            mitm_addon.responseheaders(flow)
+            response_stream(flow)(
+                b"event: response.completed\n"
+                b'data: {"response":{"model":"gpt-5.5","usage":{"output_tokens":12}}}\n\n'
+            )
+            mitm_addon.response(flow)
+            usage.flush_usage_events(trigger="test")
+            fresh_usage_executor.shutdown(wait=True)
+
+        assert webhook.request_count == 1
+        assert webhook.requests[0].path == "/api/webhooks/agent/usage-event"
+        assert webhook.requests[0].json_body()["runId"] == "run-abc-123"
+        [event] = webhook.usage_events()
+        assert {key: value for key, value in event.items() if key != "idempotencyKey"} == {
+            "kind": "model",
+            "provider": "gpt-5.5",
+            "category": "tokens.output",
+            "quantity": 12,
+        }
+        assert [
+            entry
+            for entry in read_jsonl_entries_after_flush(tmp_path / "proxy.jsonl")
+            if entry.get("type") == "usage_underbilling"
+        ] == []
+
+    def test_unresolved_terminal_source_does_not_suppress_classifiable_sources(
+        self, tmp_path, real_flow, fresh_usage_executor, usage_webhook_api
+    ):
+        """Exercise normalized adapter sources, not multiple HTTP SSE parser results."""
+        flow = make_model_provider_usage_reporting_flow(
+            real_flow,
+            tmp_path,
+            model_usage_provider="gpt-5.5",
+            usage_sources={
+                "resp_unresolved": {"tokens.output": 12},
+                "resp_base": {"tokens.input": 10, "tokens.output": 3},
+                "resp_long_context": {"tokens.input": 272_001, "tokens.output": 7},
+            },
+        )
+        flow.metadata[metadata_keys.MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS] = 272_001
+        flow.response = tutils.tresp(
+            status_code=200, headers=header_map({"content-type": "text/event-stream"})
+        )
+
+        with usage_webhook_api() as webhook:
+            mitm_addon.response(flow)
+            usage.flush_usage_events(trigger="test")
+            fresh_usage_executor.shutdown(wait=True)
+
+        assert webhook.request_count == 1
+        assert webhook.requests[0].json_body()["runId"] == "run-abc-123"
+        events = webhook.usage_events()
+        assert len(events) == 4
+        assert {event["kind"] for event in events} == {"model"}
+        assert {event["provider"] for event in events} == {"gpt-5.5"}
+        assert {event["category"]: event["quantity"] for event in events} == {
+            "tokens.input": 10,
+            "tokens.output": 3,
+            "tokens.input.long_context": 272_001,
+            "tokens.output.long_context": 7,
+        }
+        [entry] = [
+            entry
+            for entry in read_jsonl_entries_after_flush(tmp_path / "proxy.jsonl")
+            if entry.get("type") == "usage_underbilling"
+        ]
+        assert entry["reason"] == "model_long_context_tier_unresolved"
+        assert entry["underbilling_class"] == "risk"
+        assert entry["run_id"] == "run-abc-123"
+        assert entry["provider"] == "gpt-5.5"
 
     def test_full_path_response_to_webhook(
         self, tmp_path, real_flow, fresh_usage_executor, usage_webhook_api
