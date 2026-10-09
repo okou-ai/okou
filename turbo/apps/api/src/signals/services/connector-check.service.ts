@@ -36,7 +36,7 @@ import { agents } from "@okouai/db/schema/agent";
 import { connectors } from "@okouai/db/schema/connector";
 import { variables } from "@okouai/db/schema/variable";
 import { command } from "ccstate";
-import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 
 import { db$, type Db, writeDb$ } from "../external/db";
 import { pgTextDecoder } from "../../lib/db-structured-result";
@@ -56,6 +56,7 @@ import {
   listConnectorRuntimeVisibleSlugs,
   loadConnectorRuntimeSnapshot,
   type ConnectorRuntimeSnapshot,
+  type ConnectorRuntimeMethod,
 } from "./connector-catalog-runtime.service";
 import {
   resolveConnectorRuntimeDiagnosticTargets,
@@ -63,10 +64,8 @@ import {
 } from "./connector-runtime-sync.service";
 import type { FirewallRoutingRouteMetadata } from "./connector-server-firewall-catalog.service";
 import {
-  builtinConnectorCredentialVariableReadCondition,
   resolveBuiltinConnectorCredentialAccess,
   type BuiltinConnectorCredentialAccess,
-  type BuiltinConnectorCredentialReadGroup,
 } from "./builtin-connector-credential-access.service";
 
 type FeatureStates = ReturnType<typeof getAllFeatureStates>;
@@ -124,10 +123,6 @@ interface StoredConnectorReadPlan {
     PendingStoredConnectorRuntime | null
   >;
   readonly credentialResolutionBySlug: StoredRuntimeState["credentialResolutionBySlug"];
-  readonly readGroups: readonly BuiltinConnectorCredentialReadGroup[];
-  readonly variableReadCondition: ReturnType<
-    typeof builtinConnectorCredentialVariableReadCondition
-  >;
 }
 
 type ConnectorCheckTargetUnavailableReason = Extract<
@@ -284,60 +279,128 @@ function pendingStoredConnectorRuntimes(
       continue;
     }
     const { access } = accessResult;
-    const requiredRuntimeNames =
-      args.snapshot.serverFirewalls.getExecutionMetadata(row.connectorSlug)
-        ?.baseUrlVarNames ?? [];
-    if (requiredRuntimeNames.length === 0) {
-      pending.set(row.connectorSlug, {
-        access,
-        storageNameByRuntimeName: new Map(),
-      });
-      continue;
-    }
-
-    const runtimeMetadata = connectorAuthMethodRuntimeMetadata(
-      access.runtimeMethod.method,
+    const storageNameByRuntimeName = storedBaseUrlVariableBindings(
+      args.snapshot,
+      access.runtimeMethod,
     );
-    const requiredNameSet = new Set(requiredRuntimeNames);
-    const storageNameByRuntimeName = new Map<string, string>();
-    for (const binding of runtimeMetadata.runtimeBindings) {
-      if (
-        requiredNameSet.has(binding.envName) &&
-        binding.source.kind === "connector-variable"
-      ) {
-        storageNameByRuntimeName.set(binding.envName, binding.source.name);
+    if (storageNameByRuntimeName !== null) {
+      const declaredNames = new Set(
+        access.runtimeMethod.method.storage.variables,
+      );
+      for (const name of storageNameByRuntimeName.values()) {
+        if (!declaredNames.has(name)) {
+          throw new Error(
+            "Connector variable is not declared by the selected auth method",
+          );
+        }
       }
     }
     pending.set(
       row.connectorSlug,
-      storageNameByRuntimeName.size === requiredNameSet.size
-        ? { access, storageNameByRuntimeName }
-        : null,
+      storageNameByRuntimeName === null
+        ? null
+        : { access, storageNameByRuntimeName },
     );
   }
 
   return pending;
 }
 
+function storedBaseUrlVariableBindings(
+  snapshot: ConnectorRuntimeSnapshot,
+  runtimeMethod: ConnectorRuntimeMethod,
+): ReadonlyMap<string, string> | null {
+  const requiredNameSet = new Set(
+    snapshot.serverFirewalls.getExecutionMetadata(runtimeMethod.connectorSlug)
+      ?.baseUrlVarNames ?? [],
+  );
+  const storageNameByRuntimeName = new Map<string, string>();
+  if (requiredNameSet.size === 0) {
+    return storageNameByRuntimeName;
+  }
+  for (const binding of connectorAuthMethodRuntimeMetadata(runtimeMethod.method)
+    .runtimeBindings) {
+    if (
+      requiredNameSet.has(binding.envName) &&
+      binding.source.kind === "connector-variable"
+    ) {
+      storageNameByRuntimeName.set(binding.envName, binding.source.name);
+    }
+  }
+  return storageNameByRuntimeName.size === requiredNameSet.size
+    ? storageNameByRuntimeName
+    : null;
+}
+
 function storedConnectorReadQuery(args: {
   readonly orgId: string;
   readonly userId: string;
+  readonly snapshot: ConnectorRuntimeSnapshot;
 }) {
+  const variableConditions = [...args.snapshot.connectors.values()].flatMap(
+    (connector) => {
+      return connector.catalogConnector.authMethods.flatMap((catalogMethod) => {
+        const runtimeMethod = connector.methods.get(catalogMethod.id);
+        if (runtimeMethod?.executable !== true) {
+          return [];
+        }
+        const bindings = storedBaseUrlVariableBindings(
+          args.snapshot,
+          runtimeMethod,
+        );
+        if (bindings === null || bindings.size === 0) {
+          return [];
+        }
+        const names = [...new Set(bindings.values())].filter((name) => {
+          return runtimeMethod.method.storage.variables.includes(name);
+        });
+        if (names.length === 0) {
+          return [];
+        }
+        return [
+          and(
+            eq(connectors.connectorSlug, connector.connectorSlug),
+            eq(connectors.authMethod, catalogMethod.id),
+            // Credential reads require the runtime storage version even when
+            // a no-auth grant can resolve an older stored connection.
+            eq(connectors.storageVersion, runtimeMethod.method.storage.version),
+            inArray(variables.name, names),
+          ),
+        ];
+      });
+    },
+  );
   return {
     projection: {
-      connectorId: connectors.id,
-      connectorSlug: sql`${connectors.connectorSlug}`
-        .mapWith(pgTextDecoder)
-        .as("connector_slug"),
-      authMethod: connectors.authMethod,
-      automaticAuthType: connectors.automaticAuthType,
-      storageVersion: connectors.storageVersion,
+      connector: {
+        connectorId: connectors.id,
+        connectorSlug: sql`${connectors.connectorSlug}`
+          .mapWith(pgTextDecoder)
+          .as("connector_slug"),
+        authMethod: connectors.authMethod,
+        automaticAuthType: connectors.automaticAuthType,
+        storageVersion: connectors.storageVersion,
+      },
+      variable: {
+        id: variables.id,
+        name: variables.name,
+        value: variables.value,
+      },
     },
     condition: and(
       eq(connectors.orgId, args.orgId),
       eq(connectors.userId, args.userId),
       isNotNull(connectors.connectorSlug),
       eq(connectors.isDefault, true),
+    ),
+    variableCondition: and(
+      eq(variables.orgId, args.orgId),
+      eq(variables.userId, args.userId),
+      eq(variables.type, "connector"),
+      eq(variables.connectorId, connectors.id),
+      variableConditions.length === 0
+        ? isNull(variables.id)
+        : or(...variableConditions),
     ),
   };
 }
@@ -362,27 +425,7 @@ function storedConnectorReadPlan(
       );
     }
   }
-  const readGroups = [...pending.values()].flatMap((value) => {
-    return value === null || value.storageNameByRuntimeName.size === 0
-      ? []
-      : [
-          {
-            access: value.access,
-            names: [...value.storageNameByRuntimeName.values()],
-          },
-        ];
-  });
-  return {
-    pending,
-    credentialResolutionBySlug,
-    readGroups,
-    variableReadCondition:
-      readGroups.length === 0
-        ? undefined
-        : builtinConnectorCredentialVariableReadCondition({
-            groups: readGroups,
-          }),
-  };
+  return { pending, credentialResolutionBySlug };
 }
 
 function storedRuntimeStateFromRows(
@@ -1654,7 +1697,7 @@ function publicCheckResult(
 
 export const resolveConnectorCheck$ = command(
   async (
-    { set },
+    { get, set },
     args: ResolveConnectorCheckArgs,
     signal: AbortSignal,
   ): Promise<ResolveConnectorCheckResult> => {
@@ -1709,31 +1752,31 @@ export const resolveConnectorCheck$ = command(
           userId: args.userId,
           snapshot,
         };
-        // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0114; new non-billing transactions are prohibited.
-        state = await db.transaction(
-          async (tx) => {
-            const query = storedConnectorReadQuery(storedScope);
-            const connectorRows = await tx
-              .select(query.projection)
-              .from(connectors)
-              .where(query.condition);
-            const plan = storedConnectorReadPlan(
-              connectorRows,
-              pendingStoredConnectorRuntimes(connectorRows, storedScope),
-            );
-            const variableRows =
-              plan.readGroups.length === 0
-                ? []
-                : await tx
-                    .select({ name: variables.name, value: variables.value })
-                    .from(variables)
-                    .where(plan.variableReadCondition);
-            return storedRuntimeStateFromRows(plan, variableRows);
-          },
-          {
-            isolationLevel: "repeatable read",
-            accessMode: "read only",
-          },
+        const query = storedConnectorReadQuery(storedScope);
+        // Only stored connectors and their required variables share this
+        // statement snapshot; catalog and diagnostic work remain outside it.
+        const rows = await get(db$)
+          .select(query.projection)
+          .from(connectors)
+          .leftJoin(variables, query.variableCondition)
+          .where(query.condition);
+        signal.throwIfAborted();
+        const connectorRows = [
+          ...new Map(
+            rows.map((row) => {
+              return [row.connector.connectorId, row.connector] as const;
+            }),
+          ).values(),
+        ];
+        const plan = storedConnectorReadPlan(
+          connectorRows,
+          pendingStoredConnectorRuntimes(connectorRows, storedScope),
+        );
+        state = storedRuntimeStateFromRows(
+          plan,
+          rows.flatMap((row) => {
+            return row.variable === null ? [] : [row.variable];
+          }),
         );
       } else {
         state = {
