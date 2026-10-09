@@ -11,7 +11,10 @@ import {
   type TelegramMessageEntity,
 } from "@okouai/db/schema/telegram-message";
 import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-user-link";
-import { AUTO_SELECTED_MODEL, sameSelectedModel } from "@okouai/core/auto-run-model";
+import {
+  AUTO_SELECTED_MODEL,
+  sameSelectedModel,
+} from "@okouai/core/auto-run-model";
 import { command } from "ccstate";
 import { and, desc, eq } from "drizzle-orm";
 import { createHmac, timingSafeEqual } from "node:crypto";

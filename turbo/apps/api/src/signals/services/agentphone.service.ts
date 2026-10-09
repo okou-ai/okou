@@ -5,7 +5,10 @@ import { agentphoneGroupMessageReceipts } from "@okouai/db/schema/agentphone-gro
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
 import { agentphoneMessageVisibility } from "@okouai/db/schema/agentphone-message-visibility";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
-import { AUTO_SELECTED_MODEL, sameSelectedModel } from "@okouai/core/auto-run-model";
+import {
+  AUTO_SELECTED_MODEL,
+  sameSelectedModel,
+} from "@okouai/core/auto-run-model";
 import { command } from "ccstate";
 import { and, desc, eq, isNull, or } from "drizzle-orm";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";

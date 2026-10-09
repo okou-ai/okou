@@ -1,7 +1,7 @@
 -- Read-only release-three census. Run against an authorized database snapshot.
 -- Counts describe relational coverage, not installed consumers or blob resume.
-BEGIN READ ONLY;
-SET LOCAL statement_timeout = '30s';
+SET default_transaction_read_only = on;
+SET statement_timeout = '30s';
 SELECT 'threads' AS surface,
   count(*) FILTER (WHERE selected_model IS NULL) AS nullable_auto,
   count(*) FILTER (WHERE selected_model IN ('okou-1.0', 'okou-1.0-pro', 'okou-1.0-max')) AS legacy_auto,
@@ -48,4 +48,3 @@ FROM chat_thread_snapshots;
 SELECT archive_schema_version, count(*) AS event_snapshot_heads,
   count(*) FILTER (WHERE object_key IS NULL) AS absent_objects
 FROM chat_event_snapshots GROUP BY archive_schema_version;
-ROLLBACK;

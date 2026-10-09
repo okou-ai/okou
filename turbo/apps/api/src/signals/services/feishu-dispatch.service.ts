@@ -6,7 +6,10 @@ import {
 import { agents } from "@okouai/db/schema/agent";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
-import { AUTO_SELECTED_MODEL, sameSelectedModel } from "@okouai/core/auto-run-model";
+import {
+  AUTO_SELECTED_MODEL,
+  sameSelectedModel,
+} from "@okouai/core/auto-run-model";
 import { command } from "ccstate";
 import { and, eq, isNull, or } from "drizzle-orm";
 import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
