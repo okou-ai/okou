@@ -67,56 +67,14 @@ export const renameDialogOpen$ = computed((get) => {
   return get(internalRenameDialogOpen$);
 });
 
-const internalRenameDialogFocusOrigin$ = state<{
-  readonly element: Element | null;
-  readonly signal: AbortSignal;
-} | null>(null);
 const internalRenameMenuHandoff$ = state(false);
 export const renameMenuFinalFocus$ = computed((get) => {
-  // Keep the handoff suppressed until the next menu opening, even after Rename.
   return get(internalRenameMenuHandoff$) ? false : undefined;
 });
 export const handleRenameMenuOpenChange$ = command(
   ({ get, set }, open: boolean) => {
-    if (open && !get(internalRenameDialogOpen$)) {
-      set(internalRenameDialogFocusOrigin$, null);
-      set(internalRenameMenuHandoff$, false);
-    }
-  },
-);
-
-export const handleRenameDialogOpenChangeComplete$ = command(
-  ({ get, set }, open: boolean) => {
-    if (open) {
-      return;
-    }
-    const origin = get(internalRenameDialogFocusOrigin$);
-    set(internalRenameDialogFocusOrigin$, null);
-    const previousFocus = origin?.element;
-    const active = document.activeElement;
-    if (
-      !origin ||
-      origin.signal.aborted ||
-      !(previousFocus instanceof HTMLElement) ||
-      previousFocus === document.body ||
-      !previousFocus.isConnected ||
-      previousFocus.closest("[data-closed]") ||
-      document.querySelector('[role="dialog"]:not([data-closed])') ||
-      (active !== document.body &&
-        active !== document.documentElement &&
-        active !== previousFocus &&
-        !active?.closest("[data-chat-rename-dialog]"))
-    ) {
-      return;
-    }
-    previousFocus.focus({ preventScroll: true });
-    // F2 can leave its source menu open; its next Escape must behave normally.
-    if (
-      document.activeElement === previousFocus &&
-      previousFocus.closest('[role="menu"]')
-    ) {
-      set(internalRenameMenuHandoff$, false);
-    }
+    // Only suppress a menu that closes while handing off to Rename.
+    set(internalRenameMenuHandoff$, !open && get(internalRenameDialogOpen$));
   },
 );
 
@@ -150,13 +108,7 @@ export const openRenameChatThreadDialog$ = command(
       title: string | null | undefined;
       agentId?: string | null | undefined;
     },
-    signal: AbortSignal,
   ) => {
-    set(internalRenameDialogFocusOrigin$, {
-      element: document.activeElement,
-      signal,
-    });
-    set(internalRenameMenuHandoff$, true);
     set(internalRenameDialogInput$, title?.trim() ?? "");
     set(internalRenameDialogAgentId$, agentId?.trim() || null);
     set(internalRenameDialogThreadId$, threadId);

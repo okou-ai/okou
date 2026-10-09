@@ -105,7 +105,7 @@ async function renameDialog(): Promise<HTMLElement> {
 }
 
 test.each(["Enter", "Escape", "Cancel", "Close"])(
-  "Restore the exact original non-tabbable element after Rename closes with %s",
+  "Leave focus unforced after Rename closes from a chat pane with %s",
   async (dismissal) => {
     const { side } = await setupRenamePage();
     const user = userEvent.setup({ delay: null });
@@ -126,20 +126,20 @@ test.each(["Enter", "Escape", "Cancel", "Close"])(
       click(controlNamed("button", dismissal, dialog));
     }
     await waitFor(() => {
-      expect(container).toHaveFocus();
+      expect(dialog).not.toBeInTheDocument();
+      expect(container).toHaveTextContent(
+        dismissal === "Enter" ? "Renamed side focus chat" : "Side focus chat",
+      );
     });
-    expect(dialog).not.toBeInTheDocument();
-    expect(container).toHaveTextContent(
-      dismissal === "Enter" ? "Renamed side focus chat" : "Side focus chat",
-    );
+    expect(document.body).toHaveFocus();
 
     await user.keyboard("{Enter}");
     expect(screen.queryByLabelText("Search emoji")).not.toBeInTheDocument();
-    expect(container).toHaveFocus();
+    expect(container).not.toHaveFocus();
   },
 );
 
-test("Restore the original main focus after double-clicking its title", async () => {
+test("Leave focus unforced after double-clicking the chat title to Rename", async () => {
   const { main } = await setupRenamePage();
   const user = userEvent.setup({ delay: null });
   const container = threadContainer(main.id);
@@ -150,9 +150,9 @@ test("Restore the original main focus after double-clicking its title", async ()
   const dialog = await renameDialog();
   await user.keyboard("{Escape}");
   await waitFor(() => {
-    expect(container).toHaveFocus();
+    expect(dialog).not.toBeInTheDocument();
   });
-  expect(dialog).not.toBeInTheDocument();
+  expect(document.body).toHaveFocus();
 });
 
 test.each(["mouse", "keyboard"])(
@@ -270,7 +270,7 @@ test("Keep the mobile header menu's ordinary return after its Rename handoff", a
   });
 });
 
-test("Restore the still-open source menu after F2 and keep its next Escape", async () => {
+test("Leave focus unforced after F2 from an open menu and keep its next Escape", async () => {
   const { side } = await setupRenamePage();
   const user = userEvent.setup({ delay: null });
   const trigger = sidebarMenuTrigger(side.id);
@@ -283,8 +283,8 @@ test("Restore the still-open source menu after F2 and keep its next Escape", asy
   await user.keyboard("{Escape}");
   await waitFor(() => {
     expect(dialog).not.toBeInTheDocument();
-    expect(rename).toHaveFocus();
   });
+  expect(document.body).toHaveFocus();
   await user.keyboard("{Escape}");
   await waitFor(() => {
     expect(menu).not.toBeInTheDocument();
@@ -293,7 +293,7 @@ test("Restore the still-open source menu after F2 and keep its next Escape", asy
 });
 
 test.each(["main", "side"] as const)(
-  "Restore the original %s composer rather than its chat container",
+  "Do not restore the original %s composer or select its chat container",
   async (pane) => {
     const threads = await setupRenamePage();
     const user = userEvent.setup({ delay: null });
@@ -308,8 +308,9 @@ test.each(["main", "side"] as const)(
     await user.keyboard("{Escape}");
     await waitFor(() => {
       expect(dialog).not.toBeInTheDocument();
-      expect(composer).toHaveFocus();
     });
+    expect(document.body).toHaveFocus();
+    expect(composer).not.toHaveFocus();
     expect(container).not.toHaveFocus();
   },
 );
@@ -396,8 +397,9 @@ test("Keep F2 blocked until Rename finishes closing, then allow a fresh opening"
   await user.keyboard("{Escape}");
   await waitFor(() => {
     expect(reopened).not.toBeInTheDocument();
-    expect(mainContainer).toHaveFocus();
   });
+  expect(document.body).toHaveFocus();
+  expect(mainContainer).not.toHaveFocus();
   expect(threadContainer(side.id)).not.toHaveFocus();
 });
 
@@ -478,8 +480,10 @@ test("Keep a reopened Rename input focused when an earlier save completes", asyn
   await user.keyboard("{Enter}");
   await requested.promise;
   await waitFor(() => {
-    expect(container).toHaveFocus();
+    expect(first).not.toBeInTheDocument();
   });
+  expect(document.body).toHaveFocus();
+  container.focus();
   await user.keyboard("{F2}");
   const second = await renameDialog();
   const input = within(second).getByPlaceholderText("Chat title");

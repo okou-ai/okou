@@ -92,7 +92,6 @@ import {
   pendingDeleteThreadId$,
   renameDialogAgentId$,
   renameDialogOpen$,
-  handleRenameDialogOpenChangeComplete$,
   renameMenuFinalFocus$,
   handleRenameMenuOpenChange$,
   setPendingDeleteThreadId$,
@@ -633,7 +632,6 @@ function ChatThreadRenameDialog() {
   const closeRenameChatThreadDialog = useSet(closeRenameChatThreadDialog$);
   const setRenameDialogInput = useSet(setRenameDialogInput$);
   const renameChatThread = useSet(renameChatThread$);
-  const onOpenChangeComplete = useSet(handleRenameDialogOpenChangeComplete$);
   const pageSignal = useGet(pageSignal$);
 
   function closeRenameDialog() {
@@ -659,14 +657,13 @@ function ChatThreadRenameDialog() {
   return (
     <Dialog
       open={renameDialogOpen}
-      onOpenChangeComplete={onOpenChangeComplete}
       onOpenChange={(open) => {
         if (!open) {
           closeRenameDialog();
         }
       }}
     >
-      <DialogContent finalFocus={false} data-chat-rename-dialog>
+      <DialogContent finalFocus={false}>
         <DialogHeader>
           <DialogTitle>
             {t(($) => {
