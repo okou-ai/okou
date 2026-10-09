@@ -2,7 +2,7 @@ use super::*;
 use std::fs;
 use std::os::unix::fs::MetadataExt;
 
-fn fixture_files(count: usize, bytes: usize, long_paths: bool) -> Vec<StorageFile> {
+pub(super) fn fixture_files(count: usize, bytes: usize, long_paths: bool) -> Vec<StorageFile> {
     (0..count)
         .map(|index| {
             let mut content = vec![b'x'; bytes];
@@ -27,7 +27,7 @@ fn fixture_files(count: usize, bytes: usize, long_paths: bool) -> Vec<StorageFil
         .collect()
 }
 
-fn archive_files(files: &[StorageFile]) -> Vec<u8> {
+pub(super) fn archive_files(files: &[StorageFile]) -> Vec<u8> {
     let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
     let mut builder = tar::Builder::new(encoder);
     for file in files {
@@ -150,7 +150,7 @@ fn count_and_content_boundaries_are_independent_of_gzip_size() {
 }
 
 #[tokio::test]
-async fn production_warming_keeps_its_envelope_separate_from_reader_capability() {
+async fn production_warming_enforces_activated_count_content_and_longname_admission() {
     let root = tempfile::tempdir().unwrap();
     let home = HomePaths::with_root(root.path().to_owned());
     let cache = DecodedCache::new(home.clone());
@@ -164,9 +164,14 @@ async fn production_warming_keeps_its_envelope_separate_from_reader_capability()
             false,
             false,
         ),
-        ("longnames", 1, 256, true, false),
+        ("longnames", 1, 256, true, true),
     ] {
-        let files = fixture_files(count, bytes, long_paths);
+        let mut files = fixture_files(count, bytes, long_paths);
+        if name == "content" {
+            for file in &mut files {
+                file.content[storage_files::MAX_FILE_BYTES / 3..].fill(b'x');
+            }
+        }
         let gzip = archive_files(&files);
         assert!(gzip.len() <= MAX_ADMITTED_COMPRESSED_BYTES);
         let source = home.storage_cache_dir(name, "v1");

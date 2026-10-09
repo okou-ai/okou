@@ -1791,8 +1791,7 @@ fn reuse_decoded(
     let Some(files) = files else {
         return Ok(false);
     };
-    // Reader capability can exceed the active producer policy during rollout.
-    // The positive entry was validated; do not select a wider outbound shape yet.
+    // Apply the active producer policy only after validating the positive entry.
     if !decoded::admitted_for_delivery(&files) {
         return Ok(false);
     }

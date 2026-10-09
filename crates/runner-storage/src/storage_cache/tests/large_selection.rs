@@ -76,13 +76,24 @@ async fn alias_group_retains_archive_delivery_when_decoded_files_do_not_fit() {
             archive_size: None,
             decoded_ready_observed: true,
         };
-        assert!(!reuse_decoded(&mut plan, &group, Some(Arc::clone(&ready))).unwrap());
-        assert_eq!(plan.decoded_mount_count(), 0);
-        for index in 0..count {
+        assert_eq!(
+            reuse_decoded(&mut plan, &group, Some(Arc::clone(&ready))).unwrap(),
+            count == 32
+        );
+        if count == 32 {
             assert_eq!(
-                storage_archive_url(&plan, index),
-                Some("https://storage.example/retained")
+                plan.decoded_file_count(),
+                guest_contracts::storage_files::MAX_TOTAL_FILES
             );
+            assert_eq!(plan.decoded_mount_count(), count);
+        } else {
+            assert_eq!(plan.decoded_mount_count(), 0);
+            for index in 0..count {
+                assert_eq!(
+                    storage_archive_url(&plan, index),
+                    Some("https://storage.example/retained")
+                );
+            }
         }
     }
     drop(ready);
@@ -90,17 +101,16 @@ async fn alias_group_retains_archive_delivery_when_decoded_files_do_not_fit() {
 }
 
 #[tokio::test]
-async fn preparation_keeps_small_delivery_policy_for_valid_larger_v1_positives() {
+async fn preparation_selects_valid_larger_v1_positives_within_the_active_policy() {
     let root = tempfile::tempdir().unwrap();
     let home = home_at(&root);
     let cache = decoded::DecodedCache::new(home.clone());
-    for (name, count, bytes, selected) in [
-        ("small", 32, 64, true),
-        ("count", 33, 64, false),
-        ("small-content", 3, 256 * 1024, true),
-        // Stored gzip framing exceeds 1 MiB despite decoded content fitting.
-        ("gzip-overflow", 4, 256 * 1024, false),
-        ("content-overflow", 5, 256 * 1024, false),
+    for (name, count, bytes) in [
+        ("small", 32, 64),
+        ("count", 33, 64),
+        ("small-content", 3, 256 * 1024),
+        ("gzip-overflow", 4, 256 * 1024),
+        ("larger-content", 5, 256 * 1024),
     ] {
         seed_later_writer(&home, name, count, bytes);
         for fresh in [false, true] {
@@ -146,18 +156,11 @@ async fn preparation_keeps_small_delivery_policy_for_valid_larger_v1_positives()
             )
             .await
             .unwrap();
-            assert_eq!(plan.decoded_mount_count(), if selected { 2 } else { 0 });
-            if !selected {
-                assert!(
-                    storage_archive_url(&plan, 0)
-                        .unwrap()
-                        .starts_with("file://")
-                );
-                assert!(
-                    artifact_archive_url(&plan, 0)
-                        .unwrap()
-                        .starts_with("file://")
-                );
+            assert_eq!(plan.decoded_mount_count(), 2);
+            for (_, files) in plan.take_decoded() {
+                assert_eq!(files.files.len(), count);
+                assert!(files.files.iter().all(|file| file.content.len() == bytes
+                    && file.content.iter().all(|byte| *byte == b'x')));
             }
             drop(deferred);
         }
@@ -166,7 +169,7 @@ async fn preparation_keeps_small_delivery_policy_for_valid_larger_v1_positives()
 }
 
 #[tokio::test]
-async fn larger_positive_corruption_is_not_hidden_by_small_delivery_policy() {
+async fn positive_corruption_is_not_replaced_by_archive_delivery() {
     let root = tempfile::tempdir().unwrap();
     let home = home_at(&root);
     seed_later_writer(&home, "corrupt", 33, 64);
