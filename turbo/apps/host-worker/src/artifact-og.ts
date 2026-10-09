@@ -17,6 +17,10 @@ export async function withArtifactOg(
       .get("Content-Type")
       ?.toLowerCase()
       .startsWith("text/html") ||
+    response.headers
+      .get("Content-Disposition")
+      ?.toLowerCase()
+      .startsWith("attachment") ||
     response.headers.has("Content-Encoding") ||
     Number(response.headers.get("Content-Length")) > 4 * 1024 * 1024
   )

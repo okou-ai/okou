@@ -33,7 +33,7 @@ function inspectHtml(html: string) {
       if (ignoredTags.has(name)) ignoredDepth += 1;
       if (ignoredDepth > 0) return;
       if (name === "body") bodyStarted = true;
-      if (bodyStarted) return;
+      if (bodyStarted || headEnd !== undefined) return;
       if (name === "html") documentStart = parser.endIndex + 1;
       if (name === "title") {
         readingTitle = true;
@@ -65,7 +65,7 @@ function inspectHtml(html: string) {
         ignoredDepth -= 1;
         return;
       }
-      if (ignoredDepth > 0 || bodyStarted) return;
+      if (ignoredDepth > 0 || bodyStarted || headEnd !== undefined) return;
       if (name === "head") headEnd ??= parser.startIndex;
       if (name === "title") {
         readingTitle = false;
@@ -189,9 +189,14 @@ export function artifactOgHtml(
         : `${extra}${tags}`,
   });
   edits.sort((left, right) => {
-    return right.start - left.start;
+    return left.start - right.start || left.end - right.end;
   });
-  for (const edit of edits)
-    html = html.slice(0, edit.start) + edit.text + html.slice(edit.end);
-  return html;
+  const parts: string[] = [];
+  let offset = 0;
+  for (const edit of edits) {
+    parts.push(html.slice(offset, edit.start), edit.text);
+    offset = edit.end;
+  }
+  parts.push(html.slice(offset));
+  return parts.join("");
 }

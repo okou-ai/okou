@@ -192,6 +192,43 @@ afterEach(() => {
   server.resetHandlers();
 });
 
+test("preserves HTML attachment bytes on fresh and cached reads when OG is enabled", async () => {
+  const f = fixture(false, "html");
+  if (f.policy.target.kind !== "file") {
+    throw new Error("Expected a file fixture");
+  }
+  f.policy.target.contentType = "text/html";
+  const html =
+    "<!doctype html><html><head><title>Original report</title></head><body>Downloaded report</body></html>";
+  f.objects.set(policyKey, JSON.stringify(f.policy));
+  f.objects.set(f.policy.target.key, html);
+  server.use(
+    http.get("https://authority.test/api/artifact-og/metadata", () => {
+      return HttpResponse.json({
+        available: true,
+        title: "Published report",
+        description: "Public summary",
+        imageUrl: "https://authority.test/api/artifact-og/image?version=one",
+        url: siteOrigin,
+      });
+    }),
+  );
+  const env = { ...f.env, ARTIFACT_OG_API_ORIGIN: "https://authority.test" };
+  for (let read = 0; read < 2; read += 1) {
+    const response = await fetchWorker(
+      new Request(`https://a.okou.io/${publicToken}.html`),
+      env,
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Disposition")).toBe(
+      "attachment; filename*=UTF-8''report.html",
+    );
+    expect(await response.text()).toBe(html);
+    expect(response.headers.get("Content-Length")).toBe(String(html.length));
+    expect(response.headers.get("ETag")).toBe('"file"');
+  }
+});
+
 test("rechecks OG metadata on cached HTML and denies revoked shares before reading the cache", async () => {
   const f = fixture(true);
   let enabled = true;

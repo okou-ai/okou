@@ -20,6 +20,22 @@ describe("artifact sharing HTML", () => {
     );
     expect(result).toContain("<svg><title>Chart title</title></svg>");
   });
+
+  it("ignores body metadata when the optional body tag is omitted", () => {
+    const body =
+      '<main><meta property="og:title" content="Body title"><meta property="og:image" content="https://example.com/body.png">Report</main>';
+    const html = `<html><head><title>Document title</title></head>${body}</html>`;
+    expect(artifactHtmlMetadata(html)).toEqual({
+      title: "Document title",
+      description: "",
+    });
+    const result = artifactOgHtml(html, metadata, false);
+    const head = result.slice(0, result.indexOf("</head>"));
+    expect(head).toContain('property="og:title"');
+    expect(head).toContain('property="og:image"');
+    expect(head).not.toContain("body.png");
+    expect(result).toContain(body);
+  });
   it("adds metadata to the initial head without rewriting scripts or authored content", () => {
     const script =
       "<script>const sample = \"<meta property='og:image' content='fake'>\";</script>";
@@ -89,6 +105,20 @@ describe("artifact sharing HTML", () => {
       "<title>Report &lt;draft&gt; &amp; &quot;review&quot;</title>",
     );
     expect(result.match(/property="og:image"/gu)).toHaveLength(1);
+  });
+
+  it("replaces document metadata when the optional head tags are omitted", () => {
+    const html =
+      '<!doctype html><html><title>Marketing</title><meta name="description" content="Marketing copy"><body>Report</body></html>';
+    const result = artifactOgHtml(html, metadata, true);
+    expect(result).toMatch(/^<!doctype html><html><head>/u);
+    expect(result).not.toContain("Marketing");
+    expect(result).toContain("<body>Report</body>");
+    expect(result.match(/<title>/gu)).toHaveLength(1);
+    expect(artifactHtmlMetadata(result)).toEqual({
+      title: metadata.title,
+      description: metadata.description,
+    });
   });
 
   it("keeps tag and attribute injection attempts as metadata text", () => {
