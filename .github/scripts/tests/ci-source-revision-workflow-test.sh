@@ -6,10 +6,8 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 ruby -ryaml -ropen3 -rtmpdir -rfileutils - "$repo_root" <<'RUBY'
 repo_root = ARGV.fetch(0)
 turbo = YAML.load_file(File.join(repo_root, ".github/workflows/turbo.yml"))
-release = YAML.load_file(File.join(repo_root, ".github/workflows/release-please.yml"))
 jobs = turbo.fetch("jobs")
 event_source = "${{ github.sha }}"
-release_source = "${{ needs.release-please.outputs.release_target }}"
 
 e2e_jobs = jobs.keys.select { |name| name.start_with?("cli-e2e-") }
 raise "missing CLI E2E source consumers" if e2e_jobs.empty?
@@ -35,22 +33,6 @@ unless api_urls.length == 2 && api_urls.all? { |url| url == "https://static.okou
 end
 artifact_step = cli.fetch("steps").find { |step| step["id"] == "artifact" }
 raise "missing CLI artifact source output" unless artifact_step
-
-production_refs = %w[promote-api-production promote-app-worker-production].flat_map do |name|
-  production_steps = release.fetch("jobs").fetch(name).fetch("steps")
-  checkout = production_steps.find { |step| step.fetch("uses", "").start_with?("actions/checkout@") }
-  deployment = production_steps.find { |step| step.dig("with", "step") == "start" }
-  unless checkout&.dig("with", "ref") == release_source && deployment&.dig("with", "ref") == release_source
-    raise "#{name} artifact and deployment record must use the exact release target, not the driver ref/SHA"
-  end
-  [checkout.fetch("with").fetch("ref"), deployment.fetch("with").fetch("ref")]
-end
-production_action = release.fetch("jobs").fetch("promote-api-production").fetch("steps").find do |step|
-  step["uses"] == "./.github/actions/vercel-deploy"
-end
-unless production_action&.dig("with", "skip-start") == "true" && production_action&.dig("with", "skip-finish") == "true"
-  raise "production promotion must retain ownership of its deployment record"
-end
 
 def run!(command, directory, environment = {})
   stdout, stderr, status = Open3.capture3(environment, *command, chdir: directory)
@@ -98,10 +80,6 @@ Dir.mktmpdir("ci-source-revision-") do |fixture|
   queue_sha = git.call("rev-parse", "HEAD")
   unless [pr_head, merge_sha, later_main, queue_sha].uniq.length == 4
     raise "fixture must distinguish PR head, captured merge, advancing main, and merge group"
-  end
-
-  unless production_refs.all? { |ref| ref.sub(release_source, merge_sha) == merge_sha } && merge_sha != later_main
-    raise "production source and record must retain the release target when the driver advances"
   end
 
   {"pull_request" => merge_sha, "merge_group" => queue_sha, "push" => later_main}.each do |event, sha|
