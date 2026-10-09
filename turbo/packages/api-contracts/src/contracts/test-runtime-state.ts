@@ -63,13 +63,6 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
     automation_id: z.uuid(),
   }),
   z.object({
-    action: z.literal("set-runner-job-pi-context-as-versioned-writer"),
-    run_id: z.uuid(),
-    // Stored rows can come from a future or invalid writer. The claim boundary
-    // must validate them, not this test-only fixture endpoint.
-    pi_model_config: z.record(z.string(), z.unknown()),
-  }),
-  z.object({
     action: z.literal("clear-run-api-start"),
     run_id: z.uuid(),
   }),

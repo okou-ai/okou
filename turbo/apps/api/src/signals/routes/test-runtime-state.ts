@@ -322,37 +322,6 @@ async function autonomyBudgetFixtureActionResponse(
   }
 }
 
-type SetRunnerJobPiContextAsVersionedWriterAction = Extract<
-  TestRuntimeStateActionBody,
-  { action: "set-runner-job-pi-context-as-versioned-writer" }
->;
-
-async function setRunnerJobPiContextAsVersionedWriter(
-  db: Db,
-  body: SetRunnerJobPiContextAsVersionedWriterAction,
-  signal: AbortSignal,
-): Promise<void> {
-  // This private infrastructure fixture models stored contexts to exercise
-  // the real claim API without changing production admission.
-  const piContext = {
-    cliAgentType: "pi",
-    piSessionId: body.run_id,
-    piLaunchConfig: { schemaVersion: 2 },
-    piModelConfig: body.pi_model_config,
-  };
-  const [updated] = await db
-    .update(runnerJobQueue)
-    .set({
-      executionContext: sql`${runnerJobQueue.executionContext} || ${JSON.stringify(piContext)}::jsonb`,
-    })
-    .where(eq(runnerJobQueue.runId, body.run_id))
-    .returning({ runId: runnerJobQueue.runId });
-  signal.throwIfAborted();
-  if (!updated) {
-    throw new Error("Expected a queued runner job for Pi context update");
-  }
-}
-
 type ReadRunLaunchSnapshotAction = Extract<
   TestRuntimeStateActionBody,
   { action: "read-run-launch-snapshot" }
@@ -608,12 +577,7 @@ const postRuntimeStateAction$ = command(
     if (specializedFixture) {
       return specializedFixture;
     }
-    switch (body.action) {
-      case "set-runner-job-pi-context-as-versioned-writer": {
-        await setRunnerJobPiContextAsVersionedWriter(db, body, signal);
-        return { status: 200 as const, body: { ok: true as const } };
-      }
-    }
+    throw new Error("Unsupported runtime fixture action");
   },
 );
 
