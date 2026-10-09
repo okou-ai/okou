@@ -5251,6 +5251,8 @@
     "mermaid": {
       "diagramLabel": "Diagrama",
       "expand": "Ampliar diagrama",
+      "fillView": "Ampliar vista",
+      "restoreView": "Restaurar vista",
       "viewSource": "Código del diagrama"
     },
     "notFound": {

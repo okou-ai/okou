@@ -90,8 +90,7 @@ type AdmissionStatement = AdmissionFacts & {
 type Admitted = AdmissionFacts & {
   readonly kind: "admitted";
   readonly queueFirstClaim:
-    | { readonly kind: "claimed"; readonly createdAt: Date }
-    | undefined;
+    { readonly kind: "claimed"; readonly createdAt: Date } | undefined;
 };
 export type PendingAdmissionProgress =
   | AdmissionStatement

@@ -49,10 +49,7 @@ const AD_HOC_NOTE_FILENAME = "2026-09-05T15-30-00-remember-review-style.md";
 const temporaryDirectories: string[] = [];
 
 type MemoryToolName =
-  | "add_ad_hoc_note"
-  | "memories_list"
-  | "memories_read"
-  | "memories_search";
+  "add_ad_hoc_note" | "memories_list" | "memories_read" | "memories_search";
 
 afterEach(async () => {
   await Promise.all(

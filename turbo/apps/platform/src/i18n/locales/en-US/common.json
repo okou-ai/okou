@@ -5175,6 +5175,8 @@
     "mermaid": {
       "diagramLabel": "Diagram",
       "expand": "Expand diagram",
+      "fillView": "Fill view",
+      "restoreView": "Restore view",
       "viewSource": "Diagram source"
     },
     "notFound": {

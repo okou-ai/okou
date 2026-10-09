@@ -2,13 +2,10 @@ import { readCompletedRunSessionId } from "./helpers/public-run-session";
 import { now } from "../../../lib/time";
 import { expectThreadModelCredits } from "./helpers/public-thread-usage";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
-import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
 
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 
@@ -362,23 +359,6 @@ describe("thread-bound Pi terminal failures", () => {
           "duplicate terminal delivery",
         );
       }
-      await flushWaitUntilForTest();
-      await accept(
-        setupApp({ context, routes: testWorkflowAutomationExecutionRoutes })(
-          testWorkflowAutomationExecutionContract,
-        ).dispatchCallbacks({
-          body: {
-            run_id: run.runId,
-            status: "failed",
-            error:
-              status === "cancelled"
-                ? "Run cancelled"
-                : "subscription rejected",
-            dispatch_count: 2,
-          },
-        }),
-        [200],
-      );
       await flushWaitUntilForTest();
 
       await expectThreadModelCredits(context, actor, run.threadId, 0);

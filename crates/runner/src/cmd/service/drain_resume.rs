@@ -90,14 +90,14 @@ use super::drain_override::{
 use super::gate::read_runner_status;
 use super::reload::{SystemdReloadRequirement, coordinate_systemd_reload};
 use super::signal::{ServiceSignalOutcome, signal_service_main, signal_service_main_bounded};
-use super::systemctl::{
-    CleanupUnitActiveState, SystemdUnitEnablement, cleanup_unit_active_state_bounded,
-    get_service_restart_policy, is_unit_active_bounded, read_unit_enablement,
-    restore_unit_enablement, run_systemctl,
-};
 use super::{
     RunnerServiceUnit, ServiceFuture, acquire_service_lock, read_unit_config_path,
     selected_config_base_dir, selected_config_live_instance,
+};
+use runner_host::service::{
+    CleanupUnitActiveState, SystemdUnitEnablement, cleanup_unit_active_state_bounded,
+    get_service_restart_policy, is_unit_active_bounded, read_unit_enablement,
+    restore_unit_enablement, run_systemctl,
 };
 
 const DRAIN_SIGNAL_CONVERGENCE_TIMEOUT: Duration = Duration::from_secs(10);
@@ -218,14 +218,18 @@ impl ServiceDrainOps for RealServiceDrainOps {
         unit: &'a RunnerServiceUnit,
         timeout: Duration,
     ) -> ServiceFuture<'a, CleanupUnitActiveState> {
-        Box::pin(async move { cleanup_unit_active_state_bounded(unit, timeout).await })
+        Box::pin(async move {
+            cleanup_unit_active_state_bounded(unit, timeout)
+                .await
+                .map_err(Into::into)
+        })
     }
 
     fn enablement<'a>(
         &'a mut self,
         unit: &'a RunnerServiceUnit,
     ) -> ServiceFuture<'a, SystemdUnitEnablement> {
-        Box::pin(async move { read_unit_enablement(unit).await })
+        Box::pin(async move { read_unit_enablement(unit).await.map_err(Into::into) })
     }
 
     fn write_restart_override(
@@ -252,7 +256,7 @@ impl ServiceDrainOps for RealServiceDrainOps {
     }
 
     fn restart_policy<'a>(&'a mut self, unit: &'a RunnerServiceUnit) -> ServiceFuture<'a, String> {
-        Box::pin(async move { get_service_restart_policy(unit).await })
+        Box::pin(async move { get_service_restart_policy(unit).await.map_err(Into::into) })
     }
 
     fn signal_drain<'a>(
@@ -273,9 +277,11 @@ impl ServiceDrainOps for RealServiceDrainOps {
     }
 
     fn disable<'a>(&'a mut self, unit: &'a RunnerServiceUnit) -> ServiceFuture<'a, ()> {
-        Box::pin(
-            async move { run_systemctl(&["disable", "--no-reload", unit.service_name()]).await },
-        )
+        Box::pin(async move {
+            run_systemctl(&["disable", "--no-reload", unit.service_name()])
+                .await
+                .map_err(Into::into)
+        })
     }
 
     fn restore_enablement<'a>(
@@ -283,14 +289,18 @@ impl ServiceDrainOps for RealServiceDrainOps {
         unit: &'a RunnerServiceUnit,
         enablement: SystemdUnitEnablement,
     ) -> ServiceFuture<'a, ()> {
-        Box::pin(async move { restore_unit_enablement(unit, enablement).await })
+        Box::pin(async move {
+            restore_unit_enablement(unit, enablement)
+                .await
+                .map_err(Into::into)
+        })
     }
 
     fn read_unit_config_path<'a>(
         &'a mut self,
         unit: &'a RunnerServiceUnit,
     ) -> ServiceFuture<'a, Option<std::path::PathBuf>> {
-        Box::pin(async move { read_unit_config_path(unit).await })
+        Box::pin(async move { read_unit_config_path(unit).await.map_err(Into::into) })
     }
 }
 
@@ -300,21 +310,25 @@ impl ServiceResumeOps for RealServiceResumeOps {
         unit: &'a RunnerServiceUnit,
         timeout: Duration,
     ) -> ServiceFuture<'a, bool> {
-        Box::pin(async move { is_unit_active_bounded(unit, timeout).await })
+        Box::pin(async move {
+            is_unit_active_bounded(unit, timeout)
+                .await
+                .map_err(Into::into)
+        })
     }
 
     fn read_unit_config_path<'a>(
         &'a mut self,
         unit: &'a RunnerServiceUnit,
     ) -> ServiceFuture<'a, Option<std::path::PathBuf>> {
-        Box::pin(async move { read_unit_config_path(unit).await })
+        Box::pin(async move { read_unit_config_path(unit).await.map_err(Into::into) })
     }
 
     fn enablement<'a>(
         &'a mut self,
         unit: &'a RunnerServiceUnit,
     ) -> ServiceFuture<'a, SystemdUnitEnablement> {
-        Box::pin(async move { read_unit_enablement(unit).await })
+        Box::pin(async move { read_unit_enablement(unit).await.map_err(Into::into) })
     }
 
     fn write_restart_override(&mut self, unit: &RunnerServiceUnit) -> RunnerResult<()> {
@@ -345,9 +359,11 @@ impl ServiceResumeOps for RealServiceResumeOps {
     }
 
     fn enable<'a>(&'a mut self, unit: &'a RunnerServiceUnit) -> ServiceFuture<'a, ()> {
-        Box::pin(
-            async move { run_systemctl(&["enable", "--no-reload", unit.service_name()]).await },
-        )
+        Box::pin(async move {
+            run_systemctl(&["enable", "--no-reload", unit.service_name()])
+                .await
+                .map_err(Into::into)
+        })
     }
 
     fn restore_enablement<'a>(
@@ -355,7 +371,11 @@ impl ServiceResumeOps for RealServiceResumeOps {
         unit: &'a RunnerServiceUnit,
         enablement: SystemdUnitEnablement,
     ) -> ServiceFuture<'a, ()> {
-        Box::pin(async move { restore_unit_enablement(unit, enablement).await })
+        Box::pin(async move {
+            restore_unit_enablement(unit, enablement)
+                .await
+                .map_err(Into::into)
+        })
     }
 }
 
@@ -1329,6 +1349,7 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     use super::*;
+    use runner_host::service::test_support;
 
     const TEST_RUNNER_STARTED_AT: &str = "2026-08-04T00:00:00Z";
 
@@ -1358,7 +1379,10 @@ mod tests {
             active_state,
             "active" | "activating" | "reloading" | "refreshing" | "deactivating"
         );
-        Ok(CleanupUnitActiveState::for_test(active_state, active_like))
+        Ok(test_support::cleanup_unit_active_state(
+            active_state,
+            active_like,
+        ))
     }
 
     fn lifecycle_states(

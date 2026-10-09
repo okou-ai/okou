@@ -119,8 +119,7 @@ Notes:
         );
       });
       let matchingThreads: readonly (
-        | EventDrivenChatThread
-        | UnreadChatThread
+        EventDrivenChatThread | UnreadChatThread
       )[];
       if (options.unread) {
         const indicators = await getChatIndicators();

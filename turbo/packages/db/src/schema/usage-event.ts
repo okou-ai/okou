@@ -76,7 +76,7 @@ export const usageEvent = pgTable(
     billingAnchorAt: timestamp("billing_anchor_at"),
     billingContext: text("billing_context").notNull().default("legacy_unknown"),
     kind: varchar("kind", { length: 30 }).notNull(),
-    provider: varchar("provider", { length: 100 }).notNull(),
+    provider: text("provider").notNull(),
     category: varchar("category", { length: 100 }).notNull(),
     quantity: bigint("quantity", { mode: "number" }).notNull(),
     pricingUnitPrice: bigint("pricing_unit_price", { mode: "number" }),

@@ -14,9 +14,6 @@ export const testTelegramStateActionBodySchema = z
       "seed-org-default-agent",
       "seed-official-user-link",
       "seed-agent-run-callback",
-      "seed-post-fixture",
-      "delete-post-fixture",
-      "get-post-run-state",
       "delete-fixture",
     ]),
   })

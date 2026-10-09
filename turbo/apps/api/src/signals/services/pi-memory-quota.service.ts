@@ -36,9 +36,7 @@ export interface PiMemoryQuotaDecision {
 export class PiMemoryQuotaError extends Error {
   constructor(
     readonly errorClass:
-      | "quota_below_threshold"
-      | "quota_limit_reached"
-      | "quota_unavailable",
+      "quota_below_threshold" | "quota_limit_reached" | "quota_unavailable",
   ) {
     super("Pi memory quota admission failed");
     this.name = "PiMemoryQuotaError";

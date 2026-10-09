@@ -104,6 +104,10 @@ trigger-free schema. They are fixture coverage, not a new production endpoint.
   the insertion transaction using exact stored time/source/thread. Its existing
   Computer Use API file passes 26 tests against the same isolated trigger-free
   schema; authorization and ordinary behavior assertions are unchanged.
+  This is historical trigger-migration evidence, not approval of private test
+  construction. [#37440 batch 014](implementation/issue-37440-batches/batch-014.md)
+  retires that fixture and uses an actual Runner claim for delegated Computer
+  Use authorization; the former SQL/token guarantees are explicitly lost.
 - SSH, queue-monitor and Telegram fixture Run insertions now publish canonical
   attribution in the same transaction, using exact stored time/source/thread.
   Existing Runner SSH (43), queue-monitor (9) and Telegram integration (39) API
@@ -150,3 +154,8 @@ writer-drain-only deliverable; their functions are dropped in the same
 migration. Production-data convergence before
 removing reader fallbacks is a separate evidence gate; no production operator
 or erasure action is authorized here.
+
+The chat-thread benchmark reference above records the original implementation.
+[#37440 batch016](implementation/issue-37440-batches/batch-016.md) retires that
+privately seeded benchmark; the separate development seed and production capture
+writer are unchanged.

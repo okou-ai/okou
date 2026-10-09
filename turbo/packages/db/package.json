@@ -1,6 +1,6 @@
 {
   "name": "@okouai/db",
-  "version": "1.324.1",
+  "version": "1.326.1",
   "private": true,
   "type": "module",
   "exports": {
@@ -42,7 +42,9 @@
     "db:migrate": "tsx scripts/migrate.ts",
     "db:studio": "drizzle-kit studio",
     "db:reset": "tsx scripts/reset-db.ts",
-    "test:migration-consistency": "pnpm test:usage-allowance-retirement && pnpm test:connector-catalog-entry-columns && pnpm test:unselectable-thread-model-cleanup && pnpm test:auto-model-selection-null && pnpm test:file-run-provenance && pnpm test:file-thread-associations && pnpm test:legacy-free-retirement && pnpm test:pi-memory-stage1-alerts && pnpm test:migration-runner && pnpm test:kms-rotation && pnpm test:pi-memory-checkpoint-settlement && pnpm test:pi-memory-citations && pnpm test:show-usage-pack-migration && pnpm test:usage-pack-overdraft-transfer && pnpm test:plan-entitlement-capability-migration && pnpm test:reusable-ssh-credentials && pnpm test:cloudflare-access && pnpm test:vnc-configuration && pnpm test:vnc-runner-authority && pnpm test:agent-grant-table-retirement && pnpm test:native-morning-brief-storage-retirement && pnpm test:morning-brief-enrollment-installation && pnpm test:pi-candidate-trigger-retirement && pnpm test:historical-blob-audit && pnpm test:hosted-publication-history-audit && pnpm test:hosted-publication-runtime && pnpm test:hosted-publication-contraction && pnpm test:hosted-publication-pointers && pnpm test:private-artifact-absolute-urls && pnpm test:pro-suspend-retirement && pnpm test:slack-ingress-failed-retirement && pnpm test:prepared-domain-trigger-retirement && pnpm test:pi-inference-lifecycle && pnpm test:retire-v7-chat-event-snapshots && pnpm --filter api test:chat-event-sequences && pnpm --filter api test:chat-event-context && pnpm --filter api test:chat-event-auxiliary && tsx scripts/test-migration-consistency-schema.ts",
+    "test:oauth-contract-hash-retirement": "tsx scripts/test-oauth-contract-hash-retirement.ts",
+    "test:usage-allowance-retirement": "tsx scripts/test-usage-allowance-retirement.ts",
+    "test:migration-consistency": "pnpm test:usage-allowance-retirement && pnpm test:oauth-contract-hash-retirement && pnpm test:connector-permission-baseline-retirement && pnpm test:connector-catalog-entry-columns && pnpm test:unselectable-thread-model-cleanup && pnpm test:auto-model-selection-null && pnpm test:file-run-provenance && pnpm test:file-thread-associations && pnpm test:legacy-free-retirement && pnpm test:pi-memory-stage1-alerts && pnpm test:migration-runner && pnpm test:kms-rotation && pnpm test:pi-memory-checkpoint-settlement && pnpm test:run-checkpoint-retirement-preparation && pnpm test:pi-memory-citations && pnpm test:show-usage-pack-migration && pnpm test:usage-pack-overdraft-transfer && pnpm test:plan-entitlement-capability-migration && pnpm test:reusable-ssh-credentials && pnpm test:cloudflare-access && pnpm test:vnc-configuration && pnpm test:vnc-runner-authority && pnpm test:agent-grant-table-retirement && pnpm test:native-morning-brief-storage-retirement && pnpm test:morning-brief-enrollment-installation && pnpm test:pi-candidate-trigger-retirement && pnpm test:historical-blob-audit && pnpm test:hosted-publication-history-audit && pnpm test:hosted-publication-runtime && pnpm test:hosted-publication-contraction && pnpm test:hosted-publication-pointers && pnpm test:private-artifact-absolute-urls && pnpm test:runtime-usage-reporting && pnpm test:pro-suspend-retirement && pnpm test:slack-ingress-failed-retirement && pnpm test:prepared-domain-trigger-retirement && pnpm test:pi-inference-lifecycle && pnpm test:retire-v7-chat-event-snapshots && pnpm --filter api test:chat-event-sequences && pnpm --filter api test:chat-event-context && pnpm --filter api test:chat-event-auxiliary && tsx scripts/test-migration-consistency-schema.ts",
     "test:vnc-configuration": "tsx scripts/test-vnc-configuration.ts",
     "test:native-morning-brief-storage-retirement": "tsx scripts/test-native-morning-brief-storage-retirement.ts",
     "test:agent-grant-table-retirement": "tsx scripts/test-agent-grant-table-retirement.ts",
@@ -51,7 +53,6 @@
     "test:kms-rotation": "tsx scripts/migrations/013-kms-account-rotation/test.ts && tsx scripts/migrations/013-kms-account-rotation/test-business.ts",
     "test:show-usage-pack-migration": "tsx scripts/test-show-usage-pack-migration.ts",
     "test:usage-pack-overdraft-transfer": "tsx scripts/test-usage-pack-overdraft-transfer.ts",
-    "test:usage-allowance-retirement": "tsx scripts/test-usage-allowance-retirement.ts",
     "test:plan-entitlement-capability-migration": "tsx scripts/test-plan-entitlement-capability-migration.ts",
     "test:migration-runner": "tsx scripts/test-migration-runner-timeouts.ts",
     "lint:jsonb-contracts": "tsx scripts/check-jsonb-contracts.ts",
@@ -70,6 +71,7 @@
     "test:pi-memory-stage1-alerts": "node --test ../../../ops/pi-memory-stage1/v1/fixtures.test.mjs",
     "test:hosted-publication-history-audit": "tsx scripts/test-hosted-publication-history-audit.ts",
     "test:private-artifact-absolute-urls": "tsx scripts/test-private-artifact-absolute-urls.ts",
+    "test:runtime-usage-reporting": "tsx scripts/test-runtime-usage-reporting.ts",
     "test:hosted-publication-runtime": "tsx scripts/test-hosted-publication-runtime.ts",
     "test:hosted-publication-contraction": "tsx scripts/test-hosted-publication-contraction.ts",
     "test:pro-suspend-retirement": "tsx scripts/test-pro-suspend-retirement.ts",
@@ -80,11 +82,13 @@
     "test:file-run-provenance": "tsx scripts/test-file-run-provenance.ts",
     "test:slack-ingress-failed-retirement": "tsx scripts/test-slack-ingress-failed-status-retirement.ts",
     "test:hosted-publication-pointers": "tsx scripts/migrations/018-hosted-publication-pointers/test.ts",
-    "test:connector-catalog-entry-columns": "tsx scripts/test-connector-catalog-entry-columns.ts"
+    "test:connector-catalog-entry-columns": "tsx scripts/test-connector-catalog-entry-columns.ts",
+    "test:connector-permission-baseline-retirement": "tsx scripts/test-connector-permission-baseline-retirement.ts",
+    "test:run-checkpoint-retirement-preparation": "tsx scripts/test-run-checkpoint-retirement-preparation.ts"
   },
   "dependencies": {
-    "@aws-sdk/client-kms": "^3.1136.0",
-    "@aws-sdk/client-s3": "^3.1136.0",
+    "@aws-sdk/client-kms": "^3.1144.0",
+    "@aws-sdk/client-s3": "^3.1144.0",
     "@clerk/backend": "^3.13.1",
     "@okouai/api-contracts": "workspace:*",
     "@okouai/connectors": "workspace:*",
@@ -107,7 +111,7 @@
     "tsx": "^4.21.0",
     "@typescript/native": "npm:typescript@7.0.2",
     "typescript": "npm:@typescript/typescript6@6.0.2",
-    "vitest": "^5.0.1",
+    "vitest": "^5.0.3",
     "zod": "^4.5.4"
   }
 }

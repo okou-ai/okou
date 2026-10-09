@@ -419,16 +419,6 @@ async function setupConfiguredPricing(
   return fixture;
 }
 
-async function setupMissingPricing(): Promise<UsagePricingFixture> {
-  const fixture = await createUsagePricingFixture({
-    missing: [socialPricingKey()],
-  });
-  onTestFinished(async () => {
-    await fixture.cleanup();
-  });
-  return fixture;
-}
-
 function providerResponse(data: unknown = { value: "provider result" }) {
   return { success: true, data };
 }
@@ -2367,32 +2357,6 @@ describe("managed SocialKit route", () => {
 
     expectApiError(response.body);
     expect(response.body.error.code).toBe("NOT_CONFIGURED");
-  });
-
-  it("returns missing pricing before provider work", async () => {
-    const actor = createBddApi(context).user();
-    let providerRequests = 0;
-    configureProvider();
-    await fundActorWithSubscription(actor);
-    const pricing = await setupMissingPricing();
-    server.use(
-      providerHandler("GET", "/youtube/transcript", () => {
-        providerRequests += 1;
-        return HttpResponse.json(providerResponse());
-      }),
-    );
-
-    const response = await accept(
-      client(pricing.resolution)(socialContract).request({
-        headers: authenticate(actor),
-        body: DEFAULT_SOCIAL_REQUEST,
-      }),
-      [503],
-    );
-
-    expectApiError(response.body);
-    expect(response.body.error.code).toBe("PRICING_NOT_CONFIGURED");
-    expect(providerRequests).toBe(0);
   });
 
   it.each([

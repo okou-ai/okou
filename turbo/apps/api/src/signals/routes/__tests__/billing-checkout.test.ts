@@ -25,7 +25,6 @@ const {
   createOrgFixture,
   authenticateOrg,
   readBillingStatus,
-  createOnboardingPaymentPendingOrg,
   createSubscriptionOrg,
   createPublicBillingOrg,
   createUsagePackAtomGrantOrg,
@@ -54,13 +53,6 @@ describe("POST /api/billing/checkout", () => {
       subscriptionStatus: values.subscriptionStatus,
       tier: values.tier,
     });
-  }
-
-  function trackedPendingSeed(): Promise<{
-    orgId: string;
-    userId: string;
-  }> {
-    return createOnboardingPaymentPendingOrg();
   }
 
   it("returns 503 when STRIPE_SECRET_KEY is not configured", async () => {
@@ -1557,61 +1549,6 @@ describe("POST /api/billing/checkout", () => {
     );
   });
 
-  it("returns Pro trial checkout URL during onboarding payment", async () => {
-    const fixture = await trackedPendingSeed();
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-
-    const customerId = `cus_${randomUUID().slice(0, 8)}`;
-    context.mocks.stripe.customers.create.mockResolvedValue({ id: customerId });
-    context.mocks.stripe.checkout.sessions.create.mockResolvedValue({
-      url: "https://checkout.stripe.com/session/trial",
-    });
-
-    const client = setupApp({ context, routes: billingCheckoutRoutes })(
-      billingCheckoutContract,
-    );
-
-    const response = await accept(
-      client.create({
-        body: {
-          tier: "pro",
-          trialDays: 7,
-          successUrl: `${APP_ORIGIN}/onboarding?billing=pro`,
-          cancelUrl: `${APP_ORIGIN}/onboarding?billing=canceled`,
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({
-      url: "https://checkout.stripe.com/session/trial",
-    });
-    expect(context.mocks.stripe.checkout.sessions.create).toHaveBeenCalledWith({
-      mode: "subscription",
-      customer: customerId,
-      line_items: [{ price: TEST_PRICE_PRO, quantity: 1 }],
-      allow_promotion_codes: true,
-      success_url: `${APP_ORIGIN}/onboarding?billing=pro`,
-      cancel_url: `${APP_ORIGIN}/onboarding?billing=canceled`,
-      metadata: {
-        orgId: fixture.orgId,
-        tier: "pro",
-        priceId: TEST_PRICE_PRO,
-        purchaseCreatedAt: expect.any(String),
-      },
-      subscription_data: {
-        metadata: {
-          orgId: fixture.orgId,
-          tier: "pro",
-          priceId: TEST_PRICE_PRO,
-          purchaseCreatedAt: expect.any(String),
-        },
-        trial_period_days: 7,
-      },
-    });
-  });
-
   it("rejects Pro trial checkout outside onboarding payment", async () => {
     const fixture = await trackedSeed();
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
@@ -1642,7 +1579,7 @@ describe("POST /api/billing/checkout", () => {
   });
 
   it("rejects trial checkout for non-Pro tiers", async () => {
-    const fixture = await trackedPendingSeed();
+    const fixture = createOrgFixture();
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
 
     const client = setupApp({ context, routes: billingCheckoutRoutes })(
@@ -1699,7 +1636,7 @@ describe("POST /api/billing/checkout", () => {
   });
 
   it("accepts successUrl on a first-party www.okou.ai origin", async () => {
-    const fixture = await trackedPendingSeed();
+    const fixture = createOrgFixture();
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
 
     const customerId = `cus_${randomUUID().slice(0, 8)}`;
@@ -1716,7 +1653,6 @@ describe("POST /api/billing/checkout", () => {
       client.create({
         body: {
           tier: "pro",
-          trialDays: 7,
           successUrl: "https://www.okou.ai/billing?billing=pro",
           cancelUrl: "https://www.okou.ai/billing?billing=canceled",
         },

@@ -6,40 +6,12 @@ use std::path::{Path, PathBuf};
 use std::{env, fs};
 
 use serde::Deserialize;
-use sha2::{Digest, Sha256};
+
+mod cli_package;
 
 const GUEST_BINARIES_FILE: &str = "guest-binaries.json";
 const MAX_CLI_PACKAGE_SIZE: u64 = 64 * 1024 * 1024;
 const MAX_CLI_MANIFEST_SIZE: u64 = 16 * 1024;
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct CliManifest {
-    version: u32,
-    package: CliPackage,
-    versions: CliVersions,
-    session_construction: CliSessionConstruction,
-}
-
-#[derive(Deserialize)]
-struct CliPackage {
-    path: String,
-    sha256: String,
-    size: u64,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct CliVersions {
-    cli: String,
-    pi_agent_runtime: String,
-    pi_sdk: String,
-}
-
-#[derive(Deserialize)]
-struct CliSessionConstruction {
-    digest: String,
-}
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -67,6 +39,7 @@ fn main() {
     println!("cargo::rerun-if-changed=scripts/customize-rootfs.sh");
     println!("cargo::rerun-if-changed=scripts/verify-rootfs.sh");
     println!("cargo::rerun-if-changed={GUEST_BINARIES_FILE}");
+    println!("cargo::rerun-if-changed=cli_package.rs");
 
     generate_addon_files();
     let guests = load_guest_binaries();
@@ -170,24 +143,6 @@ fn cli_file_path(path: &str, workspace_root: &Path, label: &str, max_size: u64) 
     path
 }
 
-fn valid_lower_hex(value: &str, len: usize) -> bool {
-    value.len() == len
-        && value
-            .bytes()
-            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
-}
-
-fn valid_release_version(value: &str) -> bool {
-    let parts: Vec<_> = value.split('.').collect();
-    parts.len() == 3
-        && parts.iter().all(|part| {
-            !part.is_empty()
-                && part.len() <= 10
-                && part.bytes().all(|byte| byte.is_ascii_digit())
-                && (part.len() == 1 || !part.starts_with('0'))
-        })
-}
-
 fn embed_guest_cli(path: &str, manifest_path: &str, workspace_root: &Path) {
     let package = cli_file_path(path, workspace_root, "package", MAX_CLI_PACKAGE_SIZE);
     let manifest_path = cli_file_path(
@@ -196,82 +151,37 @@ fn embed_guest_cli(path: &str, manifest_path: &str, workspace_root: &Path) {
         "manifest",
         MAX_CLI_MANIFEST_SIZE,
     );
-    let manifest: CliManifest =
-        serde_json::from_slice(&fs::read(&manifest_path).expect("read CLI manifest"))
-            .expect("parse CLI manifest");
-    assert_eq!(manifest.version, 1, "unsupported CLI manifest version");
-    assert_eq!(
-        manifest.package.path, "package.tgz",
-        "unexpected CLI package path"
-    );
-    assert!(
-        valid_lower_hex(&manifest.package.sha256, 64),
-        "invalid CLI package SHA-256"
-    );
-    let bytes = fs::read(&package).expect("read CLI package");
-    assert_eq!(
-        manifest.package.size,
-        bytes.len() as u64,
-        "CLI package size mismatch"
-    );
-    assert_eq!(
-        manifest.package.sha256,
-        hex::encode(Sha256::digest(&bytes)),
-        "CLI package digest mismatch"
-    );
-    assert!(
-        valid_release_version(&manifest.versions.cli),
-        "invalid CLI version"
-    );
-    assert!(
-        valid_release_version(&manifest.versions.pi_agent_runtime),
-        "invalid Pi runtime version"
-    );
-    let (sdk_version, patch) = manifest
-        .versions
-        .pi_sdk
-        .split_once("+okou.")
-        .expect("invalid Pi SDK identity");
-    assert!(
-        valid_release_version(sdk_version) && valid_lower_hex(patch, 12),
-        "invalid Pi SDK identity"
-    );
-    assert!(
-        valid_lower_hex(&manifest.session_construction.digest, 64),
-        "invalid session-construction digest"
-    );
+    let prepared = cli_package::prepare(
+        fs::read(&package).expect("read CLI package"),
+        &fs::read(&manifest_path).expect("read CLI manifest"),
+    )
+    .expect("prepare compiled CLI resources");
 
-    // Only the tarball is included as a Runner resource. The manifest stays a
-    // build input; individual validated identity fields become compile-time
-    // constants for constructing the installed rootfs manifest.
+    // Snapshot the verified buffer, not its mutable input path. rustc embeds
+    // exactly the bytes whose identity/integrity produced the installed metadata.
+    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR"));
+    let compiled_package = out_dir.join("okou-cli-package.tgz");
+    let installed_manifest = out_dir.join("okou-cli-installed.json");
+    fs::write(&compiled_package, &prepared.package).expect("write compiled CLI package");
+    fs::write(&installed_manifest, &prepared.installed_manifest)
+        .expect("write compiled CLI installed manifest");
+
     println!("cargo::rustc-cfg=bundled_okou_cli");
     println!(
         "cargo::rustc-env=BUNDLED_OKOU_CLI_PACKAGE={}",
-        package.display()
+        compiled_package.display()
+    );
+    println!(
+        "cargo::rustc-env=BUNDLED_OKOU_CLI_INSTALLED_MANIFEST={}",
+        installed_manifest.display()
     );
     println!(
         "cargo::rustc-env=BUNDLED_OKOU_CLI_SHA256={}",
-        manifest.package.sha256
-    );
-    println!(
-        "cargo::rustc-env=BUNDLED_OKOU_CLI_SIZE={}",
-        manifest.package.size
+        prepared.installed.package.sha256
     );
     println!(
         "cargo::rustc-env=BUNDLED_OKOU_CLI_VERSION={}",
-        manifest.versions.cli
-    );
-    println!(
-        "cargo::rustc-env=BUNDLED_OKOU_PI_RUNTIME_VERSION={}",
-        manifest.versions.pi_agent_runtime
-    );
-    println!(
-        "cargo::rustc-env=BUNDLED_OKOU_PI_SDK_VERSION={}",
-        manifest.versions.pi_sdk
-    );
-    println!(
-        "cargo::rustc-env=BUNDLED_OKOU_SESSION_DIGEST={}",
-        manifest.session_construction.digest
+        prepared.installed.versions.cli
     );
 }
 

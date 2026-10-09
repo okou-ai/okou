@@ -6,9 +6,8 @@ use runner_host::paths::HomePaths;
 use runner_types::ids::RunId;
 use tracing::info;
 
-use super::diagnostic::status_field_preview;
-use super::target::RunnerServiceUnit;
 use super::{ServiceFuture, selected_config_base_dir};
+use runner_host::service::{RunnerServiceUnit, status_field_preview};
 
 pub(super) trait ActiveJobsGateOps {
     fn is_unit_active<'a>(&'a mut self, unit: &'a RunnerServiceUnit) -> ServiceFuture<'a, bool>;
@@ -877,12 +876,12 @@ exit 2
         }
 
         let bounded_config =
-            super::super::unit_config::read_unit_config_path_bounded(&unit, Duration::from_secs(5))
+            runner_host::service::read_unit_config_path_bounded(&unit, Duration::from_secs(5))
                 .await
                 .unwrap();
         assert!(matches!(
             bounded_config,
-            super::super::systemctl::BoundedSystemctlQuery::Completed(Some(path))
+            runner_host::service::BoundedSystemctlQuery::Completed(Some(path))
                 if path == config_path
         ));
     }

@@ -171,12 +171,7 @@ export const setManageSectionCollapsed$ = command(
 // Three-column search dialog state
 // ---------------------------------------------------------------------------
 export type ThreeColumnSearchFilter =
-  | "all"
-  | "chats"
-  | "messages"
-  | "agents"
-  | "workflows"
-  | "artifacts";
+  "all" | "chats" | "messages" | "agents" | "workflows" | "artifacts";
 
 const internalThreeColumnSearchOpen$ = state(false);
 export const threeColumnSearchOpen$ = computed((get) => {

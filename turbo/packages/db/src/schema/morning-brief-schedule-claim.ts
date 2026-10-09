@@ -28,11 +28,7 @@ export type MorningBriefScheduleClaimQueueDisposition = "queued" | "claimed";
  * looking like an execution this table never recorded.
  */
 export type MorningBriefScheduleClaimSettlement =
-  | "unsettled"
-  | "completed"
-  | "failed"
-  | "pre_run_failure"
-  | "revoked";
+  "unsettled" | "completed" | "failed" | "pre_run_failure" | "revoked";
 
 /**
  * Content-free execution journal for the legacy Morning Brief schedule.

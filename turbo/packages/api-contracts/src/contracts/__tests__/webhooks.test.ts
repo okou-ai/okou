@@ -22,10 +22,38 @@ import {
   webhookStoragesCommitContract,
   webhookStoragesPrepareContract,
   webhookTelemetryContract,
+  webhookUsageEventContract,
 } from "../webhooks";
 
 const storageId = "00000000-0000-4000-8000-000000000000";
 const manifestHash = "a".repeat(64);
+
+describe("captured runtime usage identities", () => {
+  it.each(["okou-1.0", "@preset/okou-1-0", "@preset/" + "x".repeat(247)])(
+    "accepts complete billing identity %s",
+    (provider) => {
+      const body = {
+        runId: storageId,
+        events: [
+          {
+            idempotencyKey: storageId,
+            kind: "model",
+            provider,
+            category: "tokens.input",
+            quantity: 1,
+          },
+        ],
+      };
+      expect(webhookUsageEventContract.send.body.parse(body)).toEqual(body);
+      expect(
+        webhookUsageEventContract.send.body.safeParse({
+          ...body,
+          events: [{ ...body.events[0], provider: "x".repeat(256) }],
+        }).success,
+      ).toBe(false);
+    },
+  );
+});
 
 describe("archive size mismatch telemetry", () => {
   const operation = {
@@ -474,6 +502,45 @@ describe("Pi memory citation event transport", () => {
           piMemoryCitationTransport,
         }).success,
       ).toBe(false);
+    }
+  });
+});
+
+describe("Run completion metadata generations", () => {
+  const completion = {
+    cliAgentType: "codex",
+    cliAgentSessionId: "native-session",
+    cliAgentSessionHistoryHash: manifestHash,
+  };
+  const body = { runId: "run", exitCode: 0 };
+  it("accepts current and draining Guests and metadata-free Runner fallback", () => {
+    for (const metadata of [{ completion }, { checkpoint: completion }, {}]) {
+      expect(
+        webhookCompleteContract.complete.body.parse({ ...body, ...metadata }),
+      ).toStrictEqual({ ...body, ...metadata });
+    }
+  });
+  it("rejects ambiguous metadata and preserves native history authority", () => {
+    expect(
+      webhookCompleteContract.complete.body.safeParse({
+        ...body,
+        completion,
+        checkpoint: completion,
+      }).success,
+    ).toBe(false);
+    for (const field of ["completion", "checkpoint"]) {
+      for (const invalid of [
+        { ...completion, runId: "other-run" },
+        { ...completion, cliAgentSessionHistoryDisposition: "unavailable" },
+        { ...completion, cliAgentSessionHistoryHash: "A".repeat(64) },
+      ]) {
+        expect(
+          webhookCompleteContract.complete.body.safeParse({
+            ...body,
+            [field]: invalid,
+          }).success,
+        ).toBe(false);
+      }
     }
   });
 });

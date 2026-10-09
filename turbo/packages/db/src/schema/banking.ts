@@ -25,18 +25,11 @@ export type { BankingOperationScope } from "@okouai/db/jsonb-contracts/banking";
 
 export type BankingProvider = "finicity";
 export type BankingConnectionStatus =
-  | "active"
-  | "repair_required"
-  | "revoked"
-  | "deleted";
+  "active" | "repair_required" | "revoked" | "deleted";
 export type BankingAuditStatus = "allowed" | "denied";
 export type BankingConnectSessionMode = "connect" | "fix";
 export type BankingConnectSessionStatus =
-  | "pending"
-  | "completed"
-  | "cancelled"
-  | "failed"
-  | "superseded";
+  "pending" | "completed" | "cancelled" | "failed" | "superseded";
 
 export const bankingConnections = pgTable(
   "banking_connections",

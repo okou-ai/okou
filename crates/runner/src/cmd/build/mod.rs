@@ -1245,9 +1245,11 @@ async fn customize_rootfs_staging(
 
 /// Publish or clear the installed Okou CLI sidecar for a rootfs about to commit.
 ///
-/// The running service reads this file to advertise the installed versions at
-/// claim time; the rootfs hash already covers the same bytes, so a rootfs that
-/// is present on disk always has a sidecar that matches its content.
+/// The running service reads this file to advertise installed versions at claim
+/// time. The verified package and fixed installation recipe determine these
+/// bytes; the rootfs hash covers that package's SHA-256, not the sidecar again.
+/// Publish before committing the rootfs, then check exact sidecar bytes before
+/// cached reuse.
 async fn write_okou_cli_sidecar(
     rootfs_paths: &RootfsPaths,
     okou_cli: Option<&OkouCliArtifact>,

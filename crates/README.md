@@ -9,7 +9,7 @@ control and RPC services, shared contracts, and developer/test support.
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | runner                   | Process-wide composition, `start` orchestration, operational CLI and build packaging                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | runner-executor          | Claimed-run sandbox execution, session history, results, diagnostics and per-run telemetry                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| runner-host              | Runner host filesystem and persisted process identity, live process registry, local control IPC, locks, paths and logging primitives                                                                                                                                                                                                                                                                                                                                                                             |
+| runner-host              | Runner host filesystem and persisted process identity, live process registry, local control IPC, systemd identity/query/selected-config primitives, locks, paths and logging                                                                                                                                                                                                                                                                                                                                     |
 | runner-lifecycle         | Active-run handoff, idle sandbox, memory prefetch, status, workspace image and cache snapshot lifecycle                                                                                                                                                                                                                                                                                                                                                                                                          |
 | runner-network           | Runner proxy process/recovery, DNS, CA, network log capture and bounded upload                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | runner-provider          | API/local job discovery, claiming, completion, active input, cancellation and queue coordination                                                                                                                                                                                                                                                                                                                                                                                                                 |
@@ -80,6 +80,21 @@ Separating the 52002 protocol does not create a new daemon, binary or crate.
 A `guest-` package prefix is not an artifact inventory. The authoritative
 [guest binary inventory](runner/guest-binaries.json) separately records each
 package, binary, build environment key and installed path.
+
+### Systemd service ownership
+
+`runner-host::service` owns validated runner service identities, bounded
+systemctl/journalctl primitives, selected unit configuration parsing, and their
+private tests. Runner retains service command policy, active-job decisions,
+reload coordination, drain/signal/stop behavior, and unit generation/private
+atomic publication. Existing service names, lock/unit paths, selected-config
+semantics, error categories and machine-readable state fields are unchanged.
+
+The three cross-owner state fixtures are available only through host's
+non-default `test-support` feature, which Runner requests as a dev-dependency;
+production state fields and normalization remain private. Moved tracing targets
+use `runner_host::service` rather than `runner::cmd::service`; no old-target
+aliases or duplicate logs are emitted.
 
 ### Source, executable and release identities
 

@@ -11,7 +11,7 @@ import { badRequestMessage } from "../../lib/error";
 import { env } from "../../lib/env";
 import { hostedLinkDomain, hostedLinkScheme } from "../../lib/link-layout";
 import { nowDate } from "../../lib/time";
-import { db$, type ReadonlyDb } from "../external/db";
+import { db$ } from "../external/db";
 import {
   generateHostedSitesPresignedGetUrl,
   generatePresignedGetUrl,
@@ -19,8 +19,8 @@ import {
 import { safeUriComponentDecode, safeUrlParse } from "../utils";
 import { resolveOwnedPublicArtifactKey$ } from "./artifact-storage.service";
 import { resolveArtifactPreviewUrl$ } from "./artifact-preview-url.service";
-import { resolveArtifactFileReference } from "./private-artifact-storage.service";
-import { uploadedArtifactObject } from "./uploaded-artifact.service";
+import { resolveArtifactFileReference$ } from "./private-artifact-storage.service";
+import { uploadedArtifactObject$ } from "./uploaded-artifact.service";
 
 const IMMUTABLE_DEPLOYMENT_HOST_PATTERN =
   /^dpl-([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/u;
@@ -101,25 +101,86 @@ function hostedSiteUrlTarget(value: string): HostedSiteUrlTarget | null {
   return matches.length === 1 ? (matches[0] ?? null) : null;
 }
 
-async function loadHostedSiteDeployment(
-  db: ReadonlyDb,
-  orgId: string,
-  target: HostedSiteUrlTarget,
-): Promise<HostedSiteDeploymentTarget | null> {
-  const deploymentId = IMMUTABLE_DEPLOYMENT_HOST_PATTERN.exec(
-    target.publicSlug,
-  )?.[1];
-  if (deploymentId) {
+const loadHostedSiteDeployment$ = command(
+  async (
+    { get },
+    orgId: string,
+    target: HostedSiteUrlTarget,
+    signal: AbortSignal,
+  ): Promise<HostedSiteDeploymentTarget | null> => {
+    const db = get(db$);
+    const deploymentId = IMMUTABLE_DEPLOYMENT_HOST_PATTERN.exec(
+      target.publicSlug,
+    )?.[1];
+    if (deploymentId) {
+      const [deployment] = await db
+        .select({
+          manifest: hostedDeployments.manifest,
+          r2Prefix: hostedDeployments.r2Prefix,
+          siteId: hostedDeployments.siteId,
+        })
+        .from(hostedDeployments)
+        .where(
+          and(
+            eq(hostedDeployments.id, deploymentId),
+            eq(hostedDeployments.orgId, orgId),
+            eq(
+              hostedDeployments.linkLayoutSegment,
+              linkLayoutSegment(target.layout),
+            ),
+            eq(hostedDeployments.status, "ready"),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      if (!deployment) {
+        return null;
+      }
+      const [site] = await db
+        .select({ id: hostedSites.id })
+        .from(hostedSites)
+        .where(
+          and(
+            eq(hostedSites.id, deployment.siteId),
+            eq(hostedSites.orgId, orgId),
+            eq(hostedSites.linkLayoutSegment, linkLayoutSegment(target.layout)),
+            isNull(hostedSites.deletedAt),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      return site ? deployment : null;
+    }
+
+    const [site] = await db
+      .select({
+        id: hostedSites.id,
+        activeDeploymentId: hostedSites.activeDeploymentId,
+      })
+      .from(hostedSites)
+      .where(
+        and(
+          eq(hostedSites.publicSlug, target.publicSlug),
+          eq(hostedSites.orgId, orgId),
+          eq(hostedSites.linkLayoutSegment, linkLayoutSegment(target.layout)),
+          isNull(hostedSites.deletedAt),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!site?.activeDeploymentId) {
+      return null;
+    }
     const [deployment] = await db
       .select({
         manifest: hostedDeployments.manifest,
         r2Prefix: hostedDeployments.r2Prefix,
-        siteId: hostedDeployments.siteId,
       })
       .from(hostedDeployments)
       .where(
         and(
-          eq(hostedDeployments.id, deploymentId),
+          eq(hostedDeployments.id, site.activeDeploymentId),
+          eq(hostedDeployments.siteId, site.id),
           eq(hostedDeployments.orgId, orgId),
           eq(
             hostedDeployments.linkLayoutSegment,
@@ -129,63 +190,10 @@ async function loadHostedSiteDeployment(
         ),
       )
       .limit(1);
-    if (!deployment) {
-      return null;
-    }
-    const [site] = await db
-      .select({ id: hostedSites.id })
-      .from(hostedSites)
-      .where(
-        and(
-          eq(hostedSites.id, deployment.siteId),
-          eq(hostedSites.orgId, orgId),
-          eq(hostedSites.linkLayoutSegment, linkLayoutSegment(target.layout)),
-          isNull(hostedSites.deletedAt),
-        ),
-      )
-      .limit(1);
-    return site ? deployment : null;
-  }
-
-  const [site] = await db
-    .select({
-      id: hostedSites.id,
-      activeDeploymentId: hostedSites.activeDeploymentId,
-    })
-    .from(hostedSites)
-    .where(
-      and(
-        eq(hostedSites.publicSlug, target.publicSlug),
-        eq(hostedSites.orgId, orgId),
-        eq(hostedSites.linkLayoutSegment, linkLayoutSegment(target.layout)),
-        isNull(hostedSites.deletedAt),
-      ),
-    )
-    .limit(1);
-  if (!site?.activeDeploymentId) {
-    return null;
-  }
-  const [deployment] = await db
-    .select({
-      manifest: hostedDeployments.manifest,
-      r2Prefix: hostedDeployments.r2Prefix,
-    })
-    .from(hostedDeployments)
-    .where(
-      and(
-        eq(hostedDeployments.id, site.activeDeploymentId),
-        eq(hostedDeployments.siteId, site.id),
-        eq(hostedDeployments.orgId, orgId),
-        eq(
-          hostedDeployments.linkLayoutSegment,
-          linkLayoutSegment(target.layout),
-        ),
-        eq(hostedDeployments.status, "ready"),
-      ),
-    )
-    .limit(1);
-  return deployment ?? null;
-}
+    signal.throwIfAborted();
+    return deployment ?? null;
+  },
+);
 
 export const resolveProviderReferenceUrls$ = command(
   async (
@@ -193,18 +201,19 @@ export const resolveProviderReferenceUrls$ = command(
     args: ProviderReferenceUrlsArgs,
     signal: AbortSignal,
   ): Promise<readonly string[] | ReturnType<typeof badRequestMessage>> => {
-    const db = get(db$);
     const resolved: string[] = [];
     for (const url of args.urls) {
-      const reference = await get(resolveArtifactFileReference(url, signal));
+      const reference = await set(resolveArtifactFileReference$, url, signal);
       signal.throwIfAborted();
       if (reference) {
-        const object = await get(
-          uploadedArtifactObject({
+        const object = await set(
+          uploadedArtifactObject$,
+          {
             id: reference.id,
             userId: args.userId,
             orgId: args.orgId,
-          }),
+          },
+          signal,
         );
         signal.throwIfAborted();
         if (!object) {
@@ -262,10 +271,11 @@ export const resolveProviderReferenceUrls$ = command(
         resolved.push(url);
         continue;
       }
-      const deployment = await loadHostedSiteDeployment(
-        db,
+      const deployment = await set(
+        loadHostedSiteDeployment$,
         args.orgId,
         hostedTarget,
+        signal,
       );
       signal.throwIfAborted();
       if (!deployment?.manifest.files[hostedTarget.path]) {

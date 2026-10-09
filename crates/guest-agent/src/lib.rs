@@ -212,7 +212,6 @@
 
 pub mod active_input;
 mod artifact;
-pub mod checkpoint;
 pub mod cli;
 mod codex_auth;
 pub mod codex_session_cleanup;
@@ -225,6 +224,7 @@ pub mod error;
 pub mod events;
 pub mod failure_diagnostics;
 mod failure_patterns;
+pub mod finalization;
 pub mod heartbeat;
 pub mod http;
 pub mod masker;

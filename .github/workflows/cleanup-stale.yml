@@ -96,7 +96,7 @@ jobs:
       pull-requests: read
     steps:
       - name: Cleanup Stale Deployments
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const dryRun = '${{ env.DRY_RUN }}' === 'true';
@@ -224,7 +224,7 @@ jobs:
       contents: read
       pull-requests: read
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
@@ -264,7 +264,7 @@ jobs:
       - name: Select closed runner PRs
         if: steps.check.outputs.should-cleanup == 'true'
         id: prs
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           PR_NUMBERS: ${{ steps.runner-prs.outputs.numbers }}
           RUNNER_PR_NUMBERS: ${{ inputs.runner-pr-numbers }}
@@ -387,7 +387,7 @@ jobs:
       pull-requests: read
     steps:
       - name: Cleanup Stale Git Branches
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const dryRun = '${{ env.DRY_RUN }}' === 'true';

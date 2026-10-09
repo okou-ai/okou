@@ -87,10 +87,7 @@ type CancelConcurrencySubscriptionResult =
   | {
       readonly ok: false;
       readonly reason:
-        | "not_found"
-        | "pending_update"
-        | "plan_ending"
-        | "billing_changed";
+        "not_found" | "pending_update" | "plan_ending" | "billing_changed";
     };
 
 type PreviewConcurrencySubscriptionChangeResult =
@@ -2323,10 +2320,7 @@ export const cancelConcurrencySubscription$ = command(
 );
 
 type RestoreConcurrencyStripeResult =
-  | "restored"
-  | "not_found"
-  | "pending_update"
-  | "plan_ending";
+  "restored" | "not_found" | "pending_update" | "plan_ending";
 
 const restoreScheduledConcurrencyChange$ = command(
   async (

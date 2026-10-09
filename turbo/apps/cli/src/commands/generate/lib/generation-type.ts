@@ -1,9 +1,5 @@
 export type ConnectorGenerationType =
-  | "audio"
-  | "code"
-  | "document"
-  | "image"
-  | "text";
+  "audio" | "code" | "document" | "image" | "text";
 
 export type GenerationType =
   | "code"

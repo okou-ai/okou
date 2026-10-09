@@ -22,7 +22,7 @@ const journal = z
     ),
   );
 const targetEntry = journal.entries.find((entry) => {
-  return entry.tag === "1347_drop_organization_usage_allowance";
+  return entry.tag === "1356_drop_organization_usage_allowance";
 });
 assert.ok(targetEntry, "Allowance contraction must be present in the journal");
 const target = targetEntry;

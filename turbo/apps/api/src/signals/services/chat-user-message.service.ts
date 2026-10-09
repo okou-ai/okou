@@ -384,8 +384,7 @@ export function projectUserMessage(
     readonly titleSnapshot: string;
     readonly template: GenerationTemplateRequest;
   }): string => {
-    // Retired selections in stored messages are ignored: no marker, no
-    // guidance, and no usage identity.
+    // Retired selections in stored messages contribute no marker or guidance.
     if (isRetiredGenerationTemplate(part.template)) {
       return "";
     }

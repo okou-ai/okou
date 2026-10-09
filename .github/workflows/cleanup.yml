@@ -21,7 +21,7 @@ jobs:
       contents: read
       pull-requests: read
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
@@ -106,7 +106,7 @@ jobs:
     container:
       image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Delete Neon Branch
         uses: ./.github/actions/neon-branch
@@ -124,7 +124,7 @@ jobs:
       deployments: write
     steps:
       - name: Delete PR Deployments
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const branchName = context.payload.pull_request.head.ref;

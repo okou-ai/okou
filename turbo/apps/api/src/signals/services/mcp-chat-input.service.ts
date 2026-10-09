@@ -29,8 +29,7 @@ type PublicInput = Extract<
 interface CanonicalInput {
   readonly original: PublicInput;
   readonly current:
-    | PublicInput
-    | Extract<ChatEvent, { eventType: "control.revoke" }>;
+    PublicInput | Extract<ChatEvent, { eventType: "control.revoke" }>;
 }
 type CanonicalInputResult =
   | { readonly kind: "ok"; readonly data: CanonicalInput }

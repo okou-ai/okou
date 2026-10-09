@@ -5,9 +5,7 @@ export interface UsagePackDeferredSchedule {
   readonly params: {
     readonly end_behavior?: "cancel" | "none" | "release" | "renew";
     readonly proration_behavior?:
-      | "always_invoice"
-      | "create_prorations"
-      | "none";
+      "always_invoice" | "create_prorations" | "none";
     readonly phases?: UsagePackDeferredSchedulePhase[];
   };
 }

@@ -206,45 +206,52 @@ describe("Pi 0.86.1 Codex wire pinning", () => {
 });
 
 describe("Pi agent model adapter", () => {
-  it("sends canonical Gen1 to public Responses with the selected credential", async () => {
-    const provider = await retryableCodexProvider();
-    try {
-      const config = await materializePiAgentModelConfig({
-        config: {
-          provider: "openrouter",
-          baseUrl: provider.baseUrl,
-          model: "@preset/okou-1-0",
-          catalogModel: "okou-1.0",
-          apiKeyEnv: "OPENAI_API_KEY",
-          credentialSecretName: "OPENROUTER_API_KEY",
-        },
-        resolveCredential: () => {
-          return "selected-public-key";
-        },
-      });
-      const model = resolvePiAgentModel(config);
-      if (!model) throw new Error("Expected a public model");
-      const result = await piAgentStreamForConfig(config)(
-        model,
-        normalizeContext({
-          messages: [{ role: "user", content: "hello", timestamp: 1 }],
-        }),
-        { apiKey: config.apiKey },
-      ).result();
-      expect(result.stopReason).toBe("error");
-      expect(provider.requests).toHaveLength(1);
-      expect(provider.requests[0]).toMatchObject({
-        url: "/responses",
-        headers: { authorization: "Bearer selected-public-key" },
-        body: { model: "@preset/okou-1-0", stream: true, store: false },
-      });
-      expect(provider.requests[0]?.headers).not.toHaveProperty(
-        "chatgpt-account-id",
-      );
-    } finally {
-      await provider.close();
-    }
-  });
+  it.each([
+    { catalogModel: "okou-1.0", runtimeModel: "@preset/okou-1-0" },
+    { catalogModel: "auto", runtimeModel: "@preset/okou-experimental" },
+    { catalogModel: undefined, runtimeModel: "@preset/okou-1-0-dsf" },
+  ])(
+    "sends captured $catalogModel / $runtimeModel to Responses with its bound credential",
+    async ({ catalogModel, runtimeModel }) => {
+      const provider = await retryableCodexProvider();
+      try {
+        const config = await materializePiAgentModelConfig({
+          config: {
+            provider: "openrouter",
+            baseUrl: provider.baseUrl,
+            model: runtimeModel,
+            ...(catalogModel === undefined ? {} : { catalogModel }),
+            apiKeyEnv: "OPENAI_API_KEY",
+            credentialSecretName: "OPENROUTER_API_KEY",
+          },
+          resolveCredential: () => {
+            return "selected-public-key";
+          },
+        });
+        const model = resolvePiAgentModel(config);
+        if (!model) throw new Error("Expected a public model");
+        const result = await piAgentStreamForConfig(config)(
+          model,
+          normalizeContext({
+            messages: [{ role: "user", content: "hello", timestamp: 1 }],
+          }),
+          { apiKey: config.apiKey },
+        ).result();
+        expect(result.stopReason).toBe("error");
+        expect(provider.requests).toHaveLength(1);
+        expect(provider.requests[0]).toMatchObject({
+          url: "/responses",
+          headers: { authorization: "Bearer selected-public-key" },
+          body: { model: runtimeModel, stream: true, store: false },
+        });
+        expect(provider.requests[0]?.headers).not.toHaveProperty(
+          "chatgpt-account-id",
+        );
+      } finally {
+        await provider.close();
+      }
+    },
+  );
 
   it.each([
     {
@@ -326,96 +333,103 @@ describe("Pi agent model adapter", () => {
     }
   });
 
-  it("sends Gen5 Okou routes to OpenRouter Chat Completions with Preset-owned policy", async () => {
-    const provider = await retryableCodexProvider();
-    try {
-      const materialized = await materializePiAgentModelConfig({
-        config: {
-          schemaVersion: 5,
-          dialect: "openai-completions",
-          transport: "sse",
-          provider: "openrouter",
-          baseUrl: provider.baseUrl,
-          model: "@preset/okou-1-0",
-          catalogModel: "okou-1.0",
-          credentialBindings: [
-            {
-              kind: "api-key",
-              environment: "OPENAI_API_KEY",
-              secretName: "OPENROUTER_API_KEY",
-            },
-          ],
-        },
-        resolveCredential: () => {
-          return "selected-public-key";
-        },
-      });
-      const config = { ...materialized, sessionAffinityKey: "thread-1" };
-      const model = resolvePiAgentModel(config);
-      if (!model) throw new Error("Expected an Okou model");
-      expect(model).toMatchObject({
-        api: "openai-completions",
-        reasoning: false,
-        contextWindow: 1_000_000,
-        compat: {
-          thinkingFormat: "openrouter",
-          cacheControlFormat: "anthropic",
-          sendSessionAffinityHeaders: true,
-          sessionAffinityFormat: "openrouter",
-        },
-      });
+  it.each([
+    { catalogModel: "okou-1.0", runtimeModel: "@preset/okou-1-0" },
+    { catalogModel: "auto", runtimeModel: "@preset/okou-experimental" },
+    { catalogModel: undefined, runtimeModel: "@preset/okou-1-0-dsf" },
+  ])(
+    "sends captured $catalogModel / $runtimeModel to Gen5 Chat Completions with Preset-owned policy",
+    async ({ catalogModel, runtimeModel }) => {
+      const provider = await retryableCodexProvider();
+      try {
+        const materialized = await materializePiAgentModelConfig({
+          config: {
+            schemaVersion: 5,
+            dialect: "openai-completions",
+            transport: "sse",
+            provider: "openrouter",
+            baseUrl: provider.baseUrl,
+            model: runtimeModel,
+            ...(catalogModel === undefined ? {} : { catalogModel }),
+            credentialBindings: [
+              {
+                kind: "api-key",
+                environment: "OPENAI_API_KEY",
+                secretName: "OPENROUTER_API_KEY",
+              },
+            ],
+          },
+          resolveCredential: () => {
+            return "selected-public-key";
+          },
+        });
+        const config = { ...materialized, sessionAffinityKey: "thread-1" };
+        const model = resolvePiAgentModel(config);
+        if (!model) throw new Error("Expected an Okou model");
+        expect(model).toMatchObject({
+          api: "openai-completions",
+          reasoning: false,
+          contextWindow: 1_000_000,
+          compat: {
+            thinkingFormat: "openrouter",
+            cacheControlFormat: "anthropic",
+            sendSessionAffinityHeaders: true,
+            sessionAffinityFormat: "openrouter",
+          },
+        });
 
-      await piAgentStreamForConfig(config)(
-        model,
-        normalizeContext({
-          systemPrompt: "You are Okou.",
-          messages: [{ role: "user", content: "hello", timestamp: 1 }],
-        }),
-        { apiKey: config.apiKey, sessionId: "pi-session" },
-      ).result();
+        await piAgentStreamForConfig(config)(
+          model,
+          normalizeContext({
+            systemPrompt: "You are Okou.",
+            messages: [{ role: "user", content: "hello", timestamp: 1 }],
+          }),
+          { apiKey: config.apiKey, sessionId: "pi-session" },
+        ).result();
 
-      expect(provider.requests.length).toBeGreaterThan(0);
-      const request = provider.requests[0];
-      expect(request).toMatchObject({
-        url: "/chat/completions",
-        headers: {
-          authorization: "Bearer selected-public-key",
-          "x-session-id": "thread-1",
-        },
-        body: {
-          model: "@preset/okou-1-0",
-          stream: true,
-          messages: [
-            {
-              role: "system",
-              content: [
-                {
-                  type: "text",
-                  text: "You are Okou.",
-                  cache_control: { type: "ephemeral" },
-                },
-              ],
-            },
-            {
-              role: "user",
-              content: [
-                {
-                  type: "text",
-                  text: "hello",
-                  cache_control: { type: "ephemeral" },
-                },
-              ],
-            },
-          ],
-        },
-      });
-      expect(request?.body).not.toHaveProperty("reasoning");
-      expect(request?.body).not.toHaveProperty("reasoning_effort");
-      expect(request?.body).not.toHaveProperty("input");
-    } finally {
-      await provider.close();
-    }
-  });
+        expect(provider.requests.length).toBeGreaterThan(0);
+        const request = provider.requests[0];
+        expect(request).toMatchObject({
+          url: "/chat/completions",
+          headers: {
+            authorization: "Bearer selected-public-key",
+            "x-session-id": "thread-1",
+          },
+          body: {
+            model: runtimeModel,
+            stream: true,
+            messages: [
+              {
+                role: "system",
+                content: [
+                  {
+                    type: "text",
+                    text: "You are Okou.",
+                    cache_control: { type: "ephemeral" },
+                  },
+                ],
+              },
+              {
+                role: "user",
+                content: [
+                  {
+                    type: "text",
+                    text: "hello",
+                    cache_control: { type: "ephemeral" },
+                  },
+                ],
+              },
+            ],
+          },
+        });
+        expect(request?.body).not.toHaveProperty("reasoning");
+        expect(request?.body).not.toHaveProperty("reasoning_effort");
+        expect(request?.body).not.toHaveProperty("input");
+      } finally {
+        await provider.close();
+      }
+    },
+  );
 
   it.each([["okou-1.0", "@preset/okou-1-0", "Auto", 0.2, 1.2]] as const)(
     "resolves independent %s metadata for request preset %s",

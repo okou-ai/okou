@@ -1,41 +1,34 @@
-import { randomUUID } from "node:crypto";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { insertSubscriptionRouteCapabilitiesFixture } from "../../../test-fixtures/subscription-route-capabilities";
-import { updateModelRouteCapabilitiesFixture } from "../../../test-fixtures/model-route-capabilities";
-import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { userModelPreferenceRoutes } from "../user-model-preference";
 
 const context = testContext();
 const authOrgApi = createAuthOrgAgentsBddApi(context);
-const { configureSubscriptionPiModel, sessionHeaders } =
+const { api, bdd, configureSubscriptionPiModel, sessionHeaders } =
   createChatEventsFixture(context);
 function preferencesApi() {
   return setupApp({ context, routes: userModelPreferenceRoutes })(
     userModelPreferenceContract,
   );
 }
+
 async function connectedActor() {
   const actor = authOrgApi.user();
   if (!actor.orgId) {
     throw new Error("Expected organization member");
   }
-  // Personal capabilities remain available on an active restricted/free plan.
-  await upsertOrgPlanEntitlementFixture({
-    orgId: actor.orgId,
+  authOrgApi.acceptAgentStorageWrites();
+  await bdd.readOnboardingStatus(actor);
+  await bdd.completeOnboarding(actor);
+  await expect(api.readBillingStatus(actor)).resolves.toMatchObject({
+    tier: "limited-free-1",
     status: "active",
-    restrictedBuiltInModels: true,
   });
   await configureSubscriptionPiModel(actor);
   return actor;
-}
-async function insertSubscriptionModel() {
-  const model = `subscription-capabilities-${randomUUID()}`;
-  onTestFinished(await insertSubscriptionRouteCapabilitiesFixture(model));
-  return model;
 }
 
 describe("personal model route capabilities", () => {
@@ -59,53 +52,19 @@ describe("personal model route capabilities", () => {
     });
   });
 
-  it("accepts only the reasoning efforts the personal catalog route lists", async () => {
+  it("offers Fast only for a connected model whose route supports priority", async () => {
     const actor = await connectedActor();
-    const model = await insertSubscriptionModel();
-    const update = (effort: "low" | "xhigh") => {
-      return preferencesApi().update({
-        headers: sessionHeaders(actor),
-        body: {
-          selectedModel: model,
-          serviceTier: null,
-          modelSettingsPatch: { model, effort },
-        },
-      });
-    };
-    const saved = await accept(update("low"), [200]);
-    expect(saved.body.modelSettings).toStrictEqual({
-      [model]: { effort: "low" },
+    await api.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
     });
-    await updateModelRouteCapabilitiesFixture({
-      model,
-      efforts: ["medium", "xhigh"],
-      defaultEffort: "medium",
-      serviceTiers: [],
-    });
-    await accept(update("low"), [400]);
-    const changed = await accept(update("xhigh"), [200]);
-    expect(changed.body.modelSettings).toStrictEqual({
-      [model]: { effort: "xhigh" },
-    });
-  });
-
-  it("offers Fast only when the personal route lists the priority tier", async () => {
-    const actor = await connectedActor();
-    const model = await insertSubscriptionModel();
-    const selectFast = () => {
+    const selectFast = (model: string) => {
       return preferencesApi().update({
         headers: sessionHeaders(actor),
         body: { selectedModel: model, serviceTier: "priority" },
       });
     };
-    await accept(selectFast(), [400]);
-    await updateModelRouteCapabilitiesFixture({
-      model,
-      efforts: ["low", "high"],
-      defaultEffort: "high",
-      serviceTiers: ["priority"],
-    });
-    const saved = await accept(selectFast(), [200]);
+    await accept(selectFast("claude-fable-5-1"), [400]);
+    const saved = await accept(selectFast("gpt-6-astra"), [200]);
     expect(saved.body.serviceTier).toBe("priority");
   });
 });

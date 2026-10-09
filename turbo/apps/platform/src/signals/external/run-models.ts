@@ -1,5 +1,6 @@
 import type { AvailableRunModelsResponse } from "@okouai/api-contracts/contracts/model-providers";
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
+import { isAutoSelectedModel } from "@okouai/core/auto-run-model";
 import { command, computed, state } from "ccstate";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
@@ -26,14 +27,23 @@ export const availableRunModels$ = computed(async (get) => {
   const generation = ++resource.generation;
   const result = await settle(accept(client.list(), [200]));
   if (result.ok) {
+    // Keep the composer's nullable Auto representation against both API releases.
+    const body: AvailableRunModelsResponse = {
+      ...result.value.body,
+      models: result.value.body.models.map((model) => {
+        return isAutoSelectedModel(model.model)
+          ? { ...model, model: null }
+          : model;
+      }),
+    };
     if (
       pendingResource === get(runModelResource$) &&
       revision === get(internalReloadAvailableRunModels$) &&
       generation === resource.generation
     ) {
-      resource.lastResolved = result.value.body;
+      resource.lastResolved = body;
     }
-    return result.value.body;
+    return body;
   }
   if (resource.lastResolved !== undefined) {
     return resource.lastResolved;

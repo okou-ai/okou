@@ -37,6 +37,7 @@ const SKILL_IMPORT_TOKEN_PREFIX = "vm0_skillimport_";
 const SANDBOX_TOKEN_TTL_SECONDS = 3 * 60 * 60;
 
 const CONDITIONAL_CAPABILITIES = [
+  ["notify:write", FeatureSwitchKey.NotifyMail],
   ["artifact:read", FeatureSwitchKey.PrivateArtifacts],
   ["artifact:write", FeatureSwitchKey.PrivateArtifacts],
   ["banking:read", FeatureSwitchKey.Banking],

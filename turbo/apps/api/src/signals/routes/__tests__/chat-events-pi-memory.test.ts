@@ -3,11 +3,6 @@ import { PI_MEMORY_ROOT } from "@okouai/api-contracts/contracts/runners";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
-import {
-  barrierQueryText,
-  barrierQueryBinds,
-  withDatabaseTransactionBarrierFixture,
-} from "../../../test-fixtures/database-transaction-barrier";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { expectCanonicalStorageManifest } from "./helpers/api-bdd-runs";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
@@ -460,72 +455,6 @@ describe("CHAT-02: model-first routing", () => {
       cancelChatRun(actor, enabled.runId, enabledClaim.sandboxHeaders),
     ]);
   }, 90_000);
-  it("uses captured memory flags for one launch and observes changes on the next request", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    const orgId = requireOrgId(actor);
-    const summary =
-      "# Captured memory\n\nKeep this launch on its captured flags.";
-    const memory = await commitMemoryVersion(context, actor, [
-      { path: "memory_summary.md", content: summary },
-    ]);
-    await seedReadyMemorySummaryProjection(context, actor, memory, summary);
-    await configureSubscriptionPiModel(actor, {}, "gpt-6-luna");
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId },
-      { [FeatureSwitchKey.PiMemory]: true },
-    );
-    mockPiResourceArchiveDownloads();
-    mockPiCheckpointObjectStore();
-    const captured = await withDatabaseTransactionBarrierFixture(
-      {
-        select: (queryArgs) => {
-          return (
-            barrierQueryText(queryArgs).includes(
-              'from "user_feature_switches"',
-            ) &&
-            barrierQueryBinds(queryArgs, actor.userId) &&
-            barrierQueryBinds(queryArgs, orgId)
-          );
-        },
-        stopAt: (_queryArgs, selecting) => {
-          return selecting;
-        },
-        pauseAfter: true,
-        work: async (barrier) => {
-          const sending = sendChatRun(actor, {
-            agentId,
-            model: "gpt-6-luna",
-            prompt: "launch with captured flags",
-          });
-          await barrier.entered;
-          await updateFeatureSwitchesForUser(
-            context,
-            { ...actor, orgId },
-            { [FeatureSwitchKey.PiMemory]: false },
-          );
-          barrier.release();
-          return await sending;
-        },
-      },
-      context.signal,
-    );
-    const capturedClaim = await claimChatRun(runnerGroup, captured.runId);
-    expect(capturedClaim.claim.piLaunchConfig).toMatchObject({
-      memoryRecall: { status: "ready", content: summary },
-    });
-    await cancelChatRun(actor, captured.runId, capturedClaim.sandboxHeaders);
-    const next = await sendChatRun(actor, {
-      agentId,
-      model: "gpt-6-luna",
-      prompt: "next request sees disabled memory",
-    });
-    const nextClaim = await claimChatRun(runnerGroup, next.runId);
-    expect(nextClaim.claim.piLaunchConfig).toMatchObject({
-      memoryRecall: { status: "no-content", memoryStorageId: memory.storageId },
-    });
-    await cancelChatRun(actor, next.runId, nextClaim.sandboxHeaders);
-  });
 
   it("preserves delegated Pi provenance and rejects foreign thread writes", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeCarrierActor();

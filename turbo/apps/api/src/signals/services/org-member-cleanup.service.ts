@@ -24,6 +24,7 @@ import { revokeMorningBriefScheduleOwnership } from "./morning-brief-schedule-cl
 import { eraseVncOwnerData$ } from "./vnc-owner-lifecycle.service";
 import { deleteDiscordOrgMemberData } from "./discord-owner-cleanup.service";
 import { purgeRetiredMorningBriefEmailSql } from "./retired-morning-brief-email";
+import { eraseMailNotifications$ } from "./mail-notification.service";
 
 import { command } from "ccstate";
 import { writeDb$, type Db } from "../external/db";
@@ -97,6 +98,8 @@ export const cleanupOrgMemberResources$ = command(
     );
     signal.throwIfAborted();
     await revokeOrgMemberRunAuthority(db, args, onSlotsReleased, signal);
+    signal.throwIfAborted();
+    await set(eraseMailNotifications$, args, signal);
     signal.throwIfAborted();
     await deleteDiscordOrgMemberData(db, args);
     signal.throwIfAborted();

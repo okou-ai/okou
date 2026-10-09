@@ -1,10 +1,10 @@
 //! Guest-side `/webhooks/agent/complete` caller.
 //!
-//! The guest calls `/complete` with a prepared checkpoint after successful
-//! execution or recovery, persisting the checkpoint and terminal state together
-//! before its final telemetry and shutdown work.
+//! The guest sends native history metadata and published file versions to
+//! `/complete` after execution or recovery. The API saves those outputs and the
+//! terminal state together before final telemetry and shutdown work.
 //!
-//! After the executor returns, the API-backed runner posts a checkpoint-less
+//! After the executor returns, the API-backed runner posts a finalization-less
 //! fallback concurrently with sandbox park-or-destroy finalization
 //! (`ConcurrentWithFinalization`). A subsequent call for an already-terminal run
 //! is idempotent. The VM may remain alive for reuse, and a parked sandbox retains
@@ -17,8 +17,8 @@
 //!
 //! [runner timing contract]: https://github.com/okou-ai/okou/blob/main/crates/runner-provider/src/provider/mod.rs
 //!
-//! Checkpoint-bearing completion uses the checkpoint retry budget and returns
-//! failures to the caller. Checkpoint-less cancellation fallback remains
+//! Completion with output metadata uses the finalization retry budget and returns
+//! failures to the caller. Metadata-free cancellation fallback remains
 //! fire-and-forget because the runner is its correctness guarantee.
 //!
 //! Trust model: sandbox and workspace metadata are relayed from
@@ -28,9 +28,9 @@
 //! could skew these values with no way for the runner to correct them. Do
 //! not treat these fields as authoritative for security decisions.
 
-use crate::checkpoint::PreparedCheckpoint;
 use crate::constants;
 use crate::error::AgentError;
+use crate::finalization::PreparedFinalization;
 use crate::http::HttpClient;
 use crate::run_context::GuestRuntime;
 use api_contracts::generated::types::webhooks::agent::complete;
@@ -59,14 +59,14 @@ struct CompletePayload<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     workspace_reuse_result: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    checkpoint: Option<&'a complete::RequestCheckpoint>,
+    completion: Option<&'a complete::RequestCompletion>,
 }
 
 fn as_optional(value: &str) -> Option<&str> {
     if value.is_empty() { None } else { Some(value) }
 }
 
-/// Atomically persist a prepared checkpoint and complete the run.
+/// Atomically persist a prepared finalization and complete the run.
 ///
 /// Sandbox and workspace reuse fields are relayed analytics values;
 /// empty strings are serialized as absent so an unset env var is equivalent
@@ -76,16 +76,16 @@ fn as_optional(value: &str) -> Option<&str> {
 /// events webhook POST succeeded. The host persists it on the run, and clients
 /// use it as a terminal event-drain watermark after observing terminal status.
 ///
-/// This uses the checkpoint request's retry budget and propagates failure so a
+/// This uses the finalization request's retry budget and propagates failure so a
 /// successful execution can return nonzero rather than silently lose
 /// persistence. Recovery callers may handle the same error as best-effort.
-pub async fn report_checkpoint_for_run(
+pub async fn report_finalization_for_run(
     runtime: &GuestRuntime,
     exit_code: i32,
     failure_reason: Option<FailureReason>,
     error: Option<&str>,
     last_event_sequence: Option<u32>,
-    checkpoint: PreparedCheckpoint,
+    finalization: PreparedFinalization,
 ) -> Result<(), AgentError> {
     let api_started_at = Instant::now();
     let result = report_payload(
@@ -96,7 +96,7 @@ pub async fn report_checkpoint_for_run(
             failure_reason,
             error,
             last_event_sequence,
-            Some(checkpoint.request()),
+            Some(finalization.request()),
         ),
         constants::HTTP_MAX_ATTEMPTS,
     )
@@ -104,18 +104,18 @@ pub async fn report_checkpoint_for_run(
     let api_elapsed = api_started_at.elapsed();
     match result {
         Ok(()) => {
-            checkpoint.acknowledge(api_elapsed);
+            finalization.acknowledge(api_elapsed);
             log_info!(LOG_TAG, "Complete webhook acknowledged");
             Ok(())
         }
         Err(error) => {
-            checkpoint.record_persistence_failure(api_elapsed);
+            finalization.record_persistence_failure(api_elapsed);
             Err(error)
         }
     }
 }
 
-/// Report an explicit user cancellation after its recovery-checkpoint attempt.
+/// Report an explicit user cancellation after its recovery-finalization attempt.
 ///
 /// Fire-and-forget. A failed request is logged and swallowed so runner
 /// completion remains the fallback.
@@ -133,7 +133,7 @@ pub async fn report_user_cancellation_for_run(
 
     if let Err(error) = report_payload(
         http,
-        checkpointless_payload_for_run(
+        metadata_free_payload_for_run(
             run_id,
             1,
             sandbox_id,
@@ -160,7 +160,7 @@ fn payload_for_runtime<'a>(
     failure_reason: Option<FailureReason>,
     error: Option<&'a str>,
     last_event_sequence: Option<u32>,
-    checkpoint: Option<&'a complete::RequestCheckpoint>,
+    completion: Option<&'a complete::RequestCompletion>,
 ) -> CompletePayload<'a> {
     let config = &runtime.config;
     CompletePayload {
@@ -172,11 +172,11 @@ fn payload_for_runtime<'a>(
         sandbox_id: as_optional(&config.sandbox_id),
         sandbox_reuse_result: as_optional(&config.sandbox_reuse_result),
         workspace_reuse_result: as_optional(&config.workspace_reuse_result),
-        checkpoint,
+        completion,
     }
 }
 
-fn checkpointless_payload_for_run<'a>(
+fn metadata_free_payload_for_run<'a>(
     run_id: &'a str,
     exit_code: i32,
     sandbox_id: &'a str,
@@ -193,7 +193,7 @@ fn checkpointless_payload_for_run<'a>(
         sandbox_id: as_optional(sandbox_id),
         sandbox_reuse_result: as_optional(sandbox_reuse_result),
         workspace_reuse_result: as_optional(workspace_reuse_result),
-        checkpoint: None,
+        completion: None,
     }
 }
 
@@ -222,7 +222,7 @@ mod tests {
             sandbox_id: None,
             sandbox_reuse_result: None,
             workspace_reuse_result: None,
-            checkpoint: None,
+            completion: None,
         };
         let json = serde_json::to_string(&payload).unwrap();
         assert_eq!(json, r#"{"runId":"run-123","exitCode":0}"#);
@@ -239,7 +239,7 @@ mod tests {
             sandbox_id: Some("abc"),
             sandbox_reuse_result: Some("reused"),
             workspace_reuse_result: Some("sandboxReused"),
-            checkpoint: None,
+            completion: None,
         };
         let json = serde_json::to_string(&payload).unwrap();
         assert!(json.contains(r#""sandboxId":"abc""#));
@@ -258,7 +258,7 @@ mod tests {
             sandbox_id: None,
             sandbox_reuse_result: None,
             workspace_reuse_result: None,
-            checkpoint: None,
+            completion: None,
         };
 
         let json = serde_json::to_value(&payload).unwrap();
@@ -278,7 +278,7 @@ mod tests {
             sandbox_id: None,
             sandbox_reuse_result: Some("poolMiss"),
             workspace_reuse_result: None,
-            checkpoint: None,
+            completion: None,
         };
         let json = serde_json::to_string(&payload).unwrap();
         assert!(!json.contains("sandboxId"));
@@ -296,7 +296,7 @@ mod tests {
             sandbox_id: Some("sid"),
             sandbox_reuse_result: None,
             workspace_reuse_result: Some("cacheMiss"),
-            checkpoint: None,
+            completion: None,
         };
         let json = serde_json::to_string(&payload).unwrap();
         assert!(json.contains(r#""sandboxId":"sid""#));
@@ -321,7 +321,7 @@ mod tests {
             sandbox_id: None,
             sandbox_reuse_result: None,
             workspace_reuse_result: None,
-            checkpoint: None,
+            completion: None,
         };
         let json = serde_json::to_string(&payload).unwrap();
         assert_eq!(

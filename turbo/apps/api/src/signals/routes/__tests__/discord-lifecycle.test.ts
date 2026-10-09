@@ -1,31 +1,22 @@
 import { randomUUID } from "node:crypto";
 
 import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
-import { testUserExportWorkContract } from "@okouai/api-contracts/contracts/test-user-export-work";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import AdmZip from "adm-zip";
 import { expect, test, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { integrationsDiscordRoutes } from "../integrations-discord";
-import { testUserExportWorkRoutes } from "../test-user-export-work";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { createOpsLogsApi } from "./helpers/api-bdd-ops-logs";
-import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import {
   configureDiscordApp,
   deleteDiscordFixture,
   mockDiscordMemberships,
   seedDiscordFixture,
-  uniqueDiscordSnowflake,
   type DiscordActor,
 } from "./helpers/discord";
-import { installDurableUserExportStorage } from "./helpers/durable-user-export-storage";
-import { createEmailOutboxStateApi } from "./helpers/email-outbox-state";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 
@@ -57,139 +48,6 @@ async function enable(user: DiscordActor) {
     [FeatureSwitchKey.DiscordIntegration]: true,
   });
 }
-
-async function exportWork(
-  user: ApiTestUser,
-  jobId: string,
-  action: "run" | "delete",
-) {
-  return await accept(
-    setupApp({ context, routes: testUserExportWorkRoutes })(
-      testUserExportWorkContract,
-    ).action({ body: { userId: user.userId, jobId, action, maxSteps: 200 } }),
-    [200],
-  );
-}
-
-test("exports every owned Discord record, including pre-route ingress and deliveries, without another member's data", async () => {
-  configureDiscordApp();
-  const owner = actor();
-  const peer = actor({ orgId: owner.orgId });
-  mockDiscordMemberships(context, [owner, peer]);
-  await enable(owner);
-  await enable(peer);
-  const storage = installDurableUserExportStorage(context);
-  await createRunsApi(context).ensurePersonalSubscriptionModel(owner);
-  const ownerAgent = await bdd.createAgent(owner, {
-    displayName: "Export owner",
-  });
-  const peerAgent = await bdd.createAgent(peer, { displayName: "Export peer" });
-  const chat = createChatFilesBddApi(context);
-  const ownerThread = await chat.createThread(owner, {
-    agentId: ownerAgent.agentId,
-  });
-  const peerThread = await chat.createThread(peer, {
-    agentId: peerAgent.agentId,
-  });
-  const owned = await seedDiscordFixture(context, {
-    ...owner,
-    history: {
-      chatThreadId: ownerThread.id,
-      channelId: uniqueDiscordSnowflake(),
-      messageId: uniqueDiscordSnowflake(),
-      messageText: "The export owner's Discord message",
-    },
-  });
-  onTestFinished(async () => {
-    await deleteDiscordFixture(context, owned);
-  });
-  const unrelated = await seedDiscordFixture(context, {
-    ...peer,
-    guildId: owned.guildId,
-    botUserId: owned.botUserId,
-    history: {
-      chatThreadId: peerThread.id,
-      channelId: uniqueDiscordSnowflake(),
-      messageId: uniqueDiscordSnowflake(),
-      messageText: "Another member's private Discord message",
-    },
-  });
-  await accept(
-    discordClient(owner).setDmSelection({
-      headers: authHeaders(),
-      body: { connectionId: owned.connectionId },
-    }),
-    [200],
-  );
-
-  const api = createOpsLogsApi(context);
-  const started = await api.requestPostUserExport(owner, [202]);
-  onTestFinished(async () => {
-    await exportWork(owner, started.body.jobId, "delete");
-    const outbox = createEmailOutboxStateApi(context);
-    const emails = await outbox.findItems({
-      toAddress: owner.email,
-      subject: "Your data export is ready",
-    });
-    if (emails.length > 0) {
-      await outbox.deleteItems(
-        emails.map((email) => {
-          return email.id;
-        }),
-      );
-    }
-  });
-  await flushWaitUntilForTest();
-  await exportWork(owner, started.body.jobId, "run");
-  const status = await api.requestGetUserExport(owner, [200]);
-  expect(status.body.job).toMatchObject({ status: "completed", error: null });
-  if (!status.body.job?.downloadUrl) {
-    throw new Error("Expected completed Discord export download");
-  }
-  const zip = new AdmZip(storage.download(status.body.job.downloadUrl));
-  const entries = zip.getEntries().filter((entry) => {
-    return entry.entryName.startsWith("integrations/discord/");
-  });
-  const counts = Object.fromEntries(
-    [
-      "installations",
-      "connections",
-      "dm-preferences",
-      "routes",
-      "ingress",
-      "contexts",
-    ].map((kind) => {
-      return [
-        kind,
-        entries.filter((entry) => {
-          return entry.entryName.startsWith(`integrations/discord/${kind}/`);
-        }).length,
-      ];
-    }),
-  );
-  expect(counts).toStrictEqual({
-    installations: 1,
-    connections: 1,
-    "dm-preferences": 1,
-    routes: 1,
-    ingress: 2,
-    contexts: 1,
-  });
-  const exported = entries
-    .map((entry) => {
-      return entry.getData().toString("utf8");
-    })
-    .join("\n");
-  expect(exported).toContain(owned.connectionId);
-  expect(exported).toContain("The export owner's Discord message");
-  expect(exported).toContain("Accepted before route creation");
-  expect(exported).not.toContain(unrelated.connectionId);
-  expect(exported).not.toContain(unrelated.discordUserId);
-  expect(exported).not.toContain("Another member's private Discord message");
-  expect(exported).not.toContain("claimToken");
-  expect(exported).not.toContain("Missing Access");
-  expect(exported).not.toContain("lastError");
-});
 
 test("removes a departed member's binding only in the affected organization", async () => {
   configureDiscordApp();

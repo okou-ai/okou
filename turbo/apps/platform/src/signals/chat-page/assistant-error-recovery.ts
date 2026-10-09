@@ -47,10 +47,7 @@ type AssistantErrorRecoveryKind =
   | "autonomy-budget-exhausted";
 type AssistantErrorRecoveryScope = "framework" | "model";
 type AssistantErrorRecoveryWindow =
-  | "five-hour"
-  | "weekly"
-  | "model"
-  | "unknown";
+  "five-hour" | "weekly" | "model" | "unknown";
 type SubscriptionResetWindow = Exclude<
   AssistantErrorRecoveryWindow,
   "model" | "unknown"

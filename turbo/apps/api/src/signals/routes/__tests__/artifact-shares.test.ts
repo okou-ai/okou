@@ -33,6 +33,7 @@ import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { uploadsCompleteRoutes } from "../uploads-complete";
 import { webFileUrlRoutes } from "../web-file-url";
 import { createRouteMocks } from "./helpers/route-test";
+import { createDeferredPromise } from "../../utils";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -1738,43 +1739,108 @@ test("sharing copies file bytes once into private storage without changing the o
   expect(ownerPreview.body.publicUrl).toBeNull();
 });
 
-test("a delayed writer cannot resurrect a public grant after a newer revocation", async () => {
-  const { objects } = await fixture();
-  const target = await file();
-  const shared = await accept(
-    api()(artifactSharesContract).update({
+test.each(["organization", "private"] as const)(
+  "a delayed publication cannot restore public access after a newer %s update",
+  async (audience) => {
+    await fixture();
+    const target = await file();
+    const shared = await accept(
+      api()(artifactSharesContract).update({
+        headers,
+        body: { target, audience: "public" },
+      }),
+      [200],
+    );
+    const publicationStarted = createDeferredPromise<void>(context.signal);
+    const resumePublication = createDeferredPromise<void>(context.signal);
+    const storage = context.mocks.s3.send.getMockImplementation()!;
+    let delayed = false;
+    context.mocks.s3.send.mockImplementation(async (cmd) => {
+      if (
+        !delayed &&
+        cmd instanceof PutObjectCommand &&
+        cmd.input.Key?.startsWith("artifact-shares/") &&
+        artifactSharePolicySchema.parse(JSON.parse(String(cmd.input.Body)))
+          .audience === "public"
+      ) {
+        delayed = true;
+        publicationStarted.resolve();
+        await resumePublication.promise;
+      }
+      return await storage(cmd);
+    });
+    const publication = api()(artifactSharesContract).update({
       headers,
       body: { target, audience: "public" },
-    }),
-    [200],
-  );
-  const key = `artifact-shares/okou/${shared.body.shareId}.json`;
-  const storage = context.mocks.s3.send.getMockImplementation()!;
-  context.mocks.s3.send.mockImplementation((cmd) => {
-    if (cmd instanceof PutObjectCommand && cmd.input.Key === key) {
-      // A different writer committed after this request's read. R2 must reject
-      // its stale If-Match even if the old process lost its database row lock.
-      const previous = JSON.parse(objects.get(key)!);
-      objects.set(
-        key,
-        JSON.stringify({
-          ...previous,
-          revision: randomUUID(),
-          audience: "private",
-          status: "revoked",
-          publicToken: null,
+    });
+    await publicationStarted.promise;
+    await accept(
+      api()(artifactSharesContract).update({
+        headers,
+        body: { target, audience },
+      }),
+      [200],
+    );
+    resumePublication.resolve();
+    await accept(publication, [500]);
+    const status = await accept(
+      api()(artifactSharesContract).status({ headers, body: target }),
+      [200],
+    );
+    expect(status.body.audience).toBe(audience);
+    expect(status.body.shareId).toBe(shared.body.shareId);
+    if (audience === "private") {
+      expect(status.body.url).toBeNull();
+      await accept(
+        api()(artifactSharesContract).resolve({
+          headers,
+          params: { id: shared.body.shareId! },
         }),
+        [404],
       );
     }
-    return storage(cmd);
+    await accept(
+      api()(artifactReferencesContract).publicUrl({
+        params: {
+          reference: artifactReferencePath(target.id, "report.pdf")
+            .split("/")
+            .at(-1)!,
+        },
+      }),
+      [404],
+    );
+  },
+);
+
+test("a first publication preparing its snapshot cannot grant access after an initial stop", async () => {
+  await fixture();
+  const target = await file();
+  const preparationStarted = createDeferredPromise<void>(context.signal);
+  const resumePreparation = createDeferredPromise<void>(context.signal);
+  const storage = context.mocks.s3.send.getMockImplementation()!;
+  let delayed = false;
+  context.mocks.s3.send.mockImplementation(async (cmd) => {
+    if (!delayed && cmd instanceof CopyObjectCommand) {
+      delayed = true;
+      preparationStarted.resolve();
+      await resumePreparation.promise;
+    }
+    return await storage(cmd);
   });
+  const publication = api()(artifactSharesContract).update({
+    headers,
+    body: { target, audience: "public" },
+  });
+  await preparationStarted.promise;
   await accept(
     api()(artifactSharesContract).update({
       headers,
-      body: { target, audience: "public" },
+      body: { target, audience: "private" },
     }),
-    [500],
+    [200],
   );
+  resumePreparation.resolve();
+  await accept(publication, [500]);
   const status = await accept(
     api()(artifactSharesContract).status({ headers, body: target }),
     [200],
@@ -1783,7 +1849,17 @@ test("a delayed writer cannot resurrect a public grant after a newer revocation"
   await accept(
     api()(artifactSharesContract).resolve({
       headers,
-      params: { id: shared.body.shareId! },
+      params: { id: status.body.shareId! },
+    }),
+    [404],
+  );
+  await accept(
+    api()(artifactReferencesContract).publicUrl({
+      params: {
+        reference: artifactReferencePath(target.id, "report.pdf")
+          .split("/")
+          .at(-1)!,
+      },
     }),
     [404],
   );

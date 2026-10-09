@@ -13,7 +13,7 @@ import {
 import { connectors } from "./connector";
 import { builtinConnectorDcrRegistrations } from "./connector-dcr-registration";
 
-/** Authority and client frozen at builtin Automatic consent; tokens remain account-owned secrets. */
+/** OAuth authority and client metadata; tokens remain account-owned secrets. */
 export const builtinConnectorAccountOauthBindings = pgTable(
   "connector_account_oauth_bindings",
   {
@@ -23,7 +23,6 @@ export const builtinConnectorAccountOauthBindings = pgTable(
     connectorSlug: varchar("connector_slug", { length: 64 }).notNull(),
     authMethod: varchar("auth_method", { length: 50 }).notNull(),
     storageVersion: bigint("storage_version", { mode: "number" }).notNull(),
-    contractHash: varchar("contract_hash", { length: 64 }).notNull(),
     endpoint: text("endpoint").notNull(),
     issuer: text("issuer").notNull(),
     resource: text("resource").notNull(),
@@ -60,20 +59,18 @@ export const builtinConnectorAccountOauthBindings = pgTable(
           table.orgId,
           table.connectorSlug,
           table.authMethod,
-          table.contractHash,
         ],
         foreignColumns: [
           builtinConnectorDcrRegistrations.id,
           builtinConnectorDcrRegistrations.orgId,
           builtinConnectorDcrRegistrations.connectorSlug,
           builtinConnectorDcrRegistrations.authMethod,
-          builtinConnectorDcrRegistrations.contractHash,
         ],
       }),
       index("idx_connector_oauth_binding_dcr").on(table.dcrRegistrationId),
       check(
         "chk_connector_oauth_binding_identity",
-        sql`${table.storageVersion} > 0 AND ${table.contractHash} ~ '^[a-f0-9]{64}$' AND btrim(${table.endpoint}) <> '' AND btrim(${table.issuer}) <> '' AND btrim(${table.resource}) <> '' AND btrim(${table.tokenEndpoint}) <> '' AND btrim(${table.clientId}) <> ''`,
+        sql`${table.storageVersion} > 0 AND btrim(${table.endpoint}) <> '' AND btrim(${table.issuer}) <> '' AND btrim(${table.resource}) <> '' AND btrim(${table.tokenEndpoint}) <> '' AND btrim(${table.clientId}) <> ''`,
       ),
       check(
         "chk_connector_oauth_binding_token_auth",

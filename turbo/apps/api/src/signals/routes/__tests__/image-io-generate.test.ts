@@ -2058,15 +2058,13 @@ describe("POST /api/image-io/generate", () => {
       openai_api_key: "test-openai-key",
     });
 
-    if (
-      !(
-        typeof body === "object" &&
-        body !== null &&
-        "id" in body &&
-        "filename" in body &&
-        "url" in body
-      )
-    ) {
+    if (!(
+      typeof body === "object" &&
+      body !== null &&
+      "id" in body &&
+      "filename" in body &&
+      "url" in body
+    )) {
       throw new Error("Expected image response id, filename, and url");
     }
     const fileId = String(body.id);
@@ -3166,14 +3164,12 @@ describe("POST /api/image-io/generate", () => {
       enhance_prompt: false,
     });
 
-    if (
-      !(
-        typeof body === "object" &&
-        body !== null &&
-        "id" in body &&
-        "filename" in body
-      )
-    ) {
+    if (!(
+      typeof body === "object" &&
+      body !== null &&
+      "id" in body &&
+      "filename" in body
+    )) {
       throw new Error("Expected image response id and filename");
     }
     const fileId = String(body.id);

@@ -10,7 +10,6 @@ import {
   createPiMemoryPhase2Worker,
   type PiMemoryPhase2WorkerResult,
 } from "../services/pi-memory-phase2-worker.service";
-import type { PiMemoryPhase2OwnerScope } from "../services/pi-memory-phase2-job.service";
 import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
 import { admitsPiMemoryBackgroundWorkerInvocation } from "./pi-memory-background-worker-breaker";
 
@@ -42,10 +41,8 @@ function responseForPhase2Result(
   };
 }
 
-function consolidatePiMemoryPhase2Routes(
-  scope: PiMemoryPhase2OwnerScope | undefined,
-): readonly RouteEntry[] {
-  const { execute$ } = createPiMemoryPhase2Worker(scope);
+function consolidatePiMemoryPhase2Routes(): readonly RouteEntry[] {
+  const { execute$ } = createPiMemoryPhase2Worker();
   const consolidatePiMemoryPhase2Route$ = command(
     async ({ get, set }, signal: AbortSignal) => {
       if (!get(hasValidCronSecret$)) {
@@ -70,4 +67,4 @@ function consolidatePiMemoryPhase2Routes(
 }
 
 export const cronConsolidatePiMemoryPhase2Routes =
-  consolidatePiMemoryPhase2Routes(undefined);
+  consolidatePiMemoryPhase2Routes();

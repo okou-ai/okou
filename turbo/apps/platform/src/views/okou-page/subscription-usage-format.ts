@@ -19,8 +19,7 @@ interface InvalidSubscriptionUsageResetFormat {
 }
 
 type SubscriptionUsageResetDisplay =
-  | InvalidSubscriptionUsageResetFormat
-  | SubscriptionUsageResetFormat;
+  InvalidSubscriptionUsageResetFormat | SubscriptionUsageResetFormat;
 
 export function formatSubscriptionUsageReset(
   resetAt: string | null,

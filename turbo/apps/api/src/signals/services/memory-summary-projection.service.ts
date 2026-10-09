@@ -28,9 +28,9 @@ import { z } from "zod";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import {
-  downloadS3BufferWithMaxBytes,
+  downloadS3BufferWithMaxBytes$,
   S3ObjectSizeLimitError,
   isS3NotFoundError,
 } from "../external/s3";
@@ -58,8 +58,6 @@ const manifestSchema = z
     createdAt: z.iso.datetime(),
   })
   .strict();
-
-type ProjectionDb = Pick<Db, "insert">;
 
 interface CanonicalMemoryStorageIdentity {
   readonly id: string;
@@ -140,32 +138,18 @@ function isCanonicalUserMemoryStorage(
   );
 }
 
-export async function enqueueMemorySummaryProjection(
-  args: {
-    readonly db: ProjectionDb;
-    readonly storage: CanonicalMemoryStorageIdentity;
-    readonly storageVersionId: string;
-  },
-  signal?: AbortSignal,
-): Promise<boolean> {
-  if (!isCanonicalUserMemoryStorage(args.storage)) {
-    return false;
-  }
-
-  const [inserted] = await args.db
-    .insert(memorySummaryProjections)
-    .values({
-      memoryStorageId: args.storage.id,
-      storageVersionId: args.storageVersionId,
-      orgId: args.storage.orgId,
-      userId: args.storage.userId,
-    })
-    .onConflictDoNothing()
-    .returning({
-      memoryStorageId: memorySummaryProjections.memoryStorageId,
-    });
-  signal?.throwIfAborted();
-  return inserted !== undefined;
+export function memorySummaryProjectionValues(args: {
+  readonly storage: CanonicalMemoryStorageIdentity;
+  readonly storageVersionId: string;
+}) {
+  return isCanonicalUserMemoryStorage(args.storage)
+    ? {
+        memoryStorageId: args.storage.id,
+        storageVersionId: args.storageVersionId,
+        orgId: args.storage.orgId,
+        userId: args.storage.userId,
+      }
+    : undefined;
 }
 
 function projectionScopeCondition(
@@ -181,13 +165,13 @@ function projectionScopeCondition(
 
 const backfillMissingProjections$ = command(
   async (
-    { set },
+    { get, set },
     scope: MemorySummaryProjectionScope | undefined,
     currentTime: Date,
     signal: AbortSignal,
   ): Promise<number> => {
     const db = set(writeDb$);
-    const rows = await db
+    const rows = await get(db$)
       .select({
         memoryStorageId: storages.id,
         storageVersionId: storageVersions.id,
@@ -515,20 +499,17 @@ function extractSummaryFromArchive(
 
 const downloadProjectionManifest$ = command(
   async (
-    { get },
+    { set },
     work: ClaimedProjection,
     signal: AbortSignal,
   ): Promise<ManifestValidationResult> => {
     const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
     const manifestKey = `${work.s3Key}/manifest.json`;
     const manifestDownload = await settle(
-      get(
-        downloadS3BufferWithMaxBytes(
-          bucket,
-          manifestKey,
-          MANIFEST_MAX_BYTES,
-          signal,
-        ),
+      set(
+        downloadS3BufferWithMaxBytes$,
+        { bucket, key: manifestKey, maxBytes: MANIFEST_MAX_BYTES },
+        signal,
       ),
       signal,
     );
@@ -547,7 +528,7 @@ const downloadProjectionManifest$ = command(
 
 const downloadProjectionArchive$ = command(
   async (
-    { get },
+    { set },
     args: {
       readonly work: ClaimedProjection;
       readonly summary: FileEntryWithHash;
@@ -561,13 +542,10 @@ const downloadProjectionArchive$ = command(
     // previously issued upload URL can leave a different gzip size for the
     // same logical version; enforce limits on the actual object instead.
     const archiveDownload = await settle(
-      get(
-        downloadS3BufferWithMaxBytes(
-          bucket,
-          archiveKey,
-          ARCHIVE_MAX_BYTES,
-          signal,
-        ),
+      set(
+        downloadS3BufferWithMaxBytes$,
+        { bucket, key: archiveKey, maxBytes: ARCHIVE_MAX_BYTES },
+        signal,
       ),
       signal,
     );

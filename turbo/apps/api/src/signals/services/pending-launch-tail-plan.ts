@@ -8,7 +8,7 @@ import {
 import type { AgentRunLaunchSnapshot } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
 import type { ChatThreadSessionResolutionAction } from "./chat-session-continuity.service";
 import { nowDate } from "../../lib/time";
-import { getPiMemoryStage1AdmissionPrerequisiteSkipReason } from "./pi-memory-stage1-candidate.service";
+import { getPiMemoryStage1AdmissionPrerequisiteSkipReason } from "./pi-memory-stage1-admission-plan";
 import {
   pendingLaunchInsertSql,
   pendingLaunchUpdateSql,

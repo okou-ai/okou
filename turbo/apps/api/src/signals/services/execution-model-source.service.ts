@@ -4,9 +4,9 @@ import {
   modelProviderAccounts,
   modelProviderAccountSecrets,
 } from "@okouai/db/schema/model-provider-account";
-import { computed, type Computed } from "ccstate";
+import { command } from "ccstate";
 import { and, eq, isNull } from "drizzle-orm";
-import { db$, type ReadonlyDb } from "../external/db";
+import { db$ } from "../external/db";
 import { managedSourceFromSnapshot } from "./model-source-context.service";
 
 export type ModelSourceIdentity =
@@ -19,8 +19,7 @@ export interface ModelSourceRequest {
   readonly source: ModelSourceIdentity;
 }
 export type ModelSourceCredential =
-  | EncryptedModelCredential
-  | ManagedModelKeyReference;
+  EncryptedModelCredential | ManagedModelKeyReference;
 export interface ManagedModelKeyReference {
   readonly kind: "managed-key";
   readonly name: string;
@@ -42,27 +41,12 @@ export interface ModelSourceSnapshot {
   readonly credentials: readonly ModelSourceCredential[];
 }
 
-async function loadManagedSource(
-  db: Pick<ReadonlyDb, "select">,
-  source: Extract<ModelSourceIdentity, { kind: "built-in" }>,
-): Promise<ModelSourceSnapshot | null> {
-  const [key] = await db
-    .select({
-      id: builtInModelKeys.id,
-      vendor: builtInModelKeys.vendor,
-      apiKey: builtInModelKeys.apiKey,
-    })
-    .from(builtInModelKeys)
-    .where(eq(builtInModelKeys.id, source.modelKeyId))
-    .limit(1);
-  return managedSourceFromSnapshot(key);
-}
-
 /** Read only an already-selected source; never select defaults or decrypt. */
-export function createModelSourceSnapshot(
-  request: ModelSourceRequest,
-): Computed<Promise<ModelSourceSnapshot | null>> {
-  return computed(async (get): Promise<ModelSourceSnapshot | null> => {
+export const readModelSourceSnapshot$ = command(
+  async (
+    { get },
+    request: ModelSourceRequest,
+  ): Promise<ModelSourceSnapshot | null> => {
     const db = get(db$);
     const source = request.source;
     if (source.kind === "member") {
@@ -111,6 +95,15 @@ export function createModelSourceSnapshot(
         }),
       };
     }
-    return await loadManagedSource(db, source);
-  });
-}
+    const [key] = await db
+      .select({
+        id: builtInModelKeys.id,
+        vendor: builtInModelKeys.vendor,
+        apiKey: builtInModelKeys.apiKey,
+      })
+      .from(builtInModelKeys)
+      .where(eq(builtInModelKeys.id, source.modelKeyId))
+      .limit(1);
+    return managedSourceFromSnapshot(key);
+  },
+);

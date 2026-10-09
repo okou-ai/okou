@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.18.9](https://github.com/okou-ai/okou/compare/guest-contracts-v0.18.8...guest-contracts-v0.18.9) (2026-10-09)
+
+## [0.18.8](https://github.com/okou-ai/okou/compare/guest-contracts-v0.18.7...guest-contracts-v0.18.8) (2026-10-08)
+
+
+### Documentation
+
+* **rust:** correct request-driven installed cli parity docs ([#38108](https://github.com/okou-ai/okou/issues/38108)) ([1555ef4](https://github.com/okou-ai/okou/commit/1555ef40d2a57d13db5032088c0585a6a93d02ec))
+
 ## [0.18.7](https://github.com/okou-ai/okou/compare/guest-contracts-v0.18.6...guest-contracts-v0.18.7) (2026-10-08)
 
 ## [0.18.6](https://github.com/okou-ai/okou/compare/guest-contracts-v0.18.5...guest-contracts-v0.18.6) (2026-10-07)

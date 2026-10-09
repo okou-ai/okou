@@ -16,10 +16,7 @@ import {
 import { workflowAutomations } from "./workflow";
 
 export type StripeWorkflowDeliveryStatus =
-  | "pending"
-  | "delivered"
-  | "skipped"
-  | "failed";
+  "pending" | "delivered" | "skipped" | "failed";
 
 export const stripeWorkflowDeliveries = pgTable(
   "stripe_workflow_deliveries",

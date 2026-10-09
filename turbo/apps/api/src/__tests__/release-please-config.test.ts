@@ -286,6 +286,9 @@ describe("release-please API deployment graph", () => {
     const deploymentStep = promoteApiProductionJob.indexOf(
       "- name: Deploy API Production",
     );
+    const finishStep = promoteApiProductionJob.indexOf(
+      "- name: Finish GitHub Deployment",
+    );
 
     expect(promoteApiProductionJob).toContain(
       "needs.release-please.outputs.api_release_created == 'true'",
@@ -320,80 +323,9 @@ describe("release-please API deployment graph", () => {
     expect(migrationStep).toBeGreaterThan(deploymentToolchainStep);
     expect(migrationStep).toBeGreaterThan(migrationSmokeStep);
     expect(deploymentStep).toBeGreaterThan(migrationStep);
+    expect(finishStep).toBeGreaterThan(deploymentStep);
     expect(promoteApiProductionJob).toContain('prebuilt: "true"');
     expect(promoteApiProductionJob).toContain('skip-setup: "true"');
-  });
-
-  it("reconciles the connector catalog immediately after API deployment", () => {
-    const workflow = readText(".github/workflows/release-please.yml");
-    const promoteApiProductionJob = workflowJobBlock(
-      workflow,
-      "promote-api-production",
-    );
-    const deployStep = promoteApiProductionJob.indexOf(
-      "- name: Deploy API Production",
-    );
-    const reconcileStep = promoteApiProductionJob.indexOf(
-      "- name: Reconcile production connector catalog (best effort)",
-    );
-    const finishStep = promoteApiProductionJob.indexOf(
-      "- name: Finish GitHub Deployment",
-    );
-
-    expect(deployStep).toBeGreaterThan(-1);
-    expect(reconcileStep).toBeGreaterThan(deployStep);
-    expect(finishStep).toBeGreaterThan(reconcileStep);
-    expect(promoteApiProductionJob).not.toContain(
-      "- name: Verify production App and API domains",
-    );
-    expect(promoteApiProductionJob).not.toContain(
-      "- name: Check staged API health",
-    );
-    expect(promoteApiProductionJob).not.toContain(
-      "- name: Promote API Production",
-    );
-
-    const deployBlock = promoteApiProductionJob.slice(
-      deployStep,
-      reconcileStep,
-    );
-    expect(deployBlock).not.toContain('skip-domain: "true"');
-    expect(deployBlock.match(/- name:/g)).toHaveLength(1);
-    expect(promoteApiProductionJob).not.toContain(
-      "uses: ./.github/actions/vercel-promote",
-    );
-
-    const reconcileBlock = promoteApiProductionJob.slice(
-      reconcileStep,
-      finishStep,
-    );
-    expect(reconcileBlock).toContain("shell: bash");
-    expect(reconcileBlock).toContain(
-      `API_DEPLOYMENT_URL: \${{ steps.deploy.outputs.url }}`,
-    );
-    expect(reconcileBlock).toContain(
-      "vercel curl /api/cron/sync-connector-catalog",
-    );
-    expect(reconcileBlock).toContain('--deployment "$API_DEPLOYMENT_URL"');
-    expect(reconcileBlock).toContain(
-      `--header "Authorization: Bearer \${CRON_SECRET}"`,
-    );
-    expect(reconcileBlock).not.toContain("for attempt in");
-    expect(reconcileBlock).not.toContain("sleep ");
-    expect(reconcileBlock).not.toContain("exit 1");
-    expect(reconcileBlock).toContain("::warning::");
-    expect(reconcileBlock).toContain("the scheduled cron will retry");
-    expect(reconcileBlock).toContain("--max-time 120");
-    // The response is only the attempt report; older APIs' extra
-    // diagnostics fields are neither summarized nor checked.
-    expect(reconcileBlock).toContain("jq -c '{outcome, failureCode}'");
-    expect(reconcileBlock).toContain(
-      '.outcome == "accepted" or .outcome == "unchanged"',
-    );
-    expect(reconcileBlock).not.toContain(".state");
-    expect(reconcileBlock).not.toContain(".active");
-    expect(reconcileBlock).not.toContain(".pointer");
-    expect(reconcileBlock).not.toContain(".filtering");
   });
 
   it("keeps Vercel setup enabled for other deployment callers", () => {

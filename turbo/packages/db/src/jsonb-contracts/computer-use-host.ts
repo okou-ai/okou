@@ -8,21 +8,13 @@ export interface ComputerUsePermissions {
   readonly automation?: {
     readonly chrome: {
       readonly status:
-        | "unknown"
-        | "granted"
-        | "denied"
-        | "not_installed"
-        | "not_running";
+        "unknown" | "granted" | "denied" | "not_installed" | "not_running";
       readonly updatedAt: string | null;
       readonly reason: string | null;
     };
     readonly safari: {
       readonly status:
-        | "unknown"
-        | "granted"
-        | "denied"
-        | "not_installed"
-        | "not_running";
+        "unknown" | "granted" | "denied" | "not_installed" | "not_running";
       readonly updatedAt: string | null;
       readonly reason: string | null;
     };

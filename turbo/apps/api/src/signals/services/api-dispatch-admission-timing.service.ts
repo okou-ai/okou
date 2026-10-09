@@ -18,10 +18,7 @@ export type AdmissionLockLeaf =
   | "maintenance_binding";
 
 export type AdmissionAttemptOutcome =
-  | "pending"
-  | "rejected"
-  | "queue_first_claim_lost"
-  | "rolled_back";
+  "pending" | "rejected" | "queue_first_claim_lost" | "rolled_back";
 
 interface AdmissionTimingRecord {
   readonly actionType: string;

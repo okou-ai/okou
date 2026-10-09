@@ -273,11 +273,7 @@ export type OpenComposerTemplatePickerIntent =
   | { readonly kind: "edit-legacy"; readonly category: string };
 
 export type ComposerTemplateAttachmentType =
-  | "custom"
-  | "presentation"
-  | "illustration"
-  | "workflow"
-  | "website";
+  "custom" | "presentation" | "illustration" | "workflow" | "website";
 
 export interface ComposerTemplateAttachment {
   readonly type: ComposerTemplateAttachmentType;
@@ -1837,8 +1833,7 @@ function workflowComposerDocumentForDraft(
   draft: {
     readonly input: string;
     readonly userMessage:
-      | Parameters<DraftInputSyncTarget["syncUserMessage"]>[0]
-      | null;
+      Parameters<DraftInputSyncTarget["syncUserMessage"]>[0] | null;
     readonly editorDocument: EditorDocumentSnapshot | null;
   },
 ): ProseMirrorNode {

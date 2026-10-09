@@ -58,6 +58,10 @@ import { db$ } from "../external/db";
 
 import { createConnectorRuntimeSelection } from "./connector-catalog-entries.service";
 import { agentConnectorScopeFromRows } from "./agent-connector-scope.service";
+import {
+  createAuthorizedConnectors,
+  type AuthorizedConnectors,
+} from "./authorized-connectors.service";
 import type { ConnectorRuntimeSelection } from "./connector-catalog-runtime.service";
 import type { CustomConnectorExecutionDefinition } from "./custom-connector-definition-selection";
 import { customConnectorPermissionBundleDependencySlug } from "./custom-connector-permission-bundle.service";
@@ -126,6 +130,7 @@ export interface AgentRunContextSignals {
   readonly modelPricing$: ReturnType<typeof createModelPricing>;
   readonly memberMetadata$: Computed<Promise<ExecutionMemberMetadata>>;
   readonly connectorSelection$: Computed<Promise<AgentConnectorSelection>>;
+  readonly authorizedConnectors$: Computed<Promise<AuthorizedConnectors>>;
   readonly permissionGrants$: Computed<
     Promise<readonly ConnectorPermissionGrant[]>
   >;
@@ -525,6 +530,7 @@ function createIdentityContext(
     ...modelSources,
     memberMetadata$,
     connectorSelection$: connectorContext.connectorSelection$,
+    authorizedConnectors$: connectorContext.authorizedConnectors$,
     permissionGrants$,
     workflows$,
     officialCatalog$,
@@ -553,6 +559,7 @@ export const preloadAgentRunContext$ = command(
     // All nodes start in this turn; the starter awaits none of them.
     const nodes: readonly Computed<Promise<unknown>>[] = [
       signals.catalog$,
+      signals.authorizedConnectors$,
       signals.connectors$,
       signals.storage$,
       signals.agent$,
@@ -1000,6 +1007,10 @@ function createConnectorContextGroups(
     };
   });
   const catalog$ = createConnectorRuntimeSelection(requested$);
+  const authorizedConnectors$ = createAuthorizedConnectors(
+    connectorSelection$,
+    catalog$,
+  );
   const connectors$ = computed(async (get): Promise<BootstrapConnectorData> => {
     const snapshot = await get(connectorSnapshot$);
     return {
@@ -1010,6 +1021,7 @@ function createConnectorContextGroups(
   });
   return {
     connectorSelection$,
+    authorizedConnectors$,
     permissionGrants$,
     workflows$,
     environmentSnapshot$,

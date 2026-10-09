@@ -15,75 +15,80 @@ import {
 } from "./model-catalog.service";
 import { PI_MEMORY_STAGE1_BUILT_IN_MODEL } from "@okouai/pi-agent-runtime/api";
 import { and, eq } from "drizzle-orm";
-import type { ReadonlyDb } from "../external/db";
+import { db$ } from "../external/db";
+import { command } from "ccstate";
 import type { ResolvedModelProviderEnvironment } from "./agent-run-contracts";
 import type { BuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
 import { compileModelRuntime } from "./execution-model-runtime";
 import type { ModelSourceSnapshot } from "./execution-model-source.service";
 
-export async function readPiMemoryBuiltinPricing(
-  db: ReadonlyDb,
-  catalog: ModelCatalog,
-  resolution: UsagePricingResolution,
-) {
-  const route = catalogBuiltInRoute(
-    catalog,
-    PI_MEMORY_BUILTIN_BINDING.selectedModel,
-    PI_MEMORY_BUILTIN_BINDING.providerType,
-  );
-  if (!route?.pricingKind || !route.pricingProvider) {
-    throw new ModelCatalogInvariantError(
-      "Pi memory pricing binding is missing",
+export const readPiMemoryBuiltinPricing$ = command(
+  async (
+    { get },
+    catalog: ModelCatalog,
+    resolution: UsagePricingResolution,
+  ) => {
+    const route = catalogBuiltInRoute(
+      catalog,
+      PI_MEMORY_BUILTIN_BINDING.selectedModel,
+      PI_MEMORY_BUILTIN_BINDING.providerType,
     );
-  }
-  const rows = await db
-    .select({
-      kind: usagePricing.kind,
-      provider: usagePricing.provider,
-      category: usagePricing.category,
-    })
-    .from(usagePricing)
-    .where(
-      and(
-        eq(usagePricing.kind, route.pricingKind),
-        eq(
-          usagePricing.provider,
-          resolveUsagePricingProvider(
-            resolution,
-            route.pricingKind,
-            route.pricingProvider,
+    if (!route?.pricingKind || !route.pricingProvider) {
+      throw new ModelCatalogInvariantError(
+        "Pi memory pricing binding is missing",
+      );
+    }
+    const rows = await get(db$)
+      .select({
+        kind: usagePricing.kind,
+        provider: usagePricing.provider,
+        category: usagePricing.category,
+      })
+      .from(usagePricing)
+      .where(
+        and(
+          eq(usagePricing.kind, route.pricingKind),
+          eq(
+            usagePricing.provider,
+            resolveUsagePricingProvider(
+              resolution,
+              route.pricingKind,
+              route.pricingProvider,
+            ),
           ),
         ),
-      ),
+      );
+    return builtInRoutePricingFromSnapshot(
+      { resolution, serviceTier: undefined },
+      usagePricingByKey(rows),
     );
-  return builtInRoutePricingFromSnapshot(
-    { resolution, serviceTier: undefined },
-    usagePricingByKey(rows),
-  );
-}
+  },
+);
 
 /** Internal maintenance binding. This is never a foreground model candidate. */
 export const PI_MEMORY_BUILTIN_BINDING = {
   selectedModel: PI_MEMORY_STAGE1_BUILT_IN_MODEL,
   providerType: "openrouter-codex",
-  upstreamModel: `deepseek/${PI_MEMORY_STAGE1_BUILT_IN_MODEL}`,
+  upstreamModel: `openai/${PI_MEMORY_STAGE1_BUILT_IN_MODEL}`,
 } as const;
 
-export async function resolvePiMemoryBuiltinRoute(
-  db: ReadonlyDb,
-  signal: AbortSignal,
-): Promise<BuiltInModelRuntimeRoute | null> {
-  const [key] = await db
-    .select({ id: builtInModelKeys.id, apiKey: builtInModelKeys.apiKey })
-    .from(builtInModelKeys)
-    .where(eq(builtInModelKeys.vendor, "openrouter"))
-    .limit(1);
-  signal.throwIfAborted();
-  if (!key?.apiKey.trim()) {
-    return null;
-  }
-  return { ...PI_MEMORY_BUILTIN_BINDING, modelKeyId: key.id };
-}
+/** Fixed read owner for the internal route, without foreground default selection. */
+export const resolvePiMemoryBuiltinRoute$ = command(
+  async (
+    { get },
+    signal: AbortSignal,
+  ): Promise<BuiltInModelRuntimeRoute | null> => {
+    const [key] = await get(db$)
+      .select({ id: builtInModelKeys.id, apiKey: builtInModelKeys.apiKey })
+      .from(builtInModelKeys)
+      .where(eq(builtInModelKeys.vendor, "openrouter"))
+      .limit(1);
+    signal.throwIfAborted();
+    return key?.apiKey.trim()
+      ? { ...PI_MEMORY_BUILTIN_BINDING, modelKeyId: key.id }
+      : null;
+  },
+);
 
 export function preparePiMemoryBuiltinEnvironment(
   source: ModelSourceSnapshot,

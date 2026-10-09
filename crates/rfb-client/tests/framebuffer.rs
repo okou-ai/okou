@@ -777,7 +777,7 @@ async fn decodes_high_entropy_4k_zrle_within_the_framebuffer_memory_budget() {
             tiles.push(0); // Raw ZRLE tile, with three-byte RGB CPIXEL values.
             for y in tile_y..(tile_y + 64).min(HEIGHT) {
                 for x in tile_x..(tile_x + 64).min(WIDTH) {
-                    tiles.extend(color(y * WIDTH + x));
+                    tiles.extend_from_slice(&color(y * WIDTH + x));
                 }
             }
         }

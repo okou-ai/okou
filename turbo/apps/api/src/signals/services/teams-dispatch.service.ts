@@ -21,7 +21,6 @@ import { env } from "../../lib/env";
 import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { logger } from "../../lib/log";
 import { inferMimetype } from "../../lib/mimetype";
-import { isAllowedTeamsDownloadUrl } from "../../lib/teams-file-url";
 import { teamsBotDisplayName } from "../../lib/teams-official-app";
 import { nowDate } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
@@ -34,7 +33,6 @@ import {
   fetchTeamsChannelMessage,
   fetchTeamsChannelMessageReplies,
   fetchTeamsChannelMessages,
-  fetchTeamsFile,
   fetchTeamsPersonalChatMessages,
   fetchTeamsUsers,
   sendTeamsMessageReply,
@@ -47,7 +45,6 @@ import {
 } from "../external/teams-bot-client";
 import { bestEffort, safeJsonParse, settle } from "../utils";
 import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
-import { InputFileImportError } from "./canonical-asset.service";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
 import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
@@ -1482,23 +1479,7 @@ function teamsInputFiles(
         messageId: `${activity.conversationId}:${activity.activityId ?? activity.idempotencyKey}`,
         externalFileId: file.upstreamFileId,
       },
-      download: async (downloadSignal: AbortSignal) => {
-        if (!isAllowedTeamsDownloadUrl(file.payload.url)) {
-          throw new InputFileImportError(
-            "invalid-url",
-            "Invalid Teams attachment URL",
-          );
-        }
-        const result = await fetchTeamsFile(file.payload, downloadSignal);
-        if (result.kind === "teams-error") {
-          throw new InputFileImportError(
-            "download-failed",
-            "Teams attachment download failed",
-            result.status,
-          );
-        }
-        return result.response;
-      },
+      resource: { provider: "teams", payload: file.payload },
     };
   });
 }

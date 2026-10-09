@@ -99,8 +99,7 @@ export interface PiMemoryPhase2PreparedResult extends PiMemoryPhase2ResultBase {
 }
 
 export type PiMemoryPhase2ConsolidationResult =
-  | PiMemoryPhase2NoDiffResult
-  | PiMemoryPhase2PreparedResult;
+  PiMemoryPhase2NoDiffResult | PiMemoryPhase2PreparedResult;
 
 export type PiMemoryPhase2FailureClass =
   | "aborted"

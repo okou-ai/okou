@@ -5162,6 +5162,8 @@
     "mermaid": {
       "diagramLabel": "図",
       "expand": "図を拡大",
+      "fillView": "ビュー全体に表示",
+      "restoreView": "表示を元に戻す",
       "viewSource": "図のソース"
     },
     "notFound": {

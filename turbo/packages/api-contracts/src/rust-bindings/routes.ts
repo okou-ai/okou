@@ -7,13 +7,13 @@ import {
   runnersBuiltinFirewallsResolveContract,
   runnersHeartbeatContract,
   runnersJobClaimContract,
-  runnersModelProviderFailuresContract,
   runnersPollContract,
   runnersSteerContract,
 } from "../contracts/runners";
 import {
   webhookCheckpointsContract,
   webhookCheckpointsPrepareHistoryContract,
+  webhookSessionHistoryPrepareContract,
   webhookCompleteContract,
   webhookEventsContract,
   webhookHeartbeatContract,
@@ -97,11 +97,6 @@ export const rustRouteBindings = [
     rustConstName: "STEERED",
   },
   {
-    route: runnersModelProviderFailuresContract.report,
-    rustModulePath: ["runners", "runs", "by_run_id", "model_provider_failures"],
-    rustConstName: "REPORT",
-  },
-  {
     route: runnersConnectorRuntimeSyncContract.sync,
     rustModulePath: [
       "runners",
@@ -145,6 +140,11 @@ export const rustRouteBindings = [
   {
     route: webhookCheckpointsPrepareHistoryContract.prepare,
     rustModulePath: ["webhooks", "agent", "checkpoints", "prepare_history"],
+    rustConstName: "PREPARE",
+  },
+  {
+    route: webhookSessionHistoryPrepareContract.prepare,
+    rustModulePath: ["webhooks", "agent", "session_history", "prepare"],
     rustConstName: "PREPARE",
   },
   {

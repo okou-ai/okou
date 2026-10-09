@@ -33,9 +33,7 @@ interface StoredUpload {
 }
 
 type ExportWriteCommand =
-  | PutObjectCommand
-  | UploadPartCommand
-  | CompleteMultipartUploadCommand;
+  PutObjectCommand | UploadPartCommand | CompleteMultipartUploadCommand;
 
 type ExportObjectCommand =
   | ExportWriteCommand
@@ -321,21 +319,8 @@ export function installDurableUserExportStorage(
     seedObject(key: string, bytes: Buffer): void {
       objects.set(key, storedObject(bytes));
     },
-    seedMultipartUpload(key: string, initiated: Date): string {
-      const uploadId = randomUUID();
-      uploads.set(uploadId, { key, initiated, metadata: {}, parts: new Map() });
-      return uploadId;
-    },
-    objectKeys(prefix: string): readonly string[] {
-      return [...objects.keys()].filter((key) => {
-        return key.startsWith(prefix);
-      });
-    },
     hasObject(key: string): boolean {
       return objects.has(key);
-    },
-    hasMultipartUpload(uploadId: string): boolean {
-      return uploads.has(uploadId);
     },
     download(url: string): Buffer {
       const key = decodeURIComponent(new URL(url).pathname.slice(1));

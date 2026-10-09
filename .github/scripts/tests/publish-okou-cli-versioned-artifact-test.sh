@@ -19,7 +19,11 @@ fail() {
 
 # Real packed files and the real verifier; only curl/AWS are boundary mocks.
 jq -n --arg version "$cli_version" '{
-  name: "@okouai/cli", version: $version, private: true, bin: {okou: "okou.js"}
+  name: "@okouai/cli", version: $version, private: true, bin: {okou: "okou.js"},
+  okouBuildIdentity: {
+    schemaVersion: 1, piAgentRuntime: "1.36.0", piSdk: "0.86.1+okou.0123456789ab",
+    sessionConstruction: {digest: ("d" * 64)}
+  }
 }' > "${canonical}/contents/package/package.json"
 for asset in okou.js image-resize-worker.js photon_rs_bg.wasm; do
   printf 'synthetic %s\n' "$asset" > "${canonical}/contents/package/${asset}"

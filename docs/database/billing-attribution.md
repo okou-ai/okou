@@ -3,7 +3,7 @@
 > The Allowance-specific readers, window grains and archive references in this
 > historical A1 record are superseded by
 > [organization Usage Allowance retirement](../deployment-compatibility.md#organization-usage-allowance-retired).
-> Migration 1347 deletes team-only Allowance history; current attribution keeps
+> Migration 1356 deletes team-only Allowance history; current attribution keeps
 > ordinary usage identities and recorded credits, without Allowance tables.
 
 Issue [#33851](https://github.com/vm0-ai/vm0/issues/33851), parent

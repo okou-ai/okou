@@ -20,12 +20,7 @@ type MessageId =
   | "unknownInterpolation";
 
 type ValueCategory =
-  | "any"
-  | "array"
-  | "bound"
-  | "undefined"
-  | "unknown"
-  | "wrapper";
+  "any" | "array" | "bound" | "undefined" | "unknown" | "wrapper";
 
 const DRIZZLE_WRAPPER_TYPES = new Set(["SQL", "SQLWrapper"]);
 

@@ -1,6 +1,10 @@
 import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import { isMemberRunModelConfigurable } from "@okouai/api-contracts/contracts/member-run-model";
 import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
+import {
+  isAutoSelectedModel,
+  sameSelectedModel,
+} from "@okouai/core/auto-run-model";
 import chalk from "chalk";
 import { Command } from "commander";
 import {
@@ -28,7 +32,7 @@ const listCommand = new Command()
       console.log(chalk.bold("Available Models:"));
       for (const model of models) {
         console.log(
-          `  - ${model.modelLabel} (${formatModelSelectionArgument(model.model)})${model.model === null ? " (default)" : ""}`,
+          `  - ${model.modelLabel} (${formatModelSelectionArgument(model.model)})${model.model === null || isAutoSelectedModel(model.model) ? " (default)" : ""}`,
         );
         console.log(`    provider: ${formatModelProviderRoute(model)}`);
         const status = formatRunModelStatus(model);
@@ -55,6 +59,12 @@ async function resolveServiceTier(
   selected: AvailableRunModel,
   priority: boolean | undefined,
 ): Promise<ChatThreadServiceTier | null> {
+  if (selected.model === null || isAutoSelectedModel(selected.model)) {
+    if (priority === true) {
+      throw new Error("Fast mode is unavailable for Auto");
+    }
+    return null;
+  }
   if (priority !== undefined) {
     return priority ? "priority" : null;
   }
@@ -85,7 +95,7 @@ const selectCommand = new Command()
       const model = parseModelSelectionArgument(argument);
       const available = await listRunModels();
       const selected = available.models.find((candidate) => {
-        return candidate.model === model;
+        return sameSelectedModel(candidate.model, model);
       });
       if (!selected || !isMemberRunModelConfigurable(selected)) {
         throw new Error(

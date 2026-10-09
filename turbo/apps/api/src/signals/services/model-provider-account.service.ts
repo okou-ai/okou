@@ -52,8 +52,7 @@ const ACCOUNT_CONFLICT_MESSAGE =
   "The subscription account changed concurrently. Refresh and try again.";
 
 export type PersonalSubscriptionProviderType =
-  | typeof CODEX_TYPE
-  | typeof CLAUDE_CODE_TYPE;
+  typeof CODEX_TYPE | typeof CLAUDE_CODE_TYPE;
 
 /** Connected Claude/Codex member accounts read together for one queued model route. */
 export interface MemberModelAccountSnapshot {
@@ -1062,6 +1061,79 @@ interface SubscriptionCredentialOwner {
   readonly sourceId?: string;
   readonly runId?: string;
 }
+
+/** Exact connected/live-run account read owned by a fixed graph command. */
+export const readPersonalSubscriptionAccount$ = command(
+  async (
+    { get },
+    owner: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly id: string;
+      readonly runId?: string;
+    },
+  ) => {
+    const [account] = await get(db$)
+      .select()
+      .from(modelProviderAccounts)
+      .where(
+        and(
+          eq(modelProviderAccounts.id, owner.id),
+          personalSubscriptionAccountAccessCondition(owner.runId),
+          eq(modelProviderAccounts.orgId, owner.orgId),
+          eq(modelProviderAccounts.userId, owner.userId),
+        ),
+      )
+      .limit(1);
+    return account ?? null;
+  },
+);
+
+/** Capture the exact account and all ciphertexts in one statement, then decrypt. */
+export const readPersonalSubscriptionCredentialBundle$ = command(
+  async ({ get }, owner: Omit<SubscriptionCredentialOwner, "db">) => {
+    if (!owner.sourceId) {
+      return null;
+    }
+    const rows = await get(db$)
+      .select({
+        account: modelProviderAccounts,
+        secret: {
+          name: modelProviderAccountSecrets.name,
+          encryptedValue: modelProviderAccountSecrets.encryptedValue,
+        },
+      })
+      .from(modelProviderAccounts)
+      .leftJoin(
+        modelProviderAccountSecrets,
+        eq(
+          modelProviderAccountSecrets.modelProviderAccountId,
+          modelProviderAccounts.id,
+        ),
+      )
+      .where(
+        and(
+          eq(modelProviderAccounts.id, owner.sourceId),
+          personalSubscriptionAccountAccessCondition(owner.runId),
+          eq(modelProviderAccounts.orgId, owner.orgId),
+          eq(modelProviderAccounts.userId, owner.userId),
+          eq(modelProviderAccounts.type, owner.type),
+        ),
+      );
+    const account = rows[0]?.account;
+    if (!account) {
+      return null;
+    }
+    const ciphertexts = rows.flatMap((row) => {
+      return row.secret ? [row.secret] : [];
+    });
+    const values = await credentialValues(
+      ciphertexts,
+      owner.featureSwitchContext,
+    );
+    return { account, values };
+  },
+);
 
 /** One non-locking statement for the exact account and its whole ciphertext
  * bundle. Callers decrypt after it returns, never inside a transaction. */

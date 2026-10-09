@@ -33,11 +33,7 @@ export interface BankingActionDescriptor {
 }
 
 export type BankingBusyAction =
-  | "connect"
-  | "save"
-  | "revoke"
-  | "continue"
-  | null;
+  "connect" | "save" | "revoke" | "continue" | null;
 
 export interface BankingCardUiState {
   readonly selectedAccountIds: readonly string[] | null;

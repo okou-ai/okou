@@ -57,6 +57,19 @@ jobs:
           echo "skip=false" >> "$GITHUB_OUTPUT"
           echo "Not a release-please context"
 
+  action-pins:
+    name: Action Pins
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      - name: Validate approved action SHAs
+        run: python3 .github/scripts/tests/action-pins-test.py .
+
   detect-native-only:
     needs: [detect-release]
     if: needs.detect-release.outputs.skip != 'true'
@@ -117,7 +130,7 @@ jobs:
     container:
       image: semgrep/semgrep
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: ${{ github.event_name == 'push' && 1 || 2 }}
 
@@ -166,7 +179,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
@@ -222,7 +235,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install actionlint
         run: |
@@ -297,6 +310,7 @@ jobs:
             .github/scripts/verify-okou-cli-artifact.sh \
             .github/scripts/verify-okou-desktop-artifact.sh \
             .github/scripts/with-runner-lifecycle-lock.sh \
+            .github/scripts/tests/action-pins-test.sh \
             .github/scripts/tests/ansible-ssh-control-path-test.sh \
             .github/scripts/tests/cancel-superseded-merge-group-runs-test.sh \
             .github/scripts/tests/check-release-please-component-releases-test.sh \
@@ -411,7 +425,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: ${{ github.event_name != 'pull_request' && 2 || 0 }}
 
@@ -439,6 +453,7 @@ jobs:
     timeout-minutes: 5
     needs:
       - detect-release
+      - action-pins
       - detect-native-only
       - pr-title
       - semgrep
@@ -455,9 +470,14 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           IS_RELEASE: ${{ needs.detect-release.outputs.skip }}
+          ACTION_PINS_RESULT: ${{ needs.action-pins.result }}
           RELEASE_WORKSPACE_COVERAGE_RESULT: ${{ needs.release-workspace-coverage.result }}
         run: |
-          # Release candidates retain the fast path after workspace validation.
+          if [[ "$ACTION_PINS_RESULT" != "success" ]]; then
+            echo "::error::action-pins: expected success, got $ACTION_PINS_RESULT"
+            exit 1
+          fi
+          # Release candidates retain the fast path after pin and workspace validation.
           if [[ "$IS_RELEASE" == "true" ]]; then
             if [[ "$EVENT_NAME" != "push" && "$RELEASE_WORKSPACE_COVERAGE_RESULT" != "success" ]]; then
               echo "::error::release-workspace-coverage: expected success, got $RELEASE_WORKSPACE_COVERAGE_RESULT"

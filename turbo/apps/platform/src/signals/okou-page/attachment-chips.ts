@@ -18,6 +18,7 @@ import {
 } from "../text-preview.ts";
 import { onRef, resetSignal } from "../utils.ts";
 import { createObjectUrlResource } from "../object-url-resource.ts";
+import { createArtifactDiagramPreviewSignals } from "../artifact-diagram-preview.ts";
 import { rootSignal$ } from "../root-signal.ts";
 import type {
   ChatThreadArtifactGoogleDriveRecovery,
@@ -41,8 +42,7 @@ export type AttachmentArtifactMetadata = {
   readonly filename: string;
   readonly googleDriveDisconnected: boolean;
   readonly googleDriveRecovery:
-    | ChatThreadArtifactGoogleDriveRecovery
-    | undefined;
+    ChatThreadArtifactGoogleDriveRecovery | undefined;
   readonly googleDriveSynced: boolean;
   readonly onSyncSuccess?: () => void;
   readonly runId: string;
@@ -75,8 +75,7 @@ type AttachmentFileLightboxInput = AttachmentNamedLightboxBase & {
 };
 
 type AttachmentDocumentLightboxInput =
-  | AttachmentTextDocumentLightboxInput
-  | AttachmentFramedDocumentLightboxInput;
+  AttachmentTextDocumentLightboxInput | AttachmentFramedDocumentLightboxInput;
 
 type AttachmentPreviewSource =
   | { readonly url: string; readonly file?: undefined }
@@ -141,6 +140,8 @@ export type AttachmentLightboxState = AttachmentLightboxInput &
     readonly preview: AttachmentPreviewSignals;
   };
 
+export const attachmentDiagramPreview = createArtifactDiagramPreviewSignals();
+
 const internalLightboxState$ = state<AttachmentLightboxState | null>(null);
 const internalLightboxDialogVisible$ = state(false);
 const internalLightboxDialogFullscreen$ = state(false);
@@ -160,6 +161,7 @@ const resetLightboxPreviewSignal$ = resetSignal();
 export const attachmentLightboxImageCanvasSignals =
   createZoomableImageCanvasSignals();
 const disposeLightboxSession$ = command(({ set }) => {
+  set(attachmentDiagramPreview.dispose$);
   set(internalLightboxDialogVisible$, false);
   set(internalLightboxDialogFullscreen$, false);
   set(internalLightboxState$, null);
@@ -215,6 +217,7 @@ export const completeLightboxDialogExit$ = command(
 export const closeLightboxWithDialogExit$ = command(
   ({ set }, signal: AbortSignal) => {
     signal.throwIfAborted();
+    set(attachmentDiagramPreview.dispose$);
     set(internalLightboxDialogVisible$, false);
   },
 );
@@ -305,6 +308,7 @@ export const openImageLightbox$ = command(
     }
     set(attachmentLightboxImageCanvasSignals.reset$);
     const previewSignal = set(resetLightboxPreviewSignal$, get(rootSignal$));
+    set(attachmentDiagramPreview.dispose$);
     const image = imageLightboxState(input, previewSignal);
     set(internalLightboxDialogVisible$, true);
     set(internalLightboxDialogFullscreen$, false);
@@ -318,7 +322,7 @@ export const openImageLightbox$ = command(
  * rendered in the reader's browser, so it has no stable link to share.
  */
 export const openDiagramLightbox$ = command(
-  ({ set }, file: File, signal: AbortSignal) => {
+  ({ set }, file: File, _trigger: HTMLElement, signal: AbortSignal) => {
     signal.throwIfAborted();
     set(openImageLightbox$, { file, shareAvailable: false });
   },
@@ -345,6 +349,7 @@ export const navigateImageLightbox$ = command(
   ) => {
     set(attachmentLightboxImageCanvasSignals.reset$);
     set(resetLightboxPreviewSignal$, get(rootSignal$));
+    set(attachmentDiagramPreview.dispose$);
     const preview = attachmentPreviewSignalsFor(value);
     set(internalLightboxState$, {
       kind: "image",
@@ -365,6 +370,7 @@ export const openDocumentLightbox$ = command(
       return;
     }
     set(resetLightboxPreviewSignal$, get(rootSignal$));
+    set(attachmentDiagramPreview.dispose$);
     set(internalLightboxDialogVisible$, true);
     set(internalLightboxDialogFullscreen$, false);
     const preview = attachmentPreviewSignalsFor(value);
@@ -379,7 +385,10 @@ export const openDocumentLightbox$ = command(
           preview,
           ...preview,
           text$,
-          markdownTree$: createMarkdownPreviewTree(text$, openDiagramLightbox$),
+          markdownTree$: createMarkdownPreviewTree(
+            text$,
+            attachmentDiagramPreview.open$,
+          ),
         });
         return;
       }
@@ -403,6 +412,7 @@ function createSimpleLightboxOpener(kind: "audio" | "file" | "video") {
         return;
       }
       set(resetLightboxPreviewSignal$, get(rootSignal$));
+      set(attachmentDiagramPreview.dispose$);
       set(internalLightboxDialogVisible$, true);
       set(internalLightboxDialogFullscreen$, false);
       const preview = attachmentPreviewSignalsFor(value);

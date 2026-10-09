@@ -15,6 +15,7 @@ use rand::{
 use rfb_client::{AppleRsaSrpCredentials, AuthenticationStage, Error, authenticate_apple_rsa_srp};
 use rsa::{Pkcs1v15Encrypt, RsaPrivateKey, RsaPublicKey, pkcs8::EncodePublicKey};
 use sha2::{Digest, Sha512};
+use std::sync::Arc;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt, DuplexStream, duplex},
     time::{Duration, Instant},
@@ -58,7 +59,66 @@ enum Scenario {
     TruncatedFinal,
 }
 
-async fn peer(server: &mut DuplexStream, scenario: Scenario) {
+const SALT: [u8; 32] = [0x13; 32];
+
+// Only invariant synthetic server material is shared within one test matrix.
+// Every client exchange and server proof below is still computed independently.
+struct PeerFixture {
+    private: RsaPrivateKey,
+    n_bytes: Vec<u8>,
+    params: BoxedMontyParams,
+    verifier: BoxedMontyForm,
+    b_private: BoxedUint,
+    b_public: Box<[u8]>,
+    g_pad: [u8; 512],
+}
+
+impl PeerFixture {
+    fn new() -> Self {
+        let mut rng = StdRng::try_from_rng(&mut SysRng).expect("OS entropy");
+        let private = RsaPrivateKey::new(&mut rng, 2048).expect("synthetic RSA key");
+        let n_bytes = group();
+        let n = BoxedUint::from_be_slice(&n_bytes, 4096).expect("N");
+        let params = BoxedMontyParams::new_vartime(
+            Option::<Odd<BoxedUint>>::from(Odd::new(n)).expect("odd"),
+        );
+        let g = BoxedMontyForm::new(BoxedUint::from_be_slice(&[5], 4096).expect("g"), &params);
+        let mut derived = [0u8; 128];
+        pbkdf2::pbkdf2_hmac::<Sha512>(b"test-password", &SALT, 10_000, &mut derived);
+        let x_inner = sha512(&[b":", &derived]);
+        let x_hash = sha512(&[&SALT, &x_inner]);
+        let x = BoxedUint::from_be_slice(&x_hash, 4096).expect("x");
+        let verifier = g.pow_bounded_exp(&x, 512);
+        let mut g_pad = [0u8; 512];
+        g_pad[511] = 5;
+        let k_hash = sha512(&[&n_bytes, &g_pad]);
+        let k = BoxedMontyForm::new(BoxedUint::from_be_slice(&k_hash, 4096).expect("k"), &params);
+        let b_private = BoxedUint::from_be_slice(&[17], 4096).expect("b");
+        let b_public = (&k * &verifier + g.pow_bounded_exp(&b_private, 8))
+            .retrieve()
+            .to_be_bytes();
+        Self {
+            private,
+            n_bytes,
+            params,
+            verifier,
+            b_private,
+            b_public,
+            g_pad,
+        }
+    }
+}
+
+async fn peer(server: &mut DuplexStream, scenario: Scenario, fixture: &PeerFixture) {
+    let PeerFixture {
+        private,
+        params,
+        verifier,
+        b_private,
+        b_public,
+        g_pad,
+        ..
+    } = fixture;
     server.write_all(b"RFB 003.889\n").await.expect("banner");
     let mut version = [0; 12];
     server.read_exact(&mut version).await.expect("version");
@@ -74,9 +134,7 @@ async fn peer(server: &mut DuplexStream, scenario: Scenario) {
         &[33, 0, 0, 0, 10, 1, 0, b'R', b'S', b'A', b'1', 0, 0, 0, 0]
     );
 
-    let mut rng = StdRng::try_from_rng(&mut SysRng).expect("OS entropy");
-    let private = RsaPrivateKey::new(&mut rng, 2048).expect("synthetic RSA key");
-    let public = RsaPublicKey::from(&private);
+    let public = RsaPublicKey::from(private);
     let der = public.to_public_key_der().expect("SPKI");
     assert_eq!(der.as_bytes().len(), 294);
     let mut key_reply = Vec::new();
@@ -112,26 +170,7 @@ async fn peer(server: &mut DuplexStream, scenario: Scenario) {
         return;
     }
 
-    let mut n_bytes = group();
-    let n = BoxedUint::from_be_slice(&n_bytes, 4096).expect("N");
-    let params =
-        BoxedMontyParams::new_vartime(Option::<Odd<BoxedUint>>::from(Odd::new(n)).expect("odd"));
-    let g = BoxedMontyForm::new(BoxedUint::from_be_slice(&[5], 4096).expect("g"), &params);
-    let salt = [0x13; 32];
-    let mut derived = [0u8; 128];
-    pbkdf2::pbkdf2_hmac::<Sha512>(b"test-password", &salt, 10_000, &mut derived);
-    let x_inner = sha512(&[b":", &derived]);
-    let x_hash = sha512(&[&salt, &x_inner]);
-    let x = BoxedUint::from_be_slice(&x_hash, 4096).expect("x");
-    let verifier = g.pow_bounded_exp(&x, 512);
-    let mut g_pad = [0u8; 512];
-    g_pad[511] = 5;
-    let k_hash = sha512(&[&n_bytes, &g_pad]);
-    let k = BoxedMontyForm::new(BoxedUint::from_be_slice(&k_hash, 4096).expect("k"), &params);
-    let b_private = BoxedUint::from_be_slice(&[17], 4096).expect("b");
-    let b_public = (&k * &verifier + g.pow_bounded_exp(&b_private, 8))
-        .retrieve()
-        .to_be_bytes();
+    let mut n_bytes = fixture.n_bytes.clone();
     if matches!(scenario, Scenario::InvalidGroup) {
         n_bytes[0] ^= 1;
     }
@@ -142,9 +181,9 @@ async fn peer(server: &mut DuplexStream, scenario: Scenario) {
     fields.extend_from_slice(&1u16.to_be_bytes());
     fields.push(5);
     fields.push(32);
-    fields.extend_from_slice(&salt);
+    fields.extend_from_slice(&SALT);
     fields.extend_from_slice(&512u16.to_be_bytes());
-    fields.extend_from_slice(&b_public);
+    fields.extend_from_slice(b_public);
     fields.extend_from_slice(&10_000u64.to_be_bytes());
     fields.extend_from_slice(&80u16.to_be_bytes());
     fields.extend_from_slice(&[0x31; 80]);
@@ -191,22 +230,22 @@ async fn peer(server: &mut DuplexStream, scenario: Scenario) {
     assert_eq!(&response[579..581], &80u16.to_be_bytes());
     assert_eq!(&response[581..661], &[0x31; 80]);
     assert_eq!(response[661], 16);
-    let a = BoxedMontyForm::new(BoxedUint::from_be_slice(a_bytes, 4096).expect("A"), &params);
-    let u = BoxedUint::from_be_slice(&sha512(&[a_bytes, &b_public]), 4096).expect("u");
+    let a = BoxedMontyForm::new(BoxedUint::from_be_slice(a_bytes, 4096).expect("A"), params);
+    let u = BoxedUint::from_be_slice(&sha512(&[a_bytes, b_public]), 4096).expect("u");
     let shared = (a * verifier.pow_bounded_exp(&u, 512))
-        .pow_bounded_exp(&b_private, 8)
+        .pow_bounded_exp(b_private, 8)
         .retrieve()
         .to_be_bytes();
     let session_key = sha512(&[&shared]);
     let hn = sha512(&[&group()]);
-    let hg = sha512(&[&g_pad]);
+    let hg = sha512(&[g_pad]);
     let xor_ng: Vec<u8> = hn.iter().zip(hg.iter()).map(|(n, g)| n ^ g).collect();
     let expected_m1 = sha512(&[
         &xor_ng,
         &sha512(&[b""]),
-        &salt,
+        &SALT,
         a_bytes,
-        &b_public,
+        b_public,
         &session_key,
     ]);
     if m1 != expected_m1 {
@@ -254,8 +293,9 @@ async fn peer(server: &mut DuplexStream, scenario: Scenario) {
 
 #[tokio::test]
 async fn type_33_authenticates_and_hands_off_only_after_valid_proof() {
+    let fixture = PeerFixture::new();
     let (client, mut server) = duplex(4096);
-    let peer = tokio::spawn(async move { peer(&mut server, Scenario::Success).await });
+    let peer = tokio::spawn(async move { peer(&mut server, Scenario::Success, &fixture).await });
     let authenticated = authenticate_apple_rsa_srp(client, credentials(), deadline())
         .await
         .expect("authenticated");
@@ -266,6 +306,7 @@ async fn type_33_authenticates_and_hands_off_only_after_valid_proof() {
 
 #[tokio::test]
 async fn invalid_key_group_proof_and_missing_final_fail_closed() {
+    let fixture = Arc::new(PeerFixture::new());
     for (scenario, expected) in [
         (Scenario::BadKey, "parameters"),
         (Scenario::BadSpki, "parameters"),
@@ -280,7 +321,8 @@ async fn invalid_key_group_proof_and_missing_final_fail_closed() {
         (Scenario::TruncatedFinal, "transport"),
     ] {
         let (client, mut server) = duplex(4096);
-        let peer = tokio::spawn(async move { peer(&mut server, scenario).await });
+        let fixture = Arc::clone(&fixture);
+        let peer = tokio::spawn(async move { peer(&mut server, scenario, &fixture).await });
         let credential = if matches!(scenario, Scenario::WrongPassword) {
             AppleRsaSrpCredentials::new("test-user".into(), "incorrect".into())
                 .expect("wrong password")

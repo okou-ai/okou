@@ -1,5 +1,6 @@
 import { command, state, type Command } from "ccstate";
 import {
+  foregroundChannelName,
   platformRealtimeTokenContract,
   sessionOutputChannelName,
 } from "@okouai/api-contracts/contracts/realtime";
@@ -1195,6 +1196,27 @@ export const setupRealtime$ = command(
     // Preserve the actual outcome for subscribers arriving after startup fails.
     set(realtimeInitialization$, initialization);
     await initialization;
+  },
+);
+
+export const setForegroundPresence$ = command(
+  async ({ get }, visible: boolean, signal: AbortSignal): Promise<void> => {
+    const initialization = get(realtimeInitialization$);
+    if (!initialization) {
+      throw new Error("Realtime is not initialized");
+    }
+    const session = await waitForOperation(initialization, signal);
+    const identity = await get(runtimeAuthenticatedIdentity$);
+    signal.throwIfAborted();
+    const channel = session.ably.channels.get(
+      foregroundChannelName(identity.userId, identity.orgId),
+    );
+    if (visible) {
+      await channel.presence.enter();
+    } else {
+      await channel.presence.leave();
+    }
+    signal.throwIfAborted();
   },
 );
 

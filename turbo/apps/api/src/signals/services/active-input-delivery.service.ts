@@ -16,11 +16,9 @@ import { DiscordQueuedLaunchUnavailableError } from "./discord-queued-launch-con
 import {
   activeInputDeliveryPromptFitsControlPayload,
   activeInputRowsByIds,
-  activeInputTemplateIdentities,
   materializeActiveInputSource$,
   type ActiveInputSourceRow,
 } from "./active-input-prompt.service";
-import { logTemplateUsage } from "../../lib/template-usage-log";
 import { runTimeBudgetEventIdForRun } from "./assistant-event-id";
 import { chatEventReplacementInsertSql } from "./chat-event.service";
 import { listPendingChatInputs } from "./chat-event-queue.service";
@@ -84,7 +82,7 @@ const RUN_QUEUE_INPUT_EVENT_TYPES = [
 ] as const;
 
 type ActiveInputConsumption =
-  | { readonly outcome: "appended"; readonly source: ActiveInputSourceRow }
+  | { readonly outcome: "appended" }
   | { readonly outcome: "steered" }
   | { readonly outcome: "rejected" }
   | { readonly outcome: "invalid" };
@@ -184,7 +182,7 @@ async function consumeActiveInputSource(
         ),
       )[0] ?? null;
     if (replacement) {
-      return { outcome: "appended", source };
+      return { outcome: "appended" };
     }
   }
   const [revoker] = await db
@@ -196,24 +194,6 @@ async function consumeActiveInputSource(
     revoker.eventType === source.eventType
     ? { outcome: "steered" }
     : { outcome: "rejected" };
-}
-
-function logSteeredTemplateUsage(
-  scope: ActiveInputDeliveryScope,
-  source: ActiveInputSourceRow,
-): void {
-  if (source.eventType !== "input.prompt" || !source.userMessage) {
-    return;
-  }
-  logTemplateUsage(
-    {
-      dispatchPath: "active-input",
-      orgId: scope.orgId,
-      userId: scope.userId,
-      chatThreadId: scope.chatThreadId,
-    },
-    activeInputTemplateIdentities(source.userMessage),
-  );
 }
 
 /**
@@ -364,9 +344,6 @@ export async function declareSteeredInput(
       outcome: "conflict",
       reason: running ? "input_already_consumed" : "run_not_running",
     };
-  }
-  if (consumed.outcome === "appended") {
-    logSteeredTemplateUsage(scope, consumed.source);
   }
   return {
     outcome: "steered",

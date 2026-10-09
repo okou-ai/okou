@@ -50,14 +50,14 @@ async fn oversized_codex_input_writes_actionable_structured_failure()
     });
     let prepare_history = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/checkpoints/prepare-history");
+            .path("/api/webhooks/agent/session-history/prepare");
         then.status(200);
     });
     let complete = server.mock(|when, then| {
         when.method(POST)
             .path("/api/webhooks/agent/complete")
             .json_body_includes(
-                r#"{"runId":"codex-input-too-large","exitCode":1,"failureReason":"input_too_large","error":"execution: Codex input is too large: 101 characters provided, maximum is 100 characters. Reduce the input and try again.","checkpoint":{"cliAgentSessionHistoryDisposition":"unavailable"}}"#,
+                r#"{"runId":"codex-input-too-large","exitCode":1,"failureReason":"input_too_large","error":"execution: Codex input is too large: 101 characters provided, maximum is 100 characters. Reduce the input and try again.","completion":{"cliAgentSessionHistoryDisposition":"unavailable"}}"#,
             );
         then.status(200)
             .header("Content-Type", "application/json")

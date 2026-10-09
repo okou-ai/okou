@@ -1,10 +1,10 @@
+import { modelUsageDisplayProviderSql } from "@okouai/db/runtime/model-usage-reporting";
 import {
   usageRecordKindSchema,
   type UsageRecordKind,
   type UsageRecordKindBreakdown,
 } from "@okouai/api-contracts/contracts/usage-record";
 import { inArray, sql, sum, type SQLWrapper } from "drizzle-orm";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
 
 import {
   pgInt8ToSafeIntegerDecoder,
@@ -42,21 +42,15 @@ export function usageBreakdownKindExpr(usage: FinalizedUsageRelation) {
 }
 
 /**
- * The name a usage row is shown under. Model usage of a run names the model
- * the run actually used (`agent_runs.selected_model`, joined by `run_id`):
- * the recorded provider is the `usage_pricing` identity, which for a Built-in
- * route with a pricing alias differs from the model. Stored usage keeps its
- * provider; only this projection changes. Other usage, and model usage
- * without a run (or whose run row is gone), keeps the recorded provider.
+ * Runtime-preset model observations keep their captured billing identity,
+ * including after Run deletion. Legacy model observations keep the selected
+ * model display projection; future selected Auto never replaces the billing
+ * provider with `auto`. Only reporting changes, not stored keys or settled
+ * amounts. Other usage keeps its own provider.
  * Callers must left join `agent_runs` on the usage row's `run_id`.
  */
 export function usageDisplayProviderExpr(usage: FinalizedUsageRelation) {
-  return sql`
-    CASE
-      WHEN ${usage.kind} = 'model' AND NULLIF(${agentRuns.selectedModel}, '') IS NOT NULL
-        THEN ${agentRuns.selectedModel}
-      ELSE COALESCE(NULLIF(${usage.provider}, ''), 'unknown')
-    END`.mapWith(pgTextDecoder);
+  return modelUsageDisplayProviderSql(usage).mapWith(pgTextDecoder);
 }
 
 export function usageCreditsExpr(usage: FinalizedUsageRelation) {

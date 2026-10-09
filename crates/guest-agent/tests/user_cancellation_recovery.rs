@@ -110,7 +110,7 @@ async fn run_scenario(scenario: Scenario) -> Result<(), Box<dyn std::error::Erro
     });
     let prepare = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/checkpoints/prepare-history")
+            .path("/api/webhooks/agent/session-history/prepare")
             .json_body_includes(format!(r#"{{"runId":"{}"}}"#, scenario.run_id));
         then.status(200)
             .header("Content-Type", "application/json")
@@ -131,7 +131,7 @@ async fn run_scenario(scenario: Scenario) -> Result<(), Box<dyn std::error::Erro
             .path("/api/webhooks/agent/complete")
             .header("Authorization", "Bearer test-token")
             .json_body_includes(format!(
-                r#"{{"runId":"{}","exitCode":1,"checkpoint":{{"cliAgentSessionId":"{}"}}}}"#,
+                r#"{{"runId":"{}","exitCode":1,"completion":{{"cliAgentSessionId":"{}"}}}}"#,
                 scenario.run_id, scenario.thread_id
             ));
         then.respond_with(move |_| {
@@ -158,7 +158,7 @@ async fn run_scenario(scenario: Scenario) -> Result<(), Box<dyn std::error::Erro
                 };
                 body.get("runId").and_then(serde_json::Value::as_str) == Some(scenario.run_id)
                     && body.get("exitCode").and_then(serde_json::Value::as_i64) == Some(1)
-                    && body.get("checkpoint").is_none()
+                    && body.get("completion").is_none()
             });
         then.respond_with(move |_| {
             fallback_complete_order

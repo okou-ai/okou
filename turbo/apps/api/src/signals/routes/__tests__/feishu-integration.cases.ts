@@ -11,6 +11,8 @@ import {
   randomUUID,
 } from "node:crypto";
 import { Buffer } from "node:buffer";
+import { Readable } from "node:stream";
+import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
@@ -51,7 +53,6 @@ import { extractFileFromTarGz } from "../../../lib/tar";
 import { server } from "../../../mocks/server";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
-import { seedLegacyPrivateDefaultAgentFixture } from "../../../test-fixtures/legacy-default-agent";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { now } from "../../../lib/time";
 import { createDeferredPromise } from "../../utils";
@@ -104,7 +105,6 @@ import { customConnectorsUpdateRoutes } from "../custom-connectors-update";
 import { customConnectorsValuesSetRoutes } from "../custom-connectors-values-set";
 import { feishuConnectRoutes } from "../feishu-connect";
 import { logsRoutes } from "../logs";
-import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
 
 const customConnectorByIdTestRoutes = Object.freeze([
   ...customConnectorsDeleteRoutes,
@@ -1156,7 +1156,6 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
 
   async function setupFeishuRunFixture(
     options: {
-      readonly useAlternateInstallationDefault?: boolean;
       readonly useSystemDefaultIdentity?: boolean;
     } = {},
   ): Promise<FeishuRunFixture> {
@@ -1194,26 +1193,10 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
         visibility: "public",
       }),
     ]);
-    const installationDefaultAgent = options.useAlternateInstallationDefault
-      ? alternateAgent
-      : defaultAgent;
-    const otherAgent = options.useAlternateInstallationDefault
-      ? defaultAgent
-      : alternateAgent;
     await runsApi.grantProEntitlement(actor);
     await runsApi.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
-    if (options.useAlternateInstallationDefault) {
-      const orgId = actor.orgId;
-      if (!orgId) {
-        throw new Error("Expected the Feishu actor to belong to an org");
-      }
-      await setOrgDefaultAgentFixture({
-        orgId,
-        agentId: installationDefaultAgent.agentId,
-      });
-    }
     mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
     const { callbackUrl, installationId } = await configureTestInstallation({
       appId,
@@ -1224,8 +1207,8 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
       appId,
       callbackUrl,
       installationId,
-      defaultAgentId: installationDefaultAgent.agentId,
-      alternateAgentId: otherAgent.agentId,
+      defaultAgentId: defaultAgent.agentId,
+      alternateAgentId: alternateAgent.agentId,
     };
   }
 
@@ -1409,17 +1392,57 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
     const headers = {
       authorization: `Bearer ${args.sandboxToken}`,
     };
-    await webhooksApi.requestAgentCheckpointPrepareHistory(
-      {
-        runId: args.runId,
-        hash: historyHash,
-        rawSize: historySize,
-        encodedSize: historySize,
-        encoding: "identity",
+    const presign = context.mocks.s3.getSignedUrl.getMockImplementation();
+    const transport = context.mocks.s3.send.getMockImplementation();
+    if (!presign || !transport) {
+      throw new Error("Expected the configured Feishu S3 transport");
+    }
+    let preparedKey: string | undefined;
+    context.mocks.s3.getSignedUrl.mockImplementation(
+      (client, command, options) => {
+        if (command instanceof PutObjectCommand) {
+          preparedKey = command.input.Key;
+        }
+        return presign(client, command, options);
       },
-      headers,
-      [200],
     );
+    const prepared = await webhooksApi
+      .requestAgentCheckpointPrepareHistory(
+        {
+          runId: args.runId,
+          hash: historyHash,
+          rawSize: historySize,
+          encodedSize: historySize,
+          encoding: "identity",
+        },
+        headers,
+        [200],
+      )
+      .finally(() => {
+        context.mocks.s3.getSignedUrl.mockImplementation(presign);
+      });
+    if (prepared.status !== 200) {
+      throw new Error("Expected the authorized history prepare to succeed");
+    }
+    expect(prepared.body.existing).toBeFalsy();
+    expect(prepared.body.presignedUrl).toBeTruthy();
+    const historyKey = requireValue(
+      preparedKey,
+      "Expected the history key from the authorized prepare",
+    );
+    // The Runner uploads these exact bytes at the key authorized by prepare.
+    context.mocks.s3.send.mockImplementation((command: unknown) => {
+      if (
+        command instanceof GetObjectCommand &&
+        command.input.Key === historyKey
+      ) {
+        return Promise.resolve({
+          Body: Readable.from([Buffer.from(args.history)]),
+          ContentLength: historySize,
+        });
+      }
+      return transport(command);
+    });
     if (args.assistantText !== undefined) {
       const assistantEvent = {
         type: "assistant" as const,
@@ -1648,6 +1671,7 @@ export function registerFeishuIntegrationTests(
       removeFeishuInstallation,
       expectRunSource,
       expectFeishuResourceDownloads,
+      startFeishuDmSession,
     } = createFeishuIntegrationFixture(platform);
     beforeEach(reset);
 
@@ -5558,9 +5582,87 @@ export function registerFeishuIntegrationTests(
 
     // oxlint-disable-next-line vitest/no-conditional-tests -- The entrypoint selects this group before collection.
     if (group === "conversation") {
+      it("retains platform run history when a model change starts a fresh session", async () => {
+        const fixture = await setupFeishuRunFixture();
+        const { actor, runnerGroup, appId, callbackUrl, defaultAgentId } =
+          fixture;
+        const providerThreadId = `omt_${randomUUID()}`;
+        await startFeishuDmSession(fixture, providerThreadId);
+        await createBddIntegrationApi(
+          context,
+        ).configureNativeSubscriptionModels(actor);
+        mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+        const threads = await accept(
+          setupApp({ context, routes: chatThreadRoutes })(
+            chatThreadsContract,
+          ).events({
+            headers: { authorization: "Bearer clerk-session" },
+            query: {},
+          }),
+          [200],
+        );
+        const thread = requireValue(
+          threads.body.events.find((event) => {
+            return event.kind === "created" && event.agentId === defaultAgentId;
+          }),
+          "Expected the integration chat thread",
+        );
+        await accept(
+          setupApp({ context, routes: chatThreadRoutes })(
+            chatThreadModelSelectionContract,
+          ).update({
+            headers: { authorization: "Bearer clerk-session" },
+            params: { id: thread.chatThreadId },
+            body: { model: "gpt-6-astra" },
+          }),
+          [204],
+        );
+        const prompt = "continue after changing model family";
+        await postEvent(
+          callbackUrl,
+          directMessage(appId, prompt, "ou_feishu_user", {
+            threadId: providerThreadId,
+          }),
+          { encrypted: true },
+        );
+        await flushWaitUntilForTest();
+        const run = await findRun(actor, prompt);
+        await expectRunSource(actor, run.id);
+        await runsApi.heartbeatRunner(runnerGroup);
+        const claim = await runsApi.claimRunnerJob(run.id);
+        expect(claim.resumeSession).toBeNull();
+        const events = await readProjectedChatEvents(context, {
+          threadId: thread.chatThreadId,
+          headers: { authorization: "Bearer clerk-session" },
+        });
+        expect(events).toContainEqual(
+          expect.objectContaining({
+            eventType: "input.prompt",
+            runId: run.id,
+            userMessage: expect.objectContaining({
+              parts: expect.arrayContaining([
+                expect.objectContaining({ type: "source", kind: platform }),
+              ]),
+            }),
+          }),
+        );
+        expect(claim.appendSystemPrompt).toContain(
+          `# ${provider.name} Run Context`,
+        );
+        expect(claim.appendSystemPrompt).toContain(
+          "User: start the Feishu DM session",
+        );
+        expect(claim.appendSystemPrompt).toContain(
+          "Assistant: Initial Feishu DM answer",
+        );
+        await runsApi.requestCancelRun(actor, run.id, [200]);
+        await flushWaitUntilForTest();
+        await removeFeishuInstallation(fixture);
+      });
+
       it("builds Feishu DM context and canonical response metadata", async () => {
         const fixture = await setupFeishuRunFixture({
-          useAlternateInstallationDefault: true,
+          useSystemDefaultIdentity: true,
         });
         const { actor, runnerGroup, appId, callbackUrl, defaultAgentId } =
           fixture;
@@ -5813,7 +5915,7 @@ export function registerFeishuIntegrationTests(
 
       it("keeps Feishu group control cases out of runs", async () => {
         const fixture = await setupFeishuRunFixture();
-        const { actor, appId, callbackUrl, defaultAgentId } = fixture;
+        const { actor, appId, callbackUrl } = fixture;
         const secondOpenId = "ou_feishu_canonical_group_user";
         const secondActor = authOrgApi.user({
           userId: `user_${randomUUID()}`,
@@ -5857,30 +5959,12 @@ export function registerFeishuIntegrationTests(
           }),
         ).toBeTruthy();
 
-        // Retain access-denial coverage for historical private defaults; current
-        // agent APIs reject this state, so it requires an explicit legacy fixture.
-        await seedLegacyPrivateDefaultAgentFixture(defaultAgentId);
-        await postEvent(
-          callbackUrl,
-          groupMessage(appId, "unavailable group task", {
-            openId: secondOpenId,
-          }),
-          { encrypted: true },
-        );
-        await flushWaitUntilForTest();
-        expect(
-          fixtureState.outboundMessages.some((message) => {
-            return messageContent(message).includes("Agent unavailable");
-          }),
-        ).toBeTruthy();
         const controlRuns = await listActiveFeishuRuns(secondActor);
         expect(
           controlRuns.some((run) => {
-            return [
-              "@Nova unconnected group task",
-              "@Nova /help",
-              "@Nova unavailable group task",
-            ].includes(run.prompt);
+            return ["@Nova unconnected group task", "@Nova /help"].includes(
+              run.prompt,
+            );
           }),
         ).toBeFalsy();
       });
@@ -6389,7 +6473,6 @@ export function registerSharedFeishuConversationTests(): void {
   describe("shared Feishu/Lark conversation and queue behavior", () => {
     const platform = "feishu";
     const {
-      provider,
       connectContract,
       reset,
       fixtureState,
@@ -6440,67 +6523,6 @@ export function registerSharedFeishuConversationTests(): void {
         }),
         [200],
       );
-    });
-
-    it("retains platform run history when a model change starts a fresh session", async () => {
-      const fixture = await setupFeishuRunFixture();
-      const { actor, runnerGroup, appId, callbackUrl, defaultAgentId } =
-        fixture;
-      const providerThreadId = `omt_${randomUUID()}`;
-      await startFeishuDmSession(fixture, providerThreadId);
-      await allowFeishuGptModel(actor);
-      mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-      const threads = await accept(
-        setupApp({ context, routes: chatThreadRoutes })(
-          chatThreadsContract,
-        ).events({
-          headers: { authorization: "Bearer clerk-session" },
-          query: {},
-        }),
-        [200],
-      );
-      const thread = requireValue(
-        threads.body.events.find((event) => {
-          return event.kind === "created" && event.agentId === defaultAgentId;
-        }),
-        "Expected the integration chat thread",
-      );
-      await accept(
-        setupApp({ context, routes: chatThreadRoutes })(
-          chatThreadModelSelectionContract,
-        ).update({
-          headers: { authorization: "Bearer clerk-session" },
-          params: { id: thread.chatThreadId },
-          body: { model: "gpt-6-astra" },
-        }),
-        [204],
-      );
-      const prompt = "continue after changing model family";
-      await postEvent(
-        callbackUrl,
-        directMessage(appId, prompt, "ou_feishu_user", {
-          threadId: providerThreadId,
-        }),
-        { encrypted: true },
-      );
-      await flushWaitUntilForTest();
-      const run = await findRun(actor, prompt);
-      await expectRunSource(actor, run.id);
-      await runsApi.heartbeatRunner(runnerGroup);
-      const claim = await runsApi.claimRunnerJob(run.id);
-      expect(claim.resumeSession).toBeNull();
-      expect(claim.appendSystemPrompt).toContain(
-        `# ${provider.name} Run Context`,
-      );
-      expect(claim.appendSystemPrompt).toContain(
-        "User: start the Feishu DM session",
-      );
-      expect(claim.appendSystemPrompt).toContain(
-        "Assistant: Initial Feishu DM answer",
-      );
-      await runsApi.requestCancelRun(actor, run.id, [200]);
-      await flushWaitUntilForTest();
-      await removeFeishuInstallation(fixture);
     });
 
     async function allowFeishuGptModel(actor: ApiTestUser): Promise<void> {

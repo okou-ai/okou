@@ -65,7 +65,7 @@ Allowance contraction does not transfer, forgive or otherwise alter these liabil
 ## Allowance data removed
 
 The owner confirmed that only the Okou team received Allowance and requested
-complete deletion of that history. Migration 1347 drops the entitlement, window
+complete deletion of that history. Migration 1356 drops the entitlement, window
 and allocation tables and the hourly Allowance columns. No serving code issues,
 reads, refreshes, reserves or consumes Allowance. Reports sum only recorded
 `creditsCharged`; this contraction does not change wallets or ordinary usage facts, and processed

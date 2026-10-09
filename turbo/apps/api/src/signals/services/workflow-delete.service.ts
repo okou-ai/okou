@@ -1,6 +1,6 @@
 import { nowDate } from "../../lib/time";
 import {
-  ensurePublicationGenerations,
+  publicationGenerationValues,
   retirePublicationSql,
   lockPublicationScopeSql,
   workflowPublicationKey,
@@ -15,11 +15,12 @@ import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 
-import type { Tx } from "../../lib/db-types";
 import { env } from "../../lib/env";
 import { writeDb$ } from "../external/db";
 import { reconcileAutomationEventWatches$ } from "./automation-event-watch-lifecycle.service";
-import { lockAcceptedOfficialWorkflowCatalog } from "./official-workflow-catalog-read.service";
+import { acceptedOfficialWorkflowCatalogReadPlan } from "./official-workflow-catalog-read.service";
+import { officialWorkflowCatalogState } from "@okouai/db/schema/official-workflow-catalog";
+import { storagePublicationGenerations } from "@okouai/db/schema/storage-publication-fence";
 import { purgeDeletedStoragePrefix$ } from "./storage-prefix-purge.service";
 
 interface DeleteWorkflowInput {
@@ -33,38 +34,6 @@ interface DeleteWorkflowInput {
 interface DeleteOrphanedWorkflowVolumeInput {
   readonly orgId: string;
   readonly workflowId: string;
-}
-
-async function retireDeletedWorkflowPublications(
-  tx: Tx,
-  args: {
-    readonly orgId: string;
-    readonly workflow: {
-      readonly id: string;
-      readonly agentId: string;
-      readonly name: string;
-      readonly ownerUserId: string;
-      readonly officialDefinitionName: string | null;
-    };
-  },
-): Promise<void> {
-  // A Workflow can have an abandoned obligation in either scope after a
-  // visibility transition or a stale update. Settle both in one deterministic
-  // @agent → user order.
-  const scopes = [
-    { orgId: args.orgId, agentId: args.workflow.agentId },
-    {
-      orgId: args.orgId,
-      agentId: args.workflow.agentId,
-      userId: args.workflow.ownerUserId,
-    },
-  ] as const;
-  await ensurePublicationGenerations(tx, scopes);
-  const publicationKey = workflowPublicationKey(args.workflow.id);
-  for (const scope of scopes) {
-    await tx.execute(lockPublicationScopeSql(scope, nowDate()));
-    await tx.execute(retirePublicationSql(scope, publicationKey));
-  }
 }
 
 /**
@@ -138,57 +107,65 @@ export const deleteOrphanedWorkflowVolume$ = command(
   },
 );
 
-async function lockWorkflowForDeletion(tx: Tx, args: DeleteWorkflowInput) {
-  const [observed] = await tx
-    .select({ agentId: workflows.agentId })
-    .from(workflows)
-    .where(
-      and(eq(workflows.orgId, args.orgId), eq(workflows.id, args.workflowId)),
-    )
-    .limit(1);
-  if (!observed) {
-    return undefined;
-  }
-
-  if (args.serializeOfficialLifecycle === true) {
-    await lockAcceptedOfficialWorkflowCatalog(tx);
-  }
-  const [agent] = await tx
-    .select({ id: agents.id })
-    .from(agents)
-    .where(and(eq(agents.id, observed.agentId), eq(agents.orgId, args.orgId)))
-    .for("key share")
-    .limit(1);
-  if (!agent) {
-    return undefined;
-  }
-  const [workflow] = await tx
-    .select({
-      id: workflows.id,
-      agentId: workflows.agentId,
-      name: workflows.name,
-      ownerUserId: workflows.ownerUserId,
-      officialDefinitionName: workflows.officialDefinitionName,
-      officialInstallationState: workflows.officialInstallationState,
-    })
-    .from(workflows)
-    .where(
-      and(eq(workflows.orgId, args.orgId), eq(workflows.id, args.workflowId)),
-    )
-    .for("update")
-    .limit(1);
-
-  return workflow;
+function workflowDeletionColumns() {
+  return {
+    id: workflows.id,
+    agentId: workflows.agentId,
+    name: workflows.name,
+    ownerUserId: workflows.ownerUserId,
+    officialDefinitionName: workflows.officialDefinitionName,
+    officialInstallationState: workflows.officialInstallationState,
+  };
 }
-export const deleteWorkflow$ = command(
-  async (
-    { set },
-    args: DeleteWorkflowInput,
-    signal: AbortSignal,
-  ): Promise<boolean> => {
+
+const deleteWorkflowRows$ = command(
+  async ({ set }, args: DeleteWorkflowInput, signal: AbortSignal) => {
     const writeDb = set(writeDb$);
     const result = await writeDb.transaction(async (tx) => {
-      const workflow = await lockWorkflowForDeletion(tx, args);
+      const [observed] = await tx
+        .select({ agentId: workflows.agentId })
+        .from(workflows)
+        .where(
+          and(
+            eq(workflows.orgId, args.orgId),
+            eq(workflows.id, args.workflowId),
+          ),
+        )
+        .limit(1);
+      if (!observed) {
+        return { deleted: false as const };
+      }
+
+      if (args.serializeOfficialLifecycle === true) {
+        await tx
+          .select({ authority: officialWorkflowCatalogState.authority })
+          .from(officialWorkflowCatalogState)
+          .where(acceptedOfficialWorkflowCatalogReadPlan().condition)
+          .for("share");
+      }
+      const [agent] = await tx
+        .select({ id: agents.id })
+        .from(agents)
+        .where(
+          and(eq(agents.id, observed.agentId), eq(agents.orgId, args.orgId)),
+        )
+        .for("key share")
+        .limit(1);
+      if (!agent) {
+        return { deleted: false as const };
+      }
+      const [workflow] = await tx
+        .select(workflowDeletionColumns())
+        .from(workflows)
+        .where(
+          and(
+            eq(workflows.orgId, args.orgId),
+            eq(workflows.id, args.workflowId),
+          ),
+        )
+        .for("update")
+        .limit(1);
+
       if (!workflow) {
         return { deleted: false as const };
       }
@@ -233,10 +210,24 @@ export const deleteWorkflow$ = command(
       if (storage) {
         await tx.delete(storages).where(eq(storages.id, storage.id));
       }
-      await retireDeletedWorkflowPublications(tx, {
-        orgId: args.orgId,
-        workflow,
-      });
+      // Settle both possible publication scopes in deterministic @agent → user order.
+      const scopes = [
+        { orgId: args.orgId, agentId: workflow.agentId },
+        {
+          orgId: args.orgId,
+          agentId: workflow.agentId,
+          userId: workflow.ownerUserId,
+        },
+      ] as const;
+      await tx
+        .insert(storagePublicationGenerations)
+        .values(publicationGenerationValues(scopes))
+        .onConflictDoNothing();
+      const publicationKey = workflowPublicationKey(workflow.id);
+      for (const scope of scopes) {
+        await tx.execute(lockPublicationScopeSql(scope, nowDate()));
+        await tx.execute(retirePublicationSql(scope, publicationKey));
+      }
       return {
         deleted: true as const,
         s3Prefix: storage?.s3Prefix ?? null,
@@ -244,6 +235,17 @@ export const deleteWorkflow$ = command(
       };
     });
     signal.throwIfAborted();
+    return result;
+  },
+);
+
+export const deleteWorkflow$ = command(
+  async (
+    { set },
+    args: DeleteWorkflowInput,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const result = await set(deleteWorkflowRows$, args, signal);
     if (!result.deleted) {
       return false;
     }

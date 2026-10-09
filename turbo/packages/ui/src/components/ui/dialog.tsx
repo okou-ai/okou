@@ -103,6 +103,8 @@ interface DialogContentProps extends Omit<
   "className" | "style" | "render"
 > {
   readonly closeLabel?: string;
+  /** Keep overlays inside a native fullscreen host when one owns the viewer. */
+  readonly portalContainer?: DialogPrimitive.Portal.Props["container"];
   /** Styles the inner layout; viewport bounds and vertical scrolling stay owned here. */
   readonly contentClassName?: string;
   /** Maximum width; the available safe viewport may be narrower. */
@@ -124,6 +126,7 @@ const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
       children,
       contentClassName,
       closeLabel = "Close",
+      portalContainer,
       maxWidth = "lg",
       smMaxWidth,
       height = "content",
@@ -137,7 +140,10 @@ const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
     ref,
   ) => {
     return (
-      <DialogPortal>
+      <DialogPortal
+        container={portalContainer}
+        className={portalContainer ? "relative z-50" : undefined}
+      >
         <DialogOverlay className={overlayClassName} forceRender />
         <DialogPrimitive.Viewport
           data-slot="dialog-viewport"
