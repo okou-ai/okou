@@ -115,7 +115,9 @@ function receiptFrom(stdout: string) {
     1,
     "The audit must emit exactly one aggregate receipt",
   );
-  const receipt = receiptSchema.parse(JSON.parse(lines[0] ?? ""));
+  const [line] = lines;
+  assert.ok(line);
+  const receipt = receiptSchema.parse(JSON.parse(line));
   assert.ok(Date.parse(receipt.finished_at) >= Date.parse(receipt.observed_at));
   return receipt;
 }
@@ -169,8 +171,11 @@ try {
   assert.equal(settings.code, 0, settings.stderr);
   const lines = settings.stdout.trim().split("\n");
   assert.equal(lines.length, 2);
-  receiptFrom(lines[0] ?? "");
-  assert.deepEqual(JSON.parse(lines[1] ?? ""), {
+  const [receiptLine, settingsLine] = lines;
+  assert.ok(receiptLine);
+  assert.ok(settingsLine);
+  receiptFrom(receiptLine);
+  assert.deepEqual(JSON.parse(settingsLine), {
     read_only: "on",
     isolation: "repeatable read",
     statement_timeout: "30s",
