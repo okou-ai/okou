@@ -77,6 +77,36 @@ credential-free `api_allow` behavior and therefore may receive the MCP service's
 OAuth challenge until replaced. Production-entrypoint coverage is in
 `tests/test_request_handler_api_admission.py`.
 
+## Credential preparation and connection lifetime
+
+Async credential resolution and catalog waits do not require the original
+upstream socket to stay open. Before applying credentials or continuing to the
+provider, HTTP hooks revalidate trusted authority, method/scheme, current run,
+firewall owner, permission, route and host policy. A connected destination still
+passes ordinary endpoint admission; a live socket alone is not authorization.
+
+For an authorized, non-streamed HTTPS request without a live upstream, secure
+TLS must remain enabled. The addon selects the validated hostname through the
+public `request.host` field and preserves wire Host/`:authority` and body. Normal
+mitmproxy acquisition/pooling and upstream certificate-chain/hostname validation
+own the next connection and first send. The addon does not replace a Server,
+intercept a private before-send event or retry/replay a request. HTTP flow errors,
+errored live upstreams and already-streamed/ambiguously-forwarded requests remain
+rejected. An unavailable original Server's acquisition error alone is not an HTTP
+flow error or permission revocation; eligible preparation leaves that error intact
+and delegates the transport outcome to normal acquisition and verified TLS.
+
+TLS identity is separate from public routability. `publicDestination` retains
+its concrete endpoint policy and still-valid pending-binding path. A lost binding
+or failed pending acquisition without replacement endpoint evidence stays fail
+closed; fresh DNS or valid TLS
+is not public-IP proof. `auth.base` retains its owned forwarder. Global eager
+connections, server-first TCP and existing auth deadlines are unchanged.
+Reclassification preserves the pre-injection network-log target, including after
+catalog waits, so managed query credentials are not logged. The addon is embedded
+in Runner; enforcement requires normal replacement/drain of older instances,
+without an API, CLI, registry or database migration.
+
 ## Ordinary connector firewall owner selection
 
 Outside the platform API admission path, the addon first gathers active firewall
