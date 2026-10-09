@@ -68,6 +68,10 @@ import { customConnectorPermissionBundleDependencySlug } from "./custom-connecto
 import type { AgentConnectorSelection } from "./execution-agent-connectors.service";
 import { createAgentSelectionContext } from "./execution-agent-selection-context.service";
 import type { SelectedAgentWorkflow } from "./execution-agent-workflows.service";
+import {
+  createWorkflowSkills,
+  type WorkflowSkills,
+} from "./workflow-skills.service";
 import type { ConnectorPermissionGrant } from "./execution-connector-permissions.service";
 import {
   contextJsonProjection,
@@ -137,6 +141,7 @@ export interface AgentRunContextSignals {
   readonly workflows$: Computed<Promise<readonly SelectedAgentWorkflow[]>>;
   readonly officialCatalog$: ReturnType<typeof createOfficialWorkflowCatalog>;
   readonly officialWorkflows$: Computed<Promise<OfficialWorkflowContextFacts>>;
+  readonly workflowSkills$: Computed<Promise<WorkflowSkills>>;
   readonly storage$: Computed<Promise<AgentStorageContext>>;
   readonly storageCache$: Computed<
     Promise<{
@@ -481,6 +486,7 @@ function createIdentityContext(
         )
       : null;
   });
+  const workflowSkills$ = createWorkflowSkills(workflows$, officialWorkflows$);
   const storage$ = computed(async (get): Promise<AgentStorageContext> => {
     const plan = agentStorageReadPlan(
       scope,
@@ -535,6 +541,7 @@ function createIdentityContext(
     workflows$,
     officialCatalog$,
     officialWorkflows$,
+    workflowSkills$,
     storage$,
     storageCache$,
     featureSwitches$: featureSwitchContext$,
@@ -575,6 +582,7 @@ export const preloadAgentRunContext$ = command(
       signals.permissionGrants$,
       signals.workflows$,
       signals.officialWorkflows$,
+      signals.workflowSkills$,
       signals.storageCache$,
       signals.featureSwitches$,
       signals.disabledPaidTools$,

@@ -5108,6 +5108,13 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         // The personal Codex route launches a Pi turn rather than a native job.
         expect(claim.cliAgentType).toBe("pi");
+        const appendSystemPrompt = claim.appendSystemPrompt ?? "";
+        expect(appendSystemPrompt).toMatch(
+          /^# Agent Identity$[\s\S]+^# Execution Time Limit$[\s\S]+^# Agent Tools$[\s\S]+^# Current User Info$/mu,
+        );
+        expect(appendSystemPrompt.match(/^# Agent Identity$/gmu)).toHaveLength(
+          1,
+        );
         expect(claim.piModelConfig).toMatchObject({
           provider: "openai-codex",
           model: selectedModel,
@@ -10940,6 +10947,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const claim = await api.claimRunnerJob(run.runId);
 
         const appendSystemPrompt = claim.appendSystemPrompt ?? "";
+        expect(appendSystemPrompt).toMatch(
+          /^# Agent Identity$[\s\S]+^# Execution Time Limit$[\s\S]+^# Agent Tools$[\s\S]+^# Current User Info$/mu,
+        );
         expect(appendSystemPrompt).toContain("# Agent Identity");
         expect(appendSystemPrompt).toContain("Your name is Research Bot.");
         expect(appendSystemPrompt).toContain(
