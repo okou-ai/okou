@@ -2,7 +2,7 @@ import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context
 import { computed, type Computed } from "ccstate";
 import { eq } from "drizzle-orm";
 import { db$ } from "../external/db";
-import type { ThreadPromptSource } from "./thread-run-prompt/types";
+import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 
 type ThreadAutomationContext = Readonly<
   Pick<
@@ -20,14 +20,14 @@ type ThreadAutomationContext = Readonly<
 >;
 
 export function createThreadAutomationContext(
-  source$: Computed<Promise<ThreadPromptSource | null>>,
+  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
 ): Computed<Promise<ThreadAutomationContext | null>> {
   return computed(async (get) => {
-    const source = await get(source$);
+    const pickedEvent = await get(pickedEvent$);
     if (
-      !source ||
-      source.event.contextType !== "automation" ||
-      source.event.contextId === null
+      !pickedEvent ||
+      pickedEvent.contextType !== "automation" ||
+      pickedEvent.contextId === null
     ) {
       return null;
     }
@@ -41,12 +41,12 @@ export function createThreadAutomationContext(
         connectorSourceId: chatAutomationContext.connectorSourceId,
       })
       .from(chatAutomationContext)
-      .where(eq(chatAutomationContext.id, source.event.contextId))
+      .where(eq(chatAutomationContext.id, pickedEvent.contextId))
       .limit(1);
     return context
       ? {
-          id: source.event.id,
-          chatThreadId: source.chatThreadId,
+          id: pickedEvent.id,
+          chatThreadId: pickedEvent.chatThreadId,
           ...context,
         }
       : null;
