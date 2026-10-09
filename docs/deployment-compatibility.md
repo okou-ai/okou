@@ -698,17 +698,10 @@ remaining sync schemas (failure code and attempt report) now live in
 `contracts/connector-catalog-sync`. Sync behavior (accept, unchanged, reject,
 and keeping the serving pointer after a rejection) is unchanged.
 
-The release workflow's best-effort post-deploy call now logs
-`{ outcome, failureCode }` and warns when `outcome` is neither `accepted` nor
-`unchanged` (a rejection, or a missing outcome). It still never fails the
-deploy. The step calls the API deployment it just created from the same
-commit (`steps.deploy.outputs.url`), so the workflow and the API agree on the
-response. The check only needs `outcome`, which pre-change API builds also
-return (alongside extra diagnostics fields the summary ignores), so a rerun or
-rollback that pairs this workflow with an older API still works. An empty
-generation is no longer
-reported by this check; query the masked database for it. The Vercel cron
-ignores the response body.
+The release workflow no longer calls the production catalog synchronizer after
+API deployment. The hourly Vercel cron owns scheduled publication and ignores
+the response body. Query the masked database for the serving generation and
+entry count; there is no release-time catalog readiness check.
 
 There are no schema, data or writer behavior changes.
 
@@ -941,17 +934,18 @@ captured generation, as if the user had never authorized it, and Runner
 runtime sync reports the target `absent`. Run launch omits it while the
 connector stays enabled.
 
-**Known, accepted behavior: brief pointer regression between two writers.**
-Two callers run the writer: the hourly cron and the release workflow's
-post-deploy sync. Each reads `connectors/v4/active.json` independently and
-last writer wins. If the publication advances between their reads and the
-writer holding the older publication commits last, the pointer briefly returns
-to the previous complete generation; the next hourly sync republishes the
-newer one. Readers always see a complete generation and Pi invalidation
-follows each actual switch. Runtime wakeups compare against the generation the
-writer read before publishing, so a connector that differs only between the
-two newer publications may wait for that next sync to wake its Runs. Ethan accepted this (2026-10-07); there is
-no compare-and-swap or monotonic guard.
+**Publication cadence and concurrent callers.** The hourly cron is the only
+scheduled production publisher. API releases no longer invoke the synchronizer;
+a new official publication may wait until the next hourly attempt. Preview
+initialization remains separate and does not target production.
+
+The authenticated sync endpoint remains available for operator calls. Overlapping
+attempts still read `connectors/v4/active.json` independently and last writer wins;
+removing the release caller does not serialize all possible calls. If an older
+publication commits last, the pointer can briefly return to the previous complete
+generation until the next hourly sync. Readers always see a complete generation,
+and runtime wakeups follow actual pointer switches. No compare-and-swap or
+monotonic guard is introduced.
 
 **Final catalog architecture.** The former staged v4 rollout guide is removed;
 its still-current content is:
@@ -994,7 +988,7 @@ immutable entries `connector_catalog_entries(hash, slug, payload)` with
 and payloads, including generations captured by Runs, Pi contexts and
 permission baselines, are kept unchanged and stay readable by hash.
 
-**Writer.** `/api/cron/sync-connector-catalog` (hourly, plus the release
+**Writer.** `/api/cron/sync-connector-catalog` (hourly; no production release
 workflow call) downloads `connectors/v4/active.json` with a plain GET. A
 pointer whose digest equals the serving hash is `unchanged` without downloading
 the catalog, because only complete, validated generations are ever published.
@@ -1030,13 +1024,11 @@ fallback. The connectors package drops its now-unused gzip snapshot codec.
 made. `state` is `stale` when that attempt was rejected while a pointer
 serves. `lastAttempt`, `lastSuccessAt`, `rejectedCandidate` and
 `active.activatedAt` are removed. (`active.catalogVersion`, then a hash
-alias, was removed by the [Release 2 follow-up](#connector-catalog-release-2-follow-up).) The release workflow's post-deploy call logs
-`outcome`, `failureCode`, `state` and `pointer.entryCount`; its readiness check
-(`state == "current"`, `active != null`, `filtering.stale == false`) keeps its
-meaning and remains a best-effort warning that never fails the deploy. Staff
-diagnostics are unchanged. (The cron sync response was later reduced to
-`outcome` and `failureCode`, and the readiness check to `outcome`; see
-[diagnostics removal](#connector-catalog-diagnostics-removed-2026-10-07).) The preview seed response keeps
+alias, was removed by the [Release 2 follow-up](#connector-catalog-release-2-follow-up).) The cron sync response was later reduced to
+`outcome` and `failureCode`; see
+[diagnostics removal](#connector-catalog-diagnostics-removed-2026-10-07).
+The production release workflow no longer calls the synchronizer or consumes
+its report. The preview seed response keeps
 `catalogVersion` (the validated publication label, which is not stored),
 `catalogDigest` and the sorted `connectorSlugs` of the validated publication,
 so the CI preview workflow is unchanged.
