@@ -23,14 +23,16 @@ teardown() {
 }
 
 assert_auto_context() {
-    runner_api_curl "/api/runs/$1/context" | jq -e '
+    local context
+    context=$(runner_e2e_wait_for_run_context "$1") || return
+    jq -e '
         .cliAgentType == "pi" and
         .environment.OPENAI_BASE_URL == "https://openrouter.ai/api/v1" and
         .environment.OPENAI_MODEL == "@preset/okou-1-0" and
         any(.firewalls[]?;
             .kind == "builtin" and .name == "model-provider:openrouter-codex"
         )
-    '
+    ' <<<"$context"
 }
 
 @test "auto preserves session continuity and its OpenRouter route on a successor" {
