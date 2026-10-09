@@ -80,7 +80,7 @@ input is never replayed after a timeout. Background updates also wait until the
 host has been idle for 30 minutes. Required upgrades bypass that grace while
 still waiting for claimed commands, completion reports, and host cleanup.
 
-See [the minimum version policy](../docs/desktop-version-policy.md) for the
+See [the minimum version policy](https://github.com/okou-ai/okou/blob/9813db4b51faa42c982dcfec1720caf5bd5b1b82/docs/desktop-version-policy.md) for the
 default-disabled deployment floor, visible upgrade states, and activation gates.
 
 ## Release
@@ -109,5 +109,5 @@ Local sign-out drains claimed work before ending the SDK session. Remote
 revocation can prevent result reporting: the local command log retains the
 execution result, the server command times out, and native input is never replayed.
 
-See [the authentication contract](../docs/desktop-session-auth.md) for remote
+See [the authentication contract](https://github.com/okou-ai/okou/blob/9813db4b51faa42c982dcfec1720caf5bd5b1b82/docs/desktop-session-auth.md) for remote
 revocation, mixed-version behavior, and acceptance steps.

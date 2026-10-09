@@ -12,7 +12,7 @@ import {
 
 /** Content-free reconciliation identity; deliberately independent of content FKs.
  * A run with no incurred or outstanding billing obligation is provisional, not
- * permanently retained evidence. See docs/database/billing-attribution.md.
+ * permanently retained evidence.
  */
 export const billingRunAttribution = pgTable(
   "billing_run_attribution",

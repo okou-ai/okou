@@ -49,7 +49,7 @@ export class MemberRoleRefreshUnavailableError extends Error {
 }
 
 // Process-local only. The database remains the sole positive cache. Cold
-// instances can each refresh a key; see docs/membership-refresh.md for bounds.
+// instances can each refresh a key under this owner's capacity and retry bounds.
 const memberRoleRefreshes = singleton(() => {
   return {
     active: new Map<string, MemberRoleRefresh>(),

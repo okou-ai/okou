@@ -52,7 +52,7 @@ rejects stale base protection along with its existing quiescence checks.
 
 Runner and Guest binaries ship together; existing draining artifacts retain their
 old policy and do not adopt another artifact's sandbox. See
-[deployment compatibility](deployment-compatibility.md#runner-process-drain).
+[deployment compatibility](deployment-compatibility.md#drain-and-rollback-gates).
 
 Resource-policy validation must include real native progress and compiler outcomes,
 control delivery/high output, checkpoint/finalization, cancellation, cleanup and

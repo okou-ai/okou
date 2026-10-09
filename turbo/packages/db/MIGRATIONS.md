@@ -52,7 +52,7 @@ expired transition validator must be deleted.
 The #32575 cleanup removes the invitation transition validators and frozen
 outgoing API fixture after migration `1137_retire_legacy_invitation_columns`
 from #34317 shipped in API 1.604.0 / App 0.900.0. The
-[production receipt](../../../docs/deployment-compatibility.md#legacy-invitation-column-contraction-2026-09-15)
+[production receipt](https://github.com/okou-ai/okou/blob/9813db4b51faa42c982dcfec1720caf5bd5b1b82/docs/deployment-compatibility.md#legacy-invitation-column-contraction-2026-09-15)
 records release #34303, the real production migration completion at
 2026-09-15 10:31:12.0275988 UTC, and the immutable runner/SQL evidence establishing
 the committed journal frontier `1789460587817` and column contraction. It also
@@ -152,7 +152,7 @@ are enforced by the integration ingress tests.
   migration-to-promotion serving boundary. Keep the validator until the production contraction
   and serving/rollback drain satisfy the transition gates above. Shipped SQL and
   snapshots remain immutable. See
-  [deployment compatibility](../../../docs/deployment-compatibility.md#organization-usage-allowance-retired).
+  [deployment compatibility](https://github.com/okou-ai/okou/blob/9813db4b51faa42c982dcfec1720caf5bd5b1b82/docs/deployment-compatibility.md#organization-usage-allowance-retired).
 - `scripts/test-oauth-contract-hash-retirement.ts` protects migration
   `1354_retire_oauth_contract_hash`: both physical hash columns disappear,
   multiple historical registrations for the same method/issuer and their exact
@@ -323,7 +323,7 @@ records the evidence and its limits:
    The later [#33307](https://github.com/vm0-ai/vm0/pull/33307), merged by Ethan,
    completed contraction and promoted API 1.582.0 / App 0.884.1 at
    `9c777819776d2bed0cfdb110653e46dcaffc0e8b`. The accepted physical absence and
-   [S1 plus combined-S4 rollback floors](../../../docs/deployment-compatibility.md#okou-goal-retirement-rollback-floor)
+   [S1 plus combined-S4 rollback floors](https://github.com/okou-ai/okou/blob/9813db4b51faa42c982dcfec1720caf5bd5b1b82/docs/deployment-compatibility.md#okou-goal-retirement-rollback-floor)
    close the Goal schema transition; those floors remain in force.
 3. **Permanent surviving coverage:**
    [migration consistency](scripts/test-migration-consistency-schema.ts) retains
@@ -339,7 +339,7 @@ and [1105/1106 validator](https://github.com/vm0-ai/vm0/blob/1cd69b0219c6fe67b7d
 remain immutable historical evidence for replay, locks and the measured census.
 Keep shipped SQL, snapshots, journal and numbered external-data operation 014
 (including its original README/code/exports) unchanged. The
-[completed 014 record](../../../docs/goal-archive-search-recovery.md) is not an
+[completed 014 record](https://github.com/okou-ai/okou/blob/9813db4b51faa42c982dcfec1720caf5bd5b1b82/docs/goal-archive-search-recovery.md) is not an
 execution entry for the contracted schema. Unrelated transition validators and
 the complete migration consistency command remain active.
 
@@ -360,7 +360,7 @@ while the previous API drains is accepted by explicit owner decision
 (2026-10-07). The production rollback resolver enforces a floor on the
 first-parent `main` commit that adds 1343. Numbered operation 017 remains as a
 historical record and no longer has tables to act on. See
-[deployment compatibility](../../../docs/deployment-compatibility.md#pi-stable-context-tables-retired-2026-10-07).
+[deployment compatibility](https://github.com/okou-ai/okou/blob/9813db4b51faa42c982dcfec1720caf5bd5b1b82/docs/deployment-compatibility.md#pi-stable-context-tables-retired-2026-10-07).
 
 ## Model catalog
 
@@ -369,7 +369,7 @@ families: fixed Auto (`okou-1.0` on `openrouter-codex`), personal Claude/Codex
 subscriptions, and the independent OpenRouter DeepSeek memory binding.
 Historical catalog metadata and pricing remain unchanged; active metadata
 without a route does not grant execution. See
-[cleanup boundaries](../../../docs/retired-model-route-cleanup.md).
+[cleanup boundaries](https://github.com/okou-ai/okou/blob/9813db4b51faa42c982dcfec1720caf5bd5b1b82/docs/retired-model-route-cleanup.md).
 
 Migration `1347_pi_memory_luna_route` restores the managed OpenRouter Luna
 binding. Migration `1353_retire_deepseek_memory_route` subsequently deletes
@@ -377,7 +377,7 @@ only DeepSeek V4.1 Flash execution routes after the production drain gate.
 Luna APIs work both before and after deletion; rollback requires #38129's
 Luna routing commit. Historical model metadata and all usage/pricing are
 unchanged. See the
-[retirement receipt and deployment contract](../../../docs/deployment-compatibility.md#deepseek-memory-execution-retirement-2026-10-08).
+[retirement receipt and deployment contract](https://github.com/okou-ai/okou/blob/9813db4b51faa42c982dcfec1720caf5bd5b1b82/docs/deployment-compatibility.md#deepseek-memory-execution-retirement-2026-10-08).
 
 Migrations `1330_drop_retired_model_configuration_columns` and
 `1331_delete_organization_model_provider_rows` contract the remaining model
@@ -402,7 +402,7 @@ Migration `1332_drop_chat_thread_provider_pin_columns` then drops the legacy
 `selected_model`. It has the same rollout constraint and its own rollback
 floor keyed to the commit that added 1332. Its owner-accepted interruption is
 recorded in
-[deployment compatibility](../../../docs/deployment-compatibility.md#legacy-chat-thread-provider-pin-columns-dropped).
+[deployment compatibility](https://github.com/okou-ai/okou/blob/9813db4b51faa42c982dcfec1720caf5bd5b1b82/docs/deployment-compatibility.md#legacy-chat-thread-provider-pin-columns-dropped).
 
 Migration `1333_drop_dead_model_provider_columns` drops the remaining constant
 model configuration columns: `model_providers.auth_method`, `is_default` (with
@@ -425,7 +425,7 @@ Migration `1336_retire_ultrafast_data` clears stored Ultrafast selections from
 route tiers to `priority` and adds the thread and member service tier checks
 `NOT VALID` with a separate `VALIDATE`, per the online constraint rule below.
 See
-[deployment compatibility](../../../docs/deployment-compatibility.md#ultrafast-service-tier-retired-2026-10-07).
+[deployment compatibility](https://github.com/okou-ai/okou/blob/9813db4b51faa42c982dcfec1720caf5bd5b1b82/docs/deployment-compatibility.md#ultrafast-service-tier-retired-2026-10-07).
 
 Migration `1338_retire_model_route_state` drops
 `built_in_model_candidate_cooldown`; Auto no longer cools its route down after a
@@ -436,7 +436,7 @@ while a pre-1338 API drains, recorded in deployment compatibility. The
 production rollback resolver enforces this as a floor on the first-parent
 `main` commit that adds 1338. The permanent `test-built-in-model-cooldown-permanent.ts` validator is
 deleted with the table it checked. See
-[deployment compatibility](../../../docs/deployment-compatibility.md#built-in-model-candidate-cooldown-removed-2026-10-07).
+[deployment compatibility](https://github.com/okou-ai/okou/blob/9813db4b51faa42c982dcfec1720caf5bd5b1b82/docs/deployment-compatibility.md#built-in-model-candidate-cooldown-removed-2026-10-07).
 
 Migration `1337_retire_unused_model_route_data` clears data no live reader
 uses: `run_model_catalog.pi_route_class` values other than `gpt-codex`,
@@ -457,7 +457,7 @@ rolling-compatible contraction; Ethan explicitly accepted (2026-10-07) the bound
 deployment compatibility. The
 production rollback resolver enforces a floor on the first-parent `main` commit
 that adds 1338. See
-[deployment compatibility](../../../docs/deployment-compatibility.md#frozen-model-provider-state-dropped-2026-10-07).
+[deployment compatibility](https://github.com/okou-ai/okou/blob/9813db4b51faa42c982dcfec1720caf5bd5b1b82/docs/deployment-compatibility.md#frozen-model-provider-state-dropped-2026-10-07).
 
 The 1325–1327 transition validators (`test-custom-model-retirement.ts`,
 `test-retired-model-route-cleanup.ts`) were removed after those migrations
@@ -525,7 +525,7 @@ Built-in route) and backfills the configured long-context routes to 272001. It i
 (the catalog has tens of routes) and changes no price. Apply it before
 promoting the API; the previous API does not select the column. Runner
 compatibility of the captured value is in
-[deployment compatibility](../../../docs/deployment-compatibility.md#long-context-threshold-in-the-runner-payload-2026-10-01).
+[deployment compatibility](https://github.com/okou-ai/okou/blob/9813db4b51faa42c982dcfec1720caf5bd5b1b82/docs/deployment-compatibility.md#long-context-threshold-in-the-runner-payload-2026-10-01).
 
 ### Migration 1299 performance evidence
 

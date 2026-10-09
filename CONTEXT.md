@@ -128,7 +128,7 @@ _Avoid_: Catalog model, logical model
 # Retired Goal History Context
 
 Okou's persistent Goal lifecycle was retired through S5 on 2026-09-10; see the
-[accepted archival record](docs/goal-retirement-archival.md). Retained events
+[accepted archival record](https://github.com/okou-ai/okou/blob/9813db4b51faa42c982dcfec1720caf5bd5b1b82/docs/goal-retirement-archival.md). Retained events
 and archives describe historical objectives and status, with no scheduling or
 lifecycle authority. Ordinary chat and Workflow Automations remain separate.
 

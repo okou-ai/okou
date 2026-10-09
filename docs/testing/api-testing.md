@@ -207,10 +207,8 @@ creates normal Plan previews and confirms two concurrently, observing 200/409,
 stale-preview rejection and one Stripe subscription creation. Its identity
 factory only supplies random IDs; Clerk and Stripe mocks supply provider-owned
 responses. This is an existing public request race, without a SQL pause or guard
-count assertion. It does not establish the exact internal transaction/repair
-guarantees retired with
-[#37440 batch 006](../implementation/issue-37440-batches/batch-006.md), or certify
-unrelated private methods in the same fixture factory.
+count assertion. It does not establish exact internal transaction/repair
+guarantees or certify unrelated private methods in the same fixture factory.
 
 For provider deletion failures, see the three public user-deletion cases in
 [`storage-object-cleanup.test.ts`](../../turbo/apps/api/src/signals/routes/__tests__/storage-object-cleanup.test.ts).
@@ -310,8 +308,6 @@ Do not add owner selectors, smaller test batch sizes or a private cron driver to
 retain that internal assertion. Similarly, a valid Stripe OAuth connection
 followed by private corruption of its storage version or identity is not a
 provider failure; keep actual provider Test-mode/reconnect behavior separately.
-See [batch013](../implementation/issue-37440-batches/batch-013.md) for the explicit
-losses of retired cleanup/monitor/corruption scenarios.
 
 For purchase balances, `billing-usage-pack-credits.test.ts` creates member
 allocations through the normal Usage Pack checkout, then delivers a Stripe

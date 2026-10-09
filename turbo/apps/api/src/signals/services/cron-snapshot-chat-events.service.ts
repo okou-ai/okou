@@ -1428,7 +1428,7 @@ async function processSnapshotCandidate(
     // Events until a Snapshot covers them. `awaitWithSignal` settles this race
     // with the deadline's own reason, so no unrelated failure is absorbed
     // here. `skippedTimedOutHeads` on the terminal event remains the alerting
-    // signal; see docs/chat-event-snapshot-timeout-logging.md.
+    // signal.
     log.info("Timed out Chat Event Snapshot candidate", {
       type: "chat_event_snapshot_candidate_timed_out",
       expected: true,

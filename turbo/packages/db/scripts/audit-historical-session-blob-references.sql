@@ -1,6 +1,7 @@
 -- #34230: aggregate observations, never a repair manifest.
 -- Run this whole file in a fresh psql -X session with ON_ERROR_STOP=1.
--- Revalidate docs/database/historical-session-blob-audit.md before execution.
+-- Revalidate all live reference owners and the current schema before execution.
+-- Historical census: https://github.com/okou-ai/okou/blob/9813db4b51faa42c982dcfec1720caf5bd5b1b82/docs/database/historical-session-blob-audit.md
 BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
 SET LOCAL statement_timeout = '30s';
 SET LOCAL lock_timeout = '3s';
