@@ -467,9 +467,7 @@ function ChatThreadMenu({
             />
           </DropdownMenuItem>
           <DropdownMenuItem
-            onClick={() => {
-              requestDelete();
-            }}
+            onClick={requestDelete}
             className="text-destructive focus:text-destructive"
           >
             <Trash size={16} className="mr-2" />
