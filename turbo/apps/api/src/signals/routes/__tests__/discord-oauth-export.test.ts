@@ -62,8 +62,10 @@ test("stages only the requesting owner's OAuth export content without capabiliti
     orgId: owner.orgId,
     orgRole: "org:member" as const,
   };
-  mockDiscordMemberships(context, [owner, peer]);
-  for (const user of [owner, peer]) {
+  const otherInstaller = actor();
+  const actors = [owner, peer, otherInstaller];
+  mockDiscordMemberships(context, actors);
+  for (const user of actors) {
     await updateFeatureSwitchesForUser(context, user, {
       [FeatureSwitchKey.DiscordIntegration]: true,
     });
@@ -78,9 +80,14 @@ test("stages only the requesting owner's OAuth export content without capabiliti
     guildId: binding.guildId,
     botUserId: binding.botUserId,
   });
+  const otherInstallation = await createPublicDiscordBinding(context, {
+    ...otherInstaller,
+    flow: "install",
+  });
   onTestFinished(async () => {
-    mockDiscordMemberships(context, [owner, peer]);
+    mockDiscordMemberships(context, actors);
     await removePublicDiscordBinding(context, peerBinding);
+    await removePublicDiscordBinding(context, otherInstallation);
     await removePublicDiscordBinding(context, binding);
   });
   const ownAttempt = await startAttempt(owner, binding.guildId);
@@ -178,6 +185,36 @@ test("stages only the requesting owner's OAuth export content without capabiliti
     guildId: binding.guildId,
     discordUserId: binding.discordUserId,
   });
+  const installationConsents = emitted.flatMap((bytes) => {
+    const parsed: unknown = JSON.parse(bytes.startsWith("{") ? bytes : "null");
+    return parsed !== null &&
+      typeof parsed === "object" &&
+      "initiatedByUserId" in parsed
+      ? [parsed]
+      : [];
+  });
+  expect(installationConsents).toHaveLength(1);
+  const installationConsent = z
+    .object({
+      id: z.uuid(),
+      orgId: z.string(),
+      initiatedByUserId: z.string(),
+      requestedGuildId: z.string(),
+      verifiedGuildId: z.string(),
+      verifiedBotUserId: z.string(),
+      approvedAt: z.iso.datetime(),
+      createdAt: z.iso.datetime(),
+      expiresAt: z.iso.datetime(),
+    })
+    .strict()
+    .parse(installationConsents[0]);
+  expect(installationConsent).toMatchObject({
+    orgId: owner.orgId,
+    initiatedByUserId: owner.userId,
+    requestedGuildId: binding.guildId,
+    verifiedGuildId: binding.guildId,
+    verifiedBotUserId: binding.botUserId,
+  });
   const contents = emitted.join("\n");
   const ownState = new URL(ownAttempt.body.authorizationUrl).searchParams.get(
     "state",
@@ -186,6 +223,10 @@ test("stages only the requesting owner's OAuth export content without capabiliti
   for (const hidden of [
     peer.userId,
     peerBinding.discordUserId,
+    otherInstaller.userId,
+    otherInstaller.orgId,
+    otherInstallation.guildId,
+    otherInstallation.discordUserId,
     ownAttempt.body.completionToken,
     peerAttempt.body.completionToken,
     ownState,
