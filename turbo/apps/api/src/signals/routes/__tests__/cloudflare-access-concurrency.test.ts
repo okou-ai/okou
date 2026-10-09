@@ -152,6 +152,101 @@ function createHost(
   });
 }
 
+test.each(["personal", "organization"] as const)(
+  "accepts exactly one same-revision metadata rename for a %s configuration without changing host authority",
+  async (scope) => {
+    const owner = await actor();
+    const original = (
+      await accept(
+        configs().create({
+          headers: owner.headers,
+          query,
+          body: {
+            id: randomUUID(),
+            scope,
+            name: "Concurrent gateway",
+            credentials: {
+              clientId: "synthetic-id",
+              clientSecret: "synthetic-secret",
+            },
+          },
+        }),
+        [201],
+      )
+    ).body;
+    const own = (await accept(createHost(owner, original.id), [201])).body;
+    const member = await actor(owner.orgId, "member");
+    await accept(
+      createHost(member, scope === "organization" ? original.id : undefined),
+      [201],
+    );
+    const beforeOwn = (
+      await accept(hosts().list({ headers: owner.headers }), [200])
+    ).body;
+    const beforeMember = (
+      await accept(hosts().list({ headers: member.headers }), [200])
+    ).body;
+    const beforeLogins = (
+      await accept(credentials().list({ headers: owner.headers }), [200])
+    ).body;
+
+    const results = await Promise.all(
+      ["First rename", "Second rename"].map((name) => {
+        return accept(
+          configs().update({
+            headers: owner.headers,
+            params: { configId: original.id },
+            query,
+            body: { expectedRevision: original.revision, name },
+          }),
+          [200, 409],
+        );
+      }),
+    );
+    expect(
+      results
+        .map(({ status }) => {
+          return status;
+        })
+        .sort(),
+    ).toStrictEqual([200, 409]);
+    const renamed = results.find((result) => {
+      return result.status === 200;
+    });
+    const rejected = results.find((result) => {
+      return result.status === 409;
+    });
+    if (!renamed || !rejected) {
+      throw new Error("Expected one accepted and one rejected metadata rename");
+    }
+    expect(["First rename", "Second rename"]).toContain(renamed.body.name);
+    expect(renamed.body).toMatchObject({
+      id: original.id,
+      scope,
+      revision: original.revision + 1,
+      generation: original.generation,
+      sshHosts: [{ id: own.id, displayName: own.displayName }],
+    });
+    expect(rejected.body.error.code).toBe(
+      "CLOUDFLARE_ACCESS_REVISION_CONFLICT",
+    );
+    expect(
+      (await accept(configs().list({ headers: owner.headers, query }), [200]))
+        .body.configs,
+    ).toStrictEqual([renamed.body]);
+    expect(
+      (await accept(hosts().list({ headers: owner.headers }), [200])).body,
+    ).toStrictEqual(beforeOwn);
+    expect(
+      (await accept(hosts().list({ headers: member.headers }), [200])).body,
+    ).toStrictEqual(beforeMember);
+    expect(
+      (await accept(credentials().list({ headers: owner.headers }), [200]))
+        .body,
+    ).toStrictEqual(beforeLogins);
+  },
+);
+
 test.each(["create", "update"] as const)(
   "admits selected %s after a metadata-only rename during external login preparation without advancing host authority",
   async (operation) => {
@@ -394,14 +489,30 @@ test.each(["create", "update"] as const)(
           .body.credentials,
       ).toHaveLength(1);
     } else {
-      expect(converted.body.error.code).toBe(
+      expect([
+        "CLOUDFLARE_ACCESS_REVISION_CONFLICT",
         "CLOUDFLARE_ACCESS_IMPACT_CONFLICT",
-      );
+      ]).toContain(converted.body.error.code);
       expect(bound.status).toBe(operation === "create" ? 201 : 200);
       if (bound.status === 404) {
         throw new Error("Expected a binding that changed the reviewed impact");
       }
       const saved = bound;
+      expect(
+        (await accept(configs().list({ headers: admin.headers, query }), [200]))
+          .body.configs,
+      ).toContainEqual(
+        expect.objectContaining({
+          id: shared.id,
+          scope: "organization",
+          revision: shared.revision,
+          generation: shared.generation,
+        }),
+      );
+      expect(
+        (await accept(hosts().list({ headers: member.headers }), [200])).body
+          .connections,
+      ).toContainEqual(saved.body);
       const latest = (
         await accept(
           configs().impactPreview({
@@ -484,8 +595,26 @@ test("requires a fresh deletion preview for a first concurrent member binding", 
         .body.credentials,
     ).toStrictEqual([]);
   } else {
-    expect(deleted.body.error.code).toBe("CLOUDFLARE_ACCESS_IMPACT_CONFLICT");
+    expect([
+      "CLOUDFLARE_ACCESS_REVISION_CONFLICT",
+      "CLOUDFLARE_ACCESS_IMPACT_CONFLICT",
+    ]).toContain(deleted.body.error.code);
     const saved = await accept(Promise.resolve(bound), [201]);
+    expect(
+      (await accept(configs().list({ headers: admin.headers, query }), [200]))
+        .body.configs,
+    ).toContainEqual(
+      expect.objectContaining({
+        id: shared.id,
+        scope: "organization",
+        revision: shared.revision,
+        generation: shared.generation,
+      }),
+    );
+    expect(
+      (await accept(hosts().list({ headers: member.headers }), [200])).body
+        .connections,
+    ).toContainEqual(saved.body);
     const latest = (
       await accept(
         configs().impactPreview({
@@ -527,6 +656,99 @@ test("requires a fresh deletion preview for a first concurrent member binding", 
   ).toStrictEqual([]);
 });
 
+test("promotes a configuration with a concurrent first binding or an explicit new request after conflict", async () => {
+  const owner = await actor();
+  const personal = (
+    await accept(
+      configs().create({
+        headers: owner.headers,
+        query,
+        body: {
+          id: randomUUID(),
+          scope: "personal",
+          name: "Personal gateway",
+          credentials: {
+            clientId: "synthetic-id",
+            clientSecret: "synthetic-secret",
+          },
+        },
+      }),
+      [201],
+    )
+  ).body;
+  const [bound, promoted] = await Promise.all([
+    accept(createHost(owner, personal.id), [201]),
+    accept(
+      configs().convertToOrganization({
+        headers: owner.headers,
+        params: { configId: personal.id },
+        body: { expectedRevision: personal.revision },
+      }),
+      [200, 409],
+    ),
+  ]);
+  if (promoted.status === 409) {
+    expect(promoted.body.error.code).toBe(
+      "CLOUDFLARE_ACCESS_REVISION_CONFLICT",
+    );
+    expect(
+      (await accept(configs().list({ headers: owner.headers, query }), [200]))
+        .body.configs,
+    ).toContainEqual(
+      expect.objectContaining({
+        id: personal.id,
+        scope: "personal",
+        revision: personal.revision,
+        generation: personal.generation,
+      }),
+    );
+    expect(
+      (await accept(hosts().list({ headers: owner.headers }), [200])).body
+        .connections,
+    ).toStrictEqual([bound.body]);
+  }
+  const completed =
+    promoted.status === 409
+      ? await accept(
+          configs().convertToOrganization({
+            headers: owner.headers,
+            params: { configId: personal.id },
+            body: { expectedRevision: personal.revision },
+          }),
+          [200],
+        )
+      : promoted;
+  expect(completed.body).toMatchObject({
+    scope: "organization",
+    revision: personal.revision + 1,
+    generation: personal.generation + 1,
+  });
+  const included = completed.body.sshHosts.some(({ id }) => {
+    return id === bound.body.id;
+  });
+  expect(
+    (await accept(hosts().list({ headers: owner.headers }), [200])).body
+      .connections,
+  ).toContainEqual({
+    ...bound.body,
+    generation: bound.body.generation + (included ? 1 : 0),
+    // Promotion updates included hosts; only an unincluded host is unchanged.
+    updatedAt: included ? expect.any(String) : bound.body.updatedAt,
+  });
+  expect(
+    (await accept(configs().list({ headers: owner.headers, query }), [200]))
+      .body.configs,
+  ).toContainEqual(
+    expect.objectContaining({
+      id: personal.id,
+      scope: "organization",
+      revision: personal.revision + 1,
+      generation: personal.generation + 1,
+      sshHosts: [{ id: bound.body.id, displayName: bound.body.displayName }],
+    }),
+  );
+});
+
 test.each(["first", "late"] as const)(
   "includes %s concurrent bindings in current rotation authority without losing existing hosts",
   async (timing) => {
@@ -556,7 +778,7 @@ test.each(["first", "late"] as const)(
       accept(createHost(owner, shared.id), [201]),
     ]);
     if (rotated.status === 409) {
-      // Two separate arriving bindings may expand both attempts. That bounded
+      // An arriving binding may expand the single attempt's locked set. That
       // conflict must leave authority untouched, not silently replay a write.
       expect(rotated.body.error.code).toBe(
         "CLOUDFLARE_ACCESS_REVISION_CONFLICT",

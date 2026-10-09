@@ -23,10 +23,10 @@ import { workflowUserAutomationThreadOwnerCondition } from "./workflow-user-auto
 /**
  * The canonical read of the Morning Brief state a member actually owns.
  *
- * The Settings surface and the `simple-morning-brief` migration must agree on
- * which installation a member owns and what that installation is really doing,
- * so both read it here. The rules this module encodes are described in
- * [the migration contract](../../../../../../docs/morning-brief-migration-state.md).
+ * Settings reads the selected Official installation, its current automation
+ * and its canonical thread binding here. This is a read-only functional view,
+ * not a Native migration executor. Its ownership and state rules are described
+ * in [the Morning Brief contract](../../../../../../docs/morning-brief.md).
  */
 
 interface MorningBriefInstallation {
@@ -73,7 +73,7 @@ interface MorningBriefStateBase {
   /**
    * Installations this member holds beyond the managed one. Holding several is
    * legitimate: the catalog installs Morning Brief per Agent. They are
-   * inventory for the migration and must never be adopted or mutated here.
+   * reported as inventory and must never be adopted or mutated here.
    */
   readonly additionalInstallations: readonly MorningBriefInstallation[];
 }

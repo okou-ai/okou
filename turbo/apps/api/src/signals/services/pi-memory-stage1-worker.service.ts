@@ -25,26 +25,21 @@ import {
   observePiMemoryStage1Cost$,
   observePiMemoryStage1MissingUsage,
 } from "./pi-memory-stage1-cost.service";
-import {
-  checkPiMemoryQuota$,
-  PiMemoryQuotaError,
-} from "./pi-memory-quota.service";
-import { checkOrgCreditsForRunAdmission$ } from "./run-admission.service";
-import { loadModelCatalog$, type ModelCatalog } from "./model-catalog.service";
+
 import {
   PiMemoryStage1ProviderError,
   PiMemoryStage1BudgetError,
   type PiMemoryStage1Evidence,
   projectPiMemoryStage1Evidence,
   redactPiMemoryStage1Secrets,
-  runPiMemoryStage1Extraction,
+  preparePiMemoryStage1Extraction,
+  runPiMemoryStage1PreparedExtraction,
   type PiMemoryStage1ProviderResult,
 } from "@okouai/pi-agent-runtime/api";
 import {
   resolvePiMemoryStage1Credential$,
   validatePiMemoryStage1Credential$,
   PiMemoryStage1CredentialError,
-  PiMemoryStage1CredentialRefreshError,
   type PiMemoryStage1CredentialResult,
 } from "./pi-memory-stage1-credential.service";
 import { piMemoryStage1Selections } from "@okouai/db/schema/pi-memory-stage1-schedule";
@@ -76,7 +71,7 @@ import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 
 import {
-  downloadS3BufferWithMaxBytes,
+  downloadS3BufferWithMaxBytes$,
   S3ObjectSizeLimitError,
 } from "../external/s3";
 import {
@@ -507,7 +502,7 @@ async function decodeHistory(
 
 const loadAndProjectHistory$ = command(
   async (
-    { get },
+    { set },
     args: {
       readonly work: ClaimedPiMemoryStage1Work;
     },
@@ -519,13 +514,14 @@ const loadAndProjectHistory$ = command(
       encoding,
     );
     const downloaded = await settle(
-      get(
-        downloadS3BufferWithMaxBytes(
-          env("R2_USER_STORAGES_BUCKET_NAME"),
+      set(
+        downloadS3BufferWithMaxBytes$,
+        {
+          bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
           key,
-          args.work.blobEncodedSize,
-          signal,
-        ),
+          maxBytes: args.work.blobEncodedSize,
+        },
+        signal,
       ),
       signal,
     );
@@ -693,18 +689,13 @@ function logOutcome(args: {
 
 function isCredentialFailure(
   error: unknown,
-): error is
-  PiMemoryStage1CredentialError | PiMemoryStage1CredentialRefreshError {
-  return (
-    error instanceof PiMemoryStage1CredentialError ||
-    error instanceof PiMemoryStage1CredentialRefreshError
-  );
+): error is PiMemoryStage1CredentialError {
+  return error instanceof PiMemoryStage1CredentialError;
 }
 
 function workErrorClass(error: unknown): string {
   return error instanceof PermanentSourceError ||
     error instanceof RetryableWorkError ||
-    error instanceof PiMemoryQuotaError ||
     isCredentialFailure(error) ||
     error instanceof PiMemoryStage1BudgetError ||
     error instanceof DisabledWorkError
@@ -735,8 +726,7 @@ const failWork$ = command(
           ? { kind: "terminal_failure", errorClass }
           : { kind: "retryable_failure", errorClass },
         {
-          revalidateSelection:
-            isCredentialFailure(error) || error instanceof PiMemoryQuotaError,
+          revalidateSelection: isCredentialFailure(error),
         },
       ),
     );
@@ -821,7 +811,6 @@ const prepareSourceWork$ = command(
     signal.throwIfAborted();
     const credential = await set(
       resolvePiMemoryStage1Credential$,
-      await set(loadModelCatalog$, signal),
       {
         sourceRunId: work.selection.sourceRunId,
         orgId: work.orgId,
@@ -972,35 +961,9 @@ interface ProcessPreparedWorkArgs {
 }
 
 const checkPreparedStage1Request$ = command(
-  async (
-    { set },
-    catalog: ModelCatalog,
-    prepared: RoutedWork,
-    signal: AbortSignal,
-  ) => {
-    const admission = await set(
-      checkOrgCreditsForRunAdmission$,
-      {
-        catalog,
-        ...prepared.credential.billing,
-        modelProviderType: prepared.credential.modelProviderType,
-        selectedModel: prepared.credential.selectedModel,
-      },
-      signal,
-    );
-    if (admission) {
-      throw new RetryableWorkError("source_admission_denied");
-    }
+  async ({ set }, prepared: RoutedWork, signal: AbortSignal) => {
+    // Memory is free: no organization credits or personal quota admission.
     set(writeDb$);
-    await set(
-      checkPiMemoryQuota$,
-      {
-        ...prepared.credential.billing,
-        stage: "stage1",
-        source: prepared.credential.quota,
-      },
-      signal,
-    );
     await set(
       validatePiMemoryStage1Credential$,
       prepared.credential.proof,
@@ -1010,52 +973,77 @@ const checkPreparedStage1Request$ = command(
   },
 );
 
+type Stage1ProviderOutcome =
+  | { readonly ok: true; readonly value: PiMemoryStage1ProviderResult }
+  | { readonly ok: false; readonly error: unknown };
+
+interface Stage1ProviderObservation {
+  readonly provider: Stage1ProviderOutcome;
+  readonly requestPrepared: boolean;
+}
+
+/** Preparation/admission failures never reached an admitted provider request. */
+function stage1ProviderObservation(
+  extraction:
+    | { readonly ok: true; readonly value: Stage1ProviderObservation }
+    | { readonly ok: false; readonly error: unknown },
+): Stage1ProviderObservation {
+  return extraction.ok
+    ? extraction.value
+    : { provider: extraction, requestPrepared: false };
+}
+
+/** Measure the complete SDK body, then own admission before provider execution. */
+const extractPreparedStage1Provider$ = command(
+  async (
+    { set },
+    args: { readonly prepared: RoutedWork; readonly requestId: string },
+    signal: AbortSignal,
+  ): Promise<Stage1ProviderObservation> => {
+    // This async command returns preparation/admission failures to its finite
+    // parent guard, including abort. It forwards no caller operation callback.
+    const planned = preparePiMemoryStage1Extraction({
+      model: args.prepared.credential.model,
+      evidence: args.prepared.evidence,
+      requestId: args.requestId,
+    });
+    await set(checkPreparedStage1Request$, args.prepared, signal);
+    // The SDK retains the original abort check immediately before HTTP. Join the
+    // provider outcome so the parent can complete finite usage/result settlement.
+    return {
+      provider: await settleIncludingAbort(
+        runPiMemoryStage1PreparedExtraction(planned, signal),
+      ),
+      requestPrepared: true,
+    };
+  },
+);
+
 const processPreparedWork$ = command(
   async (
     { set },
-    catalogSnapshot: ModelCatalog,
     args: ProcessPreparedWorkArgs,
     signal: AbortSignal,
   ): Promise<WorkOutcome> => {
     const startedAt = performance.now();
     const requestId = randomUUID();
-    let requestPrepared = false;
-    // Return the complete irreversible-result reconciliation. The batch owner
-    // joins every provider branch before propagating cancellation, so one
-    // aborted request cannot abandon a sibling's observed usage receipt.
+    // Join every provider branch before propagating cancellation so one aborted
+    // request cannot abandon a sibling's observed usage receipt.
     return await set(settlePreparedWork$, args, {
-      provider: await settleIncludingAbort(
-        runPiMemoryStage1Extraction(
-          {
-            model: args.prepared.credential.model,
-            evidence: args.prepared.evidence,
-            requestId,
-            beforeRequest: async (requestSignal) => {
-              await set(
-                checkPreparedStage1Request$,
-                catalogSnapshot,
-                args.prepared,
-                requestSignal,
-              );
-              requestPrepared = true;
-            },
-          },
-          signal,
+      ...stage1ProviderObservation(
+        await settleIncludingAbort(
+          set(
+            extractPreparedStage1Provider$,
+            { prepared: args.prepared, requestId },
+            signal,
+          ),
         ),
       ),
       requestId,
-      requestPrepared,
       startedAt,
     });
   },
 );
-
-type Stage1ProviderOutcome =
-  | {
-      readonly ok: true;
-      readonly value: Awaited<ReturnType<typeof runPiMemoryStage1Extraction>>;
-    }
-  | { readonly ok: false; readonly error: unknown };
 
 /** Finite reconciliation of an irreversible provider result, even after abort. */
 const settlePreparedWork$ = command(
@@ -1293,7 +1281,6 @@ export const executePiMemoryStage1Work$ = command(
         .map(async (item) => {
           return await set(
             processPreparedWork$,
-            await set(loadModelCatalog$, signal),
             {
               prepared: item,
               pricingResolution: get(usagePricingResolution$),

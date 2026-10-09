@@ -1288,17 +1288,6 @@
       "subscriptionChangeConfirmed": "订阅变更已确认。"
     },
     "usage": {
-      "allowance": {
-        "day": "{{value}}天",
-        "hour": "{{value}}小时",
-        "left": "剩余 {{value}}",
-        "minute": "{{value}}分钟",
-        "remainingAria": "用量额度剩余 {{label}}",
-        "resets": "{{date}} 重置",
-        "resetsRaw": "{{value}} 重置",
-        "title": "用量额度",
-        "week": "{{value}}周"
-      },
       "autoRechargeOn": "已开启自动充值",
       "breakdown": {
         "currentPlanDescription": "套餐每月积分，每个账单周期重置",
@@ -4896,24 +4885,6 @@
           "enabled_other": "已对接下来{{count}}次运行启用",
           "title": "抓取网络请求内容"
         },
-        "connectionDiagnostics": {
-          "activeWaits": "活跃等待",
-          "channel": "频道",
-          "clear": "清空",
-          "connection": "连接",
-          "copyJson": "复制JSON",
-          "description": "查看认证和Ably连接信号。",
-          "empty": "没有记录到诊断事件。",
-          "events": "事件",
-          "log": "事件日志",
-          "refresh": "刷新",
-          "title": "实时连接诊断",
-          "unavailable": "不可用",
-          "workerDescription": "查看持有实时连接的共享Worker所记录的抓取内容。",
-          "workerLoading": "加载中",
-          "workerTitle": "共享Worker连接诊断",
-          "workerUnavailable": "不可用"
-        },
         "indexedDb": {
           "countExplanation": "计数使用只读事务，不会读取记录内容。",
           "description": "查看共享Worker持有的本地聊天缓存中的记录数。",
@@ -4933,6 +4904,13 @@
           "stores": "个对象存储",
           "title": "IndexedDB存储",
           "unavailable": "IndexedDB存储不可用。"
+        },
+        "openrouterPreset": {
+          "description": "对整个组织后续新建的 Auto 和 Okou 1.0 内置模型运行生效，不影响已有运行。",
+          "loading": "加载中…",
+          "systemDefault": "系统默认",
+          "title": "OpenRouter 预设",
+          "unavailable": "不可用"
         },
         "welcomeThread": {
           "create": "创建欢迎会话",

@@ -1,3 +1,4 @@
+import { gunzipSync } from "node:zlib";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { z } from "zod";
@@ -133,7 +134,9 @@ describe("Axiom logging transport", () => {
           expect(request.headers.get("content-type")).toBe(
             "application/x-ndjson",
           );
-          const body = await request.text();
+          const body = gunzipSync(
+            Buffer.from(await request.arrayBuffer()),
+          ).toString("utf8");
           const events = body.split("\n").map((line): unknown => {
             return JSON.parse(line);
           });

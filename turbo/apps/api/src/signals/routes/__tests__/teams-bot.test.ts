@@ -128,6 +128,7 @@ async function deletePublicTeamsAdmissionFixture(
     id: owned.subscriptionId,
     status: "canceled",
     metadata: {},
+    items: { data: [{ price: { id: "price_bdd_pro" } }] },
   });
   context.mocks.stripe.subscriptions.update.mockResolvedValue({
     id: owned.subscriptionId,
@@ -2730,7 +2731,7 @@ describe("POST /api/webhooks/teams/bot", () => {
       expect.objectContaining({
         kind: "model_selection_updated",
         chatThreadId: dmThread.chatThreadId,
-        selectedModel: null,
+        selectedModel: "auto",
       }),
     );
   });

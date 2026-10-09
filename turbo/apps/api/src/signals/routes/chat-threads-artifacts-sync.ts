@@ -1,5 +1,6 @@
 import { command } from "ccstate";
 import { chatThreadArtifactsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { artifactGoogleDriveContract } from "@okouai/api-contracts/contracts/artifact-google-drive";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -42,7 +43,54 @@ const syncInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   return result;
 });
 
+const uploadArtifactInner$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const auth = get(organizationAuthContext$);
+    const { artifactId } = get(
+      pathParamsOf(artifactGoogleDriveContract.upload),
+    );
+    const body = await get(bodyResultOf(artifactGoogleDriveContract.upload));
+    signal.throwIfAborted();
+    if (!body.ok) {
+      return body.response;
+    }
+    return await set(
+      syncArtifactToGoogleDrive$,
+      {
+        orgId: auth.orgId,
+        userId: auth.userId,
+        artifactId,
+        ...body.data,
+        ...(auth.tokenType === "agent"
+          ? {
+              authorizedRunId: auth.runId,
+              ...(auth.builtinConnectorSourceIds?.["google-drive"]
+                ? {
+                    connectionId:
+                      auth.builtinConnectorSourceIds["google-drive"],
+                  }
+                : {}),
+            }
+          : {}),
+      },
+      signal,
+    );
+  },
+);
+
 export const chatThreadsArtifactsSyncRoutes: readonly RouteEntry[] = [
+  {
+    route: artifactGoogleDriveContract.upload,
+    handler: authRoute(
+      {
+        requireOrganization: true,
+        missingOrganizationStatus: 401,
+        requiredCapability: "file:write",
+        accept: ["session", "pat", "agent"],
+      },
+      uploadArtifactInner$,
+    ),
+  },
   {
     route: chatThreadArtifactsContract.syncGoogleDrive,
     handler: authRoute(

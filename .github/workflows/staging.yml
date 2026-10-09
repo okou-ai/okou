@@ -42,6 +42,8 @@ jobs:
       CLERK_WEBHOOK_SIGNING_SECRET: ${{ secrets.CLERK_WEBHOOK_SIGNING_SECRET }}
       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
       CRON_SECRET: ${{ secrets.CRON_SECRET }}
+      DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+      DISCORD_GATEWAY_SECRET: ${{ secrets.DISCORD_GATEWAY_SECRET }}
       FAL_KEY: ${{ secrets.FAL_KEY }}
       FINICITY_APP_KEY: ${{ secrets.FINICITY_APP_KEY }}
       FINICITY_APP_SECRET: ${{ secrets.FINICITY_APP_SECRET }}

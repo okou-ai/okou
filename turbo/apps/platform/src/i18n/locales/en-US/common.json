@@ -1289,17 +1289,6 @@
       "subscriptionChangeConfirmed": "Subscription change confirmed."
     },
     "usage": {
-      "allowance": {
-        "day": "{{value}}d",
-        "hour": "{{value}}h",
-        "left": "{{value}} left",
-        "minute": "{{value}}m",
-        "remainingAria": "Usage allowance {{label}} remaining",
-        "resets": "Resets {{date}}",
-        "resetsRaw": "Resets {{value}}",
-        "title": "Usage allowance",
-        "week": "{{value}}w"
-      },
       "autoRechargeOn": "Auto-recharge on",
       "breakdown": {
         "currentPlanDescription": "Monthly plan credits, resets each billing cycle",
@@ -4909,24 +4898,6 @@
           "enabled_other": "Enabled for the next {{count}} runs",
           "title": "Capture network bodies"
         },
-        "connectionDiagnostics": {
-          "activeWaits": "Active waits",
-          "channel": "channel",
-          "clear": "Clear",
-          "connection": "connection",
-          "copyJson": "Copy JSON",
-          "description": "Inspect authentication and Ably connection signals.",
-          "empty": "No diagnostic events recorded.",
-          "events": "events",
-          "log": "Event log",
-          "refresh": "Refresh",
-          "title": "Realtime connection diagnostics",
-          "unavailable": "unavailable",
-          "workerDescription": "Inspect the capture recorded by the shared worker that owns the realtime connection.",
-          "workerLoading": "Loading",
-          "workerTitle": "Shared worker connection diagnostics",
-          "workerUnavailable": "Unavailable"
-        },
         "indexedDb": {
           "countExplanation": "Counts use read-only transactions and do not read record bodies.",
           "description": "Inspect record counts in the local chat cache owned by the shared worker.",
@@ -4946,6 +4917,13 @@
           "stores": "object stores",
           "title": "IndexedDB storage",
           "unavailable": "IndexedDB storage is unavailable."
+        },
+        "openrouterPreset": {
+          "description": "Applies to new Auto and Okou 1.0 Built-in runs for the entire organization. Existing runs are unchanged.",
+          "loading": "Loading…",
+          "systemDefault": "System default",
+          "title": "OpenRouter preset",
+          "unavailable": "Unavailable"
         },
         "welcomeThread": {
           "create": "Create welcome thread",

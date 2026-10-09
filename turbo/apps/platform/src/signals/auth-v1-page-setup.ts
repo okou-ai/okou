@@ -67,7 +67,6 @@ function setupAuthV1Page(mode: AuthV1PageMode) {
     // cancellation propagating while this route offers a visible reload.
     const uiLoad = await settle(set(ensureClerkUiLoaded$, signal), signal);
     if (!uiLoad.ok) {
-      L.error("Clerk UI failed to load", uiLoad.error);
       set(updatePage$, createElement(AuthV1LoadError));
       return;
     }

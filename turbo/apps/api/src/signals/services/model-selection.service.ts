@@ -9,7 +9,6 @@ import {
 } from "@okouai/api-contracts/contracts/model-providers";
 import { formatReplacementSubscriptionRequiredMessage } from "@okouai/api-contracts/contracts/errors";
 import {
-  AUTO_RUN_MODEL,
   AUTO_SELECTED_MODEL,
   isAutoSelectedModel,
 } from "@okouai/core/auto-run-model";
@@ -61,18 +60,14 @@ export interface ModelFirstPin {
 export interface DefaultModelFirstPin extends ModelFirstPin {
   readonly serviceTier: ChatThreadServiceTier | null;
 }
-/** Auto as a thread or member selection: an empty selection. */
+/** New thread, member, input and Run selections use the canonical Auto ID. */
 export function autoSelectionPin(): ModelFirstPin {
   return {
     modelProviderId: null,
     modelProviderType: "built-in",
     modelProviderCredentialScope: "org",
-    selectedModel: null,
+    selectedModel: AUTO_SELECTED_MODEL,
   };
-}
-/** Auto as a captured input or run: the internal Auto run model. */
-export function autoModelPin(): ModelFirstPin {
-  return { ...autoSelectionPin(), selectedModel: AUTO_RUN_MODEL };
 }
 function subscriptionPin(entry: MemberSubscriptionModelRoute): ModelFirstPin {
   return {
@@ -186,8 +181,8 @@ const modelRoutingFacts$ = command(
   },
 );
 /**
- * The runnable model of a non-empty selection. Auto is only the empty
- * selection, so its internal run model is not a selectable ID.
+ * Resolve personal selections; Auto aliases are handled separately and the
+ * legacy capture ID remains unavailable as a public selectable model.
  */
 export function resolveRunSelectionModel(
   catalog: ModelCatalog,
@@ -246,13 +241,13 @@ export const resolveModelSelectionPin$ = command(
     },
     signal: AbortSignal,
   ): Promise<ModelFirstPin | ReturnType<typeof badRequestMessage>> => {
-    // PR1 accepts the new intent but continues writing predecessor-compatible pins.
+    // New intents canonicalize; queued snapshots below retain their captured ID.
     if (
       params.modelSelection.selectedModel === AUTO_SELECTED_MODEL ||
       (params.purpose === "capture" &&
         isAutoSelectedModel(params.modelSelection.selectedModel))
     ) {
-      return params.purpose === "capture" ? autoModelPin() : autoSelectionPin();
+      return autoSelectionPin();
     }
     const facts = await set(modelRoutingFacts$, params, signal);
     const selectedModel = resolveRunSelectionModel(
@@ -364,7 +359,7 @@ export function resolveQueuedModelSelectionPinFromSnapshot(params: {
 }): ModelFirstPin | ReturnType<typeof badRequestMessage> {
   // A captured decision is immutable metadata, not a new selection request.
   if (isAutoSelectedModel(params.selectedModel)) {
-    return { ...autoModelPin(), selectedModel: params.selectedModel };
+    return { ...autoSelectionPin(), selectedModel: params.selectedModel };
   }
   const selectedModel = resolveRunSelectionModel(
     params.catalog,

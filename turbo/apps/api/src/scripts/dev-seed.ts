@@ -516,6 +516,24 @@ export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
   // Development pricing is intentionally local seed data. Production pricing
   // is copied from the target database's current GPT rows by migration 1194.
   ...usageGroup("model", "okou-1.0", GPT_5_6_LUNA_USAGE_PRICING),
+  // Synthetic test/preview rates, not production tariffs. Cover both runtime
+  // presets and every standard/long-context category without copying live data.
+  ...["@preset/okou-1-0", "@preset/okou-1-0-dsf"].flatMap((provider) => {
+    return usageGroup(
+      "model",
+      provider,
+      withLongContextPricing(
+        [
+          ["tokens.input", 1000, 1_000_000],
+          ["tokens.output", 1000, 1_000_000],
+          ["tokens.cache_read", 1000, 1_000_000],
+          ["tokens.cache_creation", 1000, 1_000_000],
+        ],
+        1,
+        1,
+      ),
+    );
+  }),
   ...usageGroup(
     "model",
     "gpt-5.5",
@@ -707,7 +725,17 @@ export function buildBuiltInModelKeys(
   return [{ vendor: AUTO_RUN_KEY_VENDOR, apiKey, label: "dev-seed" }];
 }
 
+export function devSeedUsagePricing(environment: string | undefined) {
+  if (environment !== "development" && environment !== "preview") {
+    throw new Error(
+      "Development pricing seed is restricted to development/preview",
+    );
+  }
+  return USAGE_PRICING;
+}
+
 async function devSeed() {
+  const pricing = devSeedUsagePricing(optionalEnv("ENV"));
   if (!optionalEnv("DATABASE_URL")) {
     throw new Error("DATABASE_URL environment variable is not set");
   }
@@ -718,7 +746,7 @@ async function devSeed() {
   writeLine("Seeding usage_pricing");
   await database
     .insert(usagePricing)
-    .values([...USAGE_PRICING])
+    .values([...pricing])
     .onConflictDoUpdate({
       target: [usagePricing.kind, usagePricing.provider, usagePricing.category],
       set: {
@@ -727,7 +755,7 @@ async function devSeed() {
         updatedAt: nowDate(),
       },
     });
-  writeLine(`Seeded ${USAGE_PRICING.length} usage pricing entries`);
+  writeLine(`Seeded ${pricing.length} usage pricing entries`);
 
   // --- built_in_model_keys (transactional replace) ---
   writeLine("Seeding built_in_model_keys");

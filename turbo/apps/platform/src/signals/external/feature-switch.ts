@@ -9,7 +9,6 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { clerk$ } from "../auth";
 import { apiClient$ } from "../api-client.ts";
 import { accept } from "../../lib/accept.ts";
-import { writeConnectionDiagnostic$ } from "../connection-diagnostics.ts";
 import { syncShellDocumentAttributes$ } from "../theme.ts";
 import {
   featureSwitchState$,
@@ -92,10 +91,6 @@ export const applyFeatureSwitches$ = command(
   ({ set }, switches: Record<FeatureSwitchKey, boolean>) => {
     set(setFeatureSwitchState$, switches);
     set(syncShellDocumentAttributes$);
-    set(writeConnectionDiagnostic$, {
-      action: "set-enabled",
-      enabled: switches[FeatureSwitchKey.OkouDebug],
-    });
   },
 );
 

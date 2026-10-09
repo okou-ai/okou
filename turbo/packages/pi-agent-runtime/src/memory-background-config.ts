@@ -1,36 +1,49 @@
 import type { PiAgentThinkingLevel } from "./types";
 
-/**
- * Background memory pipeline model and reasoning policy, defined once here and
- * imported by every consumer. It mirrors upstream Codex
- * (`DEFAULT_MEMORY_EXTRACTION_PREFERRED_MODEL` / `stage_one::REASONING_EFFORT`
- * and `DEFAULT_MEMORY_CONSOLIDATION_PREFERRED_MODEL` /
- * `stage_two::REASONING_EFFORT`). Phase 2 keeps its models where the API
- * dispatches the maintenance run (`PI_MEMORY_PHASE2_MODELS`).
- *
- * Both stages use GPT-6 Luna on the memory owner's current connected Codex
- * subscription, or on the fixed managed OpenRouter binding,
- * before execution; a selected attempt never falls back to another route.
- *
- * These values are deliberately independent from the foreground chat reasoning
- * defaults in `@okouai/api-contracts` (`model-reasoning-effort`): tuning the
- * foreground effort of a model must never change background extraction or
- * consolidation cost.
- *
- * The fixed OpenRouter maintenance binding is independent of foreground Auto.
- */
-export const PI_MEMORY_STAGE1_BUILT_IN_MODEL = "gpt-6-luna";
-export const PI_MEMORY_STAGE1_PERSONAL_MODEL = "gpt-6-luna";
+/** Private, platform-funded memory identity; never a foreground model choice. */
+export const PI_MEMORY_STAGE1_BUILT_IN_MODEL = "okou-memory";
+export const PI_MEMORY_PRESET = "@preset/memory";
+export const PI_MEMORY_PRESET_REQUEST_FIELDS = [
+  "model",
+  "messages",
+  "tools",
+  "stream",
+  "stream_options",
+] as const;
 
+/** Share the final wire policy with preparation so its measured body is exact. */
+export function memoryPresetPayload(payload: unknown): unknown {
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    Array.isArray(payload)
+  ) {
+    throw new Error("Invalid memory Chat Completions payload");
+  }
+  const allowed: ReadonlySet<string> = new Set(PI_MEMORY_PRESET_REQUEST_FIELDS);
+  return Object.fromEntries(
+    Object.entries(payload).filter(([key]) => {
+      return allowed.has(key);
+    }),
+  );
+}
+
+/** Retained historical subscription identity, not a new credential candidate. */
+export const PI_MEMORY_STAGE1_PERSONAL_MODEL = "gpt-6-luna";
 export type PiMemoryStage1Model =
   | typeof PI_MEMORY_STAGE1_BUILT_IN_MODEL
   | typeof PI_MEMORY_STAGE1_PERSONAL_MODEL;
 
-/**
- * Both Luna credential routes publish `low` for extraction.
- */
+// Legacy extraction still recognizes its captured request policy. New preset
+// requests omit reasoning and sampling parameters at the transport boundary.
 export const PI_MEMORY_STAGE1_REASONING = "low" satisfies PiAgentThinkingLevel;
-
-/** Both Luna credential routes publish `medium` for consolidation. */
 export const PI_MEMORY_PHASE2_MAINTENANCE_REASONING =
   "medium" satisfies PiAgentThinkingLevel;
+
+/** Both stages and all attempts share one owner-scoped OpenRouter cache route. */
+export function piMemorySessionAffinityKey(
+  userId: string,
+  orgId: string,
+): string {
+  return `MEMORY-${userId}-${orgId}`;
+}

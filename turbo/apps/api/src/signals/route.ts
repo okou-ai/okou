@@ -155,6 +155,7 @@ import { orgLogoRoutes } from "./routes/org-logo";
 import { orgMembersRoutes } from "./routes/org-members";
 import { orgMembershipRequestsRoutes } from "./routes/org-membership-requests";
 import { orgReadRoutes } from "./routes/org-read";
+import { orgOpenrouterPresetRoutes } from "./routes/org-openrouter-preset";
 import { paidToolsRoutes } from "./routes/paid-tools";
 import { peopleSearchRoutes } from "./routes/people-search";
 import { presentationTemplatesRoutes } from "./routes/presentation-templates";
@@ -392,6 +393,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...orgMembersRoutes,
   ...orgMembershipRequestsRoutes,
   ...orgReadRoutes,
+  ...orgOpenrouterPresetRoutes,
   ...pushSubscriptionsRoutes,
   ...userPermissionGrantsRoutes,
   ...userPreferencesRoutes,

@@ -1,3 +1,8 @@
+import {
+  AUTO_SELECTED_MODEL,
+  isAutoSelectedModel,
+  explicitModelSettings,
+} from "@okouai/core/auto-run-model";
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   modelSettingsSchema,
@@ -50,7 +55,13 @@ export function prepareChatThreadInsert(args: NewChatThreadArgs) {
   const defaults = builder.$with("new_chat_thread_defaults").as(
     builder
       .select({
-        modelSettings: orgMembersMetadata.modelSettings,
+        modelSettings: sql`COALESCE((
+          SELECT jsonb_object_agg(key, value)
+          FROM jsonb_each(${orgMembersMetadata.modelSettings})
+          WHERE key NOT IN ('auto', 'okou-1.0') AND key NOT LIKE '@preset/%'
+        ), '{}'::jsonb)`
+          .mapWith(orgMembersMetadata.modelSettings)
+          .as("model_settings"),
         cloudBrowserEnabled: orgMembersMetadata.cloudBrowserEnabledByDefault,
       })
       .from(orgMembersMetadata)
@@ -74,9 +85,14 @@ export function prepareChatThreadInsert(args: NewChatThreadArgs) {
         : [defaults],
     values: {
       ...values,
+      selectedModel:
+        args.selectedModel === null || isAutoSelectedModel(args.selectedModel)
+          ? AUTO_SELECTED_MODEL
+          : args.selectedModel,
       modelSettings:
-        args.modelSettings ??
-        sql`COALESCE((SELECT ${defaults.modelSettings} FROM ${defaults}), '{}'::jsonb)`,
+        args.modelSettings === undefined
+          ? sql`COALESCE((SELECT ${defaults.modelSettings} FROM ${defaults}), '{}'::jsonb)`
+          : explicitModelSettings(args.modelSettings),
       computerUseHostId,
       cloudBrowserEnabled: computerUseHostId
         ? false

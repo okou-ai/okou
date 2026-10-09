@@ -14,6 +14,7 @@ import { withErrorHandler } from "../../lib/command/with-error-handler";
 
 interface MailOptions {
   readonly to: string;
+  readonly kind: string;
   readonly subject: string;
   readonly idempotencyKey: string;
   readonly text?: string;
@@ -117,6 +118,11 @@ export function createNotifyCommand(): Command {
       "Send an Okou email notification to the user of the current run",
     )
     .option("--to <recipient>", "Recipient (only me is supported)", "me")
+    .option(
+      "--kind <kind>",
+      "Notification purpose: notification or morning-brief",
+      "notification",
+    )
     .requiredOption(
       "--subject <subject>",
       "Email subject (at most 180 characters)",
@@ -132,11 +138,13 @@ export function createNotifyCommand(): Command {
       "after",
       `
 Examples:
-  okou notify mail --subject "Your brief" --file brief.md --idempotency-key morning-brief:2026-10-08 --json
+  okou notify mail --kind morning-brief --subject "Morning Brief" --file brief.md --idempotency-key morning-brief:2026-10-08 --json
   printf 'A useful update' | okou notify mail --subject "Update" --idempotency-key update:123 --json
 
 Requires an active Okou run with notify:write and notifyMail enabled.
 Uses Okou's sender and your account email; no Gmail or Outlook connector is needed.
+notification is the default. morning-brief requires a run from the official Morning Brief automation
+and uses its original artwork and Manage link; it does not disable the completion email.
 queued means awaiting delivery; sent means provider accepted, not inbox delivered.
 skipped means opt-out, suppression, or no account email stopped delivery.
 Provider requests already in flight cannot be recalled.
@@ -148,6 +156,7 @@ Use a new key only for an intentional new notification. --text/--file take prece
       withErrorHandler(async (options: MailOptions) => {
         const parsed = notifyMailBodySchema.safeParse({
           to: options.to,
+          kind: options.kind,
           subject: options.subject,
           idempotencyKey: options.idempotencyKey,
           text: await readBody(options),

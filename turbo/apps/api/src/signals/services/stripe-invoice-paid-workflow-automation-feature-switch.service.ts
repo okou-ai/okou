@@ -1,6 +1,7 @@
 import {
   featureSwitchContextFromRows,
   userFeatureSwitchRowCondition,
+  type UserFeatureSwitchOverrideRow,
 } from "./feature-switch-scope";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { computed } from "ccstate";
@@ -8,24 +9,32 @@ import { computed } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 
-import type { ReadonlyDb } from "../external/db";
 import { userFeatureSwitchOverrides } from "./feature-switches.service";
 
-export async function stripeInvoicePaidWorkflowAutomationEnabledForOwnerInDb(
-  db: ReadonlyDb,
-  orgId: string,
-  userId: string,
-): Promise<boolean> {
-  const featureSwitchContextRows0 = await db
-    .select({
+interface StripeInvoiceFeatureOwner {
+  readonly orgId: string;
+  readonly userId: string;
+}
+
+export function stripeInvoicePaidFeatureReadPlan(
+  owner: StripeInvoiceFeatureOwner,
+) {
+  return {
+    columns: {
       userId: userFeatureSwitches.userId,
       switches: userFeatureSwitches.switches,
-    })
-    .from(userFeatureSwitches)
-    .where(userFeatureSwitchRowCondition(orgId, userId));
+    },
+    condition: userFeatureSwitchRowCondition(owner.orgId, owner.userId),
+  };
+}
+
+export function stripeInvoicePaidFeatureEnabledFromRows(
+  owner: StripeInvoiceFeatureOwner,
+  rows: readonly UserFeatureSwitchOverrideRow[],
+): boolean {
   return isFeatureEnabled(
     FeatureSwitchKey.StripeInvoicePaidWorkflowAutomations,
-    featureSwitchContextFromRows(orgId, userId, featureSwitchContextRows0),
+    featureSwitchContextFromRows(owner.orgId, owner.userId, rows),
   );
 }
 

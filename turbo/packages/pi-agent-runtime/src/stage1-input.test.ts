@@ -1,3 +1,4 @@
+import { PI_MEMORY_STAGE1_RESPONSE_SCHEMA } from "./stage1-provider";
 import { zstdDecompressSync } from "node:zlib";
 import {
   fauxAssistantMessage,
@@ -21,7 +22,6 @@ import {
 
 import { MemoryPiSession } from "./session-memory";
 import {
-  PI_MEMORY_STAGE1_RESPONSE_SCHEMA,
   projectPiMemoryStage1Evidence,
   runPiMemoryStage1Extraction,
 } from "./stage1-memory";
@@ -34,10 +34,7 @@ import {
 } from "./stage1-input";
 import type { PiAgentModelConfig } from "./types";
 import { resolvePiAgentModel } from "./model";
-import {
-  PI_MEMORY_STAGE1_BUILT_IN_MODEL,
-  PI_MEMORY_STAGE1_PERSONAL_MODEL,
-} from "./memory-background-config";
+import { PI_MEMORY_STAGE1_PERSONAL_MODEL } from "./memory-background-config";
 import {
   PI_MEMORY_STAGE1_SYSTEM_PROMPT,
   renderPiMemoryStage1Input,
@@ -54,7 +51,8 @@ afterAll(() => {
   return server.close();
 });
 const SESSION = "00000000-0000-4000-8000-000000000123";
-const MODEL = PI_MEMORY_STAGE1_BUILT_IN_MODEL;
+// Captured requests from the previous API still use the Luna contract.
+const MODEL = "gpt-6-luna";
 
 function canonical(messages: readonly Message[]): PiMemoryStage1Evidence[] {
   const session = MemoryPiSession.create({ cwd: "/private/path", id: SESSION });
@@ -664,7 +662,7 @@ describe("Stage 1 evidence and complete request admission", () => {
     ["over_budget", "openai-responses"],
     ["over_budget", "openai-completions"],
   ] as const)(
-    "retains terminal %s through the %s SDK callback with zero HTTP",
+    "rejects terminal %s in the complete %s SDK body with zero HTTP",
     async (failure, dialect) => {
       const bodies = captureBodies(
         dialect === "openai-completions"

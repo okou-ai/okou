@@ -47,10 +47,9 @@ function settledRunUsageQuery(args: RunUsageScope) {
       userId: chatThreads.userId,
       kind: usage.kind,
       provider: provider.mapWith(pgTextDecoder).as("provider"),
-      credits:
-        sql`COALESCE(${sum(sql`${usage.creditsCharged} + ${usage.allowanceUnits}`)}, 0)::bigint`
-          .mapWith(pgInt8ToSafeIntegerDecoder)
-          .as("credits"),
+      credits: sql`COALESCE(${sum(usage.creditsCharged)}, 0)::bigint`
+        .mapWith(pgInt8ToSafeIntegerDecoder)
+        .as("credits"),
       settledAt:
         sql`COALESCE(MAX(${agentRuns.completedAt}), MAX(${billingRunAttribution.runStartedAt}), MAX(${agentRuns.createdAt}), MAX(${usage.processedHour}))`
           .mapWith(agentRuns.createdAt)

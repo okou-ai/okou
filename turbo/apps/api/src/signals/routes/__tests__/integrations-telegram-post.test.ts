@@ -955,7 +955,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       };
     }
     const main = await completeDm("start the main DM", 3501);
-    return { actor, sendDm, completeDm, main };
+    return { actor, sendDm, completeDm, main, telegram };
   }
 
   describe.each([
@@ -1080,7 +1080,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       expect(returned.chatThread.id).toBe(main.chatThread.id);
       expect(returned.chatThread.selectedModel).toBe("claude-fable-5-1");
 
-      // Auto is the empty selection.
+      // An explicit Auto command stores the canonical selection.
       await sendDm("/model auto", 3512);
       const lifecycle = await chatApi.requestThreadEvents(dm.actor, {}, [200]);
       if (lifecycle.status !== 200) {
@@ -1091,7 +1091,14 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
           return thread.id === main.chatThread.id;
         },
       );
-      expect(autoThread?.selectedModel).toBeNull();
+      expect(autoThread?.selectedModel).toBe("auto");
+      await sendDm("/model", 3513);
+      expect(dm.telegram.sentMessages.at(-1)?.text).toContain(
+        "Current: <b>Auto</b>",
+      );
+      expect(dm.telegram.sentMessages.at(-1)?.text).toContain(
+        "Auto (current, default)",
+      );
     });
   });
 

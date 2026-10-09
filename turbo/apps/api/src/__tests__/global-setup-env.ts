@@ -1,13 +1,15 @@
 import { apiTestEnvironment } from "./test-environment";
+import { apiTestDatabaseUrl } from "./test-database-url";
 import { singleton } from "../lib/singleton";
 
 // globalSetup runs outside Vitest workers, before env-stub can be loaded.
 const previousEnvironment = singleton(() => {
   const environment = {
     ...apiTestEnvironment,
-    DATABASE_URL:
-      process.env.DATABASE_URL ??
-      "postgresql://postgres:postgres@localhost:5432/vm0_test",
+    DATABASE_URL: apiTestDatabaseUrl(
+      process.env.DATABASE_URL,
+      process.env.PGOPTIONS,
+    ).toString(),
   };
   const previous = new Map(
     Object.keys(environment).map((key) => {

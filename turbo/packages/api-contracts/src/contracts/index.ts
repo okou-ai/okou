@@ -6,6 +6,12 @@
  */
 export { initContract } from "./base";
 export {
+  ORG_OPENROUTER_PRESETS,
+  orgOpenrouterPresetSchema,
+  orgOpenrouterPresetContract,
+  type OrgOpenrouterPreset,
+} from "./org-openrouter-preset";
+export {
   buildCommitShaSchema,
   buildInfoContract,
   buildInfoResponseSchema,
@@ -408,6 +414,7 @@ export {
   type ArtifactDetail,
   type ArtifactSummary,
 } from "./artifact-catalog";
+export { artifactGoogleDriveContract } from "./artifact-google-drive";
 export {
   chatThreadsContract,
   chatThreadByIdContract,

@@ -1,5 +1,38 @@
 # Changelog
 
+## [9.381.1](https://github.com/okou-ai/okou/compare/cli-v9.381.0...cli-v9.381.1) (2026-10-09)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.544.0
+    * @okouai/core bumped to 8.737.3
+    * @okouai/pi-agent-runtime bumped to 1.48.1
+
+## [9.381.0](https://github.com/okou-ai/okou/compare/cli-v9.380.1...cli-v9.381.0) (2026-10-09)
+
+
+### Features
+
+* make pi memory free with an openrouter preset ([#38290](https://github.com/okou-ai/okou/issues/38290)) ([5768ad5](https://github.com/okou-ai/okou/commit/5768ad5ef7ce0808c6cde85a9eb628be7e8aeb57))
+* **notify:** add morning brief notification kind ([#38308](https://github.com/okou-ai/okou/issues/38308)) ([31d9036](https://github.com/okou-ai/okou/commit/31d9036dcb2e6a005ebbdb250a3b216ce713c51c))
+
+
+### Performance Improvements
+
+* **ci:** reduce runner image prepare startup overhead ([#38200](https://github.com/okou-ai/okou/issues/38200)) ([0f05acd](https://github.com/okou-ai/okou/commit/0f05acd51d6acb3080d3b09144537bdfef74e80f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.543.0
+    * @okouai/core bumped to 8.737.2
+    * @okouai/pi-agent-runtime bumped to 1.48.0
+
 ## [9.380.1](https://github.com/okou-ai/okou/compare/cli-v9.380.0...cli-v9.380.1) (2026-10-09)
 
 

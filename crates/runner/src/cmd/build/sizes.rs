@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::byte_size::human_bytes;
+use runner_host::byte_size::human_bytes;
 
 /// Return `(logical, disk)` as human-readable strings (e.g. "65.2 MiB").
 ///

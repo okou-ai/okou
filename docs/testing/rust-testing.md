@@ -64,6 +64,20 @@ cargo test --manifest-path crates/Cargo.toml --profile local --locked \
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-storage -- --test-threads=1
 
+# Storage-cache GC and retained Runner policy/report composition
+# All 34 archive/decoded-cache GC cases moved into Storage; filesystem (4),
+# lock cleanup (8), and byte formatting (1) cases moved into Host. None removed.
+# Four new boundary regressions cover explicit age propagation and Runner's
+# defaults, grace, dry-run, zero-byte/allocated-byte activity, reports and errors.
+# The low-NOFILE ordinary parent invokes exactly one guarded ignored child:
+# cache_gc::tests::gc_storage_cache_many_candidates_low_fd_child,
+# with OKOU_RUNNER_STORAGE_LOW_FD_STORAGE_GC_CHILD=1 and its existing 60s bound.
+# Private directory iteration faults use Host's non-default test-support feature;
+# normal production builds do not enable it. Warm scoped tests are correctness
+# evidence, not the complete ten-package cold-memory acceptance gate below.
+cargo test --manifest-path crates/Cargo.toml --profile local --locked \
+  -j 1 -p runner-host -p runner-storage -p runner -- --test-threads=1
+
 # Extracted Runner active-run, idle sandbox, workspace and cache snapshot owner tests
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-lifecycle -- --test-threads=1
@@ -158,6 +172,13 @@ synchronous guard across an await. Consume owned parsed arrays rather than
 cloning them, and reuse canonical fixture bytes for exact-original checks.
 Textual JSON observations must include member names and preserve the caller's
 search domain; they are not arbitrary serialized-JSON substring searches.
+
+Keep one canonical serialized fixture for writing and exact-byte verification,
+and consume already-owned observation snapshots instead of immediately cloning
+another. Response gates may borrow raw JSON when extracting sequence metadata;
+retain complete parsed-body assertions and reject missing or invalid sequences.
+Reuse periodic synthetic pixel rows only when all original dimensions, pixel
+values, compression settings and actual encoded/retained buffers remain intact.
 
 Keep real process/socket deadlines, full payload/file/pixel boundaries, key/KDF
 strengths, every assertion and actual retained image buffers. Compare complete

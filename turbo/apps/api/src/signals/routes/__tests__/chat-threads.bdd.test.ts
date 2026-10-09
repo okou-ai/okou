@@ -1069,22 +1069,22 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
       }),
       [201],
     );
-    expect(created.body.selectedModel).toBeNull();
+    expect(created.body.selectedModel).toBe("auto");
     await expect(
       chat.readThreadMetadata(actor, created.body.id),
-    ).resolves.toMatchObject({ selectedModel: null });
+    ).resolves.toMatchObject({ selectedModel: "auto" });
     await expect(allThreadEvents(actor)).resolves.toContainEqual(
       expect.objectContaining({
         id: eventId,
         kind: "created",
         chatThreadId: created.body.id,
-        selectedModel: null,
+        selectedModel: "auto",
       }),
     );
   });
 
   it.each([null, "auto"])(
-    "stores Auto intent %s as a null thread selection for limited-free-1 workspaces",
+    "stores canonical Auto intent %s for limited-free-1 workspaces",
     async (model) => {
       const fixture = createPublicFirewallFixture(context);
       await fixture.run(async () => {
@@ -1135,7 +1135,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
         await chat.updateThreadModelSelection(actor, thread.id, model);
         await expect(
           chat.readThreadMetadata(actor, thread.id),
-        ).resolves.toMatchObject({ selectedModel: null });
+        ).resolves.toMatchObject({ selectedModel: "auto" });
       });
     },
     90_000,

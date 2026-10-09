@@ -6,6 +6,7 @@ import {
 import { agents } from "@okouai/db/schema/agent";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
+import { sameSelectedModel } from "@okouai/core/auto-run-model";
 import { command } from "ccstate";
 import { and, eq, isNull, or } from "drizzle-orm";
 import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
@@ -729,7 +730,7 @@ function feishuModelCommandOptions(
     return {
       commandValue: integrationModelOptionValue(option.model),
       label: `${option.label}${option.isDefault ? " (default)" : ""}`,
-      current: currentSelectedModel === option.model,
+      current: sameSelectedModel(currentSelectedModel, option.model),
     };
   });
 }

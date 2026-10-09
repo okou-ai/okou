@@ -85,10 +85,6 @@ import {
   executionOrgSlots,
 } from "./execution-org-context.service";
 import { ORG_SENTINEL_USER_ID } from "./feature-switch-scope";
-import {
-  createUsageAllowanceContext,
-  type UsageAllowanceContext,
-} from "./usage-allowance-context.service";
 
 import { now } from "../../lib/time";
 import {
@@ -127,7 +123,6 @@ export interface AgentRunContextSignals {
   readonly orgMetadata$: Computed<Promise<RunOrgMetadata | null>>;
   readonly plan$: Computed<Promise<OrgPlanCapabilities | null>>;
   readonly concurrencyCapacity$: Computed<Promise<number>>;
-  readonly allowance$: Computed<Promise<UsageAllowanceContext>>;
   readonly credits$: Computed<Promise<ExecutionCreditBalance | null>>;
   readonly modelFacts$: Computed<Promise<OrgModelBootstrap>>;
   readonly memberModels$: Computed<Promise<MemberModelBootstrap>>;
@@ -413,8 +408,6 @@ function createOrgContext(
       return Number.isFinite(limit) ? limit : 0;
     });
   const modelCatalog$ = globalReferences.catalog$;
-  const allowance$ =
-    sharedOrg?.allowance$ ?? createUsageAllowanceContext(orgId);
   const modelFacts$ =
     sharedOrg?.modelFacts$ ??
     computed(async (get) => {
@@ -431,7 +424,6 @@ function createOrgContext(
     orgMetadata$,
     plan$,
     concurrencyCapacity$,
-    allowance$,
     modelFacts$,
     globalReferences,
     memberModels$,
@@ -453,7 +445,6 @@ function createIdentityContext(
     orgMetadata$,
     plan$,
     concurrencyCapacity$,
-    allowance$,
     modelFacts$,
     globalReferences,
     memberModels$,
@@ -533,7 +524,6 @@ function createIdentityContext(
     orgMetadata$,
     plan$,
     concurrencyCapacity$,
-    allowance$,
     credits$,
     modelFacts$,
     memberModels$,
@@ -577,7 +567,6 @@ export const preloadAgentRunContext$ = command(
       signals.orgMetadata$,
       signals.plan$,
       signals.concurrencyCapacity$,
-      signals.allowance$,
       signals.credits$,
       signals.modelFacts$,
       signals.memberModels$,

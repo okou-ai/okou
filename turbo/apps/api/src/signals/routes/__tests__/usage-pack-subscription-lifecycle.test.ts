@@ -505,6 +505,28 @@ function mockUsagePackPriceCatalog(
     if (typeof priceId !== "string") {
       throw new Error("Expected a Stripe Price ID");
     }
+    const fixedAmounts = new Map<string, number>([
+      [TEST_PRICE_PRO, 2000],
+      [TEST_PRICE_TEAM, 10_000],
+      [TEST_PRICE_PLAN_PRO, 0],
+      [TEST_PRICE_PLAN_TEAM, 0],
+      [TEST_PRICE_ATOM_GRANT, 0],
+    ]);
+    for (const customPriceId of env("OKOU_PRICE_CUSTOM") ?? []) {
+      fixedAmounts.set(customPriceId, 0);
+    }
+    const fixedAmount = fixedAmounts.get(priceId);
+    if (fixedAmount !== undefined) {
+      return Promise.resolve({
+        id: priceId,
+        active: true,
+        currency: "usd",
+        type: "recurring",
+        recurring: { interval: "month", interval_count: 1 },
+        unit_amount: fixedAmount,
+        product: { id: `prod_${priceId}`, metadata: {} },
+      });
+    }
     const configuration = usagePackForPriceId(priceId);
     return Promise.resolve({
       id: priceId,
@@ -731,11 +753,14 @@ describe("usage pack subscription Stripe lifecycle", () => {
           purchasedCredits: 16_670,
           bonusCredits: 866,
           totalCredits: 17_536,
-          creditGrants: credits.body.creditGrants,
+          // Equal creation timestamps do not define an order between grants.
+          // Require the same complete grants and cardinality in both balances.
+          creditGrants: expect.arrayContaining(credits.body.creditGrants),
         },
       ],
     });
     expect(credits.body.creditGrants).toHaveLength(2);
+    expect(credits.body.memberCredits?.[0]?.creditGrants).toHaveLength(2);
   });
 
   it("grants fully discounted renewal credits without a refundable amount", async () => {

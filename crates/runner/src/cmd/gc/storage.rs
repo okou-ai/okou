@@ -1,524 +1,178 @@
-use std::os::unix::fs::MetadataExt;
-use std::path::{Path, PathBuf};
-use std::time::SystemTime;
-
-use tracing::{info, warn};
-
-use crate::byte_size::human_bytes;
 use crate::error::RunnerResult;
 use runner_host::paths::HomePaths;
+use runner_storage::cache_gc::CacheGcLimits;
 
 use super::GC_MIN_AGE;
-use super::filesystem::{
-    GcDirStatus, collect_dir_stats, dir_stats, gc_entry_is_real_dir, gc_path_dir_status,
-    next_entry_warn_or_stop, read_dir_or_missing,
-};
-use super::lock_file::{LockProbe, probe_lock, remove_unused_lock_after_probe};
 use super::report::GcReport;
 
-/// Per-host storage archive cache byte target for best-effort eviction.
-/// `gc_storage_cache` may leave the cache above this target when protected or
-/// unmeasured entries leave no safe eviction candidate.
-const STORAGE_CACHE_MAX_BYTES: u64 = 1 << 30; // 1 GiB
-/// Per-host storage archive cache entry target for best-effort eviction. The
-/// byte target alone does not bound many tiny storage versions, and each
-/// cached version also creates a lock file. Recent, held-lock, and
-/// lock-probe-error entries can leave this target exceeded after one pass.
+/// Best-effort archive-cache targets remain command policy, not Storage defaults.
+const STORAGE_CACHE_MAX_BYTES: u64 = 1 << 30;
 const STORAGE_CACHE_MAX_ENTRIES: u64 = 5_000;
 
-/// Eligible `<version>` directory discovered during the scan phase.
-///
-/// The scan-time size is reused only when deletion reacquires the per-version
-/// lock and finds the same directory identity and mtime.
-struct StorageCandidate {
-    path: PathBuf,
-    name: String,
-    version: String,
-    size: u64,
-    mtime: SystemTime,
-    identity: Option<StorageDirectoryIdentity>,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-struct StorageDirectoryIdentity {
-    device: u64,
-    inode: u64,
-}
-
-impl From<&std::fs::Metadata> for StorageDirectoryIdentity {
-    fn from(metadata: &std::fs::Metadata) -> Self {
-        Self {
-            device: metadata.dev(),
-            inode: metadata.ino(),
-        }
+fn storage_cache_limits() -> CacheGcLimits {
+    CacheGcLimits {
+        max_bytes: STORAGE_CACHE_MAX_BYTES,
+        max_entries: STORAGE_CACHE_MAX_ENTRIES,
+        min_age: GC_MIN_AGE,
     }
 }
 
-struct StorageEvictionResult {
-    freed: u64,
-    /// Candidate contribution to keep in `total_size` after this attempt.
-    /// `None` removes the scan-time size from this pass's measured accounting.
-    remaining_size: Option<u64>,
-    /// Candidate contribution to keep in `total_entries` after this attempt.
-    /// Dry-runs set this to false to model the real deletion while leaving
-    /// the filesystem untouched.
-    remaining_entry: bool,
-    /// True when a real run deleted the cache entry, or a dry-run would have.
-    evicted: bool,
-}
-
-/// Best-effort eviction for `/var/lib/vm0-runner/storages/` using storage
-/// cache byte and entry targets, evicting least-recently-used `<version>`
-/// directories first. The targets are not unconditional post-GC caps: a pass
-/// may finish above either target when recent, held-lock, or lock-probe-error
-/// entries cannot be safely evicted.
-///
-/// Entries younger than [`GC_MIN_AGE`] or whose per-version flock is held
-/// are always protected — the former prevents races with a writer's
-/// atomic rename-in, the latter protects an in-flight cache read. Stale
-/// `<version>.tmp/` staging directories are removed under the final
-/// version's flock so crashed writers do not leak disk indefinitely.
-/// Entries whose locks are held or whose lock probes fail are not safely
-/// measured for byte accounting. Consequently, `remaining_bytes` in the
-/// storage-cache GC log is a lower bound on cache disk usage when such entries
-/// exist. A candidate can also become locked or recent during deletion
-/// revalidation and remain on disk after that pass.
-///
-/// A missing `storages_dir` is a no-op: a host without a populated storage
-/// cache has nothing to collect.
 pub(super) async fn gc_storage_cache(home: &HomePaths, dry_run: bool) -> RunnerResult<GcReport> {
-    gc_storage_cache_with_limits_report(
-        home,
-        STORAGE_CACHE_MAX_BYTES,
-        STORAGE_CACHE_MAX_ENTRIES,
-        dry_run,
-    )
-    .await
+    let report =
+        runner_storage::cache_gc::gc_storage_cache(home, storage_cache_limits(), dry_run).await?;
+    Ok(GcReport::cleanup(report.activity_count, report.freed_bytes))
 }
 
 #[cfg(test)]
-async fn gc_storage_cache_with_cap(
-    home: &HomePaths,
-    max_bytes: u64,
-    dry_run: bool,
-) -> RunnerResult<u64> {
-    let report = gc_storage_cache_with_limits_report(home, max_bytes, u64::MAX, dry_run).await?;
-    Ok(report.freed_bytes)
-}
+mod tests {
+    use super::super::report::{log_gc_phase_summary, log_gc_summary};
+    use super::super::test_support::{old_gc_time, set_mtime, test_home};
+    use super::super::{GcOperations, RealGcOperations};
+    use super::*;
+    use crate::error::RunnerError;
+    use std::path::PathBuf;
+    use std::time::SystemTime;
+    use tracing_subscriber::prelude::*;
+    use tracing_test_support::CapturedEvents;
 
-#[cfg(test)]
-async fn gc_storage_cache_with_limits(
-    home: &HomePaths,
-    max_bytes: u64,
-    max_entries: u64,
-    dry_run: bool,
-) -> RunnerResult<u64> {
-    let report = gc_storage_cache_with_limits_report(home, max_bytes, max_entries, dry_run).await?;
-    Ok(report.freed_bytes)
-}
-
-async fn gc_storage_cache_with_limits_report(
-    home: &HomePaths,
-    max_bytes: u64,
-    max_entries: u64,
-    dry_run: bool,
-) -> RunnerResult<GcReport> {
-    let storages_dir = home.storages_dir();
-    let Some(mut name_entries) = read_dir_or_missing(&storages_dir).await? else {
-        return Ok(GcReport::default());
-    };
-
-    let now = SystemTime::now();
-    let mut candidates: Vec<StorageCandidate> = Vec::new();
-    // Measured bytes considered for this pass. Recent (age-protected) entries
-    // count toward this total but are not eviction candidates; entries whose
-    // locks are held or whose lock probes fail deliberately do NOT count
-    // because they cannot be safely measured without racing the writer.
-    // Therefore this total is a lower bound on cache disk usage when any
-    // entry is unmeasured.
-    let mut total_size: u64 = 0;
-    // Entry cardinality is independent from byte accounting: locked or
-    // probe-error entries still contribute to filesystem pressure even when
-    // they cannot be safely evicted in this pass.
-    let mut total_entries: u64 = 0;
-    let mut freed: u64 = 0;
-    let mut activity_count: u64 = 0;
-    let mut scanned_entries: u64 = 0;
-    let mut eligible_entries: u64 = 0;
-    let mut skipped_recent: u64 = 0;
-    let mut skipped_locked: u64 = 0;
-    let mut lock_probe_errors: u64 = 0;
-    let mut evicted_entries: u64 = 0;
-
-    while let Some(name_entry) =
-        next_entry_warn_or_stop(&mut name_entries, "gc_storage_cache", &storages_dir).await
-    {
-        let name_path = name_entry.path();
-        let Some(name_str) = name_path.file_name().and_then(|n| n.to_str()) else {
-            continue;
-        };
-        match gc_entry_is_real_dir(&name_entry).await {
-            Ok(true) => {}
-            Ok(false) => continue,
-            Err(e) => {
-                warn!("storages/{name_str}: cannot read file type ({e}), skipping");
-                continue;
-            }
+    fn cache_entry(
+        home: &HomePaths,
+        version: &str,
+        staging: bool,
+        bytes: &[u8],
+        mtime: SystemTime,
+    ) -> PathBuf {
+        let mut path = home.storage_cache_dir("adapter-cache", version);
+        if staging {
+            let final_name = path.file_name().unwrap().to_str().unwrap();
+            path = path.with_file_name(format!("{final_name}.tmp"));
         }
-
-        let mut version_entries = match tokio::fs::read_dir(&name_path).await {
-            Ok(rd) => rd,
-            Err(e) => {
-                warn!("storages/{name_str}: read failed ({e}), skipping");
-                continue;
-            }
-        };
-
-        while let Some(version_entry) =
-            next_entry_warn_or_stop(&mut version_entries, "gc_storage_cache", &name_path).await
-        {
-            let version_path = version_entry.path();
-            let Some(version_str) = version_path.file_name().and_then(|n| n.to_str()) else {
-                continue;
-            };
-            match gc_entry_is_real_dir(&version_entry).await {
-                Ok(true) => {}
-                Ok(false) => continue,
-                Err(e) => {
-                    warn!(
-                        "storages/{name_str}/{version_str}: cannot read file type ({e}), skipping"
-                    );
-                    continue;
-                }
-            }
-            if let Some(final_version_hash) = version_str.strip_suffix(".tmp") {
-                if let Some(staging_freed) = gc_storage_staging_dir(
-                    home,
-                    name_str,
-                    final_version_hash,
-                    &version_path,
-                    now,
-                    dry_run,
-                )
-                .await
-                {
-                    freed = freed.saturating_add(staging_freed);
-                    activity_count = activity_count.saturating_add(1);
-                }
-                continue;
-            }
-
-            scanned_entries = scanned_entries.saturating_add(1);
-            total_entries = total_entries.saturating_add(1);
-
-            let lock_path = home.storage_lock_for_cache_key(name_str, version_str);
-            let lock = match probe_lock(&lock_path) {
-                LockProbe::Free(l) => l,
-                LockProbe::Held => {
-                    skipped_locked = skipped_locked.saturating_add(1);
-                    continue;
-                }
-                LockProbe::Error(_) => {
-                    lock_probe_errors = lock_probe_errors.saturating_add(1);
-                    continue;
-                }
-            };
-
-            let stats = collect_dir_stats(&version_path).await;
-            let size = stats.size;
-            let mtime = stats.mtime;
-            let identity = stats
-                .root_metadata
-                .as_ref()
-                .map(StorageDirectoryIdentity::from);
-            let age = now.duration_since(mtime).unwrap_or_default();
-            total_size = total_size.saturating_add(size);
-            drop(lock);
-            if age < GC_MIN_AGE {
-                skipped_recent = skipped_recent.saturating_add(1);
-                continue;
-            }
-
-            let name = name_str.to_owned();
-            let version = version_str.to_owned();
-            eligible_entries = eligible_entries.saturating_add(1);
-            candidates.push(StorageCandidate {
-                path: version_path,
-                name,
-                version,
-                size,
-                mtime,
-                identity,
-            });
+        std::fs::create_dir_all(&path).unwrap();
+        if !bytes.is_empty() {
+            std::fs::write(path.join("archive.tar.gz"), bytes).unwrap();
         }
+        set_mtime(&path, mtime);
+        path
     }
 
-    if total_size <= max_bytes && total_entries <= max_entries {
-        return Ok(GcReport::cleanup(activity_count, freed));
+    fn summary_messages(report: &GcReport, dry_run: bool) -> Vec<String> {
+        let captured = CapturedEvents::default();
+        let subscriber = tracing_subscriber::registry().with(captured.clone());
+        let guard = tracing::subscriber::set_default(subscriber);
+        tracing::callsite::rebuild_interest_cache();
+        log_gc_phase_summary("storage", report, dry_run);
+        let mut total = GcReport::cleanup(2, 512);
+        total += GcReport::cleanup(report.activity_count, report.freed_bytes);
+        log_gc_summary(&total, dry_run);
+        drop(guard);
+        captured
+            .entries()
+            .into_iter()
+            .filter_map(|event| event.fields.get("message").cloned())
+            .collect()
     }
 
-    // LRU: evict oldest first while the measured accounting model exceeds a
-    // target. Protected or unmeasured entries can prevent the target from
-    // being reached in this pass.
-    candidates.sort_by_key(|c| c.mtime);
-
-    for c in candidates {
-        if total_size <= max_bytes && total_entries <= max_entries {
-            break;
-        }
-        let result = evict_storage_candidate(home, &c, now, dry_run).await;
-        freed = freed.saturating_add(result.freed);
-        if result.evicted {
-            evicted_entries = evicted_entries.saturating_add(1);
-            activity_count = activity_count.saturating_add(1);
-        }
-        total_size = total_size.saturating_sub(c.size);
-        if let Some(remaining_size) = result.remaining_size {
-            total_size = total_size.saturating_add(remaining_size);
-        }
-        total_entries = total_entries.saturating_sub(1);
-        if result.remaining_entry {
-            total_entries = total_entries.saturating_add(1);
-        }
-    }
-
-    let eviction_action = if dry_run { "would_evict" } else { "evicted" };
-    // `total_size` is measured accounting, not a complete filesystem
-    // inventory. Entries skipped because their locks were held or their lock
-    // probes failed are absent from it. A candidate that becomes locked or
-    // recent during revalidation remains on disk and contributes according to
-    // what could be safely observed, so `remaining_bytes` can be only a lower
-    // bound when unmeasured entries exist.
-    info!(
-        "storage cache gc: scanned={scanned_entries}, eligible={eligible_entries}, skipped_recent={skipped_recent}, skipped_locked={skipped_locked}, lock_probe_errors={lock_probe_errors}, eviction_action={eviction_action}, evicted_entries={evicted_entries}, freed={}, remaining_bytes={}, remaining_entries={total_entries}, limits=({}, {max_entries} entries)",
-        human_bytes(freed),
-        human_bytes(total_size),
-        human_bytes(max_bytes)
-    );
-
-    Ok(GcReport::cleanup(activity_count, freed))
-}
-
-async fn evict_storage_candidate(
-    home: &HomePaths,
-    candidate: &StorageCandidate,
-    now: SystemTime,
-    dry_run: bool,
-) -> StorageEvictionResult {
-    let lock_path = home.storage_lock_for_cache_key(&candidate.name, &candidate.version);
-    let lock = match probe_lock(&lock_path) {
-        LockProbe::Free(lock) => lock,
-        LockProbe::Held => {
-            if dry_run {
-                info!(
-                    "storages/{}/{}: in use, skipping",
-                    candidate.name, candidate.version
-                );
-            }
-            return StorageEvictionResult {
-                freed: 0,
-                remaining_size: None,
-                remaining_entry: true,
-                evicted: false,
-            };
-        }
-        LockProbe::Error(e) => {
-            warn!(
-                "storages/{}/{}: lock probe failed ({e}), skipping",
-                candidate.name, candidate.version
-            );
-            return StorageEvictionResult {
-                freed: 0,
-                remaining_size: None,
-                remaining_entry: true,
-                evicted: false,
-            };
-        }
-    };
-
-    let metadata = match gc_path_dir_status(&candidate.path).await {
-        Ok(GcDirStatus::RealDir(metadata)) => metadata,
-        Ok(GcDirStatus::NotDirectory) => {
-            warn!(
-                "storages/{}/{}: no longer a directory, skipping",
-                candidate.name, candidate.version
-            );
-            return StorageEvictionResult {
-                freed: 0,
-                remaining_size: None,
-                remaining_entry: false,
-                evicted: false,
-            };
-        }
-        Ok(GcDirStatus::Missing) => {
-            return StorageEvictionResult {
-                freed: 0,
-                remaining_size: None,
-                remaining_entry: false,
-                evicted: false,
-            };
-        }
-        Err(e) => {
-            warn!(
-                "storages/{}/{}: stat failed ({e}), skipping",
-                candidate.name, candidate.version
-            );
-            return StorageEvictionResult {
-                freed: 0,
-                remaining_size: Some(candidate.size),
-                remaining_entry: true,
-                evicted: false,
-            };
-        }
-    };
-
-    let current_mtime = metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH);
-    let current_identity = StorageDirectoryIdentity::from(&metadata);
-    let (size, mtime) =
-        if candidate.identity == Some(current_identity) && candidate.mtime == current_mtime {
-            (candidate.size, current_mtime)
-        } else {
-            dir_stats(&candidate.path).await
-        };
-    let age = now.duration_since(mtime).unwrap_or_default();
-    if age < GC_MIN_AGE {
-        if dry_run {
-            info!(
-                "storages/{}/{}: too recent ({}s), keeping",
-                candidate.name,
-                candidate.version,
-                age.as_secs()
-            );
-        }
-        return StorageEvictionResult {
-            freed: 0,
-            remaining_size: Some(size),
-            remaining_entry: true,
-            evicted: false,
-        };
-    }
-
-    if dry_run {
-        return StorageEvictionResult {
-            freed: size,
-            remaining_size: None,
-            remaining_entry: false,
-            evicted: true,
-        };
-    }
-
-    match tokio::fs::remove_dir_all(&candidate.path).await {
-        Ok(()) => {
-            let lock_name = lock_path.to_string_lossy();
-            remove_unused_lock_after_probe(&lock_path, &lock, &lock_name, false).await;
-            remove_empty_storage_name_dir_after_eviction(&candidate.path, &candidate.name).await;
-            StorageEvictionResult {
-                freed: size,
-                remaining_size: None,
-                remaining_entry: false,
-                evicted: true,
-            }
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => StorageEvictionResult {
-            freed: 0,
-            remaining_size: None,
-            remaining_entry: false,
-            evicted: false,
-        },
-        Err(e) => {
-            warn!(
-                "failed to remove storages/{}/{}: {e}",
-                candidate.name, candidate.version
-            );
-            StorageEvictionResult {
-                freed: 0,
-                remaining_size: Some(size),
-                remaining_entry: true,
-                evicted: false,
-            }
-        }
-    }
-}
-
-async fn remove_empty_storage_name_dir_after_eviction(version_path: &Path, name_hash: &str) {
-    let Some(name_path) = version_path.parent() else {
-        return;
-    };
-
-    match tokio::fs::remove_dir(name_path).await {
-        Ok(()) => {}
-        Err(e)
-            if matches!(
-                e.kind(),
-                std::io::ErrorKind::NotFound | std::io::ErrorKind::DirectoryNotEmpty
-            ) => {}
-        Err(e) => {
-            warn!(
-                "storages/{name_hash}: failed to remove empty storage directory {}: {e}",
-                name_path.display()
-            );
-        }
-    }
-}
-
-async fn gc_storage_staging_dir(
-    home: &HomePaths,
-    name_hash: &str,
-    version_hash: &str,
-    path: &Path,
-    now: SystemTime,
-    dry_run: bool,
-) -> Option<u64> {
-    let lock_path = home.storage_lock_for_cache_key(name_hash, version_hash);
-    let _lock = match probe_lock(&lock_path) {
-        LockProbe::Free(l) => l,
-        LockProbe::Held => {
-            if dry_run {
-                info!("storages/{name_hash}/{version_hash}.tmp: in use, skipping");
-            }
-            return None;
-        }
-        LockProbe::Error(e) => {
-            warn!("storages/{name_hash}/{version_hash}.tmp: lock probe failed ({e}), skipping");
-            return None;
-        }
-    };
-
-    match gc_path_dir_status(path).await {
-        Ok(GcDirStatus::RealDir(_)) => {}
-        Ok(GcDirStatus::Missing | GcDirStatus::NotDirectory) => return None,
-        Err(e) => {
-            warn!("storages/{name_hash}/{version_hash}.tmp: stat failed ({e}), skipping");
-            return None;
-        }
-    }
-
-    let (size, mtime) = dir_stats(path).await;
-    let age = now.duration_since(mtime).unwrap_or_default();
-    if age < GC_MIN_AGE {
-        if dry_run {
-            info!(
-                "storages/{name_hash}/{version_hash}.tmp: too recent ({}s), keeping",
-                age.as_secs()
-            );
-        }
-        return None;
-    }
-
-    if dry_run {
-        info!(
-            "[dry-run] would remove stale storage staging storages/{name_hash}/{version_hash}.tmp ({})",
-            human_bytes(size)
+    #[tokio::test]
+    async fn storage_gc_adapter_preserves_defaults_grace_dry_run_and_zero_byte_activity() {
+        let limits = storage_cache_limits();
+        assert_eq!(limits.max_bytes, 1 << 30);
+        assert_eq!(limits.max_entries, 5_000);
+        assert_eq!(limits.min_age, std::time::Duration::from_secs(600));
+        let dir = tempfile::tempdir().unwrap();
+        let home = test_home(dir.path());
+        let old = cache_entry(&home, "old-staging", true, &[], old_gc_time());
+        let fresh = cache_entry(&home, "fresh-staging", true, &[], SystemTime::now());
+        let mut operations = RealGcOperations;
+        let dry = operations.gc_storage_cache(&home, true).await.unwrap();
+        assert_eq!(dry, GcReport::cleanup(1, 0));
+        assert!(
+            !dry.is_empty(),
+            "zero allocated bytes still represent cleanup activity"
         );
-    } else if let Err(e) = tokio::fs::remove_dir_all(path).await {
-        warn!(
-            "failed to remove stale storage staging storages/{name_hash}/{version_hash}.tmp: {e}"
+        assert!(old.exists() && fresh.exists());
+        let real = operations.gc_storage_cache(&home, false).await.unwrap();
+        assert_eq!(real, dry);
+        assert!(!old.exists() && fresh.exists());
+        assert!(
+            summary_messages(&real, false)
+                .contains(&"gc storage complete: cleaned=1, freed=0 B".to_owned())
         );
-        return None;
+        assert!(
+            summary_messages(&dry, true)
+                .contains(&"gc storage complete: would_clean=1, would_free=0 B".to_owned())
+        );
+
+        // Empty completed versions exercise the real command's cardinality target.
+        for index in 0..=STORAGE_CACHE_MAX_ENTRIES {
+            cache_entry(
+                &home,
+                &format!("version-{index}"),
+                false,
+                &[],
+                old_gc_time(),
+            );
+        }
+        let dry = operations.gc_storage_cache(&home, true).await.unwrap();
+        assert_eq!(dry, GcReport::cleanup(1, 0));
+        let real = operations.gc_storage_cache(&home, false).await.unwrap();
+        assert_eq!(real, dry);
+        assert_eq!(
+            operations.gc_storage_cache(&home, false).await.unwrap(),
+            GcReport::default()
+        );
+        assert!(fresh.exists());
     }
 
-    Some(size)
-}
+    #[tokio::test]
+    async fn storage_gc_adapter_preserves_byte_activity_phase_and_total_reports() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = test_home(dir.path());
+        let old = cache_entry(&home, "allocated-staging", true, &[7; 4096], old_gc_time());
+        let bytes = runner_host::gc::collect_dir_stats(&old).await.size;
+        assert!(bytes > 0);
+        let mut operations = RealGcOperations;
+        let dry = operations.gc_storage_cache(&home, true).await.unwrap();
+        assert_eq!(dry, GcReport::cleanup(1, bytes));
+        assert!(old.exists());
+        let real = operations.gc_storage_cache(&home, false).await.unwrap();
+        assert_eq!(real, dry);
+        assert!(!old.exists());
+        let human = runner_host::byte_size::human_bytes(bytes);
+        let total = runner_host::byte_size::human_bytes(bytes + 512);
+        assert_eq!(
+            summary_messages(&real, false),
+            vec![
+                format!("gc storage complete: cleaned=1, freed={human}"),
+                format!("total: cleaned=3, freed={total}"),
+            ]
+        );
+        assert_eq!(
+            summary_messages(&dry, true),
+            vec![
+                format!("gc storage complete: would_clean=1, would_free={human}"),
+                format!("total: would_clean=3, would_free={total}"),
+            ]
+        );
+    }
 
-#[cfg(test)]
-mod tests;
+    #[tokio::test]
+    async fn storage_gc_adapter_preserves_internal_read_error_category_and_display() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = test_home(dir.path());
+        std::fs::create_dir_all(home.storages_dir().parent().unwrap()).unwrap();
+        std::fs::write(home.storages_dir(), b"not a directory").unwrap();
+        let io_error = std::fs::read_dir(home.storages_dir()).unwrap_err();
+        let expected = format!("read {}: {io_error}", home.storages_dir().display());
+        let mut operations = RealGcOperations;
+        let error = operations.gc_storage_cache(&home, false).await.unwrap_err();
+        assert!(matches!(&error, RunnerError::Internal(message) if message == &expected));
+        assert_eq!(
+            error.to_string(),
+            RunnerError::Internal(expected).to_string()
+        );
+        assert_eq!(
+            std::fs::read(home.storages_dir()).unwrap(),
+            b"not a directory"
+        );
+    }
+}

@@ -1,6 +1,5 @@
 import { command, type Command } from "ccstate";
 import { createElement } from "react";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isDesktopAuthFlow } from "../lib/desktop-auth-flow.ts";
 import { setupDesktopAuthPage } from "./desktop-auth/desktop-auth.ts";
 import {
@@ -107,13 +106,8 @@ import { setupChatThreadFilterShortcut$ } from "./okou-page/chat-thread-filter-s
 import { bootstrapOnboardingGuard$ } from "./okou-page/onboard-guard.ts";
 import {
   applyFeatureSwitches$,
-  featureSwitch$,
   featureSwitches$,
 } from "./external/feature-switch.ts";
-import {
-  setupConnectionDiagnostics$,
-  writeConnectionDiagnostic$,
-} from "./connection-diagnostics.ts";
 import { checkUnifiedSettingsParam$ } from "./okou-page/settings/settings-dialog.ts";
 import { captureInvitationRedirect$ } from "./invitation-redirect.ts";
 import {
@@ -666,15 +660,6 @@ export const bootstrap$ = command(
       ...(vercelProtectionBypass ? { vercelProtectionBypass } : {}),
     });
     set(setupLoggers$);
-
-    // Feature switches start from repository defaults until the API responds.
-    // Install diagnostics before authenticated services so an enabled default
-    // can capture their initial Clerk and Ably waits.
-    set(setupConnectionDiagnostics$, signal);
-    set(writeConnectionDiagnostic$, {
-      action: "set-enabled",
-      enabled: get(featureSwitch$)[FeatureSwitchKey.OkouDebug] ?? false,
-    });
 
     // Keep failures that happen before the first React render observable.
     set(listenSharedWorkerFailure$, signal);

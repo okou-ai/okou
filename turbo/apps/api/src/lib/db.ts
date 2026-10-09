@@ -66,6 +66,11 @@ export const db: SingletonValue<ApiDb> = singleton((): ApiDb => {
   return drizzle(pool());
 });
 
+/** Exclusive lease for the external DB adapter; business nodes receive rows only. */
+export async function acquireDbClient() {
+  return await pool().connect();
+}
+
 export async function closeDbPool(): Promise<void> {
   const current = pool.peek();
   if (current) {

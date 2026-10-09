@@ -16,7 +16,6 @@ import {
 } from "drizzle-orm";
 import { alias, type AnyPgColumn } from "drizzle-orm/pg-core";
 
-import { logger } from "../../lib/log";
 import type { Db } from "../external/db";
 import { chatEventTypeIn } from "./chat-event-type.service";
 
@@ -26,7 +25,6 @@ type ChatQueueEventContextType = NonNullable<
 >;
 
 const queueEventRevoker = alias(chatEvents, "queue_event_revoker");
-const log = logger("ChatEventQueue");
 
 export const CHAT_QUEUE_STALE_AFTER_MS = 5 * 60 * 1000;
 export const CHAT_QUEUE_STALE_RECHECK_WINDOW_MS = 10 * 60 * 1000;
@@ -184,8 +182,6 @@ function pendingChatQueueEventConditionFor(
   );
 }
 
-const SLOW_PENDING_INPUT_READ_MS = 250;
-
 export interface PendingChatInput {
   readonly id: string;
   readonly chatThreadId: string;
@@ -212,7 +208,6 @@ export async function listPendingChatInputs(
     readonly afterSeqId?: number;
   },
 ): Promise<readonly PendingChatInput[]> {
-  const startedAt = performance.now();
   const candidates = await db
     .select({
       id: chatEvents.id,
@@ -249,14 +244,6 @@ export async function listPendingChatInputs(
       return id;
     }),
   );
-  const durationMs = performance.now() - startedAt;
-  if (durationMs >= SLOW_PENDING_INPUT_READ_MS) {
-    log.warn("Pending chat input read exceeded 250 ms", {
-      chatThreadId: args.chatThreadId,
-      scannedRows: candidates.length,
-      durationMs,
-    });
-  }
   return candidates
     .flatMap((event): PendingChatInput[] => {
       if (

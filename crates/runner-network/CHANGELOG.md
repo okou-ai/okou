@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.12](https://github.com/okou-ai/okou/compare/runner-network-v0.2.11...runner-network-v0.2.12) (2026-10-09)
+
+
+### Performance Improvements
+
+* **test:** reduce remaining crates fixture overhead ([#38283](https://github.com/okou-ai/okou/issues/38283)) ([80ea1e5](https://github.com/okou-ai/okou/commit/80ea1e5381b35f4ca152d4ffbf387915d8f3d1cc))
+
 ## [0.2.11](https://github.com/okou-ai/okou/compare/runner-network-v0.2.10...runner-network-v0.2.11) (2026-10-09)
 
 ## [0.2.10](https://github.com/okou-ai/okou/compare/runner-network-v0.2.9...runner-network-v0.2.10) (2026-10-08)

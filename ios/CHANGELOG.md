@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/okou-ai/okou/compare/ios-v0.7.0...ios-v0.7.1) (2026-10-09)
+
+
+### CI
+
+* **ios:** promote verified immutable archives to testflight ([#38232](https://github.com/okou-ai/okou/issues/38232)) ([e7107ba](https://github.com/okou-ai/okou/commit/e7107ba0aba194ef052ee6a087eeb752959ba01e))
+
 ## [0.7.0](https://github.com/okou-ai/okou/compare/ios-v0.6.8...ios-v0.7.0) (2026-10-09)
 
 

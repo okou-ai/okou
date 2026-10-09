@@ -40,21 +40,6 @@ function stripeRefId(ref: StripeRef | undefined): string | null {
   return typeof ref === "string" ? ref : (ref?.id ?? null);
 }
 
-export function canceledUsageAllowanceScheduleMetadata(
-  subscription: Pick<StripeSubscription, "metadata">,
-): Readonly<Record<string, string>> | null {
-  const metadata = subscription.metadata;
-  if (metadata?.allowanceStatus !== "canceled") {
-    return null;
-  }
-  return {
-    allowanceStatus: "canceled",
-    ...(metadata.allowanceCancelAt === undefined
-      ? {}
-      : { allowanceCancelAt: metadata.allowanceCancelAt }),
-  };
-}
-
 function scheduleDiscountParam(
   discount: NonNullable<StripeSchedulePhase["discounts"]>[number],
 ): StripeSchedulePhaseDiscountParam {
@@ -106,7 +91,6 @@ function schedulePhaseParam(
     readonly startDate?: number;
     readonly endDate: number;
     readonly items?: readonly StripeSchedulePhaseItemParam[];
-    readonly metadataOverlay: Readonly<Record<string, string>> | null;
   },
 ): StripeSchedulePhaseParam {
   const startDate = args.startDate ?? phase.start_date;
@@ -115,9 +99,7 @@ function schedulePhaseParam(
     throw new Error("Stripe subscription schedule has an invalid phase");
   }
   const discounts = (phase.discounts ?? []).map(scheduleDiscountParam);
-  const metadata = args.metadataOverlay
-    ? { ...phase.metadata, ...args.metadataOverlay }
-    : phase.metadata;
+  const metadata = phase.metadata;
   return {
     start_date: startDate,
     end_date: args.endDate,
@@ -132,7 +114,6 @@ function schedulePhaseParam(
 export function subscriptionSchedulePhasesEndingAt(
   schedule: Pick<StripeSubscriptionSchedule, "current_phase" | "phases">,
   endDate: number,
-  metadataOverlay: Readonly<Record<string, string>> | null = null,
 ): readonly StripeSchedulePhaseParam[] {
   const currentPhase = schedule.current_phase;
   if (!currentPhase) {
@@ -163,7 +144,6 @@ export function subscriptionSchedulePhasesEndingAt(
   return phases.map((phase) => {
     return schedulePhaseParam(phase, {
       endDate: Math.min(phase.end_date, endDate),
-      metadataOverlay,
     });
   });
 }
@@ -231,7 +211,6 @@ export function subscriptionSchedulePhasesReplacingPriceAt(
       return [
         schedulePhaseParam(phase, {
           endDate: phase.end_date,
-          metadataOverlay: null,
         }),
       ];
     }
@@ -246,20 +225,17 @@ export function subscriptionSchedulePhasesReplacingPriceAt(
         schedulePhaseParam(phase, {
           endDate: phase.end_date,
           items: replacedItems,
-          metadataOverlay: null,
         }),
       ];
     }
     return [
       schedulePhaseParam(phase, {
         endDate: args.effectiveAt,
-        metadataOverlay: null,
       }),
       schedulePhaseParam(phase, {
         startDate: args.effectiveAt,
         endDate: phase.end_date,
         items: replacedItems,
-        metadataOverlay: null,
       }),
     ];
   });

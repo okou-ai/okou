@@ -1288,17 +1288,6 @@
       "subscriptionChangeConfirmed": "訂閱變更已確認。"
     },
     "usage": {
-      "allowance": {
-        "day": "{{value}}天",
-        "hour": "{{value}}小時",
-        "left": "剩餘 {{value}}",
-        "minute": "{{value}}分鐘",
-        "remainingAria": "用量額度剩餘 {{label}}",
-        "resets": "{{date}} 重置",
-        "resetsRaw": "{{value}} 重置",
-        "title": "用量額度",
-        "week": "{{value}}周"
-      },
       "autoRechargeOn": "已開啟自動充值",
       "breakdown": {
         "currentPlanDescription": "套餐每月積分，每個帳單週期重置",
@@ -4896,24 +4885,6 @@
           "enabled_other": "已對接下來{{count}}次執行啟用",
           "title": "抓取網路請求內容"
         },
-        "connectionDiagnostics": {
-          "activeWaits": "活躍等待",
-          "channel": "頻道",
-          "clear": "清空",
-          "connection": "連線",
-          "copyJson": "複製JSON",
-          "description": "檢視認證和Ably連線訊號。",
-          "empty": "沒有記錄到診斷事件。",
-          "events": "事件",
-          "log": "事件日誌",
-          "refresh": "重新整理",
-          "title": "實時連線診斷",
-          "unavailable": "不可用",
-          "workerDescription": "檢視持有實時連線的共享Worker所記錄的抓取內容。",
-          "workerLoading": "載入中",
-          "workerTitle": "共享Worker連線診斷",
-          "workerUnavailable": "不可用"
-        },
         "indexedDb": {
           "countExplanation": "計數使用只讀事務，不會讀取記錄內容。",
           "description": "檢視共享Worker持有的本地聊天快取中的記錄數。",
@@ -4933,6 +4904,13 @@
           "stores": "個物件儲存",
           "title": "IndexedDB儲存",
           "unavailable": "IndexedDB儲存不可用。"
+        },
+        "openrouterPreset": {
+          "description": "對整個組織後續新建的 Auto 和 Okou 1.0 內建模型執行生效，不影響既有執行。",
+          "loading": "載入中…",
+          "systemDefault": "系統預設",
+          "title": "OpenRouter 預設",
+          "unavailable": "無法使用"
         },
         "welcomeThread": {
           "create": "建立歡迎會話",

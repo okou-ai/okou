@@ -100,7 +100,7 @@ describe("GET /api/chat-threads/:id/metadata", () => {
       id: fixture.threadId,
       agentId: fixture.agentId,
       title: "Launch plan",
-      selectedModel: null,
+      selectedModel: "auto",
       modelSettings: {},
       serviceTier: null,
       pinnedAt: null,

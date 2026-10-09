@@ -7,7 +7,6 @@ import {
 import type {
   ChannelOptions,
   ChannelStateChange,
-  ConnectionStateChange,
   InboundMessage,
   RealtimeChannel,
 } from "ably";
@@ -16,16 +15,9 @@ import type { SharedDatabaseBridge } from "../shared-database/bridge.ts";
 import type { SharedDatabaseRealtimeScope } from "../shared-database/protocol.ts";
 import { IN_VITEST } from "../env.ts";
 import { createAblyRealtime, type AblyRealtime } from "../lib/ably-realtime.ts";
-import { now } from "../lib/time.ts";
 import { apiClient$ } from "./api-client.ts";
 import { runtimeAuthenticatedIdentity$ } from "./auth-context.ts";
 import { createAblyAuthCallback } from "../lib/ably-auth.ts";
-import {
-  connectionDiagnosticError,
-  createConnectionDiagnosticSpanId,
-  publishConnectionDiagnostic,
-  type ConnectionDiagnosticDetails,
-} from "./connection-diagnostics.ts";
 import {
   createDeferredPromise,
   detach,
@@ -59,31 +51,6 @@ const MAX_TRANSIENT_RETRIES = 3;
  */
 function realtimeChannelOptions(): ChannelOptions {
   return { attachOnSubscribe: false };
-}
-
-function connectionStateDetails(
-  stateChange: ConnectionStateChange,
-): ConnectionDiagnosticDetails {
-  const errorDetails = connectionDiagnosticError(stateChange.reason);
-  return {
-    ...errorDetails,
-    connectionState: stateChange.current,
-    previousConnectionState: stateChange.previous,
-    retryInMs:
-      typeof stateChange.retryIn === "number"
-        ? stateChange.retryIn
-        : errorDetails.retryInMs,
-  };
-}
-
-function channelStateDetails(
-  stateChange: ChannelStateChange,
-): ConnectionDiagnosticDetails {
-  return {
-    ...connectionDiagnosticError(stateChange.reason),
-    channelState: stateChange.current,
-    previousChannelState: stateChange.previous,
-  };
 }
 
 interface RealtimeMessage {
@@ -674,49 +641,6 @@ function unsubscribeFromRealtimeChannel(
   channel.unsubscribe(subscription.topic, subscription.ablyCallback);
 }
 
-async function trackRealtimeSubscription(
-  operation: () => Promise<unknown>,
-  subscription: ActiveChannelSubscription,
-  subscriberCount: number,
-): Promise<void> {
-  const spanId = createConnectionDiagnosticSpanId();
-  const startedAtMs = now();
-  publishConnectionDiagnostic({
-    details: {
-      subscriberCount,
-      subscriptionKind: subscription.topic === null ? "channel" : "topic",
-    },
-    event: "realtime.subscription",
-    phase: "start",
-    spanId,
-  });
-  const result = await settle(operation());
-  if (!result.ok) {
-    publishConnectionDiagnostic({
-      details: {
-        ...connectionDiagnosticError(result.error),
-        subscriberCount,
-        subscriptionKind: subscription.topic === null ? "channel" : "topic",
-      },
-      durationMs: now() - startedAtMs,
-      event: "realtime.subscription",
-      phase: "error",
-      spanId,
-    });
-    throw result.error;
-  }
-  publishConnectionDiagnostic({
-    details: {
-      subscriberCount,
-      subscriptionKind: subscription.topic === null ? "channel" : "topic",
-    },
-    durationMs: now() - startedAtMs,
-    event: "realtime.subscription",
-    phase: "finish",
-    spanId,
-  });
-}
-
 function createRealtimeSubscriptionChannel(
   channel: RealtimeChannel,
   signal: AbortSignal,
@@ -751,28 +675,22 @@ function createRealtimeSubscriptionChannel(
         onResync,
       };
       subscriptions.set(callback, subscription);
-      await trackRealtimeSubscription(
-        () => {
-          return onRejection(
-            // Registering the listener cannot fail on a transport condition;
-            // waiting for `attached` is what makes the subscription live.
-            async () => {
-              await waitForOperation(
-                subscribeToRealtimeChannel(channel, subscription),
-                subscriptionSignal,
-              );
-              await whenChannelAttached(channel, subscriptionSignal);
-            },
-            () => {
-              if (subscriptions.get(callback) === subscription) {
-                subscriptions.delete(callback);
-              }
-              unsubscribeFromRealtimeChannel(channel, subscription);
-            },
+      await onRejection(
+        // Registering the listener cannot fail on a transport condition;
+        // waiting for `attached` is what makes the subscription live.
+        async () => {
+          await waitForOperation(
+            subscribeToRealtimeChannel(channel, subscription),
+            subscriptionSignal,
           );
+          await whenChannelAttached(channel, subscriptionSignal);
         },
-        subscription,
-        subscriptions.size,
+        () => {
+          if (subscriptions.get(callback) === subscription) {
+            subscriptions.delete(callback);
+          }
+          unsubscribeFromRealtimeChannel(channel, subscription);
+        },
       );
       if (subscriptions.get(callback) !== subscription) {
         unsubscribeFromRealtimeChannel(channel, subscription);
@@ -907,14 +825,6 @@ async function attachRealtimeChannels(
         channelState: channel.state,
         error: result.error,
       });
-      publishConnectionDiagnostic({
-        details: {
-          ...connectionDiagnosticError(result.error),
-          channelState: channel.state,
-        },
-        event: "realtime.channel",
-        phase: "error",
-      });
     }),
   );
 }
@@ -958,26 +868,6 @@ function whenChannelAttached(
   });
 }
 
-function observeRealtimeChannels(
-  channels: ConnectedRealtimeChannels,
-): () => void {
-  const handleStateChange = (stateChange: ChannelStateChange): void => {
-    publishConnectionDiagnostic({
-      details: channelStateDetails(stateChange),
-      event: "realtime.channel",
-      phase: "instant",
-    });
-  };
-  channels.credential.on(handleStateChange);
-  channels.user.on(handleStateChange);
-  channels.org.on(handleStateChange);
-  return () => {
-    channels.credential.off(handleStateChange);
-    channels.user.off(handleStateChange);
-    channels.org.off(handleStateChange);
-  };
-}
-
 interface ConnectedRealtimeClient {
   readonly identity: { userId: string; orgId: string };
   readonly ably: AblyRealtime;
@@ -998,21 +888,6 @@ const connectRealtimeClient$ = command(
       disconnectedRetryTimeout: 5000,
       suspendedRetryTimeout: 15_000,
     });
-    publishConnectionDiagnostic({
-      details: { connectionState: ably.connection.state },
-      event: "realtime.client",
-      phase: "instant",
-    });
-    const handleConnectionStateChange = (
-      stateChange: ConnectionStateChange,
-    ): void => {
-      publishConnectionDiagnostic({
-        details: connectionStateDetails(stateChange),
-        event: "realtime.connection",
-        phase: "instant",
-      });
-    };
-    ably.connection.on(handleConnectionStateChange);
 
     let closed = false;
     const closeConnection = (): void => {
@@ -1022,7 +897,6 @@ const connectRealtimeClient$ = command(
       closed = true;
       signal.removeEventListener("abort", closeConnection);
       ably.close();
-      ably.connection.off(handleConnectionStateChange);
     };
     signal.addEventListener("abort", closeConnection, { once: true });
 
@@ -1042,60 +916,19 @@ const connectRealtimeClient$ = command(
       }
     });
 
-    const initialConnectionSpanId = createConnectionDiagnosticSpanId();
-    const initialConnectionStartedAtMs = now();
-    publishConnectionDiagnostic({
-      details: { connectionState: ably.connection.state },
-      event: "realtime.initial-connection",
-      phase: "start",
-      spanId: initialConnectionSpanId,
-    });
     const initialConnectionResult = await settle(deferred.promise, signal);
     if (!initialConnectionResult.ok) {
-      publishConnectionDiagnostic({
-        details: {
-          ...connectionDiagnosticError(initialConnectionResult.error),
-          connectionState: ably.connection.state,
-        },
-        durationMs: now() - initialConnectionStartedAtMs,
-        event: "realtime.initial-connection",
-        phase: "error",
-        spanId: initialConnectionSpanId,
-      });
       closeConnection();
       throw initialConnectionResult.error;
     }
-    publishConnectionDiagnostic({
-      details: { connectionState: ably.connection.state },
-      durationMs: now() - initialConnectionStartedAtMs,
-      event: "realtime.initial-connection",
-      phase: "finish",
-      spanId: initialConnectionSpanId,
-    });
 
     const channels = connectedRealtimeChannels(
       ably,
       identity.userId,
       identity.orgId,
     );
-    const stopObservingChannels = observeRealtimeChannels(channels);
-    const close = (): void => {
-      signal.removeEventListener("abort", close);
-      closeConnection();
-      stopObservingChannels();
-    };
-    // Own the observer before the first suspension point: cancelling during the
-    // attach below must still detach these listeners.
-    signal.removeEventListener("abort", closeConnection);
-    signal.addEventListener("abort", close, { once: true });
-
     await attachRealtimeChannels(channels);
     signal.throwIfAborted();
-    publishConnectionDiagnostic({
-      details: { channelState: channels.user.state },
-      event: "realtime.channel",
-      phase: "instant",
-    });
     return { ably, channels, identity };
   },
 );
@@ -1151,11 +984,6 @@ const initializeRealtime$ = command(
 
     const pendingSubscriptions = get(pendingAblySubscriptions$);
     if (pendingSubscriptions.length > 0) {
-      publishConnectionDiagnostic({
-        details: { pendingSubscriberCount: pendingSubscriptions.length },
-        event: "realtime.pending-subscribers",
-        phase: "start",
-      });
       L.debug(
         `Realtime connected, starting ${pendingSubscriptions.length} pending subscriber(s)`,
       );
@@ -1175,11 +1003,6 @@ const initializeRealtime$ = command(
         }
       }
       set(pendingAblySubscriptions$, []);
-      publishConnectionDiagnostic({
-        details: { pendingSubscriberCount: 0 },
-        event: "realtime.pending-subscribers",
-        phase: "finish",
-      });
     }
 
     L.debug(`Realtime connected for user:${connected.ably.auth.clientId}`);
@@ -1249,13 +1072,6 @@ const realtimeChannel$ = command(
       signal,
       channelDeferred,
     };
-    publishConnectionDiagnostic({
-      details: {
-        pendingSubscriberCount: get(pendingAblySubscriptions$).length + 1,
-      },
-      event: "realtime.pending-subscribers",
-      phase: "instant",
-    });
     set(pendingAblySubscriptions$, (prev) => {
       return [...prev, pendingSubscription];
     });

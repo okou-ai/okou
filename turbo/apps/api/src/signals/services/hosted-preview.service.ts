@@ -3,6 +3,8 @@ import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { command } from "ccstate";
+import { and, eq } from "drizzle-orm";
+import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import sharp from "sharp";
 import { v5 as uuidv5 } from "uuid";
 import {
@@ -18,10 +20,11 @@ import {
   s3ObjectExists,
   S3ObjectSizeLimitError,
 } from "../external/s3";
+import { nowDate } from "../../lib/time";
+import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import {
   allocatePrivateArtifact$,
-  completePrivateArtifact$,
   privateArtifactRecord$,
   privateArtifactUrl,
   privateArtifactsBucket,
@@ -93,6 +96,45 @@ async function normalizePreview(
   }
   return normalized;
 }
+
+/** Covers are ready file records, not standalone catalog publications. */
+const markHostedPreviewReady$ = command(
+  async (
+    { set },
+    args: {
+      readonly id: string;
+      readonly userId: string;
+      readonly orgId: string;
+      readonly storageKey: string;
+      readonly size: number;
+    },
+    signal: AbortSignal,
+  ) => {
+    const [completed] = await set(writeDb$)
+      .update(runUploadedFiles)
+      .set({
+        url: null,
+        contentType: "image/png",
+        sizeBytes: args.size,
+        materializationStatus: "ready",
+        updatedAt: nowDate(),
+      })
+      .where(
+        and(
+          eq(runUploadedFiles.id, args.id),
+          eq(runUploadedFiles.userId, args.userId),
+          eq(runUploadedFiles.orgId, args.orgId),
+          eq(runUploadedFiles.storageKey, args.storageKey),
+        ),
+      )
+      .returning({ id: runUploadedFiles.id });
+    signal.throwIfAborted();
+    if (!completed) {
+      throw new Error("Hosted preview ownership record is unavailable");
+    }
+    return completed.id;
+  },
+);
 
 export const completeHostedPreview$ = command(
   async (
@@ -202,8 +244,14 @@ export const completeHostedPreview$ = command(
     );
     signal.throwIfAborted();
     await set(
-      completePrivateArtifact$,
-      { id, url: null, contentType: "image/png", size: decoded.value.length },
+      markHostedPreviewReady$,
+      {
+        id,
+        userId: args.userId,
+        orgId: args.orgId,
+        storageKey: artifact.key,
+        size: decoded.value.length,
+      },
       signal,
     );
     await get(deleteS3Objects(bucket, [key], signal));

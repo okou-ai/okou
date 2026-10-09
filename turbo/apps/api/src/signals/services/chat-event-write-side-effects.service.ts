@@ -17,9 +17,6 @@ export function reportChatEventSideEffect(
   };
   if (result.ok) {
     L.debug("Chat event auxiliary write completed", timing);
-    if (timing.durationMs >= 250) {
-      L.warn("Chat event auxiliary write exceeded 250 ms", timing);
-    }
   } else {
     L.error("Chat event auxiliary write failed", {
       ...timing,

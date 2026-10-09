@@ -6,10 +6,6 @@ import {
 import { z } from "zod";
 
 import {
-  connectionDiagnosticsSchema,
-  type ConnectionDiagnostics,
-} from "../signals/connection-diagnostics.ts";
-import {
   chatThreadIndicatorsSchema,
   type ChatThreadIndicators,
 } from "./data-key.ts";
@@ -17,7 +13,6 @@ import {
 export const computedKeySchema = z.enum([
   "chat-thread-indicators",
   "computer-use-hosts",
-  "connection-diagnostics",
   "indexeddb-diagnostics",
   "indexeddb-snapshot-measurement",
   "queue-data",
@@ -68,7 +63,6 @@ export type IndexedDbSnapshotMeasurement = z.infer<
 interface ComputedValueMap {
   readonly "chat-thread-indicators": ChatThreadIndicators;
   readonly "computer-use-hosts": ListedComputerUseHost[];
-  readonly "connection-diagnostics": ConnectionDiagnostics;
   readonly "indexeddb-diagnostics": IndexedDbDiagnostics;
   readonly "indexeddb-snapshot-measurement": IndexedDbSnapshotMeasurement | null;
   readonly "queue-data": QueueResponse;
@@ -89,9 +83,6 @@ export function parseComputedValue(
   }
   if (computedKey === "computer-use-hosts") {
     return listedComputerUseHostSchema.array().parse(value);
-  }
-  if (computedKey === "connection-diagnostics") {
-    return connectionDiagnosticsSchema.parse(value);
   }
   if (computedKey === "indexeddb-diagnostics") {
     return indexedDbDiagnosticsSchema.parse(value);

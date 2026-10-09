@@ -342,7 +342,7 @@ function artifactDialogKindLabel(
 function artifactDialogSyncTarget(
   artifact: AttachmentArtifactMetadata | undefined,
 ): ArtifactDownloadSyncTarget | undefined {
-  if (!artifact) {
+  if (!artifact?.artifactId) {
     return undefined;
   }
   return {
@@ -350,16 +350,15 @@ function artifactDialogSyncTarget(
     agentId: artifact.agentId,
     disconnected: artifact.googleDriveDisconnected,
     recovery: artifact.googleDriveRecovery,
-    fileId: artifact.fileId,
+    artifactId: artifact.artifactId,
+    connectionId: artifact.googleDriveConnectionId,
     filename: artifact.filename,
     onSyncSuccess:
       artifact.onSyncSuccess ??
       (() => {
         return undefined;
       }),
-    runId: artifact.runId,
     synced: artifact.googleDriveSynced,
-    threadId: artifact.threadId,
   };
 }
 
@@ -388,8 +387,13 @@ function artifactDialogMetadataFromItem(params: {
   onSyncSuccess: () => void;
   threadId: string;
 }): AttachmentArtifactMetadata {
+  const connectionId = params.item.file.googleDriveConnectionId;
   return {
     agentId: params.agentId,
+    ...(params.item.file.artifactId
+      ? { artifactId: params.item.file.artifactId }
+      : {}),
+    ...(connectionId ? { googleDriveConnectionId: connectionId } : {}),
     aliasUrl: params.item.file.aliasUrl,
     artifactKind: params.item.file.artifactKind,
     contentType: params.item.file.contentType,

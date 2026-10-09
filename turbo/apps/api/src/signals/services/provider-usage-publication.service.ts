@@ -1,4 +1,8 @@
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
+import {
+  AUTO_SELECTED_MODEL,
+  isAutoRunPreset,
+} from "@okouai/core/auto-run-model";
 import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { usageEvent } from "@okouai/db/schema/usage-event";
@@ -44,6 +48,8 @@ function billableRunnerEvents(
   run: {
     readonly triggerSource: string | null;
     readonly modelProvider: string | null;
+    readonly selectedModel: string | null;
+    readonly modelRuntimeModel: string | null;
   },
 ) {
   return events
@@ -55,6 +61,19 @@ function billableRunnerEvents(
           run.modelProvider === null ||
           isBuiltInModelProviderType(run.modelProvider))
       );
+    })
+    .map((event) => {
+      if (event.kind !== "model" || run.selectedModel !== AUTO_SELECTED_MODEL) {
+        return event;
+      }
+      if (!isAutoRunPreset(run.modelRuntimeModel)) {
+        throw new Error(
+          "Canonical Auto usage requires its captured runtime model",
+        );
+      }
+      // The Run, not an upstream response or the current org preset, owns billing.
+      // Legacy captures below PR2 retain their producer's original billing key.
+      return { ...event, provider: run.modelRuntimeModel };
     })
     .sort((left, right) => {
       return left.idempotencyKey
@@ -83,6 +102,8 @@ export const recordRunnerUsageBatch$ = command(
             triggerSource: agentRuns.triggerSource,
             threadId: agentRuns.chatThreadId,
             modelProvider: agentRuns.modelProvider,
+            selectedModel: agentRuns.selectedModel,
+            modelRuntimeModel: agentRuns.modelRuntimeModel,
           })
           .from(agentRuns)
           .where(

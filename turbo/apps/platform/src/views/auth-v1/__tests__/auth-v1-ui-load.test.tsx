@@ -12,15 +12,6 @@ import { bootstrapSkeleton } from "../../../test/bootstrap-skeleton.ts";
 const context = testContext();
 
 test("A Clerk UI load failure offers a visible refresh without a partial auth form", async () => {
-  // oxlint-disable-next-line no-console -- Preserve the test harness's fatal handling of every unexpected log.
-  const unexpectedError = vi.mocked(console.error).getMockImplementation();
-  // oxlint-disable-next-line no-console -- The expected SDK failure is asserted through its visible recovery UI below.
-  vi.mocked(console.error).mockImplementation((...args) => {
-    if (args.includes("Clerk UI failed to load")) {
-      return;
-    }
-    unexpectedError?.(...args);
-  });
   vi.spyOn(clerkScript, "loadScript").mockRejectedValueOnce(
     new Error("UI resource is unavailable"),
   );

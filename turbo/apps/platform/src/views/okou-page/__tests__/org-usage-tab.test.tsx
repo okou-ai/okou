@@ -21,22 +21,6 @@ import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts"
 
 const context = testContext();
 const MOCK_NOW = "2026-03-01T01:00:00Z";
-const SHORT_ALLOWANCE_RESET = "2026-03-01T05:00:00Z";
-const WEEKLY_ALLOWANCE_RESET = "2026-03-08T00:00:00Z";
-
-// Mirrors the allowance formatter: a window resetting today shows the clock,
-// a later one shows the day.
-function expectedAllowanceResetText(value: string): string {
-  const date = new Date(value);
-  const resetsToday = date.toDateString() === new Date(MOCK_NOW).toDateString();
-  const formatted = new Intl.DateTimeFormat(
-    "en-US",
-    resetsToday
-      ? { hour: "numeric", minute: "2-digit" }
-      : { month: "short", day: "numeric" },
-  ).format(date);
-  return `Resets ${formatted}`;
-}
 
 function mockBillingStatus(
   overrides: Partial<BillingStatusResponse> = {},
@@ -82,28 +66,6 @@ function mockBillingStatus(
           expiresAt: "2026-04-01T00:00:00Z",
         },
       ],
-      usageAllowance: {
-        windows: [
-          {
-            kind: "short",
-            windowSeconds: 18_000,
-            unitLimit: 5000,
-            consumedUnits: 1250,
-            remainingUnits: 3750,
-            startsAt: "2026-03-01T00:00:00Z",
-            expiresAt: SHORT_ALLOWANCE_RESET,
-          },
-          {
-            kind: "weekly",
-            windowSeconds: 604_800,
-            unitLimit: 50_000,
-            consumedUnits: 10_000,
-            remainingUnits: 40_000,
-            startsAt: "2026-03-01T00:00:00Z",
-            expiresAt: WEEKLY_ALLOWANCE_RESET,
-          },
-        ],
-      },
       concurrencyLimit: 0,
       concurrencySubscriptions: [],
       ...overrides,
@@ -269,27 +231,12 @@ async function setupCreditBalanceReview() {
   });
 }
 
-test("Review workspace credit allowances", async () => {
+test("Review workspace credit balance and additions", async () => {
   await setupCreditBalanceReview();
-  const allowance = screen.getByTestId("usage-allowance-section");
-  expect(allowance).toBeInTheDocument();
-  expect(screen.getByText("Usage allowance")).toBeInTheDocument();
-  expect(screen.getByText("5h")).toBeInTheDocument();
-  expect(screen.getByText("1w")).toBeInTheDocument();
-  expect(screen.getByText("3,750 left")).toBeInTheDocument();
-  expect(screen.getByText("40,000 left")).toBeInTheDocument();
-  expect(
-    screen.getByText(expectedAllowanceResetText(SHORT_ALLOWANCE_RESET)),
-  ).toBeInTheDocument();
-  expect(
-    screen.getByText(expectedAllowanceResetText(WEEKLY_ALLOWANCE_RESET)),
-  ).toBeInTheDocument();
-  expect(within(allowance).getAllByRole("progressbar")).toHaveLength(2);
-});
-
-test("Review workspace credit additions", async () => {
-  await setupCreditBalanceReview();
-  const grants = screen.getByTestId("credit-grants-section");
+  const balance = screen.getByTestId("credit-balance-info");
+  expect(within(balance).getByText("Org credits")).toBeInTheDocument();
+  expect(within(balance).getByText("12,000")).toBeInTheDocument();
+  const grants = within(balance).getByTestId("credit-grants-section");
   expect(within(grants).getByText("Date")).toBeInTheDocument();
   expect(within(grants).getByText("Credits")).toBeInTheDocument();
   expect(within(grants).getByText("Left")).toBeInTheDocument();

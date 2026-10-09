@@ -1312,17 +1312,6 @@
       "subscriptionChangeConfirmed": "Se confirmó el cambio de suscripción."
     },
     "usage": {
-      "allowance": {
-        "day": "{{value}}d",
-        "hour": "{{value}}h",
-        "left": "{{value}} restantes",
-        "minute": "{{value}}m",
-        "remainingAria": "Límite de uso {{label}} restante",
-        "resets": "Se restablece el {{date}}",
-        "resetsRaw": "Se restablece {{value}}",
-        "title": "Asignación de uso",
-        "week": "{{value}} sem"
-      },
       "autoRechargeOn": "Recarga automática activada",
       "breakdown": {
         "currentPlanDescription": "Los créditos mensuales del plan se restablecen en cada ciclo de facturación",
@@ -4985,24 +4974,6 @@
           "enabled_other": "Activado para las próximas {{count}} ejecuciones",
           "title": "Capturar cuerpos de red"
         },
-        "connectionDiagnostics": {
-          "activeWaits": "Esperas activas",
-          "channel": "canal",
-          "clear": "Borrar",
-          "connection": "conexión",
-          "copyJson": "Copiar JSON",
-          "description": "Inspecciona las señales de autenticación y conexión de Ably.",
-          "empty": "No se registraron eventos de diagnóstico.",
-          "events": "eventos",
-          "log": "Registro de eventos",
-          "refresh": "Actualizar",
-          "title": "Diagnóstico de conexión en tiempo real",
-          "unavailable": "no disponible",
-          "workerDescription": "Inspecciona el registro del shared worker que mantiene la conexión en tiempo real.",
-          "workerLoading": "Cargando",
-          "workerTitle": "Diagnóstico de conexión del shared worker",
-          "workerUnavailable": "No disponible"
-        },
         "indexedDb": {
           "countExplanation": "El recuento usa transacciones de solo lectura y no lee el contenido de los registros.",
           "description": "Consulta la cantidad de registros de la caché local de chats administrada por el worker compartido.",
@@ -5022,6 +4993,13 @@
           "stores": "almacenes de objetos",
           "title": "Almacenamiento de IndexedDB",
           "unavailable": "El almacenamiento de IndexedDB no está disponible."
+        },
+        "openrouterPreset": {
+          "description": "Se aplica a las nuevas ejecuciones de Auto y Okou 1.0 integrado de toda la organización. Las ejecuciones existentes no cambian.",
+          "loading": "Cargando…",
+          "systemDefault": "Predeterminado del sistema",
+          "title": "Preset de OpenRouter",
+          "unavailable": "No disponible"
         },
         "welcomeThread": {
           "create": "Crear chat de bienvenida",

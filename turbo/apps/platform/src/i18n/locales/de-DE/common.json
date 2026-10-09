@@ -1289,17 +1289,6 @@
       "subscriptionChangeConfirmed": "Die Abonnementänderung wurde bestätigt."
     },
     "usage": {
-      "allowance": {
-        "day": "{{value}}d",
-        "hour": "{{value}}h",
-        "left": "{{value}} übrig",
-        "minute": "{{value}}m",
-        "remainingAria": "Verbleibendes Nutzungskontingent für {{label}}",
-        "resets": "Wird am {{date}} zurückgesetzt",
-        "resetsRaw": "Wird in {{value}} zurückgesetzt",
-        "title": "Nutzungskontingent",
-        "week": "{{value}}w"
-      },
       "autoRechargeOn": "Automatische Aufladung aktiv",
       "breakdown": {
         "currentPlanDescription": "Monatliche Tarif-Credits; werden in jedem Abrechnungszeitraum zurückgesetzt",
@@ -4917,24 +4906,6 @@
           "enabled_other": "Für {{count}} kommende Ausführungen aktiviert",
           "title": "Netzwerk-Bodys erfassen"
         },
-        "connectionDiagnostics": {
-          "activeWaits": "Aktive Wartevorgänge",
-          "channel": "Kanal",
-          "clear": "Leeren",
-          "connection": "Verbindung",
-          "copyJson": "JSON kopieren",
-          "description": "Authentifizierungs- und Ably-Verbindungssignale untersuchen.",
-          "empty": "Keine Diagnoseereignisse aufgezeichnet.",
-          "events": "Ereignisse",
-          "log": "Ereignisprotokoll",
-          "refresh": "Aktualisieren",
-          "title": "Echtzeit-Verbindungsdiagnose",
-          "unavailable": "nicht verfügbar",
-          "workerDescription": "Die Aufzeichnung des Shared Workers prüfen, der die Echtzeitverbindung hält.",
-          "workerLoading": "Laden",
-          "workerTitle": "Verbindungsdiagnose des Shared Workers",
-          "workerUnavailable": "Nicht verfügbar"
-        },
         "indexedDb": {
           "countExplanation": "Die Zählung verwendet schreibgeschützte Transaktionen und liest keine Datensatzinhalte.",
           "description": "Datensatzanzahlen im lokalen Chat-Cache des Shared Workers prüfen.",
@@ -4954,6 +4925,13 @@
           "stores": "Objektspeicher",
           "title": "IndexedDB-Speicher",
           "unavailable": "IndexedDB-Speicher ist nicht verfügbar."
+        },
+        "openrouterPreset": {
+          "description": "Gilt für neue Auto- und integrierte Okou 1.0-Ausführungen in der gesamten Organisation. Bestehende Ausführungen bleiben unverändert.",
+          "loading": "Wird geladen…",
+          "systemDefault": "Systemstandard",
+          "title": "OpenRouter-Preset",
+          "unavailable": "Nicht verfügbar"
         },
         "welcomeThread": {
           "create": "Willkommenschat erstellen",

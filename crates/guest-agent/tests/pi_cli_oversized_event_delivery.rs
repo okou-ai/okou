@@ -9,7 +9,6 @@ use guest_agent::masker::SecretMasker;
 use guest_agent::paths::GuestPaths;
 use guest_agent::run_context::GuestRuntime;
 use serde_json::{Value, json};
-use std::fmt::Write as _;
 use std::os::unix::fs::PermissionsExt;
 use std::time::Duration;
 
@@ -499,10 +498,12 @@ async fn deliver_pi_rpc(
         .suffix(&format!("_{session_id}.jsonl"))
         .tempfile_in(session_dir)?;
     let session_path = session_file.path();
-    let mut original = String::new();
+    let mut original = Vec::new();
     for event in messages {
-        writeln!(original, "{event}")?;
+        serde_json::to_writer(&mut original, event)?;
+        original.push(b'\n');
     }
+    let original = String::from_utf8(original)?;
     assert!(original.lines().all(
         |line| line.len() < guest_contracts::stdout_framing::ORDINARY_CLI_STDOUT_MAX_LINE_BYTES
     ));

@@ -36,7 +36,10 @@ const host = createHostMapsBddApi(context);
 const chat = createChatFilesBddApi(context);
 
 /** Model real uploads through the returned presigned URL; no private DB setup. */
-function previewStorage() {
+function previewStorage(
+  options: { readonly failStagingDeleteOnce?: boolean } = {},
+) {
+  let failStagingDelete = options.failStagingDeleteOnce ?? false;
   host.captureHostedSitesS3();
   const baseSend = context.mocks.s3.send.getMockImplementation();
   const baseSign = context.mocks.s3.getSignedUrl.getMockImplementation();
@@ -77,6 +80,10 @@ function previewStorage() {
       command instanceof DeleteObjectsCommand &&
       command.input.Bucket === env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME")
     ) {
+      if (failStagingDelete) {
+        failStagingDelete = false;
+        return Promise.reject(new Error("Preview staging cleanup unavailable"));
+      }
       for (const entry of command.input.Delete?.Objects ?? []) {
         if (entry.Key) {
           objects.delete(entry.Key);
@@ -334,6 +341,62 @@ describe("sandbox hosted previews", () => {
       }),
       [404],
     );
+  });
+
+  it("retries a sealed cover after staging cleanup fails without activating it early", async () => {
+    const fixture = createChatEventsFixture(context);
+    const entitled = await fixture.entitledNativeChatActor();
+    if (!entitled.actor.orgId) {
+      throw new Error("Expected an organization");
+    }
+    const actor = { ...entitled.actor, orgId: entitled.actor.orgId };
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.ArtifactPreviews]: true,
+    });
+    const run = await fixture.sendChatRun(actor, {
+      agentId: entitled.agentId,
+      prompt: "Publish a site with a retryable preview",
+    });
+    const { claim } = await fixture.claimChatRun(
+      entitled.runnerGroup,
+      run.runId,
+    );
+    const runner = { bearerToken: okouTokenFromClaim(claim) };
+    const objects = previewStorage({ failStagingDeleteOnce: true });
+    const bytes = await image();
+    const body = {
+      site: `preview-retry-${randomUUID().slice(0, 8)}`,
+      artifactKind: "hosted-site" as const,
+      spaFallback: false,
+      files: [hostedTextFile("/index.html", "<main>Website</main>")],
+      preview: preview(bytes),
+    };
+    const prepared = await host.prepareHostedSite(runner, body);
+    await upload(prepared, bytes);
+    await host.requestCompleteHostedSite(runner, prepared.deploymentId, [500]);
+    const pending = await host.readHostedSiteDeployments(runner, body.site);
+    expect(pending.activeDeploymentId).toBeNull();
+    expect(pending.deployments[0]?.status).toBe("uploading");
+    expect(objects.size).toBe(2);
+
+    const completed = await host.completeHostedSite(
+      runner,
+      prepared.deploymentId,
+    );
+    expect(completed.previewImageUrl).toBeDefined();
+    expect(completed.isActive).toBeTruthy();
+    expect(objects.size).toBe(1);
+    expect([...objects.keys()][0]).not.toMatch(/\/upload$/u);
+    await expect(
+      host.completeHostedSite(runner, prepared.deploymentId),
+    ).resolves.toMatchObject({ previewImageUrl: completed.previewImageUrl });
+    expect((await chat.listArtifactCatalog(actor)).artifacts).toStrictEqual([
+      expect.objectContaining({
+        kind: "hosted-site",
+        title: body.site,
+        thumbnail: { url: completed.previewImageUrl },
+      }),
+    ]);
   });
 
   it("does not activate missing, corrupt, or checksum-mismatched previews and permits repair", async () => {
