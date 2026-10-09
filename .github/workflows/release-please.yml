@@ -429,7 +429,7 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
-      - name: Install AWS CLI for private archive consumption
+      - name: Install AWS CLI for archive consumption
         run: |
           if ! command -v aws >/dev/null; then
             HOMEBREW_NO_AUTO_UPDATE=1 brew install awscli
@@ -439,11 +439,11 @@ jobs:
         env:
           IOS_ARCHIVE_DIR: ${{ runner.temp }}/okou-ios-promotion
           GH_TOKEN: ${{ github.token }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID_DEV }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY_DEV }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_STATIC_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_STATIC_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: auto
           R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
-          R2_BUCKET_NAME: user-artifact-private-dev
+          R2_BUCKET_NAME: ${{ vars.R2_STATIC_BUCKET_NAME }}
         run: |
           echo "IOS_ARCHIVE_DIR=$IOS_ARCHIVE_DIR" >> "$GITHUB_ENV"
           mkdir "$IOS_ARCHIVE_DIR"

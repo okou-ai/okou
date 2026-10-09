@@ -95,11 +95,11 @@ jobs:
         env:
           MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
           GH_TOKEN: ${{ github.token }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID_DEV }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY_DEV }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_STATIC_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_STATIC_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: auto
           R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
-          R2_BUCKET_NAME: user-artifact-private-dev
+          R2_BUCKET_NAME: ${{ vars.R2_STATIC_BUCKET_NAME }}
         run: python3 ios/scripts/archive-promotion.py resolve-tests "$IOS_ARCHIVE_DIR"
       - name: Check Swift formatting and property lists
         run: |
@@ -174,11 +174,11 @@ jobs:
     env:
       MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
       GH_TOKEN: ${{ github.token }}
-      AWS_ACCESS_KEY_ID: ${{ secrets.R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID_DEV }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY_DEV }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_STATIC_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_STATIC_SECRET_ACCESS_KEY }}
       AWS_DEFAULT_REGION: auto
       R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
-      R2_BUCKET_NAME: user-artifact-private-dev
+      R2_BUCKET_NAME: ${{ vars.R2_STATIC_BUCKET_NAME }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

@@ -50,15 +50,31 @@ fingerprint; claimed JSON hashes alone are insufficient. Missing test evidence
 selects full tests; corrupt evidence, permission errors, or unverifiable
 provenance stop the pipeline rather than masquerading as a cache miss.
 
-## Immutable private storage
+## Immutable shared artifact storage
 
-Unsigned applications and dSYMs use the existing private development artifact
-bucket `user-artifact-private-dev`, not the public static bucket. CI and the
-consumer use the existing repository `R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID_DEV` /
-`R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY_DEV` secrets and `R2_ACCOUNT_ID` variable.
+Unsigned applications, dSYMs, evidence, and release mappings use the same static
+artifact bucket as App and Desktop, configured by `R2_STATIC_BUCKET_NAME`
+(currently `vm0-static-prod`). CI and the production consumer use repository-level
+`R2_STATIC_ACCESS_KEY_ID` / `R2_STATIC_SECRET_ACCESS_KEY` secrets and the
+`R2_ACCOUNT_ID` variable. Keep this artifact configuration shared across
+environments: production must not override it with credentials for another bucket.
+The old private-artifact `_DEV` secret names are also defined in the production
+environment and therefore do not reliably select the repository's development
+bucket credentials.
+
+This bucket is publicly readable. Archives contain the open-source application,
+public client configuration, and debug symbols, never signing material or server
+credentials. The native builder rejects `Local.xcconfig` and receives no signing
+secrets; signing and App Store Connect credentials remain in the approved
+production job. Do not add non-public build configuration to these artifacts.
+The separately retained workflow artifacts remain private.
+
 No new credentials or infrastructure are required. Protect the `okou-ios/`
 prefix from independent overwrite or retention cleanup while releases reference
-it; deleting an object makes promotion fail closed.
+it; deleting an object makes promotion fail closed. Existing private-bucket
+objects are not copied or used as a fallback. Storage workflow changes invalidate
+the input fingerprints, so CI must publish fresh matching artifacts to the static
+bucket before production can consume them.
 
 Objects use conditional `PutObject` with `If-None-Match: *`:
 
