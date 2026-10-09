@@ -54,8 +54,11 @@ It retains monotonic and wall-clock host samples, fixture-only generation-pinned
 RSS/PSS, bounded raw stdout/stderr and `report.json`. Residency is checked against
 process start ticks before and after reading; missing/raced samples are explicit
 null residency with an incomplete-sample count, not zero resident bytes. Child
-discovery covers all bounded worker threads, including Tokio-spawned VMs. Fixture cancellation, timeout, low headroom, nonzero exit and
-cleanup uncertainty remain visible failures. Cancellation first signals only
+discovery covers all bounded worker threads, including Tokio-spawned VMs, and
+checks each current PPID against its captured parent generation before recording
+ownership. A recycled PID from a stale children list is not adopted for cleanup.
+Fixture cancellation, timeout, low headroom, nonzero exit and cleanup uncertainty
+remain visible failures. Cancellation first signals only
 the driver, giving it its saving/export grace. Descendant signal escalation is
 recorded as `cleanup_intervened` and disqualifies fixture success even when all
 children are subsequently reaped. Required-data preservation must never be

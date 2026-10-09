@@ -63,7 +63,7 @@ def process_identity(pid):
     except FileNotFoundError:
         return None
     fields = content.rsplit(")", 1)[1].split()
-    return int(fields[19]), fields[0]
+    return int(fields[19]), fields[0], int(fields[1])
 
 
 def child_pids(pid):
@@ -90,25 +90,36 @@ def child_pids(pid):
 def discover_owned(owned):
     # This standalone subreaper has no pre-existing children. Do not attach to a
     # supplied PID or scan another Runner's VM inventory.
-    pending = child_pids(os.getpid())
+    collector = os.getpid()
+    collector_identity = process_identity(collector)
+    if collector_identity is None:
+        raise ValueError("collector process identity unavailable")
+    pending = [(pid, collector, collector_identity[0]) for pid in child_pids(collector)]
     seen = set()
     while pending:
-        pid = pending.pop()
+        pid, parent, parent_generation = pending.pop()
         if pid in seen:
             continue
         seen.add(pid)
         if len(seen) > MAX_CHILDREN or len(owned) > MAX_CHILDREN:
             raise ValueError("fixture descendant bound exceeded")
         identity = process_identity(pid)
-        if identity is None:
+        if identity is None or identity[2] != parent:
+            continue
+        # A stale children list can name a recycled unrelated PID. Its own start
+        # ticks alone cannot prove ownership: fence its current PPID against the
+        # captured parent generation before registering it for cleanup.
+        parent_identity = process_identity(parent)
+        if parent_identity is None or parent_identity[0] != parent_generation:
             continue
         generation = identity[0]
         if pid in owned and owned[pid] != generation:
             raise ValueError("owned PID generation changed")
         owned[pid] = generation
         children = child_pids(pid)
-        if process_identity(pid) == identity:
-            pending.extend(children)
+        after = process_identity(pid)
+        if after is not None and after[0] == generation:
+            pending.extend((child, pid, generation) for child in children)
 
 
 def residency(pid, generation):

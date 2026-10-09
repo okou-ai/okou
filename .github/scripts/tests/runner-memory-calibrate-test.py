@@ -275,6 +275,63 @@ os._exit(3)
             with self.assertRaises(ValueError):
                 MODULE.available_bytes(content)
 
+    def test_recycled_child_pid_cannot_be_adopted_from_an_old_children_list(self):
+        collector = os.getpid()
+        parent = 123456
+        recycled = 123457
+        identities = {
+            collector: (1, "S", 0),
+            parent: (2, "S", collector),
+            recycled: (3, "S", 42),  # Now belongs to an unrelated parent.
+        }
+        for children, expected in (
+            ({collector: [recycled]}, {}),
+            ({collector: [parent], parent: [recycled]}, {parent: 2}),
+        ):
+            with (
+                self.subTest(children=children),
+                unittest.mock.patch.object(
+                    MODULE,
+                    "child_pids",
+                    side_effect=lambda pid, children=children: list(
+                        children.get(pid, [])
+                    ),
+                ),
+                unittest.mock.patch.object(
+                    MODULE, "process_identity", side_effect=identities.get
+                ),
+            ):
+                owned = {}
+                MODULE.discover_owned(owned)
+                self.assertEqual(owned, expected)
+
+    def test_recycled_parent_generation_cannot_authorize_a_child(self):
+        collector = os.getpid()
+        parent = 123456
+        child = 123457
+        parent_reads = iter([(2, "S", collector), (2, "S", collector), (4, "S", 42)])
+
+        def identity(pid):
+            if pid == parent:
+                return next(parent_reads)
+            return {collector: (1, "S", 0), child: (3, "S", parent)}.get(pid)
+
+        with (
+            unittest.mock.patch.object(
+                MODULE,
+                "child_pids",
+                side_effect=lambda pid: {collector: [parent], parent: [child]}.get(
+                    pid, []
+                ),
+            ),
+            unittest.mock.patch.object(
+                MODULE, "process_identity", side_effect=identity
+            ),
+        ):
+            owned = {}
+            MODULE.discover_owned(owned)
+            self.assertEqual(owned, {parent: 2})
+
     def test_pid_generation_change_discards_residency(self):
         with (
             unittest.mock.patch.object(
