@@ -1,4 +1,6 @@
 import { createDiscordThreadContext } from "./discord-thread-prompt-context.service";
+import { createAgentPrompt } from "./thread-run-prompt/agent";
+import { createUserPrompt } from "./thread-run-prompt/user";
 import { createAgentPhoneThreadPrompt } from "./thread-run-prompt/agentphone";
 import { createAutomationThreadPrompt } from "./thread-run-prompt/automation";
 import { createDiscordThreadPrompt } from "./thread-run-prompt/discord";
@@ -6,12 +8,15 @@ import { createFeishuThreadPrompt } from "./thread-run-prompt/feishu";
 import { createRuntimePrompt } from "./thread-run-prompt/runtime";
 import {
   mergeRunPromptAndSkills,
-  renderRunPromptAndSkills,
+  renderRunPrompts,
+  resolveRunSkillVolumes,
   type RunPromptAndSkills,
   type SkillVolume,
 } from "./run-prompt-and-skills";
 import { createRotatedPrompt } from "./thread-run-prompt/rotated";
 import { createConnectorsContext } from "./connectors-context.service";
+import { assertRequiredOfficialWorkflows } from "./official-workflow-observation.service";
+import { createSystemSkillsContext } from "./system-skills-context.service";
 import { createSlackThreadPrompt } from "./thread-run-prompt/slack";
 import { createTeamsThreadPrompt } from "./thread-run-prompt/teams";
 import { createTelegramThreadPrompt } from "./thread-run-prompt/telegram";
@@ -32,7 +37,6 @@ import {
 } from "./thread-run-context.service";
 import { createThreadAutomationContext } from "./thread-automation-context.service";
 import {
-  AGENT_EXECUTION_TIMEOUT_SECONDS,
   agentRunConnectorDiagnosticRegistrationPayloadSchema,
   CANONICAL_CLAUDE_CONFIG_DIR,
   CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
@@ -84,10 +88,7 @@ import { VERCEL_AUTOMATION_BYPASS_ENV } from "../../lib/preview-automation-bypas
 
 import { now, nowDate } from "../../lib/time";
 import { previewAutomationBypass$ } from "../context/hono";
-import {
-  type SystemSkillStorageResolution,
-  systemSkillStorageResolution$,
-} from "../context/system-skill-storage-resolution";
+import { systemSkillStorageResolution$ } from "../context/system-skill-storage-resolution";
 import { usagePricingResolution$ } from "../context/usage-pricing-resolution";
 import { waitUntil } from "../context/wait-until";
 import { type Db, db$, type ReadonlyDb, writeDb$ } from "../external/db";
@@ -186,10 +187,9 @@ import {
   morningBriefScheduleClaimSupersededCondition,
 } from "./morning-brief-schedule-claim.service";
 import {
-  acceptedRunCandidates,
-  assembleRunObservation,
   OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE,
   OfficialWorkflowRunAdmissionError,
+  type OfficialWorkflowObservation,
   type OfficialWorkflowRunObservation,
 } from "./official-workflow-run.service";
 import { pendingLaunchBillingAttributionSql } from "./pending-launch-billing-plan";
@@ -406,18 +406,14 @@ import {
   getValidatedFramework,
   type SupportedFramework,
 } from "@okouai/core/frameworks";
-import { parseGitHubTreeUrl, resolveSkillRef } from "@okouai/core/github-url";
 import {
   DEFAULT_IMAGE_MODEL,
   type ImageModel,
 } from "@okouai/core/image-model-catalog";
 import { piCatalogModel } from "@okouai/core/pi-execution";
-import { SEED_SKILLS } from "@okouai/core/seed-skills";
 import { isStaffOrg } from "@okouai/core/staff-org";
 import {
-  getCustomSkillStorageName,
   getInstructionsStorageName,
-  getSkillStorageName,
   MEMORY_ARTIFACT_NAME,
   SYSTEM_ORG_ID,
   VOLUME_ORG_USER_ID,
@@ -491,15 +487,10 @@ import { z } from "zod";
 import { piModelConfigObservation } from "../../lib/pi-model-config-observation";
 import { generateOkouToken } from "../auth/tokens";
 import { getDatasetName, ingestToAxiom } from "../external/axiom";
-import { buildAgentIdentityPrompt } from "./agent-identity-prompt.service";
 import {
   normalizeRunMetadata,
   type RunMetadataValues,
 } from "./agent-run-metadata-write.service";
-import {
-  buildAgentToolsPrompt,
-  buildAgentToolsPromptInputs,
-} from "./agent-tools-prompt.service";
 import {
   type ChatThreadRequestFacts,
   chatThreadRequestSelection,
@@ -728,7 +719,7 @@ function queuedPromptRunInput(args: {
   readonly input: CreateQueuedChatRunInputArgs;
   readonly launch: QueuedLaunchMaterial;
   readonly promptAndSkills: RunPromptAndSkills;
-  readonly userIdentity: string;
+  readonly userPrompt: RunPromptAndSkills;
   readonly model: Exclude<
     QueuedMessageModelRouteResolution,
     { readonly error: unknown }
@@ -740,12 +731,12 @@ function queuedPromptRunInput(args: {
   readonly catalog: ModelCatalog;
 }): CreateQueuedChatRunInput {
   const { input, launch } = args;
-  const prompt = renderRunPromptAndSkills(
+  const prompt = renderRunPrompts(
     mergeRunPromptAndSkills([
       args.promptAndSkills,
+      args.userPrompt,
       {
         systemPromptVariables: {
-          userIdentity: args.userIdentity,
           computerUseContext: args.host
             ? buildComputerUseSystemPrompt(args.host.displayName)
             : "",
@@ -771,7 +762,9 @@ function queuedPromptRunInput(args: {
     featureSwitchContext: args.features,
     prompt: prompt.userPrompt,
     appendSystemPrompt: prompt.systemPrompt,
-    presentationTemplateVolumes: prompt.skillVolumes,
+    presentationTemplateVolumes: resolveRunSkillVolumes(
+      args.promptAndSkills.skillVolumes,
+    ).skillVolumes,
     threadId: input.threadId,
     queuedMessage: input.queuedMessage,
     requiredOfficialWorkflowIds:
@@ -907,7 +900,7 @@ function buildWorkflowAutomationQueuedLaunchMaterial(args: {
   }
   const eventType = workflowAutomationEventTypeSchema.parse(args.eventType);
   return {
-    prompt: renderRunPromptAndSkills(args.prompt).userPrompt,
+    prompt: renderRunPrompts(args.prompt).userPrompt,
     appendSystemPrompt: undefined,
     callbacks: buildWorkflowAutomationCallbacks(
       args.automation,
@@ -1959,17 +1952,13 @@ export function createThreadClaimRunObjects(
     threadPromptSource$,
     automationContext$,
   );
-  const threadUserIdentity$ = computed(async (get) => {
+  const threadMemberMetadata$ = computed(async (get) => {
     const selected = (await get(isAutomation$))
       ? await get(queuedIdentityContext$)
       : await get(promptExecutionContext$);
-    const member = await get(selected.memberMetadata$);
-    return buildCurrentUserPrompt({
-      name: member.profile?.name ?? null,
-      email: member.profile?.email ?? null,
-      timezone: member.preferences?.timezone ?? null,
-    });
+    return get(selected.memberMetadata$);
   });
+  const userPrompt$ = createUserPrompt(threadMemberMetadata$);
   const selectedIntegrationPrompt$ = computed(async (get) => {
     // Preserve canonical input validation before evaluating channel material.
     const { queuedMessage } = await get(promptArgsArgs$);
@@ -2725,7 +2714,7 @@ export function createThreadClaimRunObjects(
         args,
         launch,
         context,
-        userIdentity,
+        userPrompt,
         model,
         session,
         host,
@@ -2735,7 +2724,7 @@ export function createThreadClaimRunObjects(
         get(promptArgsArgs$),
         get(promptMaterialMaterial$),
         get(promptAndSkills$),
-        get(threadUserIdentity$),
+        get(userPrompt$),
         get(promptModelModel$),
         get(promptSessionSession$),
         get(promptHostHost$),
@@ -2774,7 +2763,7 @@ export function createThreadClaimRunObjects(
         input: args,
         launch,
         promptAndSkills: context,
-        userIdentity,
+        userPrompt,
         model,
         session,
         host,
@@ -3090,7 +3079,7 @@ export function createThreadClaimRunObjects(
     return !context.value || "error" in context.value
       ? {}
       : additionalVolumesForRun(
-          renderRunPromptAndSkills(context.value).skillVolumes,
+          resolveRunSkillVolumes(context.value.skillVolumes).skillVolumes,
         );
   });
   const event$ = automationContext$;
@@ -3302,12 +3291,12 @@ export function createThreadClaimRunObjects(
       if (!integration) {
         throw new Error("Admitted automation is missing its prompt");
       }
-      const prompt = renderRunPromptAndSkills(
+      const prompt = renderRunPrompts(
         mergeRunPromptAndSkills([
           integration,
+          await get(userPrompt$),
           {
             systemPromptVariables: {
-              userIdentity: await get(threadUserIdentity$),
               computerUseContext:
                 appendComputerUseSystemPrompt(
                   undefined,
@@ -3321,7 +3310,8 @@ export function createThreadClaimRunObjects(
       );
       return {
         prompt: prompt.userPrompt,
-        additionalVolumes: prompt.skillVolumes,
+        additionalVolumes: resolveRunSkillVolumes(integration.skillVolumes)
+          .skillVolumes,
         appendSystemPrompt: prompt.systemPrompt,
         callbacks: args.callbacks,
         agentRunMetadata: workflowAutomationRunMetadata(
@@ -3717,7 +3707,9 @@ export function createThreadClaimRunObjects(
     }
     const context = await get(automationPrompt$);
     return context
-      ? additionalVolumesForRun(renderRunPromptAndSkills(context).skillVolumes)
+      ? additionalVolumesForRun(
+          resolveRunSkillVolumes(context.skillVolumes).skillVolumes,
+        )
       : {};
   });
   const queuedAutomationAssemblerConnectorSourceId$ = computed(async (get) => {
@@ -4104,7 +4096,6 @@ export function createThreadClaimRunObjects(
         ...account,
         agent,
         timing,
-        cloudBrowserEnabled: undefined,
         connectorCatalogSelection: catalog,
         runPermissionPolicies: policies,
         authorizedRequestObservation: observation ?? {
@@ -4115,6 +4106,21 @@ export function createThreadClaimRunObjects(
         },
       };
     },
+  );
+  const agentFeatureSwitches$ = computed(async (get) => {
+    return get((await get(executionContext$)).featureSwitches$);
+  });
+  const cloudBrowserEnabled$ = computed(async (get) => {
+    const thread = await get(threadRow$);
+    if (!thread) {
+      throw new Error("Agent prompt requires a chat thread");
+    }
+    return thread.cloudBrowserEnabled;
+  });
+  const agentPrompt$ = createAgentPrompt(
+    preCreateAgentAgent$,
+    agentFeatureSwitches$,
+    cloudBrowserEnabled$,
   );
   const preCreatePreparedInput$ = computed(async (get) => {
     const [input, resolution, appendSystemPrompt, fullCommand, catalog] =
@@ -4148,7 +4154,7 @@ export function createThreadClaimRunObjects(
         appendSystemPrompt,
       },
       threadSessionResolution: resolution,
-      cloudBrowserEnabled: resolution?.cloudBrowserEnabled,
+      cloudBrowserEnabled: await get(cloudBrowserEnabled$),
     };
   });
   const preCreateRunArgsRunArgs$ = computed(async (get) => {
@@ -4177,9 +4183,6 @@ export function createThreadClaimRunObjects(
     preCreateConnectorCatalogConnectorCatalog$;
   const preCreateExecutionPermissionPolicies$ =
     preCreatePermissionPoliciesPermissionPolicies$;
-  const preCreateExecutionWorkflows$ = computed(async (get) => {
-    return await get((await get(executionContext$)).workflows$);
-  });
   const runDisabledPaidToolsSnapshot$ = computed(async (get) => {
     const selected = await get(executionContext$);
     return {
@@ -4453,34 +4456,12 @@ export function createThreadClaimRunObjects(
       : piConfigurationRouteError(materialized.error);
   });
   const modelRoute$ = runModelProviderModelRoute$;
-  const connectorSkillsRoot$ = computed(async (get) => {
-    const [input, requestedFramework, modelProvider] = await Promise.all([
-      get(preCreateInput$),
-      get(runFramework$),
-      get(modelRoute$),
-    ]);
-    if (isRouteError(requestedFramework) || isRouteError(modelProvider)) {
-      throw new Error("Connector skills require a valid run model route");
-    }
-    const piSandbox = resolvePreparedPiModelConfig({
-      input: {
-        catalog: await get(claimCatalog$),
-        piExecution: selectedRunPiExecution(input.command),
-        codexServiceTier: input.command.codexServiceTier,
-        reasoningEffort: input.command.reasoningEffort,
-      },
-      modelProvider,
-    });
-    return skillsRootForRun(
-      modelProvider
-        ? modelProviderFramework(modelProvider)
-        : requestedFramework,
-      piSandbox,
-    );
+  const connectorsContext$ = createConnectorsContext(authorizedConnectors$);
+  const workflowSkills$ = computed(async (get) => {
+    return get((await get(executionContext$)).workflowSkills$);
   });
-  const connectorsContext$ = createConnectorsContext(
-    authorizedConnectors$,
-    connectorSkillsRoot$,
+  const systemSkillsContext$ = createSystemSkillsContext(
+    systemSkillStorageResolution$,
   );
   const runtimePromptInput$ = computed(async (get) => {
     const [requestedFramework, modelProvider, event, selectedImageModel] =
@@ -4509,7 +4490,12 @@ export function createThreadClaimRunObjects(
   const runtimePrompt$ = createRuntimePrompt(runtimePromptInput$);
   const runtimePromptAndSkills$ = computed(async (get) => {
     return mergeRunPromptAndSkills(
-      await Promise.all([get(connectorsContext$), get(runtimePrompt$)]),
+      await Promise.all([
+        get(connectorsContext$),
+        get(workflowSkills$),
+        get(systemSkillsContext$),
+        get(runtimePrompt$),
+      ]),
     );
   });
   const model = {
@@ -5385,27 +5371,7 @@ export function createThreadClaimRunObjects(
     },
   );
   const prepared = { connectorContext$: connectorContext$ };
-  const workflowInput$ = computed(
-    async (get): Promise<RunWorkflowReadInput> => {
-      const { command } = await get(preCreateExecutionInput$);
-      const db = get(db$);
-      const workflows = await get(preCreateExecutionWorkflows$);
-      return {
-        db,
-        args: {
-          catalog: await get(claimCatalog$),
-          orgId: command.owner.orgId,
-          userId: command.owner.userId,
-          injectSkillVolumes: { workflows },
-          requiredOfficialWorkflowIds: command.requiredOfficialWorkflowIds,
-          piExecution: selectedRunPiExecution(command),
-          codexServiceTier: command.codexServiceTier,
-          agentRunMetadata: { reasoningEffort: command.reasoningEffort },
-        },
-      };
-    },
-  );
-  const modelState$ = computed(async (get): Promise<RunWorkflowModelState> => {
+  const workflowModelError$ = computed(async (get) => {
     const [requestedFramework, modelProvider] = await Promise.all([
       get(runFramework$),
       get(modelRoute$),
@@ -5413,86 +5379,30 @@ export function createThreadClaimRunObjects(
     if (isRouteError(requestedFramework)) {
       return requestedFramework;
     }
-    if (isRouteError(modelProvider)) {
-      return modelProvider;
+    return isRouteError(modelProvider) ? modelProvider : null;
+  });
+  const admittedWorkflowObservation$ = computed(async (get) => {
+    if (await get(workflowModelError$)) {
+      return undefined;
     }
-    return { requestedFramework, modelProvider };
-  });
-  const candidates$ = computed(async (get) => {
-    const { args } = await get(workflowInput$);
-    const modelState = await get(modelState$);
-    if (modelState === undefined || isRouteError(modelState)) {
-      return [];
-    }
-    const { requestedFramework, modelProvider } = modelState;
-    const framework = modelProvider
-      ? modelProviderFramework(modelProvider)
-      : requestedFramework;
-    const piSandbox = resolvePreparedPiModelConfig({
-      input: piModelPreparationInput(args),
-      modelProvider,
-    });
-    return officialWorkflowRunCandidates(
-      args.injectSkillVolumes?.workflows ?? [],
-      skillsRootForRun(framework, piSandbox),
-      args.requiredOfficialWorkflowIds ?? [],
-    );
-  });
-  const acceptedRunCatalog$ = computed(async (get) => {
-    return (
-      (await get((await get(executionContext$)).officialWorkflows$))?.catalog ??
-      null
-    );
-  });
-  const acceptedCandidates$ = computed(async (get) => {
-    const [catalog, candidates] = await Promise.all([
-      get(acceptedRunCatalog$),
-      get(candidates$),
+    const selected = await get(executionContext$);
+    const [observation, { command }] = await Promise.all([
+      get(selected.officialWorkflowObservation$),
+      get(preCreateExecutionInput$),
     ]);
-    if (candidates.length === 0) {
-      return [];
-    }
-    if (!catalog) {
-      throw new OfficialWorkflowRunAdmissionError();
-    }
-    return acceptedRunCandidates(catalog, candidates);
+    assertRequiredOfficialWorkflows(
+      observation,
+      command.requiredOfficialWorkflowIds ?? [],
+    );
+    return observation;
   });
-  const acceptedRunRevisions$ = computed(async (get) => {
-    const [facts, candidates] = await Promise.all([
-      get((await get(executionContext$)).officialWorkflows$),
-      get(acceptedCandidates$),
-    ]);
-    if (candidates.length === 0) {
-      return [];
-    }
-    if (!facts) {
-      throw new OfficialWorkflowRunAdmissionError();
-    }
-    const revisions = facts.revisions;
-    return candidates.map(({ accepted }) => {
-      return (
-        revisions.get(JSON.stringify([accepted.name, accepted.revision])) ??
-        null
-      );
-    });
-  });
-  const officialWorkflowRunObservation$ = computed(
-    async (get): Promise<OfficialWorkflowRunObservation | undefined> => {
-      const [catalog, candidates, revisions] = await Promise.all([
-        get(acceptedRunCatalog$),
-        get(acceptedCandidates$),
-        get(acceptedRunRevisions$),
-      ]);
-      return catalog && candidates.length > 0
-        ? assembleRunObservation(catalog, candidates, revisions)
-        : undefined;
-    },
-  );
-  const observation$ = officialWorkflowRunObservation$;
-  const runWorkflowReadOfficialWorkflow$ = computed(
+  const officialWorkflow$ = computed(
     async (get): Promise<PreparedOfficialWorkflow> => {
       const result = await settle(
-        Promise.all([get(modelState$), get(observation$)]),
+        Promise.all([
+          get(workflowModelError$),
+          get(admittedWorkflowObservation$),
+        ]),
       );
       if (!result.ok) {
         if (result.error instanceof OfficialWorkflowRunAdmissionError) {
@@ -5500,11 +5410,10 @@ export function createThreadClaimRunObjects(
         }
         throw result.error;
       }
-      const [model, observation] = result.value;
-      return isRouteError(model) ? model : observation;
+      const [modelError, observation] = result.value;
+      return modelError ?? observation;
     },
   );
-  const officialWorkflow$ = runWorkflowReadOfficialWorkflow$;
   const workflow = {
     officialWorkflow$: officialWorkflow$,
     officialWorkflowFacts$: computed(async (get) => {
@@ -5632,13 +5541,12 @@ export function createThreadClaimRunObjects(
       });
       const metadata = prepareRunOutputMetadata({
         createArgs: { injectSkillVolumes: { workflows: bootstrap.workflows } },
-        systemSkillStorageResolution: get(systemSkillStorageResolution$),
         promptAndSkills: await get(runtimePromptAndSkills$),
+        officialWorkflow: officialWorkflowRun,
         framework,
         piSandbox,
         body,
         resolved,
-        officialWorkflowRun,
       });
       return {
         kind: "requested",
@@ -6282,13 +6190,12 @@ export function createThreadClaimRunObjects(
     }
     const metadata = prepareRunOutputMetadata({
       createArgs: args,
-      systemSkillStorageResolution: get(systemSkillStorageResolution$),
       promptAndSkills: await get(runtimePromptAndSkills$),
+      officialWorkflow: officialWorkflowRun,
       framework,
       piSandbox,
       body,
       resolved,
-      officialWorkflowRun,
     });
     return {
       disabledPaidTools,
@@ -6305,7 +6212,6 @@ export function createThreadClaimRunObjects(
       modelUsageLongContextMinTotalInputTokens:
         runtimeContext.modelUsageLongContextMinTotalInputTokens,
       ...metadata,
-      officialWorkflowRun,
       officialWorkflowFacts: await get(
         selectedRunContextShared.officialWorkflowFacts$,
       ),
@@ -6864,22 +6770,17 @@ export function createThreadClaimRunObjects(
         return storagePlan;
       }
       const { args, timing } = await get(contextInput$);
-      const finalAppendSystemPrompt =
-        args.piExecution && args.piSystemPrompt
-          ? bindStableAppendSystemPrompt(
-              args.piSystemPrompt.buildPrompt(),
-              args.body.appendSystemPrompt ??
-                args.piSystemPrompt.dynamicAppendSystemPrompt,
-            )
-          : args.body.appendSystemPrompt;
       const launchSnapshot = {
         schemaVersion: 3 as const,
         framework:
           context.piSandbox === undefined ? context.framework : ("pi" as const),
         runnerProfile: DEFAULT_PROFILE,
       };
-      const runtime = await get(runtimePromptAndSkills$);
-      const prompt = renderRunPromptAndSkills(
+      const [agentPrompt, runtime] = await Promise.all([
+        get(agentPrompt$),
+        get(runtimePromptAndSkills$),
+      ]);
+      const prompt = renderRunPrompts(
         {
           ...runtime,
           systemPromptVariables: {
@@ -6892,7 +6793,12 @@ export function createThreadClaimRunObjects(
         },
         {
           userPrompt: context.body.prompt,
-          systemPrompt: finalAppendSystemPrompt,
+          systemPrompt: [
+            renderRunPrompts(agentPrompt).systemPrompt,
+            args.body.appendSystemPrompt,
+          ]
+            .filter(Boolean)
+            .join("\n\n"),
         },
       );
       const body = {
@@ -12771,76 +12677,6 @@ function agentRunsCreateForbidden(
   };
 }
 
-function buildExecutionTimeLimitPrompt(): string {
-  const executionHours = AGENT_EXECUTION_TIMEOUT_SECONDS / (60 * 60);
-  const executionHourUnit = executionHours === 1 ? "hour" : "hours";
-  return [
-    "# Execution Time Limit",
-    "",
-    `A single agent run has a maximum execution time of ${executionHours} ${executionHourUnit}.`,
-    "Plan and prioritize the work so you can complete the most important in-scope tasks and provide a final response before the run ends.",
-  ].join("\n");
-}
-
-function buildCurrentUserPrompt(userInfo: UserInfo): string {
-  const lines = ["# Current User Info"];
-  if (userInfo.name) {
-    lines.push(`Name: ${userInfo.name}`);
-  }
-  if (userInfo.email) {
-    lines.push(`Email: ${userInfo.email}`);
-  }
-  lines.push(`Timezone: ${userInfo.timezone ?? "UTC"}`);
-  return lines.join("\n");
-}
-
-/** Agent-level system-prompt sections shared by every run of the agent. */
-interface AgentSystemPromptSections {
-  readonly agentIdentity: string;
-  readonly executionLimit: string;
-  readonly tools: string;
-}
-
-function buildAppendSystemPrompt(stable: AgentSystemPromptSections): string {
-  return [stable.agentIdentity, stable.executionLimit, stable.tools]
-    .filter((part): part is string => {
-      return Boolean(part);
-    })
-    .join("\n\n");
-}
-
-function buildStableAgentPrompt(args: {
-  readonly privateArtifactsEnabled: boolean;
-  readonly agent: AgentRunRecord;
-  readonly triggerSource: TriggerSource;
-  readonly cloudBrowserEnabled: boolean | undefined;
-  readonly browserNativeInputEnabled: boolean;
-  readonly bankingEnabled: boolean;
-  readonly vncEnabled: boolean;
-  readonly larkEnabled: boolean;
-  readonly discordEnabled: boolean;
-  readonly deliveryFormatGuidanceEnabled: boolean;
-  readonly presentationConvertEnabled: boolean;
-  readonly customConnectorMcpEnabled: boolean;
-}): AgentSystemPromptSections {
-  return {
-    agentIdentity: buildAgentIdentityPrompt(args.agent) ?? "",
-    executionLimit: buildExecutionTimeLimitPrompt(),
-    tools: buildAgentToolsPrompt({
-      privateArtifactsEnabled: args.privateArtifactsEnabled,
-      triggerSource: args.triggerSource,
-      cloudBrowserEnabled: args.cloudBrowserEnabled,
-      browserNativeInputEnabled: args.browserNativeInputEnabled,
-      bankingEnabled: args.bankingEnabled,
-      vncEnabled: args.vncEnabled,
-      larkEnabled: args.larkEnabled,
-      discordEnabled: args.discordEnabled,
-      deliveryFormatGuidanceEnabled: args.deliveryFormatGuidanceEnabled,
-      presentationConvertEnabled: args.presentationConvertEnabled,
-    }),
-  };
-}
-
 function buildAgentRunPlatformEnvironment(args: {
   readonly agentId: string;
   readonly triggerSource: TriggerSource;
@@ -12912,14 +12748,12 @@ function agentRunOrigin(args: {
 function createRunBody(args: {
   readonly body: AgentRunCreateBody;
   readonly agent: AgentRunRecord;
-  readonly stablePrompt: AgentSystemPromptSections;
   readonly permissionPolicies: FirewallPolicies | null | undefined;
   readonly triggerSource: TriggerSource | undefined;
   readonly appendSystemPrompt: string | undefined;
   readonly standaloneIntegrationNote: string;
 }) {
   const triggerSource = args.triggerSource ?? "web";
-  const baseAppendSystemPrompt = buildAppendSystemPrompt(args.stablePrompt);
   return {
     prompt: args.body.prompt,
     agentId: args.agent.id,
@@ -12933,7 +12767,6 @@ function createRunBody(args: {
     permissionPolicies: args.permissionPolicies ?? undefined,
     triggerSource,
     appendSystemPrompt: [
-      baseAppendSystemPrompt,
       args.appendSystemPrompt,
       args.appendSystemPrompt ? "" : args.standaloneIntegrationNote,
     ]
@@ -12969,7 +12802,6 @@ interface AgentRunAfterBootstrap extends RunBootstrapContext {
   readonly agent: AgentRunRecord;
   readonly authorizedRequestObservation?: AuthorizedAgentRunRequestObservation;
   readonly timing: ApiDispatchTimingCollector;
-  readonly cloudBrowserEnabled: boolean | undefined;
   readonly command: ThreadRunIdentity;
   readonly threadSessionResolution?: ChatThreadSessionResolution;
 }
@@ -12993,16 +12825,8 @@ interface ProductRunArgsInput {
   readonly customConnectorGrants: readonly AgentCustomConnectorGrant[];
   readonly timing: ApiDispatchTimingCollector;
   readonly threadSessionResolution?: ChatThreadSessionResolution;
-  readonly cloudBrowserEnabled: boolean | undefined;
+  readonly cloudBrowserEnabled: boolean;
   readonly featureSwitchContext: FeatureSwitchContext;
-}
-
-function emptyStablePrompt(): AgentSystemPromptSections {
-  return {
-    agentIdentity: "",
-    executionLimit: "",
-    tools: "",
-  };
 }
 
 /**
@@ -13020,49 +12844,6 @@ function standaloneIntegrationNote(args: ProductRunArgsInput): string {
     triggerSource: args.command.triggerSource ?? "web",
     featureSwitchContext: args.featureSwitchContext,
   });
-}
-
-function buildStableRunPromptContext(args: ProductRunArgsInput): {
-  readonly initialStablePrompt: AgentSystemPromptSections;
-  readonly piSystemPrompt: PiSystemPromptInput;
-} {
-  const promptInputs = buildAgentToolsPromptInputs({
-    featureSwitchContext: args.featureSwitchContext,
-    triggerSource: args.command.triggerSource ?? "web",
-    cloudBrowserEnabled: args.cloudBrowserEnabled,
-  });
-  let stablePrompt: AgentSystemPromptSections | undefined;
-  const buildPrompt = () => {
-    stablePrompt ??= buildStableAgentPrompt({
-      ...promptInputs,
-      agent: args.agent,
-    });
-    return stablePrompt;
-  };
-  return {
-    initialStablePrompt: args.command.piExecution
-      ? emptyStablePrompt()
-      : buildPrompt(),
-    piSystemPrompt: {
-      buildPrompt,
-      dynamicAppendSystemPrompt: [
-        args.command.appendSystemPrompt,
-        standaloneIntegrationNote(args),
-      ]
-        .filter((part): part is string => {
-          return Boolean(part);
-        })
-        .join("\n\n"),
-    },
-  };
-}
-
-/** Pi system-prompt parts captured by the product entry point. */
-interface PiSystemPromptInput {
-  /** Agent identity, execution limit, and tool sections, built on demand. */
-  readonly buildPrompt: () => AgentSystemPromptSections;
-  /** Dynamic profile/channel text and explicit caller appendage, bound later. */
-  readonly dynamicAppendSystemPrompt: string;
 }
 
 /**
@@ -13084,7 +12865,6 @@ interface ProductRunArgs {
   readonly queueFirstAssociation?: QueueFirstRunAssociation;
   readonly body: CreateRunBody;
   readonly apiStartTime: number;
-  readonly piSystemPrompt?: PiSystemPromptInput;
   readonly chatThreadId?: string;
   readonly connectorSourceId?: string;
   readonly threadSessionResolution?: ChatThreadSessionResolution;
@@ -13106,22 +12886,18 @@ interface ProductRunArgs {
 
 function buildProductRunArgs(args: ProductRunArgsInput): ProductRunArgs {
   const command = args.command;
-  const { initialStablePrompt, piSystemPrompt } =
-    buildStableRunPromptContext(args);
   return {
     ...selectedRunModelProviderArgs(command),
     catalog: args.catalog,
     body: createRunBody({
       body: command.body,
       agent: args.agent,
-      stablePrompt: initialStablePrompt,
       permissionPolicies: args.runPermissionPolicies,
       triggerSource: command.triggerSource,
       appendSystemPrompt: command.appendSystemPrompt,
       standaloneIntegrationNote: standaloneIntegrationNote(args),
     }),
     apiStartTime: command.apiStartTime,
-    piSystemPrompt,
     chatThreadId: command.chatThreadId,
     ...(command.connectorSourceId
       ? { connectorSourceId: command.connectorSourceId }
@@ -13243,148 +13019,6 @@ interface PreparedAdditionalVolumes {
   readonly sources: AdditionalVolumeSources;
 }
 
-function skillMountPath(skillsRoot: string, skillName: string): string {
-  return `${skillsRoot}/${skillName}`;
-}
-
-// Legacy CLI runs use the framework resolved from the model provider, never
-// the runtime framework selected from the current model. Eligible Pi runs receive the
-// fixed Pi root before Storage resolves any versions or overlays.
-function buildLegacySystemSkillVolumes(
-  skillNames: readonly string[],
-  skillsRoot: string,
-  storageResolution: SystemSkillStorageResolution,
-): readonly AgentRunCreateAdditionalVolume[] {
-  return [...new Set(skillNames)].flatMap((skillName) => {
-    const url = resolveSkillRef(skillName);
-    const parsed = parseGitHubTreeUrl(url);
-    if (!parsed) {
-      return [];
-    }
-    return [
-      {
-        name:
-          storageResolution[skillName] ?? getSkillStorageName(parsed.fullPath),
-        mountPath: skillMountPath(skillsRoot, parsed.skillName),
-        system: true,
-      },
-    ];
-  });
-}
-
-function mountedWorkflowRefs(
-  workflows: readonly RunWorkflowRef[],
-): readonly RunWorkflowRef[] {
-  return workflows.filter((workflow) => {
-    return !SEED_SKILLS.includes(workflow.name);
-  });
-}
-
-function officialWorkflowRunCandidates(
-  workflows: readonly RunWorkflowRef[],
-  skillsRoot: string,
-  requiredWorkflowIds: readonly string[],
-): readonly {
-  readonly workflowId: string;
-  readonly workflowName: string;
-  readonly definitionName: string;
-  readonly mountPath: string;
-}[] {
-  for (const workflow of workflows) {
-    if (
-      workflow.officialDefinitionName !== null &&
-      SEED_SKILLS.includes(workflow.name)
-    ) {
-      throw new OfficialWorkflowRunAdmissionError();
-    }
-  }
-  const candidates = mountedWorkflowRefs(workflows).flatMap((workflow) => {
-    return workflow.officialDefinitionName === null
-      ? []
-      : [
-          {
-            workflowId: workflow.workflowId,
-            workflowName: workflow.name,
-            definitionName: workflow.officialDefinitionName,
-            mountPath: skillMountPath(skillsRoot, workflow.name),
-          },
-        ];
-  });
-  const candidateWorkflowIds = new Set(
-    candidates.map((candidate) => {
-      return candidate.workflowId;
-    }),
-  );
-  if (
-    new Set(requiredWorkflowIds).size !== requiredWorkflowIds.length ||
-    requiredWorkflowIds.some((workflowId) => {
-      return !candidateWorkflowIds.has(workflowId);
-    })
-  ) {
-    throw new OfficialWorkflowRunAdmissionError();
-  }
-  return candidates;
-}
-
-function buildWorkflowSkillVolumes(
-  workflows: readonly RunWorkflowRef[],
-  skillsRoot: string,
-  officialWorkflowRun: OfficialWorkflowRunObservation | undefined,
-): readonly SkillVolume[] {
-  return mountedWorkflowRefs(workflows).map((workflow) => {
-    if (workflow.officialDefinitionName !== null) {
-      const definition = officialWorkflowRun?.definitions.find((candidate) => {
-        return candidate.workflowId === workflow.workflowId;
-      });
-      if (!definition) {
-        throw new OfficialWorkflowRunAdmissionError();
-      }
-      return {
-        name: definition.artifact.storageName,
-        version: definition.artifact.storageVersion,
-        mountPath: definition.mountPath,
-        system: true,
-        expectedStorageId: definition.artifact.storageId,
-        source: "official_workflow" as const,
-      };
-    }
-    return {
-      // The volume is keyed by the workflow id; it mounts at the slug.
-      name: getCustomSkillStorageName(workflow.workflowId),
-      mountPath: skillMountPath(skillsRoot, workflow.name),
-      source: "workflow_skill" as const,
-    };
-  });
-}
-
-function buildInjectedSkillVolumes(
-  args: {
-    readonly injectSkillVolumes: RunSkillVolumeInjection | undefined;
-    readonly systemSkillStorageResolution: SystemSkillStorageResolution;
-    readonly officialWorkflowRun: OfficialWorkflowRunObservation | undefined;
-  },
-  skillsRoot: string,
-): readonly SkillVolume[] | undefined {
-  if (!args.injectSkillVolumes) {
-    return undefined;
-  }
-  const systemSkillVolumes = buildLegacySystemSkillVolumes(
-    SEED_SKILLS,
-    skillsRoot,
-    args.systemSkillStorageResolution,
-  ).map((volume): SkillVolume => {
-    return { ...volume, source: "system_skill" };
-  });
-  return [
-    ...systemSkillVolumes,
-    ...buildWorkflowSkillVolumes(
-      args.injectSkillVolumes.workflows,
-      skillsRoot,
-      args.officialWorkflowRun,
-    ),
-  ];
-}
-
 function autoMemoryMountPath(
   framework: SupportedFramework,
   piSandbox: PiModelConfig | undefined,
@@ -13455,39 +13089,22 @@ function preparedRunAdditionalVolumes(args: {
   readonly createArgs: {
     readonly injectSkillVolumes?: RunSkillVolumeInjection;
   };
-  readonly systemSkillStorageResolution: SystemSkillStorageResolution;
   readonly promptAndSkills: RunPromptAndSkills;
   readonly skillsRoot: string;
   readonly body: Pick<CreateRunBody, "additionalVolumes">;
   readonly resolved: Pick<ResolvedRunExecution, "additionalVolumes">;
-  readonly officialWorkflowRun: OfficialWorkflowRunObservation | undefined;
 }): PreparedAdditionalVolumes {
   const bodyAdditionalVolumes = args.body.additionalVolumes;
-  const injectedSkillVolumes = buildInjectedSkillVolumes(
-    {
-      injectSkillVolumes: args.createArgs.injectSkillVolumes,
-      systemSkillStorageResolution: args.systemSkillStorageResolution,
-      officialWorkflowRun: args.officialWorkflowRun,
-    },
+  const rendered = resolveRunSkillVolumes(
+    args.promptAndSkills.skillVolumes.filter((volume) => {
+      return (
+        args.createArgs.injectSkillVolumes !== undefined ||
+        volume.source === "custom_connector_skill" ||
+        volume.source === "request_additional_volume"
+      );
+    }),
     args.skillsRoot,
   );
-  const promptAndSkills = mergeRunPromptAndSkills([
-    {
-      ...args.promptAndSkills,
-      skillVolumes: args.promptAndSkills.skillVolumes.filter((volume) => {
-        return (
-          args.createArgs.injectSkillVolumes !== undefined ||
-          volume.source !== "connector_skill"
-        );
-      }),
-    },
-    {
-      systemPromptVariables: {},
-      userPromptVariables: {},
-      skillVolumes: injectedSkillVolumes ?? [],
-    },
-  ]);
-  const rendered = renderRunPromptAndSkills(promptAndSkills);
   const additionalVolumes =
     bodyAdditionalVolumes ?? args.resolved.additionalVolumes ?? [];
   return {
@@ -13505,27 +13122,26 @@ function prepareRunOutputMetadata(args: {
   readonly createArgs: {
     readonly injectSkillVolumes?: RunSkillVolumeInjection;
   };
-  readonly systemSkillStorageResolution: SystemSkillStorageResolution;
   readonly promptAndSkills: RunPromptAndSkills;
+  readonly officialWorkflow: OfficialWorkflowObservation | undefined;
   readonly framework: SupportedFramework;
   readonly piSandbox: PiModelConfig | undefined;
   readonly body: Pick<CreateRunBody, "additionalVolumes">;
   readonly resolved: RunStorageExecution;
-  readonly officialWorkflowRun: OfficialWorkflowRunObservation | undefined;
 }): {
   readonly artifacts: readonly AgentRunCreateContextArtifact[];
   readonly additionalVolumes:
     readonly AgentRunCreateAdditionalVolume[] | undefined;
   readonly additionalVolumeSources: AdditionalVolumeSources;
+  readonly officialWorkflowRun: OfficialWorkflowRunObservation | undefined;
 } {
+  const skillsRoot = skillsRootForRun(args.framework, args.piSandbox);
   const additionalVolumes = preparedRunAdditionalVolumes({
     createArgs: args.createArgs,
-    systemSkillStorageResolution: args.systemSkillStorageResolution,
     promptAndSkills: args.promptAndSkills,
-    skillsRoot: skillsRootForRun(args.framework, args.piSandbox),
+    skillsRoot,
     body: args.body,
     resolved: args.resolved,
-    officialWorkflowRun: args.officialWorkflowRun,
   });
   const artifacts = artifactsForRun({
     resolved: args.resolved,
@@ -13536,6 +13152,15 @@ function prepareRunOutputMetadata(args: {
     additionalVolumes: additionalVolumes.volumes,
     additionalVolumeSources: additionalVolumes.sources,
     artifacts,
+    officialWorkflowRun: args.officialWorkflow && {
+      ...args.officialWorkflow,
+      definitions: args.officialWorkflow.definitions.map((definition) => {
+        return {
+          ...definition,
+          mountPath: `${skillsRoot}/${definition.workflowName}`,
+        };
+      }),
+    },
   };
 }
 
@@ -13549,32 +13174,8 @@ function resolveCompatibleDirectResumeSession(args: {
     : { ...args.resolved, resumeSession: undefined };
 }
 
-interface RunWorkflowReadInput {
-  readonly db: ReadonlyDb;
-  readonly args: Pick<
-    RunModelProviderArgs,
-    | "catalog"
-    | "orgId"
-    | "userId"
-    | "piExecution"
-    | "codexServiceTier"
-    | "agentRunMetadata"
-  > & {
-    readonly injectSkillVolumes?: RunSkillVolumeInjection;
-    readonly requiredOfficialWorkflowIds?: readonly string[];
-  };
-}
-
-type RunWorkflowModelState =
-  | {
-      readonly requestedFramework: SupportedFramework;
-      readonly modelProvider: ResolvedModelProviderEnvironment | null;
-    }
-  | CreateRunErrorResult
-  | undefined;
-
 type PreparedOfficialWorkflow =
-  OfficialWorkflowRunObservation | CreateRunErrorResult | undefined;
+  OfficialWorkflowObservation | CreateRunErrorResult | undefined;
 // --- Thread-private implementation: Pi launch resources ---
 
 function noContentPiMemoryRecall(args: {
@@ -13597,21 +13198,6 @@ interface PreparePiLaunchResourcesArgs {
   readonly piLaunchConfig: PiLaunchConfigOverrides | undefined;
 }
 
-function bindStableAppendSystemPrompt(
-  prompt: AgentSystemPromptSections,
-  dynamicAppendSystemPrompt: string,
-): string {
-  return [
-    prompt.agentIdentity,
-    prompt.executionLimit,
-    prompt.tools,
-    dynamicAppendSystemPrompt,
-  ]
-    .filter((part) => {
-      return Boolean(part);
-    })
-    .join("\n\n");
-}
 // --- Thread-private implementation: launch admission ---
 
 type AtomicLaunchCommitAttempt =
