@@ -963,6 +963,79 @@ async fn real_registry_eight_stream_cap_and_close_release_are_preserved() {
 }
 
 #[tokio::test]
+async fn owner_revoke_cancels_pending_guest_activation_before_auth_ack() {
+    struct PendingActivation {
+        started: tokio::sync::Notify,
+        dropped: std::sync::atomic::AtomicBool,
+    }
+    struct PendingAccept<'a>(&'a std::sync::atomic::AtomicBool);
+    impl Drop for PendingAccept<'_> {
+        fn drop(&mut self) {
+            self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+    #[async_trait]
+    impl GuestDuplexAcceptor for PendingActivation {
+        async fn accept(&self) -> io::Result<AcceptedGuestDuplex> {
+            let _pending = PendingAccept(&self.dropped);
+            self.started.notify_one();
+            std::future::pending().await
+        }
+    }
+    let mut fixture = Fixture::new().await;
+    let activation = Arc::new(PendingActivation {
+        started: tokio::sync::Notify::new(),
+        dropped: std::sync::atomic::AtomicBool::new(false),
+    });
+    drop(fixture.registration.take());
+    let mut provider =
+        MockSandbox::new(fixture.sandbox.to_string()).with_guest_duplex(activation.clone());
+    provider.bind_run_control(&fixture.run.to_string()).unwrap();
+    fixture.registration =
+        fixture
+            .ctx
+            .guest
+            .register(fixture.run, &provider, &CancellationToken::new());
+    assert!(fixture.registration.is_some());
+    let (client, task) = fixture.connect(&format!("/ws/{}", fixture.runner)).await;
+    let mut ws = client.unwrap();
+    ws.send(first(fixture.run, &"A".repeat(43))).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(2), activation.started.notified())
+        .await
+        .expect("the actual registry must enter the pending provider activation");
+    *fixture.tickets.epoch.lock().unwrap() = Uuid::from_u128(2);
+    // Earlier than the five-second pre-auth timer: observed denial must cancel
+    // an already pending Guest activation, not wait for that unrelated timeout.
+    let closed = tokio::time::timeout(Duration::from_secs(4), ws.next())
+        .await
+        .expect("owner denial must fence activation before auth.ok");
+    assert!(matches!(
+        closed,
+        None | Some(Err(_)) | Some(Ok(Message::Close(_)))
+    ));
+    task.await.unwrap();
+    assert!(activation.dropped.load(std::sync::atomic::Ordering::SeqCst));
+    assert_eq!(
+        fixture.ctx.status.running_sandbox(fixture.run).await,
+        Some(fixture.sandbox)
+    );
+    assert!(
+        fixture
+            .ctx
+            .active_runs
+            .watch_live_run(fixture.run)
+            .is_some()
+    );
+    assert!(
+        fixture
+            .ctx
+            .guest
+            .contains_live_assignment(fixture.run, &fixture.sandbox.to_string())
+    );
+    assert!(!fixture.assignment_cancelled.is_cancelled());
+}
+
+#[tokio::test]
 async fn owner_revoke_closes_idle_wss_without_ending_run_and_fresh_ticket_reconnects() {
     let fixture = Fixture::new().await;
     let (client, task) = fixture.connect(&format!("/ws/{}", fixture.runner)).await;
