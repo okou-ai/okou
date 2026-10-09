@@ -17,7 +17,7 @@ export const noNewAdvisoryLock = createRule({
     schema: [],
     messages: {
       advisoryLock:
-        "Do not add PostgreSQL advisory locks. Use an existing database constraint or atomic conditional statement instead. See docs/database.md#concurrency-and-coordination.",
+        "Do not add PostgreSQL advisory locks. Use an existing database constraint or atomic conditional statement instead. See docs/api/database.md#concurrency-and-coordination.",
     },
   },
   create(context) {

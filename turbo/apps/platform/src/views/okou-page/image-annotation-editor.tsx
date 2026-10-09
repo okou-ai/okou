@@ -572,7 +572,7 @@ function InlineMarkEditor({
         // border, ground and ring that make a field legible in a form are
         // exactly what must not appear over the user's image.
         // `bindAnnotationNoteField$` owns the caret: focus belongs in `onRef`
-        // (docs/effect.md), and a mount-time attribute cannot fire again when
+        // (docs/app/effect.md), and a mount-time attribute cannot fire again when
         // the field is reused for the next mark.
         ref={bindNoteField}
         rows={1}

@@ -134,7 +134,7 @@ const setRootRef$ = onRef(
 ```
 
 Mount ownership does not justify observing application-owned layout changes.
-Follow the [ResizeObserver guide](./resize-observer.md) to use CSS, stable
+Follow the [ResizeObserver guide](resize-observer.md) to use CSS, stable
 geometry, and deterministic command triggers.
 
 Pass the stable `useSet` result directly to React so the cleanup return value is
@@ -306,9 +306,9 @@ For each new effect or command, verify:
 
 ## Related Documentation
 
-- [React and ccstate cache and lifecycle practices](./cache.md) defines the
+- [React and ccstate cache and lifecycle practices](cache.md) defines the
   anti-patterns used during implementation and review.
-- [React commit analysis](./react-commit.md) explains how to measure and
+- [React commit analysis](react-commit.md) explains how to measure and
   attribute unnecessary React work.
-- [ccstate patterns and best practices](../.claude/skills/ccstate/SKILL.md)
+- [ccstate patterns and best practices](../../.claude/skills/ccstate/SKILL.md)
   documents the concrete ccstate APIs and implementation patterns.

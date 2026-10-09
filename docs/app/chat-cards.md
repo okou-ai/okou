@@ -47,7 +47,7 @@ thread signal. Keep subscriptions and polling in that owner, including while a
 presentation dialog is closed. Do not move action ownership into a details
 viewer or let stale thread work update a replacement card.
 
-Follow [ccstate](../.claude/skills/ccstate/SKILL.md), [effects](effect.md), and
+Follow [ccstate](../../.claude/skills/ccstate/SKILL.md), [effects](effect.md), and
 [cache/lifecycle](cache.md) for graph construction, cancellation, and teardown.
 
 ## Fixed Height and Stable Layout
@@ -77,9 +77,9 @@ that the mounted frame is preserved.
 
 The shared `ChatCard` supplies surface styling, not automatic height/lifetime
 ownership. Each card owner must satisfy the contract. See
-[`connector-account-action-card.tsx`](../turbo/apps/platform/src/views/okou-page/connector-account-action-card.tsx)
+[`connector-account-action-card.tsx`](../../turbo/apps/platform/src/views/okou-page/connector-account-action-card.tsx)
 for the persistent-frame pattern and
-[`attachment-preview.tsx`](../turbo/apps/platform/src/views/okou-page/attachment-preview.tsx)
+[`attachment-preview.tsx`](../../turbo/apps/platform/src/views/okou-page/attachment-preview.tsx)
 for reserved artwork/preview geometry.
 
 ### Reserve Only the Required Geometry
@@ -126,7 +126,7 @@ message position while reading history. Cover cold/warm navigation, long text,
 narrow layouts, WebKit, and Chromium.
 
 The existing
-[`chat-card-scroll.ts`](../e2e/playwright/regressions/chat-card-scroll.ts)
+[`chat-card-scroll.ts`](../../e2e/playwright/regressions/chat-card-scroll.ts)
 regression checks persistent-frame geometry and reading position against a
 prepared preview with private authenticated storage state:
 
@@ -140,4 +140,4 @@ pnpm exec tsx playwright/regressions/chat-card-scroll.ts \
 Choose the appropriate family/count and an overflowing thread. This read-only
 loading check does not authorize actions or establish their completed/error
 behavior; cover those through page tests and authorized preview acceptance.
-Follow [Platform testing](testing/app-testing.md).
+Follow [Platform testing](app-testing.md).

@@ -509,7 +509,7 @@ function createAnnotationViewportSignals() {
   /**
    * The note field, owned by the element that renders it.
    *
-   * Focus belongs in `onRef` (docs/effect.md), and it cannot be an `autoFocus`
+   * Focus belongs in `onRef` (docs/app/effect.md), and it cannot be an `autoFocus`
    * attribute here: the field is already mounted when a printed note is clicked
    * while the popover is open, and a mount-time attribute cannot fire twice.
    * Forcing a remount to re-fire one throws the live input away mid-edit.

@@ -6,16 +6,16 @@ engineering constraints, not a claim of source or production retirement completi
 
 ## Select the Matching Guidance
 
-- For schema changes, follow [migration workflows](../.claude/skills/database-development/references/migrations.md)
-  and [DB migrations](../turbo/packages/db/MIGRATIONS.md). Use Drizzle to generate
+- For schema changes, follow [migration workflows](../../.claude/skills/database-development/references/migrations.md)
+  and [DB migrations](../../turbo/packages/db/MIGRATIONS.md). Use Drizzle to generate
   metadata; do not hand-edit journals or snapshots. Numbered external-data
   migration scripts are permanent history, self-contained and dry-run by default.
-- For selections, decoding, or SQL rewrites, read [query contracts](../.claude/skills/database-development/references/query-contracts.md).
+- For selections, decoding, or SQL rewrites, read [query contracts](../../.claude/skills/database-development/references/query-contracts.md).
   TypeScript generics do not decode PostgreSQL results. Preserve nullability,
   precision, provenance, bindings, returned outcomes, and material query cost.
 - For reactive reads, commands, and graph ownership, read [API ccstate](api-ccstate.md).
 - For persisted shapes, deployment order, and old/new consumers, read
-  [deployment compatibility](deployment-compatibility.md).
+  [deployment compatibility](../deployment-compatibility.md).
 
 ## Concurrency and Coordination
 
@@ -40,7 +40,7 @@ triggers may remain in the final schema; express transitions in the owning SQL.
 Indexes or constraints over existing fields are allowed when the actual business
 contract requires them. For narrowly scoped outgoing-schema trigger
 compatibility, follow the
-[trigger policy](eslint/no-database-trigger.md).
+[trigger policy](database.md#database-triggers).
 
 Enforce each invariant at the smallest sufficient boundary: an existing business
 key, constraint, atomic statement, or necessary billing transaction. If a design
@@ -159,7 +159,7 @@ Shared transaction logic becomes pure builders that return values, conditions,
 or SQL fragments, never functions that execute queries. Document the financial
 invariant, billing snapshot, or billing transaction-local setting that requires
 each remaining billing transaction. Follow
-[query contracts](../.claude/skills/database-development/references/query-contracts.md)
+[query contracts](../../.claude/skills/database-development/references/query-contracts.md)
 for SQL rewrites; do not add locks, retries, or timeouts to compensate for a
 changed transaction boundary.
 
@@ -201,13 +201,13 @@ execution paths rather than editing old SQL to make a search return zero.
 Retire compatibility and operator paths against actual data-convergence and
 deployment gates, not age, lower lock counts, or a CI reference.
 
-Apply [deployment compatibility](deployment-compatibility.md) only to an actual
+Apply [deployment compatibility](../deployment-compatibility.md) only to an actual
 changed consumer or schema boundary. Do not invent an App upgrade, Runner drain,
 extra release, or fixed elapsed-time gate merely because those surfaces exist.
 A source merge is not deployment evidence.
 
-Tests use [production caller boundaries](testing/testing-external-behavior.md)
-and follow [Testing](testing.md). Do not hold production advisory locks, install
+Tests use [production caller boundaries](../testing-external-behavior.md)
+and follow [Testing](../testing.md). Do not hold production advisory locks, install
 blocking triggers, inspect waiters, add internal gates, or assert lock acquisition.
 Remove tests that only pin retired implementations with their unused fixtures.
 Preserve authorization, financial correctness, idempotency, and exact-resource
@@ -294,3 +294,41 @@ pnpm lint:transactions <full-base-main-sha>
 Stage file deletions before running the Git-backed scan. This command is intentionally not a baseline-update command.
 
 This is a static policy guard, not a runtime/data-flow proof. It rejects extra detected boundaries and unregistered, copied, moved or resurrected IDs. It intentionally allows an existing callback's business logic to change. Replacing a boundary within the same file and owner while transferring its sole ID cannot be distinguished from an edit; review must reject using that limitation to introduce a new transaction. Expanded transaction scope, external I/O, surrounding control flow, arbitrary reflection, dynamically generated property names or SQL, cross-file callable aliases, external callback bodies and new callers of old transaction-opening helpers also require review. CI workflow/rule/scanner changes themselves require review. Preserve authorization, concurrency, idempotency, cleanup and financial correctness when removing transactions.
+
+## Database Triggers
+
+`api/no-database-trigger` rejects `CREATE TRIGGER`, `CREATE OR REPLACE TRIGGER`,
+`CREATE CONSTRAINT TRIGGER`, and `CREATE EVENT TRIGGER`. Keep write orchestration
+explicit in the owning application SQL; use database constraints for invariants.
+Any necessary transaction must follow the [transaction boundaries](#transaction-boundaries).
+
+The rule runs on API and DB production TypeScript strings and templates, and on
+DB `.sql` files through the normal ESLint command. Static string concatenations,
+comments between SQL keywords, procedure bodies and literal `EXECUTE` statements
+are checked. Comments, quoted identifiers, ordinary data strings, and
+`DROP TRIGGER` are allowed. The rule neither executes SQL nor interprets SQL
+assembled entirely at runtime.
+
+Existing shipped migrations stay unchanged. The DB ESLint configuration lists
+the eight historical migration files that created triggers explicitly; new
+migrations are checked by default. These historical definitions include triggers
+removed by later migrations. CI rejects any edits to these shipped SQL files,
+including comment-only changes.
+
+The nine surviving triggers are checked in `EXPECTED_PERMANENT_TRIGGERS` in
+`scripts/test-migration-consistency-schema.ts`. Each current definition has one
+`eslint-disable-next-line api/no-database-trigger` with the reason:
+`Legacy trigger created before 2026-09-29; new database triggers are prohibited.`
+Keep these exceptions local to the existing definitions; do not add new ones.
+The inventory script is explicitly checked despite the general test exclusion.
+
+Test files and existing fault-injection fixtures may create temporary triggers.
+They are excluded in the owning package's ESLint configuration. Production code
+must not import those test fixtures.
+
+Run the rule through the existing package ESLint command:
+
+```sh
+cd turbo/packages/db
+pnpm exec eslint . --max-warnings 0
+```

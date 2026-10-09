@@ -10,7 +10,7 @@ changes should not break a test when that contract is preserved.
 - **Platform:** boot the real Router with `setupPage`, interact with the page,
   and assert rendered content, controls, navigation, and downloads. Default to
   `toBeInTheDocument()` for content presence; use `toBeVisible()` only when
-  visibility itself is the contract. See [App assertions](testing/app-testing.md#assertions).
+  visibility itself is the contract. See [App assertions](app/app-testing.md#assertions).
 - **API:** call production endpoints for setup and verification. Assert HTTP
   responses, including status, headers, bodies, and effects observable through
   subsequent requests. Exercise auth, validation, serialization, permissions,
@@ -22,7 +22,7 @@ changes should not break a test when that contract is preserved.
 
 Do not substitute component state, query caches, database rows, service return
 values, or internal callback counts for these outcomes. The
-[external behavior guide](testing/testing-external-behavior.md) defines the
+[external behavior guide](testing-external-behavior.md) defines the
 boundary and the treatment of states impossible to construct through it.
 
 ## Coverage
@@ -73,18 +73,18 @@ remain part of the runtime contract.
 
 Read only the guides matching the work:
 
-| Surface                  | Guide                                                     |
-| ------------------------ | --------------------------------------------------------- |
-| Shared setup and cleanup | [Patterns](testing/patterns.md)                           |
-| Common mistakes          | [Anti-patterns](testing/anti-patterns.md)                 |
-| External assertions      | [External behavior](testing/testing-external-behavior.md) |
-| API routes               | [API testing](testing/api-testing.md)                     |
-| Platform pages           | [App testing](testing/app-testing.md)                     |
-| CLI commands             | [CLI testing](testing/cli-testing.md)                     |
-| CLI deployed E2E         | [CLI E2E](testing/cli-e2e-testing.md)                     |
-| Desktop                  | [Desktop testing](testing/desktop-testing.md)             |
-| Rust                     | [Rust testing](testing/rust-testing.md)                   |
-| Python addon             | [Addon testing](testing/mitm-addon-testing.md)            |
+| Surface                  | Guide                                             |
+| ------------------------ | ------------------------------------------------- |
+| Shared setup and cleanup | [Patterns](testing-patterns.md)                   |
+| Common mistakes          | [Anti-patterns](testing-anti-patterns.md)         |
+| External assertions      | [External behavior](testing-external-behavior.md) |
+| API routes               | [API testing](api/api-testing.md)                 |
+| Platform pages           | [App testing](app/app-testing.md)                 |
+| CLI commands             | [CLI testing](cli-testing.md)                     |
+| CLI deployed E2E         | [CLI E2E](cli-e2e-testing.md)                     |
+| Desktop                  | [Desktop testing](app/desktop-testing.md)         |
+| Rust                     | [Rust testing](runner/rust-testing.md)            |
+| Python addon             | [Addon testing](runner/mitm-addon-testing.md)     |
 
 Select verification from the changed surface and consumers, as described in
 [the project guidelines](../CLAUDE.md#development-and-verification). Run one

@@ -30,29 +30,29 @@ A contents API read can fetch a guide at the recorded practice SHA:
 gh api 'repos/okou-ai/okou/contents/docs/docs.md?ref=<PRACTICE_SHA>' --jq '.content' | base64 -d
 ```
 
-| Changed behavior                                                              | Guidance                                                                                                           |
-| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Production logic                                                              | [Code quality](docs/bad-smell.md) and [testing](docs/testing.md)                                                   |
-| Tests or coverage decisions                                                   | [Testing](docs/testing.md), then the matching surface guide                                                        |
-| Fallbacks, defaults, removed paths, or rollout switches                       | [Fallbacks](docs/fallback.md)                                                                                      |
-| Persistent/optimistic events and reconciliation                               | [Event sourcing](docs/event-sourcing.md)                                                                           |
-| React, signals, caches, refs, or async ownership                              | [ccstate router](.claude/skills/ccstate/SKILL.md), [effects](docs/effect.md), [cache](docs/cache.md) as applicable |
-| API signals or HTTP client handling                                           | Relevant ccstate reactive, command, lifecycle, or HTTP references; React/DOM only if affected                      |
-| Requests, protocols, queue payloads, schema, persisted state, service workers | [Deployment compatibility](docs/deployment-compatibility.md)                                                       |
-| Database schema, raw results, SQL rewrites, transactions, concurrency         | [Database guide](docs/database.md), then [database development](.claude/skills/database-development/SKILL.md)      |
-| New user-facing behavior and containment                                      | [Feature switches](.claude/skills/feature-switch/SKILL.md)                                                         |
-| External identifiers and reference resolution                                 | [Externally managed references](docs/externally-managed-references.md)                                             |
-| App/shared UI styling or interactions                                         | [Styles](docs/styles.md), [UI interaction contracts](CLAUDE.md#ui-interaction-contracts)                           |
-| Chat-card recognition, registration, or rendering                             | [Chat cards](docs/chat-cards.md)                                                                                   |
-| Runner build, release, deploy, architecture selection, or rollback            | [Runner architectures](docs/runner-multi-architecture.md)                                                          |
-| React performance claims or subscription equality                             | [React measurements](docs/react-commit.md)                                                                         |
+| Changed behavior                                                              | Guidance                                                                                                                   |
+| ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Production logic                                                              | [Code quality](docs/bad-smell.md) and [testing](docs/testing.md)                                                           |
+| Tests or coverage decisions                                                   | [Testing](docs/testing.md), then the matching surface guide                                                                |
+| Fallbacks, defaults, removed paths, or rollout switches                       | [Fallbacks](docs/fallback.md)                                                                                              |
+| Persistent/optimistic events and reconciliation                               | [Event sourcing](docs/app/event-sourcing.md)                                                                               |
+| React, signals, caches, refs, or async ownership                              | [ccstate router](.claude/skills/ccstate/SKILL.md), [effects](docs/app/effect.md), [cache](docs/app/cache.md) as applicable |
+| API signals or HTTP client handling                                           | Relevant ccstate reactive, command, lifecycle, or HTTP references; React/DOM only if affected                              |
+| Requests, protocols, queue payloads, schema, persisted state, service workers | [Deployment compatibility](docs/deployment-compatibility.md)                                                               |
+| Database schema, raw results, SQL rewrites, transactions, concurrency         | [Database guide](docs/api/database.md), then [database development](.claude/skills/database-development/SKILL.md)          |
+| New user-facing behavior and containment                                      | [Feature switches](.claude/skills/feature-switch/SKILL.md)                                                                 |
+| External identifiers and reference resolution                                 | [Externally managed references](docs/externally-managed-references.md)                                                     |
+| App/shared UI styling or interactions                                         | [Styles](docs/app/styles.md), [UI interaction contracts](CLAUDE.md#ui-interaction-contracts)                               |
+| Chat-card recognition, registration, or rendering                             | [Chat cards](docs/app/chat-cards.md)                                                                                       |
+| Runner build, release, deploy, architecture selection, or rollback            | [Runner architectures](docs/runner/runner-multi-architecture.md)                                                           |
+| React performance claims or subscription equality                             | [React measurements](docs/app/react-commit.md)                                                                             |
 
 For Platform requests, async ownership, module state, or runtime loading, read
-[Platform ccstate](docs/platform-ccstate.md). API graph changes also require
-[API ccstate](docs/api-ccstate.md).
+[Platform ccstate](docs/app/platform-ccstate.md). API graph changes also require
+[API ccstate](docs/api/api-ccstate.md).
 
 For changed tests, follow the surface routes in [Testing](docs/testing.md).
-API and Platform tests must also follow [external behavior](docs/testing/testing-external-behavior.md).
+API and Platform tests must also follow [external behavior](docs/testing-external-behavior.md).
 Reading an index or skill router does not replace reading the selected reference.
 Do not load unrelated references merely because they share a parent directory.
 
@@ -137,7 +137,7 @@ For changed UI interactions, apply the
   rejection tests when fail-closed security is the actual product behavior.
 - Persistent events reconcile optimistic events by shared ID. Do not require
   failure rollback, timeout removal, or other cleanup of optimistic projections
-  contrary to [event sourcing](docs/event-sourcing.md).
+  contrary to [event sourcing](docs/app/event-sourcing.md).
 
 ## Findings and Verdict
 

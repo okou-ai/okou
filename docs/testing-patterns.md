@@ -1,16 +1,16 @@
 # Testing Patterns
 
-Use [Testing](../testing.md) for strategy and [external behavior](testing-external-behavior.md)
+Use [Testing](testing.md) for strategy and [external behavior](testing-external-behavior.md)
 for setup and assertion boundaries. This page covers shared ownership patterns;
 application guides own their executable examples.
 
 ## Production Entry Points
 
-| Surface  | Setup and assertions                                                                                     |
-| -------- | -------------------------------------------------------------------------------------------------------- |
-| API      | [Hono and ts-rest route clients](api-testing.md); create and verify state through production endpoints   |
-| Platform | [Page setup](app-testing.md); await `setupPage`, act through controls, then assert observable page state |
-| CLI      | [Command parsing](cli-testing.md); assert output, exit status, and user-accessible files                 |
+| Surface  | Setup and assertions                                                                                         |
+| -------- | ------------------------------------------------------------------------------------------------------------ |
+| API      | [Hono and ts-rest route clients](api/api-testing.md); create and verify state through production endpoints   |
+| Platform | [Page setup](app/app-testing.md); await `setupPage`, act through controls, then assert observable page state |
+| CLI      | [Command parsing](cli-testing.md); assert output, exit status, and user-accessible files                     |
 
 A helper may wrap an API call or page interaction. It must not hide direct DB
 writes, service calls, or store mutation that bypass the external interface.

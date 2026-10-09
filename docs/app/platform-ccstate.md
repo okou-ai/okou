@@ -2,10 +2,10 @@
 
 This guide defines Platform-specific request, asynchronous ownership, module
 state, and runtime import boundaries. Read the shared
-[ccstate references](../.claude/skills/ccstate/SKILL.md) for reactive values,
+[ccstate references](../../.claude/skills/ccstate/SKILL.md) for reactive values,
 commands, lifecycle, HTTP, and React/DOM patterns; use [effects](effect.md),
-[cache](cache.md), and [Platform testing](testing/app-testing.md) when relevant.
-It complements [API ccstate](api-ccstate.md), which owns server-side graph and
+[cache](cache.md), and [Platform testing](app-testing.md) when relevant.
+It complements [API ccstate](../api/api-ccstate.md), which owns server-side graph and
 database rules, rather than applying those API rules to browser code.
 
 Platform uses error severity throughout its ESLint policy. `--max-warnings 0`
@@ -74,7 +74,7 @@ Constructor permissions apply only at their definition files:
 | `signals/utils.ts`    | `PromiseTracker`    | Private bookkeeping used only in Vitest |
 
 The existing shared test teardown owns `clearAllDetached()`; see
-[Test context and cleanup](./testing/app-testing.md#test-context-and-cleanup).
+[Test context and cleanup](app-testing.md#test-context-and-cleanup).
 It awaits detached work, including work registered during teardown, without
 timed polling. Production does not collect promises.
 

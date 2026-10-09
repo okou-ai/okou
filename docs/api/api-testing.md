@@ -126,7 +126,7 @@ internal state or race. Delete unjustified coverage together with unused support
 rewrite valuable behavior through an existing normal API or genuine provider
 webhook. If those interfaces cannot construct the case, reconsider its value
 instead of treating an existing test as permission to keep private setup. See
-the [scenario decision procedure](./testing-external-behavior.md#cases-without-public-construction).
+the [scenario decision procedure](../testing-external-behavior.md#cases-without-public-construction).
 
 API route tests must construct, drive, and observe a case through production
 interfaces available to the real caller. Follow the complete chain, including
@@ -268,7 +268,7 @@ DELETE 404 while its owner still exists. These outcomes do not prove the exact
 physical history-blob reference counts removed with batch 010.
 
 For the full reasoning, see
-[Testing External Behavior](./testing-external-behavior.md).
+[Testing External Behavior](../testing-external-behavior.md).
 
 For storage URL reuse, see `workflow-skill-storage-presigned-url-cache.suite.ts`:
 create a workflow or custom connector through its normal API, associate it with

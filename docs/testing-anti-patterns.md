@@ -1,6 +1,6 @@
 # Testing Anti-Patterns
 
-Use [Testing](../testing.md) and the matching application guide as the canonical
+Use [Testing](testing.md) and the matching application guide as the canonical
 setup reference. These patterns explain common sources of false confidence.
 
 ## AP-1: Testing Mock Calls Instead of Behavior
@@ -21,7 +21,7 @@ register overrides through `context.mocks.api` or the supported
 
 Use real temporary directories and inspect user-accessible file results.
 Mocking `fs` can hide path, encoding, permission, and resource-lifetime problems.
-See [shared patterns](patterns.md#real-filesystem).
+See [shared patterns](testing-patterns.md#real-filesystem).
 
 ## AP-4: Mocking Internal Code
 
@@ -77,7 +77,7 @@ Platform view tests enter through the production Router using awaited
 `setupPage()`. Configure context-owned mocks first, wait for observable readiness,
 perform the interaction, and assert the result. Do not substitute a direct
 component render, hook call, or store mutation for the user journey.
-See [App testing](app-testing.md).
+See [App testing](app/app-testing.md).
 
 ## AP-11: Testing Service Functions When a Route Exists
 
@@ -85,7 +85,7 @@ API tests use `setupApp()` with the route contract and production endpoint.
 Helpers may wrap those API calls; they must not seed DB rows, import services,
 or call `initServices()` to skip middleware, auth, parsing, or serialization.
 Verify persistence with a follow-up HTTP request an external caller can make.
-See [API testing](api-testing.md).
+See [API testing](api/api-testing.md).
 
 ## AP-12: Pinning Diagnostics
 
@@ -106,7 +106,7 @@ is still updating opacity. When the contract is that the message rendered, use
 an awaited `findByText` with `toBeInTheDocument()`. An extra `toBeVisible()` or
 animation wait couples that assertion to unrelated presentation timing.
 Reserve visibility assertions for behavior that specifically shows or hides
-content. See [App assertions](app-testing.md#assertions).
+content. See [App assertions](app/app-testing.md#assertions).
 
 ## Review Checklist
 

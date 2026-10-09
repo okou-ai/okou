@@ -33,7 +33,7 @@ For example:
    surface.
 
 For rendered content, default to `toBeInTheDocument()` as described in
-[App assertions](app-testing.md#assertions). Use `toBeVisible()` when showing or
+[App assertions](app/app-testing.md#assertions). Use `toBeVisible()` when showing or
 hiding content is itself the contract.
 
 Do not render an internal component just because it is convenient. Do not mutate

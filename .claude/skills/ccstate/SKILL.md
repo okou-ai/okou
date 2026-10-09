@@ -35,7 +35,7 @@ React/DOM reference unless it also changes that surface.
 - Route setup owns `pageSignal$`. Preserve stable callback refs and `onRef`
   cleanup returns.
 
-See [effects](../../../docs/effect.md), [cache](../../../docs/cache.md), and
-[Platform tests](../../../docs/testing/app-testing.md) for the relevant broader
+See [effects](../../../docs/app/effect.md), [cache](../../../docs/app/cache.md), and
+[Platform tests](../../../docs/app/app-testing.md) for the relevant broader
 contracts. For performance investigations, use
-[React measurements](../../../docs/react-commit.md).
+[React measurements](../../../docs/app/react-commit.md).

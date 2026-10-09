@@ -19,63 +19,87 @@ this index does not replace its detailed rules.
   this index does not authorize removing runtime compatibility, rollback floors,
   security checks, data, tests, or migration history.
 
-## Code Quality and Architecture
+## Directory Ownership
+
+- `docs/`: cross-surface standards, shared test practices, CLI testing, and
+  deployed product E2E guidance.
+- `docs/app/`: browser and Desktop application behavior, React/ccstate, styling,
+  and application testing.
+- `docs/api/`: server-side ccstate, database policy and lint, and API testing.
+- `docs/runner/`: host/guest infrastructure, MITM addon contracts, and native
+  Rust/addon testing.
+
+Classify by the guidance's actual owner, not its implementation language or
+current filename. CLI and deployed E2E span application, API, and Runner
+boundaries, so their guides remain at the root. Shared testing rules also remain
+at the root; surface-specific test guides live with their owning surface.
+
+## Shared Standards and Testing
 
 - [Bad code smells](bad-smell.md): production-code quality boundaries.
 - [Fallbacks](fallback.md): legitimate exceptions, declarations, and removal gates.
-- [Event sourcing](event-sourcing.md): persistent and optimistic event ownership.
 - [Externally managed references](externally-managed-references.md): reference
   authority, dependency failures, and fail-closed resolution.
 - [Deployment compatibility](deployment-compatibility.md): independent releases,
   persisted state, schema transitions, drain, and rollback requirements.
-- [API ccstate](api-ccstate.md): derived reads, explicit writes, graph construction,
-  database ownership, cancellation, and entry-owned orchestration.
-- [Database guide](database.md): concurrency, atomic SQL, transaction ownership,
-  external effects, recovery, and transaction lint, with routes to migration
+- [Testing](testing.md): strategy and routes to each affected surface.
+- [Testing patterns](testing-patterns.md): shared setup, mocks, and cleanup.
+- [Testing anti-patterns](testing-anti-patterns.md): common sources of false confidence.
+- [External behavior testing](testing-external-behavior.md): production setup
+  and assertion boundaries across surfaces.
+- [CLI testing](cli-testing.md): command parsing, external mocks, and real files.
+- [CLI and product E2E](cli-e2e-testing.md): deployed product journeys and Runner
+  E2E boundaries.
+
+## App
+
+- [Platform ccstate](app/platform-ccstate.md): transport, lifecycle, module state,
+  and import boundaries. Read the matching shared
+  [ccstate references](../.claude/skills/ccstate/SKILL.md) as needed.
+- [Effects](app/effect.md): derived values, semantic commands, DOM lifecycles,
+  and render purity.
+- [Cache and lifecycle](app/cache.md): ownership, retention, refs, and teardown.
+- [Event sourcing](app/event-sourcing.md): persistent and optimistic event
+  reconciliation in frontend projections.
+- [Styles](app/styles.md): shared tokens, semantic HTML, and component composition.
+- [ResizeObserver](app/resize-observer.md): CSS layout and measurement ownership.
+- [Chat-card UI contracts](app/chat-cards.md): stable frames, portable action
+  links, signal registration, and lifecycle ownership.
+- [React measurements](app/react-commit.md): reproducible commit attribution
+  and behavior verification.
+- [Clerk customization](app/clerk-customize.md): public styling ownership and enforcement.
+- [Platform testing](app/app-testing.md): real page setup and user-visible assertions.
+- [Desktop testing](app/desktop-testing.md): native application entry points,
+  packaged acceptance, and release contracts.
+
+## API
+
+- [API ccstate](api/api-ccstate.md): derived reads, explicit writes, graph
+  construction, database ownership, cancellation, and entry-owned orchestration.
+- [Database guide](api/database.md): concurrency, atomic SQL, transaction
+  ownership, external effects, recovery, transaction lint, and
+  [trigger policy](api/database.md#database-triggers), with routes to migration
   workflows, decoding, and SQL construction.
-- [Database trigger policy](eslint/no-database-trigger.md).
+- [API testing](api/api-testing.md): real route clients, auth, external mocks,
+  persistent state, and observable HTTP contracts.
 
-## React and Platform
+## Runner
 
-- [ccstate](../.claude/skills/ccstate/SKILL.md): reactive, command, lifecycle, and
-  HTTP guidance.
-- [Effects](effect.md): derived values, semantic commands, DOM lifecycles, and
-  render purity.
-- [Cache and lifecycle](cache.md): ownership, retention, refs, and teardown.
-- [Styles](styles.md): shared tokens, semantic HTML, and component composition.
-- [ResizeObserver](resize-observer.md): CSS layout and measurement ownership.
-- [Chat-card UI contracts](chat-cards.md): stable frames, portable action links,
-  signal registration, and lifecycle ownership, not a feature catalog.
-- [React measurements](react-commit.md): reproducible commit attribution and
-  behavior verification, not historical benchmark results.
-- [Platform ccstate](platform-ccstate.md): transport, lifecycle, module state,
-  and import boundaries.
-- [Clerk customization](clerk-customize.md): public styling ownership and enforcement.
-
-## Testing
-
-Start with [Testing](testing.md), then select the affected surface:
-
-- [Patterns](testing/patterns.md) and [anti-patterns](testing/anti-patterns.md).
-- [External behavior](testing/testing-external-behavior.md).
-- [API](testing/api-testing.md) and [Platform](testing/app-testing.md).
-- [CLI](testing/cli-testing.md) and [CLI/Runner E2E](testing/cli-e2e-testing.md).
-- [Desktop](testing/desktop-testing.md).
-- [Rust](testing/rust-testing.md).
-- [MITM addon](testing/mitm-addon-testing.md).
-
-## Shared Runtime Infrastructure
-
-- [Guest process lifecycle](runner-guest-process-lifecycle.md): containment,
+- [Guest process lifecycle](runner/runner-guest-process-lifecycle.md): containment,
   process ownership, reuse, and operation lifetime.
-- [Runner host configuration](runner-host-configuration.md): validated host-local
-  capacity and configuration ownership.
-- [Guest memory policy](runner-memory-policy.md): workload sharing and reclaim protection.
-- [Runner architectures](runner-multi-architecture.md): artifact pairing, build,
-  deployment, and architecture selection.
-- [Runner reactor progress](runner-reactor-progress.md): independently scheduled
-  work, shared-resource progress, cancellation, and shutdown.
-- [Guest/Runner transport](runner-rpc-transport.md): control versus RPC placement,
-  bounded framing, exact-assignment authority, and resource lifetime.
-- [MITM addon contracts](mitm-addon-contracts.md): credential boundaries, framing,
-  logging, and bounded protocol inspection.
+- [Runner host configuration](runner/runner-host-configuration.md): validated
+  host-local capacity and configuration ownership.
+- [Guest memory policy](runner/runner-memory-policy.md): workload sharing and
+  reclaim protection.
+- [Runner architectures](runner/runner-multi-architecture.md): artifact pairing,
+  build, deployment, and architecture selection.
+- [Runner reactor progress](runner/runner-reactor-progress.md): independently
+  scheduled work, shared-resource progress, cancellation, and shutdown.
+- [Guest/Runner transport](runner/runner-rpc-transport.md): control versus RPC
+  placement, bounded framing, exact-assignment authority, and resource lifetime.
+- [MITM addon contracts](runner/mitm-addon-contracts.md): credential boundaries,
+  framing, logging, and bounded protocol inspection.
+- [Rust testing](runner/rust-testing.md): crate integration tests, Runner owner
+  targets, coverage, and native verification.
+- [MITM addon testing](runner/mitm-addon-testing.md): the locked Python environment,
+  test boundaries, and executable addon coverage.

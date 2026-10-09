@@ -3,7 +3,7 @@
 This document defines the React, ccstate, cache, and resource-lifecycle
 anti-patterns to check during implementation and code review. It complements
 the ccstate patterns in `.claude/skills/ccstate/SKILL.md` and the React
-measurement guidance in `docs/react-commit.md`.
+measurement guidance in `docs/app/react-commit.md`.
 
 Do not classify a match from syntax alone. For each candidate, trace the
 component, signal definition, callers, owner, identity key, invalidation path,

@@ -12,7 +12,7 @@ directory with a `.test.tsx` or `.test.ts` suffix.
 
 Use a signal bootstrap test only when the behavior has no page-visible surface
 and still needs the production Platform bootstrap path. Follow the
-[external behavior boundary](testing-external-behavior.md) when a state cannot
+[external behavior boundary](../testing-external-behavior.md) when a state cannot
 be constructed through a production interface.
 
 Do not add helper-only, component-only, or static-configuration unit tests when

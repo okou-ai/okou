@@ -1565,7 +1565,7 @@ by hash.
 
 Hosted Clerk authentication does not use a third-party DOM adapter. It stays on
 Clerk's public appearance API under the narrower rules in
-[Clerk customization](./clerk-customize.md).
+[Clerk customization](clerk-customize.md).
 
 Every exception identifies the exact file and selector or injected-style
 fingerprint, its owner, rationale, and removal condition. Third-party adapters
@@ -1644,7 +1644,7 @@ merge queue, and on a contributor's machine. An unreadable or malformed
 CI runs this as the independent required `lint-style` job. The pre-commit hook
 runs the fast repository policy so the most actionable boundary failures are
 returned before push. Both policy diagnostics and the full lint command's
-failure output direct contributors to `docs/styles.md` for the style guide. The
+failure output direct contributors to `docs/app/styles.md` for the style guide. The
 full command keeps a failing exit status for policy, CSS, Tailwind, or test
 failures.
 

@@ -4,12 +4,12 @@ This guide covers how API server code under `turbo/apps/api/src/signals/` should
 build ccstate graphs: derived reads, explicit writes, graph-local ownership,
 and entry-owned orchestration.
 
-The general ccstate rules live in the [ccstate skill](../.claude/skills/ccstate/SKILL.md)
-and its [command reference](../.claude/skills/ccstate/references/commands.md).
+The general ccstate rules live in the [ccstate skill](../../.claude/skills/ccstate/SKILL.md)
+and its [command reference](../../.claude/skills/ccstate/references/commands.md).
 This document adds API-specific guidance for per-request and per-claim graphs.
 The database ownership, transaction, and signal-parameter restrictions below
 are stricter than patterns permitted by the general command reference and
-[database development guidance](../.claude/skills/database-development/SKILL.md).
+[database development guidance](../../.claude/skills/database-development/SKILL.md).
 Apply these stricter API rules when building API graphs.
 
 The central rule is:
@@ -214,11 +214,11 @@ tasks; one was dropped and later restored during #37430.
 - Use `Promise.all` for parallel reads so that the first failure fails the step.
 - Return business rejections explicitly as data. Do not use `try/catch` to
   continue, `?? default` for impossible states, or retry loops. See
-  [Fallbacks](./fallback.md) and [Bad code smells](./bad-smell.md).
+  [Fallbacks](../fallback.md) and [Bad code smells](../bad-smell.md).
 - Do not add locks to order the steps of a graph. On the pick path,
   correctness comes from the actual claim predicate and existing ownership
   fences, not a second orchestration lock. Follow
-  [database concurrency rules](./database.md#concurrency-and-coordination) for retained invariants. Do not
+  [database concurrency rules](database.md#concurrency-and-coordination) for retained invariants. Do not
   hide unresolved ordering with `NOWAIT`, lock retry loops, or larger timeouts.
 
 ### 9. No test hooks in production code
@@ -232,8 +232,8 @@ with the model-route and connector-catalog read hooks.
 Tests build scenarios through public APIs, run callbacks, `mockNow`, and test
 environment configuration. A scenario that can only be reached through a hook
 is deleted, including fabricated historical state. See
-[Testing](./testing.md) and
-[external behavior testing](./testing/testing-external-behavior.md).
+[Testing](../testing.md) and
+[external behavior testing](../testing-external-behavior.md).
 
 ### 10. Keep database handles local and prefer atomic SQL
 
