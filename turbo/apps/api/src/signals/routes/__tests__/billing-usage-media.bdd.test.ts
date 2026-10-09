@@ -487,7 +487,14 @@ describe("BILL-02: usage reads", () => {
     await completeVisibleOnboarding(admin);
 
     const usageMembers = await api.readUsageMembers(admin);
-    expect(usageMembers.body.members).toStrictEqual([]);
+    expect(usageMembers.body).toStrictEqual({ period: null, members: [] });
+
+    const fixedPeriod = await api.readUsageMembers(admin, {
+      range: "7d",
+      tz: "Asia/Shanghai",
+    });
+    expect(fixedPeriod.body.period).not.toBeNull();
+    expect(fixedPeriod.body.members).toStrictEqual([]);
 
     const usageRecord = await api.readUsageRecord(admin);
     expect(usageRecord.body.pagination.total).toBe(0);
