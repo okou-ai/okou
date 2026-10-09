@@ -342,7 +342,7 @@ it("serves version-bound OG in the initial HTML while preserving authored metada
 });
 
 it.each(["demo", `dpl-${deploymentId}`])(
-  "normalizes authored image URLs on %s without enabling platform previews",
+  "normalizes authored image URLs on %s when artifact previews are enabled",
   async (alias) => {
     server.use(
       http.get(endpoint, () => {
@@ -350,8 +350,11 @@ it.each(["demo", `dpl-${deploymentId}`])(
       }),
       http.get("https://authority.test/api/artifact-og/metadata", () => {
         return HttpResponse.json({
-          available: false,
-          normalizeImageUrls: true,
+          available: true,
+          title: "Report",
+          description: "Summary",
+          url: `https://${alias}.okou.app/`,
+          imageUrl: "https://authority.test/platform-cover.png",
         });
       }),
     );
@@ -375,71 +378,16 @@ it.each(["demo", `dpl-${deploymentId}`])(
     );
     expect(html).toContain('property="og:image:width" content="1200"');
     expect(html).toContain('<body><img src="cover.png"></body>');
-    expect(html).not.toContain("artifact-og/image");
-    expect(html).not.toContain("og:title");
+    expect(html).not.toContain("platform-cover.png");
+    expect(html).toContain('property="og:title" content="Report"');
+    expect(html).toContain(
+      `name="twitter:image" content="https://${alias}.okou.app/cover.png"`,
+    );
     expect(response.headers.get("ETag")).toBeNull();
     expect(response.headers.get("Content-Length")).toBeNull();
     expect(response.headers.get("Cache-Control")).toBe("private, no-store");
   },
 );
-
-it("preserves exact bytes and validators when enabled normalization makes no edits", async () => {
-  server.use(
-    http.get(endpoint, () => {
-      return HttpResponse.json({ allowed: true });
-    }),
-    http.get("https://authority.test/api/artifact-og/metadata", () => {
-      return HttpResponse.json({ available: false, normalizeImageUrls: true });
-    }),
-  );
-  const original =
-    '\uFEFF<head><meta property="og:image" content="https://cdn.example/cover.png"></head><body>Report</body>';
-  const response = await fetchWorker(new Request("https://demo.okou.app/"), {
-    ...environment(true, undefined, "okou", true, original),
-    ARTIFACT_OG_API_ORIGIN: "https://authority.test",
-  });
-  expect(new Uint8Array(await response.arrayBuffer())).toEqual(
-    new TextEncoder().encode(original),
-  );
-  expect(response.headers.get("ETag")).toBe('"hosted"');
-});
-
-it("preserves the authored relative cover when both OG features are enabled", async () => {
-  server.use(
-    http.get(endpoint, () => {
-      return HttpResponse.json({ allowed: true });
-    }),
-    http.get("https://authority.test/api/artifact-og/metadata", () => {
-      return HttpResponse.json({
-        available: true,
-        normalizeImageUrls: true,
-        title: "Report",
-        description: "Summary",
-        url: "https://demo.okou.app/",
-        imageUrl: "https://authority.test/platform-cover.png",
-      });
-    }),
-  );
-  const response = await fetchWorker(new Request("https://demo.okou.app/"), {
-    ...environment(
-      true,
-      undefined,
-      "okou",
-      true,
-      '<head><meta property="og:image" content="cover.png"></head><body>Report</body>',
-    ),
-    ARTIFACT_OG_API_ORIGIN: "https://authority.test",
-  });
-  const html = await response.text();
-  expect(html).toContain(
-    'property="og:image" content="https://demo.okou.app/cover.png"',
-  );
-  expect(html).toContain(
-    'name="twitter:image" content="https://demo.okou.app/cover.png"',
-  );
-  expect(html).toContain('property="og:title" content="Report"');
-  expect(html).not.toContain("platform-cover.png");
-});
 
 it.each(["disabled", "unavailable"])(
   "keeps public HTML readable when OG is %s",

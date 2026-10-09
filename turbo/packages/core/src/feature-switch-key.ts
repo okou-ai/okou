@@ -41,7 +41,6 @@ export enum FeatureSwitchKey {
   ZapierConnector = "zapierConnector",
   PrivateArtifacts = "privateArtifacts",
   ArtifactPreviews = "artifactPreviews",
-  ArtifactOgRelativeImages = "artifactOgRelativeImages",
   SidebarSubscriptionUsage = "sidebarSubscriptionUsage",
   PwaNavigation = "pwaNavigation",
   FeishuIntegration = "_feishuIntegration",

@@ -8,7 +8,6 @@ import {
 } from "@aws-sdk/client-s3";
 import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import { artifactOgContract } from "@okouai/api-contracts/contracts/artifact-og";
-import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { HostedSitePrepareResponse } from "@okouai/api-contracts/contracts/host";
@@ -24,7 +23,6 @@ import { featureSwitchesRoutes } from "../feature-switches";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { artifactReferenceRoutes } from "../artifact-references";
 import { artifactOgRoutes } from "../artifact-og";
-import { artifactShareRoutes } from "../artifact-shares";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
@@ -161,138 +159,6 @@ async function upload(prepared: HostedSitePrepareResponse, bytes: Buffer) {
 }
 
 describe("sandbox hosted previews", () => {
-  it("authorizes relative-image normalization by the site owner independently of previews", async () => {
-    const owner = createBddApi(context).user();
-    const viewer = createBddApi(context).user();
-    if (!owner.orgId || !viewer.orgId) {
-      throw new Error("Expected organizations");
-    }
-    const actor = { ...owner, orgId: owner.orgId };
-    previewStorage();
-    const prepared = await host.prepareHostedSite(actor, {
-      site: `relative-og-${randomUUID().slice(0, 8)}`,
-      artifactKind: "hosted-site",
-      spaFallback: false,
-      files: [
-        hostedTextFile(
-          "/index.html",
-          '<head><meta property="og:image" content="cover.png"></head>',
-        ),
-      ],
-    });
-    await host.completeHostedSite(actor, prepared.deploymentId);
-    const og = setupAppWithRoutes({ context, routes: artifactOgRoutes })(
-      artifactOgContract,
-    );
-    const query = { kind: "host" as const, id: prepared.deploymentId };
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...viewer, orgId: viewer.orgId },
-      {
-        [FeatureSwitchKey.ArtifactOgRelativeImages]: true,
-      },
-    );
-    expect((await accept(og.metadata({ query }), [200])).body).toStrictEqual({
-      available: false,
-    });
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.ArtifactOgRelativeImages]: true,
-      [FeatureSwitchKey.ArtifactPreviews]: false,
-    });
-    expect((await accept(og.metadata({ query }), [200])).body).toStrictEqual({
-      available: false,
-      normalizeImageUrls: true,
-    });
-    const generic = Buffer.from(
-      await (await accept(og.defaultImage(), [200])).body.arrayBuffer(),
-    );
-    const noPreview = await accept(
-      og.image({ query: { ...query, version: "none" } }),
-      [200],
-    );
-    expect(Buffer.from(await noPreview.body.arrayBuffer())).toStrictEqual(
-      generic,
-    );
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.ArtifactOgRelativeImages]: false,
-    });
-    expect((await accept(og.metadata({ query }), [200])).body).toStrictEqual({
-      available: false,
-    });
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.ArtifactOgRelativeImages]: true,
-    });
-    await host.deleteHostedSite(actor, prepared.publicSlug);
-    expect((await accept(og.metadata({ query }), [200])).body).toStrictEqual({
-      available: false,
-    });
-    expect(
-      (
-        await accept(
-          og.metadata({ query: { kind: "host", id: randomUUID() } }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual({ available: false });
-  });
-
-  it("does not expose normalization policy for private or organization-only HTML shares", async () => {
-    const owner = createBddApi(context).user();
-    if (!owner.orgId) {
-      throw new Error("Expected an organization");
-    }
-    const actor = { ...owner, orgId: owner.orgId };
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.PrivateArtifacts]: true,
-      [FeatureSwitchKey.ArtifactOgRelativeImages]: true,
-    });
-    previewStorage();
-    const prepared = await host.prepareHostedSite(actor, {
-      site: `relative-private-og-${randomUUID().slice(0, 8)}`,
-      artifactKind: "hosted-site",
-      spaFallback: false,
-      files: [hostedTextFile("/index.html", "<main>Private report</main>")],
-    });
-    const completed = await host.completeHostedSite(
-      actor,
-      prepared.deploymentId,
-    );
-    if (!completed.artifactUrl) {
-      throw new Error("Expected a private artifact reference");
-    }
-    const reference = new URL(completed.artifactUrl).pathname.slice(
-      "/artifacts/".length,
-    );
-    const og = setupAppWithRoutes({ context, routes: artifactOgRoutes })(
-      artifactOgContract,
-    );
-    const query = { kind: "reference" as const, id: reference };
-    expect((await accept(og.metadata({ query }), [200])).body).toStrictEqual({
-      available: false,
-    });
-    const shares = setupAppWithRoutes({ context, routes: artifactShareRoutes })(
-      artifactSharesContract,
-    );
-    createRouteMocks(context).clerk.session(actor.userId, actor.orgId);
-    for (const audience of ["public", "organization", "private"] as const) {
-      await accept(
-        shares.update({
-          headers: { authorization: "Bearer clerk-session" },
-          body: {
-            target: { kind: "html", id: prepared.deploymentId },
-            audience,
-          },
-        }),
-        [200],
-      );
-      expect((await accept(og.metadata({ query }), [200])).body).toStrictEqual(
-        audience === "public"
-          ? { available: false, normalizeImageUrls: true }
-          : { available: false },
-      );
-    }
-  });
-
   it("serves the exact published cover anonymously, retains older versions, and revokes OG on disable or deletion", async () => {
     const owner = createBddApi(context).user();
     if (!owner.orgId) {

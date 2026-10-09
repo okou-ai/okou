@@ -206,7 +206,6 @@ test("preserves HTML attachment bytes on fresh and cached reads when OG is enabl
     http.get("https://authority.test/api/artifact-og/metadata", () => {
       return HttpResponse.json({
         available: true,
-        normalizeImageUrls: true,
         title: "Published report",
         description: "Public summary",
         imageUrl: "https://authority.test/api/artifact-og/image?version=one",
@@ -278,7 +277,7 @@ test("rechecks OG metadata on cached HTML and denies revoked shares before readi
   expect(lookups).toBe(2);
 });
 
-test("rechecks relative-image rollout on cached HTML and still denies revoked shares", async () => {
+test("rechecks the preview switch for relative images on cached HTML and denies revoked shares", async () => {
   const f = fixture(true);
   const original =
     '<head><meta property="og:image" content="image.png"></head><body>Report</body>';
@@ -291,7 +290,13 @@ test("rechecks relative-image rollout on cached HTML and still denies revoked sh
     http.get("https://authority.test/api/artifact-og/metadata", () => {
       return HttpResponse.json(
         enabled
-          ? { available: false, normalizeImageUrls: true }
+          ? {
+              available: true,
+              title: "Report",
+              description: "Summary",
+              url: siteOrigin,
+              imageUrl: "https://authority.test/platform-cover.png",
+            }
           : { available: false },
       );
     }),

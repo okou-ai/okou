@@ -1,41 +1,5 @@
 # Deployment Compatibility
 
-## Hosted social image relative URLs
-
-`artifactOgRelativeImages` is an independent, default-off owner switch, including
-staff. The existing anonymous OG metadata response can now include
-`normalizeImageUrls: true`, but only after the current hosted publication or
-public share is authorized. `available` still describes platform OG metadata:
-`{ available: false, normalizeImageUrls: true }` permits authored URL resolution
-without enabling `artifactPreviews`, loading HTML or covers in the API, or
-exposing titles, descriptions or platform image URLs. Private, organization-only,
-deleted and revoked publications do not authorize anonymous normalization.
-
-The existing Host Worker resolves relative `og:image`, `og:image:secure_url` and
-`twitter:image` attributes in delivered HTML against its request URL and the
-first head `base[href]`. It preserves complete URLs, image groups and dimensions,
-body/script bytes, stored files and downloads. It does not fetch images. Existing
-HTML eligibility guards, delivery authorization and temporary-preview routing
-remain unchanged. Raw content stays in the internal cache; each delivery reloads
-the owner's policy. Changed responses remove byte validators and use no-store.
-Disabling the switch restores existing response behavior; it does not withdraw
-previously downloaded or third-party-cached content.
-
-- **Old Worker + new API:** the additive policy field is ignored; existing OG
-  behavior remains, including platform-preview gating.
-- **New Worker + old API:** an omitted policy field does not enable normalization.
-  Existing platform OG behavior remains.
-- **New Worker + new API:** only an explicit owner-enabled, authorized policy
-  enables normalization, independently of platform-preview availability.
-- **App Worker:** its artifact shell still uses platform metadata only; the
-  normalization policy does not grant shell metadata or platform image access.
-
-No database migration, CLI/file mutation, template update or new Worker is
-required. Deploy API and Host Worker before enabling the switch for an owner.
-Authority errors or invalid metadata preserve already-authorized site delivery
-without enabling the new behavior. Rollback or disable does not require rewriting
-published assets.
-
 This guide defines reusable compatibility rules for independently deployed
 components and persisted state. Feature-specific rollout plans and production
 receipts belong in their owning issue or PR, not in this guide. Removing a

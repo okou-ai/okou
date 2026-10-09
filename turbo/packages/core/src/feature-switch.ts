@@ -44,11 +44,6 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
-  [FeatureSwitchKey.ArtifactOgRelativeImages]: {
-    maintainer: "bingjie@okou.ai",
-    description: "Resolve authored social image URLs in hosted HTML responses.",
-    enabled: false,
-  },
   [FeatureSwitchKey.ArtifactPreviews]: {
     maintainer: "bingjie@okou.ai",
     description: "Capture and publish sandbox covers for HTML artifacts.",
