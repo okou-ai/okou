@@ -116,8 +116,8 @@ import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 // would otherwise clamp to 16px. Dimming stays on the individual glyphs so the
 // state indicators keep their own contrast.
 const CHAT_THREAD_ROW_ICON_CLASS = "[&_svg]:size-[17px]";
-// One spatial cycle spans 6 rows: 400ms per row at the existing 2.4s cadence.
-const RUNNING_INDICATOR_WAVE_ROWS = 6;
+// One spatial cycle spans 12 rows: 200ms per row at the existing 2.4s cadence.
+const RUNNING_INDICATOR_WAVE_ROWS = 12;
 const CHAT_THREADS_CONTENT_ID = "sidebar-chat-threads-content";
 
 function ChatThreadMenuShortcut({ shortcut }: { readonly shortcut: string }) {
@@ -359,15 +359,17 @@ function ChatThreadPinMenuItems({
   );
 }
 
+type ChatThreadMenuProps = {
+  signals: SidebarChatThreadItemSignals;
+  rowIndex: number;
+  touch?: boolean;
+};
+
 function ChatThreadMenu({
   signals,
   rowIndex,
   touch = false,
-}: {
-  signals: SidebarChatThreadItemSignals;
-  rowIndex: number;
-  touch?: boolean;
-}) {
+}: ChatThreadMenuProps) {
   const { t } = useTranslation();
   const isPinned = useGet(signals.pinned$);
   const indicatorState = useLastResolved(signals.indicatorState$) ?? null;
