@@ -62,6 +62,25 @@ uv run --no-sync python -m pytest \
 uv run --no-sync python -m pytest -v tests/
 ```
 
+### CI shards
+
+CI runs the addon suite in two independent jobs. Both collect `tests/` normally,
+then select complementary partitions using SHA-256 of the node ID. Every case
+runs once across the two jobs; directory-owned fixtures and collection order are
+preserved. Both shards must pass the existing Crates gate, and a failing shard
+does not cancel its sibling.
+
+```bash
+uv run --no-sync python -m pytest tests/ -q --test-shard=1/2
+uv run --no-sync python -m pytest tests/ -q --test-shard=2/2
+```
+
+Omit `--test-shard` for the unchanged full local run. Invalid selectors are usage
+errors; an empty shard retains pytest's nonzero no-tests exit code. The bounded
+node-ID regression inspects the complete pre-shard collection, not only its own
+selected partition. Run `tests/test_pytest_sharding.py` for partition, fixture,
+argument, failure and full-collection diagnostic regressions.
+
 ### Directory-fixture collection smoke check
 
 Pytest is temporarily constrained to `>=9.0.3,<9.1` for
