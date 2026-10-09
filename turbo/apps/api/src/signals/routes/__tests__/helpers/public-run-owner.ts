@@ -1,5 +1,5 @@
 import { createRouteMocks } from "./route-test";
-import { onTestFinished } from "vitest";
+import { createFixtureOperationOwner } from "./fixture-operation-owner";
 import type { TestContext } from "../../../../__tests__/test-context";
 import { env, mockEnv } from "../../../../lib/env";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
@@ -64,8 +64,9 @@ export function publicRunOwner(
     await options.afterRuns?.();
     cleaned = true;
   }
-  onTestFinished(cleanup);
+  const operations = createFixtureOperationOwner(cleanup);
   return {
+    run: operations.run,
     cleanup,
     async claim(runId: string) {
       const claim = await createRunsApi(context).claimRunnerJob(runId);

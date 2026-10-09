@@ -1,3 +1,4 @@
+import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
 import { prepareRunnerCheckpointHistory } from "./helpers/runner-checkpoint-history";
 import { publicRunOwner } from "./helpers/public-run-owner";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
@@ -257,7 +258,7 @@ async function createTelegramPostFixture(
     composeId: defaultAgentId,
     runs: publicRunOwner(context, actor, {
       afterRuns: async () => {
-        await authOrgApi.deleteAgent(actor, defaultAgentId);
+        await deletePublicWorkspace(context, actor);
       },
     }),
     telegramBotId: OFFICIAL_TELEGRAM_BOT_ID,

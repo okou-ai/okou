@@ -1,3 +1,4 @@
+import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
 import { publicRunOwner } from "./helpers/public-run-owner";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import {
@@ -3145,7 +3146,7 @@ describe("POST /api/webhooks/teams/bot", () => {
       });
       const ownedRuns = publicRunOwner(context, actor, {
         afterRuns: async () => {
-          await authOrgApi.deleteAgent(actor, defaultAgentId);
+          await deletePublicWorkspace(context, actor);
         },
       });
       await runsApi.grantProEntitlement(actor);

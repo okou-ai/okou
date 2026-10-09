@@ -1,3 +1,4 @@
+import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
 import { publicRunOwner } from "./helpers/public-run-owner";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
@@ -5992,7 +5993,7 @@ export function registerFeishuIntegrationTests(
         const ownedRuns = publicRunOwner(context, secondActor, {
           afterRuns: async () => {
             await removeFeishuInstallation(fixture);
-            await authOrgApi.deleteAgent(actor, defaultAgentId);
+            await deletePublicWorkspace(context, actor);
           },
         });
         await enableFeishuIntegration(platform, secondActor, {
@@ -6947,7 +6948,7 @@ export function registerSharedFeishuConversationTests(): void {
       const ownedRuns = publicRunOwner(context, actor, {
         afterRuns: async () => {
           await removeFeishuInstallation(fixture);
-          await authOrgApi.deleteAgent(actor, defaultAgentId);
+          await deletePublicWorkspace(context, actor);
         },
       });
       await connectFixtureUser(fixture);
@@ -7149,7 +7150,7 @@ export function registerSharedFeishuConversationTests(): void {
       const ownedRuns = publicRunOwner(context, actor, {
         afterRuns: async () => {
           await removeFeishuInstallation(fixture);
-          await authOrgApi.deleteAgent(actor, defaultAgentId);
+          await deletePublicWorkspace(context, actor);
         },
       });
       await connectFixtureUser(fixture);

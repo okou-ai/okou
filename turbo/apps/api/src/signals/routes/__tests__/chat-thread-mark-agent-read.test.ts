@@ -1,11 +1,16 @@
 import { publicRunOwner } from "./helpers/public-run-owner";
 import { randomUUID } from "node:crypto";
+import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { chatThreadRoutes } from "../chat-threads";
+import { createRouteMocks } from "./helpers/route-test";
+import { projectChatEventRows } from "./helpers/chat-event-test-reader";
 import { mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -31,6 +36,8 @@ interface AgentReadFixture {
   readonly agentId: string;
   readonly orgId: string;
   readonly threadIds: readonly string[];
+  readonly signal: AbortSignal;
+  readonly run: ReturnType<typeof publicRunOwner>["run"];
 }
 
 function prepareChatRuntime(): void {
@@ -42,32 +49,129 @@ function prepareChatRuntime(): void {
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
 }
 
-/**
- * Appends one terminal Run event to a caller thread the way a user does: a
- * chat send launches a Run, which the caller then cancels. Without
- * `threadId` the send creates a new thread. The Run must still be active when
- * it is cancelled, so the caller selects Fable, whose personal Claude
- * subscription route keeps it queued for the native Runner instead of Pi.
- */
+/** The normal SharedWorker batch reader returns every fresh thread's full tail. */
+async function threadEvents(actor: ApiTestUser, threadIds: readonly string[]) {
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.orgRole,
+  );
+  const response = await accept(
+    setupApp({ context, routes: chatThreadRoutes })(
+      chatThreadEventsContract,
+    ).catchUp({
+      headers: { authorization: "Bearer clerk-session" },
+      body: threadIds.map((threadId): [string, number] => {
+        return [threadId, 0];
+      }),
+    }),
+    [200],
+  );
+  expect(response.body.notFoundThreads).toStrictEqual([]);
+  expect(Object.keys(response.body.events).sort()).toStrictEqual(
+    [...threadIds].sort(),
+  );
+  return new Map(
+    Object.entries(response.body.events).map(([id, rows]) => {
+      return [id, projectChatEventRows(rows)];
+    }),
+  );
+}
+
+async function settledValues<T>(
+  operations: readonly Promise<T>[],
+): Promise<T[]> {
+  const results = await Promise.allSettled(operations);
+  return results.map((result) => {
+    if (result.status === "rejected") {
+      throw result.reason;
+    }
+    return result.value;
+  });
+}
+
+/** Normal chat sends and cancellations; batch only their public observations. */
+async function appendCancelledRuns(
+  args: {
+    readonly actor: ApiTestUser;
+    readonly agentId: string;
+    readonly threadId?: string;
+  },
+  count: number,
+  signal: AbortSignal,
+): Promise<string[]> {
+  signal.throwIfAborted();
+  const sent = await settledValues(
+    Array.from({ length: count }, async () => {
+      const clientEventId = randomUUID();
+      const response = await chat.requestSendEvent(
+        args.actor,
+        {
+          agentId: args.agentId,
+          prompt: `agent read ${randomUUID()}`,
+          model: "claude-fable-5-1",
+          clientEventId,
+          ...(args.threadId === undefined ? {} : { threadId: args.threadId }),
+        },
+        [201],
+        {},
+        signal,
+      );
+      if (response.status !== 201) {
+        throw new Error("Expected a normal chat send");
+      }
+      return { threadId: response.body.threadId, clientEventId };
+    }),
+  );
+  signal.throwIfAborted();
+  await flushWaitUntilForTest();
+  signal.throwIfAborted();
+  const threadIds = sent.map(({ threadId }) => {
+    return threadId;
+  });
+  const launched = await threadEvents(args.actor, threadIds);
+  const runIds = sent.map(({ threadId, clientEventId }) => {
+    const prompt = launched.get(threadId)?.find((event) => {
+      return (
+        event.eventType === "input.prompt" &&
+        event.revokesEventId === clientEventId
+      );
+    });
+    if (!prompt?.runId) {
+      throw new Error("Expected the public chat send to launch its Run");
+    }
+    return prompt.runId;
+  });
+  signal.throwIfAborted();
+  await settledValues(
+    runIds.map((runId) => {
+      return runs.requestCancelRun(args.actor, runId, [200]);
+    }),
+  );
+  signal.throwIfAborted();
+  await flushWaitUntilForTest();
+  signal.throwIfAborted();
+  const terminal = await threadEvents(args.actor, threadIds);
+  for (const [index, threadId] of threadIds.entries()) {
+    expect(terminal.get(threadId)).toContainEqual(
+      expect.objectContaining({
+        eventType: "run.cancelled",
+        runId: runIds[index],
+      }),
+    );
+  }
+  return threadIds;
+}
+
 async function appendCancelledRun(args: {
   readonly actor: ApiTestUser;
   readonly agentId: string;
   readonly threadId?: string;
 }): Promise<string> {
-  const { runId, threadId } = await chat.sendAndLaunch(args.actor, {
-    agentId: args.agentId,
-    prompt: `agent read ${randomUUID()}`,
-    ...(args.threadId === undefined ? {} : { threadId: args.threadId }),
-  });
-  await runs.requestCancelRun(args.actor, runId, [200]);
-  await flushWaitUntilForTest();
-  const { events } = await chat.listThreadEvents(args.actor, threadId);
-  expect(events).toContainEqual(
-    expect.objectContaining({
-      eventType: "run.cancelled",
-      runId,
-    }),
-  );
+  const [threadId] = await appendCancelledRuns(args, 1, context.signal);
+  if (!threadId) {
+    throw new Error("Expected one cancelled thread");
+  }
   return threadId;
 }
 
@@ -79,6 +183,7 @@ async function appendCancelledRun(args: {
 async function createUnreadAgentThreads(
   threadCount: number,
 ): Promise<AgentReadFixture> {
+  const signal = context.signal;
   prepareChatRuntime();
   const orgId = `org_${randomUUID()}`;
   const owner = bdd.user({ orgId });
@@ -93,30 +198,40 @@ async function createUnreadAgentThreads(
     displayName: `Shared ${randomUUID().slice(0, 8)}`,
     visibility: "public",
   });
-  publicRunOwner(context, actor, {
+  const owned = publicRunOwner(context, actor, {
     afterRuns: async () => {
+      context.mocks.s3.send.mockResolvedValue({
+        Contents: [],
+        IsTruncated: false,
+      });
       await bdd.deleteAgent(owner, agent.agentId);
       await flushWaitUntilForTest();
     },
   });
-  const threadIds: string[] = [];
-  // Ordinary Team admission provides ten slots for the high-cardinality cases.
-  // Eight concurrent user flows leave headroom in the ten-connection API pool.
-  const batchSize = threadCount > 3 ? 8 : 2;
-  for (let start = 0; start < threadCount; start += batchSize) {
-    const results = await Promise.allSettled(
-      Array.from({ length: Math.min(batchSize, threadCount - start) }, () => {
-        return appendCancelledRun({ actor, agentId: agent.agentId });
-      }),
-    );
-    for (const result of results) {
-      if (result.status === "rejected") {
-        throw result.reason;
-      }
-      threadIds.push(result.value);
+  return await owned.run(async () => {
+    const threadIds: string[] = [];
+    // Team's ten real admission slots accommodate eight concurrent sends.
+    const batchSize = threadCount > 3 ? 8 : 2;
+    for (let start = 0; start < threadCount; start += batchSize) {
+      signal.throwIfAborted();
+      threadIds.push(
+        ...(await appendCancelledRuns(
+          { actor, agentId: agent.agentId },
+          Math.min(batchSize, threadCount - start),
+          signal,
+        )),
+      );
     }
-  }
-  return { actor, owner, agentId: agent.agentId, orgId, threadIds };
+    return {
+      actor,
+      owner,
+      agentId: agent.agentId,
+      orgId,
+      threadIds,
+      signal,
+      run: owned.run,
+    };
+  });
 }
 
 /** Each thread's read cursor as the production thread reader returns it. */
@@ -142,39 +257,38 @@ async function visibleUnreadThreadIds(
 async function unreadThreadIds(
   fixture: AgentReadFixture,
 ): Promise<ReadonlySet<string>> {
-  const unread = new Set<string>();
-  for (let start = 0; start < fixture.threadIds.length; start += 8) {
-    const results = await Promise.allSettled(
-      fixture.threadIds.slice(start, start + 8).map(async (threadId) => {
-        const [detail, { events }] = await Promise.all([
-          chat.readThread(fixture.actor, threadId),
-          chat.listThreadEvents(fixture.actor, threadId),
-        ]);
-        const terminal = events.filter((event) => {
-          return ["run.completed", "run.cancelled", "run.failed"].includes(
-            event.eventType,
+  return await fixture.run(async () => {
+    fixture.signal.throwIfAborted();
+    const eventsByThread = await threadEvents(fixture.actor, fixture.threadIds);
+    const unread = new Set<string>();
+    for (let start = 0; start < fixture.threadIds.length; start += 8) {
+      fixture.signal.throwIfAborted();
+      await settledValues(
+        fixture.threadIds.slice(start, start + 8).map(async (threadId) => {
+          const detail = await chat.readThread(fixture.actor, threadId);
+          const terminal = (eventsByThread.get(threadId) ?? []).filter(
+            (event) => {
+              return ["run.completed", "run.cancelled", "run.failed"].includes(
+                event.eventType,
+              );
+            },
           );
-        });
-        expect(terminal.length).toBeGreaterThan(0);
-        if (
-          terminal.some((event) => {
-            return (
-              detail.lastReadAt === null ||
-              Date.parse(event.createdAt) > Date.parse(detail.lastReadAt)
-            );
-          })
-        ) {
-          unread.add(threadId);
-        }
-      }),
-    );
-    for (const result of results) {
-      if (result.status === "rejected") {
-        throw result.reason;
-      }
+          expect(terminal.length).toBeGreaterThan(0);
+          if (
+            terminal.some((event) => {
+              return (
+                detail.lastReadAt === null ||
+                Date.parse(event.createdAt) > Date.parse(detail.lastReadAt)
+              );
+            })
+          ) {
+            unread.add(threadId);
+          }
+        }),
+      );
     }
-  }
-  return unread;
+    return unread;
+  });
 }
 
 function clearPublishedNotifications(): void {
