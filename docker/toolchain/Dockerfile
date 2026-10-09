@@ -47,11 +47,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && unzstd --version \
     && rm -rf /var/lib/apt/lists/*
 
-# Install the same pinned sccache release used by CI. Select the executable
-# for the image's native host, independently of the Rust compilation target.
-ARG SCCACHE_VERSION=0.15.0
-ARG SCCACHE_AMD64_SHA256=782d2b5dd7ae0a55ebe368ab258114d0928d019ac2d949ab85d5d02f3926709e
-ARG SCCACHE_ARM64_SHA256=3a6a3712b49da3d263bf2d30d702de4302793016019e800bfb81c0c69401d8f8
+# Preinstall a pinned stable sccache release. Select the executable for the
+# image's native host, independently of the Rust compilation target.
+ARG SCCACHE_VERSION=0.18.0
+ARG SCCACHE_AMD64_SHA256=45f1447fbe231e3037bde351ef70677dd212216c8d62ae7ca409fecc4d6acc89
+ARG SCCACHE_ARM64_SHA256=2b3284d5da3b46a47dc4229e75bb7b88ac4aa99c8d754fb7d2f84997e5a4354a
 RUN ARCH=$(dpkg --print-architecture) \
     && case "$ARCH" in \
         amd64) SCCACHE_ARCH="x86_64"; SCCACHE_SHA256="$SCCACHE_AMD64_SHA256" ;; \
