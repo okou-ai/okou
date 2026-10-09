@@ -92,7 +92,7 @@ import {
   pendingDeleteThreadId$,
   renameDialogAgentId$,
   renameDialogOpen$,
-  renameDialogFinalFocus$,
+  restoreRenameChatThreadDialogFocus$,
   renameMenuFinalFocus$,
   handleRenameMenuOpenChange$,
   setPendingDeleteThreadId$,
@@ -633,7 +633,7 @@ function ChatThreadRenameDialog() {
   const closeRenameChatThreadDialog = useSet(closeRenameChatThreadDialog$);
   const setRenameDialogInput = useSet(setRenameDialogInput$);
   const renameChatThread = useSet(renameChatThread$);
-  const finalFocus = useGet(renameDialogFinalFocus$);
+  const finalFocus = useSet(restoreRenameChatThreadDialogFocus$);
   const pageSignal = useGet(pageSignal$);
 
   function closeRenameDialog() {

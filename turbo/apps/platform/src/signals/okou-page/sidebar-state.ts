@@ -67,23 +67,65 @@ export const renameDialogOpen$ = computed((get) => {
   return get(internalRenameDialogOpen$);
 });
 
-const internalRenameDialogFinalFocus$ = state<(() => false) | false | null>(
-  null,
-);
-export const renameDialogFinalFocus$ = computed((get) => {
-  return get(internalRenameDialogFinalFocus$) ?? false;
-});
+const internalRenameDialogFocusOrigin$ = state<{
+  readonly element: Element | null;
+  readonly signal: AbortSignal;
+} | null>(null);
+const internalRenameMenuHandoff$ = state(false);
 export const renameMenuFinalFocus$ = computed((get) => {
   // Keep the handoff suppressed until the next menu opening, even after Rename.
-  return get(internalRenameDialogFinalFocus$) === null ? undefined : false;
+  return get(internalRenameMenuHandoff$) ? false : undefined;
 });
 export const handleRenameMenuOpenChange$ = command(
   ({ get, set }, open: boolean) => {
     if (open && !get(internalRenameDialogOpen$)) {
-      set(internalRenameDialogFinalFocus$, null);
+      set(internalRenameDialogFocusOrigin$, null);
+      set(internalRenameMenuHandoff$, false);
     }
   },
 );
+
+export const restoreRenameChatThreadDialogFocus$ = command(({ get, set }) => {
+  const origin = get(internalRenameDialogFocusOrigin$);
+  if (!origin) {
+    return false;
+  }
+  // Base UI resolves a non-tabbable return target to its first tabbable child.
+  // Restore the exact original element after teardown instead.
+  queueMicrotask(() => {
+    if (
+      get(internalRenameDialogFocusOrigin$) !== origin ||
+      get(internalRenameDialogOpen$)
+    ) {
+      return;
+    }
+    set(internalRenameDialogFocusOrigin$, null);
+    const previousFocus = origin.element;
+    const doc = document;
+    if (
+      origin.signal.aborted ||
+      !(previousFocus instanceof HTMLElement) ||
+      previousFocus === doc.body ||
+      !previousFocus.isConnected ||
+      previousFocus.closest("[data-closed]") ||
+      doc.querySelector('[role="dialog"]:not([data-closed])') ||
+      (doc.activeElement !== doc.body &&
+        doc.activeElement !== doc.documentElement &&
+        doc.activeElement !== previousFocus)
+    ) {
+      return;
+    }
+    previousFocus.focus({ preventScroll: true });
+    // F2 can open Rename without closing its source menu.
+    if (
+      doc.activeElement === previousFocus &&
+      previousFocus.closest('[role="menu"]')
+    ) {
+      set(internalRenameMenuHandoff$, false);
+    }
+  });
+  return false;
+});
 
 const internalRenameDialogThreadId$ = state<string | null>(null);
 export const renameDialogThreadId$ = computed((get) => {
@@ -105,7 +147,7 @@ export const setRenameDialogInput$ = command(({ set }, input: string) => {
 
 export const openRenameChatThreadDialog$ = command(
   (
-    { get, set },
+    { set },
     {
       threadId,
       title,
@@ -117,47 +159,11 @@ export const openRenameChatThreadDialog$ = command(
     },
     signal: AbortSignal,
   ) => {
-    const doc = document;
-    const previousFocus = doc.activeElement;
-    const restoreFocus = (): false => {
-      // Base UI would resolve a non-tabbable element to its first tabbable child.
-      // Restore the exact previous element, or leave the browser's focus alone.
-      queueMicrotask(() => {
-        if (
-          get(internalRenameDialogFinalFocus$) !== restoreFocus ||
-          get(internalRenameDialogOpen$)
-        ) {
-          return;
-        }
-        // Release the captured element without enabling a slower menu's return.
-        set(internalRenameDialogFinalFocus$, false);
-        if (
-          signal.aborted ||
-          !(previousFocus instanceof HTMLElement) ||
-          previousFocus === doc.body ||
-          !previousFocus.isConnected ||
-          previousFocus.closest("[data-closed]") ||
-          doc.querySelector('[role="dialog"]:not([data-closed])') ||
-          (doc.activeElement !== doc.body &&
-            doc.activeElement !== doc.documentElement &&
-            doc.activeElement !== previousFocus)
-        ) {
-          return;
-        }
-        previousFocus.focus({ preventScroll: true });
-        // F2 can open Rename without closing its source menu.
-        if (
-          doc.activeElement === previousFocus &&
-          previousFocus.closest('[role="menu"]')
-        ) {
-          set(internalRenameDialogFinalFocus$, null);
-        }
-      });
-      return false;
-    };
-    set(internalRenameDialogFinalFocus$, () => {
-      return restoreFocus;
+    set(internalRenameDialogFocusOrigin$, {
+      element: document.activeElement,
+      signal,
     });
+    set(internalRenameMenuHandoff$, true);
     set(internalRenameDialogInput$, title?.trim() ?? "");
     set(internalRenameDialogAgentId$, agentId?.trim() || null);
     set(internalRenameDialogThreadId$, threadId);
