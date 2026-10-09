@@ -52,7 +52,7 @@ For Platform requests, async ownership, module state, or runtime loading, read
 [API ccstate](docs/api/api-ccstate.md).
 
 For changed tests, follow the surface routes in [Testing](docs/testing.md).
-API and Platform tests must also follow [external behavior](docs/testing-external-behavior.md).
+API and Platform tests must also follow [external behavior](docs/testing.md#external-behavior).
 Reading an index or skill router does not replace reading the selected reference.
 Do not load unrelated references merely because they share a parent directory.
 

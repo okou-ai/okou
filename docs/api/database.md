@@ -206,7 +206,7 @@ changed consumer or schema boundary. Do not invent an App upgrade, Runner drain,
 extra release, or fixed elapsed-time gate merely because those surfaces exist.
 A source merge is not deployment evidence.
 
-Tests use [production caller boundaries](../testing-external-behavior.md)
+Tests use [production caller boundaries](../testing.md#external-behavior)
 and follow [Testing](../testing.md). Do not hold production advisory locks, install
 blocking triggers, inspect waiters, add internal gates, or assert lock acquisition.
 Remove tests that only pin retired implementations with their unused fixtures.

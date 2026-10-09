@@ -233,7 +233,7 @@ Tests build scenarios through public APIs, run callbacks, `mockNow`, and test
 environment configuration. A scenario that can only be reached through a hook
 is deleted, including fabricated historical state. See
 [Testing](../testing.md) and
-[external behavior testing](../testing-external-behavior.md).
+[external behavior testing](../testing.md#external-behavior).
 
 ### 10. Keep database handles local and prefer atomic SQL
 

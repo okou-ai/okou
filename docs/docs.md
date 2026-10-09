@@ -21,18 +21,19 @@ this index does not replace its detailed rules.
 
 ## Directory Ownership
 
-- `docs/`: cross-surface standards, shared test practices, CLI testing, and
-  deployed product E2E guidance.
+- `docs/`: cross-surface standards and the unified shared testing guide.
 - `docs/app/`: browser and Desktop application behavior, React/ccstate, styling,
   and application testing.
 - `docs/api/`: server-side ccstate, database policy and lint, and API testing.
 - `docs/runner/`: host/guest infrastructure, MITM addon contracts, and native
   Rust/addon testing.
+- `docs/cli/`: CLI command testing and deployed CLI/product E2E guidance.
 
 Classify by the guidance's actual owner, not its implementation language or
-current filename. CLI and deployed E2E span application, API, and Runner
-boundaries, so their guides remain at the root. Shared testing rules also remain
-at the root; surface-specific test guides live with their owning surface.
+current filename. The CLI E2E guide also covers journeys spanning App, API, and
+Runner; its CLI location does not make those tests Runner-only. Shared testing
+rules live in `docs/testing.md`; surface-specific test guides live with their
+owning surface.
 
 ## Shared Standards and Testing
 
@@ -42,13 +43,14 @@ at the root; surface-specific test guides live with their owning surface.
   authority, dependency failures, and fail-closed resolution.
 - [Deployment compatibility](deployment-compatibility.md): independent releases,
   persisted state, schema transitions, drain, and rollback requirements.
-- [Testing](testing.md): strategy and routes to each affected surface.
-- [Testing patterns](testing-patterns.md): shared setup, mocks, and cleanup.
-- [Testing anti-patterns](testing-anti-patterns.md): common sources of false confidence.
-- [External behavior testing](testing-external-behavior.md): production setup
-  and assertion boundaries across surfaces.
-- [CLI testing](cli-testing.md): command parsing, external mocks, and real files.
-- [CLI and product E2E](cli-e2e-testing.md): deployed product journeys and Runner
+- [Testing](testing.md): strategy, [external behavior](testing.md#external-behavior),
+  [shared patterns](testing.md#shared-patterns), [anti-patterns](testing.md#anti-patterns),
+  and routes to each affected surface.
+
+## CLI
+
+- [CLI testing](cli/cli-testing.md): command parsing, external mocks, and real files.
+- [CLI and product E2E](cli/cli-e2e-testing.md): deployed product journeys and Runner
   E2E boundaries.
 
 ## App

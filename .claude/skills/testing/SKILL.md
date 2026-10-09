@@ -15,10 +15,10 @@ Read the testing guide and relevant reference based on context:
 | Context                                   | Primary                                     | Reference                                                           |
 | ----------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------- |
 | General                                   | [docs/testing.md](../../../docs/testing.md) | —                                                                   |
-| Anti-patterns                             | [docs/testing.md](../../../docs/testing.md) | [anti-patterns.md](../../../docs/testing-anti-patterns.md)          |
-| Patterns                                  | [docs/testing.md](../../../docs/testing.md) | [patterns.md](../../../docs/testing-patterns.md)                    |
-| CLI (`turbo/apps/cli`)                    | [docs/testing.md](../../../docs/testing.md) | [cli-testing.md](../../../docs/cli-testing.md)                      |
-| CLI E2E (`e2e/tests/`)                    | [docs/testing.md](../../../docs/testing.md) | [cli-e2e-testing.md](../../../docs/cli-e2e-testing.md)              |
+| Anti-patterns                             | [docs/testing.md](../../../docs/testing.md) | [Anti-patterns](../../../docs/testing.md#anti-patterns)             |
+| Patterns                                  | [docs/testing.md](../../../docs/testing.md) | [Shared patterns](../../../docs/testing.md#shared-patterns)         |
+| CLI (`turbo/apps/cli`)                    | [docs/testing.md](../../../docs/testing.md) | [cli-testing.md](../../../docs/cli/cli-testing.md)                  |
+| CLI E2E (`e2e/tests/`)                    | [docs/testing.md](../../../docs/testing.md) | [cli-e2e-testing.md](../../../docs/cli/cli-e2e-testing.md)          |
 | API (`turbo/apps/api`)                    | [docs/testing.md](../../../docs/testing.md) | [api-testing.md](../../../docs/api/api-testing.md)                  |
 | App (`turbo/apps/platform`)               | [docs/testing.md](../../../docs/testing.md) | [app-testing.md](../../../docs/app/app-testing.md)                  |
 | Rust (`crates/`)                          | [docs/testing.md](../../../docs/testing.md) | [rust-testing.md](../../../docs/runner/rust-testing.md)             |
