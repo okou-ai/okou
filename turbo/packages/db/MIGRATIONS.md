@@ -113,7 +113,7 @@ are enforced by the integration ingress tests.
 ### Active transition validators
 
 - `scripts/test-canonical-selected-model-history.ts` protects migration
-  `1358_canonical_selected_model_history`: keyset pages, preserved personal
+  `1359_canonical_selected_model_history`: keyset pages, preserved personal
   selection/effort, optional uncaptured decisions, unconsumed legacy-input
   rejection, transactional recovery and idempotent transform replay. Runs and
   inline/hash-backed native references remain unchanged. Keep it until #38114's

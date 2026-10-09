@@ -5,6 +5,46 @@ normalization. Read the relevant section before changing the addon or its pinned
 mitmproxy/wsproto dependencies. See the [testing guide](testing/mitm-addon-testing.md)
 for environment setup, commands, and executable coverage.
 
+## Cooperative response inspection
+
+Connector parsers may opt into bounded owner-loop work steps. A response callback
+processes at most eight row/fragment steps in total across all its decoded feeds;
+remaining work resumes with an explicit event-loop yield before each quantum.
+Rows retain their existing syntax and identity limits. Blank and invalid lines
+also consume steps. Decoder output remains lazy, so a pending callback retains
+one wire input, the current decoder output and the parser's bounded partial
+line, not a queue of later wire callbacks. Zlib and identity output deliveries
+are hard chunk-bounded. Brotli keeps its existing documented soft output-batch
+limit: an accepted binding batch may exceed a delivery chunk and remain retained
+until consumed, but rejected expansion overshoot is released before yielding.
+This does not introduce a byte-exact Brotli allocation guarantee. This is not a
+lifetime row limit, a billing cutoff, or an alternate price/count fallback.
+
+The exact mitmproxy 12.2.3 compatibility bridge provides two ownership boundaries:
+it pauses the HTTP stream before its next body event, and joins the checkpoint's
+complete native hook task outside the connection event lock before the connection
+reads again. Joining includes `HookCompleted` and any buffered events resumed by
+it; waiting only for parser completion or inserting a hook alone would allow
+reads to accumulate in the runtime's paused queue. The pinned read loop consumes
+at most 65,535 wire bytes per read. Unrelated loop work and other connections can
+continue while inspection yields. There is no detached addon parser task or
+cross-thread reporting owner.
+
+Response/error completion joins the same pending owner before finalization and
+cleanup. Cancellation or abandonment closes retained iterators, publishes
+explicit unparsed state and logs an inspection-interruption underbilling risk;
+it never reports the uninspected suffix as observed zero. Previously accepted
+row source events remain intact. Original wire bytes, row ordinals and normal
+compressed failure/trailing-line semantics are unchanged. Runner and addon ship
+together with the pinned runtime; no external wire or database migration is
+required.
+
+Executable coverage: `tests/test_x_cooperative_streaming.py` exercises row and
+accounting semantics, and `tests/test_mitmproxy_response_inspection.py` uses the
+real runtime read loop, native HTTP stream hooks and fixture-owned TCP peers to
+verify fairness, byte forwarding and read backpressure. These tests do not claim
+production latency or a production load soak.
+
 ## Platform connector authorization path policy
 
 Registered sandbox requests to the configured platform API normally use the

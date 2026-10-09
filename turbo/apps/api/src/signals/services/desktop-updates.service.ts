@@ -205,17 +205,6 @@ const desktopUpdateManifestCache = testOverride<
   return {};
 });
 
-const desktopUpdateManifestOverride = testOverride<
-  Partial<Record<ResolvableDesktopUpdateLine, DesktopUpdateManifest>>
->(() => {
-  return {};
-});
-
-export function clearDesktopUpdateManifestCacheForTest(): void {
-  desktopUpdateManifestCache.clear();
-  desktopUpdateManifestOverride.clear();
-}
-
 function compareDesktopVersions(left: string, right: string): number {
   const leftParts = left.split(/[+-]/, 1)[0]?.split(".").map(Number) ?? [];
   const rightParts = right.split(/[+-]/, 1)[0]?.split(".").map(Number) ?? [];
@@ -415,11 +404,6 @@ async function fetchDesktopUpdateManifest(
   line: ResolvableDesktopUpdateLine,
   signal: AbortSignal,
 ): Promise<DesktopUpdateManifest> {
-  const override = desktopUpdateManifestOverride.get()[line];
-  if (override) {
-    return override;
-  }
-
   for (let attempt = 1; ; attempt += 1) {
     const result = await fetchDesktopUpdateManifestOnce(line, signal);
     if (result.ok) {

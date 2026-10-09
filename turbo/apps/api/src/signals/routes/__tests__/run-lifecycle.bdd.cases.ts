@@ -1,3 +1,5 @@
+import { publicRunOwner } from "./helpers/public-run-owner";
+import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 /* oxlint-disable jest/no-export -- Each test entrypoint imports one deterministic group from this shared case registry. */
 import { createHash, createHmac, randomUUID } from "node:crypto";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
@@ -66,12 +68,7 @@ import {
   API_TEST_CONNECTOR_FIREWALL_CONFIGS,
   installApiTestConnectorCatalog,
 } from "../../../test-fixtures/connector-catalog";
-import {
-  deleteOrgPlanEntitlementFixture,
-  upsertOrgPlanEntitlementFixture,
-} from "../../../test-fixtures/org-plan-entitlement";
-import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
-import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
+
 import { verifyOkouToken } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
@@ -85,6 +82,7 @@ import {
   type ApiTestUserOptions,
 } from "./helpers/api-bdd";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
+import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import {
@@ -730,6 +728,7 @@ async function entitledRunActor(
   readonly actor: ApiTestUser;
   readonly agentId: string;
   readonly runnerGroup: string;
+  readonly personalProviderId: string;
   readonly granted: {
     readonly customerId: string;
     readonly subscriptionId: string;
@@ -743,13 +742,19 @@ async function entitledRunActor(
   api.acceptTelemetryIngest();
   const runnerGroup = api.configureRunnerGroup();
   const granted = await api.grantProEntitlement(actor);
-  await api.ensurePersonalSubscriptionModel(actor, route);
+  const personal = await api.ensurePersonalSubscriptionModel(actor, route);
   const agent = await bdd.createAgent(actor, {
     displayName: "BDD lifecycle agent",
     description: "Exercises the full run lifecycle.",
     visibility: "private",
   });
-  return { actor, agentId: agent.agentId, runnerGroup, granted };
+  return {
+    actor,
+    agentId: agent.agentId,
+    runnerGroup,
+    personalProviderId: personal.providerId,
+    granted,
+  };
 }
 
 type OrdinaryRunOAuthSlug =
@@ -876,6 +881,7 @@ function useOrdinaryOAuthRuns() {
   return function createOrdinaryOAuthRunApi() {
     const runs = createRunsApi(context);
     const agents = new Map<string, ApiTestUser>();
+    const personalAccounts = new Map<string, ApiTestUser>();
     const ownedRuns = new Map<
       string,
       { actor: ApiTestUser; sandboxToken?: string; acknowledged: boolean }
@@ -921,6 +927,11 @@ function useOrdinaryOAuthRuns() {
         await cleanupAgents.deleteAgent(actor, agentId);
         await flushWaitUntilForTest();
       }
+      for (const [id, actor] of personalAccounts) {
+        await createAuthDeviceSupportApi(
+          context,
+        ).deletePersonalModelProviderAccount(actor, id);
+      }
     });
 
     return {
@@ -948,6 +959,7 @@ function useOrdinaryOAuthRuns() {
       async entitledRunActor(...args: Parameters<typeof entitledRunActor>) {
         const entitled = await entitledRunActor(...args);
         agents.set(entitled.agentId, entitled.actor);
+        personalAccounts.set(entitled.personalProviderId, entitled.actor);
         return entitled;
       },
       async createAgent(
@@ -1481,13 +1493,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       });
 
       it("reuses current validator package authority", async () => {
-        const api = createRunsApi(context);
-        const fw = createFirewallApi(context);
+        const oauth = createOrdinaryOAuthRunApi();
+        const api = oauth.api;
         mockEnv("GIT_COMMIT_SHA", "a".repeat(40));
-        const { actor, agentId, runnerGroup } = await entitledRunActor();
-        await fw.seedTestConnector(actor, {
+        const { actor, agentId, runnerGroup } = await oauth.entitledRunActor();
+        await oauth.connect(actor, {
           connectorSlug: "x",
-          authMethod: "oauth",
           accessToken: "x-reusable-authority-access",
           refreshToken: "x-reusable-authority-refresh",
         });
@@ -4556,11 +4567,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         if (!actor.orgId) {
           throw new Error("Expected suspended run actor to have an org");
         }
-        await seedOrgMetadata({
-          orgId: actor.orgId,
-          tier: "pro",
-          credits: 20_000,
-        });
+        const plan = publicPlanLifecycle(context, actor);
+        await plan.update("active");
         await api.ensurePersonalSubscriptionModel(actor);
         // A personal subscription default route and a selectable built-in route.
         await api.updateUserModelPreference(actor, "claude-fable-5-1");
@@ -4571,15 +4579,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         const subscriptionPrompt = `suspended subscription ${randomUUID()}`;
         const builtInPrompt = `suspended built-in ${randomUUID()}`;
-        await seedOrgMetadata({
-          orgId: actor.orgId,
-          tier: "pro",
-          credits: 0,
-        });
-        await upsertOrgPlanEntitlementFixture({
-          orgId: actor.orgId,
-          status: "suspended",
-        });
+        await plan.update("canceled");
 
         await expect(
           api.readThreadRunRejection(actor, {
@@ -4597,12 +4597,15 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           }),
         ).resolves.toBe("insufficient_credits");
 
-        const runs = await api.listAgentRuns(actor, {
-          status: "queued,pending,running,completed,failed,timeout,cancelled",
-          limit: 100,
-        });
+        const runs = await createRunReadsApi(context).requestListLogs(
+          actor,
+          {
+            limit: 100,
+          },
+          [200],
+        );
         expect(
-          runs.runs.filter((run) => {
+          runs.body.data.filter((run) => {
             return (
               run.prompt === subscriptionPrompt || run.prompt === builtInPrompt
             );
@@ -4863,71 +4866,47 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         ).resolves.toBe("insufficient_credits");
       });
 
-      it("enforces staff entitlement status at final run admission", async () => {
+      it("enforces Stripe subscription status at final run admission", async () => {
         const bdd = createBddApi(context);
         const api = createRunsApi(context);
-        const orgId = createUniqueStaffOrgIdFixture();
+        const orgId = `org_${randomUUID()}`;
         const actor = bdd.user({ orgId });
-        onTestFinished(async () => {
-          await deleteOrgPlanEntitlementFixture(orgId);
-        });
         bdd.acceptAgentStorageWrites();
         api.acceptStorageDownloads();
         api.acceptTelemetryIngest();
         const runnerGroup = api.configureRunnerGroup();
-
-        await upsertOrgPlanEntitlementFixture({
-          orgId,
-          status: "active",
-          restrictedBuiltInModels: false,
-        });
         const completed = await bdd.completeOnboarding(actor);
+        const plan = publicPlanLifecycle(context, actor);
+        await plan.update("active");
         expect(completed.status).toBe(200);
-        await upsertOrgPlanEntitlementFixture({
-          orgId,
-          status: "active",
-          restrictedBuiltInModels: false,
-        });
         await api.ensurePersonalSubscriptionModel(actor);
         // A personal subscription default route and a selectable built-in route.
         await api.updateUserModelPreference(actor, "claude-fable-5-1");
         const agent = await bdd.createAgent(actor, {
-          displayName: "BDD staff entitlement admission agent",
+          displayName: "BDD subscription admission agent",
           visibility: "private",
         });
-        await seedOrgMetadata({
-          orgId,
-          tier: "limited-free-1",
-          credits: 20_000,
-        });
-        // The metadata fixture keeps the production tier/entitlement invariant.
-        // Restore the deliberate staff-only divergence exercised by this test.
-        await upsertOrgPlanEntitlementFixture({
-          orgId,
-          status: "active",
-          restrictedBuiltInModels: false,
-        });
 
+        const ownedRuns = publicRunOwner(context, actor, {
+          afterRuns: async () => {
+            await bdd.deleteAgent(actor, agent.agentId);
+          },
+        });
         const run = await api.createThreadRun(actor, {
           agentId: agent.agentId,
-          prompt: "staff entitlement subscription run",
+          prompt: "subscription subscription run",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await ownedRuns.claim(run.runId);
         const appendSystemPrompt = claim.appendSystemPrompt ?? "";
         expect(appendSystemPrompt).toContain("okou chat send");
         expect(appendSystemPrompt).toContain("okou chat cancel");
         await api.requestCancelRun(actor, run.runId, [200]);
         await finishCancelledRun(run.runId, claim.sandboxToken);
 
-        await upsertOrgPlanEntitlementFixture({
-          orgId,
-          status: "suspended",
-          restrictedBuiltInModels: false,
-        });
-
-        const subscriptionPrompt = `staff suspended subscription ${randomUUID()}`;
-        const builtInPrompt = `staff suspended built-in ${randomUUID()}`;
+        await plan.update("canceled");
+        const subscriptionPrompt = `suspended subscription ${randomUUID()}`;
+        const builtInPrompt = `suspended built-in ${randomUUID()}`;
         await expect(
           api.readThreadRunRejection(actor, {
             agentId: agent.agentId,
@@ -4942,12 +4921,15 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           }),
         ).resolves.toBe("insufficient_credits");
 
-        const runs = await api.listAgentRuns(actor, {
-          status: "queued,pending,running,completed,failed,timeout,cancelled",
-          limit: 100,
-        });
+        const runs = await createRunReadsApi(context).requestListLogs(
+          actor,
+          {
+            limit: 100,
+          },
+          [200],
+        );
         expect(
-          runs.runs.filter((candidate) => {
+          runs.body.data.filter((candidate) => {
             return (
               candidate.prompt === subscriptionPrompt ||
               candidate.prompt === builtInPrompt
@@ -5324,19 +5306,18 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       });
 
       it("injects oauth connector tokens with billable firewalls and resolvable secrets", async () => {
-        const api = createRunsApi(context);
+        const oauth = createOrdinaryOAuthRunApi();
+        const api = oauth.api;
         const fw = createFirewallApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor();
+        const { actor, agentId, runnerGroup } = await oauth.entitledRunActor();
 
-        await fw.seedTestConnector(actor, {
+        await oauth.connect(actor, {
           connectorSlug: "x",
-          authMethod: "oauth",
           accessToken: "x-bdd-access",
           refreshToken: "x-bdd-refresh",
         });
-        await fw.seedTestConnector(actor, {
+        await oauth.connect(actor, {
           connectorSlug: "slack",
-          authMethod: "oauth",
           accessToken: "xoxb-bdd-unenabled-access",
         });
         const enabled = await api.enableAgentConnectors(actor, agentId, ["x"]);
@@ -8254,30 +8235,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         mockNow(firstRefreshAt);
         onTestFinished(() => {
           clearMockNow();
-        });
-        await seedOrgMetadata({
-          orgId: actor.orgId,
-          tier: "pro",
-          credits: 20_000,
-        });
-        await upsertOrgPlanEntitlementFixture({
-          orgId: actor.orgId,
-          status: "suspended",
-        });
-        const deniedRefresh = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${claim.sandboxToken}` },
-          { ...currentAuthBody, firewallBillable: true },
-          [402],
-        );
-        if (deniedRefresh.status !== 402) {
-          throw new Error("Expected billable custom OAuth auth to be denied");
-        }
-        expect(deniedRefresh.body.error.code).toBe("INSUFFICIENT_CREDITS");
-        expect(provider.tokenBodies).toHaveLength(1);
-        await seedOrgMetadata({
-          orgId: actor.orgId,
-          tier: "pro",
-          credits: 20_000,
         });
         const [firstResolved, secondResolved] = await Promise.all([
           fw.requestFirewallAuth(

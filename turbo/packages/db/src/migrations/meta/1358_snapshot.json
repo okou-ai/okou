@@ -1,5 +1,5 @@
 {
-  "id": "858560ec-1d67-4929-9c00-423c5cff79ec",
+  "id": "1d02fb36-ce31-490d-9f3f-e9d3a9165b67",
   "prevId": "b86708d7-8863-49d7-814b-3def84c583d1",
   "version": "7",
   "dialect": "postgresql",
@@ -950,14 +950,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
-        "agent_runs_selected_model_check": {
-          "name": "agent_runs_selected_model_check",
-          "value": "\"agent_runs\".\"selected_model\" IS NULL OR char_length(\"agent_runs\".\"selected_model\") > 0"
-        },
-        "agent_runs_executable_builtin_capture_check": {
-          "name": "agent_runs_executable_builtin_capture_check",
-          "value": "NOT (\n          \"agent_runs\".\"model_provider\" = 'built-in' AND\n          \"agent_runs\".\"launch_snapshot\" IS NOT NULL AND\n          \"agent_runs\".\"status\" IN ('pending', 'running')\n        ) OR (\n          \"agent_runs\".\"selected_model\" IS NOT NULL AND\n          \"agent_runs\".\"model_runtime_provider\" IS NOT NULL AND\n          char_length(\"agent_runs\".\"model_runtime_provider\") > 0 AND\n          \"agent_runs\".\"model_runtime_model\" IS NOT NULL AND\n          char_length(\"agent_runs\".\"model_runtime_model\") > 0 AND\n          \"agent_runs\".\"built_in_model_key_id\" IS NOT NULL\n        )"
-        },
         "agent_runs_autonomy_budget_check": {
           "name": "agent_runs_autonomy_budget_check",
           "value": "\"agent_runs\".\"autonomy_budget\" >= 0 AND \"agent_runs\".\"autonomy_budget\" <= 32"
@@ -6929,14 +6921,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
-        "chat_events_model_selection_check": {
-          "name": "chat_events_model_selection_check",
-          "value": "\"chat_events\".\"model_selection\" IS NULL OR COALESCE((\n          jsonb_typeof(\"chat_events\".\"model_selection\") = 'object' AND\n          jsonb_typeof(\"chat_events\".\"model_selection\" -> 'selectedModel') = 'string' AND\n          char_length(\"chat_events\".\"model_selection\" ->> 'selectedModel') > 0\n        ), false)"
-        },
-        "chat_events_model_annotation_check": {
-          "name": "chat_events_model_annotation_check",
-          "value": "NOT jsonb_path_exists(\"chat_events\".\"payload\", '$.userMessage.parts[*] ? (@.type == \"model\" && (!exists(@.selectedModel) || @.selectedModel.type() != \"string\" || @.selectedModel == \"\"))')"
-        },
         "chat_events_event_type_check": {
           "name": "chat_events_event_type_check",
           "value": "\"chat_events\".\"event_type\" IN (\n          'input.prompt',\n          'input.automation',\n          'input.budget',\n          'input.rejected',\n          'output.message',\n          'output.error',\n          'output.followups',\n          'run.completed',\n          'run.failed',\n          'run.cancelled',\n          'control.interrupt',\n          'control.revoke',\n          'usage.recorded'\n        )"
@@ -8160,10 +8144,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
-        "chat_thread_events_selected_model_check": {
-          "name": "chat_thread_events_selected_model_check",
-          "value": "\"chat_thread_events\".\"selected_model\" IS NULL OR char_length(\"chat_thread_events\".\"selected_model\") > 0"
-        },
         "chat_thread_events_computer_access_check": {
           "name": "chat_thread_events_computer_access_check",
           "value": "NOT (\"chat_thread_events\".\"cloud_browser_enabled\" AND \"chat_thread_events\".\"computer_use_host_id\" IS NOT NULL)"
@@ -8457,8 +8437,7 @@
           "name": "selected_model",
           "type": "varchar(255)",
           "primaryKey": false,
-          "notNull": true,
-          "default": "'auto'"
+          "notNull": false
         },
         "model_settings": {
           "name": "model_settings",
@@ -8680,14 +8659,6 @@
       },
       "policies": {},
       "checkConstraints": {
-        "chat_threads_selected_model_check": {
-          "name": "chat_threads_selected_model_check",
-          "value": "char_length(\"chat_threads\".\"selected_model\") > 0"
-        },
-        "chat_threads_explicit_model_settings_check": {
-          "name": "chat_threads_explicit_model_settings_check",
-          "value": "jsonb_typeof(\"chat_threads\".\"model_settings\") = 'object' AND NOT jsonb_path_exists(\"chat_threads\".\"model_settings\", '$.keyvalue() ? (@.key == \"auto\" || @.key == \"okou-1.0\" || @.key == \"okou-1.0-pro\" || @.key == \"okou-1.0-max\" || @.key starts with \"@preset/\")')"
-        },
         "chk_chat_threads_codex_service_tier": {
           "name": "chk_chat_threads_codex_service_tier",
           "value": "\"chat_threads\".\"codex_service_tier\" IS NULL OR \"chat_threads\".\"codex_service_tier\" = 'fast'"
@@ -17071,7 +17042,7 @@
           "name": "source_run_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "idempotency_key": {
           "name": "idempotency_key",
@@ -20552,8 +20523,7 @@
           "name": "selected_model",
           "type": "varchar(255)",
           "primaryKey": false,
-          "notNull": true,
-          "default": "'auto'"
+          "notNull": false
         },
         "model_settings": {
           "name": "model_settings",
@@ -20629,14 +20599,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
-        "org_members_metadata_selected_model_check": {
-          "name": "org_members_metadata_selected_model_check",
-          "value": "char_length(\"org_members_metadata\".\"selected_model\") > 0"
-        },
-        "org_members_metadata_explicit_model_settings_check": {
-          "name": "org_members_metadata_explicit_model_settings_check",
-          "value": "jsonb_typeof(\"org_members_metadata\".\"model_settings\") = 'object' AND NOT jsonb_path_exists(\"org_members_metadata\".\"model_settings\", '$.keyvalue() ? (@.key == \"auto\" || @.key == \"okou-1.0\" || @.key == \"okou-1.0-pro\" || @.key == \"okou-1.0-max\" || @.key starts with \"@preset/\")')"
-        },
         "chk_org_members_metadata_service_tier": {
           "name": "chk_org_members_metadata_service_tier",
           "value": "\"org_members_metadata\".\"service_tier\" IS NULL OR \"org_members_metadata\".\"service_tier\" = 'priority'"

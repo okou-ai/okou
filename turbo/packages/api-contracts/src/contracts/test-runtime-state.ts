@@ -63,10 +63,6 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
     automation_id: z.uuid(),
   }),
   z.object({
-    action: z.literal("read-latest-workflow-automation-run"),
-    automation_id: z.uuid(),
-  }),
-  z.object({
     action: z.literal("set-runner-job-pi-context-as-versioned-writer"),
     run_id: z.uuid(),
     // Stored rows can come from a future or invalid writer. The claim boundary
@@ -135,13 +131,7 @@ export const testRuntimeStateActionResponseSchema = z.object({
     })
     .nullable()
     .optional(),
-  workflow_automation_run: z
-    .object({
-      run_id: z.uuid(),
-      autonomy_budget: z.int().min(0).max(32),
-    })
-    .nullable()
-    .optional(),
+
   run_launch_snapshot: z
     .object({
       exists: z.boolean(),

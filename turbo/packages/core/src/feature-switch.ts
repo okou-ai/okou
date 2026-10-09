@@ -115,12 +115,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Ahrefs SEO connector",
     enabled: false,
   },
-  [FeatureSwitchKey.PlaudConnector]: {
-    maintainer: "liangyou@okou.ai",
-    description: "Enable the Plaud MCP connector",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.BillConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the BILL Spend & Expense connector",

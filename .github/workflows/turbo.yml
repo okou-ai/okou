@@ -1297,51 +1297,6 @@ jobs:
           API_DEPLOYMENT_URL: ${{ steps.api-deploy.outputs.url }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
 
-      # Preview cron does not run automatically. Seed the same bounded official
-      # catalog projection against the deployed API's capability configuration;
-      # do not call the production full-catalog synchronizer here.
-      - name: Seed preview onboarding connector catalog
-        env:
-          API_DEPLOYMENT_URL: ${{ steps.api-deploy.outputs.url }}
-          CRON_SECRET: ${{ secrets.CRON_SECRET }}
-          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
-        run: |
-          set -euo pipefail
-
-          response=""
-          for attempt in 1 2 3; do
-            if ! response=$(curl \
-              --fail-with-body \
-              --show-error \
-              --silent \
-              --max-time 120 \
-              -H "Authorization: Bearer ${CRON_SECRET}" \
-              -H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}" \
-              "${API_DEPLOYMENT_URL}/api/cron/seed-preview-onboarding-catalog"); then
-              echo "::warning::Preview catalog seed request failed (attempt ${attempt}/3)"
-            elif summary=$(jq -c '{catalogVersion, catalogDigest, connectorSlugs}' <<< "$response"); then
-              echo "Preview onboarding catalog: ${summary}"
-
-              if jq -e '
-                (.catalogVersion | type == "string" and length > 0)
-                and (.catalogDigest | test("^sha256:[a-f0-9]{64}$"))
-                and (.connectorSlugs | type == "array" and length > 0)
-              ' <<< "$response" >/dev/null; then
-                exit 0
-              fi
-              echo "::warning::Preview onboarding catalog is not ready (attempt ${attempt}/3)"
-            else
-              echo "::warning::Preview catalog seed returned invalid JSON (attempt ${attempt}/3)"
-            fi
-
-            if [ "$attempt" -lt 3 ]; then
-              sleep 2
-            fi
-          done
-
-          echo "::error::Preview catalog seed did not produce an onboarding projection"
-          exit 1
-
       - name: Create API Vercel Alias
         id: api-alias
         if: vars.PREVIEW_DOMAIN != ''

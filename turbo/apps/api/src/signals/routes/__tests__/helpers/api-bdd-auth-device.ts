@@ -1,18 +1,12 @@
 import { mockClerkUsers } from "./clerk-users";
 import { Buffer } from "node:buffer";
 
-import type { z } from "zod";
 import { authContract } from "@okouai/api-contracts/contracts/auth";
 import {
   cliAuthApproveContract,
   cliAuthDeviceContract,
   cliAuthTokenContract,
 } from "@okouai/api-contracts/contracts/cli-auth";
-import {
-  cliAuthTestCodexOauthContract,
-  cliAuthTestConnectorContract,
-  cliAuthTestTokenContract,
-} from "@okouai/api-contracts/contracts/cli-auth-test";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import {
@@ -39,7 +33,6 @@ import { server } from "../../../../mocks/server";
 import type { RouteEntry } from "../../../route-entry";
 import { authMeRoutes } from "../../auth-me";
 import { cliAuthRoutes } from "../../cli-auth";
-import { cliAuthTestRoutes } from "../../cli-auth-test";
 import { desktopAuthRoutes } from "../../desktop-auth";
 import { agentsRoutes } from "../../agents";
 import { billingStatusRoutes } from "../../billing-status";
@@ -57,21 +50,9 @@ interface CliApproveBody {
   readonly device_code: string;
   readonly timezone?: string;
 }
-
-interface TestEmailQuery {
-  readonly email?: string;
-}
-
-type SeedTestConnectorBody = z.infer<
-  (typeof cliAuthTestConnectorContract.create)["body"]
->;
-type SeedTestCodexOauthBody = z.infer<
-  (typeof cliAuthTestCodexOauthContract.create)["body"]
->;
 const authDeviceRoutes: readonly RouteEntry[] = [
   ...authMeRoutes,
   ...cliAuthRoutes,
-  ...cliAuthTestRoutes,
   ...desktopAuthRoutes,
   ...agentsRoutes,
   ...billingStatusRoutes,
@@ -494,10 +475,6 @@ export function createAuthDeviceApiActions(context: TestContext) {
       );
     },
 
-    seedClerkDirectory(actor: ApiTestUser): void {
-      setClerkReads(context, actor);
-    },
-
     async requestCliApprovalWithBearer(
       token: string,
       body: CliApproveBody,
@@ -511,64 +488,6 @@ export function createAuthDeviceApiActions(context: TestContext) {
         }),
         statuses,
       );
-    },
-
-    async requestTestToken(
-      query: TestEmailQuery,
-      statuses: readonly (200 | 404)[],
-    ) {
-      const client = authDeviceApp(context)(cliAuthTestTokenContract);
-      return await accept(client.create({ query, body: {} }), statuses);
-    },
-
-    async requestTestTokenRaw(headers: Record<string, string> = {}) {
-      return await postRawJson(
-        "/api/cli/auth/test-token",
-        JSON.stringify({}),
-        headers,
-      );
-    },
-
-    async provisionTestOrg(actor: ApiTestUser): Promise<{
-      readonly accessToken: string;
-      readonly userId: string;
-    }> {
-      setClerkReads(context, actor);
-      const client = authDeviceApp(context)(cliAuthTestTokenContract);
-      const response = await accept(
-        client.create({ query: { email: actor.email }, body: {} }),
-        [200],
-      );
-      return {
-        accessToken: response.body.access_token,
-        userId: response.body.user_id,
-      };
-    },
-
-    async requestTestConnector(
-      query: TestEmailQuery,
-      body: SeedTestConnectorBody,
-      statuses: readonly (200 | 400 | 404)[],
-    ) {
-      const client = authDeviceApp(context)(cliAuthTestConnectorContract);
-      return await accept(client.create({ query, body }), statuses);
-    },
-
-    async requestTestConnectorRaw(rawBody: string) {
-      return await postRawJson("/api/cli/auth/test-connector", rawBody);
-    },
-
-    async requestTestCodexOauth(
-      query: TestEmailQuery,
-      body: SeedTestCodexOauthBody,
-      statuses: readonly (200 | 400 | 404)[],
-    ) {
-      const client = authDeviceApp(context)(cliAuthTestCodexOauthContract);
-      return await accept(client.create({ query, body }), statuses);
-    },
-
-    async requestTestCodexOauthRaw(rawBody: string) {
-      return await postRawJson("/api/cli/auth/test-codex-oauth", rawBody);
     },
 
     async readUserConnectors(actor: ApiTestUser, agentId: string) {

@@ -101,7 +101,7 @@ export async function claimPublicToolRun(
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   const runnerGroup = runs.configureRunnerGroup();
-  await runs.ensurePersonalSubscriptionModel(actor, {
+  const personal = await runs.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });
   const agent = await bdd.createAgent(actor, {
@@ -154,6 +154,7 @@ export async function claimPublicToolRun(
   }
   return {
     ...run,
+    providerId: personal.providerId,
     claim,
     cleanup,
     token,

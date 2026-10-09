@@ -9,7 +9,7 @@ import { command } from "ccstate";
 
 import { AUTO_RUN_KEY_VENDOR } from "@okouai/core/auto-run-model";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
-import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import { request$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
@@ -239,8 +239,7 @@ type AutonomyBudgetFixtureAction = Extract<
     action:
       | "read-run-autonomy-budget"
       | "set-workflow-automation-autonomy-budget"
-      | "read-workflow-automation-autonomy-state"
-      | "read-latest-workflow-automation-run";
+      | "read-workflow-automation-autonomy-state";
   }
 >;
 
@@ -251,7 +250,6 @@ function isAutonomyBudgetFixtureAction(
     "read-run-autonomy-budget",
     "set-workflow-automation-autonomy-budget",
     "read-workflow-automation-autonomy-state",
-    "read-latest-workflow-automation-run",
   ].includes(body.action);
 }
 
@@ -316,35 +314,6 @@ async function autonomyBudgetFixtureActionResponse(
                 official_blueprint_key: automation.officialBlueprintKey,
                 official_result_email_enabled:
                   automation.officialResultEmailEnabled,
-              }
-            : null,
-        },
-      };
-    }
-    case "read-latest-workflow-automation-run": {
-      const [run] = await db
-        .select({
-          runId: agentRuns.id,
-          autonomyBudget: agentRuns.autonomyBudget,
-        })
-        .from(agentRuns)
-        .where(
-          and(
-            eq(agentRuns.workflowAutomationId, body.automation_id),
-            isNotNull(agentRuns.triggerSource),
-          ),
-        )
-        .orderBy(desc(agentRuns.createdAt))
-        .limit(1);
-      signal.throwIfAborted();
-      return {
-        status: 200 as const,
-        body: {
-          ok: true as const,
-          workflow_automation_run: run
-            ? {
-                run_id: run.runId,
-                autonomy_budget: run.autonomyBudget,
               }
             : null,
         },
@@ -485,7 +454,6 @@ function isCompatibilityFixtureAction(
     "read-run-autonomy-budget",
     "set-workflow-automation-autonomy-budget",
     "read-workflow-automation-autonomy-state",
-    "read-latest-workflow-automation-run",
     "set-runner-job-context-profile-as-previous-api",
     "clear-workflow-automation-event-connector-as-previous-api",
   ].includes(body.action);

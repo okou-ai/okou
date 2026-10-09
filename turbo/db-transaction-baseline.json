@@ -507,11 +507,6 @@
       "owner": "testUserId$"
     },
     {
-      "id": "TX-0102",
-      "file": "turbo/apps/api/src/signals/services/cli-auth.service.ts",
-      "owner": "ensureTestOrgBillingRow$"
-    },
-    {
       "id": "TX-0103",
       "file": "turbo/apps/api/src/signals/services/cloudflare-access.service.ts",
       "owner": "createCloudflareAccessConfig$"
