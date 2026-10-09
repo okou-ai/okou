@@ -116,6 +116,8 @@ def discover_owned(owned):
         generation = identity[0]
         if pid in owned and owned[pid] != generation:
             raise ValueError("owned PID generation changed")
+        if pid not in owned and len(owned) >= MAX_CHILDREN:
+            raise ValueError("fixture descendant bound exceeded")
         owned[pid] = generation
         children = child_pids(pid)
         after = process_identity(pid)

@@ -391,6 +391,40 @@ os._exit(3)
             MODULE.discover_owned(owned)
             self.assertEqual(owned, {parent: 2})
 
+    def test_total_generation_inventory_is_bounded_before_registration(self):
+        collector = os.getpid()
+        driver, child = 123456, 123457
+        # Churn can fill the historical inventory while only the driver is live.
+        owned = {driver: 2}
+        owned.update(
+            (pid, 1) for pid in range(200000, 200000 + MODULE.MAX_CHILDREN - 1)
+        )
+        initial = dict(owned)
+        identities = {
+            collector: (1, "S", 0),
+            driver: (2, "S", collector),
+            child: (3, "S", driver),
+        }
+        children = {collector: [driver], driver: []}
+        with (
+            unittest.mock.patch.object(
+                MODULE, "child_pids", side_effect=lambda pid: children.get(pid, [])
+            ),
+            unittest.mock.patch.object(
+                MODULE, "process_identity", side_effect=identities.get
+            ),
+        ):
+            # Existing generations remain discoverable at exactly the limit.
+            MODULE.discover_owned(owned)
+            self.assertEqual(owned, initial)
+            children[driver] = [child]
+            with self.assertRaisesRegex(
+                ValueError, "fixture descendant bound exceeded"
+            ):
+                MODULE.discover_owned(owned)
+            self.assertEqual(owned, initial)
+            self.assertNotIn(child, owned)
+
     def test_pid_generation_change_discards_residency(self):
         with (
             unittest.mock.patch.object(
