@@ -859,11 +859,11 @@ test("Closing the connector intro keeps its content while the dialog exits", asy
   });
   await within(dialog).findByTestId("quest-connector-picker");
 
-  click(within(dialog).getByRole("button", { name: "Close" }));
+  click(buttonNamed("Close", dialog));
   // The exit transition paints whatever is still mounted, so the intro body
   // must survive the close rather than being emptied at once.
   expect(
-    within(dialog).queryByTestId("quest-connector-picker"),
+    screen.queryByTestId("quest-connector-picker"),
   ).toBeInTheDocument();
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
