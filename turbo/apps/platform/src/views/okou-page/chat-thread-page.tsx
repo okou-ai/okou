@@ -277,7 +277,6 @@ import { PlainTextWithLinks } from "../components/plain-text-with-links.tsx";
 import {
   ChatThreadLinkChip,
   STRUCTURED_INLINE_LINK_REFERENCE_CLASS,
-  STRUCTURED_INLINE_REFERENCE_CLASS,
 } from "../components/chat-thread-link-chip.tsx";
 import { userMessageFileAttachments } from "../../signals/chat-page/user-message-files.ts";
 import type {
