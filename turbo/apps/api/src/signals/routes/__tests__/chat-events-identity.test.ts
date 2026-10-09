@@ -570,6 +570,9 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
           return withMockNowForTest(phaseTime, operation);
         });
       }
+      api.configureRunnerGroup();
+      api.acceptStorageDownloads();
+      api.acceptTelemetryIngest();
       await run(() => {
         return bdd.completeOnboarding(actor);
       });

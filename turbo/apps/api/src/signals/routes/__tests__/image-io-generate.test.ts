@@ -987,6 +987,13 @@ async function createClaimedImageRun(imageModel: string, credits = 1000) {
   await run(() => {
     return useImageModel(fixture, imageModel);
   });
+  // Normal Pro activation grants 20,000 credits before the separate purchase.
+  await expect(
+    run(() => {
+      return orgCredits(fixture);
+    }),
+  ).resolves.toBe(20_000);
+  const initialCredits = 20_000 + credits;
   await run(() => {
     return purchaseToolCredits(context, actor, {
       credits,
@@ -998,6 +1005,11 @@ async function createClaimedImageRun(imageModel: string, credits = 1000) {
     });
   });
   restoreSetupExternalState = undefined;
+  await expect(
+    run(() => {
+      return orgCredits(fixture);
+    }),
+  ).resolves.toBe(initialCredits);
   const sent = await run(() => {
     return chat.sendChatRun(actor, {
       agentId,
@@ -1021,6 +1033,7 @@ async function createClaimedImageRun(imageModel: string, credits = 1000) {
   return {
     ...fixture,
     actor,
+    initialCredits,
     runId: claimed.runId,
     run,
     token: okouTokenFromClaim(claimed.claim),
@@ -1985,7 +1998,9 @@ describe("POST /api/image-io/generate", () => {
         creditsCharged: 50,
         billingCategory: "output_image.medium.standard",
       });
-      await expect(orgCredits(fixture)).resolves.toBe(950);
+      await expect(orgCredits(fixture)).resolves.toBe(
+        fixture.initialCredits - 50,
+      );
     });
   });
 
@@ -2088,7 +2103,7 @@ describe("POST /api/image-io/generate", () => {
           };
         }),
       );
-      await expect(orgCredits(fixture)).resolves.toBe(10_000);
+      await expect(orgCredits(fixture)).resolves.toBe(fixture.initialCredits);
     });
   });
 
@@ -2268,7 +2283,9 @@ describe("POST /api/image-io/generate", () => {
       // The charge is asserted through product surfaces: the settled usage shows
       // up in the user's usage record with image/provider attribution, and the
       // org balance drops by exactly the credits charged (a single settlement).
-      await expect(orgCredits(fixture)).resolves.toBe(10_000 - creditsCharged);
+      await expect(orgCredits(fixture)).resolves.toBe(
+        fixture.initialCredits - creditsCharged,
+      );
 
       mocks.clerk.session(fixture.userId, fixture.orgId);
       const usageResponse = await fixture.request(app, "/api/usage/record", {
@@ -2473,7 +2490,7 @@ describe("POST /api/image-io/generate", () => {
         }
         expect(falCalls).toBe(4);
         expect(context.mocks.s3.send).not.toHaveBeenCalled();
-        await expect(orgCredits(fixture)).resolves.toBe(1000);
+        await expect(orgCredits(fixture)).resolves.toBe(fixture.initialCredits);
 
         mocks.clerk.session(fixture.userId, fixture.orgId);
         const usageResponse = await fixture.request(app, "/api/usage/record", {
@@ -2700,7 +2717,7 @@ describe("POST /api/image-io/generate", () => {
         }
 
         expect(context.mocks.s3.send).not.toHaveBeenCalled();
-        await expect(orgCredits(fixture)).resolves.toBe(1000);
+        await expect(orgCredits(fixture)).resolves.toBe(fixture.initialCredits);
         mocks.clerk.session(fixture.userId, fixture.orgId);
         const usageResponse = await fixture.request(app, "/api/usage/record", {
           headers: authHeaders(),
@@ -3343,7 +3360,9 @@ describe("POST /api/image-io/generate", () => {
 
       // The megapixel category/quantity are asserted in the result body above;
       // the single settled charge is observable as the exact balance drop.
-      await expect(orgCredits(fixture)).resolves.toBe(904);
+      await expect(orgCredits(fixture)).resolves.toBe(
+        fixture.initialCredits - 96,
+      );
     });
   });
 

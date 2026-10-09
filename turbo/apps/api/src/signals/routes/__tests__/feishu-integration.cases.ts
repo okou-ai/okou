@@ -17,8 +17,6 @@ import {
   randomUUID,
 } from "node:crypto";
 import { Buffer } from "node:buffer";
-import { Readable } from "node:stream";
-import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
@@ -53,7 +51,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createAppWithRoutes } from "../../../app-factory-core";
-import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { extractFileFromTarGz } from "../../../lib/tar";
 import { server } from "../../../mocks/server";
 
@@ -1773,8 +1771,6 @@ export function registerFeishuIntegrationTests(
       createActor,
       claimRun,
       ownFeishuRun,
-      grantEntitlement,
-      cancelPlan,
       deletedUsers,
       provider,
       connectContract,
@@ -1852,7 +1848,7 @@ export function registerFeishuIntegrationTests(
             if (!(request instanceof Request)) {
               throw new Error("Expected the actual Clerk webhook Request");
             }
-            expect(await request.text()).toBe(payload);
+            await expect(request.text()).resolves.toBe(payload);
             return deletion;
           },
         );

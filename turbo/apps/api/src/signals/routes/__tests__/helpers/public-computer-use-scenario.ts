@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { onTestFinished } from "vitest";
-import type { TestContext } from "../../../../__tests__/test-context";
+import {
+  desktopCompatibility,
+  type TestContext,
+} from "../../../../__tests__/test-context";
 import { now, withMockNowForTest } from "../../../../lib/time";
 import { settleIncludingAbort } from "../../../utils";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
@@ -48,7 +51,9 @@ export function createPublicComputerUseScenario(
       options.optionalEnvironmentNames,
     );
     const providers = options.retainProviderState?.();
+    const minimumDesktopVersion = desktopCompatibility.minimumSupportedVersion;
     return () => {
+      desktopCompatibility.minimumSupportedVersion = minimumDesktopVersion;
       base();
       providers?.();
     };

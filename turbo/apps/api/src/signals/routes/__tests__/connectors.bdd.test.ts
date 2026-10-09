@@ -102,12 +102,16 @@ async function createBuiltinCredentialConsumer(
   }
   return {
     claim,
-    resolve(alias: string) {
-      expect(claim.secretConnectorMap?.[alias]).toBe(connectorSlug);
-      expect(claim.secretConnectorMetadataMap?.[alias]).toMatchObject({
+    resolve(alias: string, claimedAlias = alias) {
+      expect(claim.secretConnectorMap?.[claimedAlias]).toBe(connectorSlug);
+      const source = claim.secretConnectorMetadataMap?.[claimedAlias];
+      expect(source).toMatchObject({
         sourceType: "connector",
         sourceId: expect.any(String),
       });
+      if (!source) {
+        throw new Error("Expected the actual claim's connector source");
+      }
       return own(() => {
         return firewall.requestFirewallAuth(
           sandboxHeaders,
@@ -116,9 +120,14 @@ async function createBuiltinCredentialConsumer(
             authHeaders: {
               Authorization: "Bearer ${{ secrets." + alias + " }}",
             },
-            secretConnectorMap: claim.secretConnectorMap ?? undefined,
-            secretConnectorMetadataMap:
-              claim.secretConnectorMetadataMap ?? undefined,
+            secretConnectorMap: {
+              ...claim.secretConnectorMap,
+              [alias]: connectorSlug,
+            },
+            secretConnectorMetadataMap: {
+              ...claim.secretConnectorMetadataMap,
+              [alias]: source,
+            },
           },
           [200],
         );
@@ -279,13 +288,6 @@ function stateFromAuthorizationUrl(authorizationUrl: string): string {
     throw new Error("Expected connector authorization URL to include state");
   }
   return state;
-}
-
-function requiredOrgId(user: ApiTestUser): string {
-  if (!user.orgId) {
-    throw new Error("Expected test user to have an organization");
-  }
-  return user.orgId;
 }
 
 function expectNoVisibleSecret(value: unknown, secret: string): void {
@@ -4675,6 +4677,14 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       connected: true,
     });
 
+    const initialAccount = connected.find((connector) => {
+      return connector.id === created.id;
+    });
+    if (!initialAccount?.connectedAccountId) {
+      throw new Error("Expected the actual connected OAuth account");
+    }
+    const connectionId = initialAccount.connectedAccountId;
+
     const updateBody = {
       displayName: "BDD Edited OAuth Connector",
       prefixTemplates: ["https://editable-oauth.example.test/v2/"],
@@ -4731,7 +4741,12 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     });
 
     const nextAuthorizationUrl = await own(() => {
-      return connectorsApi.startCustomConnectorOAuth2(member, created.id);
+      return connectorsApi.startCustomConnectorOAuth2(
+        member,
+        created.id,
+        undefined,
+        { intent: "reconnect", connectionId },
+      );
     });
     const nextAuthorization = new URL(nextAuthorizationUrl);
     expect(nextAuthorization.searchParams.get("client_id")).toBe(clientId);
@@ -8365,7 +8380,6 @@ describe("CONN-02: test-oauth auth-code journey", () => {
     ).resolves.toStrictEqual(oauthConnector);
     const retainedAuth = await oauthConsumer.resolve("TEST_OAUTH_TOKEN");
     expect(retainedAuth.body).toStrictEqual(originalAuth.body);
-    await oauthConsumer.cancel();
 
     const manual = await own(() => {
       return connectorsApi.connectManualGrant(
@@ -8405,6 +8419,24 @@ describe("CONN-02: test-oauth auth-code journey", () => {
     if (!manualBinding) {
       throw new Error("Expected the public manual access-token binding");
     }
+    // The still-live, normally claimed consumer owns this same account. Resolve
+    // its newly published alias through the normal firewall refresh before a new
+    // Run snapshots the manual method's lazily created access-token secret.
+    expect(
+      oauthConsumer.claim.secretConnectorMetadataMap?.TEST_OAUTH_TOKEN,
+    ).toMatchObject({ sourceType: "connector", sourceId: manual.id });
+    const refreshedManual = await oauthConsumer.resolve(
+      manualBinding.name,
+      "TEST_OAUTH_TOKEN",
+    );
+    expect(refreshedManual.body).toMatchObject({
+      headers: {
+        Authorization:
+          "Bearer fresh-test-oauth-api-token:bdd-successful-replacement-token:bdd-successful-replacement-input",
+      },
+    });
+    await oauthConsumer.cancel();
+
     const manualConsumer = await createBuiltinCredentialConsumer(
       fixture,
       "test-oauth",

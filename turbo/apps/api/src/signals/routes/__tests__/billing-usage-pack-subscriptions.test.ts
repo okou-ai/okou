@@ -10169,6 +10169,7 @@ describe("usage pack allocation management", () => {
       managedUsagePackUpgradeInvoice,
       readManagedUsagePacks,
       readPurchasedCreditGrants,
+      postManagedUsagePackEvent,
     } = createManagedUsagePackHelpers(lifecycle);
     return await withNowScopeForTest(() => {
       return run(async () => {
@@ -10454,9 +10455,35 @@ describe("usage pack allocation management", () => {
             return grant.memberId === userId;
           }),
         ).toStrictEqual([]);
+        // Removing the final allocation schedules the existing Plan's end.
+        // Stripe completes that accepted cancellation at the public period boundary.
+        expect(context.mocks.stripe.subscriptions.update).toHaveBeenCalledWith(
+          fixture.subscriptionId,
+          { cancel_at_period_end: true },
+        );
+        mockNow(fixture.billingPeriod.end * 1000);
+        const canceledSubscription = {
+          ...upgradedSubscription,
+          status: "canceled" as const,
+          canceled_at: fixture.billingPeriod.end,
+          ended_at: fixture.billingPeriod.end,
+        };
+        context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+          canceledSubscription,
+        );
+        lifecycle.captureExternalState();
+        await postManagedUsagePackEvent(
+          "customer.subscription.deleted",
+          canceledSubscription,
+        );
+        await run(flushWaitUntilForTest);
         expect(
           (await readManagedUsagePacks(fixture)).allocations,
         ).not.toContainEqual(expect.objectContaining({ memberId: userId }));
+        expect(context.mocks.stripe.refunds.create).toHaveBeenCalledTimes(1);
+        expect(context.mocks.stripe.creditNotes.create).toHaveBeenCalledTimes(
+          1,
+        );
       });
     });
   });

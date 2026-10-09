@@ -6765,6 +6765,13 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
         );
       });
       await own(() => {
+        return connectors.updateAgentCustomConnectors(
+          doomed,
+          doomedAgent.agentId,
+          [customManual.id],
+        );
+      });
+      await own(() => {
         createRouteMocks(context).clerk.session(
           doomed.userId,
           doomed.orgId,

@@ -8172,10 +8172,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await own(() => {
           return api.heartbeatRunner(runnerGroup);
         });
-        const { claim: claim } = await fixture.claimChatRun(
-          runnerGroup,
-          run.runId,
-        );
+        const { claim } = await fixture.claimChatRun(runnerGroup, run.runId);
         const internalName = `custom_connector_${custom.id.replaceAll("-", "")}`;
         const secretKey = `CUSTOM_${custom.id.replaceAll("-", "")}_S___OAUTH_ACCESS_TOKEN`;
         const customApis = inlineFirewallApis(claim.firewalls, internalName);
@@ -9101,10 +9098,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await own(() => {
           return api.heartbeatRunner(runnerGroup);
         });
-        const { claim: claim } = await fixture.claimChatRun(
-          runnerGroup,
-          run.runId,
-        );
+        const { claim } = await fixture.claimChatRun(runnerGroup, run.runId);
         const internalName = `custom_connector_${mcp.id.replaceAll("-", "")}`;
         const secretKey = `CUSTOM_${mcp.id.replaceAll("-", "")}_S___OAUTH_ACCESS_TOKEN`;
         expect(
