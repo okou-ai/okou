@@ -182,13 +182,19 @@ async def test_long_lived_stream_reuses_quantum_without_a_lifetime_limit(
 
 
 @pytest.mark.parametrize("cancel_terminal", [False, True], ids=["release", "cancel"])
+@pytest.mark.parametrize("billable_prefix", [False, True], ids=["zero-prefix", "accepted-prefix"])
 async def test_abandoned_pending_inspection_is_explicit_and_releases_input(
-    real_flow, tmp_path, usage_webhook_api, cancel_terminal
+    real_flow, tmp_path, usage_webhook_api, cancel_terminal, billable_prefix
 ):
     flow = _flow(real_flow, tmp_path)
     with usage_webhook_api() as webhook:
         mitm_addon.responseheaders(flow)
-        wire = gzip.compress(b"{}\n" * 100 + b'{"data":{"id":"uninspected"}}\n')
+        prefix = (
+            b"".join(b'{"data":{"id":"' + str(index).encode() + b'"}}\n' for index in range(8))
+            if billable_prefix
+            else b""
+        )
+        wire = gzip.compress(prefix + b"{}\n" * 100 + b'{"data":{"id":"uninspected"}}\n')
         assert response_stream(flow)(wire) == wire
         assert response_streaming.has_pending_connector_inspection(flow)
         if cancel_terminal:
@@ -212,7 +218,12 @@ async def test_abandoned_pending_inspection_is_explicit_and_releases_input(
             "response inspection interrupted"
         )
         usage.flush_usage_events(trigger="test")
-    assert webhook.usage_events() == []
+    events = webhook.usage_events()
+    assert [event["resources"] for event in events] == (
+        [[{"id": str(index), "occurrences": 1}] for index in range(8)] if billable_prefix else []
+    )
+    assert all(event["quantity"] == 1 for event in events)
+    assert len({event["idempotencyKey"] for event in events}) == len(events)
     entries = read_jsonl_entries_after_flush(tmp_path / "proxy.jsonl")
     assert (
         len(
