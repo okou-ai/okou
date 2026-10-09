@@ -13,11 +13,11 @@ PR head is unchanged; Runner content-based caches remain reusable.
 
 Build source is not Actions producer/run identity: Runner `PRODUCER_HEAD_SHA`
 and consumer `LOOKUP_SHA` retain the PR head for provenance and API run lookup.
-The reusable Vercel action records verified checked-out Git HEAD as its
-deployment source while keeping environment/branch/PR association separate.
-Its existing record-ownership skips remain intact. API/App production promotion
-records use the exact `release_target`, matching their already source-bound
-artifact inputs rather than the release driver's event SHA or mutable branch.
+Preview GitHub deployment records retain their existing branch/ref attribution;
+they are not proof of the exact build source. The shared Vercel deployment
+action is unchanged. API/App production promotion records use the exact
+`release_target`, matching their already source-bound artifact inputs rather
+than the release driver's event SHA or mutable branch.
 
 No API/Runner wire format, persisted data, runtime protocol, or artifact
 migration is required. New previews publish and capture merge-addressed CLI
@@ -25,7 +25,7 @@ URLs; already captured contexts retain their existing URLs, and their archives
 must stay available. Rolling the workflows back restores previous source
 selection without rewriting historical deployment records or deleting captured
 artifacts. Production artifact selection and serving-promotion behavior remain
-unchanged; only record attribution is corrected.
+unchanged; only production record attribution is corrected.
 
 ## Free memory preset routing (2026-10-09)
 

@@ -7,7 +7,6 @@ ruby -ryaml -ropen3 -rtmpdir -rfileutils - "$repo_root" <<'RUBY'
 repo_root = ARGV.fetch(0)
 turbo = YAML.load_file(File.join(repo_root, ".github/workflows/turbo.yml"))
 release = YAML.load_file(File.join(repo_root, ".github/workflows/release-please.yml"))
-vercel = YAML.load_file(File.join(repo_root, ".github/actions/vercel-deploy/action.yml"))
 jobs = turbo.fetch("jobs")
 event_source = "${{ github.sha }}"
 release_source = "${{ needs.release-please.outputs.release_target }}"
@@ -36,20 +35,6 @@ unless api_urls.length == 2 && api_urls.all? { |url| url == "https://static.okou
 end
 artifact_step = cli.fetch("steps").find { |step| step["id"] == "artifact" }
 raise "missing CLI artifact source output" unless artifact_step
-
-steps = vercel.fetch("runs").fetch("steps")
-start = steps.find { |step| step.dig("with", "step") == "start" }
-raise "missing preview deployment record" unless start
-source_ref = start.fetch("with").fetch("ref").match(/\A\$\{\{ steps\.([a-z0-9-]+)\.outputs\.([a-z0-9-]+) \}\}\z/)
-raise "preview deployment must reference a verified checkout output" unless source_ref
-source_step = steps.find { |step| step["id"] == source_ref[1] }
-unless source_step && steps.index(source_step) < steps.index(start) &&
-    source_step["if"] == start["if"] && start["if"] == "inputs.skip-start != 'true'"
-  raise "deployment source must resolve before record creation and preserve the skip-start guard"
-end
-unless start.fetch("with").fetch("env").include?("inputs.meta-branch || github.head_ref || github.ref_name")
-  raise "preview environment association must remain independent of source SHA"
-end
 
 production_refs = %w[promote-api-production promote-app-worker-production].flat_map do |name|
   production_steps = release.fetch("jobs").fetch(name).fetch("steps")
@@ -123,9 +108,8 @@ Dir.mktmpdir("ci-source-revision-") do |fixture|
     git.call("checkout", "--quiet", "--detach", sha)
     action_env = environment.merge("GITHUB_EVENT_NAME" => event, "GITHUB_SHA" => sha)
     artifact = action_outputs(artifact_step.fetch("run"), checkout, action_env, File.join(fixture, "artifact outputs"))
-    deployment = action_outputs(source_step.fetch("run"), checkout, action_env, File.join(fixture, "deployment outputs"))
-    unless artifact.fetch("sha") == sha && artifact.fetch("prefix") == "okou-cli/#{sha}" && deployment.fetch(source_ref[2]) == sha
-      raise "#{event} artifact/deployment outputs must identify the actual captured checkout"
+    unless artifact.fetch("sha") == sha && artifact.fetch("prefix") == "okou-cli/#{sha}"
+      raise "#{event} artifact outputs must identify the actual captured checkout"
     end
     unless api_urls.all? { |url| url.sub(event_source, sha) == "https://static.okou.io/#{artifact.fetch('prefix')}/package.tgz" } &&
         cli.fetch("concurrency").fetch("group").sub(event_source, sha) == "deploy-cli-#{artifact.fetch('sha')}"
@@ -133,11 +117,13 @@ Dir.mktmpdir("ci-source-revision-") do |fixture|
     end
   end
 
-  # Reusable deployment attribution follows the checkout, not an unrelated driver revision.
+  # Artifact identity follows the checkout, not an unrelated driver revision.
   git.call("checkout", "--quiet", "--detach", merge_sha)
-  deployment = action_outputs(source_step.fetch("run"), checkout, environment.merge("GITHUB_SHA" => later_main),
+  artifact = action_outputs(artifact_step.fetch("run"), checkout, environment.merge("GITHUB_SHA" => later_main),
     File.join(fixture, "different driver outputs"))
-  raise "deployment source must not be replaced with the driver SHA" unless deployment.fetch(source_ref[2]) == merge_sha
+  unless artifact.fetch("sha") == merge_sha && artifact.fetch("prefix") == "okou-cli/#{merge_sha}"
+    raise "artifact source must not be replaced with the driver SHA"
+  end
 
   # Valid driver identity is not a fallback for a missing Git checkout.
   missing_checkout = File.join(fixture, "missing-checkout")
@@ -146,9 +132,9 @@ Dir.mktmpdir("ci-source-revision-") do |fixture|
   output_path = File.join(fixture, "invalid outputs")
   File.write(output_path, "")
   _, _, status = Open3.capture3(environment.merge("GITHUB_SHA" => later_main, "GITHUB_OUTPUT" => output_path),
-    "bash", "-euo", "pipefail", "-c", source_step.fetch("run"), chdir: missing_checkout)
+    "bash", "-euo", "pipefail", "-c", artifact_step.fetch("run"), chdir: missing_checkout)
   unless !status.success? && File.read(output_path).empty?
-    raise "missing checkout must fail before exposing a deployment source; no driver/branch fallback"
+    raise "missing checkout must fail before exposing an artifact source; no driver/branch fallback"
   end
 end
 puts "ci-source-revision-workflow-test: ok"

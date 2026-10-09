@@ -73,15 +73,6 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - name: Resolve deployment commit SHA
-      id: build-commit
-      if: inputs.skip-start != 'true'
-      shell: bash
-      run: |
-        set -euo pipefail
-        sha="$(bash .github/scripts/resolve-build-commit-sha.sh)"
-        printf 'sha=%s\n' "$sha" >> "$GITHUB_OUTPUT"
-
     - name: Start deployment
       id: deployment
       if: inputs.skip-start != 'true'
@@ -90,7 +81,7 @@ runs:
         step: start
         token: ${{ github.token }}
         env: ${{ inputs.environment == 'production' && format('{0}/production', inputs.deployment-env) || format('{0}/preview/{1}', inputs.deployment-env, inputs.meta-branch || github.head_ref || github.ref_name) }}
-        ref: ${{ steps.build-commit.outputs.sha }}
+        ref: ${{ github.head_ref && format('refs/heads/{0}', github.head_ref) || github.ref }}
         desc: Deploying ${{ inputs.environment }} environment
 
     - name: Setup Vercel
