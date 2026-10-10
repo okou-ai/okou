@@ -331,6 +331,10 @@ function instrumentQuery(
 }
 
 export function instrumentPgPool(pool: Pool, tracer: Tracer): Pool {
+  // Establish the scope before any checkout is queued. Otherwise a callback
+  // registered before the first capture could inherit that later request's
+  // scope when its connection is delivered by the request's release.
+  const queryCaptureStorage = scopedPgQueryExecutionCapture();
   const originalQuery = pool.query.bind(pool) as PgQuery;
   pool.query = instrumentQuery(
     pool,
@@ -359,15 +363,7 @@ export function instrumentPgPool(pool: Pool, tracer: Tracer): Pool {
     if (isPoolConnectCallback(callback)) {
       const markedSpan = context.active().getValue(POOL_QUERY_SPAN_KEY);
       const capture = scopedPgPoolAcquisitionCapture.peek()?.getStore();
-      const queryCaptureStorage = scopedPgQueryExecutionCapture.peek();
-      const queryCapture = queryCaptureStorage?.getStore();
-      if (
-        !(markedSpan instanceof PoolQuerySpan) &&
-        !capture &&
-        !queryCaptureStorage
-      ) {
-        return Reflect.apply(originalConnect, pool, args);
-      }
+      const queryCapture = queryCaptureStorage.getStore();
 
       const startedAt = performance.now();
       const path = acquisitionPath(pool);
@@ -392,13 +388,9 @@ export function instrumentPgPool(pool: Pool, tracer: Tracer): Pool {
         // A queued checkout can be delivered by another request's release.
         // Its client query must use the checkout owner's capture, not that
         // releasing request's currently active AsyncLocalStorage context.
-        if (queryCaptureStorage) {
-          queryCaptureStorage.run(queryCapture, () => {
-            callback(error, client, release);
-          });
-        } else {
+        queryCaptureStorage.run(queryCapture, () => {
           callback(error, client, release);
-        }
+        });
       };
       const wrappedArgs = [...args.slice(0, -1), wrappedCallback] as const;
       return Reflect.apply(originalConnect, pool, wrappedArgs);
