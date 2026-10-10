@@ -6,6 +6,9 @@ import {
   computerUseHostChannelScope,
   computerUseHostChannelName,
   computerUseCommandsChangedEvent,
+  computerUseCommandResultChannelName,
+  computerUseCommandResultChangedEvent,
+  type RealtimeSubscription,
   type BrowserSessionChangedPayload,
   type HomeTaskRecommendationsChangedPayload,
   type SessionOutputDelta,
@@ -21,7 +24,7 @@ import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { singleton } from "../../lib/singleton";
 import { waitUntil } from "../context/wait-until";
-import { bestEffort, tapError } from "../utils";
+import { awaitWithSignal, bestEffort, settle, tapError } from "../utils";
 
 const L = logger("Realtime");
 
@@ -146,6 +149,77 @@ export async function createBuiltInGenerationRealtimeSubscription(
     eventName: getBuiltInGenerationEventName(generationId),
     tokenRequest: await createPlatformUserRealtimeToken(userId),
   };
+}
+
+export async function createComputerUseResultSubscription(
+  target: {
+    readonly userId: string;
+    readonly orgId: string;
+    readonly commandId: string;
+    readonly timeoutMs: number;
+  },
+  signal: AbortSignal,
+): Promise<RealtimeSubscription | undefined> {
+  signal.throwIfAborted();
+  const channelName = computerUseCommandResultChannelName(
+    target.userId,
+    target.orgId,
+    target.commandId,
+  );
+  const request = (async () => {
+    return await ablyClient().auth.createTokenRequest({
+      capability: { [channelName]: ["subscribe"] },
+      clientId: target.userId,
+      ttl: target.timeoutMs + 60_000,
+    });
+  })();
+  const token = await settle(
+    awaitWithSignal(
+      request,
+      AbortSignal.any([signal, AbortSignal.timeout(2000)]),
+    ),
+    signal,
+  );
+  if (!token.ok) {
+    // #38733: notification delivery is optional; the created operation remains readable.
+    L.warn("Unable to issue computer-use result subscription", {
+      commandId: target.commandId,
+    });
+    return undefined;
+  }
+  return {
+    channelName,
+    eventName: computerUseCommandResultChangedEvent,
+    tokenRequest: token.value,
+  };
+}
+
+async function publishComputerUseResultChangedNow(
+  channelName: string,
+): Promise<void> {
+  await ablyClient()
+    .channels.get(channelName)
+    .publish(computerUseCommandResultChangedEvent, null);
+}
+
+export function publishComputerUseResultChangedSafely(target: {
+  readonly userId: string;
+  readonly orgId: string;
+  readonly id: string;
+}): void {
+  const channelName = computerUseCommandResultChannelName(
+    target.userId,
+    target.orgId,
+    target.id,
+  );
+  waitUntil(
+    tapError(publishComputerUseResultChangedNow(channelName), (error) => {
+      L.warn("Unable to publish computer-use result change", {
+        error,
+        channelName,
+      });
+    }),
+  );
 }
 
 export async function createRunnerGroupRealtimeToken(

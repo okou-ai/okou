@@ -40,6 +40,7 @@ import { writeDb$, type Db } from "../external/db";
 import {
   publishUserSignal,
   publishComputerUseCommandsChangedSafely,
+  publishComputerUseResultChangedSafely,
 } from "../external/realtime";
 import { downloadS3Buffer, putS3Object } from "../external/s3";
 import { settle } from "../utils";
@@ -783,6 +784,7 @@ async function failTimedOutComputerUseCommand(
   if (!timedOut) {
     return null;
   }
+  publishComputerUseResultChangedSafely(timedOut);
   await insertComputerUseCommandAuditEvent(db, {
     command: timedOut,
     event: "completed",
@@ -1766,6 +1768,8 @@ export const completeComputerUseHostCommand$ = command(
     if (!updated) {
       return await resolveMissedComputerUseCompletion(db, params, signal);
     }
+
+    publishComputerUseResultChangedSafely(updated);
 
     await insertComputerUseCommandAuditEvent(db, {
       command: updated,

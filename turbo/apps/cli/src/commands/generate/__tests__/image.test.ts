@@ -14,10 +14,20 @@ import { server } from "../../../mocks/server";
 import { generateCommand } from "../index";
 import { imageCommand } from "../image";
 import {
+  ablyRealtimeFake,
+  deferred,
+} from "../../../test-fixtures/ably-realtime";
+
+import {
   AVAILABILITY_URL,
   GENERATION_ARTIFACT_ID,
   serveGenerationVisibility,
 } from "./artifact-visibility-fixtures";
+
+vi.mock("ably", async () => {
+  const { FakeRealtime } = await import("../../../test-fixtures/ably-realtime");
+  return { Realtime: FakeRealtime };
+});
 
 const IMAGE_URL = "http://localhost:3000/api/image-io/generate";
 const IMAGE_GENERATION_ID = "00000000-0000-4000-8000-000000000001";
@@ -66,6 +76,7 @@ describe("okou generate image command", () => {
     .mockImplementation(() => {});
 
   beforeEach(() => {
+    ablyRealtimeFake.reset();
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
@@ -832,6 +843,63 @@ describe("okou generate image command", () => {
       expect(stdout).toContain(`![${IMAGE_RESULT.filename}](<${expectedUrl}>)`);
     },
   );
+
+  it("uses the shared notification transport for a pending image and closes it after printing the result", async () => {
+    const pendingRead = deferred<void>();
+    let complete = false;
+    let reads = 0;
+    server.use(
+      http.post(IMAGE_URL, () => {
+        return HttpResponse.json(
+          {
+            generationId: IMAGE_GENERATION_ID,
+            type: "image",
+            status: "queued",
+            realtime: {
+              channelName: "user:user-1",
+              eventName: `built-in-generation:${IMAGE_GENERATION_ID}`,
+              tokenRequest: {
+                keyName: "test.key",
+                timestamp: 1,
+                capability: '{"user:user-1":["subscribe"]}',
+                nonce: "nonce",
+                mac: "mac",
+              },
+            },
+          },
+          { status: 202 },
+        );
+      }),
+      http.get(IMAGE_STATUS_URL, () => {
+        if (++reads === 2) pendingRead.resolve();
+        return HttpResponse.json({
+          generationId: IMAGE_GENERATION_ID,
+          type: "image",
+          status: complete ? "completed" : "running",
+          ...(complete ? { result: IMAGE_RESULT } : {}),
+          createdAt: "2026-10-10T00:00:00Z",
+          startedAt: "2026-10-10T00:00:01Z",
+          completedAt: complete ? "2026-10-10T00:00:02Z" : null,
+        });
+      }),
+    );
+    const running = generateCommand.parseAsync([
+      "node",
+      "okou",
+      "image",
+      "--raw-prompt",
+      "A watercolor fox",
+    ]);
+    const client = await ablyRealtimeFake.created.promise;
+    await pendingRead.promise;
+    complete = true;
+    client.publish();
+    await running;
+    expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain(
+      `Image generated: ${IMAGE_RESULT.url}`,
+    );
+    expect(client.closed).toBe(true);
+  });
 
   it("should explain an async output safety block with manual retry guidance", async () => {
     let statusRequested = false;

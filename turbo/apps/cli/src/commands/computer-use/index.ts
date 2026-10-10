@@ -1,7 +1,9 @@
 import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { Command } from "commander";
 import type {
   ComputerUseCommandResponse,
+  ComputerUseCommandCreateResponse,
   ComputerUseReadCommandKind,
   ComputerUseWriteCommandKind,
 } from "@okouai/api-contracts/contracts/computer-use";
@@ -13,6 +15,10 @@ import {
   getComputerUseCommand,
 } from "../../lib/api/domains/computer-use";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
+import {
+  createRealtimeNotifier,
+  type RealtimeNotifier,
+} from "../../lib/realtime-notifier";
 import {
   computerUseOutputDir,
   writeComputerUseArtifact,
@@ -126,12 +132,6 @@ Examples:
 
   Open an app without activating the current foreground app:
     okou computer-use open-app --app com.culturedcode.ThingsMac`;
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
-}
 
 function throwComputerUseAuthorizationGuidanceError(error: unknown): never {
   if (
@@ -345,6 +345,7 @@ function compactActionResult(
 export async function formatComputerUseResultForConsole(
   result: Record<string, unknown>,
   commandId: string,
+  signal?: AbortSignal,
 ): Promise<string> {
   const printable: Record<string, unknown> = { status: "succeeded" };
   const apps = result.apps;
@@ -366,7 +367,10 @@ export async function formatComputerUseResultForConsole(
   } else {
     const pointerType = screenshotPointerType(screenshot);
     if (pointerType === "s3") {
-      const { buffer, mimeType } = await fetchComputerUseScreenshot(commandId);
+      const { buffer, mimeType } = await fetchComputerUseScreenshot(
+        commandId,
+        signal,
+      );
       printable.screenshot = await writeScreenshotBytes(
         result,
         buffer,
@@ -385,47 +389,80 @@ export async function formatComputerUseResultForConsole(
 
 async function commandOutputText(
   command: ComputerUseCommandResponse,
+  signal: AbortSignal,
 ): Promise<string> {
   if (!command.result) {
     return "";
   }
-  return await formatComputerUseResultForConsole(command.result, command.id);
+  return await formatComputerUseResultForConsole(
+    command.result,
+    command.id,
+    signal,
+  );
 }
 
 async function waitForCommand(
-  commandId: string,
+  created: ComputerUseCommandCreateResponse,
   timeoutSeconds: number,
 ): Promise<void> {
+  const commandId = created.commandId;
   const deadline = Date.now() + timeoutSeconds * 1000;
-  while (Date.now() <= deadline) {
-    const command = await getComputerUseCommand(commandId);
-    if (command.status === "queued" || command.status === "running") {
-      if (process.stdout.isTTY) {
-        process.stdout.write(".");
+  const owner = new AbortController();
+  const deadlineTimer = setTimeout(() => {
+    return owner.abort();
+  }, timeoutSeconds * 1000);
+  const signal = owner.signal;
+  let notifier: RealtimeNotifier | undefined;
+  try {
+    while (Date.now() <= deadline) {
+      const command = await getComputerUseCommand(commandId, signal);
+      if (command.status === "queued" || command.status === "running") {
+        if (process.stdout.isTTY) {
+          process.stdout.write(".");
+        }
+        // #38733: old serving/rollback APIs and unavailable token issuance omit metadata.
+        // Retire the old-API obligation after those targets drain; delivery recovery remains.
+        if (!notifier && created.realtime) {
+          notifier = createRealtimeNotifier(created.realtime, signal);
+        }
+        const waitMs = Math.min(
+          notifier?.active ? 2_000 : 500,
+          deadline - Date.now(),
+        );
+        if (notifier && !notifier.closed) {
+          // Setup or a disconnected transport must not block fast HTTP completions.
+          await notifier.wait(waitMs);
+        } else {
+          await delay(waitMs, undefined, { signal });
+        }
+        continue;
       }
-      await sleep(500);
-      continue;
-    }
 
-    if (process.stdout.isTTY) {
-      process.stdout.write("\n");
-    }
+      if (process.stdout.isTTY) {
+        process.stdout.write("\n");
+      }
 
-    if (command.status === "failed") {
-      throw new Error(
-        command.error
-          ? `${command.error.code}: ${command.error.message}`
-          : "Computer-use command failed",
-      );
-    }
+      if (command.status === "failed") {
+        throw new Error(
+          command.error
+            ? `${command.error.code}: ${command.error.message}`
+            : "Computer-use command failed",
+        );
+      }
 
-    const text = await commandOutputText(command);
-    if (text) {
-      console.log(text);
+      const text = await commandOutputText(command, signal);
+      if (text) {
+        console.log(text);
+      }
+      return;
     }
-    return;
+  } catch (error) {
+    if (!signal.aborted) throw error;
+  } finally {
+    clearTimeout(deadlineTimer);
+    owner.abort();
+    await notifier?.close();
   }
-
   throw new Error(`Computer-use command timed out: ${commandId}`);
 }
 
@@ -441,7 +478,7 @@ async function runReadCommand(
       timeoutMs: timeoutSeconds * 1000,
       ...payload,
     });
-    await waitForCommand(created.commandId, timeoutSeconds);
+    await waitForCommand(created, timeoutSeconds);
   } catch (error) {
     throwComputerUseAuthorizationGuidanceError(error);
   }
@@ -474,7 +511,7 @@ async function runWriteCommand(
       timeoutMs: timeoutSeconds * 1000,
       ...payload,
     });
-    await waitForCommand(created.commandId, timeoutSeconds);
+    await waitForCommand(created, timeoutSeconds);
   } catch (error) {
     throwComputerUseAuthorizationGuidanceError(error);
   }
