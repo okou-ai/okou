@@ -8,6 +8,7 @@ import { chatThreadCreateRoutes } from "../chat-threads-create";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -119,7 +120,22 @@ describe("model identity new writes", () => {
         },
       }),
     );
+    const reads = createRunReadsApi(context);
+    const captured = await reads.requestReadLogById(actor, run.runId, [200]);
+    expect(captured.body).toMatchObject({
+      selectedModel: "claude-sonnet-5-5",
+      modelRuntimeProvider: "claude-code-oauth-token",
+      modelRuntimeModel: expect.any(String),
+    });
+    expect(captured.body.modelRuntimeModel).not.toBe("");
+    await chat.updateThreadModelSelection(actor, thread.id, "auto");
     await runs.requestCancelRun(actor, run.runId, [200]);
+    const retained = await reads.requestReadLogById(actor, run.runId, [200]);
+    expect(retained.body).toMatchObject({
+      selectedModel: captured.body.selectedModel,
+      modelRuntimeProvider: captured.body.modelRuntimeProvider,
+      modelRuntimeModel: captured.body.modelRuntimeModel,
+    });
   });
 
   it("keeps personal effort when switching to Auto and rejects Auto effort and Fast", async () => {

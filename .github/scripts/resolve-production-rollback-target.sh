@@ -50,6 +50,10 @@ readonly PI_MEMORY_LUNA_ROUTING_COMMIT=77357abdb29ce96b2caf9ee679299602757844dc
 # API/Runner/CLI readers no longer execute unversioned contexts, so a rollback
 # must not restore the generation 1 writer or its disabled-switch path.
 readonly PI_OPENROUTER_VERSIONED_WRITER_COMMIT=a635ec3afa20cdb5df9c8125afe6cec24ef53e16
+# #38477 captures personal runtime and independent managed usage provenance.
+# Final capture checks reject earlier personal writers; normalized histories
+# must never regain selected-dependent usage interpretation after rollback.
+readonly MODEL_EXECUTION_CAPTURE_WRITER_COMMIT=b6919718b6d856dfa3a7c500b6e899dd3fde7674
 # #38431 removed chat_threads.provenance from runtime and root-schema SQL.
 # The later physical contraction cannot serve earlier implicit column lists.
 readonly CHAT_THREAD_PROVENANCE_REMOVAL_COMMIT=9fa8da0d3d25e75e0dcfdd3292e1e2bbe6fe262f
@@ -155,6 +159,10 @@ if ! git merge-base --is-ancestor "$PI_MEMORY_LUNA_ROUTING_COMMIT" "$TARGET_COMM
 fi
 if ! git merge-base --is-ancestor "$PI_OPENROUTER_VERSIONED_WRITER_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the versioned Pi OpenRouter writer: ${PI_OPENROUTER_VERSIONED_WRITER_COMMIT}."
+fi
+
+if ! git merge-base --is-ancestor "$MODEL_EXECUTION_CAPTURE_WRITER_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the model execution capture writer: ${MODEL_EXECUTION_CAPTURE_WRITER_COMMIT}."
 fi
 
 # The preparatory catalog release stops writing/reading payload and removes it
