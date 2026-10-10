@@ -4,10 +4,9 @@ import {
   type PresentationTemplatePreviewAsset,
 } from "@okouai/api-contracts/contracts/presentation-templates";
 import { presentationTemplates } from "@okouai/db/schema/presentation-template";
-import { and, eq } from "drizzle-orm";
+import { and, eq, getTableColumns, sql } from "drizzle-orm";
 
 import { notFound } from "../../lib/error";
-import { nowDate } from "../../lib/time";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
@@ -341,48 +340,49 @@ const updateInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!bodyResult.ok) {
     return bodyResult.response;
   }
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0021; new non-billing transactions are prohibited.
-  const mutation = await set(writeDb$).transaction(async (tx) => {
-    const whereOwner = and(
-      eq(presentationTemplates.id, params.templateId),
-      eq(presentationTemplates.orgId, auth.orgId),
-      eq(presentationTemplates.ownerUserId, auth.userId),
-    );
-    const [previous] = await tx
-      .select({ visibility: presentationTemplates.visibility })
+  const db = set(writeDb$);
+  const whereOwner = and(
+    eq(presentationTemplates.id, params.templateId),
+    eq(presentationTemplates.orgId, auth.orgId),
+    eq(presentationTemplates.ownerUserId, auth.userId),
+  );
+  // Keep the existing row lock in the statement: when it waits for a concurrent
+  // update, retraction must notify the workspace using the replaced visibility.
+  const previous = db.$with("previous").as(
+    db
+      .select({
+        id: presentationTemplates.id,
+        visibility: presentationTemplates.visibility,
+      })
       .from(presentationTemplates)
       .where(whereOwner)
       .for("update")
-      .limit(1);
-    if (!previous) {
-      return null;
-    }
-    const [row] = await tx
-      .update(presentationTemplates)
-      .set({
-        title: bodyResult.data.title,
-        visibility: bodyResult.data.visibility,
-        updatedAt: nowDate(),
-        updatedBy: auth.userId,
-      })
-      .where(whereOwner)
-      .returning();
-    if (!row) {
-      throw new Error(
-        `Presentation template disappeared: ${params.templateId}`,
-      );
-    }
-    return {
-      row,
-      workspaceVisible:
-        previous.visibility === "public" || row.visibility === "public",
-    };
-  });
+      .limit(1),
+  );
+  const [mutation] = await db
+    .with(previous)
+    .update(presentationTemplates)
+    .set({
+      title: bodyResult.data.title,
+      visibility: bodyResult.data.visibility,
+      // Sample after the lock: pre-wait time can leave a client's optimistic
+      // summary newer than the catalog after concurrent writes.
+      updatedAt: sql`clock_timestamp() AT TIME ZONE 'UTC'`,
+      updatedBy: auth.userId,
+    })
+    .from(previous)
+    .where(and(whereOwner, eq(presentationTemplates.id, previous.id)))
+    .returning({
+      row: getTableColumns(presentationTemplates),
+      previousVisibility: previous.visibility,
+    });
   signal.throwIfAborted();
   if (!mutation) {
     return templateNotFound(params.templateId);
   }
-  const { row, workspaceVisible } = mutation;
+  const { row, previousVisibility } = mutation;
+  const workspaceVisible =
+    previousVisibility === "public" || row.visibility === "public";
   const coverAsset = presentationTemplatePreviewAssetsForRow({
     row,
     orgId: auth.orgId,
