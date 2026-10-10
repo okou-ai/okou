@@ -43,6 +43,7 @@ fn new_provider_classification_does_not_match_unowned_output() {
         AgentFramework::ClaudeCode,
     ] {
         for message in [
+            "Codex error: Unable to verify model access right now. Please retry.",
             "Our servers are currently overloaded. Please try again later.",
             "This content was flagged for possible biological risk. If this seems wrong, try rephrasing your request. We are continuously refining our work in detecting biological risk, and you can read more about our approach in our blog post: https://example.invalid/policy",
             "Codex error: Invalid prompt: your prompt was flagged as potentially violating our usage policy. Please try again with a different prompt: https://example.invalid/policy",

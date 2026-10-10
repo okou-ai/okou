@@ -1,5 +1,69 @@
 [
   {
+    "message": "Unable to verify model access right now. Please retry.",
+    "reason": "provider_server_error"
+  },
+  {
+    "message": "Codex error: Unable to verify model access right now. Please retry.",
+    "reason": "provider_server_error"
+  },
+  {
+    "message": "unknown: Unable to verify model access right now. Please retry.",
+    "reason": "provider_server_error"
+  },
+  {
+    "message": "Error Code invalid_request_error: Unable to verify model access right now. Please retry.",
+    "reason": "provider_server_error"
+  },
+  {
+    "message": "{\"error\":{\"message\":\"Unable to verify model access right now. Please retry.\"}}",
+    "reason": "provider_server_error"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"invalid_api_key\",\"message\":\"Unable to verify model access right now. Please retry.\"}}",
+    "reason": "invalid_api_key"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"model_not_found\",\"message\":\"Unable to verify model access right now. Please retry.\"}}",
+    "reason": "unsupported_model"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"usage_limit_reached\",\"message\":\"Unable to verify model access right now. Please retry.\"}}",
+    "reason": "usage_limit"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"content_policy_violation\",\"message\":\"Unable to verify model access right now. Please retry.\"}}",
+    "reason": "safety_policy_refusal"
+  },
+  {
+    "message": "API Error: 200 {\"error\":{\"code\":\"insufficient_quota\",\"message\":\"Unable to verify model access right now. Please retry.\"}}",
+    "reason": "provider_insufficient_credits"
+  },
+  {
+    "message": "Unable to verify model access right now.",
+    "reason": null
+  },
+  {
+    "message": "Unable to verify model access. Please retry.",
+    "reason": null
+  },
+  {
+    "message": "Unable to verify model access right now. Please retry. is an example.",
+    "reason": null
+  },
+  {
+    "message": "The tool printed: Unable to verify model access right now. Please retry.",
+    "reason": null
+  },
+  {
+    "message": "\"Unable to verify model access right now. Please retry.\"",
+    "reason": null
+  },
+  {
+    "message": "{\"debug\":{\"error\":{\"message\":\"Unable to verify model access right now. Please retry.\"}}}",
+    "reason": null
+  },
+  {
     "message": "This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request. If you’re doing authorized security work that requires more cyber permissive safeguards, apply for Daybreak access via https://example.invalid/policy before retrying.",
     "reason": "safety_policy_refusal"
   },

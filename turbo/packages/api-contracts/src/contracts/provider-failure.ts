@@ -78,6 +78,12 @@ function providerTextFailureReason(
     /^(?:error code )?(?:unknown|invalid_request_error): /u,
     "",
   );
+  // Verification is unavailable, not an entitlement denial. Match the full
+  // provider retry instruction only at this failed-result boundary.
+  if (
+    semanticMessage === "unable to verify model access right now. please retry."
+  )
+    return "provider_server_error";
   if (
     semanticMessage ===
       "our servers are currently overloaded. please try again later." ||
