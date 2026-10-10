@@ -6,6 +6,8 @@ import { beforeEach, expect, test, vi } from "vitest";
 
 import { setupPage, startPage } from "../../__tests__/page-helper.ts";
 import { ROUTES } from "../route-paths.ts";
+import { createDeferredPromise } from "../utils.ts";
+import { bootstrapSkeleton } from "../../test/bootstrap-skeleton.ts";
 import { testContext } from "./test-helpers.ts";
 
 const POSTHOG_KEY = "phc_platform_test";
@@ -78,8 +80,43 @@ test("A failed stylesheet keeps Loading visible without reporting completed star
     screen.findByRole("heading", { name: "Agents" }),
   ).resolves.toBeInTheDocument();
   expect(screen.getByRole("status", { name: "Loading" })).toBeVisible();
+  expect(
+    screen.getByRole("heading", { name: "Agents" }).closest("[inert]"),
+  ).toBeInTheDocument();
   expect(capturedEvents("app_first_skeleton_hide")).toStrictEqual([]);
   expect(capturedEvents(BOOTSTRAP_PHASE_TIMING_EVENT)).toStrictEqual([]);
+});
+
+test("Startup releases keyboard isolation with the skeleton fade, without waiting for transitionend", async () => {
+  const stylesheet = createDeferredPromise<"loaded">(context.signal);
+  const originalStylesheetLoaded = window.__mainStylesheetLoaded;
+  window.__mainStylesheetLoaded = stylesheet.promise;
+  context.signal.addEventListener(
+    "abort",
+    () => {
+      if (originalStylesheetLoaded) {
+        window.__mainStylesheetLoaded = originalStylesheetLoaded;
+      } else {
+        delete window.__mainStylesheetLoaded;
+      }
+    },
+    { once: true },
+  );
+
+  const page = await startPage({
+    context,
+    path: "/agents",
+    host: "app.okou.ai",
+  });
+  const heading = await screen.findByRole("heading", { name: "Agents" });
+  expect(heading.closest("[inert]")).toBeInTheDocument();
+  expect(bootstrapSkeleton()).not.toHaveAttribute("aria-hidden", "true");
+
+  stylesheet.resolve("loaded");
+  await page.ready;
+
+  expect(heading.closest("[inert]")).toBeNull();
+  expect(bootstrapSkeleton()).toHaveAttribute("aria-hidden", "true");
 });
 
 test("Startup timing is bounded and anonymous", async () => {
