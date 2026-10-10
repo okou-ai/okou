@@ -1397,11 +1397,6 @@
       "owner": "updateVncConnection$"
     },
     {
-      "id": "TX-0317",
-      "file": "turbo/apps/api/src/signals/services/vnc-credential.service.ts",
-      "owner": "updateVncCredential$"
-    },
-    {
       "id": "TX-0318",
       "file": "turbo/apps/api/src/signals/services/vnc-owner-lifecycle.service.ts",
       "owner": "eraseVncOwnerData$"
