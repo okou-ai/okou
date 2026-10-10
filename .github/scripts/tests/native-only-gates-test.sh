@@ -105,12 +105,21 @@ for job in artifacts:
         broken['needs.detect-turbo-ts-checks.result'] = result
         assert not condition(turbo[job], broken), (job, result)
 
-for job in ts_jobs + artifacts:
+for job in ts_jobs + ['lint-runtime-api-compat'] + artifacts:
     native[f'needs.{job}.result'] = 'skipped'
 gate(turbo, 'ci-gate-turbo', native, True)
-for job in ts_jobs + artifacts:
+for job in ts_jobs + ['lint-runtime-api-compat'] + artifacts:
     for failure in ['failure', 'cancelled']:
         gate(turbo, 'ci-gate-turbo', native | {f'needs.{job}.result': failure}, False)
+# The runtime API compatibility lint is required whenever it is selected.
+assert 'lint-runtime-api-compat' in turbo['ci-gate-turbo']['needs']
+assert 'continue-on-error' not in turbo['lint-runtime-api-compat']
+for event in ['pull_request', 'merge_group']:
+    selected = context(ios=False, ts=True, event=event)
+    assert condition(turbo['lint-runtime-api-compat'], selected)
+    gate(turbo, 'ci-gate-turbo', selected, True)
+    for result in ['failure', 'cancelled', 'skipped']:
+        gate(turbo, 'ci-gate-turbo', selected | {'needs.lint-runtime-api-compat.result': result}, False)
 for failure in ['failure', 'cancelled', 'skipped']:
     gate(turbo, 'ci-gate-turbo', native | {'needs.detect-turbo-ts-checks.result': failure}, False)
 for ios in ['false', '']:

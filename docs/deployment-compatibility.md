@@ -181,6 +181,50 @@ matching metadata and surviving proof. Namespace cleanup is not a claim of
 forensic erasure of deleted filesystem blocks; define that acceptance boundary
 explicitly in the owning issue or PR.
 
+### Desktop Contract Gate
+
+Installed Desktop builds decode every route in
+[`swift-bindings/routes.ts`](../turbo/packages/api-contracts/src/swift-bindings/routes.ts)
+strictly, and the API deploys long before a Desktop release reaches users. The
+required `lint-runtime-api-compat` job binds those routes into the runtime API
+schema with owner `desktop` and compares the candidate with the production
+snapshot that each API production promotion republishes. A breaking Desktop
+finding fails the job unless the same PR carries one of two proofs:
+
+- **(A) Floor raise.** Raise `minimumSupportedVersion` in
+  [`desktop-compatibility.json`](../turbo/apps/api/src/lib/desktop-compatibility.json)
+  to a stable `x.y.z` that is not lower than the base branch floor and not above
+  the published Desktop version. A raise covers every Desktop finding in the PR;
+  review confirms that the new floor tolerates the new shape. Semantic changes
+  expand additively, ship Desktop, then contract together with the raise.
+- **(B) Response transform.** Register a transform for the same method, path,
+  and `2xx` status in
+  [`client-transforms/desktop.ts`](../turbo/packages/api-contracts/src/client-transforms/desktop.ts)
+  with `maxVersion` `null` or at least the published Desktop version.
+  Transforms cannot prove request findings or route removal, method, or path
+  changes.
+
+The published Desktop version is `currentRelease` of
+`GET https://api.okou.ai/api/desktop/updates/ai-okou-desktop/stable/darwin/arm64/RELEASES.json`,
+which the API serves only after the Desktop update manifest is published. When
+it cannot be read, a PR that raises the floor or relies on a non-null
+`maxVersion` fails and names the oracle; other PRs are unaffected. A lowered,
+removed, or non-stable floor fails even without findings.
+
+The base floor and base schema come from the main commit that the candidate
+merges onto, not from the branch's fork point. A finding the base already has
+against production was proven by the PR that introduced it; it warns until that
+PR reaches production instead of blocking later PRs. Routes absent from the
+production snapshot produce no finding until the next API release publishes
+them. Runner, Guest Agent, and MITM findings only warn.
+
+Transform lifecycle: a shape-only break registers its transform with
+`maxVersion: null`, the Desktop PR that adopts the new shape sets `maxVersion`
+as defined in
+[`client-transforms/types.ts`](../turbo/packages/api-contracts/src/client-transforms/types.ts),
+and once a floor raise passes `maxVersion` the gate reports the transform as
+unreachable until it is deleted.
+
 ## Database/API Transitions
 
 Check two independent directions:
