@@ -117,7 +117,7 @@ def _install_response_inspection_bridge() -> None:
         self: HttpStream, event: events.Event
     ) -> layer.CommandGenerator[None]:
         for command in current_stream(self, event):
-            if response_streaming.has_pending_connector_inspection(self.flow):
+            if response_streaming.has_pending_response_inspection(self.flow):
                 checkpoint = ResponseInspectionHook(self.flow)
                 checkpoints = _INSPECTION_CHECKPOINTS.get()
                 if checkpoints is not None:
@@ -139,7 +139,7 @@ def _install_response_inspection_bridge() -> None:
                     await asyncio.shield(checkpoint.completed)
         except BaseException:
             for checkpoint in checkpoints:
-                response_streaming.abandon_connector_inspection(checkpoint.flow)
+                response_streaming.abandon_response_inspection(checkpoint.flow)
             raise
 
     async def hook_task(self: ConnectionHandler, hook: commands.StartHook) -> None:
@@ -149,7 +149,7 @@ def _install_response_inspection_bridge() -> None:
         try:
             await current_hook(self, hook)
         except BaseException:
-            response_streaming.abandon_connector_inspection(hook.flow)
+            response_streaming.abandon_response_inspection(hook.flow)
             # The stock hook task does not resume a stream after an exception.
             # Release our checkpoint with explicitly unparsed state instead of
             # leaving an indefinitely paused event queue behind.

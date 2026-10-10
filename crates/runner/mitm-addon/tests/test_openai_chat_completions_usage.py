@@ -529,7 +529,7 @@ class TestOpenAIChatCompletionsUsage:
 
         assert webhook.request_count == 0
 
-    def test_long_sse_reports_final_usage_after_discarded_and_malformed_events(
+    async def test_long_sse_reports_final_usage_after_discarded_and_malformed_events(
         self,
         tmp_path,
         real_flow,
@@ -562,6 +562,7 @@ class TestOpenAIChatCompletionsUsage:
                 + b"\n\n"
                 + b'data: {"id":"chatcmpl_bad","usage":{"prompt_tokens":30}\n\n'
             )
+            await mitm_addon.responseinspection(flow)
             final_payload = {
                 "id": "chatcmpl_final",
                 "model": "gpt-5.5",
@@ -579,6 +580,7 @@ class TestOpenAIChatCompletionsUsage:
                 + json.dumps(final_payload, separators=(",", ":")).encode()
                 + b"\n\ndata: [DONE]\n\n"
             )
+            await mitm_addon.responseinspection(flow)
 
             webhook = _run_response(flow, self._usage_webhook_api)
 
