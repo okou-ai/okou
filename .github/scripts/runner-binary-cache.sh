@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 . "${SCRIPT_DIR}/runner-image-target.sh"
 . "${SCRIPT_DIR}/runner-binary-download.sh"
+. "${SCRIPT_DIR}/runner-binary-github.sh"
 . "${SCRIPT_DIR}/runner-guest-binaries.sh"
 . "${REPO_ROOT}/.github/scripts/runner-binary-build/contract.env"
 
@@ -512,9 +513,10 @@ validate_resolution_context() {
 }
 
 producer_is_main_reachable() {
-  local producer_head_sha=$1 comparison_json
-  if ! comparison_json=$(gh api \
-    "repos/${REPO}/compare/${producer_head_sha}...${DEFAULT_BRANCH}" 2>/dev/null); then
+  local producer_head_sha=$1 comparison_json encoded_branch
+  encoded_branch=$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$DEFAULT_BRANCH")
+  if ! comparison_json=$(runner_binary_github_json \
+    "compare/${producer_head_sha}...${encoded_branch}" 2>/dev/null); then
     return 1
   fi
   jq -e \
@@ -546,8 +548,7 @@ collect_trusted_candidates() {
 
   local artifact_name_value artifacts_json
   artifact_name_value=$(reusable_artifact_name "$expected_target" "$expected_digest")
-  if ! artifacts_json=$(gh api --paginate --slurp \
-    "repos/${REPO}/actions/artifacts?name=${artifact_name_value}&per_page=100" 2>/dev/null); then
+  if ! artifacts_json=$(runner_binary_github_artifacts "$artifact_name_value" 2>/dev/null); then
     CANDIDATE_DISCOVERY_REASON="artifact-api-unavailable"
     return 1
   fi
@@ -640,7 +641,7 @@ collect_trusted_candidates() {
     inspected=$((inspected + 1))
 
     local run_json
-    if ! run_json=$(gh api "repos/${REPO}/actions/runs/${artifact_run_id}" 2>/dev/null); then
+    if ! run_json=$(runner_binary_github_json "actions/runs/${artifact_run_id}" 2>/dev/null); then
       continue
     fi
     if ! jq -e \
@@ -720,8 +721,7 @@ collect_trusted_candidates() {
     candidate_dir="${output_dir}/candidate-${artifact_id}"
     rm -rf "$candidate_dir"
     mkdir -p "$candidate_dir"
-    if ! gh run download "$artifact_run_id" -n "$artifact_name_value" -D "$candidate_dir" \
-      >/dev/null 2>&1; then
+    if ! runner_binary_github_download "$artifact_id" "$candidate_dir" >/dev/null 2>&1; then
       continue
     fi
     mapfile -t manifest_candidates < <(find "$candidate_dir" -type f -name manifest.json | sort)
@@ -936,8 +936,7 @@ resolve_reference() {
 
   local name artifacts candidates run_id artifact_id inspected=0 reason=no-candidate
   name=$(reusable_artifact_name "$EXPECTED_TARGET" "$EXPECTED_BINARY_INPUT_DIGEST")
-  if ! artifacts=$(gh api --paginate --slurp \
-    "repos/${REPO}/actions/artifacts?name=${name}&per_page=100" 2>/dev/null); then
+  if ! artifacts=$(runner_binary_github_artifacts "$name" 2>/dev/null); then
     resolve_result "miss" "" "artifact-api-unavailable"
     return 0
   fi
@@ -962,7 +961,7 @@ resolve_reference() {
     local candidate_dir="${RUNNER_CACHE_TEMP_ROOT}/${artifact_id}"
     mkdir -p "$candidate_dir"
     # GitHub is only the existing cache index; R2 does not need run/ancestry proof.
-    if ! gh run download "$run_id" -n "$name" -D "$candidate_dir" >/dev/null 2>&1; then
+    if ! runner_binary_github_download "$artifact_id" "$candidate_dir" >/dev/null 2>&1; then
       continue
     fi
     if ! CACHE_REFERENCE=$(jq -c '{
