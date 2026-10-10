@@ -16,7 +16,8 @@ const maxAutonomyBudget = testOverride<number>(() => {
 /**
  * Budget granted to the root of a user-started delegation chain: Web and
  * channel inputs and user-created Automations. Production always reads the
- * ceiling; no API, configuration or environment value can change it.
+ * ceiling; no API, configuration or environment value can change it. Each
+ * request Store reads it once, so tests set it before the first request.
  */
 export const maxAutonomyBudget$ = computed(() => {
   return maxAutonomyBudget.get();

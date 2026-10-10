@@ -4365,24 +4365,33 @@ describe("okou workflow automations", () => {
       maxAutonomyBudget: 2,
     });
 
-    async function claimAgentToken(runId: string | null): Promise<string> {
+    async function claimRun(runId: string | null) {
       if (!runId) {
         throw new Error("Expected the Automation run to start");
       }
       await runs.heartbeatRunner(runnerGroup);
       const claim = await runs.claimRunnerJob(runId);
-      const token = claim.platformEnvironment.OKOU_TOKEN;
-      if (!token) {
+      const okouToken = claim.platformEnvironment.OKOU_TOKEN;
+      if (!okouToken) {
         throw new Error("Expected the claimed run to receive OKOU_TOKEN");
       }
-      return token;
+      return { runId, okouToken, sandboxToken: claim.sandboxToken };
     }
 
-    async function cancel(runId: string | null): Promise<void> {
-      if (runId) {
-        await runs.requestCancelRun(actor, runId, [200]);
-        await flushWaitUntilForTest();
-      }
+    // The user cancels and the Runner reports its exit, which releases the
+    // shared workflow Automation thread for the next run.
+    async function cancel(run: {
+      readonly runId: string;
+      readonly sandboxToken: string;
+    }): Promise<void> {
+      await runs.requestCancelRun(actor, run.runId, [200]);
+      await flushWaitUntilForTest();
+      await webhookCallbacks.requestAgentComplete(
+        { runId: run.runId, exitCode: 1, error: "Run cancelled" },
+        { authorization: `Bearer ${run.sandboxToken}` },
+        [200],
+      );
+      await flushWaitUntilForTest();
     }
 
     function createAs(authorization: string, intervalSeconds: number) {
@@ -4394,19 +4403,28 @@ describe("okou workflow automations", () => {
     }
 
     const root = await accept(createAs("Bearer clerk-session", 3600), [201]);
-    const rootRun = await runAutomationNow(root.body.id);
-    const rootToken = await claimAgentToken(rootRun.runId);
-    const first = await accept(createAs(`Bearer ${rootToken}`, 3601), [201]);
-    await cancel(rootRun.runId);
+    const rootRun = await claimRun(
+      (await runAutomationNow(root.body.id)).runId,
+    );
+    const first = await accept(
+      createAs(`Bearer ${rootRun.okouToken}`, 3601),
+      [201],
+    );
+    await cancel(rootRun);
 
-    const firstRun = await runAutomationNow(first.body.id);
-    const firstToken = await claimAgentToken(firstRun.runId);
-    const second = await accept(createAs(`Bearer ${firstToken}`, 3602), [201]);
-    await cancel(firstRun.runId);
+    const firstRun = await claimRun(
+      (await runAutomationNow(first.body.id)).runId,
+    );
+    const second = await accept(
+      createAs(`Bearer ${firstRun.okouToken}`, 3602),
+      [201],
+    );
+    await cancel(firstRun);
 
-    const secondRun = await runAutomationNow(second.body.id);
-    const exhaustedToken = await claimAgentToken(secondRun.runId);
-    const exhausted = `Bearer ${exhaustedToken}`;
+    const secondRun = await claimRun(
+      (await runAutomationNow(second.body.id)).runId,
+    );
+    const exhausted = `Bearer ${secondRun.okouToken}`;
 
     const blockedCreate = await accept(createAs(exhausted, 3603), [409]);
     expect(blockedCreate.body.error.code).toBe("AUTONOMY_BUDGET_EXHAUSTED");
@@ -4469,20 +4487,25 @@ describe("okou workflow automations", () => {
       }),
     ).not.toContain(WORKFLOW_NAME);
 
-    // The exhausted request is accepted; its rejection appears in the idle
-    // root thread and no child run is linked to it.
-    await cancel(secondRun.runId);
+    // The exhausted request is accepted; once the shared workflow Automation
+    // thread is idle its rejection appears there and no child run is linked.
+    await cancel(secondRun);
     const blockedRun = await runAutomationNow(root.body.id, {
       authorization: exhausted,
     });
-    expect(blockedRun.runId).toBe(rootRun.runId);
-    await expect(
-      wf.readThreadEvents(blockedRun.chatThreadId),
-    ).resolves.toContainEqual(
+    const events = await wf.readThreadEvents(blockedRun.chatThreadId);
+    expect(events).toContainEqual(
       expect.objectContaining({
         eventType: "input.rejected",
         error: "autonomy_budget_exhausted",
       }),
     );
+    expect(
+      events.flatMap((event) => {
+        return event.eventType === "input.prompt" && event.runId
+          ? [event.runId]
+          : [];
+      }),
+    ).toStrictEqual([rootRun.runId, firstRun.runId, secondRun.runId]);
   });
 });
