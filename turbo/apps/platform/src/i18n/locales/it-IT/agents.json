@@ -444,10 +444,6 @@
           "support-ticket-router": {
             "description": "I ticket vanno a Notion e quelli urgenti eseguono il ping a Slack",
             "title": "Supporta il router dei ticket"
-          },
-          "zendesk-notion-knowledge-base": {
-            "description": "Estrai le domande frequenti su Zendesk e aggiungile automaticamente alle domande frequenti su Notion",
-            "title": "Zendesk → Base di conoscenza Notion"
           }
         },
         "title": "Supporto"

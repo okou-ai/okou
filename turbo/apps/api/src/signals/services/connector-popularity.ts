@@ -76,7 +76,6 @@ const CONNECTOR_POPULARITY_RANKING = [
   "gusto",
   "deel",
   "brex",
-  "zendesk",
   "intercom",
   // Marketing and content.
   "mailchimp",

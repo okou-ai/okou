@@ -2351,25 +2351,25 @@ const connectors = [
     ],
   }),
   connector({
-    connectorSlug: "zendesk",
-    label: "Zendesk",
+    connectorSlug: "test-subdomain",
+    label: "Test Subdomain",
     authMethods: [
       manualMethod({
         fields: [
           manualField({
-            privateName: "ZENDESK_API_TOKEN",
+            privateName: "SUBDOMAIN_TEST_API_TOKEN",
             publicId: "apiToken",
             label: "API Token",
             storage: "secret",
           }),
           manualField({
-            privateName: "ZENDESK_EMAIL",
+            privateName: "SUBDOMAIN_TEST_EMAIL",
             publicId: "email",
             label: "Email",
             storage: "variable",
           }),
           manualField({
-            privateName: "ZENDESK_SUBDOMAIN",
+            privateName: "SUBDOMAIN_TEST_SUBDOMAIN",
             publicId: "subdomain",
             label: "Subdomain",
             storage: "variable",
@@ -2377,18 +2377,18 @@ const connectors = [
           }),
         ],
         envBindings: {
-          ZENDESK_API_TOKEN: secret("ZENDESK_API_TOKEN"),
-          ZENDESK_EMAIL: variable("ZENDESK_EMAIL"),
-          ZENDESK_SUBDOMAIN: variable("ZENDESK_SUBDOMAIN"),
+          SUBDOMAIN_TEST_API_TOKEN: secret("SUBDOMAIN_TEST_API_TOKEN"),
+          SUBDOMAIN_TEST_EMAIL: variable("SUBDOMAIN_TEST_EMAIL"),
+          SUBDOMAIN_TEST_SUBDOMAIN: variable("SUBDOMAIN_TEST_SUBDOMAIN"),
         },
       }),
     ],
     firewall: generatedFirewall([
       {
-        base: `https://${variableTemplate("ZENDESK_SUBDOMAIN")}.zendesk.com`,
+        base: `https://${variableTemplate("SUBDOMAIN_TEST_SUBDOMAIN")}.example.com`,
         auth: {
           headers: {
-            Authorization: `Bearer ${secretTemplate("ZENDESK_API_TOKEN")}`,
+            Authorization: `Bearer ${secretTemplate("SUBDOMAIN_TEST_API_TOKEN")}`,
           },
         },
         permissions: [],

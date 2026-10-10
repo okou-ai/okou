@@ -95,21 +95,23 @@ async fn proxy_registration_accepts_canonical_targets() {
     let canonical_dir = tempfile::tempdir().unwrap();
     let canonical_config = test_executor_config(canonical_dir.path()).await;
     let mut canonical_context = minimal_context();
-    let canonical_routing_variables =
-        HashMap::from([("ZENDESK_SUBDOMAIN".to_string(), "xn--mnich-kva".to_string())]);
+    let canonical_routing_variables = HashMap::from([(
+        "SUBDOMAIN_TEST_SUBDOMAIN".to_string(),
+        "xn--mnich-kva".to_string(),
+    )]);
     canonical_context.firewalls = Some(vec![FirewallEntry::Builtin {
-        name: "zendesk".to_string(),
+        name: "test-subdomain".to_string(),
         base_url_vars: Some(canonical_routing_variables.clone()),
         source_id: None,
     }]);
     canonical_context.connector_runtime_targets =
         vec![ConnectorRuntimeTargetRegistration::Builtin {
-            connector_slug: "zendesk".to_string(),
+            connector_slug: "test-subdomain".to_string(),
             base_url_vars: Some(canonical_routing_variables),
             source_id: None,
         }];
     canonical_context.vars = Some(HashMap::from([(
-        "ZENDESK_SUBDOMAIN".to_string(),
+        "SUBDOMAIN_TEST_SUBDOMAIN".to_string(),
         "münich".to_string(),
     )]));
 
@@ -127,9 +129,9 @@ async fn proxy_registration_accepts_canonical_targets() {
         canonical_sandbox["firewalls"],
         serde_json::json!([{
             "kind": "builtin",
-            "name": "zendesk",
+            "name": "test-subdomain",
             "baseUrlVars": {
-                "ZENDESK_SUBDOMAIN": "xn--mnich-kva"
+                "SUBDOMAIN_TEST_SUBDOMAIN": "xn--mnich-kva"
             }
         }])
     );
@@ -137,12 +139,12 @@ async fn proxy_registration_accepts_canonical_targets() {
         canonical_sandbox["connectorRuntimeTargets"],
         serde_json::json!([{
             "kind": "builtin",
-            "connectorSlug": "zendesk"
+            "connectorSlug": "test-subdomain"
         }])
     );
     assert_eq!(
-        canonical_sandbox["connectorRoutingVariables"]["builtin:zendesk"],
-        serde_json::json!({"ZENDESK_SUBDOMAIN": "münich"})
+        canonical_sandbox["connectorRoutingVariables"]["builtin:test-subdomain"],
+        serde_json::json!({"SUBDOMAIN_TEST_SUBDOMAIN": "münich"})
     );
 }
 

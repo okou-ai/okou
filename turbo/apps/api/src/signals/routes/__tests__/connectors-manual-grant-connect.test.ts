@@ -43,7 +43,7 @@ interface AuthenticatedFixture {
 
 const CONNECTOR_SLUGS_TO_CLEAN_UP = [
   "openai",
-  "zendesk",
+  "test-subdomain",
   "insforge",
   "lark",
   "test-oauth",
@@ -480,12 +480,12 @@ describe("POST /api/connectors/:connectorSlug/manual-grant", () => {
     mocks.clerk.session(fixture.userId, fixture.orgId);
     const wrongTarget = await accept(
       client.connect({
-        params: { connectorSlug: "zendesk" },
+        params: { connectorSlug: "test-subdomain" },
         body: {
           authMethod: "api-token",
           account: { intent: "reconnect", connectionId: added.body.id },
           values: {
-            apiToken: "zendesk-token",
+            apiToken: "test-subdomain-token",
             email: "support@example.com",
             subdomain: "example",
           },
@@ -527,7 +527,7 @@ describe("POST /api/connectors/:connectorSlug/manual-grant", () => {
     ).toStrictEqual([200, 200]);
   });
 
-  it("connects Zendesk manual grant fields through the API", async () => {
+  it("connects Test Subdomain manual grant fields through the API", async () => {
     const fixture = await seedFixture();
     const client = setupApp({ context, routes: builtinConnectorsRoutes })(
       builtinConnectorManualGrantContract,
@@ -535,12 +535,12 @@ describe("POST /api/connectors/:connectorSlug/manual-grant", () => {
 
     const response = await accept(
       client.connect({
-        params: { connectorSlug: "zendesk" },
+        params: { connectorSlug: "test-subdomain" },
         body: {
           authMethod: "api-token",
           account: { intent: "add" },
           values: {
-            apiToken: " zendesk\n-token ",
+            apiToken: " test-subdomain\n-token ",
             email: " support@example.com ",
             subdomain: " example ",
           },
@@ -551,11 +551,11 @@ describe("POST /api/connectors/:connectorSlug/manual-grant", () => {
     );
 
     expect(response.body).toMatchObject({
-      slug: "zendesk",
+      slug: "test-subdomain",
       authMethod: "api-token",
       connectionStatus: "connected",
     });
-    const stored = await readConnector(fixture, "zendesk");
+    const stored = await readConnector(fixture, "test-subdomain");
     expect(stored.body.authMethod).toBe("api-token");
 
     expect(stored.body).toMatchObject({
@@ -569,10 +569,10 @@ describe("POST /api/connectors/:connectorSlug/manual-grant", () => {
         .connectorProvidedBindings,
     ).toContainEqual(
       expect.objectContaining({
-        connectorSlug: "zendesk",
+        connectorSlug: "test-subdomain",
         authMethod: "api-token",
-        name: "ZENDESK_API_TOKEN",
-        source: { kind: "connector-secret", name: "ZENDESK_API_TOKEN" },
+        name: "SUBDOMAIN_TEST_API_TOKEN",
+        source: { kind: "connector-secret", name: "SUBDOMAIN_TEST_API_TOKEN" },
       }),
     );
     expect(
@@ -580,10 +580,10 @@ describe("POST /api/connectors/:connectorSlug/manual-grant", () => {
         .connectorProvidedBindings,
     ).toContainEqual(
       expect.objectContaining({
-        connectorSlug: "zendesk",
+        connectorSlug: "test-subdomain",
         authMethod: "api-token",
-        name: "ZENDESK_EMAIL",
-        source: { kind: "connector-variable", name: "ZENDESK_EMAIL" },
+        name: "SUBDOMAIN_TEST_EMAIL",
+        source: { kind: "connector-variable", name: "SUBDOMAIN_TEST_EMAIL" },
       }),
     );
     expect(
@@ -591,29 +591,33 @@ describe("POST /api/connectors/:connectorSlug/manual-grant", () => {
         .connectorProvidedBindings,
     ).toContainEqual(
       expect.objectContaining({
-        connectorSlug: "zendesk",
+        connectorSlug: "test-subdomain",
         authMethod: "api-token",
-        name: "ZENDESK_SUBDOMAIN",
-        source: { kind: "connector-variable", name: "ZENDESK_SUBDOMAIN" },
+        name: "SUBDOMAIN_TEST_SUBDOMAIN",
+        source: {
+          kind: "connector-variable",
+          name: "SUBDOMAIN_TEST_SUBDOMAIN",
+        },
       }),
     );
-    expect(JSON.stringify(stored.body)).not.toContain("zendesk-token");
+    expect(JSON.stringify(stored.body)).not.toContain("test-subdomain-token");
     await withConnectorRuntime(
       context,
       actor,
-      "zendesk",
+      "test-subdomain",
       async ({ claim, resolveAuth }) => {
         expect(claim.environment).toMatchObject({
-          ZENDESK_EMAIL: "support@example.com",
-          ZENDESK_SUBDOMAIN: "example",
+          SUBDOMAIN_TEST_EMAIL: "support@example.com",
+          SUBDOMAIN_TEST_SUBDOMAIN: "example",
         });
         const resolved = await resolveAuth({
           authHeaders: {
-            Authorization: "Bearer " + secretTemplate("ZENDESK_API_TOKEN"),
+            Authorization:
+              "Bearer " + secretTemplate("SUBDOMAIN_TEST_API_TOKEN"),
           },
         });
         expect(resolved.headers).toStrictEqual({
-          Authorization: "Bearer zendesk-token",
+          Authorization: "Bearer test-subdomain-token",
         });
       },
     );
@@ -625,12 +629,12 @@ describe("POST /api/connectors/:connectorSlug/manual-grant", () => {
       setupApp({ context, routes: builtinConnectorsRoutes })(
         builtinConnectorManualGrantContract,
       ).connect({
-        params: { connectorSlug: "zendesk" },
+        params: { connectorSlug: "test-subdomain" },
         body: {
           authMethod: "api-token",
           account: { intent: "add" },
           values: {
-            apiToken: "zendesk-token",
+            apiToken: "test-subdomain-token",
             email: "support@example.com",
             subdomain: "example",
           },
@@ -640,19 +644,25 @@ describe("POST /api/connectors/:connectorSlug/manual-grant", () => {
       [200],
     );
 
-    await deleteConnector(fixture, "zendesk");
+    await deleteConnector(fixture, "test-subdomain");
 
     const actor = createBddApi(context).user(fixture);
     const connectorsApi = createConnectorBddApi(context);
     expect(connected.body.connectionStatus).toBe("connected");
     await expect(
-      connectorsApi.listBuiltinConnectorAccounts(actor, "zendesk"),
+      connectorsApi.listBuiltinConnectorAccounts(actor, "test-subdomain"),
     ).resolves.toStrictEqual([]);
-    await connectorsApi.requestReadConnectorBySlug(actor, "zendesk", [404]);
+    await connectorsApi.requestReadConnectorBySlug(
+      actor,
+      "test-subdomain",
+      [404],
+    );
     expect(
       (await connectorsApi.listBuiltinConnectors(actor))
         .connectorProvidedBindings,
-    ).not.toContainEqual(expect.objectContaining({ connectorSlug: "zendesk" }));
+    ).not.toContainEqual(
+      expect.objectContaining({ connectorSlug: "test-subdomain" }),
+    );
   });
 
   it("normalizes a full URL host field for manual grant connectors", async () => {

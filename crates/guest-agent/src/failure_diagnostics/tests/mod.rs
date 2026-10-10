@@ -1996,7 +1996,7 @@ fn cli_failure_reason_ignores_codex_oauth_refresh_without_failure_reason() {
 fn cli_failure_reason_ignores_non_codex_oauth_reconnect_required() {
     let reason = classify_cli_failure_reason(
         AgentFramework::Codex,
-        r#"unexpected status 502 Bad Gateway: {"error":"TOKEN_REFRESH_FAILED","message":"Access token expired and refresh failed for: zendesk.","permission":"connector:zendesk","connectors":["zendesk"],"failureReason":"reconnect_required"}, url: https://example.zendesk.com/api/v2/tickets"#,
+        r#"unexpected status 502 Bad Gateway: {"error":"TOKEN_REFRESH_FAILED","message":"Access token expired and refresh failed for: test-subdomain.","permission":"connector:test-subdomain","connectors":["test-subdomain"],"failureReason":"reconnect_required"}, url: https://example.example.com/api/v2/tickets"#,
     );
 
     assert_eq!(reason, None);
