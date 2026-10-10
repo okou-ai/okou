@@ -28,6 +28,69 @@ async function setupMaps() {
 const validUsage = vertexMapsInteraction().usage;
 
 describe("Maps Interactions usage and citations", () => {
+  it("does not charge for the incomplete citation and usage shape returned by live Vertex", async () => {
+    const { billing, actor } = await setupMaps();
+    server.use(
+      http.post(VERTEX_MAPS_URL, () => {
+        // Reduced, anonymized response observed on the pinned Vertex revision.
+        // The place exists only in the tool result: annotations have no source
+        // identity, and usage has no billable Maps query aggregate.
+        return HttpResponse.json({
+          model: "gemini-3.5-flash-lite",
+          status: "completed",
+          steps: [
+            { type: "thought", signature: "private-signature" },
+            {
+              type: "model_output",
+              content: [
+                {
+                  type: "text",
+                  text: "Example Cafe is open nearby.",
+                  annotations: [{ start_index: 0, end_index: 18 }],
+                },
+              ],
+            },
+            { type: "google_maps_call", id: "maps-call" },
+            {
+              type: "google_maps_result",
+              call_id: "maps-call",
+              result: [
+                {
+                  places: [
+                    {
+                      place_id: "places/123",
+                      name: "Example Cafe",
+                      url: "https://maps.google.com/?cid=123",
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+          usage: {
+            total_input_tokens: 199,
+            total_output_tokens: 228,
+            total_thought_tokens: 0,
+            total_tool_use_tokens: 0,
+            total_tokens: 427,
+          },
+        });
+      }),
+    );
+    const before = await billing.readBillingStatus(actor);
+    const search = await billing.requestMapsSearch(
+      actor,
+      { query: "Find one cafe near the Ferry Building in San Francisco" },
+      [502],
+    );
+    expect(search.body).toMatchObject({
+      error: { code: "MAPS_GROUNDING_ERROR" },
+    });
+    expect((await billing.readBillingStatus(actor)).credits).toBe(
+      before.credits,
+    );
+  });
+
   it.each([
     { mapsQueries: 0, providerCost: 155, credits: 1 },
     { mapsQueries: 3, providerCost: 42_155, credits: 53 },
