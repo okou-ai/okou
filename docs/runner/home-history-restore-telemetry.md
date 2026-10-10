@@ -87,15 +87,11 @@ already completed Run. A frozen sandbox cannot return to idle/handoff. Cleanup
 proves namespace absence, not forensic erasure of deleted ext4 blocks.
 
 Deploy compatible schema/API and strict telemetry/webhook readers before
-activating writers, together with paired Guest/Runner artifacts. The current
-contract accepts `home_cache`, `downloaded` and `inline` history sources;
-`workspace_cache` and `workspaceCache` are retired tokens. Scheduling advice uses
-`homeCache` and whole-heartbeat `heldHomeStates`, including explicit empty state,
-without a recipient capability lookup. Invalid or unavailable evidence still uses
-generic scheduling and normal authoritative execution. Old readers, writers,
-captured callbacks and supported rollback artifacts must exit or be excluded by
-a compatible floor before this contraction is released. Merge and CI are not
-activation or deployment receipts.
+activating writers, together with paired Guest/Runner artifacts. Follow
+[deployment compatibility](../deployment-compatibility.md) for independently
+deployed readers, captured callbacks and inventory observation ownership.
+Invalid or unavailable evidence still uses generic scheduling and normal
+authoritative execution. Merge and CI are not activation or deployment receipts.
 
 Remove executing protocol and SQL dependencies before physical schema
 contraction. Deploy that column-independent application first, then drain the
