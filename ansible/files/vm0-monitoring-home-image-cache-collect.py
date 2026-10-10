@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
-"""Fixed-label gauges from the canonical Runner snapshot; never inspect cache files."""
+"""Bounded, read-only cache allocation gauges, independent of Runner binaries."""
 
-import argparse
-import json
 import os
-import signal
-import subprocess
-import tempfile
+import stat
 import time
 import uuid
 from pathlib import Path
 
-MAX_OUTPUT_BYTES = 4 * 1024 * 1024
-TIMEOUT_SECONDS = 15
-MAX_ENTRIES = 1024
 PREFIX = "vm0_home_image_cache_"
+DEFAULT_CACHE_DIR = "/var/lib/vm0-runner/home-image-cache"
+DEFAULT_TEXTFILE_DIR = "/var/lib/vm0-monitoring/textfile-collector"
+DIRECTORY_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+MAX_ENTRIES = 1024
+MAX_PATHS = 32768
+MAX_DEPTH = 32
+TIMEOUT_SECONDS = 15
 MIB = 1024 * 1024
 BUCKETS = (
     ("lt_16MiB", 16 * MIB),
@@ -23,154 +23,195 @@ BUCKETS = (
     ("256MiB_1GiB", 1024 * MIB),
     ("1GiB_4GiB", 4096 * MIB),
     ("4GiB_16GiB", 16384 * MIB),
-    ("gte_16GiB", 1 << 64),
+    ("gte_16GiB", None),
 )
-STATUSES = {
-    "reusable": "reusableEntries",
-    "invalid": "invalidEntries",
-    "stale": "staleEntries",
-    "temporaryOnly": "temporaryEntries",
-    "locked": "lockedEntries",
-}
 
 
-def counter(value):
-    if type(value) is not int or not 0 <= value <= (1 << 64) - 1:
-        raise ValueError("invalid counter")
-    return value
+class BudgetReached(Exception):
+    pass
 
 
-def gauges(snapshot):
-    """Schema failures are unavailable, including an old Runner's JSON shape."""
-    summary = snapshot["summary"]
-    fs = snapshot["fsStats"]
-    budget = snapshot["budget"]
-    entries = snapshot["entries"]
-    complete = snapshot["measurementsComplete"]
-    entries_complete = snapshot["entriesComplete"]
-    if type(complete) is not bool or type(entries_complete) is not bool:
-        raise ValueError("invalid completeness")
-    if not isinstance(entries, list) or len(entries) > MAX_ENTRIES:
-        raise ValueError("invalid entries")
-    total = counter(summary["totalEntries"])
-    locked = counter(summary["lockedEntries"])
-    if complete != (locked == 0) or entries_complete != (len(entries) == total):
-        raise ValueError("inconsistent completeness")
-    if (
-        len(entries) != min(total, MAX_ENTRIES)
-        or sum(counter(summary[key]) for key in STATUSES.values()) != total
-    ):
-        raise ValueError("inconsistent counts")
-    for entry in entries:
-        if entry["status"] not in STATUSES:
-            raise ValueError("invalid status")
-        # Locked placeholders are not measurements. Do not export per-entry IDs.
-        if entry["status"] != "locked":
-            for key in (
-                "allocatedBytes",
-                "logicalImageSizeBytes",
-                "temporaryAllocatedBytes",
-            ):
-                counter(entry[key])
-    total_bytes = counter(fs["totalBytes"])
-    available_bytes = counter(fs["availableBytes"])
-    total_inodes = counter(fs["totalInodes"])
-    available_inodes = counter(fs["availableInodes"])
-    if available_bytes > total_bytes or available_inodes > total_inodes:
-        raise ValueError("impossible filesystem stats")
-    metrics = {
-        "snapshot_available": 1,
-        "measurements_complete": int(complete),
-        "entries_complete": int(entries_complete),
-        "allocation_lower_bound": int(not complete),
-        "bucket_measurements_complete": int(complete and entries_complete),
-        "entries": total,
-        "allocated_bytes": counter(summary["totalAllocatedBytes"]),
-        "logical_bytes": counter(summary["totalLogicalImageBytes"]),
-        "temporary_allocated_bytes": counter(summary["temporaryAllocatedBytes"]),
-        "temporary_paths": counter(summary["temporaryPaths"]),
-        "filesystem_total_bytes": total_bytes,
-        "filesystem_available_bytes": available_bytes,
-        "filesystem_total_inodes": total_inodes,
-        "filesystem_available_inodes": available_inodes,
-        "budget_max_bytes": counter(budget["maxCacheBytes"]),
-        "budget_target_after_gc_bytes": counter(budget["targetAfterGcBytes"]),
-        "budget_min_free_bytes": counter(budget["minFreeBytes"]),
-    }
-    if metrics["temporary_allocated_bytes"] > metrics["allocated_bytes"]:
-        raise ValueError("inconsistent allocation")
-    lines = [
-        f"# TYPE {PREFIX}{name} gauge\n{PREFIX}{name} {value}\n"
-        for name, value in metrics.items()
-    ]
-    lines.append(f"# TYPE {PREFIX}entries_by_status gauge\n")
-    for status, key in STATUSES.items():
-        lines.append(
-            f'{PREFIX}entries_by_status{{status="{status}"}} {counter(summary[key])}\n'
-        )
-    # Fixed buckets cover measured entry allocation, including its staging bytes,
-    # not a guessed current.ext4 or the sparse image's logical length.
-    counts = [0] * len(BUCKETS)
-    allocated = [0] * len(BUCKETS)
-    for entry in entries:
-        if entry["status"] == "locked":
-            continue
-        size = counter(
-            counter(entry["allocatedBytes"]) + counter(entry["temporaryAllocatedBytes"])
-        )
-        index = next(index for index, (_, bound) in enumerate(BUCKETS) if size < bound)
-        counts[index] += 1
-        allocated[index] += size
-    for name, values in (
-        ("bucket_entries", counts),
-        ("bucket_allocated_bytes", allocated),
-    ):
-        lines.append(f"# TYPE {PREFIX}{name} gauge\n")
-        for (label, _), value in zip(BUCKETS, values, strict=True):
-            lines.append(f'{PREFIX}{name}{{bucket="{label}"}} {counter(value)}\n')
-    return "".join(lines)
+class Scan:
+    def __init__(self, device):
+        self.device = device
+        self.remaining = MAX_PATHS
+        self.deadline = time.monotonic() + TIMEOUT_SECONDS
+        self.seen = set()
+
+    def next(self, entries):
+        if self.remaining <= 0 or time.monotonic() >= self.deadline:
+            raise BudgetReached
+        entry = next(entries, None)
+        if entry is not None:
+            self.remaining -= 1
+        return entry
+
+    def allocated(self, metadata):
+        identity = (metadata.st_dev, metadata.st_ino)
+        if identity in self.seen:
+            return 0
+        self.seen.add(identity)
+        return metadata.st_blocks * 512
+
+    def walk(self, directory, depth=0):
+        before = os.fstat(directory)
+        allocated = self.allocated(before)
+        complete = True
+        with os.scandir(directory) as entries:
+            while True:
+                try:
+                    entry = self.next(entries)
+                except BudgetReached:
+                    complete = False
+                    break
+                if entry is None:
+                    break
+                try:
+                    metadata = entry.stat(follow_symlinks=False)
+                    if metadata.st_dev != self.device:
+                        complete = False
+                    elif stat.S_ISDIR(metadata.st_mode):
+                        if depth >= MAX_DEPTH:
+                            allocated += self.allocated(metadata)
+                            complete = False
+                            continue
+                        child = os.open(entry.name, DIRECTORY_FLAGS, dir_fd=directory)
+                        try:
+                            actual = os.fstat(child)
+                            if (actual.st_dev, actual.st_ino) != (
+                                metadata.st_dev,
+                                metadata.st_ino,
+                            ):
+                                complete = False
+                                continue
+                            size, child_complete = self.walk(child, depth + 1)
+                            allocated += size
+                            complete = complete and child_complete
+                        finally:
+                            os.close(child)
+                    else:
+                        # Count each inode's allocation without opening file content
+                        # or following symlinks and special files.
+                        allocated += self.allocated(metadata)
+                except OSError:
+                    complete = False
+        after = os.fstat(directory)
+        complete = complete and before.st_mtime_ns == after.st_mtime_ns
+        return allocated, complete
 
 
-def read_snapshot(runner):
-    # Native subprocess output is file-backed, never an unbounded communicate buffer.
-    with (
-        tempfile.TemporaryFile() as output,
-        subprocess.Popen(
-            [runner, "home-image-cache", "list", "--limit", str(MAX_ENTRIES), "--json"],
-            stdout=output,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        ) as process,
-    ):
-        try:
-            deadline = time.monotonic() + TIMEOUT_SECONDS
-            while process.poll() is None:
-                if (
-                    os.fstat(output.fileno()).st_size > MAX_OUTPUT_BYTES
-                    or time.monotonic() >= deadline
+def open_directory(path):
+    """Pin every component so a replaced ancestor cannot redirect the scan."""
+    path = Path(path)
+    directory = os.open("/" if path.is_absolute() else ".", DIRECTORY_FLAGS)
+    try:
+        for component in path.parts:
+            if component == "/":
+                continue
+            child = os.open(component, DIRECTORY_FLAGS, dir_fd=directory)
+            os.close(directory)
+            directory = child
+        return directory
+    except BaseException:
+        os.close(directory)
+        raise
+
+
+def gauge(name, value):
+    return f"# TYPE {PREFIX}{name} gauge\n{PREFIX}{name} {value}\n"
+
+
+def collect(cache_dir):
+    root = open_directory(cache_dir)
+    try:
+        before = os.fstat(root)
+        fs = os.fstatvfs(root)
+        scan = Scan(before.st_dev)
+        total_entries = 0
+        total_allocated = 0
+        entries_complete = True
+        measurements_complete = True
+        counts = [0] * len(BUCKETS)
+        allocated = [0] * len(BUCKETS)
+        with os.scandir(root) as entries:
+            while True:
+                try:
+                    entry = scan.next(entries)
+                except BudgetReached:
+                    entries_complete = False
+                    break
+                if entry is None:
+                    break
+                if len(entry.name) != 64 or any(
+                    c not in "0123456789abcdef" for c in entry.name
                 ):
-                    raise ValueError("producer exceeded budget")
-                time.sleep(0.05)
-            if (
-                process.returncode != 0
-                or os.fstat(output.fileno()).st_size > MAX_OUTPUT_BYTES
-            ):
-                raise ValueError("producer unavailable")
-            output.seek(0)
-            return json.loads(output.read(MAX_OUTPUT_BYTES + 1))
-        finally:
-            # Also retire descendants that outlive their process leader.
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                # The producer's process group no longer exists.
-                pass
-            process.wait()
+                    continue
+                metadata = entry.stat(follow_symlinks=False)
+                if not stat.S_ISDIR(metadata.st_mode):
+                    continue
+                if total_entries >= MAX_ENTRIES:
+                    entries_complete = False
+                    break
+                total_entries += 1
+                child = os.open(entry.name, DIRECTORY_FLAGS, dir_fd=root)
+                try:
+                    actual = os.fstat(child)
+                    if (actual.st_dev, actual.st_ino) != (
+                        metadata.st_dev,
+                        metadata.st_ino,
+                    ):
+                        measurements_complete = False
+                        continue
+                    if actual.st_dev != before.st_dev:
+                        measurements_complete = False
+                        continue
+                    size, complete = scan.walk(child)
+                finally:
+                    os.close(child)
+                total_allocated += size
+                measurements_complete = measurements_complete and complete
+                if complete:
+                    index = next(
+                        i
+                        for i, (_, bound) in enumerate(BUCKETS)
+                        if bound is None or size < bound
+                    )
+                    counts[index] += 1
+                    allocated[index] += size
+        entries_complete = (
+            entries_complete and before.st_mtime_ns == os.fstat(root).st_mtime_ns
+        )
+        complete = entries_complete and measurements_complete
+        text = "".join(
+            gauge(name, value)
+            for name, value in {
+                "snapshot_available": 1,
+                "measurements_complete": int(complete),
+                "entries_complete": int(entries_complete),
+                "allocation_lower_bound": int(not complete),
+                "bucket_measurements_complete": int(complete),
+                "entries": total_entries,
+                "allocated_bytes": total_allocated,
+                "filesystem_total_bytes": fs.f_blocks * fs.f_frsize,
+                "filesystem_available_bytes": fs.f_bavail * fs.f_frsize,
+                "filesystem_total_inodes": fs.f_files,
+                "filesystem_available_inodes": fs.f_favail,
+            }.items()
+        )
+        for name, values in (
+            ("bucket_entries", counts),
+            ("bucket_allocated_bytes", allocated),
+        ):
+            text += f"# TYPE {PREFIX}{name} gauge\n"
+            for (label, _), value in zip(BUCKETS, values, strict=True):
+                text += f'{PREFIX}{name}{{bucket="{label}"}} {value}\n'
+        return text
+    finally:
+        os.close(root)
 
 
 def publish(directory, text):
-    # Pin the textfile directory; never follow an attacker-replaced destination.
-    fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    fd = open_directory(directory)
     name = f".home-image-cache.{uuid.uuid4().hex}.tmp"
     try:
         metadata = os.fstat(fd)
@@ -192,36 +233,32 @@ def publish(directory, text):
         try:
             os.unlink(name, dir_fd=fd)
         except FileNotFoundError:
-            # No temporary file remains, including after atomic replacement.
+            # Atomic replacement already consumed the temporary name.
             pass
-        os.close(fd)
+        finally:
+            os.close(fd)
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--runner", required=True)
-    parser.add_argument(
-        "--textfile-dir", default="/var/lib/vm0-monitoring/textfile-collector"
-    )
-    args = parser.parse_args()
-    if not Path(args.runner).is_absolute():
-        parser.error("--runner must be an absolute path")
-    text = "".join(
-        f"# TYPE {PREFIX}{name} gauge\n{PREFIX}{name} 0\n"
-        for name in (
-            "snapshot_available",
-            "measurements_complete",
-            "entries_complete",
-            "bucket_measurements_complete",
-        )
+    cache_dir = os.environ.get("OKOU_HOME_IMAGE_CACHE_DIR") or DEFAULT_CACHE_DIR
+    textfile_dir = (
+        os.environ.get("OKOU_MONITORING_TEXTFILE_DIR") or DEFAULT_TEXTFILE_DIR
     )
     try:
-        text = gauges(read_snapshot(args.runner))
-    except (OSError, ValueError, KeyError, TypeError, OverflowError, RecursionError):
-        # Replace old successful metrics, not a stale-success or measured-empty result.
-        pass
-    text += f"# TYPE {PREFIX}collection_timestamp_seconds gauge\n{PREFIX}collection_timestamp_seconds {int(time.time())}\n"
-    publish(args.textfile_dir, text)
+        text = collect(cache_dir)
+    except (OSError, ValueError):
+        # Unavailable observations replace stale success, without invented bytes.
+        text = "".join(
+            gauge(name, 0)
+            for name in (
+                "snapshot_available",
+                "measurements_complete",
+                "entries_complete",
+                "bucket_measurements_complete",
+            )
+        )
+    text += gauge("collection_timestamp_seconds", int(time.time()))
+    publish(textfile_dir, text)
 
 
 if __name__ == "__main__":

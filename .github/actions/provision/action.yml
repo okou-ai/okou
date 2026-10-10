@@ -5,9 +5,6 @@ inputs:
   hosts:
     description: "Comma-separated metal hosts"
     required: true
-  monitoring-runner-binary:
-    description: "Absolute versioned Runner CLI path for the home cache collector"
-    required: true
   metal-user:
     description: "SSH user for metal hosts"
     required: true
@@ -36,7 +33,6 @@ runs:
       env:
         HOSTS: ${{ inputs.hosts }}
         METAL_USER: ${{ inputs.metal-user }}
-        MONITORING_RUNNER_BINARY: ${{ inputs.monitoring-runner-binary }}
         GRAFANA_CLOUD_PROMETHEUS_URL: ${{ inputs.grafana-cloud-prometheus-url }}
         GRAFANA_CLOUD_PROMETHEUS_USER: ${{ inputs.grafana-cloud-prometheus-user }}
         GRAFANA_CLOUD_API_KEY: ${{ inputs.grafana-cloud-api-key }}
@@ -49,8 +45,6 @@ runs:
         fi
 
         ANSIBLE_HASH=$(git rev-parse HEAD:ansible)
-        # Monitoring consumes an exact installed CLI, not a stale retired version.
-        ANSIBLE_HASH=$(printf '%s\n%s\n' "$ANSIBLE_HASH" "$MONITORING_RUNNER_BINARY" | sha256sum | awk '{print $1}')
         STALE_HOSTS=""
         for HOST in $(echo "$HOSTS" | tr ',' ' '); do
           REMOTE_HASH=$(ssh "${METAL_USER}@${HOST}" "cat ~/.vm0-provision-hash 2>/dev/null" || true)
@@ -81,8 +75,7 @@ runs:
           -e "grafana_cloud_prometheus_url=${GRAFANA_CLOUD_PROMETHEUS_URL}" \
           -e "grafana_cloud_prometheus_user=${GRAFANA_CLOUD_PROMETHEUS_USER}" \
           -e "grafana_cloud_api_key=${GRAFANA_CLOUD_API_KEY}" \
-          -e "env_label=${ENV_LABEL}" \
-          -e "monitoring_runner_binary=${MONITORING_RUNNER_BINARY}" -v
+          -e "env_label=${ENV_LABEL}" -v
 
         for HOST in $(echo "$STALE_HOSTS" | tr ',' ' '); do
           ssh "${METAL_USER}@${HOST}" "echo ${ANSIBLE_HASH} > ~/.vm0-provision-hash"

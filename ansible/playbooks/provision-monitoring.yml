@@ -10,20 +10,12 @@
 #     -e "grafana_cloud_prometheus_url=https://..." \
 #     -e "grafana_cloud_prometheus_user=123456" \
 #     -e "grafana_cloud_api_key=glc_..." \
-#     -e "env_label=prod" \
-#     -e "monitoring_runner_binary=/var/lib/vm0-runner/bin/v1.2.3/runner"
+#     -e "env_label=prod"
 
 - name: Provision monitoring with Grafana Alloy
   hosts: all
 
   tasks:
-    - name: Require an explicit versioned Runner CLI path for cache monitoring
-      assert:
-        that:
-          - monitoring_runner_binary is defined
-          - monitoring_runner_binary is match('^/var/lib/vm0-runner/bin/[a-zA-Z0-9._-]+/runner$')
-        fail_msg: Supply monitoring_runner_binary for the Runner artifact serving this host.
-
     - name: Wait for apt lock to be released
       shell: |
         while fuser \
@@ -148,7 +140,7 @@
 
           [Service]
           Type=oneshot
-          ExecStart=/usr/bin/python3 -I -B /usr/local/bin/vm0-monitoring-home-image-cache-collect --runner {{ monitoring_runner_binary }}
+          ExecStart=/usr/bin/python3 -I -B /usr/local/bin/vm0-monitoring-home-image-cache-collect
           TimeoutStartSec=30
         dest: /etc/systemd/system/vm0-monitoring-home-image-cache-collect.service
         owner: root

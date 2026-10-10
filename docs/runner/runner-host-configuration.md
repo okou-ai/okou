@@ -204,24 +204,26 @@ best-effort, not an atomic whole-host capacity reservation. Retained/staging
 allocation excludes active/idle home, rootfs COW, shared images/snapshots,
 archives, logs and other consumers; filesystem availability includes their use.
 
-The independent Ansible collector consumes that CLI snapshot rather than
-reading generations itself. Supply `monitoring_runner_binary` as an absolute
-versioned Runner path under `/var/lib/vm0-runner/bin/`; provisioning's native
-callers bind it to the artifact they install. A missing/incompatible CLI reports
-unavailable until the artifact exists. Updating the CLI path invalidates the
-provisioning stamp, so later binary GC does not leave monitoring pinned to a
-retired release. Install a compatible Runner before relying on the new gauges.
+The independent Ansible collector scans the home cache directory directly;
+it does not depend on a Runner executable or release. Provisioning retains its
+Ansible-content hash. The read-only scan counts allocated blocks across each
+cache entry, including retained generations, staging files, metadata and
+directories, without following symlinks or counting hard-linked inodes twice.
+It does not interpret cache metadata, classify reuse eligibility or enforce the
+cache budget. Use the CLI for those details.
 
 The collector atomically replaces `home-image-cache.prom` with fixed-label
 `vm0_home_image_cache_*` metrics. Check `snapshot_available`,
 `measurements_complete`, `entries_complete`, `bucket_measurements_complete` and
-`allocation_lower_bound` before
-using allocated/logical/temporary totals or size buckets. A failed producer invocation
+`allocation_lower_bound` before using allocation totals or size buckets.
+The non-atomic scan is bounded to 1,024 entries, 32,768 paths, depth 32 and
+15 seconds; partial totals are lower bounds and buckets include only fully
+measured entries. An absent or unreadable cache
 replaces stale success with availability/completeness signals only, not zero
 allocation. Require a recent `collection_timestamp_seconds` (or exporter
 textfile mtime) and a healthy collector unit: filesystem/publishing failures can
-prevent replacement, and the last textfile must not then imply fresh success. Per-entry buckets describe the displayed measured subset; they
-cannot recover locked or truncated contents. No key, profile, project path,
+prevent replacement, and the last textfile must not then imply fresh success.
+No key, profile, project path,
 environment value or file content is published. Provisioning stops/removes old
 workspace collector units and their textfile, never cache entries. Update
 external dashboards/alerts to this namespace and treat absent gauges as
