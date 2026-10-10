@@ -47,6 +47,28 @@ The builder signs all nested native code, submits the app ZIP, staples the app,
 and creates, signs, notarizes, and staples a DMG. Archives retain the names
 `Okou-darwin-arm64-VERSION.zip` and `.dmg`.
 
+## Generated bindings
+
+`Okou/Core/Generated/` holds Swift generated from the TypeScript API contracts:
+`ApiConstants.swift` (client header names, the Desktop client type, the force-upgrade
+status, the update line, and error codes the app compares), `ApiRoutes.swift`
+(the method and path of every route the app calls, with percent-encoded path
+parameters), and `ApiTypes.swift` (the response bodies the app decodes). Do not
+edit these files; change the binding lists in
+`turbo/packages/api-contracts/src/swift-bindings/` and regenerate:
+
+```bash
+cd turbo && pnpm -F @okouai/api-contracts generate:swift
+```
+
+The Crates workflow regenerates the bindings and fails when the committed output
+drifts, so a contract change that touches a bound schema must ship its regenerated
+Swift and compile against the app. String enums render as `RawRepresentable`
+structs with constants for the known values, so an unknown wire value decodes with
+its raw string instead of failing. Request bodies, command results, and the realtime
+token stay `JSONValue`: the native helper and Ably author or consume them, not the
+app.
+
 ## Existing installations
 
 The bundle ID, URL scheme, Developer ID team, and Application Support directory

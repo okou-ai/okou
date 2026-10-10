@@ -144,6 +144,9 @@ jobs:
               turbo/packages/api-contracts/src/contracts/* | \
               turbo/packages/api-contracts/src/python-bindings/* | \
               turbo/packages/api-contracts/src/rust-bindings/* | \
+              turbo/packages/api-contracts/src/swift-bindings/* | \
+              turbo/packages/api-contracts/tsconfig.swift-bindings.json | \
+              desktop/Okou/Core/Generated/* | \
               turbo/packages/connectors/src/public-destination-policy.ts | \
               turbo/pnpm-lock.yaml)
                 api_contracts_rust_bindings_changed=true
@@ -555,9 +558,11 @@ jobs:
         run: |
           pnpm -F @okouai/api-contracts generate:rust
           pnpm -F @okouai/api-contracts generate:python
+          pnpm -F @okouai/api-contracts generate:swift
           git diff --exit-code -- \
             ../crates/api-contracts/src/generated \
-            ../crates/runner/mitm-addon/src/generated
+            ../crates/runner/mitm-addon/src/generated \
+            ../desktop/Okou/Core/Generated
 
   runner-firewall-contract-test:
     runs-on: ubuntu-latest

@@ -181,33 +181,32 @@ public final class DesktopSessionCoordinator {
         publish()
         return
       }
-      let me = try await authenticatedGet("api/auth/me", identity: identity, generation: current)
+      let me = try await authenticatedGet(ApiRoutes.authMe, identity: identity, generation: current)
       if await reject(me, identity: identity, generation: current) { return }
       guard me.status == 200 else {
         throw DesktopFailure("network_error", "Unable to verify Desktop account")
       }
-      guard me.body["userId"].string == identity.userId,
-        me.body["sessionId"].string == identity.sessionId,
-        me.body["orgId"].string == identity.organizationId,
-        let email = me.body["email"].string
+      guard let user = try? me.decode(AuthenticatedUser.self), user.userId == identity.userId,
+        user.sessionId == identity.sessionId, user.orgId == identity.organizationId
       else {
         await invalidate(generation: current)
         throw DesktopFailure(
           "invalid_response", "Desktop account response does not match its session")
       }
+      let email = user.email
       var name = source.snapshot.organizationName
       if let orgId = identity.organizationId, name == nil {
         // A restored SDK client may not yet contain its active organization resource.
-        let org = try await authenticatedGet("api/org", identity: identity, generation: current)
+        let org = try await authenticatedGet(ApiRoutes.org, identity: identity, generation: current)
         if await reject(org, identity: identity, generation: current) { return }
         if org.status == 404 {
           await invalidate(generation: current)
           return
         }
-        guard org.status == 200, org.body["id"].string == orgId,
-          let loadedName = org.body["name"].string
+        guard org.status == 200, let workspace = try? org.decode(CurrentOrganization.self),
+          workspace.id == orgId
         else { throw DesktopFailure("invalid_response", "Unable to verify Desktop workspace") }
-        name = loadedName
+        name = workspace.name
       }
       try checkIdentity(identity, generation: current)
       verifiedIdentity = identity
@@ -219,7 +218,7 @@ public final class DesktopSessionCoordinator {
       state.developerToolsAvailable = false
       if identity.organizationId != nil {
         let switches = try await authenticatedGet(
-          "api/feature-switches", identity: identity, generation: current)
+          ApiRoutes.featureSwitches, identity: identity, generation: current)
         if switches.status == 403 {
           try checkIdentity(identity, generation: current)
           state.error = "Desktop feature switches are unavailable."
@@ -231,7 +230,8 @@ public final class DesktopSessionCoordinator {
         guard switches.status == 200 else {
           throw DesktopFailure("network_error", "Unable to refresh Desktop feature switches")
         }
-        state.developerToolsAvailable = switches.body["effectiveSwitches"]["_debug"].bool == true
+        state.developerToolsAvailable =
+          (try? switches.decode(FeatureSwitches.self))?.effectiveSwitches["_debug"] == true
       }
       try checkIdentity(identity, generation: current)
       state.error = nil
@@ -253,10 +253,10 @@ public final class DesktopSessionCoordinator {
   }
 
   private func authenticatedGet(
-    _ path: String, identity: DesktopSessionIdentity, generation current: Int
+    _ route: ApiRoute, identity: DesktopSessionIdentity, generation current: Int
   ) async throws -> APIResponse {
     let response = try await api.authenticatedRequest(
-      path, timeout: 10,
+      route, timeout: 10,
       tokenProvider: { forceRefresh in
         try await self.readToken(
           identity: identity, generation: current, forceRefresh: forceRefresh)
@@ -369,7 +369,8 @@ public final class DesktopSessionCoordinator {
     guard current == generation else { return true }
     if response.status == 426 {
       state.updateRequired = true
-      state.minimumSupportedVersion = response.body["minimumSupportedVersion"].string
+      state.minimumSupportedVersion =
+        (try? response.decode(DesktopUpgradeRequired.self))?.minimumSupportedVersion
     }
     state.error =
       response.status == 426

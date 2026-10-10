@@ -111,7 +111,8 @@ private func replySessionRequest(_ connection: SessionURLProtocol) {
   case "/api/feature-switches":
     connection.reply(
       .object([
-        "effectiveSwitches": .object(["_debug": .bool(org == "org_a")])
+        "switches": .object([:]),
+        "effectiveSwitches": .object(["_debug": .bool(org == "org_a")]),
       ]))
   default: XCTFail("Unexpected HTTP request: \(connection.request.url!.path)")
   }
@@ -406,8 +407,10 @@ final class DesktopSessionTests: XCTestCase, @unchecked Sendable {
               "status": .string("command"),
               "command": .object([
                 "id": .string("00000000-0000-0000-0000-000000000002"), "kind": .string("apps.list"),
+                "status": .string("running"), "hostId": .null, "hostName": .null,
                 "payload": .object([:]), "timeoutMs": .number(30_000),
                 "claimedAt": .string(timestamp), "createdAt": .string(timestamp),
+                "completedAt": .null,
               ]),
             ]))
         } else {
@@ -416,7 +419,11 @@ final class DesktopSessionTests: XCTestCase, @unchecked Sendable {
       } else if path.hasSuffix("/heartbeat") {
         XCTAssertEqual(
           connection.request.value(forHTTPHeaderField: "Authorization"), "Bearer token-a")
-        connection.reply(.object(["hasPendingCommands": .bool(false)]))
+        connection.reply(
+          .object([
+            "ok": .bool(true), "hostId": .string("00000000-0000-0000-0000-000000000001"),
+            "hasPendingCommands": .bool(false),
+          ]))
         if beats.next() == 1 { heartbeat.fulfill() }
       } else if path.hasSuffix("/complete") {
         XCTAssertEqual(
