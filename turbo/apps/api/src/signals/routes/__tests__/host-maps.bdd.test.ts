@@ -679,11 +679,11 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
       location: { latitude: 48.21, longitude: 16.37 },
       languageCode: "de_AT",
       provider: "google-maps-grounding",
-      model: "gemini-3.8-flash",
+      model: "gemini-3.5-flash-lite",
       billingCategory: "provider_cost_usd_micros",
-      billingQuantity: 14_525,
-      providerCostUsd: 0.014525,
-      creditsCharged: 19,
+      billingQuantity: 14_155,
+      providerCostUsd: 0.014155,
+      creditsCharged: 18,
       answer,
       sources: [
         {
@@ -710,7 +710,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     expect(providerAuthorization).toBe("Bearer synthetic-google-token");
     expect(providerRevision).toBe("2026-05-20");
     expect(providerBody).toMatchObject({
-      model: "gemini-3.8-flash",
+      model: "gemini-3.5-flash-lite",
       input: "best café near me",
       store: false,
       background: false,
@@ -724,7 +724,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
         },
       ],
       generation_config: {
-        thinking_level: "low",
+        thinking_level: "minimal",
         thinking_summaries: "none",
         max_output_tokens: 2048,
       },
@@ -741,7 +741,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     expect(providerCalls).toBe(1);
 
     const settled = await billing.readBillingStatus(admin);
-    expect(settled.credits).toBe(before.credits - 19);
+    expect(settled.credits).toBe(before.credits - 18);
 
     server.use(
       http.post(VERTEX_MAPS_URL, () => {
@@ -1026,8 +1026,8 @@ describe("CHAIN-BILLING-MEDIA/FILE-01: run-scoped agent-token attribution", () =
       expect(mapsSearch.body).toMatchObject({
         provider: "google-maps-grounding",
         billingCategory: "provider_cost_usd_micros",
-        billingQuantity: 14_525,
-        creditsCharged: 19,
+        billingQuantity: 14_155,
+        creditsCharged: 18,
       });
       expect(mapsRequests).toBe(1);
 
@@ -1057,7 +1057,7 @@ describe("CHAIN-BILLING-MEDIA/FILE-01: run-scoped agent-token attribution", () =
       expect(recompleted).toStrictEqual(completed);
 
       const settled = await billing.readBillingStatus(actor);
-      expect(settled.credits).toBe(before.credits - 19);
+      expect(settled.credits).toBe(before.credits - 18);
     });
   });
 });
