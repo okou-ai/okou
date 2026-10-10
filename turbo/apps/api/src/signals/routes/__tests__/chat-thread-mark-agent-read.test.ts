@@ -19,6 +19,7 @@ import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import {
   updateFeatureSwitchesForUser,
   deleteFeatureSwitchesForUser,
@@ -28,6 +29,7 @@ const context = testContext();
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const runs = createRunsApi(context);
+const runReads = createRunReadsApi(context);
 const chatCallbacks = createChatCallbacksApi(context);
 /** The route's notification budget; one more id than this overflows it. */
 const NOTIFIED_THREAD_ID_BUDGET = 100;
@@ -67,21 +69,19 @@ async function createAgentReadFixture(
     const batchSize = 10;
     for (let start = 0; start < threadCount; start += batchSize) {
       context.signal.throwIfAborted();
-      const batch = await Promise.allSettled(
-        Array.from({ length: Math.min(batchSize, threadCount - start) }, () => {
-          return appendCancelledRun({
-            actor,
-            agentId: agent.agentId,
-            run: lifecycle.run,
-          });
-        }),
+      threadIds.push(
+        ...(await appendCancelledRuns({
+          actor,
+          agentId: agent.agentId,
+          run: lifecycle.run,
+          threads: Array.from(
+            { length: Math.min(batchSize, threadCount - start) },
+            () => {
+              return {};
+            },
+          ),
+        })),
       );
-      for (const result of batch) {
-        if (result.status === "rejected") {
-          throw result.reason;
-        }
-        threadIds.push(result.value);
-      }
     }
     return {
       actor,
@@ -116,36 +116,150 @@ async function appendCancelledRun(args: {
   readonly threadId?: string;
   readonly run: AgentReadFixture["run"];
 }): Promise<string> {
-  return await args.run(async () => {
-    const { runId, threadId } = await chat.sendAndLaunch(args.actor, {
-      agentId: args.agentId,
-      prompt: `agent read ${randomUUID()}`,
-      model: "claude-fable-5-1",
-      ...(args.threadId === undefined ? {} : { threadId: args.threadId }),
-    });
-    await runs.requestCancelRun(args.actor, runId, [200]);
-    await flushWaitUntilForTest();
-    const [page, detail] = await Promise.all([
-      chat.listThreadEvents(args.actor, threadId),
-      chat.readThread(args.actor, threadId),
-    ]);
-    const terminals = page.events.filter((event) => {
-      return (
-        event.runId === runId && isChatRunTerminalEventType(event.eventType)
-      );
-    });
-    expect(terminals).toHaveLength(1);
-    const terminal = terminals[0];
-    if (!terminal) {
-      throw new Error("Expected the actual cancelled Run terminal event");
-    }
-    expect(terminal.eventType).toBe("run.cancelled");
-    expect(
-      detail.lastReadAt === null ||
-        Date.parse(detail.lastReadAt) < Date.parse(terminal.createdAt),
-    ).toBeTruthy();
-    return threadId;
+  const threadIds = await appendCancelledRuns({
+    ...args,
+    threads: [{ threadId: args.threadId }],
   });
+  const threadId = threadIds[0];
+  if (!threadId) {
+    throw new Error("Expected the accepted chat thread");
+  }
+  return threadId;
+}
+
+/** Join a normal Team-sized batch, locating each actual Run through public logs. */
+async function appendCancelledRuns(args: {
+  readonly actor: ApiTestUser;
+  readonly agentId: string;
+  readonly threads: readonly { readonly threadId?: string }[];
+  readonly run: AgentReadFixture["run"];
+}): Promise<readonly string[]> {
+  return await args.run(async () => {
+    const sends = await Promise.allSettled(
+      args.threads.map(async (thread) => {
+        const prompt = `agent read ${randomUUID()}`;
+        const sent = await chat.requestSendEvent(
+          args.actor,
+          {
+            agentId: args.agentId,
+            prompt,
+            model: "claude-fable-5-1",
+            ...(thread.threadId === undefined
+              ? {}
+              : { threadId: thread.threadId }),
+          },
+          [201],
+        );
+        if (sent.status !== 201) {
+          throw new Error("Expected the ordinary chat send to be accepted");
+        }
+        return { prompt, threadId: sent.body.threadId };
+      }),
+    );
+    await flushWaitUntilForTest();
+    const accepted = sends.map((result) => {
+      if (result.status === "rejected") {
+        throw result.reason;
+      }
+      return result.value;
+    });
+    const pages = await Promise.allSettled(
+      (["pending", "queued"] as const).map((status) => {
+        return runReads.requestListLogs(
+          args.actor,
+          {
+            agentId: args.agentId,
+            status,
+            limit: 100,
+          },
+          [200],
+        );
+      }),
+    );
+    const active = pages.flatMap((result) => {
+      if (result.status === "rejected") {
+        throw result.reason;
+      }
+      expect(result.value.body.pagination.hasMore).toBeFalsy();
+      return result.value.body.data;
+    });
+    const launched = accepted.map((sent) => {
+      const matches = active.filter((item) => {
+        return item.agentId === args.agentId && item.prompt === sent.prompt;
+      });
+      expect(matches).toHaveLength(1);
+      const match = matches[0];
+      if (!match) {
+        throw new Error(
+          "Expected exactly one actual Run for the unique prompt",
+        );
+      }
+      return { ...sent, runId: match.id };
+    });
+    expect(
+      new Set(
+        launched.map((item) => {
+          return item.runId;
+        }),
+      ).size,
+    ).toBe(accepted.length);
+    const cancellations = await Promise.allSettled(
+      launched.map((item) => {
+        return runs.requestCancelRun(args.actor, item.runId, [200]);
+      }),
+    );
+    await flushWaitUntilForTest();
+    for (const result of cancellations) {
+      if (result.status === "rejected") {
+        throw result.reason;
+      }
+    }
+    const verified = await Promise.allSettled(
+      launched.map(async ({ runId, threadId }) => {
+        const [page, detail] = await readPublicThreadState(
+          args.actor,
+          threadId,
+        );
+        const terminals = page.events.filter((event) => {
+          return (
+            event.runId === runId && isChatRunTerminalEventType(event.eventType)
+          );
+        });
+        expect(terminals).toHaveLength(1);
+        const terminal = terminals[0];
+        if (!terminal) {
+          throw new Error("Expected the actual cancelled Run terminal event");
+        }
+        expect(terminal.eventType).toBe("run.cancelled");
+        expect(
+          detail.lastReadAt === null ||
+            Date.parse(detail.lastReadAt) < Date.parse(terminal.createdAt),
+        ).toBeTruthy();
+        return threadId;
+      }),
+    );
+    return verified.map((result) => {
+      if (result.status === "rejected") {
+        throw result.reason;
+      }
+      return result.value;
+    });
+  });
+}
+
+/** Join both ordinary reads even when one request fails. */
+async function readPublicThreadState(actor: ApiTestUser, threadId: string) {
+  const [page, detail] = await Promise.allSettled([
+    chat.listThreadEvents(actor, threadId),
+    chat.readThread(actor, threadId),
+  ]);
+  if (page.status === "rejected") {
+    throw page.reason;
+  }
+  if (detail.status === "rejected") {
+    throw detail.reason;
+  }
+  return [page.value, detail.value] as const;
 }
 
 /** Each thread's read cursor as the production thread reader returns it. */
@@ -184,10 +298,10 @@ async function unreadThreadIds(
           fixture.threadIds
             .slice(start, start + batchSize)
             .map(async (threadId) => {
-              const [page, detail] = await Promise.all([
-                chat.listThreadEvents(fixture.actor, threadId),
-                chat.readThread(fixture.actor, threadId),
-              ]);
+              const [page, detail] = await readPublicThreadState(
+                fixture.actor,
+                threadId,
+              );
               const terminals = page.events.filter((event) => {
                 return isChatRunTerminalEventType(event.eventType);
               });
