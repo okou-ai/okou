@@ -19,74 +19,28 @@ import {
 } from "@okouai/api-contracts/contracts/link-layout";
 import { hostedLinkOrigin } from "../../lib/link-layout";
 import { publicSlugCandidate } from "../../lib/hosted-site-slug";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
   hostedDeployments,
   hostedSites,
   privateHostedDeployments,
 } from "@okouai/db/runtime/hosted-site";
-import { and, eq, isNull, or, sql, type SQL } from "drizzle-orm";
-import { HostedSiteScopeError } from "./hosted-site-scope.service";
+import { and, eq, isNull, sql, type SQL } from "drizzle-orm";
 
-interface AllocationScope {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly runId?: string;
-  readonly chatThreadId: string | null;
-  readonly body: { readonly site: string };
-}
-
-/** Match the shipped text-reference trigger before constructing a UUID query. */
-function hostedRunScopeId(runId: string | null | undefined) {
-  return runId !== null &&
-    runId !== undefined &&
-    /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/u.test(runId)
-    ? runId
-    : null;
-}
-
-function hostedRunChatScope(
-  run:
-    | Pick<typeof agentRuns.$inferSelect, "chatThreadId" | "triggerSource">
-    | undefined,
-) {
-  return !run || run.triggerSource === null ? null : run.chatThreadId;
-}
-
-function scopedHostedSiteCondition(args: AllocationScope, publicSlug?: string) {
+function hostedSiteCondition(args: PrepareDeploymentArgs, publicSlug?: string) {
   return and(
     eq(hostedSites.orgId, args.orgId),
     publicSlug === undefined
       ? eq(hostedSites.requestedSlug, args.body.site)
       : eq(hostedSites.slug, publicSlug),
     eq(hostedSites.linkLayoutSegment, linkLayoutSegment(CURRENT_LINK_LAYOUT)),
-    args.chatThreadId === null
-      ? isNull(hostedSites.chatThreadId)
-      : eq(hostedSites.chatThreadId, args.chatThreadId),
-    isNull(hostedSites.deletedAt),
-  );
-}
-
-function unscopedHostedSiteCondition(args: AllocationScope) {
-  return and(
-    eq(hostedSites.orgId, args.orgId),
-    isNull(hostedSites.chatThreadId),
-    or(
-      eq(hostedSites.requestedSlug, args.body.site),
-      and(
-        isNull(hostedSites.requestedSlug),
-        eq(hostedSites.slug, args.body.site),
-      ),
-    ),
     isNull(hostedSites.deletedAt),
   );
 }
 
 function hostedSiteAllocationValues(
-  args: AllocationScope,
+  args: PrepareDeploymentArgs,
   publicSlug: string,
   attempt: number,
-  chatThreadId: string | null,
   now: Date,
 ): typeof hostedSites.$inferInsert {
   return {
@@ -96,26 +50,11 @@ function hostedSiteAllocationValues(
     // Only the preferred candidate owns the requested name; fallback names
     // remain reserved under their resolved identity, including after deletion.
     requestedSlug: attempt === 0 ? args.body.site : publicSlug,
-    chatThreadId,
     linkLayoutSegment: linkLayoutSegment(CURRENT_LINK_LAYOUT),
     publicSlug,
     createdFromRunId: args.runId,
     updatedAt: now,
   };
-}
-
-function assertHostedSiteAdmission(
-  site: Pick<typeof hostedSites.$inferSelect, "chatThreadId"> | undefined,
-  chatThreadId: string | null,
-) {
-  if (!site) {
-    throw new Error("Hosted site not found for deployment");
-  }
-  if (site.chatThreadId !== chatThreadId) {
-    throw new HostedSiteScopeError(
-      "Hosted site belongs to a different chat; choose another site slug",
-    );
-  }
 }
 
 function hostedAssetConflictQuery(
@@ -153,10 +92,6 @@ export interface PrepareDeploymentArgs {
   readonly body: HostedSitePrepareRequest;
 }
 
-interface ScopedPrepareDeploymentArgs extends PrepareDeploymentArgs {
-  readonly chatThreadId: string | null;
-}
-
 export type SiteDeploymentCreationResult =
   | {
       readonly kind: "ok";
@@ -165,7 +100,6 @@ export type SiteDeploymentCreationResult =
     }
   | { readonly kind: "slug_conflict" }
   | { readonly kind: "owner_conflict" }
-  | { readonly kind: "scope_conflict"; readonly message: string }
   | { readonly kind: "content_conflict"; readonly message: string };
 
 type HostedSiteResolution =
@@ -184,10 +118,6 @@ function deploymentUrl(layout: LinkLayout, deploymentId: string): string {
 
 function deploymentPrefix(layout: LinkLayout, deploymentId: string) {
   return `${hostedSitePointerNamespace(layout)}/publications/${deploymentId}`;
-}
-
-function hostedSiteScopeKey(args: ScopedPrepareDeploymentArgs): string {
-  return args.chatThreadId ?? "organization";
 }
 
 function hashJson(value: unknown): string {
@@ -254,7 +184,7 @@ function buildManifest(args: {
 
 function resolvedHostedSite(
   site: HostedSiteRow,
-  args: ScopedPrepareDeploymentArgs,
+  args: PrepareDeploymentArgs,
 ): HostedSiteResolution {
   // Redeploying replaces what a site serves, so only its creator may do it.
   // Organization membership alone never carries that authority.
@@ -326,13 +256,11 @@ function hostedDeploymentValues(
 }
 
 type HostedAllocationQuery =
-  | { readonly kind: "run"; readonly runId: string }
   | {
       readonly kind: "site";
       readonly condition: SQL | undefined;
       readonly lock: boolean;
     }
-  | { readonly kind: "unscoped"; readonly condition: SQL | undefined }
   | {
       readonly kind: "site-insert";
       readonly values: typeof hostedSites.$inferInsert;
@@ -343,25 +271,14 @@ type HostedAllocationQuery =
     }
   | { readonly kind: "asset-conflict"; readonly query: SQL }
   | {
-      readonly kind: "admission";
-      readonly siteId: string;
-      readonly orgId: string;
-    }
-  | {
       readonly kind: "deployment-insert";
       readonly values: typeof hostedDeployments.$inferInsert;
     };
 
 export interface HostedAllocationQueryResult {
-  readonly run?: Pick<
-    typeof agentRuns.$inferSelect,
-    "chatThreadId" | "triggerSource"
-  >;
   readonly site?: HostedSiteRow;
-  readonly unscoped?: { readonly id: string };
   readonly version?: number | null;
   readonly path?: string;
-  readonly admission?: Pick<HostedSiteRow, "chatThreadId">;
   readonly deployment?: HostedDeploymentRow;
 }
 
@@ -372,13 +289,12 @@ type SiteAllocationPlan = Generator<
 >;
 
 function* hostedSiteAllocationPlan(
-  args: ScopedPrepareDeploymentArgs,
-  runId: string | null,
+  args: PrepareDeploymentArgs,
   now: Date,
 ): SiteAllocationPlan {
   const existing = (yield {
     kind: "site",
-    condition: scopedHostedSiteCondition(args),
+    condition: hostedSiteCondition(args),
     lock: true,
   }).site;
   if (existing) {
@@ -388,23 +304,12 @@ function* hostedSiteAllocationPlan(
     const publicSlug = publicSlugCandidate(
       args.body.site,
       args.orgId,
-      hostedSiteScopeKey(args),
+      "organization",
       attempt,
     );
-    // Canonicalization still re-locks the run on each null-scope candidate.
-    const run =
-      args.chatThreadId === null && runId !== null
-        ? (yield { kind: "run", runId }).run
-        : undefined;
     const created = (yield {
       kind: "site-insert",
-      values: hostedSiteAllocationValues(
-        args,
-        publicSlug,
-        attempt,
-        args.chatThreadId ?? hostedRunChatScope(run),
-        now,
-      ),
+      values: hostedSiteAllocationValues(args, publicSlug, attempt, now),
     }).site;
     if (created) {
       return { kind: "ok", site: created };
@@ -412,12 +317,12 @@ function* hostedSiteAllocationPlan(
     const concurrent =
       (yield {
         kind: "site",
-        condition: scopedHostedSiteCondition(args),
+        condition: hostedSiteCondition(args),
         lock: true,
       }).site ??
       (yield {
         kind: "site",
-        condition: scopedHostedSiteCondition(args, publicSlug),
+        condition: hostedSiteCondition(args, publicSlug),
         lock: true,
       }).site;
     if (concurrent) {
@@ -436,33 +341,7 @@ export function* hostedDeploymentAllocationPlan(
   SiteDeploymentCreationResult,
   HostedAllocationQueryResult
 > {
-  const runId = hostedRunScopeId(args.runId);
-  const run = runId === null ? undefined : (yield { kind: "run", runId }).run;
-  const scopedArgs = { ...args, chatThreadId: hostedRunChatScope(run) };
-  if (scopedArgs.chatThreadId !== null) {
-    const scoped = (yield {
-      kind: "site",
-      condition: scopedHostedSiteCondition(scopedArgs),
-      lock: false,
-    }).site;
-    if (
-      !scoped &&
-      (yield {
-        kind: "unscoped",
-        condition: unscopedHostedSiteCondition(scopedArgs),
-      }).unscoped
-    ) {
-      return {
-        kind: "scope_conflict",
-        message: `Hosted site slug "${args.body.site}" is owned outside this chat. Choose a different --site value and rerun the same okou host command.`,
-      };
-    }
-  }
-  const resolution = yield* hostedSiteAllocationPlan(
-    scopedArgs,
-    runId,
-    context.now,
-  );
+  const resolution = yield* hostedSiteAllocationPlan(args, context.now);
   if (resolution.kind !== "ok") {
     return resolution;
   }
@@ -487,14 +366,6 @@ export function* hostedDeploymentAllocationPlan(
     }
   }
   const values = hostedDeploymentValues(args, context, site, deploymentVersion);
-  const admissionRun =
-    runId === null ? undefined : (yield { kind: "run", runId }).run;
-  const admission = (yield {
-    kind: "admission",
-    siteId: site.id,
-    orgId: args.orgId,
-  }).admission;
-  assertHostedSiteAdmission(admission, hostedRunChatScope(admissionRun));
   const deployment = (yield { kind: "deployment-insert", values }).deployment;
   if (!deployment) {
     throw new Error("Failed to create hosted deployment");

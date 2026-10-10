@@ -2,12 +2,15 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createHash, randomUUID } from "node:crypto";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
+import { hostContract } from "@okouai/api-contracts/contracts/host";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { hostRoutes } from "../host";
 
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { RouteEntry } from "../../route-entry";
@@ -757,97 +760,150 @@ describe("GET /api/artifacts/catalog", () => {
     });
   }, 180_000);
 
-  it("isolates same-name hosted sites by chat thread", async () => {
-    const owner = await catalogActor(
-      "Artifact catalog chat-scoped hosted owner",
-      bdd.user(),
-    );
+  it("queries and republishes one hosted site across chats and Clerk sessions", async () => {
+    const actor = bdd.user();
     host.captureHostedSitesS3();
-    const site = `catalog-chat-scope-${randomUUID().slice(0, 8)}`;
-
-    const first = await publishHostedSite({ owner, site });
-    const secondChat = await publishHostedSite({
-      owner,
+    const site = `catalog-cross-chat-${randomUUID().slice(0, 8)}`;
+    const body = {
       site,
-      claimRun: false,
+      artifactKind: "hosted-site" as const,
+      spaFallback: false,
+      files: [hostedTextFile("/index.html", "<main>first</main>")],
+    };
+    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+    const app = await setupApp({
+      context,
+      routes: hostRoutes,
+      isolatePg: true,
+    });
+    const firstResponse = await accept(
+      app(hostContract).prepare({
+        headers: { authorization: "Bearer clerk-session" },
+        body,
+      }),
+      [200],
+    );
+    const first = firstResponse.body;
+    const owner = await catalogActor("Thread-independent hosted owner", actor);
+    host.captureHostedSitesS3();
+    const activeRuns = new Set<string>();
+    onTestFinished(async () => {
+      for (const runId of activeRuns) {
+        await api.requestCancelRun(actor, runId, [200]);
+      }
+      await flushWaitUntilForTest();
     });
 
-    expect(secondChat).toMatchObject({ deploymentVersion: 1 });
-    expect(secondChat.siteId).not.toBe(first.siteId);
-    expect(secondChat.publicSlug).not.toBe(first.publicSlug);
-    expect(secondChat.url).not.toBe(first.url);
-    expect(secondChat.threadId).not.toBe(first.threadId);
-
-    const firstHistory = await chat.readHostedSiteDeploymentsWithBearer(
-      `Bearer ${scopedOkouToken(owner, first.runId, ["host:read"])}`,
-      first.publicSlug,
+    const firstChat = await sendChatRun(actor, {
+      agentId: owner.agentId,
+      prompt: "update the existing website",
+    });
+    activeRuns.add(firstChat.runId);
+    const firstClaim = await claimChatRun(owner.runnerGroup, firstChat.runId);
+    const firstBearer = { bearerToken: okouTokenFromClaim(firstClaim.claim) };
+    const firstHistory = await host.readHostedSiteDeployments(
+      firstBearer,
+      site,
     );
-    const secondHistory = await chat.readHostedSiteDeploymentsWithBearer(
-      `Bearer ${scopedOkouToken(owner, secondChat.runId, ["host:read"])}`,
-      secondChat.publicSlug,
-    );
-    expect(firstHistory).toMatchObject({
+    expect(firstHistory).toMatchObject({ siteId: first.siteId });
+    expect(firstHistory.deployments).toHaveLength(1);
+    const second = await host.prepareHostedSite(firstBearer, {
+      ...body,
+      files: [hostedTextFile("/index.html", "<main>second</main>")],
+    });
+    expect(second).toMatchObject({
       siteId: first.siteId,
       publicSlug: first.publicSlug,
+      url: first.url,
+      deploymentVersion: 2,
     });
-    expect(firstHistory.deployments).toHaveLength(1);
-    expect(secondHistory).toMatchObject({
-      siteId: secondChat.siteId,
-      publicSlug: secondChat.publicSlug,
-    });
-    expect(secondHistory.deployments).toHaveLength(1);
+    await completeChatRunOk(firstChat.runId, firstClaim.sandboxHeaders);
+    activeRuns.delete(firstChat.runId);
 
-    const crossChatComplete = await chat.requestCompleteHostedSiteWithBearer(
-      `Bearer ${scopedOkouToken(owner, secondChat.runId, ["host:write"])}`,
-      first.deploymentId,
-      [409],
-    );
-    expectApiError(crossChatComplete.body);
-    expect(crossChatComplete.body.error).toStrictEqual({
-      code: "CONFLICT",
-      message: "Hosted deployment belongs to a different chat",
+    const secondChat = await sendChatRun(actor, {
+      agentId: owner.agentId,
+      prompt: "publish and inspect the same website from another chat",
     });
-
-    context.mocks.s3.getSignedUrl.mockResolvedValue(
-      "https://r2.example.com/hosted-sites/download?sig=bdd",
-    );
-    const firstActive = await host.readHostedSiteFiles(
-      owner.actor,
-      first.publicSlug,
-    );
-    const secondActive = await host.readHostedSiteFiles(
-      owner.actor,
-      secondChat.publicSlug,
-    );
-    expect(firstActive).toMatchObject({
+    activeRuns.add(secondChat.runId);
+    expect(secondChat.threadId).not.toBe(firstChat.threadId);
+    const secondClaim = await claimChatRun(owner.runnerGroup, secondChat.runId);
+    const secondBearer = { bearerToken: okouTokenFromClaim(secondClaim.claim) };
+    await host.completeHostedSite(secondBearer, first.deploymentId);
+    await host.completeHostedSite(secondBearer, second.deploymentId);
+    const third = await host.prepareHostedSite(secondBearer, {
+      ...body,
+      files: [hostedTextFile("/index.html", "<main>third</main>")],
+    });
+    expect(third).toMatchObject({
       siteId: first.siteId,
-      deploymentId: first.deploymentId,
-      deploymentVersion: 1,
+      publicSlug: first.publicSlug,
+      url: first.url,
+      deploymentVersion: 3,
     });
-    expect(secondActive).toMatchObject({
-      siteId: secondChat.siteId,
-      deploymentId: secondChat.deploymentId,
-      deploymentVersion: 1,
-    });
-
-    const catalog = await chat.listArtifactCatalog(owner.actor);
-    const entries = catalog.artifacts.filter((artifact) => {
-      return [first.publicSlug, secondChat.publicSlug].includes(artifact.title);
-    });
-    expect(entries).toHaveLength(2);
-    const details = await Promise.all(
-      entries.map(async (entry) => {
-        return await chat.getArtifactCatalogEntry(owner.actor, entry.id);
-      }),
-    );
     expect(
-      details.map((detail) => {
-        if (detail.kind !== "hosted-site") {
-          throw new Error("Expected a chat-scoped hosted-site catalog entry");
-        }
-        return detail.site.id;
-      }),
-    ).toStrictEqual(expect.arrayContaining([first.siteId, secondChat.siteId]));
+      new Set([first.deploymentId, second.deploymentId, third.deploymentId])
+        .size,
+    ).toBe(3);
+    await host.completeHostedSite(actor, third.deploymentId);
+    await expect(
+      host.completeHostedSite(secondBearer, first.deploymentId),
+    ).resolves.toMatchObject({
+      isActive: false,
+      activeDeploymentVersion: 3,
+    });
+    for (const caller of [actor, secondBearer]) {
+      const history = await host.readHostedSiteDeployments(caller, site);
+      expect(history).toMatchObject({
+        siteId: first.siteId,
+        activeDeploymentId: third.deploymentId,
+      });
+      expect(history.deployments).toHaveLength(3);
+      await expect(
+        host.readHostedSiteFiles(caller, site),
+      ).resolves.toMatchObject({
+        siteId: first.siteId,
+        deploymentId: third.deploymentId,
+        deploymentVersion: 3,
+      });
+      await expect(
+        host.readHostedSiteFiles(caller, site, 1),
+      ).resolves.toMatchObject({
+        deploymentId: first.deploymentId,
+        files: body.files,
+      });
+    }
+
+    const member = bdd.user({ orgId: actor.orgId });
+    const otherOrg = bdd.user({ userId: actor.userId });
+    for (const unauthorized of [member, otherOrg]) {
+      await host.requestHostedSiteDeployments(unauthorized, site, [404]);
+      await host.requestHostedSiteFiles(unauthorized, site, [404]);
+      await host.requestCompleteHostedSite(
+        unauthorized,
+        third.deploymentId,
+        [404],
+      );
+    }
+    const denied = await host.requestPrepareHostedSite(member, body, [409]);
+    expectApiError(denied.body);
+    expect(denied.body.error.message).toContain("belongs to another owner");
+
+    const catalog = await chat.listArtifactCatalog(actor);
+    expect(catalog.artifacts).toHaveLength(1);
+    const entry = catalog.artifacts[0];
+    if (!entry) {
+      throw new Error("Expected one hosted site catalog entry");
+    }
+    const detail = await chat.getArtifactCatalogEntry(actor, entry.id);
+    if (detail.kind !== "hosted-site") {
+      throw new Error("Expected a hosted site catalog entry");
+    }
+    expect(detail.site).toMatchObject({
+      id: first.siteId,
+      deploymentVersion: 3,
+    });
+    await completeChatRunOk(secondChat.runId, secondClaim.sandboxHeaders);
+    activeRuns.delete(secondChat.runId);
   }, 180_000);
 
   it("catalogues a published deck as a presentation", async () => {
