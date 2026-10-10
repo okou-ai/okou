@@ -641,9 +641,9 @@ describe("workflow queue", () => {
         throw new Error("Expected the Runner's public automation event data");
       }
       const parsedEvent: unknown = JSON.parse(eventData);
-      const event = z.object({ body: z.unknown() }).parse(parsedEvent);
+      const event = z.object({ parsedJson: z.unknown() }).parse(parsedEvent);
       // Structural equality ignores object key order; compare exact JSON.
-      expect(JSON.stringify(event.body)).toBe(JSON.stringify(body));
+      expect(JSON.stringify(event.parsedJson)).toBe(JSON.stringify(body));
       expect(claim.prompt).not.toContain(automation.secret);
     }
 
