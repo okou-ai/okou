@@ -116,9 +116,42 @@ export const restoreSubscription$ = command(
     const restoredAt = nowDate();
     // Stripe has applied the restore; record it as main did, without a
     // row-version guard that a concurrent debit or webhook rewrite would trip.
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0064; new non-billing transactions are prohibited.
-    await db.transaction(async (tx) => {
-      await tx
+    if (pendingScheduleId) {
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0064; new non-billing transactions are prohibited.
+      await db.transaction(async (tx) => {
+        await tx
+          .update(orgMetadata)
+          .set({
+            cancelAtPeriodEnd: false,
+            pendingSubscriptionScheduleId: null,
+            pendingSubscriptionTargetTier: null,
+            pendingSubscriptionChangeAt: null,
+            updatedAt: restoredAt,
+          })
+          .where(eq(orgMetadata.orgId, args.orgId));
+        if (pendingScheduleId) {
+          await tx
+            .update(usagePackAllocationChanges)
+            .set({
+              status: "failed",
+              failureReason: "scheduled_change_restored",
+              completedAt: restoredAt,
+              updatedAt: restoredAt,
+            })
+            .where(
+              and(
+                eq(usagePackAllocationChanges.orgId, args.orgId),
+                eq(usagePackAllocationChanges.status, "scheduled"),
+                eq(
+                  usagePackAllocationChanges.stripeScheduleId,
+                  pendingScheduleId,
+                ),
+              ),
+            );
+        }
+      });
+    } else {
+      await db
         .update(orgMetadata)
         .set({
           cancelAtPeriodEnd: false,
@@ -128,27 +161,7 @@ export const restoreSubscription$ = command(
           updatedAt: restoredAt,
         })
         .where(eq(orgMetadata.orgId, args.orgId));
-      if (pendingScheduleId) {
-        await tx
-          .update(usagePackAllocationChanges)
-          .set({
-            status: "failed",
-            failureReason: "scheduled_change_restored",
-            completedAt: restoredAt,
-            updatedAt: restoredAt,
-          })
-          .where(
-            and(
-              eq(usagePackAllocationChanges.orgId, args.orgId),
-              eq(usagePackAllocationChanges.status, "scheduled"),
-              eq(
-                usagePackAllocationChanges.stripeScheduleId,
-                pendingScheduleId,
-              ),
-            ),
-          );
-      }
-    });
+    }
     signal.throwIfAborted();
 
     L.debug("scheduled subscription change restored", {
