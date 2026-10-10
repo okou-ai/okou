@@ -987,20 +987,16 @@ const refreshAutomatic = command(
     if (!redirectUri) {
       throw new Error("Builtin Automatic OAuth redirect URI is unavailable");
     }
-    const client =
-      binding.registrationMethod === "dcr"
-        ? await set(
-            readBuiltinDcrBoundClient$,
-            { owner, id: binding.dcrRegistration.id },
-            signal,
-          )
-        : null;
     const refreshed = await settle(
       refreshMcpAutomaticOAuthToken(
         {
           dcrStore: {
-            readBoundClient: (id) => {
-              return Promise.resolve(client?.id === id ? client : null);
+            readBoundClient: async (id) => {
+              return await set(
+                readBuiltinDcrBoundClient$,
+                { owner, id },
+                signal,
+              );
             },
           },
           binding,
