@@ -1,6 +1,7 @@
 import { fetchResource } from "../../lib/resource-fetch.ts";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { rewritePlatformHostname } from "@okouai/core/platform-service-origin";
+import { timeout } from "signal-timers";
 
 import { resolvePlatformOriginForTarget } from "../../signals/api-base.ts";
 import { isAllowedDevArtifactFetchUrl } from "../../lib/dev-artifact-fetch-url.ts";
@@ -211,14 +212,13 @@ export function triggerBlobDownload(
   const resource = createObjectUrlResource(blob, signal);
   const anchor = createDownloadAnchor(resource.url, filename);
   const cleanup = () => {
-    window.clearTimeout(timer);
     signal.removeEventListener("abort", cleanup);
     anchor.remove();
     resource.release();
   };
   // Safari can resolve the download after click() returns. Keep both the link
   // and its bytes alive for that handoff, then release them on expiry or abort.
-  const timer = window.setTimeout(cleanup, BLOB_DOWNLOAD_CLEANUP_DELAY_MS);
+  timeout(cleanup, BLOB_DOWNLOAD_CLEANUP_DELAY_MS, { signal });
   signal.addEventListener("abort", cleanup, { once: true });
   anchor.click();
 }
