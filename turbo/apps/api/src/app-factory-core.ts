@@ -45,8 +45,6 @@ import {
 } from "./signals/external/axiom";
 import type { RouteEntry } from "./signals/route-entry";
 import { configureChatRunFinishedEventDispatcher$ } from "./signals/services/chat-run-finished-event-registration.service";
-import type { UsagePricingResolution } from "./signals/context/usage-pricing-resolution";
-import type { SystemSkillStorageResolution } from "./signals/context/system-skill-storage-resolution";
 import {
   isAbortError,
   normalizeThrown,
@@ -571,15 +569,11 @@ function handleError(error: unknown, context: Context): Response {
 interface CreateAppWithRoutesOptions {
   readonly signal: AbortSignal;
   readonly routes: readonly RouteEntry[];
-  readonly usagePricingResolution?: UsagePricingResolution;
-  readonly systemSkillStorageResolution?: SystemSkillStorageResolution;
 }
 
 export function createAppWithRoutes({
   routes,
   signal,
-  usagePricingResolution,
-  systemSkillStorageResolution,
 }: CreateAppWithRoutesOptions): Hono {
   const app = new Hono();
   app.onError(handleError);
@@ -644,8 +638,7 @@ export function createAppWithRoutes({
     const { route } = entry;
     const routeHandler = honoSignalHandler(entry.handler, route, signal, {
       initializeServices$: initializeApiServices$,
-      usagePricingResolution,
-      systemSkillStorageResolution,
+
       observeJsonResponse: entry.observeJsonResponse,
     });
     app.on(route.method, route.path, routeHandler);

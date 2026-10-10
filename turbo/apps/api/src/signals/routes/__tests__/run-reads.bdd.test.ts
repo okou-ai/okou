@@ -1,3 +1,4 @@
+import { publicChatActor } from "./helpers/public-chat-actor";
 import { createPublicFirewallFixture } from "./helpers/public-firewall-fixture";
 import { getCustomSkillStorageName } from "@okouai/core/storage-names";
 import { createHash, randomUUID } from "node:crypto";
@@ -29,7 +30,6 @@ import {
 } from "./helpers/api-bdd-runs";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { storageTextFile } from "./helpers/api-bdd-storage-files";
-import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { refreshConcurrencyEntitlement } from "./helpers/stripe-billing-webhook";
@@ -1033,7 +1033,6 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
     await fixture.run(async () => {
       mockEnv("S3_ENDPOINT", undefined);
       mockEnv("S3_PUBLIC_ENDPOINT", undefined);
-      const storages = createStoragesBddApi(context);
       const actor = fixture.actor;
       bdd.acceptAgentStorageWrites();
       api.acceptStorageDownloads();
@@ -1044,10 +1043,14 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
         model: "claude-fable-5-1",
       });
       const volumeArchiveSize = 12_345;
-      storages.mockStoragePresignedUrls();
+      context.mocks.s3.getSignedUrl.mockResolvedValue(
+        "https://r2.example.com/storages/presigned?sig=bdd",
+      );
       // An Agent workflow's exact Storage version is the run's volume; its
       // archive is recorded at the mocked object size.
-      storages.mockStorageObjectsExist(volumeArchiveSize);
+      context.mocks.s3.send.mockResolvedValue({
+        ContentLength: volumeArchiveSize,
+      });
       const agent = await bdd.createAgent(actor, {
         displayName: "BDD resume agent",
         visibility: "private",
@@ -1086,7 +1089,9 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       if (!workflowVersion) {
         throw new Error("Expected the workflow's actual archive publication");
       }
-      storages.mockStoragePresignedUrls();
+      context.mocks.s3.getSignedUrl.mockResolvedValue(
+        "https://r2.example.com/storages/presigned?sig=bdd",
+      );
 
       // The session-history blob for checkpointed conversations is hash-only
       // in R2 — answer the GetObject for it while keeping other s3 sends inert.
@@ -1169,7 +1174,9 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
         "bdd volume payload",
       );
       const memoryHeaders = sandboxHeaders(claim1.sandboxToken);
-      storages.mockStorageObjectsExist(volumeArchiveSize);
+      context.mocks.s3.send.mockResolvedValue({
+        ContentLength: volumeArchiveSize,
+      });
       const prepared = await webhooks.requestAgentStoragePrepare(
         { runId: r1.runId, storageId: memory1.storageId, files: [volumeFile] },
         memoryHeaders,
@@ -3127,42 +3134,49 @@ describe("RUN-04/OPS-01: agent run logs", () => {
   });
 
   it("returns pending and failed run-log detail residue", async () => {
-    const { actor, agentOne } = await setupRunLogFixture();
-    const pendingRun = await api.createThreadRun(actor, {
-      agentId: agentOne.agentId,
-      prompt: "pending detail run",
-    });
-    const pendingDetail = await reads.requestReadLogById(
-      actor,
-      pendingRun.runId,
-      [200],
-    );
-    expect(pendingDetail.body).toMatchObject({
-      id: pendingRun.runId,
-      status: "pending",
-      sessionId: null,
-      completedAt: null,
-    });
-    await api.requestCancelRun(actor, pendingRun.runId, [200]);
+    const owned = await publicChatActor(context);
+    const { actor, agentId } = owned;
+    await owned.run(async () => {
+      const pendingRun = await owned.sendChatRun(actor, {
+        agentId,
+        prompt: "pending detail run",
+      });
+      const pendingDetail = await reads.requestReadLogById(
+        actor,
+        pendingRun.runId,
+        [200],
+      );
+      expect(pendingDetail.body).toMatchObject({
+        id: pendingRun.runId,
+        status: "pending",
+        sessionId: null,
+        completedAt: null,
+      });
+      await api.requestCancelRun(actor, pendingRun.runId, [200]);
 
-    const failedRun = await api.createThreadRun(actor, {
-      agentId: agentOne.agentId,
-      prompt: "failed detail run",
-    });
-    await webhooks.requestAgentComplete(
-      { runId: failedRun.runId, exitCode: 1, error: "bdd failure" },
-      sandboxHeaders(api.sandboxTokenForRun(actor, failedRun.runId)),
-      [200],
-    );
-    const failedDetail = await reads.requestReadLogById(
-      actor,
-      failedRun.runId,
-      [200],
-    );
-    expect(failedDetail.body).toMatchObject({
-      id: failedRun.runId,
-      status: "failed",
-      error: "bdd failure",
+      const failedRun = await owned.sendChatRun(actor, {
+        agentId,
+        prompt: "failed detail run",
+      });
+      const { claim } = await owned.claimChatRun(
+        owned.runnerGroup,
+        failedRun.runId,
+      );
+      await webhooks.requestAgentComplete(
+        { runId: failedRun.runId, exitCode: 1, error: "bdd failure" },
+        sandboxHeaders(claim.sandboxToken),
+        [200],
+      );
+      const failedDetail = await reads.requestReadLogById(
+        actor,
+        failedRun.runId,
+        [200],
+      );
+      expect(failedDetail.body).toMatchObject({
+        id: failedRun.runId,
+        status: "failed",
+        error: "bdd failure",
+      });
     });
   });
 

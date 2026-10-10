@@ -1,6 +1,6 @@
 -- One statement/snapshot. $1 UTC date, $2 exact org or NULL, $3 exact user or NULL.
--- $4 canonical provider -> lookup provider JSON object (normally {}). Same alias
--- contract as resolveUsagePricingProvider; never use model-name prefix matching.
+-- $4 canonical provider -> lookup provider JSON object (normally {}), retained
+-- for historical reconciliation; never use model-name prefix matching.
 -- Caller: READ ONLY, UTC, lock_timeout=1s, statement_timeout<=5s.
 WITH facts AS MATERIALIZED (
   SELECT billing_context, billing_anchor_at, provider, category,

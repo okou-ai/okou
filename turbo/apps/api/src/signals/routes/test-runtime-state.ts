@@ -7,7 +7,6 @@ import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { runnerWssTickets } from "@okouai/db/schema/runner-wss-ticket";
 import { command } from "ccstate";
 
-import { AUTO_RUN_KEY_VENDOR } from "@okouai/core/auto-run-model";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { eq, sql } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
@@ -16,16 +15,6 @@ import { bodyResultOf } from "../context/request";
 import { writeDb$, type Db } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { writeRunMetadata$ } from "../services/agent-run-metadata-write.service";
-import {
-  acquireBuiltInModelKeyFixture,
-  releaseBuiltInModelKeyFixture,
-} from "../services/built-in-model-key-fixture";
-import { catalogBuiltInModelRouteUpstream } from "../services/built-in-model-runtime-route.service";
-import {
-  catalogBuiltInRoute,
-  modelCatalog$,
-  type ModelCatalog,
-} from "../services/model-catalog.service";
 import { saveRunSummary$ } from "../services/run-summary.service";
 import { resolveRunnerWssTarget$ } from "../services/runner-wss-target.service";
 
@@ -34,38 +23,9 @@ import {
   testEndpointNotFoundResponse,
 } from "./test-endpoint-helpers";
 
-import { PI_MEMORY_BUILTIN_BINDING } from "../services/pi-memory-builtin-config";
-
-/** Infrastructure fixtures seed only the OpenRouter key behind fixed Auto or
- * the independent memory binding; retired vendor keys are never seeded. */
-function builtInModelKeyVendor(
-  catalogSnapshot: ModelCatalog,
-  selectedModel: string,
-): string | null {
-  if (selectedModel === PI_MEMORY_BUILTIN_BINDING.selectedModel) {
-    const route = catalogBuiltInRoute(
-      catalogSnapshot,
-      selectedModel,
-      PI_MEMORY_BUILTIN_BINDING.providerType,
-    );
-    if (
-      !route?.enabled ||
-      route.upstreamModel !== PI_MEMORY_BUILTIN_BINDING.upstreamModel
-    ) {
-      throw new Error("Expected the independent fixed memory binding");
-    }
-    return AUTO_RUN_KEY_VENDOR;
-  }
-  return catalogBuiltInModelRouteUpstream(catalogSnapshot, selectedModel) ===
-    null
-    ? null
-    : AUTO_RUN_KEY_VENDOR;
-}
-
 // Test-only support actions for generic infrastructure fixtures.
 
 const actionBody$ = bodyResultOf(testRuntimeStateContract.action);
-const BUILT_IN_MODEL_KEY_FIXTURE_PREFIX = "built-in-key-runtime-fixture-";
 type RunSummaryFixtureAction = Extract<
   TestRuntimeStateActionBody,
   { action: "save-run-summary" }
@@ -93,114 +53,6 @@ const runSummaryFixtureActionResponse$ = command(
     return { status: 200 as const, body: { ok: true as const } };
   },
 );
-
-async function seedBuiltInDefaultModelKey(
-  catalogSnapshot: ModelCatalog,
-  db: Db,
-  fixtureId: string,
-  signal: AbortSignal,
-): Promise<string> {
-  return await seedBuiltInModelKey(
-    catalogSnapshot,
-    db,
-    fixtureId,
-    await catalogSnapshot.systemDefaultModel,
-    signal,
-  );
-}
-
-async function seedBuiltInModelKey(
-  catalogSnapshot: ModelCatalog,
-  db: Db,
-  fixtureId: string,
-  selectedModel: string,
-  signal: AbortSignal,
-): Promise<string> {
-  const vendor = builtInModelKeyVendor(catalogSnapshot, selectedModel);
-  if (vendor === null) {
-    throw new Error(`Expected a Built-in catalog route for ${selectedModel}`);
-  }
-  await acquireBuiltInModelKeyFixture(db, fixtureId, [
-    {
-      vendor,
-      apiKey: `${BUILT_IN_MODEL_KEY_FIXTURE_PREFIX}${fixtureId}`,
-    },
-  ]);
-  signal.throwIfAborted();
-  return selectedModel;
-}
-
-async function deleteBuiltInModelKey(
-  db: Db,
-  fixtureId: string,
-  signal: AbortSignal,
-): Promise<void> {
-  await releaseBuiltInModelKeyFixture(db, fixtureId);
-  signal.throwIfAborted();
-}
-
-type BuiltInModelAction = Extract<
-  TestRuntimeStateActionBody,
-  {
-    action:
-      | "seed-built-in-default-model-key"
-      | "seed-built-in-model-key"
-      | "delete-built-in-model-key";
-  }
->;
-
-function isBuiltInModelAction(
-  body: TestRuntimeStateActionBody,
-): body is BuiltInModelAction {
-  return [
-    "seed-built-in-default-model-key",
-    "seed-built-in-model-key",
-    "delete-built-in-model-key",
-  ].includes(body.action);
-}
-
-async function builtInModelActionResponse(
-  catalogSnapshot: ModelCatalog,
-  db: Db,
-  body: BuiltInModelAction,
-  signal: AbortSignal,
-) {
-  switch (body.action) {
-    case "seed-built-in-default-model-key": {
-      return {
-        status: 200 as const,
-        body: {
-          ok: true as const,
-          selected_model: await seedBuiltInDefaultModelKey(
-            catalogSnapshot,
-            db,
-            body.fixture_id,
-            signal,
-          ),
-        },
-      };
-    }
-    case "seed-built-in-model-key": {
-      return {
-        status: 200 as const,
-        body: {
-          ok: true as const,
-          selected_model: await seedBuiltInModelKey(
-            catalogSnapshot,
-            db,
-            body.fixture_id,
-            body.selected_model,
-            signal,
-          ),
-        },
-      };
-    }
-    case "delete-built-in-model-key": {
-      await deleteBuiltInModelKey(db, body.fixture_id, signal);
-      return { status: 200 as const, body: { ok: true as const } };
-    }
-  }
-}
 
 const runMetadataFixtureAction$ = command(
   async (
@@ -320,40 +172,6 @@ async function autonomyBudgetFixtureActionResponse(
       };
     }
   }
-}
-
-type ReadRunLaunchSnapshotAction = Extract<
-  TestRuntimeStateActionBody,
-  { action: "read-run-launch-snapshot" }
->;
-
-function isReadRunLaunchSnapshotAction(
-  body: TestRuntimeStateActionBody,
-): body is ReadRunLaunchSnapshotAction {
-  return body.action === "read-run-launch-snapshot";
-}
-
-async function readRunLaunchSnapshotActionResponse(
-  db: Db,
-  body: ReadRunLaunchSnapshotAction,
-  signal: AbortSignal,
-) {
-  const [run] = await db
-    .select({ launchSnapshot: agentRuns.launchSnapshot })
-    .from(agentRuns)
-    .where(eq(agentRuns.id, body.run_id))
-    .limit(1);
-  signal.throwIfAborted();
-  return {
-    status: 200 as const,
-    body: {
-      ok: true as const,
-      run_launch_snapshot: {
-        exists: run !== undefined,
-        launch_snapshot: run?.launchSnapshot ?? null,
-      },
-    },
-  };
 }
 
 type PreviousApiRunnerJobContextProfileAction = Extract<
@@ -552,22 +370,11 @@ const postRuntimeStateAction$ = command(
       return await set(runMetadataFixtureAction$, body, signal);
     }
     const db = set(writeDb$);
-    if (isReadRunLaunchSnapshotAction(body)) {
-      return await readRunLaunchSnapshotActionResponse(db, body, signal);
-    }
     if (isRunSummaryFixtureAction(body)) {
       return await set(runSummaryFixtureActionResponse$, body, signal);
     }
     if (isCompatibilityFixtureAction(body)) {
       return await compatibilityFixtureActionResponse(db, body, signal);
-    }
-    if (isBuiltInModelAction(body)) {
-      return await builtInModelActionResponse(
-        await get(modelCatalog$),
-        db,
-        body,
-        signal,
-      );
     }
     const specializedFixture = await set(
       specializedRuntimeFixtureAction$,

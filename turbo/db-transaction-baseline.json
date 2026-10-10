@@ -262,16 +262,6 @@
       "owner": "retireExpiredInactiveBrowser$"
     },
     {
-      "id": "TX-0075",
-      "file": "turbo/apps/api/src/signals/services/built-in-model-key-fixture.ts",
-      "owner": "acquireBuiltInModelKeyFixture"
-    },
-    {
-      "id": "TX-0076",
-      "file": "turbo/apps/api/src/signals/services/built-in-model-key-fixture.ts",
-      "owner": "releaseBuiltInModelKeyFixture"
-    },
-    {
       "id": "TX-0077",
       "file": "turbo/apps/api/src/signals/services/builtin-connector-automatic-connection.service.ts",
       "owner": "publishAutomaticConnection$"
@@ -1485,11 +1475,6 @@
       "id": "TX-0350",
       "file": "turbo/apps/api/src/test-fixtures/connector-catalog.ts",
       "owner": "publishFixtureGeneration"
-    },
-    {
-      "id": "TX-0351",
-      "file": "turbo/apps/api/src/test-fixtures/org-metadata.ts",
-      "owner": "upsertOrgMetadataFixture"
     },
     {
       "id": "TX-0355",

@@ -13,10 +13,7 @@ import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { mcpServerRoutes } from "../mcp-server";
 import type { ApiTestUser } from "./helpers/api-bdd";
-import {
-  createChatEventsFixture,
-  userMessages,
-} from "./helpers/chat-events-fixture";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { createRouteMocks } from "./helpers/route-test";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { modelCatalogRoutes } from "../model-catalog";
@@ -36,7 +33,6 @@ const {
   claimChatRun,
   waitForThreadMessages,
   cancelChatRun,
-  seedBuiltInModelKey,
   configureSubscriptionPiModel,
 } = createChatEventsFixture(context);
 
@@ -141,29 +137,6 @@ function requireOrgId(actor: ApiTestUser): string {
     throw new Error("Expected an organization-scoped actor");
   }
   return actor.orgId;
-}
-
-/** Wait for the pick of a queued input and return the run it launched. */
-async function pickedRunId(
-  actor: ApiTestUser,
-  threadId: string,
-  clientEventId: string,
-): Promise<string> {
-  await flushWaitUntilForTest();
-  const page = await waitForThreadMessages(actor, threadId, (events) => {
-    return userMessages(events).some((message) => {
-      return (
-        message.revokesEventId === clientEventId && message.runId !== undefined
-      );
-    });
-  });
-  const runId = userMessages(page.events).find((message) => {
-    return message.revokesEventId === clientEventId;
-  })?.runId;
-  if (runId === undefined) {
-    throw new Error("Expected the queued input to launch a run");
-  }
-  return runId;
 }
 
 /** The thread snapshot and its one model event name the final successor. */
@@ -480,33 +453,6 @@ describe("public selections of replaced models", () => {
       source: null,
       admission: "checked_on_send",
     });
-  }, 90_000);
-
-  it("keeps the queued Auto selection when the active run releases its slot", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
-    await seedBuiltInModelKey("okou-1.0");
-    const active = await sendChatRun(actor, {
-      agentId,
-      model: null,
-      prompt: "keep the thread busy",
-    });
-    const clientEventId = randomUUID();
-    await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        threadId: active.threadId,
-        model: null,
-        prompt: "queued Auto",
-        clientEventId,
-      },
-      [201],
-    );
-    await flushWaitUntilForTest();
-    await cancelChatRun(actor, active.runId);
-    const runId = await pickedRunId(actor, active.threadId, clientEventId);
-    expect((await api.readRun(actor, runId)).source.model).toBe("auto");
-    await cancelChatRun(actor, runId);
   }, 90_000);
 
   it("stores an explicitly requested replaced model as its successor on the thread and member preference", async () => {

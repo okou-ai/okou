@@ -71,7 +71,6 @@ import { VERCEL_AUTOMATION_BYPASS_ENV } from "../../lib/preview-automation-bypas
 
 import { now, nowDate } from "../../lib/time";
 import { previewAutomationBypass$ } from "../context/hono";
-import { usagePricingResolution$ } from "../context/usage-pricing-resolution";
 import { waitUntil } from "../context/wait-until";
 import { type Db, db$, type ReadonlyDb, writeDb$ } from "../external/db";
 import {
@@ -4955,7 +4954,6 @@ export function createThreadClaimRunObjects(
         {
           modelProvider,
           serviceTier: (await get(contextInput$)).args.codexServiceTier,
-          resolution: get(usagePricingResolution$),
         },
         await get((await get(executionContext$)).modelPricing$),
       ),

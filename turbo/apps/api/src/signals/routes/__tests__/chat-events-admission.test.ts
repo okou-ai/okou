@@ -1,6 +1,7 @@
 import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import { userPreferencesRoutes } from "../user-preferences";
-import { createStoragesBddApi } from "./helpers/api-bdd-storages";
+import { createPublicComputerUseScenario } from "./helpers/public-computer-use-scenario";
+import { expectCanonicalStorageManifest } from "./helpers/api-bdd-runs";
 import { randomUUID } from "node:crypto";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
 import { mailContract } from "@okouai/api-contracts/contracts/mail";
@@ -59,75 +60,102 @@ async function entitledChatActor() {
 
 describe("CHAT-02: on-demand member memory initialization", () => {
   it("initializes an existing member's memory from preferences before the member's first run", async () => {
-    const { actor: owner } = await entitledChatActor();
-    const member = bdd.user({ orgId: owner.orgId, orgRole: "org:member" });
-    await api.ensurePersonalSubscriptionModel(member, {
-      model: "claude-fable-5-1",
+    const lifecycle = createPublicComputerUseScenario(context);
+    const owner = lifecycle.user();
+    const member = lifecycle.user({
+      orgId: owner.orgId,
+      orgRole: "org:member",
     });
-    const preferences = setupApp({ context, routes: userPreferencesRoutes })(
-      userPreferencesContract,
-    );
-    const storages = createStoragesBddApi(context);
-    // An existing member with preferences but no memory, as before on-demand
-    // initialization: the read reports it without writing anything.
-    await accept(
-      preferences.update({
-        headers: sessionHeaders(member),
-        body: { timezone: "Asia/Tokyo", locale: "ja-JP" },
-      }),
-      [200],
-    );
-    const before = await accept(
-      preferences.get({ headers: sessionHeaders(member) }),
-      [200],
-    );
-    expect(before.body.memoryInitialized).toBeFalsy();
-    await expect(
-      accept(preferences.get({ headers: sessionHeaders(member) }), [200]),
-    ).resolves.toMatchObject({ body: { memoryInitialized: false } });
+    await lifecycle.run(async () => {
+      await lifecycle.prepareActor(owner);
+      await api.ensurePersonalSubscriptionModel(member, {
+        model: "claude-fable-5-1",
+      });
+      const preferences = setupApp({ context, routes: userPreferencesRoutes })(
+        userPreferencesContract,
+      );
+      // An existing member with preferences but no memory, as before on-demand
+      // initialization: the read reports it without writing anything.
+      await accept(
+        preferences.update({
+          headers: sessionHeaders(member),
+          body: { timezone: "Asia/Tokyo", locale: "ja-JP" },
+        }),
+        [200],
+      );
+      const before = await accept(
+        preferences.get({ headers: sessionHeaders(member) }),
+        [200],
+      );
+      expect(before.body.memoryInitialized).toBeFalsy();
+      await expect(
+        accept(preferences.get({ headers: sessionHeaders(member) }), [200]),
+      ).resolves.toMatchObject({ body: { memoryInitialized: false } });
 
-    const initialized = await accept(
-      preferences.initialize({
-        headers: sessionHeaders(member),
-        body: { timezone: "America/Los_Angeles", locale: "en-US" },
-      }),
-      [200],
-    );
-    expect(initialized.body).toMatchObject({
-      timezone: "Asia/Tokyo",
-      locale: "ja-JP",
-      memoryInitialized: true,
-    });
-    const memory = await storages.downloadStorage(member, {
-      name: "memory",
-      owner: "user",
-    });
+      const initialized = await accept(
+        preferences.initialize({
+          headers: sessionHeaders(member),
+          body: { timezone: "America/Los_Angeles", locale: "en-US" },
+        }),
+        [200],
+      );
+      expect(initialized.body).toMatchObject({
+        timezone: "Asia/Tokyo",
+        locale: "ja-JP",
+        memoryInitialized: true,
+      });
 
-    const agent = await bdd.createAgent(member, {
-      displayName: "Member memory agent",
-      visibility: "private",
-    });
-    // The member runs with their own connected subscription, never the owner's
-    // account. Memory initialization remains independent of provider ownership.
-    const launched = await sendChatRun(member, {
-      agentId: agent.agentId,
-      model: "claude-fable-5-1",
-      prompt: "run after on-demand memory initialization",
-    });
-    expect(launched.runId).toStrictEqual(expect.any(String));
-    await cancelChatRun(member, launched.runId);
+      const agent = await bdd.createAgent(member, {
+        displayName: "Member memory agent",
+        visibility: "private",
+      });
+      // The member runs with their own connected subscription, never the owner's
+      // account. Memory initialization remains independent of provider ownership.
+      const launched = await sendChatRun(member, {
+        agentId: agent.agentId,
+        model: "claude-fable-5-1",
+        prompt: "run after on-demand memory initialization",
+      });
+      expect(launched.runId).toStrictEqual(expect.any(String));
+      const claim = await lifecycle.claimExisting(member, launched.runId);
+      const memory = expectCanonicalStorageManifest(
+        claim.storageManifest,
+      )?.storageMounts.find((mount) => {
+        return mount.name === "memory";
+      });
+      if (!memory) {
+        throw new Error("Expected the member's real Memory mount");
+      }
+      expect(memory.empty).toBeTruthy();
+      await lifecycle.cancelRun(member, launched.runId);
 
-    // Repeating initialization keeps the existing memory unchanged.
-    await accept(
-      preferences.initialize({
-        headers: sessionHeaders(member),
-        body: { timezone: "America/Los_Angeles", locale: "en-US" },
-      }),
-      [200],
-    );
-    await expect(
-      storages.downloadStorage(member, { name: "memory", owner: "user" }),
-    ).resolves.toStrictEqual(memory);
+      // Repeating initialization keeps the existing memory unchanged.
+      await accept(
+        preferences.initialize({
+          headers: sessionHeaders(member),
+          body: { timezone: "America/Los_Angeles", locale: "en-US" },
+        }),
+        [200],
+      );
+      const next = await sendChatRun(member, {
+        agentId: agent.agentId,
+        model: "claude-fable-5-1",
+        prompt: "Observe repeated memory initialization",
+      });
+      const repeated = await lifecycle.claimExisting(member, next.runId);
+      expect(
+        expectCanonicalStorageManifest(
+          repeated.storageManifest,
+        )?.storageMounts.find((mount) => {
+          return mount.name === "memory";
+        }),
+      ).toMatchObject({
+        empty: true,
+        storageId: memory.storageId,
+        versionId: memory.versionId,
+      });
+      await lifecycle.cancelRun(member, next.runId);
+    });
   });
 });
 

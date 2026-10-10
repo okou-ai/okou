@@ -22,7 +22,6 @@ import {
   insufficientCredits,
   providerUnavailable,
 } from "../../lib/error";
-import { usagePricingResolution$ } from "../context/usage-pricing-resolution";
 import { safeSync, settle } from "../utils";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import type {
@@ -317,7 +316,6 @@ function createQueuedModel(
               catalog: await get(bootstrap.modelCatalog$),
               model: pin.selectedModel,
               serviceTier: undefined,
-              resolution: get(usagePricingResolution$),
             },
             await get(bootstrap.modelPricing$),
           )
@@ -373,7 +371,7 @@ function createBuiltInRuntimeRoute(
         return key.vendor === AUTO_RUN_KEY_VENDOR;
       })?.id,
       routePricing: builtInRoutePricingFromSnapshot(
-        { serviceTier: undefined, resolution: get(usagePricingResolution$) },
+        { serviceTier: undefined },
         pricing,
       ),
     });

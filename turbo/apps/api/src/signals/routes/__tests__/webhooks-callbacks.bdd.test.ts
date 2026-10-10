@@ -46,7 +46,6 @@ import {
   createRunsApi,
   expectCanonicalStorageManifest,
 } from "./helpers/api-bdd-runs";
-import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createUserConfigBddApi } from "./helpers/api-bdd-user-config";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 
@@ -114,29 +113,18 @@ function collectorEvidence(stage: "initial" | "sample" | "cleanup") {
 }
 
 async function createEventWebhookRun(prompt: string) {
-  const bdd = createBddApi(context);
-  const runs = createRunsApi(context);
-  const actor = bdd.user();
-  bdd.acceptAgentStorageWrites();
-  runs.acceptStorageDownloads();
-  runs.acceptTelemetryIngest();
-  runs.configureRunnerGroup();
-  await runs.grantProEntitlement(actor);
-  await runs.ensurePersonalSubscriptionModel(actor);
-  const agent = await bdd.createAgent(actor, {
-    displayName: `BDD Event Consumer ${randomUUID()}`,
-    visibility: "private",
-  });
-  const run = await runs.createThreadRun(actor, {
-    agentId: agent.agentId,
+  const owned = await publicChatActor(context);
+  const run = await owned.sendChatRun(owned.actor, {
+    agentId: owned.agentId,
     prompt,
   });
+  const claimed = await owned.claimChatRun(owned.runnerGroup, run.runId);
   return {
-    actor,
+    actor: owned.actor,
     runId: run.runId,
-    headers: {
-      authorization: `Bearer ${runs.sandboxTokenForRun(actor, run.runId)}`,
-    },
+    headers: claimed.sandboxHeaders,
+    run: owned.run,
+    ownsFeatureSwitches: owned.ownsFeatureSwitches,
   };
 }
 
@@ -1436,128 +1424,121 @@ describe("WHCB-03: email inbound webhook boundaries", () => {
 
 describe("WHCB-04: internal callback and event-consumer boundaries", () => {
   it("exports raw events for a debug-enabled owner while the trace stays best effort", async () => {
-    const bdd = createBddApi(context);
-    const runs = createRunsApi(context);
-    const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    runs.configureRunnerGroup();
-    await runs.grantProEntitlement(actor);
-    await runs.ensurePersonalSubscriptionModel(actor);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "BDD Axiom Event Consumer Agent",
-      visibility: "private",
-    });
-    const run = await runs.createThreadRun(actor, {
-      agentId: agent.agentId,
+    const owned = await publicChatActor(context);
+    owned.ownsFeatureSwitches();
+    const { actor } = owned;
+    const run = await owned.sendChatRun(actor, {
+      agentId: owned.agentId,
       prompt: "emit events to Axiom",
     });
-    const headers = {
-      authorization: `Bearer ${runs.sandboxTokenForRun(actor, run.runId)}`,
-    };
-    await createBillingMediaApi(context).updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.OkouDebug]: true,
-    });
-    const body = {
-      runId: run.runId,
-      events: [
-        { type: "assistant", sequenceNumber: 1, message: { content: [] } },
-        { type: "tool_result", sequenceNumber: 2, result: "ok" },
-      ],
-    };
-    let ingestRequests = 0;
-    const ingestedEvents: unknown[] = [];
-    server.use(
-      http.post(
-        "https://api.axiom.co/v1/datasets/agent-run-events/ingest",
-        async ({ request }) => {
-          ingestRequests += 1;
-          ingestedEvents.push(await request.json());
+    const { sandboxHeaders: headers } = await owned.claimChatRun(
+      owned.runnerGroup,
+      run.runId,
+    );
+    await owned.run(async () => {
+      await createBillingMediaApi(context).updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.OkouDebug]: true,
+      });
+      const body = {
+        runId: run.runId,
+        events: [
+          { type: "assistant", sequenceNumber: 1, message: { content: [] } },
+          { type: "tool_result", sequenceNumber: 2, result: "ok" },
+        ],
+      };
+      let ingestRequests = 0;
+      const ingestedEvents: unknown[] = [];
+      server.use(
+        http.post(
+          "https://api.axiom.co/v1/datasets/agent-run-events/ingest",
+          async ({ request }) => {
+            ingestRequests += 1;
+            ingestedEvents.push(await request.json());
+            return HttpResponse.json(
+              successfulAxiomIngestStatus(body.events.length),
+            );
+          },
+        ),
+      );
+
+      const ingested = await api.requestAgentEvents(body, headers, [200]);
+      expect(ingested.body).toStrictEqual({
+        received: 2,
+        firstSequence: 1,
+        lastSequence: 2,
+      });
+      await flushWaitUntilForTest();
+      expect(ingestRequests).toBe(1);
+      expect(ingestedEvents).toStrictEqual([
+        body.events.map((event) => {
+          return {
+            runId: run.runId,
+            userId: actor.userId,
+            sequenceNumber: event.sequenceNumber,
+            eventType: event.type,
+            eventData: event,
+          };
+        }),
+      ]);
+      mockOptionalEnv("AXIOM_TOKEN_SESSIONS", undefined);
+      const unconfigured = await api.requestAgentEvents(body, headers, [200]);
+      expect(unconfigured.body).toStrictEqual({
+        received: 2,
+        firstSequence: 1,
+        lastSequence: 2,
+      });
+      await flushWaitUntilForTest();
+      expect(ingestRequests).toBe(1);
+
+      mockOptionalEnv("AXIOM_TOKEN_SESSIONS", "xaat-test-sessions");
+      let failedRequestCount = 0;
+      server.use(
+        http.post(
+          "https://api.axiom.co/v1/datasets/agent-run-events/ingest",
+          () => {
+            failedRequestCount += 1;
+            return HttpResponse.text("unavailable", { status: 503 });
+          },
+        ),
+      );
+      const unavailable = await api.requestAgentEvents(body, headers, [200]);
+      expect(unavailable.body).toStrictEqual({
+        received: 2,
+        firstSequence: 1,
+        lastSequence: 2,
+      });
+      await flushWaitUntilForTest();
+      expect(failedRequestCount).toBe(1);
+
+      const redirectTarget =
+        "https://api.axiom.co/v1/datasets/redirected-agent-run-events/ingest";
+      let redirectTargetRequests = 0;
+      server.use(
+        http.post(
+          "https://api.axiom.co/v1/datasets/agent-run-events/ingest",
+          () => {
+            return new HttpResponse(null, {
+              headers: { location: redirectTarget },
+              status: 307,
+            });
+          },
+        ),
+        http.post(redirectTarget, () => {
+          redirectTargetRequests += 1;
           return HttpResponse.json(
             successfulAxiomIngestStatus(body.events.length),
           );
-        },
-      ),
-    );
-
-    const ingested = await api.requestAgentEvents(body, headers, [200]);
-    expect(ingested.body).toStrictEqual({
-      received: 2,
-      firstSequence: 1,
-      lastSequence: 2,
+        }),
+      );
+      const redirected = await api.requestAgentEvents(body, headers, [200]);
+      expect(redirected.body).toStrictEqual({
+        received: 2,
+        firstSequence: 1,
+        lastSequence: 2,
+      });
+      await flushWaitUntilForTest();
+      expect(redirectTargetRequests).toBe(0);
     });
-    await flushWaitUntilForTest();
-    expect(ingestRequests).toBe(1);
-    expect(ingestedEvents).toStrictEqual([
-      body.events.map((event) => {
-        return {
-          runId: run.runId,
-          userId: actor.userId,
-          sequenceNumber: event.sequenceNumber,
-          eventType: event.type,
-          eventData: event,
-        };
-      }),
-    ]);
-    mockOptionalEnv("AXIOM_TOKEN_SESSIONS", undefined);
-    const unconfigured = await api.requestAgentEvents(body, headers, [200]);
-    expect(unconfigured.body).toStrictEqual({
-      received: 2,
-      firstSequence: 1,
-      lastSequence: 2,
-    });
-    await flushWaitUntilForTest();
-    expect(ingestRequests).toBe(1);
-
-    mockOptionalEnv("AXIOM_TOKEN_SESSIONS", "xaat-test-sessions");
-    let failedRequestCount = 0;
-    server.use(
-      http.post(
-        "https://api.axiom.co/v1/datasets/agent-run-events/ingest",
-        () => {
-          failedRequestCount += 1;
-          return HttpResponse.text("unavailable", { status: 503 });
-        },
-      ),
-    );
-    const unavailable = await api.requestAgentEvents(body, headers, [200]);
-    expect(unavailable.body).toStrictEqual({
-      received: 2,
-      firstSequence: 1,
-      lastSequence: 2,
-    });
-    await flushWaitUntilForTest();
-    expect(failedRequestCount).toBe(1);
-
-    const redirectTarget =
-      "https://api.axiom.co/v1/datasets/redirected-agent-run-events/ingest";
-    let redirectTargetRequests = 0;
-    server.use(
-      http.post(
-        "https://api.axiom.co/v1/datasets/agent-run-events/ingest",
-        () => {
-          return new HttpResponse(null, {
-            headers: { location: redirectTarget },
-            status: 307,
-          });
-        },
-      ),
-      http.post(redirectTarget, () => {
-        redirectTargetRequests += 1;
-        return HttpResponse.json(
-          successfulAxiomIngestStatus(body.events.length),
-        );
-      }),
-    );
-    const redirected = await api.requestAgentEvents(body, headers, [200]);
-    expect(redirected.body).toStrictEqual({
-      received: 2,
-      firstSequence: 1,
-      lastSequence: 2,
-    });
-    await flushWaitUntilForTest();
-    expect(redirectTargetRequests).toBe(0);
   });
 
   it("acknowledges an event batch when its required DB run is missing", async () => {
@@ -1591,103 +1572,117 @@ describe("WHCB-04: internal callback and event-consumer boundaries", () => {
   });
 
   it("acknowledges the event batch before the Axiom sub-deadline elapses", async () => {
-    const { actor, runId, headers } = await createEventWebhookRun(
-      "best-effort Axiom deadline",
-    );
-    await createBillingMediaApi(context).updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.OkouDebug]: true,
-    });
-    const submittedPayloadValue = `private-timeout-value-${randomUUID()}`;
-    const axiomToken = `xaat-timeout-${randomUUID()}`;
-    mockOptionalEnv("AXIOM_TOKEN_SESSIONS", axiomToken);
-    const startedAt = now();
-    mockNow(startedAt);
-    const ingestStarted = createDeferredPromise<void>(context.signal);
-    const releaseIngest = createDeferredPromise<void>(context.signal);
-    const axiomDeadline = new AbortController();
-    context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
-      return milliseconds === 10_000 ? axiomDeadline.signal : undefined;
-    });
-    onTestFinished(() => {
-      if (!releaseIngest.settled()) {
-        releaseIngest.resolve(undefined);
-      }
-    });
-    server.use(
-      http.post(
-        "https://api.axiom.co/v1/datasets/agent-run-events/ingest",
-        async () => {
-          ingestStarted.resolve(undefined);
-          await releaseIngest.promise;
-          return HttpResponse.json(successfulAxiomIngestStatus(1));
-        },
-      ),
-    );
-    const response = await api.requestAgentEvents(
-      {
-        runId,
-        events: [
-          {
-            type: "result",
-            sequenceNumber: 0,
-            result: submittedPayloadValue,
-          },
-        ],
-      },
+    const {
+      actor,
+      runId,
       headers,
-      [200],
-    );
-    expect(response.body).toStrictEqual({
-      received: 1,
-      firstSequence: 0,
-      lastSequence: 0,
-    });
-    await ingestStarted.promise;
-    mockNow(startedAt + 2345);
-    axiomDeadline.abort(
-      new DOMException("Axiom ingest deadline", "TimeoutError"),
-    );
+      run: own,
+      ownsFeatureSwitches,
+    } = await createEventWebhookRun("best-effort Axiom deadline");
+    ownsFeatureSwitches();
+    await own(async () => {
+      await createBillingMediaApi(context).updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.OkouDebug]: true,
+      });
+      const submittedPayloadValue = `private-timeout-value-${randomUUID()}`;
+      const axiomToken = `xaat-timeout-${randomUUID()}`;
+      mockOptionalEnv("AXIOM_TOKEN_SESSIONS", axiomToken);
+      const startedAt = now();
+      mockNow(startedAt);
+      const ingestStarted = createDeferredPromise<void>(context.signal);
+      const releaseIngest = createDeferredPromise<void>(context.signal);
+      const axiomDeadline = new AbortController();
+      context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
+        return milliseconds === 10_000 ? axiomDeadline.signal : undefined;
+      });
+      onTestFinished(() => {
+        if (!releaseIngest.settled()) {
+          releaseIngest.resolve(undefined);
+        }
+      });
+      server.use(
+        http.post(
+          "https://api.axiom.co/v1/datasets/agent-run-events/ingest",
+          async () => {
+            ingestStarted.resolve(undefined);
+            await releaseIngest.promise;
+            return HttpResponse.json(successfulAxiomIngestStatus(1));
+          },
+        ),
+      );
+      const response = await api.requestAgentEvents(
+        {
+          runId,
+          events: [
+            {
+              type: "result",
+              sequenceNumber: 0,
+              result: submittedPayloadValue,
+            },
+          ],
+        },
+        headers,
+        [200],
+      );
+      expect(response.body).toStrictEqual({
+        received: 1,
+        firstSequence: 0,
+        lastSequence: 0,
+      });
+      await ingestStarted.promise;
+      mockNow(startedAt + 2345);
+      axiomDeadline.abort(
+        new DOMException("Axiom ingest deadline", "TimeoutError"),
+      );
 
-    releaseIngest.resolve(undefined);
-    await flushWaitUntilForTest();
+      releaseIngest.resolve(undefined);
+      await flushWaitUntilForTest();
+    });
   });
 
   it("acknowledges events when the optional Axiom status is malformed", async () => {
-    const { actor, runId, headers } = await createEventWebhookRun(
-      "malformed optional Axiom status",
-    );
-    await createBillingMediaApi(context).updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.OkouDebug]: true,
-    });
-    server.use(
-      http.post(
-        "https://api.axiom.co/v1/datasets/agent-run-events/ingest",
-        () => {
-          return HttpResponse.json({ ingested: 0, failed: 1 });
-        },
-      ),
-    );
-
-    const response = await api.requestAgentEvents(
-      {
-        runId,
-        events: [
-          {
-            type: "result",
-            sequenceNumber: 0,
-            result: "DB-backed callback output",
-          },
-        ],
-      },
+    const {
+      actor,
+      runId,
       headers,
-      [200],
-    );
-    expect(response.body).toStrictEqual({
-      received: 1,
-      firstSequence: 0,
-      lastSequence: 0,
+      run: own,
+      ownsFeatureSwitches,
+    } = await createEventWebhookRun("malformed optional Axiom status");
+    ownsFeatureSwitches();
+    await own(async () => {
+      await createBillingMediaApi(context).updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.OkouDebug]: true,
+      });
+      server.use(
+        http.post(
+          "https://api.axiom.co/v1/datasets/agent-run-events/ingest",
+          () => {
+            return HttpResponse.json({ ingested: 0, failed: 1 });
+          },
+        ),
+      );
+
+      const response = await api.requestAgentEvents(
+        {
+          runId,
+          events: [
+            {
+              type: "result",
+              sequenceNumber: 0,
+              result: "DB-backed callback output",
+            },
+          ],
+        },
+        headers,
+        [200],
+      );
+      expect(response.body).toStrictEqual({
+        received: 1,
+        firstSequence: 0,
+        lastSequence: 0,
+      });
+      await flushWaitUntilForTest();
     });
-    await flushWaitUntilForTest();
   });
 });
 
@@ -1726,424 +1721,470 @@ describe("WHCB-05: sandbox agent webhook boundaries", () => {
   });
 
   it("returns 500 when telemetry ingest times out", async () => {
-    const { runId, headers } = await createEventWebhookRun(
-      "required Axiom telemetry deadline",
-    );
-    const submittedHost = `${randomUUID()}.timeout.example.test`;
-    const axiomToken = `xaat-telemetry-timeout-${randomUUID()}`;
-    mockOptionalEnv("AXIOM_TOKEN_TELEMETRY", axiomToken);
-    const startedAt = now();
-    mockNow(startedAt);
-    const ingestStarted = createDeferredPromise<void>(context.signal);
-    const releaseIngest = createDeferredPromise<void>(context.signal);
-    const axiomDeadline = new AbortController();
-    context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
-      return milliseconds === 10_000 ? axiomDeadline.signal : undefined;
-    });
-    onTestFinished(() => {
-      if (!releaseIngest.settled()) {
-        releaseIngest.resolve(undefined);
-      }
-    });
-    server.use(
-      http.post(
-        "https://api.axiom.co/v1/datasets/sandbox-telemetry-network/ingest",
-        async () => {
-          ingestStarted.resolve(undefined);
-          await releaseIngest.promise;
-          return HttpResponse.json(successfulAxiomIngestStatus(1));
-        },
-      ),
-    );
-
-    const pendingResponse = api.requestAgentTelemetry(
-      {
-        runId,
-        networkLogs: [
-          { timestamp: nowDate().toISOString(), host: submittedHost },
-        ],
-      },
+    const {
+      runId,
       headers,
-      [500],
-    );
-    await ingestStarted.promise;
-    mockNow(startedAt + 3456);
-    axiomDeadline.abort(
-      new DOMException("Axiom telemetry deadline", "TimeoutError"),
-    );
-    releaseIngest.resolve(undefined);
+      run: own,
+    } = await createEventWebhookRun("required Axiom telemetry deadline");
+    await own(async () => {
+      const submittedHost = `${randomUUID()}.timeout.example.test`;
+      const axiomToken = `xaat-telemetry-timeout-${randomUUID()}`;
+      mockOptionalEnv("AXIOM_TOKEN_TELEMETRY", axiomToken);
+      const startedAt = now();
+      mockNow(startedAt);
+      const ingestStarted = createDeferredPromise<void>(context.signal);
+      const releaseIngest = createDeferredPromise<void>(context.signal);
+      const axiomDeadline = new AbortController();
+      context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
+        return milliseconds === 10_000 ? axiomDeadline.signal : undefined;
+      });
+      onTestFinished(() => {
+        if (!releaseIngest.settled()) {
+          releaseIngest.resolve(undefined);
+        }
+      });
+      server.use(
+        http.post(
+          "https://api.axiom.co/v1/datasets/sandbox-telemetry-network/ingest",
+          async () => {
+            ingestStarted.resolve(undefined);
+            await releaseIngest.promise;
+            return HttpResponse.json(successfulAxiomIngestStatus(1));
+          },
+        ),
+      );
 
-    const response = await pendingResponse;
-    expect(response.status).toBe(500);
-    expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
+      const pendingResponse = api.requestAgentTelemetry(
+        {
+          runId,
+          networkLogs: [
+            { timestamp: nowDate().toISOString(), host: submittedHost },
+          ],
+        },
+        headers,
+        [500],
+      );
+      await ingestStarted.promise;
+      mockNow(startedAt + 3456);
+      axiomDeadline.abort(
+        new DOMException("Axiom telemetry deadline", "TimeoutError"),
+      );
+      releaseIngest.resolve(undefined);
+
+      const response = await pendingResponse;
+      expect(response.status).toBe(500);
+      expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
+    });
   });
 
   it("returns 500 without API error capture when telemetry transport fails", async () => {
-    const { runId, headers } = await createEventWebhookRun(
+    const {
+      runId,
+      headers,
+      run: own,
+    } = await createEventWebhookRun(
       "required Axiom telemetry transport failure",
     );
-    mockOptionalEnv(
-      "AXIOM_TOKEN_TELEMETRY",
-      `xaat-telemetry-transport-${randomUUID()}`,
-    );
-    server.use(
-      http.post(
-        "https://api.axiom.co/v1/datasets/sandbox-telemetry-network/ingest",
-        () => {
-          return HttpResponse.error();
-        },
-      ),
-    );
-
-    const response = await api.requestAgentTelemetry(
-      {
-        runId,
-        networkLogs: [
-          {
-            timestamp: nowDate().toISOString(),
-            host: `${randomUUID()}.transport.example.test`,
+    await own(async () => {
+      mockOptionalEnv(
+        "AXIOM_TOKEN_TELEMETRY",
+        `xaat-telemetry-transport-${randomUUID()}`,
+      );
+      server.use(
+        http.post(
+          "https://api.axiom.co/v1/datasets/sandbox-telemetry-network/ingest",
+          () => {
+            return HttpResponse.error();
           },
-        ],
-      },
-      headers,
-      [500],
-    );
+        ),
+      );
 
-    expect(response.status).toBe(500);
-    expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
+      const response = await api.requestAgentTelemetry(
+        {
+          runId,
+          networkLogs: [
+            {
+              timestamp: nowDate().toISOString(),
+              host: `${randomUUID()}.transport.example.test`,
+            },
+          ],
+        },
+        headers,
+        [500],
+      );
+
+      expect(response.status).toBe(500);
+      expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
+    });
   });
 
   it("captures a deterministic telemetry failure alongside a transport failure", async () => {
-    const { runId, headers } = await createEventWebhookRun(
-      "mixed required Axiom telemetry failures",
-    );
-    mockOptionalEnv(
-      "AXIOM_TOKEN_TELEMETRY",
-      `xaat-telemetry-mixed-${randomUUID()}`,
-    );
-    server.use(
-      http.post(
-        "https://api.axiom.co/v1/datasets/sandbox-telemetry-metrics/ingest",
-        () => {
-          return HttpResponse.error();
-        },
-      ),
-      http.post(
-        "https://api.axiom.co/v1/datasets/sandbox-telemetry-network/ingest",
-        () => {
-          return new HttpResponse(null, { status: 503 });
-        },
-      ),
-    );
-
-    const response = await api.requestAgentTelemetry(
-      {
-        runId,
-        metrics: [
-          {
-            ts: nowDate().toISOString(),
-            cpu: 0.5,
-            mem_used: 1,
-            mem_total: 2,
-            disk_used: 3,
-            disk_total: 4,
-          },
-        ],
-        networkLogs: [
-          {
-            timestamp: nowDate().toISOString(),
-            host: `${randomUUID()}.deterministic.example.test`,
-          },
-        ],
-      },
+    const {
+      runId,
       headers,
-      [500],
-    );
+      run: own,
+    } = await createEventWebhookRun("mixed required Axiom telemetry failures");
+    await own(async () => {
+      mockOptionalEnv(
+        "AXIOM_TOKEN_TELEMETRY",
+        `xaat-telemetry-mixed-${randomUUID()}`,
+      );
+      server.use(
+        http.post(
+          "https://api.axiom.co/v1/datasets/sandbox-telemetry-metrics/ingest",
+          () => {
+            return HttpResponse.error();
+          },
+        ),
+        http.post(
+          "https://api.axiom.co/v1/datasets/sandbox-telemetry-network/ingest",
+          () => {
+            return new HttpResponse(null, { status: 503 });
+          },
+        ),
+      );
 
-    expect(response.status).toBe(500);
-    expect(context.mocks.sentry.captureException).toHaveBeenCalledTimes(1);
-    expect(context.mocks.sentry.captureException).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: "DirectAxiomIngestError",
-        reason: "http_status",
-        status: 503,
-      }),
-    );
+      const response = await api.requestAgentTelemetry(
+        {
+          runId,
+          metrics: [
+            {
+              ts: nowDate().toISOString(),
+              cpu: 0.5,
+              mem_used: 1,
+              mem_total: 2,
+              disk_used: 3,
+              disk_total: 4,
+            },
+          ],
+          networkLogs: [
+            {
+              timestamp: nowDate().toISOString(),
+              host: `${randomUUID()}.deterministic.example.test`,
+            },
+          ],
+        },
+        headers,
+        [500],
+      );
+
+      expect(response.status).toBe(500);
+      expect(context.mocks.sentry.captureException).toHaveBeenCalledTimes(1);
+      expect(context.mocks.sentry.captureException).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "DirectAxiomIngestError",
+          reason: "http_status",
+          status: 503,
+        }),
+      );
+    });
   });
 
   it("preserves parent cancellation at the telemetry request boundary", async () => {
-    const { runId, headers } = await createEventWebhookRun(
-      "parent-cancelled Axiom telemetry",
-    );
-    const ingestStarted = createDeferredPromise<void>(context.signal);
-    const releaseIngest = createDeferredPromise<void>(context.signal);
-    const parentController = new AbortController();
-    onTestFinished(() => {
-      if (!releaseIngest.settled()) {
-        releaseIngest.resolve(undefined);
-      }
-    });
-    server.use(
-      http.post(
-        "https://api.axiom.co/v1/datasets/sandbox-telemetry-network/ingest",
-        async () => {
-          ingestStarted.resolve(undefined);
-          await releaseIngest.promise;
-          return HttpResponse.json(successfulAxiomIngestStatus(1));
-        },
-      ),
-    );
-
-    const pendingResponse = api.requestAgentTelemetry(
-      {
-        runId,
-        networkLogs: [
-          {
-            timestamp: nowDate().toISOString(),
-            host: `${randomUUID()}.parent-abort.example.test`,
-          },
-        ],
-      },
+    const {
+      runId,
       headers,
-      [500],
-      parentController.signal,
-    );
-    await ingestStarted.promise;
-    const parentAbort = new Error("Parent request cancelled");
-    parentAbort.name = "AbortError";
-    parentController.abort(parentAbort);
-    releaseIngest.resolve(undefined);
+      run: own,
+    } = await createEventWebhookRun("parent-cancelled Axiom telemetry");
+    await own(async () => {
+      const ingestStarted = createDeferredPromise<void>(context.signal);
+      const releaseIngest = createDeferredPromise<void>(context.signal);
+      const parentController = new AbortController();
+      onTestFinished(() => {
+        if (!releaseIngest.settled()) {
+          releaseIngest.resolve(undefined);
+        }
+      });
+      server.use(
+        http.post(
+          "https://api.axiom.co/v1/datasets/sandbox-telemetry-network/ingest",
+          async () => {
+            ingestStarted.resolve(undefined);
+            await releaseIngest.promise;
+            return HttpResponse.json(successfulAxiomIngestStatus(1));
+          },
+        ),
+      );
 
-    const response = await pendingResponse;
-    expect(response.status).toBe(500);
-    expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
+      const pendingResponse = api.requestAgentTelemetry(
+        {
+          runId,
+          networkLogs: [
+            {
+              timestamp: nowDate().toISOString(),
+              host: `${randomUUID()}.parent-abort.example.test`,
+            },
+          ],
+        },
+        headers,
+        [500],
+        parentController.signal,
+      );
+      await ingestStarted.promise;
+      const parentAbort = new Error("Parent request cancelled");
+      parentAbort.name = "AbortError";
+      parentController.abort(parentAbort);
+      releaseIngest.resolve(undefined);
+
+      const response = await pendingResponse;
+      expect(response.status).toBe(500);
+      expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
+    });
   });
 
   it("ingests collector OOM evidence and fallback with the same identity and rejects cross-run or forged payloads", async () => {
-    const { runId, headers } = await createEventWebhookRun(
-      `OOM evidence ${randomUUID()}`,
-    );
-    const evidence = collectorEvidence("sample");
-    let ingestRequests = 0;
-    mockOptionalEnv("AXIOM_TOKEN_TELEMETRY", `xaat-oom-${randomUUID()}`);
-    server.use(
-      http.post(
-        "https://api.axiom.co/v1/datasets/sandbox-telemetry-metrics/ingest",
-        async ({ request }) => {
-          ingestRequests += 1;
-          // Axiom answers with the number of events it accepted, so the mock
-          // has to size its response the same way. Nothing here inspects the
-          // payload; the test asserts the HTTP result and the request count.
-          return HttpResponse.json(
-            successfulAxiomIngestStatus(await ingestedEventCount(request)),
-          );
-        },
-      ),
-    );
-    const response = await api.requestAgentTelemetry(
-      { runId, oomEvidence: evidence },
+    const {
+      runId,
       headers,
-      [200],
-    );
-    expect(response.body).toMatchObject({
-      success: true,
-      oomEvidenceVersion: 1,
-    });
-    const fallback = collectorEvidence("cleanup");
-    const retried = await api.requestAgentTelemetry(
-      { runId, oomEvidence: fallback },
-      headers,
-      [200],
-    );
-    expect(retried.body).toMatchObject({ oomEvidenceVersion: 1 });
-    expect(fallback.incidents).toStrictEqual(evidence.incidents);
-    await api.requestAgentTelemetry(
-      { runId: randomUUID(), oomEvidence: evidence },
-      headers,
-      [401],
-    );
-    for (const altered of [
-      { ...evidence, prompt: "must never enter telemetry" },
-      {
-        ...evidence,
-        incidents: Array.from({ length: 5 }, () => {
-          return evidence.incidents[0];
-        }),
-      },
-      { ...evidence, operation_id: randomUUID() },
-      {
-        ...evidence,
-        incidents: evidence.incidents.map((incident) => {
-          return {
-            ...incident,
-            kernel_events: incident.kernel_events.map((event) => {
-              return { ...event, source: "host" };
-            }),
-          };
-        }),
-      },
-    ]) {
-      await api.requestAgentTelemetryUnchecked(
-        { runId, oomEvidence: altered },
-        headers,
-        [400],
+      run: own,
+    } = await createEventWebhookRun(`OOM evidence ${randomUUID()}`);
+    await own(async () => {
+      const evidence = collectorEvidence("sample");
+      let ingestRequests = 0;
+      mockOptionalEnv("AXIOM_TOKEN_TELEMETRY", `xaat-oom-${randomUUID()}`);
+      server.use(
+        http.post(
+          "https://api.axiom.co/v1/datasets/sandbox-telemetry-metrics/ingest",
+          async ({ request }) => {
+            ingestRequests += 1;
+            // Axiom answers with the number of events it accepted, so the mock
+            // has to size its response the same way. Nothing here inspects the
+            // payload; the test asserts the HTTP result and the request count.
+            return HttpResponse.json(
+              successfulAxiomIngestStatus(await ingestedEventCount(request)),
+            );
+          },
+        ),
       );
-    }
-    expect(ingestRequests).toBe(2);
+      const response = await api.requestAgentTelemetry(
+        { runId, oomEvidence: evidence },
+        headers,
+        [200],
+      );
+      expect(response.body).toMatchObject({
+        success: true,
+        oomEvidenceVersion: 1,
+      });
+      const fallback = collectorEvidence("cleanup");
+      const retried = await api.requestAgentTelemetry(
+        { runId, oomEvidence: fallback },
+        headers,
+        [200],
+      );
+      expect(retried.body).toMatchObject({ oomEvidenceVersion: 1 });
+      expect(fallback.incidents).toStrictEqual(evidence.incidents);
+      await api.requestAgentTelemetry(
+        { runId: randomUUID(), oomEvidence: evidence },
+        headers,
+        [401],
+      );
+      for (const altered of [
+        { ...evidence, prompt: "must never enter telemetry" },
+        {
+          ...evidence,
+          incidents: Array.from({ length: 5 }, () => {
+            return evidence.incidents[0];
+          }),
+        },
+        { ...evidence, operation_id: randomUUID() },
+        {
+          ...evidence,
+          incidents: evidence.incidents.map((incident) => {
+            return {
+              ...incident,
+              kernel_events: incident.kernel_events.map((event) => {
+                return { ...event, source: "host" };
+              }),
+            };
+          }),
+        },
+      ]) {
+        await api.requestAgentTelemetryUnchecked(
+          { runId, oomEvidence: altered },
+          headers,
+          [400],
+        );
+      }
+      expect(ingestRequests).toBe(2);
+    });
   });
 
   it("does not acknowledge OOM evidence when the Axiom destination is unavailable", async () => {
-    const { runId, headers } = await createEventWebhookRun(
-      `OOM unavailable ${randomUUID()}`,
-    );
-    mockOptionalEnv("AXIOM_TOKEN_TELEMETRY", undefined);
-    const response = await api.requestAgentTelemetry(
-      { runId, oomEvidence: collectorEvidence("cleanup") },
+    const {
+      runId,
       headers,
-      [200],
-    );
-    expect(response.body).toStrictEqual({ success: true, id: runId });
+      run: own,
+    } = await createEventWebhookRun(`OOM unavailable ${randomUUID()}`);
+    await own(async () => {
+      mockOptionalEnv("AXIOM_TOKEN_TELEMETRY", undefined);
+      const response = await api.requestAgentTelemetry(
+        { runId, oomEvidence: collectorEvidence("cleanup") },
+        headers,
+        [200],
+      );
+      expect(response.body).toStrictEqual({ success: true, id: runId });
+    });
   });
 
   it.each(["failed", "partial"])(
     "does not acknowledge collector OOM evidence after %s ingestion",
     async (result) => {
-      const { runId, headers } = await createEventWebhookRun(
-        `OOM ingestion ${randomUUID()}`,
-      );
-      mockOptionalEnv("AXIOM_TOKEN_TELEMETRY", `xaat-oom-${randomUUID()}`);
-      server.use(
-        http.post(
-          "https://api.axiom.co/v1/datasets/sandbox-telemetry-metrics/ingest",
-          () => {
-            return result === "failed"
-              ? new HttpResponse(null, { status: 500 })
-              : HttpResponse.json({
-                  ingested: 1,
-                  failed: 1,
-                  processedBytes: 123,
-                });
-          },
-        ),
-      );
-      const response = await api.requestAgentTelemetry(
-        { runId, oomEvidence: collectorEvidence("sample") },
+      const {
+        runId,
         headers,
-        [500],
-      );
-      expect(response.body).not.toHaveProperty("oomEvidenceVersion");
+        run: own,
+      } = await createEventWebhookRun(`OOM ingestion ${randomUUID()}`);
+      await own(async () => {
+        mockOptionalEnv("AXIOM_TOKEN_TELEMETRY", `xaat-oom-${randomUUID()}`);
+        server.use(
+          http.post(
+            "https://api.axiom.co/v1/datasets/sandbox-telemetry-metrics/ingest",
+            () => {
+              return result === "failed"
+                ? new HttpResponse(null, { status: 500 })
+                : HttpResponse.json({
+                    ingested: 1,
+                    failed: 1,
+                    processedBytes: 123,
+                  });
+            },
+          ),
+        );
+        const response = await api.requestAgentTelemetry(
+          { runId, oomEvidence: collectorEvidence("sample") },
+          headers,
+          [500],
+        );
+        expect(response.body).not.toHaveProperty("oomEvidenceVersion");
+      });
     },
   );
 
   it("ingests collector memory in ordinary mixed telemetry and degrades an unusable snapshot without dropping the batch", async () => {
-    const { runId, headers } = await createEventWebhookRun(
+    const {
+      runId,
+      headers,
+      run: own,
+    } = await createEventWebhookRun(
       `collector mixed telemetry ${randomUUID()}`,
     );
-    const ingestedDatasets = new Set<string>();
-    mockOptionalEnv("AXIOM_TOKEN_TELEMETRY", `xaat-mixed-${randomUUID()}`);
-    server.use(
-      http.post(
-        "https://api.axiom.co/v1/datasets/:dataset/ingest",
-        async ({ request, params }) => {
-          ingestedDatasets.add(String(params.dataset));
-          return HttpResponse.json(
-            successfulAxiomIngestStatus(await ingestedEventCount(request)),
-          );
-        },
-      ),
-    );
-    const metrics = [
-      collectorEvidence("initial"),
-      collectorEvidence("sample"),
-    ].map((memory) => {
-      return {
-        ts: memory.sampled_at,
-        cpu: 1,
-        mem_used: 4096,
-        mem_total: 16_384,
-        disk_used: 1024,
-        disk_total: 8192,
-        memory,
-      };
-    });
-    const networkLogs = [
-      {
-        timestamp: nowDate().toISOString(),
-        host: "telemetry-batch.example.test",
-      },
-    ];
-    const body = {
-      runId,
-      systemLog: "synthetic system event",
-      metrics,
-      networkLogs,
-      sandboxOperations: [
+    await own(async () => {
+      const ingestedDatasets = new Set<string>();
+      mockOptionalEnv("AXIOM_TOKEN_TELEMETRY", `xaat-mixed-${randomUUID()}`);
+      server.use(
+        http.post(
+          "https://api.axiom.co/v1/datasets/:dataset/ingest",
+          async ({ request, params }) => {
+            ingestedDatasets.add(String(params.dataset));
+            return HttpResponse.json(
+              successfulAxiomIngestStatus(await ingestedEventCount(request)),
+            );
+          },
+        ),
+      );
+      const metrics = [
+        collectorEvidence("initial"),
+        collectorEvidence("sample"),
+      ].map((memory) => {
+        return {
+          ts: memory.sampled_at,
+          cpu: 1,
+          mem_used: 4096,
+          mem_total: 16_384,
+          disk_used: 1024,
+          disk_total: 8192,
+          memory,
+        };
+      });
+      const networkLogs = [
         {
-          ts: nowDate().toISOString(),
-          action_type: "cli",
-          duration_ms: 10,
-          success: true,
+          timestamp: nowDate().toISOString(),
+          host: "telemetry-batch.example.test",
         },
-      ],
-    };
-    const response = await api.requestAgentTelemetry(body, headers, [200]);
-    expect(response.body).toStrictEqual({ success: true, id: runId });
-    expect([...ingestedDatasets].sort()).toStrictEqual([
-      "sandbox-telemetry-metrics",
-      "sandbox-telemetry-network",
-      "sandbox-telemetry-system",
-    ]);
-    await flushWaitUntilForTest();
-    ingestedDatasets.clear();
-    const malformed = structuredClone(body);
-    const malformedMemory = malformed.metrics[0]?.memory;
-    if (!malformedMemory) {
-      throw new Error("Expected first periodic memory snapshot");
-    }
-    for (const group of malformedMemory.groups) {
-      group.cgroup = group.cgroup.slice(1);
-    }
-    const degraded = await api.requestAgentTelemetry(malformed, headers, [200]);
+      ];
+      const body = {
+        runId,
+        systemLog: "synthetic system event",
+        metrics,
+        networkLogs,
+        sandboxOperations: [
+          {
+            ts: nowDate().toISOString(),
+            action_type: "cli",
+            duration_ms: 10,
+            success: true,
+          },
+        ],
+      };
+      const response = await api.requestAgentTelemetry(body, headers, [200]);
+      expect(response.body).toStrictEqual({ success: true, id: runId });
+      expect([...ingestedDatasets].sort()).toStrictEqual([
+        "sandbox-telemetry-metrics",
+        "sandbox-telemetry-network",
+        "sandbox-telemetry-system",
+      ]);
+      await flushWaitUntilForTest();
+      ingestedDatasets.clear();
+      const malformed = structuredClone(body);
+      const malformedMemory = malformed.metrics[0]?.memory;
+      if (!malformedMemory) {
+        throw new Error("Expected first periodic memory snapshot");
+      }
+      for (const group of malformedMemory.groups) {
+        group.cgroup = group.cgroup.slice(1);
+      }
+      const degraded = await api.requestAgentTelemetry(
+        malformed,
+        headers,
+        [200],
+      );
 
-    // An unusable periodic snapshot drops itself, never the unrelated system
-    // logs, metrics, and sandbox operations batched in the same request.
-    expect(degraded.body).toStrictEqual({ success: true, id: runId });
-    expect([...ingestedDatasets].sort()).toStrictEqual([
-      "sandbox-telemetry-metrics",
-      "sandbox-telemetry-network",
-      "sandbox-telemetry-system",
-    ]);
-    await flushWaitUntilForTest();
+      // An unusable periodic snapshot drops itself, never the unrelated system
+      // logs, metrics, and sandbox operations batched in the same request.
+      expect(degraded.body).toStrictEqual({ success: true, id: runId });
+      expect([...ingestedDatasets].sort()).toStrictEqual([
+        "sandbox-telemetry-metrics",
+        "sandbox-telemetry-network",
+        "sandbox-telemetry-system",
+      ]);
+      await flushWaitUntilForTest();
+    });
   });
 
   it("keeps dedicated OOM evidence strict so an unusable payload is never acknowledged", async () => {
-    const { runId, headers } = await createEventWebhookRun(
+    const {
+      runId,
+      headers,
+      run: own,
+    } = await createEventWebhookRun(
       `collector strict evidence ${randomUUID()}`,
     );
-    let ingestRequests = 0;
-    mockOptionalEnv("AXIOM_TOKEN_TELEMETRY", `xaat-strict-${randomUUID()}`);
-    server.use(
-      http.post("https://api.axiom.co/v1/datasets/:dataset/ingest", () => {
-        ingestRequests += 1;
-        return HttpResponse.json(successfulAxiomIngestStatus(1));
-      }),
-    );
-    const relativePaths = collectorEvidence("sample");
-    for (const group of relativePaths.groups) {
-      group.cgroup = group.cgroup.slice(1);
-    }
+    await own(async () => {
+      let ingestRequests = 0;
+      mockOptionalEnv("AXIOM_TOKEN_TELEMETRY", `xaat-strict-${randomUUID()}`);
+      server.use(
+        http.post("https://api.axiom.co/v1/datasets/:dataset/ingest", () => {
+          ingestRequests += 1;
+          return HttpResponse.json(successfulAxiomIngestStatus(1));
+        }),
+      );
+      const relativePaths = collectorEvidence("sample");
+      for (const group of relativePaths.groups) {
+        group.cgroup = group.cgroup.slice(1);
+      }
 
-    await api.requestAgentTelemetryUnchecked(
-      {
-        runId,
-        systemLog: "batched with unusable evidence",
-        oomEvidence: relativePaths,
-      },
-      headers,
-      [400],
-    );
+      await api.requestAgentTelemetryUnchecked(
+        {
+          runId,
+          systemLog: "batched with unusable evidence",
+          oomEvidence: relativePaths,
+        },
+        headers,
+        [400],
+      );
 
-    expect(ingestRequests).toBe(0);
+      expect(ingestRequests).toBe(0);
+    });
   });
 
   it("rejects malformed, unauthenticated, mismatched, and missing-run sandbox reports", async () => {
@@ -2626,220 +2667,212 @@ describe("WHCB-06: sandbox agent artifact webhook boundaries", () => {
 
 describe("WHCB-09: sandbox storage writes and checkpoint history blobs land in the run organization", () => {
   it("prepares, commits, dedups, and bounds sandbox storage writes for the run org", async () => {
-    const bdd = createBddApi(context);
     const runs = createRunsApi(context);
-    const storages = createStoragesBddApi(context);
-    const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    const runnerGroup = runs.configureRunnerGroup();
-    await runs.heartbeatRunner(runnerGroup);
-    await runs.grantProEntitlement(actor);
-    await runs.ensurePersonalSubscriptionModel(actor);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "BDD sandbox storage agent",
-      visibility: "private",
-    });
-    const run = await runs.createThreadRun(actor, {
-      agentId: agent.agentId,
-      prompt: "write artifacts from the sandbox",
-    });
-    const claim = await runs.claimRunnerJob(run.runId);
-    const manifest = expectCanonicalStorageManifest(claim.storageManifest);
-    const writebackMount = manifest?.storageMounts.find((mount) => {
-      return mount.writeback === true;
-    });
-    if (!writebackMount) {
-      throw new Error("Expected a canonical writeback mount");
-    }
-    const headers = {
-      authorization: `Bearer ${claim.sandboxToken}`,
-    };
+    const fixture = await publicChatActor(context);
+    const { actor, agentId, runnerGroup } = fixture;
+    await fixture.run(async () => {
+      const run = await fixture.sendChatRun(actor, {
+        agentId,
+        prompt: "write artifacts from the sandbox",
+      });
+      const { claim } = await fixture.claimChatRun(runnerGroup, run.runId);
+      const manifest = expectCanonicalStorageManifest(claim.storageManifest);
+      const writebackMount = manifest?.storageMounts.find((mount) => {
+        return mount.writeback === true;
+      });
+      if (!writebackMount) {
+        throw new Error("Expected a canonical writeback mount");
+      }
+      const headers = {
+        authorization: `Bearer ${claim.sandboxToken}`,
+      };
 
-    // Checkpoint history blobs: first prepare issues an upload URL, the
-    // second sees the registered blob and skips the upload.
-    const historyHash = createHash("sha256")
-      .update(`bdd history blob ${run.runId}`)
-      .digest("hex");
-    const firstHistory = await api.requestAgentSessionHistoryPrepare(
-      { runId: run.runId, hash: historyHash, rawSize: 456, encodedSize: 456 },
-      headers,
-      [200],
-    );
-    if (firstHistory.status !== 200) {
-      throw new Error("Expected the first history prepare to succeed");
-    }
-    expect(firstHistory.body.existing).toBeFalsy();
-    expect(firstHistory.body.presignedUrl).toMatch(/^https/);
+      // Checkpoint history blobs: first prepare issues an upload URL, the
+      // second sees the registered blob and skips the upload.
+      const historyHash = createHash("sha256")
+        .update(`bdd history blob ${run.runId}`)
+        .digest("hex");
+      const firstHistory = await api.requestAgentSessionHistoryPrepare(
+        { runId: run.runId, hash: historyHash, rawSize: 456, encodedSize: 456 },
+        headers,
+        [200],
+      );
+      if (firstHistory.status !== 200) {
+        throw new Error("Expected the first history prepare to succeed");
+      }
+      expect(firstHistory.body.existing).toBeFalsy();
+      expect(firstHistory.body.presignedUrl).toMatch(/^https/);
 
-    const repeatedHistory = await api.requestAgentSessionHistoryPrepare(
-      { runId: run.runId, hash: historyHash, rawSize: 456, encodedSize: 456 },
-      headers,
-      [200],
-    );
-    if (repeatedHistory.status !== 200) {
-      throw new Error("Expected the repeated history prepare to succeed");
-    }
-    expect(repeatedHistory.body).toStrictEqual({
-      existing: true,
-      encoding: "identity",
-    });
+      const repeatedHistory = await api.requestAgentSessionHistoryPrepare(
+        { runId: run.runId, hash: historyHash, rawSize: 456, encodedSize: 456 },
+        headers,
+        [200],
+      );
+      if (repeatedHistory.status !== 200) {
+        throw new Error("Expected the repeated history prepare to succeed");
+      }
+      expect(repeatedHistory.body).toStrictEqual({
+        existing: true,
+        encoding: "identity",
+      });
 
-    const ghostRunId = randomUUID();
-    const missingHistoryRun = await api.requestAgentSessionHistoryPrepare(
-      { runId: ghostRunId, hash: historyHash, rawSize: 456, encodedSize: 456 },
-      {
-        authorization: `Bearer ${runs.sandboxTokenForRun(actor, ghostRunId)}`,
-      },
-      [404],
-    );
-    expectApiError(missingHistoryRun.body);
-    expect(missingHistoryRun.body.error.message).toBe("Agent run not found");
+      // A real Run token cannot authorize a different, unknown Run identity.
+      const foreignHistory = await api.requestAgentSessionHistoryPrepare(
+        {
+          runId: randomUUID(),
+          hash: historyHash,
+          rawSize: 456,
+          encodedSize: 456,
+        },
+        headers,
+        [401],
+      );
+      expectApiError(foreignHistory.body);
+      expect(foreignHistory.body.error.code).toBe("UNAUTHORIZED");
 
-    const unmountedStorage = await api.requestAgentStoragePrepare(
-      {
-        runId: run.runId,
-        storageId: randomUUID(),
-        files: [],
-      },
-      headers,
-      [404],
-    );
-    expectApiError(unmountedStorage.body);
-    expect(unmountedStorage.body.error.message).toBe(
-      "Writeback storage not found",
-    );
+      const unmountedStorage = await api.requestAgentStoragePrepare(
+        {
+          runId: run.runId,
+          storageId: randomUUID(),
+          files: [],
+        },
+        headers,
+        [404],
+      );
+      expectApiError(unmountedStorage.body);
+      expect(unmountedStorage.body.error.message).toBe(
+        "Writeback storage not found",
+      );
 
-    // Canonical writes land under the run organization's Storage prefix.
-    const storageName = writebackMount.name;
-    const files = [
-      {
-        path: "index.html",
-        hash: createHash("sha256")
-          .update(`bdd artifact ${storageName}`)
-          .digest("hex"),
-        size: 2048,
-      },
-    ];
-    const prepared = await api.requestAgentStoragePrepare(
-      {
-        runId: run.runId,
-        storageId: writebackMount.storageId,
-        parentVersionId: writebackMount.versionId,
-        files,
-      },
-      headers,
-      [200],
-    );
-    if (prepared.status !== 200) {
-      throw new Error("Expected the sandbox storage prepare to succeed");
-    }
-    expect(prepared.body.existing).toBeFalsy();
-    expect(prepared.body.uploads?.archive.key).toMatch(
-      new RegExp(
-        `^${orgOf(actor)}/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/${prepared.body.versionId}/archive\\.tar\\.gz$`,
-      ),
-    );
-    expect(prepared.body.uploads?.archive.presignedUrl).toMatch(/^https/);
-    expect(prepared.body.uploads?.manifest.presignedUrl).toMatch(/^https/);
+      // Canonical writes land under the run organization's Storage prefix.
+      const storageName = writebackMount.name;
+      const files = [storageFile("index.html", 2048)];
+      const prepared = await api.requestAgentStoragePrepare(
+        {
+          runId: run.runId,
+          storageId: writebackMount.storageId,
+          parentVersionId: writebackMount.versionId,
+          files,
+        },
+        headers,
+        [200],
+      );
+      if (prepared.status !== 200) {
+        throw new Error("Expected the sandbox storage prepare to succeed");
+      }
+      expect(prepared.body.existing).toBeFalsy();
+      expect(prepared.body.uploads?.archive.key).toMatch(
+        new RegExp(
+          `^${orgOf(actor)}/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/${prepared.body.versionId}/archive\\.tar\\.gz$`,
+        ),
+      );
+      expect(prepared.body.uploads?.archive.presignedUrl).toMatch(/^https/);
+      expect(prepared.body.uploads?.manifest.presignedUrl).toMatch(/^https/);
 
-    const committed = await api.requestAgentStorageCommit(
-      {
-        runId: run.runId,
-        storageId: writebackMount.storageId,
-        versionId: prepared.body.versionId,
-        parentVersionId: writebackMount.versionId,
-        files,
-        message: "bdd sandbox commit",
-      },
-      headers,
-      [200],
-    );
-    if (committed.status !== 200) {
-      throw new Error("Expected the sandbox storage commit to succeed");
-    }
-    expect(committed.body).toStrictEqual({
-      success: true,
-      versionId: prepared.body.versionId,
-      storageName,
-      size: 2048,
-      fileCount: 1,
-    });
-
-    // Re-preparing identical content reuses the committed version without
-    // new upload URLs.
-    const reprepared = await api.requestAgentStoragePrepare(
-      { runId: run.runId, storageId: writebackMount.storageId, files },
-      headers,
-      [200],
-    );
-    if (reprepared.status !== 200) {
-      throw new Error("Expected the duplicate prepare to succeed");
-    }
-    expect(reprepared.body).toStrictEqual({
-      versionId: prepared.body.versionId,
-      existing: true,
-    });
-
-    const mismatchedCommit = await api.requestAgentStorageCommit(
-      {
-        runId: run.runId,
-        storageId: writebackMount.storageId,
-        versionId: "f".repeat(64),
-        files,
-      },
-      headers,
-      [400],
-    );
-    expectApiError(mismatchedCommit.body);
-    expect(mismatchedCommit.body.error.message).toBe(
-      "Version ID mismatch - files may have changed",
-    );
-
-    const oversized = await api.requestAgentStoragePrepare(
-      {
-        runId: run.runId,
-        storageId: writebackMount.storageId,
-        files: [
+      const committed = await fixture.run(() => {
+        acceptPreparedStorageBytes(prepared.body, files);
+        return api.requestAgentStorageCommit(
           {
-            path: "a.bin",
-            hash: "1".repeat(64),
-            size: MAX_FILE_SIZE_BYTES,
+            runId: run.runId,
+            storageId: writebackMount.storageId,
+            versionId: prepared.body.versionId,
+            parentVersionId: writebackMount.versionId,
+            files,
+            message: "bdd sandbox commit",
           },
-          { path: "b.bin", hash: "2".repeat(64), size: 1 },
-        ],
-      },
-      headers,
-      [413],
-    );
-    expectApiError(oversized.body);
-    expect(oversized.body.error.code).toBe("PAYLOAD_TOO_LARGE");
+          headers,
+          [200],
+        );
+      });
+      if (committed.status !== 200) {
+        throw new Error("Expected the sandbox storage commit to succeed");
+      }
+      expect(committed.body).toStrictEqual({
+        success: true,
+        versionId: prepared.body.versionId,
+        storageName,
+        size: 2048,
+        fileCount: 1,
+      });
 
-    // The committed writeback is visible through fixture-only state reads.
-    const listed = await storages.listStorages(actor, "user");
-    expect(listed).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          name: storageName,
-          size: 2048,
-          fileCount: 1,
+      // Re-preparing identical content reuses the committed version without
+      // new upload URLs.
+      const reprepared = await api.requestAgentStoragePrepare(
+        { runId: run.runId, storageId: writebackMount.storageId, files },
+        headers,
+        [200],
+      );
+      if (reprepared.status !== 200) {
+        throw new Error("Expected the duplicate prepare to succeed");
+      }
+      expect(reprepared.body).toStrictEqual({
+        versionId: prepared.body.versionId,
+        existing: true,
+      });
+
+      const mismatchedCommit = await api.requestAgentStorageCommit(
+        {
+          runId: run.runId,
+          storageId: writebackMount.storageId,
+          versionId: "f".repeat(64),
+          files,
+        },
+        headers,
+        [400],
+      );
+      expectApiError(mismatchedCommit.body);
+      expect(mismatchedCommit.body.error.message).toBe(
+        "Version ID mismatch - files may have changed",
+      );
+
+      const oversized = await api.requestAgentStoragePrepare(
+        {
+          runId: run.runId,
+          storageId: writebackMount.storageId,
+          files: [
+            {
+              path: "a.bin",
+              hash: "1".repeat(64),
+              size: MAX_FILE_SIZE_BYTES,
+            },
+            { path: "b.bin", hash: "2".repeat(64), size: 1 },
+          ],
+        },
+        headers,
+        [413],
+      );
+      expectApiError(oversized.body);
+      expect(oversized.body.error.code).toBe("PAYLOAD_TOO_LARGE");
+      await runs.requestCancelRun(actor, run.runId, [200]);
+      const cancelled = await runs.readRun(actor, run.runId);
+      expect(cancelled.status).toBe("cancelled");
+      await api.requestAgentComplete(
+        { runId: run.runId, exitCode: 1, error: "Storage writer cancelled" },
+        headers,
+        [200],
+      );
+      const next = await fixture.sendChatRun(actor, {
+        agentId,
+        prompt: "Read the committed Memory",
+      });
+      const nextClaim = await fixture.claimChatRun(runnerGroup, next.runId);
+      expect(
+        expectCanonicalStorageManifest(
+          nextClaim.claim.storageManifest,
+        )?.storageMounts.find((mount) => {
+          return mount.storageId === writebackMount.storageId;
         }),
-      ]),
-    );
-    const downloaded = await storages.downloadStorage(actor, {
-      name: storageName,
-      owner: "user",
+      ).toMatchObject({
+        name: storageName,
+        versionId: prepared.body.versionId,
+        archiveUrl: expect.any(String),
+      });
+      await createChatEventsFixture(context).cancelChatRun(
+        actor,
+        next.runId,
+        nextClaim.sandboxHeaders,
+      );
     });
-    expect(downloaded).toMatchObject({
-      versionId: prepared.body.versionId,
-      size: 2048,
-      fileCount: 1,
-    });
-
-    await runs.requestCancelRun(actor, run.runId, [200]);
-    const cancelled = await runs.readRun(actor, run.runId);
-    expect(cancelled.status).toBe("cancelled");
   });
 });
 

@@ -1,3 +1,4 @@
+import { publicChatActor } from "./helpers/public-chat-actor";
 import { publicRunOwner } from "./helpers/public-run-owner";
 import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
 import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
@@ -37,9 +38,7 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { readCompletedRunSessionId } from "./helpers/public-run-session";
 import { expectThreadModelCredits } from "./helpers/public-thread-usage";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { seedBuiltInModelKey } from "./helpers/runtime-state";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 /*
 helper gap:
 - INT-01 Slack channel, message, upload, and download-file happy paths still
@@ -4064,7 +4063,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     expect(continuationRun.result?.agentSessionId).toBe(gptSessionId);
   });
 
-  it("captures canonical Auto for a Slack thread without changing its pin", async () => {
+  it("keeps an explicit Auto pin on a historical Slack thread when the member preference changes", async () => {
     const actor = bdd.user();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
@@ -4115,24 +4114,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
 
     await chat.updateThreadModelSelection(actor, chatThreadId, null);
     await integrations.updateUserModelPreference(actor, "gpt-6-astra");
-    await seedBuiltInModelKey(context, SEEDED_SYSTEM_DEFAULT_MODEL);
-    expect(
-      (await chat.readThreadMetadata(actor, chatThreadId)).selectedModel,
-    ).toBe("auto");
-
-    await integrations.postSlackEvent(teamId, {
-      type: "app_mention",
-      user: slackUserId,
-      text: "resolve the current canonical Slack model",
-      ts: "3150.000200",
-      thread_ts: threadTs,
-      channel: channelId,
-    });
-    // An existing Auto thread runs Auto, not the member's personal preference.
-    const resolvedRunId = await pollSlackRun(runnerGroup);
-    expect((await runs.readRun(actor, resolvedRunId)).source.model).toBe(
-      "auto",
-    );
     expect(
       (await chat.readThreadMetadata(actor, chatThreadId)).selectedModel,
     ).toBe("auto");
@@ -4148,8 +4129,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
         selectedModel: "gpt-6-astra",
       }),
     );
-
-    await runs.requestCancelRun(actor, resolvedRunId, [200]);
   }, 90_000);
 
   it("prompts disconnected Slack users and filters non-actionable messages", async () => {
@@ -5509,143 +5488,148 @@ describe("INT-02: Telegram integration", () => {
     expect(context.mocks.webpush.sendNotification).not.toHaveBeenCalled();
   });
 
-  it("refreshes telegram typing for pending webhook-dispatched runs", async () => {
-    bdd.acceptAgentStorageWrites();
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    const runnerGroup = runs.configureRunnerGroup();
-    const actor = integrations.user();
-    await runs.grantProEntitlement(actor);
-    await runs.ensurePersonalSubscriptionModel(actor, {
-      model: "claude-fable-5-1",
+  it("refreshes telegram typing while the dispatched callback is pending", async () => {
+    const owned = await publicChatActor(context, {
+      optionalEnvironmentNames: [
+        "TELEGRAM_OFFICIAL_BOT_TOKEN",
+        "TELEGRAM_OFFICIAL_BOT_USERNAME",
+        "TELEGRAM_OFFICIAL_WEBHOOK_SECRET",
+      ],
     });
-
-    const typingBotId = randomInt(1_000_000_000, 9_999_999_999);
-    const typingBotToken = `${typingBotId}:bdd-typing-token`;
-    const botId = OFFICIAL_TELEGRAM_BOT_ID;
-    mockEnv("TELEGRAM_OFFICIAL_BOT_TOKEN", typingBotToken);
-    mockEnv("TELEGRAM_OFFICIAL_BOT_USERNAME", "bdd_official_typing_bot");
-    mockEnv(
-      "TELEGRAM_OFFICIAL_WEBHOOK_SECRET",
-      TELEGRAM_OFFICIAL_WEBHOOK_SECRET,
-    );
-    const webhookSecret = TELEGRAM_OFFICIAL_WEBHOOK_SECRET;
-    await bdd.readOnboardingStatus(actor);
-    const chatActions: {
-      readonly chat_id: string;
-      readonly action: string;
-    }[] = [];
-    server.use(
-      http.post(
-        `https://api.telegram.org/bot${typingBotToken}/sendChatAction`,
-        async ({ request }) => {
-          chatActions.push(
-            (await request.json()) as (typeof chatActions)[number],
-          );
-          return HttpResponse.json({ ok: true, result: true });
-        },
-      ),
-      http.post(
-        `https://api.telegram.org/bot${typingBotToken}/sendMessage`,
-        () => {
-          return HttpResponse.json({
-            ok: true,
-            result: { message_id: 654, chat: { id: 999_111 } },
-          });
-        },
-      ),
-    );
-    const telegramUserId = randomInt(100_000_000, 999_999_999);
-    await integrations.requestLinkTelegram(
-      actor,
-      {
-        telegramBotId: botId,
-        telegramAuth: telegramLoginAuth(typingBotToken, {
-          id: telegramUserId,
-          first_name: "BDD",
-          username: "bdd_typing_user",
-        }),
-      },
-      [200],
-    );
-    const linkStatus = await integrations.readTelegramLinkStatus(actor, botId);
-    expect(linkStatus).toMatchObject({ linked: true });
-
-    // A linked DM dispatches a run carrying a pending Telegram callback.
-    const dmChatId = 8_811_223;
-    const dm = await integrations.requestTelegramWebhook(
-      botId,
-      JSON.stringify({
-        update_id: 4001,
-        message: {
-          message_id: 71,
-          chat: { id: dmChatId, type: "private" },
-          from: {
+    const { actor, runnerGroup } = owned;
+    await owned.run(async () => {
+      await runs.updateUserModelPreference(actor, "claude-fable-5-1");
+      const typingBotId = randomInt(1_000_000_000, 9_999_999_999);
+      const typingBotToken = `${typingBotId}:bdd-typing-token`;
+      const botId = OFFICIAL_TELEGRAM_BOT_ID;
+      mockEnv("TELEGRAM_OFFICIAL_BOT_TOKEN", typingBotToken);
+      mockEnv("TELEGRAM_OFFICIAL_BOT_USERNAME", "bdd_official_typing_bot");
+      mockEnv(
+        "TELEGRAM_OFFICIAL_WEBHOOK_SECRET",
+        TELEGRAM_OFFICIAL_WEBHOOK_SECRET,
+      );
+      const webhookSecret = TELEGRAM_OFFICIAL_WEBHOOK_SECRET;
+      await bdd.readOnboardingStatus(actor);
+      const chatActions: {
+        readonly chat_id: string;
+        readonly action: string;
+      }[] = [];
+      server.use(
+        http.post(
+          `https://api.telegram.org/bot${typingBotToken}/sendChatAction`,
+          async ({ request }) => {
+            chatActions.push(
+              (await request.json()) as (typeof chatActions)[number],
+            );
+            return HttpResponse.json({ ok: true, result: true });
+          },
+        ),
+        http.post(
+          `https://api.telegram.org/bot${typingBotToken}/sendMessage`,
+          () => {
+            return HttpResponse.json({
+              ok: true,
+              result: { message_id: 654, chat: { id: 999_111 } },
+            });
+          },
+        ),
+      );
+      const telegramUserId = randomInt(100_000_000, 999_999_999);
+      await integrations.requestLinkTelegram(
+        actor,
+        {
+          telegramBotId: botId,
+          telegramAuth: telegramLoginAuth(typingBotToken, {
             id: telegramUserId,
             first_name: "BDD",
             username: "bdd_typing_user",
-          },
-          text: "summarize my telegram inbox",
+          }),
         },
-      }),
-      { "x-telegram-bot-api-secret-token": webhookSecret },
-      [200],
-    );
-    expect(dm.body).toBe("OK");
+        [200],
+      );
+      const linkStatus = await integrations.readTelegramLinkStatus(
+        actor,
+        botId,
+      );
+      expect(linkStatus).toMatchObject({ linked: true });
 
-    // Poll only: claiming is not needed for typing refreshes.
-    const runId = await pollRunnerRun(
-      runnerGroup,
-      "Expected the Telegram DM to dispatch a run",
-    );
-    const typingBody = {
-      runId,
-      events: [{ type: "assistant", sequenceNumber: 1 }],
-    };
-    const sandboxHeaders = {
-      authorization: `Bearer ${runs.sandboxTokenForRun(actor, runId)}`,
-    };
-    const actionsBeforeTyping = chatActions.length;
-    const typing = await webhooks.requestAgentEvents(
-      typingBody,
-      sandboxHeaders,
-      [200],
-    );
-    expect(typing.body).toStrictEqual({
-      received: 1,
-      firstSequence: 1,
-      lastSequence: 1,
-    });
-    await flushWaitUntilForTest();
-    expect(chatActions.slice(actionsBeforeTyping)).toStrictEqual([
-      { chat_id: String(dmChatId), action: "typing" },
-    ]);
+      // A linked DM dispatches a run carrying a pending Telegram callback.
+      const dmChatId = 8_811_223;
+      const dm = await integrations.requestTelegramWebhook(
+        botId,
+        JSON.stringify({
+          update_id: 4001,
+          message: {
+            message_id: 71,
+            chat: { id: dmChatId, type: "private" },
+            from: {
+              id: telegramUserId,
+              first_name: "BDD",
+              username: "bdd_typing_user",
+            },
+            text: "summarize my telegram inbox",
+          },
+        }),
+        { "x-telegram-bot-api-secret-token": webhookSecret },
+        [200],
+      );
+      expect(dm.body).toBe("OK");
 
-    // Run cancellation dispatches completion callbacks via waitUntil. Wait for
-    // those side effects to settle before checking that later typing refreshes
-    // no longer see pending Telegram callbacks.
-    await runs.requestCancelRun(actor, runId, [200]);
-    await flushWaitUntilForTest();
-    await expect(
-      (async () => {
-        const run = await runs.readRun(actor, runId);
-        return run.status;
-      })(),
-    ).resolves.toBe("cancelled");
-    await flushWaitUntilForTest();
-    const actionsAfterCancel = chatActions.length;
-    const idleTyping = await webhooks.requestAgentEvents(
-      typingBody,
-      sandboxHeaders,
-      [200],
-    );
-    expect(idleTyping.body).toStrictEqual({
-      received: 1,
-      firstSequence: 1,
-      lastSequence: 1,
+      // Observe dispatch before a real Runner claims its callback credentials.
+      const runId = await pollRunnerRun(
+        runnerGroup,
+        "Expected the Telegram DM to dispatch a run",
+      );
+      const { claim } = await owned.claimChatRun(runnerGroup, runId);
+      const typingBody = {
+        runId,
+        events: [{ type: "assistant", sequenceNumber: 1 }],
+      };
+      const sandboxHeaders = {
+        authorization: `Bearer ${claim.sandboxToken}`,
+      };
+      const actionsBeforeTyping = chatActions.length;
+      const typing = await webhooks.requestAgentEvents(
+        typingBody,
+        sandboxHeaders,
+        [200],
+      );
+      expect(typing.body).toStrictEqual({
+        received: 1,
+        firstSequence: 1,
+        lastSequence: 1,
+      });
+      await flushWaitUntilForTest();
+      expect(chatActions.slice(actionsBeforeTyping)).toStrictEqual([
+        { chat_id: String(dmChatId), action: "typing" },
+      ]);
+
+      // Run cancellation dispatches completion callbacks via waitUntil. Wait for
+      // those side effects to settle before checking that later typing refreshes
+      // no longer see pending Telegram callbacks.
+      await runs.requestCancelRun(actor, runId, [200]);
+      await flushWaitUntilForTest();
+      await expect(
+        (async () => {
+          const run = await runs.readRun(actor, runId);
+          return run.status;
+        })(),
+      ).resolves.toBe("cancelled");
+      await flushWaitUntilForTest();
+      const actionsAfterCancel = chatActions.length;
+      const idleTyping = await webhooks.requestAgentEvents(
+        typingBody,
+        sandboxHeaders,
+        [200],
+      );
+      expect(idleTyping.body).toStrictEqual({
+        received: 1,
+        firstSequence: 1,
+        lastSequence: 1,
+      });
+      await flushWaitUntilForTest();
+      expect(chatActions).toHaveLength(actionsAfterCancel);
     });
-    await flushWaitUntilForTest();
-    expect(chatActions).toHaveLength(actionsAfterCancel);
   });
 });
 

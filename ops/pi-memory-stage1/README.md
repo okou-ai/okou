@@ -48,9 +48,8 @@ connected Codex account or the managed OpenRouter key. Four quantities use the
 captured route's cache-inclusive long-context threshold (272,001 for Luna).
 Historical model and pricing snapshots remain unchanged; see the
 [routing rollout](https://github.com/okou-ai/okou/blob/9813db4b51faa42c982dcfec1720caf5bd5b1b82/docs/deployment-compatibility.md#pi-memory-luna-routing-2026-10-08).
-Pricing uses the same
-`resolveUsagePricingProvider` exact/alias mapping as credit settlement and exact
-category rows; `__fallback__` alone is unavailable. The estimate is:
+Production pricing uses canonical provider identities and exact category rows.
+The ledger query retains an explicit optional alias map for historical reconciliation; `__fallback__` alone is unavailable. The estimate is:
 
 `sum(quantity * unit_price / unit_size) / 1000`
 
