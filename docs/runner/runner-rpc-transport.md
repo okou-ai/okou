@@ -105,7 +105,7 @@ A routing label is not a path, executable, endpoint or permission grant. Run,
 owner and sandbox identity come from the host assignment, never from params.
 Every production method must have explicit dispatch and current-authority checks
 before sensitive work. Unknown/unavailable methods must be rejected before
-invoking a handler. These responsibilities belong to #32013.
+invoking a handler. The method's consumer owns these responsibilities.
 
 The helper connects once to AF_VSOCK CID 2, port 52001, routed by Firecracker to
 the private host listener at `vsock.sock_52001`. There is no destination override,

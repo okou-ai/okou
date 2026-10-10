@@ -289,7 +289,8 @@ switch`),
 
 - `sidebar-unread-threads.ts:allUnreadThreadIds$` — accepts `404` from an API
   that predates the additive `unreadIds` route. Surface: new app -> old API.
-  Remove after that API is outside the rollback window; follow-up #25694.
+  Remove after that API is no longer serving or retained for production rollback;
+  follow-up: <removal issue or PR>.
 ```
 
 PRs that do not introduce a fallback need no `Fallbacks` section. This includes
@@ -313,8 +314,7 @@ must show why the removed branch is unreachable:
 - **Single-writer evidence** — the only code path that creates the row always
   sets the field.
 - **Production evidence** — a read-only query against the masked production
-  branch showing zero rows in the old shape. PR #24888 removed an unreachable
-  claim-time fallback only after confirming `pending_automation = 0`.
+  branch showing zero rows in the old shape.
 - **Rollout evidence** — the applicable gate in section 7 has passed.
 
 The evidence can come from the diff, tests, or linked production or rollout

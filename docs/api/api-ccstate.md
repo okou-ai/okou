@@ -209,7 +209,7 @@ const noticed = await settle(sendWaitNoticeIfNeeded(/* ... */));
 Work that is independent of the sequence keeps its own `waitUntil`. On the
 enqueue path, notifying a running run of pending input is one such task. When
 you move orchestration into entries, check every entry for these independent
-tasks; one was dropped and later restored during #37430.
+tasks.
 
 ### 7. Cancellation
 
@@ -221,7 +221,7 @@ tasks; one was dropped and later restored during #37430.
 - A `computed` cannot capture a signal (`ccstate/no-computed-signal`). External
   reads started from a computed are owned by their own request timeout.
   Side-effect-free reads, including KMS decryption and an exact managed-key
-  read, may run in a computed (Ethan, 2026-10-02); side effects such as OAuth
+  read, may run in a computed; side effects such as OAuth
   refresh, encryption followed by a database write, Stripe or cache writes stay
   in commands. If such
   a read must follow the caller's cancellation, move it into a command that
@@ -242,10 +242,7 @@ tasks; one was dropped and later restored during #37430.
 ### 9. No test hooks in production code
 
 Production signals must not export `set…HookForTest` and `clear…HookForTest`
-functions, `observe…` pause or count points, or fault injectors. #37430 deleted
-`agent-run-preparation-hooks.ts` and
-`prepared-launch-persistence-observer.service.ts` for this reason, together
-with the model-route and connector-catalog read hooks.
+functions, `observe…` pause or count points, or fault injectors.
 
 Tests build scenarios through public APIs, run callbacks, `mockNow`, and test
 environment configuration. A scenario that can only be reached through a hook
