@@ -2186,34 +2186,6 @@ function oneUsagePackSubscriptionId(
   return ids.values().next().value ?? null;
 }
 
-async function boundUsagePackSubscriptionId(
-  db: Pick<Db, "select">,
-  stripeSubscriptionId: string | null,
-  includeTerminal: boolean,
-): Promise<string | null> {
-  if (!stripeSubscriptionId) {
-    return null;
-  }
-  const [subscription] = await db
-    .select({ id: usagePackSubscriptions.id })
-    .from(usagePackSubscriptions)
-    .where(
-      includeTerminal
-        ? eq(usagePackSubscriptions.stripeSubscriptionId, stripeSubscriptionId)
-        : and(
-            eq(
-              usagePackSubscriptions.stripeSubscriptionId,
-              stripeSubscriptionId,
-            ),
-            notInArray(usagePackSubscriptions.subscriptionStatus, [
-              ...TERMINAL_USAGE_PACK_SUBSCRIPTION_STATUSES,
-            ]),
-          ),
-    )
-    .limit(1);
-  return subscription?.id ?? null;
-}
-
 export async function stripeSubscriptionUsesMemberUsagePacks(
   db: Pick<Db, "select">,
   args: {
@@ -2260,13 +2232,33 @@ async function resolveUsagePackSubscriptionId(
     readonly includeTerminalBinding?: boolean;
   },
 ): Promise<string | null> {
-  const boundId = await boundUsagePackSubscriptionId(
-    db,
-    args.stripeSubscriptionId,
-    args.includeTerminalBinding ?? false,
-  );
-  if (boundId) {
-    return boundId;
+  const stripeSubscriptionId = args.stripeSubscriptionId;
+  const includeTerminal = args.includeTerminalBinding ?? false;
+  if (stripeSubscriptionId) {
+    const [subscription] = await db
+      .select({ id: usagePackSubscriptions.id })
+      .from(usagePackSubscriptions)
+      .where(
+        includeTerminal
+          ? eq(
+              usagePackSubscriptions.stripeSubscriptionId,
+              stripeSubscriptionId,
+            )
+          : and(
+              eq(
+                usagePackSubscriptions.stripeSubscriptionId,
+                stripeSubscriptionId,
+              ),
+              notInArray(usagePackSubscriptions.subscriptionStatus, [
+                ...TERMINAL_USAGE_PACK_SUBSCRIPTION_STATUSES,
+              ]),
+            ),
+      )
+      .limit(1);
+    const boundId = subscription?.id ?? null;
+    if (boundId) {
+      return boundId;
+    }
   }
   const metadataId = oneUsagePackSubscriptionId(...args.metadata);
   if (!metadataId) {
