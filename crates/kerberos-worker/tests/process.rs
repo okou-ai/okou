@@ -725,34 +725,96 @@ async fn metadata_expiry_is_not_rounded_up_and_standard_long_lived_tickets_remai
     assert_eq!(fs::read_dir(path).unwrap().count(), 0);
 }
 
+#[cfg(target_os = "linux")]
 #[tokio::test]
 #[ignore = "requires supported native Linux namespace/Landlock runtime; strict matrix job"]
 async fn actual_idle_deadline_reaps_without_a_waiter_and_new_admission_is_available() {
+    use rustix::{
+        event::{PollFd, PollFlags, poll},
+        process::{Pid, PidfdFlags, pidfd_open},
+    };
+
     let root = root();
     let path = root.path().canonicalize().unwrap();
+    let occupied_deadline = Instant::now() + Duration::from_secs(30);
+    let (occupied, _) = kerberos_worker::open(
+        &path,
+        credentials("fixture"),
+        policy(),
+        occupied_deadline,
+        &mut NoKdc,
+    )
+    .await
+    .unwrap();
+    let occupied_pid = Pid::from_raw(i32::try_from(occupied.process_id()).unwrap()).unwrap();
+    let occupied_pidfd = pidfd_open(occupied_pid, PidfdFlags::empty()).unwrap();
+    // The public deadline includes package verification and native bootstrap.
+    // Use the normal operation budget so this tests idle expiry, not startup speed.
+    let deadline = Instant::now() + Duration::from_secs(10);
     let (context, _) = kerberos_worker::open(
         &path,
         credentials("fixture"),
         policy(),
-        Instant::now() + Duration::from_millis(250),
+        deadline,
         &mut NoKdc,
     )
     .await
     .unwrap();
     let id = context.process_id();
-    tokio::time::sleep(Duration::from_millis(350)).await;
-    assert!(!std::path::Path::new(&format!("/proc/{id}")).exists());
-    context.close().await.unwrap();
+    let pid = Pid::from_raw(i32::try_from(id).unwrap()).unwrap();
+    let pidfd = pidfd_open(pid, PidfdFlags::empty()).unwrap();
+    // An empty interest mask waits for HUP (reap), rather than IN (exit/zombie).
+    // Keep the context alive and idle; only its independent supervisor can reap it.
+    tokio::task::spawn_blocking(move || {
+        let until = (deadline + Duration::from_secs(2)).into_std();
+        let mut events = [PollFd::new(&pidfd, PollFlags::empty())];
+        loop {
+            let timeout = until
+                .saturating_duration_since(std::time::Instant::now())
+                .try_into()
+                .unwrap();
+            match poll(&mut events, Some(&timeout)) {
+                Err(rustix::io::Errno::INTR) => continue,
+                result => {
+                    assert_eq!(result.unwrap(), 1, "idle worker was not reaped");
+                    assert!(events[0].revents().contains(PollFlags::HUP));
+                    break;
+                }
+            }
+        }
+    })
+    .await
+    .unwrap();
+    assert!(
+        Instant::now() >= deadline,
+        "idle worker exited before expiry"
+    );
+    // Admit before the other worker's deadline and confirm it remains alive, so
+    // success proves capacity release before close/drop of the expired context.
     let (replacement, _) = kerberos_worker::open(
         &path,
         credentials("fixture"),
         policy(),
-        Instant::now() + Duration::from_secs(10),
+        occupied_deadline.min(Instant::now() + Duration::from_secs(10)),
         &mut NoKdc,
     )
     .await
     .unwrap();
+    let mut occupied_events = [PollFd::new(&occupied_pidfd, PollFlags::IN)];
+    let no_wait = Duration::ZERO.try_into().unwrap();
+    let occupied_ready = loop {
+        match poll(&mut occupied_events, Some(&no_wait)) {
+            Err(rustix::io::Errno::INTR) => continue,
+            result => break result.unwrap(),
+        }
+    };
+    assert_eq!(
+        occupied_ready, 0,
+        "capacity blocker exited before admission"
+    );
+    context.close().await.unwrap();
     replacement.close().await.unwrap();
+    occupied.close().await.unwrap();
     assert_eq!(fs::read_dir(path).unwrap().count(), 0);
 }
 
