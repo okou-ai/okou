@@ -1,8 +1,8 @@
 diff --git a/dist/core/agent-session.d.ts b/dist/core/agent-session.d.ts
-index 5620ac326bd3885819f4dbca401522c3058a640b..a29400f61364d9ae58eda44b08231135d1adf17a 100644
+index f8b11c9634799b32ce69d3b1be02cfc1605f5e05..b4df150d6ed6c02a742e1baecf22d8d0952071d0 100644
 --- a/dist/core/agent-session.d.ts
 +++ b/dist/core/agent-session.d.ts
-@@ -376,6 +376,8 @@ export declare class AgentSession {
+@@ -483,6 +483,8 @@ export declare class AgentSession {
      private _normalizePromptSnippet;
      private _normalizePromptGuidelines;
      private _rebuildSystemPrompt;
@@ -12,10 +12,10 @@ index 5620ac326bd3885819f4dbca401522c3058a640b..a29400f61364d9ae58eda44b08231135
       * Apply a prompt and tool loadout for the next request. Sets the executable tools and
       * returns a system message patching the prompt sections the model currently has (replayed
 diff --git a/dist/core/agent-session.js b/dist/core/agent-session.js
-index 36fdb31c121d1121cebc51c6f0d61d09cf07bae0..ac60bcb280b27301c9da9347a688f0b77a691051 100644
+index c5ad71905832cac59341cff04729260936dfba77..37435f47e694065ae21cd0390db823d642e32d4e 100644
 --- a/dist/core/agent-session.js
 +++ b/dist/core/agent-session.js
-@@ -1075,6 +1075,47 @@ export class AgentSession {
+@@ -1377,6 +1377,47 @@ export class AgentSession {
      // =========================================================================
      // Prompting
      // =========================================================================
@@ -36,7 +36,7 @@ index 36fdb31c121d1121cebc51c6f0d61d09cf07bae0..ac60bcb280b27301c9da9347a688f0b7
 +            beforeSettled: async () => {
 +                this._flushPendingBashMessages();
 +                this._flushPendingCustomMessages();
-+                await this._extensionRunner.emit({ type: "agent_settled" });
++                await this._extensionRunner.emit({ type: "agent_settled", aborted: this._agentRunAbortRequested });
 +                this._flushPendingCustomMessages();
 +            },
 +            onSettled: () => {
@@ -51,7 +51,7 @@ index 36fdb31c121d1121cebc51c6f0d61d09cf07bae0..ac60bcb280b27301c9da9347a688f0b7
 +                this._flushPendingBashMessages();
 +                this._flushPendingCustomMessages();
 +                try {
-+                    this._emit({ type: "agent_settled" });
++                    this._emit({ type: "agent_settled", aborted: this._agentRunAbortRequested });
 +                }
 +                finally {
 +                    this._isAgentRunActive = false;
@@ -62,8 +62,8 @@ index 36fdb31c121d1121cebc51c6f0d61d09cf07bae0..ac60bcb280b27301c9da9347a688f0b7
 +    }
      async _runAgentPrompt(messages) {
          this._agentRunAbortRequested = false;
-         this._isAgentRunActive = true;
-@@ -1430,8 +1471,6 @@ export class AgentSession {
+         // Compaction before the prompt may have scheduled a retry; the new prompt replaces it.
+@@ -1731,8 +1772,6 @@ export class AgentSession {
       * Internal: Queue a steering message (already expanded, no extension command check).
       */
      async _queueSteer(text, images) {
@@ -72,7 +72,7 @@ index 36fdb31c121d1121cebc51c6f0d61d09cf07bae0..ac60bcb280b27301c9da9347a688f0b7
          const content = [{ type: "text", text }];
          if (images) {
              content.push(...images);
-@@ -1441,18 +1480,20 @@ export class AgentSession {
+@@ -1742,18 +1781,20 @@ export class AgentSession {
              content,
              timestamp: Date.now(),
          });
@@ -95,7 +95,7 @@ index 36fdb31c121d1121cebc51c6f0d61d09cf07bae0..ac60bcb280b27301c9da9347a688f0b7
      }
      /**
       * Throw an error if the text is an extension command.
-@@ -1618,10 +1659,10 @@ export class AgentSession {
+@@ -1919,10 +1960,10 @@ export class AgentSession {
          await this.waitForIdle();
      }
      async waitForIdle() {
@@ -109,7 +109,7 @@ index 36fdb31c121d1121cebc51c6f0d61d09cf07bae0..ac60bcb280b27301c9da9347a688f0b7
      }
      // =========================================================================
      // Model Management
-@@ -2028,6 +2069,11 @@ export class AgentSession {
+@@ -2330,6 +2371,11 @@ export class AgentSession {
          const settings = this.settingsManager.getCompactionSettings(this.model);
          if (!settings.enabled)
              return false;
@@ -122,10 +122,10 @@ index 36fdb31c121d1121cebc51c6f0d61d09cf07bae0..ac60bcb280b27301c9da9347a688f0b7
          if (skipAbortedCheck && assistantMessage.stopReason === "aborted")
              return false;
 diff --git a/dist/core/tools/bash.d.ts b/dist/core/tools/bash.d.ts
-index bc39335476b8424ff848364706fa5866213086c3..4f7d0c3c739ad39c1050d3042a46fde999d8f41a 100644
+index 64be599a321c7486ebe8c9a21608ad8ce61f7778..a0a77775eff9dc53d13263dd4e50f53460de4837 100644
 --- a/dist/core/tools/bash.d.ts
 +++ b/dist/core/tools/bash.d.ts
-@@ -31,6 +31,8 @@ export interface BashOperations {
+@@ -43,6 +43,8 @@ export interface BashOperations {
       */
      exec: (command: string, cwd: string, options: {
          onData: (data: Buffer) => void;
@@ -135,10 +135,10 @@ index bc39335476b8424ff848364706fa5866213086c3..4f7d0c3c739ad39c1050d3042a46fde9
          timeout?: number;
          env?: NodeJS.ProcessEnv;
 diff --git a/dist/core/tools/bash.js b/dist/core/tools/bash.js
-index c0dcf1406a932bdfc1515faf0ca5f2f8f84fb2ca..3badd60dc78bc2e5f6cdc568cea61c995a325dd1 100644
+index e52c9d779bdb50667083810d946e11da6c7e29ba..9c17544952761d2932404da6b84fd3bcda065ccd 100644
 --- a/dist/core/tools/bash.js
 +++ b/dist/core/tools/bash.js
-@@ -34,7 +34,7 @@ export const bashToolSystemPromptContribution = {
+@@ -47,7 +47,7 @@ const bashOutputSchema = Type.Object({
  /** Shared process execution used by the built-in shell tools. */
  export function createLocalShellOperations(shellName, resolveShellConfig) {
      return {
@@ -147,7 +147,7 @@ index c0dcf1406a932bdfc1515faf0ca5f2f8f84fb2ca..3badd60dc78bc2e5f6cdc568cea61c99
              const timeoutMs = resolveTimeoutMs(timeout);
              if (signal?.aborted) {
                  throw new Error("aborted");
-@@ -46,6 +46,7 @@ export function createLocalShellOperations(shellName, resolveShellConfig) {
+@@ -59,6 +59,7 @@ export function createLocalShellOperations(shellName, resolveShellConfig) {
              catch {
                  throw new Error(`Working directory does not exist: ${cwd}\nCannot execute ${shellName} commands.`);
              }
@@ -155,7 +155,7 @@ index c0dcf1406a932bdfc1515faf0ca5f2f8f84fb2ca..3badd60dc78bc2e5f6cdc568cea61c99
              const commandFromStdin = shellConfig.commandTransport === "stdin";
              const child = spawn(shellConfig.shell, commandFromStdin ? shellConfig.args : [...shellConfig.args, command], {
                  cwd,
-@@ -60,52 +61,80 @@ export function createLocalShellOperations(shellName, resolveShellConfig) {
+@@ -73,52 +74,80 @@ export function createLocalShellOperations(shellName, resolveShellConfig) {
              }
              if (child.pid)
                  trackDetachedChildPid(child.pid);
@@ -269,7 +269,7 @@ index c0dcf1406a932bdfc1515faf0ca5f2f8f84fb2ca..3badd60dc78bc2e5f6cdc568cea61c99
              }
          },
      };
-@@ -158,7 +187,14 @@ export function createShellToolDefinition(cwd, config, options) {
+@@ -172,7 +201,14 @@ export function createShellToolDefinition(cwd, config, options) {
          async execute(_toolCallId, { command, timeout }, signal, onUpdate, ctx) {
              const resolvedCommand = commandPrefix ? `${commandPrefix}\n${command}` : command;
              const spawnContext = resolveSpawnContext(resolvedCommand, ctx?.cwd || cwd, spawnHook, exposeSessionEnvironment, ctx);
@@ -285,7 +285,7 @@ index c0dcf1406a932bdfc1515faf0ca5f2f8f84fb2ca..3badd60dc78bc2e5f6cdc568cea61c99
              let acceptingOutput = true;
              let updateTimer;
              let updateDirty = false;
-@@ -195,12 +231,10 @@ export function createShellToolDefinition(cwd, config, options) {
+@@ -209,12 +245,10 @@ export function createShellToolDefinition(cwd, config, options) {
                  }
                  updateTimer ??= setTimeout(() => {
                      updateTimer = undefined;
@@ -300,7 +300,7 @@ index c0dcf1406a932bdfc1515faf0ca5f2f8f84fb2ca..3badd60dc78bc2e5f6cdc568cea61c99
              const handleData = (data) => {
                  if (!acceptingOutput)
                      return;
-@@ -213,7 +247,7 @@ export function createShellToolDefinition(cwd, config, options) {
+@@ -227,7 +261,7 @@ export function createShellToolDefinition(cwd, config, options) {
                  clearUpdateTimer();
                  emitOutputUpdate();
                  const snapshot = output.snapshot({ persistIfTruncated: true });
@@ -309,9 +309,9 @@ index c0dcf1406a932bdfc1515faf0ca5f2f8f84fb2ca..3badd60dc78bc2e5f6cdc568cea61c99
                  return snapshot;
              };
              const formatOutput = (snapshot, emptyText = "(no output)") => {
-@@ -239,30 +273,26 @@ export function createShellToolDefinition(cwd, config, options) {
-             };
+@@ -254,30 +288,26 @@ export function createShellToolDefinition(cwd, config, options) {
              const appendStatus = (text, status) => `${text ? `${text}\n\n` : ""}${status}`;
+             const startedAt = performance.now();
              try {
 -                let exitCode;
 -                try {
@@ -357,9 +357,9 @@ index c0dcf1406a932bdfc1515faf0ca5f2f8f84fb2ca..3badd60dc78bc2e5f6cdc568cea61c99
                  if (exitCode === null) {
                      throw new Error(appendStatus(outputText, "Command terminated without an exit code"));
                  }
-@@ -271,8 +301,25 @@ export function createShellToolDefinition(cwd, config, options) {
+@@ -302,8 +332,25 @@ export function createShellToolDefinition(cwd, config, options) {
                  }
-                 return { content: [{ type: "text", text: outputText }], details };
+                 return { content: [{ type: "text", text: outputText }], details, structuredContent };
              }
 +            catch (error) {
 +                const err = execution.signal.aborted ? execution.signal.reason : error;
@@ -384,7 +384,7 @@ index c0dcf1406a932bdfc1515faf0ca5f2f8f84fb2ca..3badd60dc78bc2e5f6cdc568cea61c99
          },
          ...createShellRenderers(config.prompt),
 diff --git a/dist/core/tools/output-accumulator.d.ts b/dist/core/tools/output-accumulator.d.ts
-index fbd581f6067c98771dc6a29272a5bab2b2653dcd..6ecae286e90e6d2008ea1c8a77526f4589fe4f80 100644
+index 2e4ce2fba648d75e5585248e9ff24f20c9073d1c..9f06eb9441df3d63f94ea42faafa31fa74618384 100644
 --- a/dist/core/tools/output-accumulator.d.ts
 +++ b/dist/core/tools/output-accumulator.d.ts
 @@ -3,6 +3,7 @@ export interface OutputAccumulatorOptions {
@@ -395,7 +395,7 @@ index fbd581f6067c98771dc6a29272a5bab2b2653dcd..6ecae286e90e6d2008ea1c8a77526f45
  }
  export interface OutputSnapshot {
      content: string;
-@@ -35,13 +36,18 @@ export declare class OutputAccumulator {
+@@ -40,13 +41,18 @@ export declare class OutputAccumulator {
      private finished;
      private tempFilePath;
      private tempFileStream;
@@ -413,22 +413,20 @@ index fbd581f6067c98771dc6a29272a5bab2b2653dcd..6ecae286e90e6d2008ea1c8a77526f45
 +    waitForDrain(signal?: AbortSignal): Promise<void> | undefined;
 +    closeTempFile(signal?: AbortSignal): Promise<void>;
 +    destroyTempFile(): void;
-     getLastLineBytes(): number;
-     private appendDecodedText;
-     private trimTail;
+     /**
+      * The complete output, for callers that can take more than the display snapshot. Call after
+      * `finish()` and `closeTempFile()`. Output longer than `maxBytes` raw bytes keeps its first and
 diff --git a/dist/core/tools/output-accumulator.js b/dist/core/tools/output-accumulator.js
-index 72416680b6307108ffeace36e45fa7076cc8b7e5..293d1f1509c95505c3c5ac2371eb3df9a55df038 100644
+index 640d2259a2c6ffb78e67e389e4819b5785637eaf..c7629c97d239d676a9742b90ae18716f6f68e395 100644
 --- a/dist/core/tools/output-accumulator.js
 +++ b/dist/core/tools/output-accumulator.js
-@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
- import { createWriteStream } from "node:fs";
- import { tmpdir } from "node:os";
- import { join } from "node:path";
+@@ -1,4 +1,5 @@
+ import { open } from "node:fs/promises";
 +import { finished } from "node:stream/promises";
+ import { createOutputFileStream } from "../../utils/output-files.js";
  import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, truncateTail } from "./truncate.js";
- function defaultTempFilePath(prefix) {
-     const id = randomBytes(8).toString("hex");
-@@ -36,7 +37,11 @@ export class OutputAccumulator {
+ function byteLength(text) {
+@@ -30,7 +31,11 @@ export class OutputAccumulator {
      finished = false;
      tempFilePath;
      tempFileStream;
@@ -440,7 +438,7 @@ index 72416680b6307108ffeace36e45fa7076cc8b7e5..293d1f1509c95505c3c5ac2371eb3df9
          this.maxLines = options.maxLines ?? DEFAULT_MAX_LINES;
          this.maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
          this.maxRollingBytes = Math.max(this.maxBytes * 2, 1);
-@@ -56,13 +61,13 @@ export class OutputAccumulator {
+@@ -50,13 +55,13 @@ export class OutputAccumulator {
              this.rawChunks.push(data);
          }
      }
@@ -456,7 +454,7 @@ index 72416680b6307108ffeace36e45fa7076cc8b7e5..293d1f1509c95505c3c5ac2371eb3df9
              this.ensureTempFile();
          }
      }
-@@ -93,26 +98,43 @@ export class OutputAccumulator {
+@@ -87,24 +92,27 @@ export class OutputAccumulator {
              fullOutputPath: this.tempFilePath,
          };
      }
@@ -497,6 +495,11 @@ index 72416680b6307108ffeace36e45fa7076cc8b7e5..293d1f1509c95505c3c5ac2371eb3df9
 +            signal?.addEventListener("abort", onAbort, { once: true });
          });
      }
+     /**
+@@ -142,6 +150,20 @@ export class OutputAccumulator {
+             await file.close();
+         }
+     }
 +    async closeTempFile(signal) {
 +        signal?.throwIfAborted();
 +        if (this.tempFileError) throw this.tempFileError;
@@ -514,16 +517,13 @@ index 72416680b6307108ffeace36e45fa7076cc8b7e5..293d1f1509c95505c3c5ac2371eb3df9
      getLastLineBytes() {
          return this.currentLineBytes;
      }
-@@ -174,10 +196,23 @@ export class OutputAccumulator {
-             return;
-         }
-         this.tempFilePath = defaultTempFilePath(this.tempFilePrefix);
--        this.tempFileStream = createWriteStream(this.tempFilePath);
+@@ -205,9 +227,21 @@ export class OutputAccumulator {
+         const { path, stream } = createOutputFileStream(this.tempFilePrefix, ".log");
+         this.tempFilePath = path;
+         this.tempFileStream = stream;
 -        for (const chunk of this.rawChunks) {
 -            this.tempFileStream.write(chunk);
 -        }
-+        const stream = createWriteStream(this.tempFilePath, { highWaterMark: 64 * 1024 });
-+        this.tempFileStream = stream;
 +        const onError = (error) => {
 +            if (this.tempFileError || this.disposed) return;
 +            this.tempFileError = error;

@@ -156,8 +156,8 @@ function catalogSourceModel(
   if (okouModel) {
     return okouModel;
   }
-  // The pinned Pi catalog predates 6.1 Sol. Only the ChatGPT subscription is
-  // approved; do not infer OpenRouter support.
+  // Keep product-owned 6.1 Sol metadata for ChatGPT subscriptions independent
+  // of upstream catalog updates; do not infer OpenRouter admission.
   if (provider === "openai-codex" && model === "gpt-6.1-sol") {
     const predecessor = providerModels(provider).find((entry) => {
       return entry.id === "gpt-6-sol";

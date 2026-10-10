@@ -21,7 +21,7 @@ index 704476da084be53d6aa194a5f774fa3ad47f5e9a..87a8eea1330f3a7bf98f063045d28d09
  //# sourceMappingURL=openai-codex-responses.d.ts.map
 \ No newline at end of file
 diff --git a/dist/api/openai-codex-responses.js b/dist/api/openai-codex-responses.js
-index dfdb6ec3651febbba6b8788f16118ecbf4b38fa8..acee3fe6d9f2fa78f50cf8bd68507d8371eaa48a 100644
+index 6ee63ec3201e788c1843bb077ae263f91fc671ca..37f3a85837e9825ff405288424ebc871d613c3ae 100644
 --- a/dist/api/openai-codex-responses.js
 +++ b/dist/api/openai-codex-responses.js
 @@ -27,6 +27,18 @@ const DEFAULT_WEBSOCKET_CONNECT_TIMEOUT_MS = 15_000;
@@ -70,7 +70,7 @@ index dfdb6ec3651febbba6b8788f16118ecbf4b38fa8..acee3fe6d9f2fa78f50cf8bd68507d83
              output.errorMessage = formatProviderError(normalizeProviderError(error));
              stream.push({ type: "error", reason: output.stopReason, error: output });
              stream.end();
-@@ -1300,4 +1323,10 @@ function buildWebSocketHeaders(initHeaders, additionalHeaders, accountId, token,
+@@ -1318,4 +1341,10 @@ function buildWebSocketHeaders(initHeaders, additionalHeaders, accountId, token,
      headers.set("session-id", requestId);
      return headers;
  }
@@ -95,10 +95,10 @@ index 7f146126800d7446fd7e2493fd9b05d455d7ad95..3aa7449674a47c888b6de15fee96def8
  //# sourceMappingURL=openai-completions.d.ts.map
 \ No newline at end of file
 diff --git a/dist/api/openai-completions.js b/dist/api/openai-completions.js
-index fc8e89382b75f259eb4f041b522840b0d603c033..34c1153d188c2a76b63d742e08c23bb867698c49 100644
+index a60f39352b776d71497e55b33b3334bacfbeb2f5..296ae769718dcaac61532e5a820d2ad665e42177 100644
 --- a/dist/api/openai-completions.js
 +++ b/dist/api/openai-completions.js
-@@ -1339,4 +1339,9 @@ function getCompat(model) {
+@@ -1342,4 +1342,9 @@ function getCompat(model) {
          vllmPriority: model.compat.vllmPriority,
      };
  }
@@ -128,10 +128,10 @@ index 41267bd50904069aa0879cc8634ea94bc1045236..3d7e30ebc76cf507b88a2a1a2926c38c
  //# sourceMappingURL=openai-responses.d.ts.map
 \ No newline at end of file
 diff --git a/dist/api/openai-responses.js b/dist/api/openai-responses.js
-index 1396c8d57ffb0e300382281a026d878e6a96b43a..8bcfe08977ac3aa266e5d661ff73c3f1b2b9f8fd 100644
+index 2a6b4e408498e33fd7685471559fbd4696755f0a..403a78fcd0e06c6d1c689ef04b98bd92f8e5f028 100644
 --- a/dist/api/openai-responses.js
 +++ b/dist/api/openai-responses.js
-@@ -290,4 +290,9 @@ function applyServiceTierPricing(usage, serviceTier, model) {
+@@ -311,4 +311,9 @@ function applyServiceTierPricing(usage, serviceTier, model) {
      usage.cost.cacheWrite *= multiplier;
      usage.cost.total = usage.cost.input + usage.cost.output + usage.cost.cacheRead + usage.cost.cacheWrite;
  }
@@ -190,7 +190,7 @@ index 0000000000000000000000000000000000000000..d4b554b2d2a821394284b3d5e4e8b963
 +        "we were unable to start processing your request within the 900-second timeout limit. please try again later.";
 +}
 diff --git a/dist/utils/provider-retry.js b/dist/utils/provider-retry.js
-index a08fefd7e254f494f838ffa95affd6bf279973db..065475141167b6436818c231741ff76699057dcf 100644
+index 5960cf7f5e992eef7d1b96530cea66c6f616a6d2..a2f2c47b1cb76f1faac44f80b0e087155ea6ed7d 100644
 --- a/dist/utils/provider-retry.js
 +++ b/dist/utils/provider-retry.js
 @@ -1,3 +1,4 @@
@@ -209,7 +209,7 @@ index a08fefd7e254f494f838ffa95affd6bf279973db..065475141167b6436818c231741ff766
      if (shouldRetry === "true")
          return true;
 diff --git a/dist/utils/retry.js b/dist/utils/retry.js
-index 6538c63c99f75a4f232ebd413adf80571a0f39b4..5239de1bfe281131c9c66dd3028e75e8b73f6cad 100644
+index 738a6f0db0ed42d257eefa7a7eb2d355ae784f65..af2e4b6135d0d4ae02171b7f2986f972689bf16f 100644
 --- a/dist/utils/retry.js
 +++ b/dist/utils/retry.js
 @@ -1,3 +1,4 @@
@@ -217,7 +217,7 @@ index 6538c63c99f75a4f232ebd413adf80571a0f39b4..5239de1bfe281131c9c66dd3028e75e8
  function buildProviderErrorPattern(patterns) {
      return new RegExp(patterns.join("|"), "i");
  }
-@@ -163,6 +164,59 @@ export async function retryAssistantCall(produce, policy, signal, callbacks) {
+@@ -176,6 +177,59 @@ export async function retryAssistantCall(produce, policy, signal, callbacks) {
          await callbacks?.onRetryAttemptStart?.();
      }
  }
@@ -277,7 +277,7 @@ index 6538c63c99f75a4f232ebd413adf80571a0f39b4..5239de1bfe281131c9c66dd3028e75e8
  /**
   * Classifies whether a failed assistant message looks like a transient provider
   * or transport error, so callers can decide if the last assistant turn should be
-@@ -176,8 +230,15 @@ export function isRetryableAssistantError(message) {
+@@ -189,8 +243,15 @@ export function isRetryableAssistantError(message) {
      if (message.stopReason !== "error" || !message.errorMessage)
          return false;
      const errorMessage = message.errorMessage;

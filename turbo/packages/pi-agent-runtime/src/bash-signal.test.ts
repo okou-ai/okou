@@ -144,7 +144,9 @@ describe.each(["prompt", "pending-tools"] as const)(
         expect(results[0]?.content).toEqual([
           {
             type: "text",
-            text: expect.stringContaining("Command terminated by signal"),
+            text: expect.stringContaining(
+              `Command exited with code ${signal === "SIGKILL" ? 137 : 143}`,
+            ),
           },
         ]);
         expect(messages.at(-1)).toMatchObject({
