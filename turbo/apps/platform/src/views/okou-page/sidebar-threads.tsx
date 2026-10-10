@@ -1246,8 +1246,8 @@ export function ChatThreadsListMenu({
   );
 }
 
-// A non-default filter names itself in the title, so the list never looks like
-// the inbox while it shows archived, unread, or muted chats.
+// With archiving on, a non-default filter names itself in the title so the list
+// never looks like the inbox while it shows archived, unread, or muted chats.
 function useChatThreadsFilteredTitleLabel() {
   const { t } = useTranslation();
   const { titleLabel } = useChatThreadsTitleLabels();
@@ -1260,7 +1260,7 @@ function useChatThreadsFilteredTitleLabel() {
     ? t(($) => {
         return $.chat.sidebar.unreadOnly;
       })
-    : archiveEnabled && archivedOnly
+    : archivedOnly
       ? t(($) => {
           return $.chat.sidebar.archived;
         })
@@ -1269,7 +1269,7 @@ function useChatThreadsFilteredTitleLabel() {
             return $.chat.sidebar.muted;
           })
         : null;
-  if (filterLabel === null) {
+  if (!archiveEnabled || filterLabel === null) {
     return titleLabel;
   }
   return t(

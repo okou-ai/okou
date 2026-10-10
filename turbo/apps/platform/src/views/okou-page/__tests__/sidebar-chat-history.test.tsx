@@ -375,7 +375,16 @@ test("Keep check-mark chats and archive controls unchanged when archiving is dis
   expect(menuItemByText("All chats")).toBeInTheDocument();
   expect(queryMenuItemByText("Inbox")).not.toBeInTheDocument();
   expect(queryMenuItemByText("Archived")).not.toBeInTheDocument();
-  fireEvent.keyDown(document, { code: "Escape", key: "Escape" });
+  click(menuItemByText("Unread"));
+  await expect(
+    within(sidebar()).findByText("No unread chats"),
+  ).resolves.toBeInTheDocument();
+  // Without archiving, the filter keeps the plain agent title.
+  expect(within(sidebar()).getByText("Chats with Okou")).toBeInTheDocument();
+  click(buttonByText("Show all chats", sidebar()));
+  await expect(
+    within(sidebar()).findByText("✅ Completed release"),
+  ).resolves.toBeInTheDocument();
 
   openThreadMenu("✅ Completed release");
   expect(menuItemByText("Rename chat")).toBeInTheDocument();
@@ -785,6 +794,9 @@ test("Archive and unarchive the current chat with the keyboard shortcut", async 
       within(sidebar()).queryByText("Release plan"),
     ).not.toBeInTheDocument();
   });
+  await expect(
+    screen.findByText("Chat archived. A new reply brings it back to Inbox."),
+  ).resolves.toBeInTheDocument();
 
   pressArchiveShortcut();
 
@@ -794,6 +806,9 @@ test("Archive and unarchive the current chat with the keyboard shortcut", async 
   expect(
     within(sidebar()).queryByText("Your inbox is empty"),
   ).not.toBeInTheDocument();
+  await expect(
+    screen.findByText("Chat moved to Inbox"),
+  ).resolves.toBeInTheDocument();
 });
 
 test("Undo an archive from its toast and explain the muted exception", async () => {

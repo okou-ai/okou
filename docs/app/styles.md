@@ -1472,6 +1472,8 @@ replace the wrapper defaults. The description has no upstream color variable or
 style slot, so that slot alone needs important text utilities. Rich-color and
 inverted descriptions inherit their surface foreground instead of the muted
 token. This is a third-party cascade adapter, not a pattern for business UI.
+A reversible action such as Undo spreads the wrapper's `TEXT_TOAST_ACTION`
+into the toast options instead of defining its own button style.
 
 These colors intentionally change the visual result: Dark no longer displays a
 Light toast, and both themes use the application's foreground, border and

@@ -1,5 +1,5 @@
 import { command } from "ccstate";
-import { toast } from "@okouai/ui/components/ui/sonner";
+import { TEXT_TOAST_ACTION, toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
 import { navigateToChat$ } from "../okou-page/nav.ts";
 import { rootSignal$ } from "../root-signal.ts";
@@ -7,20 +7,6 @@ import { navigateTo$ } from "../route.ts";
 import { onDomEventFn } from "../utils.ts";
 import { setChatThreadArchived$ } from "./chat-event.ts";
 import { chatThreadMetaMap$ } from "./chat-thread-event-sourcing.ts";
-
-// Undo is a quiet text action; the primary fill is reserved for commitments.
-const UNDO_ACTION_CLASS_NAMES = {
-  // A one-line toast sizes to its content, so the action needs its own gap.
-  actionButton: "!ml-4 underline-offset-4 hover:underline active:opacity-80",
-} as const;
-const UNDO_ACTION_STYLE = {
-  background: "transparent",
-  color: "hsl(var(--foreground))",
-  fontSize: "inherit",
-  height: "auto",
-  lineHeight: "1.5",
-  padding: 0,
-} as const;
 
 // One line says what happened and when the chat comes back. The API brings an
 // archived chat back on a new reply unless it is muted.
@@ -80,8 +66,7 @@ export const setChatThreadArchivedWithFeedback$ = command(
     signal.throwIfAborted();
 
     toast.success(archiveToastMessage(archived, meta?.muted === true), {
-      actionButtonStyle: UNDO_ACTION_STYLE,
-      classNames: UNDO_ACTION_CLASS_NAMES,
+      ...TEXT_TOAST_ACTION,
       action: {
         label: i18n.t(($) => {
           return $.chat.toasts.undo;
