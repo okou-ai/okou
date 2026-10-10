@@ -88,12 +88,6 @@ export {
   type RunFailureReasonToken,
 } from "./run-failure-reasons";
 export {
-  desktopAuthConsumeContract,
-  desktopAuthHandoffContract,
-  type DesktopAuthConsumeContract,
-  type DesktopAuthHandoffContract,
-} from "./desktop-auth";
-export {
   CAPABILITIES,
   CAPABILITY_META,
   type Capability,
