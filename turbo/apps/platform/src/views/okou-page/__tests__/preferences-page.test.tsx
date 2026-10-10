@@ -222,7 +222,8 @@ test("A workspace without a saved color theme starts on the default palette", as
   ).toStrictEqual([{ colorTheme: "golden-hour" }]);
 });
 
-test("Chat settings keep the agreed row order and save personal subscription chat defaults", async () => {
+test("Chat settings select models without changing the current model's options", async () => {
+  const user = userEvent.setup({ delay: null });
   context.mocks.data.personalModelProviders([
     {
       id: "00000000-0000-4000-a000-000000000601",
@@ -237,7 +238,7 @@ test("Chat settings keep the agreed row order and save personal subscription cha
   const updates = mockPreferences({ cloudBrowserEnabledByDefault: false });
   context.mocks.data.userModelPreference({
     selectedModel: "gpt-6-astra",
-    serviceTier: null,
+    serviceTier: "priority",
     modelSettings: {},
     selectedImageModel: null,
     updatedAt: "2026-09-06T00:00:00.000Z",
@@ -288,18 +289,36 @@ test("Chat settings keep the agreed row order and save personal subscription cha
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
 
-  click(await within(dialog).findByRole("combobox", { name: "GPT 6 Astra" }));
-  click(await screen.findByRole("option", { name: "GPT 6 Astra Fast" }));
+  const picker = await within(dialog).findByRole("combobox", {
+    name: "GPT 6 Astra",
+  });
+  await user.click(picker);
+  const selectedOption = await screen.findByRole("option", {
+    name: "GPT 6 Astra",
+    selected: true,
+  });
+  await waitFor(() => {
+    expect(selectedOption).toHaveFocus();
+  });
+  expect(
+    screen.getAllByRole("option", { name: /^GPT 6 Astra/u }),
+  ).toStrictEqual([selectedOption]);
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(picker).toHaveFocus();
+  });
+  await user.click(picker);
+  click(await screen.findByRole("option", { name: "GPT 6 Astra" }));
   await waitFor(() => {
     expect(modelUpdates).toContainEqual({
       selectedModel: "gpt-6-astra",
       serviceTier: "priority",
     });
     expect(
-      within(dialog).getByRole("combobox", { name: "GPT 6 Astra Fast" }),
+      within(dialog).getByRole("combobox", { name: "GPT 6 Astra" }),
     ).toBeVisible();
   });
-  click(within(dialog).getByRole("combobox", { name: "GPT 6 Astra Fast" }));
+  click(within(dialog).getByRole("combobox", { name: "GPT 6 Astra" }));
   click(await screen.findByRole("option", { name: "Auto" }));
   await waitFor(() => {
     expect(modelUpdates).toContainEqual({
