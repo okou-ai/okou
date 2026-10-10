@@ -3,6 +3,81 @@ use ::sandbox::DEFAULT_PROCESS_START_TIMEOUT;
 use std::sync::Arc;
 
 #[tokio::test]
+async fn agent_start_preserves_provider_handle_without_consuming_it_for_other_starts() {
+    let overrides = Arc::new(MockSandboxOverrides::new());
+    overrides.push_start_agent_process_handle(::sandbox::GuestProcessHandle::new(
+        42,
+        None,
+        Some(::sandbox::GuestProcessControlHandle::new_with_outcome(
+            |message_id, payload, _| {
+                Box::pin(async move {
+                    assert_eq!(payload, b"provider payload");
+                    ProcessControlOutcome::Delivered(::sandbox::ProcessControlAck { message_id })
+                })
+            },
+        )),
+        ::sandbox::GuestProcessWaiter::new(|_| {
+            Box::pin(async { Ok(::sandbox::ProcessExit::new(42, 7, Vec::new(), Vec::new())) })
+        }),
+    ));
+    let sandbox = MockSandbox::with_overrides("test", Arc::clone(&overrides));
+    let ordinary = sandbox
+        .start_process(&StartProcessRequest {
+            timeout_is_expected: false,
+            cmd: "ordinary helper",
+            start_timeout: DEFAULT_PROCESS_START_TIMEOUT,
+            timeout: Duration::from_secs(5),
+            env: &[],
+            sudo: false,
+            output: ProcessOutputMode::buffered(EXEC_OUTPUT_LIMIT_1_MIB),
+        })
+        .await
+        .unwrap();
+    assert_eq!(ordinary.guest_pid, 1);
+    sandbox
+        .wait_process(ordinary, Duration::from_secs(5))
+        .await
+        .unwrap();
+    assert!(
+        sandbox
+            .start_agent_process(&StartAgentProcessRequest {
+                timeout: Duration::from_secs(5),
+                env: &[("INVALID=KEY", "value")],
+                output: ProcessOutputMode::buffered(EXEC_OUTPUT_LIMIT_1_MIB),
+            })
+            .await
+            .is_err()
+    );
+    let agent = sandbox
+        .start_agent_process(&StartAgentProcessRequest {
+            timeout: Duration::from_secs(5),
+            env: &[],
+            output: ProcessOutputMode::buffered(EXEC_OUTPUT_LIMIT_1_MIB),
+        })
+        .await
+        .unwrap();
+    let (process, control) = agent.into_parts();
+    assert_eq!(process.guest_pid, 42);
+    let outcome = control
+        .control_outcome("message", b"provider payload", Duration::from_secs(1))
+        .await;
+    let ProcessControlOutcome::Delivered(ack) = outcome else {
+        panic!("expected delivered process-control outcome, got {outcome:?}");
+    };
+    assert_eq!(ack.message_id, "message");
+    let exit = sandbox
+        .wait_process(process, Duration::from_secs(5))
+        .await
+        .unwrap();
+    assert_eq!(exit.guest_pid, 42);
+    assert_eq!(
+        exit.termination,
+        ::sandbox::ExecTermination::Exited { exit_code: 7 }
+    );
+    assert_eq!(overrides.start_agent_process_calls().len(), 1);
+}
+
+#[tokio::test]
 async fn overrides_record_start_process_output_modes_in_order() {
     let overrides = Arc::new(MockSandboxOverrides::new());
     let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));

@@ -4,6 +4,9 @@ version = "0.22.36"
 edition.workspace = true
 description = "Runner-side client for controlling guest operations"
 
+[features]
+test-support = []
+
 [dependencies]
 guest-contracts.workspace = true
 nix = { workspace = true, features = ["net"] }

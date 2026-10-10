@@ -76,6 +76,8 @@ mod guest_dns_readiness;
 mod guest_state_restore;
 mod guest_storage_manifest;
 mod operation_tracker;
+#[cfg(feature = "test-support")]
+pub mod test_support;
 #[cfg(test)]
 mod tests;
 mod workspace_drive_mount;

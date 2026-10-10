@@ -11,6 +11,7 @@
 )]
 
 pub mod execution_context;
+pub mod guest_control;
 pub use runner_host::test_fixtures::ignored_child;
 pub mod raw_http;
 pub mod session_history;

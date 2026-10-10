@@ -27,8 +27,8 @@ use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
 use runner_provider::{
-    ClaimedJob, CompletionAuth, CompletionReportTiming, JobCandidate, JobProvider, ProviderError,
-    ProviderResult,
+    ActiveInputSource, ClaimedJob, CompletionAuth, CompletionReportTiming, JobCandidate,
+    JobProvider, ProviderError, ProviderResult,
 };
 use runner_types::ids::RunId;
 use runner_types::types::{
@@ -45,6 +45,11 @@ pub struct Completion {
     pub sandbox_id: Option<SandboxId>,
     pub reuse_result: Option<SandboxReuseResult>,
     pub workspace_reuse_result: Option<WorkspaceReuseResult>,
+}
+
+struct MockClaim {
+    context: ExecutionContext,
+    active_input_source: Option<ActiveInputSource>,
 }
 
 /// Channel-driven mock provider.
@@ -64,7 +69,7 @@ pub struct MockJobProvider {
     /// delay won't be discovered until it completes.
     poll_delay: Option<Duration>,
     ready_discovery: Arc<StdMutex<VecDeque<JobCandidate>>>,
-    claim_results: StdMutex<HashMap<RunId, Option<ExecutionContext>>>,
+    claim_results: StdMutex<HashMap<RunId, Option<MockClaim>>>,
     claim_candidates: Arc<StdMutex<Vec<JobCandidate>>>,
     completions: Arc<StdMutex<Vec<Completion>>>,
     heartbeats: Arc<StdMutex<Vec<HeartbeatState>>>,
@@ -371,7 +376,32 @@ impl MockJobProvider {
         self.claim_results
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .insert(run_id, result);
+            .insert(
+                run_id,
+                result.map(|context| MockClaim {
+                    context,
+                    active_input_source: None,
+                }),
+            );
+    }
+
+    /// Attach an active-input source at the same claimed-job boundary as a real provider.
+    pub fn set_claim_with_active_input(
+        &self,
+        run_id: RunId,
+        context: ExecutionContext,
+        source: ActiveInputSource,
+    ) {
+        self.claim_results
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(
+                run_id,
+                Some(MockClaim {
+                    context,
+                    active_input_source: Some(source),
+                }),
+            );
     }
 }
 
@@ -620,13 +650,16 @@ impl JobProvider for MockJobProvider {
             .unwrap_or_else(|e| e.into_inner())
             .push(candidate.clone());
         self.claim_control.run_while_blocked(|_| {}).await;
-        let context = self
+        let MockClaim {
+            context,
+            active_input_source,
+        } = self
             .claim_results
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .remove(&run_id)
             .flatten()?;
-        match ClaimedJob::local_with_active_input_source(run_id, context, None) {
+        match ClaimedJob::local_with_active_input_source(run_id, context, active_input_source) {
             Ok(claimed) => Some(claimed),
             Err(err) => {
                 warn!(
