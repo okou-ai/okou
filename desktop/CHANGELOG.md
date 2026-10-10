@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.52.2](https://github.com/okou-ai/okou/compare/desktop-v0.52.1...desktop-v0.52.2) (2026-10-10)
+
+
+### Performance Improvements
+
+* **computer-use:** replace desktop command polling with ably wakeups ([#38610](https://github.com/okou-ai/okou/issues/38610)) ([ff8cd53](https://github.com/okou-ai/okou/commit/ff8cd536be6edd610413923204b26c35e76b9ec4))
+
 ## [0.52.1](https://github.com/okou-ai/okou/compare/desktop-v0.52.0...desktop-v0.52.1) (2026-10-09)
 
 

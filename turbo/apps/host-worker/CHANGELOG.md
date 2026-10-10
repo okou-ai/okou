@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.6.4](https://github.com/okou-ai/okou/compare/host-worker-v1.6.3...host-worker-v1.6.4) (2026-10-10)
+
+
+### Bug Fixes
+
+* use hosted og credentials and restore the okou brand cover ([#38510](https://github.com/okou-ai/okou/issues/38510)) ([2d2ec67](https://github.com/okou-ai/okou/commit/2d2ec676fbf7ab4bc0db3cd5439715869ff2d6b9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.549.0
+    * @okouai/core bumped to 8.740.1
+
 ## [1.6.3](https://github.com/okou-ai/okou/compare/host-worker-v1.6.2...host-worker-v1.6.3) (2026-10-10)
 
 
