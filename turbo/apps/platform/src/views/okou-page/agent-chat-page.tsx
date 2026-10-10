@@ -23,6 +23,7 @@ import { detach, Reason } from "../../signals/utils.ts";
 import { ChatComposer } from "./chat-composer.tsx";
 import { StartCards } from "./start-cards.tsx";
 import { ComposerTaskChips } from "./composer-task-chips.tsx";
+import { ChatHomeCompliance } from "./chat-home-compliance.tsx";
 import { HomeTaskRecommendations } from "./home-task-recommendations.tsx";
 import { GrowthEntryHeader } from "./growth-entry.tsx";
 import {
@@ -537,6 +538,7 @@ function AgentComposerPage() {
             )}
           </div>
         </div>
+        <ChatHomeCompliance />
       </main>
       <PersonalClaudeCodeDeviceAuthDialog />
       <PersonalCodexDeviceAuthDialog />

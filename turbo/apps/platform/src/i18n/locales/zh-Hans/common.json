@@ -3907,22 +3907,6 @@
         "continue": "继续",
         "notNow": "暂不"
       },
-      "compliance": {
-        "frameworks": {
-          "ccpa": "CCPA / CPRA",
-          "gdpr": "GDPR",
-          "hipaa": "HIPAA",
-          "iso27001": "ISO/IEC 27001",
-          "soc2": "SOC 2 Type II"
-        },
-        "link": "安全详情",
-        "status": {
-          "aligned": "已对标",
-          "compliant": "已合规",
-          "inProgress": "进行中"
-        },
-        "title": "Okou 的合规进展，让你用得放心"
-      },
       "documentTitles": {
         "experience": "你的AI使用经验",
         "industry": "选择你的领域",
@@ -5148,6 +5132,22 @@
   },
   "shared": {
     "breadcrumb": "面包屑导航",
+    "compliance": {
+      "frameworks": {
+        "ccpa": "CCPA / CPRA",
+        "gdpr": "GDPR",
+        "hipaa": "HIPAA",
+        "iso27001": "ISO/IEC 27001",
+        "soc2": "SOC 2 Type II"
+      },
+      "link": "安全详情",
+      "status": {
+        "aligned": "已对标",
+        "compliant": "已合规",
+        "inProgress": "进行中"
+      },
+      "title": "Okou 的合规进展，让你用得放心"
+    },
     "errorBoundary": {
       "contactSupport": "客服",
       "description": "再试一次，或者联系我们",

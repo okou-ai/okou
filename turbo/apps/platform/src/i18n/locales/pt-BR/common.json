@@ -3986,22 +3986,6 @@
         "continue": "Continuar",
         "notNow": "Agora não"
       },
-      "compliance": {
-        "frameworks": {
-          "ccpa": "CCPA / CPRA",
-          "gdpr": "GDPR",
-          "hipaa": "HIPAA",
-          "iso27001": "ISO/IEC 27001",
-          "soc2": "SOC 2 Type II"
-        },
-        "link": "Detalhes de segurança",
-        "status": {
-          "aligned": "Alinhado",
-          "compliant": "Em conformidade",
-          "inProgress": "Em andamento"
-        },
-        "title": "A conformidade do Okou, feita para a sua confiança"
-      },
       "documentTitles": {
         "experience": "Sua experiência com IA",
         "industry": "Escolha sua área",
@@ -5237,6 +5221,22 @@
   },
   "shared": {
     "breadcrumb": "Navegação estrutural",
+    "compliance": {
+      "frameworks": {
+        "ccpa": "CCPA / CPRA",
+        "gdpr": "GDPR",
+        "hipaa": "HIPAA",
+        "iso27001": "ISO/IEC 27001",
+        "soc2": "SOC 2 Type II"
+      },
+      "link": "Detalhes de segurança",
+      "status": {
+        "aligned": "Alinhado",
+        "compliant": "Em conformidade",
+        "inProgress": "Em andamento"
+      },
+      "title": "A conformidade do Okou, feita para a sua confiança"
+    },
     "errorBoundary": {
       "contactSupport": "suporte",
       "description": "Tente novamente ou fale com o",

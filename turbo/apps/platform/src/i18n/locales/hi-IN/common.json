@@ -3926,22 +3926,6 @@
         "continue": "आगे बढ़ें",
         "notNow": "अभी नहीं"
       },
-      "compliance": {
-        "frameworks": {
-          "ccpa": "CCPA / CPRA",
-          "gdpr": "GDPR",
-          "hipaa": "HIPAA",
-          "iso27001": "ISO/IEC 27001",
-          "soc2": "SOC 2 Type II"
-        },
-        "link": "सुरक्षा विवरण",
-        "status": {
-          "aligned": "संरेखित",
-          "compliant": "अनुपालित",
-          "inProgress": "जारी है"
-        },
-        "title": "Okou का अनुपालन, आपके भरोसे के लिए"
-      },
       "documentTitles": {
         "experience": "आपका AI अनुभव",
         "industry": "अपना क्षेत्र चुनें",
@@ -5169,6 +5153,22 @@
   },
   "shared": {
     "breadcrumb": "ब्रेडक्रम्ब",
+    "compliance": {
+      "frameworks": {
+        "ccpa": "CCPA / CPRA",
+        "gdpr": "GDPR",
+        "hipaa": "HIPAA",
+        "iso27001": "ISO/IEC 27001",
+        "soc2": "SOC 2 Type II"
+      },
+      "link": "सुरक्षा विवरण",
+      "status": {
+        "aligned": "संरेखित",
+        "compliant": "अनुपालित",
+        "inProgress": "जारी है"
+      },
+      "title": "Okou का अनुपालन, आपके भरोसे के लिए"
+    },
     "errorBoundary": {
       "contactSupport": "सहायता",
       "description": "इसे एक और प्रयास करें या संपर्क करें",

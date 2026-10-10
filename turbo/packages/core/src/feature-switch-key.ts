@@ -51,6 +51,7 @@ export enum FeatureSwitchKey {
   PiMemory = "piMemory",
   CodexExecution = "_codexExecution",
   ComposerTaskChips = "composerTaskChips",
+  ChatHomeCompliance = "chatHomeCompliance",
   ChatComposerLayout = "chatComposerLayout",
   ChatThreadArchiving = "chatThreadArchiving",
   ChatThreadMuting = "chatThreadMuting",

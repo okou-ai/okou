@@ -3907,22 +3907,6 @@
         "continue": "계속",
         "notNow": "나중에"
       },
-      "compliance": {
-        "frameworks": {
-          "ccpa": "CCPA / CPRA",
-          "gdpr": "GDPR",
-          "hipaa": "HIPAA",
-          "iso27001": "ISO/IEC 27001",
-          "soc2": "SOC 2 Type II"
-        },
-        "link": "보안 세부 정보",
-        "status": {
-          "aligned": "정렬",
-          "compliant": "준수",
-          "inProgress": "진행 중"
-        },
-        "title": "믿고 쓸 수 있도록, Okou의 컴플라이언스"
-      },
       "documentTitles": {
         "experience": "AI 사용 경험",
         "industry": "분야 선택",
@@ -5148,6 +5132,22 @@
   },
   "shared": {
     "breadcrumb": "경로 표시",
+    "compliance": {
+      "frameworks": {
+        "ccpa": "CCPA / CPRA",
+        "gdpr": "GDPR",
+        "hipaa": "HIPAA",
+        "iso27001": "ISO/IEC 27001",
+        "soc2": "SOC 2 Type II"
+      },
+      "link": "보안 세부 정보",
+      "status": {
+        "aligned": "정렬",
+        "compliant": "준수",
+        "inProgress": "진행 중"
+      },
+      "title": "믿고 쓸 수 있도록, Okou의 컴플라이언스"
+    },
     "errorBoundary": {
       "contactSupport": "지원",
       "description": "다시 시도하거나 문의해 주세요",

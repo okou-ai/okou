@@ -14,7 +14,7 @@ import { startOnboardingRecommendation$ } from "../../signals/onboarding/onboard
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { OnboardingConnectorSetup } from "../onboarding/onboarding-connectors.tsx";
-import { securityPageUrl } from "./onboarding-security.ts";
+import { securityPageUrl } from "../components/security-page.ts";
 import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
 import {
   FEATURED_SOURCE_SLUGS,
