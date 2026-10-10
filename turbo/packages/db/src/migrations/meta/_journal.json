@@ -2052,6 +2052,13 @@
       "when": 1791625914837,
       "tag": "1370_drop_computer_use_host_token_hash",
       "breakpoints": true
+    },
+    {
+      "idx": 1371,
+      "version": "7",
+      "when": 1791638276606,
+      "tag": "1371_retire_desktop_auth_handoff_storage",
+      "breakpoints": true
     }
   ]
 }

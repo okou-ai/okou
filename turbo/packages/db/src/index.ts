@@ -7,7 +7,6 @@ import * as artifactShareSchema from "./schema/artifact-share";
 import * as userSchema from "./schema/user";
 import * as deviceCodesSchema from "./schema/device-codes";
 import * as cliTokensSchema from "./schema/cli-tokens";
-import * as desktopAuthHandoffCodeSchema from "./schema/desktop-auth-handoff-code";
 import * as agentSchema from "./schema/agent";
 import * as agentRunSchema from "./runtime/agent-run";
 import * as agentRunConnectorDiagnosticRegistrationSchema from "./schema/agent-run-connector-diagnostic-registration";
@@ -171,7 +170,6 @@ export const schema = {
   ...artifactShareSchema,
   ...deviceCodesSchema,
   ...cliTokensSchema,
-  ...desktopAuthHandoffCodeSchema,
   ...agentSchema,
   ...agentRunSchema,
   ...agentRunConnectorDiagnosticRegistrationSchema,
