@@ -295,6 +295,21 @@ class _BoundedPerMessageDeflate(PerMessageDeflate):
             return CloseReason.MESSAGE_TOO_BIG
         return decoded
 
+    def frame_inbound_header(
+        self,
+        proto: FrameDecoder | FrameProtocol,
+        opcode: Opcode,
+        rsv: RsvBits,
+        payload_length: int,
+    ) -> RsvBits | CloseReason:
+        inbound_compressed = self._inbound_compressed
+        result = super().frame_inbound_header(proto, opcode, rsv, payload_length)
+        if opcode.iscontrol():
+            # Keep the parent's RSV checks without letting an idle control
+            # header initialize the next data message's compression marker.
+            self._inbound_compressed = inbound_compressed
+        return result
+
     def frame_inbound_payload_data(
         self,
         proto: FrameDecoder | FrameProtocol,
@@ -309,10 +324,8 @@ class _BoundedPerMessageDeflate(PerMessageDeflate):
         proto: FrameDecoder | FrameProtocol,
         fin: bool,
     ) -> bytes | CloseReason | None:
-        if not fin:
-            return None
-        if not self._inbound_is_compressible:
-            self._inbound_compressed = None
+        # A final control frame does not complete an interrupted data message.
+        if not fin or not self._inbound_is_compressible:
             return None
         if not self._inbound_compressed:
             self._inbound_compressed = None

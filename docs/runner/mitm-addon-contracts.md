@@ -657,6 +657,12 @@ an overflow lower bound, clears the decompressor and message budget, and closes
 the flow with code 1009. A zlib decoding error clears the same state and closes
 with `INVALID_FRAME_PAYLOAD_DATA` (1007).
 
+Compression state belongs to a logical data message, not to each frame. Ping
+and Pong headers retain the inherited reserved-bit validation but cannot
+initialize the next data message's compression marker. Their completion leaves
+an interrupted message's marker, decompressor and cumulative budgets intact;
+only data-message completion or terminal cleanup can end that state.
+
 RFC 7692 messages omit the final deflate block on the wire. The adapter restores
 the empty-deflate trailer (`00 00 ff ff`) at the end of a compressed message and
 runs that output through the same bound before dispatch. Uncompressed messages
