@@ -353,7 +353,7 @@ describe("direct Runner WSS ticket boundary", () => {
     expect(newer.digest).not.toBe(old.digest);
     const authorized = await accept(check([old, newer]), [200]);
     expect(authorized.body.authorized).toHaveLength(2);
-    expect(authorized.body.authorized).toEqual(
+    expect(authorized.body.authorized).toStrictEqual(
       expect.arrayContaining([old, newer]),
     );
     await accept(consume(f, first.body.ticket), [404]);
@@ -471,7 +471,8 @@ describe("direct Runner WSS ticket boundary", () => {
     const f = await setup();
     const terminal = await accept(bootstrap(f), [200]);
     await f.api.requestCancelRun(f.actor, f.runId, [200]);
-    await accept(consume(f, terminal.body.ticket), [404]);
+    const denied = await accept(consume(f, terminal.body.ticket), [404]);
+    expect(denied.body.error.code).toBe("NOT_FOUND");
     await accept(bootstrap(f), [404]);
   });
 });
