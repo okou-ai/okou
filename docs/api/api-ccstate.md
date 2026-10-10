@@ -334,11 +334,9 @@ business graph's symbol inventory in this standard.
 ## Reference Implementation
 
 These references illustrate derived reads, limited state, and entry-owned
-orchestration from #37430. They are not proof that the referenced files already
-meet every target rule above. In particular, remaining database-handle passing,
-node-valued parameters, or command construction during execution are migration
-work, not patterns to copy. Transaction and handle cleanup is tracked in
-[#37513](https://github.com/okou-ai/okou/issues/37513).
+orchestration. Review each pattern against this guide before reusing it; a
+reference is not proof that every implementation detail satisfies the
+database-handle, node-parameter, graph-construction, and transaction rules above.
 
 - `turbo/apps/api/src/signals/services/thread-claim-run.service.ts`: the claim
   graph (`createThreadClaimRunObjects`), with derived head, model inputs, model

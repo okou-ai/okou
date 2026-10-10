@@ -73,14 +73,15 @@ cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-host -p runner-storage -p runner -- --test-threads=1
 
 # Host-owned orphan-workspace GC and retained Runner policy/report composition
-# All 34 original ordinary workspace/held-lease/retry cases follow the operation
-# into runner-host/src/gc/workspaces/tests/mod.rs; none removed or ignored.
-# New explicit-age and Root default/report/error seams cover the boundary.
+# Run both owner and composition targets for workspace/held-lease/retry behavior,
+# explicit-age propagation and Runner's defaults, reports and errors.
 # Shared GC and immutable report fixtures use non-default Host test-support;
 # production report, candidate, lease and removal-hook state stay private.
-# Initial candidates, fixed age reference, complete ownership snapshots and
-# later held lease retain their ordering. Root global lock/phase policy remains.
-# Scoped warm correctness is not the complete cold-memory acceptance gate.
+# Preserve ordering between initial candidates, the fixed age reference,
+# complete ownership snapshots and later held leases. Cover Runner's global
+# lock/phase policy as well.
+# Scoped correctness tests do not replace the complete native target selection
+# below or establish compile-memory savings.
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-host -p runner -- --test-threads=1
 

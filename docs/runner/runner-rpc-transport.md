@@ -1,9 +1,8 @@
 # Guest-to-Runner RPC
 
-The transport delivered by #32012 is infrastructure under #31932. Its first
-consumer is the Runner SSH dispatcher (`crates/runner-remote/src/ssh`), installed by
-#32387 for official API-backed Runs. The shared Runner-side owner now lives in
-`crates/runner-remote/src/guest_rpc`; SSH owns only its business handlers and run-local
+The shared Runner-side owner lives in `crates/runner-remote/src/guest_rpc` and
+serves authorized consumers for official API-backed Runs. The SSH dispatcher
+(`crates/runner-remote/src/ssh`) owns only its business handlers and run-local
 authority/session state. The generic transport itself has no API
 calls or business validators. Local/mock sandbox providers expose no capability.
 The private run-scoped Guest duplex (`crates/runner-remote/src/guest_duplex`) has its own
@@ -12,9 +11,8 @@ its request bytes, one-operation lifetime, admission budget and decoder are not
 part of a shared protocol classifier. Both listeners rely on the same sandbox
 assignment and authoritative normal-operation reservation. Idle duplex candidates
 hold no park reservation.
-The SSH CLI and owner/Agent UI are delivered. SSH is generally
-available but still requires current API authority; the transport itself does
-not grant SSH access.
+SSH consumers require current API authority; the transport itself does not
+grant SSH access.
 
 ## Choosing a Guest/Runner transport for new work
 
@@ -40,8 +38,8 @@ Apply these questions in order:
 4. **Does the Runner attach an opaque, long-lived bidirectional channel to the
    exact live Run rather than service one Guest RPC?** Use the separate private
    duplex listener on **52002**. Its connection is not an RPC request and cannot
-   acquire an operation reservation until exact-run attachment; #37027 owns
-   ticket admission before any public WSS acknowledgement. See the
+   acquire an operation reservation until exact-run attachment. Ticket admission
+   must precede any public WSS acknowledgement. See the
    [duplex owner](../../crates/runner-remote/src/guest_duplex).
 
 Port 52000 has one accepted control connection: the Guest control service owns its
@@ -76,9 +74,7 @@ plus EOF, file streaming, deadlines, no-replay and exact-Run/park semantics,
 while proving bounded control latency under congested Guest-origin traffic and
 bounded RPC latency under busy control/file work. Compare paired-image
 fresh/restore/reuse behavior and measured idle and congested tail latency
-before recommending a physical-port change. [#37378](https://github.com/okou-ai/okou/issues/37378)
-tracks that research; this placement guide does not choose or activate a
-consolidation.
+before recommending a physical-port change.
 
 ## Guest boundary
 
@@ -270,9 +266,9 @@ Runner's assignment-bound usage handler and its protocol tests.
 
 ## Opt-in binary streaming foundation
 
-#33856 (under #33847) adds `/usr/local/bin/runner-rpc-client --stream` for
-bounded binary consumers. #33857 adds `ssh.file.upload` / `ssh.file.download`,
-Runner-owned SFTP and CLI file semantics.
+`/usr/local/bin/runner-rpc-client --stream` provides bounded binary transport.
+The `ssh.file.upload` / `ssh.file.download` consumers own Runner-side SFTP and
+CLI file semantics.
 Only validated file methods extend the Runner request lifetime; unknown methods
 are rejected before resolving authority. Existing exec, session and no-argument
 helper contracts are unchanged.
@@ -320,7 +316,7 @@ Binary counters are separate from control counters. Readers check advertised
 sizes and remaining capacity before allocating bodies; writers validate before
 transmission. The bridge buffers only bounded frames and concurrently forwards
 input and responses. Slow output applies backpressure. An early remote terminal
-ends pending input work, including a stalled producer. A future upload handler
+ends pending input work, including a stalled producer. An upload handler
 must therefore verify its own input End, expected size and completion before
 reporting success; the helper cannot establish those business facts.
 
@@ -340,7 +336,7 @@ timeout or missing acknowledgement causes reconnection or replay.
 
 Runner and its bundled helper are one artifact, including rootfs/snapshot
 identity. No cross-version helper/Runner negotiation is added. Independently
-selected older CLI packages keep the unchanged no-argument interface. A future
+selected older CLI packages keep the unchanged no-argument interface. A
 stream-aware CLI on an old helper must report an unsupported invocation without
 exec fallback. An unavailable method returns the existing JSON unknown-method
 error, which the streaming response reader accepts without binary frames.
