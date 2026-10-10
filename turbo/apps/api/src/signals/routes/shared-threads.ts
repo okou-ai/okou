@@ -2,7 +2,14 @@ import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-th
 import { command } from "ccstate";
 
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
-import { deleteSharedThread$ } from "../services/shared-thread-artifacts.service";
+import {
+  deleteSharedThread$,
+  renderSharedThreadMarkdownCovers$,
+} from "../services/shared-thread-artifacts.service";
+import { waitUntil } from "../context/wait-until";
+import { tapError } from "../utils";
+import { logger } from "../../lib/log";
+
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { requestSignal$, setResHeader$ } from "../context/hono";
@@ -14,6 +21,7 @@ import {
 } from "../services/shared-thread.service";
 import type { RouteEntry } from "../route-entry";
 
+const coverLog = logger("artifacts:markdown-cover");
 const createBody$ = bodyResultOf(sharedThreadsContract.create);
 
 const noShareableMessages = Object.freeze({
@@ -94,6 +102,25 @@ const createSharedThreadInner$ = command(
     if (result.kind === "id-conflict") {
       return conflict("A shared conversation with this ID already exists");
     }
+    waitUntil(
+      tapError(
+        set(
+          renderSharedThreadMarkdownCovers$,
+          {
+            threadId: result.id,
+            userId: auth.userId,
+            orgId: auth.orgId,
+          },
+          AbortSignal.timeout(180_000),
+        ),
+        (error) => {
+          coverLog.warn("Failed to prepare conversation Markdown covers", {
+            threadId: result.id,
+            error,
+          });
+        },
+      ),
+    );
     return { status: 201 as const, body: { id: result.id } };
   },
 );

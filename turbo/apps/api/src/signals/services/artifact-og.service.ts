@@ -9,6 +9,7 @@ import {
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { ArtifactOgTarget } from "@okouai/api-contracts/contracts/artifact-og";
+import type { ArtifactSharePolicy } from "@okouai/api-contracts/contracts/artifact-shares";
 import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
 import { hostedDeployments, hostedSites } from "@okouai/db/runtime/hosted-site";
 import { sharedThreads } from "@okouai/db/schema/shared-thread";
@@ -79,6 +80,21 @@ function imageSource(
   return ["image/png", "image/jpeg", "image/webp"].includes(contentType)
     ? { bucket: privateArtifactsBucket(), key }
     : undefined;
+}
+
+function sharedFileImage(
+  target: Extract<ArtifactSharePolicy["target"], { kind: "file" }>,
+): ImageSource | undefined {
+  return (
+    imageSource(target.key, target.contentType) ??
+    (target.preview ? imageSource(target.preview.key, "image/png") : undefined)
+  );
+}
+
+function sharedImageVersion(policy: ArtifactSharePolicy): string {
+  return policy.target.kind === "file" && policy.target.preview
+    ? `${policy.revision}:${policy.target.preview.sha256}`
+    : policy.revision;
 }
 
 const hostedCover$ = command(
@@ -273,7 +289,7 @@ const referenceOgSource$ = command(
     const { policy, candidate } = published;
     const shared = policy.target;
     return {
-      version: policy.revision,
+      version: sharedImageVersion(policy),
       title:
         shared.kind === "file" ? shared.filename : shared.manifest.publicSlug,
       url,
@@ -288,7 +304,7 @@ const referenceOgSource$ = command(
           : undefined,
       image:
         shared.kind === "file"
-          ? imageSource(shared.key, shared.contentType)
+          ? sharedFileImage(shared)
           : candidate.target.kind === "html"
             ? await set(
                 hostedCover$,

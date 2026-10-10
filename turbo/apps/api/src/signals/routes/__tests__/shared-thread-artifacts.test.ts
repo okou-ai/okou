@@ -26,6 +26,7 @@ import {
   artifactReferencesContract,
 } from "@okouai/api-contracts/contracts/artifact-references";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
+import { sharedThreadArtifactPolicySchema } from "@okouai/api-contracts/contracts/shared-thread-artifacts";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -96,7 +97,12 @@ async function fixture() {
   const actor = bdd.user();
   context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
     {
-      data: [{ publicUserData: { userId: actor.userId } }],
+      data: [
+        {
+          publicUserData: { userId: actor.userId },
+          organization: { id: actor.orgId, name: "Resource snapshots" },
+        },
+      ],
       totalCount: 1,
     },
   );
@@ -605,6 +611,643 @@ test("resolves a public snapshot to copied bytes without exposing its private so
   );
   const revokedDownload = await accept(download(), [404]);
   expect(revokedDownload.body).not.toHaveProperty("url");
+});
+
+async function markdownRenderer(
+  options: {
+    fail?: boolean;
+    invalidImage?: boolean;
+    beforeResponse?: () => Promise<void>;
+  } = {},
+) {
+  mockEnv("CLOUDFLARE_BROWSER_RENDERING_API_TOKEN", "markdown-test-token");
+  const image = await sharp({
+    create: {
+      width: options.invalidImage ? 32 : 1200,
+      height: options.invalidImage ? 20 : 630,
+      channels: 3,
+      background: "#f2e8dc",
+    },
+  })
+    .png()
+    .toBuffer();
+  const requests: {
+    html: string;
+    rejectRequestPattern: string[];
+    viewport: { width: number; height: number };
+  }[] = [];
+  server.use(
+    http.post(
+      "https://api.cloudflare.com/client/v4/accounts/:account/browser-rendering/snapshot",
+      async ({ request }) => {
+        const body = z
+          .object({
+            html: z.string(),
+            rejectRequestPattern: z.array(z.string()),
+            viewport: z.object({ width: z.number(), height: z.number() }),
+          })
+          .parse(await request.json());
+        requests.push(body);
+        await options.beforeResponse?.();
+        if (options.fail) {
+          return new HttpResponse(null, { status: 503 });
+        }
+        return HttpResponse.json({
+          success: true,
+          result: { content: body.html, screenshot: image.toString("base64") },
+        });
+      },
+    ),
+  );
+  return { image, requests };
+}
+
+async function enableMarkdownCovers(actor: ApiTestUser, enabled: boolean) {
+  await accept(
+    api()(featureSwitchesContract).update({
+      headers: headers(actor),
+      body: { switches: { artifactPreviews: enabled } },
+    }),
+    [200],
+  );
+  await flushWaitUntilForTest();
+}
+
+async function markdownImageQuery(reference: string) {
+  const target = { kind: "reference" as const, id: reference };
+  const metadata = await accept(
+    api()(artifactOgContract).metadata({ query: target }),
+    [200],
+  );
+  if (!metadata.body.available) {
+    throw new Error("Expected public Markdown metadata");
+  }
+  return {
+    ...target,
+    version: new URL(metadata.body.imageUrl).searchParams.get("version")!,
+  };
+}
+
+async function markdownPublishedText(reference: string): Promise<string> {
+  const outsider = bdd.user({ orgId: null });
+  const download = await accept(
+    api()(artifactDownloadsContract).download({
+      headers: headers(outsider),
+      params: { reference },
+    }),
+    [200],
+  );
+  if (download.body.kind !== "file") {
+    throw new Error("Expected a Markdown file download");
+  }
+  const response = await fetch(download.body.url);
+  expect(response.status).toBe(200);
+  return response.text();
+}
+
+const markdownContent =
+  "# Quarterly review 季度回顾\n\n**Revenue** grew 42%.\n\n| Team | Result |\n| --- | --- |\n| Sales | 42 |\n\n```ts\nconst result = 42;\n```\n";
+
+test.each(["user", "agent"] as const)(
+  "markdown covers use the immutable ordinary share for %s-created files",
+  async (producer) => {
+    const f = await fixture();
+    const renderer = await markdownRenderer();
+    await enableMarkdownCovers(f.actor, true);
+    let bearerToken: string | undefined;
+    if (producer === "agent") {
+      const run = await f.selection("Create a Markdown artifact");
+      await runs.heartbeatRunner(f.runnerGroup);
+      bearerToken = okouTokenFromClaim(await runs.claimRunnerJob(run.runId));
+    }
+    const source = await f.upload(f.actor, markdownContent, {
+      filename: "review.md",
+      contentType: "text/markdown",
+      bearerToken,
+    });
+    const target = { kind: "file" as const, id: source.id };
+    const published = await accept(
+      api()(artifactSharesContract).update({
+        headers: headers(f.actor),
+        body: { target, audience: "public" },
+      }),
+      [200],
+    );
+    // The background task must read the publication copy, never this later mutation.
+    f.objects.set(source.key, Buffer.from("# Later private changes"));
+    await flushWaitUntilForTest();
+    expect(renderer.requests).toHaveLength(1);
+    expect(renderer.requests[0]!.html).toContain(
+      "<h1>Quarterly review 季度回顾</h1>",
+    );
+    expect(renderer.requests[0]!.html).not.toContain("Later private changes");
+    expect(renderer.requests[0]!.rejectRequestPattern).toStrictEqual([".*"]);
+    expect(renderer.requests[0]!.viewport).toStrictEqual({
+      width: 1200,
+      height: 630,
+    });
+    const reference = referenceName(source.url);
+    const query = await markdownImageQuery(reference);
+    expect(query.version).toContain(":");
+    const image = await accept(
+      api()(artifactOgContract).image({ query }),
+      [200],
+    );
+    const bytes = Buffer.from(await image.body.arrayBuffer());
+    await expect(sharp(bytes).metadata()).resolves.toMatchObject({
+      width: 1200,
+      height: 630,
+    });
+    const raw = await accept(
+      api()(artifactReferencesContract).publicUrl({ params: { reference } }),
+      [200],
+    );
+    expect(raw.body.preview).toMatchObject({
+      filename: "review.md",
+      contentType: "text/markdown",
+    });
+    await expect(markdownPublishedText(reference)).resolves.toBe(
+      markdownContent,
+    );
+    expect(published.body.ownerUrl).toBe(source.url);
+    const sourceFingerprint = createHash("sha256")
+      .update(markdownContent)
+      .digest("hex");
+    const policies = [...f.objects.entries()].filter(([key]) => {
+      return key.includes("artifact-shares/");
+    });
+    expect(
+      policies.some(([, bytes]) => {
+        return bytes.toString().includes(sourceFingerprint);
+      }),
+    ).toBeTruthy();
+    await accept(
+      api()(artifactSharesContract).status({
+        headers: headers(f.actor),
+        body: target,
+      }),
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect(renderer.requests).toHaveLength(1);
+    await enableMarkdownCovers(f.actor, false);
+    const disabled = await accept(
+      api()(artifactOgContract).image({ query }),
+      [302],
+    );
+    expect(disabled.headers.get("location")).toBe(ARTIFACT_OG_BRAND.imageUrl);
+    expect(disabled.headers.get("cache-control")).toBe("private, no-store");
+    await enableMarkdownCovers(f.actor, true);
+    await accept(api()(artifactOgContract).image({ query }), [200]);
+    for (const audience of ["organization", "private"] as const) {
+      await accept(
+        api()(artifactSharesContract).update({
+          headers: headers(f.actor),
+          body: { target, audience },
+        }),
+        [200],
+      );
+      await accept(api()(artifactOgContract).image({ query }), [302]);
+    }
+    await flushWaitUntilForTest();
+  },
+);
+
+test("markdown covers catch up files shared while OFF without re-uploading and invalidate pending image URLs", async () => {
+  const f = await fixture();
+  const entered = createDeferredPromise<void>(context.signal);
+  const release = createDeferredPromise<void>(context.signal);
+  onTestFinished(() => {
+    if (!release.settled()) {
+      release.resolve(undefined);
+    }
+  });
+  const renderer = await markdownRenderer({
+    beforeResponse: async () => {
+      entered.resolve(undefined);
+      await release.promise;
+    },
+  });
+  await enableMarkdownCovers(f.actor, false);
+  const source = await f.upload(f.actor, markdownContent, {
+    filename: "review.markdown",
+    contentType: "text/plain",
+  });
+  const target = { kind: "file" as const, id: source.id };
+  await accept(
+    api()(artifactSharesContract).update({
+      headers: headers(f.actor),
+      body: { target, audience: "public" },
+    }),
+    [200],
+  );
+  await flushWaitUntilForTest();
+  expect(renderer.requests).toHaveLength(0);
+  const reference = referenceName(source.url);
+  // Enabling queues work but metadata/image reads themselves never render.
+  await accept(
+    api()(featureSwitchesContract).update({
+      headers: headers(f.actor),
+      body: { switches: { artifactPreviews: true } },
+    }),
+    [200],
+  );
+  await entered.promise;
+  const pending = await markdownImageQuery(reference);
+  release.resolve(undefined);
+  await flushWaitUntilForTest();
+  const ready = await markdownImageQuery(reference);
+  expect(ready.version).not.toBe(pending.version);
+  await accept(api()(artifactOgContract).image({ query: pending }), [302]);
+  await accept(api()(artifactOgContract).image({ query: ready }), [200]);
+  expect(renderer.requests).toHaveLength(1);
+  expect(f.objects.get(source.key)).toStrictEqual(Buffer.from(markdownContent));
+});
+
+test.each(["failure", "invalid-image"] as const)(
+  "markdown cover %s leaves the original usable and bounds retries",
+  async (outcome) => {
+    const f = await fixture();
+    const renderer = await markdownRenderer({
+      fail: outcome === "failure",
+      invalidImage: outcome === "invalid-image",
+    });
+    await enableMarkdownCovers(f.actor, true);
+    const source = await f.upload(f.actor, markdownContent, {
+      filename: "review.md",
+      contentType: "text/markdown",
+    });
+    const target = { kind: "file" as const, id: source.id };
+    await accept(
+      api()(artifactSharesContract).update({
+        headers: headers(f.actor),
+        body: { target, audience: "public" },
+      }),
+      [200],
+    );
+    await flushWaitUntilForTest();
+    const reference = referenceName(source.url);
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await accept(
+        api()(artifactSharesContract).status({
+          headers: headers(f.actor),
+          body: target,
+        }),
+        [200],
+      );
+      await flushWaitUntilForTest();
+    }
+    expect(renderer.requests).toHaveLength(2);
+    await accept(
+      api()(artifactOgContract).image({
+        query: await markdownImageQuery(reference),
+      }),
+      [302],
+    );
+    await accept(
+      api()(artifactReferencesContract).publicUrl({ params: { reference } }),
+      [200],
+    );
+    await expect(markdownPublishedText(reference)).resolves.toBe(
+      markdownContent,
+    );
+    expect(f.objects.get(source.key)).toStrictEqual(
+      Buffer.from(markdownContent),
+    );
+  },
+);
+
+test("markdown covers cannot republish an ordinary grant revoked while rendering", async () => {
+  const f = await fixture();
+  const entered = createDeferredPromise<void>(context.signal);
+  const release = createDeferredPromise<void>(context.signal);
+  onTestFinished(() => {
+    if (!release.settled()) {
+      release.resolve(undefined);
+    }
+  });
+  const renderer = await markdownRenderer({
+    beforeResponse: async () => {
+      entered.resolve(undefined);
+      await release.promise;
+    },
+  });
+  await enableMarkdownCovers(f.actor, true);
+  const source = await f.upload(f.actor, markdownContent, {
+    filename: "review.md",
+    contentType: "text/markdown",
+  });
+  const target = { kind: "file" as const, id: source.id };
+  await accept(
+    api()(artifactSharesContract).update({
+      headers: headers(f.actor),
+      body: { target, audience: "public" },
+    }),
+    [200],
+  );
+  await entered.promise;
+  await accept(
+    api()(artifactSharesContract).update({
+      headers: headers(f.actor),
+      body: { target, audience: "private" },
+    }),
+    [200],
+  );
+  release.resolve(undefined);
+  await flushWaitUntilForTest();
+  expect(renderer.requests).toHaveLength(1);
+  const metadata = await accept(
+    api()(artifactOgContract).metadata({
+      query: { kind: "reference", id: referenceName(source.url) },
+    }),
+    [200],
+  );
+  expect(metadata.body).toStrictEqual({ available: false });
+  await accept(
+    api()(artifactReferencesContract).publicUrl({
+      params: { reference: referenceName(source.url) },
+    }),
+    [404],
+  );
+});
+
+test("markdown covers belong to independent conversation snapshots, including existing OFF shares", async () => {
+  const f = await fixture();
+  const renderer = await markdownRenderer();
+  await enableMarkdownCovers(f.actor, false);
+  const source = await f.upload(f.actor, markdownContent, {
+    filename: "review.md",
+    contentType: "text/markdown",
+  });
+  const selection = await f.selection(source.url);
+  const created = await accept(share(f.actor, selection), [201]);
+  await flushWaitUntilForTest();
+  expect(renderer.requests).toHaveLength(0);
+  f.objects.delete(source.key);
+  await enableMarkdownCovers(f.actor, true);
+  const shared = await accept(
+    api()(sharedThreadsContract).get({ params: { id: created.body.id } }),
+    [200],
+  );
+  const reference = referenceName(shared.body.messages[0]!.content);
+  const query = await markdownImageQuery(reference);
+  await accept(api()(artifactOgContract).image({ query }), [200]);
+  expect(renderer.requests).toHaveLength(1);
+  expect(renderer.requests[0]!.html).toContain("Quarterly review 季度回顾");
+  await enableMarkdownCovers(f.actor, false);
+  await accept(api()(artifactOgContract).image({ query }), [302]);
+  await enableMarkdownCovers(f.actor, true);
+  await accept(api()(artifactOgContract).image({ query }), [200]);
+  await accept(
+    api()(sharedThreadsContract).delete({
+      headers: headers(f.actor),
+      params: { id: created.body.id },
+    }),
+    [204],
+  );
+  await accept(api()(artifactOgContract).image({ query }), [302]);
+});
+
+test("markdown conversation publication succeeds while its cover is pending or failed", async () => {
+  const f = await fixture();
+  const entered = createDeferredPromise<void>(context.signal);
+  const release = createDeferredPromise<void>(context.signal);
+  onTestFinished(() => {
+    if (!release.settled()) {
+      release.resolve(undefined);
+    }
+  });
+  await markdownRenderer({
+    fail: true,
+    beforeResponse: async () => {
+      entered.resolve(undefined);
+      await release.promise;
+    },
+  });
+  await enableMarkdownCovers(f.actor, true);
+  const source = await f.upload(f.actor, markdownContent, {
+    filename: "review.md",
+    contentType: "text/markdown",
+  });
+  const selection = await f.selection(source.url);
+  const created = await accept(share(f.actor, selection), [201]);
+  await entered.promise;
+  const shared = await accept(
+    api()(sharedThreadsContract).get({ params: { id: created.body.id } }),
+    [200],
+  );
+  const reference = referenceName(shared.body.messages[0]!.content);
+  const raw = await accept(
+    api()(artifactReferencesContract).publicUrl({ params: { reference } }),
+    [200],
+  );
+  await expect((await fetch(raw.body.url)).text()).resolves.toBe(
+    markdownContent,
+  );
+  release.resolve(undefined);
+  await flushWaitUntilForTest();
+  await accept(
+    api()(sharedThreadsContract).get({ params: { id: created.body.id } }),
+    [200],
+  );
+  await accept(
+    api()(artifactOgContract).image({
+      query: await markdownImageQuery(reference),
+    }),
+    [302],
+  );
+});
+
+test.each([
+  {
+    label: "empty",
+    filename: "empty.md",
+    contentType: "text/markdown",
+    content: Buffer.alloc(0),
+  },
+  {
+    label: "oversized",
+    filename: "large.md",
+    contentType: "text/markdown",
+    content: Buffer.alloc(256 * 1024 + 1, 65),
+  },
+  {
+    label: "invalid UTF-8",
+    filename: "invalid.md",
+    contentType: "text/plain",
+    content: Buffer.from([0xff, 0xfe, 0x41]),
+  },
+  {
+    label: "HTML MIME",
+    filename: "invalid.md",
+    contentType: "text/html",
+    content: Buffer.from("<h1>Not Markdown</h1>"),
+  },
+  {
+    label: "PDF",
+    filename: "report.pdf",
+    contentType: "application/pdf",
+    content: Buffer.from("PDF fixture"),
+  },
+  {
+    label: "Excel",
+    filename: "report.xlsx",
+    contentType: "application/octet-stream",
+    content: Buffer.from("Workbook fixture"),
+  },
+])(
+  "markdown covers skip $label safely with unchanged downloads",
+  async ({ filename, contentType, content }) => {
+    const f = await fixture();
+    const renderer = await markdownRenderer();
+    await enableMarkdownCovers(f.actor, true);
+    const source = await f.upload(f.actor, content, { filename, contentType });
+    const reference = referenceName(source.url);
+    const privateMetadata = await accept(
+      api()(artifactOgContract).metadata({
+        query: { kind: "reference", id: reference },
+      }),
+      [200],
+    );
+    expect(privateMetadata.body).toStrictEqual({ available: false });
+    await accept(
+      api()(artifactSharesContract).update({
+        headers: headers(f.actor),
+        body: { target: { kind: "file", id: source.id }, audience: "public" },
+      }),
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect(renderer.requests).toHaveLength(0);
+    await accept(
+      api()(artifactOgContract).image({
+        query: await markdownImageQuery(reference),
+      }),
+      [302],
+    );
+    expect(f.objects.get(source.key)).toStrictEqual(content);
+  },
+);
+
+test("markdown covers deduplicate in-flight owner requests and keep internal covers private", async () => {
+  const f = await fixture();
+  const entered = createDeferredPromise<void>(context.signal);
+  const release = createDeferredPromise<void>(context.signal);
+  onTestFinished(() => {
+    if (!release.settled()) {
+      release.resolve(undefined);
+    }
+  });
+  const renderer = await markdownRenderer({
+    beforeResponse: async () => {
+      if (!entered.settled()) {
+        entered.resolve(undefined);
+      }
+      await release.promise;
+    },
+  });
+  await enableMarkdownCovers(f.actor, true);
+  const source = await f.upload(f.actor, markdownContent, {
+    filename: "review.md",
+    contentType: "text/markdown",
+  });
+  const target = { kind: "file" as const, id: source.id };
+  await accept(
+    api()(artifactSharesContract).update({
+      headers: headers(f.actor),
+      body: { target, audience: "public" },
+    }),
+    [200],
+  );
+  await entered.promise;
+  await Promise.all(
+    [0, 1, 2].map(async () => {
+      await accept(
+        api()(artifactSharesContract).status({
+          headers: headers(f.actor),
+          body: target,
+        }),
+        [200],
+      );
+    }),
+  );
+  release.resolve(undefined);
+  await flushWaitUntilForTest();
+  expect(renderer.requests).toHaveLength(1);
+  const coverKey = [...f.objects.keys()].find((key) => {
+    return (
+      key.endsWith("/markdown-cover-v1.png") && !key.includes("/thread-shares/")
+    );
+  });
+  if (!coverKey) {
+    throw new Error("Expected a private cached Markdown cover");
+  }
+  const coverId = coverKey.split("/")[2]!;
+  await accept(
+    api()(artifactReferencesContract).publicUrl({
+      params: {
+        reference: referenceName(
+          artifactReferencePath(coverId, "markdown-cover-v1.png"),
+        ),
+      },
+    }),
+    [404],
+  );
+  await accept(
+    api()(artifactOgContract).image({
+      query: await markdownImageQuery(referenceName(source.url)),
+    }),
+    [200],
+  );
+});
+
+test("markdown covers admit an older owned conversation through authenticated file reads", async () => {
+  const f = await fixture();
+  const renderer = await markdownRenderer();
+  await enableMarkdownCovers(f.actor, false);
+  const source = await f.upload(f.actor, markdownContent, {
+    filename: "review.md",
+    contentType: "text/markdown",
+  });
+  const threadIds: string[] = [];
+  const selection = await f.selection(source.url);
+  for (let index = 0; index < 5; index += 1) {
+    threadIds.push((await accept(share(f.actor, selection), [201])).body.id);
+  }
+  await flushWaitUntilForTest();
+  await enableMarkdownCovers(f.actor, true);
+  const pendingId = threadIds.find((id) => {
+    const policy = f.objects.get(
+      `test-hosted-sites/shared-thread-artifacts/okou/${id}.json`,
+    );
+    return (
+      policy !== undefined &&
+      sharedThreadArtifactPolicySchema.parse(JSON.parse(policy.toString()))
+        .previews === undefined
+    );
+  });
+  if (!pendingId) {
+    throw new Error("Expected a snapshot outside the bounded catch-up batch");
+  }
+  const shared = await accept(
+    api()(sharedThreadsContract).get({ params: { id: pendingId } }),
+    [200],
+  );
+  const reference = referenceName(shared.body.messages[0]!.content);
+  const pending = await markdownImageQuery(reference);
+  await accept(api()(artifactOgContract).image({ query: pending }), [302]);
+  await accept(
+    api()(artifactReferencesContract).read({
+      headers: headers(f.actor),
+      params: { reference },
+    }),
+    [200],
+  );
+  await flushWaitUntilForTest();
+  const ready = await markdownImageQuery(reference);
+  expect(ready.version).not.toBe(pending.version);
+  await accept(api()(artifactOgContract).image({ query: ready }), [200]);
+  expect(renderer.requests).toHaveLength(1);
 });
 
 test("copies an uploaded video with independent bytes and the parent revocation", async () => {

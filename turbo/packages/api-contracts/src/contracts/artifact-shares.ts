@@ -48,6 +48,17 @@ export const artifactSharePolicySchema = z
         key: z.string().startsWith("private-artifacts/"),
         filename: z.string().min(1),
         contentType: z.string().min(1),
+        sha256: z
+          .string()
+          .regex(/^[a-f0-9]{64}$/u)
+          .optional(),
+        preview: z
+          .object({
+            key: z.string().startsWith("private-artifacts/"),
+            sha256: z.string().regex(/^[a-f0-9]{64}$/u),
+            sourceSha256: z.string().regex(/^[a-f0-9]{64}$/u),
+          })
+          .optional(),
       }),
       z.object({
         kind: z.literal("html"),
@@ -99,7 +110,11 @@ export const artifactSharePolicySchema = z
     }
     if (
       target.kind === "file" &&
-      !target.key.startsWith(`private-artifacts/${target.id}/`)
+      (!target.key.startsWith(`private-artifacts/${target.id}/`) ||
+        (target.preview !== undefined &&
+          !target.preview.key.startsWith(
+            `${target.key.slice(0, target.key.lastIndexOf("/") + 1)}__preview-`,
+          )))
     ) {
       ctx.addIssue({ code: "custom", message: "Inconsistent shared file" });
     }

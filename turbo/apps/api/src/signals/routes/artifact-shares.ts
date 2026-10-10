@@ -10,8 +10,15 @@ import {
   readArtifactShare$,
   resolveArtifactShare$,
   updateArtifactShare$,
+  renderArtifactShareMarkdownCover$,
 } from "../services/artifact-shares.service";
+import { waitUntil } from "../context/wait-until";
+import { tapError } from "../utils";
+import { logger } from "../../lib/log";
+
 import type { RouteEntry } from "../route-entry";
+
+const coverLog = logger("artifacts:markdown-cover");
 
 const availability$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
@@ -38,6 +45,31 @@ const status$ = command(async ({ get, set }, signal: AbortSignal) => {
     { target, userId: auth.userId, orgId: auth.orgId },
     signal,
   );
+  if (
+    result?.shareId &&
+    result.audience !== "private" &&
+    target.kind === "file"
+  ) {
+    waitUntil(
+      tapError(
+        set(
+          renderArtifactShareMarkdownCover$,
+          {
+            shareId: result.shareId,
+            userId: auth.userId,
+            orgId: auth.orgId,
+          },
+          AbortSignal.timeout(180_000),
+        ),
+        (error) => {
+          coverLog.warn("Failed to prepare Markdown sharing cover", {
+            shareId: result.shareId,
+            error,
+          });
+        },
+      ),
+    );
+  }
   return result
     ? { status: 200 as const, body: result }
     : notFound("Artifact not found");
@@ -77,6 +109,31 @@ const update$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
   if (result && "status" in result) {
     return result;
+  }
+  if (
+    result?.shareId &&
+    body.audience !== "private" &&
+    body.target.kind === "file"
+  ) {
+    waitUntil(
+      tapError(
+        set(
+          renderArtifactShareMarkdownCover$,
+          {
+            shareId: result.shareId,
+            userId: auth.userId,
+            orgId: auth.orgId,
+          },
+          AbortSignal.timeout(180_000),
+        ),
+        (error) => {
+          coverLog.warn("Failed to prepare Markdown sharing cover", {
+            shareId: result.shareId,
+            error,
+          });
+        },
+      ),
+    );
   }
   return result
     ? { status: 200 as const, body: result }

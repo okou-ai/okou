@@ -60,6 +60,7 @@
     "src/lib/db-types.ts",
     "src/lib/db.ts",
     "src/lib/marketing-metadata.ts",
+    "src/lib/safe-markdown.ts",
     "src/lib/pg-errors.ts",
     "src/lib/sql-span-name.ts",
     "src/lib/time.ts",

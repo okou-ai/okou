@@ -1,5 +1,6 @@
 import { convert } from "html-to-text";
-import MarkdownIt from "markdown-it";
+import type MarkdownIt from "markdown-it";
+import { createSafeMarkdownRenderer } from "../../lib/safe-markdown";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 
 import { safeSync, safeUrlParse } from "../utils";
@@ -101,12 +102,7 @@ function linkDestinationIsSafe(destination: string): boolean {
 }
 
 function createMarkdownRenderer(): MarkdownIt {
-  const markdown = new MarkdownIt({
-    html: false,
-    breaks: false,
-    linkify: false,
-    typographer: false,
-  });
+  const markdown = createSafeMarkdownRenderer();
 
   // Link destinations have already been entity-decoded and normalized when
   // validateLink runs. Retain every parsed link token here so the renderer can

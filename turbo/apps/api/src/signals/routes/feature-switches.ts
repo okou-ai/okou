@@ -4,6 +4,12 @@ import {
   type FeatureSwitchesResponse,
 } from "@okouai/api-contracts/contracts/feature-switches";
 import { getAllFeatureStates } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { waitUntil } from "../context/wait-until";
+import { tapError } from "../utils";
+import { logger } from "../../lib/log";
+import { renderOwnedArtifactShareMarkdownCovers$ } from "../services/artifact-shares.service";
+import { renderOwnedSharedThreadMarkdownCovers$ } from "../services/shared-thread-artifacts.service";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -15,6 +21,18 @@ import {
   updateUserFeatureSwitches$,
   loadUserFeatureSwitchContext$,
 } from "../services/feature-switches.service";
+
+const coverLog = logger("artifacts:markdown-cover");
+const catchUpMarkdownCovers$ = command(
+  async (
+    { set },
+    args: { readonly userId: string; readonly orgId: string },
+    signal: AbortSignal,
+  ) => {
+    await set(renderOwnedArtifactShareMarkdownCovers$, args, signal);
+    await set(renderOwnedSharedThreadMarkdownCovers$, args, signal);
+  },
+);
 
 const featureSwitchesAuthOptions = {
   requireOrganization: true,
@@ -85,6 +103,22 @@ const updateFeatureSwitchesInner$ = command(
       signal,
     );
 
+    if (bodyResult.data.switches[FeatureSwitchKey.ArtifactPreviews] === true) {
+      waitUntil(
+        tapError(
+          set(
+            catchUpMarkdownCovers$,
+            { userId: auth.userId, orgId: auth.orgId },
+            AbortSignal.timeout(180_000),
+          ),
+          (error) => {
+            coverLog.warn("Failed to catch up owned Markdown sharing covers", {
+              error,
+            });
+          },
+        ),
+      );
+    }
     return {
       status: 200 as const,
       body: featureSwitchResponseBody({

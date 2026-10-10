@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { command } from "ccstate";
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { artifacts } from "@okouai/db/schema/artifact";
 import { sharedThreads } from "@okouai/db/schema/shared-thread";
 import type { ArtifactDeliveryRecord } from "@okouai/api-contracts/contracts/artifact-delivery";
@@ -36,6 +36,7 @@ import {
 } from "./private-artifact-storage.service";
 import {
   copySharedThreadArtifacts$,
+  prepareSharedThreadMarkdownCovers$,
   SharedThreadArtifactUnavailable,
   sharedThreadArtifactsBucket,
   type SharedThreadArtifactPlan,
@@ -342,6 +343,89 @@ export const prepareSharedThreadArtifactCopies$ = command(
 export const publishSharedThreadArtifacts$ = command(
   ({ set }, plan: SharedThreadArtifactPlan, signal: AbortSignal) => {
     return set(changeSharedThreadArtifactPhase$, plan, "publish", signal);
+  },
+);
+
+export const renderSharedThreadMarkdownCovers$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly threadId: string;
+      readonly userId: string;
+      readonly orgId: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    const [row] = await get(db$)
+      .select()
+      .from(sharedThreads)
+      .where(
+        and(
+          eq(sharedThreads.id, args.threadId),
+          eq(sharedThreads.userId, args.userId),
+          eq(sharedThreads.orgId, args.orgId),
+          eq(sharedThreads.hasArtifactSnapshot, true),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!row) {
+      return;
+    }
+    const current = await set(readPolicy$, row, signal);
+    if (!current || current.policy.status !== "active") {
+      return;
+    }
+    const prepared = await set(
+      prepareSharedThreadMarkdownCovers$,
+      current.policy,
+      signal,
+    );
+    if (!prepared) {
+      return;
+    }
+    await get(
+      writeArtifactSharePolicyObject(
+        sharedThreadArtifactsBucket(),
+        sharedThreadArtifactPolicyKey(
+          storedLinkLayoutSegment(row.linkLayoutSegment),
+          row.id,
+        ),
+        JSON.stringify(prepared),
+        current.etag,
+        signal,
+      ),
+    );
+    signal.throwIfAborted();
+  },
+);
+
+export const renderOwnedSharedThreadMarkdownCovers$ = command(
+  async (
+    { get, set },
+    args: { readonly userId: string; readonly orgId: string },
+    signal: AbortSignal,
+  ) => {
+    const rows = await get(db$)
+      .select({ id: sharedThreads.id })
+      .from(sharedThreads)
+      .where(
+        and(
+          eq(sharedThreads.userId, args.userId),
+          eq(sharedThreads.orgId, args.orgId),
+          eq(sharedThreads.hasArtifactSnapshot, true),
+        ),
+      )
+      .orderBy(desc(sharedThreads.createdAt))
+      .limit(4);
+    signal.throwIfAborted();
+    for (const row of rows) {
+      await set(
+        renderSharedThreadMarkdownCovers$,
+        { ...args, threadId: row.id },
+        signal,
+      );
+    }
   },
 );
 

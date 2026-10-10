@@ -138,7 +138,7 @@ interface ClerkOrganizationMembership {
   readonly id: string;
   readonly createdAt: number;
   readonly role: string;
-  readonly organization: { readonly id: string };
+  readonly organization: { readonly id: string; readonly name: string };
   readonly publicUserData: {
     readonly userId: string;
   };
@@ -201,7 +201,7 @@ function clerkOrganizationMemberships(
       id: `membership-${actor.userId}-${actor.orgId}`,
       createdAt: Date.parse("2020-01-01T00:00:00.000Z"),
       role: actor.orgRole ?? "org:member",
-      organization: { id: actor.orgId },
+      organization: { id: actor.orgId, name: "Test organization" },
       publicUserData: { userId: actor.userId },
     },
   ];

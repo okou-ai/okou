@@ -39,7 +39,10 @@ import {
   artifactFileReference,
   privateArtifactRecord$,
   privateArtifactUrl,
+  privateArtifactsBucket,
 } from "./private-artifact-storage.service";
+import { renderMarkdownArtifactCover$ } from "./markdown-artifact-cover.service";
+import { isMarkdownCoverSource } from "../../lib/markdown-cover";
 import {
   ArtifactDeliveryAliasConflict,
   registerArtifactDelivery$,
@@ -573,6 +576,92 @@ export const prepareSharedThreadArtifacts$ = command(
     }
     const policy = snapshotPolicy(args, resources, previews);
     return { messages, plan: { messages, policy, copies } };
+  },
+);
+
+export const prepareSharedThreadMarkdownCovers$ = command(
+  async (
+    { get, set },
+    policy: SharedThreadArtifactPolicy,
+    signal: AbortSignal,
+  ): Promise<SharedThreadArtifactPolicy | null> => {
+    const resources = { ...policy.resources };
+    const previews = { ...policy.previews };
+    const reservedTokens = new Set(Object.keys(resources));
+    let attempted = 0;
+    let changed = false;
+    for (const [sourceToken, source] of Object.entries(policy.resources)) {
+      if (
+        source.kind !== "file" ||
+        previews[sourceToken] ||
+        !isMarkdownCoverSource(source)
+      ) {
+        continue;
+      }
+      if (attempted >= 4 || Object.keys(resources).length >= MAX_RESOURCES) {
+        break;
+      }
+      attempted += 1;
+      const cover = await set(
+        renderMarkdownArtifactCover$,
+        {
+          userId: policy.ownerId,
+          orgId: policy.orgId,
+          source,
+        },
+        signal,
+      );
+      if (!cover) {
+        continue;
+      }
+      const allocated = await set(
+        allocateSnapshotReference$,
+        {
+          threadId: policy.threadId,
+          userId: policy.ownerId,
+          orgId: policy.orgId,
+          id: cover.id,
+          kind: "file",
+          filename: cover.filename,
+          reservedTokens,
+        },
+        signal,
+      );
+      const key = `private-artifacts/${cover.id}/thread-shares/${policy.threadId}/${allocated.token}/${cover.filename}`;
+      await get(
+        copyArtifactShareObject(
+          {
+            bucket: privateArtifactsBucket(),
+            sourceKey: cover.key,
+            targetKey: key,
+            hosted: false,
+          },
+          signal,
+        ),
+      );
+      signal.throwIfAborted();
+      resources[allocated.token] = {
+        kind: "file",
+        id: cover.id,
+        key,
+        filename: cover.filename,
+        contentType: "image/png",
+        sha256: cover.sha256,
+      };
+      previews[sourceToken] = {
+        token: allocated.token,
+        reference: allocated.reference,
+      };
+      changed = true;
+    }
+    if (!changed) {
+      return null;
+    }
+    return sharedThreadArtifactPolicySchema.parse({
+      ...policy,
+      resources,
+      ...(Object.keys(previews).length ? { previews } : {}),
+    });
   },
 );
 

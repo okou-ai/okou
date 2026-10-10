@@ -10,7 +10,7 @@ import {
 } from "@okouai/api-contracts/contracts/link-layout";
 import type { ArtifactDownloadResponse } from "@okouai/api-contracts/contracts/artifact-downloads";
 import { command, computed } from "ccstate";
-import { and, eq, isNull, or } from "drizzle-orm";
+import { and, desc, eq, isNull, or } from "drizzle-orm";
 import { artifactShares } from "@okouai/db/schema/artifact-share";
 import {
   hostedSites,
@@ -44,11 +44,16 @@ import { resolveArtifactPreviewUrl$ } from "./artifact-preview-url.service";
 import {
   privateArtifactRecord$,
   privateArtifactUrl,
+  privateArtifactsBucket,
 } from "./private-artifact-storage.service";
 import { prepareArtifactShareAliases$ } from "./artifact-share-alias.service";
 import { signHostedSiteFiles$ } from "./hosted-site-files.service";
 import { artifactDeliveryRecord } from "./artifact-delivery.service";
 import { resolveSharedThreadHostedDownload$ } from "./shared-thread-artifacts.service";
+import {
+  artifactContentCoversEnabled$,
+  renderMarkdownArtifactCover$,
+} from "./markdown-artifact-cover.service";
 
 interface ShareCandidate {
   readonly targetId: string;
@@ -862,6 +867,136 @@ export const resolveArtifactTargetShare$ = command(
           signal,
         )
       : null;
+  },
+);
+
+export const renderArtifactShareMarkdownCover$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly shareId: string;
+      readonly userId: string;
+      readonly orgId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const [row] = await get(db$)
+      .select()
+      .from(artifactShares)
+      .where(
+        and(
+          eq(artifactShares.id, args.shareId),
+          eq(artifactShares.userId, args.userId),
+          eq(artifactShares.orgId, args.orgId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!row) {
+      return false;
+    }
+    const stored = await get(policyFor(row, signal));
+    signal.throwIfAborted();
+    const policy = stored?.policy;
+    if (
+      !policy ||
+      policy.status !== "active" ||
+      policy.target.kind !== "file" ||
+      policy.target.preview
+    ) {
+      return false;
+    }
+    const source = policy.target;
+    const cover = await set(
+      renderMarkdownArtifactCover$,
+      { ...args, source },
+      signal,
+    );
+    if (!cover) {
+      return false;
+    }
+    const current = await get(policyFor(row, signal));
+    signal.throwIfAborted();
+    if (
+      !current ||
+      current.policy.status !== "active" ||
+      current.policy.revision !== policy.revision ||
+      !(await set(
+        artifactContentCoversEnabled$,
+        args.userId,
+        args.orgId,
+        signal,
+      ))
+    ) {
+      return false;
+    }
+    const key = `${source.key.slice(0, source.key.lastIndexOf("/") + 1)}__preview-${cover.sha256}.png`;
+    await get(
+      copyArtifactShareObject(
+        {
+          bucket: privateArtifactsBucket(),
+          sourceKey: cover.key,
+          targetKey: key,
+          hosted: false,
+        },
+        signal,
+      ),
+    );
+    signal.throwIfAborted();
+    const next = artifactSharePolicySchema.parse({
+      ...current.policy,
+      revision: randomUUID(),
+      target: {
+        ...source,
+        preview: {
+          key,
+          sha256: cover.sha256,
+          sourceSha256: cover.sourceSha256,
+        },
+      },
+    });
+    // Conditional authority write cannot restore a concurrently revoked grant.
+    await get(
+      writeArtifactSharePolicyObject(
+        policyBucket(),
+        policyKey(row),
+        JSON.stringify(next),
+        current.etag,
+        signal,
+      ),
+    );
+    signal.throwIfAborted();
+    return true;
+  },
+);
+
+export const renderOwnedArtifactShareMarkdownCovers$ = command(
+  async (
+    { get, set },
+    args: { readonly userId: string; readonly orgId: string },
+    signal: AbortSignal,
+  ) => {
+    const rows = await get(db$)
+      .select({ id: artifactShares.id })
+      .from(artifactShares)
+      .where(
+        and(
+          eq(artifactShares.userId, args.userId),
+          eq(artifactShares.orgId, args.orgId),
+          eq(artifactShares.targetKind, "file"),
+        ),
+      )
+      .orderBy(desc(artifactShares.createdAt))
+      .limit(4);
+    signal.throwIfAborted();
+    for (const row of rows) {
+      await set(
+        renderArtifactShareMarkdownCover$,
+        { ...args, shareId: row.id },
+        signal,
+      );
+    }
+    return rows.length;
   },
 );
 

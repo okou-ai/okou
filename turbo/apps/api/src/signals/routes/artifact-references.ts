@@ -20,6 +20,12 @@ import {
 import { artifactReferenceRecord$ } from "../services/artifact-reference.service";
 import { resolveSharedThreadArtifactReference$ } from "../services/shared-thread-artifact-reference.service";
 import type { RouteEntry } from "../route-entry";
+import { renderSharedThreadMarkdownCovers$ } from "../services/shared-thread-artifacts.service";
+import { waitUntil } from "../context/wait-until";
+import { tapError } from "../utils";
+import { logger } from "../../lib/log";
+
+const coverLog = logger("artifacts:markdown-cover");
 
 const resolveFileReference$ = command(
   async (
@@ -213,6 +219,34 @@ const read$ = command(async ({ get, set }, signal: AbortSignal) => {
   const { reference } = get(pathParamsOf(artifactReferencesContract.read));
   const result = await set(resolveReference$, reference, undefined, signal);
   if (result.status === 200) {
+    const parsed = parseArtifactReference(`/artifacts/${reference}`);
+    const record =
+      parsed?.id === null
+        ? await set(artifactReferenceRecord$, parsed.hash, signal)
+        : null;
+    signal.throwIfAborted();
+    const auth = get(authContext$);
+    if (record?.version === 3 && auth.orgId !== undefined) {
+      waitUntil(
+        tapError(
+          set(
+            renderSharedThreadMarkdownCovers$,
+            {
+              threadId: record.threadId,
+              userId: auth.userId,
+              orgId: auth.orgId,
+            },
+            AbortSignal.timeout(180_000),
+          ),
+          (error) => {
+            coverLog.warn(
+              "Failed to catch up an owned conversation Markdown cover",
+              { threadId: record.threadId, error },
+            );
+          },
+        ),
+      );
+    }
     return {
       status: 200 as const,
       body: {
