@@ -882,7 +882,7 @@ async function artifactPageResponse(
   if (!shell.ok) return shell;
   const html = previewAppAssetHtml(await shell.text(), requestUrl);
   return htmlResponse(
-    artifactOgHtml(html, metadata, true),
+    artifactOgHtml(html, metadata, "replace-all"),
     shell,
     200,
     "private, no-store",
