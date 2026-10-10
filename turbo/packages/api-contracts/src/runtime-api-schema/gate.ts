@@ -44,6 +44,8 @@ type RuntimeApiGateOutcome = "blocking" | "proven" | "inherited" | "warning";
 interface RuntimeApiGateFinding extends RuntimeApiCompatFinding {
   readonly outcome: RuntimeApiGateOutcome;
   readonly resolution: string;
+  /** The two accepted proofs; set for every Desktop finding. */
+  readonly proofs?: string;
 }
 
 interface RuntimeApiGateError {
@@ -142,6 +144,7 @@ export function renderRuntimeApiGateReport(
       `Impact: ${finding.impact}`,
       "",
       `Suggested fix: ${finding.recommendation}`,
+      ...(finding.proofs ? ["", `Desktop proofs: ${finding.proofs}`] : []),
       "",
       `Gate: ${finding.resolution}`,
       "",
@@ -170,7 +173,7 @@ export function runtimeApiGateAnnotations(
 ): readonly string[] {
   const annotations = result.findings.map((finding) => {
     const message = oneLine(
-      `${finding.route} ${finding.path}: ${finding.problem} Impact: ${finding.impact} ${finding.resolution}`,
+      `${finding.route} ${finding.path}: ${finding.problem} Impact: ${finding.impact} ${finding.resolution}${finding.proofs ? ` ${finding.proofs}` : ""}`,
     );
     return finding.outcome === "blocking"
       ? `::error title=Runtime API compatibility break::${message}`
@@ -291,9 +294,21 @@ function classifyFinding(
   finding: RuntimeApiCompatFinding,
   context: ClassifyContext,
 ): RuntimeApiGateFinding {
+  return {
+    ...finding,
+    ...classifyOutcome(finding, context),
+    ...(finding.owner === "desktop"
+      ? { proofs: desktopProofs(finding, context.publishedVersion) }
+      : {}),
+  };
+}
+
+function classifyOutcome(
+  finding: RuntimeApiCompatFinding,
+  context: ClassifyContext,
+): Pick<RuntimeApiGateFinding, "outcome" | "resolution"> {
   if (!context.blockingOwners.has(finding.owner)) {
     return {
-      ...finding,
       outcome: "warning",
       resolution: `Report only: ${finding.owner} findings do not block merges.`,
     };
@@ -301,7 +316,6 @@ function classifyFinding(
 
   if (context.inherited.has(findingKey(finding))) {
     return {
-      ...finding,
       outcome: "inherited",
       resolution:
         "The base commit already has this finding against the production schema. The change that introduced it carried its proof; it clears once that change reaches production.",
@@ -310,7 +324,6 @@ function classifyFinding(
 
   if (finding.owner !== "desktop") {
     return {
-      ...finding,
       outcome: "blocking",
       resolution: `${finding.owner} findings block merges and accept no proof; keep the production contract.`,
     };
@@ -318,7 +331,6 @@ function classifyFinding(
 
   if (context.floor.kind === "raised") {
     return {
-      ...finding,
       outcome: "proven",
       resolution: `Proof A: this change raises the Desktop floor in ${DESKTOP_FLOOR_FILE} from ${JSON.stringify(context.floor.from)} to ${context.floor.to}, not above the published Desktop version ${context.floor.published}. Review must confirm that ${context.floor.to} tolerates the new shape.`,
     };
@@ -331,20 +343,17 @@ function classifyFinding(
   );
   if (transform.proof) {
     return {
-      ...finding,
       outcome: "proven",
       resolution: `Proof B: ${DESKTOP_TRANSFORMS_FILE} registers a response transform for ${finding.method} ${finding.routePath} ${finding.responseStatus} (since ${transform.proof.since}, maxVersion ${JSON.stringify(transform.proof.maxVersion)}).`,
     };
   }
 
   return {
-    ...finding,
     outcome: "blocking",
-    resolution: desktopProofs(
-      finding,
-      context.publishedVersion,
-      transform.rejection,
-    ),
+    resolution: [
+      "Blocking: installed Okou Desktop builds decode Desktop-consumed routes strictly, and this change carries neither accepted proof.",
+      ...(transform.rejection ? [transform.rejection] : []),
+    ].join(" "),
   };
 }
 
@@ -400,7 +409,6 @@ function transformProof(
 function desktopProofs(
   finding: RuntimeApiCompatFinding,
   published: string | undefined,
-  transformRejection: string | undefined,
 ): string {
   const publishedLabel =
     published === undefined
@@ -413,10 +421,8 @@ function desktopProofs(
     : `(B) a response transform in ${DESKTOP_TRANSFORMS_FILE}, which cannot prove a ${finding.direction}-level finding; use (A) or keep the production contract.`;
 
   return [
-    "Blocking: installed Okou Desktop builds decode Desktop-consumed routes strictly, and this change has no compatibility proof.",
-    `Prove it in the same PR with one of: (A) raise minimumSupportedVersion in ${DESKTOP_FLOOR_FILE} to a stable x.y.z version that is not lower than the base branch floor, not above ${publishedLabel}, and already tolerates the new shape; or`,
+    `A breaking change here needs one proof in the same PR: (A) raise minimumSupportedVersion in ${DESKTOP_FLOOR_FILE} to a stable x.y.z version that is not lower than the base branch floor, not above ${publishedLabel}, and already tolerates the new shape; or`,
     proofB,
-    ...(transformRejection ? [transformRejection] : []),
   ].join(" ");
 }
 

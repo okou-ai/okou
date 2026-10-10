@@ -96,10 +96,10 @@ describe("runtime API Desktop contract gate", () => {
     const [finding] = result.findings;
     expect(finding?.impact).toContain("Okou Desktop");
     expect(finding?.impact).toContain("decode this response strictly");
-    expect(finding?.resolution).toContain(
+    expect(finding?.proofs).toContain(
       "turbo/apps/api/src/lib/desktop-compatibility.json",
     );
-    expect(finding?.resolution).toContain(
+    expect(finding?.proofs).toContain(
       "turbo/packages/api-contracts/src/client-transforms/desktop.ts",
     );
   });
@@ -111,6 +111,9 @@ describe("runtime API Desktop contract gate", () => {
 
     expect(result.passed).toBe(true);
     expect(outcomes(result)).toEqual(["proven"]);
+    expect(result.findings[0]?.proofs).toContain(
+      "turbo/packages/api-contracts/src/client-transforms/desktop.ts",
+    );
   });
 
   it("accepts a matching transform with a null maxVersion", () => {
@@ -162,7 +165,7 @@ describe("runtime API Desktop contract gate", () => {
       }),
     ).toEqual(["route-removed"]);
     expect(result.passed).toBe(false);
-    expect(result.findings[0]?.resolution).toContain(
+    expect(result.findings[0]?.proofs).toContain(
       "cannot prove a route-level finding",
     );
   });
