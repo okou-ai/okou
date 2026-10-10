@@ -1775,7 +1775,7 @@ fn exec_operation_close_snapshot_limits_logged_operations() {
 fn contained_tool_oom_log_informs_on_every_exit_and_retains_independent_failures() {
     use guest_contracts::oom_evidence::{EVIDENCE_PREFIX, OomEvidence};
     let evidence: OomEvidence = serde_json::from_str(include_str!(
-        "../../../guest-contracts/tests/fixtures/contained-tool-oom.json"
+        "../../../../guest-contracts/tests/fixtures/contained-tool-oom.json"
     ))
     .unwrap();
     let diagnostic =
@@ -1897,11 +1897,11 @@ fn terminal_severity_matches_the_guest_side_mirror_for_the_same_evidence() {
     use guest_contracts::oom_evidence::{EVIDENCE_PREFIX, OomEvidence};
     for (fixture, expected) in [
         (
-            include_str!("../../../guest-contracts/tests/fixtures/contained-tool-oom.json"),
+            include_str!("../../../../guest-contracts/tests/fixtures/contained-tool-oom.json"),
             Level::INFO,
         ),
         (
-            include_str!("../../../guest-contracts/tests/fixtures/oom-evidence-v1.json"),
+            include_str!("../../../../guest-contracts/tests/fixtures/oom-evidence-v1.json"),
             Level::WARN,
         ),
     ] {

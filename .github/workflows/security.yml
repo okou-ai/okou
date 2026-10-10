@@ -367,7 +367,7 @@ jobs:
             e2e/helpers/browser.bash \
             e2e/helpers/trace-cli.sh \
             e2e/tests/02-browser/brw-t01-platform-e2e.bats
-          shellcheck .github/scripts/tests/runner-binary-early-publication-test.sh
+          shellcheck .github/scripts/tests/runner-binary-early-publication-test.sh .github/scripts/tests/runner-binary-test-inputs-test.sh
           shellcheck -x -P .github/scripts .github/scripts/runner-binary-github.sh .github/scripts/tests/runner-binary-github-test.sh
           # actionlint assumes Bash when shell is omitted and does not model the
           # sh default used by container jobs.

@@ -74,7 +74,7 @@ cargo test --manifest-path crates/Cargo.toml --profile local --locked \
 
 # Host-owned orphan-workspace GC and retained Runner policy/report composition
 # All 34 original ordinary workspace/held-lease/retry cases follow the operation
-# into runner-host/src/gc/workspaces/tests.rs; none removed or ignored.
+# into runner-host/src/gc/workspaces/tests/mod.rs; none removed or ignored.
 # New explicit-age and Root default/report/error seams cover the boundary.
 # Shared GC and immutable report fixtures use non-default Host test-support;
 # production report, candidate, lease and removal-hook state stay private.
@@ -282,6 +282,30 @@ mod tests {
     }
 }
 ```
+
+### Out-of-line unit modules (`tests/mod.rs`)
+
+Use the native `tests/` directory layout for production-disabled unit modules:
+
+```rust
+// src/config.rs
+#[cfg(test)]
+mod tests;
+// Unit tests live in src/config/tests/mod.rs.
+```
+
+Keep the guard on the production parent. The module namespace and child modules
+are the same as for `tests.rs`; relative fixture includes must follow the new
+source location. Cargo tests and coverage use the complete checkout and still
+select these modules.
+
+Runner binary hashing and compilation share a committed-source inventory that
+excludes complete `tests/` directory segments. Organize a module there only after
+confirming that production build/include readers do not consume its source.
+Other test-named files remain conservatively included. Production sources and
+embedded runtime/license inputs must stay outside excluded directories; adding
+a production reader changes the key, but cannot make omitted source available
+in the materialized build context.
 
 ## Patterns
 
