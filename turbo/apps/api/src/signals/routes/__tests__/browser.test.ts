@@ -67,7 +67,8 @@ function browserInputWrites() {
     return (
       command.method === "Runtime.callFunctionOn" &&
       typeof command.params.functionDeclaration === "string" &&
-      command.params.functionDeclaration.includes("setter.call")
+      command.params.functionDeclaration.includes("setter.call") &&
+      !nativeVerifyOnly(command.params.arguments)
     );
   });
 }
@@ -134,8 +135,8 @@ function browserInputVerifications() {
     return (
       command.method === "Runtime.callFunctionOn" &&
       typeof command.params.functionDeclaration === "string" &&
-      command.params.functionDeclaration.includes("expectedValues") &&
-      command.params.functionDeclaration.includes("controls.every")
+      command.params.functionDeclaration.includes("firstSpec") &&
+      nativeVerifyOnly(command.params.arguments)
     );
   });
 }
@@ -202,8 +203,8 @@ function mockNativeInputTarget(): void {
       case "Runtime.callFunctionOn": {
         const declaration = String(command.params.functionDeclaration);
         if (
-          declaration.includes("expected") ||
-          declaration.includes("nextValue")
+          declaration.includes("firstSpec") ||
+          declaration.includes("cloneNode")
         ) {
           return { result: { value: true } };
         }
@@ -408,9 +409,6 @@ function mockNativeConstrainedCall(
       },
     };
   }
-  if (declaration.includes("expectedValues")) {
-    return { result: { value: args.verificationMatches() } };
-  }
   if (declaration.includes("cloneNode")) {
     const first = Array.isArray(params.arguments)
       ? params.arguments[0]
@@ -426,9 +424,6 @@ function mockNativeConstrainedCall(
           : validNumberValue(value, args.constraints()),
       },
     };
-  }
-  if (declaration.includes("nextValue")) {
-    return { result: { value: true } };
   }
   return mockNativeConstrainedInspection(args);
 }
@@ -893,6 +888,330 @@ async function setupNativeMixedVerificationScenario(
     return { requestToken, values };
   };
   return { state, create };
+}
+
+async function setupNativeScalarGuardScenario(laterType = "password") {
+  const { routeMocks, runs, chat, actor, agent } = await setupBrowserScenario();
+  const current = await createClaimedChatRun(
+    chat,
+    runs,
+    actor,
+    agent.agentId,
+    "Fill the captured scalar Browser controls",
+  );
+  await updateFeatureSwitchesForUser(context, actor, {
+    [FeatureSwitchKey.BrowserNativeInput]: true,
+  });
+  const providerId = randomUUID();
+  acceptBrowserUseCdpSessions([providerId]);
+  const document = {};
+  const state: {
+    events: string[];
+    onChange?: (control: ScalarControl) => void;
+  } = { events: [] };
+  class ScalarControl {
+    readonly isConnected = true;
+    readonly ownerDocument = document;
+    required = false;
+    readOnly = false;
+    disabled = false;
+    fieldsetDisabled = false;
+    multiple = false;
+    minLength = -1;
+    maxLength = -1;
+    pattern = "";
+    min = "";
+    max = "";
+    step = "";
+    storedValue: string;
+
+    constructor(
+      readonly tagName: "INPUT" | "TEXTAREA",
+      public type: string,
+      readonly name: string,
+    ) {
+      this.storedValue = type === "number" ? "10" : `${name}-initial`;
+    }
+
+    getRootNode() {
+      return document;
+    }
+
+    matches(selector: string) {
+      return (
+        selector === ":disabled" && (this.disabled || this.fieldsetDisabled)
+      );
+    }
+
+    dispatchEvent(event: Event) {
+      state.events.push(`${this.name}:${event.type}`);
+      if (event.type === "change") {
+        state.onChange?.(this);
+      }
+      return true;
+    }
+
+    cloneNode(): NativeInput | NativeTextarea {
+      const clone =
+        this.tagName === "TEXTAREA"
+          ? new NativeTextarea(this.name)
+          : new NativeInput(this.type, this.name);
+      Object.assign(clone, this);
+      return clone;
+    }
+
+    checkValidity() {
+      const value = this.storedValue;
+      if (this.required && value === "") {
+        return false;
+      }
+      if (value === "") {
+        return true;
+      }
+      if (this.type === "number") {
+        return validNumberValue(value, {
+          min: this.min,
+          max: this.max,
+          step: this.step,
+        });
+      }
+      return (
+        (this.minLength < 0 || value.length >= this.minLength) &&
+        (this.maxLength < 0 || value.length <= this.maxLength) &&
+        (!this.pattern || new RegExp(`^(?:${this.pattern})$`, "u").test(value))
+      );
+    }
+
+    get validity() {
+      return { valid: this.checkValidity() };
+    }
+  }
+  class NativeInput extends ScalarControl {
+    constructor(type: string, name: string) {
+      super("INPUT", type, name);
+    }
+
+    get value() {
+      return this.storedValue;
+    }
+
+    set value(value: string) {
+      this.storedValue = value;
+    }
+  }
+  class NativeTextarea extends ScalarControl {
+    constructor(name: string) {
+      super("TEXTAREA", "textarea", name);
+    }
+
+    get value() {
+      return this.storedValue;
+    }
+
+    set value(value: string) {
+      this.storedValue = value;
+    }
+  }
+  const first = new NativeInput("text", "first");
+  const later =
+    laterType === "textarea"
+      ? new NativeTextarea("later")
+      : new NativeInput(laterType, "later");
+  if (laterType === "number") {
+    later.min = "0";
+    later.max = "100";
+    later.step = "1";
+  }
+  const controls = new Map([
+    ["native-first-object", first],
+    ["native-later-object", later],
+  ]);
+  context.mocks.browserUseCdp.command.mockImplementation((command) => {
+    switch (command.method) {
+      case "Target.getTargets": {
+        return {
+          targetInfos: [
+            {
+              targetId: "native-input-target",
+              type: "page",
+              url: "https://example.com/login",
+            },
+          ],
+        };
+      }
+      case "Browser.getWindowForTarget": {
+        return { windowId: 7 };
+      }
+      case "Target.attachToTarget": {
+        return { sessionId: "native-input-session" };
+      }
+      case "Page.getFrameTree": {
+        return {
+          frameTree: {
+            frame: {
+              id: "main-frame",
+              loaderId: "native-input-loader",
+              url: "https://example.com/login",
+            },
+          },
+        };
+      }
+      case "DOM.resolveNode": {
+        return {
+          object: {
+            objectId:
+              command.params.backendNodeId === 43
+                ? "native-first-object"
+                : "native-later-object",
+          },
+        };
+      }
+      case "Runtime.callFunctionOn": {
+        const declaration = z
+          .string()
+          .parse(command.params.functionDeclaration);
+        const control = controls.get(z.string().parse(command.params.objectId));
+        if (!control) {
+          throw new Error("Unknown provider control identity");
+        }
+        const wireArgs = z
+          .array(
+            z.object({
+              objectId: z.string().optional(),
+              value: z.unknown().optional(),
+            }),
+          )
+          .parse(command.params.arguments ?? []);
+        const args = wireArgs.map((argument) => {
+          if (!argument.objectId) {
+            return argument.value;
+          }
+          const other = controls.get(argument.objectId);
+          if (!other) {
+            throw new Error("Unknown provider argument identity");
+          }
+          return other;
+        });
+        if (declaration.includes("supportedInputTypes")) {
+          return {
+            result: {
+              value: [control, ...args].map((entry) => {
+                if (!(entry instanceof ScalarControl)) {
+                  throw new Error("Expected a provider inspection control");
+                }
+                return {
+                  tagName: entry.tagName,
+                  inputType: entry.type,
+                  connected: entry.isConnected,
+                  mainDocument: true,
+                  writable: !entry.matches(":disabled") && !entry.readOnly,
+                  siteRequired: entry.required,
+                  multiple: entry.type === "email" && entry.multiple,
+                  ...(entry.minLength < 0
+                    ? {}
+                    : { minLength: entry.minLength }),
+                  ...(entry.maxLength < 0
+                    ? {}
+                    : { maxLength: entry.maxLength }),
+                  ...(entry.pattern ? { pattern: entry.pattern } : {}),
+                  ...(entry.min ? { min: entry.min } : {}),
+                  ...(entry.max ? { max: entry.max } : {}),
+                  ...(entry.step ? { step: entry.step } : {}),
+                };
+              }),
+            },
+          };
+        }
+        // The external provider executes the JavaScript actually sent by apply,
+        // including the legacy writer on the red-before-green baseline.
+        const value: unknown = runInNewContext(
+          `(${declaration}).apply(control, args)`,
+          {
+            control,
+            args,
+            document,
+            Event,
+            queueMicrotask,
+            HTMLInputElement: NativeInput,
+            HTMLTextAreaElement: NativeTextarea,
+            HTMLSelectElement: class {},
+            HTMLOptGroupElement: class {},
+          },
+        );
+        return { result: { value } };
+      }
+      default: {
+        return {};
+      }
+    }
+  });
+  server.use(
+    http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
+      const body = z
+        .strictObject({ name: z.string() })
+        .parse(await request.json());
+      return HttpResponse.json(providerProfile(randomUUID(), body.name), {
+        status: 201,
+      });
+    }),
+    http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
+      return HttpResponse.json(providerBrowser(providerId), { status: 201 });
+    }),
+    http.get(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
+      return HttpResponse.json(providerBrowser(String(params.id)));
+    }),
+  );
+  await accept(
+    client().use({ headers: current.claim.browserHeaders, body: {} }),
+    [200],
+  );
+  routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+  const create = async () => {
+    const created = await accept(
+      userActionClient().create({
+        headers: current.claim.browserHeaders,
+        body: {
+          kind: "input",
+          callbackPrompt: "Continue after scalar input",
+          pageTargetId: "native-input-target",
+          fields: [
+            {
+              key: "first",
+              label: "First",
+              fieldKind: "username",
+              required: false,
+              backendNodeId: 43,
+            },
+            {
+              key: "later",
+              label: "Later",
+              fieldKind:
+                laterType === "password"
+                  ? "password"
+                  : laterType === "number"
+                    ? "number"
+                    : "text",
+              required: false,
+              backendNodeId: 42,
+            },
+          ],
+        },
+      }),
+      [201],
+    );
+    const requestToken = created.body.action.requestToken;
+    const observed = await accept(
+      userActionClient().preflight({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken },
+        body: {},
+      }),
+      [200],
+    );
+    expect(observed.body.state).toBe("pending");
+    return requestToken;
+  };
+  return { state, first, later, create };
 }
 
 type NativeRadioMockState = {
@@ -3119,8 +3438,18 @@ describe("Browser user-action route", () => {
       [200],
     );
     expect(applied.body.state).toBe("succeeded");
-    expect(browserInputWrites().at(-1)?.[0].params.arguments).toStrictEqual([
-      { value: "12.5" },
+    expect(browserInputWrites().at(-1)?.[0].params.arguments).toMatchObject([
+      {
+        value: {
+          kind: "scalar",
+          inputType: "number",
+          min: "10",
+          max: "20",
+          step: "0.5",
+          value: "12.5",
+        },
+      },
+      { value: 0 },
     ]);
 
     const untouched = await createNumber();
@@ -3134,7 +3463,12 @@ describe("Browser user-action route", () => {
       [200],
     );
     expect(untouchedResult.body.state).toBe("succeeded");
-    expect(browserInputWrites()).toHaveLength(writesBeforeUntouched);
+    // Omitted scalar batches now recheck their descriptors without value events.
+    expect(browserInputWrites()).toHaveLength(writesBeforeUntouched + 1);
+    expect(browserInputWrites().at(-1)?.[0].params.arguments).toMatchObject([
+      { value: { kind: "scalar", inputType: "number", value: null } },
+      { value: 0 },
+    ]);
 
     const clear = await createNumber();
     const cleared = await accept(
@@ -3146,8 +3480,9 @@ describe("Browser user-action route", () => {
       [200],
     );
     expect(cleared.body.state).toBe("succeeded");
-    expect(browserInputWrites().at(-1)?.[0].params.arguments).toStrictEqual([
-      { value: "" },
+    expect(browserInputWrites().at(-1)?.[0].params.arguments).toMatchObject([
+      { value: { kind: "scalar", inputType: "number", value: "" } },
+      { value: 0 },
     ]);
 
     const required = await createNumber(true);
@@ -3175,8 +3510,17 @@ describe("Browser user-action route", () => {
       [200],
     );
     expect(preciseResult.body.state).toBe("succeeded");
-    expect(browserInputWrites().at(-1)?.[0].params.arguments).toStrictEqual([
-      { value: preciseValue },
+    expect(browserInputWrites().at(-1)?.[0].params.arguments).toMatchObject([
+      {
+        value: {
+          kind: "scalar",
+          min: "0",
+          max: "1e30",
+          step: "any",
+          value: preciseValue,
+        },
+      },
+      { value: 0 },
     ]);
 
     const mismatch = await createNumber();
@@ -3911,7 +4255,11 @@ describe("Browser user-action route", () => {
       (await accept(apply(untouched.body.action.requestToken, []), [200])).body
         .state,
     ).toBe("succeeded");
-    expect(browserSelectWrites()).toHaveLength(beforeUntouched);
+    expect(browserSelectWrites()).toHaveLength(beforeUntouched + 2);
+    expect(browserSelectWrites().at(-1)?.[0].params.arguments).toMatchObject([
+      { value: { kind: "scalar", inputType: "date", value: null } },
+      { value: 0 },
+    ]);
     const clearing = await create();
     expect(
       (
@@ -3960,6 +4308,279 @@ describe("Browser user-action route", () => {
       ).body.state,
     ).toBe("uncertain");
   });
+
+  it.each([
+    "type",
+    "disabled",
+    "readOnly",
+    "fieldset",
+    "required",
+    "minLength",
+    "maxLength",
+    "pattern",
+    "multiple",
+    "min",
+    "max",
+    "step",
+  ] as const)("rejects %s drift before a later scalar write", async (drift) => {
+    const laterType = ["min", "max", "step"].includes(drift)
+      ? "number"
+      : drift === "multiple"
+        ? "email"
+        : "password";
+    const { state, first, later, create } =
+      await setupNativeScalarGuardScenario(laterType);
+    const requestToken = await create();
+    state.onChange = (control) => {
+      if (control !== first) {
+        return;
+      }
+      switch (drift) {
+        case "type": {
+          later.type = "text";
+          break;
+        }
+        case "disabled": {
+          later.disabled = true;
+          break;
+        }
+        case "readOnly": {
+          later.readOnly = true;
+          break;
+        }
+        case "fieldset": {
+          later.fieldsetDisabled = true;
+          break;
+        }
+        case "required": {
+          later.required = true;
+          break;
+        }
+        case "minLength": {
+          later.minLength = 1;
+          break;
+        }
+        case "maxLength": {
+          later.maxLength = 50;
+          break;
+        }
+        case "pattern": {
+          later.pattern = ".*";
+          break;
+        }
+        case "multiple": {
+          later.multiple = true;
+          break;
+        }
+        case "min": {
+          later.min = "1";
+          break;
+        }
+        case "max": {
+          later.max = "50";
+          break;
+        }
+        case "step": {
+          later.step = "2";
+          break;
+        }
+      }
+    };
+    const values = [
+      { key: "first", value: "synthetic-first" },
+      {
+        key: "later",
+        value:
+          laterType === "number"
+            ? "10"
+            : laterType === "email"
+              ? "synthetic@example.com"
+              : "synthetic-later",
+      },
+    ];
+    const applied = await accept(
+      userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken },
+        body: { values },
+      }),
+      [200],
+    );
+    expect(applied.body.state).toBe("uncertain");
+    expect(first.value).toBe("synthetic-first");
+    expect(later.value).toBe(laterType === "number" ? "10" : "later-initial");
+    expect(state.events).toStrictEqual(["first:input", "first:change"]);
+    const readBack = await accept(
+      userActionClient().get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken },
+      }),
+      [200],
+    );
+    expect(readBack.body).toMatchObject({
+      state: "uncertain",
+      callbackDelivered: false,
+    });
+    expect(JSON.stringify(readBack.body)).not.toContain("synthetic-first");
+    expect(JSON.stringify(readBack.body)).not.toContain("synthetic-later");
+    const retry = await userActionClient().apply({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { requestToken },
+      body: { values },
+    });
+    expect(retry.status).toBe(409);
+    expect(state.events).toStrictEqual(["first:input", "first:change"]);
+  });
+
+  it.each([
+    { drift: "type", timing: "immediate" },
+    { drift: "disabled", timing: "immediate" },
+    { drift: "readOnly", timing: "immediate" },
+    { drift: "type", timing: "microtask" },
+    { drift: "disabled", timing: "microtask" },
+    { drift: "readOnly", timing: "microtask" },
+  ] as const)(
+    "rejects final scalar $drift drift in an event $timing even when values match",
+    async ({ drift, timing }) => {
+      const { state, first, later, create } =
+        await setupNativeScalarGuardScenario();
+      const requestToken = await create();
+      state.onChange = (control) => {
+        if (control !== later) {
+          return;
+        }
+        const change = () => {
+          if (drift === "type") {
+            first.type = "password";
+          } else if (drift === "disabled") {
+            first.disabled = true;
+          } else {
+            first.readOnly = true;
+          }
+        };
+        if (timing === "microtask") {
+          queueMicrotask(change);
+        } else {
+          change();
+        }
+      };
+      const values = [
+        { key: "first", value: "synthetic-first" },
+        { key: "later", value: "synthetic-later" },
+      ];
+      const applied = await accept(
+        userActionClient().apply({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { requestToken },
+          body: { values },
+        }),
+        [200],
+      );
+      expect(applied.body.state).toBe("uncertain");
+      expect([first.value, later.value]).toStrictEqual([
+        "synthetic-first",
+        "synthetic-later",
+      ]);
+      const events = [
+        "first:input",
+        "first:change",
+        "later:input",
+        "later:change",
+      ];
+      expect(state.events).toStrictEqual(events);
+      const readBack = await accept(
+        userActionClient().get({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { requestToken },
+        }),
+        [200],
+      );
+      expect(readBack.body).toMatchObject({
+        state: "uncertain",
+        callbackDelivered: false,
+      });
+      expect(
+        (
+          await userActionClient().apply({
+            headers: { authorization: "Bearer clerk-session" },
+            params: { requestToken },
+            body: { values },
+          })
+        ).status,
+      ).toBe(409);
+      expect(state.events).toStrictEqual(events);
+    },
+  );
+
+  it.each(["text", "password", "textarea", "number"])(
+    "preserves stable %s scalar native events and omitted-field behavior",
+    async (laterType) => {
+      const { state, first, later, create } =
+        await setupNativeScalarGuardScenario(laterType);
+      const requestToken = await create();
+      // Equal values still use the normal scalar setter/input/change contract.
+      const values = [
+        { key: "first", value: first.value },
+        { key: "later", value: later.value },
+      ];
+      const applied = await accept(
+        userActionClient().apply({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { requestToken },
+          body: { values },
+        }),
+        [200],
+      );
+      expect(applied.body.state).toBe("succeeded");
+      expect(state.events).toStrictEqual([
+        "first:input",
+        "first:change",
+        "later:input",
+        "later:change",
+      ]);
+      const omitted = await create();
+      state.events = [];
+      expect(
+        (
+          await accept(
+            userActionClient().apply({
+              headers: { authorization: "Bearer clerk-session" },
+              params: { requestToken: omitted },
+              body: { values: [{ key: "later", value: later.value }] },
+            }),
+            [200],
+          )
+        ).body.state,
+      ).toBe("succeeded");
+      expect(state.events).toStrictEqual(["later:input", "later:change"]);
+      const untouched = await create();
+      state.events = [];
+      expect(
+        (
+          await accept(
+            userActionClient().apply({
+              headers: { authorization: "Bearer clerk-session" },
+              params: { requestToken: untouched },
+              body: { values: [] },
+            }),
+            [200],
+          )
+        ).body.state,
+      ).toBe("succeeded");
+      expect(state.events).toStrictEqual([]);
+      expect(
+        (
+          await accept(
+            userActionClient().get({
+              headers: { authorization: "Bearer clerk-session" },
+              params: { requestToken: untouched },
+            }),
+            [200],
+          )
+        ).body.state,
+      ).toBe("succeeded");
+    },
+  );
 
   it("validates and applies CLI-resolved Browser input without exposing target or value data", async () => {
     const { routeMocks, runs, chat, actor, agent } =
@@ -4057,7 +4678,7 @@ describe("Browser user-action route", () => {
             },
           };
         }
-        if (declaration.includes("expected")) {
+        if (nativeVerifyOnly(command.params.arguments)) {
           return {
             result: { value: verificationMatches && controlConnected },
           };
@@ -4081,7 +4702,7 @@ describe("Browser user-action route", () => {
             },
           };
         }
-        if (declaration.includes("nextValue")) {
+        if (declaration.includes("firstSpec")) {
           if (disconnectAfterNextWrite) {
             disconnectAfterNextWrite = false;
             controlConnected = false;
@@ -4621,10 +5242,30 @@ describe("Browser user-action route", () => {
     expect(context.mocks.browserUseCdp.connect).toHaveBeenCalledTimes(4);
     expect(browserControlInspections()).toHaveLength(4);
     expect(browserInputWrites()).toHaveLength(1);
-    expect(browserInputWrites()[0]?.[0].params.arguments).toStrictEqual([
-      { value: "user@example.com" },
+    expect(browserInputWrites()[0]?.[0].params.arguments).toMatchObject([
+      {
+        value: {
+          kind: "scalar",
+          tagName: "INPUT",
+          inputType: "email",
+          required: true,
+          multiple: true,
+          minLength: 3,
+          value: "user@example.com",
+        },
+      },
+      { value: 1 },
       { objectId: "native-password-object" },
-      { value: "request-memory-only" },
+      {
+        value: {
+          kind: "scalar",
+          tagName: "INPUT",
+          inputType: "password",
+          required: true,
+          minLength: 3,
+          value: "request-memory-only",
+        },
+      },
     ]);
     expect(browserInputWrites()[0]?.[0].params.functionDeclaration).toContain(
       'new Event("input"',
@@ -4761,10 +5402,19 @@ describe("Browser user-action route", () => {
     expect(optionalBlankApplied.body.state).toBe("succeeded");
     const optionalBlankWrite = browserInputWrites().at(-1);
     expect(optionalBlankWrite?.[0].params.objectId).toBe(
-      "native-password-object",
+      "native-username-object",
     );
-    expect(optionalBlankWrite?.[0].params.arguments).toStrictEqual([
-      { value: "required-only" },
+    expect(optionalBlankWrite?.[0].params.arguments).toMatchObject([
+      { value: { kind: "scalar", inputType: "email", value: null } },
+      { value: 1 },
+      { objectId: "native-password-object" },
+      {
+        value: {
+          kind: "scalar",
+          inputType: "password",
+          value: "required-only",
+        },
+      },
     ]);
 
     controlTagName = "TEXTAREA";
@@ -4810,8 +5460,17 @@ describe("Browser user-action route", () => {
       [200],
     );
     expect(multilineApplied.body.state).toBe("succeeded");
-    expect(browserInputWrites().at(-1)?.[0].params.arguments).toStrictEqual([
-      { value: "first line\nsecond line" },
+    expect(browserInputWrites().at(-1)?.[0].params.arguments).toMatchObject([
+      {
+        value: {
+          kind: "scalar",
+          tagName: "TEXTAREA",
+          inputType: "textarea",
+          minLength: 3,
+          value: "first line\nsecond line",
+        },
+      },
+      { value: 0 },
     ]);
     controlTagName = "INPUT";
 
@@ -5247,13 +5906,13 @@ describe("Browser user-action route", () => {
         return (
           command.method === "Runtime.callFunctionOn" &&
           typeof command.params.functionDeclaration === "string" &&
-          command.params.functionDeclaration.includes("expectedValues") &&
-          command.params.functionDeclaration.includes("control.isConnected")
+          nativeVerifyOnly(command.params.arguments) &&
+          command.params.functionDeclaration.includes("!control.isConnected")
         );
       },
     );
     expect(verification?.[0].params.functionDeclaration).toContain(
-      "control.ownerDocument === document",
+      "control.ownerDocument !== document",
     );
 
     const stuckCandidate = await accept(
