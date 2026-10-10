@@ -1,16 +1,22 @@
+import type { RuntimeApiRouteOwner } from "./routes";
 import {
   type JsonObject,
   type JsonValue,
   type RuntimeApiRouteSnapshot,
   type RuntimeApiSchemaDocument,
   type RuntimeSchemaSnapshot,
-  stableStringify,
 } from "./schema";
 
 export interface RuntimeApiCompatFinding {
   readonly severity: "error";
   readonly route: string;
   readonly routeId: string;
+  readonly owner: RuntimeApiRouteOwner;
+  /** Method and path of the production route the finding was found on. */
+  readonly method: string;
+  readonly routePath: string;
+  /** The 2xx status whose body changed; set only for response findings. */
+  readonly responseStatus?: number;
   readonly direction: "request" | "response" | "route";
   readonly path: string;
   readonly kind: string;
@@ -21,9 +27,9 @@ export interface RuntimeApiCompatFinding {
 }
 
 interface CompareContext {
-  readonly route: string;
-  readonly routeId: string;
+  readonly online: RuntimeApiRouteSnapshot;
   readonly direction: RuntimeApiCompatFinding["direction"];
+  readonly responseStatus?: number;
   readonly findings: RuntimeApiCompatFinding[];
 }
 
@@ -37,9 +43,17 @@ export function compareRuntimeApiSchemas(
       return [route.id, route];
     }),
   );
+  // Renaming a binding id (for example a Swift member name) keeps the route.
+  const currentRegistrations = new Map(
+    current.routes.map((route) => {
+      return [routeRegistration(route), route];
+    }),
+  );
 
   for (const onlineRoute of online.routes) {
-    const currentRoute = currentRoutes.get(onlineRoute.id);
+    const currentRoute =
+      currentRoutes.get(onlineRoute.id) ??
+      currentRegistrations.get(routeRegistration(onlineRoute));
     if (!currentRoute) {
       findings.push(
         routeFinding(onlineRoute, {
@@ -64,42 +78,6 @@ export function compareRuntimeApiSchemas(
   }
 
   return findings;
-}
-
-export function renderCompatReport(
-  findings: readonly RuntimeApiCompatFinding[],
-): string {
-  if (findings.length === 0) {
-    return "Runtime API schema compatibility check passed.\n";
-  }
-
-  const sections = findings.map((finding, index) => {
-    return [
-      `Runtime API compatibility break ${index + 1}/${findings.length}`,
-      "",
-      `Route: ${finding.route}`,
-      `Direction: ${finding.direction}`,
-      `Path: ${finding.path}`,
-      `Kind: ${finding.kind}`,
-      "",
-      `Problem: ${finding.problem}`,
-      "",
-      `Impact: ${finding.impact}`,
-      "",
-      `Suggested fix: ${finding.recommendation}`,
-      "",
-      "Agent prompt:",
-      finding.agentPrompt,
-    ].join("\n");
-  });
-
-  return `${sections.join("\n\n---\n\n")}\n`;
-}
-
-export function renderCompatReportJson(
-  findings: readonly RuntimeApiCompatFinding[],
-): string {
-  return `${stableStringify({ findings })}\n`;
 }
 
 function compareRouteIdentity(
@@ -147,8 +125,7 @@ function compareRequestPart(
 
   const currentSchema = current.request[part];
   const context: CompareContext = {
-    route: routeLabel(online),
-    routeId: online.id,
+    online,
     direction: "request",
     findings,
   };
@@ -168,9 +145,9 @@ function compareResponses(
 
     const currentSchema = current.responses[status];
     const context: CompareContext = {
-      route: routeLabel(online),
-      routeId: online.id,
+      online,
       direction: "response",
+      responseStatus: Number(status),
       findings,
     };
 
@@ -246,9 +223,14 @@ function compareTypeSubset(
       pushFinding(context, {
         path,
         kind: `${context.direction}-type-narrowed`,
-        problem: `The current schema no longer accepts type ${type} at ${path}.`,
+        problem:
+          context.direction === "request"
+            ? `The current schema no longer accepts type ${type} at ${path}.`
+            : `The current schema can return type ${type} at ${path}, which the production schema does not declare.`,
         recommendation:
-          "Keep the old type accepted for one release, usually with a union or compatibility parser.",
+          context.direction === "request"
+            ? "Keep the old type accepted for one release, usually with a union or compatibility parser."
+            : "Keep returning only the production types until production clients accept the new type.",
       });
     }
   }
@@ -271,9 +253,14 @@ function compareEnumSubset(
       pushFinding(context, {
         path,
         kind: `${context.direction}-enum-value-removed`,
-        problem: `Enum value ${JSON.stringify(value)} is present in production schema but not in the current schema.`,
+        problem:
+          context.direction === "request"
+            ? `Enum value ${JSON.stringify(value)} is present in production schema but not in the current schema.`
+            : `Enum value ${JSON.stringify(value)} can be returned by the current schema but is not in the production schema, so clients that decode the production enum reject it.`,
         recommendation:
-          "Keep accepting the previous enum value for one release before removing it.",
+          context.direction === "request"
+            ? "Keep accepting the previous enum value for one release before removing it."
+            : "Do not return the new enum value until production clients decode it, or render it as a production value for them.",
       });
     }
   }
@@ -290,10 +277,15 @@ function compareConstSubset(
   }
 
   if (subset.const !== superset.const) {
+    const [production, current] = productionFirst(
+      context,
+      subset.const,
+      superset.const,
+    );
     pushFinding(context, {
       path,
       kind: `${context.direction}-const-changed`,
-      problem: `Const value changed from ${JSON.stringify(subset.const)} to ${JSON.stringify(superset.const)}.`,
+      problem: `Const value changed from ${JSON.stringify(production)} to ${JSON.stringify(current)}.`,
       recommendation:
         "Keep the previous const value accepted for one release, usually by widening to an enum/union.",
     });
@@ -403,10 +395,15 @@ function compareLowerBound(
   }
 
   if (subsetValue < supersetValue) {
+    const [production, current] = productionFirst(
+      context,
+      subsetValue,
+      supersetValue,
+    );
     pushFinding(context, {
       path,
       kind: `${context.direction}-lower-bound-tightened`,
-      problem: `The lower bound ${key} changed from ${subsetValue} to ${supersetValue}.`,
+      problem: `The lower bound ${key} changed from ${production} to ${current}.`,
       recommendation:
         "Keep the previous lower bound accepted for one release before tightening it.",
     });
@@ -427,10 +424,15 @@ function compareUpperBound(
   }
 
   if (subsetValue > supersetValue) {
+    const [production, current] = productionFirst(
+      context,
+      subsetValue,
+      supersetValue,
+    );
     pushFinding(context, {
       path,
       kind: `${context.direction}-upper-bound-tightened`,
-      problem: `The upper bound ${key} changed from ${subsetValue} to ${supersetValue}.`,
+      problem: `The upper bound ${key} changed from ${production} to ${current}.`,
       recommendation:
         "Keep the previous upper bound accepted for one release before tightening it.",
     });
@@ -467,7 +469,9 @@ function compareUnionSubset(
         path: `${path}.anyOf[${index}]`,
         kind: `${context.direction}-union-branch-removed`,
         problem:
-          "A union branch present in the production schema is not accepted by the current schema.",
+          context.direction === "request"
+            ? "A union branch present in the production schema is not accepted by the current schema."
+            : "A union branch the current schema can return is not accepted by the production schema.",
         recommendation:
           "Keep the previous union branch accepted for one release before removing it.",
       });
@@ -475,31 +479,24 @@ function compareUnionSubset(
   }
 }
 
+type FindingInput = Pick<
+  RuntimeApiCompatFinding,
+  "direction" | "path" | "kind" | "problem" | "recommendation"
+>;
+
 function routeFinding(
   route: RuntimeApiRouteSnapshot,
-  input: Omit<
-    RuntimeApiCompatFinding,
-    "severity" | "route" | "routeId" | "impact" | "agentPrompt"
-  >,
+  input: FindingInput,
 ): RuntimeApiCompatFinding {
-  return buildFinding({
-    route: routeLabel(route),
-    routeId: route.id,
-    ...input,
-  });
+  return buildFinding(route, undefined, input);
 }
 
 function pushFinding(
   context: CompareContext,
-  input: Omit<
-    RuntimeApiCompatFinding,
-    "severity" | "route" | "routeId" | "direction" | "impact" | "agentPrompt"
-  >,
+  input: Omit<FindingInput, "direction">,
 ): void {
   context.findings.push(
-    buildFinding({
-      route: context.route,
-      routeId: context.routeId,
+    buildFinding(context.online, context.responseStatus, {
       direction: context.direction,
       ...input,
     }),
@@ -507,12 +504,14 @@ function pushFinding(
 }
 
 function buildFinding(
-  input: Omit<RuntimeApiCompatFinding, "severity" | "impact" | "agentPrompt">,
+  route: RuntimeApiRouteSnapshot,
+  responseStatus: number | undefined,
+  input: FindingInput,
 ): RuntimeApiCompatFinding {
-  const impact = impactFor(input.direction);
+  const impact = impactFor(input.direction, route.owner);
   const agentPrompt = [
     "You are fixing a one-version runtime API compatibility break.",
-    `Route: ${input.route}.`,
+    `Route: ${routeLabel(route)}.`,
     `Problem: ${input.problem}`,
     `Impact: ${impact}`,
     `Fix guidance: ${input.recommendation}`,
@@ -521,13 +520,26 @@ function buildFinding(
 
   return {
     severity: "error",
+    route: routeLabel(route),
+    routeId: route.id,
+    owner: route.owner,
+    method: route.method,
+    routePath: route.path,
+    ...(responseStatus === undefined ? {} : { responseStatus }),
     impact,
     agentPrompt,
     ...input,
   };
 }
 
-function impactFor(direction: RuntimeApiCompatFinding["direction"]): string {
+function impactFor(
+  direction: RuntimeApiCompatFinding["direction"],
+  owner: RuntimeApiRouteOwner,
+): string {
+  if (owner === "desktop") {
+    return desktopImpactFor(direction);
+  }
+
   if (direction === "request") {
     return "Existing production runner, guest-agent, or MITM clients may receive HTTP 400 from the new API during an otherwise healthy container run, causing run execution, artifact publication, telemetry, or completion to be marked failed.";
   }
@@ -537,6 +549,38 @@ function impactFor(direction: RuntimeApiCompatFinding["direction"]): string {
   }
 
   return "Existing production runner, guest-agent, or MITM clients may keep calling the old method/path during a rolling release and fail against the new API.";
+}
+
+function desktopImpactFor(
+  direction: RuntimeApiCompatFinding["direction"],
+): string {
+  if (direction === "request") {
+    return "Affects the Okou Desktop client. Installed Desktop builds keep sending the production request shape, so the new API may reject them with HTTP 400 until users install an update; the API deploys minutes after merge, while a Desktop release reaches users much later.";
+  }
+
+  if (direction === "response") {
+    return "Affects the Okou Desktop client. Installed Desktop builds decode this response strictly against their generated Swift bindings, so every installed build fails at decode time once the API deploys, until users install an update that reads the new shape.";
+  }
+
+  return "Affects the Okou Desktop client. Installed Desktop builds keep calling the production method and path and fail against the new API until users install an update.";
+}
+
+/**
+ * Request parts compare production as the subset; responses compare the
+ * current schema as the subset. Returns the pair as [production, current].
+ */
+function productionFirst<T>(
+  context: CompareContext,
+  subsetValue: T,
+  supersetValue: T,
+): readonly [T, T] {
+  return context.direction === "request"
+    ? [subsetValue, supersetValue]
+    : [supersetValue, subsetValue];
+}
+
+function routeRegistration(route: RuntimeApiRouteSnapshot): string {
+  return `${route.owner} ${route.method} ${route.path}`;
 }
 
 function routeLabel(route: RuntimeApiRouteSnapshot): string {

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { initContract } from "../../contracts/base";
+import { swiftRouteBindings } from "../../swift-bindings/routes";
 import { buildRuntimeApiSchemaDocument } from "../schema";
 import type { RuntimeApiRouteBinding } from "../routes";
 
@@ -110,5 +111,25 @@ describe("runtime API schema document", () => {
     }).toThrow(
       "Duplicate runtime API route registration: GET /api/webhooks/agent/example",
     );
+  });
+
+  it("binds every Desktop-consumed route with owner desktop", () => {
+    const document = buildRuntimeApiSchemaDocument("2026-10-10T00:00:00.000Z");
+    const desktopRoutes = document.routes.filter(({ owner }) => {
+      return owner === "desktop";
+    });
+
+    expect(
+      desktopRoutes.map(({ id, method, path }) => {
+        return [id, method, path];
+      }),
+    ).toEqual(
+      expect.arrayContaining(
+        swiftRouteBindings.map(({ swiftName, route }) => {
+          return [`desktop.${swiftName}`, route.method, route.path];
+        }),
+      ),
+    );
+    expect(desktopRoutes).toHaveLength(swiftRouteBindings.length);
   });
 });

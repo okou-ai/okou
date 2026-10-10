@@ -167,4 +167,77 @@ describe("runtime API compatibility diff", () => {
 
     expect(compareRuntimeApiSchemas(online, current)).toEqual([]);
   });
+
+  it("words a widened response enum as a value production clients cannot decode", () => {
+    const online = documentWithBody(objectSchema({}, []));
+    const route = online.routes[0];
+    if (!route) {
+      throw new Error("missing test route");
+    }
+    const withStatus = (
+      values: readonly string[],
+    ): RuntimeApiSchemaDocument => {
+      return {
+        ...online,
+        routes: [
+          {
+            ...route,
+            responses: {
+              "200": {
+                kind: "json-schema",
+                schema: objectSchema(
+                  { status: { type: "string", enum: [...values] } },
+                  ["status"],
+                ),
+              },
+            },
+          },
+        ],
+      };
+    };
+
+    const [finding] = compareRuntimeApiSchemas(
+      withStatus(["queued"]),
+      withStatus(["queued", "paused"]),
+    );
+
+    expect(finding).toMatchObject({
+      kind: "response-enum-value-removed",
+      path: "responses.200.status",
+      responseStatus: 200,
+      problem:
+        'Enum value "paused" can be returned by the current schema but is not in the production schema, so clients that decode the production enum reject it.',
+    });
+  });
+
+  it("reports nothing for a route that production does not have yet", () => {
+    const online = documentWithBody(objectSchema({}, []));
+    const route = online.routes[0];
+    if (!route) {
+      throw new Error("missing test route");
+    }
+    const current: RuntimeApiSchemaDocument = {
+      ...online,
+      routes: [
+        route,
+        { ...route, id: "desktop.example", owner: "desktop", path: "/api/org" },
+      ],
+    };
+
+    expect(compareRuntimeApiSchemas(online, current)).toEqual([]);
+  });
+
+  it("matches a renamed binding id by its method and path", () => {
+    const online = documentWithBody(objectSchema({}, []));
+    const route = online.routes[0];
+    if (!route) {
+      throw new Error("missing test route");
+    }
+    const current: RuntimeApiSchemaDocument = {
+      ...online,
+      routes: [{ ...route, id: "webhooks.agent.renamed" }],
+    };
+
+    expect(compareRuntimeApiSchemas(online, current)).toEqual([]);
+  });
 });
