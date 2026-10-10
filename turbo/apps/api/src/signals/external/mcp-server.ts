@@ -626,7 +626,7 @@ function registerReadTools(
       name: "get_chat_indicators",
       scope: "okou:chat:read",
       description:
-        "Get bounded Web presentation indicators, not authoritative Run status. active reflects eligible pending/running Runs; unread marks unread completed/failed/cancelled Run terminal events. Thread active wins; Agent unread can coexist with active threads. Reads are non-atomic with no refresh deadline: up to 128 visible Agents, 50 active and 50 unread threads, with unread chosen from 128 newest unmuted candidates within seven days. Missing entries or unread do not prove inactivity, success, complete output or that all messages are read. To establish an outcome, use get_chat_messages with the known threadId and inspect matching runId terminal rows (run.completed, run.failed, run.cancelled), following its snapshot/archive and pagination guidance. Retain uncertainty when that evidence is unavailable; activity summaries are not exact lifecycle evidence. Indicator/history reads do not mark threads read.",
+        "Show active (pending/running) and unread (completed/failed/cancelled) indicators for visible Agents and threads. This limited, non-atomic list does not prove Run completion. Use get_chat_messages with the known threadId and check terminal events for the matching runId to confirm an outcome. Does not mark threads read.",
       inputSchema: emptyInput,
       outputSchema: chatThreadsContract.indicators.responses[200],
       annotations: readAnnotations,
