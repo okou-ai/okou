@@ -2,7 +2,6 @@ import type { ChatLayoutSignals } from "../../signals/chat-page/chat-layout.ts";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import type {
   CSSProperties,
-  PointerEvent as ReactPointerEvent,
   ReactNode,
   TransitionEvent as ReactTransitionEvent,
 } from "react";
@@ -15,9 +14,8 @@ import {
   CHAT_THREAD_SIDEBAR_MIN_WIDTH,
   chatThreadSidebarResizing$,
   chatThreadSidebarWidth$,
-  startChatThreadSidebarResize$,
+  chatThreadSidebarResizeHandleRef$,
 } from "../../signals/chat-page/chat-thread-sidebar-layout.ts";
-import { pageSignal$ } from "../../signals/page-signal.ts";
 import { syncActiveBrowserFitAction$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 
 function chatThreadSidebarLayout(
@@ -40,17 +38,7 @@ function chatThreadSidebarLayout(
 
 function ChatThreadSidebarResizeHandle() {
   const { t } = useTranslation();
-  const startResize = useSet(startChatThreadSidebarResize$);
-  const pageSignal = useGet(pageSignal$);
-
-  function handlePointerDown(event: ReactPointerEvent<HTMLDivElement>): void {
-    const container = event.currentTarget.parentElement;
-    if (!container) {
-      return;
-    }
-    event.preventDefault();
-    startResize(container, pageSignal);
-  }
+  const resizeHandleRef = useSet(chatThreadSidebarResizeHandleRef$);
 
   return (
     <div
@@ -59,8 +47,8 @@ function ChatThreadSidebarResizeHandle() {
       aria-label={t(($) => {
         return $.chat.threadSidebar.resize;
       })}
-      className="group relative hidden w-1 shrink-0 cursor-col-resize items-stretch justify-center xl:flex"
-      onPointerDown={handlePointerDown}
+      className="group relative hidden w-1 shrink-0 cursor-col-resize touch-none items-stretch justify-center xl:flex"
+      ref={resizeHandleRef}
     >
       <span
         aria-hidden="true"
