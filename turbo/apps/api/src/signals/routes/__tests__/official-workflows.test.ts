@@ -1401,6 +1401,213 @@ beforeEach(() => {
 });
 
 describe("Morning Brief preference", () => {
+  it.each([true, false])(
+    "retains the public automation toggle choice %s after uninstall",
+    async (enabled) => {
+      const { actor } = await prepareBriefMember();
+      await initializeBriefMember(actor, "Asia/Shanghai");
+      const headers = authHeaders(actor);
+      await accept(
+        morningBriefPreferenceClient().update({
+          headers,
+          body: { enabled: true },
+        }),
+        [200],
+      );
+      const [installation] = await listMorningBriefInstallations(actor);
+      if (!installation) {
+        throw new Error("Expected the preference installation");
+      }
+      const [automation] = await readMorningBriefAutomations(
+        actor,
+        installation.id,
+      );
+      if (!automation) {
+        throw new Error("Expected the Morning Brief automation");
+      }
+      const paused = await accept(
+        automationClient().disable({ headers, params: { id: automation.id } }),
+        [200],
+      );
+      expect(paused.body).toMatchObject({
+        id: automation.id,
+        enabled: false,
+        nextRunAt: null,
+        official: { intendedEnabled: false, reconciliationStatus: "current" },
+      });
+      const toggled = await accept(
+        (enabled ? automationClient().enable : automationClient().disable)({
+          headers,
+          params: { id: automation.id },
+        }),
+        [200],
+      );
+      expect(toggled.body).toMatchObject({
+        id: automation.id,
+        enabled,
+        official: {
+          intendedEnabled: enabled,
+          parameterBindings: automation.official?.parameterBindings,
+        },
+      });
+      if (enabled) {
+        expect(toggled.body.nextRunAt).toStrictEqual(expect.any(String));
+      } else {
+        expect(toggled.body.nextRunAt).toBeNull();
+      }
+      expect((await readBriefPreference(actor)).body).toMatchObject({
+        enabled,
+        status: enabled ? "enabled" : "paused",
+      });
+      await accept(
+        installationClient().uninstall({
+          headers,
+          params: { workflowId: installation.id },
+        }),
+        [204],
+      );
+      // With no installation, the preference exposes the durable enrollment choice.
+      expect((await readBriefPreference(actor)).body).toMatchObject({
+        enabled,
+        status: enabled ? "preparing" : "paused",
+      });
+    },
+  );
+
+  it("preserves a paused preference during Official Morning Brief materialization", async () => {
+    installCatalogStorageFixture();
+    await syncDeployedCatalog();
+    const { actor } = await workflowBdd.setupWorkflowOrg({
+      timezone: "Asia/Shanghai",
+    });
+    const headers = authHeaders(actor);
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    const onboarding = await bdd.readOnboardingStatus(actor);
+    if (!onboarding.defaultAgentId) {
+      throw new Error("Expected the default Agent");
+    }
+    await setOfficialWorkflowsEnabled(actor, true);
+    const workflowId = await installMorningBriefFromCatalog(
+      actor,
+      onboarding.defaultAgentId,
+    );
+    await expect(
+      readMorningBriefAutomations(actor, workflowId),
+    ).resolves.toMatchObject([
+      {
+        enabled: true,
+        official: { intendedEnabled: true, reconciliationStatus: "current" },
+      },
+    ]);
+    const removed = await syncCatalog(
+      catalog([
+        activeDefinition("morning-brief", []),
+        {
+          name: "connector-doctor",
+          lifecycle: "retired",
+          presentation: { category: "productivity" },
+        },
+      ]),
+    );
+    expect(removed.body).toMatchObject({
+      outcome: "accepted",
+      diagnostics: [],
+    });
+    await executeAutomationCron();
+    await expect(
+      readMorningBriefAutomations(actor, workflowId),
+    ).resolves.toHaveLength(0);
+    await syncDeployedCatalog();
+    await executeAutomationCron();
+    await expect(
+      readMorningBriefAutomations(actor, workflowId),
+    ).resolves.toMatchObject([
+      {
+        enabled: true,
+        official: { intendedEnabled: true, reconciliationStatus: "current" },
+      },
+    ]);
+    await accept(
+      installationClient().reconfigure({
+        headers,
+        params: { workflowId },
+        body: {
+          blueprints: [{ blueprintKey: "daily-delivery", bindings: [] }],
+        },
+      }),
+      [200],
+    );
+    await accept(
+      installationClient().uninstall({ headers, params: { workflowId } }),
+      [204],
+    );
+    expect((await readBriefPreference(actor)).body).toMatchObject({
+      enabled: false,
+      status: "paused",
+    });
+  });
+
+  it("publishes one choice for overlapping Morning Brief disable requests", async () => {
+    const { actor } = await prepareBriefMember();
+    await initializeBriefMember(actor, "Asia/Shanghai");
+    const headers = authHeaders(actor);
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    const [installation] = await listMorningBriefInstallations(actor);
+    if (!installation) {
+      throw new Error("Expected the preference installation");
+    }
+    const [automation] = await readMorningBriefAutomations(
+      actor,
+      installation.id,
+    );
+    if (!automation) {
+      throw new Error("Expected the Morning Brief automation");
+    }
+    const responses = await Promise.all([
+      accept(
+        automationClient().disable({ headers, params: { id: automation.id } }),
+        [200, 409],
+      ),
+      accept(
+        automationClient().disable({ headers, params: { id: automation.id } }),
+        [200, 409],
+      ),
+    ]);
+    expect(
+      responses.some((response) => {
+        return response.status === 200;
+      }),
+    ).toBeTruthy();
+    await expect(
+      readMorningBriefAutomations(actor, installation.id),
+    ).resolves.toMatchObject([
+      { enabled: false, nextRunAt: null, official: { intendedEnabled: false } },
+    ]);
+    await accept(
+      installationClient().uninstall({
+        headers,
+        params: { workflowId: installation.id },
+      }),
+      [204],
+    );
+    expect((await readBriefPreference(actor)).body).toMatchObject({
+      enabled: false,
+      status: "paused",
+    });
+  });
+
   it("preserves enable intent while timezone is unavailable", async () => {
     const missingTimezone = await workflowBdd.setupWorkflowOrg();
     const timezoneHeaders = authHeaders(missingTimezone.actor);
