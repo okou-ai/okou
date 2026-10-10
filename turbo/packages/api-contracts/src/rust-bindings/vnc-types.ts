@@ -13,6 +13,35 @@ function identityDocs(name: string): RustTypeDeclarationDoc {
   };
 }
 
+function principalDocs(name: string): RustTypeDeclarationDoc {
+  return {
+    rustTypeName: name,
+    rustDoc: [
+      "Explicit case-preserving Kerberos identity; native validates K1 budgets.",
+    ],
+    fields: {
+      realm: ["Exact realm, never discovered from a hostname."],
+      components: [
+        "Ordered bounded principal components, never a path or ambient identity.",
+      ],
+    },
+  };
+}
+function kdcTransportDocs(name: string): RustTypeDeclarationDoc {
+  return {
+    rustTypeName: name,
+    rustDoc: ["Independently authorized exact KDC transport snapshot."],
+    fields: {
+      connectionId: ["Exact separately granted saved SSH UUID."],
+      generation: ["Current SSH generation, independently fenced from RFB."],
+    },
+    variants: {
+      direct: ["Exact saved public-network KDC route."],
+      ssh: ["Exact independently authorized SSH-to-loopback KDC route."],
+    },
+  };
+}
+
 export const vncTypeBindings = [
   {
     schema: runnerVncContract.resolve.body,
@@ -41,6 +70,9 @@ export const vncTypeBindings = [
           authMethod: ["Supported authentication method."],
           securityType: ["Supported security policy."],
           transportType: ["Supported transport for this exact tuple."],
+          kdcTransportType: [
+            "Absent for legacy, none for offline tickets, exact direct/ssh for online sources.",
+          ],
         },
       },
       {
@@ -53,6 +85,9 @@ export const vncTypeBindings = [
           vnc_password: ["Classic VNC password authentication."],
           username_password: ["Plain username/password authentication."],
           qemu_scram_sha256: ["QEMU-specific SCRAM-SHA-256 authentication."],
+          qemu_kerberos_ticket: ["Canonical selected-service ticket; no KDC."],
+          qemu_kerberos_keytab: ["Explicit online canonical keytab."],
+          qemu_kerberos_password: ["Explicit online password."],
           rsa_aes_password: [
             "RSA-AES password-only subtype with 255-byte fields.",
           ],
@@ -84,6 +119,9 @@ export const vncTypeBindings = [
           x509_vnc: ["VeNCrypt X509Vnc."],
           x509_plain: ["VeNCrypt X509Plain."],
           qemu_x509_sasl: ["QEMU X509SASL subtype 263 with verified TLS."],
+          qemu_x509_gssapi: [
+            "Verified QEMU263 with exact GSSAPI and no inner layer.",
+          ],
           rsa_aes_ra2: ["Pinned RSA-AES type 5; full-session AES-128 EAX."],
           rsa_aes_ra2_256: [
             "Pinned RSA-AES type 129; full-session AES-256 EAX.",
@@ -105,6 +143,15 @@ export const vncTypeBindings = [
         },
       },
       {
+        rustTypeName: "ResolveRequestSupportedProfileKdcTransportType",
+        rustDoc: ["KDC transport for this exact source/RFB/KDC tuple."],
+        variants: {
+          none: ["Offline service ticket; no KDC operation."],
+          direct: ["Separate exact public KDC route."],
+          ssh: ["Separate authorized SSH-loopback KDC route."],
+        },
+      },
+      {
         rustTypeName: "ResolveRequestSupportedProfileTransportType",
         rustDoc: ["Transport supported for this exact profile tuple."],
         variants: {
@@ -123,8 +170,40 @@ export const vncTypeBindings = [
     fieldTypeOverrides: {
       password: `crate::SecretUtf8Text<${VNC_USERNAME_PASSWORD_MAX_BYTES}>`,
       privateKeyPkcs8Der: "crate::SecretUtf8Text<24576>",
+      ticketCache: "crate::SecretUtf8Text<87384>",
+      keytab: "crate::SecretUtf8Text<87384>",
     },
     declarations: [
+      principalDocs(
+        "ResolveResponseResolvedTransportAuthenticationQemuKerberosTicketInitiator",
+      ),
+      principalDocs(
+        "ResolveResponseResolvedTransportAuthenticationQemuKerberosTicketService",
+      ),
+      principalDocs(
+        "ResolveResponseResolvedTransportSecurityQemuX509GssapiService",
+      ),
+      kdcTransportDocs(
+        "ResolveResponseResolvedTransportSecurityQemuX509GssapiKdcTransport",
+      ),
+      {
+        rustTypeName:
+          "ResolveResponseResolvedTransportSecurityQemuX509GssapiKdc",
+        rustDoc: [
+          "Online-only bounded KDC policy, independent of RFB transport.",
+        ],
+        fields: {
+          host: ["Exact saved KDC host; never provided by native."],
+          port: ["Exact saved TCP KDC port."],
+          transport: ["Current separately authorized route snapshot."],
+          ticketLifetimeSeconds: [
+            "Requested bounded lifetime, not a server guarantee.",
+          ],
+          renewableLifetimeSeconds: [
+            "Requested bounded renew-till policy; never extends active RFB.",
+          ],
+        },
+      },
       {
         rustTypeName: "ResolveResponse",
         rustDoc: [
@@ -134,6 +213,9 @@ export const vncTypeBindings = [
           host: ["Current private destination."],
           port: ["Current destination port."],
           generation: ["Current saved configuration generation."],
+          credentialRevision: [
+            "Kerberos-only source revision, mandatory when admitting a Kerberos profile.",
+          ],
           serverName: [
             "Certificate identity for X509 transport handoffs; absent for Apple DH.",
           ],
@@ -150,6 +232,9 @@ export const vncTypeBindings = [
         variants: {
           unavailable: [
             "Current authority is unavailable; no credential delivered.",
+          ],
+          resolved_kerberos: [
+            "Current explicit Kerberos source, independent KDC route and source revision.",
           ],
           unsupported_profile: [
             "Runner does not support the exact saved profile.",
@@ -202,6 +287,12 @@ export const vncTypeBindings = [
           privateKeyPkcs8Der: [
             "Base64-encoded unencrypted PKCS#8 key, private and zeroizing.",
           ],
+          initiator: ["Explicit saved initiator identity."],
+          service: ["Exact service selected by offline import."],
+          ticketCache: [
+            "Canonical service-only FILE4 cache, zeroizing and never guest-visible.",
+          ],
+          keytab: ["Canonical FILEkeytab2, zeroizing and never guest-visible."],
         },
         variants: {
           none: ["No inner client authentication or secret."],
@@ -217,6 +308,15 @@ export const vncTypeBindings = [
           ],
           qemu_scram_sha256: [
             "Bounded ASCII SCRAM-SHA-256 credential for QEMU X509SASL.",
+          ],
+          qemu_kerberos_ticket: [
+            "Explicit canonical offline ticket; no KDC fallback.",
+          ],
+          qemu_kerberos_keytab: [
+            "Explicit same-source online keytab acquisition.",
+          ],
+          qemu_kerberos_password: [
+            "Explicit same-source online password acquisition.",
           ],
           apple_dh_username_password: [
             "Apple DH username/password fields; the Runner validates 63-byte bounds.",
@@ -245,6 +345,10 @@ export const vncTypeBindings = [
           serverKeySha256: [
             "Independent full RSA wire-key SHA256, never CA trust.",
           ],
+          service: [
+            "Exact same-realm vnc service, separate from TCP/TLS identities.",
+          ],
+          kdc: ["Absent offline; separately authorized route/policy online."],
         },
         variants: {
           rsa_aes_ra2: ["Pinned type 5; full-session AES-128 EAX."],
@@ -260,6 +364,9 @@ export const vncTypeBindings = [
           x509_plain: ["VeNCrypt X509Plain with verified TLS."],
           qemu_x509_sasl: [
             "QEMU X509SASL subtype 263 and SCRAM-SHA-256 over verified TLS.",
+          ],
+          qemu_x509_gssapi: [
+            "Verified QEMU263/GSSAPI/no inner layer; never SCRAM or anonymous TLS.",
           ],
           apple_vnc_password: [
             "Apple bare type 2; only the separately verified SSH channel protects the RFB session.",
@@ -306,9 +413,14 @@ export const vncTypeBindings = [
             "Configuration generation returned by credential resolution.",
           ],
           expectedTransport: ["Expected explicit transport snapshot."],
+          expectedKdcTransport: [
+            "Online-only independent KDC authority snapshot.",
+          ],
+          expectedCredentialRevision: ["Kerberos-only pinned source revision."],
         },
       },
       identityDocs("CheckRequestRunnerIdentity"),
+      kdcTransportDocs("CheckRequestExpectedKdcTransport"),
       {
         rustTypeName: "CheckRequestExpectedTransport",
         rustDoc: ["Expected secret-free SSH authority snapshot."],

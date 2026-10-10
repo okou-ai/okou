@@ -1,4 +1,8 @@
 import { runnerVncContract } from "@okouai/api-contracts/contracts/runner-vnc";
+import {
+  VNC_KERBEROS_VERSION_HEADER,
+  VNC_KERBEROS_VERSION,
+} from "@okouai/api-contracts/contracts/vnc-kerberos";
 import { command } from "ccstate";
 import { runnerAuth$ } from "../auth/runner-auth";
 import { authorization$, setResHeader$ } from "../context/hono";
@@ -50,6 +54,7 @@ const resolve$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const { runId } = get(pathParamsOf(runnerVncContract.resolve));
   const result = await set(resolveRunnerVnc$, { runId, ...body.data }, signal);
+  set(setResHeader$, VNC_KERBEROS_VERSION_HEADER, VNC_KERBEROS_VERSION);
   return { status: 200 as const, body: result };
 });
 

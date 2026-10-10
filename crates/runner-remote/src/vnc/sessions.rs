@@ -77,10 +77,35 @@ struct Capacity {
     _run: OwnedSemaphorePermit,
 }
 
+/// Actual helper/DNS custody; completion is emitted only after the last owner drops.
+struct NativeWork {
+    root: Option<tempfile::TempDir>,
+    _capacity: Arc<Capacity>,
+    _operation: Arc<OwnedSemaphorePermit>,
+    completion: Option<tokio::sync::oneshot::Sender<()>>,
+}
+impl Drop for NativeWork {
+    fn drop(&mut self) {
+        if self.root.take().is_some_and(|root| root.close().is_err()) {
+            // Unknown root cleanup is not completion and cannot release capacity.
+            std::mem::forget(Arc::clone(&self._capacity));
+            std::mem::forget(Arc::clone(&self._operation));
+            if let Some(completion) = self.completion.take() {
+                std::mem::forget(completion);
+            }
+            return;
+        }
+        if let Some(completion) = self.completion.take() {
+            let _ = completion.send(());
+        }
+    }
+}
+
 pub(super) struct Session {
     pub(super) info: Info,
     pub(super) generation: i64,
     pub(super) transport: Transport,
+    pub(super) kerberos: Option<super::kerberos::Binding>,
     pub(super) cancel: CancellationToken,
     pub(super) closed: CancellationToken,
     pub(super) engine: tokio::sync::Mutex<Engine>,
@@ -163,11 +188,28 @@ impl Run {
                 .try_acquire_owned()
                 .map_err(|_| Failure::ResourceExhausted)?,
         });
+        let root = tempfile::Builder::new()
+            .prefix("okou-vnc-kerberos-")
+            .tempdir()
+            .map_err(|_| Failure::Unavailable)?;
+        let (completion, done) = tokio::sync::oneshot::channel();
+        let private_root = root.path().to_owned();
+        let native_work = Arc::new(NativeWork {
+            root: Some(root),
+            _capacity: Arc::clone(&capacity),
+            _operation: Arc::clone(&operation),
+            completion: Some(completion),
+        });
+        self.tasks.spawn(async move {
+            let _ = done.await;
+        });
+        let native_owner: Arc<dyn kerberos_worker::WorkOwner> = native_work.clone();
         let credential = scope
             .wait(self.runtime.authority.resolve(
                 self.id,
                 request.connection_id,
                 self.ssh.is_some(),
+                Some((&private_root, Arc::clone(&native_owner), scope.deadline)),
             ))
             .await??;
         let session_cancel = self.cancel.child_token();
@@ -215,9 +257,53 @@ impl Run {
                 DirectOrSshStream::Ssh(Box::new(stream))
             }
         };
+        let kerberos = match &credential.authentication {
+            Authentication::Kerberos { binding, .. } => Some(*binding),
+            _ => None,
+        };
         let authenticated = scope
             .wait_deadline_aware(async {
                 match credential.authentication {
+                    Authentication::Kerberos {
+                        server_name,
+                        roots,
+                        credentials,
+                        policy,
+                        binding,
+                        kdc,
+                    } => {
+                        let realm = credentials.realm().to_owned();
+                        let mut caller = super::kerberos::Caller {
+                            runtime: Arc::clone(&self.runtime),
+                            run: self.id,
+                            connection: request.connection_id,
+                            generation: credential.generation,
+                            rfb: transport,
+                            binding,
+                            kdc,
+                            realm,
+                            scope: scope.clone(),
+                            ssh: self.ssh.clone(),
+                            tasks: self.tasks.clone(),
+                            owner: Arc::clone(&native_owner),
+                            exchanges: 0,
+                            total: 0,
+                        };
+                        Box::pin(rfb_client::authenticate_qemu_gssapi(
+                            stream,
+                            &server_name,
+                            roots,
+                            rfb_client::QemuGssapiAuthentication {
+                                credentials,
+                                ticket_policy: policy,
+                                private_root: private_root.clone(),
+                                expires_at: Instant::now() + std::time::Duration::from_secs(7200),
+                            },
+                            &mut caller,
+                            scope.deadline,
+                        ))
+                        .await
+                    }
                     Authentication::X509 {
                         server_name,
                         authentication,
@@ -300,11 +386,12 @@ impl Run {
         let engine = Engine::new(connection);
         let expires = engine.expires_at();
         scope
-            .wait(self.runtime.authority.check(
+            .wait(self.runtime.authority.check_kerberos(
                 self.id,
                 request.connection_id,
                 credential.generation,
                 transport,
+                kerberos,
             ))
             .await??;
         scope.check()?;
@@ -319,6 +406,7 @@ impl Run {
             },
             generation: credential.generation,
             transport,
+            kerberos,
             cancel: session_cancel,
             closed: CancellationToken::new(),
             engine: tokio::sync::Mutex::new(engine),
@@ -339,11 +427,12 @@ impl Run {
 
     pub(super) async fn authorize(&self, session: &Session, scope: &Scope) -> Result<(), Failure> {
         let result = scope
-            .wait(self.runtime.authority.check(
+            .wait(self.runtime.authority.check_kerberos(
                 self.id,
                 session.info.connection_id,
                 session.generation,
                 session.transport,
+                session.kerberos,
             ))
             .await
             .and_then(|r| r);

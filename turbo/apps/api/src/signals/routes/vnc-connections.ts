@@ -12,7 +12,12 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { safeSync } from "../utils";
 import { inspectVncRsaPublicKey } from "../services/vnc-rsa-key.utils";
 import { authRoute } from "../auth/auth-route";
-import { setResHeader$ } from "../context/hono";
+import { setResHeader$, vncProfileVersion$ } from "../context/hono";
+import {
+  isVncKerberosMethod,
+  VNC_KERBEROS_VERSION_HEADER,
+  VNC_KERBEROS_VERSION,
+} from "@okouai/api-contracts/contracts/vnc-kerberos";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { clerk$ } from "../external/clerk";
 import type { RouteEntry } from "../route-entry";
@@ -54,6 +59,7 @@ const ownerAuth = {
 
 const vncAdmission$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "no-store");
+  set(setResHeader$, VNC_KERBEROS_VERSION_HEADER, VNC_KERBEROS_VERSION);
   const auth = get(organizationAuthContext$);
   const featureContext = await get(
     userFeatureSwitchContext(auth.orgId, auth.userId),
@@ -87,14 +93,24 @@ function mapFailure(result: {
   }
 }
 
-const listCredentials$ = command(async ({ set }, signal: AbortSignal) => {
+const listCredentials$ = command(async ({ get, set }, signal: AbortSignal) => {
   const context = await set(vncAdmission$, signal);
   if (!context) {
     return unavailable;
   }
   const credentials = await set(listVncCredentials$, context.owner, signal);
   signal.throwIfAborted();
-  return { status: 200 as const, body: { credentials } };
+  return {
+    status: 200 as const,
+    body: {
+      credentials:
+        get(vncProfileVersion$) === VNC_KERBEROS_VERSION
+          ? credentials
+          : credentials.filter((value) => {
+              return !isVncKerberosMethod(value.authMethod);
+            }),
+    },
+  };
 });
 
 const createCredential$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -181,14 +197,24 @@ const deleteCredential$ = command(async ({ get, set }, signal: AbortSignal) => {
     : mapFailure(result);
 });
 
-const listConnections$ = command(async ({ set }, signal: AbortSignal) => {
+const listConnections$ = command(async ({ get, set }, signal: AbortSignal) => {
   const context = await set(vncAdmission$, signal);
   if (!context) {
     return unavailable;
   }
   const connections = await set(listVncConnections$, context.owner, signal);
   signal.throwIfAborted();
-  return { status: 200 as const, body: { connections } };
+  return {
+    status: 200 as const,
+    body: {
+      connections:
+        get(vncProfileVersion$) === VNC_KERBEROS_VERSION
+          ? connections
+          : connections.filter((value) => {
+              return value.security.type !== "qemu_x509_gssapi";
+            }),
+    },
+  };
 });
 
 const summary$ = command(async ({ set }, signal: AbortSignal) => {

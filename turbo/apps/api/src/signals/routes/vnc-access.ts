@@ -7,7 +7,12 @@ import { command } from "ccstate";
 import { vncErrorResponse } from "../../lib/vnc-error";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
-import { setResHeader$ } from "../context/hono";
+import { setResHeader$, vncProfileVersion$ } from "../context/hono";
+import {
+  VNC_KERBEROS_VERSION,
+  VNC_KERBEROS_VERSION_HEADER,
+  isVncKerberosMethod,
+} from "@okouai/api-contracts/contracts/vnc-kerberos";
 import { clerk$ } from "../external/clerk";
 import type { RouteEntry } from "../route-entry";
 import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
@@ -24,6 +29,7 @@ const unavailable = Object.freeze(
 
 const admission$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "no-store");
+  set(setResHeader$, VNC_KERBEROS_VERSION_HEADER, VNC_KERBEROS_VERSION);
   const auth = get(organizationAuthContext$);
   const featureContext = await set(
     loadUserFeatureSwitchContext$,
@@ -52,7 +58,19 @@ const listHosts$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const result = await set(listRunVncHosts$, auth, signal);
   signal.throwIfAborted();
-  return result ? { status: 200 as const, body: result } : unavailable;
+  return result
+    ? {
+        status: 200 as const,
+        body: {
+          hosts:
+            get(vncProfileVersion$) === VNC_KERBEROS_VERSION
+              ? result.hosts
+              : result.hosts.filter((host) => {
+                  return !isVncKerberosMethod(host.authMethod);
+                }),
+        },
+      }
+    : unavailable;
 });
 
 export const vncAccessRoutes: readonly RouteEntry[] = [

@@ -6,6 +6,13 @@ import type {
   VncCredentialSelection,
 } from "@okouai/api-contracts/contracts/vnc-credentials";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
+import {
+  isVncKerberosMethod,
+  kerberosPrincipalSchema,
+  kerberosServicePrincipalSchema,
+  sameKerberosPrincipal,
+} from "@okouai/api-contracts/contracts/vnc-kerberos";
+import { canonicalizeVncKerberos } from "./vnc-kerberos.service";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";
 import { and, asc, count, eq, gte, sql } from "drizzle-orm";
@@ -35,6 +42,9 @@ const vncCredentialMetadata = Object.freeze({
   revision: vncCredentials.revision,
   createdAt: vncCredentials.createdAt,
   updatedAt: vncCredentials.updatedAt,
+  kerberosInitiator: vncCredentials.kerberosInitiator,
+  kerberosService: vncCredentials.kerberosService,
+  kerberosDeclaredExpiresAt: vncCredentials.kerberosDeclaredExpiresAt,
 });
 type Metadata = Pick<
   typeof vncCredentials.$inferSelect,
@@ -69,6 +79,22 @@ function response(
     updatedAt: row.updatedAt.toISOString(),
     hosts,
   };
+  if (isVncKerberosMethod(row.authMethod)) {
+    const initiator = kerberosPrincipalSchema.parse(row.kerberosInitiator);
+    if (row.authMethod === "qemu_kerberos_ticket") {
+      if (row.kerberosDeclaredExpiresAt === null) {
+        throw new Error("Stored Kerberos ticket has no declared expiry");
+      }
+      return {
+        ...common,
+        authMethod: row.authMethod,
+        initiator,
+        service: kerberosServicePrincipalSchema.parse(row.kerberosService),
+        declaredExpiresAt: row.kerberosDeclaredExpiresAt,
+      };
+    }
+    return { ...common, authMethod: row.authMethod, initiator };
+  }
   if (
     row.authMethod === "username_password" ||
     row.authMethod === "qemu_scram_sha256" ||
@@ -142,6 +168,15 @@ export const listVncCredentials$ = command(
 export function validVncClientAuthentication(
   authentication: VncAuthentication,
 ): boolean {
+  if (isVncKerberosMethod(authentication.method)) {
+    const parsed = safeSync(() => {
+      if (!isVncKerberosMethod(authentication.method)) {
+        throw new Error("Invalid Kerberos credential");
+      }
+      return canonicalizeVncKerberos(authentication);
+    });
+    return "ok" in parsed;
+  }
   if (
     authentication.method !== "client_certificate" &&
     authentication.method !== "client_certificate_vnc_password"
@@ -161,6 +196,29 @@ async function encryptAuthentication(
   authentication: VncAuthentication,
   featureContext: FeatureSwitchContext,
 ) {
+  if (
+    authentication.method === "qemu_kerberos_ticket" ||
+    authentication.method === "qemu_kerberos_keytab" ||
+    authentication.method === "qemu_kerberos_password"
+  ) {
+    const canonical = canonicalizeVncKerberos(authentication);
+    return {
+      authMethod: authentication.method,
+      username: null,
+      encryptedPassword: null,
+      encryptedClientIdentity: null,
+      encryptedKerberosCredential: await encryptStoredSecretValue(
+        JSON.stringify(canonical.authentication),
+        featureContext,
+      ),
+      kerberosInitiator: canonical.authentication.initiator,
+      kerberosService:
+        canonical.authentication.method === "qemu_kerberos_ticket"
+          ? canonical.authentication.service
+          : null,
+      kerberosDeclaredExpiresAt: canonical.declaredExpiresAt,
+    };
+  }
   const identity =
     authentication.method === "client_certificate" ||
     authentication.method === "client_certificate_vnc_password"
@@ -171,6 +229,10 @@ async function encryptAuthentication(
       : null;
   return {
     authMethod: authentication.method,
+    encryptedKerberosCredential: null,
+    kerberosInitiator: null,
+    kerberosService: null,
+    kerberosDeclaredExpiresAt: null,
     username:
       authentication.method === "username_password" ||
       authentication.method === "qemu_scram_sha256" ||
@@ -259,7 +321,11 @@ export const createVncCredential$ = command(
       return { ok: true, value: undefined };
     }
     if (!validVncClientAuthentication(args.body.authentication)) {
-      return vncFailure("invalidClientIdentity");
+      return vncFailure(
+        isVncKerberosMethod(args.body.authentication.method)
+          ? "invalidKerberosCredential"
+          : "invalidClientIdentity",
+      );
     }
     const prepared = await prepareCredential(args.body, args.featureContext);
     signal.throwIfAborted();
@@ -318,6 +384,41 @@ function rejectCredentialUpdate(
   return undefined;
 }
 
+function validKerberosRotation(
+  initial: Metadata,
+  authentication: VncAuthentication | undefined,
+) {
+  if (
+    !authentication ||
+    !isVncKerberosMethod(initial.authMethod) ||
+    !isVncKerberosMethod(authentication.method)
+  ) {
+    return true;
+  }
+  const parsed = canonicalizeVncKerberos(authentication).authentication;
+  return (
+    initial.kerberosInitiator !== null &&
+    sameKerberosPrincipal(parsed.initiator, initial.kerberosInitiator) &&
+    (parsed.method !== "qemu_kerberos_ticket" ||
+      (initial.kerberosService !== null &&
+        sameKerberosPrincipal(parsed.service, initial.kerberosService)))
+  );
+}
+
+function changesBoundKerberosSource(
+  initial: Metadata,
+  authentication: VncAuthentication | undefined,
+  count: number,
+) {
+  return (
+    count > 0 &&
+    authentication !== undefined &&
+    authentication.method !== initial.authMethod &&
+    (isVncKerberosMethod(authentication.method) ||
+      isVncKerberosMethod(initial.authMethod))
+  );
+}
+
 export const updateVncCredential$ = command(
   async (
     { set },
@@ -346,7 +447,15 @@ export const updateVncCredential$ = command(
       args.body.authentication &&
       !validVncClientAuthentication(args.body.authentication)
     ) {
-      return vncFailure("invalidClientIdentity");
+      return vncFailure(
+        isVncKerberosMethod(args.body.authentication.method)
+          ? "invalidKerberosCredential"
+          : "invalidClientIdentity",
+      );
+    }
+    const authentication = args.body.authentication;
+    if (!validKerberosRotation(initial, authentication)) {
+      return vncFailure("profileMismatch");
     }
     const hosts = await db
       .select({
@@ -359,6 +468,9 @@ export const updateVncCredential$ = command(
       .where(referencingConnections(owner, args.credentialId))
       .orderBy(asc(vncConnections.id));
     signal.throwIfAborted();
+    if (changesBoundKerberosSource(initial, authentication, hosts.length)) {
+      return vncFailure("profileMismatch");
+    }
     const rejected = rejectCredentialUpdate(
       initial.revision,
       args.body.authentication?.method,

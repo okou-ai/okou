@@ -2,6 +2,10 @@ import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import {
+  kerberosKdcSchema,
+  kerberosServicePrincipalSchema,
+} from "./vnc-kerberos";
+import {
   VNC_DISPLAY_NAME_MAX_LENGTH,
   vncCredentialSelectionSchema,
 } from "./vnc-credentials";
@@ -71,6 +75,15 @@ const vncQemuX509SaslSecurityVariantSchema = z
     serverName: hostSchema.optional(),
   })
   .strict();
+export const vncQemuGssapiSecuritySchema = z
+  .object({
+    type: z.literal("qemu_x509_gssapi"),
+    trust: vncTrustSchema,
+    serverName: hostSchema.optional(),
+    service: kerberosServicePrincipalSchema,
+    kdc: kerberosKdcSchema.optional(),
+  })
+  .strict();
 const vncAppleVncPasswordSecurityVariantSchema = z
   .object({ type: z.literal("apple_vnc_password") })
   .strict();
@@ -92,6 +105,7 @@ export const vncX509PlainSecuritySchema = z.discriminatedUnion("type", [
   vncX509PlainSecurityVariantSchema,
 ]);
 const vncCredentialSecuritySchema = z.discriminatedUnion("type", [
+  vncQemuGssapiSecuritySchema,
   ...vncRsaAesSecuritySchema.options,
   vncX509NoneSecurityVariantSchema,
   vncX509VncSecurityVariantSchema,
@@ -103,6 +117,7 @@ const vncCredentialSecuritySchema = z.discriminatedUnion("type", [
   vncAppleRsaSrpSecurityVariantSchema,
 ]);
 export const vncSecuritySchema = z.discriminatedUnion("type", [
+  vncQemuGssapiSecuritySchema,
   ...vncRsaAesSecuritySchema.options,
   vncX509NoneSecurityVariantSchema,
   vncX509VncSecurityVariantSchema,
@@ -171,6 +186,13 @@ export const vncConnectionMetadataSchema = z
     rsaAesAuthentication: vncRsaAesAuthenticationMethodSchema.optional(),
     clientCertificateAuthentication: z
       .enum(["client_certificate", "client_certificate_vnc_password"])
+      .optional(),
+    kerberosAuthentication: z
+      .enum([
+        "qemu_kerberos_ticket",
+        "qemu_kerberos_keytab",
+        "qemu_kerberos_password",
+      ])
       .optional(),
     security: vncCredentialSecuritySchema,
     generation: generationSchema,

@@ -1,4 +1,5 @@
 import { useGet, useLoadable, useSet } from "ccstate-react";
+import { KerberosConnectionFields } from "./vnc-kerberos-fields.tsx";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
@@ -280,6 +281,7 @@ function VncForm({
                   <VncTransportFields disabled={disabled} />
                   <VncEndpointFields connection={dialog.connection} />
                   <VncTlsFields disabled={disabled} />
+                  <KerberosConnectionFields connection={dialog.connection} />
                 </fieldset>
                 {editor.profile !== "x509_none" && (
                   <VncCredentialSelection disabled={disabled} />

@@ -99,6 +99,7 @@ try {
     "1296_little_electro.sql",
     "1304_bright_grim_reaper.sql",
     "1313_rsa_aes_vnc.sql",
+    "1372_vnc_kerberos_admission.sql",
   ]) {
     await client.query(
       (await migration(name)).replaceAll('"public".', `"${schema}".`),
@@ -671,6 +672,59 @@ try {
   await rejects(
     "UPDATE vnc_connections SET rsa_server_key_sha256=repeat('a',64) WHERE id='00000000-0000-4000-8000-000000000003'",
     { code: "23514", constraint: "chk_vnc_connections_rsa_pin" },
+  );
+  await client.query(`
+    INSERT INTO ssh_connections (id,org_id,user_id)
+      VALUES ('00000000-0000-4000-8000-00000000b015','org','owner');
+    INSERT INTO vnc_credentials (id,org_id,user_id,name,auth_method,encrypted_kerberos_credential,kerberos_initiator)
+      VALUES ('00000000-0000-4000-8000-00000000b013','org','owner','Online Kerberos','qemu_kerberos_password','synthetic-ciphertext',
+        '{"realm":"EXAMPLE.INVALID","components":["alice"]}');
+    INSERT INTO vnc_connections (id,org_id,user_id,display_name,host,port,credential_id,auth_method,security_type,trust_mode,kerberos_service,
+      kdc_transport_type,kdc_host,kdc_port,kerberos_ticket_lifetime_seconds,kerberos_renewable_lifetime_seconds)
+      VALUES ('00000000-0000-4000-8000-00000000b014','org','owner','Kerberos','desktop.example.com',5900,
+        '00000000-0000-4000-8000-00000000b013','qemu_kerberos_password','qemu_x509_gssapi','system',
+        '{"realm":"EXAMPLE.INVALID","components":["vnc","desktop.example.com"]}', 'direct','kdc.example.com',88,1200,7200);
+  `);
+  await rejects(
+    "UPDATE vnc_credentials SET encrypted_password='wrong-source' WHERE id='00000000-0000-4000-8000-00000000b013'",
+    { code: "23514", constraint: "chk_vnc_credentials_password" },
+  );
+  await rejects(
+    'UPDATE vnc_credentials SET kerberos_initiator=\'{"realm":"EXAMPLE.INVALID","components":[false]}\' WHERE id=\'00000000-0000-4000-8000-00000000b013\'',
+    { code: "23514", constraint: "chk_vnc_credentials_kerberos_initiator" },
+  );
+  await rejects(
+    'UPDATE vnc_credentials SET kerberos_initiator=\'{"realm":"EXAMPLE.INVALID","components":["alice"],"ambient":true}\' WHERE id=\'00000000-0000-4000-8000-00000000b013\'',
+    { code: "23514", constraint: "chk_vnc_credentials_kerberos_initiator" },
+  );
+  await rejects(
+    "UPDATE vnc_connections SET kerberos_ticket_lifetime_seconds=7201 WHERE id='00000000-0000-4000-8000-00000000b014'",
+    { code: "23514", constraint: "chk_vnc_connections_kdc" },
+  );
+  await rejects(
+    "UPDATE vnc_connections SET kdc_transport_type=NULL WHERE id='00000000-0000-4000-8000-00000000b014'",
+    { code: "23514", constraint: "chk_vnc_connections_kdc" },
+  );
+  await rejects(
+    "UPDATE vnc_connections SET kdc_transport_type='ssh',kdc_host='127.0.0.1',kdc_ssh_connection_id='00000000-0000-4000-8000-000000000011' WHERE id='00000000-0000-4000-8000-00000000b014'",
+    { code: "23503", constraint: "vnc_connections_kdc_ssh_owner_fk" },
+  );
+  await client.query(
+    "UPDATE vnc_connections SET kdc_transport_type='ssh',kdc_host='127.0.0.1',kdc_ssh_connection_id='00000000-0000-4000-8000-00000000b015' WHERE id='00000000-0000-4000-8000-00000000b014'",
+  );
+  await rejects(
+    "DELETE FROM ssh_connections WHERE id='00000000-0000-4000-8000-00000000b015'",
+    { code: "23001", constraint: "vnc_connections_kdc_ssh_owner_fk" },
+  );
+  await rejects(
+    'UPDATE vnc_connections SET kerberos_service=\'{"realm":"EXAMPLE.INVALID","components":["host","desktop.example.com"]}\' WHERE id=\'00000000-0000-4000-8000-00000000b014\'',
+    { code: "23514", constraint: "chk_vnc_connections_kerberos_service" },
+  );
+  await client.query(
+    "DELETE FROM vnc_connections WHERE id='00000000-0000-4000-8000-00000000b014'",
+  );
+  await client.query(
+    "DELETE FROM vnc_credentials WHERE id='00000000-0000-4000-8000-00000000b013'",
   );
   await client.query("DELETE FROM vnc_connections");
   await client.query("DELETE FROM ssh_connections");

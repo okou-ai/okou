@@ -979,6 +979,108 @@ test("QEMU SCRAM creates only its explicit X509SASL pair and keeps its password 
   expect(document.body.textContent).not.toContain(" secret ");
 });
 
+test("acknowledged Kerberos password saves independent explicit identities and KDC policy", async () => {
+  mockSettings({ connections: [], credentials: [] });
+  context.mocks.http.get("*/api/vnc/connections", () => {
+    return HttpResponse.json(
+      { connections: [] },
+      {
+        headers: { "X-VNC-Profile-Version": "kerberos-v1" },
+      },
+    );
+  });
+  const initiator = { realm: "EXAMPLE.INVALID", components: ["Alice"] };
+  const security = {
+    type: "qemu_x509_gssapi" as const,
+    trust: { mode: "system" as const },
+    service: {
+      realm: initiator.realm,
+      components: ["vnc", "desktop.identity.invalid"],
+    },
+    kdc: {
+      host: "kdc.example.com",
+      port: 88,
+      transport: { type: "direct" as const },
+      ticketLifetimeSeconds: 1200,
+      renewableLifetimeSeconds: 7200,
+    },
+  };
+  const requests: unknown[] = [];
+  context.mocks.api(vncConnectionsContract.create, ({ body, respond }) => {
+    requests.push(body);
+    return respond(201, {
+      ...qemuHost,
+      kerberosAuthentication: "qemu_kerberos_password",
+      security,
+    });
+  });
+  await openAddHostPage();
+  const dialog = await screen.findByRole("dialog", { name: "Add host" });
+  await fillHost(dialog);
+  await choose(dialog, "Security profile", "Kerberos · password");
+  await choose(dialog, "Credential", "Create new credential");
+  await fill(
+    within(dialog).getByLabelText("Credential name"),
+    "Explicit identity",
+  );
+  await fill(within(dialog).getByLabelText("Initiator realm"), initiator.realm);
+  await fill(within(dialog).getByLabelText("Initiator components"), "Alice");
+  await fill(
+    within(dialog).getByLabelText("VNC service realm"),
+    initiator.realm,
+  );
+  await fill(
+    within(dialog).getByLabelText("VNC service instance"),
+    "desktop.identity.invalid",
+  );
+  await fill(within(dialog).getByLabelText("KDC host"), "kdc.example.com");
+  const password = within(dialog).getByLabelText("Password");
+  await fill(password, " exact kerb ");
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(requests).toStrictEqual([
+    {
+      id: expect.any(String),
+      displayName: "Second desktop",
+      host: "second.example.com",
+      port: 5900,
+      transport: { type: "direct" },
+      security,
+      credential: {
+        create: {
+          name: "Explicit identity",
+          authentication: {
+            method: "qemu_kerberos_password",
+            initiator,
+            password: " exact kerb ",
+          },
+        },
+      },
+    },
+  ]);
+  expect(password).toHaveValue("");
+});
+
+test("Kerberos profiles remain hidden without an API version acknowledgement", async () => {
+  mockSettings({ connections: [], credentials: [] });
+  await openAddHostPage();
+  const dialog = await screen.findByRole("dialog", { name: "Add host" });
+  await userEvent.click(
+    await within(dialog).findByLabelText("Security profile"),
+  );
+  expect(
+    screen.queryByRole("option", { name: "Kerberos · password" }),
+  ).toBeNull();
+  expect(
+    screen.queryByRole("option", { name: "Kerberos · keytab" }),
+  ).toBeNull();
+  expect(
+    screen.queryByRole("option", { name: "Kerberos · service ticket" }),
+  ).toBeNull();
+});
+
 test("Profile selection filters credentials and clears incompatible choices", async () => {
   mockSettings({
     connections: [],

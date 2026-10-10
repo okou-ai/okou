@@ -1,6 +1,7 @@
 //! Run-owned VNC sessions. Guest requests carry saved IDs, never authority.
 
 mod authority;
+mod kerberos;
 mod network;
 mod operations;
 mod protocol;
@@ -45,12 +46,17 @@ enum Failure {
     StaleGeometry,
     Disconnected,
     AuthenticationFailed,
+    DeliveryUnknown,
 }
 
 impl From<rfb_client::Error> for Failure {
     fn from(error: rfb_client::Error) -> Self {
         use rfb_client::Error;
         match error {
+            Error::Kerberos(kerberos_worker::Error::DeliveryUnknown) => Self::DeliveryUnknown,
+            Error::Kerberos(kerberos_worker::Error::Authority) => Self::Authority,
+            Error::Kerberos(kerberos_worker::Error::Unavailable) => Self::Unavailable,
+            Error::Kerberos(kerberos_worker::Error::Expired) => Self::AuthenticationFailed,
             Error::InvalidInput => Self::InvalidInput,
             Error::StaleGeometry => Self::StaleGeometry,
             Error::SessionClosed | Error::Io(_) => Self::Disconnected,
