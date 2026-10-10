@@ -1387,15 +1387,21 @@ const materializeBrowserFileChoice$ = command(
       if (!upload) {
         return null;
       }
-      const buffer = await get(
-        downloadS3BufferWithMaxBytes(
-          env("R2_USER_STORAGES_BUCKET_NAME"),
-          upload.objectKey,
-          BROWSER_USER_ACTION_MAX_FILE_BYTES,
-          signal,
+      const downloaded = await settle(
+        get(
+          downloadS3BufferWithMaxBytes(
+            env("R2_USER_STORAGES_BUCKET_NAME"),
+            upload.objectKey,
+            BROWSER_USER_ACTION_MAX_FILE_BYTES,
+            signal,
+          ),
         ),
       );
       signal.throwIfAborted();
+      if (!downloaded.ok) {
+        return null;
+      }
+      const buffer = downloaded.value;
       if (
         upload.expiresAt <= nowDate() ||
         buffer.length !== upload.size ||
@@ -1901,17 +1907,20 @@ export const applyBrowserUserAction$ = command(
       | BrowserUseUserActionExactTarget["fields"][number]["fileChoice"]
       | undefined;
     if (submittedFile && "files" in submittedFile) {
-      const materialized = await settle(
-        set(materializeBrowserFileChoice$, located, submittedFile, signal),
+      const materialized = await set(
+        materializeBrowserFileChoice$,
+        located,
+        submittedFile,
+        signal,
       );
       signal.throwIfAborted();
-      if (!materialized.ok || !materialized.value) {
+      if (!materialized) {
         return conflict(
           "Temporary Browser file is missing or invalid",
           "BROWSER_USER_ACTION_INVALID_VALUE",
         );
       }
-      fileContents = materialized.value;
+      fileContents = materialized;
     }
 
     const claimed = await claimBrowserUserAction(db, located);
