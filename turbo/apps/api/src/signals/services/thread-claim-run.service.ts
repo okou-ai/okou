@@ -266,10 +266,6 @@ import {
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import {
-  DISABLED_PAID_TOOLS_ENV_VAR,
-  ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
-} from "@okouai/api-contracts/contracts/paid-tools";
-import {
   type RunContextResponse,
   runCreateBodySchema,
 } from "@okouai/api-contracts/contracts/run-routes";
@@ -2919,14 +2915,6 @@ export function createThreadClaimRunObjects(
     }
     return { input, args: buildProductRunArgs(input, promptAndSkills) };
   });
-  const runDisabledPaidToolsSnapshot$ = computed(async (get) => {
-    const selected = bootstrap;
-    return {
-      orgId: selected.orgId,
-      userId: selected.userId,
-      toolIds: await get(selected.disabledPaidTools$),
-    };
-  });
   const runMemberSnapshot$ = computed(async (get) => {
     const selected = bootstrap;
     return {
@@ -2936,7 +2924,6 @@ export function createThreadClaimRunObjects(
     };
   });
   const resources = {
-    disabledPaidTools$: runDisabledPaidToolsSnapshot$,
     member$: runMemberSnapshot$,
   };
   const preCreateModelFeatureSwitchContext$ = computed(async (get) => {
@@ -3663,9 +3650,6 @@ export function createThreadClaimRunObjects(
   const imageModel$ = computed((get) => {
     return get(bootstrap.selectedImageModel$);
   });
-  const disabledPaidTools$ = computed(async (get) => {
-    return (await get(selectedRunContextShared.disabledPaidTools$)).toolIds;
-  });
   const { officialWorkflow$: runContextOfficialWorkflow$ } =
     selectedRunContextShared;
   const { bodyContext$ } = body;
@@ -3685,21 +3669,18 @@ export function createThreadClaimRunObjects(
       timezoneResult,
       imageResult,
       workflowResult,
-      paidToolsResult,
     ] = await Promise.all([
       get(bodyContext$),
       get(runtimeContext$),
       get(runContextUserTimezone$),
       get(imageModel$),
       get(runContextOfficialWorkflow$),
-      get(disabledPaidTools$),
     ]);
     const bodyContext = bodyResult;
     const runtimeContext = runtimeResult;
     const userTimezone = timezoneResult;
     const selectedImageModel = imageResult;
     const officialWorkflowRun = workflowResult;
-    const disabledPaidTools = paidToolsResult;
     if (isRouteError(bodyContext)) {
       return bodyContext;
     }
@@ -3735,7 +3716,6 @@ export function createThreadClaimRunObjects(
       resolved,
     });
     return {
-      disabledPaidTools,
       body,
       resolved,
       framework,
@@ -4707,7 +4687,7 @@ export function createThreadClaimRunObjects(
         get(assembly$),
         get(runIdentity$),
         get(runMemberSnapshot$),
-        get(runDisabledPaidToolsSnapshot$),
+        get(bootstrap.disabledPaidTools$),
         get(bootstrap.bodyEnvironment$),
       ]);
       signal.throwIfAborted();
@@ -7888,10 +7868,10 @@ function claimRunStoredContextDraft<
     {
       ...args,
       body,
-      platformEnvironment: withPaidToolPlatformEnvironment(
-        args,
-        platformEnvironment,
-      ),
+      platformEnvironment: {
+        ...platformEnvironment,
+        ...args.environment.platformEnvironment,
+      },
       runId: args.run.id,
     },
     encrypted.encryptedSecrets,
@@ -8029,7 +8009,6 @@ function buildStoredExecutionSecrets(
 }
 
 interface BuildRunnerJobPayloadInput {
-  readonly disabledPaidTools: readonly string[];
   readonly capturedStorageMounts?: readonly PersistedStorageMount[];
   readonly deferredPiResources?: PreparedPiLaunchResources;
   readonly run: Pick<RunRecord, "id" | "sessionId" | "shouldCreateSession">;
@@ -8083,49 +8062,6 @@ function withPiMemoryRecallEpoch(
 
 function preparedRunnerGroup(): string {
   return officialRunnerGroup(optionalEnv("RUNNER_DEFAULT_GROUP"));
-}
-
-function withPaidToolPlatformEnvironment(
-  owner: Pick<
-    BuildRunnerJobPayloadInput,
-    "framework" | "modelProvider" | "piSandbox" | "disabledPaidTools"
-  >,
-  platformEnvironment: Record<string, string> | undefined,
-): Record<string, string> {
-  const disabledTools = owner.disabledPaidTools;
-  const environment: Record<string, string> = {
-    ...platformEnvironment,
-    [DISABLED_PAID_TOOLS_ENV_VAR]: JSON.stringify(disabledTools),
-  };
-  if (shouldEnableFrameworkWebSearch(owner, disabledTools)) {
-    environment[ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR] = "true";
-  } else {
-    delete environment[ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR];
-  }
-  return environment;
-}
-
-function shouldEnableFrameworkWebSearch(
-  context: Pick<
-    BuildRunnerJobPayloadInput,
-    "framework" | "modelProvider" | "piSandbox"
-  >,
-  disabledTools: readonly string[],
-): boolean {
-  if (
-    context.piSandbox !== undefined ||
-    !disabledTools.includes("web-search") ||
-    (context.framework !== "claude-code" && context.framework !== "codex")
-  ) {
-    return false;
-  }
-
-  // A successful route without a stored provider uses the framework key
-  // supplied by current runtime sources; a personal subscription does too.
-  return (
-    context.modelProvider === null ||
-    !isBuiltInModelProviderType(context.modelProvider.type)
-  );
 }
 
 /**

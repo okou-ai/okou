@@ -1,3 +1,8 @@
+import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
+import {
+  DISABLED_PAID_TOOLS_ENV_VAR,
+  ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
+} from "@okouai/api-contracts/contracts/paid-tools";
 import { FirewallBaseUrlResolutionError } from "@okouai/connectors/firewall-types";
 import { expandVariables } from "@okouai/core/variable-expander";
 import { computed } from "ccstate";
@@ -73,6 +78,50 @@ export function createModelProviderEnvironmentSignals(
 }
 
 /**
+ * Paid-tool switches: the tools the user disabled, and whether a framework's
+ * native web search replaces Okou web search. That needs Claude Code or Codex
+ * outside Pi, billed to the user's own key or subscription.
+ */
+export function createPaidToolEnvironmentSignals(
+  bootstrap: AgentRunContextSignals,
+  threadContext: ThreadContext,
+) {
+  return computed(async (get): Promise<Environment | EnvironmentError> => {
+    const [disabledTools, framework, modelProvider, selection] =
+      await Promise.all([
+        get(bootstrap.disabledPaidTools$),
+        get(threadContext.providerFramework$),
+        get(threadContext.modelRoute$),
+        get(threadContext.subscriptionSelection$),
+      ]);
+    if (isEnvironmentError(framework)) {
+      return framework;
+    }
+    if (isEnvironmentError(modelProvider)) {
+      return modelProvider;
+    }
+    if (isEnvironmentError(selection)) {
+      return selection;
+    }
+    const frameworkWebSearch =
+      !selection.piExecution &&
+      disabledTools.includes("web-search") &&
+      (framework === "claude-code" || framework === "codex") &&
+      (modelProvider === null ||
+        !isBuiltInModelProviderType(modelProvider.type));
+    return {
+      ...emptyEnvironment(),
+      platformEnvironment: {
+        [DISABLED_PAID_TOOLS_ENV_VAR]: JSON.stringify(disabledTools),
+        ...(frameworkWebSearch
+          ? { [ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR]: "true" }
+          : {}),
+      },
+    };
+  });
+}
+
+/**
  * The Run environment before its Okou token: connector and model-provider
  * sources merged in one place. Model-provider secrets and environment entries
  * override connector ones; its firewall is matched first.
@@ -89,11 +138,19 @@ export function createEnvironmentSignals(
     bootstrap,
     threadContext,
   );
+  const paidToolEnvironment$ = createPaidToolEnvironmentSignals(
+    bootstrap,
+    threadContext,
+  );
   return computed(async (get): Promise<Environment | EnvironmentError> => {
-    const [connector, modelProvider] = await Promise.all([
+    const [connector, modelProvider, paidTools] = await Promise.all([
       get(connectorEnvironment$),
       get(modelProviderEnvironment$),
+      get(paidToolEnvironment$),
     ]);
+    if (isEnvironmentError(paidTools)) {
+      return paidTools;
+    }
     if (isEnvironmentError(connector)) {
       return connector;
     }
@@ -101,8 +158,8 @@ export function createEnvironmentSignals(
       return modelProvider;
     }
     return mergeEnvironments(
-      [connector, modelProvider],
-      [modelProvider, connector],
+      [connector, modelProvider, paidTools],
+      [modelProvider, connector, paidTools],
     );
   });
 }
