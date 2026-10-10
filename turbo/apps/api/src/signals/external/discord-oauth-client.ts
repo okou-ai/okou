@@ -1,7 +1,9 @@
 import { z } from "zod";
+import { logger } from "../../lib/log";
 import { discordSnowflakeSchema, discordUserSchema } from "./discord-client";
 import { safeJsonParse, settle } from "../utils";
 
+const L = logger("DiscordOauthClient");
 const API = "https://discord.com/api/v10";
 export const DISCORD_CONNECT_SCOPES = Object.freeze(["identify", "guilds"]);
 export const DISCORD_INSTALL_SCOPES = Object.freeze([
@@ -71,9 +73,18 @@ async function request<T>(
     return { ok: false, error: "provider_error" };
   }
   const parsed = schema.safeParse(safeJsonParse(text.value));
-  return parsed.success
-    ? { ok: true, data: parsed.data }
-    : { ok: false, error: "invalid_authorization" };
+  if (!parsed.success) {
+    // Schema paths and codes contain no provider values; never log the body,
+    // Zod messages, request headers, or query parameters on this OAuth boundary.
+    L.warn("Discord OAuth response failed validation", {
+      endpoint: path.split("?")[0],
+      issues: parsed.error.issues.slice(0, 8).map((issue) => {
+        return { path: issue.path, code: issue.code };
+      }),
+    });
+    return { ok: false, error: "invalid_authorization" };
+  }
+  return { ok: true, data: parsed.data };
 }
 
 export function exchangeDiscordOauthCode(
@@ -173,6 +184,7 @@ export async function findDiscordOauthGuild(
       return BigInt(candidate.id) > BigInt(largest) ? candidate.id : largest;
     }, after);
     if (next === after) {
+      L.warn("Discord OAuth guild pagination did not advance");
       return { ok: false, error: "invalid_authorization" };
     }
     after = next;
