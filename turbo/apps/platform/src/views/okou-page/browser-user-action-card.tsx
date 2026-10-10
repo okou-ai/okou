@@ -1831,6 +1831,60 @@ function PendingInlineAction({
   );
 }
 
+function RecoveryState({
+  checking,
+  signals,
+  variant,
+}: {
+  readonly checking: boolean;
+  readonly signals: BrowserUserActionSignals;
+  readonly variant: BrowserUserActionCardVariant;
+}) {
+  const { t } = useTranslation();
+  const recoveryRef = useSet(signals.recoveryRef$);
+  const recover = useSet(signals.recover$);
+  return (
+    <div ref={checking ? recoveryRef : undefined} className="contents">
+      <ActionState
+        icon={
+          checking ? (
+            <Loader2 size={20} className="animate-spin" />
+          ) : (
+            <AlertCircle size={20} />
+          )
+        }
+        title={t(($) => {
+          return checking
+            ? $.chat.browserInput.checkingOutcome
+            : $.chat.browserInput.outcomeNotConfirmed;
+        })}
+        description={t(($) => {
+          return checking
+            ? $.chat.browserInput.checkingOutcomeDescription
+            : $.chat.browserInput.outcomeNotConfirmedDescription;
+        })}
+        action={
+          checking ? undefined : (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                recover();
+              }}
+            >
+              {t(($) => {
+                return $.chat.browserInput.checkStatus;
+              })}
+            </Button>
+          )
+        }
+        variant={variant}
+      />
+    </div>
+  );
+}
+
 function BrowserUserActionCardContent({
   callbackDelivered,
   callbackFailed,
@@ -1851,8 +1905,22 @@ function BrowserUserActionCardContent({
   readonly variant: BrowserUserActionCardVariant;
 }) {
   const { t } = useTranslation();
+  const recoveryState = useGet(signals.recoveryState$);
   let content: ReactNode;
-  if (requestLoadable.state === "loading") {
+  if (
+    recoveryState !== "idle" ||
+    (requestLoadable.state === "hasData" &&
+      requestLoadable.data.kind === "action" &&
+      requestLoadable.data.action.state === "applying")
+  ) {
+    content = (
+      <RecoveryState
+        checking={recoveryState !== "exhausted"}
+        signals={signals}
+        variant={variant}
+      />
+    );
+  } else if (requestLoadable.state === "loading") {
     content = (
       <ActionState
         icon={<Loader2 size={20} className="animate-spin" />}
@@ -1929,6 +1997,7 @@ export function BrowserUserActionCard({
   const locallyDelivered = useGet(signals.callbackDelivered$);
   const callbackFailed = useGet(signals.callbackFailed$);
   const busy = useGet(signals.busy$);
+  const recoveryState = useGet(signals.recoveryState$);
   const [continueLoadable, continueAction] = useLoadableSet(signals.continue$);
   const action =
     requestLoadable.state === "hasData" &&
@@ -1938,12 +2007,14 @@ export function BrowserUserActionCard({
   const callbackDelivered =
     locallyDelivered || action?.callbackDelivered === true;
   const needsReturnRefresh =
-    action !== undefined &&
-    ((variant === "inline" &&
-      action.kind === "input" &&
-      action.state === "pending") ||
-      ((action.state === "succeeded" || action.state === "cancelled") &&
-        !callbackDelivered));
+    recoveryState !== "idle" ||
+    (action !== undefined &&
+      ((variant === "inline" &&
+        action.kind === "input" &&
+        action.state === "pending") ||
+        ((action.state === "succeeded" || action.state === "cancelled") &&
+          !callbackDelivered) ||
+        action.state === "applying"));
   const continuing = busy || continueLoadable.state === "loading";
   const onContinue = () => {
     detach(continueAction(pageSignal), Reason.DomCallback);
