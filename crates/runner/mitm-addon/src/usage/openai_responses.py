@@ -681,6 +681,7 @@ class _OpenAIResponsesSseUsageHandler:
     ) -> None:
         self._usage = usage
         self._extractor: JsonSelectiveExtractor | None = None
+        self._event_extractors: dict[bool, JsonSelectiveExtractor] = {}
         self._event_prefix: bytearray | None = None
         self._data_event_type: _ResponsesEventTypeClassification | None = None
         self._discard_event = False
@@ -710,30 +711,33 @@ class _OpenAIResponsesSseUsageHandler:
         self._resolve_event_prefix()
         extractor = self._extractor
         data_event_type = self._data_event_type
-        self._reset_event_state()
         if extractor is None:
+            self._reset_event_state()
             return
         result = extractor.finish()
+        data_event_identity_consistent = result.complete and (
+            (self._on_terminal_usage is None and self._on_observation is None)
+            or extractor.selected_scalar_values_are_consistent(("type",))
+        )
+        data_type = extractor.observed_scalar_for_diagnostics(("type",))
+        # Copy all event diagnostics/identity proof before resetting the parser
+        # so callbacks observe a complete result and the next event starts clean.
+        self._reset_event_state()
         if result.complete:
             terminal_usage = _store_sse_result_values(
                 result.values,
                 self._usage,
                 event_name=event_name,
                 data_event_type=data_event_type,
-                data_event_identity_consistent=(
-                    (self._on_terminal_usage is None and self._on_observation is None)
-                    or extractor.selected_scalar_values_are_consistent(("type",))
-                ),
+                data_event_identity_consistent=data_event_identity_consistent,
                 on_observation=self._on_observation,
             )
             if terminal_usage is not None and self._on_terminal_usage is not None:
                 self._on_terminal_usage(terminal_usage)
             return
         event_type = event_name
-        if event_type is None:
-            data_type = extractor.observed_scalar_for_diagnostics(("type",))
-            if isinstance(data_type, str):
-                event_type = data_type
+        if event_type is None and isinstance(data_type, str):
+            event_type = data_type
         if (
             event_type is not None
             and event_type in openai_responses_events.TERMINAL_EVENTS
@@ -746,25 +750,31 @@ class _OpenAIResponsesSseUsageHandler:
         self._reset_event_state()
 
     def _reset_event_state(self) -> None:
+        if self._extractor is not None:
+            self._extractor.reset()
         self._extractor = None
         self._event_prefix = None
         self._data_event_type = None
         self._discard_event = False
 
     def _start_full_extractor(self, *, include_type: bool = True) -> JsonSelectiveExtractor:
-        self._extractor = JsonSelectiveExtractor(
-            scalar_fields=(
-                _RESPONSES_SSE_SCALAR_FIELDS
-                if include_type
-                else _RESPONSES_SSE_RESPONSE_SCALAR_FIELDS
-            ),
-            scalar_consistency_paths=(
-                {("type",)}
-                if self._on_terminal_usage is not None or self._on_observation is not None
-                else None
-            ),
-            max_work_units=_RESPONSES_MAX_WORK_UNITS,
-        )
+        extractor = self._event_extractors.get(include_type)
+        if extractor is None:
+            extractor = JsonSelectiveExtractor(
+                scalar_fields=(
+                    _RESPONSES_SSE_SCALAR_FIELDS
+                    if include_type
+                    else _RESPONSES_SSE_RESPONSE_SCALAR_FIELDS
+                ),
+                scalar_consistency_paths=(
+                    {("type",)}
+                    if self._on_terminal_usage is not None or self._on_observation is not None
+                    else None
+                ),
+                max_work_units=_RESPONSES_MAX_WORK_UNITS,
+            )
+            self._event_extractors[include_type] = extractor
+        self._extractor = extractor
         return self._extractor
 
     def _should_include_type_scalar(self) -> bool:

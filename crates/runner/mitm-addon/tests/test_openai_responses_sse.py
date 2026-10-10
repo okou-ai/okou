@@ -158,6 +158,28 @@ class TestOpenAIResponsesSseUsageExtractor:
         }
         assert terminal_usage == [usage]
 
+    def test_terminal_identity_consistency_is_scoped_to_each_event(self):
+        terminal_usage: list[dict] = []
+        parse, usage = create_openai_responses_sse_usage_extractor(
+            on_terminal_usage=terminal_usage.append
+        )
+        parse(
+            b"event: response.completed\n"
+            b'data: {"type":"response.failed","type":"response.completed",'
+            b'"response":{"model":"gpt-5.5","usage":{"output_tokens":4}}}\n\n'
+            b"event: response.completed\n"
+            b'data: {"type":"response.completed","response":{"id":"resp_next",'
+            b'"model":"gpt-5.5","usage":{"input_tokens":12,"output_tokens":7}}}\n\n'
+        )
+        expected = {
+            "message_id": "resp_next",
+            "model": "gpt-5.5",
+            "tokens.input": 12,
+            "tokens.output": 7,
+        }
+        assert usage == expected
+        assert terminal_usage == [expected]
+
     @pytest.mark.parametrize(
         ("event_name", "data_type"),
         [
