@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export RUBYOPT="${RUBYOPT:-} -r$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/workflow-test-owners.rb"
+
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 
 ruby -ryaml -rjson -rtmpdir -rfileutils -ropen3 -rdigest - "$REPO_ROOT" <<'RUBY'
 root = ARGV.fetch(0)
-workflow = YAML.load_file("#{root}/.github/workflows/runner-image.yml")
+workflow = load_workflow_test_owners("#{root}/.github/workflows/runner-image.yml")
 compile = workflow.fetch("jobs").fetch("compile")
 steps = compile.fetch("steps")
 by_id = steps.filter_map { |step| [step["id"], step] if step["id"] }.to_h

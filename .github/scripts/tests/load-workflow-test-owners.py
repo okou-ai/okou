@@ -11,8 +11,10 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+from functools import lru_cache
 
 
+@lru_cache(maxsize=None)
 def raw_workflow(root, name):
     return json.loads(subprocess.check_output(
         ["yq", "-o=json", ".", str(root / f".github/workflows/{name}.yml")], text=True))

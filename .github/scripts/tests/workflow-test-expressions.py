@@ -4,9 +4,10 @@ import os
 import re
 import subprocess
 from pathlib import Path
-import importlib.util
+from functools import lru_cache
 
 
+@lru_cache(maxsize=None)
 def workflow(root, name):
     return json.loads(subprocess.check_output(['yq', '-o=json', '.', str(Path(root) / f'.github/workflows/{name}.yml')], text=True))
 

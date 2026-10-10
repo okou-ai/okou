@@ -52,7 +52,10 @@ workflow_paths.each do |path|
   workflow_environment = document.fetch("env", {})
   relative_path = path.delete_prefix("#{repo_root}/")
 
-  if audit_setting(workflow_environment) != "false"
+  # An event wrapper has no worker environment, and its env would not propagate
+  # through workflow_call. Every execution owner is checked in this same scan.
+  execution_owner = document.fetch("jobs", {}).values.any? { |job| job.key?("steps") }
+  if execution_owner && audit_setting(workflow_environment) != "false"
     violations << "#{relative_path} must set top-level npm_config_audit=false"
   end
 

@@ -19,8 +19,10 @@ The two architecture image callers use the same build owner. Selected Crates
 runtime callers use the same preparation/behavior/test owners but depend only on
 their own architecture, not a join with an unselected caller that might still
 wait for the complementary image. Ordinary checks do not wait for host discovery
-or images. Assets/prewarm are never ancestors of consumers or required gates.
-The existing aggregate compiler barrier remains unchanged (#38603).
+or images. Prewarm is never an ancestor of consumers or required gates.
+Main's target-local binary-index publication stays inside the compiler; its
+retired aggregate asset relay is not restored. The existing aggregate compiler
+barrier remains unchanged (#38603).
 
 PR/MQ uses the explicit `current` image handoff and exact caller run ID. Retained
 separate-main callers use explicit `main`, allowed only for push/main; it is not
