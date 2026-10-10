@@ -151,30 +151,6 @@ async function loadTelegramOwnerBinding(
     : undefined;
 }
 
-async function routeStillBindsRun(args: {
-  readonly db: Db;
-  readonly target: TelegramDeliveryTarget;
-  readonly ownerLink: TelegramOwnerLink;
-  readonly chatThreadId: string;
-}): Promise<boolean> {
-  if (args.target.rootMessageId === null) {
-    return true;
-  }
-  const [route] = await args.db
-    .select({ id: telegramChatThreadRoutes.id })
-    .from(telegramChatThreadRoutes)
-    .where(
-      and(
-        telegramOwnerWhere(args.ownerLink),
-        eq(telegramChatThreadRoutes.chatId, args.target.chatId),
-        eq(telegramChatThreadRoutes.rootMessageId, args.target.rootMessageId),
-        eq(telegramChatThreadRoutes.chatThreadId, args.chatThreadId),
-      ),
-    )
-    .limit(1);
-  return route !== undefined;
-}
-
 async function loadTelegramChatDeliveryContext(
   args: {
     readonly db: Db;
@@ -246,16 +222,32 @@ async function loadTelegramChatDeliveryContext(
     signal,
   );
   signal.throwIfAborted();
-  if (
-    binding &&
-    !(await routeStillBindsRun({
-      db: args.db,
-      target: payload,
-      ownerLink: binding.ownerLink,
-      chatThreadId: runContext.chatThreadId,
-    }))
-  ) {
-    return { payload, run: runContext, messageContent: event.content };
+  if (binding) {
+    const routeDb = args.db;
+    const routeTarget = payload;
+    const routeOwnerLink = binding.ownerLink;
+    const routeChatThreadId = runContext.chatThreadId;
+    if (routeTarget.rootMessageId !== null) {
+      const [route] = await routeDb
+        .select({ id: telegramChatThreadRoutes.id })
+        .from(telegramChatThreadRoutes)
+        .where(
+          and(
+            telegramOwnerWhere(routeOwnerLink),
+            eq(telegramChatThreadRoutes.chatId, routeTarget.chatId),
+            eq(
+              telegramChatThreadRoutes.rootMessageId,
+              routeTarget.rootMessageId,
+            ),
+            eq(telegramChatThreadRoutes.chatThreadId, routeChatThreadId),
+          ),
+        )
+        .limit(1);
+      const routeBindsRun = route !== undefined;
+      if (!routeBindsRun) {
+        return { payload, run: runContext, messageContent: event.content };
+      }
+    }
   }
   return {
     payload,
@@ -575,15 +567,27 @@ export async function deliverTelegramChatAdmissionFailure(
   if (!binding) {
     return;
   }
-  if (
-    !(await routeStillBindsRun({
-      db: args.db,
-      target: args.target,
-      ownerLink: binding.ownerLink,
-      chatThreadId: args.chatThreadId,
-    }))
-  ) {
-    return;
+  const routeDb = args.db;
+  const routeTarget = args.target;
+  const routeOwnerLink = binding.ownerLink;
+  const routeChatThreadId = args.chatThreadId;
+  if (routeTarget.rootMessageId !== null) {
+    const [route] = await routeDb
+      .select({ id: telegramChatThreadRoutes.id })
+      .from(telegramChatThreadRoutes)
+      .where(
+        and(
+          telegramOwnerWhere(routeOwnerLink),
+          eq(telegramChatThreadRoutes.chatId, routeTarget.chatId),
+          eq(telegramChatThreadRoutes.rootMessageId, routeTarget.rootMessageId),
+          eq(telegramChatThreadRoutes.chatThreadId, routeChatThreadId),
+        ),
+      )
+      .limit(1);
+    const routeBindsRun = route !== undefined;
+    if (!routeBindsRun) {
+      return;
+    }
   }
   const sent = await sendTelegramCompletionMessages(
     {
