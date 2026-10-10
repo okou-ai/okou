@@ -53,7 +53,7 @@ import { logger } from "../../lib/log";
 import { SHARED_THREAD_ARTIFACT_LOGICAL_KEY_PREFIX } from "../../lib/shared-thread-artifact";
 import { nowDate } from "../../lib/time";
 import { clerk$, createClerkReadContext } from "../external/clerk";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import { publishCancelToRunnerGroup } from "../external/realtime";
 import {
   getStripeClient,
@@ -642,14 +642,13 @@ async function deleteClerkStorageReferences(
   });
 }
 
-async function deleteClerkExportReferences(
-  db: Db,
-  scope: ClerkStorageCleanupScope,
-  signal: AbortSignal,
-): Promise<string[]> {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0322; new non-billing transactions are prohibited.
-  return await db.transaction(async (tx) => {
-    const rows = await tx
+const deleteClerkExportReferences$ = command(
+  async (
+    { get, set },
+    scope: ClerkStorageCleanupScope,
+    signal: AbortSignal,
+  ): Promise<string[]> => {
+    const rows = await get(db$)
       .select({
         id: exportJobs.id,
         orgId: exportJobs.orgId,
@@ -667,7 +666,26 @@ async function deleteClerkExportReferences(
     if (rows.length === 0) {
       return [];
     }
-    await tx.delete(exportJobs).where(
+    // Keep the captured key/owner tuple and the existing UUIDv5, input
+    // validation and database-clock contract in the shared pure builder.
+    const receipts = rows.flatMap((row) => {
+      if (row.s3Key === null) {
+        return [];
+      }
+      return [
+        {
+          exportId: row.id,
+          job: storageObjectCleanupJobValues({
+            bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
+            target: { kind: "key", value: row.s3Key },
+            userId: row.userId,
+            orgId: row.orgId,
+          }),
+        },
+      ];
+    });
+    const db = set(writeDb$);
+    const deletion = db.delete(exportJobs).where(
       inArray(
         exportJobs.id,
         rows.map((row) => {
@@ -675,28 +693,60 @@ async function deleteClerkExportReferences(
         }),
       ),
     );
-    signal.throwIfAborted();
-    const jobIds: string[] = [];
-    for (const row of rows) {
-      if (row.s3Key === null) {
-        continue;
-      }
-      const receipt = storageObjectCleanupJobValues({
-        bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
-        target: { kind: "key", value: row.s3Key },
-        userId: row.userId,
-        orgId: row.orgId,
-      });
-      await tx
-        .insert(backgroundJobs)
-        .values(receipt)
-        .onConflictDoNothing({ target: backgroundJobs.id });
+    const [firstReceipt] = receipts;
+    if (!firstReceipt) {
+      await deletion;
       signal.throwIfAborted();
-      jobIds.push(receipt.id);
+      return [];
     }
-    return jobIds;
-  });
-}
+    const removed = db
+      .$with("removed_clerk_exports")
+      .as(deletion.returning({ id: exportJobs.id }));
+    const values = receipts.map(({ exportId, job }) => {
+      return {
+        exportId,
+        id: job.id,
+        kind: job.kind,
+        handlerVersion: job.handlerVersion,
+        userId: job.userId,
+        orgId: job.orgId,
+        input: job.input,
+      };
+    });
+    // Drizzle insert-select requires every column. This partial INSERT keeps
+    // database defaults and writes receipts only for references this DELETE
+    // removed. Any insert failure rolls back that deletion in the same statement.
+    const enqueued = db.$with("enqueued_clerk_export_cleanup", {}).as(sql`
+      INSERT INTO ${backgroundJobs}
+        (id, kind, handler_version, user_id, org_id, input,
+         available_at, created_at, updated_at)
+      SELECT receipt.id, receipt.kind, receipt."handlerVersion",
+             receipt."userId", receipt."orgId", receipt.input,
+             ${firstReceipt.job.availableAt},
+             ${firstReceipt.job.createdAt}, ${firstReceipt.job.updatedAt}
+      FROM jsonb_to_recordset(${sql.param(values, backgroundJobs.input)}::jsonb)
+        AS receipt("exportId" uuid, id uuid, kind text, "handlerVersion" integer,
+                   "userId" text, "orgId" text, input jsonb)
+      INNER JOIN ${removed} ON receipt."exportId" = ${removed.id}
+      ON CONFLICT (id) DO NOTHING
+    `);
+    const deleted = await db
+      .with(removed, enqueued)
+      .select({ id: removed.id })
+      .from(removed);
+    signal.throwIfAborted();
+    // Include an existing idempotent receipt as before, even when INSERT did
+    // nothing. Export ID order still owns immediate cleanup priority.
+    const deletedIds = new Set(
+      deleted.map((row) => {
+        return row.id;
+      }),
+    );
+    return receipts.flatMap(({ exportId, job }) => {
+      return deletedIds.has(exportId) ? [job.id] : [];
+    });
+  },
+);
 
 // Dependent DELETE CTEs preserve Host -> credential -> configuration ordering
 // and RESTRICT atomicity in one statement. User cleanup is Personal-only;
@@ -860,8 +910,8 @@ const deleteOrgData$ = command(
       signal.throwIfAborted();
     }
     cleanupJobIds.push(
-      ...(await deleteClerkExportReferences(
-        db,
+      ...(await set(
+        deleteClerkExportReferences$,
         { kind: "organization", orgId },
         signal,
       )),
@@ -967,8 +1017,8 @@ const deleteUserData$ = command(
     await db.delete(variables).where(eq(variables.userId, userId));
     signal.throwIfAborted();
     cleanupJobIds.push(
-      ...(await deleteClerkExportReferences(
-        db,
+      ...(await set(
+        deleteClerkExportReferences$,
         { kind: "user", userId },
         signal,
       )),
