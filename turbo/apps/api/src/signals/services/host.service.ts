@@ -21,23 +21,13 @@ import {
   artifactDeliveryKey,
   artifactDeliveryRecordSchema,
 } from "@okouai/api-contracts/contracts/artifact-delivery";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { artifactShares } from "@okouai/db/schema/artifact-share";
 import {
   hostedDeployments,
   privateHostedDeployments,
   hostedSites,
 } from "@okouai/db/runtime/hosted-site";
-import {
-  and,
-  desc,
-  eq,
-  inArray,
-  isNotNull,
-  isNull,
-  or,
-  sql,
-} from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { env } from "../../lib/env";
 import { hostedLinkDomain, hostedLinkOrigin } from "../../lib/link-layout";
 import {
@@ -89,7 +79,6 @@ import {
   collectHostedSiteDependencies$,
   hostedSiteDeliveryManifest,
 } from "./hosted-site-dependencies.service";
-import { HostedSiteScopeError } from "./hosted-site-scope.service";
 import {
   hostedDeploymentAllocationPlan,
   type HostedAllocationQueryResult,
@@ -192,7 +181,6 @@ export const authorizeHostedSiteDelivery$ = command(
 interface CompleteDeploymentArgs {
   readonly orgId: string;
   readonly userId: string;
-  readonly runId?: string;
   readonly deploymentId: string;
 }
 
@@ -207,7 +195,6 @@ interface GetHostedSiteFilesArgs {
 interface GetHostedSiteDeploymentsArgs {
   readonly orgId: string;
   readonly userId: string;
-  readonly runId?: string;
   readonly site: string;
 }
 
@@ -344,53 +331,13 @@ function hostedSiteRequestedSlug(site: HostedSiteRow): string {
   return site.requestedSlug ?? site.slug;
 }
 
-const resolveChatThreadId$ = command(
-  async (
-    { get },
-    runId: string | undefined,
-    signal: AbortSignal,
-  ): Promise<string | null> => {
-    const db = get(db$);
-    if (runId === undefined) {
-      return null;
-    }
-    const [run] = await db
-      .select({ chatThreadId: agentRuns.chatThreadId })
-      .from(agentRuns)
-      .where(and(eq(agentRuns.id, runId), isNotNull(agentRuns.triggerSource)))
-      .limit(1);
-    signal.throwIfAborted();
-    return run?.chatThreadId ?? null;
-  },
-);
-
-const hostedDeploymentScopeError$ = command(
-  async (
-    { set },
-    runId: string | undefined,
-    owningChatThreadId: string | null,
-    signal: AbortSignal,
-  ): Promise<Extract<
-    CompleteDeploymentResult,
-    { status: "conflict" }
-  > | null> => {
-    const chatThreadId = await set(resolveChatThreadId$, runId, signal);
-    return owningChatThreadId === chatThreadId
-      ? null
-      : {
-          status: "conflict",
-          message: "Hosted deployment belongs to a different chat",
-        };
-  },
-);
-
 type CompleteDeploymentLookupResult =
   | { readonly status: "ok"; readonly deployment: HostedDeploymentRow }
-  | Extract<CompleteDeploymentResult, { status: "not_found" | "conflict" }>;
+  | Extract<CompleteDeploymentResult, { status: "not_found" }>;
 
 const resolveHostedDeploymentForCompletion$ = command(
   async (
-    { get, set },
+    { get },
     args: CompleteDeploymentArgs,
     signal: AbortSignal,
   ): Promise<CompleteDeploymentLookupResult> => {
@@ -427,18 +374,11 @@ const resolveHostedDeploymentForCompletion$ = command(
       if (!site) {
         return { status: "not_found", message: "Hosted deployment not found" };
       }
-      const scopeError = await set(
-        hostedDeploymentScopeError$,
-        args.runId,
-        site.chatThreadId,
-        signal,
-      );
-      return scopeError ?? { status: "ok", deployment: privateDeployment };
+      return { status: "ok", deployment: privateDeployment };
     }
     const [ownedDeployment] = await db
       .select({
         deployment: hostedDeployments,
-        chatThreadId: hostedSites.chatThreadId,
       })
       .from(hostedDeployments)
       .innerJoin(hostedSites, eq(hostedSites.id, hostedDeployments.siteId))
@@ -456,18 +396,10 @@ const resolveHostedDeploymentForCompletion$ = command(
     if (!ownedDeployment) {
       return { status: "not_found", message: "Hosted deployment not found" };
     }
-    const scopeError = await set(
-      hostedDeploymentScopeError$,
-      args.runId,
-      ownedDeployment.chatThreadId,
-      signal,
-    );
-    return (
-      scopeError ?? {
-        status: "ok",
-        deployment: ownedDeployment.deployment,
-      }
-    );
+    return {
+      status: "ok",
+      deployment: ownedDeployment.deployment,
+    };
   },
 );
 
@@ -602,19 +534,6 @@ const createHostedSiteDeployment$ = command(
           const query = step.value;
           let result: HostedAllocationQueryResult;
           switch (query.kind) {
-            case "run": {
-              const [run] = await tx
-                .select({
-                  chatThreadId: agentRuns.chatThreadId,
-                  triggerSource: agentRuns.triggerSource,
-                })
-                .from(agentRuns)
-                .where(eq(agentRuns.id, query.runId))
-                .for("share")
-                .limit(1);
-              result = { run };
-              break;
-            }
             case "site": {
               const lookup = tx
                 .select()
@@ -624,15 +543,6 @@ const createHostedSiteDeployment$ = command(
                 ? await lookup.for("update").limit(1)
                 : await lookup.limit(1);
               result = { site };
-              break;
-            }
-            case "unscoped": {
-              const [unscoped] = await tx
-                .select({ id: hostedSites.id })
-                .from(hostedSites)
-                .where(query.condition)
-                .limit(1);
-              result = { unscoped };
               break;
             }
             case "site-insert": {
@@ -671,21 +581,6 @@ const createHostedSiteDeployment$ = command(
               result = { path: rows[0]?.path };
               break;
             }
-            case "admission": {
-              const [admission] = await tx
-                .select({ chatThreadId: hostedSites.chatThreadId })
-                .from(hostedSites)
-                .where(
-                  and(
-                    eq(hostedSites.id, query.siteId),
-                    eq(hostedSites.orgId, query.orgId),
-                  ),
-                )
-                .for("share")
-                .limit(1);
-              result = { admission };
-              break;
-            }
             case "deployment-insert": {
               const [deployment] = await tx
                 .insert(hostedDeployments)
@@ -701,9 +596,6 @@ const createHostedSiteDeployment$ = command(
       }),
     );
     if (!result.ok) {
-      if (result.error instanceof HostedSiteScopeError) {
-        return { kind: "scope_conflict", message: result.error.message };
-      }
       throw result.error;
     }
     return result.value;
@@ -754,10 +646,7 @@ export const prepareHostedSiteDeployment$ = command(
     );
     // Allocation commits one SQL unit before request cancellation is observed.
     signal.throwIfAborted();
-    if (
-      siteAndDeployment.kind === "scope_conflict" ||
-      siteAndDeployment.kind === "content_conflict"
-    ) {
+    if (siteAndDeployment.kind === "content_conflict") {
       return { status: "conflict", message: siteAndDeployment.message };
     }
     if (siteAndDeployment.kind === "owner_conflict") {
@@ -1752,17 +1641,11 @@ export const getHostedSiteFiles$ = command(
 
 export const getHostedSiteDeployments$ = command(
   async (
-    { get, set },
+    { get },
     args: GetHostedSiteDeploymentsArgs,
     signal: AbortSignal,
   ): Promise<GetHostedSiteDeploymentsResult> => {
     const db = get(db$);
-    const chatThreadId = await set(resolveChatThreadId$, args.runId, signal);
-    signal.throwIfAborted();
-    const scopeCondition =
-      chatThreadId === null
-        ? isNull(hostedSites.chatThreadId)
-        : eq(hostedSites.chatThreadId, chatThreadId);
     const [site] = await db
       .select()
       .from(hostedSites)
@@ -1770,7 +1653,7 @@ export const getHostedSiteDeployments$ = command(
         and(
           eq(hostedSites.orgId, args.orgId),
           eq(hostedSites.requestedSlug, args.site),
-          scopeCondition,
+          eq(hostedSites.userId, args.userId),
           isNull(hostedSites.deletedAt),
         ),
       )
