@@ -102,6 +102,8 @@ export interface PiRouteArgs {
 
 export interface PiExecutionRouteArgs extends PiRouteArgs {
   readonly codexServiceTier: "fast" | undefined;
+  /** Auto and personal Codex subscriptions can use their native Codex harness. */
+  readonly codexExecution?: boolean;
 }
 
 function isAutoRoute(args: PiRouteArgs): boolean {
@@ -159,5 +161,9 @@ export function isPiRouteRuntimeCapable(args: PiRouteArgs): boolean {
 }
 
 export function isPiExecutionRoute(args: PiExecutionRouteArgs): boolean {
-  return isPiAdmittedRoute(args) && isPiRouteRuntimeCapable(args);
+  return (
+    !args.codexExecution &&
+    isPiAdmittedRoute(args) &&
+    isPiRouteRuntimeCapable(args)
+  );
 }

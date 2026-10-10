@@ -48,6 +48,7 @@ export enum FeatureSwitchKey {
   DiscordIntegration = "discordIntegration",
   VncAccess = "vncAccess",
   PiMemory = "piMemory",
+  CodexExecution = "_codexExecution",
   ComposerTaskChips = "composerTaskChips",
   ChatComposerLayout = "chatComposerLayout",
   ChatThreadArchiving = "chatThreadArchiving",

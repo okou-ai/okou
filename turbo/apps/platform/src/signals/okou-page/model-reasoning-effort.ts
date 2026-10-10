@@ -45,6 +45,7 @@ export function availableChatReasoningEfforts(
   selection: ModelProviderSelection | null | undefined,
   runModel: AvailableRunModel | undefined,
   catalog: ModelCatalog | null | undefined,
+  codexExecution = false,
 ): readonly ReasoningEffort[] {
   const model = selection?.selectedModel;
   if (
@@ -66,6 +67,7 @@ export function availableChatReasoningEfforts(
     modelProviderType: route.providerType,
     runtimeProviderType,
     codexServiceTier: selection.codexServiceTier ?? undefined,
+    codexExecution,
   });
   const catalogEfforts = catalog
     .efforts(model, catalogRouteQuery(runModel))
@@ -91,12 +93,18 @@ export function effectiveChatReasoningEffort(
   selection: ModelProviderSelection | null | undefined,
   runModel: AvailableRunModel | undefined,
   catalog: ModelCatalog | null | undefined,
+  codexExecution = false,
 ): ReasoningEffort | undefined {
   const model = selection?.selectedModel;
   if (!selection || !model || !runModel || !catalog) {
     return undefined;
   }
-  const available = availableChatReasoningEfforts(selection, runModel, catalog);
+  const available = availableChatReasoningEfforts(
+    selection,
+    runModel,
+    catalog,
+    codexExecution,
+  );
   const preferred = preferredChatReasoningEffort(selection);
   if (preferred && available.includes(preferred)) {
     return preferred;
@@ -119,11 +127,17 @@ export function requestedNewThreadReasoningEffort(
   selection: ModelProviderSelection | null | undefined,
   runModel: AvailableRunModel | undefined,
   catalog: ModelCatalog | null | undefined,
+  codexExecution = false,
 ): ReasoningEffort | undefined {
   const model = selection?.selectedModel;
   const saved = model ? selection.modelSettings?.[model]?.effort : undefined;
   return saved !== undefined &&
-    availableChatReasoningEfforts(selection, runModel, catalog).includes(saved)
+    availableChatReasoningEfforts(
+      selection,
+      runModel,
+      catalog,
+      codexExecution,
+    ).includes(saved)
     ? saved
     : undefined;
 }

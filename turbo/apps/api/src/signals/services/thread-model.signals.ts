@@ -478,6 +478,7 @@ function createModelSelection(
       ]);
       const piExecution = shouldUsePiExecution({
         chatThreadId: event.chatThreadId,
+        featureSwitchContext: model.featureSwitchContext,
         modelProviderType,
         catalogModel: piCatalogModel(catalog, model.pin.selectedModel),
         codexServiceTier: model.runCodexServiceTier,
