@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.9.6](https://github.com/okou-ai/okou/compare/app-worker-v1.9.5...app-worker-v1.9.6) (2026-10-10)
+
+
+### Bug Fixes
+
+* restore artifact og requests in cloudflare workers ([#38666](https://github.com/okou-ai/okou/issues/38666)) ([2626497](https://github.com/okou-ai/okou/commit/2626497e9c7f22c913ba61de6bfac66f1b191c1c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.549.1
+    * @okouai/core bumped to 8.741.1
+
 ## [1.9.5](https://github.com/okou-ai/okou/compare/app-worker-v1.9.4...app-worker-v1.9.5) (2026-10-10)
 
 
