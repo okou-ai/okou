@@ -503,7 +503,7 @@ function createRecoverySignals(
         ]);
         let reads = 0;
         let reconciled = false;
-        await settle(
+        await onRejection(
           waitLoopUntil(
             async () => {
               set(refresh$, recoverySignal);
@@ -533,7 +533,11 @@ function createRecoverySignals(
             recoverySignal,
             { retryTransientErrors: false },
           ),
-          signal,
+          () => {
+            // The deadline can reject with TimeoutError or a wrapped AbortError.
+            signal.throwIfAborted();
+            set(internalState$, "exhausted");
+          },
         );
         signal.throwIfAborted();
         set(internalState$, reconciled ? "idle" : "exhausted");

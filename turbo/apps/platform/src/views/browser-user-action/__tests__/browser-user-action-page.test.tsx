@@ -2526,6 +2526,53 @@ test("An unresolved applying action stops waiting and offers a read-only check",
   ).resolves.toBeInTheDocument();
 });
 
+test(
+  "A stalled recovery read reaches its deadline and permits another status check",
+  // This verifies the real 90-second owner deadline without replacing the clock.
+  { timeout: 120_000 },
+  async () => {
+    const started = createDeferredPromise<AbortSignal>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    let initial = true;
+    let available = false;
+    context.mocks.api(
+      browserUserActionsContract.get,
+      async ({ request, respond }) => {
+        if (initial) {
+          initial = false;
+          return respond(200, action("applying"));
+        }
+        if (!available) {
+          started.resolve(request.signal);
+          await release.promise;
+        }
+        return respond(200, action("uncertain"));
+      },
+    );
+    await setupPage({
+      context,
+      path: route(),
+      host: "app.okou.ai",
+      featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+    });
+    const readSignal = await started.promise;
+    await expect(
+      screen.findByText("Outcome not confirmed", {}, { timeout: 100_000 }),
+    ).resolves.toBeInTheDocument();
+    expect(readSignal.aborted).toBeTruthy();
+    available = true;
+    await act(async () => {
+      release.resolve(undefined);
+      await release.promise;
+    });
+    click(button("Check status"));
+    await expect(
+      screen.findByText("Check the browser"),
+    ).resolves.toBeInTheDocument();
+    expect(screen.queryByRole("form")).toBeNull();
+  },
+);
+
 test("A recovery read is cancelled when the route changes and its late result stays stale", async () => {
   const nextToken = `vm0_browser_user_action_${"c".repeat(43)}`;
   const started = createDeferredPromise<AbortSignal>(context.signal);
