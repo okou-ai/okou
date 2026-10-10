@@ -4,6 +4,7 @@ import {
   updateFeatureSwitchesForUser,
 } from "./helpers/feature-switches";
 import { createHash, randomUUID } from "node:crypto";
+import { HeadObjectCommand } from "@aws-sdk/client-s3";
 import {
   beforeEach,
   describe,
@@ -388,6 +389,231 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
       rememberClaim,
     };
   }
+
+  async function pendingCanonicalUpload(
+    fixture: ReturnType<typeof createUploadFixture>,
+  ) {
+    const actor = await fixture.run(() => {
+      return fixture.seedRunScoped();
+    });
+    const objectStore = chatCallbacks.acceptChatObjectStorage();
+    const operationId = randomUUID();
+    const token = fixture.okouToken(actor);
+    const headers = { authorization: `Bearer ${token}` };
+    const initialized = await fixture.run(() => {
+      return accept(
+        setupApp({ context, routes: integrationsSlackUploadInitRoutes })(
+          integrationsSlackUploadInitContract,
+        ).init({
+          body: {
+            filename: "report.csv",
+            length: 42,
+            canonical: {
+              operationId,
+              contentType: "text/csv",
+              checksumSha256: "a".repeat(64),
+              channel: "C123",
+            },
+          },
+          headers,
+        }),
+        [200],
+      );
+    });
+    if (!("kind" in initialized.body)) {
+      throw new Error("Expected a canonical Slack upload");
+    }
+    const assetId = initialized.body.assetId;
+    objectStore.addObject({
+      bucket: "test-private-artifacts",
+      key: `private-artifacts/${assetId}/report.csv`,
+      size: 42,
+      body: Buffer.alloc(42, "a"),
+      metadata: { "artifact-id": assetId },
+    });
+    context.mocks.slack.files.getUploadURLExternal.mockResolvedValue({
+      ok: true,
+      file_id: "F-MATERIALIZED",
+      upload_url: "https://files.slack.com/upload/v1/materialized",
+    });
+    return {
+      actor,
+      request: { headers, body: { assetId, operationId } },
+      url: initialized.body.url,
+    };
+  }
+
+  it.each(["missing", "undefined length", "mismatched length"] as const)(
+    "keeps a canonical upload unpublished after %s storage verification and recovers on replay",
+    async (failure) => {
+      const fixture = createUploadFixture();
+      const upload = await pendingCanonicalUpload(fixture);
+      const send = context.mocks.s3.send.getMockImplementation();
+      if (!send) {
+        throw new Error("Expected the external object storage mock");
+      }
+      context.mocks.s3.send.mockImplementation((command, ...args) => {
+        if (command instanceof HeadObjectCommand) {
+          if (failure === "missing") {
+            return Promise.reject(
+              Object.assign(new Error("Object not found"), {
+                name: "NotFound",
+                $metadata: { httpStatusCode: 404 },
+              }),
+            );
+          }
+          return Promise.resolve({
+            ContentLength: failure === "undefined length" ? undefined : 41,
+          });
+        }
+        return send(command, ...args);
+      });
+      const client = setupApp({
+        context,
+        routes: integrationsSlackUploadMaterializeRoutes,
+      })(integrationsSlackUploadMaterializeContract);
+      const failed = await fixture.run(() => {
+        return accept(client.materialize(upload.request), [400]);
+      });
+      expect(failed.body.error).toStrictEqual({
+        code: "storage-verification-failed",
+        message:
+          failure === "missing"
+            ? "Canonical upload was not found"
+            : "Canonical upload size did not match",
+      });
+      const before = await fixture.run(() => {
+        return chatApi.listArtifactCatalog(actorFor(upload.actor));
+      });
+      expect(before.artifacts).toStrictEqual([]);
+      context.mocks.s3.send.mockImplementation(send);
+      const recovered = await fixture.run(() => {
+        return accept(client.materialize(upload.request), [200]);
+      });
+      expect(recovered.body).toMatchObject({
+        assetId: upload.request.body.assetId,
+        url: upload.url,
+        delivery: { status: "pending" },
+      });
+      const after = await fixture.run(() => {
+        return chatApi.listArtifactCatalog(actorFor(upload.actor));
+      });
+      expect(after.artifacts).toHaveLength(1);
+      const files = await fixture.run(() => {
+        return visibleUploadedFiles(upload.actor);
+      });
+      expect(files).toContainEqual(
+        expect.objectContaining({
+          id: upload.request.body.assetId,
+          assetRef: expect.objectContaining({
+            materialization: { status: "ready" },
+          }),
+        }),
+      );
+    },
+  );
+
+  it("cancels canonical publication during storage verification and permits a fresh replay", async () => {
+    const fixture = createUploadFixture();
+    const upload = await pendingCanonicalUpload(fixture);
+    const owner = new AbortController();
+    const started = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    onTestFinished(() => {
+      owner.abort();
+      if (!release.settled()) {
+        release.resolve(undefined);
+      }
+    });
+    const send = context.mocks.s3.send.getMockImplementation();
+    if (!send) {
+      throw new Error("Expected the external object storage mock");
+    }
+    context.mocks.s3.send.mockImplementation(async (command, ...args) => {
+      if (command instanceof HeadObjectCommand) {
+        started.resolve(undefined);
+        await release.promise;
+      }
+      return await send(command, ...args);
+    });
+    const client = setupApp({
+      context,
+      routes: integrationsSlackUploadMaterializeRoutes,
+      signal: owner.signal,
+      rethrowErrors: true,
+    })(integrationsSlackUploadMaterializeContract);
+    const cancelled = fixture.run(() => {
+      return expect(client.materialize(upload.request)).rejects.toMatchObject({
+        name: "AbortError",
+      });
+    });
+    await started.promise;
+    owner.abort();
+    release.resolve(undefined);
+    await cancelled;
+    const before = await fixture.run(() => {
+      return chatApi.listArtifactCatalog(actorFor(upload.actor));
+    });
+    expect(before.artifacts).toStrictEqual([]);
+    context.mocks.s3.send.mockImplementation(send);
+    await fixture.run(() => {
+      return accept(
+        setupApp({ context, routes: integrationsSlackUploadMaterializeRoutes })(
+          integrationsSlackUploadMaterializeContract,
+        ).materialize(upload.request),
+        [200],
+      );
+    });
+    const after = await fixture.run(() => {
+      return chatApi.listArtifactCatalog(actorFor(upload.actor));
+    });
+    expect(after.artifacts).toHaveLength(1);
+  });
+
+  it("does not revive a canonical file erased while storage verification is pending", async () => {
+    const fixture = createUploadFixture();
+    const upload = await pendingCanonicalUpload(fixture);
+    const started = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    onTestFinished(() => {
+      if (!release.settled()) {
+        release.resolve(undefined);
+      }
+    });
+    const send = context.mocks.s3.send.getMockImplementation();
+    if (!send) {
+      throw new Error("Expected the external object storage mock");
+    }
+    context.mocks.s3.send.mockImplementation(async (command, ...args) => {
+      if (command instanceof HeadObjectCommand) {
+        started.resolve(undefined);
+        await release.promise;
+      }
+      return await send(command, ...args);
+    });
+    const pending = fixture.run(() => {
+      return accept(
+        setupApp({ context, routes: integrationsSlackUploadMaterializeRoutes })(
+          integrationsSlackUploadMaterializeContract,
+        ).materialize(upload.request),
+        [404],
+      );
+    });
+    await started.promise;
+    await fixture.cancelRun(actorFor(upload.actor), upload.actor.runId);
+    webhooks.configureClerkWebhookSecret();
+    webhooks.verifyNextClerkWebhook({
+      type: "user.deleted",
+      data: { id: upload.actor.userId },
+    });
+    await fixture.run(() => {
+      return webhooks.requestClerkWebhook("{}", {}, [200]);
+    });
+    await flushWaitUntilForTest();
+    release.resolve(undefined);
+    const result = await pending;
+    expect(result.body.error.code).toBe("NOT_FOUND");
+  });
 
   it("returns 401 when no auth token is provided", async () => {
     const fixture = createUploadFixture();

@@ -312,11 +312,6 @@
       "owner": "ensureCanonicalDelivery$"
     },
     {
-      "id": "TX-0087",
-      "file": "turbo/apps/api/src/signals/services/canonical-asset.service.ts",
-      "owner": "materializeCanonicalPublishedAsset$"
-    },
-    {
       "id": "TX-0088",
       "file": "turbo/apps/api/src/signals/services/canonical-discord-ingress-processor.service.ts",
       "owner": "recordIngressFailure"
