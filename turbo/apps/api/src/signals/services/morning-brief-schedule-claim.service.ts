@@ -153,7 +153,8 @@ export const isCanonicalMorningBriefAutomation$ = command(
       current.scheduleType === "cron" &&
       current.blueprintKey === MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY &&
       current.reconciliationStatus === "current" &&
-      current.resultEmailEnabled === true
+      // Both legacy completion mail and Agent-controlled delivery are valid.
+      current.resultEmailEnabled !== null
     );
   },
 );
