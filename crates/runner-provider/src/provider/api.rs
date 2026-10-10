@@ -4765,16 +4765,18 @@ mod tests {
             excluded_poll_observed_at + CLAIM_TRANSIENT_COOLDOWN + Duration::from_millis(50);
         let cooldown = tokio::time::sleep_until(cooldown_elapsed_at);
         tokio::pin!(cooldown);
-        assert!(futures_util::poll!(cooldown.as_mut()).is_pending());
-        // The peer has received the excluded request and is holding its response.
-        // Advance only this armed timer, then resume before releasing the real I/O.
-        tokio::time::pause();
-        tokio::time::advance(
-            cooldown_elapsed_at.saturating_duration_since(tokio::time::Instant::now()),
-        )
-        .await;
-        tokio::time::resume();
-        cooldown.await;
+        // A delayed observer may reach the original deadline after it has elapsed.
+        if futures_util::poll!(cooldown.as_mut()).is_pending() {
+            // The peer is holding its response. Advance the armed timer, then
+            // resume before releasing the real I/O.
+            tokio::time::pause();
+            tokio::time::advance(
+                cooldown_elapsed_at.saturating_duration_since(tokio::time::Instant::now()),
+            )
+            .await;
+            tokio::time::resume();
+            cooldown.await;
+        }
         release_excluded_poll_tx
             .send(())
             .expect("excluded poll response should still be waiting for release");
