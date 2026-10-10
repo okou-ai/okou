@@ -130,11 +130,10 @@ fn count_and_content_boundaries_are_independent_of_gzip_size() {
     for file in &mut files {
         file.content[storage_files::MAX_FILE_BYTES / 3..].fill(b'x');
     }
-    assert!(archive_files(&files).len() <= MAX_COMPRESSED_BYTES);
-    assert_eq!(
-        decode(&archive_files(&files), &cancel).unwrap().unwrap(),
-        files
-    );
+    let gzip = archive_files(&files);
+    assert!(gzip.len() <= MAX_COMPRESSED_BYTES);
+    assert_eq!(decode(&gzip, &cancel).unwrap().unwrap(), files);
+    drop(gzip);
     let mut overflow = files;
     overflow.push(StorageFile {
         path: "extra".into(),
@@ -262,6 +261,7 @@ async fn empty_files_preserve_ready_file_read_ahead_and_allow_later_small_hits()
     let root = tempfile::tempdir().unwrap();
     let home = HomePaths::with_root(root.path().to_owned());
     let cancel = CancellationToken::new();
+    let files = fixture_files(1024, 0, false);
     for (name, count) in [
         ("wide", 1024),
         ("medium", 1000),
@@ -273,12 +273,13 @@ async fn empty_files_preserve_ready_file_read_ahead_and_allow_later_small_hits()
             name,
             "v1",
             MAX_COMPRESSED_BYTES,
-            Some(&fixture_files(count, 0, false)),
+            Some(files.get(..count).unwrap()),
             &cancel,
         )
         .unwrap();
     }
     let cache = DecodedCache::new(home);
+    drop(files);
     let keys = ["wide", "wide", "wide", "medium", "wide", "small", "single"];
     let ready = cache
         .get_ready_batch(&keys.map(|name| Some((name, "v1"))))
@@ -304,6 +305,7 @@ async fn exhausted_file_read_ahead_does_not_hide_later_invalid_metadata() {
     let root = tempfile::tempdir().unwrap();
     let home = HomePaths::with_root(root.path().to_owned());
     let cancel = CancellationToken::new();
+    let files = fixture_files(1024, 0, false);
     for (name, count) in [
         ("first", 1024),
         ("second", 1024),
@@ -316,11 +318,12 @@ async fn exhausted_file_read_ahead_does_not_hide_later_invalid_metadata() {
             name,
             "v1",
             MAX_COMPRESSED_BYTES,
-            Some(&fixture_files(count, 0, false)),
+            Some(files.get(..count).unwrap()),
             &cancel,
         )
         .unwrap();
     }
+    drop(files);
     let index_path = disk::paths(&home, "invalid", "v1").0.join("index.json");
     let mut index: serde_json::Value =
         serde_json::from_slice(&fs::read(&index_path).unwrap()).unwrap();
@@ -336,6 +339,22 @@ async fn exhausted_file_read_ahead_does_not_hide_later_invalid_metadata() {
     assert_eq!(error.kind(), io::ErrorKind::InvalidData);
     assert_eq!(cache.0.memory.available_permits(), CAPACITY);
     cache.shutdown().await;
+}
+
+#[test]
+fn empty_file_fixture_prefixes_preserve_every_descriptor() {
+    let files = fixture_files(1024, 0, false);
+    for count in [0, 1, 24, 1000, 1024] {
+        let expected: Vec<_> = (0..count)
+            .map(|index| StorageFile {
+                path: format!("file-{index:04}"),
+                mode: 0o640,
+                mtime: 1234567890,
+                content: Vec::new(),
+            })
+            .collect();
+        assert_eq!(files.get(..count).unwrap(), expected);
+    }
 }
 
 #[tokio::test]
