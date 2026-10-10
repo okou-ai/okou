@@ -223,3 +223,23 @@ Run the ordinary authorized source-built CLI and compare every page with the
 browser reference. The new fixture is not a screenshot-only deck, and its
 native text must not be duplicated invisibly to make verification pass.
 Native PowerPoint/Keynote remain separate acceptance targets.
+
+## Selected page background boundary
+
+`page-background-contract.html` places six `.stage` pages inside a 900-pixel
+scrolling deck. Only the first page is initially in the deck viewport. Export
+all six together with `--selector .stage`, without scrolling between exports:
+
+- B01 is the visible blue-page control.
+- B02 preserves an offscreen dark background and readable white text.
+- B03 preserves an offscreen native gradient.
+- B04 preserves the yellow background inherited from a page wrapper.
+- B05 keeps descendant overflow clipping at the inner padding edge; neither
+  the oversized orange rectangle nor its green shadow may leak outside it.
+- B06 retains the selected page's purple fill and yellow border while clipping
+  its oversized child inside that border.
+
+The selected page is an independent export surface. Clipping may walk from a
+descendant through that page, but must not continue from the page itself into
+the enclosing deck viewport. Compare HTML, the previous export and the current
+PPTX; all page paint must remain native, with no generated picture objects.

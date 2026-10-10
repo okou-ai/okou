@@ -800,6 +800,9 @@ export const INSTALL_NATIVE = String.raw`
     y: g.rect.y + g.rect.height / 2 + g.matrix.b * (p.x - g.w / 2) + g.matrix.d * (p.y - g.h / 2),
   });
   const clipped = (points, node) => {
+    // A selected page is an independent export surface. Its outer deck viewport
+    // must not clip offscreen page paint; descendants still clip at this root.
+    if (roots.includes(node)) return points;
     let out = points;
     for (let ancestor = node.parentElement; ancestor; ancestor = ancestor.parentElement) {
       const s = getComputedStyle(ancestor);

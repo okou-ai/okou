@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Native page background boundary contracts</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: "Liberation Sans", sans-serif;
+      }
+      .deck {
+        height: 900px;
+        overflow-y: scroll;
+      }
+      .frame {
+        width: 1600px;
+        height: 900px;
+      }
+      .stage {
+        position: relative;
+        width: 1600px;
+        height: 900px;
+        padding: 80px;
+        overflow: hidden;
+        color: white;
+      }
+      h1 {
+        margin: 0 0 38px;
+        font-size: 48px;
+      }
+      p {
+        max-width: 1150px;
+        font-size: 30px;
+        line-height: 1.5;
+      }
+      .card {
+        margin-top: 70px;
+        padding: 36px;
+        width: 850px;
+        color: #162e45;
+        background: #fff;
+        border-radius: 28px;
+      }
+      .clip-window {
+        position: relative;
+        margin-top: 70px;
+        width: 800px;
+        height: 330px;
+        overflow: hidden;
+        border: 16px solid #2563eb;
+        border-radius: 36px;
+      }
+      .oversize {
+        position: absolute;
+        left: -30px;
+        top: -30px;
+        width: 950px;
+        height: 440px;
+        background: #f97316;
+        box-shadow: 30px 30px 0 45px #84cc16;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="deck">
+      <div class="frame">
+        <section class="stage" style="background: #2e76ab" data-case="B01">
+          <h1>B01 · Visible page control</h1>
+          <p>
+            The first page is inside the deck viewport. Its blue background and
+            white text must remain unchanged.
+          </p>
+          <div class="card">
+            <p>Native text and card, without image objects.</p>
+          </div>
+        </section>
+      </div>
+      <div class="frame">
+        <section class="stage" style="background: #232120" data-case="B02">
+          <h1>B02 · Offscreen dark page</h1>
+          <p>
+            This page starts below the scroll viewport. Its dark background must
+            still cover the entire exported page.
+          </p>
+          <div class="card">
+            <p>White text above must stay readable against the dark page.</p>
+          </div>
+        </section>
+      </div>
+      <div class="frame">
+        <section
+          class="stage"
+          style="background: linear-gradient(90deg, #6b46c1, #22577a)"
+          data-case="B03"
+        >
+          <h1>B03 · Offscreen gradient</h1>
+          <p>
+            The native gradient belongs to this page, independently of the outer
+            scrolling viewport.
+          </p>
+          <div class="card">
+            <p>The gradient must extend behind this separate white card.</p>
+          </div>
+        </section>
+      </div>
+      <div class="frame" style="background: #facc15">
+        <section class="stage" style="color: #232120" data-case="B04">
+          <h1>B04 · Background inherited from the page wrapper</h1>
+          <p>
+            The transparent selected page uses its yellow wrapper as its
+            background. Export must preserve that color offscreen.
+          </p>
+          <div class="card">
+            <p>The outer deck viewport is not this page's clipping boundary.</p>
+          </div>
+        </section>
+      </div>
+      <div class="frame">
+        <section
+          class="stage"
+          style="background: #f4f7fb; color: #162e45"
+          data-case="B05"
+        >
+          <h1>B05 · Descendant clipping remains active</h1>
+          <p>
+            The orange rectangle stays inside the blue border. Its green outer
+            shadow must not leak beyond this inner clipping window.
+          </p>
+          <div class="clip-window"><div class="oversize"></div></div>
+        </section>
+      </div>
+      <div class="frame">
+        <section
+          class="stage"
+          style="background: #7257e6; border: 18px solid #facc15"
+          data-case="B06"
+        >
+          <h1>B06 · Page border and background share the export boundary</h1>
+          <p>
+            The complete yellow frame and purple background must survive. Child
+            paint is still clipped inside the page's border.
+          </p>
+          <div
+            style="
+              position: absolute;
+              left: 1420px;
+              top: 430px;
+              width: 360px;
+              height: 360px;
+              background: #fb7185;
+            "
+          ></div>
+        </section>
+      </div>
+    </main>
+  </body>
+</html>
