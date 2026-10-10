@@ -17,7 +17,10 @@ import { noPackageVariable } from "./rules/no-package-variable.ts";
 import { noProductionStaffEntitlementMutation } from "./rules/no-production-staff-entitlement-mutation.ts";
 import { noStoreInParams } from "./rules/no-store-in-params.ts";
 import { noSqlRaw } from "./rules/no-sql-raw.ts";
+import { noTestCredentialForging } from "./rules/no-test-credential-forging.ts";
 import { noTestDatabaseBinding } from "./rules/no-test-database-binding.ts";
+import { noTestOnlyRoutes } from "./rules/no-test-only-routes.ts";
+import { noTestPrivateAccess } from "./rules/no-test-private-access.ts";
 import { noTestViMocks } from "./rules/no-test-vi-mocks.ts";
 import { noUnownedUsagePricing } from "./rules/no-unowned-usage-pricing.ts";
 import { noUnsafeSqlInterpolation } from "./rules/no-unsafe-sql-interpolation.ts";
@@ -25,6 +28,7 @@ import { preferDrizzleApis } from "./rules/prefer-drizzle-apis.ts";
 import { requireExecuteRowSchema } from "./rules/require-execute-row-schema.ts";
 import { requireSqlResultMapping } from "./rules/require-sql-result-mapping.ts";
 import { signalCheckAwait } from "./rules/signal-check-await.ts";
+import { testControlAllowlist } from "./rules/test-control-allowlist.ts";
 import { sqlSourceParser } from "./sql-analysis/sql-source-parser.ts";
 import { transactionSqlParser } from "./sql-analysis/transaction-statements.ts";
 
@@ -56,13 +60,17 @@ export const apiLintPlugin = {
       noProductionStaffEntitlementMutation,
     "no-store-in-params": noStoreInParams,
     "no-sql-raw": noSqlRaw,
+    "no-test-credential-forging": noTestCredentialForging,
     "no-test-vi-mocks": noTestViMocks,
     "no-test-database-binding": noTestDatabaseBinding,
+    "no-test-only-routes": noTestOnlyRoutes,
+    "no-test-private-access": noTestPrivateAccess,
     "no-unowned-usage-pricing": noUnownedUsagePricing,
     "no-unsafe-sql-interpolation": noUnsafeSqlInterpolation,
     "prefer-drizzle-apis": preferDrizzleApis,
     "require-execute-row-schema": requireExecuteRowSchema,
     "require-sql-result-mapping": requireSqlResultMapping,
     "signal-check-await": signalCheckAwait,
+    "test-control-allowlist": testControlAllowlist,
   },
 };

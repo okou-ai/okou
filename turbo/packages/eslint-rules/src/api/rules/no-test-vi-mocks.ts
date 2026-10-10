@@ -15,7 +15,7 @@ export const noTestViMocks = createRule({
     schema: [],
     messages: {
       noTestViMock:
-        "Mock external modules only in src/__tests__/mocks.ts, and change return values through stubs exposed by testContext().",
+        "Mock external modules only in src/__tests__/mocks.ts, and change return values through stubs exposed by testContext(). See docs/api/api-testing.md#mocks.",
     },
   },
   create(context) {
