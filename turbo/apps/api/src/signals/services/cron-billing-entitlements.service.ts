@@ -3,7 +3,10 @@ import { cancelEmptyUsagePackSubscription$ } from "./billing-downgrade.service";
 import { isOrgTier, type OrgTier } from "@okouai/api-contracts/contracts/orgs";
 import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { usagePackSubscriptions } from "@okouai/db/schema/usage-pack-subscription";
+import {
+  usagePackAllocations,
+  usagePackSubscriptions,
+} from "@okouai/db/schema/usage-pack-subscription";
 import { command } from "ccstate";
 import {
   and,
@@ -45,8 +48,9 @@ import {
   tierForKnownPlanPrice,
 } from "./billing-checkout.service";
 import {
+  MANAGED_USAGE_PACK_ALLOCATION_STATUSES,
   reconcileUsagePackSubscriptions$,
-  stripeSubscriptionUsesMemberUsagePacks,
+  TERMINAL_USAGE_PACK_SUBSCRIPTION_STATUSES,
 } from "./usage-pack-subscription.service";
 import { reconcileUsagePackCreditRefunds } from "./usage-pack-credit-refund.service";
 import { reconcileUsagePackInvitationPurchases$ } from "./usage-pack-invitation-purchase.service";
@@ -664,13 +668,38 @@ async function upsertStripeSubscriptionPlanSnapshot(
   const cancelAt = subscriptionWillCancel(args.subscription)
     ? scheduledEnd
     : null;
-  const showUsagePack =
+  let showUsagePack = false;
+  if (
     args.stripeSubscriptionId !== null &&
-    (args.tier === "pro" || args.tier === "team" || args.tier === "custom") &&
-    (await stripeSubscriptionUsesMemberUsagePacks(tx, {
-      orgId: args.orgId,
-      stripeSubscriptionId: args.stripeSubscriptionId,
-    }));
+    (args.tier === "pro" || args.tier === "team" || args.tier === "custom")
+  ) {
+    const orgId = args.orgId;
+    const stripeSubscriptionId = args.stripeSubscriptionId;
+    const [allocation] = await tx
+      .select({ id: usagePackAllocations.id })
+      .from(usagePackSubscriptions)
+      .innerJoin(
+        usagePackAllocations,
+        eq(
+          usagePackAllocations.usagePackSubscriptionId,
+          usagePackSubscriptions.id,
+        ),
+      )
+      .where(
+        and(
+          eq(usagePackSubscriptions.orgId, orgId),
+          eq(usagePackSubscriptions.stripeSubscriptionId, stripeSubscriptionId),
+          notInArray(usagePackSubscriptions.subscriptionStatus, [
+            ...TERMINAL_USAGE_PACK_SUBSCRIPTION_STATUSES,
+          ]),
+          inArray(usagePackAllocations.status, [
+            ...MANAGED_USAGE_PACK_ALLOCATION_STATUSES,
+          ]),
+        ),
+      )
+      .limit(1);
+    showUsagePack = allocation !== undefined;
+  }
   await upsertOrgPlanEntitlement(tx, {
     orgId: args.orgId,
     tier: args.tier,

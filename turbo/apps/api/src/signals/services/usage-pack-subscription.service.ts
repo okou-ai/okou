@@ -130,7 +130,7 @@ const PAYABLE_USAGE_PACK_ALLOCATION_STATUSES = [
   "active",
   "pending_invitation",
 ] as const;
-const MANAGED_USAGE_PACK_ALLOCATION_STATUSES = [
+export const MANAGED_USAGE_PACK_ALLOCATION_STATUSES = [
   ...PAYABLE_USAGE_PACK_ALLOCATION_STATUSES,
   "paid_pending_invitation",
 ] as const;
@@ -146,7 +146,7 @@ const USAGE_PACK_PURCHASE_SNAPSHOT_STATUSES = [
   "checkout_pending",
   "purchase_pending",
 ] as const;
-const TERMINAL_USAGE_PACK_SUBSCRIPTION_STATUSES = [
+export const TERMINAL_USAGE_PACK_SUBSCRIPTION_STATUSES = [
   "canceled",
   "incomplete_expired",
   "invalid",
@@ -2184,42 +2184,6 @@ function oneUsagePackSubscriptionId(
     throw new Error("Stripe usage pack metadata has conflicting local IDs");
   }
   return ids.values().next().value ?? null;
-}
-
-export async function stripeSubscriptionUsesMemberUsagePacks(
-  db: Pick<Db, "select">,
-  args: {
-    readonly orgId: string;
-    readonly stripeSubscriptionId: string;
-  },
-): Promise<boolean> {
-  const [allocation] = await db
-    .select({ id: usagePackAllocations.id })
-    .from(usagePackSubscriptions)
-    .innerJoin(
-      usagePackAllocations,
-      eq(
-        usagePackAllocations.usagePackSubscriptionId,
-        usagePackSubscriptions.id,
-      ),
-    )
-    .where(
-      and(
-        eq(usagePackSubscriptions.orgId, args.orgId),
-        eq(
-          usagePackSubscriptions.stripeSubscriptionId,
-          args.stripeSubscriptionId,
-        ),
-        notInArray(usagePackSubscriptions.subscriptionStatus, [
-          ...TERMINAL_USAGE_PACK_SUBSCRIPTION_STATUSES,
-        ]),
-        inArray(usagePackAllocations.status, [
-          ...MANAGED_USAGE_PACK_ALLOCATION_STATUSES,
-        ]),
-      ),
-    )
-    .limit(1);
-  return allocation !== undefined;
 }
 
 async function resolveUsagePackSubscriptionId(
