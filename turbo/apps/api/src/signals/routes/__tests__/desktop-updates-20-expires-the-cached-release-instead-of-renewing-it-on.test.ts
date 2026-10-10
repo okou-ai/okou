@@ -27,7 +27,7 @@ describe("desktop update routes", () => {
           "1.2.3": darwinArm64Release("1.2.3", okouZipUrl("1.2.3")),
         }),
       );
-      expect((await appcastRequest()).status).toBe(200);
+      await expect(appcastRequest()).resolves.toMatchObject({ status: 200 });
 
       countingManifestHandler(() => {
         return HttpResponse.error();
@@ -37,7 +37,7 @@ describe("desktop update routes", () => {
         mockNow(initialNow + minutes * 60_000);
         const stale = await appcastRequest();
         expect(stale.status).toBe(200);
-        expect(await stale.text()).toContain(
+        await expect(stale.text()).resolves.toContain(
           "<sparkle:version>1.2.3</sparkle:version>",
         );
       }

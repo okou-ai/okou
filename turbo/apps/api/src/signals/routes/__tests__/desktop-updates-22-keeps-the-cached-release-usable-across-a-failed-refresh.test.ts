@@ -27,13 +27,13 @@ describe("desktop update routes", () => {
           "1.2.3": darwinArm64Release("1.2.3", okouZipUrl("1.2.3")),
         }),
       );
-      expect((await appcastRequest()).status).toBe(200);
+      await expect(appcastRequest()).resolves.toMatchObject({ status: 200 });
 
       countingManifestHandler(() => {
         return HttpResponse.error();
       });
       mockNow(initialNow + 5 * 60_000);
-      expect((await appcastRequest()).status).toBe(200);
+      await expect(appcastRequest()).resolves.toMatchObject({ status: 200 });
 
       // A failed refresh must not evict or age the entry, and a later success
       // must replace it outright rather than merge with it.
@@ -46,7 +46,7 @@ describe("desktop update routes", () => {
       const refreshed = await appcastRequest();
       expect(refreshed.status).toBe(200);
 
-      expect(await refreshed.text()).toContain(
+      await expect(refreshed.text()).resolves.toContain(
         "<sparkle:version>1.2.4</sparkle:version>",
       );
     });

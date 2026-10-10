@@ -28,7 +28,7 @@ describe("desktop update routes", () => {
 
       const firstResponse = await appcastRequest();
       expect(firstResponse.status).toBe(200);
-      expect(await firstResponse.text()).toContain(
+      await expect(firstResponse.text()).resolves.toContain(
         "<sparkle:version>0.2.1</sparkle:version>",
       );
 
@@ -41,7 +41,7 @@ describe("desktop update routes", () => {
 
       const cachedResponse = await appcastRequest();
       expect(cachedResponse.status).toBe(200);
-      expect(await cachedResponse.text()).toContain(
+      await expect(cachedResponse.text()).resolves.toContain(
         "<sparkle:version>0.2.1</sparkle:version>",
       );
 
@@ -49,7 +49,7 @@ describe("desktop update routes", () => {
 
       const refreshedResponse = await appcastRequest();
       expect(refreshedResponse.status).toBe(200);
-      expect(await refreshedResponse.text()).toContain(
+      await expect(refreshedResponse.text()).resolves.toContain(
         "<sparkle:version>0.2.2</sparkle:version>",
       );
     });

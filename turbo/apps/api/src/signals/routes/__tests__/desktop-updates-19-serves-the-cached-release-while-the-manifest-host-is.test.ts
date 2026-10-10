@@ -30,7 +30,7 @@ describe("desktop update routes", () => {
 
       const warmed = await appcastRequest();
       expect(warmed.status).toBe(200);
-      expect(await warmed.text()).toContain(
+      await expect(warmed.text()).resolves.toContain(
         "<sparkle:version>1.2.3</sparkle:version>",
       );
 
@@ -42,7 +42,7 @@ describe("desktop update routes", () => {
       const stale = await appcastRequest();
       expect(stale.status).toBe(200);
 
-      expect(await stale.text()).toContain(
+      await expect(stale.text()).resolves.toContain(
         "<sparkle:version>1.2.3</sparkle:version>",
       );
     });

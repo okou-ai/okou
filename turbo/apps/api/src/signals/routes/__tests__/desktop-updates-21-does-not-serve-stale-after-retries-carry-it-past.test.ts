@@ -27,7 +27,7 @@ describe("desktop update routes", () => {
           "1.2.3": darwinArm64Release("1.2.3", okouZipUrl("1.2.3")),
         }),
       );
-      expect((await appcastRequest()).status).toBe(200);
+      await expect(appcastRequest()).resolves.toMatchObject({ status: 200 });
 
       mockNow(initialNow + 30 * 60_000 - 1);
       countingManifestHandler(() => {
