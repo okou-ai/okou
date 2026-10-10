@@ -4,12 +4,14 @@ import {
   type DiscordComponentInteraction,
 } from "@okouai/api-contracts/contracts/discord-interactions";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
+import { discordChatThreadRoutes } from "@okouai/db/schema/discord-chat-thread-route";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import { delay } from "signal-timers";
 
 import type { DiscordCommandName } from "../../lib/discord-command-definition";
+import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import {
   discordAccountLabel,
   discordAccountMessage,
@@ -39,7 +41,6 @@ import {
   settleIncludingAbort,
 } from "../utils";
 import { requireDiscordConversationAccess$ } from "./discord-access.service";
-import { findDiscordInteractionChatThreadId } from "./discord-chat-ingress.service";
 import {
   discordIntegrationEnabledForOwner$,
   getDiscordAppConfig,
@@ -307,6 +308,89 @@ interface DiscordModelPickerArgs {
   readonly modelThreadTag?: string;
 }
 
+interface DiscordConversationModelOption {
+  readonly label: string;
+  readonly value: string;
+  readonly model: string | null;
+}
+
+const selectDiscordConversationModel$ = command(
+  async (
+    { set },
+    args: DiscordModelPickerArgs,
+    options: readonly DiscordConversationModelOption[],
+    chatThreadId: string,
+    signal: AbortSignal,
+  ): Promise<DiscordAccountMessage> => {
+    const option = options.find((candidate) => {
+      return candidate.value === args.selection;
+    });
+    if (!option) {
+      return discordAccountMessage(
+        "You no longer have access to that model. Run `/model` again.",
+      );
+    }
+    // Revalidate after the run model lookup before writing to the original route.
+    const db = set(writeDb$);
+    const routeArgs = {
+      connectionId: args.binding.connectionId,
+      userId: args.binding.userId,
+      channelId: args.actor.channelId,
+      isDm: args.actor.guildId === null,
+    };
+    const currentThreadId = (
+      await db
+        .select({ chatThreadId: discordChatThreadRoutes.chatThreadId })
+        .from(discordChatThreadRoutes)
+        .where(
+          and(
+            eq(discordChatThreadRoutes.connectionId, routeArgs.connectionId),
+            eq(discordChatThreadRoutes.userId, routeArgs.userId),
+            eq(
+              discordChatThreadRoutes.sessionKey,
+              routeArgs.isDm ? INTEGRATION_DM_SESSION_KEY : routeArgs.channelId,
+            ),
+            eq(
+              discordChatThreadRoutes.destinationChannelId,
+              routeArgs.channelId,
+            ),
+          ),
+        )
+        .limit(1)
+    )[0]?.chatThreadId;
+    signal.throwIfAborted();
+    if (currentThreadId !== chatThreadId) {
+      return discordAccountMessage(STALE_CONTROL);
+    }
+    const allowed = await set(
+      discordModelSelectionAllowed$,
+      args.binding,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!allowed) {
+      return discordAccountMessage(STALE_CONTROL);
+    }
+    const threadModel = await set(
+      updateIntegrationChatThreadModel$,
+      {
+        orgId: args.binding.orgId,
+        userId: args.binding.userId,
+        chatThreadId,
+        model: option.model,
+      },
+      signal,
+    );
+    return discordAccountMessage(
+      threadModel.kind === "updated"
+        ? `Model selected for this conversation: ${option.label}.`
+        : threadModel.kind === "no_thread"
+          ? STALE_CONTROL
+          : "You no longer have access to that model. Run `/model` again.",
+    );
+  },
+);
+
 const discordModelPicker$ = command(
   async (
     { set },
@@ -333,15 +417,33 @@ const discordModelPicker$ = command(
         return discordAccountMessage(STALE_CONTROL);
       }
     }
-    const chatThreadId = await findDiscordInteractionChatThreadId(
-      set(writeDb$),
-      {
-        connectionId: args.binding.connectionId,
-        userId: args.binding.userId,
-        channelId: args.actor.channelId,
-        isDm: args.actor.guildId === null,
-      },
-    );
+    const db = set(writeDb$);
+    const routeArgs = {
+      connectionId: args.binding.connectionId,
+      userId: args.binding.userId,
+      channelId: args.actor.channelId,
+      isDm: args.actor.guildId === null,
+    };
+    const chatThreadId = (
+      await db
+        .select({ chatThreadId: discordChatThreadRoutes.chatThreadId })
+        .from(discordChatThreadRoutes)
+        .where(
+          and(
+            eq(discordChatThreadRoutes.connectionId, routeArgs.connectionId),
+            eq(discordChatThreadRoutes.userId, routeArgs.userId),
+            eq(
+              discordChatThreadRoutes.sessionKey,
+              routeArgs.isDm ? INTEGRATION_DM_SESSION_KEY : routeArgs.channelId,
+            ),
+            eq(
+              discordChatThreadRoutes.destinationChannelId,
+              routeArgs.channelId,
+            ),
+          ),
+        )
+        .limit(1)
+    )[0]?.chatThreadId;
     signal.throwIfAborted();
     const currentModel = await set(
       readIntegrationChatThreadModel$,
@@ -372,53 +474,12 @@ const discordModelPicker$ = command(
       };
     });
     if (args.selection !== undefined) {
-      const option = options.find((candidate) => {
-        return candidate.value === args.selection;
-      });
-      if (!option) {
-        return discordAccountMessage(
-          "You no longer have access to that model. Run `/model` again.",
-        );
-      }
-      // Revalidate after the run model lookup before writing to the original route.
-      const currentThreadId = await findDiscordInteractionChatThreadId(
-        set(writeDb$),
-        {
-          connectionId: args.binding.connectionId,
-          userId: args.binding.userId,
-          channelId: args.actor.channelId,
-          isDm: args.actor.guildId === null,
-        },
-      );
-      signal.throwIfAborted();
-      if (currentThreadId !== chatThreadId) {
-        return discordAccountMessage(STALE_CONTROL);
-      }
-      const allowed = await set(
-        discordModelSelectionAllowed$,
-        args.binding,
+      return set(
+        selectDiscordConversationModel$,
+        args,
+        options,
+        chatThreadId,
         signal,
-      );
-      signal.throwIfAborted();
-      if (!allowed) {
-        return discordAccountMessage(STALE_CONTROL);
-      }
-      const threadModel = await set(
-        updateIntegrationChatThreadModel$,
-        {
-          orgId: args.binding.orgId,
-          userId: args.binding.userId,
-          chatThreadId,
-          model: option.model,
-        },
-        signal,
-      );
-      return discordAccountMessage(
-        threadModel.kind === "updated"
-          ? `Model selected for this conversation: ${option.label}.`
-          : threadModel.kind === "no_thread"
-            ? STALE_CONTROL
-            : "You no longer have access to that model. Run `/model` again.",
       );
     }
     return discordAccountPicker({
