@@ -9,6 +9,7 @@ export const CLIENT_TYPE_APP = "App";
 export const CLIENT_TYPE_CLI = "CLI";
 export const CLIENT_TYPE_DESKTOP = "Desktop";
 export const CLIENT_TYPE_GUEST_AGENT = "GuestAgent";
+export const CLIENT_TYPE_IOS = "iOS";
 export const CLIENT_TYPE_MITM_ADDON = "MitmAddon";
 export const CLIENT_TYPE_RUNNER = "Runner";
 
