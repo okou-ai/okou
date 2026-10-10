@@ -146,12 +146,13 @@ Placement does not move memory already charged to the starting tool.
 The task protocol is a separate bounded version-one endpoint derived from the
 existing canonical tool endpoint. Each task request/reply frame uses one overall
 read deadline; partial input cannot renew the budget or hold the task broker
-indefinitely. Old CLI/tool consumers on a new Guest retain
-the unchanged tool wire ABI. On an old Guest, the new binary/endpoint is missing:
-new consumers must report unsupported managed tasks before executing the target,
-never fall back to unmanaged spawn or the protected main runtime. The normal
-Guest inventory includes this helper in image/source fingerprints. Real Guest
-behavior coverage uses ordinary Python/Bash processes and the packaged helper;
+indefinitely. Runner and its bundled Guest share one deployment artifact, so
+their internal task protocol needs no cross-version compatibility path. CLI
+packages are selected separately; consumers require the task helper and active
+operation and fail explicitly when unavailable, without unmanaged spawn or
+protected-main-runtime fallback. Ordinary tools keep their separate placement
+contract. The normal Guest inventory includes this helper in image/source
+fingerprints. Real Guest behavior coverage uses ordinary Python/Bash processes and the packaged helper;
 unit/fake-file tests do not prove native cgroup or sandbox-UID OOM behavior.
 
 Guest-init mounts cgroup v2 with `favordynmods` before creating the containment

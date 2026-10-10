@@ -227,6 +227,7 @@ import json
 import os
 import pathlib
 import select
+import shutil
 import subprocess
 import sys
 import time
@@ -398,13 +399,13 @@ assert metadata is not None and failed.wait(timeout=10) == 126
 failed_task = main_runtime.parent / "tools" / ("task-" + metadata["handle"])
 gone(failed_task)
 
-# An unsupported/stopped broker never runs the target and produces no startup
+# An unavailable/stopped broker never runs the target and produces no startup
 # record. No unmanaged or protected-main-runtime fallback is permitted.
 no_cap_env = dict(os.environ)
 no_cap_env["OKOU_TOOL_CGROUP_PROCS_ENDPOINT"] += "-unavailable"
-unsupported, metadata = startup(["/bin/sh", "-c", "echo unsafe-target-ran"], env=no_cap_env)
-assert metadata is None and unsupported.wait(timeout=10) == 125
-assert unsupported.stdout.read() == ""
+unavailable, metadata = startup(["/bin/sh", "-c", "echo unsafe-target-ran"], env=no_cap_env)
+assert metadata is None and unavailable.wait(timeout=10) == 125
+assert unavailable.stdout.read() == ""
 
 # Actual expected-UID authentication, not a test role/environment flag.
 root_probe = r'''
@@ -420,6 +421,87 @@ assert p.returncode == 125 and out == ""
 assert "task caller is not in the owning" in err
 '''
 subprocess.run(["sudo", "--preserve-env=OKOU_TOOL_CGROUP_PROCS_ENDPOINT", "python3", "-c", root_probe], check=True, timeout=15)
+
+# Exercise the shipped image-batch consumer through the public CLI entry point.
+# Only its target entrypoint is an ordinary fixture, so no paid provider runs.
+# The native helper, private Node pipe, admission and lifecycle owner are real.
+batch_root = pathlib.Path("/tmp/vm0-process-containment/image-batch")
+batch_root.mkdir()
+cli = shutil.which("okou")
+assert cli, "source-bound CLI is missing from the Guest image"
+cli_entrypoint = json.loads(pathlib.Path("/usr/local/lib/okou-cli/installed.json").read_text())["entrypoint"]
+assert pathlib.Path(cli_entrypoint).is_file(), "installed CLI entrypoint is missing"
+worker = batch_root / "okou.js"
+worker.write_text(r'''
+const fs = require("node:fs");
+const path = require("node:path");
+const [, , , manifest, state] = process.argv.slice(2);
+const relative = fs.readFileSync("/proc/self/cgroup", "utf8").trim().slice(3);
+const score = fs.readFileSync("/proc/self/oom_score_adj", "utf8").trim();
+const ready = { pid: process.pid, runtime: relative, score };
+const release = path.join(state, "release-worker");
+let finished = false;
+function complete() {
+  if (finished) return;
+  finished = true;
+  watcher.close();
+  const id = fs.readFileSync(manifest, "utf8").split("\t", 1)[0];
+  fs.writeFileSync(path.join(state, "results.tsv"), id + "\thttps://cdn.example/fixture.png\n");
+  fs.writeFileSync(path.join(state, "done.tmp"), "0\n");
+  fs.renameSync(path.join(state, "done.tmp"), path.join(state, "done"));
+}
+const watcher = fs.watch(state, (_event, filename) => {
+  if (filename === "release-worker") complete();
+});
+console.log("image-batch-worker-output");
+fs.writeFileSync(path.join(state, "worker-runtime.json.tmp"), JSON.stringify(ready));
+fs.renameSync(path.join(state, "worker-runtime.json.tmp"), path.join(state, "worker-runtime.json"));
+if (fs.existsSync(release)) complete();
+''')
+driver = batch_root / "driver.mjs"
+driver.write_text('''
+import { realpathSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+process.argv[1] = process.env.BATCH_TEST_WORKER;
+await import(pathToFileURL(realpathSync(process.env.BATCH_TEST_CLI)).href);
+''')
+manifest = batch_root / "images.tsv"
+manifest.write_text("hero\tA synthetic test image\n")
+batch_env = dict(os.environ, BATCH_TEST_WORKER=str(worker), BATCH_TEST_CLI=cli_entrypoint,
+                 OKOU_TOKEN="synthetic-image-batch-test-token", SENTRY_DSN="",
+                 OKOU_API_BACKEND_URL="http://127.0.0.1:9", OKOU_DISABLED_PAID_TOOLS="[]")
+node = shutil.which("node")
+assert node, "Guest Node executable is missing"
+batch_tasks = []
+for name in ("first", "second"):
+    state = batch_root / name
+    started = subprocess.run([node, str(driver), "generate", "image-batch", "start", str(manifest), str(state)],
+                             env=batch_env, check=True, capture_output=True, text=True, timeout=40)
+    assert "Image batch started:" in started.stdout
+    assert "image-batch-worker-output" not in started.stdout
+    deadline = time.monotonic() + 10
+    ready_path = state / "worker-runtime.json"
+    while not ready_path.exists() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    ready = json.loads(ready_path.read_text())
+    assert ready["pid"] == int((state / "pid").read_text())
+    assert ready["score"] == "0"
+    task_path = pathlib.Path("/sys/fs/cgroup" + ready["runtime"]).parent
+    assert task_path.parent == main_runtime.parent / "tools"
+    assert task_path.name.startswith("task-") and ready["runtime"].endswith("/runtime")
+    assert (task_path / "runtime/cgroup.procs").read_text().strip() == str(ready["pid"])
+    assert not (state / "done").exists(), "start waited for the worker to finish"
+    batch_tasks.append((state, task_path))
+assert batch_tasks[0][1] != batch_tasks[1][1]
+for state, task_path in batch_tasks:
+    (state / "release-worker").touch()
+    waited = subprocess.run([cli, "generate", "image-batch", "wait", str(state), "--timeout", "10"],
+                            env=batch_env, check=True, capture_output=True, text=True, timeout=20)
+    assert "hero\thttps://cdn.example/fixture.png" in waited.stdout
+    assert "Image batch joined:" in waited.stdout
+    assert "image-batch-worker-output" in (state / "output.log").read_text()
+    gone(task_path)
+print("image-batch-native-task-consumer-passed", flush=True)
 
 assert not list((main_runtime.parent / "tools").glob("task-*"))
 assert (main_runtime / "cgroup.procs").read_text() == main_pids
