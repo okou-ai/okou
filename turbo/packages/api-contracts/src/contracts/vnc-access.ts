@@ -30,6 +30,16 @@ const vncHostBaseSchema = vncConnectionMetadataSchema
 export const vncHostSchema = z.union([
   vncHostBaseSchema
     .extend({
+      authMethod: z.enum([
+        "qemu_kerberos_ticket",
+        "qemu_kerberos_keytab",
+        "qemu_kerberos_password",
+      ]),
+      securityType: z.literal("qemu_x509_gssapi"),
+    })
+    .strict(),
+  vncHostBaseSchema
+    .extend({
       authMethod: vncRsaAesAuthenticationMethodSchema,
       securityType: z.enum(VNC_RSA_AES_SECURITY_TYPES),
     })

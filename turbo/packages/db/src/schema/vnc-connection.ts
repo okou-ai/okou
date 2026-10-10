@@ -5,6 +5,7 @@ import {
   foreignKey,
   index,
   integer,
+  jsonb,
   pgTable,
   text,
   timestamp,
@@ -13,6 +14,8 @@ import {
 } from "drizzle-orm/pg-core";
 import { sshConnections } from "./ssh-connection";
 import { vncCredentials } from "./vnc-credential";
+import type { VncKerberosPrincipal } from "../jsonb-contracts/vnc-kerberos";
+import { kerberosPrincipalCheck } from "./vnc-kerberos";
 
 export const vncConnections = pgTable(
   "vnc_connections",
@@ -39,6 +42,9 @@ export const vncConnections = pgTable(
         "vnc_password",
         "username_password",
         "qemu_scram_sha256",
+        "qemu_kerberos_ticket",
+        "qemu_kerberos_keytab",
+        "qemu_kerberos_password",
         "rsa_aes_password",
         "rsa_aes_username_password",
         "apple_dh_username_password",
@@ -55,6 +61,7 @@ export const vncConnections = pgTable(
         "x509_vnc",
         "x509_plain",
         "qemu_x509_sasl",
+        "qemu_x509_gssapi",
         "rsa_aes_ra2",
         "rsa_aes_ra2_256",
         "rsa_aes_ra2ne",
@@ -71,6 +78,18 @@ export const vncConnections = pgTable(
     }).notNull(),
     caBundle: text("ca_bundle"),
     rsaServerKeySha256: varchar("rsa_server_key_sha256", { length: 64 }),
+    kerberosService: jsonb("kerberos_service").$type<VncKerberosPrincipal>(),
+    kdcTransportType: varchar("kdc_transport_type", {
+      length: 16,
+      enum: ["direct", "ssh"],
+    }),
+    kdcHost: varchar("kdc_host", { length: 253 }),
+    kdcPort: integer("kdc_port"),
+    kdcSshConnectionId: uuid("kdc_ssh_connection_id"),
+    kerberosTicketLifetimeSeconds: integer("kerberos_ticket_lifetime_seconds"),
+    kerberosRenewableLifetimeSeconds: integer(
+      "kerberos_renewable_lifetime_seconds",
+    ),
     generation: integer("generation").notNull().default(1),
     defaultEnabledForChats: boolean("default_enabled_for_chats")
       .notNull()
@@ -142,7 +161,42 @@ export const vncConnections = pgTable(
       check("chk_vnc_connections_generation", sql`${table.generation} > 0`),
       check(
         "chk_vnc_connections_profile",
-        sql`(${table.credentialId} IS NOT NULL AND ${table.authMethod} IN ('rsa_aes_password', 'rsa_aes_username_password') AND ((${table.securityType} IN ('rsa_aes_ra2', 'rsa_aes_ra2_256')) OR (${table.securityType} IN ('rsa_aes_ra2ne', 'rsa_aes_ra2ne_256') AND ${table.transportType} = 'ssh' AND ${table.host} IN ('127.0.0.1', '::1')))) OR (${table.authMethod} = 'none' AND ${table.securityType} = 'x509_none' AND ${table.credentialId} IS NULL) OR (${table.credentialId} IS NOT NULL AND ((${table.authMethod} = 'client_certificate' AND ${table.securityType} = 'x509_none') OR (${table.authMethod} = 'client_certificate_vnc_password' AND ${table.securityType} = 'x509_vnc') OR (${table.authMethod} = 'vnc_password' AND ${table.securityType} = 'x509_vnc') OR (${table.authMethod} = 'vnc_password' AND ${table.securityType} = 'apple_vnc_password' AND ${table.transportType} = 'ssh' AND ${table.host} IN ('127.0.0.1', '::1') AND ${table.x509ServerName} IS NULL) OR (${table.authMethod} = 'username_password' AND ${table.securityType} = 'x509_plain') OR (${table.authMethod} = 'qemu_scram_sha256' AND ${table.securityType} = 'qemu_x509_sasl') OR (${table.authMethod} = 'apple_dh_username_password' AND ${table.securityType} = 'apple_dh' AND ${table.transportType} = 'ssh' AND ${table.host} IN ('127.0.0.1', '::1') AND ${table.x509ServerName} IS NULL) OR (${table.authMethod} = 'apple_srp_username_password' AND ${table.securityType} = 'apple_srp' AND ${table.transportType} = 'ssh' AND ${table.host} IN ('127.0.0.1', '::1') AND ${table.x509ServerName} IS NULL) OR (${table.authMethod} = 'apple_rsa_srp_username_password' AND ${table.securityType} = 'apple_rsa_srp' AND ${table.transportType} = 'ssh' AND ${table.host} IN ('127.0.0.1', '::1') AND ${table.x509ServerName} IS NULL)))`,
+        sql`(${table.credentialId} IS NOT NULL AND ${table.authMethod} IN ('rsa_aes_password', 'rsa_aes_username_password') AND ((${table.securityType} IN ('rsa_aes_ra2', 'rsa_aes_ra2_256')) OR (${table.securityType} IN ('rsa_aes_ra2ne', 'rsa_aes_ra2ne_256') AND ${table.transportType} = 'ssh' AND ${table.host} IN ('127.0.0.1', '::1')))) OR (${table.authMethod} = 'none' AND ${table.securityType} = 'x509_none' AND ${table.credentialId} IS NULL) OR (${table.credentialId} IS NOT NULL AND ((${table.authMethod} = 'client_certificate' AND ${table.securityType} = 'x509_none') OR (${table.authMethod} = 'client_certificate_vnc_password' AND ${table.securityType} = 'x509_vnc') OR (${table.authMethod} = 'vnc_password' AND ${table.securityType} = 'x509_vnc') OR (${table.authMethod} = 'vnc_password' AND ${table.securityType} = 'apple_vnc_password' AND ${table.transportType} = 'ssh' AND ${table.host} IN ('127.0.0.1', '::1') AND ${table.x509ServerName} IS NULL) OR (${table.authMethod} = 'username_password' AND ${table.securityType} = 'x509_plain') OR (${table.authMethod} = 'qemu_scram_sha256' AND ${table.securityType} = 'qemu_x509_sasl') OR (${table.authMethod} = 'apple_dh_username_password' AND ${table.securityType} = 'apple_dh' AND ${table.transportType} = 'ssh' AND ${table.host} IN ('127.0.0.1', '::1') AND ${table.x509ServerName} IS NULL) OR (${table.authMethod} = 'apple_srp_username_password' AND ${table.securityType} = 'apple_srp' AND ${table.transportType} = 'ssh' AND ${table.host} IN ('127.0.0.1', '::1') AND ${table.x509ServerName} IS NULL) OR (${table.authMethod} = 'apple_rsa_srp_username_password' AND ${table.securityType} = 'apple_rsa_srp' AND ${table.transportType} = 'ssh' AND ${table.host} IN ('127.0.0.1', '::1') AND ${table.x509ServerName} IS NULL))) OR (${table.authMethod} IN ('qemu_kerberos_ticket', 'qemu_kerberos_keytab', 'qemu_kerberos_password') AND ${table.securityType} = 'qemu_x509_gssapi' AND ${table.credentialId} IS NOT NULL)`,
+      ),
+      foreignKey({
+        name: "vnc_connections_kdc_ssh_owner_fk",
+        columns: [table.kdcSshConnectionId, table.orgId, table.userId],
+        foreignColumns: [
+          sshConnections.id,
+          sshConnections.orgId,
+          sshConnections.userId,
+        ],
+      }).onDelete("restrict"),
+      check(
+        "chk_vnc_connections_kerberos_service",
+        kerberosPrincipalCheck(table.kerberosService, true),
+      ),
+      check(
+        "chk_vnc_connections_kerberos",
+        sql`CASE
+        WHEN ${table.authMethod} IN ('qemu_kerberos_ticket', 'qemu_kerberos_keytab', 'qemu_kerberos_password')
+          THEN ${table.kerberosService} IS NOT NULL AND ${table.securityType} = 'qemu_x509_gssapi'
+        ELSE ${table.kerberosService} IS NULL END`,
+      ),
+      check(
+        "chk_vnc_connections_kdc",
+        sql`CASE
+        WHEN ${table.authMethod} IN ('qemu_kerberos_keytab', 'qemu_kerberos_password') THEN
+          ${table.kdcTransportType} IS NOT NULL AND ${table.kdcHost} IS NOT NULL
+          AND octet_length(${table.kdcHost}) BETWEEN 1 AND 253
+          AND ${table.kdcPort} IS NOT NULL AND ${table.kdcPort} BETWEEN 1 AND 65535
+          AND ${table.kerberosTicketLifetimeSeconds} IS NOT NULL AND ${table.kerberosTicketLifetimeSeconds} BETWEEN 1 AND 7200
+          AND ${table.kerberosRenewableLifetimeSeconds} IS NOT NULL AND ${table.kerberosRenewableLifetimeSeconds} BETWEEN 0 AND 7200
+          AND ((${table.kdcTransportType} = 'direct' AND ${table.kdcSshConnectionId} IS NULL)
+            OR (${table.kdcTransportType} = 'ssh' AND ${table.kdcSshConnectionId} IS NOT NULL AND ${table.kdcHost} IN ('127.0.0.1', '::1')))
+        ELSE ${table.kdcTransportType} IS NULL AND ${table.kdcHost} IS NULL AND ${table.kdcPort} IS NULL
+          AND ${table.kdcSshConnectionId} IS NULL AND ${table.kerberosTicketLifetimeSeconds} IS NULL
+          AND ${table.kerberosRenewableLifetimeSeconds} IS NULL END`,
       ),
       check(
         "chk_vnc_connections_rsa_pin",

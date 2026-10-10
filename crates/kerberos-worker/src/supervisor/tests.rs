@@ -16,6 +16,7 @@ fn allocation() -> (tempfile::TempDir, Arc<Semaphore>, Resources) {
     fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
     let semaphore = Arc::new(Semaphore::new(1));
     let capacity = Capacity {
+        owner: None,
         permit: Some(semaphore.clone().try_acquire_owned().unwrap()),
         clean: Arc::new(AtomicBool::new(true)),
         reaped: Arc::new(AtomicBool::new(true)),

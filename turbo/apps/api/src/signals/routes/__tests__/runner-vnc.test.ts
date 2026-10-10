@@ -1,6 +1,7 @@
 import { createPublicRemoteAccessRunApi } from "./helpers/public-remote-access-run";
 import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { runnersJobClaimContract } from "@okouai/api-contracts/contracts/runners";
 import {
@@ -12,6 +13,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
+import { mockNow } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, onRejection } from "../../utils";
 import { runnerVncRoutes } from "../runner-vnc";
@@ -43,6 +45,29 @@ const context = testContext();
 const api = createVncRuntimeApi(context);
 const runs = createRunsApi(context);
 beforeEach(initializeVncRuntimeTest);
+
+const kerberosVectors = readFileSync(
+  new URL(
+    "../../../../../../../crates/kerberos-credentials/tests/fixtures/conformance.tsv",
+    import.meta.url,
+  ),
+  "utf8",
+)
+  .trimEnd()
+  .split("\n")
+  .slice(1)
+  .map((line) => {
+    return line.split("\t");
+  });
+function kerberosMaterial(name: string) {
+  const canonical = kerberosVectors.find((vector) => {
+    return vector[0] === name;
+  })?.[3];
+  if (!canonical) {
+    throw new Error("Missing public K1 conformance vector");
+  }
+  return Buffer.from(canonical, "hex").toString("base64");
+}
 
 function check(
   f: VncRuntimeFixture,
@@ -175,6 +200,432 @@ describe("private Runner VNC authority", () => {
       credentialId: requireVncCredentialId(connection.body),
     };
   }
+
+  it("negotiates online Kerberos before KMS and independently fences source revision and KDC route", async () => {
+    const f = await claimedFixture();
+    const kms = useSecretKmsProbe();
+    const initiator = { realm: "EXAMPLE.INVALID", components: ["alice"] };
+    const changed = await accept(
+      api.connections().update({
+        headers: vncSessionHeaders,
+        params: { connectionId: f.connectionId },
+        body: {
+          expectedGeneration: 1,
+          security: {
+            type: "qemu_x509_gssapi",
+            trust: { mode: "system" },
+            service: {
+              realm: initiator.realm,
+              components: ["vnc", "desktop.example.com"],
+            },
+            kdc: {
+              host: "kdc.example.com",
+              port: 88,
+              transport: { type: "direct" },
+              ticketLifetimeSeconds: 1200,
+              renewableLifetimeSeconds: 7200,
+            },
+          },
+          credential: {
+            create: {
+              name: "Explicit source",
+              authentication: {
+                method: "qemu_kerberos_password",
+                initiator,
+                password: "synthetic exact source",
+              },
+            },
+          },
+        },
+      }),
+      [200],
+    );
+    await expect(api.resolve(f)).resolves.toStrictEqual({
+      outcome: "unsupported_profile",
+    });
+    expect(kms.decryptCalls).toBe(0);
+    const result = await accept(
+      api.runner().resolve({
+        headers: vncRunnerHeaders,
+        params: { runId: f.runId },
+        body: {
+          connectionId: f.connectionId,
+          runnerIdentity: f.runnerIdentity,
+          supportedProfiles: [
+            {
+              authMethod: "qemu_kerberos_password",
+              securityType: "qemu_x509_gssapi",
+              transportType: "direct",
+              kdcTransportType: "direct",
+            },
+          ],
+        },
+      }),
+      [200],
+    );
+    expect(result.headers.get("X-VNC-Profile-Version")).toBe("kerberos-v1");
+    expect(result.body).toMatchObject({
+      outcome: "resolved_kerberos",
+      generation: 2,
+      credentialRevision: 1,
+      authentication: {
+        method: "qemu_kerberos_password",
+        initiator,
+        password: "synthetic exact source",
+      },
+      security: { kdc: { transport: { type: "direct" } } },
+    });
+    expect(kms.decryptCalls).toBe(1);
+    expect((await check(f, 2)).body).toStrictEqual({
+      outcome: "configuration_changed",
+    });
+    const binding = {
+      expectedCredentialRevision: 1,
+      expectedKdcTransport: { type: "direct" as const },
+    };
+    expect((await check(f, 2, binding)).body).toStrictEqual({
+      outcome: "valid",
+    });
+    await accept(
+      api.credentials().update({
+        headers: vncSessionHeaders,
+        params: { credentialId: requireVncCredentialId(changed.body) },
+        body: {
+          expectedRevision: 1,
+          authentication: {
+            method: "qemu_kerberos_password",
+            initiator,
+            password: "synthetic rotated source",
+          },
+        },
+      }),
+      [200],
+    );
+    expect((await check(f, 2, binding)).body).toStrictEqual({
+      outcome: "configuration_changed",
+    });
+    expect(kms.decryptCalls).toBe(1);
+  });
+
+  it.each(
+    (["qemu_kerberos_password", "qemu_kerberos_keytab"] as const).flatMap(
+      (method) => {
+        return (
+          [
+            { rfb: "direct", kdc: "direct" },
+            { rfb: "direct", kdc: "ssh" },
+            { rfb: "ssh", kdc: "direct" },
+            { rfb: "ssh", kdc: "ssh" },
+          ] as const
+        ).map((route) => {
+          return { method, ...route };
+        });
+      },
+    ),
+  )(
+    "independently authorizes and fences $method / $rfb RFB / $kdc KDC routes",
+    async ({ method, rfb, kdc }) => {
+      const f = await claimedFixture();
+      const ssh = setupApp({ context, routes: sshConnectionsRoutes })(
+        sshConnectionsContract,
+      );
+      const gateways = [];
+      for (const name of ["RFB", "KDC"]) {
+        const saved = await accept(
+          ssh.create({
+            headers: vncSessionHeaders,
+            body: {
+              id: randomUUID(),
+              displayName: `${name} gateway`,
+              host: `${name.toLowerCase()}.gateway.example.com`,
+              credential: inlineSshKey("operator", "synthetic-private-key"),
+            },
+          }),
+          [201],
+        );
+        gateways.push(saved.body);
+      }
+      const [rfbGateway, kdcGateway] = gateways;
+      if (!rfbGateway || !kdcGateway) {
+        throw new Error("Missing owned route fixture");
+      }
+      const initiator = { realm: "EXAMPLE.INVALID", components: ["alice"] };
+      const authentication =
+        method === "qemu_kerberos_keytab"
+          ? { method, initiator, keytab: kerberosMaterial("keytab") }
+          : { method, initiator, password: "synthetic-secret" };
+      const saved = await accept(
+        api.connections().update({
+          headers: vncSessionHeaders,
+          params: { connectionId: f.connectionId },
+          body: {
+            expectedGeneration: 1,
+            host: rfb === "ssh" ? "127.0.0.1" : "desktop.example.com",
+            transport:
+              rfb === "ssh"
+                ? { type: "ssh", connectionId: rfbGateway.id }
+                : { type: "direct" },
+            security: {
+              type: "qemu_x509_gssapi",
+              trust: { mode: "system" },
+              serverName: "desktop.identity.example.com",
+              service: {
+                realm: initiator.realm,
+                components: ["vnc", "desktop.example.com"],
+              },
+              kdc: {
+                host: kdc === "ssh" ? "127.0.0.1" : "kdc.example.com",
+                port: 88,
+                transport:
+                  kdc === "ssh"
+                    ? { type: "ssh", connectionId: kdcGateway.id }
+                    : { type: "direct" },
+                ticketLifetimeSeconds: 1200,
+                renewableLifetimeSeconds: 7200,
+              },
+            },
+            credential: {
+              create: {
+                name: "Independent Kerberos source",
+                authentication,
+              },
+            },
+          },
+        }),
+        [200],
+      );
+      expect(saved.body.generation).toBe(2);
+      const profiles = [
+        {
+          authMethod: method,
+          securityType: "qemu_x509_gssapi",
+          transportType: rfb,
+          kdcTransportType: kdc,
+        },
+      ] as const;
+      const kms = useSecretKmsProbe();
+      if (rfb === "ssh" || kdc === "ssh") {
+        await expect(
+          api.resolve(f, { supportedProfiles: [...profiles] }),
+        ).resolves.toStrictEqual({ outcome: "unavailable" });
+      }
+      expect(kms.decryptCalls).toBe(0);
+      if (rfb === "ssh") {
+        await api.enableDefault(f, "ssh", rfbGateway.id);
+      }
+      if (kdc === "ssh") {
+        await expect(
+          api.resolve(f, { supportedProfiles: [...profiles] }),
+        ).resolves.toStrictEqual({ outcome: "unavailable" });
+        expect(kms.decryptCalls).toBe(0);
+        await api.enableDefault(f, "ssh", kdcGateway.id);
+      }
+      await expect(
+        api.resolve(f, {
+          supportedProfiles: [
+            {
+              ...profiles[0],
+              kdcTransportType: kdc === "ssh" ? "direct" : "ssh",
+            },
+          ],
+        }),
+      ).resolves.toStrictEqual({ outcome: "unsupported_profile" });
+      expect(kms.decryptCalls).toBe(0);
+      const expectedTransport =
+        rfb === "ssh"
+          ? { type: "ssh" as const, connectionId: rfbGateway.id, generation: 1 }
+          : { type: "direct" as const };
+      const expectedKdcTransport =
+        kdc === "ssh"
+          ? { type: "ssh" as const, connectionId: kdcGateway.id, generation: 1 }
+          : { type: "direct" as const };
+      const binding = {
+        expectedTransport,
+        expectedKdcTransport,
+        expectedCredentialRevision: 1,
+      };
+      await expect(
+        api.resolve(f, { supportedProfiles: [...profiles] }),
+      ).resolves.toMatchObject({
+        outcome: "resolved_kerberos",
+        transport: expectedTransport,
+        credentialRevision: 1,
+        authentication,
+        security: { kdc: { transport: expectedKdcTransport } },
+      });
+      expect((await check(f, 2, binding)).body).toStrictEqual({
+        outcome: "valid",
+      });
+      expect(kms.decryptCalls).toBe(1);
+      for (const route of [
+        ...(rfb === "ssh"
+          ? [{ gateway: rfbGateway, field: "expectedTransport" as const }]
+          : []),
+        ...(kdc === "ssh"
+          ? [{ gateway: kdcGateway, field: "expectedKdcTransport" as const }]
+          : []),
+      ]) {
+        await api.setDefault(f, "ssh", route.gateway.id, false);
+        expect((await check(f, 2, binding)).body).toStrictEqual({
+          outcome: "unavailable",
+        });
+        await expect(
+          api.resolve(f, { supportedProfiles: [...profiles] }),
+        ).resolves.toStrictEqual({ outcome: "unavailable" });
+        expect(kms.decryptCalls).toBe(1);
+        await api.enableDefault(f, "ssh", route.gateway.id);
+        expect((await check(f, 2, binding)).body).toStrictEqual({
+          outcome: "valid",
+        });
+        const wrong = {
+          type: "ssh" as const,
+          connectionId:
+            route.field === "expectedTransport" ? kdcGateway.id : rfbGateway.id,
+          generation: 1,
+        };
+        expect(
+          (await check(f, 2, { ...binding, [route.field]: wrong })).body,
+        ).toStrictEqual({ outcome: "configuration_changed" });
+        await accept(
+          ssh.update({
+            headers: vncSessionHeaders,
+            params: { connectionId: route.gateway.id },
+            body: {
+              expectedGeneration: 1,
+              displayName: `Rotated ${route.gateway.displayName}`,
+            },
+          }),
+          [200],
+        );
+        expect((await check(f, 2, binding)).body).toStrictEqual({
+          outcome: "configuration_changed",
+        });
+        binding[route.field] = {
+          type: "ssh",
+          connectionId: route.gateway.id,
+          generation: 2,
+        };
+        expect((await check(f, 2, binding)).body).toStrictEqual({
+          outcome: "valid",
+        });
+      }
+    },
+  );
+
+  it.each(["direct", "ssh"] as const)(
+    "admits an offline ticket through %s without a KDC and refuses expiry before KMS",
+    async (route) => {
+      const f = await claimedFixture();
+      mockNow(new Date(200_000));
+      const ssh = setupApp({ context, routes: sshConnectionsRoutes })(
+        sshConnectionsContract,
+      );
+      const saved = await accept(
+        ssh.create({
+          headers: vncSessionHeaders,
+          body: {
+            id: randomUUID(),
+            displayName: "Offline ticket RFB gateway",
+            host: "gateway.example.com",
+            credential: inlineSshKey("operator", "synthetic-private-key"),
+          },
+        }),
+        [201],
+      );
+      const transport =
+        route === "ssh"
+          ? { type: route, connectionId: saved.body.id }
+          : { type: route };
+      const initiator = { realm: "EXAMPLE.INVALID", components: ["alice"] };
+      const service = {
+        realm: initiator.realm,
+        components: ["vnc", "host.example.invalid"],
+      };
+      const authentication = {
+        method: "qemu_kerberos_ticket" as const,
+        initiator,
+        service,
+        ticketCache: kerberosMaterial("service"),
+      };
+      await accept(
+        api.connections().update({
+          headers: vncSessionHeaders,
+          params: { connectionId: f.connectionId },
+          body: {
+            expectedGeneration: 1,
+            host: route === "ssh" ? "127.0.0.1" : "desktop.example.com",
+            transport,
+            security: {
+              type: "qemu_x509_gssapi",
+              trust: { mode: "system" },
+              serverName: "desktop.identity.example.com",
+              service,
+            },
+            credential: {
+              create: { name: "Offline service ticket", authentication },
+            },
+          },
+        }),
+        [200],
+      );
+      if (route === "ssh") {
+        await api.enableDefault(f, "ssh", saved.body.id);
+      }
+      const kms = useSecretKmsProbe();
+      const supportedProfiles = [
+        {
+          authMethod: "qemu_kerberos_ticket" as const,
+          securityType: "qemu_x509_gssapi" as const,
+          transportType: route,
+          kdcTransportType: "none" as const,
+        },
+      ];
+      const expectedTransport: RunnerVncCheckRequest["expectedTransport"] =
+        route === "ssh"
+          ? { type: route, connectionId: saved.body.id, generation: 1 }
+          : { type: route };
+      const binding = {
+        expectedTransport,
+        expectedCredentialRevision: 1,
+      };
+      await expect(
+        api.resolve(f, { supportedProfiles }),
+      ).resolves.toMatchObject({
+        outcome: "resolved_kerberos",
+        authentication,
+        security: { kdc: null },
+        transport: expectedTransport,
+      });
+      expect((await check(f, 2, binding)).body).toStrictEqual({
+        outcome: "valid",
+      });
+      expect(kms.decryptCalls).toBe(1);
+      mockNow(new Date(1_000_000));
+      await expect(
+        api.resolve(f, { supportedProfiles }),
+      ).resolves.toStrictEqual({
+        outcome: "unavailable",
+      });
+      expect((await check(f, 2, binding)).body).toStrictEqual({
+        outcome: "unavailable",
+      });
+      expect(kms.decryptCalls).toBe(1);
+      mockNow(new Date(200_000));
+      const expiresDuringKms = useSecretKmsProbe(undefined, () => {
+        mockNow(new Date(1_000_000));
+        return undefined;
+      });
+      await expect(
+        api.resolve(f, { supportedProfiles }),
+      ).resolves.toStrictEqual({
+        outcome: "unavailable",
+      });
+      expect(expiresDuringKms.decryptCalls).toBe(1);
+      expect((await check(f, 2, binding)).body).toStrictEqual({
+        outcome: "unavailable",
+      });
+    },
+  );
 
   it("uses current chat VNC and exact SSH dependency access during an active Run", async () => {
     const f = await claimedFixture({

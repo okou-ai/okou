@@ -286,6 +286,7 @@ impl Drop for AbortOnDrop {
 
 struct Capacity {
     permit: Option<OwnedSemaphorePermit>,
+    owner: Option<Arc<dyn crate::WorkOwner>>,
     clean: Arc<AtomicBool>,
     reaped: Arc<AtomicBool>,
 }
@@ -296,6 +297,9 @@ impl Drop for Capacity {
                 drop(permit);
             } else {
                 std::mem::forget(permit);
+                if let Some(owner) = self.owner.take() {
+                    std::mem::forget(owner);
+                }
             }
         }
     }
@@ -393,11 +397,12 @@ fn encode_name(out: &mut Vec<u8>, name: &kerberos_credentials::Principal) -> Res
     Ok(())
 }
 
-pub(crate) async fn start(
+pub(crate) async fn start_owned(
     root: &Path,
     credentials: Credentials,
     policy: TicketPolicy,
     deadline: Instant,
+    owner: Option<Arc<dyn crate::WorkOwner>>,
 ) -> Result<Context, Error> {
     let deadline = deadline.min(Instant::now() + Duration::from_secs(30));
     if deadline <= Instant::now() {
@@ -438,6 +443,7 @@ pub(crate) async fn start(
         root,
         Capacity {
             permit: Some(permit),
+            owner,
             clean: Arc::new(AtomicBool::new(true)),
             reaped: Arc::new(AtomicBool::new(true)),
         },

@@ -79,6 +79,21 @@ function VncProfileLabel({ profile }: { readonly profile: VncProfile }) {
         return $.vnc.security.qemuX509Sasl;
       });
     }
+    case "qemu_kerberos_ticket": {
+      return t(($) => {
+        return $.vnc.kerberos.ticket;
+      });
+    }
+    case "qemu_kerberos_keytab": {
+      return t(($) => {
+        return $.vnc.kerberos.keytab;
+      });
+    }
+    case "qemu_kerberos_password": {
+      return t(($) => {
+        return $.vnc.kerberos.password;
+      });
+    }
     case "apple_vnc_password": {
       return t(($) => {
         return $.vnc.security.appleVncPassword;
@@ -146,6 +161,21 @@ function VncAuthenticationLabel({
     case "qemu_scram_sha256": {
       return t(($) => {
         return $.vnc.security.qemuX509Sasl;
+      });
+    }
+    case "qemu_kerberos_ticket": {
+      return t(($) => {
+        return $.vnc.kerberos.ticket;
+      });
+    }
+    case "qemu_kerberos_keytab": {
+      return t(($) => {
+        return $.vnc.kerberos.keytab;
+      });
+    }
+    case "qemu_kerberos_password": {
+      return t(($) => {
+        return $.vnc.kerberos.password;
       });
     }
     case "apple_dh_username_password": {

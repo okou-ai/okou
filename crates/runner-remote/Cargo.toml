@@ -24,6 +24,9 @@ pkcs5 = { workspace = true, features = ["alloc", "pbes2"] }
 pkcs8 = { workspace = true, features = ["encryption", "std"] }
 reqwest = { workspace = true, features = ["json", "rustls"] }
 rfb-client.workspace = true
+kerberos-credentials.workspace = true
+kerberos-worker.workspace = true
+tempfile = { workspace = true, features = ["getrandom"] }
 rsa = { workspace = true, features = ["encoding", "std"] }
 russh = { workspace = true, features = ["ring", "rsa"] }
 rustls = { workspace = true, features = ["aws_lc_rs", "std", "tls12"] }
@@ -52,7 +55,6 @@ rcgen = { workspace = true, features = ["crypto", "ring"] }
 runner-network = { workspace = true, features = ["test-support"] }
 runner-rpc-client.workspace = true
 sandbox-mock.workspace = true
-tempfile = { workspace = true, features = ["getrandom"] }
 tokio = { workspace = true, features = ["process", "test-util"] }
 tracing-log = { workspace = true, features = ["log-tracer", "std"] }
 tracing-subscriber = { workspace = true, features = ["ansi", "fmt", "smallvec", "std", "tracing-log"] }

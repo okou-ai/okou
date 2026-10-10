@@ -2059,6 +2059,13 @@
       "when": 1791638276606,
       "tag": "1371_retire_desktop_auth_handoff_storage",
       "breakpoints": true
+    },
+    {
+      "idx": 1372,
+      "version": "7",
+      "when": 1791645587661,
+      "tag": "1372_vnc_kerberos_admission",
+      "breakpoints": true
     }
   ]
 }

@@ -19,6 +19,20 @@ import {
 } from "@okouai/api-contracts/contracts/vnc-credentials";
 import { VNC_ERROR_CODES } from "@okouai/api-contracts/contracts/vnc-errors";
 import {
+  isVncKerberosMethod,
+  VNC_KERBEROS_VERSION,
+  VNC_KERBEROS_VERSION_HEADER,
+  type VncKerberosMethod,
+  kerberosPrincipalSchema,
+  kerberosServicePrincipalSchema,
+} from "@okouai/api-contracts/contracts/vnc-kerberos";
+import {
+  encodeAndClearKerberosMaterial,
+  canonicalKerberosKeytab,
+  canonicalKerberosTicket,
+} from "@okouai/api-contracts/contracts/vnc-kerberos-format";
+import { now } from "../lib/time.ts";
+import {
   isVncRsaAesSecurityType,
   isVncRsaAesAuthenticationOnly,
 } from "@okouai/api-contracts/contracts/vnc-rsa-aes";
@@ -34,7 +48,13 @@ import { runtimeAuthenticatedIdentity$ } from "./auth-context.ts";
 import { apiClient$ } from "./api-client.ts";
 import { featureSwitch$ } from "./external/feature-switch.ts";
 import { invalidateRemoteAccess$ } from "./remote-access-refresh.ts";
-import { onRef, resetSignal, settle, waitForOperation } from "./utils.ts";
+import {
+  onRef,
+  resetSignal,
+  settle,
+  waitForOperation,
+  withCleanup,
+} from "./utils.ts";
 
 export const vncIdentity$ = computed(async (get) => {
   if (!get(featureSwitch$)[FeatureSwitchKey.VncAccess]) {
@@ -90,18 +110,30 @@ export const retryVnc$ = command(({ set }) => {
   set(invalidateVnc$);
 });
 
-export const vncConnections$ = computed(async (get) => {
+const vncConnectionsResult$ = computed(async (get) => {
   get(reload$);
   if (!(await get(vncIdentity$))) {
     return null;
   }
   const result = await accept(
-    (await get(vncClients$)).connections.list(),
+    (await get(vncClients$)).connections.list({
+      extraHeaders: { [VNC_KERBEROS_VERSION_HEADER]: VNC_KERBEROS_VERSION },
+    }),
     [200, 404],
     undefined,
     { showErrorToast: false },
   );
-  return result.status === 200 ? result.body.connections : null;
+  return result.status === 200 ? result : null;
+});
+export const vncConnections$ = computed(async (get) => {
+  return (await get(vncConnectionsResult$))?.body.connections ?? null;
+});
+export const vncKerberosSupported$ = computed(async (get) => {
+  return (
+    (await get(vncConnectionsResult$))?.headers.get(
+      VNC_KERBEROS_VERSION_HEADER,
+    ) === VNC_KERBEROS_VERSION
+  );
 });
 
 export const vncCredentials$ = computed(async (get) => {
@@ -110,7 +142,9 @@ export const vncCredentials$ = computed(async (get) => {
     return null;
   }
   const result = await accept(
-    (await get(vncClients$)).credentials.list(),
+    (await get(vncClients$)).credentials.list({
+      extraHeaders: { [VNC_KERBEROS_VERSION_HEADER]: VNC_KERBEROS_VERSION },
+    }),
     [200, 404],
     undefined,
     { showErrorToast: false },
@@ -147,13 +181,17 @@ export interface VncDialogState {
 }
 const dialog$ = state<VncDialogState | null>(null);
 export type VncProfile =
-  | VncSecurity["type"]
+  | Exclude<VncSecurity["type"], "qemu_x509_gssapi">
+  | VncKerberosMethod
   | "client_certificate_none"
   | "client_certificate_vnc"
   | RsaAesProfile;
 export type VncAuthMethod = VncCredentialResponse["authMethod"] | "none";
 
 export function vncAuthMethodForProfile(profile: VncProfile): VncAuthMethod {
+  if (isVncKerberosMethod(profile)) {
+    return profile;
+  }
   if (isRsaAesProfile(profile)) {
     return RSA_AES_PROFILES[profile].method;
   }
@@ -194,6 +232,9 @@ export function vncAuthMethodForProfile(profile: VncProfile): VncAuthMethod {
 function vncProfileForAuthMethod(
   method: VncCredentialResponse["authMethod"],
 ): VncProfile {
+  if (isVncKerberosMethod(method)) {
+    return method;
+  }
   switch (method) {
     case "rsa_aes_password": {
       return "rsa_aes_ra2";
@@ -260,6 +301,12 @@ export function vncSshConnectionId(connection: VncConnectionResponse) {
 export function vncProfileForConnection(
   connection: VncConnectionResponse,
 ): VncProfile {
+  if (connection.security.type === "qemu_x509_gssapi") {
+    if (!connection.kerberosAuthentication) {
+      throw new Error("Missing VNC Kerberos source");
+    }
+    return connection.kerberosAuthentication;
+  }
   if (isVncRsaAesSecurityType(connection.security.type)) {
     if (
       !("rsaAesAuthentication" in connection) ||
@@ -314,6 +361,8 @@ const editor$ = state({
   trust: "system" as "system" | "custom_ca",
   transport: "direct" as "direct" | "ssh",
   sshConnectionId: "",
+  kdcSshConnectionId: "",
+  kdcHost: "",
   loopbackHost: "127.0.0.1" as "127.0.0.1" | "::1",
   destinationHost: "",
   tlsServerName: "",
@@ -327,6 +376,7 @@ const saveMessage$ = state<string | null>(null);
 const conflict$ = state(false);
 const resetSave$ = resetSignal();
 const resetRsaImport$ = resetSignal();
+const resetKerberosImport$ = resetSignal();
 const editorLocked$ = computed((get) => {
   return get(uncertain$) || get(conflict$);
 });
@@ -350,6 +400,7 @@ export const vncConflict$ = computed((get) => {
 export const chooseVncCredential$ = command(
   ({ get, set }, selection: string | null) => {
     if (selection !== null && !get(editorLocked$)) {
+      set(resetKerberosImport$);
       set(editor$, (current) => {
         return { ...current, selection };
       });
@@ -366,6 +417,7 @@ export const chooseVncProfile$ = command(
         profile === "client_certificate_vnc" ||
         profile === "x509_plain" ||
         profile === "qemu_x509_sasl" ||
+        (profile !== null && isVncKerberosMethod(profile)) ||
         profile === "apple_vnc_password" ||
         profile === "apple_dh" ||
         profile === "apple_srp" ||
@@ -373,6 +425,7 @@ export const chooseVncProfile$ = command(
         isRsaAesProfile(profile))
     ) {
       set(resetRsaImport$);
+      set(resetKerberosImport$);
       set(editor$, (current): Editor => {
         return current.profile === profile
           ? current
@@ -520,6 +573,25 @@ export const chooseVncSshConnection$ = command(
     }
   },
 );
+export const chooseVncKdcSsh$ = command(({ get, set }, id: string | null) => {
+  if (id === null || get(editorLocked$)) {
+    return;
+  }
+  set(editor$, (current) => {
+    return {
+      ...current,
+      kdcSshConnectionId: id === "direct" ? "" : id,
+      kdcHost: id === "direct" ? "" : "127.0.0.1",
+    };
+  });
+});
+export const editVncKdcHost$ = command(({ get, set }, host: string) => {
+  if (!get(editorLocked$)) {
+    set(editor$, (current) => {
+      return { ...current, kdcHost: host };
+    });
+  }
+});
 export const replaceVncAuthentication$ = command(
   ({ get, set }, replace: boolean) => {
     if (get(editorLocked$)) {
@@ -528,10 +600,12 @@ export const replaceVncAuthentication$ = command(
     set(editor$, (current) => {
       return { ...current, replace };
     });
+    set(resetKerberosImport$);
   },
 );
 
 export const closeVncDialog$ = command(({ set }) => {
+  set(resetKerberosImport$);
   set(resetSave$);
   set(resetRsaImport$);
   set(dialog$, null);
@@ -544,6 +618,8 @@ export const closeVncDialog$ = command(({ set }) => {
     trust: "system",
     transport: "direct",
     sshConnectionId: "",
+    kdcSshConnectionId: "",
+    kdcHost: "",
     loopbackHost: "127.0.0.1",
     destinationHost: "",
     tlsServerName: "",
@@ -563,6 +639,7 @@ export const mountVncForm$ = onRef(
         if (get(dialog$) === mountedDialog) {
           set(resetSave$);
           set(resetRsaImport$);
+          set(resetKerberosImport$);
           // StrictMode replays callback refs within the same owner lifetime.
           // Only an actual authority change discards the stored draft here.
           if (
@@ -602,6 +679,100 @@ export const mountVncCertificateSecret$ = onRef(
   }),
 );
 
+export const importVncKerberos$ = command(
+  async (
+    { get, set },
+    form: HTMLFormElement,
+    file: File,
+    parentSignal: AbortSignal,
+  ) => {
+    const signal = set(resetKerberosImport$, parentSignal);
+    const dialog = await get(vncDialog$);
+    signal.throwIfAborted();
+    const profile = get(editor$).profile;
+    const field = form.elements.namedItem("kerberosMaterial");
+    if (
+      !dialog ||
+      get(editorLocked$) ||
+      !(field instanceof HTMLInputElement) ||
+      (profile !== "qemu_kerberos_ticket" && profile !== "qemu_kerberos_keytab")
+    ) {
+      return;
+    }
+    field.value = "";
+    if (file.size === 0 || file.size > 65_536) {
+      set(saveMessage$, VNC_ERROR_CODES.INVALID_INPUT);
+      return;
+    }
+    const principal = [
+      textField(form, "kerberosRealm"),
+      textField(form, "kerberosComponents"),
+    ];
+    const target =
+      profile === "qemu_kerberos_ticket"
+        ? [
+            textField(form, "kerberosTicketRealm"),
+            textField(form, "kerberosTicketInstance"),
+          ]
+        : null;
+    let bytes: Uint8Array | undefined;
+    const result = await settle(
+      withCleanup(
+        (async () => {
+          bytes = new Uint8Array(await file.arrayBuffer());
+          signal.throwIfAborted();
+          if (
+            get(dialog$) !== dialog ||
+            get(editor$).profile !== profile ||
+            !form.isConnected ||
+            get(editorLocked$) ||
+            (await get(vncIdentity$)) !== dialog.identity ||
+            principal[0] !== textField(form, "kerberosRealm") ||
+            principal[1] !== textField(form, "kerberosComponents")
+          ) {
+            return;
+          }
+          signal.throwIfAborted();
+          const initiator = kerberosPrincipalSchema.parse({
+            realm: principal[0],
+            components: principal[1]!.split("\n"),
+          });
+          const canonical = target
+            ? canonicalKerberosTicket(
+                bytes,
+                initiator,
+                kerberosServicePrincipalSchema.parse({
+                  realm: target[0],
+                  components: ["vnc", target[1]],
+                }),
+                Math.floor(now() / 1000),
+              ).bytes
+            : canonicalKerberosKeytab(bytes, initiator);
+          field.value = encodeAndClearKerberosMaterial(canonical);
+          set(saveMessage$, null);
+        })(),
+        () => {
+          bytes?.fill(0);
+        },
+      ),
+      signal,
+    );
+    if (!result.ok) {
+      field.value = "";
+      set(saveMessage$, VNC_ERROR_CODES.INVALID_INPUT);
+    }
+  },
+);
+export const invalidateVncKerberosImport$ = command(
+  ({ set }, form: HTMLFormElement) => {
+    set(resetKerberosImport$);
+    const field = form.elements.namedItem("kerberosMaterial");
+    if (field instanceof HTMLInputElement) {
+      field.value = "";
+    }
+  },
+);
+
 function initialVncSecurityFields(
   connection: VncConnectionResponse | null,
 ): Pick<Editor, "trust" | "tlsServerName" | "caBundle" | "rsaServerKeySha256"> {
@@ -638,6 +809,15 @@ function initialVncEditor(
     transport:
       sshConnectionId || requiresSshLoopback(profile) ? "ssh" : "direct",
     sshConnectionId: sshConnectionId ?? "",
+    kdcSshConnectionId:
+      connection?.security.type === "qemu_x509_gssapi" &&
+      connection.security.kdc?.transport.type === "ssh"
+        ? connection.security.kdc.transport.connectionId
+        : "",
+    kdcHost:
+      connection?.security.type === "qemu_x509_gssapi"
+        ? (connection.security.kdc?.host ?? "")
+        : "",
     loopbackHost: connection?.host === "::1" ? "::1" : "127.0.0.1",
     destinationHost: connection?.host ?? "",
     rsaImportedModulusBits: null,
@@ -711,8 +891,45 @@ function textField(form: HTMLFormElement, name: string): string {
   return input.value;
 }
 
+function kerberosCredentialFields(
+  form: HTMLFormElement,
+  profile: VncKerberosMethod,
+) {
+  const initiator = {
+    realm: textField(form, "kerberosRealm"),
+    components: textField(form, "kerberosComponents").split("\n"),
+  };
+  return {
+    authentication:
+      profile === "qemu_kerberos_ticket"
+        ? {
+            method: profile,
+            initiator,
+            service: {
+              realm: textField(form, "kerberosTicketRealm"),
+              components: ["vnc", textField(form, "kerberosTicketInstance")],
+            },
+            ticketCache: textField(form, "kerberosMaterial"),
+          }
+        : profile === "qemu_kerberos_keytab"
+          ? {
+              method: profile,
+              initiator,
+              keytab: textField(form, "kerberosMaterial"),
+            }
+          : {
+              method: profile,
+              initiator,
+              password: textField(form, "password"),
+            },
+  };
+}
+
 function credentialFields(form: HTMLFormElement, profile: VncProfile) {
   const name = textField(form, "credentialName");
+  if (isVncKerberosMethod(profile)) {
+    return { name, ...kerberosCredentialFields(form, profile) };
+  }
   if (isRsaAesProfile(profile)) {
     const method = RSA_AES_PROFILES[profile].method;
     return {
@@ -833,6 +1050,8 @@ interface Editor {
   readonly trust: "system" | "custom_ca";
   readonly transport: "direct" | "ssh";
   readonly sshConnectionId: string;
+  readonly kdcSshConnectionId: string;
+  readonly kdcHost: string;
   readonly loopbackHost: "127.0.0.1" | "::1";
   readonly destinationHost: string;
   readonly tlsServerName: string;
@@ -876,7 +1095,43 @@ function connectionFields(form: HTMLFormElement, editor: Editor) {
                 ? ("x509_none" as const)
                 : editor.profile === "client_certificate_vnc"
                   ? ("x509_vnc" as const)
-                  : editor.profile,
+                  : isVncKerberosMethod(editor.profile)
+                    ? ("qemu_x509_gssapi" as const)
+                    : editor.profile,
+            ...(isVncKerberosMethod(editor.profile)
+              ? {
+                  service: {
+                    realm: textField(form, "kerberosServiceRealm"),
+                    components: [
+                      "vnc",
+                      textField(form, "kerberosServiceInstance"),
+                    ],
+                  },
+                  ...(editor.profile === "qemu_kerberos_ticket"
+                    ? {}
+                    : {
+                        kdc: {
+                          host: textField(form, "kdcHost"),
+                          port: Number(textField(form, "kdcPort")),
+                          transport: textField(form, "kdcSshConnectionId")
+                            ? {
+                                type: "ssh" as const,
+                                connectionId: textField(
+                                  form,
+                                  "kdcSshConnectionId",
+                                ),
+                              }
+                            : { type: "direct" as const },
+                          ticketLifetimeSeconds: Number(
+                            textField(form, "kerberosLifetime"),
+                          ),
+                          renewableLifetimeSeconds: Number(
+                            textField(form, "kerberosRenewableLifetime"),
+                          ),
+                        },
+                      }),
+                }
+              : {}),
             ...(serverName ? { serverName } : {}),
             trust:
               editor.trust === "system"

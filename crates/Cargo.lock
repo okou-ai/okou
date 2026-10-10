@@ -3854,6 +3854,8 @@ dependencies = [
  "guest-control-proto",
  "hex",
  "httpmock",
+ "kerberos-credentials",
+ "kerberos-worker",
  "libc",
  "log",
  "nix",

@@ -1,6 +1,7 @@
 //! Run-owned VNC sessions. Guest requests carry saved IDs, never authority.
 
 mod authority;
+mod kerberos;
 mod network;
 mod operations;
 mod protocol;
@@ -45,12 +46,34 @@ enum Failure {
     StaleGeometry,
     Disconnected,
     AuthenticationFailed,
+    DeliveryUnknown,
+    KerberosExpired,
+    KerberosNonRenewable,
+    KerberosRenewalExhausted,
 }
 
 impl From<rfb_client::Error> for Failure {
     fn from(error: rfb_client::Error) -> Self {
         use rfb_client::Error;
         match error {
+            Error::Kerberos(error) => match error {
+                kerberos_worker::Error::DeliveryUnknown => Self::DeliveryUnknown,
+                kerberos_worker::Error::Authority => Self::Authority,
+                kerberos_worker::Error::Unavailable | kerberos_worker::Error::CleanupUnknown => {
+                    Self::Unavailable
+                }
+                kerberos_worker::Error::Invalid | kerberos_worker::Error::IdentityMismatch => {
+                    Self::InvalidCredential
+                }
+                kerberos_worker::Error::CredentialRejected => Self::AuthenticationFailed,
+                kerberos_worker::Error::KdcUnavailable => Self::Network,
+                kerberos_worker::Error::Expired => Self::KerberosExpired,
+                kerberos_worker::Error::NonRenewable => Self::KerberosNonRenewable,
+                kerberos_worker::Error::RenewalExhausted => Self::KerberosRenewalExhausted,
+                kerberos_worker::Error::Deadline => Self::TimedOut,
+                kerberos_worker::Error::Capacity => Self::ResourceExhausted,
+                kerberos_worker::Error::Protocol => Self::Protocol,
+            },
             Error::InvalidInput => Self::InvalidInput,
             Error::StaleGeometry => Self::StaleGeometry,
             Error::SessionClosed | Error::Io(_) => Self::Disconnected,

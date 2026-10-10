@@ -2,6 +2,11 @@ import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { VNC_RSA_AES_FIELD_MAX_BYTES } from "./vnc-rsa-aes";
+import {
+  kerberosPrincipalSchema,
+  kerberosServicePrincipalSchema,
+  vncKerberosAuthenticationSchema,
+} from "./vnc-kerberos";
 
 export const VNC_DISPLAY_NAME_MAX_LENGTH = 128;
 export const VNC_PASSWORD_MAX_LENGTH = 8;
@@ -151,6 +156,7 @@ export const vncLegacyAuthenticationSchema = z.discriminatedUnion("method", [
 
 export const vncAuthenticationSchema = z.discriminatedUnion("method", [
   ...vncLegacyAuthenticationSchema.options,
+  ...vncKerberosAuthenticationSchema.options,
   vncQemuScramAuthenticationSchema,
   ...vncRsaAesAuthenticationSchema.options,
   z
@@ -199,6 +205,29 @@ const vncCredentialResponseBase = {
 } as const;
 
 export const vncCredentialResponseSchema = z.discriminatedUnion("authMethod", [
+  z
+    .object({
+      ...vncCredentialResponseBase,
+      authMethod: z.literal("qemu_kerberos_ticket"),
+      initiator: kerberosPrincipalSchema,
+      service: kerberosServicePrincipalSchema,
+      declaredExpiresAt: z.int().positive().max(4_294_967_295),
+    })
+    .strict(),
+  z
+    .object({
+      ...vncCredentialResponseBase,
+      authMethod: z.literal("qemu_kerberos_keytab"),
+      initiator: kerberosPrincipalSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...vncCredentialResponseBase,
+      authMethod: z.literal("qemu_kerberos_password"),
+      initiator: kerberosPrincipalSchema,
+    })
+    .strict(),
   z
     .object({
       ...vncCredentialResponseBase,

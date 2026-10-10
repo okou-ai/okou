@@ -1,6 +1,10 @@
 import { Command } from "commander";
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 import { vncHostsContract } from "@okouai/api-contracts/contracts/vnc-access";
+import {
+  VNC_KERBEROS_VERSION_HEADER,
+  VNC_KERBEROS_VERSION,
+} from "@okouai/api-contracts/contracts/vnc-kerberos";
 
 import {
   getClientConfig,
@@ -12,7 +16,9 @@ import { requireVncCapability } from "./validation";
 
 async function listVncHosts() {
   const client = initClient(vncHostsContract, await getClientConfig());
-  const result = await client.list();
+  const result = await client.list({
+    extraHeaders: { [VNC_KERBEROS_VERSION_HEADER]: VNC_KERBEROS_VERSION },
+  });
   if (result.status === 200) {
     return {
       ...result,
