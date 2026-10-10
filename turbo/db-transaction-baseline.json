@@ -177,11 +177,6 @@
       "owner": "persistFinicityWebhookEvent"
     },
     {
-      "id": "TX-0062",
-      "file": "turbo/apps/api/src/signals/services/billing-customer.service.ts",
-      "owner": "publishStripeCustomer$"
-    },
-    {
       "id": "TX-0063",
       "file": "turbo/apps/api/src/signals/services/billing-downgrade.service.ts",
       "owner": "publishDowngrade$"
