@@ -732,6 +732,9 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
       "No implicit user location is available",
     );
     expect(serializedProviderBody).toContain(
+      "The user explicitly supplied latitude 48.21 and longitude 16.37",
+    );
+    expect(serializedProviderBody).toContain(
       "Do not assist with high-risk uses of maps",
     );
     expect(providerCalls).toBe(1);

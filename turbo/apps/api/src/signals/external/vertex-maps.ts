@@ -11,7 +11,12 @@ import {
 import { z } from "zod";
 
 import { logger } from "../../lib/log";
-import { onRejection, readBoundedResponseText, safeJsonParse } from "../utils";
+import {
+  onRejection,
+  readBoundedResponseText,
+  safeJsonParse,
+  startUntrackedBestEffortCleanup,
+} from "../utils";
 import { gcpLlmAccessToken, gcpLlmConfiguration } from "./gcp-llm-auth";
 import {
   gcpLlmTransportReason,
@@ -150,9 +155,12 @@ function providerRequestBody(project: string, request: MapsSearchRequest) {
       : {}),
     ...(request.languageCode ? { languageCode: request.languageCode } : {}),
   };
+  const locationInstruction = request.location
+    ? `The user explicitly supplied latitude ${request.location.latitude} and longitude ${request.location.longitude}. Use these coordinates for searches near them or near the supplied coordinates. If the query names another location, respect that named location.`
+    : "No coordinates were supplied. Use a location named in the user's query; if the query depends on their current location and names none, ask for it before searching.";
   return {
     systemInstruction: {
-      parts: [{ text: MAPS_SYSTEM_INSTRUCTION }],
+      parts: [{ text: `${MAPS_SYSTEM_INSTRUCTION}\n${locationInstruction}` }],
     },
     contents: [
       {
@@ -322,38 +330,6 @@ function parseMapsCitations(
   });
 }
 
-function responseFieldShape(value: unknown, key = "", depth = 0): unknown {
-  if (depth >= 12) {
-    return typeof value;
-  }
-  if (typeof value === "string") {
-    return (key === "type" ||
-      key === "modelVersion" ||
-      key === "finishReason") &&
-      /^[a-zA-Z0-9_.-]{1,80}$/u.test(value)
-      ? value
-      : "string";
-  }
-  if (Array.isArray(value)) {
-    return value.slice(0, 32).map((item) => {
-      return responseFieldShape(item, "", depth + 1);
-    });
-  }
-  if (value !== null && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value)
-        .slice(0, 64)
-        .filter(([name]) => {
-          return /^[a-zA-Z0-9_]{1,64}$/u.test(name);
-        })
-        .map(([name, field]) => {
-          return [name, responseFieldShape(field, name, depth + 1)];
-        }),
-    );
-  }
-  return typeof value === "number" ? "number" : value;
-}
-
 function parseUsage(
   usageMetadata: unknown,
   retrievalQueries: unknown,
@@ -389,12 +365,7 @@ function parseUsage(
 }
 
 function parseVertexMapsResponse(body: string): VertexMapsResult {
-  const decoded = safeJsonParse(body);
-  L.warn("Google Maps generateContent probe response", {
-    model: VERTEX_MAPS_MODEL,
-    responseShape: responseFieldShape(decoded),
-  });
-  const parsed = responseSchema.safeParse(decoded);
+  const parsed = responseSchema.safeParse(safeJsonParse(body));
   if (!parsed.success || parsed.data.modelVersion !== VERTEX_MAPS_MODEL) {
     throw new VertexMapsError(502, "invalid_response");
   }
@@ -434,14 +405,6 @@ function parseVertexMapsResponse(body: string): VertexMapsResult {
     grounding === undefined ? [] : grounding.retrievalQueries,
     sources.length > 0,
   );
-  L.warn("Google Maps generateContent probe parsed", {
-    model: VERTEX_MAPS_MODEL,
-    answerBytes: Buffer.byteLength(answer.text, "utf8"),
-    sourceCount: sources.length,
-    citationCount: citations.length,
-    mapsQueries: usage.mapsQueries,
-    usage,
-  });
   return {
     answer: answer.text,
     sources,
@@ -488,32 +451,8 @@ async function requestVertexMaps(
   );
   assertProviderActive();
   if (!response.ok) {
-    const failure = await onRejection(
-      readBoundedResponseText(response, MAX_PROVIDER_RESPONSE_BYTES),
-      rejectTransport,
-    );
-    assertProviderActive();
-    if (failure.kind === "text") {
-      const parsedError = z
-        .object({
-          error: z.object({
-            message: z.string().optional(),
-            status: z.string().optional(),
-          }),
-        })
-        .safeParse(safeJsonParse(failure.text));
-      if (parsedError.success) {
-        L.warn("Google Maps generateContent probe upstream error", {
-          model: VERTEX_MAPS_MODEL,
-          status: response.status,
-          providerStatus: parsedError.data.error.status,
-          providerMessage: parsedError.data.error.message
-            ?.replaceAll(accessToken, "[token]")
-            .replaceAll(project, "[project]")
-            .replaceAll(request.query, "[query]")
-            .slice(0, 500),
-        });
-      }
+    if (response.body) {
+      startUntrackedBestEffortCleanup(response.body.cancel());
     }
     throw new VertexMapsError(response.status, "http");
   }

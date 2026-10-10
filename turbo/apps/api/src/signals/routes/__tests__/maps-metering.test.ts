@@ -237,7 +237,12 @@ describe("Maps generateContent usage and citations", () => {
         [502],
       );
       expect(search.body).toMatchObject({
-        error: { code: "MAPS_GROUNDING_ERROR" },
+        error: {
+          code:
+            finishReason === "SAFETY" || finishReason === "RECITATION"
+              ? "MAPS_GROUNDING_BLOCKED"
+              : "MAPS_GROUNDING_ERROR",
+        },
       });
       expect((await billing.readBillingStatus(actor)).credits).toBe(
         before.credits,

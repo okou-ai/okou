@@ -86,6 +86,12 @@ function providerError(error: unknown): MapsErrorResponse {
         "MAPS_RESPONSE_TOO_LARGE",
       );
     }
+    if (error.reason === "blocked") {
+      return badGateway(
+        "Google Maps grounding could not answer this request",
+        "MAPS_GROUNDING_BLOCKED",
+      );
+    }
     if (error.reason === "invalid_usage") {
       return invalidProviderUsage();
     }
