@@ -176,6 +176,7 @@ describe("AUTH-02: platform realtime token", () => {
       [`user-org:${actor.userId}:${actor.orgId}`]: ["subscribe"],
       [`user-org-foreground:${actor.userId}:${actor.orgId}`]: ["presence"],
       [`run-output:${actor.userId}:${actor.orgId}:*`]: ["subscribe"],
+      [`computer-use-host:${actor.userId}:${actor.orgId}:*`]: ["subscribe"],
     };
   }
 

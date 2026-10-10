@@ -1011,7 +1011,11 @@ describe("FILE-03 desktop computer-use runtime", () => {
         mockNow(base + 10_000);
         await expect(
           api.heartbeatComputerUseHost(host.connection),
-        ).resolves.toStrictEqual({ ok: true, hostId: host.hostId });
+        ).resolves.toStrictEqual({
+          ok: true,
+          hostId: host.hostId,
+          hasPendingCommands: false,
+        });
         await expect(lastSeenAt()).resolves.toBe(new Date(base).toISOString());
 
         // Once the stamp is 30s old it is refreshed, without a broadcast.
@@ -1093,7 +1097,11 @@ describe("FILE-03 desktop computer-use runtime", () => {
         const heartbeat = await api.heartbeatComputerUseHost(first.connection, {
           hostName: "Office Mac",
         });
-        expect(heartbeat).toStrictEqual({ ok: true, hostId: first.hostId });
+        expect(heartbeat).toStrictEqual({
+          ok: true,
+          hostId: first.hostId,
+          hasPendingCommands: false,
+        });
 
         mockNow(base + 120_000);
         const second = await api.startComputerUseHost(actor, {
@@ -1110,6 +1118,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
         expect(staleHeartbeat).toStrictEqual({
           ok: true,
           hostId: first.hostId,
+          hasPendingCommands: false,
         });
 
         const visibleHosts = await api.listComputerUseHosts(actor);
