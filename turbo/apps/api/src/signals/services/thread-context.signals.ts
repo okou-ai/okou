@@ -58,9 +58,6 @@ export interface ThreadContext {
   readonly modelRoute$: ThreadModels["modelRoute$"];
   readonly providerFramework$: ThreadModels["providerFramework$"];
   readonly dispatchTiming$: ThreadModels["dispatchTiming$"];
-  /** Connector scope and catalog of the execution identity. */
-  readonly connectorScope$: ConnectedAccounts["connectorScope$"];
-  readonly connectorCatalog$: ConnectedAccounts["connectorCatalog$"];
   /** Connector accounts chosen from thread, source and default selections. */
   readonly connectorSelection$: ConnectedAccounts["connectorSelection$"];
   readonly connectorSnapshot$: ConnectedAccounts["connectorSnapshot$"];
@@ -133,8 +130,6 @@ export function createThreadContext(
     modelRoute$: model.modelRoute$,
     providerFramework$: model.providerFramework$,
     dispatchTiming$: model.dispatchTiming$,
-    connectorScope$: connectedAccounts.connectorScope$,
-    connectorCatalog$: connectedAccounts.connectorCatalog$,
     connectorSelection$: connectedAccounts.connectorSelection$,
     connectorSnapshot$: connectedAccounts.connectorSnapshot$,
     connectorThreadSelections$: connectedAccounts.threadSelections$,

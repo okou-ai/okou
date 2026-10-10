@@ -21,7 +21,7 @@ import { badRequestMessage } from "../../lib/error";
 import { now, nowDate } from "../../lib/time";
 import { db$ } from "../external/db";
 import { safeSync } from "../utils";
-import { agentConnectorScopeFromRows } from "./agent-connector-scope.service";
+import type { AgentConnectorScope } from "./agent-connector-scope.service";
 import type {
   AgentRunContextSignals,
   BootstrapConnectorObservation,
@@ -88,8 +88,6 @@ function isConnectedAccountsError(
 
 /** Connector accounts selected for one picked event's execution identity. */
 export interface ConnectedAccounts {
-  readonly connectorScope$: Computed<Promise<EffectiveConnectorScope>>;
-  readonly connectorCatalog$: Computed<Promise<RunConnectorCatalogSelection>>;
   readonly connectorSelection$: Computed<
     Promise<RunConnectorSelection | ConnectedAccountsError>
   >;
@@ -197,8 +195,6 @@ export function createConnectedAccountsSignals(
     },
   );
   return {
-    connectorScope$: inputs.connectorScope$,
-    connectorCatalog$: inputs.connectorCatalog$,
     connectorSelection$: prepared.connectorSelection$,
     connectorSnapshot$,
     threadSelections$: accounts.threadSelections$,
@@ -227,34 +223,16 @@ function createConnectorInputSignals(
   });
   const connectorScope$ = computed(
     async (get): Promise<EffectiveConnectorScope> => {
-      const selection = await get(execution.connectorSelection$);
-      const scope = agentConnectorScopeFromRows({
-        connectorRows: selection.builtinConnectorSlugs.map((connectorSlug) => {
-          return { connectorSlug };
-        }),
-        customConnectorRows: selection.customConnectors,
-      });
-      return {
-        allowedConnectorSlugs: scope.allowedConnectorSlugs,
-        allowedCustomConnectorIds: scope.allowedCustomConnectorIds,
-        customConnectorGrants: scope.customConnectorGrants,
-        source: isEmptyRunConnectorScope(scope) ? "empty" : "stored_agent",
-      };
+      return runConnectorScope(await get(execution.connectorScope$));
     },
   );
   const connectorCatalog$ = computed(
     async (get): Promise<RunConnectorCatalogSelection> => {
-      const [catalog, scope] = await Promise.all([
+      const [scope, catalog] = await Promise.all([
+        get(execution.connectorScope$),
         get(execution.catalog$),
-        get(connectorScope$),
       ]);
-      if (isEmptyRunConnectorScope(scope)) {
-        return { kind: "empty" };
-      }
-      if (!catalog) {
-        throw new Error("Scoped connector catalog is missing from bootstrap");
-      }
-      return { kind: "scoped", selection: catalog };
+      return runConnectorCatalogSelection(scope, catalog);
     },
   );
   const featureSwitchContext$ = computed(async (get) => {
@@ -887,6 +865,32 @@ function createCustomConnectorContextSignals(
     },
   );
   return { customConnectorContext$ };
+}
+
+/** The Agent's stored connector scope as a Run connector scope. */
+export function runConnectorScope(
+  scope: AgentConnectorScope,
+): EffectiveConnectorScope {
+  return {
+    allowedConnectorSlugs: scope.allowedConnectorSlugs,
+    allowedCustomConnectorIds: scope.allowedCustomConnectorIds,
+    customConnectorGrants: scope.customConnectorGrants,
+    source: isEmptyRunConnectorScope(scope) ? "empty" : "stored_agent",
+  };
+}
+
+/** The bootstrap connector catalog, explicit about an empty scope. */
+export function runConnectorCatalogSelection(
+  scope: AgentConnectorScope,
+  catalog: ConnectorRuntimeSelection | null,
+): RunConnectorCatalogSelection {
+  if (isEmptyRunConnectorScope(scope)) {
+    return { kind: "empty" };
+  }
+  if (!catalog) {
+    throw new Error("Scoped connector catalog is missing from bootstrap");
+  }
+  return { kind: "scoped", selection: catalog };
 }
 
 function customConnectorSourceStorageRows(

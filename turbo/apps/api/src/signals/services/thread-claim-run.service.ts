@@ -30,6 +30,7 @@ import {
   type EffectiveConnectorScope,
   isEmptyRunConnectorScope,
   type RunConnectorCatalogSelection,
+  runConnectorCatalogSelection,
 } from "./thread-connected-accounts.signals";
 import { countBucket } from "./dispatch-count-bucket";
 import {
@@ -98,10 +99,7 @@ import {
 import { recordSandboxOperation } from "../external/sandbox-op-log";
 import { getOfficialTelegramBotConfig } from "../external/telegram-official";
 import { safeSync, settle, tapError } from "../utils";
-import {
-  agentConnectorScopeFromRows,
-  type AgentConnectorScopeSnapshot,
-} from "./agent-connector-scope.service";
+import type { AgentConnectorScopeSnapshot } from "./agent-connector-scope.service";
 import { activatePendingRun$ as activateCommittedRun$ } from "./agent-run-activation.service";
 import type { PendingRunActivation } from "./agent-run-activation.types";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
@@ -2846,6 +2844,7 @@ export function createThreadClaimRunObjects(
     const [
       { timing },
       selection,
+      connectorScope,
       memberMetadata,
       permissionGrants,
       workflows,
@@ -2853,6 +2852,7 @@ export function createThreadClaimRunObjects(
     ] = await Promise.all([
       get(selectedIdentityInputIdentityInput$),
       get(selected.connectorSelection$),
+      get(selected.connectorScope$),
       get(selected.memberMetadata$),
       get(selected.permissionGrants$),
       get(selected.workflows$),
@@ -2870,14 +2870,6 @@ export function createThreadClaimRunObjects(
           : { bootstrap_prefetch_miss_reason: prefetchOutcome }),
       },
     );
-    const connectorScope = agentConnectorScopeFromRows({
-      connectorRows: selection.builtinConnectorSlugs.map((connectorSlug) => {
-        return {
-          connectorSlug,
-        };
-      }),
-      customConnectorRows: selection.customConnectors,
-    });
     const metadataSlugs = new Set(
       selection.customConnectors.flatMap((connector) => {
         const ref = connector.permissionBundleRef;
@@ -2941,8 +2933,15 @@ export function createThreadClaimRunObjects(
       };
     },
   );
-  const preCreateConnectorCatalogConnectorCatalog$ =
-    threadContext.connectorCatalog$;
+  const preCreateConnectorCatalogConnectorCatalog$ = computed(
+    async (get): Promise<RunConnectorCatalogSelection> => {
+      const [scope, catalog] = await Promise.all([
+        get(context.connectorScope$),
+        get(context.catalog$),
+      ]);
+      return runConnectorCatalogSelection(scope, catalog);
+    },
+  );
   const preCreatePermissionPoliciesPermissionPolicies$ =
     connectorRuntime.permissionPolicies$;
   const sessionPrompt$ = computed(async (get) => {

@@ -32,6 +32,7 @@ import {
   emptyBuiltinConnectorRuntimeContext,
   storedConnectorContextFromSnapshot,
   type RunConnectorCatalogSelection,
+  runConnectorCatalogSelection,
   storedConnectorCredentialNames,
   type StoredConnectorMaterializationSnapshot,
   type StoredConnectorSecretRow,
@@ -90,16 +91,15 @@ function createConnectorRuntimeInputSignals(
   dispatchTiming$: ThreadContext["dispatchTiming$"],
   threadContext: ThreadContext,
 ) {
-  const { connectorCatalog$, connectorScope$, connectorSelection$ } =
-    threadContext;
-  const { connectorSnapshot$ } = threadContext;
+  const { connectorSelection$, connectorSnapshot$ } = threadContext;
   const bodyEnvironment$ = createRunBodyEnvironmentSignal(execution);
   const permissionPolicies$ = computed(async (get) => {
-    const [grants, catalog, scope] = await Promise.all([
+    const [grants, scope, bootstrapCatalog] = await Promise.all([
       get(execution.permissionGrants$),
-      get(connectorCatalog$),
-      get(connectorScope$),
+      get(execution.connectorScope$),
+      get(execution.catalog$),
     ]);
+    const catalog = runConnectorCatalogSelection(scope, bootstrapCatalog);
     return await get(dispatchTiming$).measure(
       "api_dispatch_pre_create_agent_resolve_firewall_metadata",
       "nested",
