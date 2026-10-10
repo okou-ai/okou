@@ -824,16 +824,15 @@ test.each([true, false])(
       name: "GPT 5.6 Sol",
     });
     const options = screen.getAllByRole("option");
-    if (!currentModelOffered) {
-      await user.keyboard("{ArrowDown}");
-    }
-    const focusedOption = currentModelOffered
-      ? screen.getByRole("option", { name: "GPT 5.6 Luna", selected: true })
-      : options[0];
+    const focusedOption = screen.getByRole("option", {
+      name: currentModelOffered ? "GPT 5.6 Luna" : "Auto",
+      selected: true,
+    });
     await waitFor(() => {
       expect(focusedOption).toHaveFocus();
     });
-    expect(options).toHaveLength(models.length);
+    // The run-models response includes Auto as well as the configured models.
+    expect(options).toHaveLength(models.length + 1);
     expect(
       screen.getByRole("option", { name: /^Claude Sonnet 5/iu }),
     ).toBeVisible();
