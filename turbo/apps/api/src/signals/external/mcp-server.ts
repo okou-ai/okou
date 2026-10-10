@@ -587,7 +587,7 @@ function registerReadTools(
       name: "get_chat_messages",
       scope: "okou:chat:read",
       description:
-        "Get one conversation's R2 snapshot pointer (null before compaction) and one bounded raw Web event-row page. Omit the cursor initially; continue with cursor.lastSeqId as sinceSeqId and cursor.lastEventId as sinceEventId. On 410, restart from a fresh snapshot. Does not download, decompress or reconstruct history.",
+        "Get one conversation's R2 snapshot pointer (null before compaction) and one bounded raw Web event-row page. Use the known threadId to check recent sends without relying on search. Omit the cursor initially; rows start after the snapshot boundary, or at zero when snapshot is null. To inspect archived events, download snapshot.url (gzip NDJSON). While hasMore is true, continue with cursor.lastSeqId as sinceSeqId and cursor.lastEventId as sinceEventId. On 410, restart from a fresh snapshot. Does not download, decompress or reconstruct history.",
       inputSchema: mcpGetChatMessagesInputSchema,
       outputSchema: mcpGetChatMessagesOutputSchema,
       annotations: readAnnotations,
@@ -604,7 +604,7 @@ function registerReadTools(
       name: "search_chat_messages",
       scope: "okou:chat:read",
       description:
-        "Search using the Web keyword, agentId and since parameters and return the Web results unchanged.",
+        "Search using the Web keyword, agentId and since parameters and return the Web results unchanged. The index updates asynchronously: recent messages may be missing even after a Run completes, and an empty result does not prove absence. No index freshness signal or lag bound is returned. To confirm a recent send, use get_chat_messages with its known threadId and inspect the snapshot and event pages; do not resend solely because search is empty.",
       inputSchema: chatSearchContract.search.query,
       outputSchema: chatSearchContract.search.responses[200],
       annotations: readAnnotations,

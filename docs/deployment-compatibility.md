@@ -100,7 +100,15 @@ Workspace-cache images, metadata, and history sidecars can outlive their produce
 and be consumed by another Runner release. Keep old formats readable or
 explicitly invalidate and purge incompatible disposable entries before the new
 reader depends on the change. Host-local status files and independently deployed
-monitoring collectors also require old/new writer and reader analysis.
+monitoring collectors also require old/new writer and reader analysis. A
+directory-allocation collector can remain independent of Runner releases when
+it measures physical blocks without interpreting cache metadata or claiming
+reuse eligibility. Changes to directory layouts or metric namespaces still
+require consumer updates. Report unavailable or partial observations explicitly
+rather than translate old layouts or publish false-zero/stale-success
+measurements. Optional diagnostic samples can be
+omitted on measurement failure without implying an empty filesystem; retain
+legacy fields while tolerant older telemetry readers remain reachable.
 
 ## What Requires Compatibility
 

@@ -154,6 +154,10 @@ const STRUCTURED_FAILURE_EXPECTATIONS = {
     title: "This run ran out of space",
     action: "Try again",
   },
+  guest_home_filesystem_full: {
+    title: "This run ran out of space",
+    action: "Try again",
+  },
   execution_timeout: { title: "Time limit reached", action: "Continue" },
   insufficient_credits: {
     title: "Upgrade to Pro to run",

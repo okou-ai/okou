@@ -58,6 +58,7 @@ const KNOWN_FAILURE_LOG_POLICY = Object.freeze({
   usage_limit: "suppress-caller-owned",
   session_history_limit: "retain",
   guest_root_filesystem_full: "retain",
+  guest_home_filesystem_full: "retain",
   unsupported_model: "retain",
 } satisfies Record<
   KnownRunFailureReason,
@@ -160,7 +161,10 @@ export function logAgentRunFailure(input: LogAgentRunFailureInput): void {
     L.debug("Run stopped: insufficient credits", fields);
     return;
   }
-  if (input.failureReason === "guest_root_filesystem_full") {
+  if (
+    input.failureReason === "guest_root_filesystem_full" ||
+    input.failureReason === "guest_home_filesystem_full"
+  ) {
     L.info("Run failed", fields);
     return;
   }

@@ -8,16 +8,6 @@ import time
 
 TARGETS = (
     "/tmp",
-    "/home/user/.pi",
-    "/home/user/.cache",
-    "/home/user/.cargo",
-    "/home/user/.rustup",
-    "/home/user/.local",
-    "/home/user/.codex",
-    "/home/user/.claude",
-    "/home/user/.vm0",
-    "/home/user/.npm",
-    "/home/user",
     "/var",
     "/usr",
     "/opt",
@@ -25,7 +15,7 @@ TARGETS = (
     "/home",
     "/",
 )
-EXCLUDED = {"/home/user/workspace", "/proc", "/sys", "/dev", "/run"}
+EXCLUDED = {"/home/user", "/proc", "/sys", "/dev", "/run"}
 DIRECTORY_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
 ENTRIES_PER_TARGET = 4096
 TOTAL_ENTRIES = 32768

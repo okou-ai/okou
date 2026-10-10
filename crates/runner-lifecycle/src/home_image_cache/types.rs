@@ -159,11 +159,13 @@ pub struct HomeImageProfileIdentity<'a> {
     pub rootfs_hash: &'a str,
     pub image_size_bytes: u64,
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FsStats {
     pub total_bytes: u64,
     pub available_bytes: u64,
+    pub total_inodes: u64,
+    pub available_inodes: u64,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]

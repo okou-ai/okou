@@ -71,6 +71,7 @@ pub(super) fn fs_stats_with_additional_available(stats: FsStats, bytes: u64) -> 
             .available_bytes
             .saturating_add(bytes)
             .min(stats.total_bytes),
+        ..stats
     }
 }
 
@@ -216,6 +217,8 @@ pub(super) fn fs_stats_from_statvfs(stats: &libc::statvfs) -> FsStats {
     FsStats {
         total_bytes: stats.f_blocks.saturating_mul(block_size),
         available_bytes: stats.f_bavail.saturating_mul(block_size),
+        total_inodes: stats.f_files,
+        available_inodes: stats.f_favail,
     }
 }
 

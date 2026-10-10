@@ -159,6 +159,7 @@ impl HomeImageCache {
                 FsStats {
                     total_bytes: TEST_FS_TOTAL_BYTES,
                     available_bytes: TEST_FS_AVAILABLE_BYTES,
+                    ..FsStats::default()
                 },
             )
         }
