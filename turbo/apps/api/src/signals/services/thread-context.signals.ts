@@ -65,6 +65,10 @@ export interface ThreadContext {
   readonly automationTarget$: Computed<Promise<ThreadAutomationTarget | null>>;
   readonly agentSelection$: Computed<Promise<ThreadAgentSelection | null>>;
   readonly executionBootstrap$: Computed<Promise<AgentRunContextSignals>>;
+  /** The picked thread, only while it belongs to the execution identity. */
+  readonly executionThread$: Computed<
+    Promise<PickedThreadInputEvent["thread"] | null>
+  >;
   readonly templates$: ReturnType<typeof createRunTemplates>;
   readonly queuedModel$: ThreadModels["queuedModel$"];
   readonly subscriptionSelection$: ThreadModels["subscriptionSelection$"];
@@ -114,6 +118,11 @@ export function createThreadContext(
     agentSelection$,
     orgId,
   );
+  const executionThread$ = createExecutionThread(
+    pickedEvent$,
+    executionBootstrap$,
+    agentSelection$,
+  );
   const templates$ = createRunTemplates(
     pickedEvent$,
     orgId,
@@ -142,6 +151,7 @@ export function createThreadContext(
     automationTarget$,
     agentSelection$,
     executionBootstrap$,
+    executionThread$,
     templates$,
     queuedModel$: model.queuedModel$,
     subscriptionSelection$: model.subscriptionSelection$,
@@ -215,6 +225,32 @@ function createThreadAgentSelection(
       },
     };
   });
+}
+
+function createExecutionThread(
+  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
+  executionBootstrap$: ThreadContext["executionBootstrap$"],
+  agentSelection$: ThreadContext["agentSelection$"],
+) {
+  return computed(
+    async (get): Promise<PickedThreadInputEvent["thread"] | null> => {
+      const event = await get(pickedEvent$);
+      if (!event) {
+        return null;
+      }
+      const [execution, agentSelection] = await Promise.all([
+        get(executionBootstrap$),
+        get(agentSelection$),
+      ]);
+      const { thread } = event;
+      return thread.id === event.chatThreadId &&
+        thread.userId === execution.userId &&
+        thread.agentId ===
+          (agentSelection?.expectedThreadAgentId ?? execution.agentId)
+        ? thread
+        : null;
+    },
+  );
 }
 
 function createThreadExecutionBootstrap(
