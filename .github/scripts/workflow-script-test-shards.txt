@@ -122,4 +122,4 @@
 4 toolchain-image-references-test.sh
 4 update-rollback-dashboard-body-test.sh
 4 verify-okou-app-artifact-test.sh
-4 vm0-monitoring-workspace-image-cache-collect-test.sh
+4 vm0-monitoring-home-image-cache-collect-test.sh

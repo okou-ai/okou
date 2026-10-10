@@ -1,7 +1,7 @@
 # Provision Monitoring with Grafana Alloy
 #
 # Installs Grafana Alloy on bare metal hosts to collect system metrics
-# (via built-in prometheus.exporter.unix), workspace image cache and runner
+# (via built-in prometheus.exporter.unix), home image cache and runner
 # lifecycle textfile metrics, and remote-write to Grafana Cloud.
 #
 # Usage:
@@ -10,12 +10,20 @@
 #     -e "grafana_cloud_prometheus_url=https://..." \
 #     -e "grafana_cloud_prometheus_user=123456" \
 #     -e "grafana_cloud_api_key=glc_..." \
-#     -e "env_label=prod"
+#     -e "env_label=prod" \
+#     -e "monitoring_runner_binary=/var/lib/vm0-runner/bin/v1.2.3/runner"
 
 - name: Provision monitoring with Grafana Alloy
   hosts: all
 
   tasks:
+    - name: Require an explicit versioned Runner CLI path for cache monitoring
+      assert:
+        that:
+          - monitoring_runner_binary is defined
+          - monitoring_runner_binary is match('^/var/lib/vm0-runner/bin/[a-zA-Z0-9._-]+/runner$')
+        fail_msg: Supply monitoring_runner_binary for the Runner artifact serving this host.
+
     - name: Wait for apt lock to be released
       shell: |
         while fuser \
@@ -85,10 +93,39 @@
         mode: "0755"
       become: true
 
-    - name: Install Okou monitoring workspace image cache collector script
+    - name: Inspect obsolete cache monitoring units
+      stat:
+        path: "/etc/systemd/system/{{ item }}"
+      loop:
+        - vm0-monitoring-workspace-image-cache-collect.timer
+        - vm0-monitoring-workspace-image-cache-collect.service
+      register: obsolete_cache_units
+      become: true
+
+    - name: Stop and disable obsolete cache monitoring units
+      systemd:
+        name: "{{ item.item }}"
+        state: stopped
+        enabled: false
+      loop: "{{ obsolete_cache_units.results }}"
+      when: item.stat.exists
+      become: true
+
+    - name: Remove obsolete monitoring files without deleting cache data
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/systemd/system/vm0-monitoring-workspace-image-cache-collect.timer
+        - /etc/systemd/system/vm0-monitoring-workspace-image-cache-collect.service
+        - /usr/local/bin/vm0-monitoring-workspace-image-cache-collect
+        - /var/lib/vm0-monitoring/textfile-collector/workspace-image-cache.prom
+      become: true
+
+    - name: Install Okou monitoring home image cache collector script
       copy:
-        src: ../files/vm0-monitoring-workspace-image-cache-collect.sh
-        dest: /usr/local/bin/vm0-monitoring-workspace-image-cache-collect
+        src: ../files/vm0-monitoring-home-image-cache-collect.py
+        dest: /usr/local/bin/vm0-monitoring-home-image-cache-collect
         owner: root
         group: root
         mode: "0755"
@@ -103,16 +140,17 @@
         mode: "0755"
       become: true
 
-    - name: Install Okou monitoring workspace image cache collector service
+    - name: Install Okou monitoring home image cache collector service
       copy:
         content: |
           [Unit]
-          Description=Collect Okou workspace image cache metrics
+          Description=Collect Okou home image cache metrics
 
           [Service]
           Type=oneshot
-          ExecStart=/usr/local/bin/vm0-monitoring-workspace-image-cache-collect
-        dest: /etc/systemd/system/vm0-monitoring-workspace-image-cache-collect.service
+          ExecStart=/usr/bin/python3 -I -B /usr/local/bin/vm0-monitoring-home-image-cache-collect --runner {{ monitoring_runner_binary }}
+          TimeoutStartSec=30
+        dest: /etc/systemd/system/vm0-monitoring-home-image-cache-collect.service
         owner: root
         group: root
         mode: "0644"
@@ -133,11 +171,11 @@
         mode: "0644"
       become: true
 
-    - name: Install Okou monitoring workspace image cache collector timer
+    - name: Install Okou monitoring home image cache collector timer
       copy:
         content: |
           [Unit]
-          Description=Collect Okou workspace image cache metrics every minute
+          Description=Collect Okou home image cache metrics every minute
 
           [Timer]
           OnBootSec=1min
@@ -147,7 +185,7 @@
 
           [Install]
           WantedBy=timers.target
-        dest: /etc/systemd/system/vm0-monitoring-workspace-image-cache-collect.timer
+        dest: /etc/systemd/system/vm0-monitoring-home-image-cache-collect.timer
         owner: root
         group: root
         mode: "0644"
@@ -173,9 +211,9 @@
         mode: "0644"
       become: true
 
-    - name: Generate initial Okou workspace image cache metrics
+    - name: Generate initial Okou home image cache metrics
       systemd:
-        name: vm0-monitoring-workspace-image-cache-collect.service
+        name: vm0-monitoring-home-image-cache-collect.service
         state: started
         daemon_reload: true
       become: true
@@ -189,9 +227,9 @@
       become: true
       changed_when: false
 
-    - name: Enable Okou monitoring workspace image cache collector timer
+    - name: Enable Okou monitoring home image cache collector timer
       systemd:
-        name: vm0-monitoring-workspace-image-cache-collect.timer
+        name: vm0-monitoring-home-image-cache-collect.timer
         state: started
         enabled: true
         daemon_reload: true

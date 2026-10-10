@@ -693,6 +693,7 @@ jobs:
           grafana-cloud-prometheus-user: ${{ secrets.GRAFANA_CLOUD_PROMETHEUS_USER }}
           grafana-cloud-api-key: ${{ secrets.GRAFANA_CLOUD_API_KEY }}
           env-label: dev
+          monitoring-runner-binary: /var/lib/vm0-runner/bin/${{ needs.prepare.outputs.job-ref }}/runner
 
       - name: Build runner image on all metal hosts
         env:

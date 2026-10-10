@@ -724,6 +724,7 @@ describe("agent completion failure reasons", () => {
     expect(knownRunFailureReasonSchema.options).toStrictEqual([
       "session_history_limit",
       "guest_root_filesystem_full",
+      "guest_home_filesystem_full",
       "execution_timeout",
       "insufficient_credits",
       "provider_insufficient_credits",

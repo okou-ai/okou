@@ -2414,6 +2414,7 @@ jobs:
           grafana-cloud-prometheus-user: ${{ secrets.GRAFANA_CLOUD_PROMETHEUS_USER }}
           grafana-cloud-api-key: ${{ secrets.GRAFANA_CLOUD_API_KEY }}
           env-label: prod
+          monitoring-runner-binary: /var/lib/vm0-runner/bin/v${{ needs.release-please.outputs.runner_rs_version }}/runner
 
       - name: Build rootfs and snapshot on production hosts
         env:

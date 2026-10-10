@@ -160,6 +160,7 @@ async fn no_key_unsafe_cwd_and_reserve_pressure_are_safe_nonfatal_misses() {
         FsStats {
             total_bytes: 100 * GIB,
             available_bytes: 1,
+            ..FsStats::default()
         },
     );
     let lease = pressure

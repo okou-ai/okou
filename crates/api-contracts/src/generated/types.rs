@@ -2673,6 +2673,9 @@ pub mod webhooks {
                 /// The sandbox root filesystem ran out of free blocks or inodes.
                 #[serde(rename = "guest_root_filesystem_full")]
                 GuestRootFilesystemFull,
+                /// The sandbox home filesystem ran out of free blocks or inodes.
+                #[serde(rename = "guest_home_filesystem_full")]
+                GuestHomeFilesystemFull,
                 /// The run reached its execution time limit.
                 #[serde(rename = "execution_timeout")]
                 ExecutionTimeout,

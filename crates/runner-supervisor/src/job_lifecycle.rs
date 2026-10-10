@@ -36,9 +36,17 @@ pub fn completion_failure_reason(
             if failure
                 .resource_diagnostics
                 .and_then(|diagnostics| diagnostics.failure_kind)
-                == Some(ResourceFailureKind::GuestRootFilesystemFull) =>
+                .is_some_and(ResourceFailureKind::is_filesystem_full) =>
         {
-            Some(RequestFailureReason::GuestRootFilesystemFull)
+            match failure
+                .resource_diagnostics
+                .and_then(|diagnostics| diagnostics.failure_kind)
+            {
+                Some(ResourceFailureKind::GuestHomeFilesystemFull) => {
+                    Some(RequestFailureReason::GuestHomeFilesystemFull)
+                }
+                _ => Some(RequestFailureReason::GuestRootFilesystemFull),
+            }
         }
         ExecutionFailureKind::Generic => failure
             .diagnostic
