@@ -101,7 +101,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ChatHomeCompliance]: {
-    maintainer: "tongx@vm0.ai",
+    maintainer: "tongx@okou.ai",
     displayName: "Chat home compliance",
     description:
       "Show the compliance status badges at the bottom of the chat home.",
