@@ -712,7 +712,9 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
       stream: false,
       interaction: {
         modelInteraction: {
-          model: "gemini-3.5-flash-lite",
+          model: expect.stringMatching(
+            /^projects\/[^/]+\/locations\/global\/publishers\/google\/models\/gemini-3\.5-flash-lite$/u,
+          ),
           generationConfig: {
             thinkingLevel: "THINKING_LEVEL_MINIMAL",
             thinkingSummaries: "THINKING_SUMMARIES_NONE",

@@ -121,14 +121,18 @@ function vertexEndpoint(project: string): string {
   return `https://aiplatform.googleapis.com/v1beta1/projects/${project}/locations/${LOCATION}/interactions:create`;
 }
 
-function providerRequestBody(request: MapsSearchRequest) {
+function vertexModelResource(project: string): string {
+  return `projects/${project}/locations/${LOCATION}/publishers/google/models/${VERTEX_MAPS_MODEL}`;
+}
+
+function providerRequestBody(project: string, request: MapsSearchRequest) {
   return {
     store: false,
     stream: false,
     background: false,
     interaction: {
       modelInteraction: {
-        model: VERTEX_MAPS_MODEL,
+        model: vertexModelResource(project),
         generationConfig: {
           thinkingLevel: "THINKING_LEVEL_MINIMAL",
           thinkingSummaries: "THINKING_SUMMARIES_NONE",
@@ -309,7 +313,10 @@ function nativeResponseShape(value: unknown, path = "", depth = 0): string[] {
     });
 }
 
-function parseVertexMapsResponse(body: string): VertexMapsResult {
+function parseVertexMapsResponse(
+  body: string,
+  project: string,
+): VertexMapsResult {
   const decoded = safeJsonParse(body);
   L.warn("Native Maps response field paths", {
     paths: [...new Set(nativeResponseShape(decoded))],
@@ -327,7 +334,9 @@ function parseVertexMapsResponse(body: string): VertexMapsResult {
     );
   }
   if (
-    parsed.data.modelInteraction?.model !== VERTEX_MAPS_MODEL ||
+    ![VERTEX_MAPS_MODEL, vertexModelResource(project)].includes(
+      parsed.data.modelInteraction?.model ?? "",
+    ) ||
     !parsed.data.steps ||
     parsed.data.errors?.length
   ) {
@@ -383,7 +392,7 @@ async function requestVertexMaps(
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json; charset=utf-8",
       },
-      body: JSON.stringify(providerRequestBody(request)),
+      body: JSON.stringify(providerRequestBody(project, request)),
       signal: requestSignal,
     }),
     rejectTransport,
@@ -399,6 +408,16 @@ async function requestVertexMaps(
             code: z.number().optional(),
             status: z.string().optional(),
             message: z.string().optional(),
+            details: z
+              .array(
+                z.object({
+                  reason: z.string().optional(),
+                  fieldViolations: z
+                    .array(z.object({ field: z.string() }))
+                    .optional(),
+                }),
+              )
+              .optional(),
           }),
         })
         .safeParse(safeJsonParse(errorBody.text));
@@ -406,6 +425,7 @@ async function requestVertexMaps(
         L.warn("Native Maps request contract rejected", {
           status: providerError.data.error.status,
           code: providerError.data.error.code,
+          details: providerError.data.error.details,
           message: providerError.data.error.message
             ?.replace(/"[^"\n]*"|'[^'\n]*'/gu, "[redacted]")
             .slice(0, 600),
@@ -422,7 +442,7 @@ async function requestVertexMaps(
   if (body.kind !== "text") {
     throw new VertexMapsError(502, "response_too_large");
   }
-  return parseVertexMapsResponse(body.text);
+  return parseVertexMapsResponse(body.text, project);
 }
 
 export async function generateVertexMapsSearch(
