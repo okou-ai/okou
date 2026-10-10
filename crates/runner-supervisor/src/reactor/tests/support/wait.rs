@@ -4,8 +4,8 @@ use futures_util::FutureExt;
 use std::future::Future;
 use std::panic::AssertUnwindSafe;
 
+use crate::home_image_cache::HomeImageCache;
 use crate::idle_pool::ParkingState;
-use crate::workspace_image_cache::WorkspaceImageCache;
 use runner_provider::{RunCancellationHandle, RunCancellationRegistry};
 
 const WAIT_POLL_INTERVAL: Duration = Duration::from_millis(10);
@@ -178,8 +178,8 @@ pub(in super::super) async fn wait_idle_pool_reuse_keys(
     .await;
 }
 
-pub(in super::super) async fn wait_workspace_cache_reuse_keys(
-    cache: &WorkspaceImageCache,
+pub(in super::super) async fn wait_home_cache_reuse_keys(
+    cache: &HomeImageCache,
     expected: &[&str],
     timeout: Duration,
 ) {
@@ -189,11 +189,11 @@ pub(in super::super) async fn wait_workspace_cache_reuse_keys(
         .collect();
     expected.sort_unstable();
     wait_for_probe(timeout, || async {
-        let states = cache.held_workspace_states().await;
+        let states = cache.held_home_states().await;
         for state in &states {
             if chrono::DateTime::parse_from_rfc3339(&state.last_completed_at).is_err() {
                 return WaitProbe::Pending(format!(
-                    "workspace cache state had invalid timestamp: {state:?}",
+                    "home cache state had invalid timestamp: {state:?}",
                 ));
             }
         }
@@ -203,7 +203,7 @@ pub(in super::super) async fn wait_workspace_cache_reuse_keys(
             WaitProbe::Ready(())
         } else {
             WaitProbe::Pending(format!(
-                "workspace cache reuse keys did not reach {expected:?} within {timeout:?} (actual: {actual:?})",
+                "home cache reuse keys did not reach {expected:?} within {timeout:?} (actual: {actual:?})",
             ))
         }
     })

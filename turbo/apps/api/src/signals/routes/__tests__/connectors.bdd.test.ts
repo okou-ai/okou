@@ -1,6 +1,9 @@
 import { createPublicConnectorActor } from "./helpers/public-connector-actor";
 import { publicChatActor } from "./helpers/public-chat-actor";
-import { createRunsApi } from "./helpers/api-bdd-runs";
+import {
+  createRunsApi,
+  expectCanonicalStorageManifest,
+} from "./helpers/api-bdd-runs";
 import { createFirewallApi } from "./helpers/api-bdd-firewall";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { readGetStartedStatus } from "./helpers/get-started";
@@ -39,7 +42,10 @@ import {
   now,
   withMockNowForTest,
 } from "../../../lib/time";
-import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
+import {
+  okouTokenFromClaim,
+  createChatEventsFixture,
+} from "./helpers/chat-events-fixture";
 import { createDeferredPromise } from "../../utils";
 import {
   createBddApi,
@@ -65,7 +71,6 @@ import {
   requestOauthCallbackRaw,
 } from "./helpers/api-bdd-connectors";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
-import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { holdSecretKms } from "./helpers/hold-secret-kms";
 import { customConnectorsRoutes } from "../custom-connectors";
@@ -75,7 +80,30 @@ import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
 const context = testContext();
 const connectorsApi = createConnectorBddApi(context);
 const authOrgApi = createAuthOrgAgentsBddApi(context);
-const storagesApi = createStoragesBddApi(context);
+async function observeCustomSkill(
+  fixture: Awaited<ReturnType<typeof publicChatActor>>,
+  connectorId: string,
+) {
+  const sent = await fixture.sendChatRun(fixture.actor, {
+    agentId: fixture.agentId,
+    prompt: "Read the current custom connector skill",
+    model: "claude-fable-5-1",
+  });
+  const { claim, sandboxHeaders } = await fixture.claimChatRun(
+    fixture.runnerGroup,
+    sent.runId,
+  );
+  const mount = expectCanonicalStorageManifest(
+    claim.storageManifest,
+  )?.storageMounts.find((item) => {
+    return item.name === getCustomConnectorSkillStorageName(connectorId);
+  });
+  await createChatEventsFixture(context).completeChatRunOk(
+    sent.runId,
+    sandboxHeaders,
+  );
+  return mount;
+}
 
 async function createBuiltinCredentialConsumer(
   fixture: Awaited<ReturnType<typeof publicChatActor>>,
@@ -7259,249 +7287,254 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
   });
 
   it("keeps the active definition and skill HEAD when an update upload fails", async () => {
-    const bdd = createBddApi(context);
-    const admin = bdd.user();
-    bdd.acceptAgentStorageWrites();
-    const created = await connectorsApi.createCustomConnector(admin, {
-      ...customConnectorBody(uniqueSlug("bdd-skill-update-failure")),
-      skillMarkdown: "Keep these active instructions.",
-    });
-    const storageName = getCustomConnectorSkillStorageName(created.id);
-    const initialHead = await storagesApi.downloadStorage(admin, {
-      name: storageName,
-      owner: "organization",
-    });
-    context.mocks.s3.send.mockRejectedValue(
-      new Error("Custom connector skill update upload failed"),
-    );
+    const fixture = await publicChatActor(context);
+    const admin = fixture.actor;
+    await fixture.run(async () => {
+      const created = await connectorsApi.createCustomConnector(admin, {
+        ...customConnectorBody(uniqueSlug("bdd-skill-update-failure")),
+        skillMarkdown: "Keep these active instructions.",
+      });
+      await connectorsApi.updateAgentCustomConnectors(admin, fixture.agentId, [
+        created.id,
+      ]);
+      const initialHead = await observeCustomSkill(fixture, created.id);
+      if (!initialHead) {
+        throw new Error("Expected a real connector skill mount");
+      }
+      context.mocks.s3.send.mockRejectedValue(
+        new Error("Custom connector skill update upload failed"),
+      );
 
-    const response = await connectorsApi.requestUpdateCustomConnector(
-      admin,
-      created.id,
-      {
-        displayName: "Must Not Become Active",
-        prefixTemplates: created.prefixTemplates,
-        fields: created.fields,
-        headerInjections: created.headerInjections,
-        queryInjections: created.queryInjections,
-        authMode: created.authMode,
-        skillMarkdown: "These failed instructions must not become active.",
-      },
-      [500],
-    );
+      const response = await connectorsApi.requestUpdateCustomConnector(
+        admin,
+        created.id,
+        {
+          displayName: "Must Not Become Active",
+          prefixTemplates: created.prefixTemplates,
+          fields: created.fields,
+          headerInjections: created.headerInjections,
+          queryInjections: created.queryInjections,
+          authMode: created.authMode,
+          skillMarkdown: "These failed instructions must not become active.",
+        },
+        [500],
+      );
 
-    expect(response.status).toBe(500);
-    context.mocks.s3.send.mockResolvedValue({ ContentLength: 1024 });
-    await expect(
-      connectorsApi.readCustomConnector(admin, created.id),
-    ).resolves.toMatchObject({
-      displayName: created.displayName,
-      skillMarkdown: "Keep these active instructions.",
+      expect(response.status).toBe(500);
+      context.mocks.s3.send.mockResolvedValue({ ContentLength: 1024 });
+      await expect(
+        connectorsApi.readCustomConnector(admin, created.id),
+      ).resolves.toMatchObject({
+        displayName: created.displayName,
+        skillMarkdown: "Keep these active instructions.",
+      });
+      await expect(
+        observeCustomSkill(fixture, created.id),
+      ).resolves.toMatchObject({ versionId: initialHead.versionId });
+
+      await connectorsApi.deleteCustomConnector(admin, created.id);
     });
-    await expect(
-      storagesApi.downloadStorage(admin, {
-        name: storageName,
-        owner: "organization",
-      }),
-    ).resolves.toMatchObject({ versionId: initialHead.versionId });
-
-    await connectorsApi.deleteCustomConnector(admin, created.id);
   });
 
   it("does not let a stale skill update move the winning definition or HEAD", async () => {
-    const bdd = createBddApi(context);
-    const admin = bdd.user();
-    bdd.acceptAgentStorageWrites();
-    const created = await connectorsApi.createCustomConnector(admin, {
-      ...customConnectorBody(uniqueSlug("bdd-skill-update-race")),
-      skillMarkdown: "Initial active instructions.",
+    let releasePending: (() => void) | undefined;
+    const fixture = await publicChatActor(context, {
+      restoreEnvironment: () => {
+        return releasePending?.();
+      },
     });
-    const storageName = getCustomConnectorSkillStorageName(created.id);
-    const initialHead = await storagesApi.downloadStorage(admin, {
-      name: storageName,
-      owner: "organization",
-    });
-    const staleUploadStarted = createDeferredPromise<void>(context.signal);
-    const releaseStaleUpload = createDeferredPromise<void>(context.signal);
-    context.mocks.s3.send.mockImplementation(async (command: unknown) => {
-      const skill = uploadedSkillInstruction(command);
-      if (skill?.includes("Stale writer instructions")) {
-        if (!staleUploadStarted.settled()) {
-          staleUploadStarted.resolve();
-        }
-        await releaseStaleUpload.promise;
+    const admin = fixture.actor;
+    await fixture.run(async () => {
+      const created = await connectorsApi.createCustomConnector(admin, {
+        ...customConnectorBody(uniqueSlug("bdd-skill-update-race")),
+        skillMarkdown: "Initial active instructions.",
+      });
+      await connectorsApi.updateAgentCustomConnectors(admin, fixture.agentId, [
+        created.id,
+      ]);
+      const initialHead = await observeCustomSkill(fixture, created.id);
+      if (!initialHead) {
+        throw new Error("Expected a real connector skill mount");
       }
-      return { ContentLength: 1024 };
-    });
+      const staleUploadStarted = createDeferredPromise<void>(context.signal);
+      const releaseStaleUpload = createDeferredPromise<void>(context.signal);
+      context.mocks.s3.send.mockImplementation(async (command: unknown) => {
+        const skill = uploadedSkillInstruction(command);
+        if (skill?.includes("Stale writer instructions")) {
+          if (!staleUploadStarted.settled()) {
+            staleUploadStarted.resolve();
+          }
+          await releaseStaleUpload.promise;
+        }
+        return { ContentLength: 1024 };
+      });
+      releasePending = () => {
+        if (!releaseStaleUpload.settled()) {
+          releaseStaleUpload.resolve();
+        }
+      };
+      const staleRequest = fixture.run(() => {
+        return connectorsApi.requestUpdateCustomConnector(
+          admin,
+          created.id,
+          {
+            displayName: "Stale Writer",
+            prefixTemplates: created.prefixTemplates,
+            fields: created.fields,
+            headerInjections: created.headerInjections,
+            queryInjections: created.queryInjections,
+            authMode: created.authMode,
+            skillMarkdown: "Stale writer instructions.",
+          },
+          [400],
+        );
+      });
+      await staleUploadStarted.promise;
+      const winner = await connectorsApi.updateCustomConnector(
+        admin,
+        created.id,
+        {
+          displayName: "Winning Writer",
+          prefixTemplates: created.prefixTemplates,
+          fields: created.fields,
+          headerInjections: created.headerInjections,
+          queryInjections: created.queryInjections,
+          authMode: created.authMode,
+          skillMarkdown: "Winning writer instructions.",
+        },
+      );
+      const winningHead = await observeCustomSkill(fixture, created.id);
+      if (!winningHead) {
+        throw new Error("Expected a real connector skill mount");
+      }
+      releaseStaleUpload.resolve();
+      const staleResponse = await staleRequest;
 
-    const staleRequest = connectorsApi.requestUpdateCustomConnector(
-      admin,
-      created.id,
-      {
-        displayName: "Stale Writer",
-        prefixTemplates: created.prefixTemplates,
-        fields: created.fields,
-        headerInjections: created.headerInjections,
-        queryInjections: created.queryInjections,
-        authMode: created.authMode,
-        skillMarkdown: "Stale writer instructions.",
-      },
-      [400],
-    );
-    await staleUploadStarted.promise;
-    const winner = await connectorsApi.updateCustomConnector(
-      admin,
-      created.id,
-      {
-        displayName: "Winning Writer",
-        prefixTemplates: created.prefixTemplates,
-        fields: created.fields,
-        headerInjections: created.headerInjections,
-        queryInjections: created.queryInjections,
-        authMode: created.authMode,
+      expect(staleResponse.status).toBe(400);
+      expectApiError(staleResponse.body);
+      expect(staleResponse.body.error.message).toContain(
+        "changed while the definition was being saved",
+      );
+      expect(winningHead.versionId).not.toBe(initialHead.versionId);
+      await expect(
+        connectorsApi.readCustomConnector(admin, created.id),
+      ).resolves.toMatchObject({
+        displayName: winner.displayName,
         skillMarkdown: "Winning writer instructions.",
-      },
-    );
-    const winningHead = await storagesApi.downloadStorage(admin, {
-      name: storageName,
-      owner: "organization",
-    });
-    releaseStaleUpload.resolve();
-    const staleResponse = await staleRequest;
+      });
+      await expect(
+        observeCustomSkill(fixture, created.id),
+      ).resolves.toMatchObject({ versionId: winningHead.versionId });
 
-    expect(staleResponse.status).toBe(400);
-    expectApiError(staleResponse.body);
-    expect(staleResponse.body.error.message).toContain(
-      "changed while the definition was being saved",
-    );
-    expect(winningHead.versionId).not.toBe(initialHead.versionId);
-    await expect(
-      connectorsApi.readCustomConnector(admin, created.id),
-    ).resolves.toMatchObject({
-      displayName: winner.displayName,
-      skillMarkdown: "Winning writer instructions.",
+      await connectorsApi.deleteCustomConnector(admin, created.id);
     });
-    await expect(
-      storagesApi.downloadStorage(admin, {
-        name: storageName,
-        owner: "organization",
-      }),
-    ).resolves.toMatchObject({ versionId: winningHead.versionId });
-
-    await connectorsApi.deleteCustomConnector(admin, created.id);
   });
 
-  it("publishes exact skill versions and retains them after clearing and deletion", async () => {
-    const bdd = createBddApi(context);
-    const admin = bdd.user();
-    bdd.acceptAgentStorageWrites();
-    const slug = uniqueSlug("bdd-permission-skill");
+  it("publishes exact skill versions and removes fresh mounts after clearing and deletion", async () => {
+    const fixture = await publicChatActor(context);
+    const admin = fixture.actor;
+    await fixture.run(async () => {
+      const slug = uniqueSlug("bdd-permission-skill");
 
-    const created = await connectorsApi.createCustomConnector(admin, {
-      ...customConnectorBody(slug),
-      permissionBundleRef: "builtin:slack@1",
-      skillMarkdown: "Use this connector to coordinate Slack conversations.",
-    });
-    expect(created).toMatchObject({
-      permissionBundleRef: "builtin:slack@1",
-      skillMarkdown: "Use this connector to coordinate Slack conversations.",
-    });
-    const storageName = getCustomConnectorSkillStorageName(created.id);
-    const createdHead = await storagesApi.downloadStorage(admin, {
-      name: storageName,
-      owner: "organization",
-    });
+      const created = await connectorsApi.createCustomConnector(admin, {
+        ...customConnectorBody(slug),
+        permissionBundleRef: "builtin:slack@1",
+        skillMarkdown: "Use this connector to coordinate Slack conversations.",
+      });
+      expect(created).toMatchObject({
+        permissionBundleRef: "builtin:slack@1",
+        skillMarkdown: "Use this connector to coordinate Slack conversations.",
+      });
+      await connectorsApi.updateAgentCustomConnectors(admin, fixture.agentId, [
+        created.id,
+      ]);
+      const createdHead = await observeCustomSkill(fixture, created.id);
+      if (!createdHead) {
+        throw new Error("Expected a real connector skill mount");
+      }
 
-    const skillUpdated = await connectorsApi.updateCustomConnector(
-      admin,
-      created.id,
-      {
-        displayName: created.displayName,
-        prefixTemplates: created.prefixTemplates,
-        fields: created.fields,
-        headerInjections: created.headerInjections,
-        queryInjections: created.queryInjections,
-        authMode: created.authMode,
+      const skillUpdated = await connectorsApi.updateCustomConnector(
+        admin,
+        created.id,
+        {
+          displayName: created.displayName,
+          prefixTemplates: created.prefixTemplates,
+          fields: created.fields,
+          headerInjections: created.headerInjections,
+          queryInjections: created.queryInjections,
+          authMode: created.authMode,
+          skillMarkdown: "Updated Slack operating instructions.",
+        },
+      );
+      expect(skillUpdated).toMatchObject({
+        permissionBundleRef: "builtin:slack@1",
         skillMarkdown: "Updated Slack operating instructions.",
-      },
-    );
-    expect(skillUpdated).toMatchObject({
-      permissionBundleRef: "builtin:slack@1",
-      skillMarkdown: "Updated Slack operating instructions.",
-    });
-    const updatedHead = await storagesApi.downloadStorage(admin, {
-      name: storageName,
-      owner: "organization",
-    });
-    expect(updatedHead.versionId).not.toBe(createdHead.versionId);
-    await expect(
-      storagesApi.downloadStorage(admin, {
-        name: storageName,
-        owner: "organization",
-        version: createdHead.versionId,
-      }),
-    ).resolves.toMatchObject({ versionId: createdHead.versionId });
+      });
+      const updatedHead = await observeCustomSkill(fixture, created.id);
+      if (!updatedHead) {
+        throw new Error("Expected a real connector skill mount");
+      }
+      expect(updatedHead.versionId).not.toBe(createdHead.versionId);
 
-    const permissionBundleCleared = await connectorsApi.updateCustomConnector(
-      admin,
-      created.id,
-      {
-        displayName: skillUpdated.displayName,
-        prefixTemplates: skillUpdated.prefixTemplates,
-        fields: skillUpdated.fields,
-        headerInjections: skillUpdated.headerInjections,
-        queryInjections: skillUpdated.queryInjections,
-        authMode: skillUpdated.authMode,
+      const permissionBundleCleared = await connectorsApi.updateCustomConnector(
+        admin,
+        created.id,
+        {
+          displayName: skillUpdated.displayName,
+          prefixTemplates: skillUpdated.prefixTemplates,
+          fields: skillUpdated.fields,
+          headerInjections: skillUpdated.headerInjections,
+          queryInjections: skillUpdated.queryInjections,
+          authMode: skillUpdated.authMode,
+          permissionBundleRef: null,
+        },
+      );
+      expect(permissionBundleCleared).toMatchObject({
         permissionBundleRef: null,
-      },
-    );
-    expect(permissionBundleCleared).toMatchObject({
-      permissionBundleRef: null,
-      skillMarkdown: "Updated Slack operating instructions.",
+        skillMarkdown: "Updated Slack operating instructions.",
+      });
+
+      const unknownBundle = await connectorsApi.requestCreateCustomConnector(
+        admin,
+        {
+          ...customConnectorBody(uniqueSlug("bdd-unknown-bundle")),
+          permissionBundleRef: "builtin:not-a-connector@1",
+        },
+        [400],
+      );
+      expectApiError(unknownBundle.body);
+      expect(unknownBundle.body.error.message).toContain(
+        "Unknown custom connector permission bundle",
+      );
+
+      const skillCleared = await connectorsApi.updateCustomConnector(
+        admin,
+        created.id,
+        {
+          displayName: permissionBundleCleared.displayName,
+          prefixTemplates: permissionBundleCleared.prefixTemplates,
+          fields: permissionBundleCleared.fields,
+          headerInjections: permissionBundleCleared.headerInjections,
+          queryInjections: permissionBundleCleared.queryInjections,
+          authMode: permissionBundleCleared.authMode,
+          skillMarkdown: null,
+        },
+      );
+      expect(skillCleared.skillMarkdown).toBeNull();
+      await expect(
+        observeCustomSkill(fixture, created.id),
+      ).resolves.toBeUndefined();
+
+      await connectorsApi.deleteCustomConnector(admin, created.id);
+      await expect(
+        observeCustomSkill(fixture, created.id),
+      ).resolves.toBeUndefined();
+      await expect(
+        connectorsApi.listCustomConnectors(admin),
+      ).resolves.not.toContainEqual(
+        expect.objectContaining({ id: created.id }),
+      );
     });
-
-    const unknownBundle = await connectorsApi.requestCreateCustomConnector(
-      admin,
-      {
-        ...customConnectorBody(uniqueSlug("bdd-unknown-bundle")),
-        permissionBundleRef: "builtin:not-a-connector@1",
-      },
-      [400],
-    );
-    expectApiError(unknownBundle.body);
-    expect(unknownBundle.body.error.message).toContain(
-      "Unknown custom connector permission bundle",
-    );
-
-    const skillCleared = await connectorsApi.updateCustomConnector(
-      admin,
-      created.id,
-      {
-        displayName: permissionBundleCleared.displayName,
-        prefixTemplates: permissionBundleCleared.prefixTemplates,
-        fields: permissionBundleCleared.fields,
-        headerInjections: permissionBundleCleared.headerInjections,
-        queryInjections: permissionBundleCleared.queryInjections,
-        authMode: permissionBundleCleared.authMode,
-        skillMarkdown: null,
-      },
-    );
-    expect(skillCleared.skillMarkdown).toBeNull();
-    await expect(
-      storagesApi.downloadStorage(admin, {
-        name: storageName,
-        owner: "organization",
-      }),
-    ).resolves.toMatchObject({ versionId: updatedHead.versionId });
-
-    await connectorsApi.deleteCustomConnector(admin, created.id);
-    await expect(
-      storagesApi.downloadStorage(admin, {
-        name: storageName,
-        owner: "organization",
-        version: updatedHead.versionId,
-      }),
-    ).resolves.toMatchObject({ versionId: updatedHead.versionId });
   });
 
   it("allows an edited definition to share a prefix without changing identity", async () => {

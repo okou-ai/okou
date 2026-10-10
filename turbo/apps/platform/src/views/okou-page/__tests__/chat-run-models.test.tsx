@@ -792,50 +792,67 @@ test("Show the reset time for a limit reached while the thread is open", async (
   );
 });
 
-test("Recover when a model is at capacity", async () => {
-  const user = userEvent.setup({ delay: null });
-  configureConnectedRunModels([
-    "gpt-5.6-luna",
-    "claude-sonnet-5",
-    "gpt-5.6-sol",
-  ]);
-  context.mocks.api(billingStatusContract.get, ({ respond }) => {
-    return respond(200, limitedFreeBillingStatus());
-  });
-  installRunChat({
-    selectedModel: "gpt-5.6-luna",
-    chatEvents: failedRunEvents(
-      "Selected model is at capacity. Please try a different model.",
-      "gpt-5.6-luna",
-    ),
-  });
+test.each([true, false])(
+  "Recover when a model is at capacity (current model offered: %s)",
+  async (currentModelOffered) => {
+    const user = userEvent.setup({ delay: null });
+    const models = currentModelOffered
+      ? ["gpt-5.6-luna", "claude-sonnet-5", "gpt-5.6-sol"]
+      : ["claude-sonnet-5", "gpt-5.6-sol"];
+    configureConnectedRunModels(models);
+    context.mocks.api(billingStatusContract.get, ({ respond }) => {
+      return respond(200, limitedFreeBillingStatus());
+    });
+    installRunChat({
+      selectedModel: "gpt-5.6-luna",
+      chatEvents: failedRunEvents(
+        "Selected model is at capacity. Please try a different model.",
+        "gpt-5.6-luna",
+      ),
+    });
 
-  await setupPage({
-    context,
-    path: RUN_PATH,
-  });
+    await setupPage({
+      context,
+      path: RUN_PATH,
+    });
 
-  await readyChat();
-  const recovery = await recoveryCard();
-  const picker = within(recovery).getByRole("combobox");
-  await user.click(picker);
-  // Fast-capable models always carry their own Fast row, so each plain row is
-  // addressed by its exact label rather than a shared prefix.
-  await expect(
-    screen.findByRole("option", { name: "GPT 5.6 Luna" }),
-  ).resolves.toBeVisible();
-  expect(
-    screen.getByRole("option", { name: /^Claude Sonnet 5/iu }),
-  ).toBeVisible();
-  const personalOption = screen.getByRole("option", { name: "GPT 5.6 Sol" });
-  expect(personalOption).not.toBeDisabled();
-  await user.keyboard("{Escape}");
+    await readyChat();
+    const recovery = await recoveryCard();
+    const picker = within(recovery).getByRole("combobox");
+    await user.click(picker);
+    const personalOption = await screen.findByRole("option", {
+      name: "GPT 5.6 Sol",
+    });
+    const options = screen.getAllByRole("option");
+    const focusedOption = screen.getByRole("option", {
+      name: currentModelOffered ? "GPT 5.6 Luna" : "Auto",
+      selected: true,
+    });
+    await waitFor(() => {
+      expect(focusedOption).toHaveFocus();
+    });
+    // The run-models response includes Auto as well as the configured models.
+    expect(options).toHaveLength(models.length + 1);
+    expect(
+      screen.getByRole("option", { name: /^Claude Sonnet 5/iu }),
+    ).toBeVisible();
+    expect(personalOption).not.toBeDisabled();
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(picker).toHaveFocus();
+    });
+    if (!currentModelOffered) {
+      await user.click(picker);
+      click(await screen.findByRole("option", { name: "GPT 5.6 Sol" }));
+      await within(recovery).findByRole("combobox", { name: "GPT 5.6 Sol" });
+    }
 
-  click(await findButton("Try again"));
+    click(await findButton("Try again"));
 
-  await expect(screen.findByText("continue")).resolves.toBeVisible();
-  await expect(findButton("Stop")).resolves.toBeVisible();
-});
+    await expect(screen.findByText("continue")).resolves.toBeVisible();
+    await expect(findButton("Stop")).resolves.toBeVisible();
+  },
+);
 
 test("Reset the current route's active subscription account", async () => {
   const resets: string[] = [];

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.19](https://github.com/okou-ai/okou/compare/runner-network-v0.2.18...runner-network-v0.2.19) (2026-10-10)
+
+
+### Performance Improvements
+
+* **test:** reduce fixture observation allocations ([#38473](https://github.com/okou-ai/okou/issues/38473)) ([65e3292](https://github.com/okou-ai/okou/commit/65e3292dcf4cc635182ab1ffb88354726aae7402))
+
 ## [0.2.18](https://github.com/okou-ai/okou/compare/runner-network-v0.2.17...runner-network-v0.2.18) (2026-10-10)
 
 ## [0.2.17](https://github.com/okou-ai/okou/compare/runner-network-v0.2.16...runner-network-v0.2.17) (2026-10-10)

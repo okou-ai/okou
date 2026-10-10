@@ -1,0 +1,18 @@
+[package]
+name = "guest-home-mount"
+version = "0.1.2"
+edition.workspace = true
+description = "Fixed privileged home mount checks and bounded initialization"
+
+[dependencies]
+guest-contracts.workspace = true
+libc = { workspace = true, features = ["std"] }
+linux-mountinfo.workspace = true
+nix = { workspace = true, features = ["user"] }
+rustix = { workspace = true, features = ["fs", "linux_4_11", "std"] }
+
+[dev-dependencies]
+tempfile = { workspace = true, features = ["getrandom"] }
+
+[lints]
+workspace = true

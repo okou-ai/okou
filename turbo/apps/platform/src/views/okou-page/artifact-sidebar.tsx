@@ -102,6 +102,7 @@ type ArtifactSidebarItem = {
 
 type ArtifactSidebarContentProps = {
   agentId?: string | null;
+  artifactKind?: ChatThreadArtifactFile["artifactKind"];
   artifactRef: ArtifactRef;
   fullscreenState: ArtifactSidebarFullscreenState;
   imageCanvasSignals: ZoomableImageCanvasSignals;
@@ -201,8 +202,9 @@ function artifactSidebarSyncTargetForItem({
     : undefined;
 }
 
-function ArtifactSidebarContent({
+export function ArtifactSidebarContent({
   agentId,
+  artifactKind,
   artifactRef,
   fullscreenState,
   imageCanvasSignals,
@@ -220,7 +222,11 @@ function ArtifactSidebarContent({
   const toggleFullscreen = fullscreenState.toggle;
   const resourceUrl = useLastResolved(artifactRef.resourceUrl$) ?? null;
   const shareUrl = useLastResolved(artifactRef.shareUrl$);
-  const display = resolveArtifactDisplay(artifactRef, item);
+  const resolvedDisplay = resolveArtifactDisplay(artifactRef, item);
+  const display = {
+    ...resolvedDisplay,
+    artifactKind: artifactKind ?? resolvedDisplay.artifactKind,
+  };
   const syncTarget = artifactSidebarSyncTargetForItem({
     agentId,
     item,

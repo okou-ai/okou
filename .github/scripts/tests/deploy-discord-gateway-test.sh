@@ -64,24 +64,29 @@ sys.exit(int(os.environ.get('GATEWAY_TEST_EXIT', '0')))
         "DISCORD_API_ORIGIN": "https://api.example.test",
     }
 
-    def run(target, changes=None):
+    def run(target, changes=None, enabled=None):
         capture.unlink(missing_ok=True)
         selected = env | (changes or {})
-        result = subprocess.run(
-            ["bash", str(script), target], env=selected, capture_output=True, text=True,
-        )
+        args = ["bash", str(script), target]
+        if enabled is not None:
+            args.append(enabled)
+        result = subprocess.run(args, env=selected, capture_output=True, text=True)
         for key in keys:
             assert env[key] not in result.stdout + result.stderr, "credentials must not be logged"
         return result
 
-    for target in ("test", "production"):
-        result = run(target)
+    for target, enabled in (
+        ("test", None), ("production", None),
+        ("test", "false"), ("production", "false"),
+        ("test", "true"), ("production", "true"),
+    ):
+        result = run(target, enabled=enabled)
         assert result.returncode == 0, "valid configuration must reach deploy"
         call = json.loads(capture.read_text())
         args = call["args"]
         assert args[:5] == ["--filter", "@okouai/discord-gateway-worker", "exec", "wrangler", "deploy"]
         assert args[args.index("--env") + 1] == target, "preserve exact environment"
-        assert args[args.index("--var") + 1] == "DISCORD_GATEWAY_ENABLED:false", "deployment cannot activate"
+        assert args[args.index("--var") + 1] == "DISCORD_GATEWAY_ENABLED:" + (enabled or "false"), "startup requires explicit deployment input"
         assert call["secrets"] == {key: env[key] for key in keys}, "pass all encrypted bindings"
         assert call["inherited_discord_keys"] == [], "credentials must leave the child environment"
         assert call["mode"] == 0o600, "temporary credential file must be private"
@@ -103,7 +108,12 @@ sys.exit(int(os.environ.get('GATEWAY_TEST_EXIT', '0')))
         assert result.returncode != 0, "invalid configuration must fail closed"
         assert not capture.exists(), "reject invalid configuration before deployment"
 
-    result = run("test", {"GATEWAY_TEST_EXIT": "17"})
+    for enabled in ("1", "yes", "TRUE", "false --var DISCORD_GATEWAY_ENABLED:true"):
+        result = run("production", enabled=enabled)
+        assert result.returncode != 0, "invalid startup selection must fail closed"
+        assert not capture.exists(), "reject invalid startup selection before deployment"
+
+    result = run("test", {"GATEWAY_TEST_EXIT": "17"}, enabled="true")
     assert result.returncode == 17, "preserve deployment failures"
     call = json.loads(capture.read_text())
     assert not Path(call["secret_file"]).exists(), "delete credential file after failure"

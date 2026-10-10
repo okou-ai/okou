@@ -262,24 +262,9 @@
       "owner": "retireExpiredInactiveBrowser$"
     },
     {
-      "id": "TX-0075",
-      "file": "turbo/apps/api/src/signals/services/built-in-model-key-fixture.ts",
-      "owner": "acquireBuiltInModelKeyFixture"
-    },
-    {
-      "id": "TX-0076",
-      "file": "turbo/apps/api/src/signals/services/built-in-model-key-fixture.ts",
-      "owner": "releaseBuiltInModelKeyFixture"
-    },
-    {
       "id": "TX-0077",
       "file": "turbo/apps/api/src/signals/services/builtin-connector-automatic-connection.service.ts",
       "owner": "publishAutomaticConnection$"
-    },
-    {
-      "id": "TX-0078",
-      "file": "turbo/apps/api/src/signals/services/builtin-connector-automatic-dcr.service.ts",
-      "owner": "retireBuiltinDcrRegistration$"
     },
     {
       "id": "TX-0079",
@@ -320,11 +305,6 @@
       "id": "TX-0086",
       "file": "turbo/apps/api/src/signals/services/canonical-asset.service.ts",
       "owner": "ensureCanonicalDelivery$"
-    },
-    {
-      "id": "TX-0087",
-      "file": "turbo/apps/api/src/signals/services/canonical-asset.service.ts",
-      "owner": "materializeCanonicalPublishedAsset$"
     },
     {
       "id": "TX-0088",
@@ -535,11 +515,6 @@
       "id": "TX-0135",
       "file": "turbo/apps/api/src/signals/services/cron-sync-skills.service.ts",
       "owner": "removeOrphanedSkills$"
-    },
-    {
-      "id": "TX-0136",
-      "file": "turbo/apps/api/src/signals/services/custom-connector-automatic-oauth.service.ts",
-      "owner": "retireCustomDcrRegistration$"
     },
     {
       "id": "TX-0137",
@@ -775,11 +750,6 @@
       "id": "TX-0190",
       "file": "turbo/apps/api/src/signals/services/morning-brief-timezone.service.ts",
       "owner": "synchronizeMorningBriefTimezone$"
-    },
-    {
-      "id": "TX-0191",
-      "file": "turbo/apps/api/src/signals/services/notion-automation-event.service.ts",
-      "owner": "storeVerificationToken$"
     },
     {
       "id": "TX-0192",
@@ -1087,11 +1057,6 @@
       "owner": "ensureTelegramChatThreadRoute$"
     },
     {
-      "id": "TX-0260",
-      "file": "turbo/apps/api/src/signals/services/telegram-chat-ingress.service.ts",
-      "owner": "createTelegramChatThread$"
-    },
-    {
       "id": "TX-0261",
       "file": "turbo/apps/api/src/signals/services/thread-claim-run.service.ts",
       "owner": "createThreadClaimRunObjects/commitQueueHeadRejection$"
@@ -1170,11 +1135,6 @@
       "id": "TX-0279",
       "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
       "owner": "refundPurchase$"
-    },
-    {
-      "id": "TX-0280",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
-      "owner": "claimAcceptedPurchaseActivation$"
     },
     {
       "id": "TX-0281",
@@ -1342,11 +1302,6 @@
       "owner": "updateVncConnection$"
     },
     {
-      "id": "TX-0318",
-      "file": "turbo/apps/api/src/signals/services/vnc-owner-lifecycle.service.ts",
-      "owner": "eraseVncOwnerData$"
-    },
-    {
       "id": "TX-0319",
       "file": "turbo/apps/api/src/signals/services/webhooks-clerk-cleanup.service.ts",
       "owner": "cancelOrgRuns"
@@ -1500,21 +1455,6 @@
       "id": "TX-0350",
       "file": "turbo/apps/api/src/test-fixtures/connector-catalog.ts",
       "owner": "publishFixtureGeneration"
-    },
-    {
-      "id": "TX-0351",
-      "file": "turbo/apps/api/src/test-fixtures/org-metadata.ts",
-      "owner": "upsertOrgMetadataFixture"
-    },
-    {
-      "id": "TX-0352",
-      "file": "turbo/packages/db/scripts/audit-historical-session-blob-references.sql",
-      "owner": "<module>"
-    },
-    {
-      "id": "TX-0353",
-      "file": "turbo/packages/db/scripts/audit-hosted-publication-history.sql",
-      "owner": "<module>"
     },
     {
       "id": "TX-0355",

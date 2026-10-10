@@ -87,46 +87,12 @@
 //! to runner reasons. Keep those source references in sync with the linked
 //! shared constants when changing this protocol.
 //!
-//! ## `export-session-history-sidecar`
+//! ## `verify-home-cache-history`
 //!
-//! ### Invocation and streams
-//!
-//! ```text
-//! guest-agent export-session-history-sidecar <metadata-path> <export-path>
-//! ```
-//!
-//! Exactly two positional paths are required. The helper consumes no stdin.
-//! After verifying the identity and source history, it writes the selected
-//! sidecar representation to `export-path` and serializes
-//! [`SessionHistorySidecarExportMetadata`](guest_contracts::session_history_identity::SessionHistorySidecarExportMetadata)
-//! as one JSON value on stdout. The metadata records whether the output is
-//! [`SessionHistorySidecarRepresentation::Raw`](guest_contracts::session_history_identity::SessionHistorySidecarRepresentation::Raw)
-//! or [`SessionHistorySidecarRepresentation::CodexZstd`](guest_contracts::session_history_identity::SessionHistorySidecarRepresentation::CodexZstd)
-//! and records the exact encoded byte length. The runner
-//! supplies the runtime-directory environment when the source history needs
-//! the guest runtime path contract.
-//!
-//! A successful export returns
-//! [`SESSION_HISTORY_IDENTITY_VERIFY_EXIT_SUCCESS`](guest_contracts::session_history_identity::SESSION_HISTORY_IDENTITY_VERIFY_EXIT_SUCCESS).
-//! Missing or extra arguments return
-//! [`SESSION_HISTORY_IDENTITY_VERIFY_EXIT_INVALID_ARGS`](guest_contracts::session_history_identity::SESSION_HISTORY_IDENTITY_VERIFY_EXIT_INVALID_ARGS).
-//! Verification
-//! failures return the same session-history verification codes documented for
-//! [`crate::session_history_identity::SessionHistoryIdentityVerifyError`]. If
-//! creating or writing `export-path` fails, the helper returns
-//! [`SESSION_HISTORY_SIDECAR_EXPORT_EXIT_WRITE_FAILURE`](guest_contracts::session_history_identity::SESSION_HISTORY_SIDECAR_EXPORT_EXIT_WRITE_FAILURE)
-//! and emits the safe
-//! [`SessionHistorySidecarExportFailure`](guest_contracts::session_history_identity::SessionHistorySidecarExportFailure)
-//! JSON shape on stdout. The failure shape contains only the linked
-//! [`SessionHistorySidecarIoErrorClass`](guest_contracts::session_history_identity::SessionHistorySidecarIoErrorClass).
-//! The helper does not consume stdin or emit a protocol stderr payload. The
-//! write is not transactional, so callers consume the file only after a
-//! successful exit and valid metadata.
-//!
-//! The runner caller and consumer are
-//! `crates/runner-lifecycle/src/workspace_promotion.rs::export_session_history_sidecar`.
-//! That path parses the linked metadata, validates its encoded size, and
-//! cleans up the export when promotion cannot proceed.
+//! A fixed typed helper consumes bounded JSON stdin and returns a hit/miss report.
+//! It verifies a generation/digest-bound surviving proof, the current request,
+//! current launch source, and no-follow live raw/zstd bytes. No body is exported.
+//! Missing/corrupt/stale evidence is a miss; cancellation is not a miss.
 //!
 //! ## `prepare-for-reuse`
 //!
@@ -162,7 +128,7 @@
 //! - [`REUSE_PREPARATION_EXIT_CONTAINMENT_FAILED`](guest_contracts::reuse_preparation::REUSE_PREPARATION_EXIT_CONTAINMENT_FAILED)
 //!   means the supervised-exec containment invariant could not be proven.
 //!
-//! [`REUSE_PREPARATION_EXIT_WORKSPACE_MOUNT_FAILED`](guest_contracts::reuse_preparation::REUSE_PREPARATION_EXIT_WORKSPACE_MOUNT_FAILED)
+//! [`REUSE_PREPARATION_EXIT_HOME_MOUNT_FAILED`](guest_contracts::reuse_preparation::REUSE_PREPARATION_EXIT_HOME_MOUNT_FAILED)
 //! is reserved for the composed runner workspace-mount wrapper; it is not a
 //! guest-helper failure. Cleanup is not transactional: a later failure can be
 //! returned after earlier stale entries have already been removed.
@@ -178,17 +144,18 @@
 //! guest-agent prepare-for-cache < request.json
 //! ```
 //!
-//! This terminal helper shares the bounded request, report and exit-code contract
-//! above, but accepts only the canonical managed runtime parent
+//! This terminal helper accepts a generation-owned terminal request and returns
+//! cleanup plus optional surviving proof, with the existing exit-code categories.
+//! It accepts only the canonical managed runtime parent
 //! `/home/user/.vm0/guest-agent/runs`. Both requested anchors must pass the existing
 //! containment, no-follow, mount and identity checks before mutation. Once required
-//! readers and sidecar export/host copy finish, it removes all completed runtime
+//! checkpoint, identity and log readers finish, it removes all completed runtime
 //! children (including current/retained anchors) and managed Codex auth. It does not
 //! delete ordinary user files, framework histories/catalogs or package caches.
 //! Unlike idle preparation, Runner does not apply a rootfs-reserve gate to its
 //! report. Failure rejects optional publication; successful deletion is not a
 //! forensic block-erasure guarantee. Runner invokes it from
-//! `crates/runner-lifecycle/src/workspace_promotion.rs` before freeze and stop.
+//! `crates/runner-lifecycle/src/home_promotion.rs` before freeze and stop.
 //!
 //! ## `cleanup-codex-session`
 //!
@@ -245,6 +212,7 @@ pub mod failure_diagnostics;
 mod failure_patterns;
 pub mod finalization;
 pub mod heartbeat;
+pub mod home_cache_history;
 pub mod http;
 pub mod masker;
 pub mod metrics;

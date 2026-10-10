@@ -330,7 +330,7 @@ async fn execute_reused_sandbox_drains_archive_when_guest_state_restore_fails() 
                 params: &default_params(),
                 sandbox,
                 source_ip,
-                workspace_image: None,
+                home_image: None,
                 kind: crate::idle_pool::IdleSandboxKind::Exact,
             },
             &context,
@@ -338,7 +338,7 @@ async fn execute_reused_sandbox_drains_archive_when_guest_state_restore_fails() 
             RunStart {
                 restore_guest_state: true,
                 reuse_result: runner_types::types::SandboxReuseResult::Reused,
-                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::SandboxReused,
+                home_reuse_result: runner_types::types::HomeReuseResult::SandboxReused,
                 prev_storage: Some(&previous_storage),
             },
             &mut telemetry,
@@ -516,13 +516,13 @@ async fn execute_job_reuse_claude_tool_validation_failure_returns_sandbox() {
 }
 
 #[tokio::test]
-async fn execute_job_reuse_invalid_resume_session_does_not_lease_workspace_image() {
+async fn execute_job_reuse_invalid_resume_session_does_not_lease_home_image() {
     let dir = tempfile::tempdir().unwrap();
-    let cache = WorkspaceImageCache::new(RunnerPaths::new(dir.path().join("runner")));
+    let cache = HomeImageCache::new(RunnerPaths::new(dir.path().join("runner")));
     let mut config = test_executor_config(dir.path()).await;
-    config.workspace_cache = Some(cache);
+    config.home_cache = Some(cache);
     let params = JobParams {
-        workspace_disk_mb: 16,
+        home_disk_mb: 16,
         ..default_params()
     };
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
@@ -544,7 +544,7 @@ async fn execute_job_reuse_invalid_resume_session_does_not_lease_workspace_image
     assert!(!error.contains(raw_session_id));
     assert!(reuse_outcome.sandbox.is_some());
     assert!(reuse_outcome.network_log_session.is_none());
-    assert!(reuse_outcome.workspace_image.is_none());
+    assert!(reuse_outcome.home_image.is_none());
     assert!(
         overrides.start_agent_process_calls().is_empty(),
         "reused sandbox must not start a process after resume session validation failure"
@@ -705,7 +705,7 @@ async fn execute_job_reuse_reseed_failure_returns_sandbox() {
 }
 
 #[tokio::test]
-async fn execute_job_reuse_skips_workspace_mount_validation() {
+async fn execute_job_reuse_skips_home_mount_validation() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
@@ -727,7 +727,7 @@ async fn execute_job_reuse_skips_workspace_mount_validation() {
     assert!(outcome.error().is_none());
     assert!(outcome.sandbox.is_some());
     assert_eq!(
-        overrides.workspace_drive_mount_calls(),
+        overrides.home_drive_mount_calls(),
         0,
         "reused execution must rely on the idle-admission mount proof"
     );

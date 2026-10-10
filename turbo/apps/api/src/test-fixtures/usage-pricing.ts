@@ -6,11 +6,8 @@
  * replacing a test endpoint with this helper. Prefer independently public
  * behavior; delete private-only scenarios as their callers are corrected.
  */
-import { randomUUID } from "node:crypto";
 
-import { createStore } from "ccstate";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
-import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
 import { z } from "zod";
@@ -18,98 +15,8 @@ import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import { env } from "../lib/env";
 import { USAGE_PRICING } from "../scripts/dev-seed";
-import { writeDb$, type Db } from "../signals/external/db";
-import {
-  resolveUsagePricingProvider,
-  type UsagePricingProviderResolution,
-  type UsagePricingResolution,
-} from "../signals/context/usage-pricing-resolution";
+
 import { onRejection } from "../signals/utils";
-
-export interface UsagePricingKey {
-  readonly kind: string;
-  readonly provider: string;
-  readonly category: string;
-}
-
-export interface UsagePricingRow extends UsagePricingKey {
-  readonly unitPrice: number;
-  readonly unitSize: number;
-}
-
-export interface UsagePricingFixture {
-  readonly resolution: UsagePricingResolution;
-  readonly cleanup: () => Promise<void>;
-}
-
-interface CreateUsagePricingFixtureOptions {
-  readonly configured?: readonly UsagePricingRow[];
-  readonly missing?: readonly UsagePricingKey[];
-  readonly registerCleanup?: (cleanup: () => Promise<void>) => void;
-}
-
-function fixtureDb(): Db {
-  return createStore().set(writeDb$);
-}
-
-function usagePricingResolution(
-  keys: readonly UsagePricingKey[],
-): UsagePricingProviderResolution[] {
-  const resolution: UsagePricingProviderResolution[] = [];
-  for (const key of keys) {
-    if (
-      resolution.some((entry) => {
-        return entry.kind === key.kind && entry.provider === key.provider;
-      })
-    ) {
-      continue;
-    }
-    resolution.push({
-      kind: key.kind,
-      provider: key.provider,
-      lookupProvider: `pricing-fixture-${randomUUID()}`,
-    });
-  }
-  return resolution;
-}
-
-export async function createUsagePricingFixture({
-  configured = [],
-  missing = [],
-  registerCleanup,
-}: CreateUsagePricingFixtureOptions): Promise<UsagePricingFixture> {
-  const db = fixtureDb();
-  const resolution = usagePricingResolution([...configured, ...missing]);
-  const cleanup = async () => {
-    for (const entry of resolution) {
-      await db
-        .delete(usagePricing)
-        .where(
-          and(
-            eq(usagePricing.kind, entry.kind),
-            eq(usagePricing.provider, entry.lookupProvider),
-          ),
-        );
-    }
-  };
-  registerCleanup?.(cleanup);
-  if (configured.length > 0) {
-    await db.insert(usagePricing).values(
-      configured.map((row) => {
-        return {
-          ...row,
-          provider: resolveUsagePricingProvider(
-            resolution,
-            row.kind,
-            row.provider,
-          ),
-        };
-      }),
-    );
-  }
-
-  return { resolution, cleanup };
-}
 
 /**
  * Pricing the development seed does not carry for an active migrated

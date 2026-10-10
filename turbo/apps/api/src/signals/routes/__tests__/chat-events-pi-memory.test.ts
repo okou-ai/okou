@@ -30,7 +30,6 @@ const {
   requestSendEventWithBearer,
   mockPiCheckpointObjectStore,
   completeSandboxFirstPiRun,
-  publishPendingPiInstructions,
   mockPiResourceArchiveDownloads,
 } = createChatEventsFixture(context);
 
@@ -235,56 +234,65 @@ describe("CHAT-02: model-first routing", () => {
   });
 
   it("keeps an empty recall-enabled Pi memory mount valid", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    await publishPendingPiInstructions(actor, agentId);
-    const orgId = requireOrgId(actor);
-    await configureSubscriptionPiModel(actor, {}, "gpt-6-luna");
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId },
-      {
-        [FeatureSwitchKey.PiMemory]: true,
-      },
-    );
-    mockPiResourceArchiveDownloads(true);
-    mockPiCheckpointObjectStore();
-    await api.heartbeatRunner(runnerGroup);
-
-    const run = await sendChatRun(actor, {
+    const {
+      actor,
       agentId,
-      prompt: "launch Pi with an absent memory Storage",
-      model: "gpt-6-luna",
-    });
-    const claimed = await claimChatRun(runnerGroup, run.runId);
-    const storageManifest = expectCanonicalStorageManifest(
-      claimed.claim.storageManifest,
-    );
-    if (!storageManifest) {
-      throw new Error("Expected empty recall-enabled Pi Storage mounts");
-    }
-    const memorySlotMounts = storageManifest.storageMounts.filter((mount) => {
-      return mount.name === "memory" || mount.mountPath === PI_MEMORY_ROOT;
-    });
-    expect(memorySlotMounts).toHaveLength(1);
-    expect(memorySlotMounts[0]).toMatchObject({
-      name: "memory",
-      versionId: expect.any(String),
-      mountPath: PI_MEMORY_ROOT,
-      missingRootPolicy: "preserveParentVersion",
-      writeback: true,
-      empty: true,
-    });
-    expect(claimed.claim.piLaunchConfig).toMatchObject({
-      memoryRecall: {
-        status: "no-content",
-        memoryStorageId: memorySlotMounts[0]?.storageId,
-        storageVersionId: memorySlotMounts[0]?.versionId,
-      },
-    });
-    expect(memorySlotMounts[0]).not.toHaveProperty("archiveUrl");
-    expect(memorySlotMounts[0]).not.toHaveProperty("generatedBy");
+      runnerGroup,
+      run: own,
+      ownsFeatureSwitches,
+      sendChatRun,
+      claimChatRun,
+    } = await publicChatActor(context);
+    ownsFeatureSwitches();
+    await own(async () => {
+      const orgId = requireOrgId(actor);
+      await configureSubscriptionPiModel(actor, {}, "gpt-6-luna");
+      await updateFeatureSwitchesForUser(
+        context,
+        { ...actor, orgId },
+        {
+          [FeatureSwitchKey.PiMemory]: true,
+        },
+      );
+      mockPiResourceArchiveDownloads(true);
+      mockPiCheckpointObjectStore();
+      await api.heartbeatRunner(runnerGroup);
 
-    await cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
+      const run = await sendChatRun(actor, {
+        agentId,
+        prompt: "launch Pi with an absent memory Storage",
+        model: "gpt-6-luna",
+      });
+      const claimed = await claimChatRun(runnerGroup, run.runId);
+      const storageManifest = expectCanonicalStorageManifest(
+        claimed.claim.storageManifest,
+      );
+      if (!storageManifest) {
+        throw new Error("Expected empty recall-enabled Pi Storage mounts");
+      }
+      const memorySlotMounts = storageManifest.storageMounts.filter((mount) => {
+        return mount.name === "memory" || mount.mountPath === PI_MEMORY_ROOT;
+      });
+      expect(memorySlotMounts).toHaveLength(1);
+      expect(memorySlotMounts[0]).toMatchObject({
+        name: "memory",
+        versionId: expect.any(String),
+        mountPath: PI_MEMORY_ROOT,
+        missingRootPolicy: "preserveParentVersion",
+        writeback: true,
+        empty: true,
+      });
+      expect(claimed.claim.piLaunchConfig).toMatchObject({
+        memoryRecall: {
+          status: "no-content",
+          memoryStorageId: memorySlotMounts[0]?.storageId,
+          storageVersionId: memorySlotMounts[0]?.versionId,
+        },
+      });
+      expect(memorySlotMounts[0]).not.toHaveProperty("archiveUrl");
+      expect(memorySlotMounts[0]).not.toHaveProperty("generatedBy");
+      await cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
+    });
   }, 90_000);
 
   it("continues native history with memory published by the preceding Run", async () => {

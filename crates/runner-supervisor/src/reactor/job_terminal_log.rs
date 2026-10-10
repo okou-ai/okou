@@ -216,7 +216,7 @@ fn log_job_execution_failed(
                 guest_root_fs_inode_used_percent =
                     resource_fields.guest_root_fs_inode_used_percent,
                 guest_root_fs_available_inodes = resource_fields.guest_root_fs_available_inodes,
-                guest_workspace_fs_used_percent = resource_fields.guest_workspace_fs_used_percent,
+                guest_home_fs_used_percent = resource_fields.guest_home_fs_used_percent,
                 guest_memory_available_mb = resource_fields.guest_memory_available_mb,
                 $message
             )
@@ -251,7 +251,7 @@ struct JobResourceLogFields {
     guest_root_fs_available_kb: Option<u64>,
     guest_root_fs_inode_used_percent: Option<u64>,
     guest_root_fs_available_inodes: Option<u64>,
-    guest_workspace_fs_used_percent: Option<u64>,
+    guest_home_fs_used_percent: Option<u64>,
     guest_memory_available_mb: Option<u64>,
 }
 
@@ -468,7 +468,9 @@ impl From<Option<executor::ResourceFailureDiagnostics>> for JobResourceLogFields
                 .map(u64::from),
             guest_root_fs_available_inodes: diagnostics
                 .and_then(|diagnostics| diagnostics.guest_root_fs_available_inodes),
-            guest_workspace_fs_used_percent: diagnostics
+            // The fixed cwd probe observes the mounted home filesystem.
+            // Dedicated home byte/inode diagnostics are a separate extension.
+            guest_home_fs_used_percent: diagnostics
                 .and_then(|diagnostics| diagnostics.guest_workspace_fs_used_percent)
                 .map(u64::from),
             guest_memory_available_mb: diagnostics
@@ -1611,7 +1613,7 @@ mod tests {
         assert_field_eq(&event, "guest_root_fs_available_kb", "20");
         assert_field_eq(&event, "guest_root_fs_inode_used_percent", "99");
         assert_field_eq(&event, "guest_root_fs_available_inodes", "42");
-        assert_field_eq(&event, "guest_workspace_fs_used_percent", "1");
+        assert_field_eq(&event, "guest_home_fs_used_percent", "1");
         assert_field_eq(&event, "guest_memory_available_mb", "624");
     }
 
@@ -1769,7 +1771,7 @@ mod tests {
             assert_field_eq(event, "resource_failure_kind", "guest_root_filesystem_full");
             assert_field_eq(event, "guest_root_fs_used_percent", "100");
             assert_field_eq(event, "guest_root_fs_available_kb", "20");
-            assert_field_eq(event, "guest_workspace_fs_used_percent", "1");
+            assert_field_eq(event, "guest_home_fs_used_percent", "1");
             assert_field_eq(event, "guest_memory_available_mb", "624");
 
             assert_field_kind(event, "message", "debug");

@@ -3,6 +3,9 @@ import type { RunnerSshInvalidate } from "@okouai/api-contracts/contracts/runner
 import {
   foregroundChannelName,
   sessionOutputChannelName,
+  computerUseHostChannelScope,
+  computerUseHostChannelName,
+  computerUseCommandsChangedEvent,
   type BrowserSessionChangedPayload,
   type HomeTaskRecommendationsChangedPayload,
   type SessionOutputDelta,
@@ -87,6 +90,9 @@ export async function createPlatformRealtimeToken(
     capability[getOrgChannelName(orgId)] = ["subscribe"];
     capability[getUserOrgChannelName(userId, orgId)] = ["subscribe"];
     capability[sessionOutputChannelName(userId, orgId, "*")] = ["subscribe"];
+    capability[`${computerUseHostChannelScope(userId, orgId)}:*`] = [
+      "subscribe",
+    ];
   }
   const tokenParams = {
     capability,
@@ -98,6 +104,37 @@ export async function createPlatformRealtimeToken(
   signal.throwIfAborted();
   L.debug(`Generated platform realtime token request for ${scope}`);
   return tokenRequest;
+}
+
+/** Wake one registered connection; HTTP remains authoritative for claiming. */
+async function publishComputerUseCommandsChangedNow(
+  channelName: string,
+): Promise<void> {
+  await ablyClient()
+    .channels.get(channelName)
+    .publish(computerUseCommandsChangedEvent, null);
+}
+
+export function publishComputerUseCommandsChangedSafely(target: {
+  readonly userId: string;
+  readonly orgId: string;
+  readonly hostId: string;
+  readonly connectionGeneration: number;
+}): void {
+  const channelName = computerUseHostChannelName(
+    target.userId,
+    target.orgId,
+    target.hostId,
+    target.connectionGeneration,
+  );
+  waitUntil(
+    tapError(publishComputerUseCommandsChangedNow(channelName), (error) => {
+      L.warn("Unable to publish computer-use command wakeup", {
+        error,
+        channelName,
+      });
+    }),
+  );
 }
 
 export async function createBuiltInGenerationRealtimeSubscription(

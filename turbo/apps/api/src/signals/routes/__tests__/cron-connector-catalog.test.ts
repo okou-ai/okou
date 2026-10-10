@@ -1,3 +1,6 @@
+import { publicChatActor } from "./helpers/public-chat-actor";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import { readPublishedArchive } from "./helpers/published-archive";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createHash, randomUUID } from "node:crypto";
 
@@ -6,10 +9,7 @@ import { cronConnectorCatalogContract } from "@okouai/api-contracts/contracts/cr
 import { builtinConnectorsSlugCallbackContract } from "@okouai/api-contracts/contracts/connectors-slug-callback";
 import { MODEL_PROVIDER_FIREWALL_CONFIGS } from "@okouai/api-contracts/contracts/model-provider-firewalls";
 import { runnersBuiltinFirewallsResolveContract } from "@okouai/api-contracts/contracts/runners";
-import {
-  testSystemStoragePresignedUrlCacheStateContract,
-  type TestSystemStoragePresignedUrlCacheStateActionBody,
-} from "@okouai/api-contracts/contracts/test-system-storage-presigned-url-cache-state";
+
 import {
   builtinConnectorOpenIdStartContract,
   builtinConnectorsSearchContract,
@@ -19,7 +19,11 @@ import { connectorCheckContract } from "@okouai/api-contracts/contracts/connecto
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { userPermissionGrantsContract } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
+import {
+  SYSTEM_ORG_ID,
+  getCustomConnectorSkillName,
+  getCustomConnectorSkillStorageName,
+} from "@okouai/core/storage-names";
 import { HttpResponse, http } from "msw";
 import {
   afterEach,
@@ -72,7 +76,7 @@ import {
   createRunsApi,
   expectCanonicalStorageManifest,
 } from "./helpers/api-bdd-runs";
-import { testSystemStoragePresignedUrlCacheStateRoutes } from "../test-system-storage-presigned-url-cache-state";
+
 import { builtinConnectorsSlugCallbackRoutes } from "../connectors-slug-callback";
 import { cronConnectorCatalogRoutes } from "../cron-connector-catalog";
 import { runnersRoutes } from "../runners";
@@ -86,7 +90,6 @@ const TEST_APP_ROUTES = Object.freeze([
   ...builtinConnectorsSlugCallbackRoutes,
   ...cronConnectorCatalogRoutes,
   ...runnersRoutes,
-  ...testSystemStoragePresignedUrlCacheStateRoutes,
   ...connectorCatalogRoutes,
   ...connectorCheckRoutes,
   ...builtinConnectorsRoutes,
@@ -1322,104 +1325,6 @@ function runnerFirewallClient() {
   return setupApp({ context, routes: runnersRoutes })(
     runnersBuiltinFirewallsResolveContract,
   );
-}
-
-interface VolumeStorageState {
-  readonly s3_prefix: string;
-  readonly size: number;
-  readonly file_count: number;
-  readonly head_version_id: string | null;
-}
-
-async function systemStorageStateClient() {
-  const app = await setupApp({
-    context,
-    routes: testSystemStoragePresignedUrlCacheStateRoutes,
-    isolatePg: true,
-  });
-  return app(testSystemStoragePresignedUrlCacheStateContract);
-}
-
-async function systemStorageStateAction(
-  body: TestSystemStoragePresignedUrlCacheStateActionBody,
-) {
-  return await accept(
-    (await systemStorageStateClient()).action({ body }),
-    [200],
-  );
-}
-
-async function readVolumeStorageState(args: {
-  readonly orgId: string;
-  readonly storageName: string;
-}): Promise<VolumeStorageState | null> {
-  const response = await systemStorageStateAction({
-    action: "read-storage-state",
-    org_id: args.orgId,
-    user_id: VOLUME_ORG_USER_ID,
-    storage_name: args.storageName,
-  });
-  return response.body.storage_state ?? null;
-}
-
-async function readOwnedVolumeStorageState(
-  storageId: string,
-): Promise<VolumeStorageState | null> {
-  const response = await systemStorageStateAction({
-    action: "read-owned-storage-state",
-    storage_id: storageId,
-  });
-  return response.body.storage_state ?? null;
-}
-
-interface OwnedVolumeStorageClaim extends OwnedVolumeStorageFixture {
-  readonly orgId: string;
-}
-
-async function claimOwnedVolumeStorages(
-  claims: readonly OwnedVolumeStorageClaim[],
-): Promise<void> {
-  await systemStorageStateAction({
-    action: "claim-owned-storages",
-    storages: claims.map((claim) => {
-      return {
-        storage_id: claim.storageId,
-        org_id: claim.orgId,
-        user_id: VOLUME_ORG_USER_ID,
-        storage_name: claim.storageName,
-        s3_prefix: claim.s3Prefix,
-      };
-    }),
-  });
-}
-
-async function claimOwnedVolumeStorage(
-  claim: OwnedVolumeStorageClaim,
-): Promise<void> {
-  await claimOwnedVolumeStorages([claim]);
-}
-
-async function cleanupOwnedVolumeStorages(
-  storageIds: readonly string[],
-): Promise<void> {
-  await systemStorageStateAction({
-    action: "cleanup-owned-storages",
-    storage_ids: [...storageIds],
-  });
-}
-
-async function seedOwnedVolumeStorageVersion(args: {
-  readonly storageId: string;
-  readonly versionId: string;
-  readonly s3Key: string;
-}): Promise<void> {
-  await systemStorageStateAction({
-    action: "seed-owned-storage-version",
-    storage_id: args.storageId,
-    version_id: args.versionId,
-    s3_key: args.s3Key,
-    archive_size: 321,
-  });
 }
 
 async function syncCatalog() {
@@ -2843,389 +2748,180 @@ describe("connector catalog valid lifecycle", () => {
     expect(context.mocks.s3.send).toHaveBeenCalledTimes(callsBeforeSecondRead);
   });
 
-  it("loads 17 exact connector skill versions in one bounded storage preload", async () => {
-    const fixtureSuffix = randomUUID().replaceAll("-", "");
-    const skills = Array.from({ length: 17 }, (_, index) => {
-      const sequence = String(index + 1).padStart(2, "0");
-      const connectorSlug = `batch-skill-${fixtureSuffix}-${sequence}`;
-      const selectedVersionId = createHash("sha256")
-        .update(`selected:${connectorSlug}`)
-        .digest("hex");
-      const newerVersionId = createHash("sha256")
-        .update(`newer:${connectorSlug}`)
-        .digest("hex");
-      return {
-        connectorSlug,
-        selectedVersionId,
-        newerVersionId,
-        skill: buildBundledSkillFixture(connectorSlug, selectedVersionId),
-      };
+  it("mounts all 17 normally published connector skill versions", async () => {
+    const owned = await publicChatActor(context, { clockTime: now() });
+    const fixture = createChatEventsFixture(context);
+    await owned.run(async () => {
+      await fixture.api.createPersonalModelProvider(owned.actor, {
+        type: "codex-oauth-token",
+        authMethod: "auth_json",
+        secrets: { CODEX_AUTH_JSON: makeCodexAuthJson() },
+      });
+      await fixture.api.updateUserModelPreference(owned.actor, "gpt-6-luna");
     });
-    configureSource();
-    await claimOwnedVolumeStorages(
-      skills.map((skill) => {
-        return { orgId: SYSTEM_ORG_ID, ...skill.skill };
-      }),
-    );
-
-    const firstSkill = skills[0];
-    if (!firstSkill) {
-      throw new Error("Expected connector skill fixtures");
-    }
-    const release = buildRelease({
-      version: `2026-07-15.external-batch-skills-${fixtureSuffix}`,
-      connectorSlug: firstSkill.connectorSlug,
-      label: "External Batch Skill 01",
-      mutateArtifact: (artifact) => {
-        const template = firstRecord(artifact.connectors, "connectors");
-        const iconKey = recordValue(template.icon, "connector icon").key;
-        if (typeof iconKey !== "string") {
-          throw new Error("Expected connector icon key");
-        }
-        artifact.connectors = skills.map((skill, index) => {
-          const sequence = String(index + 1).padStart(2, "0");
-          const connector = buildCatalogConnector({
-            connectorSlug: skill.connectorSlug,
-            label: `External Batch Skill ${sequence}`,
-            iconKey,
-          });
-          const presentation = publicAuthMethod({
-            id: "api-token",
-            grantKind: "manual",
-            manual: true,
-          });
-          presentation.label = "API Token";
-          const privateName = `BATCH_SKILL_${sequence}_TOKEN`;
-          connector.authMethods = [
-            canonicalAuthMethod(presentation, {
-              id: "api-token",
-              storage: {
-                version: 1,
-                secrets: [privateName],
-                variables: [],
-              },
-              grant: {
-                kind: "manual",
-                fields: [
-                  {
-                    privateName,
-                    publicId: "credential",
-                    storage: "secret",
-                  },
-                ],
-              },
-              access: {
-                kind: "static",
-                envBindings: {
-                  [privateName]: `$secrets.${privateName}`,
-                },
-              },
-              revoke: { kind: "none" },
-            }),
-          ];
-          connector.skill = skill.skill.descriptor;
-          return connector;
+    const skills: {
+      connector: Awaited<
+        ReturnType<typeof connectorsApi.createCustomConnector>
+      >;
+      published: ReturnType<typeof readPublishedArchive>;
+    }[] = [];
+    for (let index = 0; index < 17; index += 1) {
+      const start = context.mocks.s3.send.mock.calls.length;
+      const connector = await owned.run(() => {
+        return connectorsApi.createCustomConnector(owned.actor, {
+          displayName: `Published skill ${index + 1}`,
+          prefixTemplates: [`https://skill-${randomUUID()}.example.test/`],
+          fields: [
+            { key: "secret", label: "Token", kind: "secret", required: true },
+          ],
+          headerInjections: [
+            {
+              name: "Authorization",
+              valueTemplate: "Bearer {{secrets.secret}}",
+            },
+          ],
+          queryInjections: [],
+          authMode: "manual",
+          skillMarkdown: `Read published skill ${index + 1}.`,
         });
-      },
-    });
-    serveObjects(catalogObjects([release], release));
-    await syncCatalog();
-
-    const runs = createRunsApi(context);
-    const actor = bdd.user();
-    if (!actor.orgId) {
-      throw new Error("Expected an organization-scoped test actor");
+      });
+      skills.push({
+        connector,
+        published: readPublishedArchive(context, start),
+      });
     }
-    bdd.acceptAgentStorageWrites();
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    const runnerGroup = runs.configureRunnerGroup();
-    await runs.grantProEntitlement(actor);
-    await runs.createPersonalModelProvider(actor, {
-      type: "codex-oauth-token",
-      authMethod: "auth_json",
-      secrets: { CODEX_AUTH_JSON: makeCodexAuthJson() },
-    });
-    await runs.updateUserModelPreference(actor, "gpt-6-luna");
-    const agent = await bdd.createAgent(actor, {
-      displayName: "External batch connector skill agent",
-      visibility: "private",
-    });
-    const activeRunIds = new Set<string>();
-    onTestFinished(async () => {
-      context.mocks.s3.send.mockResolvedValue({ Contents: [] });
-      for (const runId of activeRunIds) {
-        await runs.requestCancelRun(actor, runId, [200, 404]);
-      }
-      for (const skill of skills) {
-        await systemStorageStateAction({
-          action: "cleanup",
-          object_key_prefix: skill.skill.s3Prefix,
-        });
-        await createConnectorCleanup(actor, skill.connectorSlug)();
-      }
-      await cleanupOwnedVolumeStorages(
+    await owned.run(() => {
+      return connectorsApi.updateAgentCustomConnectors(
+        owned.actor,
+        owned.agentId,
         skills.map((skill) => {
-          return skill.skill.storageId;
+          return skill.connector.id;
         }),
       );
-      await bdd.deleteAgent(actor, agent.agentId);
     });
-
-    for (const [index, skill] of skills.entries()) {
-      await connectorsApi.connectManualGrant(
-        actor,
-        skill.connectorSlug,
-        "api-token",
-        { credential: `batch-skill-secret-${index + 1}` },
-        agent.agentId,
-      );
-    }
-
-    const createAndClaimRun = async (prompt: string) => {
-      const run = await runs.createThreadRun(actor, {
-        agentId: agent.agentId,
+    for (const prompt of [
+      "Use all published connector skills",
+      "Reuse all exact published connector skills",
+    ]) {
+      const run = await owned.sendChatRun(owned.actor, {
+        agentId: owned.agentId,
         prompt,
       });
-      activeRunIds.add(run.runId);
-      expect(run.status).not.toBe("failed");
-      await runs.heartbeatRunner(runnerGroup);
-      await flushWaitUntilForTest();
-      await expect(
-        (async () => {
-          return (await runs.pollRunner(runnerGroup)).body.job?.runId;
-        })(),
-      ).resolves.toBe(run.runId);
-      return {
-        run,
-        claim: await runs.claimRunnerJob(run.runId),
-      };
-    };
-    const expectSkillMounts = (
-      claim: Awaited<ReturnType<typeof runs.claimRunnerJob>>,
-    ): void => {
-      const storageMounts =
+      const { claim, sandboxHeaders } = await owned.claimChatRun(
+        owned.runnerGroup,
+        run.runId,
+      );
+      const mounts =
         expectCanonicalStorageManifest(
           claim.storageManifest,
         )?.storageMounts.filter((mount) => {
           return skills.some((skill) => {
-            return mount.name === skill.skill.storageName;
+            return (
+              mount.name ===
+              getCustomConnectorSkillStorageName(skill.connector.id)
+            );
           });
         }) ?? [];
-      expect(storageMounts).toHaveLength(skills.length);
-      for (const skill of skills) {
-        expect(storageMounts).toContainEqual(
+      expect(mounts).toHaveLength(17);
+      for (const { connector, published } of skills) {
+        expect(mounts).toContainEqual(
           expect.objectContaining({
-            name: skill.skill.storageName,
-            mountPath: `/home/user/.pi/agent/skills/${skill.connectorSlug}`,
-            versionId: skill.selectedVersionId,
-            archiveSize: 321,
+            name: getCustomConnectorSkillStorageName(connector.id),
+            mountPath: `/home/user/.pi/agent/skills/${getCustomConnectorSkillName(connector.slug, connector.id)}`,
+            versionId: published.versionId,
+            archiveSize: published.archiveSize,
             archiveUrl: expect.any(String),
           }),
         );
       }
-    };
-
-    const headRun = await createAndClaimRun(
-      "Use all connector skills at their registered HEAD versions",
-    );
-    expectSkillMounts(headRun.claim);
-    await runs.requestCancelRun(actor, headRun.run.runId, [200]);
-    activeRunIds.delete(headRun.run.runId);
-
-    for (const skill of skills) {
-      await seedOwnedVolumeStorageVersion({
-        storageId: skill.skill.storageId,
-        versionId: skill.newerVersionId,
-        s3Key: `${skill.skill.s3Prefix}/${skill.newerVersionId}`,
+      await owned.run(() => {
+        return fixture.failChatRun(
+          run.runId,
+          sandboxHeaders,
+          "Published skills inspected",
+        );
       });
+      await owned.run(flushWaitUntilForTest);
     }
-
-    const historicalRun = await createAndClaimRun(
-      "Use all connector skills after their storage HEADs advance",
-    );
-    expectSkillMounts(historicalRun.claim);
-    await runs.requestCancelRun(actor, historicalRun.run.runId, [200]);
-    activeRunIds.delete(historicalRun.run.runId);
   }, 30_000);
 
-  it("mounts an external connector skill from its exact system version", async () => {
-    const connectorSlug = `external-skill-${randomUUID().slice(0, 8)}`;
-    const selectedVersionId = createHash("sha256")
-      .update(`selected:${randomUUID()}`)
-      .digest("hex");
-    const otherVersionId = createHash("sha256")
-      .update(`other:${randomUUID()}`)
-      .digest("hex");
-    const newerVersionId = createHash("sha256")
-      .update(`newer:${randomUUID()}`)
-      .digest("hex");
-    const skill = buildBundledSkillFixture(connectorSlug, selectedVersionId);
-    const { storageName, s3Prefix: canonicalPrefix } = skill;
-    configureSource();
-    await claimOwnedVolumeStorage({ orgId: SYSTEM_ORG_ID, ...skill });
-    const release = buildRelease({
-      version: "2026-07-15.external-exact-skill",
-      connectorSlug,
-      label: "External Exact Skill",
-      mutateRuntime: (artifact) => {
-        firstRecord(artifact.connectors, "connectors").skill = skill.descriptor;
-      },
-    });
-    serveObjects(catalogObjects([release], release));
-    await syncCatalog();
-
-    const runs = createRunsApi(context);
-    const actor = bdd.user();
-    if (!actor.orgId) {
-      throw new Error("Expected an organization-scoped test actor");
-    }
-    const runtimeOrgId = actor.orgId;
-    const runtimeStorage = createOwnedVolumeStorageFixture(
-      storageName,
-      canonicalPrefix,
-    );
-    bdd.acceptAgentStorageWrites();
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    const runnerGroup = runs.configureRunnerGroup();
-    await runs.grantProEntitlement(actor);
-    await runs.createPersonalModelProvider(actor, {
-      type: "codex-oauth-token",
-      authMethod: "auth_json",
-      secrets: { CODEX_AUTH_JSON: makeCodexAuthJson() },
-    });
-    await runs.updateUserModelPreference(actor, "gpt-6-luna");
-    const agent = await bdd.createAgent(actor, {
-      displayName: "External exact connector skill agent",
-      visibility: "private",
-    });
-    let successfulRunId: string | undefined;
-    const cleanupConnector = createConnectorCleanup(actor, connectorSlug);
-    onTestFinished(async () => {
-      context.mocks.s3.send.mockResolvedValue({ Contents: [] });
-      if (successfulRunId) {
-        await runs.requestCancelRun(actor, successfulRunId, [200, 404]);
-      }
-      await systemStorageStateAction({
-        action: "cleanup",
-        object_key_prefix: canonicalPrefix,
+  it("pins a published connector skill before a normal update", async () => {
+    const owned = await publicChatActor(context, { clockTime: now() });
+    const fixture = createChatEventsFixture(context);
+    await owned.run(async () => {
+      await fixture.api.createPersonalModelProvider(owned.actor, {
+        type: "codex-oauth-token",
+        authMethod: "auth_json",
+        secrets: { CODEX_AUTH_JSON: makeCodexAuthJson() },
       });
-      await cleanupOwnedVolumeStorages([
-        skill.storageId,
-        runtimeStorage.storageId,
-      ]);
-      await cleanupConnector();
-      await bdd.deleteAgent(actor, agent.agentId);
+      await fixture.api.updateUserModelPreference(owned.actor, "gpt-6-luna");
     });
-    await connectorsApi.connectManualGrant(
-      actor,
-      connectorSlug,
-      "api-token",
-      { credential: "catalog-skill-secret" },
-      agent.agentId,
-    );
-
-    const createSkillRun = async () => {
-      return await runs.createThreadRun(actor, {
-        agentId: agent.agentId,
-        prompt: "Use the connector skill",
-      });
-    };
-    // As on main's chat path, a Thread launch failure creates no run and the
-    // thread rejects the input.
-    const expectRegistrationFailure = async () => {
-      await expect(
-        runs.readThreadLaunchFailure(actor, {
-          agentId: agent.agentId,
-          prompt: "Use the connector skill",
-        }),
-      ).resolves.toStrictEqual({
-        pickError: "Connector skill registration is unavailable",
-        inputError: "internal_error",
-      });
-    };
-
-    await seedOwnedVolumeStorageVersion({
-      storageId: skill.storageId,
-      versionId: newerVersionId,
-      s3Key: `${canonicalPrefix}/${newerVersionId}`,
+    const body = manualHttpCustomConnectorCreateBody({
+      displayName: "Published skill",
+      prefixTemplates: [`https://skill-${randomUUID()}.example.test/`],
+      skillMarkdown: "Read the first published skill.",
     });
-
-    const run = await createSkillRun();
-    successfulRunId = run.runId;
-    expect(run.status).not.toBe("failed");
-    await runs.heartbeatRunner(runnerGroup);
-    await flushWaitUntilForTest();
-    await expect(
-      (async () => {
-        return (await runs.pollRunner(runnerGroup)).body.job?.runId;
-      })(),
-    ).resolves.toBe(run.runId);
-    const claim = await runs.claimRunnerJob(run.runId);
-    const mountedSkills =
-      expectCanonicalStorageManifest(
-        claim.storageManifest,
-      )?.storageMounts.filter((storage) => {
-        return (
-          storage.mountPath === `/home/user/.pi/agent/skills/${connectorSlug}`
+    const start = context.mocks.s3.send.mock.calls.length;
+    const connector = await owned.run(() => {
+      return connectorsApi.createCustomConnector(owned.actor, body);
+    });
+    const published = readPublishedArchive(context, start);
+    await owned.run(() => {
+      return connectorsApi.updateAgentCustomConnectors(
+        owned.actor,
+        owned.agentId,
+        [connector.id],
+      );
+    });
+    const first = await owned.sendChatRun(owned.actor, {
+      agentId: owned.agentId,
+      prompt: "Use the first published skill",
+    });
+    const updateStart = context.mocks.s3.send.mock.calls.length;
+    await owned.run(() => {
+      return connectorsApi.updateCustomConnector(owned.actor, connector.id, {
+        ...body,
+        skillMarkdown: "Use the updated published skill.",
+      });
+    });
+    const updated = readPublishedArchive(context, updateStart);
+    expect(updated.versionId).not.toBe(published.versionId);
+    const check = async (runId: string, expected: typeof published) => {
+      const { claim, sandboxHeaders } = await owned.claimChatRun(
+        owned.runnerGroup,
+        runId,
+      );
+      const mounts =
+        expectCanonicalStorageManifest(
+          claim.storageManifest,
+        )?.storageMounts.filter((mount) => {
+          return (
+            mount.name === getCustomConnectorSkillStorageName(connector.id)
+          );
+        }) ?? [];
+      expect(mounts).toHaveLength(1);
+      expect(mounts[0]).toMatchObject({
+        name: getCustomConnectorSkillStorageName(connector.id),
+        mountPath: `/home/user/.pi/agent/skills/${getCustomConnectorSkillName(connector.slug, connector.id)}`,
+        versionId: expected.versionId,
+        archiveSize: expected.archiveSize,
+        archiveUrl: expect.any(String),
+      });
+      await owned.run(() => {
+        return fixture.failChatRun(
+          runId,
+          sandboxHeaders,
+          "Published skill inspected",
         );
-      }) ?? [];
-    expect(mountedSkills).toHaveLength(1);
-    expect(mountedSkills[0]).toMatchObject({
-      name: storageName,
-      mountPath: `/home/user/.pi/agent/skills/${connectorSlug}`,
-      versionId: selectedVersionId,
-      archiveSize: 321,
-      archiveUrl: expect.any(String),
+      });
+      await owned.run(flushWaitUntilForTest);
+    };
+    await check(first.runId, published);
+    const later = await owned.sendChatRun(owned.actor, {
+      agentId: owned.agentId,
+      prompt: "Use the updated published skill",
     });
-    await runs.requestCancelRun(actor, run.runId, [200]);
-    successfulRunId = undefined;
-
-    await cleanupOwnedVolumeStorages([skill.storageId]);
-    await claimOwnedVolumeStorage({
-      orgId: runtimeOrgId,
-      ...runtimeStorage,
-    });
-    await seedOwnedVolumeStorageVersion({
-      storageId: runtimeStorage.storageId,
-      versionId: selectedVersionId,
-      s3Key: `${canonicalPrefix}/${selectedVersionId}`,
-    });
-    await expectRegistrationFailure();
-    await cleanupOwnedVolumeStorages([runtimeStorage.storageId]);
-
-    await claimOwnedVolumeStorage({ orgId: SYSTEM_ORG_ID, ...skill });
-    await seedOwnedVolumeStorageVersion({
-      storageId: skill.storageId,
-      versionId: otherVersionId,
-      s3Key: `${canonicalPrefix}/${otherVersionId}`,
-    });
-    await expectRegistrationFailure();
-
-    const wrongPrefix = `${SYSTEM_ORG_ID}/volume/wrong-${storageName}`;
-    await cleanupOwnedVolumeStorages([skill.storageId]);
-    await claimOwnedVolumeStorage({
-      orgId: SYSTEM_ORG_ID,
-      storageId: skill.storageId,
-      storageName,
-      s3Prefix: wrongPrefix,
-    });
-    await seedOwnedVolumeStorageVersion({
-      storageId: skill.storageId,
-      versionId: selectedVersionId,
-      s3Key: `${wrongPrefix}/${selectedVersionId}`,
-    });
-    await expectRegistrationFailure();
-
-    await cleanupOwnedVolumeStorages([skill.storageId]);
-    await claimOwnedVolumeStorage({ orgId: SYSTEM_ORG_ID, ...skill });
-    await seedOwnedVolumeStorageVersion({
-      storageId: skill.storageId,
-      versionId: selectedVersionId,
-      s3Key: `${canonicalPrefix}/wrong-${selectedVersionId}`,
-    });
-    await expectRegistrationFailure();
+    await check(later.runId, updated);
   }, 30_000);
 
   it("executes an external device grant with catalog-owned storage", async () => {
@@ -4077,150 +3773,6 @@ describe("connector catalog valid lifecycle", () => {
       outcome: "accepted",
       failureCode: null,
     });
-  });
-
-  it("accepts a complete bundled skill descriptor", async () => {
-    configureSource();
-    const resolvedStorageName = `connector-skill@resolved-${randomUUID().replaceAll("-", "")}`;
-    const storage = createOwnedVolumeStorageFixture(resolvedStorageName);
-    const skill = buildBundledSkillFixture(
-      "external-test",
-      createHash("sha256").update(randomUUID()).digest("hex"),
-      storage,
-    );
-    await claimOwnedVolumeStorage({ orgId: SYSTEM_ORG_ID, ...skill });
-    onTestFinished(async () => {
-      await cleanupOwnedVolumeStorages([skill.storageId]);
-    });
-    const release = buildRelease({
-      version: "2026-07-15.bundled-skill",
-      mutateRuntime: (artifact) => {
-        const connector = firstRecord(artifact.connectors, "connectors");
-        connector.skill = skill.descriptor;
-      },
-    });
-    serveObjects(catalogObjects([release], release));
-
-    expect((await syncCatalog()).body).toStrictEqual({
-      outcome: "accepted",
-      failureCode: null,
-    });
-    await expect(
-      readOwnedVolumeStorageState(skill.storageId),
-    ).resolves.toStrictEqual({
-      s3_prefix: skill.s3Prefix,
-      size: 0,
-      file_count: 0,
-      head_version_id: null,
-    });
-    const requestedKeys = context.mocks.s3.send.mock.calls.map((call) => {
-      const input = commandInput(call[0]);
-      return typeof input.Key === "string" ? input.Key : null;
-    });
-    expect(requestedKeys).not.toContain(skill.manifestKey);
-    expect(requestedKeys).not.toContain(skill.archiveKey);
-  });
-
-  it("rejects incomplete or out-of-range bundled skill metadata", async () => {
-    const cases = [
-      {
-        field: "size",
-        label: "missing-size",
-        value: undefined,
-      },
-      {
-        field: "archiveSize",
-        label: "oversized-archive",
-        value: 2 * 1024 * 1024 + 1,
-      },
-      {
-        field: "fileCount",
-        label: "empty-manifest",
-        value: 0,
-      },
-    ] as const;
-
-    for (const testCase of cases) {
-      configureSource();
-      const connectorSlug = `skill-${testCase.label}-${randomUUID().slice(0, 8)}`;
-      const skill = buildBundledSkillFixture(
-        connectorSlug,
-        createHash("sha256")
-          .update(`${testCase.label}:${randomUUID()}`)
-          .digest("hex"),
-      );
-      const release = buildRelease({
-        version: `2026-07-22.skill-${testCase.label}-${randomUUID().slice(0, 8)}`,
-        connectorSlug,
-        mutateRuntime: (artifact) => {
-          const descriptor = structuredClone(skill.descriptor);
-          if (testCase.value === undefined) {
-            delete descriptor[testCase.field];
-          } else {
-            descriptor[testCase.field] = testCase.value;
-          }
-          firstRecord(artifact.connectors, "connectors").skill = descriptor;
-        },
-      });
-      serveObjects(catalogObjects([release], release));
-
-      expectRejectedAttempt((await syncCatalog()).body, "invalid-artifact");
-      await expect(
-        readVolumeStorageState({
-          orgId: SYSTEM_ORG_ID,
-          storageName: skill.storageName,
-        }),
-      ).resolves.toBeNull();
-    }
-  });
-
-  it("rejects a connector skill version owned by another storage", async () => {
-    configureSource();
-    const connectorSlug = `skill-owner-${randomUUID().slice(0, 8)}`;
-    const skill = buildBundledSkillFixture(
-      connectorSlug,
-      createHash("sha256").update(`shared:${randomUUID()}`).digest("hex"),
-    );
-    const ownerStorageName = `connector-skill@owner-${randomUUID().replaceAll("-", "")}`;
-    const ownerPrefix = `${SYSTEM_ORG_ID}/volume/${ownerStorageName}`;
-    const ownerStorage = createOwnedVolumeStorageFixture(
-      ownerStorageName,
-      ownerPrefix,
-    );
-    await claimOwnedVolumeStorage({
-      orgId: SYSTEM_ORG_ID,
-      ...ownerStorage,
-    });
-    onTestFinished(async () => {
-      await cleanupOwnedVolumeStorages([ownerStorage.storageId]);
-    });
-    await seedOwnedVolumeStorageVersion({
-      storageId: ownerStorage.storageId,
-      versionId: skill.versionId,
-      s3Key: `${ownerPrefix}/${skill.versionId}`,
-    });
-    const release = buildRelease({
-      version: `2026-07-22.skill-owner-${randomUUID().slice(0, 8)}`,
-      connectorSlug,
-      mutateRuntime: (artifact) => {
-        firstRecord(artifact.connectors, "connectors").skill = skill.descriptor;
-      },
-    });
-    serveObjects(catalogObjects([release], release));
-
-    expectRejectedAttempt((await syncCatalog()).body, "invalid-reference");
-    await expect(
-      readVolumeStorageState({
-        orgId: SYSTEM_ORG_ID,
-        storageName: skill.storageName,
-      }),
-    ).resolves.toBeNull();
-    const requestedKeys = context.mocks.s3.send.mock.calls.map((call) => {
-      const input = commandInput(call[0]);
-      return typeof input.Key === "string" ? input.Key : null;
-    });
-    expect(requestedKeys).not.toContain(skill.manifestKey);
-    expect(requestedKeys).not.toContain(skill.archiveKey);
   });
 
   it.each(["storage name", "version ID"] as const)(

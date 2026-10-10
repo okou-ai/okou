@@ -244,7 +244,9 @@ mod tests {
         ProfileConfig {
             vcpu: 2,
             memory_mb: 4096,
-            workspace_disk_mb: 10240,
+            rootfs_hash: rootfs_hash.into(),
+            rootfs_disk_mb: 12288,
+            home_disk_mb: 10240,
             factory_config: sandbox::FactoryConfig {
                 profile: name.into(),
                 binary_path: binary_kernel.0.clone(),

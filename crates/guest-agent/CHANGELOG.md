@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.104.15](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.14...guest-agent-v0.104.15) (2026-10-10)
+
+
+### Bug Fixes
+
+* classify codex model-access verification failures safely ([#38578](https://github.com/okou-ai/okou/issues/38578)) ([ac4f149](https://github.com/okou-ai/okou/commit/ac4f1498f0574326fff8f73991aabc100012c36c))
+
+
+### Performance Improvements
+
+* **test:** reduce fixture observation allocations ([#38473](https://github.com/okou-ai/okou/issues/38473)) ([65e3292](https://github.com/okou-ai/okou/commit/65e3292dcf4cc635182ab1ffb88354726aae7402))
+
 ## [0.104.14](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.13...guest-agent-v0.104.14) (2026-10-10)
 
 ## [0.104.13](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.12...guest-agent-v0.104.13) (2026-10-10)

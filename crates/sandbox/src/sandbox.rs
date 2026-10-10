@@ -966,17 +966,17 @@ pub trait Sandbox: Send + Sync + Any {
         request: &StorageManifestRequest<'_>,
     ) -> Result<ExecResult>;
 
-    /// Mount the fixed workspace drive through the provider's typed guest
+    /// Mount the fixed home drive through the provider's typed guest
     /// operation.
     ///
     /// The provider and guest select the executable, root identity, canonical
-    /// workspace path, device, mountinfo source, timeout, output bounds,
+    /// home path, device, mountinfo source, timeout, output bounds,
     /// containment, and cleanup. Callers supply no operation input.
-    async fn mount_workspace_drive(&self) -> Result<ExecResult> {
+    async fn mount_home_drive(&self) -> Result<ExecResult> {
         Err(SandboxError::Operation {
-            operation: crate::SandboxOperation::MountWorkspaceDrive,
+            operation: crate::SandboxOperation::MountHomeDrive,
             reason: crate::SandboxOperationReason::Other,
-            message: "fixed workspace drive mount is unsupported".to_string(),
+            message: "fixed home drive mount is unsupported".to_string(),
         })
     }
 

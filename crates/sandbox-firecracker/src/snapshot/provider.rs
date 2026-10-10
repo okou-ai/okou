@@ -86,6 +86,33 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn paired_home_snapshot_completeness_requires_current_layout_marker() {
+        let fixture = SnapshotOutputFixture::new().await;
+        fixture.write_required_snapshot_artifacts().await;
+        tokio::fs::write(fixture.output.complete_marker(), b"snapshot-complete-v1\n")
+            .await
+            .unwrap();
+        let provider = FirecrackerSnapshotProvider;
+        assert!(!provider.is_complete(fixture.output.dir()).await.unwrap());
+        tokio::fs::remove_file(fixture.output.complete_marker())
+            .await
+            .unwrap();
+        publish_snapshot_complete_marker(&fixture.output).unwrap();
+        assert!(provider.is_complete(fixture.output.dir()).await.unwrap());
+        assert_eq!(
+            tokio::fs::read(fixture.output.complete_marker())
+                .await
+                .unwrap(),
+            SNAPSHOT_COMPLETE_MARKER_CONTENT
+        );
+        assert!(
+            std::str::from_utf8(SNAPSHOT_COMPLETE_MARKER_CONTENT)
+                .unwrap()
+                .contains(guest_contracts::home_mount::HOME_DRIVE_LAYOUT)
+        );
+    }
+
+    #[tokio::test]
     async fn snapshot_provider_requires_cow_bitmap_for_complete_snapshot() {
         let fixture = SnapshotOutputFixture::new().await;
         let output = &fixture.output;

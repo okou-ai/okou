@@ -1,3 +1,4 @@
+import type { ApiTestUser } from "./api-bdd";
 import { onTestFinished } from "vitest";
 import type { TestContext } from "../../../../__tests__/test-context";
 import { settleIncludingAbort } from "../../../utils";
@@ -12,6 +13,8 @@ import { deleteFeatureSwitchesForUser } from "./feature-switches";
 export async function publicChatActor(
   context: TestContext,
   options: {
+    readonly beforeRuns?: (actor: ApiTestUser) => Promise<void>;
+    readonly tier?: "pro" | "team";
     readonly restoreEnvironment?: () => void;
     readonly clockTime?: number | (() => number);
     readonly beforeWorkspaceCleanup?: () => Promise<void>;
@@ -37,6 +40,7 @@ export async function publicChatActor(
   });
   const owner = publicRunOwner(context, actor, {
     clockTime: options.clockTime,
+    continueAcceptedOperations: true,
     restoreEnvironment: () => {
       previous ??= captureConnectorExternalState(
         context,
@@ -47,6 +51,9 @@ export async function publicChatActor(
       if (ready) {
         options.restoreEnvironment?.();
       }
+    },
+    beforeRuns: () => {
+      return options.beforeRuns?.(actor) ?? Promise.resolve();
     },
     afterRuns: async () => {
       const features = await settleIncludingAbort(() => {
@@ -96,6 +103,7 @@ export async function publicChatActor(
   const runnerGroup = fixture.api.configureRunnerGroup();
   const { customerId } = await run(() => {
     return fixture.api.grantProEntitlement(actor, {
+      tier: options.tier,
       onExternalStateReady: (restoreWebhook) => {
         restoreSetupWebhook = restoreWebhook;
       },
@@ -150,6 +158,19 @@ export async function publicChatActor(
     ) => {
       return run(() => {
         return fixture.requestSendEventWithBearer(...parameters);
+      });
+    },
+    claimPatRun: (
+      ...parameters: Parameters<typeof fixture.api.requestClaimRunnerJobAs>
+    ) => {
+      return run(async () => {
+        const response = await fixture.api.requestClaimRunnerJobAs(
+          ...parameters,
+        );
+        if (response.status === 200) {
+          owner.rememberClaim(parameters[1], response.body.sandboxToken);
+        }
+        return response;
       });
     },
     claimChatRun: (...parameters: Parameters<typeof fixture.claimChatRun>) => {

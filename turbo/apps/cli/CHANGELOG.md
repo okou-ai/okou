@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.384.2](https://github.com/okou-ai/okou/compare/cli-v9.384.1...cli-v9.384.2) (2026-10-10)
+
+
+### Refactoring
+
+* remove notify mail feature switch ([#38561](https://github.com/okou-ai/okou/issues/38561)) ([7f40f95](https://github.com/okou-ai/okou/commit/7f40f954492838ac72a4d291848b2ef24266a9a7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.549.0
+    * @okouai/core bumped to 8.740.1
+    * @okouai/pi-agent-runtime bumped to 1.49.4
+
 ## [9.384.1](https://github.com/okou-ai/okou/compare/cli-v9.384.0...cli-v9.384.1) (2026-10-10)
 
 

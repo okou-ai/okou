@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.1](https://github.com/okou-ai/okou/compare/sandbox-v0.25.0...sandbox-v0.25.1) (2026-10-10)
+
+
+### Refactoring
+
+* **sandbox:** retire acknowledgement-only control wrappers ([#38568](https://github.com/okou-ai/okou/issues/38568)) ([5430326](https://github.com/okou-ai/okou/commit/54303267e5dd333eca677751967aeaa07c1c748b))
+
 ## [0.25.0](https://github.com/okou-ai/okou/compare/sandbox-v0.24.1...sandbox-v0.25.0) (2026-10-10)
 
 

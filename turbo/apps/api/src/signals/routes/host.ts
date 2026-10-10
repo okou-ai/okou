@@ -116,7 +116,6 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     {
       orgId: auth.orgId,
       userId: auth.userId,
-      runId: "runId" in auth ? auth.runId : undefined,
       deploymentId: params.deploymentId,
     },
     signal,
@@ -182,7 +181,6 @@ const deploymentsInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     {
       orgId: auth.orgId,
       userId: auth.userId,
-      runId: "runId" in auth ? auth.runId : undefined,
       site: params.site,
     },
     signal,

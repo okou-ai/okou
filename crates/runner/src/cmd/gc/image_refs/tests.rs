@@ -151,7 +151,7 @@ profiles:
     vcpu: 1
     memory_mb: 1024
     rootfs_disk_mb: 8192
-    workspace_disk_mb: 8192
+    home_disk_mb: 8192
 server:
   url: https://api.example.test
   token: test-secret-token

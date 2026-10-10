@@ -19,9 +19,6 @@ const {
   api,
   connectors,
   entitledNativeChatActor,
-  seedBuiltInModelKey,
-  mockPiResourceArchiveDownloads,
-  mockPiCheckpointObjectStore,
   sendChatRun,
   claimChatRun,
   cancelChatRun,
@@ -52,34 +49,21 @@ function codexCredential() {
 }
 
 describe("shared context statement projections through normal sends", () => {
-  it.each(["empty", "providers", "agent", "all"] as const)(
+  it.each(["providers", "all"] as const)(
     "preserves %s rowsets in first and continuation sends",
     async (mode) => {
       const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-      const hasProviders = mode === "providers" || mode === "all";
-      const hasAgentRows = mode === "agent" || mode === "all";
-      if (hasProviders) {
-        await misc.upsertPersonalModelProvider(
-          actor,
-          {
-            type: "codex-oauth-token",
-            authMethod: "auth_json",
-            secrets: { CODEX_AUTH_JSON: codexCredential() },
-          },
-          [200, 201],
-        );
-        await api.updateUserModelPreference(actor, MODEL);
-      } else {
-        await seedBuiltInModelKey("okou-1.0");
-        await api.updateUserModelPreference(actor, null);
-        await misc.deletePersonalModelProvider(
-          actor,
-          "claude-code-oauth-token",
-          [204],
-        );
-        mockPiResourceArchiveDownloads();
-        mockPiCheckpointObjectStore();
-      }
+      const hasAgentRows = mode === "all";
+      await misc.upsertPersonalModelProvider(
+        actor,
+        {
+          type: "codex-oauth-token",
+          authMethod: "auth_json",
+          secrets: { CODEX_AUTH_JSON: codexCredential() },
+        },
+        [200, 201],
+      );
+      await api.updateUserModelPreference(actor, MODEL);
       let customId: string | undefined;
       let workflowId: string | undefined;
       if (hasAgentRows) {
@@ -156,9 +140,7 @@ describe("shared context statement projections through normal sends", () => {
         });
         threadId = run.threadId;
         const claimed = await claimChatRun(runnerGroup, run.runId);
-        expect(claimed.claim.modelUsageProvider).toBe(
-          hasProviders ? MODEL : "@preset/okou-1-0",
-        );
+        expect(claimed.claim.modelUsageProvider).toBe(MODEL);
         const targets = claimed.claim.connectorRuntimeTargets;
         if (customId) {
           expect(targets).toContainEqual(

@@ -4,7 +4,7 @@ use crate::config::{FirecrackerDeviceRateLimits, RateLimiterConfig};
 use crate::factory::InvariantConfig;
 
 pub(crate) const ROOTFS_DRIVE_ID: &str = "rootfs";
-pub(crate) const WORKSPACE_DRIVE_ID: &str = "workspace";
+pub(crate) const HOME_DRIVE_ID: &str = "home";
 
 pub(crate) fn nonzero_drive_count(count: usize) -> Result<NonZeroU64, String> {
     let count = u64::try_from(count)
@@ -78,7 +78,7 @@ pub(crate) struct BootConfigInput<'a> {
     pub(crate) memory_mb: u32,
     pub(crate) kernel_path: String,
     pub(crate) rootfs_path: String,
-    pub(crate) workspace_path: Option<String>,
+    pub(crate) home_path: Option<String>,
     pub(crate) vsock_path: String,
 }
 
@@ -90,7 +90,7 @@ impl FirecrackerBootConfig {
             memory_mb,
             kernel_path,
             rootfs_path,
-            workspace_path,
+            home_path,
             vsock_path,
         } = input;
         let mut drives = vec![DriveConfig {
@@ -100,10 +100,10 @@ impl FirecrackerBootConfig {
             is_read_only: false,
             rate_limiter: None,
         }];
-        if let Some(workspace_path) = workspace_path {
+        if let Some(home_path) = home_path {
             drives.push(DriveConfig {
-                drive_id: WORKSPACE_DRIVE_ID.to_owned(),
-                path_on_host: workspace_path,
+                drive_id: HOME_DRIVE_ID.to_owned(),
+                path_on_host: home_path,
                 is_root_device: false,
                 is_read_only: false,
                 rate_limiter: None,

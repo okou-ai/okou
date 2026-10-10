@@ -9,8 +9,9 @@
 //! 3. Mount `/sys` and initialize cgroup v2 exec process containment.
 //! 4. Mount `/dev/pts` for pseudo-terminals.
 //! 5. Mount `/dev/shm`.
-//! 6. Load shared environment variables.
-//! 7. Enter `/root`.
+//! 6. Mount and initialize the paired home drive when attached.
+//! 7. Load shared environment variables.
+//! 8. Enter `/root`.
 
 use nix::mount::{MsFlags, mount};
 use std::fs;
@@ -118,7 +119,12 @@ pub fn init_filesystem() -> Result<(), InitError> {
 
     eprintln!("[guest-init] Virtual filesystems mounted");
 
-    // 6. Load environment variables.
+    // 6. Mount the optional second device before any sandbox-user process.
+    // Snapshot restore still requires a new fixed RPC observation: PID 1's
+    // captured mount is not evidence about the replacement home image.
+    initialize_attached_home()?;
+
+    // 7. Load environment variables.
     //
     // /etc/environment is baked into the rootfs by customize-rootfs.sh and
     // contains variables shared by ALL users (LANG, NODE_EXTRA_CA_CERTS, …).
@@ -134,12 +140,31 @@ pub fn init_filesystem() -> Result<(), InitError> {
         std::env::set_var("SHELL", "/bin/bash");
     }
 
-    // 7. Change to root home directory. The command launcher selects the
+    // 8. Change to root home directory. The command launcher selects the
     // sandbox user's home explicitly when it transitions users.
     let _ = std::env::set_current_dir("/root");
 
     eprintln!("[guest-init] Filesystem initialization complete");
     Ok(())
+}
+
+fn initialize_attached_home() -> Result<(), InitError> {
+    let path = Path::new(guest_contracts::home_mount::HOME_DEVICE);
+    match fs::symlink_metadata(path) {
+        // Developer single-rootfs utilities have no writable home drive. A
+        // present device, including a malformed one, must pass the real owner.
+        Ok(_) => guest_home_mount::mount_home_drive().map_err(|source| InitError::Filesystem {
+            operation: "mount and initialize home at",
+            path: guest_contracts::home_mount::HOME_DIR.into(),
+            source,
+        }),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(source) => Err(InitError::Filesystem {
+            operation: "inspect home device",
+            path: path.display().to_string(),
+            source,
+        }),
+    }
 }
 
 /// Errors that can occur during filesystem initialization

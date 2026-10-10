@@ -34,6 +34,19 @@ that App can make users reload into the same unsupported build. First deploy
 compatible API and App changes, then raise the floor and remove the old contract
 in a later cleanup release.
 
+Native iOS has an independent floor, enforced by the same API check. iOS
+clients advertise `X-Client-Type: iOS` (exact, case-sensitive) and their
+marketing version in `X-Client-Version`. The API rejects a parseable version
+below the floor in
+[`ios-client-compatibility.json`](../turbo/apps/api/src/lib/ios-client-compatibility.json)
+with `426 Upgrade Required`, `Cache-Control: no-store`, and the error envelope
+`{ "error": { "code": "IOS_UPDATE_REQUIRED", "message": "..." }, "minimumSupportedVersion": "x.y.z" }`,
+which iOS treats as a blocking update state. A `null` floor disables iOS
+enforcement. Like the web floor, it never rejects a missing or unparseable
+version, so builds that predate the client headers cannot be excluded. The floor
+must be a stable `x.y.z` version and changes only through a reviewed PR and an
+API release, never through environment configuration.
+
 ### Backend
 
 The API is the compatibility boundary for frontend and Runner traffic. App
@@ -145,6 +158,28 @@ Do not add broad defaults to hide corrupt data or incompatible protocols.
 An explicitly accepted breaking cutover must record the affected consumers,
 accepted interruption, migration order, and rollback boundary in its owning
 issue or PR. Removing historical notes does not establish that acceptance.
+
+### Coupled Guest Disk and Retained-Image Contracts
+
+A Guest disk cutover couples the Runner/Guest build, device and mount identity,
+image layout and exact shape, current-input reconciliation, retained-history
+proof, and generation-owned publication. Update the actual producers and
+consumers together; a renamed binary, changed path, or transport capability alone
+does not establish support for the new layout. Reject incompatible images rather
+than interpreting a previous disk format as a new one.
+
+An image is not authority for current authentication, permissions, configuration,
+storage inputs, or session history. Reconcile captured Run inputs before use,
+then verify retained history against its actual source and current live bytes at
+consumption. Missing or invalid evidence requires the normal supported remote
+restore, not a format or identity fallback.
+
+Before durable publication, exclude other writers, finish protected readers,
+scrub the managed private namespace and authentication state, freeze the disk,
+and confirm termination. Publish only the owned immutable generation with its
+matching metadata and surviving proof. Namespace cleanup is not a claim of
+forensic erasure of deleted filesystem blocks; define that acceptance boundary
+explicitly in the owning issue or PR.
 
 ## Database/API Transitions
 

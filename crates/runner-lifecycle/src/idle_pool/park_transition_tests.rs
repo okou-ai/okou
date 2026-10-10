@@ -77,7 +77,7 @@ async fn make_idle_park_request_with_sandbox_id(
                 memory_mb: budget_lease.memory_mb(),
             },
             device_rate_limits: None,
-            workspace_drive: None,
+            home_drive: None,
         })
         .await
         .expect("create sandbox");
@@ -88,6 +88,7 @@ async fn make_idle_park_request_with_sandbox_id(
         reuse_key: reuse_key.into(),
         sandbox_id,
         profile_name: "vm0/default".into(),
+        rootfs_hash: "test-rootfs".into(),
         device_rate_limits: None,
         budget_lease,
         source_ip: "10.0.0.1".into(),
@@ -95,8 +96,8 @@ async fn make_idle_park_request_with_sandbox_id(
         restored_session_identity: None,
         history_generation_run_id: None,
         guest_timezone_intent: crate::guest_timezone::GuestTimezoneIntent::Unknown,
-        workspace_image_size_bytes: 0,
-        workspace_promotion: None,
+        home_image_size_bytes: 0,
+        home_promotion: None,
         handoff: None,
     })
 }
@@ -163,11 +164,9 @@ async fn idle_park_request_semantic_rejection_returns_parked_ownership() {
 
 #[tokio::test]
 async fn cancelled_running_handoff_cannot_return_to_idle_inventory() {
-    use crate::workspace_promotion::test_support::{
-        TEST_WORKSPACE_IMAGE_SIZE_BYTES, WorkspacePromotionFixture,
-    };
+    use crate::home_promotion::test_support::{HomePromotionFixture, TEST_HOME_IMAGE_SIZE_BYTES};
 
-    let fixture = WorkspacePromotionFixture::new("running-cancel").await;
+    let fixture = HomePromotionFixture::new("running-cancel").await;
     let overrides = Arc::new(MockSandboxOverrides::new());
     let budget = Arc::new(ResourceBudget::new(2, 2048, 1.0, 0));
     let lease = ResourceBudget::try_reserve_lease(&budget, 2, 2048).unwrap();
@@ -178,8 +177,8 @@ async fn cancelled_running_handoff_cannot_return_to_idle_inventory() {
         fixture.sandbox_id,
     )
     .await;
-    request.parts.workspace_promotion = Some(fixture.promotion);
-    request.parts.workspace_image_size_bytes = TEST_WORKSPACE_IMAGE_SIZE_BYTES;
+    request.parts.home_promotion = Some(fixture.promotion);
+    request.parts.home_image_size_bytes = TEST_HOME_IMAGE_SIZE_BYTES;
     request_running_handoff(&mut request, &overrides);
     let predecessor = request.parts.run_id;
     let outcome = request
@@ -206,17 +205,15 @@ async fn cancelled_running_handoff_cannot_return_to_idle_inventory() {
     assert_eq!(overrides.unpark_call_count(), 0);
     assert_eq!(overrides.destroy_call_count(), 1);
     assert_eq!(budget.allocated(), (0, 0, 0));
-    assert!(fixture.cache.held_workspace_states().await.is_empty());
+    assert!(fixture.cache.held_home_states().await.is_empty());
 }
 
 #[tokio::test]
 async fn running_handoff_activation_error_or_panic_retains_budget_until_destroyed() {
-    use crate::workspace_promotion::test_support::{
-        TEST_WORKSPACE_IMAGE_SIZE_BYTES, WorkspacePromotionFixture,
-    };
+    use crate::home_promotion::test_support::{HomePromotionFixture, TEST_HOME_IMAGE_SIZE_BYTES};
 
     for panic_activation in [false, true] {
-        let fixture = WorkspacePromotionFixture::new("running-activation-failure").await;
+        let fixture = HomePromotionFixture::new("running-activation-failure").await;
         let overrides = Arc::new(MockSandboxOverrides::new());
         if panic_activation {
             overrides.push_unpark_panic("test running activation panic");
@@ -237,8 +234,8 @@ async fn running_handoff_activation_error_or_panic_retains_budget_until_destroye
             fixture.sandbox_id,
         )
         .await;
-        request.parts.workspace_promotion = Some(fixture.promotion);
-        request.parts.workspace_image_size_bytes = TEST_WORKSPACE_IMAGE_SIZE_BYTES;
+        request.parts.home_promotion = Some(fixture.promotion);
+        request.parts.home_image_size_bytes = TEST_HOME_IMAGE_SIZE_BYTES;
         request_running_handoff(&mut request, &overrides);
         let predecessor = request.parts.run_id;
         let outcome = request
@@ -277,7 +274,7 @@ async fn running_handoff_activation_error_or_panic_retains_budget_until_destroye
         assert_eq!(overrides.park_call_count(), 0);
         assert_eq!(overrides.destroy_call_count(), 1);
         assert_eq!(budget.allocated(), (0, 0, 0));
-        assert!(fixture.cache.held_workspace_states().await.is_empty());
+        assert!(fixture.cache.held_home_states().await.is_empty());
     }
 }
 
@@ -456,7 +453,7 @@ async fn idle_park_request_success_preserves_reuse_metadata() {
                 memory_mb: budget_lease.memory_mb(),
             },
             device_rate_limits: None,
-            workspace_drive: None,
+            home_drive: None,
         })
         .await
         .expect("create sandbox");
@@ -479,6 +476,7 @@ async fn idle_park_request_success_preserves_reuse_metadata() {
         reuse_key: reuse_key.into(),
         sandbox_id,
         profile_name: profile_name.into(),
+        rootfs_hash: "test-rootfs".into(),
         device_rate_limits: None,
         budget_lease,
         source_ip: source_ip.into(),
@@ -486,8 +484,8 @@ async fn idle_park_request_success_preserves_reuse_metadata() {
         restored_session_identity: Some(restored_session_identity.clone()),
         history_generation_run_id: Some(history_generation_run_id),
         guest_timezone_intent: crate::guest_timezone::GuestTimezoneIntent::Unknown,
-        workspace_image_size_bytes: 0,
-        workspace_promotion: None,
+        home_image_size_bytes: 0,
+        home_promotion: None,
         handoff: None,
     });
 

@@ -1,3 +1,4 @@
+import { createPublicConnectorActor } from "./helpers/public-connector-actor";
 import { createHash, randomUUID } from "node:crypto";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it, beforeEach } from "vitest";
@@ -34,13 +35,10 @@ import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
-import { seedBuiltInModelKey } from "./helpers/runtime-state";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
-import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { readGetStartedStatus } from "./helpers/get-started";
-import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 // INT-03 deep AgentPhone flows: linking through the webhook connect prompt,
 // real run dispatch through runner poll/claim, and completion replies through
 // typed internal callback dispatch. All state is constructed through public
@@ -823,21 +821,30 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(lastSend(sends).body).toBe("Task completed successfully.");
   });
 
-  it("links an AgentPhone user without provisioning artifact storage", async () => {
-    const bdd = createBddApi(context);
+  it("links an AgentPhone user through the provider connect prompt", async () => {
     const integrations = createBddIntegrationApi(context);
     const ap = createAgentPhoneBddApi(context);
-    const storages = createStoragesBddApi(context);
-    const actor = bdd.user();
-    integrations.configureAgentPhoneProvider();
-    integrations.configureAgentPhoneWebhook();
-    const sends = ap.captureAgentPhoneSends();
+    const owner = createPublicConnectorActor(context, {
+      optionalEnvironmentNames: [
+        "AGENTPHONE_AGENT_ID",
+        "AGENTPHONE_API_BASE_URL",
+        "AGENTPHONE_API_KEY",
+        "AGENTPHONE_PHONE_NUMBER",
+        "AGENTPHONE_WEBHOOK_SECRET",
+      ],
+    });
+    const actor = owner.actor;
+    await owner.run(async () => {
+      integrations.configureAgentPhoneProvider();
+      integrations.configureAgentPhoneWebhook();
+      const sends = ap.captureAgentPhoneSends();
 
-    await ap.linkViaWebhookConnectPrompt(actor, uniquePhoneHandle(), sends);
-
-    await expect(storages.listStorages(actor, "user")).resolves.toStrictEqual(
-      [],
-    );
+      const phone = uniquePhoneHandle();
+      await ap.linkViaWebhookConnectPrompt(actor, phone, sends);
+      await expect(
+        integrations.getAgentPhoneLinkStatus(actor),
+      ).resolves.toMatchObject({ linked: true, phoneHandle: phone });
+    });
   });
 
   it.each(["dispatch context", "typing and plain-text completion"] as const)(
@@ -1321,7 +1328,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     ).resolves.toMatchObject({
       selectedModel: "auto",
     });
-    await seedBuiltInModelKey(context, SEEDED_SYSTEM_DEFAULT_MODEL);
+
     await send("use the system default");
     await runs.heartbeatRunner(runnerGroup);
     await flushWaitUntilForTest();

@@ -9,7 +9,6 @@ import { writeDb$ } from "../external/db";
 import { command } from "ccstate";
 import { randomUUID } from "node:crypto";
 import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
-import type { Tx } from "../../lib/db-types";
 import {
   integrationChatThreadInsertFromRouteSql,
   integrationChatThreadValues,
@@ -138,46 +137,6 @@ const ROUTE_COLUMNS = {
   chatThreadId: slackChatThreadRoutes.chatThreadId,
 } as const;
 
-async function loadSlackChatThreadRoute(
-  tx: Tx,
-  key: SlackChatThreadRouteKey,
-): Promise<SlackChatThreadRouteBinding | undefined> {
-  const [route] = await tx
-    .select(ROUTE_COLUMNS)
-    .from(slackChatThreadRoutes)
-    .where(slackChatThreadRouteWhere(key))
-    .limit(1);
-  return route;
-}
-
-/** A DM route follows the latest destination through one conditional update. */
-async function adoptSlackChatThreadRoute(
-  tx: Tx,
-  existing: SlackChatThreadRouteBinding,
-  key: SlackChatThreadRouteKey,
-): Promise<SlackChatThreadRouteBinding> {
-  if (
-    key.threadTs !== INTEGRATION_DM_SESSION_KEY ||
-    existing.channelId === key.channelId
-  ) {
-    return existing;
-  }
-  const [updated] = await tx
-    .update(slackChatThreadRoutes)
-    .set({ channelId: key.channelId })
-    .where(
-      and(
-        eq(slackChatThreadRoutes.id, existing.id),
-        slackChatThreadRouteWhere(key),
-      ),
-    )
-    .returning({ channelId: slackChatThreadRoutes.channelId });
-  if (!updated) {
-    throw new Error("Failed to update Slack DM route destination");
-  }
-  return { ...existing, ...updated };
-}
-
 /**
  * The unique route and its new thread/event commit in this command alone.
  * One `INSERT … ON CONFLICT DO NOTHING` decides a concurrent create; the loser
@@ -199,9 +158,32 @@ export const ensureCanonicalSlackChatThreadRoute$ = command(
     const db = set(writeDb$);
     // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0244; new non-billing transactions are prohibited.
     const result = await db.transaction(async (tx) => {
-      const existing = await loadSlackChatThreadRoute(tx, args);
+      const [existing] = await tx
+        .select(ROUTE_COLUMNS)
+        .from(slackChatThreadRoutes)
+        .where(slackChatThreadRouteWhere(args))
+        .limit(1);
       if (existing) {
-        return await adoptSlackChatThreadRoute(tx, existing, args);
+        if (
+          args.threadTs !== INTEGRATION_DM_SESSION_KEY ||
+          existing.channelId === args.channelId
+        ) {
+          return existing;
+        }
+        const [updated] = await tx
+          .update(slackChatThreadRoutes)
+          .set({ channelId: args.channelId })
+          .where(
+            and(
+              eq(slackChatThreadRoutes.id, existing.id),
+              slackChatThreadRouteWhere(args),
+            ),
+          )
+          .returning({ channelId: slackChatThreadRoutes.channelId });
+        if (!updated) {
+          throw new Error("Failed to update Slack DM route destination");
+        }
+        return { ...existing, ...updated };
       }
       const thread = integrationChatThreadValues(args, candidateId, defaults);
       const insertedRoute = tx.$with("inserted_slack_route").as(
@@ -238,13 +220,36 @@ export const ensureCanonicalSlackChatThreadRoute$ = command(
         return route;
       }
       // ON CONFLICT waited for the winner's commit; read it once.
-      const winner = await loadSlackChatThreadRoute(tx, args);
+      const [winner] = await tx
+        .select(ROUTE_COLUMNS)
+        .from(slackChatThreadRoutes)
+        .where(slackChatThreadRouteWhere(args))
+        .limit(1);
       if (!winner) {
         throw new Error(
           "Failed to resolve Slack chat thread route after conflict",
         );
       }
-      return await adoptSlackChatThreadRoute(tx, winner, args);
+      if (
+        args.threadTs !== INTEGRATION_DM_SESSION_KEY ||
+        winner.channelId === args.channelId
+      ) {
+        return winner;
+      }
+      const [updated] = await tx
+        .update(slackChatThreadRoutes)
+        .set({ channelId: args.channelId })
+        .where(
+          and(
+            eq(slackChatThreadRoutes.id, winner.id),
+            slackChatThreadRouteWhere(args),
+          ),
+        )
+        .returning({ channelId: slackChatThreadRoutes.channelId });
+      if (!updated) {
+        throw new Error("Failed to update Slack DM route destination");
+      }
+      return { ...winner, ...updated };
     });
     signal.throwIfAborted();
     return result;

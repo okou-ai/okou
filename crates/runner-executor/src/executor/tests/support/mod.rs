@@ -2,10 +2,10 @@ mod config;
 mod context;
 mod env;
 mod execution;
+mod home_cache;
 mod manifest;
 mod sandbox;
 mod tracing;
-mod workspace_cache;
 
 pub(super) use self::config::{
     assert_proxy_registry_empty, default_params, make_reusable_idle_sandbox, test_budget_lease,
@@ -20,13 +20,10 @@ pub(super) use self::execution::{
     spawn_run_in_sandbox_test, spawn_run_in_sandbox_test_with_cancellation,
     spawn_run_in_sandbox_test_with_timeouts,
 };
+pub(super) use self::home_cache::{seed_home_image_cache, seed_home_image_cache_with_fingerprints};
 pub(super) use self::manifest::{api_artifact, api_storage};
 pub(super) use self::sandbox::{
     DestroyPanicFactory, create_overridden_sandbox, sandbox_copy_file_error, sandbox_create_error,
     sandbox_exec_error, sandbox_read_file_error, sandbox_write_file_error,
 };
 pub(super) use self::tracing::{CapturedEvent, CapturedEvents};
-pub(super) use self::workspace_cache::{
-    seed_workspace_image_cache, seed_workspace_image_cache_with_fingerprints,
-    seed_workspace_image_cache_with_sidecar,
-};

@@ -1,5 +1,26 @@
 # Changelog
 
+## [8.740.1](https://github.com/okou-ai/okou/compare/core-v8.740.0...core-v8.740.1) (2026-10-10)
+
+
+### Bug Fixes
+
+* **app:** gate stable preview fullscreen layout ([#38444](https://github.com/okou-ai/okou/issues/38444)) ([dfa059a](https://github.com/okou-ai/okou/commit/dfa059a8d9a778ee720c3e744712dee718c3b8a7))
+* use hosted og credentials and restore the okou brand cover ([#38510](https://github.com/okou-ai/okou/issues/38510)) ([2d2ec67](https://github.com/okou-ai/okou/commit/2d2ec676fbf7ab4bc0db3cd5439715869ff2d6b9))
+
+
+### Refactoring
+
+* **api:** retire legacy computer-use host tokens ([#38559](https://github.com/okou-ai/okou/issues/38559)) ([829d10f](https://github.com/okou-ai/okou/commit/829d10ffe05819dca15432cee1d392cf56847cf7))
+* remove notify mail feature switch ([#38561](https://github.com/okou-ai/okou/issues/38561)) ([7f40f95](https://github.com/okou-ai/okou/commit/7f40f954492838ac72a4d291848b2ef24266a9a7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.549.0
+
 ## [8.740.0](https://github.com/okou-ai/okou/compare/core-v8.739.2...core-v8.740.0) (2026-10-10)
 
 

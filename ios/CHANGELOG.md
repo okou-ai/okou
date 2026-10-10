@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/okou-ai/okou/compare/ios-v0.7.4...ios-v0.8.0) (2026-10-10)
+
+
+### Features
+
+* **ios:** advertise client type and version headers on api requests ([#38607](https://github.com/okou-ai/okou/issues/38607)) ([a4cffaf](https://github.com/okou-ai/okou/commit/a4cffafefcdadb739be0050846605a6ee24d012b)), closes [#38585](https://github.com/okou-ai/okou/issues/38585)
+
 ## [0.7.4](https://github.com/okou-ai/okou/compare/ios-v0.7.3...ios-v0.7.4) (2026-10-09)
 
 

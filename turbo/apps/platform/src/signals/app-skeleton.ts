@@ -4,6 +4,10 @@ import {
   captureBootstrapPhaseTiming$,
   captureFirstSkeletonHide$,
 } from "../lib/posthog.ts";
+import {
+  recordClientTelemetry,
+  startClientTelemetryMeasurement,
+} from "../lib/client-telemetry.ts";
 
 const APP_BOOTSTRAP_SKELETON_ID = "app-bootstrap-skeleton";
 const APP_BOOTSTRAP_SKELETON_HIDDEN_CLASS = "app-bootstrap-skeleton--hidden";
@@ -14,19 +18,25 @@ export const mainStylesheetLoaded$ = computed(async () => {
 
 export async function hideBootstrapSkeleton(
   signal?: AbortSignal,
-): Promise<void> {
+): Promise<boolean> {
   const mainStylesheetLoaded = window.__mainStylesheetLoaded;
   if (mainStylesheetLoaded) {
     const mainStylesheetStatus = await mainStylesheetLoaded;
     if (mainStylesheetStatus === "failed") {
-      throw new Error("Failed to load the main application stylesheet");
+      // The skeleton stays visible, as it did when this path threw.
+      recordClientTelemetry(
+        startClientTelemetryMeasurement(),
+        { event_name: "bootstrap.stylesheet" },
+        "error",
+      );
+      return false;
     }
   }
   signal?.throwIfAborted();
 
   const skeleton = document.getElementById(APP_BOOTSTRAP_SKELETON_ID);
   if (!skeleton) {
-    return;
+    return true;
   }
   skeleton.setAttribute("aria-hidden", "true");
   skeleton.addEventListener(
@@ -37,11 +47,14 @@ export async function hideBootstrapSkeleton(
     { once: true },
   );
   skeleton.classList.add(APP_BOOTSTRAP_SKELETON_HIDDEN_CLASS);
+  return true;
 }
 
 export const hideAppSkeleton$ = command(
   async ({ set }, signal: AbortSignal): Promise<void> => {
-    await hideBootstrapSkeleton(signal);
+    if (!(await hideBootstrapSkeleton(signal))) {
+      return;
+    }
     set(captureFirstSkeletonHide$);
     set(captureBootstrapPhaseTiming$);
   },

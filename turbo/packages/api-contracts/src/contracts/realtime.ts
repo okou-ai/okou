@@ -31,6 +31,29 @@ export function foregroundChannelName(userId: string, orgId: string): string {
   return `user-org-foreground:${userId}:${orgId}`;
 }
 
+export const computerUseCommandsChangedEvent = "commandsChanged";
+
+export function computerUseHostChannelScope(
+  userId: string,
+  orgId: string,
+): string {
+  return `computer-use-host:${userId}:${orgId}`;
+}
+
+export function computerUseHostChannelName(
+  userId: string,
+  orgId: string,
+  hostId: string,
+  connectionGeneration: number,
+): string {
+  return `${computerUseHostChannelScope(userId, orgId)}:${hostId}:${connectionGeneration}`;
+}
+
+export const computerUseCommandNotificationsSchema = z.object({
+  channelName: z.string().min(1),
+  eventName: z.literal(computerUseCommandsChangedEvent),
+});
+
 export const connectorChangedPayloadSchema = z.object({
   connectorSlug: connectorSlugSchema,
 });

@@ -4,7 +4,7 @@ use sandbox::SandboxId;
 
 use super::super::super::env::{HostEnv, build_env_json_with_host_env_for_run};
 use crate::error::RunnerResult;
-use runner_types::types::{ExecutionContext, SandboxReuseResult, WorkspaceReuseResult};
+use runner_types::types::{ExecutionContext, HomeReuseResult, SandboxReuseResult};
 
 pub(in crate::executor::tests) fn build_env_for_test(
     ctx: &ExecutionContext,
@@ -39,7 +39,7 @@ pub(in crate::executor::tests) fn build_env_for_test_with_host_env_result(
         api_url,
         &sid,
         SandboxReuseResult::Reused,
-        WorkspaceReuseResult::SandboxReused,
+        HomeReuseResult::SandboxReused,
         host_env,
     )
 }

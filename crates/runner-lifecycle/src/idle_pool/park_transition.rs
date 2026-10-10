@@ -11,7 +11,7 @@
 //! The transition contract is:
 //!
 //! 1. **Active-owned.** The request owns the sandbox, factory, budget lease,
-//!    metadata, and any unpublished workspace promotion. A promotion identity
+//!    metadata, and any unpublished home promotion. A promotion identity
 //!    mismatch is abandoned before returning. A preparation-construction error
 //!    or a returned park error returns the promotion to the active finalization
 //!    cleanup path. A panic makes the park state uncertain, so the promotion is
@@ -23,7 +23,7 @@
 //!    is represented by [`IdleParkFailureParts::Parked`]; the finalization
 //!    caller must destroy the rejected parked candidate and must not treat it as
 //!    an active sandbox or insert it into the pool. Its destroy payload keeps
-//!    [`super::entry::WorkspacePromotionPolicy::Promote`], so the parked
+//!    [`super::entry::HomePromotionPolicy::Promote`], so the parked
 //!    cleanup lifecycle may unpark, prepare, and publish a valid promotion
 //!    before destruction.
 //! 3. **Idle-pool-owned.** A successful ordinary outcome becomes a pool entry
@@ -40,7 +40,7 @@
 //!    by the caller for cleanup.
 //!    Its Guest operations remain fenced while the VM is still running. Failed
 //!    validation, failed delivery, or cancellation destroys that candidate
-//!    without invoking parked workspace promotion.
+//!    without invoking parked home promotion.
 //! 5. **Speculative rollback.** A reserved exact-generation entry can be
 //!    unparked for claim-time preparation without becoming committed to a job.
 //!    [`SpeculativeIdleSandbox::repark_for_claim_rollback`] re-runs preparation
@@ -67,20 +67,18 @@ use sandbox::{
 };
 
 use crate::guest_timezone::GuestTimezoneIntent;
+use crate::home_image_cache::{HomeImagePromotionContext, HomeImagePromotionIdentityRequest};
+use crate::home_promotion::abandon_unpublished_home_promotion;
 use crate::idle_reuse_preparation::IdleReusePreparation;
 use crate::resource_budget::BudgetLease;
 use crate::restored_session_identity::RestoredSessionIdentity;
 use crate::storage_fingerprints::StorageFingerprints;
-use crate::workspace_image_cache::{
-    WorkspaceImagePromotionContext, WorkspaceImagePromotionIdentityRequest,
-};
-use crate::workspace_promotion::abandon_unpublished_workspace_promotion;
 use runner_types::ids::RunId;
 
 use super::entry::{
-    IdleDestroyJob, IdleDestroyPayload, IdleEntry, IdleSandboxMetadata, IdleSandboxResources,
-    ImmediateHandoffCandidate, ParkedIdleCandidate, RejectedParkedIdleCandidate,
-    ReservedIdleSandbox, SpeculativeIdleSandbox, WorkspacePromotionPolicy,
+    HomePromotionPolicy, IdleDestroyJob, IdleDestroyPayload, IdleEntry, IdleSandboxMetadata,
+    IdleSandboxResources, ImmediateHandoffCandidate, ParkedIdleCandidate,
+    RejectedParkedIdleCandidate, ReservedIdleSandbox, SpeculativeIdleSandbox,
 };
 
 /// One-shot request to transition an active sandbox into same-reuse-key idle
@@ -110,6 +108,7 @@ pub struct IdleParkRequestParts {
     pub reuse_key: String,
     pub sandbox_id: SandboxId,
     pub profile_name: String,
+    pub rootfs_hash: String,
     pub device_rate_limits: Option<DeviceRateLimits>,
     pub budget_lease: BudgetLease,
     pub source_ip: String,
@@ -117,8 +116,8 @@ pub struct IdleParkRequestParts {
     pub restored_session_identity: Option<RestoredSessionIdentity>,
     pub history_generation_run_id: Option<RunId>,
     pub guest_timezone_intent: GuestTimezoneIntent,
-    pub workspace_image_size_bytes: u64,
-    pub workspace_promotion: Option<WorkspaceImagePromotionContext>,
+    pub home_image_size_bytes: u64,
+    pub home_promotion: Option<HomeImagePromotionContext>,
     pub handoff: Option<SandboxFinalExecParkHandoff>,
 }
 
@@ -206,7 +205,7 @@ pub struct IdleParkNonReusable {
 /// still-publishable promotion. `Parked` means physical parking succeeded but
 /// post-park reuse validation rejected the candidate; its parked destroy path
 /// must be used instead. `RunningHandoff` preserves the distinct fenced-running
-/// ownership and must be destroyed without parked workspace promotion.
+/// ownership and must be destroyed without parked home promotion.
 #[must_use = "idle park failures must be explicitly destroyed or otherwise handled"]
 pub struct IdleParkFailure {
     ownership: IdleParkFailureOwnership,
@@ -231,7 +230,7 @@ enum IdleParkFailureOwnership {
 /// Active-owned resources returned by [`IdleParkFailureParts::Active`].
 ///
 /// The finalization caller owns the sandbox and lease and must complete active
-/// cleanup. A retained `workspace_promotion` is still unpublished but may be
+/// cleanup. A retained `home_promotion` is still unpublished but may be
 /// promoted by that cleanup after a successful stop; mismatch and panic paths
 /// return `None` because the transition has already abandoned it.
 #[must_use = "active idle-park parts still own a sandbox and budget lease"]
@@ -239,7 +238,7 @@ pub struct IdleParkActiveParts {
     pub sandbox: Box<dyn Sandbox>,
     pub factory: Arc<Box<dyn SandboxFactory>>,
     pub budget_lease: BudgetLease,
-    pub workspace_promotion: Option<WorkspaceImagePromotionContext>,
+    pub home_promotion: Option<HomeImagePromotionContext>,
 }
 
 /// Failure parts split by the last proven ownership boundary.
@@ -269,7 +268,7 @@ pub enum IdleParkFailureParts {
         expected_capacity_rejection: bool,
     },
     /// Running takeover succeeded, but preparation validation rejected reuse.
-    /// This candidate must be destroyed without parked workspace promotion.
+    /// This candidate must be destroyed without parked home promotion.
     RunningHandoff {
         candidate: Box<ImmediateHandoffCandidate>,
         reason: &'static str,
@@ -286,7 +285,7 @@ struct IdleParkTransitionInput {
     resources: IdleSandboxResources,
     metadata: IdleSandboxMetadata,
     budget_lease: BudgetLease,
-    workspace_image_size_bytes: u64,
+    home_image_size_bytes: u64,
 }
 
 /// Result of returning a speculatively activated exact-reuse sandbox to idle
@@ -345,6 +344,7 @@ impl IdleParkRequest {
             reuse_key,
             sandbox_id,
             profile_name,
+            rootfs_hash,
             device_rate_limits,
             budget_lease,
             source_ip,
@@ -352,8 +352,8 @@ impl IdleParkRequest {
             restored_session_identity,
             history_generation_run_id,
             guest_timezone_intent,
-            workspace_image_size_bytes,
-            workspace_promotion,
+            home_image_size_bytes,
+            home_promotion,
             handoff,
         } = self.parts;
 
@@ -361,6 +361,7 @@ impl IdleParkRequest {
             identity: super::entry::IdleSandboxIdentity::Exact(reuse_key),
             sandbox_id,
             profile_name,
+            rootfs_hash,
             device_rate_limits,
             source_ip,
             storage_fingerprints,
@@ -377,11 +378,11 @@ impl IdleParkRequest {
                 resources: IdleSandboxResources {
                     sandbox,
                     factory,
-                    workspace_promotion,
+                    home_promotion,
                 },
                 metadata,
                 budget_lease,
-                workspace_image_size_bytes,
+                home_image_size_bytes,
             },
             observer,
             handoff,
@@ -411,12 +412,12 @@ async fn park_idle_transition(
         resources,
         metadata,
         budget_lease,
-        workspace_image_size_bytes,
+        home_image_size_bytes,
     } = input;
     let IdleSandboxResources {
         mut sandbox,
         factory,
-        workspace_promotion,
+        home_promotion,
     } = resources;
     let retained_runtime_dir = metadata
         .restored_session_identity
@@ -424,17 +425,18 @@ async fn park_idle_transition(
         .and_then(RestoredSessionIdentity::final_metadata_verification)
         .map(|verification| verification.runtime_dir.to_owned());
 
-    if let Some(promotion) = workspace_promotion.as_ref()
+    if let Some(promotion) = home_promotion.as_ref()
         && let Err(mismatch) = metadata
             .reuse_key()
-            .ok_or(crate::workspace_image_cache::WorkspaceImagePromotionIdentityMismatch::ReuseKey)
+            .ok_or(crate::home_image_cache::HomeImagePromotionIdentityMismatch::ReuseKey)
             .and_then(|reuse_key| {
-                promotion.validate_stored_cache_identity(WorkspaceImagePromotionIdentityRequest {
+                promotion.validate_stored_cache_identity(HomeImagePromotionIdentityRequest {
                     sandbox_id: metadata.sandbox_id,
                     profile_name: &metadata.profile_name,
+                    rootfs_hash: &metadata.rootfs_hash,
                     reuse_key,
                     working_dir: CANONICAL_WORKING_DIR,
-                    image_size_bytes: workspace_image_size_bytes,
+                    image_size_bytes: home_image_size_bytes,
                 })
             })
     {
@@ -442,21 +444,20 @@ async fn park_idle_transition(
             sandbox_id = %metadata.sandbox_id,
             profile_name = %metadata.profile_name,
             mismatch = mismatch.as_str(),
-            "workspace promotion identity mismatch before idle park; destroying without workspace promotion"
+            "home promotion identity mismatch before idle park; destroying without home promotion"
         );
-        abandon_unpublished_workspace_promotion(workspace_promotion, "promotion_identity_mismatch")
-            .await;
+        abandon_unpublished_home_promotion(home_promotion, "promotion_identity_mismatch").await;
         return Err(IdleParkFailure {
             ownership: IdleParkFailureOwnership::Active {
                 resources: Box::new(IdleSandboxResources {
                     sandbox,
                     factory,
-                    workspace_promotion: None,
+                    home_promotion: None,
                 }),
                 budget_lease,
             },
             reason: "promotion_identity_mismatch",
-            error: format!("workspace promotion identity mismatch: {mismatch}"),
+            error: format!("home promotion identity mismatch: {mismatch}"),
             expected_capacity_rejection: false,
         });
     }
@@ -474,7 +475,7 @@ async fn park_idle_transition(
                     resources: Box::new(IdleSandboxResources {
                         sandbox,
                         factory,
-                        workspace_promotion,
+                        home_promotion,
                     }),
                     budget_lease,
                 },
@@ -520,7 +521,7 @@ async fn park_idle_transition(
             let resources = IdleSandboxResources {
                 sandbox,
                 factory,
-                workspace_promotion,
+                home_promotion,
             };
             let exec_result = match &outcome {
                 SandboxFinalExecParkHandoffOutcome::Parked(outcome) => &outcome.exec_result,
@@ -591,7 +592,7 @@ async fn park_idle_transition(
                 resources: Box::new(IdleSandboxResources {
                     sandbox,
                     factory,
-                    workspace_promotion,
+                    home_promotion,
                 }),
                 budget_lease,
             },
@@ -601,14 +602,14 @@ async fn park_idle_transition(
         }),
         Err(_) => {
             // A panic leaves the park transition state uncertain; destroy
-            // the sandbox, but do not publish a workspace cache image.
-            abandon_unpublished_workspace_promotion(workspace_promotion, "park_panicked").await;
+            // the sandbox, but do not publish a home cache image.
+            abandon_unpublished_home_promotion(home_promotion, "park_panicked").await;
             Err(IdleParkFailure {
                 ownership: IdleParkFailureOwnership::Active {
                     resources: Box::new(IdleSandboxResources {
                         sandbox,
                         factory,
-                        workspace_promotion: None,
+                        home_promotion: None,
                     }),
                     budget_lease,
                 },
@@ -633,7 +634,7 @@ impl SpeculativeIdleSandbox {
     pub async fn repark_for_claim_rollback(
         self,
         operation_run_id: RunId,
-        workspace_image_size_bytes: u64,
+        home_image_size_bytes: u64,
     ) -> SpeculativeReparkResult {
         let Some(current_runtime_run_id) = self.entry.metadata.history_generation_run_id else {
             const REASON: &str = "speculative_repark_missing_history_generation";
@@ -660,7 +661,7 @@ impl SpeculativeIdleSandbox {
                 resources,
                 metadata,
                 budget_lease,
-                workspace_image_size_bytes,
+                home_image_size_bytes,
             },
             None,
             None,
@@ -778,8 +779,7 @@ impl IdleParkFailure {
                 resources,
                 budget_lease,
             } => (
-                (*resources)
-                    .into_destroy_payload(WorkspacePromotionPolicy::AbandonUnpublished(reason)),
+                (*resources).into_destroy_payload(HomePromotionPolicy::AbandonUnpublished(reason)),
                 budget_lease,
             ),
             IdleParkFailureOwnership::Parked { rejected } => {
@@ -822,14 +822,14 @@ impl IdleParkFailure {
                 let IdleSandboxResources {
                     sandbox,
                     factory,
-                    workspace_promotion,
+                    home_promotion,
                 } = *resources;
                 IdleParkFailureParts::Active {
                     active: IdleParkActiveParts {
                         sandbox,
                         factory,
                         budget_lease,
-                        workspace_promotion,
+                        home_promotion,
                     },
                     reason,
                     error,

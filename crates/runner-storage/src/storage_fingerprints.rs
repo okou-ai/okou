@@ -1,95 +1,70 @@
 use std::collections::HashMap;
 
+use runner_types::storage_manifest::StorageManifest;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use runner_types::storage_manifest::StorageManifest;
-
-/// Fingerprints carried with reusable workspace state.
-///
-/// Known fingerprints let the storage planner reuse unchanged manifest entries. Tainted
-/// fingerprints preserve paths whose contents or removal may be uncertain after a nonzero or
-/// cancelled workspace promotion, so the next plan cleans affected paths and materializes current
-/// entries conservatively. Storage and artifact paths remain separate because the planner applies
-/// distinct behavior to each entry kind.
+/// Captured managed state carried with a reusable filesystem. `Some(empty)`
+/// means known empty; `None` at the storage-plan boundary means unknown.
+/// Storage and artifact partitions must remain separate.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct StorageFingerprints {
-    /// mount_path to version fingerprint for regular storages.
     pub storages: HashMap<String, StorageFingerprint>,
-    /// mount_path to version fingerprint for artifacts.
     pub artifacts: HashMap<String, StorageFingerprint>,
 }
 
-// These exact NUL-delimited values form the reserved serialized pair for a tainted fingerprint.
-// Keeping the pair within the legacy two-element value shape preserves workspace-cache metadata
-// compatibility.
-const TAINTED_STORAGE_FINGERPRINT_NAME: &str = "\0vm0-tainted-storage\0";
-const TAINTED_STORAGE_FINGERPRINT_VERSION: &str = "\0vm0-tainted-storage\0";
-
-/// A known storage identity or a fail-closed marker for uncertain filesystem state.
-///
-/// Known fingerprints serialize as the legacy two-element storage-name/version tuple. Tainted
-/// fingerprints preserve that tuple shape using the exact reserved sentinel pair above. This
-/// representation is persisted in workspace-cache metadata and must remain compatible with
-/// existing entries.
+/// Canonical tagged state. No tuple or NUL-sentinel decoder is accepted.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StorageFingerprint {
     kind: StorageFingerprintKind,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "state", rename_all = "camelCase", deny_unknown_fields)]
 enum StorageFingerprintKind {
     Known {
+        #[serde(rename = "vasStorageName")]
         vas_storage_name: String,
+        #[serde(rename = "vasVersionId")]
         vas_version_id: String,
     },
-    Tainted,
+    Tainted {},
 }
 
 impl StorageFingerprint {
-    /// Creates a known fingerprint unless both values are the exact reserved taint sentinel pair.
-    ///
-    /// Recognizing that pair here restores tainted state when persisted metadata is deserialized.
-    pub fn new(vas_storage_name: impl Into<String>, vas_version_id: impl Into<String>) -> Self {
-        let vas_storage_name = vas_storage_name.into();
-        let vas_version_id = vas_version_id.into();
-        if vas_storage_name == TAINTED_STORAGE_FINGERPRINT_NAME
-            && vas_version_id == TAINTED_STORAGE_FINGERPRINT_VERSION
-        {
+    /// Invalid input cannot establish reusable knowledge. Do not encode malformed
+    /// bytes as a magic value, or let them match a current manifest.
+    pub fn new(name: impl Into<String>, version: impl Into<String>) -> Self {
+        let name = name.into();
+        let version = version.into();
+        if name.contains('\0') || version.contains('\0') {
             return Self::tainted();
         }
         Self {
             kind: StorageFingerprintKind::Known {
-                vas_storage_name,
-                vas_version_id,
+                vas_storage_name: name,
+                vas_version_id: version,
             },
         }
     }
 
-    /// Creates a fingerprint for filesystem state that must not be reused as known.
     pub fn tainted() -> Self {
         Self {
-            kind: StorageFingerprintKind::Tainted,
+            kind: StorageFingerprintKind::Tainted {},
         }
     }
 
     pub fn is_tainted(&self) -> bool {
-        matches!(self.kind, StorageFingerprintKind::Tainted)
+        matches!(self.kind, StorageFingerprintKind::Tainted {})
     }
 
-    /// Returns whether this fingerprint proves the exact known storage name and version.
-    ///
-    /// A tainted fingerprint never matches any input, including the reserved sentinel values. This
-    /// makes the next storage plan clean and materialize the current entry instead of reusing it.
-    pub fn matches(&self, vas_storage_name: &str, vas_version_id: &str) -> bool {
-        if self.is_tainted() {
-            return false;
-        }
+    pub fn matches(&self, name: &str, version: &str) -> bool {
         match &self.kind {
             StorageFingerprintKind::Known {
-                vas_storage_name: known_name,
-                vas_version_id: known_version,
-            } => known_name == vas_storage_name && known_version == vas_version_id,
-            StorageFingerprintKind::Tainted => false,
+                vas_storage_name,
+                vas_version_id,
+            } => vas_storage_name == name && vas_version_id == version,
+            StorageFingerprintKind::Tainted {} => false,
         }
     }
 
@@ -97,194 +72,197 @@ impl StorageFingerprint {
         match &self.kind {
             StorageFingerprintKind::Known {
                 vas_storage_name, ..
-            } => Some(vas_storage_name.as_str()),
-            StorageFingerprintKind::Tainted => None,
+            } => Some(vas_storage_name),
+            StorageFingerprintKind::Tainted {} => None,
+        }
+    }
+
+    pub fn vas_version_id(&self) -> Option<&str> {
+        match &self.kind {
+            StorageFingerprintKind::Known { vas_version_id, .. } => Some(vas_version_id),
+            StorageFingerprintKind::Tainted {} => None,
         }
     }
 }
 
 impl Serialize for StorageFingerprint {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match &self.kind {
-            StorageFingerprintKind::Known {
-                vas_storage_name,
-                vas_version_id,
-            } => (vas_storage_name, vas_version_id).serialize(serializer),
-            StorageFingerprintKind::Tainted => (
-                TAINTED_STORAGE_FINGERPRINT_NAME,
-                TAINTED_STORAGE_FINGERPRINT_VERSION,
-            )
-                .serialize(serializer),
-        }
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.kind.serialize(serializer)
     }
 }
 
 impl<'de> Deserialize<'de> for StorageFingerprint {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let (vas_storage_name, vas_version_id) = <(String, String)>::deserialize(deserializer)?;
-        Ok(Self::new(vas_storage_name, vas_version_id))
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let kind = StorageFingerprintKind::deserialize(deserializer)?;
+        if let StorageFingerprintKind::Known {
+            vas_storage_name,
+            vas_version_id,
+        } = &kind
+            && (vas_storage_name.contains('\0') || vas_version_id.contains('\0'))
+        {
+            return Err(serde::de::Error::custom("known fingerprint contains NUL"));
+        }
+        Ok(Self { kind })
     }
 }
 
 impl StorageFingerprints {
     pub fn from_manifest(manifest: &StorageManifest) -> Self {
-        let mut storages = HashMap::new();
-        for s in &manifest.storages {
-            storages.insert(
-                s.mount_path.clone(),
-                StorageFingerprint::new(s.vas_storage_name.clone(), s.vas_version_id.clone()),
-            );
-        }
-        let mut artifacts = HashMap::new();
-        for a in &manifest.artifacts {
-            artifacts.insert(
-                a.mount_path.clone(),
-                StorageFingerprint::new(a.vas_storage_name.clone(), a.vas_version_id.clone()),
-            );
-        }
         Self {
-            storages,
-            artifacts,
+            storages: manifest
+                .storages
+                .iter()
+                .map(|s| {
+                    (
+                        s.mount_path.clone(),
+                        StorageFingerprint::new(
+                            s.vas_storage_name.clone(),
+                            s.vas_version_id.clone(),
+                        ),
+                    )
+                })
+                .collect(),
+            artifacts: manifest
+                .artifacts
+                .iter()
+                .map(|a| {
+                    (
+                        a.mount_path.clone(),
+                        StorageFingerprint::new(
+                            a.vas_storage_name.clone(),
+                            a.vas_version_id.clone(),
+                        ),
+                    )
+                })
+                .collect(),
         }
     }
 
-    /// Returns tainted entries for the union of current and optional previous paths.
-    ///
-    /// A non-successful turn may not have finished removing paths that existed only in the previous
-    /// manifest. Retaining those paths preserves their cleanup obligations for the next reuse.
-    /// Storage and artifact maps are unioned independently so their entry kinds remain intact.
+    /// Failed/cancelled reconciliation may leave removed previous paths behind.
+    /// Retain the union, including already-tainted paths, in both partitions.
     pub fn tainted_paths_including(&self, previous: Option<&Self>) -> Self {
-        let mut tainted = Self {
+        let mut result = Self {
             storages: self
                 .storages
                 .keys()
-                .map(|path| (path.clone(), StorageFingerprint::tainted()))
+                .map(|p| (p.clone(), StorageFingerprint::tainted()))
                 .collect(),
             artifacts: self
                 .artifacts
                 .keys()
-                .map(|path| (path.clone(), StorageFingerprint::tainted()))
+                .map(|p| (p.clone(), StorageFingerprint::tainted()))
                 .collect(),
         };
         if let Some(previous) = previous {
-            tainted.storages.extend(
+            result.storages.extend(
                 previous
                     .storages
                     .keys()
-                    .map(|path| (path.clone(), StorageFingerprint::tainted())),
+                    .map(|p| (p.clone(), StorageFingerprint::tainted())),
             );
-            tainted.artifacts.extend(
+            result.artifacts.extend(
                 previous
                     .artifacts
                     .keys()
-                    .map(|path| (path.clone(), StorageFingerprint::tainted())),
+                    .map(|p| (p.clone(), StorageFingerprint::tainted())),
             );
         }
-        tainted
+        result
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use serde_json::json;
 
-    use super::*;
-
     #[test]
-    fn known_fingerprint_deserializes_from_legacy_tuple() {
-        let fingerprint: StorageFingerprint = serde_json::from_value(json!(["repo", "v1"]))
-            .expect("legacy tuple fingerprint should deserialize");
-
-        assert!(!fingerprint.is_tainted());
-        assert!(fingerprint.matches("repo", "v1"));
-        assert!(!fingerprint.matches("repo", "v2"));
-        assert!(!fingerprint.matches("other", "v1"));
-    }
-
-    #[test]
-    fn known_fingerprint_serializes_to_legacy_tuple() {
-        let value = serde_json::to_value(StorageFingerprint::new("repo", "v1"))
-            .expect("known fingerprint should serialize");
-
-        assert_eq!(value, json!(["repo", "v1"]));
-    }
-
-    #[test]
-    fn tainted_fingerprint_deserializes_from_legacy_sentinel_tuple() {
-        let fingerprint: StorageFingerprint = serde_json::from_value(json!([
-            TAINTED_STORAGE_FINGERPRINT_NAME,
-            TAINTED_STORAGE_FINGERPRINT_VERSION
-        ]))
-        .expect("legacy tainted tuple should deserialize");
-
-        assert!(fingerprint.is_tainted());
-        assert!(!fingerprint.matches(
-            TAINTED_STORAGE_FINGERPRINT_NAME,
-            TAINTED_STORAGE_FINGERPRINT_VERSION
-        ));
-        assert!(!fingerprint.matches("repo", "v1"));
-    }
-
-    #[test]
-    fn tainted_fingerprint_serializes_to_legacy_sentinel_tuple() {
-        let value = serde_json::to_value(StorageFingerprint::tainted())
-            .expect("tainted fingerprint should serialize");
-
+    fn tagged_known_and_tainted_round_trip_without_tuple_fallback() {
+        for (fingerprint, value) in [
+            (
+                StorageFingerprint::new("repo", "v1"),
+                json!({"state":"known","vasStorageName":"repo","vasVersionId":"v1"}),
+            ),
+            (StorageFingerprint::tainted(), json!({"state":"tainted"})),
+        ] {
+            assert_eq!(serde_json::to_value(&fingerprint).unwrap(), value);
+            assert_eq!(
+                serde_json::from_value::<StorageFingerprint>(value).unwrap(),
+                fingerprint
+            );
+        }
+        assert!(serde_json::from_value::<StorageFingerprint>(json!(["repo", "v1"])).is_err());
+        assert!(
+            serde_json::from_value::<StorageFingerprint>(
+                json!({"state":"tainted","vasStorageName":"repo"})
+            )
+            .is_err()
+        );
+        assert!(
+            serde_json::from_value::<StorageFingerprint>(
+                json!({"state":"known","vasStorageName":"a\u{0000}b","vasVersionId":"v1"})
+            )
+            .is_err()
+        );
+        let invalid = StorageFingerprint::new("a\0b", "v1");
+        assert!(invalid.is_tainted());
+        assert!(!invalid.matches("a\0b", "v1"));
         assert_eq!(
-            value,
-            json!([
-                TAINTED_STORAGE_FINGERPRINT_NAME,
-                TAINTED_STORAGE_FINGERPRINT_VERSION
-            ])
+            serde_json::to_value(invalid).unwrap(),
+            json!({"state":"tainted"})
         );
     }
 
     #[test]
-    fn storage_fingerprints_preserve_legacy_map_value_shape() {
-        let fingerprints = StorageFingerprints {
+    fn known_empty_is_distinct_from_unknown_and_partitions_survive() {
+        let empty = Some(StorageFingerprints::default());
+        assert_ne!(
+            serde_json::to_value(&empty).unwrap(),
+            serde_json::to_value(None::<StorageFingerprints>).unwrap()
+        );
+        assert_eq!(
+            serde_json::from_value::<Option<StorageFingerprints>>(
+                serde_json::to_value(empty).unwrap()
+            )
+            .unwrap(),
+            Some(StorageFingerprints::default())
+        );
+        let current = StorageFingerprints {
             storages: HashMap::from([(
-                "/workspace/repo".to_owned(),
-                StorageFingerprint::new("repo", "v1"),
+                "/home/user/repo".into(),
+                StorageFingerprint::new("repo", "v2"),
             )]),
             artifacts: HashMap::from([(
-                "/workspace/artifact".to_owned(),
-                StorageFingerprint::tainted(),
+                "/home/user/output".into(),
+                StorageFingerprint::new("out", "v1"),
             )]),
         };
-
-        let value =
-            serde_json::to_value(&fingerprints).expect("storage fingerprints should serialize");
-
-        assert_eq!(value["storages"]["/workspace/repo"], json!(["repo", "v1"]));
-        assert_eq!(
-            value["artifacts"]["/workspace/artifact"],
-            json!([
-                TAINTED_STORAGE_FINGERPRINT_NAME,
-                TAINTED_STORAGE_FINGERPRINT_VERSION
-            ])
-        );
-
-        let parsed: StorageFingerprints =
-            serde_json::from_value(value).expect("legacy map value shape should deserialize");
+        let previous = StorageFingerprints {
+            storages: HashMap::from([("/home/user/removed".into(), StorageFingerprint::tainted())]),
+            artifacts: HashMap::from([(
+                "/home/user/old-output".into(),
+                StorageFingerprint::new("out", "v0"),
+            )]),
+        };
+        let union = current.tainted_paths_including(Some(&previous));
+        assert_eq!(union.storages.len(), 2);
+        assert_eq!(union.artifacts.len(), 2);
         assert!(
-            parsed
+            union
                 .storages
-                .get("/workspace/repo")
-                .expect("storage fingerprint should exist")
-                .matches("repo", "v1")
+                .values()
+                .chain(union.artifacts.values())
+                .all(StorageFingerprint::is_tainted)
         );
-        assert!(
-            parsed
-                .artifacts
-                .get("/workspace/artifact")
-                .expect("artifact fingerprint should exist")
-                .is_tainted()
+        assert_eq!(
+            serde_json::from_slice::<StorageFingerprints>(&serde_json::to_vec(&union).unwrap())
+                .unwrap(),
+            union
+        );
+        assert!(!current.storages["/home/user/repo"].matches("repo", "v1"));
+        assert_eq!(
+            current.storages["/home/user/repo"].vas_version_id(),
+            Some("v2")
         );
     }
 }

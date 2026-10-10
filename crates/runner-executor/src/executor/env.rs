@@ -22,7 +22,7 @@ use super::cli_framework::{
 use super::{JOB_TIMEOUT, RunnerError, RunnerResult, guest_runtime_dir, guest_runtime_path};
 use runner_types::ids::RunId;
 use runner_types::types::{
-    ConnectorRuntimeTargetRegistration, ExecutionContext, SandboxReuseResult, WorkspaceReuseResult,
+    ConnectorRuntimeTargetRegistration, ExecutionContext, HomeReuseResult, SandboxReuseResult,
 };
 
 pub(super) struct ProtectedModelProviderEnvKey {
@@ -777,7 +777,7 @@ pub(super) fn build_env_json_for_run(
     api_url: &str,
     sandbox_id: &str,
     reuse_result: SandboxReuseResult,
-    workspace_reuse_result: WorkspaceReuseResult,
+    home_reuse_result: HomeReuseResult,
 ) -> RunnerResult<HashMap<String, String>> {
     let host_env = HostEnv::from_process();
     build_env_json_with_host_env_for_run(
@@ -785,7 +785,7 @@ pub(super) fn build_env_json_for_run(
         api_url,
         sandbox_id,
         reuse_result,
-        workspace_reuse_result,
+        home_reuse_result,
         &host_env,
     )
 }
@@ -795,7 +795,7 @@ pub(super) fn build_env_json_with_host_env_for_run(
     api_url: &str,
     sandbox_id: &str,
     reuse_result: SandboxReuseResult,
-    workspace_reuse_result: WorkspaceReuseResult,
+    home_reuse_result: HomeReuseResult,
     host_env: &HostEnv,
 ) -> RunnerResult<HashMap<String, String>> {
     build_env_json_with_host_env_inner(
@@ -803,7 +803,7 @@ pub(super) fn build_env_json_with_host_env_for_run(
         api_url,
         sandbox_id,
         reuse_result,
-        Some(workspace_reuse_result),
+        Some(home_reuse_result),
         host_env,
     )
 }
@@ -813,7 +813,7 @@ fn build_env_json_with_host_env_inner(
     api_url: &str,
     sandbox_id: &str,
     reuse_result: SandboxReuseResult,
-    workspace_reuse_result: Option<WorkspaceReuseResult>,
+    home_reuse_result: Option<HomeReuseResult>,
     host_env: &HostEnv,
 ) -> RunnerResult<HashMap<String, String>> {
     let mut env = HashMap::new();
@@ -842,10 +842,10 @@ fn build_env_json_with_host_env_inner(
         guest_contracts::env::CANONICAL_SANDBOX_REUSE_RESULT_ENV.into(),
         reuse_result.as_wire().into(),
     );
-    if let Some(workspace_reuse_result) = workspace_reuse_result {
+    if let Some(home_reuse_result) = home_reuse_result {
         env.insert(
             guest_contracts::env::CANONICAL_WORKSPACE_REUSE_RESULT_ENV.into(),
-            workspace_reuse_result.as_wire().into(),
+            home_reuse_result.as_wire().into(),
         );
     }
     env.insert(

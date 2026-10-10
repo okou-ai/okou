@@ -228,15 +228,16 @@ fn item_notification(
     timestamp: i64,
     item: Value,
 ) -> Value {
-    json!({
-        "method": method,
-        "params": {
-            "threadId": thread_id,
-            "turnId": turn_id,
-            timestamp_key: timestamp,
-            "item": item,
-        }
-    })
+    let params = Value::Object(serde_json::Map::from_iter([
+        ("threadId".into(), thread_id.into()),
+        ("turnId".into(), turn_id.into()),
+        (timestamp_key.into(), timestamp.into()),
+        ("item".into(), item),
+    ]));
+    Value::Object(serde_json::Map::from_iter([
+        ("method".into(), method.into()),
+        ("params".into(), params),
+    ]))
 }
 
 pub(super) fn write_thread_item_notifications<W: Write>(
@@ -545,10 +546,14 @@ pub(super) fn write_oversized_delivery_notifications<W: Write>(
         for item in items {
             write_json_line(
                 output,
-                &json!({
-                    "method": "item/completed",
-                    "params": {"threadId": thread_id, "turnId": turn_id, "completedAtMs": 9, "item": item}
-                }),
+                &item_notification(
+                    "item/completed",
+                    thread_id,
+                    turn_id,
+                    "completedAtMs",
+                    9,
+                    item,
+                ),
             )?;
         }
     }
@@ -998,4 +1003,59 @@ pub(super) fn write_split_json_line_prefix<W: Write>(
     write!(output, "{line}")?;
     output.flush()?;
     Ok(suffix)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn owned_item_notifications_preserve_canonical_jsonl() -> io::Result<()> {
+        for item in [
+            Value::Null,
+            json!([]),
+            json!({}),
+            json!({"z-field":"你好\"\\\n\0", "a-field":[true, 7, null]}),
+            json!({"body":"x".repeat(4_096)}),
+        ] {
+            for (method, timestamp_key, timestamp) in [
+                ("item/started", "startedAtMs", 0),
+                ("item/completed", "completedAtMs", i64::MAX),
+            ] {
+                let expected = json!({
+                    "method": method,
+                    "params": {
+                        "threadId": "thread-你好\"\\\n",
+                        "turnId": "turn-\0",
+                        timestamp_key: timestamp,
+                        "item": item,
+                    }
+                });
+                let owned_item = item.clone();
+                let owned_body = owned_item
+                    .get("body")
+                    .and_then(Value::as_str)
+                    .map(str::as_ptr);
+                let notification = item_notification(
+                    method,
+                    "thread-你好\"\\\n",
+                    "turn-\0",
+                    timestamp_key,
+                    timestamp,
+                    owned_item,
+                );
+                assert_eq!(
+                    notification
+                        .pointer("/params/item/body")
+                        .and_then(Value::as_str)
+                        .map(str::as_ptr),
+                    owned_body,
+                );
+                let mut actual = Vec::new();
+                write_json_line(&mut actual, &notification)?;
+                assert_eq!(actual, format!("{expected}\n").as_bytes());
+            }
+        }
+        Ok(())
+    }
 }

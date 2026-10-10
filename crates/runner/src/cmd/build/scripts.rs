@@ -927,7 +927,7 @@ exit 18
                 ][..],
             ),
             (
-                "workspace mount and freeze runtime",
+                "home mount and freeze runtime",
                 &[
                     "/usr/bin/mountpoint",
                     "/usr/bin/mount",

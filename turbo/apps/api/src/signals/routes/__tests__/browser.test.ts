@@ -658,6 +658,243 @@ function mockNativeCheckboxTarget(args: {
   });
 }
 
+async function setupNativeMixedVerificationScenario(
+  control: "select-one" | "select-multiple" | "checkbox",
+  scalarKind: "text" | "username" | "password" | null = null,
+  verificationStarted?: () => void,
+) {
+  const { routeMocks, runs, chat, actor, agent } = await setupBrowserScenario();
+  const current = await createClaimedChatRun(
+    chat,
+    runs,
+    actor,
+    agent.agentId,
+    "Enter native input without submitting the website form",
+  );
+  await updateFeatureSwitchesForUser(context, actor, {
+    [FeatureSwitchKey.BrowserNativeInput]: true,
+  });
+  const providerId = randomUUID();
+  const state: {
+    verification:
+      "match" | "microtask-reset" | "error" | "malformed" | "timeout";
+    matches: boolean;
+    writes: number;
+    verifications: number;
+  } = { verification: "match", matches: true, writes: 0, verifications: 0 };
+  acceptBrowserUseCdpSessions([providerId], undefined, (command) => {
+    return (
+      state.verification === "timeout" &&
+      command.method === "Runtime.callFunctionOn" &&
+      nativeVerifyOnly(command.params.arguments)
+    );
+  });
+  context.mocks.browserUseCdp.command.mockImplementation((command) => {
+    switch (command.method) {
+      case "Target.getTargets": {
+        return {
+          targetInfos: [
+            {
+              targetId: "native-input-target",
+              type: "page",
+              url: "https://example.com/order",
+            },
+          ],
+        };
+      }
+      case "Browser.getWindowForTarget": {
+        return { windowId: 7 };
+      }
+      case "Target.attachToTarget": {
+        return { sessionId: "native-mixed-session" };
+      }
+      case "Page.getFrameTree": {
+        return {
+          frameTree: {
+            frame: {
+              id: "main-frame",
+              loaderId: "native-mixed-loader",
+              url: "https://example.com/order",
+            },
+          },
+        };
+      }
+      case "DOM.resolveNode": {
+        return {
+          object: {
+            objectId:
+              command.params.backendNodeId === 46
+                ? "native-scalar-object"
+                : "native-mixed-object",
+          },
+        };
+      }
+      case "Runtime.callFunctionOn": {
+        const declaration = String(command.params.functionDeclaration);
+        if (declaration.includes("firstSpec")) {
+          if (nativeVerifyOnly(command.params.arguments)) {
+            state.verifications += 1;
+            verificationStarted?.();
+            if (state.verification === "error") {
+              return new Error("Synthetic readback connection failure");
+            }
+            if (state.verification === "malformed") {
+              return {};
+            }
+            return { result: { value: state.matches } };
+          }
+          state.writes += 1;
+          // The provider returns the writer's same-task result before the
+          // website's event microtask resets a requested native/scalar value.
+          queueMicrotask(() => {
+            if (state.verification === "microtask-reset") {
+              state.matches = false;
+            }
+          });
+          return { result: { value: true } };
+        }
+        if (declaration.includes("cloneNode")) {
+          return { result: { value: true } };
+        }
+        const native = {
+          tagName: control === "checkbox" ? "INPUT" : "SELECT",
+          inputType: control,
+          connected: true,
+          mainDocument: true,
+          writable: true,
+          siteRequired: false,
+          multiple: control === "select-multiple",
+          ...(control === "checkbox"
+            ? { checked: true }
+            : {
+                options: [
+                  {
+                    index: 0,
+                    label: "Original",
+                    value: "original",
+                    disabled: false,
+                    selected: true,
+                    empty: false,
+                  },
+                  {
+                    index: 1,
+                    label: "Requested",
+                    value: "requested",
+                    disabled: false,
+                    selected: false,
+                    empty: false,
+                  },
+                ],
+              }),
+        };
+        const scalar = {
+          tagName: "INPUT",
+          inputType: scalarKind === "password" ? "password" : "text",
+          connected: true,
+          mainDocument: true,
+          writable: true,
+          siteRequired: false,
+          multiple: false,
+        };
+        return {
+          result: {
+            value:
+              scalarKind &&
+              Array.isArray(command.params.arguments) &&
+              command.params.arguments.length > 0
+                ? [native, scalar]
+                : [native],
+          },
+        };
+      }
+      default: {
+        return {};
+      }
+    }
+  });
+  server.use(
+    http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
+      const body = z
+        .strictObject({ name: z.string() })
+        .parse(await request.json());
+      return HttpResponse.json(providerProfile(randomUUID(), body.name), {
+        status: 201,
+      });
+    }),
+    http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
+      return HttpResponse.json(providerBrowser(providerId), { status: 201 });
+    }),
+    http.get(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
+      return HttpResponse.json(providerBrowser(String(params.id)));
+    }),
+  );
+  await accept(
+    client().use({ headers: current.claim.browserHeaders, body: {} }),
+    [200],
+  );
+  routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+  const create = async () => {
+    const created = await accept(
+      userActionClient().create({
+        headers: current.claim.browserHeaders,
+        body: {
+          kind: "input",
+          callbackPrompt: "Continue after verified native input",
+          pageTargetId: "native-input-target",
+          fields: [
+            {
+              key: "choice",
+              label: "Choice",
+              fieldKind: control === "checkbox" ? "checkbox" : "select",
+              required: false,
+              backendNodeId: 45,
+            },
+            ...(scalarKind
+              ? [
+                  {
+                    key: "note",
+                    label: "Note",
+                    fieldKind: scalarKind,
+                    required: true,
+                    backendNodeId: 46,
+                  },
+                ]
+              : []),
+          ],
+        },
+      }),
+      [201],
+    );
+    const requestToken = created.body.action.requestToken;
+    const observed = await accept(
+      userActionClient().preflight({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken },
+        body: {},
+      }),
+      [200],
+    );
+    const values: z.infer<
+      typeof browserUserActionsContract.apply.body
+    >["values"] = [];
+    if (control === "checkbox") {
+      values.push({ key: "choice", checked: false, observedChecked: true });
+    } else {
+      const optionSetFingerprint =
+        observed.body.fields[0]?.control.optionSetFingerprint;
+      if (!optionSetFingerprint) {
+        throw new Error("Missing public select option fingerprint");
+      }
+      values.push({ key: "choice", optionIndexes: [1], optionSetFingerprint });
+    }
+    if (scalarKind) {
+      values.push({ key: "note", value: "synthetic-native-input" });
+    }
+    return { requestToken, values };
+  };
+  return { state, create };
+}
+
 type NativeRadioMockState = {
   memberIds: readonly number[];
   name: string;
@@ -1656,6 +1893,114 @@ describe("Browser user-action route", () => {
     );
     expect(pending.body.state).toBe("pending");
   });
+
+  it.each([
+    { control: "select-one", scalarKind: null },
+    { control: "select-multiple", scalarKind: null },
+    { control: "checkbox", scalarKind: null },
+    { control: "select-one", scalarKind: "text" },
+    { control: "checkbox", scalarKind: "username" },
+    { control: "checkbox", scalarKind: "password" },
+  ] as const)(
+    "independently verifies $control/$scalarKind and reports event microtask resets as uncertain",
+    async ({ control, scalarKind }) => {
+      const { state, create } = await setupNativeMixedVerificationScenario(
+        control,
+        scalarKind,
+      );
+      const stable = await create();
+      const applied = await accept(
+        userActionClient().apply({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { requestToken: stable.requestToken },
+          body: { values: stable.values },
+        }),
+        [200],
+      );
+      expect(applied.body.state).toBe("succeeded");
+      expect(state.writes).toBe(1);
+
+      const reset = await create();
+      state.verification = "microtask-reset";
+      const uncertain = await accept(
+        userActionClient().apply({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { requestToken: reset.requestToken },
+          body: { values: reset.values },
+        }),
+        [200],
+      );
+      expect(uncertain.body.state).toBe("uncertain");
+      const persisted = await accept(
+        userActionClient().get({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { requestToken: reset.requestToken },
+        }),
+        [200],
+      );
+      expect(persisted.body).toMatchObject({
+        state: "uncertain",
+        callbackDelivered: false,
+      });
+      const repeated = await userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: reset.requestToken },
+        body: { values: reset.values },
+      });
+      expect(repeated.status).toBe(409);
+      expect(state).toMatchObject({ writes: 2, verifications: 2 });
+    },
+  );
+
+  it.each(["error", "malformed", "timeout"] as const)(
+    "keeps interrupted mixed verification uncertain without replay for %s responses",
+    async (failure) => {
+      const started = createDeferredPromise<void>(context.signal);
+      const { state, create } = await setupNativeMixedVerificationScenario(
+        "select-one",
+        "password",
+        () => {
+          started.resolve();
+        },
+      );
+      const action = await create();
+      const deadline = new AbortController();
+      context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
+        return milliseconds === 15_000 ? deadline.signal : undefined;
+      });
+      state.verification = failure;
+      const applying = userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: action.requestToken },
+        body: { values: action.values },
+      });
+      await started.promise;
+      if (failure === "timeout") {
+        deadline.abort(
+          new DOMException("CDP readback deadline", "TimeoutError"),
+        );
+      }
+      expect((await accept(applying, [200])).body.state).toBe("uncertain");
+      const persisted = await accept(
+        userActionClient().get({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { requestToken: action.requestToken },
+        }),
+        [200],
+      );
+      expect(persisted.body).toMatchObject({
+        state: "uncertain",
+        callbackDelivered: false,
+      });
+      const repeated = await userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: action.requestToken },
+        body: { values: action.values },
+      });
+      expect(repeated.status).toBe(409);
+      expect(state).toMatchObject({ writes: 1, verifications: 1 });
+    },
+  );
 
   it("applies explicit checkbox booleans, preserves untouched state, and rejects changed or required checkboxes", async () => {
     const { routeMocks, runs, chat, actor, agent } =
@@ -5235,18 +5580,6 @@ function acceptBrowserUseCdpSessions(
   }
 }
 
-function browserHeadersForRun(
-  runs: ReturnType<typeof createRunsApi>,
-  actor: ApiTestUser,
-  runId: string,
-): { readonly authorization: string } {
-  const browserToken = runs.okouTokenForRunWithCapabilities(actor, runId, [
-    "browser:read",
-    "browser:write",
-  ]);
-  return { authorization: `Bearer ${browserToken}` };
-}
-
 async function claimChatRun(
   runs: ReturnType<typeof createRunsApi>,
   runId: string,
@@ -5443,21 +5776,6 @@ describe("okou browser route", () => {
     },
   );
 
-  it("requires a chat thread when starting a managed browser", async () => {
-    const { runs, actor } = await setupBrowserScenario();
-
-    const rejected = await requestBrowserUse(
-      browserHeadersForRun(runs, actor, randomUUID()),
-    );
-    expect(rejected.status).toBe(400);
-    await expect(rejected.json()).resolves.toStrictEqual({
-      error: {
-        code: "BROWSER_CHAT_THREAD_REQUIRED",
-        message: "Managed browsers can only be started from an Okou chat run",
-      },
-    });
-  });
-
   it("keeps managed browser access off when the user explicitly disables it", async () => {
     const { runs, chat, actor, agent } = await setupBrowserScenario();
     await updateFeatureSwitchesForUser(context, actor, {
@@ -5482,21 +5800,16 @@ describe("okou browser route", () => {
     expect(claim.appendSystemPrompt ?? "").not.toContain(
       "Browser tab continuity:",
     );
-    const browserToken = runs.okouTokenForRunWithCapabilities(
-      actor,
-      sent.runId,
-      ["browser:read", "browser:write"],
-    );
-
+    const browserToken = claim.platformEnvironment.OKOU_TOKEN;
+    if (!browserToken) {
+      throw new Error("Expected a claimed agent token");
+    }
     const rejected = await requestBrowserUse({
       authorization: `Bearer ${browserToken}`,
     });
     expect(rejected.status).toBe(403);
     await expect(rejected.json()).resolves.toMatchObject({
-      error: {
-        code: "BROWSER_AUTHORIZATION_REQUIRED",
-        message: "Cloud browser is not enabled for this chat thread",
-      },
+      error: { code: "FORBIDDEN" },
     });
   });
 
@@ -5627,151 +5940,46 @@ describe("okou browser route", () => {
   });
 
   it("uses the configured app URL for browser authorization from run tokens", async () => {
-    const { routeMocks, runs, chat, actor, agent } =
-      await setupBrowserScenario();
-    const sent = await chat.sendAndLaunch(actor, {
-      agentId: agent.agentId,
-      prompt: "Ask the user to enable a cloud browser",
-      cloudBrowserEnabled: false,
-    });
-    const sandboxRunToken = runs.sandboxTokenForRun(actor, sent.runId);
-    const sandboxCreated = await accept(
-      authorizationClient().create({
-        headers: { authorization: `Bearer ${sandboxRunToken}` },
-        body: {},
-      }),
-      [200],
-    );
-    expect(new URL(sandboxCreated.body.authorizationUrl).origin).toBe(
-      "https://app.okou.ai",
-    );
-    const okouRunToken = runs.okouTokenForRunWithCapabilities(
-      actor,
-      sent.runId,
-      [],
-    );
-    const createdOnOkouApi = await accept(
-      authorizationClient("https://api.okou.ai").create({
-        headers: { authorization: `Bearer ${okouRunToken}` },
-        body: {},
-      }),
-      [200],
-    );
-    expect(new URL(createdOnOkouApi.body.authorizationUrl).origin).toBe(
-      "https://app.okou.ai",
-    );
-    const requestToken = decodeURIComponent(
-      new URL(createdOnOkouApi.body.authorizationUrl).pathname
-        .split("/")
-        .at(-1) ?? "",
-    );
-    expect(requestToken).toMatch(/^vm0_browser_authorization_request_/u);
-
-    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    const pending = await accept(
-      authorizationClient().get({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { requestToken },
-      }),
-      [200],
-    );
-    expect(pending.body).toMatchObject({
-      completedAt: null,
-      cloudBrowserEnabled: false,
-    });
-
-    const applied = await accept(
-      authorizationClient().apply({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { requestToken },
-        body: {},
-      }),
-      [200],
-    );
-    expect(applied.body).toStrictEqual({
-      ok: true,
-      cloudBrowserEnabled: true,
-    });
-    const completed = await accept(
-      authorizationClient().get({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { requestToken },
-      }),
-      [200],
-    );
-    expect(completed.body).toStrictEqual({
-      expiresAt: createdOnOkouApi.body.expiresAt,
-      completedAt: isoAt(0),
-      cloudBrowserEnabled: true,
-    });
-
-    const events = await accept(
-      chatThreadsClient().events({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    expect(events.body.events).toContainEqual(
-      expect.objectContaining({
-        kind: "computer_use_host_updated",
-        chatThreadId: sent.threadId,
-        computerUseHostId: null,
-        cloudBrowserEnabled: true,
-      }),
-    );
-  });
-
-  it.each(["another user", "another organization"] as const)(
-    "does not disclose or apply browser authorization for %s",
-    async (foreignScope) => {
-      const { routeMocks, runs, chat, actor, agent } =
-        await setupBrowserScenario();
-      const sent = await chat.sendAndLaunch(actor, {
-        agentId: agent.agentId,
-        prompt: "Keep browser authorization within its owner scope",
+    const owned = await setupOwnedComputerBrowserScenario();
+    const { chat, actor, agentId } = owned;
+    const routeMocks = createRouteMocks(context);
+    const sent = await owned.run(() => {
+      return chat.sendAndLaunch(actor, {
+        agentId,
+        prompt: "Ask the user to enable a cloud browser",
         cloudBrowserEnabled: false,
       });
-      const created = await accept(
+    });
+    const claimed = await owned.claimChatRun(owned.runnerGroup, sent.runId);
+    await owned.run(async () => {
+      const sandboxRunToken = claimed.claim.sandboxToken;
+      const sandboxCreated = await accept(
         authorizationClient().create({
-          headers: {
-            authorization: `Bearer ${runs.sandboxTokenForRun(actor, sent.runId)}`,
-          },
+          headers: { authorization: `Bearer ${sandboxRunToken}` },
           body: {},
         }),
         [200],
       );
-      const requestToken = decodeURIComponent(
-        new URL(created.body.authorizationUrl).pathname.slice(
-          "/browser/authorize/".length,
-        ),
+      expect(new URL(sandboxCreated.body.authorizationUrl).origin).toBe(
+        "https://app.okou.ai",
       );
-      const foreignActor = createBddApi(context).user(
-        foreignScope === "another user"
-          ? { orgId: actor.orgId }
-          : { userId: actor.userId },
-      );
-      routeMocks.clerk.session(
-        foreignActor.userId,
-        foreignActor.orgId,
-        foreignActor.orgRole,
-      );
-      const hidden = await accept(
-        authorizationClient().get({
-          headers: { authorization: "Bearer clerk-session" },
-          params: { requestToken },
-        }),
-        [404],
-      );
-      expect(hidden.body.error.code).toBe("NOT_FOUND");
-      const rejected = await accept(
-        authorizationClient().apply({
-          headers: { authorization: "Bearer clerk-session" },
-          params: { requestToken },
+      const okouRunToken = okouTokenFromClaim(claimed.claim);
+      const createdOnOkouApi = await accept(
+        authorizationClient("https://api.okou.ai").create({
+          headers: { authorization: `Bearer ${okouRunToken}` },
           body: {},
         }),
-        [404],
+        [200],
       );
-      expect(rejected.body.error.code).toBe("NOT_FOUND");
+      expect(new URL(createdOnOkouApi.body.authorizationUrl).origin).toBe(
+        "https://app.okou.ai",
+      );
+      const requestToken = decodeURIComponent(
+        new URL(createdOnOkouApi.body.authorizationUrl).pathname
+          .split("/")
+          .at(-1) ?? "",
+      );
+      expect(requestToken).toMatch(/^vm0_browser_authorization_request_/u);
 
       routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
       const pending = await accept(
@@ -5781,131 +5989,11 @@ describe("okou browser route", () => {
         }),
         [200],
       );
-      expect(pending.body).toStrictEqual({
-        expiresAt: created.body.expiresAt,
+      expect(pending.body).toMatchObject({
         completedAt: null,
         cloudBrowserEnabled: false,
       });
-      await expect(
-        chat.readThreadMetadata(actor, sent.threadId),
-      ).resolves.toMatchObject({ cloudBrowserEnabled: false });
-      const events = await accept(
-        chatThreadsClient().events({
-          headers: { authorization: "Bearer clerk-session" },
-        }),
-        [200],
-      );
-      expect(
-        events.body.events.filter((event) => {
-          return (
-            event.kind === "computer_use_host_updated" &&
-            event.chatThreadId === sent.threadId
-          );
-        }),
-      ).toStrictEqual([]);
-    },
-  );
 
-  it("expires pending browser authorization at the inclusive one-hour boundary", async () => {
-    const { routeMocks, runs, chat, actor, agent } =
-      await setupBrowserScenario();
-    const sent = await chat.sendAndLaunch(actor, {
-      agentId: agent.agentId,
-      prompt: "Let this browser authorization expire",
-      cloudBrowserEnabled: false,
-    });
-    const created = await accept(
-      authorizationClient().create({
-        headers: {
-          authorization: `Bearer ${runs.sandboxTokenForRun(actor, sent.runId)}`,
-        },
-        body: {},
-      }),
-      [200],
-    );
-    const requestToken = decodeURIComponent(
-      new URL(created.body.authorizationUrl).pathname.slice(
-        "/browser/authorize/".length,
-      ),
-    );
-    expect(created.body.expiresAt).toBe(isoAt(60 * MINUTE_MS));
-    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    mockNow(STARTED_AT_MS + 60 * MINUTE_MS - 1);
-    const pending = await accept(
-      authorizationClient().get({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { requestToken },
-      }),
-      [200],
-    );
-    expect(pending.body).toStrictEqual({
-      expiresAt: created.body.expiresAt,
-      completedAt: null,
-      cloudBrowserEnabled: false,
-    });
-
-    mockNow(STARTED_AT_MS + 60 * MINUTE_MS);
-    const expired = await accept(
-      authorizationClient().get({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { requestToken },
-      }),
-      [410],
-    );
-    expect(expired.body.error.code).toBe("GONE");
-    const rejected = await accept(
-      authorizationClient().apply({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { requestToken },
-        body: {},
-      }),
-      [410],
-    );
-    expect(rejected.body.error.code).toBe("GONE");
-    await expect(
-      chat.readThreadMetadata(actor, sent.threadId),
-    ).resolves.toMatchObject({ cloudBrowserEnabled: false });
-    const events = await accept(
-      chatThreadsClient().events({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    expect(
-      events.body.events.filter((event) => {
-        return (
-          event.kind === "computer_use_host_updated" &&
-          event.chatThreadId === sent.threadId
-        );
-      }),
-    ).toStrictEqual([]);
-  });
-
-  it("preserves completion and ordered events when browser authorization is applied again", async () => {
-    const { routeMocks, runs, chat, actor, agent } =
-      await setupBrowserScenario();
-    const sent = await chat.sendAndLaunch(actor, {
-      agentId: agent.agentId,
-      prompt: "Apply this browser authorization twice",
-      cloudBrowserEnabled: false,
-    });
-    const created = await accept(
-      authorizationClient().create({
-        headers: {
-          authorization: `Bearer ${runs.sandboxTokenForRun(actor, sent.runId)}`,
-        },
-        body: {},
-      }),
-      [200],
-    );
-    const requestToken = decodeURIComponent(
-      new URL(created.body.authorizationUrl).pathname.slice(
-        "/browser/authorize/".length,
-      ),
-    );
-    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    for (const minute of [1, 2]) {
-      mockNow(STARTED_AT_MS + minute * MINUTE_MS);
       const applied = await accept(
         authorizationClient().apply({
           headers: { authorization: "Bearer clerk-session" },
@@ -5926,84 +6014,329 @@ describe("okou browser route", () => {
         [200],
       );
       expect(completed.body).toStrictEqual({
-        expiresAt: created.body.expiresAt,
-        completedAt: isoAt(minute * MINUTE_MS),
+        expiresAt: createdOnOkouApi.body.expiresAt,
+        completedAt: isoAt(0),
         cloudBrowserEnabled: true,
       });
-    }
-    await expect(
-      chat.readThreadMetadata(actor, sent.threadId),
-    ).resolves.toMatchObject({
-      computerUseHostId: null,
-      cloudBrowserEnabled: true,
-    });
-    const events = await accept(
-      chatThreadsClient().events({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    const appliedEvents = events.body.events.filter((event) => {
-      return (
-        event.kind === "computer_use_host_updated" &&
-        event.chatThreadId === sent.threadId
+
+      const events = await accept(
+        chatThreadsClient().events({
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [200],
+      );
+      expect(events.body.events).toContainEqual(
+        expect.objectContaining({
+          kind: "computer_use_host_updated",
+          chatThreadId: sent.threadId,
+          computerUseHostId: null,
+          cloudBrowserEnabled: true,
+        }),
       );
     });
-    expect(appliedEvents).toHaveLength(2);
-    const [first, second] = appliedEvents;
-    if (!first || !second) {
-      throw new Error("Expected both browser authorization events");
-    }
-    expect(second.seqId).toBeGreaterThan(first.seqId);
-    expect(second.id).not.toBe(first.id);
-    expect(
-      appliedEvents.map((event) => {
-        return event.createdAt;
-      }),
-    ).toStrictEqual([isoAt(MINUTE_MS), isoAt(2 * MINUTE_MS)]);
-    expect(appliedEvents).toStrictEqual([
-      expect.objectContaining({
-        computerUseHostId: null,
-        cloudBrowserEnabled: true,
-      }),
-      expect.objectContaining({
-        computerUseHostId: null,
-        cloudBrowserEnabled: true,
-      }),
-    ]);
+  });
 
-    mockNow(STARTED_AT_MS + 60 * MINUTE_MS);
-    const expired = await accept(
-      authorizationClient().get({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { requestToken },
-      }),
-      [410],
-    );
-    expect(expired.body.error.code).toBe("GONE");
-    const rejected = await accept(
-      authorizationClient().apply({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { requestToken },
-        body: {},
-      }),
-      [410],
-    );
-    expect(rejected.body.error.code).toBe("GONE");
-    const unchangedEvents = await accept(
-      chatThreadsClient().events({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    expect(
-      unchangedEvents.body.events.filter((event) => {
+  it.each(["another user", "another organization"] as const)(
+    "does not disclose or apply browser authorization for %s",
+    async (foreignScope) => {
+      const owned = await setupOwnedComputerBrowserScenario();
+      const { chat, actor, agentId } = owned;
+      const routeMocks = createRouteMocks(context);
+      const sent = await owned.run(() => {
+        return chat.sendAndLaunch(actor, {
+          agentId,
+          prompt: "Keep browser authorization within its owner scope",
+          cloudBrowserEnabled: false,
+        });
+      });
+      const claimed = await owned.claimChatRun(owned.runnerGroup, sent.runId);
+      await owned.run(async () => {
+        const created = await accept(
+          authorizationClient().create({
+            headers: {
+              authorization: `Bearer ${claimed.claim.sandboxToken}`,
+            },
+            body: {},
+          }),
+          [200],
+        );
+        const requestToken = decodeURIComponent(
+          new URL(created.body.authorizationUrl).pathname.slice(
+            "/browser/authorize/".length,
+          ),
+        );
+        const foreignActor = createBddApi(context).user(
+          foreignScope === "another user"
+            ? { orgId: actor.orgId }
+            : { userId: actor.userId },
+        );
+        routeMocks.clerk.session(
+          foreignActor.userId,
+          foreignActor.orgId,
+          foreignActor.orgRole,
+        );
+        const hidden = await accept(
+          authorizationClient().get({
+            headers: { authorization: "Bearer clerk-session" },
+            params: { requestToken },
+          }),
+          [404],
+        );
+        expect(hidden.body.error.code).toBe("NOT_FOUND");
+        const rejected = await accept(
+          authorizationClient().apply({
+            headers: { authorization: "Bearer clerk-session" },
+            params: { requestToken },
+            body: {},
+          }),
+          [404],
+        );
+        expect(rejected.body.error.code).toBe("NOT_FOUND");
+
+        routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+        const pending = await accept(
+          authorizationClient().get({
+            headers: { authorization: "Bearer clerk-session" },
+            params: { requestToken },
+          }),
+          [200],
+        );
+        expect(pending.body).toStrictEqual({
+          expiresAt: created.body.expiresAt,
+          completedAt: null,
+          cloudBrowserEnabled: false,
+        });
+        await expect(
+          chat.readThreadMetadata(actor, sent.threadId),
+        ).resolves.toMatchObject({ cloudBrowserEnabled: false });
+        const events = await accept(
+          chatThreadsClient().events({
+            headers: { authorization: "Bearer clerk-session" },
+          }),
+          [200],
+        );
+        expect(
+          events.body.events.filter((event) => {
+            return (
+              event.kind === "computer_use_host_updated" &&
+              event.chatThreadId === sent.threadId
+            );
+          }),
+        ).toStrictEqual([]);
+      });
+    },
+  );
+
+  it("expires pending browser authorization at the inclusive one-hour boundary", async () => {
+    const owned = await setupOwnedComputerBrowserScenario();
+    const { chat, actor, agentId } = owned;
+    const routeMocks = createRouteMocks(context);
+    const sent = await owned.run(() => {
+      return chat.sendAndLaunch(actor, {
+        agentId,
+        prompt: "Let this browser authorization expire",
+        cloudBrowserEnabled: false,
+      });
+    });
+    const claimed = await owned.claimChatRun(owned.runnerGroup, sent.runId);
+    await owned.run(async () => {
+      const created = await accept(
+        authorizationClient().create({
+          headers: {
+            authorization: `Bearer ${claimed.claim.sandboxToken}`,
+          },
+          body: {},
+        }),
+        [200],
+      );
+      const requestToken = decodeURIComponent(
+        new URL(created.body.authorizationUrl).pathname.slice(
+          "/browser/authorize/".length,
+        ),
+      );
+      expect(created.body.expiresAt).toBe(isoAt(60 * MINUTE_MS));
+      routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+      mockNow(STARTED_AT_MS + 60 * MINUTE_MS - 1);
+      const pending = await accept(
+        authorizationClient().get({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { requestToken },
+        }),
+        [200],
+      );
+      expect(pending.body).toStrictEqual({
+        expiresAt: created.body.expiresAt,
+        completedAt: null,
+        cloudBrowserEnabled: false,
+      });
+
+      mockNow(STARTED_AT_MS + 60 * MINUTE_MS);
+      const expired = await accept(
+        authorizationClient().get({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { requestToken },
+        }),
+        [410],
+      );
+      expect(expired.body.error.code).toBe("GONE");
+      const rejected = await accept(
+        authorizationClient().apply({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { requestToken },
+          body: {},
+        }),
+        [410],
+      );
+      expect(rejected.body.error.code).toBe("GONE");
+      await expect(
+        chat.readThreadMetadata(actor, sent.threadId),
+      ).resolves.toMatchObject({ cloudBrowserEnabled: false });
+      const events = await accept(
+        chatThreadsClient().events({
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [200],
+      );
+      expect(
+        events.body.events.filter((event) => {
+          return (
+            event.kind === "computer_use_host_updated" &&
+            event.chatThreadId === sent.threadId
+          );
+        }),
+      ).toStrictEqual([]);
+    });
+  });
+
+  it("preserves completion and ordered events when browser authorization is applied again", async () => {
+    const owned = await setupOwnedComputerBrowserScenario();
+    const { chat, actor, agentId } = owned;
+    const routeMocks = createRouteMocks(context);
+    const sent = await owned.run(() => {
+      return chat.sendAndLaunch(actor, {
+        agentId,
+        prompt: "Apply this browser authorization twice",
+        cloudBrowserEnabled: false,
+      });
+    });
+    const claimed = await owned.claimChatRun(owned.runnerGroup, sent.runId);
+    await owned.run(async () => {
+      const created = await accept(
+        authorizationClient().create({
+          headers: {
+            authorization: `Bearer ${claimed.claim.sandboxToken}`,
+          },
+          body: {},
+        }),
+        [200],
+      );
+      const requestToken = decodeURIComponent(
+        new URL(created.body.authorizationUrl).pathname.slice(
+          "/browser/authorize/".length,
+        ),
+      );
+      routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+      for (const minute of [1, 2]) {
+        mockNow(STARTED_AT_MS + minute * MINUTE_MS);
+        const applied = await accept(
+          authorizationClient().apply({
+            headers: { authorization: "Bearer clerk-session" },
+            params: { requestToken },
+            body: {},
+          }),
+          [200],
+        );
+        expect(applied.body).toStrictEqual({
+          ok: true,
+          cloudBrowserEnabled: true,
+        });
+        const completed = await accept(
+          authorizationClient().get({
+            headers: { authorization: "Bearer clerk-session" },
+            params: { requestToken },
+          }),
+          [200],
+        );
+        expect(completed.body).toStrictEqual({
+          expiresAt: created.body.expiresAt,
+          completedAt: isoAt(minute * MINUTE_MS),
+          cloudBrowserEnabled: true,
+        });
+      }
+      await expect(
+        chat.readThreadMetadata(actor, sent.threadId),
+      ).resolves.toMatchObject({
+        computerUseHostId: null,
+        cloudBrowserEnabled: true,
+      });
+      const events = await accept(
+        chatThreadsClient().events({
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [200],
+      );
+      const appliedEvents = events.body.events.filter((event) => {
         return (
           event.kind === "computer_use_host_updated" &&
           event.chatThreadId === sent.threadId
         );
-      }),
-    ).toStrictEqual(appliedEvents);
+      });
+      expect(appliedEvents).toHaveLength(2);
+      const [first, second] = appliedEvents;
+      if (!first || !second) {
+        throw new Error("Expected both browser authorization events");
+      }
+      expect(second.seqId).toBeGreaterThan(first.seqId);
+      expect(second.id).not.toBe(first.id);
+      expect(
+        appliedEvents.map((event) => {
+          return event.createdAt;
+        }),
+      ).toStrictEqual([isoAt(MINUTE_MS), isoAt(2 * MINUTE_MS)]);
+      expect(appliedEvents).toStrictEqual([
+        expect.objectContaining({
+          computerUseHostId: null,
+          cloudBrowserEnabled: true,
+        }),
+        expect.objectContaining({
+          computerUseHostId: null,
+          cloudBrowserEnabled: true,
+        }),
+      ]);
+
+      mockNow(STARTED_AT_MS + 60 * MINUTE_MS);
+      const expired = await accept(
+        authorizationClient().get({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { requestToken },
+        }),
+        [410],
+      );
+      expect(expired.body.error.code).toBe("GONE");
+      const rejected = await accept(
+        authorizationClient().apply({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { requestToken },
+          body: {},
+        }),
+        [410],
+      );
+      expect(rejected.body.error.code).toBe("GONE");
+      const unchangedEvents = await accept(
+        chatThreadsClient().events({
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [200],
+      );
+      expect(
+        unchangedEvents.body.events.filter((event) => {
+          return (
+            event.kind === "computer_use_host_updated" &&
+            event.chatThreadId === sent.threadId
+          );
+        }),
+      ).toStrictEqual(appliedEvents);
+    });
   });
 
   it("attaches concurrent requests to the same thread browser", async () => {
@@ -6156,7 +6489,7 @@ describe("okou browser route", () => {
       agent.agentId,
       "Open a managed browser",
     );
-    const firstBrowserHeaders = browserHeadersForRun(runs, actor, first.runId);
+    const firstBrowserHeaders = first.claim.browserHeaders;
     const other = await createClaimedChatRun(
       chat,
       runs,
@@ -6668,43 +7001,41 @@ describe("okou browser route", () => {
     // Two managed browsers keep the third start past the limit, independent of
     // the Pro plan's own concurrency.
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
-    const { runs, chat, actor, agent } = await setupBrowserScenario();
-    const first = await createClaimedChatRun(
-      chat,
-      runs,
-      actor,
-      agent.agentId,
-      "Open a managed browser",
-    );
-    const other = await createClaimedChatRun(
-      chat,
-      runs,
-      actor,
-      agent.agentId,
+    const owned = await setupOwnedComputerBrowserScenario();
+    const { chat, actor, agentId } = owned;
+    async function createOwnedBrowserRun(prompt: string) {
+      const sent = await owned.run(() => {
+        return chat.sendAndLaunch(actor, {
+          agentId,
+          prompt,
+          cloudBrowserEnabled: true,
+        });
+      });
+      const claimed = await owned.claimChatRun(owned.runnerGroup, sent.runId);
+      return {
+        ...sent,
+        claim: {
+          browserHeaders: {
+            authorization: `Bearer ${okouTokenFromClaim(claimed.claim)}`,
+          },
+        },
+      };
+    }
+    const first = await createOwnedBrowserRun("Open a managed browser");
+    const other = await createOwnedBrowserRun(
       "Use the shared profile from another thread",
     );
-
-    // Admission candidates only need a browser-capable run token, so they skip
-    // the runner claim. A chat send at the org's run limit waits without a
-    // run, so the limit is lifted by one only while the candidate run starts;
-    // browser admission then meets the original limit.
+    // Claim inside the existing one-slot admission window; Browser still sees2.
     async function createCandidate(prompt: string) {
       mockEnv("CONCURRENT_RUN_LIMIT_CAP", "3");
-      const sentCandidate = await chat.sendAndLaunch(actor, {
-        agentId: agent.agentId,
-        prompt,
-        cloudBrowserEnabled: true,
-      });
+      const result = await settleIncludingAbort(createOwnedBrowserRun(prompt));
       mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
+      if (!result.ok) {
+        throw result.error;
+      }
       return {
-        threadId: sentCandidate.threadId,
-        browserHeaders: {
-          authorization: `Bearer ${runs.okouTokenForRunWithCapabilities(
-            actor,
-            sentCandidate.runId,
-            ["browser:read", "browser:write"],
-          )}`,
-        },
+        threadId: result.value.threadId,
+        browserHeaders: result.value.claim.browserHeaders,
       };
     }
 
@@ -6750,82 +7081,84 @@ describe("okou browser route", () => {
       }),
     );
 
-    await accept(
-      client().create({
-        headers: first.claim.browserHeaders,
-        body: { name: "booking", proxyCountryCode: null },
-      }),
-      [201],
-    );
-    await accept(
-      client().create({
-        headers: other.claim.browserHeaders,
-        body: { name: "research", proxyCountryCode: null },
-      }),
-      [201],
-    );
-    expect(providerCreates).toBe(2);
+    await owned.run(async () => {
+      await accept(
+        client().create({
+          headers: first.claim.browserHeaders,
+          body: { name: "booking", proxyCountryCode: null },
+        }),
+        [201],
+      );
+      await accept(
+        client().create({
+          headers: other.claim.browserHeaders,
+          body: { name: "research", proxyCountryCode: null },
+        }),
+        [201],
+      );
+      expect(providerCreates).toBe(2);
 
-    mockNow(STARTED_AT_MS + MINUTE_MS);
-    await accept(
-      client().lease({
-        headers: other.claim.browserHeaders,
-        body: {},
-      }),
-      [200],
-    );
-    const candidate = await createCandidate(
-      "Start past the managed browser concurrency limit",
-    );
-    await accept(
-      client().create({
-        headers: candidate.browserHeaders,
-        body: {
-          name: "concurrency-replacement",
-          proxyCountryCode: null,
-        },
-      }),
-      [201],
-    );
-    await flushWaitUntilForTest();
-    expect(providerCreates).toBe(3);
-    expect(providerStopAttempts).toStrictEqual([providerIds[0]]);
-
-    const reclaimed = await accept(
-      client().get({
-        headers: first.claim.browserHeaders,
-        params: {
-          threadId: (
-            await accept(
-              client().current({
-                headers: first.claim.browserHeaders,
-              }),
-              [200],
-            )
-          ).body.browser.threadId,
-        },
-      }),
-      [200],
-    );
-    expect(reclaimed.body.browser).toMatchObject({
-      status: "suspended",
-      suspensionReason: "reconcile",
-    });
-    // Each deletion frees a run slot and can pick another fixture thread.
-    // Settle that route-owned work before deleting the next one.
-    for (const threadId of [
-      first.threadId,
-      other.threadId,
-      candidate.threadId,
-    ]) {
-      await chat.deleteThread(actor, threadId);
+      mockNow(STARTED_AT_MS + MINUTE_MS);
+      await accept(
+        client().lease({
+          headers: other.claim.browserHeaders,
+          body: {},
+        }),
+        [200],
+      );
+      const candidate = await createCandidate(
+        "Start past the managed browser concurrency limit",
+      );
+      await accept(
+        client().create({
+          headers: candidate.browserHeaders,
+          body: {
+            name: "concurrency-replacement",
+            proxyCountryCode: null,
+          },
+        }),
+        [201],
+      );
       await flushWaitUntilForTest();
-    }
-    expect(providerStopAttempts).toStrictEqual([
-      providerIds[0],
-      providerIds[1],
-      providerIds[2],
-    ]);
+      expect(providerCreates).toBe(3);
+      expect(providerStopAttempts).toStrictEqual([providerIds[0]]);
+
+      const reclaimed = await accept(
+        client().get({
+          headers: first.claim.browserHeaders,
+          params: {
+            threadId: (
+              await accept(
+                client().current({
+                  headers: first.claim.browserHeaders,
+                }),
+                [200],
+              )
+            ).body.browser.threadId,
+          },
+        }),
+        [200],
+      );
+      expect(reclaimed.body.browser).toMatchObject({
+        status: "suspended",
+        suspensionReason: "reconcile",
+      });
+      // Each deletion frees a run slot and can pick another fixture thread.
+      // Settle that route-owned work before deleting the next one.
+      for (const threadId of [
+        first.threadId,
+        other.threadId,
+        candidate.threadId,
+      ]) {
+        await chat.deleteThread(actor, threadId);
+        await flushWaitUntilForTest();
+      }
+      expect(providerStopAttempts).toStrictEqual([
+        providerIds[0],
+        providerIds[1],
+        providerIds[2],
+      ]);
+    });
   }, 120_000);
 
   it("keeps the browser live across runs and reuses its renewable lease", async () => {

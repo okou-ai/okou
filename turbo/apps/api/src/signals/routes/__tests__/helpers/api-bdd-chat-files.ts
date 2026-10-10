@@ -1,4 +1,3 @@
-import type { SystemSkillStorageResolution } from "../../../context/system-skill-storage-resolution";
 import { randomUUID } from "node:crypto";
 import {
   chatEventsContract,
@@ -67,7 +66,6 @@ import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
-import type { UsagePricingResolution } from "../../../context/usage-pricing-resolution";
 import {
   buildArtifactKey,
   sanitizeArtifactFilename,
@@ -140,11 +138,9 @@ type BddSendEventBody =
     };
 
 interface RequestSendEventOptions {
-  readonly usagePricingResolution?: UsagePricingResolution;
   /** Request headers beyond authentication, such as a preview bypass. */
   readonly extraHeaders?: Readonly<Record<string, string>>;
   /** Request-owned system skill storage lookups for the send's pick. */
-  readonly systemSkillStorageResolution?: SystemSkillStorageResolution;
 }
 
 /** Both body fields are optional on the contract, and an omitted
@@ -789,7 +785,9 @@ export function createChatFilesBddApi(context: TestContext) {
       threadId: string,
     ): Promise<ChatThreadDetail> {
       const response = await accept(
-        threadByIdClient().get({
+        setupAppWithRoutes({ context, routes: chatThreadRoutes })(
+          chatThreadByIdContract,
+        ).get({
           headers: authenticate(context, actor),
           params: { id: threadId },
         }),
@@ -1598,17 +1596,8 @@ export function createChatFilesBddApi(context: TestContext) {
     ) {
       const client = setupAppWithRoutes({
         context,
-        routes: chatFilesRoutes,
+        routes: chatEventsRoutes,
         ...(signal === undefined ? {} : { signal }),
-        ...(options.usagePricingResolution === undefined
-          ? {}
-          : { usagePricingResolution: options.usagePricingResolution }),
-        ...(options.systemSkillStorageResolution === undefined
-          ? {}
-          : {
-              systemSkillStorageResolution:
-                options.systemSkillStorageResolution,
-            }),
       })(chatEventsContract);
       const defaultModel =
         "prompt" in body &&

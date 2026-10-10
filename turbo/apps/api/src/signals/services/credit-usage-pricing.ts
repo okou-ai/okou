@@ -2,10 +2,6 @@ import { isAutoRunPreset } from "@okouai/core/auto-run-model";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import { logger } from "../../lib/log";
 import { usageUnderbillingFields } from "../usage-underbilling";
-import {
-  resolveUsagePricingProvider,
-  type UsagePricingResolution,
-} from "../context/usage-pricing-resolution";
 import type { CreditLowBalanceAlertArgs } from "./credit-low-balance-alert.service";
 import { findUsagePricing, usagePricingByKey } from "./built-in-route-pricing";
 
@@ -58,7 +54,6 @@ export function priceUsageEvents(
   records: readonly UsageEventRecord[],
   pricingRecords: readonly UsagePricingRecord[],
   orgId: string,
-  pricingResolution: UsagePricingResolution,
   reportErrors = true,
 ): PricedUsageEvent[] {
   const pricingByKey = usagePricingByKey(pricingRecords);
@@ -81,11 +76,7 @@ export function priceUsageEvents(
       });
       continue;
     }
-    const lookupProvider = resolveUsagePricingProvider(
-      pricingResolution,
-      record.kind,
-      record.provider,
-    );
+    const lookupProvider = record.provider;
     const lookup = findUsagePricing(
       pricingByKey,
       record.kind,

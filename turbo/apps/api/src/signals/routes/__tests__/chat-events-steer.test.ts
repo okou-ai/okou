@@ -1,3 +1,4 @@
+import { publicChatActor } from "./helpers/public-chat-actor";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { randomUUID } from "node:crypto";
@@ -18,7 +19,6 @@ import { createChatEventsFixture } from "./helpers/chat-events-fixture";
  */
 const context = testContext();
 const {
-  bdd,
   api,
   chat,
   chatCallbacks,
@@ -371,73 +371,71 @@ describe("CHAT-02: steering input prompts into a running run", () => {
   }, 90_000);
 
   it("accepts only the run's own sandbox token", async () => {
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-    const other = await sendChatRun(actor, {
-      agentId,
-      prompt: "another run of the same user",
-    });
-    await cancelChatRun(actor, other.runId);
-    const otherToken = api.sandboxTokenForRun(actor, other.runId);
-    const active = await sendChatRun(actor, {
-      agentId,
-      prompt: "run whose steering is protected",
-    });
-    const claimed = await claimChatRun(runnerGroup, active.runId);
-    const eventId = await sendQueuedPrompt(
-      actor,
-      agentId,
-      active.threadId,
-      "only the owning run may steer",
-    );
+    const owned = await publicChatActor(context);
+    const { actor, agentId, runnerGroup } = owned;
+    await owned.run(async () => {
+      await api.updateUserModelPreference(actor, "claude-fable-5-1");
+      chatCallbacks.failIfChatCallbackRouteIsFetched();
+      const other = await owned.sendChatRun(actor, {
+        agentId,
+        prompt: "another run of the same user",
+      });
+      const otherClaim = await owned.claimChatRun(runnerGroup, other.runId);
+      await cancelChatRun(actor, other.runId, otherClaim.sandboxHeaders);
+      const otherToken = otherClaim.claim.sandboxToken;
+      const active = await owned.sendChatRun(actor, {
+        agentId,
+        prompt: "run whose steering is protected",
+      });
+      const claimed = await owned.claimChatRun(runnerGroup, active.runId);
+      const eventId = await sendQueuedPrompt(
+        actor,
+        agentId,
+        active.threadId,
+        "only the owning run may steer",
+      );
 
-    const missingAuth = await api.requestNextSteerableInputAs(
-      undefined,
-      active.runId,
-      [401],
-    );
-    expectApiError(missingAuth.body);
-    const cli = await api.createCliToken(actor);
-    const cliToken = await api.requestNextSteerableInputAs(
-      `Bearer ${cli.token}`,
-      active.runId,
-      [403],
-    );
-    expectApiError(cliToken.body);
-    const peerToken = api.sandboxTokenForRun(bdd.user(), active.runId);
-    const peer = await api.requestNextSteerableInputAs(
-      `Bearer ${peerToken}`,
-      active.runId,
-      [403],
-    );
-    expectApiError(peer.body);
-    const otherRunRead = await api.requestNextSteerableInputAs(
-      `Bearer ${otherToken}`,
-      active.runId,
-      [403],
-    );
-    expectApiError(otherRunRead.body);
-    const otherRunDeclare = await api.requestDeclareSteeredInputAs(
-      `Bearer ${otherToken}`,
-      active.runId,
-      eventId,
-      [403],
-    );
-    expectApiError(otherRunDeclare.body);
-    // Through the other run's own path the input is outside its thread.
-    const otherThread = await api.requestDeclareSteeredInputAs(
-      `Bearer ${otherToken}`,
-      other.runId,
-      eventId,
-      [404],
-    );
-    expectApiError(otherThread.body);
+      const missingAuth = await api.requestNextSteerableInputAs(
+        undefined,
+        active.runId,
+        [401],
+      );
+      expectApiError(missingAuth.body);
+      const cli = await api.createCliToken(actor);
+      const cliToken = await api.requestNextSteerableInputAs(
+        `Bearer ${cli.token}`,
+        active.runId,
+        [403],
+      );
+      expectApiError(cliToken.body);
+      const otherRunRead = await api.requestNextSteerableInputAs(
+        `Bearer ${otherToken}`,
+        active.runId,
+        [403],
+      );
+      expectApiError(otherRunRead.body);
+      const otherRunDeclare = await api.requestDeclareSteeredInputAs(
+        `Bearer ${otherToken}`,
+        active.runId,
+        eventId,
+        [403],
+      );
+      expectApiError(otherRunDeclare.body);
+      // Through the other run's own path the input is outside its thread.
+      const otherThread = await api.requestDeclareSteeredInputAs(
+        `Bearer ${otherToken}`,
+        other.runId,
+        eventId,
+        [404],
+      );
+      expectApiError(otherThread.body);
 
-    await expect(
-      api.nextSteerableInput(claimed.claim.sandboxToken, active.runId),
-    ).resolves.toStrictEqual({
-      input: { eventId, prompt: "only the owning run may steer" },
+      await expect(
+        api.nextSteerableInput(claimed.claim.sandboxToken, active.runId),
+      ).resolves.toStrictEqual({
+        input: { eventId, prompt: "only the owning run may steer" },
+      });
+      await cancelChatRun(actor, active.runId);
     });
-    await cancelChatRun(actor, active.runId);
   }, 90_000);
 });

@@ -2,7 +2,7 @@
 //!
 //! Idle preparation protects current/retained runtime readers. Terminal cache preparation instead
 //! validates those anchors under the canonical managed runtime parent and removes all its children.
-//! The terminal caller must finish checkpoint, diagnostic, log and sidecar readers first; it must
+//! The terminal caller must finish checkpoint, identity, diagnostic and log readers first; it must
 //! terminate the sandbox after cleanup rather than return it to idle or handoff.
 //!
 //! This module is the guest-side safety boundary for idle admission. The runner invokes the helper
@@ -188,8 +188,31 @@ pub fn prepare_from_stdin() -> Result<ReusePreparationReport, ReusePreparationEr
 /// # Errors
 ///
 /// Returns the same request, containment, cleanup and inspection failures as [`prepare_from_stdin`].
-pub fn prepare_for_cache_from_stdin() -> Result<ReusePreparationReport, ReusePreparationError> {
-    prepare_from_stdin_with_retention(RuntimeRetention::TerminalCache)
+pub fn prepare_for_cache_from_stdin() -> Result<
+    guest_contracts::home_cache_history::TerminalHomeCachePreparationReport,
+    ReusePreparationError,
+> {
+    let mut bytes = Vec::new();
+    io::stdin()
+        .take(MAX_REQUEST_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(ReusePreparationError::InvalidRequest)?;
+    if bytes.len() as u64 > MAX_REQUEST_BYTES {
+        return Err(invalid_path("terminal request exceeds size limit"));
+    }
+    let request: guest_contracts::home_cache_history::TerminalHomeCachePreparationRequest =
+        serde_json::from_slice(&bytes).map_err(|_| invalid_path("invalid terminal request"))?;
+    request
+        .validate()
+        .map_err(|_| invalid_path("invalid publication generation"))?;
+    prepare(
+        &ReusePreparationRequest {
+            current_runtime_dir: request.current_runtime_dir,
+            retained_runtime_dir: request.retained_runtime_dir,
+        },
+        RuntimeRetention::TerminalCache,
+        Some(&request.generation),
+    )
 }
 
 fn prepare_from_stdin_with_retention(
@@ -209,13 +232,17 @@ fn prepare_from_stdin_with_retention(
     let request = serde_json::from_slice(&bytes).map_err(|error| {
         ReusePreparationError::InvalidRequest(io::Error::new(io::ErrorKind::InvalidData, error))
     })?;
-    prepare(&request, retention)
+    prepare(&request, retention, None).map(|report| report.cleanup)
 }
 
 fn prepare(
     request: &ReusePreparationRequest,
     retention: RuntimeRetention,
-) -> Result<ReusePreparationReport, ReusePreparationError> {
+    generation: Option<&str>,
+) -> Result<
+    guest_contracts::home_cache_history::TerminalHomeCachePreparationReport,
+    ReusePreparationError,
+> {
     let current_path = Path::new(&request.current_runtime_dir);
     let (runtime_parent, current_name) = split_runtime_path(current_path)?;
     if retention == RuntimeRetention::TerminalCache && runtime_parent != cache_runtime_parent() {
@@ -244,10 +271,23 @@ fn prepare(
         }
     }
 
-    if retention == RuntimeRetention::TerminalCache {
-        // The opened anchors prove scope/mount safety, not authority to retain private inputs.
+    let history_proof = if retention == RuntimeRetention::TerminalCache {
+        // Containment and both descriptor-owned anchors have been proven before
+        // reading final metadata or changing any surviving proof. Capture facts
+        // from actual finalized bytes, then remove private runtime namespaces.
+        let generation =
+            generation.ok_or_else(|| invalid_path("missing publication generation"))?;
+        let proof = crate::home_cache_history::capture(
+            current_path,
+            request.retained_runtime_dir.as_deref().map(Path::new),
+            generation,
+        )
+        .map_err(ReusePreparationError::Cleanup)?;
         protected.clear();
-    }
+        proof
+    } else {
+        None
+    };
     remove_managed_codex_auth().map_err(ReusePreparationError::Cleanup)?;
 
     let before = rootfs_capacity().map_err(ReusePreparationError::Inspection)?;
@@ -288,11 +328,16 @@ fn prepare(
         }
     }
     let after = rootfs_capacity().map_err(ReusePreparationError::Inspection)?;
-    Ok(ReusePreparationReport {
-        before,
-        after,
-        removed_entries,
-    })
+    Ok(
+        guest_contracts::home_cache_history::TerminalHomeCachePreparationReport {
+            cleanup: ReusePreparationReport {
+                before,
+                after,
+                removed_entries,
+            },
+            history_proof,
+        },
+    )
 }
 
 fn cache_runtime_parent() -> PathBuf {

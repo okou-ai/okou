@@ -20,10 +20,10 @@ use runner_executor::test_fixtures;
 use runner_executor::{executor, telemetry};
 use runner_host::idle_prune_control;
 use runner_lifecycle::{
-    guest_timezone, idle_pool, lifecycle, prefetch, resource_budget, status, workspace_image_cache,
+    guest_timezone, home_image_cache, idle_pool, lifecycle, prefetch, resource_budget, status,
 };
 #[cfg(test)]
-use runner_lifecycle::{idle_reuse_preparation, restored_session_identity, workspace_promotion};
+use runner_lifecycle::{home_promotion, idle_reuse_preparation, restored_session_identity};
 #[cfg(test)]
 use runner_network::network_log_manager;
 use runner_network::{dns, kmsg_log, network_log_drain, network_logs, proxy};

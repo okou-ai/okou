@@ -3,33 +3,6 @@ use guest_contracts::session_history_identity::{
     SessionHistoryFramework, SessionHistoryIdentity, SessionHistoryRefKind, SessionHistorySourceRef,
 };
 use sha2::{Digest, Sha256};
-use tokio_util::sync::CancellationToken;
-
-use crate::executor::workspace_session_history_materializer::WorkspaceSessionHistoryMaterializer;
-use crate::executor::{ExecutorConfig, SessionHistoryRestorePlan, effective_cli_framework};
-use crate::workspace_image_cache::WorkspaceSessionHistorySidecar;
-use runner_types::types::ExecutionContext;
-
-pub(super) async fn local_sidecar_restore_plan(
-    context: &ExecutionContext,
-    config: &ExecutorConfig,
-    sidecar: WorkspaceSessionHistorySidecar,
-    cancel: CancellationToken,
-) -> SessionHistoryRestorePlan {
-    let materializer = WorkspaceSessionHistoryMaterializer::start(
-        sidecar,
-        context.resume_session.as_ref(),
-        effective_cli_framework(&context.cli_agent_type),
-        &config.session_history_cpu,
-        cancel,
-    )
-    .await;
-    SessionHistoryRestorePlan::LocalSidecar {
-        materializer,
-        fallback: None,
-    }
-}
-
 pub(super) fn claude_history_path(session_id: &str) -> String {
     format!("/home/user/.claude/projects/-home-user-workspace/{session_id}.jsonl")
 }

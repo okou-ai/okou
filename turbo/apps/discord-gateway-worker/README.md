@@ -6,16 +6,17 @@ Durable Object. The canonical API owns identity, access, Chat/Run admission and
 responses. The Worker only forwards the versioned raw-event contract to
 `POST /api/internal/discord/gateway`.
 
-The relay ships disabled. Merging or deploying this package does not start a
-Gateway session. There is no cron, automatic release deployment or automatic
-bootstrap. OAuth onboarding and production activation are outside this slice.
+The relay ships disabled. Deployment is manual and defaults to disabled;
+operators can explicitly allow startup with the `enable_gateway` input.
+The first Gateway session still requires an authenticated `/start`. There is
+no cron, automatic release deployment or automatic bootstrap.
 
 ## Environments and bindings
 
-| Wrangler environment | Worker name                       | Doppler project/config |
-| -------------------- | --------------------------------- | ---------------------- |
-| `test`               | `okou-discord-gateway-test`       | `vm0/dev`              |
-| `production`         | `okou-discord-gateway-production` | `vm0/prd`              |
+| Wrangler environment | Worker name                       | GitHub environment |
+| -------------------- | --------------------------------- | ------------------ |
+| `test`               | `okou-discord-gateway-test`       | `test`             |
+| `production`         | `okou-discord-gateway-production` | `production`       |
 
 Each environment binds `DISCORD_GATEWAY` to its own `DiscordGateway` namespace.
 The object identity includes environment, application ID and shard ID. Separate
@@ -29,17 +30,17 @@ Discord actually requires sharding (at 2,500 guilds) it closes the connection
 with `4011`, a fatal close that stops the relay until a multi-shard Identify
 coordinator exists.
 
-| Variable                         | Checked-in value or role                                                                |
-| -------------------------------- | --------------------------------------------------------------------------------------- |
-| `DISCORD_GATEWAY_ENABLED`        | `false` in every environment; deployment also forces `false`                            |
-| `DISCORD_GATEWAY_ENVIRONMENT`    | `test` or `production`                                                                  |
-| `DISCORD_GATEWAY_SHARD_ID`       | `0`                                                                                     |
-| `DISCORD_GATEWAY_SHARD_COUNT`    | `1`; multiple shards are rejected until a shared Identify-budget coordinator exists     |
-| `DISCORD_APPLICATION_ID`         | Exact Discord application snowflake                                                     |
-| `DISCORD_BOT_TOKEN`              | Application-level bot credential                                                        |
-| `DISCORD_GATEWAY_SECRET`         | At least 32 characters; shared with the canonical API for HMAC-SHA256                   |
-| `DISCORD_GATEWAY_CONTROL_SECRET` | Separate random credential of at least 32 characters for administrative HTTP operations |
-| `DISCORD_API_ORIGIN`             | Explicit HTTPS API origin, without credentials, path, query or trailing slash           |
+| Variable                         | Checked-in value or role                                                                        |
+| -------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `DISCORD_GATEWAY_ENABLED`        | Defaults to `false`; manual deployment requires explicit `enable_gateway=true` to allow startup |
+| `DISCORD_GATEWAY_ENVIRONMENT`    | `test` or `production`                                                                          |
+| `DISCORD_GATEWAY_SHARD_ID`       | `0`                                                                                             |
+| `DISCORD_GATEWAY_SHARD_COUNT`    | `1`; multiple shards are rejected until a shared Identify-budget coordinator exists             |
+| `DISCORD_APPLICATION_ID`         | Exact Discord application snowflake                                                             |
+| `DISCORD_BOT_TOKEN`              | Application-level bot credential                                                                |
+| `DISCORD_GATEWAY_SECRET`         | At least 32 characters; shared with the canonical API for HMAC-SHA256                           |
+| `DISCORD_GATEWAY_CONTROL_SECRET` | Separate random credential of at least 32 characters for administrative HTTP operations         |
+| `DISCORD_API_ORIGIN`             | Explicit HTTPS API origin, without credentials, path, query or trailing slash                   |
 
 The five application/origin/secret values are supplied as encrypted Worker
 bindings. Never store them in `wrangler.jsonc`, checked-in environment files,
@@ -61,10 +62,10 @@ applies to Gateway events on the next Identify, not by enabling the relay.
 
 ## Supported deployment and secret provisioning
 
-The manual **Deploy Disabled Discord Gateway** workflow is the deployment path.
+The manual **Deploy Discord Gateway** workflow is the deployment path.
 It only accepts `main`, uses the pinned repository toolchain, respects the
-selected GitHub environment, fetches the matching Doppler configuration through
-OIDC, and supplies version-scoped secrets using Wrangler's `--secrets-file`.
+selected GitHub environment, reads its GitHub variables and secrets, and supplies
+version-scoped encrypted bindings using Wrangler's `--secrets-file`.
 The private temporary file is removed on success and failure. Credential values
 never enter command arguments.
 
@@ -75,11 +76,12 @@ Before an authorized deployment, an operator must configure:
 2. `CF_ACCOUNT_ID` and `CF_API_WORKER_DEPLOY_API_TOKEN` with access to the target
    Worker and Durable Objects. These use the existing Cloudflare deployment
    variable/secret names. No token is provisioned by this change.
-3. `DOPPLER_SERVICE_IDENTITY_ID` with the selected environment's GitHub OIDC
-   subject permitted. Store `DISCORD_APPLICATION_ID`, `DISCORD_BOT_TOKEN`,
-   `DISCORD_GATEWAY_SECRET`, `DISCORD_GATEWAY_CONTROL_SECRET` and
-   `DISCORD_API_ORIGIN` in `vm0/dev` or `vm0/prd`. Store the same application ID,
-   bot token and HMAC secret in the API's authoritative environment.
+3. GitHub environment variables `DISCORD_APPLICATION_ID` and
+   `DISCORD_API_ORIGIN`, and secrets `DISCORD_BOT_TOKEN`,
+   `DISCORD_GATEWAY_SECRET` and `DISCORD_GATEWAY_CONTROL_SECRET`. The application
+   ID, bot token and HMAC secret reuse the API's authoritative GitHub environment
+   configuration; no duplicate Doppler values are required. Generate a separate
+   random control secret of at least 32 characters.
 
 After separate authorization, dispatch the disabled test deployment with:
 
@@ -88,10 +90,19 @@ gh workflow run discord-gateway-deploy.yml --ref main -f environment=test
 ```
 
 Use `environment=production` only with production deployment authorization.
-The workflow does not call `/start` and cannot enable startup. Activation
-requires a separately reviewed configuration/operations change after API and
-test-guild acceptance; editing a source variable alone does not bypass the
-deployment script's forced disabled value.
+After verifying the canonical API ingress and application configuration, an
+authorized operator can allow startup with:
+
+```bash
+gh workflow run discord-gateway-deploy.yml --ref main -f environment=production -F enable_gateway=true
+```
+
+The workflow does not call `/start`. After deployment, explicitly bootstrap
+through the authenticated control endpoint and verify `/health` reports a
+connected, resumable session without a fatal error or delivery backlog. An
+already-running relay can resume after an enabled redeployment; deploying with
+the default `enable_gateway=false` stops it while retaining durable state.
+Editing a source variable alone does not override the deployment input.
 
 Cloudflare creates the environment-specific Durable Object namespace with
 migration `v1`. Preserve this namespace and its migration history during
@@ -181,10 +192,10 @@ corepack pnpm exec vitest run --project=@okouai/discord-gateway-worker
 ```
 
 `build` is a local Wrangler dry run; it does not deploy or create a namespace.
-CI builds the relay and runs its worker protocol/storage tests in the existing
-required `test-other` job. The deployment script boundary tests verify disabled
-startup, environment selection, credential handling and failure cleanup without
-contacting Cloudflare or Discord.
+CI builds the relay and runs its worker protocol/storage tests in the
+`test-discord-gateway` job. The deployment script boundary tests verify startup
+defaults to disabled and accepts explicit enablement, environment selection,
+credential handling and failure cleanup without contacting Cloudflare or Discord.
 
 A successful dry run or CI run does not validate a live Discord guild, actual
 Cloudflare migration, deployed secret availability or Discord application

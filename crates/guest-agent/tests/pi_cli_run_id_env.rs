@@ -83,10 +83,10 @@ test -n "${OKOU_RUN_ID:-}"
 test -z "${OKOU_PI_LAUNCH_CONFIG:-}"
 test -n "${OKOU_PI_LAUNCH_PAYLOAD_FILE:-}"
 test -n "${PI_FINAL_ASSISTANT_EVENT_PATH:-}"
-test -n "${npm_config_cache:-}"
+test -n "${HOME:-}"
 printf '%s' "$OKOU_RUN_ID" > "$RUN_ID_CAPTURE_PATH"
 printf '%s' "$OKOU_PI_LAUNCH_PAYLOAD_FILE" > "$PI_PAYLOAD_CAPTURE_PATH"
-printf '%s' "$npm_config_cache" > "$NPM_CACHE_CAPTURE_PATH"
+printf '%s' "${npm_config_cache:-$HOME/.npm}" > "$NPM_CACHE_CAPTURE_PATH"
 IFS= read -r state_command
 case "$state_command" in
   *'"type":"get_state"'*) ;;
@@ -444,7 +444,7 @@ fi
     assert_eq!(std::fs::read_to_string(capture_path)?, run_id);
     assert_eq!(
         std::fs::read_to_string(npm_cache_capture_path)?,
-        "/home/user/workspace/.vm0/cache/npm"
+        format!("{}/.npm", tmp.path().display())
     );
 
     let payload_path = std::fs::read_to_string(payload_capture_path)?;

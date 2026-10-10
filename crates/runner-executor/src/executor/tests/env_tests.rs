@@ -24,9 +24,7 @@ use super::support::{
 use crate::error::{RunnerError, RunnerResult};
 use runner_types::ids::RunId;
 use runner_types::storage_manifest::StorageManifest;
-use runner_types::types::{
-    ExecutionContext, ResumeSession, SandboxReuseResult, WorkspaceReuseResult,
-};
+use runner_types::types::{ExecutionContext, HomeReuseResult, ResumeSession, SandboxReuseResult};
 
 fn validate_context_for_test(ctx: &ExecutionContext) -> Result<(), String> {
     let sandbox_id = SandboxId::new_v4().to_string();
@@ -438,7 +436,7 @@ fn build_env_json_required_keys() {
         "https://api.example.com",
         sandbox_id,
         SandboxReuseResult::Reused,
-        WorkspaceReuseResult::SandboxReused,
+        HomeReuseResult::SandboxReused,
         &HostEnv::default(),
     )
     .expect("test env should build");

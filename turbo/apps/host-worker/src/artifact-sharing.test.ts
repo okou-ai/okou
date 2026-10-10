@@ -14,6 +14,7 @@ import {
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { type ArtifactSharePolicy } from "@okouai/api-contracts/contracts/artifact-shares";
+import { ARTIFACT_OG_BRAND } from "@okouai/core/artifact-og";
 import worker from "./index";
 import { fetchWorker, memoryCache } from "./test-helpers";
 
@@ -34,7 +35,12 @@ afterAll(() => {
   return server.close();
 });
 
-function fixture(html = false, extension = "pdf", token = publicToken) {
+function fixture(
+  html = false,
+  extension = "pdf",
+  token = publicToken,
+  contentDisposition?: string,
+) {
   const files = {
     "/index.html": {
       path: "/index.html",
@@ -157,7 +163,10 @@ function fixture(html = false, extension = "pdf", token = publicToken) {
                 : value,
             ).body!,
             httpEtag: '"file"',
-            writeHttpMetadata() {},
+            writeHttpMetadata(headers) {
+              if (contentDisposition)
+                headers.set("Content-Disposition", contentDisposition);
+            },
           };
     },
   };
@@ -192,42 +201,142 @@ afterEach(() => {
   server.resetHandlers();
 });
 
-test("preserves HTML attachment bytes on fresh and cached reads when OG is enabled", async () => {
-  const f = fixture(false, "html");
-  if (f.policy.target.kind !== "file") {
-    throw new Error("Expected a file fixture");
-  }
-  f.policy.target.contentType = "text/html";
-  const html =
-    '<!doctype html><html><head><title>Original report</title><meta property="og:image" content="cover.png"></head><body>Downloaded report</body></html>';
-  f.objects.set(policyKey, JSON.stringify(f.policy));
-  f.objects.set(f.policy.target.key, html);
-  server.use(
-    http.get("https://authority.test/api/artifact-og/metadata", () => {
-      return HttpResponse.json({
-        available: true,
-        title: "Published report",
-        description: "Public summary",
-        imageUrl: "https://authority.test/api/artifact-og/image?version=one",
-        url: siteOrigin,
+test.each(
+  [
+    {
+      extension: "html",
+      contentType: "text/html",
+      body: '<!doctype html><html><head><title>Original report</title><meta property="og:image" content="cover.png"></head><body>Report 🚀</body></html>',
+    },
+    {
+      extension: "svg",
+      contentType: "image/svg+xml",
+      body: '<svg xmlns="http://www.w3.org/2000/svg"><text>Report 🚀</text></svg>',
+    },
+    {
+      extension: "xml",
+      contentType: "application/xml",
+      body: '<?xml version="1.0" encoding="UTF-8"?><report>Report 🚀</report>',
+    },
+  ]
+    .flatMap((file) => {
+      return (["publication", "legacy-file"] as const).map((delivery) => {
+        return { ...file, delivery };
       });
+    })
+    .flatMap((file) => {
+      return (file.extension === "html" ? [true, false] : [true]).map(
+        (enabled) => {
+          return { ...file, enabled };
+        },
+      );
     }),
-  );
-  const env = { ...f.env, ARTIFACT_OG_API_ORIGIN: "https://authority.test" };
-  for (let read = 0; read < 2; read += 1) {
-    const response = await fetchWorker(
-      new Request(`https://a.okou.io/${publicToken}.html`),
+)(
+  "$delivery $extension previews preserve bytes inline on fresh, warm and old cached reads with OG enabled=$enabled",
+  async ({ extension, contentType, body, delivery, enabled }) => {
+    const f = fixture(
+      false,
+      extension,
+      publicToken,
+      `attachment; filename="report.${extension}"`,
+    );
+    if (f.policy.target.kind !== "file") {
+      throw new Error("Expected a file fixture");
+    }
+    f.policy.target.contentType = contentType;
+    f.objects.set(policyKey, JSON.stringify(f.policy));
+    f.objects.set(f.policy.target.key, body);
+    if (delivery === "legacy-file") {
+      const key = `artifacts/${publicToken}.${extension}`;
+      f.objects.set(key, body);
+      f.objects.set(
+        artifactDeliveryKey("okou", "file", `${publicToken}.${extension}`),
+        JSON.stringify({
+          version: 1,
+          kind: "legacy-file",
+          publicBrand: "okou",
+          audience: "public",
+          key,
+          filename: `report.${extension}`,
+          contentType,
+        }),
+      );
+    }
+    let metadataRequests = 0;
+    server.use(
+      http.get("https://authority.test/api/artifact-og/metadata", () => {
+        metadataRequests += 1;
+        return HttpResponse.json(
+          enabled
+            ? {
+                available: true,
+                title: "Published report",
+                description: "Public summary",
+                imageUrl:
+                  "https://authority.test/api/artifact-og/image?version=one",
+                url: siteOrigin,
+              }
+            : { available: false },
+        );
+      }),
+    );
+    const env = {
+      ...f.env,
+      PUBLIC_ARTIFACTS_BUCKET: f.env.HOSTED_SITES_BUCKET,
+      ARTIFACT_OG_API_ORIGIN: "https://authority.test",
+    };
+    const url = `https://a.okou.io/${publicToken}.${extension}`;
+    const bytes = new TextEncoder().encode(body);
+    for (let read = 0; read < 3; read += 1) {
+      const response = await fetchWorker(new Request(url), env);
+      expect(response.status).toBe(200);
+      expect(response.headers.get("Content-Type"), `read ${read}`).toBe(
+        contentType,
+      );
+      expect(response.headers.get("Content-Disposition")).toBeNull();
+      expect(response.headers.get("Content-Security-Policy")).toBe(
+        "sandbox allow-scripts allow-same-origin allow-forms allow-popups allow-downloads; worker-src 'none'",
+      );
+      expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+      expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
+      expect(new Uint8Array(await response.arrayBuffer())).toStrictEqual(bytes);
+      expect(response.headers.get("Content-Length")).toBe(String(bytes.length));
+      expect(response.headers.get("ETag")).toBe('"file"');
+      if (read === 1) {
+        // Simulate bytes cached before the delivery-header fix was deployed.
+        const stored = f.cache.put.mock.calls[0];
+        if (!stored) throw new Error("Expected a cached file response");
+        const headers = new Headers(response.headers);
+        headers.set("Content-Disposition", "attachment; filename=old.html");
+        headers.delete("Content-Security-Policy");
+        await f.cache.put(stored[0], new Response(body, { headers }));
+      }
+    }
+    const head = await fetchWorker(new Request(url, { method: "HEAD" }), env);
+    expect(head.status).toBe(200);
+    expect(head.headers.get("Content-Disposition")).toBeNull();
+    expect(head.headers.get("Content-Length")).toBe(String(bytes.length));
+    expect(await head.text()).toBe("");
+    const ranged = await fetchWorker(
+      new Request(url, { headers: { Range: "bytes=0-7" } }),
       env,
     );
-    expect(response.status).toBe(200);
-    expect(response.headers.get("Content-Disposition")).toBe(
-      "attachment; filename*=UTF-8''report.html",
+    expect(ranged.status).toBe(206);
+    expect(ranged.headers.get("Content-Disposition")).toBeNull();
+    expect(ranged.headers.get("Content-Range")).toBe(
+      `bytes 0-7/${bytes.length}`,
     );
-    expect(await response.text()).toBe(html);
-    expect(response.headers.get("Content-Length")).toBe(String(html.length));
-    expect(response.headers.get("ETag")).toBe('"file"');
-  }
-});
+    expect(new Uint8Array(await ranged.arrayBuffer())).toStrictEqual(
+      bytes.slice(0, 8),
+    );
+    expect(metadataRequests).toBe(0);
+    if (delivery === "publication") {
+      f.policy.status = "revoked";
+      f.objects.set(policyKey, JSON.stringify(f.policy));
+      expect((await fetchWorker(new Request(url), env)).status).toBe(404);
+    }
+  },
+);
 
 test("rechecks OG metadata on cached HTML and denies revoked shares before reading the cache", async () => {
   const f = fixture(true);
@@ -268,7 +377,9 @@ test("rechecks OG metadata on cached HTML and denies revoked shares before readi
   const second = await fetchWorker(new Request(siteOrigin), env);
   expect(second.status).toBe(200);
   expect(second.headers.get("Content-Type")).toBe("text/html");
-  expect(await second.text()).not.toContain('property="og:image"');
+  expect(await second.text()).toContain(
+    `property="og:image" content="${ARTIFACT_OG_BRAND.imageUrl}"`,
+  );
   expect(f.cache.match.mock.calls.length).toBeGreaterThan(cachedReads);
   expect(lookups).toBe(2);
   f.policy.status = "revoked";
@@ -279,8 +390,9 @@ test("rechecks OG metadata on cached HTML and denies revoked shares before readi
 
 test("rechecks the preview switch for relative images on cached HTML and denies revoked shares", async () => {
   const f = fixture(true);
-  const original =
-    '<head><meta property="og:image" content="image.png"></head><body>Report</body>';
+  const documentMetadata =
+    '<title>Original report</title><meta name="description" content="Original summary"><link rel="canonical" href="https://reports.example/report">';
+  const original = `<head>${documentMetadata}<meta property="og:image" content="image.png"></head><body>Report</body>`;
   f.objects.set(
     `shared-artifacts/okou/${snapshotId}/${fileId}/index.html`,
     original,
@@ -311,7 +423,18 @@ test("rechecks the preview switch for relative images on cached HTML and denies 
   }
   enabled = false;
   const disabled = await fetchWorker(new Request(siteOrigin), env);
-  expect(await disabled.text()).toBe(original);
+  const html = await disabled.text();
+  expect(html).toContain(
+    `property="og:image" content="${ARTIFACT_OG_BRAND.imageUrl}"`,
+  );
+  expect(html).toContain(
+    `name="twitter:image" content="${ARTIFACT_OG_BRAND.imageUrl}"`,
+  );
+  expect(html).toContain(documentMetadata);
+  expect(html).toContain('property="og:title" content="Okou"');
+  expect(html).toContain("<body>Report</body>");
+  expect(disabled.headers.get("ETag")).toBeNull();
+  expect(disabled.headers.get("Cache-Control")).toBe("private, no-store");
   f.policy.status = "revoked";
   f.objects.set(policyKey, JSON.stringify(f.policy));
   expect((await fetchWorker(new Request(siteOrigin), env)).status).toBe(404);

@@ -1,12 +1,18 @@
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { chatThreadDraftContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { voiceIoQuotaContract } from "@okouai/api-contracts/contracts/voice-io-quota";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { cleanup, screen, within } from "@testing-library/react";
 import { openDB, type DBSchema } from "idb";
 import { HttpResponse } from "msw";
-import { expect, vi, describe, beforeEach, it } from "vitest";
+import { expect, vi, describe, beforeEach, it, test } from "vitest";
 
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  fill,
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { resetSignal } from "../../../signals/utils.ts";
 import {
@@ -81,6 +87,27 @@ async function uploadedAudio(request: Request) {
   }
   return await file.arrayBuffer();
 }
+
+test("keeps forward suggestions caret-anchored when composer-anchored suggestions are enabled", async () => {
+  installVoiceBoundaries();
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    featureSwitches: {
+      [FeatureSwitchKey.ComposerAnchoredSuggestions]: true,
+    },
+  });
+  const dialog = await openForwardComposer(FORWARD_TARGET_NAME);
+  const editor = within(dialog).getByRole("textbox", { name: "Add a message" });
+  await fill(editor, "/");
+  const menu = await screen.findByTestId("slash-workflow-menu");
+  const [first] = queryAllByRoleFast("button", menu);
+  expect(first).toHaveTextContent("Presentation");
+  expect(first).toHaveAttribute("data-active", "true");
+  expect(
+    document.querySelector('[data-slot="slash-template-flyout"]'),
+  ).toBeInTheDocument();
+});
 
 describe("reuse an unfinished agent recording in the forward dialog without replacing it", () => {
   async function prepareRecording() {

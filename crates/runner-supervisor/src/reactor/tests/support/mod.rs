@@ -11,10 +11,10 @@ pub(super) use self::env::{
     test_runner_identity, two_profiles,
 };
 pub(super) use self::idle_pool::{
-    SpeculativeIdleSeedSpec, TestParkedIdleCandidateSpec, WorkspacePromotionSeedSpec,
-    seed_idle_pool, seed_idle_pool_with_history_generation, seed_idle_pool_with_overrides,
+    HomePromotionSeedSpec, SpeculativeIdleSeedSpec, TestParkedIdleCandidateSpec,
+    seed_home_cache_state, seed_idle_pool, seed_idle_pool_with_history_generation,
+    seed_idle_pool_with_home_promotion, seed_idle_pool_with_overrides,
     seed_idle_pool_with_speculative_timezone, seed_idle_pool_with_timing,
-    seed_idle_pool_with_workspace_promotion, seed_workspace_cache_state,
 };
 pub(super) use self::jobs::{context_with_session, minimal_context, push_job, shutdown};
 pub(super) use self::status::{
@@ -24,7 +24,7 @@ pub(super) use self::status::{
 };
 pub(super) use self::wait::{
     assert_run_exits_within, wait_budget_count, wait_budget_exhausted_reactor, wait_cancel_handle,
-    wait_cancel_token, wait_cancel_token_removed, wait_discover_entered, wait_idle_pool_len,
-    wait_idle_pool_reuse_keys, wait_parking_state, wait_sandbox_lifecycle_counts,
-    wait_usage_flush_requested, wait_workspace_cache_reuse_keys,
+    wait_cancel_token, wait_cancel_token_removed, wait_discover_entered,
+    wait_home_cache_reuse_keys, wait_idle_pool_len, wait_idle_pool_reuse_keys, wait_parking_state,
+    wait_sandbox_lifecycle_counts, wait_usage_flush_requested,
 };

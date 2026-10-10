@@ -1,6 +1,6 @@
 {
   "name": "@okouai/pi-agent-runtime",
-  "version": "1.49.3",
+  "version": "1.49.4",
   "private": true,
   "type": "module",
   "exports": {
@@ -27,8 +27,8 @@
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
-    "@earendil-works/pi-ai": "0.87.1",
-    "@earendil-works/pi-coding-agent": "0.87.1",
+    "@earendil-works/pi-ai": "1.1.0",
+    "@earendil-works/pi-coding-agent": "1.1.0",
     "@okouai/api-contracts": "workspace:*",
     "gpt-tokenizer": "^3.4.0",
     "yaml": "^2.9.0"

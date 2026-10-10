@@ -1,0 +1,5 @@
+The first-parent main commit that adds this marker is the minimum API rollback
+version for notification-driven Native Desktop command pickup. Current Desktop
+requires the shared realtime token's computer-use-host capability, the registered
+connection's subscription descriptor, and heartbeat pending-command hints.
+Earlier APIs cannot serve this protocol. See docs/deployment-compatibility.md.

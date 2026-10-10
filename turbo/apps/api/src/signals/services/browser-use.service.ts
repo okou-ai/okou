@@ -2693,25 +2693,6 @@ function browserUseMixedControlWriterFunction(): string {
         }`;
 }
 
-function needsIndependentBrowserUseVerification(
-  fields: readonly ResolvedBrowserUseUserActionField[],
-): boolean {
-  return fields.some((field) => {
-    return (
-      field.radio !== undefined ||
-      [
-        "date",
-        "time",
-        "datetime-local",
-        "month",
-        "week",
-        "range",
-        "color",
-      ].includes(field.inspection.inputType)
-    );
-  });
-}
-
 async function writeBrowserUseMixedControlFields(
   socket: WebSocket,
   args: {
@@ -2814,30 +2795,29 @@ async function writeBrowserUseMixedControlFields(
   if (result.result.value !== true) {
     throw new BrowserUseUserActionMutationError(true);
   }
-  if (needsIndependentBrowserUseVerification(args.fields)) {
-    // A separate CDP task observes microtasks queued by the website's event handlers.
-    const verified = browserUseCdpValueSchema.parse(
-      await sendBrowserUseCdpCommand(
-        socket,
-        {
-          id: args.commandId + 1,
-          method: "Runtime.callFunctionOn",
-          params: {
-            ...params,
-            arguments: [
-              { value: { ...firstSpec, verifyOnly: true } },
-              ...writerArguments.slice(1),
-            ],
-          },
-          sessionId: args.sessionId,
+  // Every mixed batch needs a separate CDP task to observe microtasks queued
+  // by the website's event handlers, including those affecting scalar controls.
+  const verified = browserUseCdpValueSchema.parse(
+    await sendBrowserUseCdpCommand(
+      socket,
+      {
+        id: args.commandId + 1,
+        method: "Runtime.callFunctionOn",
+        params: {
+          ...params,
+          arguments: [
+            { value: { ...firstSpec, verifyOnly: true } },
+            ...writerArguments.slice(1),
+          ],
         },
-        signal,
-      ),
-      { reportInput: true },
-    );
-    if (verified.result.value !== true) {
-      throw new BrowserUseUserActionMutationError(true);
-    }
+        sessionId: args.sessionId,
+      },
+      signal,
+    ),
+    { reportInput: true },
+  );
+  if (verified.result.value !== true) {
+    throw new BrowserUseUserActionMutationError(true);
   }
 }
 

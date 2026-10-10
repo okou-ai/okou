@@ -583,7 +583,11 @@ export function createComputerUseBddApi(
     async heartbeatComputerUseHost(
       connection: ComputerUseTestConnection,
       options: ComputerUseHostStartOptions = {},
-    ): Promise<{ readonly ok: true; readonly hostId: string }> {
+    ): Promise<{
+      readonly ok: true;
+      readonly hostId: string;
+      readonly hasPendingCommands: boolean;
+    }> {
       return await run(async () => {
         const response = await accept(
           sessionHostsClient().heartbeat({

@@ -1,3 +1,7 @@
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import { readPublishedArchive } from "./helpers/published-archive";
+import { publicChatActor } from "./helpers/public-chat-actor";
+import { claimBudgetRun } from "./helpers/public-autonomy-budget";
 import { createPublicAutomationResultEmailApi } from "./helpers/public-automation-result-email";
 import {
   DeleteObjectsCommand,
@@ -20,7 +24,6 @@ import {
   officialWorkflowsContract,
 } from "@okouai/api-contracts/contracts/official-workflows";
 import { testOfficialWorkflowCatalogStateContract } from "@okouai/api-contracts/contracts/test-official-workflow-catalog-state";
-import { testSystemStoragePresignedUrlCacheStateContract } from "@okouai/api-contracts/contracts/test-system-storage-presigned-url-cache-state";
 
 import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import {
@@ -31,10 +34,7 @@ import {
 } from "@okouai/api-contracts/contracts/workflows";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  getCustomSkillStorageName,
-  VOLUME_ORG_USER_ID,
-} from "@okouai/core/storage-names";
+import { getCustomSkillStorageName } from "@okouai/core/storage-names";
 
 import { http, HttpResponse } from "msw";
 import { randomUUID } from "node:crypto";
@@ -59,7 +59,6 @@ import { logsRoutes } from "../logs";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import { officialWorkflowRoutes } from "../official-workflows";
 import { testOfficialWorkflowCatalogStateRoutes } from "../test-official-workflow-catalog-state";
-import { testSystemStoragePresignedUrlCacheStateRoutes } from "../test-system-storage-presigned-url-cache-state";
 
 import { userPreferencesRoutes } from "../user-preferences";
 import { workflowAutomationsRoutes } from "../workflow-automations";
@@ -73,7 +72,10 @@ import {
 } from "./helpers/api-bdd-connectors";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 
-import { createRunsApi } from "./helpers/api-bdd-runs";
+import {
+  createRunsApi,
+  expectCanonicalStorageManifest,
+} from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import {
   createWorkflowsBddApi,
@@ -819,23 +821,6 @@ function activeDefinition(
   };
 }
 
-function retiredDefinition(
-  name: string,
-): Extract<
-  OfficialWorkflowSourceDefinition,
-  { readonly lifecycle: "retired" }
-> {
-  return {
-    name,
-    lifecycle: "retired",
-    presentation: {
-      category: "retired",
-      order: 99,
-      marketingCopy: "Retired Official Workflow.",
-    },
-  };
-}
-
 async function syncClient(candidate: unknown) {
   const app = await setupApp({
     context,
@@ -957,13 +942,6 @@ function automationClient() {
   );
 }
 
-function storageClient() {
-  return setupApp({
-    context,
-    routes: testSystemStoragePresignedUrlCacheStateRoutes,
-  })(testSystemStoragePresignedUrlCacheStateContract);
-}
-
 async function allThreadEventRows(actor: ApiTestUser, chatThreadId: string) {
   const rows = await chat.listThreadEventRows(actor, chatThreadId);
   let page = rows;
@@ -1035,20 +1013,6 @@ async function runDueOfficialWorkflowReconciliationRetry() {
       return await runOfficialWorkflowReconciliationWorker();
     },
   );
-}
-
-async function readAcceptedDefinitionFixture(definitionName: string) {
-  const response = await accept(
-    stateClient().action({ body: { action: "read", definitionName } }),
-    [200],
-  );
-  if (!response.body.definition || !response.body.storage) {
-    throw new Error(`Accepted Definition is unavailable: ${definitionName}`);
-  }
-  return {
-    definition: response.body.definition,
-    storage: response.body.storage,
-  };
 }
 
 function s3BodyBuffer(body: unknown): Buffer {
@@ -1189,24 +1153,6 @@ function installCatalogStorageFixture() {
       };
     },
   };
-}
-
-function officialQueueHeaders(
-  actor: ApiTestUser,
-  sourceRunId: string,
-  queueCase: {
-    readonly origin: "web" | "agent_run";
-  },
-) {
-  return queueCase.origin === "web"
-    ? authHeaders(actor)
-    : {
-        authorization: `Bearer ${runs.okouTokenForRunWithCapabilities(
-          actor,
-          sourceRunId,
-          ["agent:write"],
-        )}`,
-      };
 }
 
 async function setOfficialWorkflowsEnabled(
@@ -1409,75 +1355,28 @@ async function installOfficialWorkflowLifecycleScenario() {
   };
 }
 
-async function installIdleOfficialWorkflowScenario() {
-  const definitionName = `api-test-idle-official-${randomUUID()}`;
-  const sourceDefinitionName = `api-test-idle-source-${randomUUID()}`;
-  installCatalogStorageFixture();
-  await syncCatalog(
-    catalog([
-      activeDefinition(definitionName, []),
-      activeDefinition(sourceDefinitionName, [loopBlueprint()]),
-    ]),
-  );
-  const { actor } = await workflowBdd.setupWorkflowOrg({
-    model: "claude-fable-5-1",
+async function ordinaryDelegationScenario() {
+  const owned = await publicChatActor(context);
+  return await owned.run(async () => {
+    await runs.updateUserModelPreference(owned.actor, "claude-fable-5-1");
+    const workflowId = await workflowBdd.createWorkflow(owned.actor, {
+      agentId: owned.agentId,
+      name: `ordinary-delegation-${randomUUID().slice(0, 8)}`,
+    });
+    const detail = await accept(
+      workflowClient().get({
+        headers: authHeaders(owned.actor),
+        params: { workflowId },
+      }),
+      [200],
+    );
+    const sent = await owned.sendChatRun(owned.actor, {
+      agentId: owned.agentId,
+      prompt: "Delegate a workflow",
+    });
+    const source = await claimBudgetRun(context, owned, sent);
+    return { owned, actor: owned.actor, workflow: detail.body, source };
   });
-  const { agentId } = await workflowBdd.createAgent(actor);
-  await setOfficialWorkflowsEnabled(actor, true);
-  const installation = await accept(
-    officialClient().install({
-      headers: authHeaders(actor),
-      params: { definitionName },
-      body: { agentId, blueprints: [] },
-    }),
-    [201],
-  );
-  onTestFinished(async () => {
-    installCatalogStorageFixture();
-    await cancelAgentRunsThroughLogs(actor, agentId);
-    await flushWaitUntilForTest();
-  });
-  runs.configureRunnerGroup();
-  runs.acceptStorageDownloads();
-
-  // The source's public Blueprint grants one delegation hop to the target.
-  const sourceInstallation = await accept(
-    officialClient().install({
-      headers: authHeaders(actor),
-      params: { definitionName: sourceDefinitionName },
-      body: {
-        agentId,
-        blueprints: [
-          {
-            blueprintKey: "pulse",
-            bindings: [
-              { key: "interval-seconds", value: 3600 },
-              { key: "autonomy-budget", value: 1 },
-            ],
-          },
-        ],
-      },
-    }),
-    [201],
-  );
-  const sourceAutomation = sourceInstallation.body.workflow.automations[0];
-  if (!sourceAutomation) {
-    throw new Error("Expected a one-hop Official source Automation");
-  }
-  const source = await accept(
-    automationClient().run({
-      headers: authHeaders(actor),
-      params: { id: sourceAutomation.id },
-    }),
-    [201],
-  );
-  expect(source.body.runId).toBeNull();
-  const sourceThreadId = source.body.chatThreadId;
-  const sourceRunId = await launchedAutomationRunId(actor, sourceThreadId);
-  if (!sourceRunId) {
-    throw new Error("Expected the Official source Automation Run");
-  }
-  return { actor, installation, sourceRunId, sourceThreadId };
 }
 
 beforeEach(() => {
@@ -2473,7 +2372,7 @@ describe("Official Workflow installations", () => {
   });
 
   it("projects installed Official Workflow state and accepted definition content", async () => {
-    const { dailyAutomation, definitionName, headers, installed, orgId } =
+    const { dailyAutomation, definitionName, headers, installed } =
       await installOfficialWorkflowLifecycleScenario();
     const firstWorkflowId = installed.body.workflow.id;
     expect(installed.body.workflow.automations).toHaveLength(3);
@@ -2558,19 +2457,6 @@ describe("Official Workflow installations", () => {
         officialResultEmailEnabled: false,
       });
     }
-
-    const customStorage = await accept(
-      storageClient().action({
-        body: {
-          action: "read-storage-state",
-          org_id: orgId,
-          user_id: VOLUME_ORG_USER_ID,
-          storage_name: getCustomSkillStorageName(firstWorkflowId),
-        },
-      }),
-      [200],
-    );
-    expect(customStorage.body.storage_state).toBeNull();
   });
 
   it("reads the accepted Official Workflow instruction after a catalog revision", async () => {
@@ -5145,207 +5031,142 @@ describe("Official Workflow installations", () => {
 });
 
 describe("Official Workflow Run admission", () => {
-  it("pins exact active and retained-retired artifacts without org shadowing", async () => {
-    installCatalogStorageFixture();
-    const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
-    const firstName = `api-test-run-a-${suffix}`;
-    const secondName = `api-test-run-b-${suffix}`;
-    await syncCatalog(
-      catalog([
-        activeDefinition(firstName, [], "accepted first revision"),
-        activeDefinition(secondName, [], "accepted retained revision"),
-      ]),
-    );
-
-    const setup = await workflowBdd.setupWorkflowOrg({
-      model: "claude-fable-5-1",
+  it("pins ordinary Workflow publications across a normal revision", async () => {
+    const owned = await publicChatActor(context);
+    const fixture = createChatEventsFixture(context);
+    await owned.run(() => {
+      return fixture.api.updateUserModelPreference(
+        owned.actor,
+        "claude-fable-5-1",
+      );
     });
-    const { actor } = setup;
-    if (!actor.orgId) {
-      throw new Error("Expected organization-scoped actor");
+    const published: {
+      workflowId: string;
+      archive: ReturnType<typeof readPublishedArchive>;
+    }[] = [];
+    for (const name of ["first", "retained"]) {
+      const start = context.mocks.s3.send.mock.calls.length;
+      const workflowId = await owned.run(() => {
+        return workflowBdd.createWorkflow(owned.actor, {
+          agentId: owned.agentId,
+          name: `published-${name}-${randomUUID().slice(0, 8)}`,
+          instruction: `Read the ${name} publication.`,
+        });
+      });
+      published.push({
+        workflowId,
+        archive: readPublishedArchive(context, start),
+      });
     }
-    const { agentId } = await workflowBdd.createAgent(actor);
-    const headers = authHeaders(actor);
-    await setOfficialWorkflowsEnabled(actor, true);
-    const ordinaryWorkflowId = await workflowBdd.createWorkflow(actor, {
-      agentId,
-      name: firstName,
-      visibility: "public",
+    const firstWorkflow = published[0];
+    const retainedWorkflow = published[1];
+    if (!firstWorkflow || !retainedWorkflow) {
+      throw new Error("Expected two published Workflows");
+    }
+    const first = await owned.sendChatRun(owned.actor, {
+      agentId: owned.agentId,
+      prompt: "Use both original Workflow publications",
     });
-    const firstInstallation = await accept(
-      officialClient().install({
-        headers,
-        params: { definitionName: firstName },
-        body: { agentId, blueprints: [] },
-      }),
-      [201],
-    );
-    await accept(
-      officialClient().install({
-        headers,
-        params: { definitionName: secondName },
-        body: { agentId, blueprints: [] },
-      }),
-      [201],
-    );
-
-    const firstAccepted = await readAcceptedDefinitionFixture(firstName);
-    const secondAccepted = await readAcceptedDefinitionFixture(secondName);
-    const shadowStorageId = randomUUID();
-    const shadowVersion = "e".repeat(64);
-    await accept(
-      storageClient().action({
-        body: {
-          action: "claim-owned-storages",
-          storages: [
-            {
-              storage_id: shadowStorageId,
-              org_id: actor.orgId,
-              user_id: VOLUME_ORG_USER_ID,
-              storage_name: firstAccepted.definition.artifact.storageName,
-              s3_prefix: `official-shadow/${shadowStorageId}`,
-            },
-          ],
-        },
-      }),
-      [200],
-    );
-    await accept(
-      storageClient().action({
-        body: {
-          action: "seed-owned-storage-version",
-          storage_id: shadowStorageId,
-          version_id: shadowVersion,
-          s3_key: `official-shadow/${shadowStorageId}/${shadowVersion}`,
-          archive_size: 1,
-        },
-      }),
-      [200],
-    );
-
-    const runnerGroup = runs.configureRunnerGroup();
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    await runs.heartbeatRunner(runnerGroup);
-    await setOfficialWorkflowsEnabled(actor, false);
-    const direct = await accept(
-      workflowClient().run({
-        headers,
-        params: { workflowId: firstInstallation.body.workflow.id },
-      }),
-      [200],
-    );
-    expect(direct.body.runId).toBeNull();
-    const firstRunId = await launchedAutomationRunId(
-      actor,
-      direct.body.chatThreadId,
-    );
-    if (!firstRunId) {
-      throw new Error("Expected direct Official Workflow Run");
-    }
-
-    await syncCatalog(
-      catalog([
-        activeDefinition(firstName, [], "accepted second revision"),
-        retiredDefinition(secondName),
-      ]),
-    );
-    const nextFirstAccepted = await readAcceptedDefinitionFixture(firstName);
-    expect(nextFirstAccepted.definition.revision).not.toBe(
-      firstAccepted.definition.revision,
-    );
-
-    const firstClaim = await runs.claimRunnerJob(firstRunId);
-    if (
-      !firstClaim.storageManifest ||
-      !("storageMounts" in firstClaim.storageManifest)
-    ) {
-      throw new Error("Expected canonical Run storage manifest");
-    }
-    expect(firstClaim.storageManifest.storageMounts).toStrictEqual(
-      expect.arrayContaining(
-        [firstAccepted.definition, secondAccepted.definition].map(
-          (definition) => {
-            return expect.objectContaining({
-              storageId: definition.artifact.storageId,
-              versionId: definition.artifact.storageVersion,
-            });
+    const updateStart = context.mocks.s3.send.mock.calls.length;
+    await owned.run(() => {
+      return accept(
+        workflowClient().update({
+          headers: authHeaders(owned.actor),
+          params: { workflowId: firstWorkflow.workflowId },
+          body: {
+            instruction: "Read the revised first publication.",
+            files: [],
           },
-        ),
-      ),
-    );
-    expect(firstClaim.storageManifest.storageMounts).not.toContainEqual(
-      expect.objectContaining({ storageId: shadowStorageId }),
-    );
-
-    await webhooks.requestAgentComplete(
-      { runId: firstRunId, exitCode: 1 },
-      { authorization: `Bearer ${firstClaim.sandboxToken}` },
-      [200],
-    );
-
-    const later = await runs.createThreadRun(actor, {
-      agentId,
-      prompt: "resolve the newly accepted Official Definition revision",
+        }),
+        [200],
+      );
     });
-    const laterClaim = await runs.claimRunnerJob(later.runId);
-    const laterManifest = laterClaim.storageManifest;
-    if (!laterManifest || !("storageMounts" in laterManifest)) {
-      throw new Error("Expected current Official storage mounts");
-    }
-    expect(laterManifest.storageMounts).toStrictEqual(
-      expect.arrayContaining(
-        [nextFirstAccepted.definition, secondAccepted.definition].map(
-          (definition) => {
-            return expect.objectContaining({
-              storageId: definition.artifact.storageId,
-              versionId: definition.artifact.storageVersion,
-            });
-          },
-        ),
-      ),
-    );
-    await runs.requestCancelRun(actor, later.runId, [200, 400]);
-    expect(ordinaryWorkflowId).not.toBe(firstInstallation.body.workflow.id);
+    const updated = readPublishedArchive(context, updateStart);
+    expect(updated.versionId).not.toBe(firstWorkflow.archive.versionId);
+    const check = async (runId: string, expected: typeof published) => {
+      const { claim, sandboxHeaders } = await owned.claimChatRun(
+        owned.runnerGroup,
+        runId,
+      );
+      const mounts =
+        expectCanonicalStorageManifest(
+          claim.storageManifest,
+        )?.storageMounts.filter((mount) => {
+          return expected.some((workflow) => {
+            return (
+              mount.name === getCustomSkillStorageName(workflow.workflowId)
+            );
+          });
+        }) ?? [];
+      expect(mounts).toHaveLength(2);
+      for (const workflow of expected) {
+        expect(mounts).toContainEqual(
+          expect.objectContaining({
+            name: getCustomSkillStorageName(workflow.workflowId),
+            versionId: workflow.archive.versionId,
+            archiveSize: workflow.archive.archiveSize,
+            archiveUrl: expect.any(String),
+          }),
+        );
+      }
+      await owned.run(() => {
+        return fixture.failChatRun(
+          runId,
+          sandboxHeaders,
+          "Workflow publications inspected",
+        );
+      });
+      await owned.run(flushWaitUntilForTest);
+    };
+    await check(first.runId, published);
+    const later = await owned.sendChatRun(owned.actor, {
+      agentId: owned.agentId,
+      prompt: "Use the updated and retained Workflow publications",
+    });
+    await check(later.runId, [
+      { ...firstWorkflow, archive: updated },
+      retainedWorkflow,
+    ]);
   });
 
-  it("launches an idle Official agent-run input with source annotations", async () => {
-    const { actor, installation, sourceRunId, sourceThreadId } =
-      await installIdleOfficialWorkflowScenario();
-    const sourceClaim = await runs.claimRunnerJob(sourceRunId);
-    await webhooks.requestAgentComplete(
-      { runId: sourceRunId, exitCode: 1 },
-      { authorization: `Bearer ${sourceClaim.sandboxToken}` },
-      [200],
-    );
-    await flushWaitUntilForTest();
-
-    const launched = await accept(
-      workflowClient().run({
-        headers: officialQueueHeaders(actor, sourceRunId, {
-          origin: "agent_run",
+  it("launches an idle ordinary workflow input with source annotations", async () => {
+    const { owned, actor, workflow, source } =
+      await ordinaryDelegationScenario();
+    const sourceRunId = source.runId;
+    const sourceThreadId = source.threadId;
+    await owned.run(async () => {
+      const launched = await accept(
+        workflowClient().run({
+          headers: { authorization: `Bearer ${source.token}` },
+          extraHeaders: { origin: "https://app.okou.ai" },
+          params: { workflowId: workflow.id },
         }),
-        extraHeaders: { origin: "https://app.okou.ai" },
-        params: { workflowId: installation.body.workflow.id },
-      }),
-      [200],
-    );
-    expect(launched.body.runId).toBeNull();
-    const launchedRunId = await launchedAutomationRunId(
-      actor,
-      launched.body.chatThreadId,
-    );
-    if (!launchedRunId) {
-      throw new Error("Expected the idle Official input to dispatch itself");
-    }
-    expect(launchedRunId).not.toBe(sourceRunId);
-    expect(launched.body.chatThreadId).not.toBe(sourceThreadId);
-    const claim = await runs.claimRunnerJob(launchedRunId);
-    expect(claim.prompt).toBe(`/${installation.body.workflow.name}`);
-    expect(claim.appendSystemPrompt).toContain(`SOURCE_RUN_ID: ${sourceRunId}`);
-    expect(claim.appendSystemPrompt).toContain(
-      `SOURCE_THREAD_ID: ${sourceThreadId}`,
-    );
+        [200],
+      );
+      expect(launched.body.runId).toBeNull();
+      const launchedRunId = await launchedAutomationRunId(
+        actor,
+        launched.body.chatThreadId,
+      );
+      if (!launchedRunId) {
+        throw new Error(
+          "Expected the idle ordinary workflow input to dispatch itself",
+        );
+      }
+      expect(launchedRunId).not.toBe(sourceRunId);
+      expect(launched.body.chatThreadId).not.toBe(sourceThreadId);
+      const { claim } = await owned.claimChatRun(
+        owned.runnerGroup,
+        launchedRunId,
+      );
+      expect(claim.prompt).toBe(`/${workflow.name}`);
+      expect(claim.appendSystemPrompt).toContain(
+        `SOURCE_RUN_ID: ${sourceRunId}`,
+      );
+      expect(claim.appendSystemPrompt).toContain(
+        `SOURCE_THREAD_ID: ${sourceThreadId}`,
+      );
+    });
   });
 
   it("spends the last inherited hop of an idle Official input and rejects the next hop", async () => {
@@ -5415,3 +5236,92 @@ describe("Official Workflow Run admission", () => {
     ).resolves.toBe(launchedRunId);
   });
 });
+
+function officialQueueHeaders(
+  actor: ApiTestUser,
+  sourceRunId: string,
+  queueCase: {
+    readonly origin: "web" | "agent_run";
+  },
+) {
+  return queueCase.origin === "web"
+    ? authHeaders(actor)
+    : {
+        authorization: `Bearer ${runs.okouTokenForRunWithCapabilities(
+          actor,
+          sourceRunId,
+          ["agent:write"],
+        )}`,
+      };
+}
+
+async function installIdleOfficialWorkflowScenario() {
+  const definitionName = `api-test-idle-official-${randomUUID()}`;
+  const sourceDefinitionName = `api-test-idle-source-${randomUUID()}`;
+  installCatalogStorageFixture();
+  await syncCatalog(
+    catalog([
+      activeDefinition(definitionName, []),
+      activeDefinition(sourceDefinitionName, [loopBlueprint()]),
+    ]),
+  );
+  const { actor } = await workflowBdd.setupWorkflowOrg({
+    model: "claude-fable-5-1",
+  });
+  const { agentId } = await workflowBdd.createAgent(actor);
+  await setOfficialWorkflowsEnabled(actor, true);
+  const installation = await accept(
+    officialClient().install({
+      headers: authHeaders(actor),
+      params: { definitionName },
+      body: { agentId, blueprints: [] },
+    }),
+    [201],
+  );
+  onTestFinished(async () => {
+    installCatalogStorageFixture();
+    await cancelAgentRunsThroughLogs(actor, agentId);
+    await flushWaitUntilForTest();
+  });
+  runs.configureRunnerGroup();
+  runs.acceptStorageDownloads();
+
+  // The source's public Blueprint grants one delegation hop to the target.
+  const sourceInstallation = await accept(
+    officialClient().install({
+      headers: authHeaders(actor),
+      params: { definitionName: sourceDefinitionName },
+      body: {
+        agentId,
+        blueprints: [
+          {
+            blueprintKey: "pulse",
+            bindings: [
+              { key: "interval-seconds", value: 3600 },
+              { key: "autonomy-budget", value: 1 },
+            ],
+          },
+        ],
+      },
+    }),
+    [201],
+  );
+  const sourceAutomation = sourceInstallation.body.workflow.automations[0];
+  if (!sourceAutomation) {
+    throw new Error("Expected a one-hop Official source Automation");
+  }
+  const source = await accept(
+    automationClient().run({
+      headers: authHeaders(actor),
+      params: { id: sourceAutomation.id },
+    }),
+    [201],
+  );
+  expect(source.body.runId).toBeNull();
+  const sourceThreadId = source.body.chatThreadId;
+  const sourceRunId = await launchedAutomationRunId(actor, sourceThreadId);
+  if (!sourceRunId) {
+    throw new Error("Expected the Official source Automation Run");
+  }
+  return { actor, installation, sourceRunId, sourceThreadId };
+}

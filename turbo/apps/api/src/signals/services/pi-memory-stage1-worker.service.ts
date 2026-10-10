@@ -18,10 +18,6 @@ import {
 } from "./feature-switch-scope";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import {
-  usagePricingResolution$,
-  type UsagePricingResolution,
-} from "../context/usage-pricing-resolution";
-import {
   observePiMemoryStage1Cost$,
   observePiMemoryStage1MissingUsage,
 } from "./pi-memory-stage1-cost.service";
@@ -931,7 +927,6 @@ const recordObservedUsage$ = command(
     prepared: RoutedWork,
     observedResult: PiMemoryStage1ProviderResult,
     requestId: string,
-    pricingResolution: UsagePricingResolution,
   ) => {
     const usageArgs = {
       memoryStorageId: prepared.work.memoryStorageId,
@@ -951,7 +946,6 @@ const recordObservedUsage$ = command(
       observePiMemoryStage1Cost$,
       usageArgs,
       recordedUsage.ok ? recordedUsage.value : null,
-      pricingResolution,
     );
     return recordedUsage;
   },
@@ -959,7 +953,6 @@ const recordObservedUsage$ = command(
 
 interface ProcessPreparedWorkArgs {
   readonly prepared: RoutedWork;
-  readonly pricingResolution: UsagePricingResolution;
 }
 
 const checkPreparedStage1Request$ = command(
@@ -1071,7 +1064,6 @@ const settlePreparedWork$ = command(
         args.prepared,
         observedResult,
         requestId,
-        args.pricingResolution,
       );
       if (!recordedUsage.ok) {
         return await set(
@@ -1190,7 +1182,7 @@ function logBatchResult(
 
 export const executePiMemoryStage1Work$ = command(
   async (
-    { get, set },
+    { set },
     input: PiMemoryStage1WorkerInput,
     signal: AbortSignal,
   ): Promise<PiMemoryStage1WorkerResult> => {
@@ -1285,7 +1277,6 @@ export const executePiMemoryStage1Work$ = command(
             processPreparedWork$,
             {
               prepared: item,
-              pricingResolution: get(usagePricingResolution$),
             },
             signal,
           );

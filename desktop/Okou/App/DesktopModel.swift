@@ -115,6 +115,7 @@ final class DesktopModel: ObservableObject {
     host = HostRuntime(
       api: api, executor: executor, installationId: installationId, hostName: deviceName,
       version: version,
+      notifications: AblyCommandNotifications(),
       tokenProvider: { [weak self] forceRefresh in
         guard let self else { throw CancellationError() }
         return try await self.sessionToken(forceRefresh: forceRefresh)

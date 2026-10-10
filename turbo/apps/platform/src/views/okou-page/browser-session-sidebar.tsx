@@ -1,4 +1,4 @@
-import { Maximize2, X } from "lucide-react";
+import { ExternalLink, X } from "lucide-react";
 import { Button } from "@okouai/ui";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
@@ -45,7 +45,7 @@ export function BrowserSessionSidebar({
             })}
             className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-state-hover hover:text-foreground"
           >
-            <Maximize2 size={16} />
+            <ExternalLink size={16} />
           </a>
         </IconTooltip>
         <Button

@@ -1,6 +1,6 @@
 [package]
 name = "runner"
-version = "0.223.1"
+version = "0.223.2"
 edition.workspace = true
 
 [dependencies]
@@ -97,7 +97,7 @@ guest-state-restore = { workspace = true }
 guest-tool-exec = { workspace = true }
 runner-rpc-client = { workspace = true }
 guest-write-file = { workspace = true }
-guest-workspace-mount = { workspace = true }
+guest-home-mount = { workspace = true }
 
 [lints]
 workspace = true

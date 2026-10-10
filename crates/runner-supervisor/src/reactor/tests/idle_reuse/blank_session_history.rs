@@ -10,16 +10,17 @@ use tokio::sync::oneshot;
 
 use super::super::super::*;
 use super::super::support::{
-    minimal_context, mock_run_config_with_overrides, push_job, seed_workspace_cache_state,
-    shutdown, test_profiles, wait_cancel_handle, wait_idle_pool_len,
+    minimal_context, mock_run_config_with_overrides, push_job, seed_home_cache_state, shutdown,
+    test_profiles, wait_cancel_handle, wait_idle_pool_len,
 };
+use crate::home_image_cache::HomeImageCache;
 use crate::test_fixtures::raw_http::{RawHttpAction, RawHttpTestServer, http_response};
-use crate::workspace_image_cache::WorkspaceImageCache;
 use runner_host::paths::RunnerPaths;
 use runner_types::storage_manifest::{ArtifactEntry, StorageManifest};
 use runner_types::types::{
-    ExecutionContext, ResumeSession, ResumeSessionHistory, ResumeSessionHistoryEncoding,
-    ResumeSessionHistoryRef, ResumeSessionHistoryRefKind, SandboxReuseResult, WorkspaceReuseResult,
+    ExecutionContext, HomeReuseResult, ResumeSession, ResumeSessionHistory,
+    ResumeSessionHistoryEncoding, ResumeSessionHistoryRef, ResumeSessionHistoryRefKind,
+    SandboxReuseResult,
 };
 
 const WAIT: Duration = Duration::from_secs(5);
@@ -37,24 +38,22 @@ enum PublicationExpectation {
     DestinationCancelled,
 }
 
-async fn configure_workspace_cache_hit(config: &mut RunConfig, reuse_key: &str) {
+async fn configure_home_cache_hit(config: &mut RunConfig, reuse_key: &str) {
     let runner_paths = RunnerPaths::new(config.paths.base_dir.clone());
-    let workspace_cache = WorkspaceImageCache::shared(
+    let home_cache = HomeImageCache::shared(
         runner_paths.clone(),
         &config.paths.home,
         &config.runner.group,
     );
-    seed_workspace_cache_state(
-        &workspace_cache,
+    seed_home_cache_state(
+        &home_cache,
         &runner_paths,
         reuse_key,
         "vm0/default",
         16 * 1024 * 1024,
     )
     .await;
-    Arc::get_mut(&mut config.exec_config)
-        .unwrap()
-        .workspace_cache = Some(workspace_cache);
+    Arc::get_mut(&mut config.exec_config).unwrap().home_cache = Some(home_cache);
 }
 
 pub(super) fn history_context(run_id: RunId, url: String, history: &[u8]) -> ExecutionContext {
@@ -91,7 +90,7 @@ pub(super) fn history_context(run_id: RunId, url: String, history: &[u8]) -> Exe
 }
 
 #[tokio::test]
-async fn workspace_history_staging_overlaps_storage_and_preserves_restore() {
+async fn home_history_staging_overlaps_storage_and_preserves_restore() {
     for (framework, encoding, publication) in [
         (
             CliFramework::ClaudeCode,
@@ -260,11 +259,11 @@ async fn workspace_history_staging_overlaps_storage_and_preserves_restore() {
         let process_gate = MockLifecycleGate::new();
         overrides.set_start_process_lifecycle_gate(process_gate.clone());
         let mut profiles = test_profiles();
-        profiles.get_mut("vm0/default").unwrap().workspace_disk_mb = 16;
+        profiles.get_mut("vm0/default").unwrap().home_disk_mb = 16;
         let (mut config, env) =
             mock_run_config_with_overrides(profiles, 16, 32_768, 8, Arc::clone(&overrides));
         let reuse_key = format!("thread:staged-history-{}", uuid::Uuid::new_v4());
-        configure_workspace_cache_hit(&mut config, &reuse_key).await;
+        configure_home_cache_hit(&mut config, &reuse_key).await;
         let budget = Arc::clone(&config.capacity.budget);
         let run_handle = tokio::spawn(run(config));
         wait_idle_pool_len(&env.idle_pool, 1, WAIT).await;
@@ -461,7 +460,7 @@ async fn workspace_history_staging_overlaps_storage_and_preserves_restore() {
         assert_eq!(completion.reuse_result, Some(SandboxReuseResult::PoolMiss));
         assert_eq!(
             completion.workspace_reuse_result,
-            Some(WorkspaceReuseResult::Reused)
+            Some(HomeReuseResult::Reused)
         );
         assert_ne!(completion.sandbox_id, Some(blank_id));
         // The one-response server and successful restore require one download;
@@ -473,7 +472,7 @@ async fn workspace_history_staging_overlaps_storage_and_preserves_restore() {
 }
 
 #[tokio::test]
-async fn workspace_history_storage_failure_precedes_staging_failure() {
+async fn home_history_storage_failure_precedes_staging_failure() {
     let (release_history, history_release) = oneshot::channel();
     let mut server = RawHttpTestServer::spawn(vec![RawHttpAction::WaitThenRespond {
         release: history_release,
@@ -496,11 +495,11 @@ async fn workspace_history_storage_failure_precedes_staging_failure() {
     let write_gate = MockLifecycleGate::new();
     overrides.set_write_file_lifecycle_gate(write_gate.clone());
     let mut profiles = test_profiles();
-    profiles.get_mut("vm0/default").unwrap().workspace_disk_mb = 16;
+    profiles.get_mut("vm0/default").unwrap().home_disk_mb = 16;
     let (mut config, env) =
         mock_run_config_with_overrides(profiles, 16, 32_768, 8, Arc::clone(&overrides));
     let reuse_key = format!("thread:staged-history-failure-{}", uuid::Uuid::new_v4());
-    configure_workspace_cache_hit(&mut config, &reuse_key).await;
+    configure_home_cache_hit(&mut config, &reuse_key).await;
     let budget = Arc::clone(&config.capacity.budget);
     let run_handle = tokio::spawn(run(config));
     wait_idle_pool_len(&env.idle_pool, 1, WAIT).await;

@@ -306,35 +306,38 @@ async function parseEncryptedProviderState(args: {
   }).providerState;
 }
 
-async function expireSession(
-  args: {
-    readonly writeDb: Db;
-    readonly session: BuiltinConnectorExternalCodeSessionRow;
-    readonly now: Date;
-  },
-  signal: AbortSignal,
-): Promise<ReturnType<typeof badRequestMessage>> {
-  await args.writeDb
-    .update(builtinConnectorExternalCodeSessions)
-    .set({
-      status: "expired",
-      errorCode: "expired_token",
-      errorMessage: "External-code authorization session expired",
-      updatedAt: args.now,
-      completedAt: args.now,
-    })
-    .where(
-      and(
-        eq(builtinConnectorExternalCodeSessions.id, args.session.id),
-        or(
-          eq(builtinConnectorExternalCodeSessions.status, "pending"),
-          eq(builtinConnectorExternalCodeSessions.status, "completing"),
+const expireExternalCodeSession$ = command(
+  async (
+    { set },
+    args: {
+      readonly session: BuiltinConnectorExternalCodeSessionRow;
+      readonly now: Date;
+    },
+    signal: AbortSignal,
+  ): Promise<ReturnType<typeof badRequestMessage>> => {
+    const writeDb = set(writeDb$);
+    await writeDb
+      .update(builtinConnectorExternalCodeSessions)
+      .set({
+        status: "expired",
+        errorCode: "expired_token",
+        errorMessage: "External-code authorization session expired",
+        updatedAt: args.now,
+        completedAt: args.now,
+      })
+      .where(
+        and(
+          eq(builtinConnectorExternalCodeSessions.id, args.session.id),
+          or(
+            eq(builtinConnectorExternalCodeSessions.status, "pending"),
+            eq(builtinConnectorExternalCodeSessions.status, "completing"),
+          ),
         ),
-      ),
-    );
-  signal.throwIfAborted();
-  return badRequestMessage("External-code authorization session expired");
-}
+      );
+    signal.throwIfAborted();
+    return badRequestMessage("External-code authorization session expired");
+  },
+);
 
 function isSessionExpired(
   session: BuiltinConnectorExternalCodeSessionRow,
@@ -1057,14 +1060,14 @@ export const completeBuiltinConnectorExternalCodeSession$ = command(
         isSessionExpired(session, now) &&
         isCompletingSessionStale(session, now)
       ) {
-        return await expireSession({ writeDb, session, now }, signal);
+        return await set(expireExternalCodeSession$, { session, now }, signal);
       }
       return badRequestMessage(
         "External-code authorization session is already completing",
       );
     }
     if (isSessionExpired(session, now)) {
-      return await expireSession({ writeDb, session, now }, signal);
+      return await set(expireExternalCodeSession$, { session, now }, signal);
     }
 
     const claimStartedAt = now;

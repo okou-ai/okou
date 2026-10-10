@@ -91,7 +91,7 @@ describe("authored social image URLs", () => {
         url: pageUrl,
         imageUrl: "https://api.okou.ai/platform-cover.png",
       },
-      false,
+      "fill-missing",
     );
     expect(result).toContain(
       'property="og:image" content="https://demo.okou.app/reports/cover.png"',

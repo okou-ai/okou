@@ -57,7 +57,7 @@ use runner_types::types::{
     ExecutionContext, HeartbeatState, Job, PollResponse,
 };
 #[cfg(test)]
-use runner_types::types::{SandboxReuseResult, WorkspaceReuseResult};
+use runner_types::types::{HomeReuseResult, SandboxReuseResult};
 
 fn supports_thread_active_input(reuse_key: Option<&str>) -> bool {
     reuse_key.is_some_and(|key| key.starts_with("thread:"))
@@ -5726,7 +5726,7 @@ mod tests {
                 error: None,
                 sandbox_id: None,
                 sandbox_reuse_result: Some(SandboxReuseResult::NoReuseKey),
-                workspace_reuse_result: Some(WorkspaceReuseResult::NoReuseKey),
+                workspace_reuse_result: Some(HomeReuseResult::NoReuseKey),
             },
         )
         .await

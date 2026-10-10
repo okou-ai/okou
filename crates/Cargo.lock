@@ -1021,7 +1021,7 @@ checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
 
 [[package]]
 name = "codex-mock"
-version = "0.11.63"
+version = "0.11.64"
 dependencies = [
  "chrono",
  "clap",
@@ -1762,7 +1762,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.104.14"
+version = "0.104.15"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -1816,7 +1816,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-client"
-version = "0.22.35"
+version = "0.22.36"
 dependencies = [
  "guest-contracts",
  "guest-control-proto",
@@ -1859,7 +1859,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-tests"
-version = "0.12.50"
+version = "0.12.51"
 dependencies = [
  "guest-contracts",
  "guest-control-client",
@@ -1874,11 +1874,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "guest-home-mount"
+version = "0.1.2"
+dependencies = [
+ "guest-contracts",
+ "libc",
+ "linux-mountinfo",
+ "nix",
+ "rustix",
+ "tempfile",
+]
+
+[[package]]
 name = "guest-init"
 version = "0.17.15"
 dependencies = [
  "guest-contracts",
  "guest-control-server",
+ "guest-home-mount",
  "libc",
  "nix",
  "tempfile",
@@ -1933,16 +1946,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
-]
-
-[[package]]
-name = "guest-workspace-mount"
-version = "0.1.2"
-dependencies = [
- "libc",
- "linux-mountinfo",
- "nix",
- "rustix",
 ]
 
 [[package]]
@@ -3572,7 +3575,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.223.1"
+version = "0.223.2"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3588,11 +3591,11 @@ dependencies = [
  "guest-agent",
  "guest-contracts",
  "guest-control-client",
+ "guest-home-mount",
  "guest-init",
  "guest-state-restore",
  "guest-storage-apply",
  "guest-tool-exec",
- "guest-workspace-mount",
  "guest-write-file",
  "hex",
  "http-body",
@@ -3639,7 +3642,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.7.3"
+version = "0.7.4"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3650,6 +3653,7 @@ dependencies = [
  "flate2",
  "futures-util",
  "guest-contracts",
+ "guest-control-client",
  "guest-control-proto",
  "guest-storage-apply",
  "hex",
@@ -3686,7 +3690,7 @@ dependencies = [
 
 [[package]]
 name = "runner-host"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "chrono",
  "futures-util",
@@ -3710,7 +3714,7 @@ dependencies = [
 
 [[package]]
 name = "runner-lifecycle"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3741,7 +3745,7 @@ dependencies = [
 
 [[package]]
 name = "runner-network"
-version = "0.2.18"
+version = "0.2.19"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3772,7 +3776,7 @@ dependencies = [
 
 [[package]]
 name = "runner-provider"
-version = "0.6.4"
+version = "0.6.5"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -3807,7 +3811,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -3882,7 +3886,7 @@ dependencies = [
 
 [[package]]
 name = "runner-storage"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3923,7 +3927,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3961,7 +3965,7 @@ dependencies = [
 
 [[package]]
 name = "runner-types"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "api-contracts",
  "idna",
@@ -4220,7 +4224,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox"
-version = "0.25.0"
+version = "0.25.1"
 dependencies = [
  "async-trait",
  "serde",
@@ -4234,7 +4238,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.45.0"
+version = "0.45.1"
 dependencies = [
  "async-trait",
  "clap",
@@ -4269,7 +4273,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-mock"
-version = "0.12.0"
+version = "0.12.1"
 dependencies = [
  "async-trait",
  "guest-contracts",

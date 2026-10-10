@@ -4,10 +4,10 @@ use sandbox::{DeviceRateLimits, Sandbox, SandboxFactory, SandboxId};
 use sandbox_mock::{MockSandbox, MockSandboxFactory};
 
 use crate::guest_timezone::GuestTimezoneIntent;
+use crate::home_image_cache::HomeImagePromotionContext;
 use crate::resource_budget::BudgetLease;
 use crate::restored_session_identity::RestoredSessionIdentity;
 use crate::storage_fingerprints::StorageFingerprints;
-use crate::workspace_image_cache::WorkspaceImagePromotionContext;
 use runner_types::ids::RunId;
 
 use super::ParkedIdleCandidate;
@@ -23,6 +23,7 @@ pub struct ParkedIdleCandidateBuilder {
     reuse_key: String,
     sandbox_id: SandboxId,
     profile_name: String,
+    rootfs_hash: String,
     device_rate_limits: Option<DeviceRateLimits>,
     budget_lease: BudgetLease,
     source_ip: String,
@@ -31,7 +32,7 @@ pub struct ParkedIdleCandidateBuilder {
     history_generation_run_id: Option<RunId>,
     guest_timezone_intent: GuestTimezoneIntent,
     last_completed_at: Option<String>,
-    workspace_promotion: Option<WorkspaceImagePromotionContext>,
+    home_promotion: Option<HomeImagePromotionContext>,
 }
 
 impl ParkedIdleCandidateBuilder {
@@ -45,6 +46,7 @@ impl ParkedIdleCandidateBuilder {
             reuse_key: reuse_key.into(),
             sandbox_id: SandboxId::new_v4(),
             profile_name: DEFAULT_PROFILE_NAME.into(),
+            rootfs_hash: "test-rootfs".into(),
             device_rate_limits: None,
             budget_lease,
             source_ip: DEFAULT_SOURCE_IP.into(),
@@ -53,7 +55,7 @@ impl ParkedIdleCandidateBuilder {
             history_generation_run_id: None,
             guest_timezone_intent: GuestTimezoneIntent::Unknown,
             last_completed_at: None,
-            workspace_promotion: None,
+            home_promotion: None,
         }
     }
 
@@ -79,6 +81,11 @@ impl ParkedIdleCandidateBuilder {
 
     pub fn with_profile_name(mut self, profile_name: impl Into<String>) -> Self {
         self.profile_name = profile_name.into();
+        self
+    }
+
+    pub fn with_rootfs_hash(mut self, rootfs_hash: impl Into<String>) -> Self {
+        self.rootfs_hash = rootfs_hash.into();
         self
     }
 
@@ -110,11 +117,8 @@ impl ParkedIdleCandidateBuilder {
         self
     }
 
-    pub fn with_workspace_promotion(
-        mut self,
-        workspace_promotion: WorkspaceImagePromotionContext,
-    ) -> Self {
-        self.workspace_promotion = Some(workspace_promotion);
+    pub fn with_home_promotion(mut self, home_promotion: HomeImagePromotionContext) -> Self {
+        self.home_promotion = Some(home_promotion);
         self
     }
 
@@ -125,6 +129,7 @@ impl ParkedIdleCandidateBuilder {
             reuse_key,
             sandbox_id,
             profile_name,
+            rootfs_hash,
             device_rate_limits,
             budget_lease,
             source_ip,
@@ -133,12 +138,13 @@ impl ParkedIdleCandidateBuilder {
             history_generation_run_id,
             guest_timezone_intent,
             last_completed_at,
-            workspace_promotion,
+            home_promotion,
         } = self;
         let metadata = IdleSandboxMetadata {
             identity: super::entry::IdleSandboxIdentity::Exact(reuse_key),
             sandbox_id,
             profile_name,
+            rootfs_hash,
             device_rate_limits,
             source_ip,
             storage_fingerprints,
@@ -151,7 +157,7 @@ impl ParkedIdleCandidateBuilder {
             resources: IdleSandboxResources {
                 sandbox,
                 factory,
-                workspace_promotion,
+                home_promotion,
             },
             metadata,
             budget_lease,

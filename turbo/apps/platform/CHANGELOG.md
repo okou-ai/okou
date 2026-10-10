@@ -12,6 +12,33 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1008.2](https://github.com/okou-ai/okou/compare/app-v0.1008.1...app-v0.1008.2) (2026-10-10)
+
+
+### Bug Fixes
+
+* **app:** gate stable preview fullscreen layout ([#38444](https://github.com/okou-ai/okou/issues/38444)) ([dfa059a](https://github.com/okou-ai/okou/commit/dfa059a8d9a778ee720c3e744712dee718c3b8a7))
+* **app:** retain artifact blobs during browser download handoff ([#38475](https://github.com/okou-ai/okou/issues/38475)) ([4122701](https://github.com/okou-ai/okou/commit/4122701f28a142ad0cd0876e2cacbcfee8848a58))
+* **app:** use external-link icon for live browser open action ([#38583](https://github.com/okou-ai/okou/issues/38583)) ([2f5e522](https://github.com/okou-ai/okou/commit/2f5e522b6b9feb423f108e4af080810112b5d6ac))
+* limit composer-anchored suggestions to chat threads ([#38575](https://github.com/okou-ai/okou/issues/38575)) ([f78ed44](https://github.com/okou-ai/okou/commit/f78ed443d2cb55aba7f34dbdba644acd85687d15))
+* **platform:** record bootstrap and shared worker failures as telemetry ([#38581](https://github.com/okou-ai/okou/issues/38581)) ([6b19212](https://github.com/okou-ai/okou/commit/6b19212474d62ea17b72507c59c79be46e8548a5))
+* show try again for safety policy refusals ([#38555](https://github.com/okou-ai/okou/issues/38555)) ([fb88a24](https://github.com/okou-ai/okou/commit/fb88a24dea118969c07fb2d2827c9fcf18f1a1a9))
+
+
+### Refactoring
+
+* **platform:** remove redundant standalone page z-index ([#38515](https://github.com/okou-ai/okou/issues/38515)) ([799c61c](https://github.com/okou-ai/okou/commit/799c61c30d213a870205bea2e7e32c79629cd3e4))
+* remove notify mail feature switch ([#38561](https://github.com/okou-ai/okou/issues/38561)) ([7f40f95](https://github.com/okou-ai/okou/commit/7f40f954492838ac72a4d291848b2ef24266a9a7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.549.0
+    * @okouai/core bumped to 8.740.1
+    * @okouai/ui bumped to 1.13.2
+
 ## [0.1008.1](https://github.com/okou-ai/okou/compare/app-v0.1008.0...app-v0.1008.1) (2026-10-10)
 
 

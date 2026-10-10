@@ -19,9 +19,9 @@
 //!   branches do not restart polling;
 //! - heartbeat and status retry tasks run independently of the reactor so its
 //!   inline resource waits cannot strand a queued task ahead of it;
-//! - workspace-cache watcher work is pinned across reactor turns so async
+//! - home-cache watcher work is pinned across reactor turns so async
 //!   metadata classification cannot lose already-drained kernel events;
-//! - routine workspace-cache GC is independently scheduled and single-flight, and
+//! - routine home-cache GC is independently scheduled and single-flight, and
 //!   its host-global cadence is coordinated through the capacity lock;
 //! - the first routine heartbeat tick is deferred;
 //! - teardown drains heartbeat work and drops discovery before provider
@@ -45,6 +45,7 @@ use tracing::{Instrument, error, info, warn};
 use crate::dns;
 use crate::duration::duration_ms as saturated_duration_ms;
 use crate::executor::{ExecutorConfig, RunnerPreSpawnConcurrency};
+use crate::home_image_cache::{HomeCacheChange, HomeCacheWatcher, HomeImageCache};
 use crate::idle_pool::ParkingGate;
 #[cfg(test)]
 use crate::idle_pool::{IdlePool, IdlePoolConfig};
@@ -59,9 +60,6 @@ use crate::prefetch;
 use crate::proxy;
 use crate::resource_budget::ResourceBudget;
 use crate::status::StatusTracker;
-use crate::workspace_image_cache::{
-    WorkspaceCacheChange, WorkspaceCacheWatcher, WorkspaceImageCache,
-};
 use error::{ReactorError as RunnerError, ReactorResult as RunnerResult};
 use runner_host::paths::HomePaths;
 #[cfg(test)]
@@ -87,7 +85,7 @@ use crate::blank_pool::{BlankPoolReplenisher, BlankProfile};
 use crate::heartbeat::{
     HEARTBEAT_PERIOD, HeartbeatContext, HeartbeatContextInit, HeartbeatController,
     HeartbeatSnapshotMetadata, WssIngressServiceProbe, collect_heartbeat_state,
-    refresh_initial_workspace_cache_snapshot,
+    refresh_initial_home_cache_snapshot,
 };
 use crate::idle_lifecycle::{IdleDestroyTracker, SharedIdlePool, drain_idle_pool};
 #[cfg(test)]
@@ -99,18 +97,18 @@ use heartbeat::heartbeat_profiles;
 use job_discovery::{DiscoveredJob, DiscoveredJobContext, handle_discovered_job};
 use job_spawn::{SpawnContext, handle_job_result};
 use runner_lifecycle::active_runs::ActiveRuns;
-use runner_lifecycle::workspace_image_cache::snapshot::WorkspaceCacheStateSnapshot;
+use runner_lifecycle::home_image_cache::snapshot::HomeCacheStateSnapshot;
 use runner_network::proxy::MitmRecovery;
 pub use signals::EarlySignals;
 use signals::{SignalController, SignalHandlerTask, handle_stopping_signal, recv_handler_task};
 
 const READY_DIRECT_CANDIDATE_DRAIN_LIMIT: usize = 8;
 /// Bounds routine cache-budget and stale-state cleanup without returning full scans to promotions.
-const WORKSPACE_CACHE_GC_PERIOD: Duration = Duration::from_secs(60);
-/// Bounds authoritative state recovery from missed workspace-cache observations.
-const WORKSPACE_CACHE_RECONCILIATION_PERIOD: Duration = Duration::from_secs(60);
+const HOME_CACHE_GC_PERIOD: Duration = Duration::from_secs(60);
+/// Bounds authoritative state recovery from missed home-cache observations.
+const HOME_CACHE_RECONCILIATION_PERIOD: Duration = Duration::from_secs(60);
 /// Staggers the first state inventory from the first routine cache GC.
-const WORKSPACE_CACHE_RECONCILIATION_INITIAL_DELAY: Duration = Duration::from_secs(30);
+const HOME_CACHE_RECONCILIATION_INITIAL_DELAY: Duration = Duration::from_secs(30);
 
 async fn sleep_until_optional_instant(deadline: Option<Instant>) {
     match deadline {
@@ -156,26 +154,26 @@ impl MaintenanceTrigger {
     }
 }
 
-type WorkspaceCacheChangeFuture = BoxFuture<
+type HomeCacheChangeFuture = BoxFuture<
     'static,
     (
-        WorkspaceCacheWatcher,
-        RunnerResult<crate::workspace_image_cache::WorkspaceCacheChange>,
+        HomeCacheWatcher,
+        RunnerResult<crate::home_image_cache::HomeCacheChange>,
     ),
 >;
 
-fn workspace_cache_change_future(mut watcher: WorkspaceCacheWatcher) -> WorkspaceCacheChangeFuture {
+fn home_cache_change_future(mut watcher: HomeCacheWatcher) -> HomeCacheChangeFuture {
     Box::pin(async move {
         let result = watcher.next_change().await;
         (watcher, result.map_err(Into::into))
     })
 }
 
-async fn next_workspace_cache_change(
-    future: &mut Option<WorkspaceCacheChangeFuture>,
+async fn next_home_cache_change(
+    future: &mut Option<HomeCacheChangeFuture>,
 ) -> (
-    WorkspaceCacheWatcher,
-    RunnerResult<crate::workspace_image_cache::WorkspaceCacheChange>,
+    HomeCacheWatcher,
+    RunnerResult<crate::home_image_cache::HomeCacheChange>,
 ) {
     match future {
         Some(future) => future.await,
@@ -186,15 +184,15 @@ async fn next_workspace_cache_change(
 // Maintenance tasks are joined during teardown, not aborted: filesystem work
 // may continue after its async future is dropped. If the reactor itself is
 // cancelled, these tasks retain their locks until their work completes.
-fn workspace_cache_gc_task(cache: WorkspaceImageCache) -> JoinHandle<()> {
+fn home_cache_gc_task(cache: HomeImageCache) -> JoinHandle<()> {
     tokio::spawn(
         async move {
-            match cache.try_routine_gc(WORKSPACE_CACHE_GC_PERIOD).await {
+            match cache.try_routine_gc(HOME_CACHE_GC_PERIOD).await {
                 Ok(Some(freed_bytes)) if freed_bytes > 0 => {
-                    info!(freed_bytes, "periodic workspace image cache GC completed");
+                    info!(freed_bytes, "periodic home image cache GC completed");
                 }
                 Ok(Some(_) | None) => {}
-                Err(error) => warn!(%error, "periodic workspace image cache GC failed"),
+                Err(error) => warn!(%error, "periodic home image cache GC failed"),
             }
         }
         .in_current_span(),
@@ -352,7 +350,9 @@ pub struct RunConfig {
 pub struct RuntimeProfile {
     pub vcpu: u32,
     pub memory_mb: u32,
-    pub workspace_disk_mb: u32,
+    pub rootfs_hash: String,
+    pub rootfs_disk_mb: u32,
+    pub home_disk_mb: u32,
     pub factory_config: sandbox::FactoryConfig,
 }
 
@@ -447,10 +447,10 @@ impl OrphanReapState {
 struct RunTestHooks {
     outer_job_panic: Option<OuterJobPanicPoint>,
     test_observer: StartLoopTestObserver,
-    before_initial_workspace_cache_scan: Option<StartLoopTestGate>,
-    after_initial_workspace_cache_scan: Option<StartLoopTestGate>,
+    before_initial_home_cache_scan: Option<StartLoopTestGate>,
+    after_initial_home_cache_scan: Option<StartLoopTestGate>,
     manual_routine_heartbeat_rx: Option<mpsc::UnboundedReceiver<()>>,
-    manual_workspace_cache_gc_rx: Option<mpsc::UnboundedReceiver<()>>,
+    manual_home_cache_gc_rx: Option<mpsc::UnboundedReceiver<()>>,
 }
 
 pub enum SignalSource {
@@ -469,7 +469,7 @@ pub enum SignalSource {
 enum StartLoopEvent {
     BudgetExhaustedReactorEntered,
     RoutineHeartbeatRequested { mode: RunnerMode },
-    WorkspaceCacheChangeObserved,
+    HomeCacheChangeObserved,
     MaintenanceDrainEntered,
     RunningJobsDrainEntered,
     DestroyTasksDrainEntered,
@@ -610,8 +610,8 @@ impl StartLoopTestObserver {
         self.record(StartLoopEvent::RoutineHeartbeatRequested { mode });
     }
 
-    fn notify_workspace_cache_change_observed(&self) {
-        self.record(StartLoopEvent::WorkspaceCacheChangeObserved);
+    fn notify_home_cache_change_observed(&self) {
+        self.record(StartLoopEvent::HomeCacheChangeObserved);
     }
 
     fn notify_destroy_tasks_drain_entered(&self) {
@@ -717,14 +717,14 @@ impl StartLoopTestObserver {
         cursor
     }
 
-    async fn wait_workspace_cache_change_observed_after(
+    async fn wait_home_cache_change_observed_after(
         &self,
         cursor: StartLoopCursor,
         timeout: Duration,
     ) -> StartLoopCursor {
         let ((), cursor) = self
-            .wait_after(cursor, timeout, "workspace-cache change", |event| {
-                matches!(event, StartLoopEvent::WorkspaceCacheChangeObserved).then_some(())
+            .wait_after(cursor, timeout, "home-cache change", |event| {
+                matches!(event, StartLoopEvent::HomeCacheChangeObserved).then_some(())
             })
             .await;
         cursor
@@ -1236,31 +1236,31 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     // -----------------------------------------------------------------------
     // Notification channel: spawned jobs signal the main loop to send an
     // immediate heartbeat after reusable state changes, so the server
-    // learns about a held reusable sandbox or workspace image cache without
+    // learns about a held reusable sandbox or home image cache without
     // waiting for the next 10-second tick.
     let reuse_state_notify = Arc::clone(&shared.reuse_state_notify);
     let idle_destroy_tracker = IdleDestroyTracker::new(Arc::clone(&reuse_state_notify));
     let orphaned_active_runs = OrphanedActiveRuns::new();
     let active_runs = shared.active_runs.clone();
-    let workspace_cache_snapshot = WorkspaceCacheStateSnapshot::new();
+    let home_cache_snapshot = HomeCacheStateSnapshot::new();
     let mut orphan_reap_tick = tokio::time::interval_at(
         tokio::time::Instant::now() + Duration::from_secs(10),
         Duration::from_secs(10),
     );
     orphan_reap_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
-    let mut workspace_cache_watcher = match exec_config.workspace_cache.clone() {
-        Some(cache) => match WorkspaceCacheWatcher::new(cache).await {
+    let mut home_cache_watcher = match exec_config.home_cache.clone() {
+        Some(cache) => match HomeCacheWatcher::new(cache).await {
             Ok(watcher) => Some(watcher),
             Err(error) => {
-                warn!(error = %error, "workspace cache watcher unavailable; using periodic reconciliation");
+                warn!(error = %error, "home cache watcher unavailable; using periodic reconciliation");
                 None
             }
         },
         None => None,
     };
     #[cfg(test)]
-    if let Some(gate) = &test_hooks.before_initial_workspace_cache_scan {
+    if let Some(gate) = &test_hooks.before_initial_home_cache_scan {
         gate.enter_and_wait().await;
     }
     let projected_heartbeat_profiles = heartbeat_profiles(&runner.profiles);
@@ -1271,34 +1271,34 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         profiles: &projected_heartbeat_profiles,
         budget: &capacity.budget,
         provider: Arc::clone(&provider_state.provider),
-        workspace_cache: exec_config.workspace_cache.clone(),
+        home_cache: exec_config.home_cache.clone(),
         active_runs: &active_runs,
-        workspace_cache_snapshot: workspace_cache_snapshot.clone(),
+        home_cache_snapshot: home_cache_snapshot.clone(),
         wss_ingress_service_probe,
     });
-    let initial_workspace_cache = refresh_initial_workspace_cache_snapshot(
-        &workspace_cache_snapshot,
-        exec_config.workspace_cache.as_ref(),
+    let initial_home_cache = refresh_initial_home_cache_snapshot(
+        &home_cache_snapshot,
+        exec_config.home_cache.as_ref(),
         &projected_heartbeat_profiles,
     )
     .await;
     #[cfg(test)]
-    if let Some(gate) = &test_hooks.after_initial_workspace_cache_scan {
+    if let Some(gate) = &test_hooks.after_initial_home_cache_scan {
         gate.enter_and_wait().await;
     }
-    debug_assert!(workspace_cache_snapshot.workspace_cache_loaded());
-    let mut initial_relevant_cache_keys = initial_workspace_cache.loaded_cache_keys;
-    initial_relevant_cache_keys.extend(initial_workspace_cache.locked_commit_keys.iter().cloned());
-    let mut initial_workspace_cache_change = match workspace_cache_watcher.as_mut() {
+    debug_assert!(home_cache_snapshot.home_cache_loaded());
+    let mut initial_relevant_cache_keys = initial_home_cache.loaded_cache_keys;
+    initial_relevant_cache_keys.extend(initial_home_cache.locked_commit_keys.iter().cloned());
+    let mut initial_home_cache_change = match home_cache_watcher.as_mut() {
         Some(watcher) => match watcher
             .reconcile_initial_relevant_entries(&initial_relevant_cache_keys)
             .await
         {
             Ok(change) => change,
             Err(error) => {
-                warn!(error = %error, "workspace cache watcher failed during startup reconciliation; using periodic reconciliation");
-                workspace_cache_watcher = None;
-                Some(crate::workspace_image_cache::WorkspaceCacheChange {
+                warn!(error = %error, "home cache watcher failed during startup reconciliation; using periodic reconciliation");
+                home_cache_watcher = None;
+                Some(crate::home_image_cache::HomeCacheChange {
                     observed_at: tokio::time::Instant::now(),
                     committed_cache_keys: std::collections::BTreeSet::new(),
                 })
@@ -1306,26 +1306,26 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         },
         None => None,
     };
-    if !initial_workspace_cache.locked_commit_keys.is_empty() {
-        let locked_change = crate::workspace_image_cache::WorkspaceCacheChange {
+    if !initial_home_cache.locked_commit_keys.is_empty() {
+        let locked_change = crate::home_image_cache::HomeCacheChange {
             observed_at: tokio::time::Instant::now(),
-            committed_cache_keys: initial_workspace_cache.locked_commit_keys,
+            committed_cache_keys: initial_home_cache.locked_commit_keys,
         };
-        match initial_workspace_cache_change.as_mut() {
+        match initial_home_cache_change.as_mut() {
             Some(change) => change.merge(locked_change),
-            None => initial_workspace_cache_change = Some(locked_change),
+            None => initial_home_cache_change = Some(locked_change),
         }
     }
-    let mut workspace_cache_change_fut = workspace_cache_watcher.map(workspace_cache_change_future);
+    let mut home_cache_change_fut = home_cache_watcher.map(home_cache_change_future);
     let mut heartbeat = HeartbeatController::new(hb_ctx);
     let initial_heartbeat_mode = lifecycle.current_mode();
     if initial_heartbeat_mode == RunnerMode::Running {
-        match initial_workspace_cache_change {
+        match initial_home_cache_change {
             Some(change) => {
-                heartbeat.request_initial_workspace_cache(initial_heartbeat_mode, change)?;
+                heartbeat.request_initial_home_cache(initial_heartbeat_mode, change)?;
             }
-            None if !initial_workspace_cache.states.is_empty() => {
-                heartbeat.request_initial_workspace_cache_snapshot(initial_heartbeat_mode)?;
+            None if !initial_home_cache.states.is_empty() => {
+                heartbeat.request_initial_home_cache_snapshot(initial_heartbeat_mode)?;
             }
             None => {}
         }
@@ -1347,7 +1347,8 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                 BlankProfile {
                     vcpu: profile.vcpu,
                     memory_mb: profile.memory_mb,
-                    workspace_disk_mb: profile.workspace_disk_mb,
+                    rootfs_hash: profile.rootfs_hash.clone(),
+                    home_disk_mb: profile.home_disk_mb,
                 },
             )
         })
@@ -1375,7 +1376,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         pre_spawn_concurrency: RunnerPreSpawnConcurrency::default(),
         blank_pool_diagnostics: blank_pool.diagnostics(),
         budget: Arc::clone(&capacity.budget),
-        workspace_cache_snapshot,
+        home_cache_snapshot,
         device_rate_limits: capacity.device_rate_limits.clone(),
         #[cfg(test)]
         outer_job_panic: test_hooks.outer_job_panic,
@@ -1388,19 +1389,18 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     );
     blank_pool_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     #[cfg(test)]
-    let mut workspace_cache_gc_tick = match test_hooks.manual_workspace_cache_gc_rx.take() {
+    let mut home_cache_gc_tick = match test_hooks.manual_home_cache_gc_rx.take() {
         Some(receiver) => MaintenanceTrigger::Manual(receiver),
-        None => MaintenanceTrigger::interval(WORKSPACE_CACHE_GC_PERIOD),
+        None => MaintenanceTrigger::interval(HOME_CACHE_GC_PERIOD),
     };
     #[cfg(not(test))]
-    let mut workspace_cache_gc_tick = MaintenanceTrigger::interval(WORKSPACE_CACHE_GC_PERIOD);
-    let mut workspace_cache_reconciliation_tick = tokio::time::interval_at(
-        tokio::time::Instant::now() + WORKSPACE_CACHE_RECONCILIATION_INITIAL_DELAY,
-        WORKSPACE_CACHE_RECONCILIATION_PERIOD,
+    let mut home_cache_gc_tick = MaintenanceTrigger::interval(HOME_CACHE_GC_PERIOD);
+    let mut home_cache_reconciliation_tick = tokio::time::interval_at(
+        tokio::time::Instant::now() + HOME_CACHE_RECONCILIATION_INITIAL_DELAY,
+        HOME_CACHE_RECONCILIATION_PERIOD,
     );
-    workspace_cache_reconciliation_tick
-        .set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    let mut workspace_cache_gc_handle = None;
+    home_cache_reconciliation_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut home_cache_gc_handle = None;
     let mut status_retry_handle = None;
     let mut draining_idle_pool_drained = false;
     let mut pending_finalizing_candidate = PendingFinalizingCandidate::new();
@@ -1630,45 +1630,45 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                     break;
                 }
             }
-            (watcher, result) = next_workspace_cache_change(&mut workspace_cache_change_fut) => {
+            (watcher, result) = next_home_cache_change(&mut home_cache_change_fut) => {
                 match result {
                     Ok(change) => {
-                        workspace_cache_change_fut = Some(workspace_cache_change_future(watcher));
+                        home_cache_change_fut = Some(home_cache_change_future(watcher));
                         #[cfg(test)]
                         test_hooks
                             .test_observer
-                            .notify_workspace_cache_change_observed();
+                            .notify_home_cache_change_observed();
                         let live_mode = *mode_rx.borrow();
                         if matches!(live_mode, RunnerMode::Running | RunnerMode::Draining) {
-                            heartbeat.request_workspace_cache(live_mode, change)?;
+                            heartbeat.request_home_cache(live_mode, change)?;
                         }
                     }
                     Err(error) => {
-                        warn!(error = %error, "workspace cache watcher failed; using periodic reconciliation");
-                        workspace_cache_change_fut = None;
+                        warn!(error = %error, "home cache watcher failed; using periodic reconciliation");
+                        home_cache_change_fut = None;
                     }
                 }
             }
-            _ = workspace_cache_reconciliation_tick.tick(),
-                if exec_config.workspace_cache.is_some() =>
+            _ = home_cache_reconciliation_tick.tick(),
+                if exec_config.home_cache.is_some() =>
             {
                 let live_mode = *mode_rx.borrow();
                 if matches!(live_mode, RunnerMode::Running | RunnerMode::Draining) {
-                    heartbeat.request_workspace_cache(
+                    heartbeat.request_home_cache(
                         live_mode,
-                        WorkspaceCacheChange {
+                        HomeCacheChange {
                             observed_at: tokio::time::Instant::now(),
                             committed_cache_keys: std::collections::BTreeSet::new(),
                         },
                     )?;
                 }
             }
-            result = next_maintenance_task(&mut workspace_cache_gc_handle, "workspace cache GC") => {
-                workspace_cache_gc_handle = None;
-                workspace_cache_gc_tick.reset();
+            result = next_maintenance_task(&mut home_cache_gc_handle, "home cache GC") => {
+                home_cache_gc_handle = None;
+                home_cache_gc_tick.reset();
                 if let Err(error) = result {
                     handle_stopping_signal(
-                        "workspace cache GC task failure",
+                        "home cache GC task failure",
                         &provider_state.cancel,
                         &provider_state.cancel_tokens,
                         &lifecycle,
@@ -1690,11 +1690,11 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                     break;
                 }
             }
-            _ = workspace_cache_gc_tick.tick() => {
-                if workspace_cache_gc_handle.is_none()
-                    && let Some(cache) = exec_config.workspace_cache.clone()
+            _ = home_cache_gc_tick.tick() => {
+                if home_cache_gc_handle.is_none()
+                    && let Some(cache) = exec_config.home_cache.clone()
                 {
-                    workspace_cache_gc_handle = Some(workspace_cache_gc_task(cache));
+                    home_cache_gc_handle = Some(home_cache_gc_task(cache));
                 }
             }
             // Mode changes (signals)
@@ -1913,7 +1913,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         .record(StartLoopEvent::MaintenanceDrainEntered);
     for (name, task) in [
         ("status retry", &mut status_retry_handle),
-        ("workspace cache GC", &mut workspace_cache_gc_handle),
+        ("home cache GC", &mut home_cache_gc_handle),
     ] {
         if task.is_some()
             && let Err(error) = next_maintenance_task(task, name).await
@@ -1930,7 +1930,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     // the historical shutdown-deadlock regression covered by mock providers.
     drop(discover_fut);
     teardown.event("drop_discover_fut");
-    drop(workspace_cache_change_fut);
+    drop(home_cache_change_fut);
 
     // Drain idle pool first — these sandboxes hold budget reservations. This
     // also clears `idle_sandboxes` in status.json so the final snapshot is
