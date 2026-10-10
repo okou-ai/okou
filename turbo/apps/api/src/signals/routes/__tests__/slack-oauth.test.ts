@@ -255,6 +255,8 @@ describe("Slack OAuth API routes", () => {
       expect(scopes).toContain("users:read");
       expect(scopes).toContain("files:read");
       expect(scopes).toContain("files:write");
+      expect(scopes).toContain("links:read");
+      expect(scopes).toContain("links:write");
       expect(signedOAuthState(redirectUrl).payload).toMatchObject({
         flow: "install",
         redirectUri: `${API_ORIGIN}/api/integrations/slack/oauth/callback`,

@@ -19,6 +19,7 @@ interface SlackPlainTextObject {
 interface SlackMrkdwnObject {
   readonly type: "mrkdwn";
   readonly text: string;
+  readonly verbatim?: boolean;
 }
 
 type SlackTextObject = SlackPlainTextObject | SlackMrkdwnObject;
@@ -76,6 +77,12 @@ interface SlackHeaderBlock {
   readonly text: SlackPlainTextObject;
 }
 
+interface SlackImageBlock {
+  readonly type: "image";
+  readonly image_url: string;
+  readonly alt_text: string;
+}
+
 interface SlackInputBlock {
   readonly type: "input";
   readonly block_id?: string;
@@ -102,6 +109,7 @@ export type SlackKnownBlock =
   | SlackContextBlock
   | SlackDividerBlock
   | SlackHeaderBlock
+  | SlackImageBlock
   | SlackInputBlock
   | SlackMarkdownBlock
   | SlackSectionBlock;
