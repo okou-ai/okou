@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if (($# != 1)) || [[ "$1" != test && "$1" != production ]]; then
-  echo "Usage: $0 <test|production>" >&2
+if (($# < 1 || $# > 2)) || [[ "$1" != test && "$1" != production ]]; then
+  echo "Usage: $0 <test|production> [true|false]" >&2
   exit 2
 fi
 gateway_environment=$1
+gateway_enabled=${2:-false}
+if [[ "$gateway_enabled" != true && "$gateway_enabled" != false ]]; then
+  echo "Gateway startup must be explicitly true or false" >&2
+  exit 2
+fi
 
 : "${CLOUDFLARE_API_TOKEN:?Cloudflare Worker deployment token is required}"
 : "${CLOUDFLARE_ACCOUNT_ID:?Cloudflare account ID is required}"
@@ -72,10 +77,10 @@ unset DISCORD_APPLICATION_ID DISCORD_BOT_TOKEN DISCORD_GATEWAY_SECRET
 unset DISCORD_GATEWAY_CONTROL_SECRET DISCORD_API_ORIGIN
 
 cd "$repo_root/turbo"
-# The supported deployment operation always turns startup off, even if the
-# source configuration was edited. Activation is a separate reviewed change.
+# Startup defaults to disabled regardless of the checked-in configuration.
+# Enabling it requires explicit deployment input; first bootstrap requires /start.
 pnpm --filter @okouai/discord-gateway-worker exec wrangler deploy \
   --env "$gateway_environment" \
-  --var DISCORD_GATEWAY_ENABLED:false \
+  --var "DISCORD_GATEWAY_ENABLED:$gateway_enabled" \
   --secrets-file "$worker_secrets" \
-  --message "Discord Gateway relay ${GITHUB_SHA:-manual} (disabled)"
+  --message "Discord Gateway relay ${GITHUB_SHA:-manual} (enabled=$gateway_enabled)"
