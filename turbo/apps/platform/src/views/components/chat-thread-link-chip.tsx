@@ -7,11 +7,11 @@ import { ROUTES } from "../../signals/route-paths.ts";
 import { Link } from "../router/link.tsx";
 
 export const STRUCTURED_INLINE_REFERENCE_CLASS = inlineReferenceVariants({
-  className: "max-w-[240px]",
+  className: "max-w-[min(240px,100%)]",
 });
 export const STRUCTURED_INLINE_LINK_REFERENCE_CLASS = inlineReferenceVariants({
   interactive: true,
-  className: "max-w-[240px]",
+  className: "max-w-[min(240px,100%)]",
 });
 
 /**
