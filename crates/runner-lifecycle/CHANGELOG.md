@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.1](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.5.0...runner-lifecycle-v0.5.1) (2026-10-10)
+
+
+### Bug Fixes
+
+* **runner:** retain accepted idle cleanup through caller cancellation ([#38770](https://github.com/okou-ai/okou/issues/38770)) ([5feb5d6](https://github.com/okou-ai/okou/commit/5feb5d66c39f43d06d05c6f087c54bd6c4e8e658))
+
+
+### Performance Improvements
+
+* **ci:** exclude audited test modules from runner binary inputs ([#38755](https://github.com/okou-ai/okou/issues/38755)) ([6ca9649](https://github.com/okou-ai/okou/commit/6ca96493c23cbe8d983a0bab2d237900258f57b0))
+
 ## [0.5.0](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.4.0...runner-lifecycle-v0.5.0) (2026-10-10)
 
 
