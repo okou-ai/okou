@@ -524,7 +524,6 @@ mod tests {
     use super::*;
 
     const TEST_DEVICE_INDEX: u32 = 1_000_000;
-    const TEST_TIMEOUT: Duration = Duration::from_secs(1);
     const TEST_COW_DATA: [u8; BLOCK_SIZE] = [0x5a; BLOCK_SIZE];
 
     fn create_test_base_image(path: &Path) {
@@ -871,20 +870,16 @@ mod tests {
             device,
         } = harness;
 
-        let result = tokio::time::timeout(
-            TEST_TIMEOUT,
-            device.destroy_keep_cow_with_retries(DestroyRetryPolicy {
+        // Bitmap persistence performs real fsyncs on the blocking pool. Await
+        // finalization itself; disk and scheduler latency are not the retry contract.
+        let result = device
+            .destroy_keep_cow_with_retries(DestroyRetryPolicy {
                 attempts: 2,
                 delay: std::time::Duration::ZERO,
-            }),
-        )
-        .await;
-        tokio::time::timeout(TEST_TIMEOUT, pool.cleanup())
-            .await
-            .expect("pool cleanup should complete");
-        let kept = result
-            .expect("destroy keep cow should complete")
-            .expect("destroy keep cow should retry after the first rename failure");
+            })
+            .await;
+        pool.cleanup().await;
+        let kept = result.expect("destroy keep cow should retry after the first rename failure");
 
         assert_eq!(rename_attempts.load(Ordering::Relaxed), 2);
         assert_eq!(kept.cow_file, cow_file);
@@ -918,20 +913,15 @@ mod tests {
             device,
         } = harness;
 
-        let result = tokio::time::timeout(
-            TEST_TIMEOUT,
-            device.destroy_keep_cow_with_retries(DestroyRetryPolicy {
+        let result = device
+            .destroy_keep_cow_with_retries(DestroyRetryPolicy {
                 attempts: 1,
                 delay: std::time::Duration::ZERO,
-            }),
-        )
-        .await;
-        tokio::time::timeout(TEST_TIMEOUT, pool.cleanup())
-            .await
-            .expect("pool cleanup should complete");
-        let error = result
-            .expect("destroy keep cow should complete")
-            .expect_err("one attempt cannot recover from the injected rename failure");
+            })
+            .await;
+        pool.cleanup().await;
+        let error =
+            result.expect_err("one attempt cannot recover from the injected rename failure");
         let error::NbdCowError::Io(error) = error else {
             panic!("expected the original rename I/O error, got {error:?}");
         };
