@@ -82,7 +82,7 @@ try {
   const beforeObservations = await client.query(
     "SELECT to_jsonb(ssh_connection_observations) AS value FROM ssh_connection_observations",
   );
-  await migrate("1363_tailscale_private_ssh");
+  await migrate("1365_tailscale_private_ssh");
   assert.deepEqual(
     (
       await client.query(
