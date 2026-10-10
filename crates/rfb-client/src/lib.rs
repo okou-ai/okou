@@ -414,7 +414,13 @@ impl fmt::Debug for ClientCertificateAuthentication {
 /// This legacy exchange protects only the credential block. It does not verify
 /// the server or encrypt subsequent RFB traffic. The caller must provide an
 /// independently authenticated, full-session protective transport when crossing
-/// an untrusted network. No product profile currently admits this engine path.
+/// an untrusted network.
+///
+/// The Runner admits a saved Apple DH profile only through an independently
+/// authorized, host-key-verified SSH connection terminating on the Mac and a
+/// literal loopback VNC destination (`127.0.0.1` or `::1`). VNC authorization
+/// remains independently required; profile support does not enable `VncAccess`
+/// or establish deployment acceptance.
 pub async fn authenticate_apple_dh<S>(
     stream: S,
     credentials: AppleDhCredentials,
