@@ -19,7 +19,8 @@ pub use archive_size_mismatch::ArchiveSizeMismatch;
 pub use error::{StorageError, StorageResult};
 pub use object_download_policy::{
     OBJECT_DOWNLOAD_BUDGET, OBJECT_DOWNLOAD_MAX_ATTEMPTS, OBJECT_DOWNLOAD_RETRY_DELAY,
-    OBJECT_DOWNLOAD_TIMEOUT, object_download_http_retry_after,
+    OBJECT_DOWNLOAD_TIMEOUT, ObjectDownloadBudgetExpired, ObjectDownloadRetry,
+    ObjectDownloadRetryBudget, object_download_http_retry_after,
     object_download_transient_transport_kind,
 };
 pub use telemetry::{SandboxOpRecord, SandboxOpReporter, StorageTelemetry};
