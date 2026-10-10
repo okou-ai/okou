@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Native rounded paint and text contracts</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        background: white;
+        font-family: "Liberation Sans", sans-serif;
+        color: #14243e;
+      }
+      .deck {
+        width: 1600px;
+      }
+      .slide {
+        position: relative;
+        width: 1600px;
+        height: 900px;
+        overflow: hidden;
+        background: #f4f7fb;
+      }
+      h1 {
+        position: absolute;
+        left: 72px;
+        top: 48px;
+        margin: 0;
+        font-size: 36px;
+      }
+      .label {
+        position: absolute;
+        left: 100px;
+        font-size: 22px;
+      }
+      .pill {
+        position: absolute;
+        display: inline-block;
+        padding: 10px 22px;
+        border-radius: 999px;
+        background: #dbeafe;
+        color: #1d4ed8;
+        font-size: 24px;
+        text-decoration: none;
+      }
+      .foot {
+        position: absolute;
+        left: 72px;
+        bottom: 36px;
+        font-size: 18px;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="deck">
+      <section class="slide" id="T01">
+        <h1>T01 / Native capsules at zero, positive and negative rotation</h1>
+        <div class="label" style="top: 190px">Unrotated control</div>
+        <div class="pill" style="left: 460px; top: 180px">
+          Rotated inline pill
+        </div>
+        <div class="label" style="top: 380px">Positive 8 degrees</div>
+        <div
+          class="pill"
+          style="left: 460px; top: 370px; transform: rotate(8deg)"
+        >
+          Rotated inline pill
+        </div>
+        <div class="label" style="top: 570px">Negative 25 degrees</div>
+        <div
+          class="pill"
+          style="left: 460px; top: 560px; transform: rotate(-25deg)"
+        >
+          Rotated inline pill
+        </div>
+        <div class="foot">
+          The background and editable text must share the same rotation and
+          position.
+        </div>
+      </section>
+      <section class="slide" id="T02">
+        <h1>T02 / Non-center origins and asymmetric CSS padding</h1>
+        <div class="label" style="top: 190px">Top-left origin</div>
+        <div
+          class="pill"
+          style="
+            left: 460px;
+            top: 180px;
+            transform: rotate(12deg);
+            transform-origin: top left;
+          "
+        >
+          Top-left anchored pill
+        </div>
+        <div class="label" style="top: 390px">
+          Bottom-right origin and translation
+        </div>
+        <div
+          class="pill"
+          style="
+            left: 540px;
+            top: 380px;
+            transform: translate(24px, 8px) rotate(-12deg);
+            transform-origin: bottom right;
+          "
+        >
+          Bottom-right anchored pill
+        </div>
+        <div class="label" style="top: 590px">
+          Different padding on all four sides
+        </div>
+        <div
+          class="pill"
+          style="
+            left: 540px;
+            top: 580px;
+            padding: 6px 38px 14px 12px;
+            transform: rotate(8deg);
+          "
+        >
+          Asymmetric native padding
+        </div>
+        <div class="foot">
+          Do not re-center the source transform origin or compensate with
+          arbitrary extra width.
+        </div>
+      </section>
+      <section class="slide" id="T03">
+        <h1>T03 / Native multiline text must retain real wrapping</h1>
+        <div class="label" style="top: 180px">Explicit line break</div>
+        <div
+          class="pill"
+          style="
+            left: 460px;
+            top: 180px;
+            width: 400px;
+            line-height: 1.5;
+            transform: rotate(8deg);
+          "
+        >
+          First line stays native<br />Second line stays native
+        </div>
+        <div class="label" style="top: 470px">
+          Natural wrapping, no forced nowrap
+        </div>
+        <div
+          class="pill"
+          style="
+            left: 460px;
+            top: 450px;
+            width: 330px;
+            line-height: 1.5;
+            transform: rotate(-8deg);
+          "
+        >
+          Natural wrapping still works inside this native rounded text box.
+        </div>
+        <div class="foot">
+          A rectangular editable text frame fixes preset insets, not legitimate
+          browser line breaks.
+        </div>
+      </section>
+      <section class="slide" id="T04">
+        <h1>T04 / Border, rich text, links and no-padding control</h1>
+        <div class="label" style="top: 190px">Native uniform border</div>
+        <div
+          class="pill"
+          style="
+            left: 460px;
+            top: 180px;
+            border: 2px solid #1d4ed8;
+            transform: rotate(8deg);
+          "
+        >
+          Native border and text
+        </div>
+        <div class="label" style="top: 370px">
+          Rich runs and editable hyperlink
+        </div>
+        <a
+          class="pill"
+          href="https://example.com/rounded-text-contract"
+          style="left: 460px; top: 360px; transform: rotate(-8deg)"
+          >Rich <strong>bold</strong> linked text</a
+        >
+        <div class="label" style="top: 570px">Zero CSS padding</div>
+        <div
+          class="pill"
+          style="left: 460px; top: 560px; padding: 0; transform: rotate(8deg)"
+        >
+          No CSS padding
+        </div>
+        <div class="foot">
+          No text may become an image, and native shape identities must stay
+          unique.
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

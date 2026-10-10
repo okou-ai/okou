@@ -105,6 +105,83 @@ function xmlValue(value: string): string {
     .replace(/</gu, "&lt;");
 }
 
+/** CSS padding belongs to a rectangular text box, not the preset's inset text area. */
+function separateRoundedText(
+  xml: string,
+  boxes: Layout["pages"][number]["roundedTextShapes"],
+  scale: number,
+  offsetX: number,
+  offsetY: number,
+): string {
+  let nextId = 0;
+  for (const match of xml.matchAll(/<p:cNvPr\b[^>]*\bid="(\d+)"/gu)) {
+    nextId = Math.max(nextId, Number(match[1]));
+  }
+  return xml.replace(/<p:sp\b[\s\S]*?<\/p:sp>/gu, (shape) => {
+    const properties = /<p:spPr\b[^>]*>[\s\S]*?<\/p:spPr>/u.exec(shape)?.[0];
+    if (
+      properties === undefined ||
+      !/<a:prstGeom\b[^>]*\bprst="roundRect"/u.test(properties)
+    )
+      return shape;
+    const text = /<p:txBody\b[^>]*>[\s\S]*?<\/p:txBody>/u.exec(shape)?.[0];
+    if (text === undefined || !text.includes("<a:t>")) return shape;
+    const nonVisual = /<p:nvSpPr\b[^>]*>[\s\S]*?<\/p:nvSpPr>/u.exec(shape)?.[0];
+    const transform = /<a:xfrm\b[\s\S]*?<\/a:xfrm>/u.exec(properties)?.[0];
+    if (nonVisual === undefined || transform === undefined)
+      throw new Error("Native rounded text has no shape metadata or transform");
+    nextId += 1;
+    if (nextId > 4_294_967_295)
+      throw new Error("No available native shape identifier");
+    const id = nextId.toString();
+    const off = /<a:off\b[^>]*\/>/u.exec(transform)?.[0];
+    const extent = /<a:ext\b[^>]*\/>/u.exec(transform)?.[0];
+    if (off === undefined || extent === undefined)
+      throw new Error("Native rounded text has no frame extent");
+    const box = boxes.find(({ rendered }) => {
+      return (
+        Math.abs(attribute(off, "x") - offsetX - rendered.x * scale) < 3 &&
+        Math.abs(attribute(off, "y") - offsetY - rendered.y * scale) < 3 &&
+        Math.abs(attribute(extent, "cx") - rendered.w * scale) < 3 &&
+        Math.abs(attribute(extent, "cy") - rendered.h * scale) < 3
+      );
+    });
+    const measuredTransform =
+      box === undefined
+        ? transform
+        : transform
+            .replace(
+              off,
+              `<a:off x="${Math.round(offsetX + box.measured.x * scale).toString()}" y="${Math.round(offsetY + box.measured.y * scale).toString()}"/>`,
+            )
+            .replace(
+              extent,
+              `<a:ext cx="${Math.round(box.measured.w * scale).toString()}" cy="${Math.round(box.measured.h * scale).toString()}"/>`,
+            );
+    let native = shape.replace(transform, measuredTransform);
+    if (box?.singleLine)
+      native = native.replace(
+        /(<a:bodyPr\b[^>]*?)\s+wrap="[^"]*"/u,
+        '$1 wrap="none"',
+      );
+    // Keep the original identity, hyperlinks and text properties on the text.
+    // The additional background must not duplicate accessibility/action metadata.
+    const background = native
+      .replace(/<p:txBody\b[^>]*>[\s\S]*?<\/p:txBody>/u, "")
+      .replace(
+        nonVisual,
+        `<p:nvSpPr><p:cNvPr id="${id}" name="Rounded background ${id}"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>`,
+      );
+    // Border/fill/shape-level effects belong only to the original native paint.
+    // Run-level text effects stay in txBody; real multi-line wrapping is retained.
+    const foreground = native.replace(
+      /<p:spPr\b[^>]*>[\s\S]*?<\/p:spPr>/u,
+      `<p:spPr>${measuredTransform}<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln><a:effectLst/></p:spPr>`,
+    );
+    return background + foreground;
+  });
+}
+
 /** Fixed boxes and per-line text are one layout contract, not an autofit heuristic. */
 export function applyGeometry(
   deck: Buffer,
@@ -333,7 +410,19 @@ export function applyGeometry(
     );
     if (tableIndex !== page.tables.length)
       throw new Error("Measured table was omitted by the renderer");
-    entries.set(name, Buffer.from(xml, "utf8"));
+    entries.set(
+      name,
+      Buffer.from(
+        separateRoundedText(
+          xml,
+          page.roundedTextShapes,
+          scale,
+          offsetX,
+          offsetY,
+        ),
+        "utf8",
+      ),
+    );
   }
   return pack(entries);
 }

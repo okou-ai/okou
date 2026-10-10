@@ -127,3 +127,28 @@ Follow-up work should establish measured fixed geometry, per-line rich-text
 geometry, slide activation/background preparation, and table row geometry at
 their owning layer. Add one independently verified contract at a time rather
 than restoring the entire policy bundle or weakening verification to look green.
+
+## Native rounded-background and text separation
+
+`rounded-text-contract.html` adds four independent pages for the C28 repair:
+
+- T01: zero, positive and negative rotation, including the original capsule text.
+- T02: non-center transform origins, translation and asymmetric CSS padding.
+- T03: explicit line breaks and normal multi-line wrapping.
+- T04: a uniform border, rich runs, a hyperlink and a zero-padding control.
+
+DrawingML's `roundRect` preset has an inset text rectangle in addition to the
+CSS padding represented by `bodyPr`. Export its paint as a native background
+and its original editable text as a transparent rectangular shape with the
+same transform and text properties. Keep background borders and shape effects
+on the background only, retain the original text identity and hyperlinks, and
+allocate an unused slide-wide identity for each background. For independent
+pure 2D rotations, retain measured local subpixel dimensions rather than the
+renderer-rounded dimensions, and disable viewer wrapping only when the browser
+measures a single line. Do not globally widen shapes or disable legitimate
+multi-line wrapping.
+
+Run the ordinary authorized source-built CLI and compare every page with the
+browser reference. The new fixture is not a screenshot-only deck, and its
+native text must not be duplicated invisibly to make verification pass.
+Native PowerPoint/Keynote remain separate acceptance targets.

@@ -17,6 +17,12 @@ const textBoxSchema = boxSchema.extend({
   underlineWidth: z.number().nonnegative(),
 });
 
+const roundedTextSchema = z.object({
+  rendered: boxSchema,
+  measured: boxSchema,
+  singleLine: z.boolean(),
+});
+
 const tableSchema = boxSchema.extend({
   rows: z.array(z.number().positive()),
   fills: z.array(z.array(z.string())),
@@ -44,6 +50,7 @@ export const layoutSchema = z.object({
       tables: z.array(tableSchema),
       orderedLists: z.array(orderedListSchema),
       textBoxes: z.array(textBoxSchema),
+      roundedTextShapes: z.array(roundedTextSchema),
       texts: z.array(z.string()),
     }),
   ),
@@ -353,12 +360,52 @@ export const PREPARE_LAYOUT = String.raw`((selector, activated) => {
       });
       return {...box(list),numbers,markers};
     });
+    const roundedTextShapes = [];
+    for (const owner of slide.querySelectorAll('*')) {
+      const style = getComputedStyle(owner);
+      if (!visible(owner) || !inlineTree(owner) || !textNodes(owner).length || parseFloat(style.borderRadius)<=0 || style.transform==='none' || style.writingMode!=='horizontal-tb') continue;
+      const matrix = new DOMMatrix(style.transform);
+      if (!matrix.is2D || Math.abs(matrix.a-matrix.d)>0.00001 || Math.abs(matrix.b+matrix.c)>0.00001 || Math.abs(Math.hypot(matrix.a,matrix.b)-1)>0.00001 || Math.abs(matrix.b)<0.00001) continue;
+      let ancestorTransform = false;
+      for (let ancestor=owner.parentElement; ancestor; ancestor=ancestor.parentElement) {
+        const value = getComputedStyle(ancestor).transform;
+        if (value!=='none') {
+          const m = new DOMMatrix(value);
+          if (!m.is2D || Math.abs(m.a-1)>0.00001 || Math.abs(m.d-1)>0.00001 || Math.abs(m.b)>0.00001 || Math.abs(m.c)>0.00001) ancestorTransform = true;
+        }
+        if (ancestor===slide) break;
+      }
+      if (ancestorTransform || ['::before','::after'].some(pseudo => !['none','normal','""'].includes(getComputedStyle(owner,pseudo).content))) continue;
+      const bounds = owner.getBoundingClientRect();
+      const centerX = bounds.left+bounds.width/2-rect.left, centerY = bounds.top+bounds.height/2-rect.top;
+      const rendered = {x:centerX-owner.offsetWidth/2,y:centerY-owner.offsetHeight/2,w:owner.offsetWidth,h:owner.offsetHeight};
+      // Pure rotation changes the axis-aligned union, not the local CSS layout.
+      // Neutralize only this rotation synchronously and restore its exact style.
+      const originalStyle = owner.getAttribute('style');
+      try {
+        owner.style.setProperty('transition','none','important');
+        owner.style.setProperty('animation','none','important');
+        owner.style.setProperty('transform','none','important');
+        const local = owner.getBoundingClientRect();
+        const fragments = textNodes(owner).flatMap(node => {
+          const range = document.createRange();
+          range.selectNodeContents(node);
+          return Array.from(range.getClientRects()).filter(r => r.width>0 && r.height>0);
+        });
+        if (!fragments.length) throw new Error('Native rounded text has no visible line geometry');
+        const singleLine = Math.max(...fragments.map(r=>r.top)) < Math.min(...fragments.map(r=>r.bottom));
+        roundedTextShapes.push({rendered,measured:{x:centerX-local.width/2,y:centerY-local.height/2,w:local.width,h:local.height},singleLine});
+      } finally {
+        if (originalStyle===null) owner.removeAttribute('style');
+        else owner.setAttribute('style',originalStyle);
+      }
+    }
     const textBoxes = prepared.filter(part => slide.contains(part.span)).map(part => ({
       ...box(part.span), ...fonts(part.style), strike:part.style.textDecorationLine.includes('line-through'),
       underlineColor:part.style.textDecorationLine.includes('underline') ? color(part.style.textDecorationColor) : '',
       underlineWidth:parseFloat(part.style.textDecorationThickness) || 0,
     }));
-    return {width:rect.width,height:rect.height,tables,orderedLists,textBoxes,texts:textNodes(slide).map(node => node.nodeValue.trim())};
+    return {width:rect.width,height:rect.height,tables,orderedLists,textBoxes,roundedTextShapes,texts:textNodes(slide).map(node => node.nodeValue.trim())};
   });
   return JSON.stringify({pages,activated,fragmented});
 })`;

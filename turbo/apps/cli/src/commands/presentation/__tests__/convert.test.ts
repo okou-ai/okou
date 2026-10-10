@@ -173,6 +173,11 @@ const state = {
       leading: number;
     }[];
   }[],
+  roundedTextShapes: [] as {
+    rendered: { x: number; y: number; w: number; h: number };
+    measured: { x: number; y: number; w: number; h: number };
+    singleLine: boolean;
+  }[],
   /** Every expression the command evaluated in the page, in order. */
   evaluated: [] as string[],
   openedUrls: [] as string[],
@@ -252,6 +257,7 @@ function fakeEval(expression: string): string {
           tables: state.tables,
           orderedLists: index === 0 ? state.orderedLists : [],
           textBoxes: state.textBoxes,
+          roundedTextShapes: index === 0 ? state.roundedTextShapes : [],
         };
       }),
       activated: 0,
@@ -382,6 +388,7 @@ describe("okou presentation convert", () => {
     state.textBoxes = [];
     state.tables = [];
     state.orderedLists = [];
+    state.roundedTextShapes = [];
     state.evaluated = [];
     state.openedUrls = [];
     state.slideCount = 2;
@@ -418,6 +425,118 @@ describe("okou presentation convert", () => {
     expect(parts.get("ppt/slides/slide2.xml")).toBe(
       slideXml(["Second line"]).replace("<a:spAutoFit/>", "<a:noAutofit/>"),
     );
+  });
+
+  it.each([
+    { rotation: 0, singleLine: false },
+    { rotation: 480_000, singleLine: true },
+    { rotation: -1_500_000, singleLine: false },
+  ])(
+    "separates rounded native paint at rotation $rotation and preserves measured singleLine=$singleLine",
+    async ({ rotation, singleLine }) => {
+      state.pageTexts = ["Rotated inline pill", "Second line"];
+      const scale = (13.333 * 914_400) / 1600;
+      const offsetY = (7.5 * 914_400 - 900 * scale) / 2;
+      const rendered = {
+        x: 944_023 / scale,
+        y: (5_090_118 - offsetY) / scale,
+        w: 1_729_697 / scale,
+        h: 365_751 / scale,
+      };
+      const measured = {
+        x: rendered.x + (rendered.w - 226.78125) / 2,
+        y: rendered.y + (rendered.h - 48) / 2,
+        w: 226.78125,
+        h: 48,
+      };
+      state.roundedTextShapes = [{ rendered, measured, singleLine }];
+      const transform = `<a:xfrm rot="${rotation.toString()}"><a:off x="944023" y="5090118"/><a:ext cx="1729697" cy="365751"/></a:xfrm>`;
+      const measuredTransform = `<a:xfrm rot="${rotation.toString()}"><a:off x="${Math.round(measured.x * scale).toString()}" y="${Math.round(offsetY + measured.y * scale).toString()}"/><a:ext cx="${Math.round(measured.w * scale).toString()}" cy="${Math.round(measured.h * scale).toString()}"/></a:xfrm>`;
+      const body =
+        '<p:txBody><a:bodyPr wrap="square" lIns="167636" tIns="76198" rIns="167636" bIns="76198"><a:spAutoFit/></a:bodyPr>' +
+        '<a:lstStyle/><a:p><a:r><a:rPr sz="1440"><a:solidFill><a:srgbClr val="1D4ED8"/></a:solidFill><a:hlinkClick r:id="rId3"/></a:rPr>' +
+        "<a:t>Rotated inline pill</a:t></a:r></a:p></p:txBody>";
+      const paint =
+        `<p:spPr>${transform}<a:prstGeom prst="roundRect"><a:avLst><a:gd name="adj" fmla="val 50000"/></a:avLst></a:prstGeom>` +
+        '<a:solidFill><a:srgbClr val="DBEAFE"/></a:solidFill><a:ln w="12700"><a:solidFill><a:srgbClr val="14243E"/></a:solidFill></a:ln>' +
+        '<a:effectLst><a:outerShdw blurRad="12700" dist="12700" dir="2700000"><a:srgbClr val="000000"/></a:outerShdw></a:effectLst></p:spPr>';
+      const metadata =
+        '<p:nvSpPr><p:cNvPr id="9" name="Editable pill" descr="Source label"><a:hlinkClick r:id="rId4"/></p:cNvPr><p:cNvSpPr/><p:nvPr/></p:nvSpPr>';
+      state.slideXml = [
+        `<p:sld xmlns:a="a" xmlns:p="p" xmlns:r="r"><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/></p:nvGrpSpPr>` +
+          `<p:sp>${metadata}${paint}${body}</p:sp>` +
+          '<p:pic><p:nvPicPr><p:cNvPr id="30" name="Existing image"/></p:nvPicPr></p:pic>' +
+          "</p:spTree></p:cSld></p:sld>",
+        slideXml(["Second line"]),
+      ];
+      await convert(["--verify"]);
+      const xml = readZip(readFileSync(outPath)).get("ppt/slides/slide1.xml");
+      expect(xml).toBeDefined();
+      const shapes = [...(xml ?? "").matchAll(/<p:sp\b[\s\S]*?<\/p:sp>/gu)].map(
+        (match) => {
+          return match[0];
+        },
+      );
+      expect(shapes).toHaveLength(2);
+      const [background, foreground] = shapes;
+      expect(background).toContain('id="31" name="Rounded background 31"');
+      expect(background).toContain(paint.replace(transform, measuredTransform));
+      expect(background).not.toContain("<p:txBody>");
+      expect(background).not.toContain("Source label");
+      expect(background).not.toContain("hlinkClick");
+      expect(foreground).toContain(metadata);
+      expect(foreground).toContain(measuredTransform);
+      expect(foreground).toContain(
+        body
+          .replace("<a:spAutoFit/>", "<a:noAutofit/>")
+          .replace('wrap="square"', `wrap="${singleLine ? "none" : "square"}"`),
+      );
+      expect(foreground).toContain('prst="rect"');
+      expect(foreground).toContain(
+        "<a:noFill/><a:ln><a:noFill/></a:ln><a:effectLst/>",
+      );
+      expect(foreground).not.toContain('val="DBEAFE"');
+      expect(foreground).not.toContain("outerShdw");
+      expect(xml?.match(/<a:t>Rotated inline pill<\/a:t>/gu)).toHaveLength(1);
+      expect(xml?.match(/<p:cNvPr\b[^>]*\bid="\d+"/gu)).toHaveLength(4);
+      expect(readZip(readFileSync(outPath)).get("[Content_Types].xml")).toBe(
+        "<Types/>",
+      );
+    },
+  );
+
+  it("retains multiline paragraphs and unique identities when splitting multiple rounded shapes", async () => {
+    state.pageTexts = ["First line", "Second line"];
+    const rounded = (id: number, texts: readonly string[]): string => {
+      return (
+        `<p:sp><p:nvSpPr><p:cNvPr id="${id.toString()}" name="Rounded text"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>` +
+        '<p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1000" cy="1000"/></a:xfrm>' +
+        '<a:prstGeom prst="roundRect"><a:avLst/></a:prstGeom></p:spPr>' +
+        '<p:txBody><a:bodyPr wrap="square" lIns="0" tIns="0" rIns="0" bIns="0"><a:spAutoFit/></a:bodyPr>' +
+        texts
+          .map((text) => {
+            return `<a:p><a:r><a:t>${text}</a:t></a:r></a:p>`;
+          })
+          .join("") +
+        "</p:txBody></p:sp>"
+      );
+    };
+    state.slideXml = [
+      `<p:sld xmlns:a="a" xmlns:p="p"><p:cSld><p:spTree>${rounded(7, ["First line", "Second line"])}${rounded(21, ["Additional label"])}</p:spTree></p:cSld></p:sld>`,
+      slideXml(["Second line"]),
+    ];
+    await convert(["--verify"]);
+    const xml = readZip(readFileSync(outPath)).get("ppt/slides/slide1.xml");
+    const ids = [...(xml ?? "").matchAll(/<p:cNvPr\b[^>]*\bid="(\d+)"/gu)].map(
+      (match) => {
+        return match[1];
+      },
+    );
+    expect(ids).toEqual(["22", "7", "23", "21"]);
+    expect(new Set(ids).size).toBe(4);
+    expect(xml?.match(/<a:bodyPr wrap="square"/gu)).toHaveLength(2);
+    expect(xml?.match(/<a:p>/gu)).toHaveLength(3);
+    expect(xml?.match(/<a:t>/gu)).toHaveLength(3);
   });
 
   it("preserves ordered-list start and explicit item values", async () => {
