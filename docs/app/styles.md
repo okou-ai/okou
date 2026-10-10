@@ -491,6 +491,22 @@ type rail and its current-model rows pair a label with a summary line and state
 their own `h-11` and `h-12`; they sit outside this contract because they are not
 single-line list rows.
 
+### Inline references
+
+`inlineReferenceVariants` from `@okouai/ui` owns the shared treatment of
+references in editable and rendered text. It supplies a 28px height, `rounded-md`,
+the shared hairline with `border-primary/25`, and `bg-primary/10`. Labels use
+`text-foreground` to retain contrast on filled message surfaces; reference glyphs
+use `text-selected-foreground` to follow the active palette in light and dark.
+Callers keep their native editor, link, button, or read-only span, the reference's
+icon or thumbnail, width constraints, and title truncation.
+
+Only interactive references opt into hover, pressed, and focus feedback. Editor
+selection opts into a constant-width primary border and a stronger fill; focus
+continues to own the ring. A reference with an inner action can omit outer
+padding and let the action own its padding and feedback. Read-only references
+retain the same resting surface without acquiring link or button behavior.
+
 ### Inline badges
 
 `Badge` from `@okouai/ui` owns the shared inline badge and tag treatment: role

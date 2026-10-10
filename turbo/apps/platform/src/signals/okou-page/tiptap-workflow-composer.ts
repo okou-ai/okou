@@ -24,7 +24,11 @@ import {
   type Transaction,
 } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, type NodeView } from "@tiptap/pm/view";
-import { createCompositionGate, type CompositionGate } from "@okouai/ui";
+import {
+  createCompositionGate,
+  inlineReferenceVariants,
+  type CompositionGate,
+} from "@okouai/ui";
 import {
   generationTemplateRequestSchema,
   type GenerationTemplateRequest,
@@ -356,35 +360,28 @@ function createReadInputForSubmissionCommand(
 }
 
 const FEEDBACK_ITEM_NODE_NAME = "feedbackItem";
-const COMPOSER_INLINE_REFERENCE_CLASS =
-  "relative -top-px mx-0.5 inline-flex h-7 max-w-full select-none items-center " +
-  "gap-1.5 whitespace-nowrap rounded-md bg-orange-500/10 px-2 align-middle " +
-  "text-[13px] font-medium text-orange-600 transition-colors " +
-  "hover:bg-orange-500/15 dark:bg-orange-400/15 dark:text-orange-300 " +
-  "dark:hover:bg-orange-400/20 data-[selected]:bg-orange-500/15 " +
-  "data-[selected]:ring-1 data-[selected]:ring-inset " +
-  "data-[selected]:ring-orange-500/40 dark:data-[selected]:bg-orange-400/20 " +
-  "dark:data-[selected]:ring-orange-300/40";
+const COMPOSER_INLINE_REFERENCE_CLASS = inlineReferenceVariants({
+  interactive: true,
+  selectable: true,
+  className: "max-w-full select-none whitespace-nowrap",
+});
 
 /**
- * Same surface as COMPOSER_INLINE_REFERENCE_CLASS with the padding and hover
- * moved onto the zones below, so each half of a split chip reacts on its own.
+ * Same reference surface, with padding and interaction feedback owned by the
+ * inner template action.
  */
-const INLINE_TEMPLATE_CHIP_CLASS =
-  "relative -top-px mx-0.5 inline-flex h-7 max-w-full select-none items-center " +
-  "overflow-hidden whitespace-nowrap rounded-md bg-orange-500/10 align-middle " +
-  "text-[13px] font-medium text-orange-600 transition-colors " +
-  "dark:bg-orange-400/15 dark:text-orange-300 data-[selected]:bg-orange-500/15 " +
-  "data-[selected]:ring-1 data-[selected]:ring-inset " +
-  "data-[selected]:ring-orange-500/40 dark:data-[selected]:bg-orange-400/20 " +
-  "dark:data-[selected]:ring-orange-300/40";
+const INLINE_TEMPLATE_CHIP_CLASS = inlineReferenceVariants({
+  selectable: true,
+  padding: "none",
+  className:
+    "max-w-full select-none overflow-hidden whitespace-nowrap transition-colors",
+});
 
 const INLINE_TEMPLATE_NAME_ZONE_CLASS =
-  "flex h-full min-w-0 items-center gap-1.5 px-2 text-orange-600 " +
-  "transition-colors dark:text-orange-300 " +
-  "hover:bg-orange-500/15 focus-visible:outline-none focus-visible:ring-1 " +
-  "focus-visible:ring-inset focus-visible:ring-orange-500/40 " +
-  "dark:hover:bg-orange-400/20 dark:focus-visible:ring-orange-300/40";
+  "flex h-full min-w-0 items-center gap-1.5 px-2 text-foreground " +
+  "transition-colors hover:bg-primary/5 active:bg-primary/10 " +
+  "focus-visible:outline-none focus-visible:ring-1 " +
+  "focus-visible:ring-inset focus-visible:ring-ring/50";
 
 interface ChatThreadMentionAttributes {
   readonly threadId: string;
@@ -416,7 +413,7 @@ function createChatThreadMentionNodeView(node: ProseMirrorNode): NodeView {
   const icon = createComposerIcon(13, 1.7, [
     "M3 20l1.3 -3.9c-2.324 -3.437 -1.426 -7.872 2.1 -10.374c3.526 -2.501 8.59 -2.296 11.845 .48c3.255 2.777 3.695 7.266 1.029 10.501c-2.666 3.235 -7.615 4.215 -11.574 2.293l-4.7 1",
   ]);
-  icon.setAttribute("class", "shrink-0");
+  icon.setAttribute("class", "shrink-0 text-selected-foreground");
   const title = document.createElement("span");
   title.className = "min-w-0 select-none truncate";
   dom.append(icon, title);
@@ -1114,10 +1111,10 @@ function createInlineTemplateNodeView(
     "M 7 17h.01",
     "m11 8 2.3-2.3a2.4 2.4 0 0 1 3.404.004L18.6 7.6a2.4 2.4 0 0 1 .026 3.434L9.9 19.8",
   ]);
+  icon.setAttribute("class", "text-selected-foreground");
   const title = document.createElement("span");
   title.className =
-    "min-w-0 select-none truncate text-[13px] font-medium text-orange-600 " +
-    "dark:text-orange-300";
+    "min-w-0 select-none truncate text-[13px] font-medium text-foreground";
   openButton.append(glyph, title);
   dom.append(openButton);
 

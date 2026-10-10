@@ -1,17 +1,18 @@
 import { MessageCircle } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { inlineReferenceVariants } from "@okouai/ui";
 
 import type { ChatThreadLink } from "../../lib/chat-thread-link.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
 import { Link } from "../router/link.tsx";
 
-export const STRUCTURED_INLINE_REFERENCE_CLASS =
-  "relative -top-px mx-0.5 inline-flex h-7 max-w-[240px] items-center " +
-  "gap-1.5 rounded-md bg-muted px-2 align-middle text-[13px] font-medium text-foreground";
-const STRUCTURED_INLINE_INTERACTIVE_CLASS =
-  "transition-colors hover:bg-state-hover-overlay focus-visible:outline-none " +
-  "focus-visible:ring-2 focus-visible:ring-ring/50 active:bg-state-pressed-overlay";
-export const STRUCTURED_INLINE_LINK_REFERENCE_CLASS = `${STRUCTURED_INLINE_REFERENCE_CLASS} ${STRUCTURED_INLINE_INTERACTIVE_CLASS}`;
+export const STRUCTURED_INLINE_REFERENCE_CLASS = inlineReferenceVariants({
+  className: "max-w-[240px]",
+});
+export const STRUCTURED_INLINE_LINK_REFERENCE_CLASS = inlineReferenceVariants({
+  interactive: true,
+  className: "max-w-[240px]",
+});
 
 /**
  * Markdown frames style every `a` through unlayered stylesheet rules — link
@@ -20,8 +21,8 @@ export const STRUCTURED_INLINE_LINK_REFERENCE_CLASS = `${STRUCTURED_INLINE_REFER
  * a chip inside Markdown looking like one in a user message.
  */
 const MARKDOWN_CHIP_RESET_CLASS =
-  "bg-muted! text-foreground! no-underline! " +
-  "hover:bg-state-hover-overlay! active:bg-state-pressed-overlay!";
+  "bg-primary/10! text-foreground! no-underline! " +
+  "hover:bg-primary/15! active:bg-primary/20!";
 
 /**
  * An in-App link to a chat thread, shown as an inline chip with its title.
@@ -56,7 +57,7 @@ export function ChatThreadLinkChip({
       }
       title={title}
     >
-      <MessageCircle size={13} className="shrink-0" />
+      <MessageCircle size={13} className="shrink-0 text-selected-foreground" />
       <span className="min-w-0 truncate">{title}</span>
     </Link>
   );
