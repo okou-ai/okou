@@ -1,5 +1,25 @@
 # Changelog
 
+## [8.742.0](https://github.com/okou-ai/okou/compare/core-v8.741.1...core-v8.742.0) (2026-10-10)
+
+
+### Features
+
+* **api:** add minimal slack previews for artifact links ([#38715](https://github.com/okou-ai/okou/issues/38715)) ([6831e9c](https://github.com/okou-ai/okou/commit/6831e9c986d7d68f109785697032af8f4f2b9620))
+* **core:** enable stable preview fullscreen for staff ([#38669](https://github.com/okou-ai/okou/issues/38669)) ([206199e](https://github.com/okou-ai/okou/commit/206199ec41100bdf448efd2e6046693eb63c2f02))
+
+
+### Bug Fixes
+
+* replace okou branding with final rudy logo assets ([#38732](https://github.com/okou-ai/okou/issues/38732)) ([0207873](https://github.com/okou-ai/okou/commit/020787385355dd03548bda3ea621bf414f159cf5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.550.0
+
 ## [8.741.1](https://github.com/okou-ai/okou/compare/core-v8.741.0...core-v8.741.1) (2026-10-10)
 
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.224.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.224.1...runner-rs-v0.224.2) (2026-10-10)
+
+
+### Refactoring
+
+* **runner:** unify responses sse prefix buffering ([#38722](https://github.com/okou-ai/okou/issues/38722)) ([cb2b89a](https://github.com/okou-ai/okou/commit/cb2b89abdd337fda82d3817c36247f74eec51a2f))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.224.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.224.0...runner-rs-v0.224.1) (2026-10-10)
 
 ### Release Dependencies

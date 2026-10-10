@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.2](https://github.com/okou-ai/okou/compare/runner-storage-v0.4.1...runner-storage-v0.4.2) (2026-10-10)
+
+
+### Refactoring
+
+* **runner-storage:** centralize bounded object-download retry scheduling ([#38730](https://github.com/okou-ai/okou/issues/38730)) ([1e78c25](https://github.com/okou-ai/okou/commit/1e78c25bde7f27f07c062f28021f8e656d4dfebb))
+
+
+### Performance Improvements
+
+* **test:** reduce redundant filesystem fixture work ([#38680](https://github.com/okou-ai/okou/issues/38680)) ([a625535](https://github.com/okou-ai/okou/commit/a625535e7607a25c3bb67c89364466b5305c637c))
+
 ## [0.4.1](https://github.com/okou-ai/okou/compare/runner-storage-v0.4.0...runner-storage-v0.4.1) (2026-10-10)
 
 ## [0.4.0](https://github.com/okou-ai/okou/compare/runner-storage-v0.3.3...runner-storage-v0.4.0) (2026-10-10)

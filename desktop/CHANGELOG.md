@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.53.0](https://github.com/okou-ai/okou/compare/desktop-v0.52.2...desktop-v0.53.0) (2026-10-10)
+
+
+### Features
+
+* **desktop:** generate swift constants, routes, and response types from the api contracts ([#38691](https://github.com/okou-ai/okou/issues/38691)) ([0199845](https://github.com/okou-ai/okou/commit/0199845f1829a890f32eb9768f44ef85723ea56e))
+
+
+### Bug Fixes
+
+* replace okou branding with final rudy logo assets ([#38732](https://github.com/okou-ai/okou/issues/38732)) ([0207873](https://github.com/okou-ai/okou/commit/020787385355dd03548bda3ea621bf414f159cf5))
+
+
+### Performance Improvements
+
+* **desktop:** replace session polling with clerk events ([#38699](https://github.com/okou-ai/okou/issues/38699)) ([1a41d94](https://github.com/okou-ai/okou/commit/1a41d94a2ea196546330d34fc3b5bced68d21c12))
+
 ## [0.52.2](https://github.com/okou-ai/okou/compare/desktop-v0.52.1...desktop-v0.52.2) (2026-10-10)
 
 
