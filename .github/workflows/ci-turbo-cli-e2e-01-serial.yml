@@ -1,0 +1,84 @@
+name: turbo-cli-e2e-01-serial
+"on":
+  workflow_call:
+    inputs:
+      dependencies:
+        type: string
+        required: true
+    secrets:
+      CODECOV_TOKEN:
+        required: false
+env:
+  npm_config_audit: "false"
+jobs:
+  cli-e2e-01-serial:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: cli-e2e-01-serial-${{ fromJSON(inputs.dependencies).prepare.outputs.job-ref }}
+      cancel-in-progress: true
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          submodules: recursive
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22
+      - name: Download CLI artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: cli-package
+          path: /tmp/cli-package
+      - name: Install CLI globally
+        run: |
+          set -euo pipefail
+          package_root="$(mktemp -d)"
+          tar -xzf /tmp/cli-package/package.tgz -C "$package_root"
+          node_prefix=$(dirname "$(dirname "$(command -v node)")")
+          cli_dir="$node_prefix/lib/node_modules/@okouai/cli"
+          sudo rm -rf "$cli_dir"
+          sudo mkdir -p "$node_prefix/lib/node_modules/@okouai"
+          sudo cp -a "$package_root/package" "$cli_dir"
+          sudo chmod +x "$cli_dir/okou.js"
+          sudo ln -sf "$cli_dir/okou.js" "$node_prefix/bin/okou"
+          okou --help
+          okou __agent-loop --help
+      - name: Run Serial E2E Tests
+        run: |
+          echo "=== Running Serial E2E Tests ==="
+          mkdir -p e2e/results
+          BATS_TEST_TIMEOUT=30 ./e2e/test/libs/bats/bin/bats -T --report-formatter junit --output e2e/results ./e2e/tests/01-serial/*.bats
+          echo "✅ Serial tests passed"
+      - name: Print E2E trace log
+        if: always()
+        run: |
+          if [ -f /tmp/e2e-trace.log ]; then
+            echo "=== E2E CLI Trace (Serial) ==="
+            cat /tmp/e2e-trace.log
+          fi
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        timeout-minutes: 1
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          flags: e2e-serial
+          files: e2e/results/*.xml
+          report_type: test_results
+      - name: Upload JUnit XML artifact
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: e2e-serial-junit-xml
+          path: e2e/results/
+          retention-days: 7
+    permissions:
+      actions: read
+      contents: read
+      deployments: write
+      id-token: write
+      issues: write
+      pull-requests: write

@@ -1,0 +1,59 @@
+name: turbo-cli-e2e-02-browser
+"on":
+  workflow_call:
+    inputs:
+      dependencies:
+        type: string
+        required: true
+    secrets:
+      CLERK_SECRET_KEY:
+        required: false
+      VERCEL_AUTOMATION_BYPASS_SECRET:
+        required: false
+env:
+  npm_config_audit: "false"
+jobs:
+  cli-e2e-02-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    concurrency:
+      group: cli-e2e-02-browser-${{ fromJSON(inputs.dependencies).prepare.outputs.job-ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          submodules: recursive
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22
+      - name: Install E2E dependencies
+        run: npm install -g agent-browser@0.22.0
+      - name: Run browser E2E tests
+        run: |
+          BATS_TEST_TIMEOUT=180 ./e2e/test/libs/bats/bin/bats -T ./e2e/tests/02-browser/*.bats
+        env:
+          OKOU_API_BACKEND_URL: ${{ fromJSON(inputs.dependencies).deploy-api.outputs.preview-url }}
+          OKOU_AUTH_URL: ${{ fromJSON(inputs.dependencies).deploy-app.outputs.preview-url }}
+          OKOU_AUTH_REDIRECT_URL: ${{ fromJSON(inputs.dependencies).deploy-app.outputs.preview-url }}/_/skeleton
+          OKOU_AUTH_DOMAIN: ${{ fromJSON(inputs.dependencies).prepare.outputs.api-preview-url != '' && format('{0}-api.{1}', fromJSON(inputs.dependencies).prepare.outputs.job-ref, vars.PREVIEW_DOMAIN || 'vm6.ai') || '' }}
+          JOB_REF: ${{ fromJSON(inputs.dependencies).prepare.outputs.job-ref }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          E2E_ACCOUNT: ${{ fromJSON(inputs.dependencies).prepare.outputs.job-ref }}+clerk_test+${{ github.run_id }}-${{ github.run_attempt }}+browser@vm0-e2e.ai
+      - name: Cleanup browser E2E account
+        if: always()
+        shell: bash
+        run: |
+          source e2e/helpers/browser.bash
+          delete_e2e_account_if_exists
+        env:
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          E2E_ACCOUNT: ${{ fromJSON(inputs.dependencies).prepare.outputs.job-ref }}+clerk_test+${{ github.run_id }}-${{ github.run_attempt }}+browser@vm0-e2e.ai
+    permissions:
+      actions: read
+      contents: read
+      deployments: write
+      id-token: write
+      issues: write
+      pull-requests: write

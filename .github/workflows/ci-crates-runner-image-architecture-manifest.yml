@@ -1,0 +1,73 @@
+name: crates-runner-image-architecture-manifest
+"on":
+  workflow_call:
+    inputs:
+      dependencies:
+        type: string
+        required: true
+      image-handoff:
+        type: string
+        required: true
+      matrix:
+        type: string
+        required: true
+    secrets:
+      AWS_METAL_RUNNER_HOSTS:
+        required: false
+      AWS_METAL_RUNNER_SSH_KEY:
+        required: false
+      CF_ACCESS_CLIENT_ID:
+        required: false
+      CF_ACCESS_CLIENT_SECRET:
+        required: false
+env:
+  npm_config_audit: "false"
+jobs:
+  runner-image-architecture-manifest:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(inputs.matrix) }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Setup SSH via Cloudflare Tunnel
+        uses: ./.github/actions/setup-ssh-tunnel
+        with:
+          ssh-user: ${{ vars.AWS_METAL_RUNNER_USER }}
+          ssh-hosts: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
+          ssh-key: ${{ secrets.AWS_METAL_RUNNER_SSH_KEY }}
+          cf-access-client-id: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          cf-access-client-secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+      - name: Resolve metal hosts
+        id: hosts
+        env:
+          AWS_METAL_RUNNER_HOSTS: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
+          METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
+          RUNNER_HOST_GROUP_ID: ${{ matrix.id }}
+        run: |
+          HOSTS=$(.github/scripts/runner-host-architecture-groups.sh hosts "$RUNNER_HOST_GROUP_ID")
+          if ! printf '%s\n' "$HOSTS" | grep -q .; then
+            echo "::error::No metal hosts found for runner host group $RUNNER_HOST_GROUP_ID"
+            exit 1
+          fi
+          {
+            echo "hosts<<HOSTS"
+            echo "$HOSTS"
+            echo "HOSTS"
+          } >> "$GITHUB_OUTPUT"
+      - name: Wait for runner image manifest for ${{ matrix.label }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.sha }}
+          LOOKUP_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          JOB_REF: ${{ fromJSON(inputs.dependencies).crates-detect.outputs.runner-image-job-ref }}
+          METAL_HOSTS: ${{ steps.hosts.outputs.hosts }}
+          TARGET: ${{ matrix.target }}
+          PROFILE: vm0/default
+          IMAGE_HANDOFF: ${{ inputs.image-handoff }}
+        run: .github/scripts/ci-image-handoff.sh single

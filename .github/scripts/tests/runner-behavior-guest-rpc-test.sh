@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export RUBYOPT="${RUBYOPT:-} -r$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/workflow-test-owners.rb"
+
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 WORKER="$REPO_ROOT/.github/scripts/runner-behavior-guest-rpc.sh"
 TEST_ROOT=$(mktemp -d)
@@ -106,9 +108,9 @@ if env PATH="$TEST_ROOT/bin:$PATH" METAL_USER=test HOST=test JOB_REF=../escape \
 fi
 
 ruby -ryaml - "$REPO_ROOT/.github/workflows/crates.yml" <<'RUBY'
-jobs = YAML.load_file(ARGV.fetch(0)).fetch('jobs')
+jobs = load_workflow_test_owners(ARGV.fetch(0)).fetch('jobs')
 native = jobs.fetch('guest-rpc-firecracker-test')
-raise 'native test must follow its selected image and compiled binary' unless native.fetch('needs') == ['runner-test-prepare', 'guest-rpc-firecracker-build']
+raise 'native test must follow its selected image and compiled binary' unless native.fetch('needs').sort == ['guest-rpc-firecracker-build', 'runner-test-prepare']
 raise 'container steps require Bash' unless native.dig('defaults', 'run', 'shell') == 'bash'
 validation = native.fetch('steps').index { |step| step['run'] == 'bash .github/scripts/runner-native-test-artifact.sh validate' }
 ssh_setup = native.fetch('steps').index { |step| step['uses'] == './.github/actions/setup-ssh-tunnel' }
@@ -118,7 +120,7 @@ raise 'native artifact must be validated before contacting metal' unless validat
   raise "wrong #{kind} source" unless native.fetch('env').fetch("DEFAULT_#{kind.upcase}_HASH") == expected
 end
 gate = jobs.fetch('ci-gate-crates')
-raise 'missing native gate dependency' unless gate.fetch('needs').include?('guest-rpc-firecracker-test')
+raise 'missing native gate dependency' unless gate.fetch('needs').include?('crates-guest-rpc-firecracker-test-arm64')
 raise 'native failure must block' unless gate.fetch('steps').any? { |step| step.fetch('run', '').include?('check_result "guest-rpc-firecracker-test"') }
 RUBY
 echo 'PASS: native RPC selection, image locks, failure propagation and cleanup'

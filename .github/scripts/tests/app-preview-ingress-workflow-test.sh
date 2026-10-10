@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export RUBYOPT="${RUBYOPT:-} -r$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/workflow-test-owners.rb"
+
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 
 ruby -ryaml - "${repo_root}/.github/workflows/turbo.yml" \
   "${repo_root}/.github/workflows/cleanup.yml" <<'RUBY'
 
-turbo = YAML.load_file(ARGV.fetch(0))
+turbo = load_workflow_test_owners(ARGV.fetch(0))
 jobs = turbo.fetch("jobs")
 deploy_app = jobs.fetch("deploy-app")
 steps = deploy_app.fetch("steps")

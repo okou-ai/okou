@@ -15,7 +15,7 @@ done
 
 actual=$(
   for workflow in turbo crates runner-image security; do
-    yq -o=json '.' "${REPO_ROOT}/.github/workflows/${workflow}.yml" |
+    python3 "${SCRIPT_DIR}/tests/load-workflow-test-owners.py" -o=json '.' "${REPO_ROOT}/.github/workflows/${workflow}.yml" |
       jq -r --arg workflow "$workflow" '
         .jobs
         | to_entries[]

@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export RUBYOPT="${RUBYOPT:-} -r$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/workflow-test-owners.rb"
+
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 repo_root="$(cd "$repo_root/.." && pwd)"
 
 ruby -ryaml -rjson -ropen3 -rtmpdir -rfileutils - "$repo_root" <<'RUBY'
 root = ARGV.fetch(0)
-workflow = YAML.load_file(File.join(root, ".github/workflows/crates.yml"))
+workflow = load_workflow_test_owners(File.join(root, ".github/workflows/crates.yml"))
 jobs = workflow.fetch("jobs")
 groups = jobs.fetch("runner-host-groups")
 selected = jobs.fetch("runner-test-prepare")
@@ -19,7 +21,7 @@ gate_step = gate.fetch("steps").find { |step| step["name"] == "Validate CI resul
 unless selected.fetch("needs") == ["detect", "runner-host-groups"] &&
     remaining.fetch("needs") == ["detect", "runner-host-groups"] &&
     remaining.dig("strategy", "fail-fast") == false &&
-    remaining.dig("strategy", "matrix", "include") == '${{ fromJSON(needs.runner-host-groups.outputs.validation-matrix || \'[]\') }}' &&
+    remaining.dig("strategy", "matrix", "include") == '${{ fromJSON(needs.runner-host-groups.outputs.validation-matrix-arm64) }}' &&
     remaining.fetch("if").include?("needs.runner-host-groups.outputs.validation-matrix != '[]'")
   raise "selected and complementary validation must start independently, with empty complements omitted"
 end
@@ -38,13 +40,13 @@ end
     raise "#{name} must compile for the planned target without waiting for an image"
   end
 end
-unless jobs.fetch("guest-rpc-firecracker-test").fetch("needs") == ["runner-test-prepare", "guest-rpc-firecracker-build"]
+unless jobs.fetch("guest-rpc-firecracker-test").fetch("needs").sort == ["guest-rpc-firecracker-build", "runner-test-prepare"]
   raise "native RPC execution must wait for both the selected image and its test binary"
 end
 unless group_step.dig("env", "SELECTION_KEY") == '${{ needs.detect.outputs.runner-image-job-ref }}' &&
     select_step.dig("env", "EXPECTED_TARGET") == '${{ needs.runner-host-groups.outputs.selected-target }}' &&
-    gate_step.dig("env", "IMAGE_VALIDATION_MATRIX") == '${{ needs.runner-host-groups.outputs.validation-matrix }}' &&
-    gate_step.dig("env", "RUNNER_IMAGE_NEEDED") == "${{ needs.detect.outputs.metal-job-ref != '' && needs.detect.outputs.crates-runner-consumer-needed == 'true' }}"
+    gate_step.dig("env", "IMAGE_VALIDATION_MATRIX") == '${{ needs.crates-runner-host-groups.outputs.validation-matrix }}' &&
+    gate_step.dig("env", "RUNNER_IMAGE_NEEDED") == "${{ needs.crates-detect.outputs.metal-job-ref != '' && needs.crates-detect.outputs.crates-runner-consumer-needed == 'true' }}"
   raise "planning, validation, and gate must share the original image selection context"
 end
 
@@ -54,15 +56,8 @@ def run_step(root, env, step, success: true)
   output + error
 end
 
-def check_gate(root, gate, step, matrix:, needed: "true", cpu_needed: "true", release: "false", results: {}, success: true)
-  values = gate.fetch("needs").to_h { |name| [name, "success"] }.merge(results)
-  script = step.fetch("run").gsub(/\$\{\{ needs\.([a-z-]+)\.result \}\}/) { values.fetch(Regexp.last_match(1)) }
-  raise "unresolved gate expression" if script.include?("${{")
-  env = {"IS_RELEASE" => release, "RUNNER_IMAGE_NEEDED" => needed,
-         "COVERAGE_NEEDED" => "true", "FIREWALL_CONTRACT_NEEDED" => "false",
-         "CPU_FAIRNESS_NEEDED" => cpu_needed, "IMAGE_VALIDATION_MATRIX" => matrix}
-  run_step(root, env, script, success: success)
-end
+# Gate failure/skip/selection receipts are exercised against the real shared
+# controller in ci-readiness-workflow-test.sh, not a logical fixture projection.
 
 Dir.mktmpdir("crates-image-waiters") do |dir|
   bin = File.join(dir, "bin")
@@ -99,7 +94,6 @@ Dir.mktmpdir("crates-image-waiters") do |dir|
       mismatch = run_step(root, env.merge("EXPECTED_TARGET" => "different-target"), select_step.fetch("run"), success: false)
       raise "inventory drift must report target mismatch" unless mismatch.include?("Selected runner target changed")
       matrix_result = other.empty? ? "skipped" : "success"
-      check_gate(root, gate, gate_step, matrix: outputs.fetch("validation-matrix"), results: {"runner-image-architecture-manifest" => matrix_result})
     end
   end
 
@@ -112,29 +106,6 @@ Dir.mktmpdir("crates-image-waiters") do |dir|
   outputs = File.readlines(output_file, chomp: true).to_h { |line| line.split("=", 2) }
   raise "host-only tests need both targets" unless JSON.parse(outputs.fetch("matrix")).length == 2
 end
-
-%w[runner-host-groups runner-test-prepare runner-image-architecture-manifest
-   host-cpu-fairness-build host-cpu-fairness-test
-   guest-rpc-firecracker-build guest-rpc-firecracker-test].each do |job|
-  %w[failure cancelled skipped].each do |result|
-    check_gate(root, gate, gate_step, matrix: '[{"target":"other"}]', results: {job => result}, success: false)
-  end
-end
-# A failed producer skips its dependent execution job. Neither may disappear
-# behind an otherwise green image waiter or the gate's optional-job handling.
-{"host-cpu-fairness-build" => "host-cpu-fairness-test",
- "guest-rpc-firecracker-build" => "guest-rpc-firecracker-test"}.each do |build, execution|
-  check_gate(root, gate, gate_step, matrix: "[]", results: {build => "failure", execution => "skipped"}, success: false)
-end
-optional_cpu = %w[host-cpu-fairness-build host-cpu-fairness-test].to_h { |name| [name, "skipped"] }
-check_gate(root, gate, gate_step, matrix: "[]", cpu_needed: "false", results: optional_cpu)
-check_gate(root, gate, gate_step, matrix: "[]", results: {"runner-test-prepare" => "skipped", "runner-image-architecture-manifest" => "skipped"}, success: false)
-check_gate(root, gate, gate_step, matrix: "", results: {"runner-image-architecture-manifest" => "skipped"}, success: false)
-unselected = %w[runner-host-groups runner-test-prepare runner-image-architecture-manifest
-                host-cpu-fairness-build host-cpu-fairness-test
-                guest-rpc-firecracker-build guest-rpc-firecracker-test].to_h { |name| [name, "skipped"] }
-check_gate(root, gate, gate_step, matrix: "", needed: "false", cpu_needed: "false", results: unselected)
-check_gate(root, gate, gate_step, matrix: "", release: "true", results: gate.fetch("needs").to_h { |name| [name, "skipped"] })
 
 puts "crates-runner-image-waiters-test: ok"
 RUBY

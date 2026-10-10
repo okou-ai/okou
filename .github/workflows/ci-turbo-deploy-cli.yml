@@ -1,0 +1,216 @@
+name: turbo-deploy-cli
+"on":
+  workflow_call:
+    inputs:
+      dependencies:
+        type: string
+        required: true
+    secrets:
+      R2_STATIC_ACCESS_KEY_ID:
+        required: false
+      R2_STATIC_SECRET_ACCESS_KEY:
+        required: false
+env:
+  npm_config_audit: "false"
+jobs:
+  deploy-cli:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: deploy-cli-${{ github.sha }}
+      cancel-in-progress: false
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
+    permissions:
+      contents: read
+      actions: read
+    defaults:
+      run:
+        shell: bash
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_STATIC_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_STATIC_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: auto
+      CLI_STATIC_BASE_URL: https://static.okou.io
+      R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+      R2_BUCKET_NAME: ${{ vars.R2_STATIC_BUCKET_NAME }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
+        with:
+          version: 10.33.4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: turbo/pnpm-lock.yaml
+      - name: Initialize pnpm cache directory
+        run: mkdir -p "$(pnpm store path --silent)"
+      - name: Configure git safe directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Install AWS CLI
+        run: |
+          architecture="$(dpkg --print-architecture)"
+          case "$architecture" in
+            amd64) aws_architecture="x86_64" ;;
+            arm64) aws_architecture="aarch64" ;;
+            *) echo "Unsupported architecture: $architecture" >&2; exit 1 ;;
+          esac
+
+          curl -fsSL --retry 3 \
+            "https://awscli.amazonaws.com/awscli-exe-linux-${aws_architecture}.zip" \
+            --output /tmp/awscliv2.zip
+          python3 -m zipfile -e /tmp/awscliv2.zip /tmp/awscli
+          chmod +x /tmp/awscli/aws/install /tmp/awscli/aws/dist/aws
+          /tmp/awscli/aws/install
+          aws --version
+      - name: Resolve artifact commit SHA
+        id: artifact
+        run: |
+          sha="$(bash .github/scripts/resolve-build-commit-sha.sh)"
+          prefix="okou-cli/$sha"
+          {
+            echo "sha=$sha"
+            echo "prefix=$prefix"
+          } >> "$GITHUB_OUTPUT"
+      - name: Check for existing artifact
+        id: existing
+        env:
+          ARTIFACT_PREFIX: ${{ steps.artifact.outputs.prefix }}
+        run: |
+          set -euo pipefail
+
+          : "${AWS_ACCESS_KEY_ID:?R2_STATIC_ACCESS_KEY_ID secret is required}"
+          : "${AWS_SECRET_ACCESS_KEY:?R2_STATIC_SECRET_ACCESS_KEY secret is required}"
+          : "${R2_ACCOUNT_ID:?R2_ACCOUNT_ID variable is required}"
+          : "${R2_BUCKET_NAME:?R2_STATIC_BUCKET_NAME variable is required}"
+
+          r2_endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          ready_key="${ARTIFACT_PREFIX}/ready.json"
+          error_log="$(mktemp)"
+
+          set +e
+          aws s3api head-object \
+            --endpoint-url "$r2_endpoint" \
+            --bucket "$R2_BUCKET_NAME" \
+            --key "$ready_key" \
+            >/dev/null 2>"$error_log"
+          status=$?
+          set -e
+
+          if (( status == 0 )); then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Artifact already ready: s3://${R2_BUCKET_NAME}/${ARTIFACT_PREFIX}/"
+          elif grep -Eq '404|NotFound|Not Found|NoSuchKey' "$error_log"; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          else
+            cat "$error_log" >&2
+            exit "$status"
+          fi
+      - name: Install CLI dependencies
+        if: steps.existing.outputs.exists != 'true'
+        run: cd turbo && pnpm install --frozen-lockfile --filter @okouai/cli...
+      - name: Build CLI
+        if: steps.existing.outputs.exists != 'true'
+        run: cd turbo && pnpm --filter @okouai/cli build
+        env:
+          DEFAULT_SENTRY_DSN: ${{ vars.SENTRY_DSN_CLI }}
+      - name: Create canonical CLI artifact
+        if: steps.existing.outputs.exists != 'true'
+        env:
+          ARTIFACT_SHA: ${{ steps.artifact.outputs.sha }}
+        run: |
+          mkdir -p /tmp/okou-cli-artifact
+          bash .github/scripts/build-okou-cli-artifact.sh \
+            "$ARTIFACT_SHA" \
+            /tmp/okou-cli-artifact
+      - name: Upload canonical CLI artifact
+        if: steps.existing.outputs.exists != 'true'
+        env:
+          ARTIFACT_PREFIX: ${{ steps.artifact.outputs.prefix }}
+        run: |
+          set -euo pipefail
+
+          r2_endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          artifact_uri="s3://${R2_BUCKET_NAME}/${ARTIFACT_PREFIX}"
+          cache_control="public, max-age=31536000, immutable"
+
+          aws s3 rm "$artifact_uri/" \
+            --endpoint-url "$r2_endpoint" \
+            --recursive
+
+          aws s3api put-object \
+            --endpoint-url "$r2_endpoint" \
+            --bucket "$R2_BUCKET_NAME" \
+            --key "${ARTIFACT_PREFIX}/package.tgz" \
+            --body /tmp/okou-cli-artifact/package.tgz \
+            --content-type application/gzip \
+            --cache-control "$cache_control"
+
+          aws s3api put-object \
+            --endpoint-url "$r2_endpoint" \
+            --bucket "$R2_BUCKET_NAME" \
+            --key "${ARTIFACT_PREFIX}/manifest.json" \
+            --body /tmp/okou-cli-artifact/manifest.json \
+            --content-type application/json \
+            --cache-control "$cache_control"
+
+          aws s3api put-object \
+            --endpoint-url "$r2_endpoint" \
+            --bucket "$R2_BUCKET_NAME" \
+            --key "${ARTIFACT_PREFIX}/ready.json" \
+            --body /tmp/okou-cli-artifact/ready.json \
+            --content-type application/json \
+            --cache-control "$cache_control" \
+            --if-none-match "*"
+
+          echo "Artifact ready: ${artifact_uri}/"
+      - name: Download existing CLI artifact
+        if: steps.existing.outputs.exists == 'true'
+        env:
+          ARTIFACT_PREFIX: ${{ steps.artifact.outputs.prefix }}
+        run: |
+          mkdir -p /tmp/okou-cli-artifact
+          aws s3 cp \
+            "s3://${R2_BUCKET_NAME}/${ARTIFACT_PREFIX}/" \
+            /tmp/okou-cli-artifact/ \
+            --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" \
+            --recursive
+      - name: Verify and smoke test CLI artifact
+        env:
+          ARTIFACT_SHA: ${{ steps.artifact.outputs.sha }}
+        run: |
+          set -euo pipefail
+          bash .github/scripts/verify-okou-cli-artifact.sh \
+            /tmp/okou-cli-artifact \
+            "$ARTIFACT_SHA"
+          bash .github/scripts/smoke-okou-cli-artifact.sh \
+            /tmp/okou-cli-artifact/package.tgz
+      - name: Verify CLI artifact through CDN
+        env:
+          ARTIFACT_SHA: ${{ steps.artifact.outputs.sha }}
+          ARTIFACT_PREFIX: ${{ steps.artifact.outputs.prefix }}
+        run: |
+          set -euo pipefail
+          cdn_dir="$(mktemp -d)"
+          for filename in package.tgz manifest.json ready.json; do
+            curl -fsSL \
+              --retry 5 \
+              --retry-delay 2 \
+              --retry-all-errors \
+              "${CLI_STATIC_BASE_URL}/${ARTIFACT_PREFIX}/${filename}" \
+              --output "${cdn_dir}/${filename}"
+          done
+          bash .github/scripts/verify-okou-cli-artifact.sh \
+            "$cdn_dir" \
+            "$ARTIFACT_SHA"
+          bash .github/scripts/smoke-okou-cli-artifact.sh \
+            "$cdn_dir/package.tgz"
+      - name: Upload CLI artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cli-package
+          path: /tmp/okou-cli-artifact/package.tgz
+          retention-days: 1

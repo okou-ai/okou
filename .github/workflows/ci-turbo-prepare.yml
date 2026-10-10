@@ -1,0 +1,233 @@
+name: turbo-prepare
+"on":
+  workflow_call:
+    inputs:
+      dependencies:
+        type: string
+        required: true
+    outputs:
+      job-ref:
+        value: ${{ jobs.prepare.outputs.job-ref }}
+      runner-image-job-ref:
+        value: ${{ jobs.prepare.outputs.runner-image-job-ref }}
+      app-preview-url:
+        value: ${{ jobs.prepare.outputs.app-preview-url }}
+      api-preview-url:
+        value: ${{ jobs.prepare.outputs.api-preview-url }}
+      api-changed:
+        value: ${{ jobs.prepare.outputs.api-changed }}
+      cli-changed:
+        value: ${{ jobs.prepare.outputs.cli-changed }}
+      platform-changed:
+        value: ${{ jobs.prepare.outputs.platform-changed }}
+      migration-changed:
+        value: ${{ jobs.prepare.outputs.migration-changed }}
+      crates-changed:
+        value: ${{ jobs.prepare.outputs.crates-changed }}
+      ci-changed:
+        value: ${{ jobs.prepare.outputs.ci-changed }}
+      e2e-changed:
+        value: ${{ jobs.prepare.outputs.e2e-changed }}
+      turbo-runner-consumer-needed:
+        value: ${{ jobs.prepare.outputs.turbo-runner-consumer-needed }}
+      playwright-runner-consumer-needed:
+        value: ${{ jobs.prepare.outputs.playwright-runner-consumer-needed }}
+      base-ref:
+        value: ${{ jobs.prepare.outputs.base-ref }}
+env:
+  npm_config_audit: "false"
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
+    outputs:
+      job-ref: ${{ steps.set-job-ref.outputs.job-ref }}
+      runner-image-job-ref: ${{ steps.set-job-ref.outputs.runner-image-job-ref }}
+      app-preview-url: ${{ steps.preview-urls.outputs.app-url }}
+      api-preview-url: ${{ steps.preview-urls.outputs.api-url }}
+      api-changed: ${{ steps.detect.outputs.api-changed }}
+      cli-changed: ${{ steps.detect.outputs.cli-changed }}
+      platform-changed: ${{ steps.detect.outputs.platform-changed }}
+      migration-changed: ${{ steps.detect.outputs.migration-changed }}
+      crates-changed: ${{ steps.detect.outputs.crates-changed }}
+      ci-changed: ${{ steps.detect.outputs.ci-changed }}
+      e2e-changed: ${{ steps.detect.outputs.e2e-changed }}
+      turbo-runner-consumer-needed: ${{ steps.runner-e2e.outputs.turbo-runner-consumer-needed }}
+      playwright-runner-consumer-needed: ${{ steps.playwright-runner.outputs.playwright-runner-consumer-needed }}
+      base-ref: ${{ steps.detect.outputs.base-ref }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 2
+      - name: Configure Git safe directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Detect changes
+        id: detect
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CHECKOUT_REF: ${{ github.ref }}
+          PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: |
+          echo "Checking for changes..."
+
+          BASE_REF=$(.github/scripts/changed-base-ref.sh)
+          echo "${{ github.event_name }} mode: comparing against base $BASE_REF"
+
+          echo "base-ref=$BASE_REF" >> "$GITHUB_OUTPUT"
+          CHANGED_FILES=$(git diff --name-only "$BASE_REF" HEAD)
+
+          # Run changed.sh to get all package changes in one go
+          CHANGES_JSON=$(./scripts/changed.sh "$BASE_REF")
+
+          # Parse JSON and set outputs for each app
+          for app_dir in turbo/apps/*/; do
+            app=$(basename "$app_dir")
+            # Get the package name from package.json
+            if [ -f "turbo/apps/$app/package.json" ]; then
+              PKG_NAME=$(jq -r '.name' "turbo/apps/$app/package.json")
+              CHANGED=$(echo "$CHANGES_JSON" | jq -r ".\"$PKG_NAME\" // false")
+
+              if [ "$CHANGED" = "true" ]; then
+                echo "Changes detected in $app ($PKG_NAME)"
+                echo "${app}-changed=true" >> "$GITHUB_OUTPUT"
+              else
+                echo "No changes in $app ($PKG_NAME)"
+                echo "${app}-changed=false" >> "$GITHUB_OUTPUT"
+              fi
+            else
+              echo "No package.json for $app, skipping"
+              echo "${app}-changed=false" >> "$GITHUB_OUTPUT"
+            fi
+          done
+
+          if printf '%s\n' "$CHANGED_FILES" | grep -qE '^turbo/packages/db/(src/(migrations|schema|jsonb-contracts)/|scripts/)'; then
+            echo "Migration, schema, JSONB contract, or database script changes detected"
+            echo "migration-changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No migration, schema, JSONB contract, or database script changes"
+            echo "migration-changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if printf '%s\n' "$CHANGED_FILES" | grep -q "^crates/"; then
+            echo "Crates changes detected"
+            echo "crates-changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No crates changes"
+            echo "crates-changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if printf '%s\n' "$CHANGED_FILES" | grep -qE "^\.github/workflows/(ci|ci-[a-z0-9-]+|turbo|staging|benchmark|crates|runner-image)\.yml$|^\.github/actions/(setup-r2-sccache|setup-ssh-tunnel|provision)/|^\.github/scripts/|^ansible/"; then
+            echo "CI workflow changes detected"
+            echo "ci-changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No CI workflow changes"
+            echo "ci-changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if printf '%s\n' "$CHANGED_FILES" | grep -q "^e2e/"; then
+            echo "E2E test changes detected"
+            echo "e2e-changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No E2E test changes"
+            echo "e2e-changed=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Select runner E2E consumer
+        id: runner-e2e
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          API_CHANGED: ${{ steps.detect.outputs.api-changed }}
+          CLI_CHANGED: ${{ steps.detect.outputs.cli-changed }}
+          CRATES_CHANGED: ${{ steps.detect.outputs.crates-changed }}
+          CI_CHANGED: ${{ steps.detect.outputs.ci-changed }}
+          E2E_CHANGED: ${{ steps.detect.outputs.e2e-changed }}
+        run: .github/scripts/runner-image-context.sh turbo-consumer
+      - name: Select Playwright runner consumer
+        id: playwright-runner
+        env:
+          API_CHANGED: ${{ steps.detect.outputs.api-changed }}
+          PLATFORM_CHANGED: ${{ steps.detect.outputs.platform-changed }}
+          CLI_CHANGED: ${{ steps.detect.outputs.cli-changed }}
+          CI_CHANGED: ${{ steps.detect.outputs.ci-changed }}
+          E2E_CHANGED: ${{ steps.detect.outputs.e2e-changed }}
+        run: .github/scripts/runner-image-context.sh playwright-consumer
+      - name: Set job-ref
+        id: set-job-ref
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # Skip runner deployment if the PR was already merged or closed.
+            # A late pull_request:synchronize run can reach here after
+            # cleanup.yml has already stopped the runner — deploying again
+            # would resurrect a stale service that no cleanup will ever reach.
+            #
+            # Retry transient API failures, then fail loudly if the state
+            # stays unknown. Silently skipping would let the PR merge without
+            # runner coverage; fail-open would risk deploying a zombie runner.
+            # A red check is the right middle ground — re-run the job once
+            # the API recovers.
+            STATE=$(curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}" \
+              | jq -r .state)
+            if [ -z "$STATE" ]; then
+              echo "::error::Failed to query PR #${{ github.event.pull_request.number }} state from GitHub API after retries"
+              exit 1
+            fi
+            if [ "$STATE" != "open" ]; then
+              echo "::warning::PR #${{ github.event.pull_request.number }} is ${STATE}, skipping job-ref to prevent stale runner deployment"
+              exit 0
+            fi
+            echo "job-ref=pr-${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+            echo "runner-image-job-ref=pr-${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+            echo "Job ref set to: pr-${{ github.event.pull_request.number }}"
+          elif [ "${{ github.event_name }}" = "merge_group" ]; then
+            MQ_REF="${{ github.event.merge_group.head_ref }}"
+            PR_NUM=$(echo "$MQ_REF" | grep -oE 'pr-[0-9]+' | head -1 | sed 's/pr-//')
+            if [ -n "$PR_NUM" ]; then
+              echo "job-ref=pr-${PR_NUM}" >> "$GITHUB_OUTPUT"
+              echo "runner-image-job-ref=pr-${PR_NUM}" >> "$GITHUB_OUTPUT"
+              echo "Job ref set to: pr-${PR_NUM}"
+            else
+              echo "::error::Failed to extract PR number from merge_group head_ref: $MQ_REF"
+              exit 1
+            fi
+          else
+            SHORT_SHA=$(printf '%s' "$GITHUB_SHA" | cut -c1-12)
+            echo "job-ref=staging" >> "$GITHUB_OUTPUT"
+            echo "runner-image-job-ref=staging-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+            echo "Job ref set to: staging"
+          fi
+      - name: Set preview URLs
+        id: preview-urls
+        run: |
+          JOB_REF="${{ steps.set-job-ref.outputs.job-ref }}"
+          PREVIEW_DOMAIN="${{ vars.PREVIEW_DOMAIN }}"
+          CF_WORKERS_SUBDOMAIN="${{ vars.CF_WORKERS_SUBDOMAIN }}"
+
+          if [ -n "$PREVIEW_DOMAIN" ] && [ -n "$CF_WORKERS_SUBDOMAIN" ] && [ -n "$JOB_REF" ]; then
+            APP_URL="$(bash .github/scripts/resolve-app-preview-url.sh \
+              "$JOB_REF" \
+              "$CF_WORKERS_SUBDOMAIN")"
+            {
+              echo "app-url=${APP_URL}"
+              echo "api-url=https://${JOB_REF}-api.${PREVIEW_DOMAIN}"
+            } >> "$GITHUB_OUTPUT"
+            echo "App preview URL uses ${CF_WORKERS_SUBDOMAIN}.workers.dev; API preview uses ${PREVIEW_DOMAIN}"
+          else
+            {
+              echo "app-url="
+              echo "api-url="
+            } >> "$GITHUB_OUTPUT"
+            echo "Preview URL not set (preview domain or job-ref is empty)"
+          fi
+    permissions:
+      actions: read
+      contents: read
+      deployments: write
+      id-token: write
+      issues: write
+      pull-requests: write

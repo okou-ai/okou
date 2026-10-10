@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export RUBYOPT="${RUBYOPT:-} -r$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/workflow-test-owners.rb"
+
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/../../.." && pwd)"
 browser_helper="${repo_root}/e2e/helpers/browser.bash"
@@ -262,7 +264,7 @@ ruby -ryaml - \
   "${repo_root}/.github/workflows/cleanup.yml" \
   "${repo_root}/.github/workflows/cleanup-stale.yml" \
   "${repo_root}/.github/workflows/cleanup-clerk-test-resources.yml" <<'RUBY'
-turbo = YAML.load_file(ARGV.fetch(0))
+turbo = load_workflow_test_owners(ARGV.fetch(0))
 stale = YAML.load_file(ARGV.fetch(2))
 scheduled_clerk = YAML.load_file(ARGV.fetch(3))
 

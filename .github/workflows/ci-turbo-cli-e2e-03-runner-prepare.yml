@@ -1,0 +1,149 @@
+name: turbo-cli-e2e-03-runner-prepare
+"on":
+  workflow_call:
+    inputs:
+      dependencies:
+        type: string
+        required: true
+    secrets:
+      CLERK_SECRET_KEY:
+        required: false
+      VERCEL_AUTOMATION_BYPASS_SECRET:
+        required: false
+    outputs:
+      runner-organization-id:
+        value: ${{ jobs.cli-e2e-03-runner-prepare.outputs.runner-organization-id }}
+      codex-organization-id:
+        value: ${{ jobs.cli-e2e-03-runner-prepare.outputs.codex-organization-id }}
+      claude-organization-id:
+        value: ${{ jobs.cli-e2e-03-runner-prepare.outputs.claude-organization-id }}
+      mock-claude-organization-id:
+        value: ${{ jobs.cli-e2e-03-runner-prepare.outputs.mock-claude-organization-id }}
+      codex-built-in-organization-id:
+        value: ${{ jobs.cli-e2e-03-runner-prepare.outputs.codex-built-in-organization-id }}
+      runner-email:
+        value: ${{ jobs.cli-e2e-03-runner-prepare.outputs.runner-email }}
+      codex-email:
+        value: ${{ jobs.cli-e2e-03-runner-prepare.outputs.codex-email }}
+      claude-email:
+        value: ${{ jobs.cli-e2e-03-runner-prepare.outputs.claude-email }}
+      mock-claude-email:
+        value: ${{ jobs.cli-e2e-03-runner-prepare.outputs.mock-claude-email }}
+      codex-built-in-email:
+        value: ${{ jobs.cli-e2e-03-runner-prepare.outputs.codex-built-in-email }}
+      runner-shard-matrix:
+        value: ${{ jobs.cli-e2e-03-runner-prepare.outputs.runner-shard-matrix }}
+env:
+  npm_config_audit: "false"
+jobs:
+  cli-e2e-03-runner-prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      E2E_CLERK_RESOURCE_DIR: /tmp/e2e-clerk-runner
+    concurrency:
+      group: cli-e2e-03-runner-prepare-${{ fromJSON(inputs.dependencies).prepare.outputs.job-ref }}
+      cancel-in-progress: true
+    outputs:
+      runner-organization-id: ${{ steps.account.outputs.runner-organization-id }}
+      codex-organization-id: ${{ steps.account.outputs.codex-organization-id }}
+      claude-organization-id: ${{ steps.account.outputs.claude-organization-id }}
+      mock-claude-organization-id: ${{ steps.account.outputs.mock-claude-organization-id }}
+      codex-built-in-organization-id: ${{ steps.account.outputs.codex-built-in-organization-id }}
+      runner-email: ${{ steps.account.outputs.runner-email }}
+      codex-email: ${{ steps.account.outputs.codex-email }}
+      claude-email: ${{ steps.account.outputs.claude-email }}
+      mock-claude-email: ${{ steps.account.outputs.mock-claude-email }}
+      codex-built-in-email: ${{ steps.account.outputs.codex-built-in-email }}
+      runner-shard-matrix: ${{ steps.shards.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
+        with:
+          version: 10.33.4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22
+      - name: Install E2E dependencies
+        run: cd e2e && pnpm install --frozen-lockfile
+      - name: Check runner E2E model selection
+        run: cd e2e && pnpm exec tsx --test scripts/runner-model-selection.test.ts scripts/runner-model-bootstrap.test.mjs scripts/runner-chat-model-default.test.mjs
+      - name: Generate runner E2E shard matrix
+        id: shards
+        shell: bash
+        run: |
+          set -euo pipefail
+          matrix="$(cd e2e && pnpm exec tsx playwright/runner-shards.ts tests/03-runner)"
+          jq -e '
+            .include | type == "array" and
+            length > 0 and length <= 12 and
+            all(.[]; (.files | type == "array" and length > 0))
+          ' <<<"$matrix" >/dev/null
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+      - name: Prepare runner E2E accounts
+        id: account
+        run: cd e2e && pnpm exec tsx playwright/runner-account.ts prepare
+        env:
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          JOB_REF: ${{ fromJSON(inputs.dependencies).prepare.outputs.job-ref }}
+      - name: Upload runner Clerk resource records
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: e2e-runner-clerk-resources-${{ github.run_attempt }}
+          path: /tmp/e2e-clerk-runner/*.json
+          if-no-files-found: ignore
+          retention-days: 1
+      - name: Install Playwright browsers
+        run: cd e2e && pnpm exec playwright install --only-shell chromium
+      - name: Generate runner E2E API tokens
+        run: cd e2e && pnpm exec tsx playwright/runner-token.ts /tmp
+        env:
+          OKOU_API_BACKEND_URL: ${{ fromJSON(inputs.dependencies).deploy-api.outputs.preview-url }}
+          OKOU_APP_URL: ${{ fromJSON(inputs.dependencies).deploy-app.outputs.preview-url }}
+          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          JOB_REF: ${{ fromJSON(inputs.dependencies).prepare.outputs.job-ref }}
+          E2E_RUNNER_ORGANIZATION_ID: ${{ steps.account.outputs.runner-organization-id }}
+          E2E_RUNNER_CODEX_ORGANIZATION_ID: ${{ steps.account.outputs.codex-organization-id }}
+          E2E_RUNNER_CLAUDE_ORGANIZATION_ID: ${{ steps.account.outputs.claude-organization-id }}
+          E2E_RUNNER_MOCK_CLAUDE_ORGANIZATION_ID: ${{ steps.account.outputs.mock-claude-organization-id }}
+          E2E_RUNNER_CODEX_BUILT_IN_ORGANIZATION_ID: ${{ steps.account.outputs.codex-built-in-organization-id }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+      - name: Upload runner E2E sign-in diagnostics
+        if: failure()
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: runner-e2e-sign-in-diagnostics
+          path: /tmp/e2e-runner-sign-in-diagnostics
+          if-no-files-found: ignore
+          retention-days: 1
+      - name: Upload runner E2E Checkout diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: runner-e2e-checkout-diagnostics
+          path: /tmp/e2e-runner-checkout-diagnostics
+          if-no-files-found: ignore
+          retention-days: 1
+      - name: Upload runner E2E API tokens
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: e2e-tokens
+          path: |
+            /tmp/e2e-api-credentials-runner.json
+            /tmp/e2e-api-credentials-runner-real-codex.json
+            /tmp/e2e-api-credentials-runner-real-claude.json
+            /tmp/e2e-api-credentials-runner-mock-claude.json
+            /tmp/e2e-api-credentials-runner-real-codex-built-in.json
+          retention-days: 1
+    permissions:
+      actions: read
+      contents: read
+      deployments: write
+      id-token: write
+      issues: write
+      pull-requests: write

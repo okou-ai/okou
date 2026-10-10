@@ -1,0 +1,70 @@
+name: crates-guest-rpc-firecracker-test
+"on":
+  workflow_call:
+    inputs:
+      dependencies:
+        type: string
+        required: true
+      ready:
+        type: string
+        required: true
+    secrets:
+      AWS_METAL_RUNNER_SSH_KEY:
+        required: false
+      CF_ACCESS_CLIENT_ID:
+        required: false
+      CF_ACCESS_CLIENT_SECRET:
+        required: false
+      R2_ACCESS_KEY_ID:
+        required: false
+      R2_SECRET_ACCESS_KEY:
+        required: false
+env:
+  npm_config_audit: "false"
+jobs:
+  guest-rpc-firecracker-test:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    env:
+      TARGET_TRIPLE: ${{ fromJSON(inputs.ready).target }}
+      TEST_NAME: guest_rpc
+      ARTIFACT_DIR: native-test-artifact
+      PRODUCER_ATTEMPT: ${{ fromJSON(inputs.dependencies).crates-guest-rpc-firecracker-build.outputs.producer-attempt }}
+      METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
+      HOST: ${{ fromJSON(inputs.ready).host }}
+      JOB_REF: ${{ fromJSON(inputs.ready).job-ref }}
+      DEFAULT_ROOTFS_HASH: ${{ fromJSON(inputs.ready).default-rootfs-hash }}
+      DEFAULT_SNAPSHOT_HASH: ${{ fromJSON(inputs.ready).default-snapshot-hash }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Install AWS CLI
+        uses: ./.github/actions/setup-aws-cli
+      - name: Download native test from R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+        run: bash .github/scripts/runner-native-test-artifact.sh download
+      - name: Validate native test
+        run: bash .github/scripts/runner-native-test-artifact.sh validate
+      - name: Setup SSH via Cloudflare Tunnel
+        uses: ./.github/actions/setup-ssh-tunnel
+        with:
+          ssh-user: ${{ env.METAL_USER }}
+          ssh-hosts: ${{ env.HOST }}
+          ssh-key: ${{ secrets.AWS_METAL_RUNNER_SSH_KEY }}
+          cf-access-client-id: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          cf-access-client-secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+      - name: Verify packaged RPC over fresh and restored Firecracker
+        run: bash .github/scripts/runner-behavior-guest-rpc.sh
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read

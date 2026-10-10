@@ -11,7 +11,7 @@ fail() {
 }
 
 command -v yq >/dev/null || fail "yq is required"
-crates_json=$(yq -o=json '.' "$CRATES_WORKFLOW")
+crates_json=$(python3 "$(dirname "${BASH_SOURCE[0]}")/load-workflow-test-owners.py" -o=json '.' "$CRATES_WORKFLOW")
 
 jq -e '
   def behavior_commands($lane):
@@ -123,9 +123,9 @@ jq -e '
     .name == "Verify weighted host CPU service with real Firecracker Guests" and
     .run == ".github/scripts/runner-behavior-host-cpu-fairness.sh"
   ) and
-  ($gate.needs | index("host-cpu-fairness-test")) != null and
-  ($gate.needs | index("host-cpu-fairness-build")) != null and
-  ($gate.needs | index("runner-behavior-lane-d")) != null and
+  ($gate.needs | index("crates-host-cpu-fairness-test-arm64")) != null and
+  ($gate.needs | index("crates-host-cpu-fairness-build")) != null and
+  ($gate.needs | index("crates-behavior-arm64")) != null and
   $rootfs_process.needs == ["detect", "runner-host-groups"] and
   $rootfs_process.defaults.run.shell == "bash" and
   ($rootfs_process.if | contains("needs.detect.outputs.runner-changed")) and
@@ -155,12 +155,12 @@ jq -e '
     (.run | contains("GITHUB_RUN_ATTEMPT")) and
     (.run | contains("runner-host-architecture-groups.sh"))
   ) and
-  ($gate.needs | index("runner-rootfs-process-test")) != null and
+  ($gate.needs | index("crates-host-tests")) != null and
   any($gate.steps[]?;
     .name == "Validate CI results" and
-    (.run | contains("needs.host-cpu-fairness-test.result")) and
-    (.run | contains("needs.runner-behavior-lane-d.result")) and
-    (.run | contains("needs.runner-rootfs-process-test.result"))
+    (.run | contains("needs.crates-host-cpu-fairness-test-arm64.result")) and
+    (.run | contains("runner-behavior-lane-d.result")) and
+    (.run | contains("runner-rootfs-process-test.result"))
   )
 ' <<<"$crates_json" >/dev/null || fail "Crates workflow contract changed"
 

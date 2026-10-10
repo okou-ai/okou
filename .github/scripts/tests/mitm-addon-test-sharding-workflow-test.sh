@@ -12,15 +12,19 @@ import subprocess
 import sys
 
 root = Path(sys.argv[1])
+import importlib.util
+spec = importlib.util.spec_from_file_location('workflow_expressions', root / '.github/scripts/tests/workflow-test-expressions.py')
+x = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(x)
 jobs = json.loads(subprocess.check_output(
-    ['yq', '-o=json', '.', str(root / '.github/workflows/crates.yml')], text=True))['jobs']
+    ['python3', str(root / '.github/scripts/tests/load-workflow-test-owners.py'), '-o=json', '.', str(root / '.github/workflows/crates.yml')], text=True))['jobs']
 addon = jobs['mitm-addon-test']
 gate = jobs['ci-gate-crates']
 assert addon['needs'] == ['detect']
 assert addon['strategy'] == {'fail-fast': False, 'matrix': {'shard': ['1/2', '2/2']}}
 assert not addon.get('continue-on-error', False)
-assert 'mitm-addon-test' in gate['needs']
-assert gate['if'].strip() == 'always()'
+assert 'crates-checks' in gate['needs']
+assert 'always()' in gate['if']
 
 test = next(step for step in addon['steps'] if step.get('name') == 'Run mitm-addon tests')
 assert not test.get('continue-on-error', False)
@@ -37,7 +41,11 @@ values = {
     name: 'success' if name.endswith('.result') else 'false'
     for name in re.findall(r'\bneeds\.[\w.-]+', '\n'.join(texts))
 }
+values.update({f'needs.{name}.result': 'success' for name in jobs})
 values['needs.runner-host-groups.outputs.validation-matrix'] = '[]'
+values['needs.detect-release.outputs.skip'] = 'false'
+values['needs.detect.outputs.metal-job-ref'] = ''
+values['needs.detect.outputs.crates-runner-consumer-needed'] = 'false'
 
 
 def expression(text, context):
@@ -60,12 +68,8 @@ for signal in ['any-changed', 'mitm-addon-test-inputs-changed', 'mitm-addon-pric
     assert expression(addon['if'], context), f'{signal} must select both shards'
     for status in ['success', 'failure', 'cancelled', '']:
         context['needs.mitm-addon-test.result'] = status
-        env = os.environ | {name: render(value, context) for name, value in validate['env'].items()}
-        result = subprocess.run(
-            ['bash', '-euo', 'pipefail', '-c', render(validate['run'], context)],
-            cwd=root, env=env, text=True, capture_output=True, check=False)
-        assert (result.returncode == 0) == (status == 'success'), (
-            f'{signal}, addon result {status!r}: {result.stdout}{result.stderr}')
+        x.run_gate(gate, x.logical_gate_context(root, context), status == 'success')
+
 
 print('mitm-addon-test-sharding-workflow-test: ok')
 PY

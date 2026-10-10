@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export RUBYOPT="${RUBYOPT:-} -r$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/workflow-test-owners.rb"
+
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 ruby -rjson -ropen3 -rtmpdir -rfileutils -ryaml - "$repo_root" <<'RUBY'
 root = ARGV.fetch(0)
@@ -239,7 +241,7 @@ Dir.mktmpdir("native-test-artifact") do |dir|
     end
   end
 
-  jobs = YAML.load_file(File.join(root, ".github/workflows/crates.yml")).fetch("jobs")
+  jobs = load_workflow_test_owners(File.join(root, ".github/workflows/crates.yml")).fetch("jobs")
   %w[host-cpu-fairness guest-rpc-firecracker].each do |prefix|
     producer = jobs.fetch("#{prefix}-build")
     consumer = jobs.fetch("#{prefix}-test")

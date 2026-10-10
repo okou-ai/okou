@@ -13,7 +13,7 @@ fail() {
 }
 
 command -v yq >/dev/null || fail "yq is required"
-yq -o=json '.' "$WORKFLOW" > "${TEST_ROOT}/workflow.json"
+python3 "$(dirname "${BASH_SOURCE[0]}")/load-workflow-test-owners.py" -o=json '.' "$WORKFLOW" > "${TEST_ROOT}/workflow.json"
 
 # Producer and consumers must derive compatible keys, without relaxing any
 # required compiler gate or making an image/deployment wait for cache warming.

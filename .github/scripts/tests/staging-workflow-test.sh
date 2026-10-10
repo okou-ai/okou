@@ -12,11 +12,15 @@ import sys
 import tempfile
 
 root = Path(sys.argv[1])
+import importlib.util
+spec = importlib.util.spec_from_file_location('workflow_expressions', root / '.github/scripts/tests/workflow-test-expressions.py')
+x = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(x)
 
 
 def workflow(name):
     return json.loads(subprocess.check_output(
-        ['yq', '-o=json', '.', str(root / f'.github/workflows/{name}.yml')], text=True))
+        ['python3', str(root / '.github/scripts/tests/load-workflow-test-owners.py'), '-o=json', '.', str(root / f'.github/workflows/{name}.yml')], text=True))
 
 
 turbo = workflow('turbo')
@@ -67,25 +71,7 @@ def context(event='push', run_id='100'):
 
 
 def expression(source, values, job=None, cancelled=False):
-    source = str(source).strip().removeprefix('${{').removesuffix('}}').strip()
-    dependencies = needs(job or {})
-    replacements = {
-        'always()': True,
-        'cancelled()': cancelled,
-        'success()': all(values[f'needs.{name}.result'] == 'success' for name in dependencies),
-        'failure()': any(values[f'needs.{name}.result'] == 'failure' for name in dependencies),
-    }
-    for function, value in replacements.items():
-        source = source.replace(function, str(value))
-    source = re.sub(r'\b(?:github|needs)\.[\w.-]+', lambda m: repr(values[m[0]]), source)
-    source = source.replace('&&', ' and ').replace('||', ' or ')
-    source = re.sub(r'!(?!=)', 'not ', source)
-    return eval('(' + source + ')', {'__builtins__': {}}, {
-        'true': True,
-        'false': False,
-        'startsWith': lambda value, prefix: value.startswith(prefix),
-        'format': lambda template, *args: template.format(*args),
-    })
+    return x.expression(source, x.logical_gate_context(root, values), job, cancelled)
 
 
 def condition(job, values, cancelled=False):
@@ -104,20 +90,13 @@ def render(source, values):
 
 
 def gate(values, expected):
-    job = jobs['ci-gate-turbo']
-    assert condition(job, values), 'the result gate must run despite skipped or failed dependencies'
-    step = next(step for step in job['steps'] if step.get('name') == 'Validate CI results')
-    env = dict(os.environ)
-    env.update({key: render(value, values) for key, value in step.get('env', {}).items()})
-    result = subprocess.run(['bash', '-c', render(step['run'], values)],
-                            env=env, text=True, capture_output=True)
-    assert (result.returncode == 0) == expected, result.stdout + result.stderr
+    x.run_gate(jobs['ci-gate-turbo'], x.logical_gate_context(root, values), expected)
 
 
 # The shared implementation must have one push owner. The caller's workflow lock
 # remains held until every called job, including both finalizers, has completed.
 assert set(turbo['on']) == {'workflow_call'}
-assert set(workflow('ci')['on']) == {'pull_request', 'merge_group'}
+assert set(workflow('ci')['on']) == {'pull_request', 'merge_group', 'workflow_call'}
 assert set(staging['on']) == {'push'}
 assert staging['on']['push']['branches'] == ['main']
 assert staging['concurrency'] == {'group': 'staging', 'cancel-in-progress': False}
@@ -132,7 +111,7 @@ for name, value in passed_secrets.items():
     assert value == '${{ secrets.' + name + ' }}', f'{name} must retain its credential identity'
 required_secrets = set()
 for name in deployed + finalizers:
-    required_secrets.update(re.findall(r'secrets\.([A-Z_0-9]+)', json.dumps(jobs[name])))
+    required_secrets.update(re.findall(r'secrets\.([A-Z_0-9]+)', json.dumps({k: v for k, v in jobs[name].items() if k != "_caller"})))
 required_secrets.discard('GITHUB_TOKEN')  # GitHub provides this to reusable workflows.
 assert required_secrets <= set(passed_secrets), 'retain deployment and cleanup credentials'
 
@@ -183,7 +162,7 @@ with tempfile.TemporaryDirectory() as temporary:
 assert condition(caller, context())
 permissions = caller.get('permissions', staging.get('permissions', {}))
 for permission, level in {
-    'actions': 'read', 'contents': 'read', 'pull-requests': 'write',
+    'actions': 'write', 'contents': 'read', 'pull-requests': 'write',
     'issues': 'write', 'deployments': 'write', 'id-token': 'write',
 }.items():
     assert permissions.get(permission) == level, (permission, permissions)
@@ -224,8 +203,9 @@ for name in finalizers:
 
 # Cleanup stays inside the staging lock without becoming a PR/merge-group gate
 # dependency, including through an indirect needs chain.
+controller_jobs = workflow('ci')['jobs']
 def ancestors(name):
-    result = set(needs(jobs[name]))
+    result = set(needs(controller_jobs[name]))
     for dependency in list(result):
         result.update(ancestors(dependency))
     return result

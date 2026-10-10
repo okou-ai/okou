@@ -1,0 +1,356 @@
+name: crates-checks
+"on":
+  workflow_call:
+    inputs:
+      dependencies:
+        type: string
+        required: true
+    secrets:
+      ABLY_API_KEY:
+        required: false
+      CODECOV_TOKEN:
+        required: false
+      R2_ACCESS_KEY_ID:
+        required: false
+      R2_SECRET_ACCESS_KEY:
+        required: false
+    outputs:
+      results:
+        value: ${{ toJSON(jobs) }}
+env:
+  npm_config_audit: "false"
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+    if: fromJSON(inputs.dependencies).crates-detect.outputs.any-changed == 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Configure Git safe directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          workspaces: crates -> target
+          shared-key: check
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Check Rust module paths
+        run: |
+          cd crates
+          cargo xtask check-rust-path-attributes
+      - name: Check formatting
+        run: |
+          cd crates
+          cargo fmt --all -- --check
+      - name: Run clippy
+        run: |
+          cd crates
+          cargo clippy --all-targets --all-features
+      - name: Lint guest-control-server production configuration
+        if: |
+          fromJSON(inputs.dependencies).crates-detect.outputs.guest-control-tests-changed == 'true' ||
+          fromJSON(inputs.dependencies).crates-detect.outputs.ci-changed == 'true'
+        run: |
+          cd crates
+          cargo clippy -p guest-control-server --release --no-default-features --all-targets
+      - name: Build documentation
+        run: |
+          cd crates
+          cargo doc --workspace --all-features --no-deps
+      - name: Run ably-subscriber smoke test
+        if: |
+          fromJSON(inputs.dependencies).crates-detect.outputs.ably-subscriber-changed == 'true' ||
+          fromJSON(inputs.dependencies).crates-detect.outputs.ci-changed == 'true'
+        env:
+          ABLY_API_KEY: ${{ secrets.ABLY_API_KEY }}
+        run: |
+          cd crates
+          cargo run -p ably-subscriber --example smoke_test
+      - name: Run guest-control-server production configuration tests
+        if: |
+          fromJSON(inputs.dependencies).crates-detect.outputs.guest-control-tests-changed == 'true' ||
+          fromJSON(inputs.dependencies).crates-detect.outputs.ci-changed == 'true'
+        run: |
+          test "$(id -u)" -eq 0
+          for command in getent groupadd useradd install; do
+            command -v "$command"
+          done
+
+          if getent passwd user >/dev/null || getent passwd 42420 >/dev/null; then
+            echo "production identity test user conflicts with the CI image" >&2
+            exit 1
+          fi
+          if getent group vm0-identity-primary >/dev/null || \
+             getent group vm0-identity-extra >/dev/null || \
+             getent group 42420 >/dev/null || \
+             getent group 42421 >/dev/null; then
+            echo "production identity test group conflicts with the CI image" >&2
+            exit 1
+          fi
+          if [ -e /sbin/guest-write-file ]; then
+            echo "production identity test helper conflicts with the CI image" >&2
+            exit 1
+          fi
+
+          groupadd --gid 42420 vm0-identity-primary
+          groupadd --gid 42421 vm0-identity-extra
+          useradd --create-home --home-dir /home/user --uid 42420 \
+            --gid vm0-identity-primary --groups vm0-identity-extra \
+            --shell /bin/sh user
+          install -d -m 0755 -o user -g vm0-identity-primary /home/user
+          install -m 0755 \
+            crates/guest-control-server/tests/fixtures/guest-write-file-identity-probe.sh \
+            /sbin/guest-write-file
+
+          cd crates
+          cargo test -p guest-control-server --release --no-default-features \
+            --lib \
+            exec_operation::tests::stdout_drain_spawn_failure_returns_wait_failed_and_cleans_registry -- \
+            --exact
+          HOME=/root USER=root LOGNAME=root \
+            cargo test -p guest-control-server --release --no-default-features \
+              --test production_identity -- \
+              --ignored --exact production_write_file_identity_matches_sudo_policy
+          HOME=/root USER=root LOGNAME=root \
+            cargo test -p guest-control-server --release --no-default-features \
+              --test production_identity -- \
+              --ignored --exact production_exec_identity_matches_sandbox_user
+          HOME=/root USER=root LOGNAME=root \
+            cargo test -p guest-control-server --release --no-default-features \
+              --test production_identity -- \
+              --ignored --exact production_env_script_remains_until_operation_cleanup
+      - name: Report peak memory
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/report-memory-peak
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+  coverage:
+    runs-on: ubuntu-latest-8-cores
+    timeout-minutes: 20
+    env:
+      CARGO_PROFILE_TEST_DEBUG: line-tables-only
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+    if: fromJSON(inputs.dependencies).crates-detect.outputs.any-changed == 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Setup R2 sccache
+        id: sccache
+        if: (github.event_name != 'pull_request' || (github.event.pull_request.user.login != 'dependabot[bot]' && github.event.pull_request.head.repo.full_name == github.repository))
+        uses: ./.github/actions/setup-r2-sccache
+        with:
+          architecture: x86_64
+          r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          r2-secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          r2-account-id: ${{ vars.R2_ACCOUNT_ID }}
+          r2-bucket-name: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          workspaces: crates -> target
+          shared-key: coverage-line-tables-only
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Report coverage disk usage after cache restore
+        continue-on-error: true
+        run: |
+          df -h "$GITHUB_WORKSPACE"
+          for path in crates/target crates/target/llvm-cov-target; do
+            if [ -e "$path" ]; then
+              du -sh "$path"
+            else
+              echo "$path: not present"
+            fi
+          done
+      - name: Install coverage tools
+        uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a
+        with:
+          tool: cargo-llvm-cov@0.9.1,cargo-nextest@0.9.148
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
+        with:
+          working-directory: crates/runner/mitm-addon
+          enable-cache: true
+      - name: Sync locked addon for Rust/Python control integration
+        working-directory: crates/runner/mitm-addon
+        run: uv sync --locked
+      - name: Run tests with coverage
+        run: |
+          cd crates
+          cargo llvm-cov nextest --all-targets --all-features --test-threads 8 --lcov --output-path lcov.info
+      - name: Validate coverage report
+        run: |
+          report=crates/lcov.info
+          source_files="${RUNNER_TEMP:-/tmp}/coverage-source-files.txt"
+          [ -s "$report" ]
+          awk -v root="${GITHUB_WORKSPACE}/" '
+            index($0, "SF:") == 1 {
+              path = substr($0, 4)
+              if (index(path, root) == 1) {
+                path = substr(path, length(root) + 1)
+              }
+              print path
+            }
+          ' "$report" | LC_ALL=C sort -u > "$source_files"
+          source_file_count=$(wc -l < "$source_files" | tr -d ' ')
+          [ "$source_file_count" -gt 0 ]
+          source_file_digest=$(sha256sum "$source_files" | cut -d ' ' -f 1)
+          echo "Coverage source files: $source_file_count"
+          echo "Coverage source file set SHA-256: $source_file_digest"
+      - name: Report final coverage disk usage
+        if: success() || failure()
+        continue-on-error: true
+        run: |
+          df -h "$GITHUB_WORKSPACE"
+          for path in crates/target crates/target/llvm-cov-target; do
+            if [ -e "$path" ]; then
+              du -sh "$path"
+            else
+              echo "$path: not present"
+            fi
+          done
+      - name: Upload coverage to Codecov
+        if: success() || failure()
+        continue-on-error: true
+        timeout-minutes: 1
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: crates/lcov.info
+          flags: rust
+      - name: Report sccache statistics
+        if: always() && steps.sccache.outputs.started == 'true'
+        run: .github/scripts/report-sccache-stats.sh
+      - name: Report peak memory
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/report-memory-peak
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+  api-contracts-rust-bindings:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+    if: |
+      fromJSON(inputs.dependencies).crates-detect.outputs.ci-changed == 'true' ||
+      fromJSON(inputs.dependencies).crates-detect.outputs.api-contracts-rust-bindings-changed == 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: ./.github/actions/toolchain-init
+      - name: Check API Contracts Bindings
+        working-directory: turbo
+        run: |
+          pnpm -F @okouai/api-contracts generate:rust
+          pnpm -F @okouai/api-contracts generate:python
+          pnpm -F @okouai/api-contracts generate:swift
+          git diff --exit-code -- \
+            ../crates/api-contracts/src/generated \
+            ../crates/runner/mitm-addon/src/generated \
+            ../desktop/Okou/Core/Generated
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+  runner-firewall-contract-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+    if: |
+      fromJSON(inputs.dependencies).crates-detect.outputs.any-changed != 'true' &&
+      fromJSON(inputs.dependencies).crates-detect.outputs.runner-firewall-contract-inputs-changed == 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          workspaces: crates -> target
+          shared-key: runner-firewall-contract
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Check runner firewall contracts
+        working-directory: crates
+        run: |
+          cargo test -p runner-types --test firewall_base_url_contract firewall_base_url_validation_matches_shared_contract -- --exact
+          cargo test -p runner-types --test firewall_rule_contract firewall_rule_validation_matches_shared_contract -- --exact
+      - name: Report peak memory
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/report-memory-peak
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+  mitm-addon-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: |
+      fromJSON(inputs.dependencies).crates-detect.outputs.any-changed == 'true' ||
+      fromJSON(inputs.dependencies).crates-detect.outputs.mitm-addon-test-inputs-changed == 'true' ||
+      fromJSON(inputs.dependencies).crates-detect.outputs.mitm-addon-pricing-seed-changed == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        shard:
+          - 1/2
+          - 2/2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version-file: crates/runner/mitm-addon/.python-version
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
+        with:
+          working-directory: crates/runner/mitm-addon
+          enable-cache: true
+      - name: Sync locked environment
+        working-directory: crates/runner/mitm-addon
+        run: |
+          uv lock --check
+          uv sync --locked
+      - name: Lint and format check
+        working-directory: crates/runner/mitm-addon
+        run: |
+          uv run --no-sync ruff check .
+          uv run --no-sync ruff format --check .
+          uv run --no-sync basedpyright -p .
+      - name: Run mitm-addon tests
+        working-directory: crates/runner/mitm-addon
+        run: uv run --no-sync python -m pytest tests/ -q --durations=30 --durations-min=0.1 --test-shard=${{ matrix.shard }}
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+  mitm-addon-packaged-control:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    if: |
+      fromJSON(inputs.dependencies).crates-detect.outputs.any-changed == 'true' ||
+      fromJSON(inputs.dependencies).crates-detect.outputs.mitm-addon-test-inputs-changed == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version-file: crates/runner/mitm-addon/.python-version
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
+        with:
+          working-directory: crates/runner/mitm-addon
+          enable-cache: true
+      - name: Sync locked environment
+        working-directory: crates/runner/mitm-addon
+        run: uv sync --locked
+      - name: Check packaged addon control lifecycle
+        shell: bash
+        run: bash .github/scripts/check-packaged-addon-control.sh
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read

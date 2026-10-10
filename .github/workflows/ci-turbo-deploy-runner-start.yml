@@ -1,0 +1,78 @@
+name: turbo-deploy-runner-start
+"on":
+  workflow_call:
+    inputs:
+      dependencies:
+        type: string
+        required: true
+    secrets:
+      AWS_METAL_RUNNER_HOSTS:
+        required: false
+      AWS_METAL_RUNNER_SSH_KEY:
+        required: false
+      CF_ACCESS_CLIENT_ID:
+        required: false
+      CF_ACCESS_CLIENT_SECRET:
+        required: false
+      OFFICIAL_RUNNER_SECRET:
+        required: false
+      R2_ACCESS_KEY_ID:
+        required: false
+      R2_SECRET_ACCESS_KEY:
+        required: false
+      VERCEL_AUTOMATION_BYPASS_SECRET:
+        required: false
+    outputs:
+      runner-receipt:
+        value: ${{ jobs.deploy-runner-start.outputs.runner-receipt }}
+env:
+  npm_config_audit: "false"
+jobs:
+  deploy-runner-start:
+    runs-on: ubuntu-latest
+    outputs:
+      runner-receipt: ${{ steps.start.outputs.runner-receipt }}
+    permissions:
+      actions: read
+      contents: read
+    concurrency:
+      group: deploy-runner-start-${{ fromJSON(inputs.dependencies).prepare.outputs.job-ref }}
+      cancel-in-progress: true
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Setup SSH via Cloudflare Tunnel
+        uses: ./.github/actions/setup-ssh-tunnel
+        with:
+          ssh-user: ${{ vars.AWS_METAL_RUNNER_USER }}
+          ssh-hosts: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
+          ssh-key: ${{ secrets.AWS_METAL_RUNNER_SSH_KEY }}
+          cf-access-client-id: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          cf-access-client-secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+      - name: Reconcile and start runner under lifecycle lock
+        id: start
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_DEFAULT_REGION: auto
+          AWS_METAL_RUNNER_HOSTS: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          BIN_DIR: ${{ fromJSON(inputs.dependencies).deploy-runner-prepare.outputs.bin-dir }}
+          GH_TOKEN: ${{ github.token }}
+          JOB_REF: ${{ fromJSON(inputs.dependencies).prepare.outputs.runner-image-job-ref }}
+          METAL_HOSTS: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
+          METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
+          OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+          REPO: ${{ github.repository }}
+          ROOTFS_HASH_MAP: ${{ fromJSON(inputs.dependencies).deploy-runner-prepare.outputs.rootfs-hash-map }}
+          RUNNER_API_URL: ${{ fromJSON(inputs.dependencies).deploy-api.outputs.preview-url }}
+          RUNNER_DIR: ${{ fromJSON(inputs.dependencies).deploy-runner-prepare.outputs.runner-dir }}
+          RUNNER_GROUP: ${{ format('vm0/development-{0}', fromJSON(inputs.dependencies).prepare.outputs.job-ref) }}
+          RUNNER_SERVICE_REF: ${{ fromJSON(inputs.dependencies).prepare.outputs.job-ref }}
+          RUNNER_SHA_MAP: ${{ fromJSON(inputs.dependencies).deploy-runner-prepare.outputs.runner-sha-map }}
+          SNAPSHOT_HASH_MAP: ${{ fromJSON(inputs.dependencies).deploy-runner-prepare.outputs.snapshot-hash-map }}
+          VERCEL_BYPASS: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          .github/scripts/with-runner-lifecycle-lock.sh \
+            .github/scripts/reconcile-and-start-runner-groups.sh

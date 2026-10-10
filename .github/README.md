@@ -1,32 +1,40 @@
 # CI workflow ownership
 
-`workflows/ci.yml` is the native PR/merge-group entry point for Turbo, Crates,
-and Runner Image. It is generated from the jobs in `turbo.yml`, `crates.yml`,
-and `runner-image.yml`; edit those modules rather than the generated file.
-The modules retain the independent main/staging lifecycle.
+`ci.yml` owns the shared readiness DAG and required gates. It directly handles
+PR/merge-group events. The existing Turbo, Crates and Runner Image entrypoints are
+thin callers with an explicit main surface; Staging retains its environment lock
+and explicit secret map. There is no composer, generated workflow, regeneration
+command or second execution implementation.
 
-After changing a module or readiness edge, regenerate and format the output:
+`ci-turbo-*.yml`, `ci-crates-*.yml` and `ci-runner-image-*.yml` own execution through
+`workflow_call`. Edit the actual owner of a job. Caller `needs`/conditions own
+external scheduling, while local callee dependencies and steps own execution.
+Inputs carry data-only direct dependency snapshots; they never contain job bodies
+or instructions. Grouped terminal checks expose the reusable `jobs` result
+context directly, without an extra relay runner.
 
-```bash
-ruby .github/scripts/compose-ci-workflow.rb
-pnpm --dir turbo exec prettier --write ../.github/workflows/ci.yml
-ruby .github/scripts/compose-ci-workflow.rb --check
-```
+Keep boundaries at actual readiness. API, app, CLI, account preparation,
+bootstrap, image readiness, native compilation and cleanup are separate callers.
+The two architecture image callers use the same build owner. Selected Crates
+runtime callers use the same preparation/behavior/test owners but depend only on
+their own architecture, not a join with an unselected caller that might still
+wait for the complementary image. Ordinary checks do not wait for host discovery
+or images. Assets/prewarm are never ancestors of consumers or required gates.
+The existing aggregate compiler barrier remains unchanged (#38603).
 
-The consistency check compares parsed workflow content, so formatting does not
-invalidate it. CI also validates all dependency references and rejects cycles.
+PR/MQ uses the explicit `current` image handoff and exact caller run ID. Retained
+separate-main callers use explicit `main`, allowed only for push/main; it is not
+a fallback for invalid/missing current-run identity. Both paths retain existing
+manifest identity, architecture, profile, host and byte-hash validation.
 
-Keep readiness dependencies at the consuming job boundary. Independent checks,
-native test compilation, deployment preparation, and optional binary publication
-must not become ancestors of unrelated consumers. Immutable CLI/cache preparation
-and compilation overlap owner cancellation; host-mutating image jobs await the
-terminal-state handoff. Crates behavior lanes consume
-only the selected architecture; complementary validation still gates the final
-required result. Turbo consumes all configured image groups. Compiler matrix
-completion remains its existing barrier, not a new whole-workflow dependency.
+Nested caller permissions are ceilings, not an active worker grant. Main callers
+allow the shared DAG's PR/MQ cancellation declaration, but the only Actions-write
+worker is event-guarded owner cancellation. Every other worker explicitly uses
+Actions read; no staging worker gains Actions write. Secret forwarding is named
+at every boundary; do not replace it with broad inheritance.
 
-Native CI consumers download only the current run's published image artifact.
-Separate main/staging consumers retain their existing cross-run handoff. Both
-paths use the same source/target/namespace/profile/host/hash validation; artifact
-existence alone is not readiness. Preserve exact required-check contexts and
-runner lifecycle ownership when changing event entry points.
+Validation: native workflow-script shards, `actionlint`,
+`check-workflow-shell-compatibility.sh`, applicable ShellCheck/Bash syntax,
+workflow formatting and `git diff --check`. `ci-readiness-workflow-test.sh`
+checks the actual caller graph, ownership, bounded interfaces, scheduling and
+required gate behavior. No generation step is necessary.

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export RUBYOPT="${RUBYOPT:-} -r$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/workflow-test-owners.rb"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 WORKFLOW="${REPO_ROOT}/.github/workflows/turbo.yml"
@@ -31,7 +33,7 @@ if [[ "$api_backend_url_key_count" -ne 1 ]]; then
   fail "Turbo must pass through the E2E API backend URL exactly once"
 fi
 
-grep -Fq ".github/scripts/reconcile-and-start-runner-groups.sh" "$WORKFLOW" ||
+grep -Fq ".github/scripts/reconcile-and-start-runner-groups.sh" "${REPO_ROOT}/.github/workflows/ci-turbo-deploy-runner-start.yml" ||
   fail "runner deployment must invoke the lifecycle-locked start helper"
 grep -Fq "local RUNNER_DIRNAME=\"\${RUNNER_DIR##*/}\"" "$RUNNER_START_HELPER" ||
   fail "runner config dirname must come from the manifest runner directory"
@@ -44,9 +46,9 @@ grep -Fq -- "--config \${RUNNER_DIR}/runner.yaml" "$RUNNER_START_HELPER" ||
 if grep -Fq -- "--runner-dirname \${RUNNER_SERVICE_REF}" "$RUNNER_START_HELPER"; then
   fail "runner service identity must not select the manifest config directory"
 fi
-grep -Fq "RUNNER_SERVICE_REF: \${{ needs.prepare.outputs.job-ref }}" "$WORKFLOW" ||
+grep -Fq "RUNNER_SERVICE_REF: \${{ fromJSON(inputs.dependencies).prepare.outputs.job-ref }}" "${REPO_ROOT}/.github/workflows/ci-turbo-deploy-runner-start.yml" ||
   fail "runner service identity must follow the deployed API job ref"
-grep -Fq "RUNNER_GROUP: \${{ format('vm0/development-{0}', needs.prepare.outputs.job-ref) }}" "$WORKFLOW" ||
+grep -Fq "RUNNER_GROUP: \${{ format('vm0/development-{0}', fromJSON(inputs.dependencies).prepare.outputs.job-ref) }}" "${REPO_ROOT}/.github/workflows/ci-turbo-deploy-runner-start.yml" ||
   fail "runner group must match the deployed API default group"
 if grep -Fq 'playwright-staging' "$WORKFLOW"; then
   fail "main Playwright runs must not use a group outside the staging API default"
@@ -85,7 +87,7 @@ if [[ "$(grep -Fc 'upgradeToPro: true' "$RUNNER_TOKEN")" -ne 5 ||
 fi
 
 ruby -ryaml -ropen3 -rtempfile - "$WORKFLOW" "$RUNNER_MOCK_CLAUDE_BOOTSTRAP" <<'RUBY'
-workflow = YAML.load_file(ARGV.fetch(0))
+workflow = load_workflow_test_owners(ARGV.fetch(0))
 jobs = workflow.fetch("jobs")
 expected_deployed_ref = "${{ github.sha }}"
 # Account/shard preparation, execution, reports, and cleanup must all consume

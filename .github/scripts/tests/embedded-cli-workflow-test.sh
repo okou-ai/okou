@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export RUBYOPT="${RUBYOPT:-} -r$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/workflow-test-owners.rb"
+
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-runner_json=$(ruby -ryaml -rjson -e 'puts JSON.generate(YAML.load_file(ARGV.fetch(0)))' \
+runner_json=$(ruby -ryaml -rjson -e 'puts JSON.generate(load_workflow_test_owners(ARGV.fetch(0)))' \
   "${REPO_ROOT}/.github/workflows/runner-image.yml")
-release_json=$(ruby -ryaml -rjson -e 'puts JSON.generate(YAML.load_file(ARGV.fetch(0)))' \
+release_json=$(ruby -ryaml -rjson -e 'puts JSON.generate(load_workflow_test_owners(ARGV.fetch(0)))' \
   "${REPO_ROOT}/.github/workflows/release-please.yml")
-crates_json=$(ruby -ryaml -rjson -e 'puts JSON.generate(YAML.load_file(ARGV.fetch(0)))' \
+crates_json=$(ruby -ryaml -rjson -e 'puts JSON.generate(load_workflow_test_owners(ARGV.fetch(0)))' \
   "${REPO_ROOT}/.github/workflows/crates.yml")
 
 jq -e '

@@ -1,0 +1,180 @@
+name: crates-host-tests
+"on":
+  workflow_call:
+    inputs:
+      dependencies:
+        type: string
+        required: true
+    secrets:
+      AWS_METAL_RUNNER_HOSTS:
+        required: false
+      AWS_METAL_RUNNER_SSH_KEY:
+        required: false
+      CF_ACCESS_CLIENT_ID:
+        required: false
+      CF_ACCESS_CLIENT_SECRET:
+        required: false
+      R2_ACCESS_KEY_ID:
+        required: false
+      R2_SECRET_ACCESS_KEY:
+        required: false
+    outputs:
+      results:
+        value: ${{ toJSON(jobs) }}
+env:
+  npm_config_audit: "false"
+jobs:
+  nbd-cow-test:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+    if: |
+      fromJSON(inputs.dependencies).crates-detect.outputs.metal-job-ref != '' && (
+        fromJSON(inputs.dependencies).crates-detect.outputs.ci-changed == 'true' ||
+        fromJSON(inputs.dependencies).crates-detect.outputs.nbd-cow-changed == 'true'
+      )
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(fromJSON(inputs.dependencies).crates-runner-host-groups.outputs.matrix || '[]') }}
+    timeout-minutes: 5
+    env:
+      TARGET_TRIPLE: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          workspaces: crates -> target
+          shared-key: ${{ matrix.cacheSuffix }}-nbd
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Cross-compile nbd-cow tests for ${{ matrix.label }}
+        run: |
+          cd crates
+          cargo test --no-run --release --target "$TARGET_TRIPLE" -p nbd-cow
+          TEST_BIN=$(find "target/$TARGET_TRIPLE/release/deps" -name "integration-*" -executable -type f | head -1)
+          cp "$TEST_BIN" "target/nbd-cow-integration-test"
+          echo "TEST_BIN=crates/target/nbd-cow-integration-test" >> "$GITHUB_ENV"
+      - name: Setup SSH via Cloudflare Tunnel
+        uses: ./.github/actions/setup-ssh-tunnel
+        with:
+          ssh-user: ${{ vars.AWS_METAL_RUNNER_USER }}
+          ssh-hosts: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
+          ssh-key: ${{ secrets.AWS_METAL_RUNNER_SSH_KEY }}
+          cf-access-client-id: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          cf-access-client-secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+      - name: Select metal host
+        id: selected-host
+        env:
+          AWS_METAL_RUNNER_HOSTS: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
+          METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
+          RUNNER_HOST_GROUP_ID: ${{ matrix.id }}
+          JOB_REF: ${{ fromJSON(inputs.dependencies).crates-detect.outputs.metal-job-ref }}
+        run: |
+          HOSTS=$(.github/scripts/runner-host-architecture-groups.sh hosts "$RUNNER_HOST_GROUP_ID")
+          NUM_HOSTS=$(printf '%s\n' "$HOSTS" | tr ',' '\n' | grep -c . || true)
+          if [ "$NUM_HOSTS" -lt 1 ]; then
+            echo "::error::No metal hosts found for runner host group $RUNNER_HOST_GROUP_ID"
+            exit 1
+          fi
+          HOST=$(.github/scripts/runner-host-architecture-groups.sh select-host "$RUNNER_HOST_GROUP_ID" "$JOB_REF" "$HOSTS")
+          echo "host=${HOST}" >> "$GITHUB_OUTPUT"
+          echo "Selected $RUNNER_HOST_GROUP_ID metal host: ${HOST} (${NUM_HOSTS} host(s) in group)"
+      - name: Run nbd-cow integration tests on metal
+        env:
+          METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
+          HOST: ${{ steps.selected-host.outputs.host }}
+          RUNNER_HOST_GROUP_ID: ${{ matrix.id }}
+        run: bash .github/scripts/run-nbd-cow-tests.sh
+      - name: Report peak memory
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/report-memory-peak
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+  runner-rootfs-process-test:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+    if: |
+      fromJSON(inputs.dependencies).crates-detect.outputs.metal-job-ref != '' && (
+        fromJSON(inputs.dependencies).crates-detect.outputs.ci-changed == 'true' ||
+        fromJSON(inputs.dependencies).crates-detect.outputs.runner-changed == 'true'
+      )
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(fromJSON(inputs.dependencies).crates-runner-host-groups.outputs.matrix || '[]') }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    env:
+      TARGET_TRIPLE: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Setup R2 sccache
+        id: sccache
+        uses: ./.github/actions/setup-r2-sccache
+        with:
+          architecture: ${{ matrix.id }}
+          r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          r2-secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          r2-account-id: ${{ vars.R2_ACCOUNT_ID }}
+          r2-bucket-name: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          workspaces: crates -> target
+          shared-key: ${{ matrix.cacheSuffix }}-rootfs-process-local
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Cross-compile rootfs process tests for ${{ matrix.label }}
+        working-directory: crates
+        run: |
+          TEST_BIN=$(cargo test --no-run --profile local --target "$TARGET_TRIPLE" \
+            -p runner --bin runner --message-format=json | \
+            jq -r 'select(.reason == "compiler-artifact" and .target.name == "runner" and .profile.test) | .executable // empty')
+          test -n "$TEST_BIN"
+          echo "Rootfs process test executable: $(stat -c '%s' "$TEST_BIN") bytes ($TEST_BIN)"
+          cp "$TEST_BIN" target/runner-rootfs-process-test
+          echo "TEST_BIN=crates/target/runner-rootfs-process-test" >> "$GITHUB_ENV"
+      - name: Setup SSH via Cloudflare Tunnel
+        uses: ./.github/actions/setup-ssh-tunnel
+        with:
+          ssh-user: ${{ vars.AWS_METAL_RUNNER_USER }}
+          ssh-hosts: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
+          ssh-key: ${{ secrets.AWS_METAL_RUNNER_SSH_KEY }}
+          cf-access-client-id: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          cf-access-client-secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+      - name: Run rootfs process ownership tests on metal
+        env:
+          AWS_METAL_RUNNER_HOSTS: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
+          METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
+          RUNNER_HOST_GROUP_ID: ${{ matrix.id }}
+          JOB_REF: ${{ fromJSON(inputs.dependencies).crates-detect.outputs.metal-job-ref }}
+        run: |
+          HOSTS=$(.github/scripts/runner-host-architecture-groups.sh hosts "$RUNNER_HOST_GROUP_ID")
+          HOST=$(.github/scripts/runner-host-architecture-groups.sh select-host "$RUNNER_HOST_GROUP_ID" "$JOB_REF" "$HOSTS")
+          REMOTE="${METAL_USER}@${HOST}"
+          REMOTE_BIN="/tmp/runner-rootfs-process-test-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${RUNNER_HOST_GROUP_ID}"
+          scp "$TEST_BIN" "${REMOTE}:${REMOTE_BIN}"
+          ssh "$REMOTE" sh -s -- "$REMOTE_BIN" <<'REMOTE_TEST'
+          set -eu
+          trap 'rm -f -- "$1"' EXIT
+          # An outer PID namespace also contains the test's deliberately stopped
+          # workers if its controller is killed before the RAII guard can resume them.
+          sudo unshare --mount --pid --fork --kill-child --mount-proc \
+            --propagation private -- "$1" --ignored --exact \
+            cmd::build::scripts::process_tests::rootfs_process_ownership --nocapture
+          REMOTE_TEST
+      - name: Report sccache statistics
+        if: always() && steps.sccache.outputs.started == 'true'
+        run: .github/scripts/report-sccache-stats.sh
+      - name: Report peak memory
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/report-memory-peak
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read

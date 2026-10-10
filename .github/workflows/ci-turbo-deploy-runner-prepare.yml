@@ -1,0 +1,70 @@
+name: turbo-deploy-runner-prepare
+"on":
+  workflow_call:
+    inputs:
+      dependencies:
+        type: string
+        required: true
+      image-handoff:
+        type: string
+        required: true
+    secrets:
+      AWS_METAL_RUNNER_HOSTS:
+        required: false
+      AWS_METAL_RUNNER_SSH_KEY:
+        required: false
+      CF_ACCESS_CLIENT_ID:
+        required: false
+      CF_ACCESS_CLIENT_SECRET:
+        required: false
+    outputs:
+      bin-dir:
+        value: ${{ jobs.deploy-runner-prepare.outputs.bin-dir }}
+      runner-dir:
+        value: ${{ jobs.deploy-runner-prepare.outputs.runner-dir }}
+      runner-sha-map:
+        value: ${{ jobs.deploy-runner-prepare.outputs.runner-sha-map }}
+      rootfs-hash-map:
+        value: ${{ jobs.deploy-runner-prepare.outputs.rootfs-hash-map }}
+      snapshot-hash-map:
+        value: ${{ jobs.deploy-runner-prepare.outputs.snapshot-hash-map }}
+env:
+  npm_config_audit: "false"
+jobs:
+  deploy-runner-prepare:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    concurrency:
+      group: deploy-runner-prepare-${{ fromJSON(inputs.dependencies).prepare.outputs.job-ref }}
+      cancel-in-progress: true
+    timeout-minutes: 20
+    outputs:
+      bin-dir: ${{ steps.manifest.outputs.bin-dir }}
+      runner-dir: ${{ steps.manifest.outputs.runner-dir }}
+      runner-sha-map: ${{ steps.manifest.outputs.runner-sha-map }}
+      rootfs-hash-map: ${{ steps.manifest.outputs.rootfs-hash-map }}
+      snapshot-hash-map: ${{ steps.manifest.outputs.snapshot-hash-map }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Setup SSH via Cloudflare Tunnel
+        uses: ./.github/actions/setup-ssh-tunnel
+        with:
+          ssh-user: ${{ vars.AWS_METAL_RUNNER_USER }}
+          ssh-hosts: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
+          ssh-key: ${{ secrets.AWS_METAL_RUNNER_SSH_KEY }}
+          cf-access-client-id: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          cf-access-client-secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+      - name: Wait for runner image manifest
+        id: manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.sha }}
+          LOOKUP_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          JOB_REF: ${{ fromJSON(inputs.dependencies).prepare.outputs.runner-image-job-ref }}
+          AWS_METAL_RUNNER_HOSTS: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
+          METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
+          PROFILE: vm0/default
+          IMAGE_HANDOFF: ${{ inputs.image-handoff }}
+        run: .github/scripts/ci-image-handoff.sh groups

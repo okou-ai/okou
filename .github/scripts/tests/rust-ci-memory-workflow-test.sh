@@ -13,8 +13,8 @@ fail() {
 }
 
 command -v yq >/dev/null || fail "yq is required"
-crates_json=$(yq -o=json '.' "$CRATES_WORKFLOW")
-runner_image_json=$(yq -o=json '.' "$RUNNER_IMAGE_WORKFLOW")
+crates_json=$(python3 "$(dirname "${BASH_SOURCE[0]}")/load-workflow-test-owners.py" -o=json '.' "$CRATES_WORKFLOW")
+runner_image_json=$(python3 "$(dirname "${BASH_SOURCE[0]}")/load-workflow-test-owners.py" -o=json '.' "$RUNNER_IMAGE_WORKFLOW")
 action_json=$(yq -o=json '.' "$ACTION")
 
 jq -e '

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export RUBYOPT="${RUBYOPT:-} -r$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/workflow-test-owners.rb"
+
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cleanup_workflow="${repo_root}/.github/workflows/cleanup.yml"
 stale_workflow="${repo_root}/.github/workflows/cleanup-stale.yml"
@@ -20,7 +22,7 @@ def named_step(job, name)
   job.fetch("steps").find { |step| step["name"] == name }
 end
 
-cleanup_workflow = YAML.load_file(ARGV.fetch(0))
+cleanup_workflow = load_workflow_test_owners(ARGV.fetch(0))
 workflow_triggers = cleanup_workflow["on"] || cleanup_workflow.fetch(true)
 pull_request_target = workflow_triggers.fetch("pull_request_target")
 unless pull_request_target.fetch("types").sort == %w[closed reopened]
@@ -91,7 +93,7 @@ if cleanup_names.include?("Cleanup crates runner on all metal hosts")
   raise "runner cleanup must not split one PR namespace across unlocked lane lists"
 end
 
-stale = YAML.load_file(ARGV.fetch(1)).fetch("jobs").fetch("cleanup-metal-runners")
+stale = load_workflow_test_owners(ARGV.fetch(1)).fetch("jobs").fetch("cleanup-metal-runners")
 unless stale.fetch("permissions") == {
   "actions" => "read",
   "contents" => "read",
@@ -188,7 +190,7 @@ unless runner_cleanup_playbook.include?("job_ref is match('^pr-[1-9][0-9]*$')") 
   raise "runner cleanup must select one strict PR namespace without per-lane duplication"
 end
 
-turbo = YAML.load_file(ARGV.fetch(2)).fetch("jobs")
+turbo = load_workflow_test_owners(ARGV.fetch(2)).fetch("jobs")
 prepare = turbo.fetch("deploy-runner-prepare")
 start = turbo.fetch("deploy-runner-start")
 unless prepare.dig("outputs", "runner-sha-map") ==

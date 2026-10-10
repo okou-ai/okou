@@ -1,0 +1,367 @@
+name: turbo-deploy-app
+"on":
+  workflow_call:
+    inputs:
+      dependencies:
+        type: string
+        required: true
+    secrets:
+      CF_API_WORKER_DEPLOY_API_TOKEN:
+        required: false
+      CLERK_SECRET_KEY:
+        required: false
+      R2_STATIC_ACCESS_KEY_ID:
+        required: false
+      R2_STATIC_SECRET_ACCESS_KEY:
+        required: false
+    outputs:
+      preview-url:
+        value: ${{ jobs.deploy-app.outputs.preview-url }}
+env:
+  npm_config_audit: "false"
+jobs:
+  deploy-app:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      preview-url: ${{ steps.worker-deploy.outputs.url }}
+    concurrency:
+      group: deploy-app-${{ github.sha }}
+      cancel-in-progress: false
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
+    permissions:
+      contents: read
+      actions: read
+    defaults:
+      run:
+        shell: bash
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_STATIC_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_STATIC_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: auto
+      CF_WORKERS_SUBDOMAIN: ${{ vars.CF_WORKERS_SUBDOMAIN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CF_ACCOUNT_ID }}
+      PREVIEW_DOMAIN: ${{ vars.PREVIEW_DOMAIN }}
+      R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+      R2_BUCKET_NAME: ${{ vars.R2_STATIC_BUCKET_NAME }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+      - name: Resolve app Worker preview alias
+        id: worker-alias
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          MERGE_GROUP_HEAD_REF: ${{ github.event.merge_group.head_ref || '' }}
+          PULL_REQUEST_NUMBER: ${{ github.event.pull_request.number || '' }}
+        run: |
+          alias="$(bash .github/scripts/resolve-app-preview-alias.sh \
+            "$EVENT_NAME" \
+            "$PULL_REQUEST_NUMBER" \
+            "$MERGE_GROUP_HEAD_REF")"
+          echo "alias=$alias" >> "$GITHUB_OUTPUT"
+      - name: Resolve app Worker preview URL
+        id: app-preview
+        env:
+          WORKER_PREVIEW_ALIAS: ${{ steps.worker-alias.outputs.alias }}
+        run: |
+          : "${CF_WORKERS_SUBDOMAIN:?CF_WORKERS_SUBDOMAIN variable is required}"
+          job_ref="${WORKER_PREVIEW_ALIAS%-app}"
+          url="$(bash .github/scripts/resolve-app-preview-url.sh \
+            "$job_ref" \
+            "$CF_WORKERS_SUBDOMAIN")"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+      - uses: ./.github/actions/toolchain-init
+      - name: Install AWS CLI
+        run: |
+          architecture="$(dpkg --print-architecture)"
+          case "$architecture" in
+            amd64) aws_architecture="x86_64" ;;
+            arm64) aws_architecture="aarch64" ;;
+            *) echo "Unsupported architecture: $architecture" >&2; exit 1 ;;
+          esac
+
+          curl -fsSL --retry 3 \
+            "https://awscli.amazonaws.com/awscli-exe-linux-${aws_architecture}.zip" \
+            --output /tmp/awscliv2.zip
+          python3 -m zipfile -e /tmp/awscliv2.zip /tmp/awscli
+          chmod +x /tmp/awscli/aws/install /tmp/awscli/aws/dist/aws
+          /tmp/awscli/aws/install
+          aws --version
+      - name: Resolve artifact commit SHA
+        id: artifact
+        run: |
+          sha="$(bash .github/scripts/resolve-build-commit-sha.sh)"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "prefix=okou-app/$sha" >> "$GITHUB_OUTPUT"
+      - name: Check for existing artifact
+        id: existing
+        env:
+          ARTIFACT_PREFIX: ${{ steps.artifact.outputs.prefix }}
+        run: |
+          set -euo pipefail
+
+          : "${AWS_ACCESS_KEY_ID:?R2_STATIC_ACCESS_KEY_ID secret is required}"
+          : "${AWS_SECRET_ACCESS_KEY:?R2_STATIC_SECRET_ACCESS_KEY secret is required}"
+          : "${R2_ACCOUNT_ID:?R2_ACCOUNT_ID variable is required}"
+          : "${R2_BUCKET_NAME:?R2_STATIC_BUCKET_NAME variable is required}"
+
+          r2_endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          ready_key="${ARTIFACT_PREFIX}/ready.json"
+          error_log="$(mktemp)"
+
+          set +e
+          aws s3api head-object \
+            --endpoint-url "$r2_endpoint" \
+            --bucket "$R2_BUCKET_NAME" \
+            --key "$ready_key" \
+            >/dev/null 2>"$error_log"
+          status=$?
+          set -e
+
+          if (( status == 0 )); then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Artifact already ready: s3://${R2_BUCKET_NAME}/${ARTIFACT_PREFIX}/"
+          elif grep -Eq '404|NotFound|Not Found|NoSuchKey' "$error_log"; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          else
+            cat "$error_log" >&2
+            exit "$status"
+          fi
+      - name: Build canonical app artifact
+        if: steps.existing.outputs.exists != 'true'
+        env:
+          VITE_CLERK_PUBLISHABLE_KEY_PREVIEW: ${{ vars.CLERK_PUBLISHABLE_KEY_PREVIEW }}
+          VITE_CLERK_PUBLISHABLE_KEY_PROD: ${{ vars.CLERK_PUBLISHABLE_KEY_PROD }}
+          OKOU_APP_GIT_COMMIT_SHA: ${{ steps.artifact.outputs.sha }}
+          VITE_AXIOM_CLIENT_TELEMETRY_TOKEN: ${{ github.event_name != 'pull_request' && vars.AXIOM_CLIENT_TELEMETRY_TOKEN || '' }}
+          VITE_POSTHOG_KEY: ${{ vars.POSTHOG_KEY }}
+          VITE_SENTRY_DSN_PROD: ${{ vars.SENTRY_DSN_APP_PROD }}
+          VITE_VAPID_PUBLIC_KEY_PREVIEW: ${{ vars.VAPID_PUBLIC_KEY_PREVIEW }}
+          VITE_VAPID_PUBLIC_KEY_PROD: ${{ vars.VAPID_PUBLIC_KEY_PROD }}
+        run: |
+          cd turbo
+          pnpm --filter @okouai/app exec vite build --sourcemap
+          pnpm --filter @okouai/app exec sentry-cli sourcemaps inject dist
+      - name: Create artifact manifest
+        if: steps.existing.outputs.exists != 'true'
+        env:
+          ARTIFACT_SHA: ${{ steps.artifact.outputs.sha }}
+        run: |
+          set -euo pipefail
+
+          dist="turbo/apps/platform/dist"
+          entries="$(mktemp)"
+
+          find "$dist" -type f -print0 | sort -z | while IFS= read -r -d '' file; do
+            relative_path="${file#"$dist"/}"
+            digest="$(sha256sum "$file" | cut -d ' ' -f 1)"
+            size="$(stat -c '%s' "$file")"
+            jq -n \
+              --arg path "$relative_path" \
+              --arg sha256 "$digest" \
+              --argjson size "$size" \
+              '{path: $path, sha256: $sha256, size: $size}' >> "$entries"
+          done
+
+          jq -s \
+            --arg commit_sha "$ARTIFACT_SHA" \
+            '{version: 1, commitSha: $commit_sha, files: .}' \
+            "$entries" > /tmp/okou-app-manifest.json
+
+          manifest_sha="$(sha256sum /tmp/okou-app-manifest.json | cut -d ' ' -f 1)"
+          jq -n \
+            --arg commit_sha "$ARTIFACT_SHA" \
+            --arg manifest_sha256 "$manifest_sha" \
+            '{version: 1, commitSha: $commit_sha, manifestSha256: $manifest_sha256}' \
+            > /tmp/okou-app-ready.json
+      - name: Upload canonical app artifact
+        if: steps.existing.outputs.exists != 'true'
+        env:
+          ARTIFACT_PREFIX: ${{ steps.artifact.outputs.prefix }}
+        run: |
+          set -euo pipefail
+
+          r2_endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          artifact_uri="s3://${R2_BUCKET_NAME}/${ARTIFACT_PREFIX}"
+          cache_control="public, max-age=31536000, immutable"
+
+          aws s3 rm "$artifact_uri/" \
+            --endpoint-url "$r2_endpoint" \
+            --recursive
+
+          # A single archive keeps readers to one request instead of one per
+          # file, which is where R2 kept breaking the transfer mid-stream.
+          tar -czf /tmp/okou-app-dist.tar.gz -C turbo/apps/platform/dist .
+
+          aws s3api put-object \
+            --endpoint-url "$r2_endpoint" \
+            --bucket "$R2_BUCKET_NAME" \
+            --key "${ARTIFACT_PREFIX}/dist.tar.gz" \
+            --body /tmp/okou-app-dist.tar.gz \
+            --content-type application/gzip \
+            --cache-control "$cache_control"
+
+          aws s3api put-object \
+            --endpoint-url "$r2_endpoint" \
+            --bucket "$R2_BUCKET_NAME" \
+            --key "${ARTIFACT_PREFIX}/manifest.json" \
+            --body /tmp/okou-app-manifest.json \
+            --content-type application/json \
+            --cache-control "$cache_control"
+
+          aws s3api put-object \
+            --endpoint-url "$r2_endpoint" \
+            --bucket "$R2_BUCKET_NAME" \
+            --key "${ARTIFACT_PREFIX}/ready.json" \
+            --body /tmp/okou-app-ready.json \
+            --content-type application/json \
+            --cache-control "$cache_control" \
+            --if-none-match "*"
+
+          echo "Artifact ready: ${artifact_uri}/"
+      - name: Prepare standalone app Worker preview
+        id: worker-preview
+        env:
+          ARTIFACT_EXISTS: ${{ steps.existing.outputs.exists }}
+          ARTIFACT_PREFIX: ${{ steps.artifact.outputs.prefix }}
+          WORKER_PREVIEW_ALIAS: ${{ steps.worker-alias.outputs.alias }}
+        run: |
+          set -euo pipefail
+
+          : "${CLOUDFLARE_ACCOUNT_ID:?CF_ACCOUNT_ID variable is required}"
+
+          r2_endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          artifact_uri="s3://${R2_BUCKET_NAME}/${ARTIFACT_PREFIX}"
+          worker_shell="turbo/apps/app-worker/shell"
+          mkdir "$worker_shell"
+
+          if [[ "$ARTIFACT_EXISTS" == "true" ]]; then
+            canonical_dist="$(mktemp -d)"
+            bash .github/scripts/fetch-okou-app-artifact.sh \
+              "$r2_endpoint" \
+              "$artifact_uri" \
+              "$canonical_dist"
+          else
+            # This job built and uploaded the artifact, so the canonical bytes
+            # are still on disk. Reading them back from R2 only adds latency and
+            # a network failure mode.
+            canonical_dist="turbo/apps/platform/dist"
+          fi
+
+          bash .github/scripts/prepare-okou-app-worker-shell.sh \
+            "$canonical_dist" \
+            "$worker_shell"
+
+          {
+            echo "canonical-dist=$canonical_dist"
+            echo "shell=$worker_shell"
+          } >> "$GITHUB_OUTPUT"
+      - name: Publish immutable app assets to R2
+        env:
+          CANONICAL_ASSETS: ${{ steps.worker-preview.outputs.canonical-dist }}/assets
+        run: |
+          r2_endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          bash .github/scripts/publish-okou-app-assets.sh \
+            "$r2_endpoint" \
+            "$R2_BUCKET_NAME" \
+            "$CANONICAL_ASSETS"
+      - name: Deploy standalone app Worker preview
+        id: worker-deploy
+        env:
+          ARTIFACT_SHA: ${{ steps.artifact.outputs.sha }}
+          CLERK_PUBLISHABLE_KEY: ${{ github.event_name == 'pull_request' && vars.CLERK_PUBLISHABLE_KEY_PREVIEW || '' }}
+          CLERK_SECRET_KEY: ${{ github.event_name == 'pull_request' && secrets.CLERK_SECRET_KEY || '' }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_WORKER_DEPLOY_API_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          EXPECTED_PREVIEW_URL: ${{ steps.app-preview.outputs.url }}
+          WORKER_PREVIEW_ALIAS: ${{ steps.worker-alias.outputs.alias }}
+        run: |
+          set -euo pipefail
+          : "${CLOUDFLARE_API_TOKEN:?CF_API_WORKER_DEPLOY_API_TOKEN secret is required}"
+          : "${CLOUDFLARE_ACCOUNT_ID:?CF_ACCOUNT_ID variable is required}"
+          : "${EXPECTED_PREVIEW_URL:?app Worker preview URL is required}"
+
+          worker_secret_args=()
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            : "${CLERK_PUBLISHABLE_KEY:?CLERK_PUBLISHABLE_KEY_PREVIEW variable is required}"
+            : "${CLERK_SECRET_KEY:?CLERK_SECRET_KEY secret is required}"
+            case "$CLERK_PUBLISHABLE_KEY" in
+              pk_test_*) ;;
+              *) echo "App Worker preview requires a Clerk test publishable key" >&2; exit 1 ;;
+            esac
+            case "$CLERK_SECRET_KEY" in
+              sk_test_*) ;;
+              *) echo "App Worker preview requires a Clerk test secret key" >&2; exit 1 ;;
+            esac
+
+            # Keep Clerk bindings encrypted and version-scoped. The exact alias
+            # origin is included so the Worker never trusts an arbitrary Host.
+            umask 077
+            worker_secrets="$(mktemp)"
+            trap 'rm -f "$worker_secrets"' EXIT
+            jq -n \
+              '{
+                CLERK_EDGE_AUTHORIZED_PARTY: env.EXPECTED_PREVIEW_URL,
+                CLERK_PUBLISHABLE_KEY: env.CLERK_PUBLISHABLE_KEY,
+                CLERK_SECRET_KEY: env.CLERK_SECRET_KEY
+              }' > "$worker_secrets"
+            worker_secret_args=(--secrets-file "$worker_secrets")
+          fi
+          unset CLERK_PUBLISHABLE_KEY CLERK_SECRET_KEY
+
+          # Preview URLs must already be enabled when Wrangler uploads the
+          # version, otherwise Cloudflare does not register --preview-alias.
+          subdomain_response="$(curl \
+            --silent \
+            --show-error \
+            --fail-with-body \
+            --request POST \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/okou-app-preview/subdomain" \
+            --header "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            --header "Content-Type: application/json" \
+            --header "Cloudflare-Workers-Script-Api-Date: 2025-08-01" \
+            --data '{"enabled":true,"previews_enabled":true}')"
+          jq --exit-status \
+            '.success == true and .result.enabled == true and .result.previews_enabled == true' \
+            <<< "$subdomain_response" >/dev/null
+
+          cd turbo
+
+          # Cloudflare requires a newly-created Worker service to have one
+          # active deployment before version preview URLs can route traffic.
+          # Bootstrap the shared preview service once; subsequent PRs only
+          # upload isolated, alias-pinned versions below.
+          deployments_response="$(curl \
+            --silent \
+            --show-error \
+            --fail-with-body \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/okou-app-preview/deployments" \
+            --header "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            --header "Cloudflare-Workers-Script-Api-Date: 2025-08-01")"
+          jq --exit-status \
+            '.success == true and (.result.deployments | type == "array")' \
+            <<< "$deployments_response" >/dev/null
+          if jq --exit-status \
+            '.result.deployments | length == 0' \
+            <<< "$deployments_response" >/dev/null; then
+            pnpm --filter @okouai/app-worker exec wrangler deploy \
+              --env preview \
+              --message "bootstrap app preview Worker (${ARTIFACT_SHA})"
+          fi
+
+          pnpm --filter @okouai/app-worker exec wrangler versions upload \
+            --env preview \
+            --preview-alias "$WORKER_PREVIEW_ALIAS" \
+            "${worker_secret_args[@]}" \
+            --message "app artifact ${ARTIFACT_SHA}"
+
+          echo "url=$EXPECTED_PREVIEW_URL" >> "$GITHUB_OUTPUT"
+      - name: Record standalone app Worker preview
+        env:
+          APP_PREVIEW_URL: ${{ steps.worker-deploy.outputs.url }}
+          WORKER_PREVIEW_ALIAS: ${{ steps.worker-alias.outputs.alias }}
+        run: |
+          echo "App Worker preview alias: ${WORKER_PREVIEW_ALIAS}" >> "$GITHUB_STEP_SUMMARY"
+          echo "App Worker preview: ${APP_PREVIEW_URL}" >> "$GITHUB_STEP_SUMMARY"

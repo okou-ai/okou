@@ -365,7 +365,7 @@ RUNNER_BINARY_CONTEXT_ROOT="$actual_context" \
 workflow_toolchain=$(awk '
   /^  compile:$/ { in_compile = 1; next }
   in_compile && /^      image: / { sub(/^      image: /, ""); print; exit }
-' "${REPO_ROOT}/.github/workflows/runner-image.yml")
+' "${REPO_ROOT}/.github/workflows/ci-runner-image-compile.yml")
 . "${REPO_ROOT}/.github/scripts/runner-binary-build/contract.env"
 [ "$RUNNER_BINARY_INPUT_SCHEMA_VERSION" = "6" ] \
   || fail "runner binary input schema must identify content-only CLI inputs"

@@ -1,0 +1,360 @@
+name: turbo-deploy-api
+"on":
+  workflow_call:
+    inputs:
+      dependencies:
+        type: string
+        required: true
+    secrets:
+      ABLY_API_KEY:
+        required: false
+      AGENTPHONE_API_KEY:
+        required: false
+      AGENTPHONE_WEBHOOK_SECRET:
+        required: false
+      AWS_ACCESS_KEY_ID:
+        required: false
+      AWS_METAL_RUNNER_HOSTS:
+        required: false
+      AWS_METAL_RUNNER_SSH_KEY:
+        required: false
+      AWS_SECRET_ACCESS_KEY:
+        required: false
+      AXIOM_TOKEN_SESSIONS:
+        required: false
+      AXIOM_TOKEN_TELEMETRY:
+        required: false
+      CF_ACCESS_CLIENT_ID:
+        required: false
+      CF_ACCESS_CLIENT_SECRET:
+        required: false
+      CF_API_WORKER_DEPLOY_API_TOKEN:
+        required: false
+      CLERK_SECRET_KEY:
+        required: false
+      CLERK_WEBHOOK_SIGNING_SECRET:
+        required: false
+      CODECOV_TOKEN:
+        required: false
+      CRON_SECRET:
+        required: false
+      DISCORD_BOT_TOKEN:
+        required: false
+      DISCORD_GATEWAY_SECRET:
+        required: false
+      FAL_KEY:
+        required: false
+      FINICITY_APP_KEY:
+        required: false
+      FINICITY_APP_SECRET:
+        required: false
+      GOOGLE_ADS_DEVELOPER_TOKEN:
+        required: false
+      GOOGLE_ADS_LOGIN_CUSTOMER_ID:
+        required: false
+      MICROSOFT_TEAMS_BOT_APP_PASSWORD:
+        required: false
+      NEON_API_KEY:
+        required: false
+      OFFICIAL_RUNNER_SECRET:
+        required: false
+      OKOU_BROWSER_USE_API_KEY:
+        required: false
+      OKOU_FINANCE_APIDOJO_TOKEN:
+        required: false
+      OKOU_GITHUB_APP_CLIENT_SECRET:
+        required: false
+      OKOU_GITHUB_APP_PRIVATE_KEY:
+        required: false
+      OKOU_GITHUB_APP_WEBHOOK_SECRET:
+        required: false
+      OKOU_MACHINE_SECRET_KEY:
+        required: false
+      OKOU_SCRAPE_FIRECRAWL_TOKEN:
+        required: false
+      OKOU_SEO_DATAFORSEO_LOGIN:
+        required: false
+      OKOU_SEO_DATAFORSEO_PASSWORD:
+        required: false
+      OKOU_SOCIAL_MONID_API_KEY:
+        required: false
+      OKOU_SOCIAL_SOCIALKIT_TOKEN:
+        required: false
+      OKOU_WEATHER_GOOGLE_WEATHER_TOKEN:
+        required: false
+      OKOU_WEB_SEARCH_PERPLEXITY_TOKEN:
+        required: false
+      OPENAI_API_KEY:
+        required: false
+      OPENROUTER_API_KEY:
+        required: false
+      R2_ACCESS_KEY_ID:
+        required: false
+      R2_HOSTED_SITES_ACCESS_KEY_ID:
+        required: false
+      R2_HOSTED_SITES_SECRET_ACCESS_KEY:
+        required: false
+      R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID_DEV:
+        required: false
+      R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY_DEV:
+        required: false
+      R2_SECRET_ACCESS_KEY:
+        required: false
+      R2_STATIC_ACCESS_KEY_ID:
+        required: false
+      R2_STATIC_SECRET_ACCESS_KEY:
+        required: false
+      R2_USER_ARTIFACTS_ACCESS_KEY_ID:
+        required: false
+      R2_USER_ARTIFACTS_SECRET_ACCESS_KEY:
+        required: false
+      RESEND_API_KEY:
+        required: false
+      RESEND_WEBHOOK_SECRET:
+        required: false
+      SECRETS_ENCRYPTION_KEY:
+        required: false
+      SECRETS_KMS_KEY_ID:
+        required: false
+      SENTRY_AUTH_TOKEN:
+        required: false
+      SENTRY_DSN:
+        required: false
+      SENTRY_DSN_API:
+        required: false
+      SENTRY_DSN_WEB:
+        required: false
+      SLACK_SIGNING_SECRET:
+        required: false
+      STEAM_WEB_API_KEY:
+        required: false
+      STRIPE_AUTOMATION_WEBHOOK_SECRET:
+        required: false
+      STRIPE_SECRET_KEY:
+        required: false
+      STRIPE_WEBHOOK_SECRET:
+        required: false
+      TELEGRAM_OFFICIAL_BOT_TOKEN:
+        required: false
+      TELEGRAM_OFFICIAL_WEBHOOK_SECRET:
+        required: false
+      VAPID_PRIVATE_KEY:
+        required: false
+      VERCEL_AUTOMATION_BYPASS_SECRET:
+        required: false
+      VERCEL_TOKEN:
+        required: false
+    outputs:
+      preview-url:
+        value: ${{ jobs.deploy-api.outputs.preview-url }}
+env:
+  npm_config_audit: "false"
+jobs:
+  deploy-api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    concurrency:
+      group: deploy-api-${{ fromJSON(inputs.dependencies).prepare.outputs.job-ref }}
+      cancel-in-progress: true
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
+    outputs:
+      preview-url: ${{ steps.api-alias.outputs.url || steps.api-deploy.outputs.url }}
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      deployments: write
+      id-token: write
+      actions: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/toolchain-init
+      - name: Fetch development Doppler OAuth config
+        id: doppler-oauth
+        uses: dopplerhq/secrets-fetch-action@451892f16195f9ac360e1a5bcbf0b5fd0e957534
+        with:
+          auth-method: oidc
+          doppler-identity-id: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+          doppler-project: vm0
+          doppler-config: dev
+      - name: Resolve API seed environment
+        id: api-seed-env
+        uses: ./.github/actions/web-api-env
+        with:
+          app: api
+          environment: preview
+          job-ref: ${{ fromJSON(inputs.dependencies).prepare.outputs.job-ref }}
+          web-url: ${{ fromJSON(inputs.dependencies).prepare.outputs.api-preview-url }}
+          app-url: ${{ fromJSON(inputs.dependencies).prepare.outputs.app-preview-url }}
+          api-backend-url: ${{ fromJSON(inputs.dependencies).prepare.outputs.api-preview-url }}
+          cli-pkg-url: https://static.okou.io/okou-cli/${{ github.sha }}/package.tgz
+        env:
+          REPO_VARS_JSON: ${{ toJSON(vars) }}
+          REPO_SECRETS_JSON: ${{ toJSON(secrets) }}
+          DOPPLER_SECRETS_JSON: ${{ toJSON(steps.doppler-oauth.outputs) }}
+      - name: Create Neon Branch
+        id: neon
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+          WEB_API_ENV_FILE: ${{ steps.api-seed-env.outputs.file }}
+          DEV_MODEL_OPENROUTER_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          while IFS= read -r line; do
+            if [ -n "$line" ]; then
+              key="${line%%=*}"
+              value="${line#*=}"
+              export "$key=$value"
+            fi
+          done < "$WEB_API_ENV_FILE"
+
+          required_seed_env=(
+            DEV_MODEL_OPENROUTER_KEY
+          )
+          missing_seed_env=()
+          for key in "${required_seed_env[@]}"; do
+            value="${!key:-}"
+            if [ -z "$value" ]; then
+              missing_seed_env+=("$key")
+            fi
+          done
+          if [ "${#missing_seed_env[@]}" -gt 0 ]; then
+            printf '::error::Missing preview seed model key env(s): %s\n' "${missing_seed_env[*]}"
+            exit 1
+          fi
+
+          # On pushes to main, migrate the test project's default (parent) branch
+          # BEFORE creating/resetting the preview branch off it. Neon branches are
+          # copy-on-write, so a preview branched from an already-migrated parent
+          # inherits the up-to-date schema and its own db:migrate below becomes a
+          # near no-op -- this is what keeps preview migrate (and deploy-api) fast.
+          # Safe by construction: this job has no `environment: production`, so
+          # NEON_PROJECT_ID resolves to the Neon TEST project, never production.
+          if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            echo "main push: pre-migrating test project default (parent) branch"
+            PARENT_DATABASE_URL=$(.github/scripts/neon-preview-branch.sh parent)
+            WORKFLOW_COMMAND_DATA="${PARENT_DATABASE_URL//%/%25}"
+            WORKFLOW_COMMAND_DATA="${WORKFLOW_COMMAND_DATA//$'\r'/%0D}"
+            WORKFLOW_COMMAND_DATA="${WORKFLOW_COMMAND_DATA//$'\n'/%0A}"
+            printf '::add-mask::%s\n' "$WORKFLOW_COMMAND_DATA"
+            (cd turbo && DATABASE_URL="$PARENT_DATABASE_URL" pnpm -F @okouai/db db:migrate)
+          fi
+
+          DATABASE_URL=$(.github/scripts/neon-preview-branch.sh branch "preview/${{ fromJSON(inputs.dependencies).prepare.outputs.job-ref }}")
+          WORKFLOW_COMMAND_DATA="${DATABASE_URL//%/%25}"
+          WORKFLOW_COMMAND_DATA="${WORKFLOW_COMMAND_DATA//$'\r'/%0D}"
+          WORKFLOW_COMMAND_DATA="${WORKFLOW_COMMAND_DATA//$'\n'/%0A}"
+          printf '::add-mask::%s\n' "$WORKFLOW_COMMAND_DATA"
+
+          cd turbo
+          DATABASE_URL="$DATABASE_URL" pnpm -F @okouai/db db:migrate
+          ENV=preview DATABASE_URL="$DATABASE_URL" pnpm -F api db:dev-seed --preview-onboarding-catalog
+
+          echo "database-url=$DATABASE_URL" >> "$GITHUB_OUTPUT"
+      - name: Resolve API deploy environment
+        id: api-deploy-env
+        uses: ./.github/actions/web-api-env
+        with:
+          app: api
+          environment: preview
+          database-url: ${{ steps.neon.outputs.database-url }}
+          job-ref: ${{ fromJSON(inputs.dependencies).prepare.outputs.job-ref }}
+          web-url: ${{ fromJSON(inputs.dependencies).prepare.outputs.api-preview-url }}
+          app-url: ${{ fromJSON(inputs.dependencies).prepare.outputs.app-preview-url }}
+          api-backend-url: ${{ fromJSON(inputs.dependencies).prepare.outputs.api-preview-url }}
+          cli-pkg-url: https://static.okou.io/okou-cli/${{ github.sha }}/package.tgz
+        env:
+          REPO_VARS_JSON: ${{ toJSON(vars) }}
+          REPO_SECRETS_JSON: ${{ toJSON(secrets) }}
+          DOPPLER_SECRETS_JSON: ${{ toJSON(steps.doppler-oauth.outputs) }}
+      - name: Use Stripe CLI webhook secret for PR API preview
+        if: |
+          fromJSON(inputs.dependencies).prepare.outputs.job-ref != 'staging' && (
+            fromJSON(inputs.dependencies).prepare.outputs.api-changed == 'true' ||
+            fromJSON(inputs.dependencies).prepare.outputs.cli-changed == 'true' ||
+            fromJSON(inputs.dependencies).prepare.outputs.platform-changed == 'true' ||
+            fromJSON(inputs.dependencies).prepare.outputs.crates-changed == 'true' ||
+            fromJSON(inputs.dependencies).prepare.outputs.ci-changed == 'true' ||
+            fromJSON(inputs.dependencies).prepare.outputs.e2e-changed == 'true'
+          )
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.local/bin:$PATH"
+          bash e2e/scripts/ensure-stripe-cli.sh
+
+          stripe_webhook_secret="$(stripe listen --api-key "$STRIPE_SECRET_KEY" --print-secret 2>/dev/null)"
+          echo "::add-mask::$stripe_webhook_secret"
+          if [[ "$stripe_webhook_secret" != whsec_* ]]; then
+            echo "Stripe CLI did not return a webhook signing secret" >&2
+            exit 1
+          fi
+
+          if grep -q '^STRIPE_WEBHOOK_SECRET=' "$API_ENV_FILE"; then
+            sed -i "s|^STRIPE_WEBHOOK_SECRET=.*|STRIPE_WEBHOOK_SECRET=${stripe_webhook_secret}|" "$API_ENV_FILE"
+          else
+            printf 'STRIPE_WEBHOOK_SECRET=%s\n' "$stripe_webhook_secret" >> "$API_ENV_FILE"
+          fi
+
+          echo "Configured API preview to trust Stripe CLI webhooks"
+        env:
+          API_ENV_FILE: ${{ steps.api-deploy-env.outputs.file }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+      - name: Deploy API to Vercel
+        id: api-deploy
+        uses: ./.github/actions/vercel-deploy
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ vars.VERCEL_TEAM_ID }}
+          vercel-project-id: ${{ vars.VERCEL_PROJECT_ID_API }}
+          environment: preview
+          deployment-env: api
+          prebuilt: "true"
+          prebuilt-build-command: |
+            pnpm --dir turbo/apps/api build
+            rm -rf .vercel/output
+            cp -R turbo/apps/api/.vercel/output .vercel/output
+          environment-file: ${{ steps.api-deploy-env.outputs.file }}
+          meta-branch: ${{ github.head_ref || github.ref_name }}
+          meta-pr: ${{ fromJSON(inputs.dependencies).prepare.outputs.job-ref }}
+          skip-start: ${{ github.event_name == 'merge_group' }}
+          skip-finish: ${{ github.event_name == 'merge_group' || (github.event_name == 'pull_request' && vars.PREVIEW_DOMAIN != '') }}
+      - name: Check API health
+        run: |
+          set -euo pipefail
+          vercel curl /health --deployment "$API_DEPLOYMENT_URL" --token "$VERCEL_TOKEN" -- \
+            --fail \
+            --show-error \
+            --silent \
+            --max-time 20 \
+            --retry 3 \
+            --retry-delay 2 \
+            --retry-all-errors
+        env:
+          API_DEPLOYMENT_URL: ${{ steps.api-deploy.outputs.url }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      - name: Create API Vercel Alias
+        id: api-alias
+        if: vars.PREVIEW_DOMAIN != ''
+        uses: ./.github/actions/vercel-alias
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ vars.VERCEL_TEAM_ID }}
+          deployment-url: ${{ steps.api-deploy.outputs.url }}
+          app-name: api
+          job-ref: ${{ fromJSON(inputs.dependencies).prepare.outputs.job-ref }}
+          preview-domain: ${{ vars.PREVIEW_DOMAIN }}
+          deployment-id: ${{ steps.api-deploy.outputs.deployment-id }}
+          deployment-env: ${{ steps.api-deploy.outputs.deployment-env }}
+      - name: Post API preview URL
+        if: github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88
+        with:
+          header: api-preview
+          message: |
+            API preview: ${{ steps.api-alias.outputs.url || steps.api-deploy.outputs.url }}

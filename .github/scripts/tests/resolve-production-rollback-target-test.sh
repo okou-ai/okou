@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export RUBYOPT="${RUBYOPT:-} -r$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/workflow-test-owners.rb"
+
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 script="${repo_root}/.github/scripts/resolve-production-rollback-target.sh"
 tmp_dir="$(mktemp -d)"
@@ -1038,7 +1040,7 @@ ruby - \
   require "yaml"
   rollback_config = YAML.safe_load(File.read(ARGV[0]), aliases: true)
   release_config = YAML.safe_load(File.read(ARGV[1]), aliases: true)
-  turbo_config = YAML.safe_load(File.read(ARGV[2]), aliases: true)
+  turbo_config = load_workflow_test_owners(ARGV[2])
   raise "rollback must not use lossy GitHub concurrency" if rollback_config.key?("concurrency")
   raise "release must not use lossy GitHub concurrency" if release_config.key?("concurrency")
   rollback = rollback_config.fetch("jobs")

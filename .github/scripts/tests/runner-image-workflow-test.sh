@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export RUBYOPT="${RUBYOPT:-} -r$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/workflow-test-owners.rb"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 WORKFLOW="${REPO_ROOT}/.github/workflows/runner-image.yml"
@@ -12,7 +14,7 @@ fail() {
 }
 
 command -v yq >/dev/null || fail "yq is required"
-workflow_json=$(yq -o=json '.' "$WORKFLOW")
+workflow_json=$(python3 "$(dirname "${BASH_SOURCE[0]}")/load-workflow-test-owners.py" -o=json '.' "$WORKFLOW")
 
 jq -e '
   .jobs.prepare.steps as $steps |
@@ -73,7 +75,7 @@ detectors = [["crates", "detect", "detect", "base-ref"],
              ["runner-image", "prepare", "crates", "base-ref"]]
 detectors << ["turbo", "prepare", "detect", "changed-files"] if include_turbo == "true"
 detectors.each do |workflow, job, step_id, input|
-  steps = YAML.load_file("#{root}/.github/workflows/#{workflow}.yml").fetch("jobs").fetch(job).fetch("steps")
+  steps = load_workflow_test_owners("#{root}/.github/workflows/#{workflow}.yml").fetch("jobs").fetch(job).fetch("steps")
   lines = steps.find { |step| step["id"] == step_id }.fetch("run").lines
   first = lines.index { |line| line.start_with?("if ") && line.include?(".github/actions/") }
   raise "missing CI detector: #{workflow}/#{step_id}" unless first
@@ -147,18 +149,14 @@ jq -e '
 ' <<<"$workflow_json" >/dev/null || fail "Turbo and Playwright runner demand must reach runner image selection"
 
 jq -e '
-  .jobs["cancel-superseded"].name == "Cancel superseded merge-group CI" and
-  .jobs["cancel-superseded"].if == "github.event_name == '\''merge_group'\''" and
   .jobs["cancel-superseded"].permissions.actions == "write" and
   .jobs["cancel-superseded"].permissions.contents == "read" and
-  .jobs["cancel-superseded"].permissions["pull-requests"] == "read" and
   any(.jobs["cancel-superseded"].steps[];
-    .run == ".github/scripts/cancel-superseded-merge-group-runs.sh"
-  ) and
-  .jobs.prepare.needs == ["cancel-superseded"] and
-  (.jobs.prepare.if | contains("!cancelled()")) and
-  (.jobs.prepare.if | contains("needs.cancel-superseded.result == '\''success'\''"))
-' <<<"$workflow_json" >/dev/null || fail "merge-group consumers must stop before shared runner resources are rebuilt"
+    .run == ".github/scripts/cancel-superseded-merge-group-runs.sh") and
+  (.jobs.prepare.needs | index("cancel-superseded") | not) and
+  (.jobs.compile.needs | index("cancel-superseded") | not) and
+  (.jobs.build._caller.needs | index("image-cancel-superseded") != null)
+' <<<"$workflow_json" >/dev/null || fail "only host mutation must wait for owner handoff"
 
 jq -e '
   [.jobs | to_entries[] | .value.steps[]? |
@@ -234,11 +232,11 @@ jq -e '
 
 jq -e '
   .jobs.build.name == "Build runner image (${{ matrix.label }})" and
-  (.jobs.build.needs | sort) == ["compile", "prepare"] and
+  (.jobs.build.needs | sort) == ["cancel-superseded", "compile", "prepare"] and
   .jobs.build["runs-on"] == "ubuntu-latest" and
   .jobs.build["timeout-minutes"] == 20 and
   (.jobs.build | has("container") | not) and
-  .jobs.build.strategy.matrix.include == "${{ fromJSON(needs.prepare.outputs.runner-host-groups-matrix) }}" and
+  .jobs.build.strategy.matrix.include == "${{ fromJSON(needs.prepare.outputs.image-matrix-arm64) }}" and
   (.jobs.build.if | contains("needs.compile.result == '\''skipped'\''")) and
   (.jobs.build.if | contains("needs.compile.result == '\''success'\''")) and
   .jobs.build.env.GUEST_CLI_PATH == "runner-cli-intermediate/package.tgz" and

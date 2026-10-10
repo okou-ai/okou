@@ -337,13 +337,13 @@ out=$(run_clean HEAD_SHA=abc JOB_REF=pr-123 TARGET=x86_64-unknown-linux-musl "$C
 assert_contains "$out" "artifact-name=runner-image-manifest-x86_64-unknown-linux-musl-abc-pr-123"
 
 grep -qF "HEAD_SHA: \${{ github.sha }}" \
-  "${REPO_ROOT}/.github/workflows/runner-image.yml" \
+  "${REPO_ROOT}/.github/workflows/ci-runner-image-prepare.yml" \
   || fail "build identity must use the captured event revision"
 grep -qF "PRODUCER_HEAD_SHA: \${{ github.event.pull_request.head.sha || github.sha }}" \
-  "${REPO_ROOT}/.github/workflows/runner-image.yml" \
+  "${REPO_ROOT}/.github/workflows/ci-runner-image-prepare.yml" \
   || fail "workflow must distinguish the Actions API head from the build merge SHA"
-grep -qF "PRODUCER_HEAD_SHA: \${{ needs.prepare.outputs.producer-head-sha }}" \
-  "${REPO_ROOT}/.github/workflows/runner-image.yml" \
+grep -qF "PRODUCER_HEAD_SHA: \${{ fromJSON(inputs.dependencies).image-prepare.outputs.producer-head-sha }}" \
+  "${REPO_ROOT}/.github/workflows/ci-runner-image-compile.yml" \
   || fail "reusable provenance must use the Actions API head SHA"
 
 echo "runner-image-context-test: ok"

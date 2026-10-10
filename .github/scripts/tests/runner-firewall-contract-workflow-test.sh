@@ -13,8 +13,12 @@ import sys
 import tempfile
 
 root = Path(sys.argv[1])
+import importlib.util
+spec = importlib.util.spec_from_file_location('workflow_expressions', root / '.github/scripts/tests/workflow-test-expressions.py')
+x = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(x)
 jobs = json.loads(subprocess.check_output(
-    ['yq', '-o=json', '.', str(root / '.github/workflows/crates.yml')], text=True))['jobs']
+    ['python3', str(root / '.github/scripts/tests/load-workflow-test-owners.py'), '-o=json', '.', str(root / '.github/workflows/crates.yml')], text=True))['jobs']
 detect = next(step for step in jobs['detect']['steps'] if step.get('id') == 'detect')
 consumer = next(step for step in jobs['detect']['steps'] if step.get('id') == 'runner-tests')
 gate = jobs['ci-gate-crates']
@@ -53,11 +57,7 @@ def selected(name, values):
 
 def assert_gate(values, results, expected, label):
     context = values | {f'needs.{name}.result': result for name, result in results.items()}
-    assert expression(gate['if'], context), 'the gate must run after failed or skipped dependencies'
-    env = os.environ | {name: render(value, context) for name, value in gate_step['env'].items()}
-    result = subprocess.run(['bash', '-euo', 'pipefail', '-c', render(gate_step['run'], context)],
-                            env=env, text=True, capture_output=True)
-    assert (result.returncode == 0) == expected, f'{label}: {result.stdout}{result.stderr}'
+    x.run_gate(gate, x.logical_gate_context(root, context), expected)
 
 
 scenarios = [
@@ -140,7 +140,7 @@ cat "$CARGO_METADATA_FIXTURE"
         outputs = dict(line.split('=', 1) for line in output.read_text().splitlines())
         assert outputs['crates-runner-consumer-needed'] == str(image_needed).lower(), label
         values.update({f'needs.detect.outputs.{name}': value for name, value in outputs.items()})
-        values.update({f'needs.{name}.result': 'success' for name in gate['needs']})
+        values.update({f'needs.{name}.result': 'success' for name in jobs})
         values.update({
             'needs.detect-release.outputs.skip': 'false',
             'needs.detect.outputs.metal-job-ref': 'pr-1-test',
@@ -162,7 +162,7 @@ cat "$CARGO_METADATA_FIXTURE"
 
     # Optional jobs may skip, but their failures must still fail the gate.
     unrelated = contexts['unrelated']
-    skipped = {name: 'skipped' for name in gate['needs'] if name != 'detect'}
+    skipped = {name: 'skipped' for name in jobs if name not in ['detect', 'detect-release']}
     assert_gate(unrelated, skipped, True, 'unrelated jobs skip')
     for name in ['coverage', standalone]:
         for result in ['failure', 'cancelled', '']:
@@ -173,7 +173,7 @@ cat "$CARGO_METADATA_FIXTURE"
         assert not selected(standalone, contexts['fixture-only'] | {'needs.detect.result': result})
 
     released = unrelated | {'needs.detect-release.outputs.skip': 'true'}
-    assert_gate(released, {name: 'skipped' for name in gate['needs']}, True, 'release fast path')
+    assert_gate(released, {name: 'skipped' for name in jobs if name != 'detect-release'}, True, 'release fast path')
 
 print('runner-firewall-contract-workflow-test: ok')
 PY

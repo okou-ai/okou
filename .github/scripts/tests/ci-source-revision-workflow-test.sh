@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export RUBYOPT="${RUBYOPT:-} -r$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/workflow-test-owners.rb"
+
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 
 ruby -ryaml -ropen3 -rtmpdir -rfileutils - "$repo_root" <<'RUBY'
 repo_root = ARGV.fetch(0)
-turbo = YAML.load_file(File.join(repo_root, ".github/workflows/turbo.yml"))
+turbo = load_workflow_test_owners(File.join(repo_root, ".github/workflows/turbo.yml"))
 jobs = turbo.fetch("jobs")
 event_source = "${{ github.sha }}"
 

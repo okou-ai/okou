@@ -14,7 +14,7 @@ for command in jq yq; do
   command -v "$command" >/dev/null || fail "$command is required"
 done
 
-workflow_json=$(yq -o=json '.' "$WORKFLOW")
+workflow_json=$(python3 "$(dirname "${BASH_SOURCE[0]}")/load-workflow-test-owners.py" -o=json '.' "$WORKFLOW")
 
 jq -e '
   .jobs.coverage as $coverage |

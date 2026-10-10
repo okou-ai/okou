@@ -11,9 +11,13 @@ import subprocess
 import sys
 
 root = Path(sys.argv[1])
+import importlib.util
+spec = importlib.util.spec_from_file_location('workflow_expressions', root / '.github/scripts/tests/workflow-test-expressions.py')
+x = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(x)
 def workflow(name):
     return json.loads(subprocess.check_output(
-        ['yq', '-o=json', '.', str(root / f'.github/workflows/{name}.yml')], text=True))['jobs']
+        ['python3', str(root / '.github/scripts/tests/load-workflow-test-owners.py'), '-o=json', '.', str(root / f'.github/workflows/{name}.yml')], text=True))['jobs']
 
 turbo, security, benchmark = workflow('turbo'), workflow('security'), workflow('benchmark')
 script_tests = security['workflow-script-tests']
@@ -45,31 +49,18 @@ def context(ios=True, ts=False, event='pull_request', release=False):
 
 # Evaluate the actual job predicates with GitHub's default success condition.
 def condition(job, values, cancelled=False):
-    expression = job.get('if', 'True').strip().removeprefix('${{').removesuffix('}}').strip()
-    has_status = any(f'{function}(' in expression for function in ['success', 'failure', 'cancelled', 'always'])
-    if not has_status and any(values[f'needs.{name}.result'] != 'success' for name in job.get('needs', [])):
-        return False
-    expression = re.sub(r'\b(?:github|needs)\.[\w.-]+', lambda m: repr(values[m[0]]), expression)
-    expression = expression.replace('cancelled()', str(cancelled)).replace('always()', 'True')
-    expression = expression.replace('&&', ' and ').replace('||', ' or ')
-    expression = re.sub(r'!(?!=)', 'not ', expression)
-    return bool(eval('(' + expression + ')', {'__builtins__': {}}, {}))
+    return x.condition(job, x.logical_gate_context(root, values), cancelled)
+
 
 def gate(jobs, name, values, expected):
-    step = next(s for s in jobs[name]['steps'] if s.get('name') == 'Validate CI results')
-    def render(text):
-        return re.sub(r'\$\{\{\s*(.*?)\s*\}\}', lambda m: (
-            values[m[1]] if m[1] in values else str(condition({'if': m[1]}, values)).lower()
-        ), str(text))
-    env = dict(os.environ)
-    env.update({key: render(value) for key, value in step.get('env', {}).items()})
-    result = subprocess.run(['bash', '-c', render(step['run'])], env=env, text=True, capture_output=True)
-    assert (result.returncode == 0) == expected, result.stdout + result.stderr
+    x.run_gate(jobs[name], x.logical_gate_context(root, values), expected)
+
 
 native = context()
 for result in ['failure', 'cancelled', 'skipped']:
     blocked = context(ios=False, ts=True) | {'needs.ci-admission.result': result}
-    assert not condition(turbo['detect-release'], blocked)
+    assert condition(turbo['detect-release'], blocked)  # immutable classification overlaps admission
+    assert not condition(turbo['detect-turbo-ts-checks'], blocked)
     assert condition(turbo['ci-gate-turbo'], blocked)
     gate(turbo, 'ci-gate-turbo', blocked, False)
     # Release classification cannot turn a rejected admission into a pass.

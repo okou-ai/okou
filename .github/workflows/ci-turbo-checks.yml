@@ -1,0 +1,662 @@
+name: turbo-checks
+"on":
+  workflow_call:
+    inputs:
+      dependencies:
+        type: string
+        required: true
+    secrets:
+      CODECOV_TOKEN:
+        required: false
+      FAL_KEY:
+        required: false
+    outputs:
+      results:
+        value: ${{ toJSON(jobs) }}
+env:
+  npm_config_audit: "false"
+jobs:
+  validate-release-presence:
+    name: Validate release presence
+    if: ${{ github.event_name == 'merge_group' && fromJSON(inputs.dependencies).detect-release.outputs.skip == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - name: Check intervening component releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          MERGE_GROUP_HEAD_REF: ${{ github.event.merge_group.head_ref }}
+          MERGE_GROUP_HEAD_SHA: ${{ github.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          pr_number=$(
+            printf '%s\n' "$MERGE_GROUP_HEAD_REF" |
+              grep -oE 'pr-[0-9]+' |
+              head -1 |
+              sed 's/pr-//'
+          )
+          if [ -z "$pr_number" ]; then
+            echo "::error::Could not resolve pull request number from merge queue ref: $MERGE_GROUP_HEAD_REF"
+            exit 1
+          fi
+
+          release_pr_head=$(
+            gh pr view "$pr_number" \
+              --repo "$REPO" \
+              --json headRefOid \
+              --jq .headRefOid
+          )
+          git fetch --no-tags origin "$release_pr_head"
+
+          .github/scripts/check-release-please-component-releases.sh \
+            "$MERGE_GROUP_BASE_SHA" \
+            "$MERGE_GROUP_HEAD_SHA" \
+            "$release_pr_head"
+  file-size-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.event_name != 'push' && fromJSON(inputs.dependencies).detect-release.outputs.skip != 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 2
+      - name: Check file sizes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CHECKOUT_REF: ${{ github.ref }}
+          PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: |
+          BASE_SHA=$(.github/scripts/changed-base-ref.sh)
+
+          # Get list of added/modified files (exclude deleted)
+          CHANGED_FILES=$(git diff --name-only --diff-filter=AM "$BASE_SHA" HEAD)
+
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "No files changed"
+            exit 0
+          fi
+
+          # Filter out whitelisted files
+          FILTERED_FILES="$CHANGED_FILES"
+
+          if [ -z "$FILTERED_FILES" ]; then
+            echo "All changed files are whitelisted"
+            exit 0
+          fi
+
+          # Check file sizes (word splitting is intentional to pass multiple files)
+          # shellcheck disable=SC2086
+          ./scripts/check-file-size.sh $FILTERED_FILES
+    permissions:
+      actions: read
+      contents: read
+      deployments: write
+      id-token: write
+      issues: write
+      pull-requests: write
+  lint-eslint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name != 'push' && fromJSON(inputs.dependencies).detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+      - uses: ./.github/actions/toolchain-init
+      - name: Check DB ownership boundary
+        run: .github/scripts/check-db-boundary.sh
+      - name: Check deletion-only database transaction inventory
+        working-directory: turbo
+        shell: bash
+        env:
+          TRANSACTION_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$TRANSACTION_BASE_SHA" =~ ^[a-f0-9]{40}$ ]] || { echo 'Missing base/main SHA' >&2; exit 1; }
+          git fetch --no-tags --depth=1 origin "$TRANSACTION_BASE_SHA"
+          pnpm lint:transactions "$TRANSACTION_BASE_SHA"
+      - name: Validate oxlintrc.json react allowImportNames
+        working-directory: turbo
+        run: |
+          allowed=$(jq -r '.overrides[0].rules."no-restricted-imports"[1].paths[0].allowImportNames | sort | join(",")' apps/platform/.oxlintrc.json)
+          expected="Component,StrictMode"
+          if [ "$allowed" != "$expected" ]; then
+            echo "::error::platform oxlintrc.json allowImportNames must be [\"StrictMode\", \"Component\"], got: $allowed"
+            exit 1
+          fi
+      - name: Lint
+        working-directory: turbo
+        run: pnpm lint
+    permissions:
+      actions: read
+      contents: read
+      deployments: write
+      id-token: write
+      issues: write
+      pull-requests: write
+  lint-style:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name != 'push' && fromJSON(inputs.dependencies).detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 1
+      - uses: ./.github/actions/toolchain-init
+      - name: Lint app styles
+        working-directory: turbo
+        run: pnpm lint:style
+    permissions:
+      actions: read
+      contents: read
+      deployments: write
+      id-token: write
+      issues: write
+      pull-requests: write
+  lint-types:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.event_name != 'push' && fromJSON(inputs.dependencies).detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: ./.github/actions/toolchain-init
+      - name: Type Check (shared packages)
+        working-directory: turbo
+        run: pnpm turbo run check-types --concurrency=1 --filter='!api' --filter='!@okouai/app'
+    permissions:
+      actions: read
+      contents: read
+      deployments: write
+      id-token: write
+      issues: write
+      pull-requests: write
+  lint-type-app:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.event_name != 'push' && fromJSON(inputs.dependencies).detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
+    env:
+      TSC_CHECKERS: "2"
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: ./.github/actions/toolchain-init
+      - name: Type Check (@okouai/app)
+        working-directory: turbo
+        run: |
+          set +e
+          result_file=".memory-results/app-check-types.jsonl"
+          rm -f "$result_file"
+
+          node scripts/measure-memory.mjs \
+            --label ci-app-check-types \
+            --json "$result_file" \
+            -- pnpm --filter @okouai/app run check-types
+          status=$?
+
+          # shellcheck disable=SC2016
+          node -e '
+            const fs = require("node:fs");
+            const file = process.argv[1];
+            if (!fs.existsSync(file)) {
+              process.exit(0);
+            }
+
+            const lines = fs.readFileSync(file, "utf8").trim().split(/\n/).filter(Boolean);
+            if (lines.length === 0) {
+              process.exit(0);
+            }
+
+            const result = JSON.parse(lines[lines.length - 1]);
+            const durationSeconds = (result.durationMs / 1000).toFixed(1);
+            const summary = [
+              "### Type Check (@okouai/app) memory",
+              "",
+              `- Peak RSS: ${result.peakRssMiB} MiB (${result.peakRssKiB} KiB)`,
+              `- Duration: ${durationSeconds}s`,
+              `- Exit code: ${result.exitCode}`,
+              "",
+            ].join("\n");
+
+            console.log(`Peak RSS (@okouai/app check-types): ${result.peakRssMiB} MiB (${result.peakRssKiB} KiB), duration ${durationSeconds}s`);
+            if (process.env.GITHUB_STEP_SUMMARY) {
+              fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
+            }
+          ' "$result_file"
+
+          exit "$status"
+    permissions:
+      actions: read
+      contents: read
+      deployments: write
+      id-token: write
+      issues: write
+      pull-requests: write
+  lint-type-api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.event_name != 'push' && fromJSON(inputs.dependencies).detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
+    env:
+      TSC_CHECKERS: "2"
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: ./.github/actions/toolchain-init
+      - name: Type Check (api)
+        working-directory: turbo
+        run: |
+          set +e
+          result_file=".memory-results/api-check-types.jsonl"
+          rm -f "$result_file"
+
+          node scripts/measure-memory.mjs \
+            --label ci-api-check-types \
+            --json "$result_file" \
+            -- pnpm --filter api run check-types
+          status=$?
+
+          # shellcheck disable=SC2016
+          node -e '
+            const fs = require("node:fs");
+            const file = process.argv[1];
+            if (!fs.existsSync(file)) {
+              process.exit(0);
+            }
+
+            const lines = fs.readFileSync(file, "utf8").trim().split(/\n/).filter(Boolean);
+            if (lines.length === 0) {
+              process.exit(0);
+            }
+
+            const result = JSON.parse(lines[lines.length - 1]);
+            const durationSeconds = (result.durationMs / 1000).toFixed(1);
+            const summary = [
+              "### Type Check (api) memory",
+              "",
+              `- Peak RSS: ${result.peakRssMiB} MiB (${result.peakRssKiB} KiB)`,
+              `- Duration: ${durationSeconds}s`,
+              `- Exit code: ${result.exitCode}`,
+              "",
+            ].join("\n");
+
+            console.log(`Peak RSS (api check-types): ${result.peakRssMiB} MiB (${result.peakRssKiB} KiB), duration ${durationSeconds}s`);
+            if (process.env.GITHUB_STEP_SUMMARY) {
+              fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
+            }
+          ' "$result_file"
+
+          exit "$status"
+    permissions:
+      actions: read
+      contents: read
+      deployments: write
+      id-token: write
+      issues: write
+      pull-requests: write
+  lint-format:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    if: github.event_name != 'push' && fromJSON(inputs.dependencies).detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: ./.github/actions/toolchain-init
+      - name: Prettier
+        working-directory: turbo
+        run: pnpm prettier --check .
+    permissions:
+      actions: read
+      contents: read
+      deployments: write
+      id-token: write
+      issues: write
+      pull-requests: write
+  lint-knip:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name != 'push' && fromJSON(inputs.dependencies).detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: ./.github/actions/toolchain-init
+      - name: Knip
+        working-directory: turbo
+        run: pnpm knip
+    permissions:
+      actions: read
+      contents: read
+      deployments: write
+      id-token: write
+      issues: write
+      pull-requests: write
+  test-cli:
+    if: github.event_name != 'push' && fromJSON(inputs.dependencies).detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: ./.github/actions/toolchain-init
+      - name: Test CLI
+        working-directory: turbo
+        run: pnpm vitest run --project=@okouai/cli --coverage.enabled --coverage.reporter=json
+      - name: Upload coverage to Codecov
+        if: success() || failure()
+        continue-on-error: true
+        timeout-minutes: 1
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          flags: cli
+          files: turbo/coverage/coverage-final.json
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        timeout-minutes: 1
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          flags: cli
+          files: turbo/junit.xml
+          report_type: test_results
+    permissions:
+      actions: read
+      contents: read
+      deployments: write
+      id-token: write
+      issues: write
+      pull-requests: write
+  test-app:
+    if: github.event_name != 'push' && fromJSON(inputs.dependencies).detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      matrix:
+        shard:
+          - 1
+          - 2
+          - 3
+          - 4
+          - 5
+          - 6
+          - 7
+          - 8
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: ./.github/actions/toolchain-init
+      - name: Test App
+        working-directory: turbo
+        run: pnpm vitest run --project=@okouai/app --shard=${{ matrix.shard }}/8 ${{ github.event_name == 'merge_group' && '--coverage.enabled --coverage.reporter=json' || '' }}
+      - name: Upload coverage to Codecov
+        if: github.event_name == 'merge_group' && (success() || failure())
+        continue-on-error: true
+        timeout-minutes: 1
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          flags: app
+          files: turbo/coverage/coverage-final.json
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        timeout-minutes: 1
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          flags: app
+          files: turbo/junit.xml
+          report_type: test_results
+    permissions:
+      actions: read
+      contents: read
+      deployments: write
+      id-token: write
+      issues: write
+      pull-requests: write
+  test-api:
+    if: github.event_name != 'push' && fromJSON(inputs.dependencies).detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      matrix:
+        shard:
+          - 1
+          - 2
+          - 3
+          - 4
+          - 5
+          - 6
+          - 7
+          - 8
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
+    services:
+      postgres:
+        image: ghcr.io/${{ github.repository_owner }}/pgvector@sha256:d229d4e975e7102b7df031cbfcf5c4463ee21c84d0373d7a736191a2603dddfd
+        options: --health-cmd pg_isready --health-interval 2s --health-timeout 5s --health-retries 5 --health-start-period 3s
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: ./.github/actions/toolchain-init
+      - name: Run Database Migrations
+        working-directory: turbo
+        env:
+          DATABASE_URL: postgresql://postgres@postgres:5432/postgres
+        run: pnpm --filter @okouai/db db:migrate
+      - name: Test API
+        working-directory: turbo
+        env:
+          DATABASE_URL: postgresql://postgres@postgres:5432/postgres
+          FAL_KEY: ${{ secrets.FAL_KEY }}
+        run: pnpm vitest run --project=api --shard=${{ matrix.shard }}/8 --coverage.enabled --coverage.reporter=json
+      - name: Upload coverage to Codecov
+        if: success() || failure()
+        continue-on-error: true
+        timeout-minutes: 1
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          flags: api
+          files: turbo/coverage/coverage-final.json
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        timeout-minutes: 1
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          flags: api
+          files: turbo/junit.xml
+          report_type: test_results
+    permissions:
+      actions: read
+      contents: read
+      deployments: write
+      id-token: write
+      issues: write
+      pull-requests: write
+  test-discord-gateway:
+    if: github.event_name != 'push' && fromJSON(inputs.dependencies).detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: ./.github/actions/toolchain-init
+      - name: Build Discord Gateway relay for runtime tests
+        working-directory: turbo
+        run: pnpm --filter @okouai/discord-gateway-worker run build
+      - name: Test Discord Gateway worker
+        working-directory: turbo
+        run: pnpm vitest run --project=@okouai/discord-gateway-worker --no-file-parallelism --coverage.enabled --coverage.reporter=json
+      - name: Upload coverage to Codecov
+        if: success() || failure()
+        continue-on-error: true
+        timeout-minutes: 1
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          flags: discord-gateway
+          files: turbo/coverage/coverage-final.json
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        timeout-minutes: 1
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          flags: discord-gateway
+          files: turbo/junit.xml
+          report_type: test_results
+    permissions:
+      actions: read
+      contents: read
+      deployments: write
+      id-token: write
+      issues: write
+      pull-requests: write
+  test-other:
+    if: github.event_name != 'push' && fromJSON(inputs.dependencies).detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: ./.github/actions/toolchain-init
+      - name: Test Other Packages
+        working-directory: turbo
+        run: pnpm vitest run --project=@okouai/core --project=@okouai/ui --project=@okouai/api-contracts --project=@okouai/db --coverage.enabled --coverage.reporter=json
+      - name: Test Connectors
+        working-directory: turbo
+        run: pnpm -F @okouai/connectors exec vitest run --reporter=default
+      - name: Test App Worker
+        working-directory: turbo
+        run: pnpm -F @okouai/app-worker test
+      - name: Test artifact OG in Workers runtime
+        working-directory: turbo
+        run: pnpm test:artifact-og-workers
+      - name: Test ESLint Config
+        working-directory: turbo
+        run: pnpm -F @okouai/eslint-config test
+      - name: Test database transaction policy
+        working-directory: turbo
+        run: pnpm -F @okouai/eslint-rules exec vitest run src/api/__tests__/no-db-transaction.test.ts src/api/__tests__/db-transaction-policy.test.ts --maxWorkers=1
+      - name: Upload coverage to Codecov
+        if: success() || failure()
+        continue-on-error: true
+        timeout-minutes: 1
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          flags: core-ui
+          files: turbo/coverage/coverage-final.json
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        timeout-minutes: 1
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          flags: core-ui
+          files: turbo/junit.xml
+          report_type: test_results
+    permissions:
+      actions: read
+      contents: read
+      deployments: write
+      id-token: write
+      issues: write
+      pull-requests: write
+  lint-runtime-api-compat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    if: github.event_name != 'push' && fromJSON(inputs.dependencies).detect-release.outputs.skip != 'true' && fromJSON(inputs.dependencies).detect-turbo-ts-checks.outputs.ios-only == 'false'
+    continue-on-error: true
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: ./.github/actions/toolchain-init
+      - name: Download online runtime API schema
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SCHEMA_RELEASE_TAG: runtime-api-schema-prod
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/runtime-api-schema
+
+          if gh release view "$SCHEMA_RELEASE_TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            if gh release download "$SCHEMA_RELEASE_TAG" \
+              --repo "${{ github.repository }}" \
+              --pattern current.json \
+              --dir /tmp/runtime-api-schema \
+              --clobber; then
+              echo "Downloaded online runtime API schema"
+            else
+              echo "::warning::Runtime API schema release exists, but current.json is not available yet."
+            fi
+          else
+            echo "::warning::Runtime API schema release $SCHEMA_RELEASE_TAG does not exist yet; compatibility report will be skipped."
+          fi
+      - name: Check runtime API compatibility (report only)
+        working-directory: turbo
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/runtime-api-schema
+
+          pnpm --filter @okouai/api-contracts run build:runtime-api-schema -- --out /tmp/runtime-api-schema/candidate.json
+
+          if [ -f /tmp/runtime-api-schema/current.json ]; then
+            pnpm --filter @okouai/api-contracts run lint-runtime-api-compat -- \
+              --against /tmp/runtime-api-schema/current.json \
+              --current /tmp/runtime-api-schema/candidate.json \
+              --report-out /tmp/runtime-api-schema/report.json \
+              --warn-only
+          else
+            echo "::warning::No online runtime API schema found. Generated candidate schema only."
+            printf '{"findings":[],"skipped":"online schema not found"}\n' > /tmp/runtime-api-schema/report.json
+          fi
+      - name: Upload runtime API compatibility report
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: runtime-api-compat-report
+          path: |
+            /tmp/runtime-api-schema/candidate.json
+            /tmp/runtime-api-schema/current.json
+            /tmp/runtime-api-schema/report.json
+          if-no-files-found: warn
+          retention-days: 14

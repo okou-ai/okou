@@ -1,0 +1,85 @@
+name: crates-runner-host-groups
+"on":
+  workflow_call:
+    inputs:
+      dependencies:
+        type: string
+        required: true
+    secrets:
+      AWS_METAL_RUNNER_HOSTS:
+        required: false
+      AWS_METAL_RUNNER_SSH_KEY:
+        required: false
+      CF_ACCESS_CLIENT_ID:
+        required: false
+      CF_ACCESS_CLIENT_SECRET:
+        required: false
+    outputs:
+      matrix:
+        value: ${{ jobs.runner-host-groups.outputs.matrix }}
+      selected-target:
+        value: ${{ jobs.runner-host-groups.outputs.selected-target }}
+      validation-matrix:
+        value: ${{ jobs.runner-host-groups.outputs.validation-matrix }}
+      validation-matrix-arm64:
+        value: ${{ jobs.runner-host-groups.outputs.validation-matrix-arm64 }}
+      validation-matrix-x86_64:
+        value: ${{ jobs.runner-host-groups.outputs.validation-matrix-x86_64 }}
+env:
+  npm_config_audit: "false"
+jobs:
+  runner-host-groups:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.groups.outputs.matrix }}
+      selected-target: ${{ steps.groups.outputs.selected-target }}
+      validation-matrix: ${{ steps.groups.outputs.validation-matrix }}
+      validation-matrix-arm64: ${{ steps.validation-partition.outputs.arm64 }}
+      validation-matrix-x86_64: ${{ steps.validation-partition.outputs.x86_64 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Setup SSH via Cloudflare Tunnel
+        uses: ./.github/actions/setup-ssh-tunnel
+        with:
+          ssh-user: ${{ vars.AWS_METAL_RUNNER_USER }}
+          ssh-hosts: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
+          ssh-key: ${{ secrets.AWS_METAL_RUNNER_SSH_KEY }}
+          cf-access-client-id: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          cf-access-client-secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+      - name: Resolve runner host architecture groups
+        id: groups
+        env:
+          AWS_METAL_RUNNER_HOSTS: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
+          METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
+          RUNNER_CONSUMER_NEEDED: ${{ fromJSON(inputs.dependencies).crates-detect.outputs.crates-runner-consumer-needed }}
+          SELECTION_KEY: ${{ fromJSON(inputs.dependencies).crates-detect.outputs.runner-image-job-ref }}
+        run: |
+          if [ "$RUNNER_CONSUMER_NEEDED" = "true" ]; then
+            PLAN=$(.github/scripts/runner-host-architecture-groups.sh validation-plan "$SELECTION_KEY")
+            MATRIX=$(jq -c '.matrix' <<<"$PLAN")
+            echo "selected-target=$(jq -r '.selectedTarget' <<<"$PLAN")" >> "$GITHUB_OUTPUT"
+            echo "validation-matrix=$(jq -c '.validationMatrix' <<<"$PLAN")" >> "$GITHUB_OUTPUT"
+          else
+            MATRIX=$(.github/scripts/runner-host-architecture-groups.sh matrix)
+          fi
+          GROUP_COUNT=$(jq -r 'length' <<<"$MATRIX")
+          if [ "$GROUP_COUNT" -lt 1 ]; then
+            echo "::error::No runner host architecture groups found"
+            exit 1
+          fi
+
+          echo "matrix=${MATRIX}" >> "$GITHUB_OUTPUT"
+
+          echo "Runner host architecture groups:"
+          jq . <<<"$MATRIX"
+      - name: Partition complementary validation metadata
+        id: validation-partition
+        env:
+          IMAGE_NEEDED: ${{ steps.groups.outputs.validation-matrix != '' && steps.groups.outputs.validation-matrix != '[]' }}
+          IMAGE_MATRIX: ${{ steps.groups.outputs.validation-matrix || '[]' }}
+        run: .github/scripts/partition-ci-image-matrix.sh
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read

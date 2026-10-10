@@ -1,0 +1,109 @@
+name: turbo-cli-e2e-03-runner-cleanup
+"on":
+  workflow_call:
+    inputs:
+      dependencies:
+        type: string
+        required: true
+    secrets:
+      AWS_METAL_RUNNER_HOSTS:
+        required: false
+      AWS_METAL_RUNNER_SSH_KEY:
+        required: false
+      CF_ACCESS_CLIENT_ID:
+        required: false
+      CF_ACCESS_CLIENT_SECRET:
+        required: false
+      CLERK_SECRET_KEY:
+        required: false
+env:
+  npm_config_audit: "false"
+jobs:
+  cli-e2e-03-runner-cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    continue-on-error: true
+    env:
+      E2E_CLERK_RESOURCE_DIR: /tmp/e2e-clerk-runner
+    steps:
+      - name: Determine runner E2E cleanup scope
+        id: cleanup-scope
+        shell: bash
+        env:
+          PREPARE_RESULT: ${{ fromJSON(inputs.dependencies).cli-e2e-03-runner-prepare.result }}
+          RUNNER_RESULT: ${{ fromJSON(inputs.dependencies).cli-e2e-03-runner.result }}
+        run: |
+          set -euo pipefail
+          if [[ "$PREPARE_RESULT" == "skipped" ]]; then
+            scope="none"
+          elif [[ "$PREPARE_RESULT" != "success" ]]; then
+            scope="generation"
+          elif [[ "$RUNNER_RESULT" == "success" ]]; then
+            scope="run"
+          else
+            scope="retain"
+          fi
+          echo "Runner E2E cleanup scope: $scope"
+          echo "scope=$scope" >> "$GITHUB_OUTPUT"
+      - name: Retain runner E2E accounts for failed-job rerun
+        if: steps.cleanup-scope.outputs.scope == 'retain'
+        run: echo "Retaining runner E2E accounts until a successful rerun or fallback cleanup"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
+        if: steps.cleanup-scope.outputs.scope == 'generation' || steps.cleanup-scope.outputs.scope == 'run'
+        with:
+          version: 10.33.4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        if: steps.cleanup-scope.outputs.scope == 'generation' || steps.cleanup-scope.outputs.scope == 'run'
+        with:
+          node-version: 22
+      - name: Install E2E dependencies
+        if: steps.cleanup-scope.outputs.scope == 'generation' || steps.cleanup-scope.outputs.scope == 'run'
+        run: cd e2e && pnpm install --frozen-lockfile
+      - name: Download runner Clerk resource records
+        if: steps.cleanup-scope.outputs.scope == 'generation' || steps.cleanup-scope.outputs.scope == 'run'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: e2e-runner-clerk-resources-*
+          path: /tmp/e2e-clerk-runner
+          merge-multiple: true
+      - name: Cleanup current runner E2E generation
+        if: steps.cleanup-scope.outputs.scope == 'generation'
+        run: cd e2e && pnpm exec tsx playwright/runner-account.ts cleanup-recorded-generation
+        env:
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          JOB_REF: ${{ fromJSON(inputs.dependencies).prepare.outputs.job-ref }}
+      - name: Cleanup runner E2E workflow run
+        if: steps.cleanup-scope.outputs.scope == 'run'
+        run: cd e2e && pnpm exec tsx playwright/runner-account.ts cleanup-recorded-run
+        env:
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          JOB_REF: ${{ fromJSON(inputs.dependencies).prepare.outputs.job-ref }}
+      - name: Setup SSH for idle sandbox cleanup
+        if: always() && fromJSON(inputs.dependencies).deploy-runner-start.result == 'success'
+        uses: ./.github/actions/setup-ssh-tunnel
+        with:
+          ssh-user: ${{ vars.AWS_METAL_RUNNER_USER }}
+          ssh-hosts: ${{ fromJSON(fromJSON(inputs.dependencies).deploy-runner-start.outputs.runner-receipt).host }}
+          ssh-key: ${{ secrets.AWS_METAL_RUNNER_SSH_KEY }}
+          cf-access-client-id: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          cf-access-client-secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+      - name: Reclaim exact idle sandboxes from the deployed runner
+        if: always() && fromJSON(inputs.dependencies).deploy-runner-start.result == 'success'
+        shell: bash
+        env:
+          RUNNER_RECEIPT: ${{ fromJSON(inputs.dependencies).deploy-runner-start.outputs.runner-receipt }}
+          METAL_HOSTS: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
+          METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
+          JOB_REF: ${{ fromJSON(inputs.dependencies).prepare.outputs.runner-image-job-ref }}
+          RUNNER_SERVICE_REF: ${{ fromJSON(inputs.dependencies).prepare.outputs.job-ref }}
+        run: bash .github/scripts/prune-runner-idle.sh
+    permissions:
+      actions: read
+      contents: read
+      deployments: write
+      id-token: write
+      issues: write
+      pull-requests: write

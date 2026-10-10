@@ -1,0 +1,97 @@
+name: crates-runner-test-prepare
+"on":
+  workflow_call:
+    inputs:
+      dependencies:
+        type: string
+        required: true
+      image-handoff:
+        type: string
+        required: true
+    secrets:
+      AWS_METAL_RUNNER_HOSTS:
+        required: false
+      AWS_METAL_RUNNER_SSH_KEY:
+        required: false
+      CF_ACCESS_CLIENT_ID:
+        required: false
+      CF_ACCESS_CLIENT_SECRET:
+        required: false
+    outputs:
+      host:
+        value: ${{ jobs.runner-test-prepare.outputs.host }}
+      job-ref:
+        value: ${{ jobs.runner-test-prepare.outputs.job-ref }}
+      image-job-ref:
+        value: ${{ jobs.runner-test-prepare.outputs.image-job-ref }}
+      bin-dir:
+        value: ${{ jobs.runner-test-prepare.outputs.bin-dir }}
+      default-rootfs-hash:
+        value: ${{ jobs.runner-test-prepare.outputs.default-rootfs-hash }}
+      default-snapshot-hash:
+        value: ${{ jobs.runner-test-prepare.outputs.default-snapshot-hash }}
+      target:
+        value: ${{ jobs.runner-test-prepare.outputs.target }}
+env:
+  npm_config_audit: "false"
+jobs:
+  runner-test-prepare:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    timeout-minutes: 20
+    outputs:
+      host: ${{ steps.selected-host.outputs.host }}
+      job-ref: ${{ fromJSON(inputs.dependencies).crates-detect.outputs.metal-job-ref }}
+      image-job-ref: ${{ fromJSON(inputs.dependencies).crates-detect.outputs.runner-image-job-ref }}
+      bin-dir: ${{ steps.manifest.outputs.bin-dir }}
+      default-rootfs-hash: ${{ steps.manifest.outputs.selected-rootfs-hash }}
+      default-snapshot-hash: ${{ steps.manifest.outputs.selected-snapshot-hash }}
+      target: ${{ steps.selected-host.outputs.target }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Setup SSH via Cloudflare Tunnel
+        uses: ./.github/actions/setup-ssh-tunnel
+        with:
+          ssh-user: ${{ vars.AWS_METAL_RUNNER_USER }}
+          ssh-hosts: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
+          ssh-key: ${{ secrets.AWS_METAL_RUNNER_SSH_KEY }}
+          cf-access-client-id: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          cf-access-client-secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+      - name: Select runner metal host
+        id: selected-host
+        env:
+          AWS_METAL_RUNNER_HOSTS: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
+          METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
+          SELECTION_KEY: ${{ fromJSON(inputs.dependencies).crates-detect.outputs.runner-image-job-ref }}
+          EXPECTED_TARGET: ${{ fromJSON(inputs.dependencies).crates-runner-host-groups.outputs.selected-target }}
+        run: |
+          CONTEXT=$(.github/scripts/runner-host-architecture-groups.sh select-context "$SELECTION_KEY")
+          HOST=$(jq -r '.host' <<<"$CONTEXT")
+          GROUP_ID=$(jq -r '.groupId' <<<"$CONTEXT")
+          TARGET=$(jq -r '.target' <<<"$CONTEXT")
+          HOSTS=$(jq -r '.groupHosts' <<<"$CONTEXT")
+          if [ "$TARGET" != "$EXPECTED_TARGET" ]; then
+            echo "::error::Selected runner target changed after architecture validation planning: $EXPECTED_TARGET != $TARGET"
+            exit 1
+          fi
+          {
+            echo "host=${HOST}"
+            echo "hosts=${HOSTS}"
+            echo "target=${TARGET}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Selected runner metal host: ${HOST} (group ${GROUP_ID}, target ${TARGET})"
+      - name: Wait for runner image manifest
+        id: manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.sha }}
+          LOOKUP_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          JOB_REF: ${{ fromJSON(inputs.dependencies).crates-detect.outputs.runner-image-job-ref }}
+          METAL_HOSTS: ${{ steps.selected-host.outputs.hosts }}
+          SELECTED_HOST: ${{ steps.selected-host.outputs.host }}
+          TARGET: ${{ steps.selected-host.outputs.target }}
+          PROFILE: vm0/default
+          IMAGE_HANDOFF: ${{ inputs.image-handoff }}
+        run: .github/scripts/ci-image-handoff.sh single

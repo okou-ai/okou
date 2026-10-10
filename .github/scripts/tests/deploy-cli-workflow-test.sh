@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-workflow="${repo_root}/.github/workflows/turbo.yml"
+workflow="${repo_root}/.github/workflows/ci.yml"
 
 fail() {
   echo "FAIL: $1" >&2
@@ -19,16 +19,17 @@ job_block() {
 }
 
 deploy_api="$(job_block deploy-api)"
-deploy_cli="$(job_block deploy-cli)"
+api_owner="${repo_root}/.github/workflows/ci-turbo-deploy-api.yml"
+deploy_cli="$(<"${repo_root}/.github/workflows/ci-turbo-deploy-cli.yml")"
 
-grep -Fq '    needs: [prepare]' <<<"$deploy_api" ||
+grep -Fq '      - prepare' <<<"$deploy_api" ||
   fail "deploy-api must depend on prepare"
 if grep -Fq 'deploy-cli' <<<"$deploy_api"; then
   fail "deploy-api must not wait for deploy-cli"
 fi
 
 expected_package_url="cli-pkg-url: https://static.okou.io/okou-cli/\${{ github.sha }}/package.tgz"
-package_url_count="$(grep -Fc "$expected_package_url" <<<"$deploy_api" || true)"
+package_url_count="$(grep -Fc "$expected_package_url" "$api_owner" || true)"
 [[ "$package_url_count" == "2" ]] ||
   fail "API seed and deploy environments must derive the CLI package URL from the artifact SHA"
 

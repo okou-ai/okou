@@ -1,0 +1,60 @@
+name: turbo-cli-e2e-03-runner-bootstrap
+"on":
+  workflow_call:
+    inputs:
+      dependencies:
+        type: string
+        required: true
+    secrets:
+      VERCEL_AUTOMATION_BYPASS_SECRET:
+        required: false
+env:
+  npm_config_audit: "false"
+jobs:
+  cli-e2e-03-runner-bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    concurrency:
+      group: cli-e2e-03-runner-bootstrap-${{ fromJSON(inputs.dependencies).prepare.outputs.job-ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+      - name: Download runner E2E API tokens
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: e2e-tokens
+          path: /tmp
+      - name: Reset runner model defaults
+        shell: bash
+        run: cd e2e && bash playwright/runner-auto-bootstrap.bash /tmp/e2e-api-credentials-runner.json false
+        env:
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+      - name: Bootstrap mock Claude account
+        shell: bash
+        run: cd e2e && bash playwright/runner-mock-claude-bootstrap.bash /tmp/e2e-api-credentials-runner-mock-claude.json
+        env:
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+      - name: Bootstrap real Codex account
+        shell: bash
+        run: cd e2e && bash playwright/runner-auto-bootstrap.bash /tmp/e2e-api-credentials-runner-real-codex.json true
+        env:
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+      - name: Bootstrap built-in Codex account
+        shell: bash
+        run: cd e2e && bash playwright/runner-auto-bootstrap.bash /tmp/e2e-api-credentials-runner-real-codex-built-in.json true
+        env:
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+      - name: Bootstrap real Claude account
+        shell: bash
+        run: cd e2e && bash playwright/runner-auto-bootstrap.bash /tmp/e2e-api-credentials-runner-real-claude.json true
+        env:
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+    permissions:
+      actions: read
+      contents: read
+      deployments: write
+      id-token: write
+      issues: write
+      pull-requests: write

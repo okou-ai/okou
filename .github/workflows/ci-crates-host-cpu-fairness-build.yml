@@ -1,0 +1,61 @@
+name: crates-host-cpu-fairness-build
+"on":
+  workflow_call:
+    inputs:
+      dependencies:
+        type: string
+        required: true
+    secrets:
+      R2_ACCESS_KEY_ID:
+        required: false
+      R2_SECRET_ACCESS_KEY:
+        required: false
+    outputs:
+      producer-attempt:
+        value: ${{ jobs.host-cpu-fairness-build.outputs.producer-attempt }}
+env:
+  npm_config_audit: "false"
+jobs:
+  host-cpu-fairness-build:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    outputs:
+      producer-attempt: ${{ steps.build.outputs.producer-attempt }}
+    env:
+      TARGET_TRIPLE: ${{ fromJSON(inputs.dependencies).crates-runner-host-groups.outputs.selected-target }}
+      TEST_NAME: host_cpu_fairness
+      ARTIFACT_DIR: native-test-artifact
+      PRODUCER_ATTEMPT: ${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          workspaces: crates -> target
+          shared-key: ${{ fromJSON(inputs.dependencies).crates-runner-host-groups.outputs.selected-target }}-host-cpu-fairness
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Cross-compile host CPU fairness test
+        id: build
+        run: bash .github/scripts/runner-native-test-artifact.sh build
+      - name: Install AWS CLI
+        uses: ./.github/actions/setup-aws-cli
+      - name: Publish native test to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+        run: bash .github/scripts/runner-native-test-artifact.sh publish
+      - name: Report peak memory
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/report-memory-peak
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read

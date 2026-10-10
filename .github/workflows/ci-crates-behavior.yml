@@ -1,0 +1,171 @@
+name: crates-behavior
+"on":
+  workflow_call:
+    inputs:
+      dependencies:
+        type: string
+        required: true
+      ready:
+        type: string
+        required: true
+    secrets:
+      AWS_METAL_RUNNER_SSH_KEY:
+        required: false
+      CF_ACCESS_CLIENT_ID:
+        required: false
+      CF_ACCESS_CLIENT_SECRET:
+        required: false
+      OFFICIAL_RUNNER_SECRET:
+        required: false
+    outputs:
+      results:
+        value: ${{ toJSON(jobs) }}
+env:
+  npm_config_audit: "false"
+jobs:
+  runner-behavior-lane-a:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
+      HOST: ${{ fromJSON(inputs.ready).host }}
+      JOB_REF: ${{ fromJSON(inputs.ready).job-ref }}
+      BIN_DIR: ${{ fromJSON(inputs.ready).bin-dir }}
+      DEFAULT_ROOTFS_HASH: ${{ fromJSON(inputs.ready).default-rootfs-hash }}
+      DEFAULT_SNAPSHOT_HASH: ${{ fromJSON(inputs.ready).default-snapshot-hash }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Setup SSH via Cloudflare Tunnel
+        uses: ./.github/actions/setup-ssh-tunnel
+        with:
+          ssh-user: ${{ env.METAL_USER }}
+          ssh-hosts: ${{ env.HOST }}
+          ssh-key: ${{ secrets.AWS_METAL_RUNNER_SSH_KEY }}
+          cf-access-client-id: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          cf-access-client-secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+      - name: Test balloon memory reclaim
+        timeout-minutes: 5
+        env:
+          OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
+        run: .github/scripts/runner-behavior-balloon.sh
+      - name: Test home cache promotion across runner restart
+        timeout-minutes: 5
+        env:
+          OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
+        run: .github/scripts/runner-behavior-home-cache-promotion.sh
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+  runner-behavior-lane-b:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
+      HOST: ${{ fromJSON(inputs.ready).host }}
+      JOB_REF: ${{ fromJSON(inputs.ready).job-ref }}
+      BIN_DIR: ${{ fromJSON(inputs.ready).bin-dir }}
+      DEFAULT_ROOTFS_HASH: ${{ fromJSON(inputs.ready).default-rootfs-hash }}
+      DEFAULT_SNAPSHOT_HASH: ${{ fromJSON(inputs.ready).default-snapshot-hash }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Setup SSH via Cloudflare Tunnel
+        uses: ./.github/actions/setup-ssh-tunnel
+        with:
+          ssh-user: ${{ env.METAL_USER }}
+          ssh-hosts: ${{ env.HOST }}
+          ssh-key: ${{ secrets.AWS_METAL_RUNNER_SSH_KEY }}
+          cf-access-client-id: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          cf-access-client-secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+      - name: Test runner exec
+        timeout-minutes: 5
+        env:
+          OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
+        run: .github/scripts/runner-behavior-exec.sh
+      - name: Run benchmark
+        timeout-minutes: 8
+        env:
+          OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
+        run: .github/scripts/runner-behavior-benchmark.sh
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+  runner-behavior-lane-c:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
+      HOST: ${{ fromJSON(inputs.ready).host }}
+      JOB_REF: ${{ fromJSON(inputs.ready).job-ref }}
+      BIN_DIR: ${{ fromJSON(inputs.ready).bin-dir }}
+      DEFAULT_ROOTFS_HASH: ${{ fromJSON(inputs.ready).default-rootfs-hash }}
+      DEFAULT_SNAPSHOT_HASH: ${{ fromJSON(inputs.ready).default-snapshot-hash }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Setup SSH via Cloudflare Tunnel
+        uses: ./.github/actions/setup-ssh-tunnel
+        with:
+          ssh-user: ${{ env.METAL_USER }}
+          ssh-hosts: ${{ env.HOST }}
+          ssh-key: ${{ secrets.AWS_METAL_RUNNER_SSH_KEY }}
+          cf-access-client-id: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          cf-access-client-secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+      - name: Test exec process containment
+        timeout-minutes: 5
+        env:
+          OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
+        run: .github/scripts/runner-behavior-process-containment.sh
+      - name: Test runner local cancel
+        timeout-minutes: 5
+        env:
+          OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
+        run: .github/scripts/runner-behavior-cancel.sh
+      - name: Test systemd reload coordination
+        timeout-minutes: 5
+        env:
+          OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
+        run: .github/scripts/runner-behavior-systemd-reload.sh
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+  runner-behavior-lane-d:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
+      HOST: ${{ fromJSON(inputs.ready).host }}
+      JOB_REF: ${{ fromJSON(inputs.ready).job-ref }}
+      BIN_DIR: ${{ fromJSON(inputs.ready).bin-dir }}
+      DEFAULT_ROOTFS_HASH: ${{ fromJSON(inputs.ready).default-rootfs-hash }}
+      DEFAULT_SNAPSHOT_HASH: ${{ fromJSON(inputs.ready).default-snapshot-hash }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Setup SSH via Cloudflare Tunnel
+        uses: ./.github/actions/setup-ssh-tunnel
+        with:
+          ssh-user: ${{ env.METAL_USER }}
+          ssh-hosts: ${{ env.HOST }}
+          ssh-key: ${{ secrets.AWS_METAL_RUNNER_SSH_KEY }}
+          cf-access-client-id: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          cf-access-client-secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+      - name: Test runner service drain + resume
+        timeout-minutes: 5
+        env:
+          OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
+        run: .github/scripts/runner-behavior-drain-resume.sh
+      - name: Test sandbox keep-alive across conversation turns
+        timeout-minutes: 5
+        env:
+          OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
+        run: .github/scripts/runner-behavior-keep-alive.sh
+      - name: Run upgrade test
+        timeout-minutes: 5
+        env:
+          OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
+        run: .github/scripts/runner-behavior-upgrade-local.sh
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read

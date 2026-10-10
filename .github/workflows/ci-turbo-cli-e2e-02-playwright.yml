@@ -1,0 +1,79 @@
+name: turbo-cli-e2e-02-playwright
+"on":
+  workflow_call:
+    inputs:
+      dependencies:
+        type: string
+        required: true
+    secrets:
+      CLERK_SECRET_KEY:
+        required: false
+      VERCEL_AUTOMATION_BYPASS_SECRET:
+        required: false
+env:
+  npm_config_audit: "false"
+jobs:
+  cli-e2e-02-playwright:
+    name: cli-e2e-02-playwright
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: cli-e2e-02-playwright-${{ fromJSON(inputs.dependencies).prepare.outputs.job-ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          submodules: recursive
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22
+      - name: Install pnpm
+        run: corepack enable pnpm
+      - name: Install E2E dependencies
+        run: cd e2e && pnpm install --frozen-lockfile
+      - name: Check Playwright E2E types
+        run: cd e2e && pnpm check-types
+      - name: Install Playwright browsers
+        run: cd e2e && pnpm exec playwright install --only-shell chromium
+      - name: Run Playwright fixture integration tests
+        run: cd e2e && pnpm test
+      - name: Run Playwright E2E tests
+        id: playwright-tests
+        shell: bash
+        run: |
+          cd e2e
+          pnpm exec playwright test \
+            --config playwright/playwright.config.ts \
+            --project=chat-smoke
+        env:
+          E2E_CLERK_RESOURCE_DIR: /tmp/e2e-clerk-playwright
+          OKOU_API_BACKEND_URL: ${{ fromJSON(inputs.dependencies).deploy-api.outputs.preview-url }}
+          OKOU_APP_URL: ${{ fromJSON(inputs.dependencies).deploy-app.outputs.preview-url }}
+          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          JOB_REF: ${{ fromJSON(inputs.dependencies).prepare.outputs.job-ref }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+      - name: Cleanup recorded Playwright E2E accounts
+        if: always() && steps.playwright-tests.outcome != 'skipped'
+        run: cd e2e && pnpm exec tsx playwright/clerk-test-resources.ts cleanup-recorded playwright
+        env:
+          E2E_CLERK_RESOURCE_DIR: /tmp/e2e-clerk-playwright
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          JOB_REF: ${{ fromJSON(inputs.dependencies).prepare.outputs.job-ref }}
+      - name: Upload Playwright blob report
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: playwright-blob-chat-smoke
+          path: e2e/playwright/blob-report/
+          retention-days: 7
+          if-no-files-found: ignore
+    permissions:
+      actions: read
+      contents: read
+      deployments: write
+      id-token: write
+      issues: write
+      pull-requests: write

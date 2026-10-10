@@ -1,0 +1,104 @@
+name: runner-image-prewarm-rust-cache
+"on":
+  workflow_call:
+    inputs:
+      dependencies:
+        type: string
+        required: true
+    secrets:
+      R2_ACCESS_KEY_ID:
+        required: false
+      R2_SECRET_ACCESS_KEY:
+        required: false
+env:
+  npm_config_audit: "false"
+jobs:
+  prewarm-rust-cache:
+    name: Prewarm runner dependency cache (${{ matrix.label }})
+    runs-on: ubuntu-latest-8-cores
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+    permissions:
+      actions: read
+      contents: read
+    continue-on-error: true
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(fromJSON(inputs.dependencies).image-prepare.outputs.runner-binary-hit-matrix) }}
+    env:
+      TARGET_TRIPLE: ${{ matrix.target }}
+      RUNNER_BINARY_ACTUAL_TOOLCHAIN_IMAGE: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+      RUNNER_BINARY_GIT_REVISION: ${{ fromJSON(inputs.dependencies).image-prepare.outputs.head-sha }}
+      GUEST_CLI_PATH: runner-cli-intermediate/package.tgz
+      GUEST_CLI_MANIFEST_PATH: runner-cli-intermediate/manifest.json
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ fromJSON(inputs.dependencies).image-prepare.outputs.head-sha }}
+      - name: Configure git safe directory
+        shell: bash
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Setup R2 sccache
+        id: sccache
+        uses: ./.github/actions/setup-r2-sccache
+        with:
+          architecture: ${{ matrix.id }}
+          r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          r2-secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          r2-account-id: ${{ vars.R2_ACCOUNT_ID }}
+          r2-bucket-name: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+      - name: Lookup runner dependency cache
+        id: cache-lookup
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          workspaces: crates -> target
+          shared-key: ${{ matrix.cacheSuffix }}-ci
+          lookup-only: true
+          save-if: false
+      - name: Restore runner dependency cache
+        id: cache-restore
+        if: steps.cache-lookup.outputs.cache-hit != 'true'
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          workspaces: crates -> target
+          shared-key: ${{ matrix.cacheSuffix }}-ci
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Download private CLI build input
+        if: steps.cache-lookup.outputs.cache-hit != 'true' && steps.cache-restore.outputs.cache-hit != 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: runner-cli-${{ github.run_id }}
+          path: runner-cli-intermediate
+      - name: Build runner dependency cache
+        id: prewarm
+        if: steps.cache-lookup.outputs.cache-hit != 'true' && steps.cache-restore.outputs.cache-hit != 'true'
+        env:
+          RUNNER_BINARY_METADATA_PATH: runner-rust-cache-prewarm/metadata.json
+        run: .github/scripts/runner-binary-build/build.sh build
+      - name: Summarize dependency cache prewarm
+        if: always()
+        env:
+          LOOKUP_OUTCOME: ${{ steps.cache-lookup.outcome }}
+          LOOKUP_HIT: ${{ steps.cache-lookup.outputs.cache-hit }}
+          RESTORE_OUTCOME: ${{ steps.cache-restore.outcome }}
+          RESTORE_HIT: ${{ steps.cache-restore.outputs.cache-hit }}
+          PREWARM_OUTCOME: ${{ steps.prewarm.outcome }}
+        run: |
+          {
+            echo "### Runner dependency cache prewarm"
+            echo
+            echo "- Target: \`${TARGET_TRIPLE}\`"
+            echo "- Lookup step: \`${LOOKUP_OUTCOME}\`; exact hit: \`${LOOKUP_HIT}\`"
+            echo "- Restore step: \`${RESTORE_OUTCOME}\`; exact hit: \`${RESTORE_HIT}\`"
+            echo "- Prewarm build: \`${PREWARM_OUTCOME}\`"
+            echo "- Runner outputs are not published or deployed."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Report sccache statistics
+        if: always() && steps.sccache.outputs.started == 'true'
+        run: .github/scripts/report-sccache-stats.sh
+      - name: Report peak memory
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/report-memory-peak

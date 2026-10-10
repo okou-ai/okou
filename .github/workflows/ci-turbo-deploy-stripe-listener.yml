@@ -1,0 +1,97 @@
+name: turbo-deploy-stripe-listener
+"on":
+  workflow_call:
+    inputs:
+      dependencies:
+        type: string
+        required: true
+    secrets:
+      AWS_METAL_RUNNER_HOSTS:
+        required: false
+      AWS_METAL_RUNNER_SSH_KEY:
+        required: false
+      CF_ACCESS_CLIENT_ID:
+        required: false
+      CF_ACCESS_CLIENT_SECRET:
+        required: false
+      STRIPE_SECRET_KEY:
+        required: false
+      VERCEL_AUTOMATION_BYPASS_SECRET:
+        required: false
+env:
+  npm_config_audit: "false"
+jobs:
+  deploy-stripe-listener:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: deploy-stripe-listener-${{ fromJSON(inputs.dependencies).prepare.outputs.job-ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Install Ansible
+        run: pip3 install ansible-core
+      - name: Setup SSH via Cloudflare Tunnel
+        uses: ./.github/actions/setup-ssh-tunnel
+        with:
+          ssh-user: ${{ vars.AWS_METAL_RUNNER_USER }}
+          ssh-hosts: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
+          require-all-hosts: "false"
+          ssh-key: ${{ secrets.AWS_METAL_RUNNER_SSH_KEY }}
+          cf-access-client-id: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          cf-access-client-secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+      - name: Start Stripe CLI listener on one metal host
+        env:
+          METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
+          METAL_HOSTS: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
+          JOB_REF: ${{ fromJSON(inputs.dependencies).prepare.outputs.job-ref }}
+          API_PREVIEW_URL: ${{ fromJSON(inputs.dependencies).prepare.outputs.api-preview-url }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          set -euo pipefail
+          cd ansible
+
+          STRIPE_LISTENER_HOST="$(printf '%s\n' "$METAL_HOSTS" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | sed '/^$/d' | head -n 1)"
+          if [[ -z "$STRIPE_LISTENER_HOST" ]]; then
+            echo "::error::AWS_METAL_RUNNER_HOSTS is empty"
+            exit 1
+          fi
+
+          CLEANUP_EXTRA_VARS="$(jq -nc \
+            --arg ansible_user "$METAL_USER" \
+            --arg job_ref "$JOB_REF" \
+            '{ansible_user: $ansible_user, job_ref: $job_ref}')"
+          if ! ansible-playbook \
+            -i "${METAL_HOSTS}," \
+            playbooks/cleanup-stripe-listener.yml \
+            --extra-vars "$CLEANUP_EXTRA_VARS" \
+            -v; then
+            echo "::warning::Stripe CLI listener cleanup failed for ${JOB_REF} — stale Stripe forwarding may remain on metal hosts"
+          fi
+
+          FORWARD_URL="${API_PREVIEW_URL%/}/api/webhooks/stripe"
+          if [[ -n "${VERCEL_AUTOMATION_BYPASS_SECRET:-}" ]]; then
+            encoded_bypass="$(node -e 'process.stdout.write(encodeURIComponent(process.env.VERCEL_AUTOMATION_BYPASS_SECRET || ""))')"
+            echo "::add-mask::$encoded_bypass"
+            FORWARD_URL="${FORWARD_URL}?x-vercel-protection-bypass=${encoded_bypass}"
+          fi
+          EXTRA_VARS="$(jq -nc \
+            --arg ansible_user "$METAL_USER" \
+            --arg job_ref "$JOB_REF" \
+            --arg forward_url "$FORWARD_URL" \
+            --arg stripe_secret_key "$STRIPE_SECRET_KEY" \
+            '{ansible_user: $ansible_user, job_ref: $job_ref, forward_url: $forward_url, stripe_secret_key: $stripe_secret_key}')"
+
+          ansible-playbook \
+            -i "${STRIPE_LISTENER_HOST}," \
+            playbooks/start-stripe-listener.yml \
+            --extra-vars "$EXTRA_VARS" \
+            -v
+    permissions:
+      actions: read
+      contents: read
+      deployments: write
+      id-token: write
+      issues: write
+      pull-requests: write

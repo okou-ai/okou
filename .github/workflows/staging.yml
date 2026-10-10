@@ -16,8 +16,10 @@ env:
 
 jobs:
   deploy-and-test:
+    # Ceiling for the shared DAG's PR/MQ-only cancellation declaration.
+    # Every active staging worker explicitly keeps Actions read permissions.
     permissions:
-      actions: read
+      actions: write
       contents: read
       deployments: write
       id-token: write

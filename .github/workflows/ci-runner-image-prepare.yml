@@ -1,0 +1,362 @@
+name: runner-image-prepare
+"on":
+  workflow_call:
+    inputs:
+      dependencies:
+        type: string
+        required: true
+    secrets:
+      AWS_METAL_RUNNER_HOSTS:
+        required: false
+      AWS_METAL_RUNNER_SSH_KEY:
+        required: false
+      CF_ACCESS_CLIENT_ID:
+        required: false
+      CF_ACCESS_CLIENT_SECRET:
+        required: false
+      R2_ACCESS_KEY_ID:
+        required: false
+      R2_SECRET_ACCESS_KEY:
+        required: false
+    outputs:
+      release-skip:
+        value: ${{ jobs.prepare.outputs.release-skip }}
+      skip-reason:
+        value: ${{ jobs.prepare.outputs.skip-reason }}
+      job-ref:
+        value: ${{ jobs.prepare.outputs.job-ref }}
+      head-sha:
+        value: ${{ jobs.prepare.outputs.head-sha }}
+      producer-head-sha:
+        value: ${{ jobs.prepare.outputs.producer-head-sha }}
+      pr-number:
+        value: ${{ jobs.prepare.outputs.pr-number }}
+      pr-head-ref:
+        value: ${{ jobs.prepare.outputs.pr-head-ref }}
+      turbo-runner-consumer-needed:
+        value: ${{ jobs.prepare.outputs.turbo-runner-consumer-needed }}
+      playwright-runner-consumer-needed:
+        value: ${{ jobs.prepare.outputs.playwright-runner-consumer-needed }}
+      crates-runner-consumer-needed:
+        value: ${{ jobs.prepare.outputs.crates-runner-consumer-needed }}
+      runner-image-consumer-needed:
+        value: ${{ jobs.prepare.outputs.runner-image-consumer-needed }}
+      runner-image-inputs-changed:
+        value: ${{ jobs.prepare.outputs.runner-image-inputs-changed }}
+      current-runner-image-needed:
+        value: ${{ jobs.prepare.outputs.current-runner-image-needed }}
+      stable-runner-image-allowed:
+        value: ${{ jobs.prepare.outputs.stable-runner-image-allowed }}
+      image-selection-reason:
+        value: ${{ jobs.prepare.outputs.image-selection-reason }}
+      runner-host-groups-matrix:
+        value: ${{ jobs.prepare.outputs.runner-host-groups-matrix }}
+      runner-host-groups-configured:
+        value: ${{ jobs.prepare.outputs.runner-host-groups-configured }}
+      runner-binary-compile-matrix:
+        value: ${{ jobs.prepare.outputs.runner-binary-compile-matrix }}
+      runner-binary-hit-matrix:
+        value: ${{ jobs.prepare.outputs.runner-binary-hit-matrix }}
+      runner-binary-hit-targets:
+        value: ${{ jobs.prepare.outputs.runner-binary-hit-targets }}
+      runner-binary-hit-references:
+        value: ${{ jobs.prepare.outputs.runner-binary-hit-references }}
+      runner-binary-miss-count:
+        value: ${{ jobs.prepare.outputs.runner-binary-miss-count }}
+      image-matrix-arm64:
+        value: ${{ jobs.prepare.outputs.image-matrix-arm64 }}
+      image-matrix-x86_64:
+        value: ${{ jobs.prepare.outputs.image-matrix-x86_64 }}
+env:
+  npm_config_audit: "false"
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+    outputs:
+      release-skip: ${{ steps.identity.outputs.release-skip }}
+      skip-reason: ${{ steps.identity.outputs.skip-reason }}
+      job-ref: ${{ steps.identity.outputs.job-ref }}
+      head-sha: ${{ steps.identity.outputs.head-sha }}
+      producer-head-sha: ${{ steps.identity.outputs.producer-head-sha }}
+      pr-number: ${{ steps.identity.outputs.pr-number }}
+      pr-head-ref: ${{ steps.identity.outputs.pr-head-ref }}
+      turbo-runner-consumer-needed: ${{ steps.needed.outputs.turbo-runner-consumer-needed }}
+      playwright-runner-consumer-needed: ${{ steps.needed.outputs.playwright-runner-consumer-needed }}
+      crates-runner-consumer-needed: ${{ steps.needed.outputs.crates-runner-consumer-needed }}
+      runner-image-consumer-needed: ${{ steps.needed.outputs.runner-image-consumer-needed }}
+      runner-image-inputs-changed: ${{ steps.needed.outputs.runner-image-inputs-changed }}
+      current-runner-image-needed: ${{ steps.needed.outputs.current-runner-image-needed }}
+      stable-runner-image-allowed: ${{ steps.needed.outputs.stable-runner-image-allowed }}
+      image-selection-reason: ${{ steps.needed.outputs.image-selection-reason }}
+      runner-host-groups-matrix: ${{ steps.host-groups.outputs.matrix }}
+      runner-host-groups-configured: ${{ steps.host-group-presence.outputs.configured }}
+      runner-binary-compile-matrix: ${{ steps.binary-plan.outputs.compile-matrix }}
+      runner-binary-hit-matrix: ${{ steps.binary-plan.outputs.hit-matrix }}
+      runner-binary-hit-targets: ${{ steps.binary-plan.outputs.hit-targets }}
+      runner-binary-hit-references: ${{ steps.binary-plan.outputs.hit-references }}
+      runner-binary-miss-count: ${{ steps.binary-plan.outputs.miss-count }}
+      image-matrix-arm64: ${{ steps.image-partition.outputs.arm64 }}
+      image-matrix-x86_64: ${{ steps.image-partition.outputs.x86_64 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 2
+      - name: Resolve runner image identity
+        id: identity
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_REF: ${{ github.head_ref || '' }}
+          COMMIT_MSG: ${{ github.event.head_commit.message || '' }}
+          MQ_HEAD_REF: ${{ github.event.merge_group.head_ref || '' }}
+          HEAD_SHA: ${{ github.sha }}
+          PRODUCER_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          CHECK_PR_OPEN: "true"
+        run: .github/scripts/runner-image-context.sh resolve
+      - name: Determine base ref
+        id: base
+        if: steps.identity.outputs.release-skip != 'true'
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CHECKOUT_REF: ${{ github.ref }}
+          PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: |
+          BASE_REF=$(.github/scripts/changed-base-ref.sh)
+          echo "base-ref=${BASE_REF}" >> "$GITHUB_OUTPUT"
+          echo "Base ref: ${BASE_REF}"
+      - name: Cache Turbo executable
+        id: turbo-cache
+        if: steps.identity.outputs.release-skip != 'true'
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306
+        with:
+          path: |
+            ${{ runner.temp }}/runner-image-turbo-npm/_cacache
+            ${{ runner.temp }}/runner-image-turbo-npm/_npx
+          key: runner-image-turbo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/changed.sh') }}
+      - name: Detect Turbo and Playwright runner image consumers
+        id: turbo
+        if: steps.identity.outputs.release-skip != 'true'
+        env:
+          BASE_REF: ${{ steps.base.outputs.base-ref }}
+          npm_config_cache: ${{ runner.temp }}/runner-image-turbo-npm
+          npm_config_prefer_offline: "true"
+        run: |
+          set -euo pipefail
+          CHANGES_JSON=$(./scripts/changed.sh "$BASE_REF")
+          web_changed=$(echo "$CHANGES_JSON" | jq -r '."web" // false')
+          platform_changed=$(echo "$CHANGES_JSON" | jq -r '."@okouai/app" // false')
+          api_changed=$(echo "$CHANGES_JSON" | jq -r '."api" // false')
+          cli_changed=$(echo "$CHANGES_JSON" | jq -r '."@okouai/cli" // false')
+
+          if git diff --name-only "$BASE_REF" HEAD | grep -q "^crates/"; then
+            crates_changed=true
+          else
+            crates_changed=false
+          fi
+
+          if git diff --name-only "$BASE_REF" HEAD | grep -qE "^\.github/workflows/(ci|ci-[a-z0-9-]+|turbo|staging|benchmark|crates|runner-image)\.yml$|^\.github/actions/(setup-aws-cli|setup-r2-sccache|setup-ssh-tunnel|provision)/|^\.github/scripts/|^ansible/"; then
+            ci_changed=true
+          else
+            ci_changed=false
+          fi
+
+          if git diff --name-only "$BASE_REF" HEAD | grep -q "^e2e/"; then
+            e2e_changed=true
+          else
+            e2e_changed=false
+          fi
+
+          EVENT_NAME="${{ github.event_name }}" \
+          WEB_CHANGED="$web_changed" \
+          API_CHANGED="$api_changed" \
+          CLI_CHANGED="$cli_changed" \
+          CRATES_CHANGED="$crates_changed" \
+          CI_CHANGED="$ci_changed" \
+          E2E_CHANGED="$e2e_changed" \
+          .github/scripts/runner-image-context.sh turbo-consumer
+
+          API_CHANGED="$api_changed" \
+          PLATFORM_CHANGED="$platform_changed" \
+          CLI_CHANGED="$cli_changed" \
+          CI_CHANGED="$ci_changed" \
+          E2E_CHANGED="$e2e_changed" \
+          .github/scripts/runner-image-context.sh playwright-consumer
+      - name: Detect Crates runner image consumers
+        id: crates
+        if: steps.identity.outputs.release-skip != 'true'
+        env:
+          BASE_REF: ${{ steps.base.outputs.base-ref }}
+        run: |
+          set -euo pipefail
+
+          if git diff --name-only "$BASE_REF" HEAD | grep -qE "^\.github/workflows/(ci|ci-[a-z0-9-]+|crates|runner-image)\.yml$|^\.github/actions/(setup-aws-cli|setup-r2-sccache|setup-ssh-tunnel|provision)/|^\.github/scripts/|^ansible/"; then
+            ci_changed=true
+          else
+            ci_changed=false
+          fi
+          echo "ci-changed=${ci_changed}" >> "$GITHUB_OUTPUT"
+
+          check_crate() {
+            local crate=$1
+            local output=$2
+            local var_name=$3
+            local rc=0
+            ./scripts/crate-changed.sh "$crate" "$BASE_REF" && rc=0 || rc=$?
+            if [ "$rc" -eq 0 ]; then
+              printf -v "$var_name" '%s' "true"
+              echo "${output}=true" >> "$GITHUB_OUTPUT"
+            elif [ "$rc" -eq 1 ]; then
+              printf -v "$var_name" '%s' "false"
+              echo "${output}=false" >> "$GITHUB_OUTPUT"
+            else
+              exit "$rc"
+            fi
+          }
+
+          check_crate runner runner-changed runner_changed
+
+          CI_CHANGED="$ci_changed" \
+          RUNNER_CHANGED="$runner_changed" \
+          .github/scripts/runner-image-context.sh crates-consumer
+      - name: Detect runner image input changes
+        id: image-inputs
+        if: steps.identity.outputs.release-skip != 'true'
+        env:
+          BASE_REF: ${{ steps.base.outputs.base-ref }}
+        run: |
+          set -euo pipefail
+
+          runner_image_ci_changed=false
+          if git diff --name-only "$BASE_REF" HEAD | grep -qE "^\.github/workflows/(ci|ci-[a-z0-9-]+|turbo|staging|benchmark|crates|runner-image)\.yml$|^\.github/actions/(setup-aws-cli|setup-r2-sccache|setup-ssh-tunnel|provision)/|^\.github/scripts/runner-binary-build/|^\.github/scripts/(prepare-runner-image|runner-binary-cache|runner-binary-cache-plan|runner-binary-download|runner-binary-github|runner-binary-transport|runner-host-architecture-groups|runner-image-context|runner-image-manifest|runner-image-target|wait-runner-image)\.sh$|^ansible/(ansible\.cfg|playbooks/(build-runner|provision-runner|promote-runner|rollback-runner)\.yml)$"; then
+            runner_image_ci_changed=true
+          fi
+
+          RUNNER_CHANGED="${{ steps.crates.outputs.runner-changed }}" \
+          RUNNER_IMAGE_CI_CHANGED="$runner_image_ci_changed" \
+          .github/scripts/runner-image-context.sh image-inputs
+      - name: Detect runner host architecture groups
+        id: host-group-presence
+        env:
+          RELEASE_SKIP: ${{ steps.identity.outputs.release-skip }}
+          AWS_METAL_RUNNER_HOSTS: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
+        run: |
+          set -euo pipefail
+          if [ "$RELEASE_SKIP" = "true" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          configured=false
+          if printf '%s\n' "$AWS_METAL_RUNNER_HOSTS" \
+            | tr ',' '\n' \
+            | grep '[^[:space:]]' >/dev/null; then
+            configured=true
+          fi
+          echo "configured=${configured}" >> "$GITHUB_OUTPUT"
+      - name: Determine whether runner image is needed
+        id: needed
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_SKIP: ${{ steps.identity.outputs.release-skip }}
+          RUNNER_HOST_GROUPS_CONFIGURED: ${{ steps.host-group-presence.outputs.configured }}
+          TURBO_RUNNER_CONSUMER_NEEDED: ${{ steps.turbo.outputs.turbo-runner-consumer-needed }}
+          PLAYWRIGHT_RUNNER_CONSUMER_NEEDED: ${{ steps.turbo.outputs.playwright-runner-consumer-needed }}
+          CRATES_RUNNER_CONSUMER_NEEDED: ${{ steps.crates.outputs.crates-runner-consumer-needed }}
+          RUNNER_IMAGE_INPUTS_CHANGED: ${{ steps.image-inputs.outputs.runner-image-inputs-changed }}
+        run: .github/scripts/runner-image-context.sh needed
+      - name: Setup SSH via Cloudflare Tunnel
+        if: steps.needed.outputs.current-runner-image-needed == 'true'
+        uses: ./.github/actions/setup-ssh-tunnel
+        with:
+          ssh-user: ${{ vars.AWS_METAL_RUNNER_USER }}
+          ssh-hosts: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
+          ssh-key: ${{ secrets.AWS_METAL_RUNNER_SSH_KEY }}
+          cf-access-client-id: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          cf-access-client-secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+      - name: Resolve runner host architecture groups
+        id: host-groups
+        env:
+          CURRENT_RUNNER_IMAGE_NEEDED: ${{ steps.needed.outputs.current-runner-image-needed }}
+          AWS_METAL_RUNNER_HOSTS: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
+          METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
+        run: |
+          set -euo pipefail
+          if [ "$CURRENT_RUNNER_IMAGE_NEEDED" != "true" ]; then
+            echo "matrix=[]" >> "$GITHUB_OUTPUT"
+            echo "Skipping runner host architecture group resolution because runner image is not needed"
+            exit 0
+          fi
+
+          matrix=$(.github/scripts/runner-host-architecture-groups.sh matrix)
+          echo "matrix=${matrix}" >> "$GITHUB_OUTPUT"
+          echo "Configured runner host architecture groups: $(jq -r 'map(.id) | join(",") // ""' <<<"$matrix")"
+      - name: Checkout source revision for CLI and Runner
+        if: steps.needed.outputs.current-runner-image-needed == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ steps.identity.outputs.head-sha }}
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
+        if: steps.needed.outputs.current-runner-image-needed == 'true'
+        with:
+          version: 10.33.4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        if: steps.needed.outputs.current-runner-image-needed == 'true'
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: turbo/pnpm-lock.yaml
+      - name: Build private source-bound CLI bundle
+        if: steps.needed.outputs.current-runner-image-needed == 'true'
+        env:
+          SOURCE_SHA: ${{ steps.identity.outputs.head-sha }}
+          DEFAULT_SENTRY_DSN: ${{ vars.SENTRY_DSN_CLI }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          (cd turbo && pnpm install --frozen-lockfile --filter @okouai/cli...)
+          (cd turbo && pnpm --filter @okouai/cli build)
+          bash .github/scripts/build-okou-cli-artifact.sh "$SOURCE_SHA" runner-cli-intermediate
+      - name: Upload private CLI build input
+        if: steps.needed.outputs.current-runner-image-needed == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: runner-cli-${{ github.run_id }}
+          path: |
+            runner-cli-intermediate/package.tgz
+            runner-cli-intermediate/manifest.json
+          overwrite: true
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+      - name: Plan runner binary reuse
+        id: binary-plan
+        if: steps.needed.outputs.current-runner-image-needed == 'true'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_DEFAULT_REGION: auto
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+          RESOLVE_OUTPUT_DIR: runner-binary-references
+          RUNNER_BINARY_CACHE_FORCE_MISS: ${{ vars.RUNNER_BINARY_CACHE_FORCE_MISS }}
+          RUNNER_HOST_GROUPS_MATRIX: ${{ steps.host-groups.outputs.matrix }}
+          RUNNER_BINARY_GIT_REVISION: ${{ steps.identity.outputs.head-sha }}
+          GUEST_CLI_PATH: runner-cli-intermediate/package.tgz
+          GUEST_CLI_MANIFEST_PATH: runner-cli-intermediate/manifest.json
+        run: .github/scripts/runner-binary-cache-plan.sh
+      - name: Partition image readiness by architecture
+        id: image-partition
+        env:
+          IMAGE_NEEDED: ${{ steps.needed.outputs.current-runner-image-needed }}
+          IMAGE_MATRIX: ${{ steps.host-groups.outputs.matrix || '[]' }}
+        run: .github/scripts/partition-ci-image-matrix.sh

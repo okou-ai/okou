@@ -270,7 +270,6 @@ jobs:
 
       - name: Run workflow static checks
         run: |
-          ruby .github/scripts/compose-ci-workflow.rb --check
           shopt -s nullglob
           script_files=(
             .github/actions/report-memory-peak/*.sh

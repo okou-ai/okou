@@ -1,0 +1,151 @@
+name: turbo-cli-e2e-03-runner
+"on":
+  workflow_call:
+    inputs:
+      dependencies:
+        type: string
+        required: true
+    secrets:
+      CODECOV_TOKEN:
+        required: false
+      VERCEL_AUTOMATION_BYPASS_SECRET:
+        required: false
+env:
+  npm_config_audit: "false"
+jobs:
+  cli-e2e-03-runner:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: cli-e2e-03-runner-${{ matrix.index }}-${{ fromJSON(inputs.dependencies).prepare.outputs.job-ref }}
+      cancel-in-progress: true
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(fromJSON(inputs.dependencies).cli-e2e-03-runner-prepare.outputs.runner-shard-matrix) }}
+    env:
+      E2E_CLERK_ORG_ID: ${{ fromJSON(inputs.dependencies).cli-e2e-03-runner-prepare.outputs.runner-organization-id }}
+      E2E_RUNNER_CODEX_ORG_ID: ${{ fromJSON(inputs.dependencies).cli-e2e-03-runner-prepare.outputs.codex-organization-id }}
+      E2E_RUNNER_CLAUDE_ORG_ID: ${{ fromJSON(inputs.dependencies).cli-e2e-03-runner-prepare.outputs.claude-organization-id }}
+      E2E_RUNNER_MOCK_CLAUDE_ORG_ID: ${{ fromJSON(inputs.dependencies).cli-e2e-03-runner-prepare.outputs.mock-claude-organization-id }}
+      E2E_RUNNER_EMAIL: ${{ fromJSON(inputs.dependencies).cli-e2e-03-runner-prepare.outputs.runner-email }}
+      E2E_RUNNER_CODEX_EMAIL: ${{ fromJSON(inputs.dependencies).cli-e2e-03-runner-prepare.outputs.codex-email }}
+      E2E_RUNNER_CLAUDE_EMAIL: ${{ fromJSON(inputs.dependencies).cli-e2e-03-runner-prepare.outputs.claude-email }}
+      E2E_RUNNER_MOCK_CLAUDE_EMAIL: ${{ fromJSON(inputs.dependencies).cli-e2e-03-runner-prepare.outputs.mock-claude-email }}
+      E2E_RUNNER_SHARD_INDEX: ${{ matrix.index }}
+      E2E_RUNNER_SHARD_TOTAL: ${{ strategy.job-total }}
+      E2E_RUNNER_TEST_FILES_JSON: ${{ toJSON(matrix.files) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          submodules: recursive
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
+        with:
+          version: 10.33.4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22
+      - name: Install E2E dependencies
+        run: cd e2e && pnpm install --frozen-lockfile
+      - name: Download runner E2E API tokens
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: e2e-tokens
+          path: /tmp
+      - name: Setup runner E2E API credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          for credential_file in \
+            /tmp/e2e-api-credentials-runner.json \
+            /tmp/e2e-api-credentials-runner-real-codex.json \
+            /tmp/e2e-api-credentials-runner-real-claude.json \
+            /tmp/e2e-api-credentials-runner-real-codex-built-in.json \
+            /tmp/e2e-api-credentials-runner-mock-claude.json; do
+            jq -er '.token | select(type == "string" and length > 0)' "$credential_file" >/dev/null
+            jq -er '.apiUrl | select(type == "string" and length > 0)' "$credential_file" >/dev/null
+          done
+          token=$(jq -er '.token' /tmp/e2e-api-credentials-runner.json)
+          api_url=$(jq -er '.apiUrl' /tmp/e2e-api-credentials-runner.json)
+          echo "::add-mask::$token"
+          echo "E2E_API_TOKEN=$token" >> "$GITHUB_ENV"
+          echo "E2E_API_URL=$api_url" >> "$GITHUB_ENV"
+      - name: Initialize runner E2E shard
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${E2E_CLERK_ORG_ID:?runner E2E organization is required}"
+          : "${E2E_RUNNER_CODEX_ORG_ID:?runner Codex E2E organization is required}"
+          : "${E2E_RUNNER_CLAUDE_ORG_ID:?runner Claude E2E organization is required}"
+          : "${E2E_RUNNER_MOCK_CLAUDE_ORG_ID:?runner mock Claude E2E organization is required}"
+          : "${E2E_RUNNER_EMAIL:?runner E2E account is required}"
+          : "${E2E_RUNNER_CODEX_EMAIL:?runner Codex E2E account is required}"
+          : "${E2E_RUNNER_CLAUDE_EMAIL:?runner Claude E2E account is required}"
+          : "${E2E_RUNNER_MOCK_CLAUDE_EMAIL:?runner mock Claude E2E account is required}"
+          : "${E2E_API_TOKEN:?runner E2E API token is required}"
+          : "${E2E_API_URL:?runner E2E API URL is required}"
+          jq -e '
+            type == "array" and length > 0 and
+            all(.[]; type == "string" and length > 0)
+          ' <<<"$E2E_RUNNER_TEST_FILES_JSON" >/dev/null
+          test_count="$(jq 'length' <<<"$E2E_RUNNER_TEST_FILES_JSON")"
+          echo "Runner E2E shard ${E2E_RUNNER_SHARD_INDEX}/${E2E_RUNNER_SHARD_TOTAL} has ${test_count} file(s)"
+      - name: Run runner E2E tests (shard ${{ matrix.index }})
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t test_files < <(jq -er '.[]' <<<"$E2E_RUNNER_TEST_FILES_JSON")
+          if (( ${#test_files[@]} == 0 )); then
+            echo "::error::Runner E2E shard has no test files"
+            exit 1
+          fi
+
+          cd e2e
+          for test_file in "${test_files[@]}"; do
+            if [[ ! -f "$test_file" ]]; then
+              echo "::error::Runner E2E test file does not exist: $test_file"
+              exit 1
+            fi
+          done
+
+          result_directory="results/runner-${E2E_RUNNER_SHARD_INDEX}"
+          mkdir -p "$result_directory"
+          BATS_TEST_TIMEOUT=240 ./test/libs/bats/bin/bats \
+            -T \
+            --report-formatter junit \
+            --output "$result_directory" \
+            "${test_files[@]}"
+        env:
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+      - name: Print runner E2E trace log
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f /tmp/e2e-trace.log ]]; then
+            cat /tmp/e2e-trace.log
+          fi
+      - name: Upload runner E2E test results to Codecov
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        timeout-minutes: 1
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          flags: e2e-runner
+          files: e2e/results/runner-${{ matrix.index }}/*.xml
+          report_type: test_results
+      - name: Upload runner E2E JUnit XML
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: e2e-runner-junit-${{ matrix.index }}
+          path: e2e/results/runner-${{ matrix.index }}/
+          retention-days: 7
+    permissions:
+      actions: read
+      contents: read
+      deployments: write
+      id-token: write
+      issues: write
+      pull-requests: write

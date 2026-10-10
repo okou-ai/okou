@@ -12,6 +12,7 @@ python3 - \
   "${repo_root}/turbo/apps/app-worker/wrangler.jsonc" \
   "${repo_root}/.github/workflows/turbo.yml" << 'PY'
 from pathlib import Path
+import json
 import os
 import subprocess
 import sys
@@ -22,6 +23,9 @@ import yaml
 
 def load_workflow(path: str) -> tuple[dict[str, object], str]:
     source = Path(path).read_text()
+    if Path(path).stem == "turbo":
+        reader = Path(path).parents[2] / ".github/scripts/tests/load-workflow-test-owners.py"
+        return json.loads(subprocess.check_output(["python3", str(reader), path], text=True)), source
     return yaml.safe_load(source), source
 
 

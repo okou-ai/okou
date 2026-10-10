@@ -1,0 +1,239 @@
+name: crates-detect
+"on":
+  workflow_call:
+    inputs:
+      dependencies:
+        type: string
+        required: true
+    secrets:
+      AWS_METAL_RUNNER_HOSTS:
+        required: false
+    outputs:
+      any-changed:
+        value: ${{ jobs.detect.outputs.any-changed }}
+      ci-changed:
+        value: ${{ jobs.detect.outputs.ci-changed }}
+      mitm-addon-test-inputs-changed:
+        value: ${{ jobs.detect.outputs.mitm-addon-test-inputs-changed }}
+      mitm-addon-pricing-seed-changed:
+        value: ${{ jobs.detect.outputs.mitm-addon-pricing-seed-changed }}
+      runner-firewall-contract-inputs-changed:
+        value: ${{ jobs.detect.outputs.runner-firewall-contract-inputs-changed }}
+      api-contracts-rust-bindings-changed:
+        value: ${{ jobs.detect.outputs.api-contracts-rust-bindings-changed }}
+      ably-subscriber-changed:
+        value: ${{ jobs.detect.outputs.ably-subscriber-changed }}
+      api-contracts-changed:
+        value: ${{ jobs.detect.outputs.api-contracts-changed }}
+      runner-changed:
+        value: ${{ jobs.detect.outputs.runner-changed }}
+      sandbox-firecracker-changed:
+        value: ${{ jobs.detect.outputs.sandbox-firecracker-changed }}
+      nbd-cow-changed:
+        value: ${{ jobs.detect.outputs.nbd-cow-changed }}
+      guest-control-tests-changed:
+        value: ${{ jobs.detect.outputs.guest-control-tests-changed }}
+      crates-runner-consumer-needed:
+        value: ${{ jobs.detect.outputs.crates-runner-consumer-needed }}
+      metal-job-ref:
+        value: ${{ jobs.detect.outputs.metal-job-ref }}
+      runner-image-job-ref:
+        value: ${{ jobs.detect.outputs.runner-image-job-ref }}
+env:
+  npm_config_audit: "false"
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      any-changed: ${{ steps.detect.outputs.any-changed }}
+      ci-changed: ${{ steps.detect.outputs.ci-changed }}
+      mitm-addon-test-inputs-changed: ${{ steps.detect.outputs.mitm-addon-test-inputs-changed }}
+      mitm-addon-pricing-seed-changed: ${{ steps.detect.outputs.mitm-addon-pricing-seed-changed }}
+      runner-firewall-contract-inputs-changed: ${{ steps.detect.outputs.runner-firewall-contract-inputs-changed }}
+      api-contracts-rust-bindings-changed: ${{ steps.detect.outputs.api-contracts-rust-bindings-changed }}
+      ably-subscriber-changed: ${{ steps.detect.outputs.ably-subscriber-changed }}
+      api-contracts-changed: ${{ steps.detect.outputs.api-contracts-changed }}
+      runner-changed: ${{ steps.detect.outputs.runner-changed }}
+      sandbox-firecracker-changed: ${{ steps.detect.outputs.sandbox-firecracker-changed }}
+      nbd-cow-changed: ${{ steps.detect.outputs.nbd-cow-changed }}
+      guest-control-tests-changed: ${{ steps.detect.outputs.guest-control-tests-changed }}
+      crates-runner-consumer-needed: ${{ steps.runner-tests.outputs.crates-runner-consumer-needed }}
+      metal-job-ref: ${{ steps.runner-job-ref.outputs.job-ref }}
+      runner-image-job-ref: ${{ steps.runner-job-ref.outputs.image-job-ref }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 2
+      - name: Detect changed crates
+        id: detect
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CHECKOUT_REF: ${{ github.ref }}
+          PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: |
+          BASE_REF=$(.github/scripts/changed-base-ref.sh)
+          echo "${{ github.event_name }} mode: comparing against base $BASE_REF"
+          # Check if the workflow file or ansible playbooks changed
+          if git diff --name-only "$BASE_REF" HEAD | grep -qE "^\.github/workflows/(ci|ci-[a-z0-9-]+|crates|runner-image)\.yml$|^\.github/actions/(setup-aws-cli|setup-r2-sccache|setup-ssh-tunnel|provision|report-memory-peak)/|^\.github/scripts/|^ansible/"; then
+            echo "ci-changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ci-changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          # scripts/crate-changed.sh: exit 0=changed, 1=not changed, 2+=error
+          check_crate() {
+            rc=0
+            ./scripts/crate-changed.sh "$1" "$BASE_REF" && rc=0 || rc=$?
+            if [ $rc -eq 0 ]; then
+              echo "$1-changed=true" >> "$GITHUB_OUTPUT"
+            elif [ $rc -eq 1 ]; then
+              echo "$1-changed=false" >> "$GITHUB_OUTPUT"
+            else
+              exit $rc
+            fi
+          }
+          check_crate ably-subscriber
+          check_crate api-contracts
+          check_crate runner
+          check_crate sandbox-firecracker
+          check_crate nbd-cow
+          check_crate guest-control-tests
+          check_crate xtask
+
+          # Aggregate: true if any crate or CI config changed
+          if grep -q "=true" "$GITHUB_OUTPUT"; then
+            echo "any-changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "any-changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          # The api-contracts cross-language bindings are generated from
+          # selected TypeScript contract files. Keep this legacy-named output
+          # separate from any-changed so a TS-only contract edit runs the
+          # drift check without forcing every Rust crate job to run.
+          api_contracts_rust_bindings_changed=false
+          changed_files="$(mktemp)"
+          git diff --name-only "$BASE_REF" HEAD > "$changed_files"
+          while IFS= read -r changed_file; do
+            case "$changed_file" in
+              crates/api-contracts/* | \
+              crates/runner/mitm-addon/src/generated/* | \
+              turbo/packages/api-contracts/package.json | \
+              turbo/packages/api-contracts/tsconfig.json | \
+              turbo/packages/api-contracts/tsconfig.python-bindings.json | \
+              turbo/packages/api-contracts/src/contracts/* | \
+              turbo/packages/api-contracts/src/python-bindings/* | \
+              turbo/packages/api-contracts/src/rust-bindings/* | \
+              turbo/packages/api-contracts/src/swift-bindings/* | \
+              turbo/packages/api-contracts/tsconfig.swift-bindings.json | \
+              desktop/Okou/Core/Generated/* | \
+              turbo/packages/connectors/src/public-destination-policy.ts | \
+              turbo/pnpm-lock.yaml)
+                api_contracts_rust_bindings_changed=true
+                break
+                ;;
+            esac
+          done < "$changed_files"
+          echo "api-contracts-rust-bindings-changed=$api_contracts_rust_bindings_changed" >> "$GITHUB_OUTPUT"
+          rm -f "$changed_files"
+
+          # Shared contract fixtures are stored under turbo but are read by
+          # mitm-addon tests. Keep this separate from any-changed so a turbo-only
+          # contract edit runs mitm-addon-test without forcing every crate job.
+          if git diff --name-only "$BASE_REF" HEAD | grep -Eqx "turbo/packages/(connectors/src/__tests__/(firewall-semantics-contract|firewall-base-url-validation-contract|public-destination-policy-contract)|api-contracts/src/contracts/__tests__/fixtures/x-resource-observations)\\.json"; then
+            echo "mitm-addon-test-inputs-changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "mitm-addon-test-inputs-changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          # The Rust runner independently validates the shared firewall
+          # contracts. Run its focused conformance tests when only a
+          # TypeScript-owned corpus changes, without selecting runner images.
+          if git diff --name-only "$BASE_REF" HEAD | grep -Eqx "turbo/packages/connectors/src/__tests__/(firewall-base-url-validation-contract|firewall-semantics-contract)\.json"; then
+            echo "runner-firewall-contract-inputs-changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "runner-firewall-contract-inputs-changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          # test_x_billing.py checks X connector usage buckets against the
+          # API pricing seed. Keep this separate from any-changed so a
+          # turbo-only pricing edit runs mitm-addon-test without forcing every
+          # crate job to re-run.
+          if git diff --name-only "$BASE_REF" HEAD | grep -qx "turbo/apps/api/src/scripts/dev-seed.ts"; then
+            echo "mitm-addon-pricing-seed-changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "mitm-addon-pricing-seed-changed=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Select runner test consumer
+        id: runner-tests
+        env:
+          CI_CHANGED: ${{ steps.detect.outputs.ci-changed }}
+          RUNNER_CHANGED: ${{ steps.detect.outputs.runner-changed }}
+        run: .github/scripts/runner-image-context.sh crates-consumer
+      - name: Select runner job refs
+        id: runner-job-ref
+        env:
+          METAL_HOSTS: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          MQ_HEAD_REF: ${{ github.event.merge_group.head_ref }}
+          HEAD_SHA: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            # Skip runner deployment if the PR was already merged or closed.
+            # A late pull_request:synchronize run can reach here after
+            # cleanup.yml has already stopped the runner — deploying again
+            # would resurrect a stale service that no cleanup will ever reach.
+            #
+            # Retry transient API failures, then fail loudly if the state
+            # stays unknown. Silently skipping would let the PR merge without
+            # runner coverage; fail-open would risk deploying a zombie runner.
+            # A red check is the right middle ground — re-run the job once
+            # the API recovers.
+            STATE=$(curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              "https://api.github.com/repos/${{ github.repository }}/pulls/${PR_NUMBER}" \
+              | jq -r .state)
+            if [ -z "$STATE" ]; then
+              echo "::error::Failed to query PR #${PR_NUMBER} state from GitHub API after retries"
+              exit 1
+            fi
+            if [ "$STATE" != "open" ]; then
+              echo "::warning::PR #${PR_NUMBER} is ${STATE}, skipping host/job-ref to prevent stale runner deployment"
+              exit 0
+            fi
+            IMAGE_JOB_REF="pr-${PR_NUMBER}"
+            JOB_REF="pr-${PR_NUMBER}-test"
+          elif [ "$EVENT_NAME" = "merge_group" ]; then
+            MQ_PR_NUM=$(echo "$MQ_HEAD_REF" | grep -oE 'pr-[0-9]+' | head -1 | sed 's/pr-//')
+            if [ -n "$MQ_PR_NUM" ]; then
+              IMAGE_JOB_REF="pr-${MQ_PR_NUM}"
+              JOB_REF="pr-${MQ_PR_NUM}-test"
+            else
+              echo "::error::Failed to extract PR number from merge_group head_ref: $MQ_HEAD_REF"
+              exit 1
+            fi
+          else
+            SHORT_SHA=$(printf '%s' "$HEAD_SHA" | cut -c1-12)
+            IMAGE_JOB_REF="staging-${SHORT_SHA}"
+            JOB_REF="staging-test"
+          fi
+
+          HOSTS=$(echo "$METAL_HOSTS" | tr ',' '\n' | grep . || true)
+          NUM_HOSTS=$(echo "$HOSTS" | grep -c . || true)
+          if [ "$NUM_HOSTS" -lt 1 ]; then
+            echo "No metal hosts configured, skipping runner job refs"
+            exit 0
+          fi
+          {
+            echo "job-ref=${JOB_REF}"
+            echo "image-job-ref=${IMAGE_JOB_REF}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Selected runner job refs: job-ref=${JOB_REF}, image-job-ref=${IMAGE_JOB_REF}"
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
