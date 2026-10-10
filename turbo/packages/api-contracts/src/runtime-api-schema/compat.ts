@@ -529,7 +529,7 @@ function buildFinding(
 
 function impactFor(direction: RuntimeApiCompatFinding["direction"]): string {
   if (direction === "request") {
-    return "Existing production runner, guest-agent, or MITM clients may receive HTTP 400 from the new API during an otherwise healthy container run, causing run execution, checkpointing, telemetry, or completion to be marked failed.";
+    return "Existing production runner, guest-agent, or MITM clients may receive HTTP 400 from the new API during an otherwise healthy container run, causing run execution, artifact publication, telemetry, or completion to be marked failed.";
   }
 
   if (direction === "response") {

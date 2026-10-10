@@ -90,7 +90,7 @@ fn capture_at_path(
     let current =
         guest_contracts::runtime_paths::final_session_history_identity_file(current_runtime);
     // Retained metadata is considered only when the current run produced none,
-    // never to mask a malformed/changed current checkpoint.
+    // never to mask a malformed/changed current history identity.
     let current_missing = matches!(
         guest_contracts::runtime_paths::read_private_bounded(
             &current,

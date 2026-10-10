@@ -118,7 +118,7 @@ async fn send_event_masks_lowercase_percent_encoded_secret() {
 async fn send_event_captures_session_metadata_before_masking() {
     let api = SharedApiMock::new().await;
     let server = api.server();
-    let _session_files = SessionCheckpointFilesGuard::new();
+    let _session_files = SessionFinalizationFilesGuard::new();
     let tmp = tempfile::tempdir().unwrap();
     let system_log_path = tmp.path().join("system.log");
     let _system_log_guard = SystemLogOverrideGuard::set(&system_log_path);
@@ -152,7 +152,7 @@ async fn send_event_captures_session_metadata_before_masking() {
     let stored = std::fs::read_to_string(&sid_file).unwrap();
     assert_eq!(
         stored, session_id,
-        "checkpoint metadata should capture the unmasked session id"
+        "finalization metadata should capture the unmasked session id"
     );
     let system_log = std::fs::read_to_string(&system_log_path).unwrap();
     assert!(
@@ -168,7 +168,7 @@ async fn send_event_captures_session_metadata_before_masking() {
 #[tokio::test]
 async fn prepare_event_does_not_capture_session_metadata() {
     let _api = SharedApiMock::new().await;
-    let _session_files = SessionCheckpointFilesGuard::new();
+    let _session_files = SessionFinalizationFilesGuard::new();
 
     let sid_file = session_id_file();
 
@@ -190,10 +190,10 @@ async fn prepare_event_does_not_capture_session_metadata() {
 }
 
 #[tokio::test]
-async fn send_event_preserves_rejected_claude_session_ids_without_checkpoint_metadata() {
+async fn send_event_preserves_rejected_claude_session_ids_without_finalization_metadata() {
     let api = SharedApiMock::new().await;
     let server = api.server();
-    let _session_files = SessionCheckpointFilesGuard::new();
+    let _session_files = SessionFinalizationFilesGuard::new();
 
     let sid_file = session_id_file();
 
@@ -226,7 +226,7 @@ async fn send_event_preserves_rejected_claude_session_ids_without_checkpoint_met
 async fn send_event_keeps_existing_session_id_file() {
     let api = SharedApiMock::new().await;
     let server = api.server();
-    let _session_files = SessionCheckpointFilesGuard::new();
+    let _session_files = SessionFinalizationFilesGuard::new();
 
     let sid_file = session_id_file();
     guest_agent::paths::write_private(&sid_file, "first-session").unwrap();
@@ -251,7 +251,7 @@ async fn send_event_keeps_existing_session_id_file() {
     assert_eq!(
         std::fs::read_to_string(&sid_file).unwrap(),
         "first-session",
-        "later id-bearing events must not replace checkpoint session metadata"
+        "later id-bearing events must not replace finalization session metadata"
     );
     assert_eq!(masker.mask_string("first-session"), "first-session");
     assert_eq!(masker.mask_string("second-session"), "second-session");
@@ -261,7 +261,7 @@ async fn send_event_keeps_existing_session_id_file() {
 async fn send_event_keeps_existing_claude_session_id_for_ordinary_events() {
     let api = SharedApiMock::new().await;
     let server = api.server();
-    let _session_files = SessionCheckpointFilesGuard::new();
+    let _session_files = SessionFinalizationFilesGuard::new();
 
     let sid_file = session_id_file();
     let session_id = "session-repair";
@@ -295,7 +295,7 @@ async fn send_event_keeps_existing_claude_session_id_for_ordinary_events() {
 async fn send_event_extracts_claude_session_id() {
     let api = SharedApiMock::new().await;
     let server = api.server();
-    let _session_files = SessionCheckpointFilesGuard::new();
+    let _session_files = SessionFinalizationFilesGuard::new();
 
     let sid_file = session_id_file();
 
@@ -326,7 +326,7 @@ async fn send_event_extracts_claude_session_id() {
 async fn send_event_rejects_unsafe_claude_session_id() {
     let api = SharedApiMock::new().await;
     let server = api.server();
-    let _session_files = SessionCheckpointFilesGuard::new();
+    let _session_files = SessionFinalizationFilesGuard::new();
 
     let sid_file = session_id_file();
     let invalid_session_ids = ["../escape", "nested/id", "nested\\id", ".", "..", "bad\nid"];
@@ -361,7 +361,7 @@ async fn send_event_rejects_unsafe_claude_session_id() {
 async fn send_event_skips_session_id_for_non_init() {
     let api = SharedApiMock::new().await;
     let server = api.server();
-    let _session_files = SessionCheckpointFilesGuard::new();
+    let _session_files = SessionFinalizationFilesGuard::new();
 
     let sid_file = session_id_file();
 

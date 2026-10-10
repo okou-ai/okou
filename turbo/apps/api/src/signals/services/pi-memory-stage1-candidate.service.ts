@@ -30,7 +30,7 @@ import { piMemoryPhase2InputRevisionSql } from "./pi-memory-phase2-input-revisio
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { z } from "zod";
 
-// Stage 1 admission and maintenance completion retain checkpoint blobs. Lock
+// Stage 1 admission and maintenance completion retain native-history blobs. Lock
 // their existing owner first to avoid a parent/blob cycle with cleanup.
 export async function lockPiMemoryCandidateStorage(
   tx: Tx,

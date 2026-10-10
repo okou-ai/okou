@@ -136,7 +136,7 @@ impl GuestPaths {
 
     /// Return the run-root `checkpoint-error` path.
     ///
-    /// The private text file contains a non-empty checkpoint or guest error
+    /// The private text file contains a non-empty finalization or guest error
     /// message when one is recorded. This accessor returns a borrowed `&str`
     /// and only derives the path; it does not create, validate, or otherwise
     /// access the file. See the canonical [checkpoint-error path helper][checkpoint_error_file]

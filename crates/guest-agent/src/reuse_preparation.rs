@@ -2,7 +2,7 @@
 //!
 //! Idle preparation protects current/retained runtime readers. Terminal cache preparation instead
 //! validates those anchors under the canonical managed runtime parent and removes all its children.
-//! The terminal caller must finish checkpoint, identity, diagnostic and log readers first; it must
+//! The terminal caller must finish finalization, identity, diagnostic and log readers first; it must
 //! terminate the sandbox after cleanup rather than return it to idle or handoff.
 //!
 //! This module is the guest-side safety boundary for idle admission. The runner invokes the helper

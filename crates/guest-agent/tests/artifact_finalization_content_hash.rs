@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-const RUN_ID: &str = "artifact-checkpoint-content-hash";
+const RUN_ID: &str = "artifact-finalization-content-hash";
 const STORAGE_ID: &str = "01234567-89ab-cdef-0123-456789abcdef";
 
 fn sha256_hex(bytes: impl AsRef<[u8]>) -> String {
@@ -20,7 +20,7 @@ fn content_hash_for_single_file(storage_id: &str, path: &str, content: &str) -> 
     sha256_hex(format!("storage:{storage_id}\n{path}:{file_hash}"))
 }
 
-fn checkpoint_request_has_artifact_snapshot(
+fn finalization_request_has_artifact_snapshot(
     req: &HttpMockRequest,
     expected_version: &str,
     expected_mount_path: &str,
@@ -31,7 +31,7 @@ fn checkpoint_request_has_artifact_snapshot(
     };
     let Some(snapshots) = body
         .get("completion")
-        .and_then(|checkpoint| checkpoint.get("artifactSnapshots"))
+        .and_then(|finalization| finalization.get("artifactSnapshots"))
         .and_then(|value| value.as_array())
     else {
         return false;
@@ -141,7 +141,7 @@ fn test_runtime(
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn unchanged_artifact_checkpoint_records_content_hash_timing()
+async fn unchanged_artifact_finalization_records_content_hash_timing()
 -> Result<(), Box<dyn std::error::Error>> {
     let temp_dir = tempfile::tempdir()?;
     let mount_path = temp_dir.path().join("workspace");
@@ -205,7 +205,7 @@ async fn unchanged_artifact_checkpoint_records_content_hash_timing()
         when.method(POST)
             .path("/api/webhooks/agent/complete")
             .is_true(move |req| {
-                checkpoint_request_has_artifact_snapshot(
+                finalization_request_has_artifact_snapshot(
                     req,
                     &expected_version,
                     &expected_mount_path,
@@ -217,10 +217,10 @@ async fn unchanged_artifact_checkpoint_records_content_hash_timing()
             .json_body(json!({"success": true, "status": "completed"}));
     });
 
-    let checkpoint =
+    let finalization =
         guest_agent::finalization::prepare_finalization_for_runtime(&runtime, &session_metadata)
             .await?;
-    guest_agent::complete::report_finalization_for_run(&runtime, 0, None, None, None, checkpoint)
+    guest_agent::complete::report_finalization_for_run(&runtime, 0, None, None, None, finalization)
         .await?;
 
     history_prepare.assert_calls_async(1).await;

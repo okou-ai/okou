@@ -4,11 +4,11 @@ use serde_json::json;
 use std::io::{Seek, SeekFrom, Write};
 
 pub(super) const LARGE_SESSION_HISTORY_SIZE_BYTES: usize = 1024 * 1024 + 1;
-pub(super) const CHECKPOINT_TEST_CANDIDATE_MAX_BYTES: u64 =
+pub(super) const FINALIZATION_TEST_CANDIDATE_MAX_BYTES: u64 =
     api_contracts::generated::constants::runners::SESSION_HISTORY_GZIP_MIN_BYTES;
-pub(super) const CHECKPOINT_TEST_MAX_BYTES: u64 = CHECKPOINT_TEST_CANDIDATE_MAX_BYTES * 2;
+pub(super) const FINALIZATION_TEST_MAX_BYTES: u64 = FINALIZATION_TEST_CANDIDATE_MAX_BYTES * 2;
 
-pub(super) fn checkpoint_runtime() -> Result<guest_agent::run_context::GuestRuntime, String> {
+pub(super) fn finalization_runtime() -> Result<guest_agent::run_context::GuestRuntime, String> {
     Ok(guest_agent::run_context::GuestRuntime {
         config: shared_guest_config()?,
         paths: shared_guest_paths(),
@@ -20,11 +20,11 @@ pub(super) fn checkpoint_runtime() -> Result<guest_agent::run_context::GuestRunt
 
 // The shared API fixture owns both these files and the producer lock. Clear
 // the process-global sink before that fixture cleans its files or unlocks.
-pub(super) struct CheckpointTelemetryGuard<'a> {
+pub(super) struct FinalizationTelemetryGuard<'a> {
     _api: &'a SharedApiMock,
 }
 
-impl<'a> CheckpointTelemetryGuard<'a> {
+impl<'a> FinalizationTelemetryGuard<'a> {
     pub(super) fn new(api: &'a SharedApiMock) -> Self {
         guest_telemetry::telemetry::set_sandbox_ops_log_file(
             shared_guest_paths().sandbox_ops_file(),
@@ -33,13 +33,13 @@ impl<'a> CheckpointTelemetryGuard<'a> {
     }
 }
 
-impl Drop for CheckpointTelemetryGuard<'_> {
+impl Drop for FinalizationTelemetryGuard<'_> {
     fn drop(&mut self) {
         guest_telemetry::telemetry::clear_sandbox_ops_log_file();
     }
 }
 
-pub(super) fn checkpoint_child_command(
+pub(super) fn finalization_child_command(
     test_name: &str,
 ) -> std::io::Result<tokio::process::Command> {
     let mut command = tokio::process::Command::new(std::env::current_exe()?);
@@ -52,19 +52,19 @@ pub(super) fn checkpoint_child_command(
     Ok(command)
 }
 
-pub(super) async fn run_checkpoint_child(
+pub(super) async fn run_finalization_child(
     command: &mut tokio::process::Command,
 ) -> std::io::Result<()> {
     let output = crate::common::command_output_with_timeout(
         command,
         std::time::Duration::from_secs(30),
-        "checkpoint child did not finish",
+        "finalization child did not finish",
     )
     .await?;
     let stdout = String::from_utf8_lossy(&output.stdout);
     if !output.status.success() || !stdout.contains("test result: ok. 1 passed;") {
         return Err(std::io::Error::other(format!(
-            "checkpoint child failed or did not execute exactly one test ({})\nstdout:\n{stdout}\nstderr:\n{}",
+            "finalization child failed or did not execute exactly one test ({})\nstdout:\n{stdout}\nstderr:\n{}",
             output.status,
             String::from_utf8_lossy(&output.stderr),
         )));
@@ -72,48 +72,53 @@ pub(super) async fn run_checkpoint_child(
     Ok(())
 }
 
-pub(super) async fn create_bounded_checkpoint(
+pub(super) async fn create_bounded_finalization(
     runtime: &guest_agent::run_context::GuestRuntime,
 ) -> Result<(), guest_agent::error::AgentError> {
-    let session_metadata = checkpoint_session_metadata(runtime);
-    let checkpoint =
+    let session_metadata = finalization_session_metadata(runtime);
+    let finalization =
         guest_agent::finalization::prepare_finalization_for_runtime_with_history_limits_for_test(
             runtime,
             &session_metadata,
-            CHECKPOINT_TEST_CANDIDATE_MAX_BYTES,
-            CHECKPOINT_TEST_MAX_BYTES,
+            FINALIZATION_TEST_CANDIDATE_MAX_BYTES,
+            FINALIZATION_TEST_MAX_BYTES,
         )
         .await?;
-    report_prepared_checkpoint(runtime, 0, checkpoint).await
+    report_prepared_finalization(runtime, 0, finalization).await
 }
 
-pub(super) async fn create_bounded_recovery_checkpoint(
+pub(super) async fn create_bounded_recovery_finalization(
     runtime: &guest_agent::run_context::GuestRuntime,
 ) -> Result<(), guest_agent::error::AgentError> {
-    let session_metadata = checkpoint_session_metadata(runtime);
-    let checkpoint =
+    let session_metadata = finalization_session_metadata(runtime);
+    let finalization =
         guest_agent::finalization::prepare_recovery_finalization_for_runtime_with_history_limits_for_test(
             runtime,
             &session_metadata,
-            CHECKPOINT_TEST_CANDIDATE_MAX_BYTES,
-            CHECKPOINT_TEST_MAX_BYTES,
+            FINALIZATION_TEST_CANDIDATE_MAX_BYTES,
+            FINALIZATION_TEST_MAX_BYTES,
         )
         .await?;
-    report_prepared_checkpoint(runtime, 1, checkpoint).await
+    report_prepared_finalization(runtime, 1, finalization).await
 }
 
-pub(super) async fn report_prepared_checkpoint(
+pub(super) async fn report_prepared_finalization(
     runtime: &guest_agent::run_context::GuestRuntime,
     exit_code: i32,
-    checkpoint: guest_agent::finalization::PreparedFinalization,
+    finalization: guest_agent::finalization::PreparedFinalization,
 ) -> Result<(), guest_agent::error::AgentError> {
     guest_agent::complete::report_finalization_for_run(
-        runtime, exit_code, None, None, None, checkpoint,
+        runtime,
+        exit_code,
+        None,
+        None,
+        None,
+        finalization,
     )
     .await
 }
 
-pub(super) fn checkpoint_session_metadata(
+pub(super) fn finalization_session_metadata(
     runtime: &guest_agent::run_context::GuestRuntime,
 ) -> guest_agent::session_metadata::CapturedSessionMetadata {
     let session_id = std::fs::read_to_string(runtime.paths.session_id_file())
@@ -228,7 +233,7 @@ pub(super) fn write_prunable_claude_history(
     let mut history_file =
         std::fs::File::create(&history_path).map_err(|error| format!("create history: {error}"))?;
     history_file
-        .set_len(CHECKPOINT_TEST_CANDIDATE_MAX_BYTES + 1)
+        .set_len(FINALIZATION_TEST_CANDIDATE_MAX_BYTES + 1)
         .map_err(|error| format!("size history: {error}"))?;
     history_file
         .seek(SeekFrom::End(0))
@@ -384,7 +389,7 @@ pub(super) fn write_prunable_codex_history(
         .write_all(&canonical)
         .map_err(|error| format!("write canonical Codex history: {error}"))?;
     history_file
-        .set_len(CHECKPOINT_TEST_MAX_BYTES + 1)
+        .set_len(FINALIZATION_TEST_MAX_BYTES + 1)
         .map_err(|error| format!("size Codex history: {error}"))?;
     history_file
         .seek(SeekFrom::End(0))

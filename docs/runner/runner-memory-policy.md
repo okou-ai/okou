@@ -55,7 +55,7 @@ old policy and do not adopt another artifact's sandbox. See
 [deployment compatibility](../deployment-compatibility.md#drain-and-rollback-gates).
 
 Resource-policy validation must include real native progress and compiler outcomes,
-control delivery/high output, checkpoint/finalization, cancellation, cleanup and
+control delivery/high output, finalization, cancellation, cleanup and
 reuse under pressure, including the minimum supported profile. Static hierarchy
 checks alone do not demonstrate adequate working-set protection. This policy does
 not establish the cause of independent upstream TLS failures.

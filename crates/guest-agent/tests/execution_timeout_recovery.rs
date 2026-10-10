@@ -1,5 +1,5 @@
 //! The guest-agent entry point must turn the runner-owned execution deadline
-//! into a recovery checkpoint before exiting with the shared timeout code.
+//! into a recovery finalization before exiting with the shared timeout code.
 
 mod common;
 
@@ -15,7 +15,7 @@ const RUN_ID: &str = "execution-timeout-recovery";
 const THREAD_ID: &str = "019fac13-2355-74d3-8414-b467fbb80c60";
 
 #[tokio::test]
-async fn execution_timeout_checkpoints_the_resumable_session_before_exit()
+async fn execution_timeout_preserves_the_resumable_session_before_exit()
 -> Result<(), Box<dyn std::error::Error>> {
     common::ensure_canonical_workspace_for_test()?;
     let server = MockServer::start();

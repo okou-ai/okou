@@ -193,7 +193,7 @@ pub mod runners {
         pub const CANONICAL_GUEST_HOME_DIR: &str = "/home/user";
 
         /// Official Pi JSONL session directory for the canonical guest workspace.
-        /// Guest checkpointing validates Pi session files under this directory and runner restore materializes resume history here.
+        /// Guest finalization validates Pi session files under this directory and runner restore materializes resume history here.
         pub const CANONICAL_PI_SESSION_DIR: &str =
             "/home/user/.pi/agent/sessions/--home-user-workspace--";
 
@@ -206,10 +206,10 @@ pub mod runners {
 /// Storage manifest contract constants shared by TypeScript and Rust.
 pub mod storages {
     /// Maximum file entries accepted in a storage manifest.
-    /// Guest artifact checkpointing and TypeScript storage webhook validation use this shared limit.
+    /// Guest artifact publication and TypeScript storage webhook validation use this shared limit.
     pub const STORAGE_MANIFEST_MAX_FILES: u64 = 50000;
 
     /// Maximum cumulative UTF-8 path bytes accepted in a storage manifest.
-    /// Guest artifact checkpointing and TypeScript storage webhook validation use this shared limit.
+    /// Guest artifact publication and TypeScript storage webhook validation use this shared limit.
     pub const STORAGE_MANIFEST_MAX_PATH_BYTES: u64 = 8388608;
 }

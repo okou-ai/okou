@@ -2,7 +2,7 @@
 //!
 //! An incoming hash-backed resume request produces a requested
 //! [`RestoredSessionIdentity`] without verifier provenance. Final metadata read
-//! after a successful checkpoint produces a retained identity with the history
+//! after successful Run finalization produces a retained identity with the history
 //! size and paths needed to verify the parked sandbox's current history.
 //!
 //! The comparison layers intentionally answer different questions. Structural
@@ -168,7 +168,7 @@ impl RestoredSessionIdentity {
         }
     }
 
-    /// Builds a retained identity from validated final checkpoint metadata.
+    /// Builds a retained identity from validated final session-history metadata.
     ///
     /// Returns `None` when the metadata is invalid or the supplied metadata
     /// path and runtime directory cannot form a usable verification

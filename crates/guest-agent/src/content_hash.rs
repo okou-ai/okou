@@ -3,7 +3,7 @@
 //!
 //! `version_id` in VAS *is* this hash — the TS function is the sole producer
 //! across every prepare/commit route. Guest-side we recompute it locally so
-//! the checkpoint step can skip the prepare+commit round-trips when the
+//! the finalization step can skip the prepare+commit round-trips when the
 //! artifact is unchanged since mount (see issue #10967).
 //!
 //! The two implementations must stay byte-identical. The inline `#[cfg(test)]`

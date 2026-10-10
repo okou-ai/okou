@@ -20,7 +20,11 @@ fn write_oversized_pi_history(
     session_id: &str,
     with_compact: bool,
 ) -> std::io::Result<(PiHistoryFileGuard, Vec<u8>)> {
-    write_pi_history(session_id, with_compact, CHECKPOINT_TEST_MAX_BYTES as usize)
+    write_pi_history(
+        session_id,
+        with_compact,
+        FINALIZATION_TEST_MAX_BYTES as usize,
+    )
 }
 
 fn write_pi_history(
@@ -60,12 +64,12 @@ fn assert_session_history_prune_operation(
     expected_success: bool,
 ) -> Result<(), String> {
     let content = std::fs::read_to_string(runtime.paths.sandbox_ops_file())
-        .map_err(|error| format!("read checkpoint telemetry: {error}"))?;
+        .map_err(|error| format!("read finalization telemetry: {error}"))?;
     let operations = content
         .lines()
         .map(serde_json::from_str::<Value>)
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| format!("parse checkpoint telemetry: {error}"))?
+        .map_err(|error| format!("parse finalization telemetry: {error}"))?
         .into_iter()
         .filter(|operation| operation["action_type"] == "session_history_prune")
         .collect::<Vec<_>>();
@@ -90,22 +94,22 @@ fn assert_session_history_prune_operation(
 }
 
 #[tokio::test]
-async fn pi_checkpoint_commits_bounded_native_generation_after_ack() {
+async fn pi_finalization_commits_bounded_native_generation_after_ack() {
     let api = SharedApiMock::new().await;
-    let _telemetry_guard = CheckpointTelemetryGuard::new(&api);
+    let _telemetry_guard = FinalizationTelemetryGuard::new(&api);
     let server = api.server();
-    let mut runtime = checkpoint_runtime().unwrap();
+    let mut runtime = finalization_runtime().unwrap();
     runtime.config.framework = guest_agent::env::Framework::Pi;
-    let _files_guard = SessionCheckpointFilesGuard::new();
+    let _files_guard = SessionFinalizationFilesGuard::new();
     let session_id = uuid::Uuid::new_v4().to_string();
     guest_agent::paths::write_private(session_id_file(), &session_id).unwrap();
     let (history_file, original) = write_oversized_pi_history(&session_id, true).unwrap();
-    assert!(original.len() as u64 > CHECKPOINT_TEST_MAX_BYTES);
+    assert!(original.len() as u64 > FINALIZATION_TEST_MAX_BYTES);
     let candidate =
         session_history_selector::select_pi_compact_generation_with_candidate_limit_for_test(
             &mut std::fs::File::open(&history_file.0).unwrap(),
             &session_id,
-            CHECKPOINT_TEST_CANDIDATE_MAX_BYTES,
+            FINALIZATION_TEST_CANDIDATE_MAX_BYTES,
         )
         .unwrap();
     let session_history_selector::PiHistorySelection::Candidate(candidate) = candidate else {
@@ -132,7 +136,7 @@ async fn pi_checkpoint_commits_bounded_native_generation_after_ack() {
             .header("Content-Type", "application/json")
             .json_body(json!({"success":true,"status":"completed"}));
     });
-    create_bounded_checkpoint(&runtime).await.unwrap();
+    create_bounded_finalization(&runtime).await.unwrap();
     prepare.assert_calls_async(1).await;
     complete.assert_calls_async(1).await;
     assert_eq!(std::fs::read(&history_file.0).unwrap(), expected);
@@ -140,28 +144,28 @@ async fn pi_checkpoint_commits_bounded_native_generation_after_ack() {
 }
 
 #[tokio::test]
-async fn pi_checkpoint_compacts_history_below_upload_cap_after_ack() {
+async fn pi_finalization_compacts_history_below_upload_cap_after_ack() {
     let api = SharedApiMock::new().await;
-    let _telemetry_guard = CheckpointTelemetryGuard::new(&api);
+    let _telemetry_guard = FinalizationTelemetryGuard::new(&api);
     let server = api.server();
-    let mut runtime = checkpoint_runtime().unwrap();
+    let mut runtime = finalization_runtime().unwrap();
     runtime.config.framework = guest_agent::env::Framework::Pi;
-    let _files_guard = SessionCheckpointFilesGuard::new();
+    let _files_guard = SessionFinalizationFilesGuard::new();
     let session_id = uuid::Uuid::new_v4().to_string();
     guest_agent::paths::write_private(session_id_file(), &session_id).unwrap();
     let (history_file, original) = write_pi_history(
         &session_id,
         true,
-        CHECKPOINT_TEST_CANDIDATE_MAX_BYTES as usize + 1024,
+        FINALIZATION_TEST_CANDIDATE_MAX_BYTES as usize + 1024,
     )
     .unwrap();
-    assert!(original.len() as u64 > CHECKPOINT_TEST_CANDIDATE_MAX_BYTES);
-    assert!(original.len() as u64 <= CHECKPOINT_TEST_MAX_BYTES);
+    assert!(original.len() as u64 > FINALIZATION_TEST_CANDIDATE_MAX_BYTES);
+    assert!(original.len() as u64 <= FINALIZATION_TEST_MAX_BYTES);
     let selection =
         session_history_selector::select_pi_compact_generation_with_candidate_limit_for_test(
             &mut std::fs::File::open(&history_file.0).unwrap(),
             &session_id,
-            CHECKPOINT_TEST_CANDIDATE_MAX_BYTES,
+            FINALIZATION_TEST_CANDIDATE_MAX_BYTES,
         )
         .unwrap();
     let session_history_selector::PiHistorySelection::Candidate(candidate) = selection else {
@@ -187,7 +191,7 @@ async fn pi_checkpoint_compacts_history_below_upload_cap_after_ack() {
             .header("Content-Type", "application/json")
             .json_body(json!({"success":true,"status":"completed"}));
     });
-    create_bounded_checkpoint(&runtime).await.unwrap();
+    create_bounded_finalization(&runtime).await.unwrap();
     prepare.assert_calls_async(1).await;
     complete.assert_calls_async(1).await;
     assert_eq!(std::fs::read(&history_file.0).unwrap(), expected);
@@ -195,23 +199,23 @@ async fn pi_checkpoint_compacts_history_below_upload_cap_after_ack() {
 }
 
 #[tokio::test]
-async fn pi_checkpoint_uploads_original_without_compact_below_upload_cap() {
+async fn pi_finalization_uploads_original_without_compact_below_upload_cap() {
     let api = SharedApiMock::new().await;
-    let _telemetry_guard = CheckpointTelemetryGuard::new(&api);
+    let _telemetry_guard = FinalizationTelemetryGuard::new(&api);
     let server = api.server();
-    let mut runtime = checkpoint_runtime().unwrap();
+    let mut runtime = finalization_runtime().unwrap();
     runtime.config.framework = guest_agent::env::Framework::Pi;
-    let _files_guard = SessionCheckpointFilesGuard::new();
+    let _files_guard = SessionFinalizationFilesGuard::new();
     let session_id = uuid::Uuid::new_v4().to_string();
     guest_agent::paths::write_private(session_id_file(), &session_id).unwrap();
     let (history_file, original) = write_pi_history(
         &session_id,
         false,
-        CHECKPOINT_TEST_CANDIDATE_MAX_BYTES as usize + 1024,
+        FINALIZATION_TEST_CANDIDATE_MAX_BYTES as usize + 1024,
     )
     .unwrap();
-    assert!(original.len() as u64 > CHECKPOINT_TEST_CANDIDATE_MAX_BYTES);
-    assert!(original.len() as u64 <= CHECKPOINT_TEST_MAX_BYTES);
+    assert!(original.len() as u64 > FINALIZATION_TEST_CANDIDATE_MAX_BYTES);
+    assert!(original.len() as u64 <= FINALIZATION_TEST_MAX_BYTES);
     let hash = hex::encode(Sha256::digest(&original));
     let prepare = server.mock(|when, then| {
         when.method(POST)
@@ -234,7 +238,7 @@ async fn pi_checkpoint_uploads_original_without_compact_below_upload_cap() {
             .header("Content-Type", "application/json")
             .json_body(json!({"success":true,"status":"completed"}));
     });
-    create_bounded_checkpoint(&runtime).await.unwrap();
+    create_bounded_finalization(&runtime).await.unwrap();
     prepare.assert_calls_async(1).await;
     complete.assert_calls_async(1).await;
     assert_eq!(std::fs::read(&history_file.0).unwrap(), original);
@@ -248,13 +252,13 @@ async fn pi_checkpoint_uploads_original_without_compact_below_upload_cap() {
 }
 
 #[tokio::test]
-async fn pi_checkpoint_leaves_under_compact_trigger_native_history_unchanged() {
+async fn pi_finalization_leaves_under_compact_trigger_native_history_unchanged() {
     let api = SharedApiMock::new().await;
-    let _telemetry_guard = CheckpointTelemetryGuard::new(&api);
+    let _telemetry_guard = FinalizationTelemetryGuard::new(&api);
     let server = api.server();
-    let mut runtime = checkpoint_runtime().unwrap();
+    let mut runtime = finalization_runtime().unwrap();
     runtime.config.framework = guest_agent::env::Framework::Pi;
-    let _files_guard = SessionCheckpointFilesGuard::new();
+    let _files_guard = SessionFinalizationFilesGuard::new();
     let session_id = uuid::Uuid::new_v4().to_string();
     guest_agent::paths::write_private(session_id_file(), &session_id).unwrap();
     let (history_file, _) = write_oversized_pi_history(&session_id, true).unwrap();
@@ -262,14 +266,14 @@ async fn pi_checkpoint_leaves_under_compact_trigger_native_history_unchanged() {
         session_history_selector::select_pi_compact_generation_with_candidate_limit_for_test(
             &mut std::fs::File::open(&history_file.0).unwrap(),
             &session_id,
-            CHECKPOINT_TEST_CANDIDATE_MAX_BYTES,
+            FINALIZATION_TEST_CANDIDATE_MAX_BYTES,
         )
         .unwrap();
     let session_history_selector::PiHistorySelection::Candidate(selected) = selected else {
         panic!("expected short native fixture");
     };
     let original = selected.as_bytes().to_vec();
-    assert!(original.len() as u64 <= CHECKPOINT_TEST_CANDIDATE_MAX_BYTES);
+    assert!(original.len() as u64 <= FINALIZATION_TEST_CANDIDATE_MAX_BYTES);
     std::fs::write(&history_file.0, &original).unwrap();
     let hash = hex::encode(Sha256::digest(&original));
     let prepare = server.mock(|when, then| {
@@ -290,20 +294,20 @@ async fn pi_checkpoint_leaves_under_compact_trigger_native_history_unchanged() {
             .header("Content-Type", "application/json")
             .json_body(json!({"success":true,"status":"completed"}));
     });
-    create_bounded_checkpoint(&runtime).await.unwrap();
+    create_bounded_finalization(&runtime).await.unwrap();
     prepare.assert_calls_async(1).await;
     complete.assert_calls_async(1).await;
     assert_eq!(std::fs::read(&history_file.0).unwrap(), original);
 }
 
 #[tokio::test]
-async fn pi_checkpoint_preserves_live_history_if_server_rejects_candidate() {
+async fn pi_finalization_preserves_live_history_if_server_rejects_candidate() {
     let api = SharedApiMock::new().await;
-    let _telemetry_guard = CheckpointTelemetryGuard::new(&api);
+    let _telemetry_guard = FinalizationTelemetryGuard::new(&api);
     let server = api.server();
-    let mut runtime = checkpoint_runtime().unwrap();
+    let mut runtime = finalization_runtime().unwrap();
     runtime.config.framework = guest_agent::env::Framework::Pi;
-    let _files_guard = SessionCheckpointFilesGuard::new();
+    let _files_guard = SessionFinalizationFilesGuard::new();
     let session_id = uuid::Uuid::new_v4().to_string();
     guest_agent::paths::write_private(session_id_file(), &session_id).unwrap();
     let (history_file, original) = write_oversized_pi_history(&session_id, true).unwrap();
@@ -318,22 +322,22 @@ async fn pi_checkpoint_preserves_live_history_if_server_rejects_candidate() {
         when.method(POST).path("/api/webhooks/agent/complete");
         then.status(400)
             .header("Content-Type", "application/json")
-            .json_body(json!({"error":"checkpoint rejected"}));
+            .json_body(json!({"error":"finalization rejected"}));
     });
-    assert!(create_bounded_checkpoint(&runtime).await.is_err());
+    assert!(create_bounded_finalization(&runtime).await.is_err());
     prepare.assert_calls_async(1).await;
     complete.assert_calls_async(1).await;
     assert_eq!(std::fs::read(&history_file.0).unwrap(), original);
 }
 
 #[tokio::test]
-async fn pi_checkpoint_rejects_oversized_history_without_compact_before_completion() {
+async fn pi_finalization_rejects_oversized_history_without_compact_before_completion() {
     let api = SharedApiMock::new().await;
-    let _telemetry_guard = CheckpointTelemetryGuard::new(&api);
+    let _telemetry_guard = FinalizationTelemetryGuard::new(&api);
     let server = api.server();
-    let mut runtime = checkpoint_runtime().unwrap();
+    let mut runtime = finalization_runtime().unwrap();
     runtime.config.framework = guest_agent::env::Framework::Pi;
-    let _files_guard = SessionCheckpointFilesGuard::new();
+    let _files_guard = SessionFinalizationFilesGuard::new();
     let session_id = uuid::Uuid::new_v4().to_string();
     guest_agent::paths::write_private(session_id_file(), &session_id).unwrap();
     let (_history_file, original) = write_oversized_pi_history(&session_id, false).unwrap();
@@ -341,7 +345,7 @@ async fn pi_checkpoint_rejects_oversized_history_without_compact_before_completi
         when.method(POST).path("/api/webhooks/agent/complete");
         then.status(200);
     });
-    let result = create_bounded_checkpoint(&runtime).await;
+    let result = create_bounded_finalization(&runtime).await;
     let error = result.expect_err("over-limit Pi history without compact must fail locally");
     assert!(
         error
@@ -356,23 +360,23 @@ async fn pi_checkpoint_rejects_oversized_history_without_compact_before_completi
         true,
     )
     .unwrap();
-    assert!(original.len() as u64 > CHECKPOINT_TEST_MAX_BYTES);
+    assert!(original.len() as u64 > FINALIZATION_TEST_MAX_BYTES);
 }
 
 #[tokio::test]
-async fn pi_checkpoint_reports_full_combined_completion_payload() {
+async fn pi_finalization_reports_full_combined_completion_payload() {
     let api = SharedApiMock::new().await;
     let server = api.server();
 
-    let mut runtime = checkpoint_runtime().unwrap();
+    let mut runtime = finalization_runtime().unwrap();
     runtime.config.framework = guest_agent::env::Framework::Pi;
     runtime.config.workspace_reuse_result = "sandboxReused".to_string();
-    let _files_guard = SessionCheckpointFilesGuard::new();
+    let _files_guard = SessionFinalizationFilesGuard::new();
     let session_id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
     guest_agent::paths::write_private(session_id_file(), session_id).unwrap();
 
-    let standalone_checkpoint = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/checkpoints");
+    let standalone_finalization = server.mock(|when, then| {
+        when.method(POST).path("/api/webhooks/agent/finalizations");
         then.status(200);
     });
     let complete = server.mock(|when, then| {
@@ -401,7 +405,7 @@ async fn pi_checkpoint_reports_full_combined_completion_payload() {
 
     let session_metadata =
         guest_agent::session_metadata::CapturedSessionMetadata::for_test(session_id, None);
-    let checkpoint =
+    let finalization =
         guest_agent::finalization::prepare_finalization_for_runtime(&runtime, &session_metadata)
             .await
             .unwrap();
@@ -411,24 +415,24 @@ async fn pi_checkpoint_reports_full_combined_completion_payload() {
         None,
         None,
         Some(42),
-        checkpoint,
+        finalization,
     )
     .await
     .unwrap();
 
-    standalone_checkpoint.assert_calls_async(0).await;
+    standalone_finalization.assert_calls_async(0).await;
     complete.assert_calls_async(1).await;
 }
 
 #[tokio::test]
-async fn success_checkpoint_preserves_small_codex_history() {
+async fn success_finalization_preserves_small_codex_history() {
     let api = SharedApiMock::new().await;
-    let _telemetry_guard = CheckpointTelemetryGuard::new(&api);
+    let _telemetry_guard = FinalizationTelemetryGuard::new(&api);
     let server = api.server();
 
-    let mut runtime = checkpoint_runtime().unwrap();
+    let mut runtime = finalization_runtime().unwrap();
     runtime.config.framework = guest_agent::env::Framework::Codex;
-    let _files_guard = SessionCheckpointFilesGuard::new();
+    let _files_guard = SessionFinalizationFilesGuard::new();
     let session_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     let (history_dir, history_path, history) = write_prunable_codex_history(session_id).unwrap();
     std::fs::write(&history_path, &history).unwrap();
@@ -457,13 +461,13 @@ async fn success_checkpoint_preserves_small_codex_history() {
             .json_body(json!({"success": true, "status": "completed"}));
     });
 
-    let checkpoint = guest_agent::finalization::prepare_finalization_for_runtime(
+    let finalization = guest_agent::finalization::prepare_finalization_for_runtime(
         &runtime,
-        &checkpoint_session_metadata(&runtime),
+        &finalization_session_metadata(&runtime),
     )
     .await
     .unwrap();
-    report_prepared_checkpoint(&runtime, 0, checkpoint)
+    report_prepared_finalization(&runtime, 0, finalization)
         .await
         .unwrap();
 
@@ -480,13 +484,13 @@ async fn success_checkpoint_preserves_small_codex_history() {
 }
 
 #[tokio::test]
-async fn checkpoint_rejects_mistyped_prepare_response_before_upload() {
+async fn finalization_rejects_mistyped_prepare_response_before_upload() {
     let api = SharedApiMock::new().await;
     let server = api.server();
 
-    let mut runtime = checkpoint_runtime().unwrap();
+    let mut runtime = finalization_runtime().unwrap();
     runtime.config.framework = guest_agent::env::Framework::Codex;
-    let _files_guard = SessionCheckpointFilesGuard::new();
+    let _files_guard = SessionFinalizationFilesGuard::new();
     let session_id = "abababab-abab-4bab-8bab-abababababab";
     let (history_dir, history_path, history) = write_prunable_codex_history(session_id).unwrap();
     std::fs::write(&history_path, &history).unwrap();
@@ -517,11 +521,11 @@ async fn checkpoint_rejects_mistyped_prepare_response_before_upload() {
 
     let error = guest_agent::finalization::prepare_finalization_for_runtime(
         &runtime,
-        &checkpoint_session_metadata(&runtime),
+        &finalization_session_metadata(&runtime),
     )
     .await
     .err()
-    .expect("mistyped prepare response should fail checkpoint preparation");
+    .expect("mistyped prepare response should fail finalization preparation");
 
     let message = error.to_string();
     assert!(message.contains("Invalid prepare-history response"));
@@ -532,13 +536,13 @@ async fn checkpoint_rejects_mistyped_prepare_response_before_upload() {
 }
 
 #[tokio::test]
-async fn checkpoint_rejects_prepare_response_without_upload_url() {
+async fn finalization_rejects_prepare_response_without_upload_url() {
     let api = SharedApiMock::new().await;
     let server = api.server();
 
-    let mut runtime = checkpoint_runtime().unwrap();
+    let mut runtime = finalization_runtime().unwrap();
     runtime.config.framework = guest_agent::env::Framework::Codex;
-    let _files_guard = SessionCheckpointFilesGuard::new();
+    let _files_guard = SessionFinalizationFilesGuard::new();
     let session_id = "adadadad-adad-4dad-8dad-adadadadadad";
     let (history_dir, history_path, history) = write_prunable_codex_history(session_id).unwrap();
     std::fs::write(&history_path, &history).unwrap();
@@ -566,11 +570,11 @@ async fn checkpoint_rejects_prepare_response_without_upload_url() {
 
     let error = guest_agent::finalization::prepare_finalization_for_runtime(
         &runtime,
-        &checkpoint_session_metadata(&runtime),
+        &finalization_session_metadata(&runtime),
     )
     .await
     .err()
-    .expect("missing upload URL should fail checkpoint preparation");
+    .expect("missing upload URL should fail finalization preparation");
 
     assert!(
         error
@@ -583,13 +587,13 @@ async fn checkpoint_rejects_prepare_response_without_upload_url() {
 }
 
 #[tokio::test]
-async fn pi_checkpoint_commits_history_after_second_upload_retry() {
+async fn pi_finalization_commits_history_after_second_upload_retry() {
     let api = SharedApiMock::new().await;
     let server = api.server();
-    let mut runtime = checkpoint_runtime().unwrap();
+    let mut runtime = finalization_runtime().unwrap();
     runtime.config.framework = guest_agent::env::Framework::Pi;
     let _system_log_guard = SystemLogOverrideGuard::set(runtime.paths.system_log_file());
-    let _files_guard = SessionCheckpointFilesGuard::new();
+    let _files_guard = SessionFinalizationFilesGuard::new();
     let session_id = uuid::Uuid::new_v4().to_string();
     guest_agent::paths::write_private(session_id_file(), &session_id).unwrap();
     let (history_file, history) = write_pi_history(&session_id, false, 0).unwrap();
@@ -637,7 +641,7 @@ async fn pi_checkpoint_commits_history_after_second_upload_retry() {
             .json_body(json!({"success":true,"status":"completed"}));
     });
 
-    create_bounded_checkpoint(&runtime).await.unwrap();
+    create_bounded_finalization(&runtime).await.unwrap();
 
     prepare.assert_calls_async(1).await;
     upload.assert_calls_async(3).await;
@@ -661,13 +665,13 @@ async fn pi_checkpoint_commits_history_after_second_upload_retry() {
 }
 
 #[tokio::test]
-async fn pi_checkpoint_recovers_after_history_upload_transport_errors() {
+async fn pi_finalization_recovers_after_history_upload_transport_errors() {
     let api = SharedApiMock::new().await;
     let server = api.server();
-    let mut runtime = checkpoint_runtime().unwrap();
+    let mut runtime = finalization_runtime().unwrap();
     runtime.config.framework = guest_agent::env::Framework::Pi;
     let _system_log_guard = SystemLogOverrideGuard::set(runtime.paths.system_log_file());
-    let _files_guard = SessionCheckpointFilesGuard::new();
+    let _files_guard = SessionFinalizationFilesGuard::new();
     let session_id = uuid::Uuid::new_v4().to_string();
     guest_agent::paths::write_private(session_id_file(), &session_id).unwrap();
     let (history_file, history) = write_pi_history(&session_id, false, 0).unwrap();
@@ -695,7 +699,7 @@ async fn pi_checkpoint_recovers_after_history_upload_transport_errors() {
             .json_body(json!({"success":true,"status":"completed"}));
     });
 
-    let (checkpoint, ()) = tokio::time::timeout(MOCK_CALL_TIMEOUT, async {
+    let (finalization, ()) = tokio::time::timeout(MOCK_CALL_TIMEOUT, async {
         let accept_uploads = async {
             for _ in 0..2 {
                 // Close the connection without returning an HTTP response.
@@ -708,11 +712,11 @@ async fn pi_checkpoint_recovers_after_history_upload_transport_errors() {
                 .respond(200)
                 .unwrap();
         };
-        tokio::join!(create_bounded_checkpoint(&runtime), accept_uploads)
+        tokio::join!(create_bounded_finalization(&runtime), accept_uploads)
     })
     .await
     .unwrap();
-    checkpoint.unwrap();
+    finalization.unwrap();
 
     prepare.assert_calls_async(1).await;
     complete.assert_calls_async(1).await;
@@ -747,13 +751,13 @@ async fn pi_checkpoint_recovers_after_history_upload_transport_errors() {
 }
 
 #[tokio::test]
-async fn pi_checkpoint_rejects_missing_history_after_upload_retries_exhausted() {
+async fn pi_finalization_rejects_missing_history_after_upload_retries_exhausted() {
     let api = SharedApiMock::new().await;
     let server = api.server();
-    let mut runtime = checkpoint_runtime().unwrap();
+    let mut runtime = finalization_runtime().unwrap();
     runtime.config.framework = guest_agent::env::Framework::Pi;
     let _system_log_guard = SystemLogOverrideGuard::set(runtime.paths.system_log_file());
-    let _files_guard = SessionCheckpointFilesGuard::new();
+    let _files_guard = SessionFinalizationFilesGuard::new();
     let session_id = uuid::Uuid::new_v4().to_string();
     guest_agent::paths::write_private(session_id_file(), &session_id).unwrap();
     let (history_file, history) = write_pi_history(&session_id, false, 0).unwrap();
@@ -781,7 +785,7 @@ async fn pi_checkpoint_rejects_missing_history_after_upload_retries_exhausted() 
             .json_body(json!({"error":{"code":"BAD_REQUEST","message":history_required}}));
     });
 
-    let error = create_bounded_checkpoint(&runtime).await.unwrap_err();
+    let error = create_bounded_finalization(&runtime).await.unwrap_err();
     assert!(matches!(
         error,
         guest_agent::error::AgentError::HttpStatus { status: 400, message }
@@ -802,15 +806,15 @@ async fn pi_checkpoint_rejects_missing_history_after_upload_retries_exhausted() 
 }
 
 #[tokio::test]
-async fn checkpoint_reports_failed_session_history_upload_as_unavailable() {
+async fn finalization_reports_failed_session_history_upload_as_unavailable() {
     let api = SharedApiMock::new().await;
-    let _telemetry_guard = CheckpointTelemetryGuard::new(&api);
+    let _telemetry_guard = FinalizationTelemetryGuard::new(&api);
     let server = api.server();
 
-    let mut runtime = checkpoint_runtime().unwrap();
+    let mut runtime = finalization_runtime().unwrap();
     runtime.config.framework = guest_agent::env::Framework::Codex;
     let _system_log_guard = SystemLogOverrideGuard::set(runtime.paths.system_log_file());
-    let _files_guard = SessionCheckpointFilesGuard::new();
+    let _files_guard = SessionFinalizationFilesGuard::new();
     let artifact_dir = tempfile::tempdir().unwrap();
     let missing_artifact_mount = artifact_dir.path().join("missing-memory");
     runtime.config.artifacts = vec![guest_agent::env::ArtifactEnv {
@@ -866,7 +870,7 @@ async fn checkpoint_reports_failed_session_history_upload_as_unavailable() {
             .json_body(json!({"success": true, "status": "completed"}));
     });
 
-    create_bounded_checkpoint(&runtime).await.unwrap();
+    create_bounded_finalization(&runtime).await.unwrap();
 
     prepare_mock.assert_calls_async(1).await;
     upload_mock.assert_calls_async(3).await;
@@ -890,25 +894,25 @@ async fn checkpoint_reports_failed_session_history_upload_as_unavailable() {
     let system_log = std::fs::read_to_string(runtime.paths.system_log_file()).unwrap();
     assert!(system_log.contains(
         "[INFO] [sandbox:guest-agent] Session history upload failed after 3 attempts; \
-         continuing checkpoint without history: http: PUT presigned: HTTP 502 Bad Gateway"
+         continuing finalization without history: http: PUT presigned: HTTP 502 Bad Gateway"
     ));
     assert!(!system_log.contains(upload_path));
     assert!(!std::path::Path::new(runtime.paths.final_session_history_identity_file()).exists());
 }
 
 #[tokio::test]
-async fn success_checkpoint_discards_oversized_claude_history_without_compact_boundary() {
+async fn success_finalization_discards_oversized_claude_history_without_compact_boundary() {
     let api = SharedApiMock::new().await;
-    let _telemetry_guard = CheckpointTelemetryGuard::new(&api);
+    let _telemetry_guard = FinalizationTelemetryGuard::new(&api);
     let server = api.server();
 
-    let mut runtime = checkpoint_runtime().unwrap();
-    let _files_guard = SessionCheckpointFilesGuard::new();
+    let mut runtime = finalization_runtime().unwrap();
+    let _files_guard = SessionFinalizationFilesGuard::new();
     let session_id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
     let line =
         b"{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":\"ordinary\"}}\n";
     let mut history = Vec::new();
-    while history.len() <= CHECKPOINT_TEST_CANDIDATE_MAX_BYTES as usize {
+    while history.len() <= FINALIZATION_TEST_CANDIDATE_MAX_BYTES as usize {
         history.extend_from_slice(line);
     }
     let history_dir = write_literal_session_history(&mut runtime, session_id, &history).unwrap();
@@ -937,7 +941,7 @@ async fn success_checkpoint_discards_oversized_claude_history_without_compact_bo
         });
     });
 
-    create_bounded_checkpoint(&runtime).await.unwrap();
+    create_bounded_finalization(&runtime).await.unwrap();
 
     prepare_mock.assert_calls_async(0).await;
     complete_mock.assert_calls_async(1).await;
@@ -953,17 +957,17 @@ async fn success_checkpoint_discards_oversized_claude_history_without_compact_bo
 }
 
 #[tokio::test]
-async fn success_checkpoint_discards_codex_history_that_jumps_past_hard_limit() {
+async fn success_finalization_discards_codex_history_that_jumps_past_hard_limit() {
     let api = SharedApiMock::new().await;
-    let _telemetry_guard = CheckpointTelemetryGuard::new(&api);
+    let _telemetry_guard = FinalizationTelemetryGuard::new(&api);
     let server = api.server();
 
-    let mut runtime = checkpoint_runtime().unwrap();
+    let mut runtime = finalization_runtime().unwrap();
     runtime.config.framework = guest_agent::env::Framework::Codex;
-    let _files_guard = SessionCheckpointFilesGuard::new();
+    let _files_guard = SessionFinalizationFilesGuard::new();
     let session_id = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
     let (history_dir, history_path, history) =
-        write_codex_history_without_compact(session_id, None, CHECKPOINT_TEST_MAX_BYTES as usize)
+        write_codex_history_without_compact(session_id, None, FINALIZATION_TEST_MAX_BYTES as usize)
             .unwrap();
     use_test_codex_home(&mut runtime, history_dir.path());
 
@@ -984,7 +988,7 @@ async fn success_checkpoint_discards_codex_history_that_jumps_past_hard_limit() 
             .json_body(json!({"success": true, "status": "completed"}));
     });
 
-    create_bounded_checkpoint(&runtime).await.unwrap();
+    create_bounded_finalization(&runtime).await.unwrap();
 
     prepare_mock.assert_calls_async(0).await;
     complete_mock.assert_calls_async(1).await;
@@ -1000,19 +1004,19 @@ async fn success_checkpoint_discards_codex_history_that_jumps_past_hard_limit() 
 }
 
 #[tokio::test]
-async fn success_checkpoint_discards_codex_history_with_oversized_canonical_candidate() {
+async fn success_finalization_discards_codex_history_with_oversized_canonical_candidate() {
     let api = SharedApiMock::new().await;
-    let _telemetry_guard = CheckpointTelemetryGuard::new(&api);
+    let _telemetry_guard = FinalizationTelemetryGuard::new(&api);
     let server = api.server();
 
-    let mut runtime = checkpoint_runtime().unwrap();
+    let mut runtime = finalization_runtime().unwrap();
     runtime.config.framework = guest_agent::env::Framework::Codex;
-    let _files_guard = SessionCheckpointFilesGuard::new();
+    let _files_guard = SessionFinalizationFilesGuard::new();
     let session_id = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
     let (history_dir, history_path, history) = write_codex_history_without_compact(
         session_id,
-        Some(CHECKPOINT_TEST_CANDIDATE_MAX_BYTES as usize),
-        CHECKPOINT_TEST_CANDIDATE_MAX_BYTES as usize,
+        Some(FINALIZATION_TEST_CANDIDATE_MAX_BYTES as usize),
+        FINALIZATION_TEST_CANDIDATE_MAX_BYTES as usize,
     )
     .unwrap();
     use_test_codex_home(&mut runtime, history_dir.path());
@@ -1033,7 +1037,7 @@ async fn success_checkpoint_discards_codex_history_with_oversized_canonical_cand
             .json_body(json!({"success": true, "status": "completed"}));
     });
 
-    create_bounded_checkpoint(&runtime).await.unwrap();
+    create_bounded_finalization(&runtime).await.unwrap();
 
     prepare_mock.assert_calls_async(0).await;
     complete_mock.assert_calls_async(1).await;
@@ -1048,13 +1052,13 @@ async fn success_checkpoint_discards_codex_history_with_oversized_canonical_cand
 }
 
 #[tokio::test]
-async fn checkpoint_continues_when_codex_history_is_missing() {
+async fn finalization_continues_when_codex_history_is_missing() {
     let api = SharedApiMock::new().await;
-    let _telemetry_guard = CheckpointTelemetryGuard::new(&api);
+    let _telemetry_guard = FinalizationTelemetryGuard::new(&api);
     let server = api.server();
-    let mut runtime = checkpoint_runtime().unwrap();
+    let mut runtime = finalization_runtime().unwrap();
     runtime.config.framework = guest_agent::env::Framework::Codex;
-    let _files_guard = SessionCheckpointFilesGuard::new();
+    let _files_guard = SessionFinalizationFilesGuard::new();
     let session_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     let home = tempfile::tempdir().unwrap();
     use_test_codex_home(&mut runtime, home.path());
@@ -1070,7 +1074,7 @@ async fn checkpoint_continues_when_codex_history_is_missing() {
             .json_body(json!({"success": true, "status": "completed"}));
     });
 
-    create_bounded_checkpoint(&runtime).await.unwrap();
+    create_bounded_finalization(&runtime).await.unwrap();
 
     complete_mock.assert_calls_async(1).await;
     let operations = std::fs::read_to_string(runtime.paths.sandbox_ops_file()).unwrap();
@@ -1082,12 +1086,12 @@ async fn checkpoint_continues_when_codex_history_is_missing() {
 }
 
 #[tokio::test]
-async fn combined_checkpoint_accepts_terminal_acknowledgement_without_checkpoint_identity() {
+async fn combined_finalization_accepts_terminal_acknowledgement_without_finalization_identity() {
     let api = SharedApiMock::new().await;
     let server = api.server();
-    let mut runtime = checkpoint_runtime().unwrap();
+    let mut runtime = finalization_runtime().unwrap();
     runtime.config.framework = guest_agent::env::Framework::Codex;
-    let _files_guard = SessionCheckpointFilesGuard::new();
+    let _files_guard = SessionFinalizationFilesGuard::new();
     let session_id = "acacacac-acac-4cac-8cac-acacacacacac";
     let home = tempfile::tempdir().unwrap();
     use_test_codex_home(&mut runtime, home.path());
@@ -1103,16 +1107,16 @@ async fn combined_checkpoint_accepts_terminal_acknowledgement_without_checkpoint
             .json_body(json!({"success": true, "status": "completed"}));
     });
 
-    create_bounded_checkpoint(&runtime).await.unwrap();
+    create_bounded_finalization(&runtime).await.unwrap();
     complete_mock.assert_calls_async(1).await;
 }
 
 #[tokio::test]
-async fn success_checkpoint_reports_invalid_local_history_as_unavailable() {
+async fn success_finalization_reports_invalid_local_history_as_unavailable() {
     let api = SharedApiMock::new().await;
     let server = api.server();
-    let mut runtime = checkpoint_runtime().unwrap();
-    let _files_guard = SessionCheckpointFilesGuard::new();
+    let mut runtime = finalization_runtime().unwrap();
+    let _files_guard = SessionFinalizationFilesGuard::new();
 
     let prepare_mock = server.mock(|when, then| {
         when.method(POST)
@@ -1144,7 +1148,7 @@ async fn success_checkpoint_reports_invalid_local_history_as_unavailable() {
         let _history_dir =
             write_literal_session_history(&mut runtime, session_id, history).unwrap();
 
-        create_bounded_checkpoint(&runtime).await.unwrap();
+        create_bounded_finalization(&runtime).await.unwrap();
 
         assert!(
             !std::path::Path::new(runtime.paths.final_session_history_identity_file()).exists()
@@ -1156,12 +1160,12 @@ async fn success_checkpoint_reports_invalid_local_history_as_unavailable() {
 }
 
 #[tokio::test]
-async fn success_checkpoint_reports_invalid_reused_zstd_history_as_unavailable() {
+async fn success_finalization_reports_invalid_reused_zstd_history_as_unavailable() {
     let api = SharedApiMock::new().await;
     let server = api.server();
-    let mut runtime = checkpoint_runtime().unwrap();
+    let mut runtime = finalization_runtime().unwrap();
     runtime.config.framework = guest_agent::env::Framework::Codex;
-    let _files_guard = SessionCheckpointFilesGuard::new();
+    let _files_guard = SessionFinalizationFilesGuard::new();
     let session_id = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
     let home = tempfile::tempdir().unwrap();
     let day_dir = home.path().join(".codex/sessions/2026/08/15");
@@ -1191,7 +1195,7 @@ async fn success_checkpoint_reports_invalid_reused_zstd_history_as_unavailable()
             .json_body(json!({"success": true, "status": "completed"}));
     });
 
-    create_bounded_checkpoint(&runtime).await.unwrap();
+    create_bounded_finalization(&runtime).await.unwrap();
 
     prepare_mock.assert_calls_async(0).await;
     complete_mock.assert_calls_async(1).await;
@@ -1199,12 +1203,12 @@ async fn success_checkpoint_reports_invalid_reused_zstd_history_as_unavailable()
 }
 
 #[tokio::test]
-async fn success_checkpoint_reconciles_claude_compact_generation_after_commit() {
+async fn success_finalization_reconciles_claude_compact_generation_after_commit() {
     let api = SharedApiMock::new().await;
     let server = api.server();
 
-    let mut runtime = checkpoint_runtime().unwrap();
-    let _files_guard = SessionCheckpointFilesGuard::new();
+    let mut runtime = finalization_runtime().unwrap();
+    let _files_guard = SessionFinalizationFilesGuard::new();
     let session_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     let (history_dir, candidate) = write_prunable_claude_history(&mut runtime, session_id).unwrap();
     let history_path = claude_history_path(history_dir.path(), session_id);
@@ -1245,7 +1249,7 @@ async fn success_checkpoint_reconciles_claude_compact_generation_after_commit() 
             .header("Content-Type", "application/octet-stream");
         then.respond_with(move |req| upload_validation_response(req, &upload_body, &upload_len));
     });
-    let checkpoint_history_path = history_path.clone();
+    let finalization_history_path = history_path.clone();
     let complete_mock = server.mock(|when, then| {
         when.method(POST)
             .path("/api/webhooks/agent/complete")
@@ -1256,7 +1260,7 @@ async fn success_checkpoint_reconciles_claude_compact_generation_after_commit() 
                 r#"{{"completion":{{"cliAgentSessionHistoryHash":"{history_hash}"}}}}"#
             ));
         then.respond_with(move |_| {
-            if std::fs::metadata(&checkpoint_history_path)
+            if std::fs::metadata(&finalization_history_path)
                 .is_ok_and(|metadata| metadata.len() == source_size)
             {
                 json_http_response(200, json!({"success": true, "status": "completed"}))
@@ -1266,7 +1270,7 @@ async fn success_checkpoint_reconciles_claude_compact_generation_after_commit() 
         });
     });
 
-    create_bounded_checkpoint(&runtime).await.unwrap();
+    create_bounded_finalization(&runtime).await.unwrap();
 
     prepare_mock.assert_calls_async(1).await;
     upload_mock.assert_calls_async(1).await;
@@ -1281,22 +1285,22 @@ async fn success_checkpoint_reconciles_claude_compact_generation_after_commit() 
     assert_eq!(identity.history_hash, history_hash);
     assert_eq!(
         identity.history_source,
-        checkpoint_session_metadata(&runtime)
+        finalization_session_metadata(&runtime)
             .history_source()
             .cloned()
-            .expect("checkpoint history source")
+            .expect("finalization history source")
     );
 }
 
 #[tokio::test]
-async fn success_checkpoint_reconciles_codex_compact_generation_after_commit() {
+async fn success_finalization_reconciles_codex_compact_generation_after_commit() {
     let api = SharedApiMock::new().await;
-    let _telemetry_guard = CheckpointTelemetryGuard::new(&api);
+    let _telemetry_guard = FinalizationTelemetryGuard::new(&api);
     let server = api.server();
 
-    let mut runtime = checkpoint_runtime().unwrap();
+    let mut runtime = finalization_runtime().unwrap();
     runtime.config.framework = guest_agent::env::Framework::Codex;
-    let _files_guard = SessionCheckpointFilesGuard::new();
+    let _files_guard = SessionFinalizationFilesGuard::new();
     let session_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     let (history_dir, history_path, candidate) = write_prunable_codex_history(session_id).unwrap();
     use_test_codex_home(&mut runtime, history_dir.path());
@@ -1339,7 +1343,7 @@ async fn success_checkpoint_reconciles_codex_compact_generation_after_commit() {
             upload_validation_response(request, &upload_body, &upload_len)
         });
     });
-    let checkpoint_history_path = history_path.clone();
+    let finalization_history_path = history_path.clone();
     let complete_mock = server.mock(|when, then| {
         when.method(POST)
             .path("/api/webhooks/agent/complete")
@@ -1351,7 +1355,7 @@ async fn success_checkpoint_reconciles_codex_compact_generation_after_commit() {
                 r#"{{"completion":{{"cliAgentSessionHistoryHash":"{history_hash}"}}}}"#
             ));
         then.respond_with(move |_| {
-            if std::fs::metadata(&checkpoint_history_path)
+            if std::fs::metadata(&finalization_history_path)
                 .is_ok_and(|metadata| metadata.len() == source_size)
             {
                 json_http_response(200, json!({"success": true, "status": "completed"}))
@@ -1361,7 +1365,7 @@ async fn success_checkpoint_reconciles_codex_compact_generation_after_commit() {
         });
     });
 
-    create_bounded_checkpoint(&runtime).await.unwrap();
+    create_bounded_finalization(&runtime).await.unwrap();
 
     prepare_mock.assert_calls_async(1).await;
     upload_mock.assert_calls_async(1).await;
@@ -1385,12 +1389,12 @@ async fn success_checkpoint_reconciles_codex_compact_generation_after_commit() {
 }
 
 #[tokio::test]
-async fn success_checkpoint_omits_identity_when_live_history_replacement_fails() {
+async fn success_finalization_omits_identity_when_live_history_replacement_fails() {
     let api = SharedApiMock::new().await;
     let server = api.server();
 
-    let mut runtime = checkpoint_runtime().unwrap();
-    let _files_guard = SessionCheckpointFilesGuard::new();
+    let mut runtime = finalization_runtime().unwrap();
+    let _files_guard = SessionFinalizationFilesGuard::new();
     let session_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     let (history_dir, candidate) = write_prunable_claude_history(&mut runtime, session_id).unwrap();
     let history_path = claude_history_path(history_dir.path(), session_id);
@@ -1429,7 +1433,7 @@ async fn success_checkpoint_omits_identity_when_live_history_replacement_fails()
         });
     });
 
-    create_bounded_checkpoint(&runtime).await.unwrap();
+    create_bounded_finalization(&runtime).await.unwrap();
 
     prepare_mock.assert_calls_async(1).await;
     complete_mock.assert_calls_async(1).await;
@@ -1439,12 +1443,12 @@ async fn success_checkpoint_omits_identity_when_live_history_replacement_fails()
 }
 
 #[tokio::test]
-async fn success_checkpoint_keeps_live_history_when_compact_commit_fails() {
+async fn success_finalization_keeps_live_history_when_compact_commit_fails() {
     let api = SharedApiMock::new().await;
     let server = api.server();
 
-    let mut runtime = checkpoint_runtime().unwrap();
-    let _files_guard = SessionCheckpointFilesGuard::new();
+    let mut runtime = finalization_runtime().unwrap();
+    let _files_guard = SessionFinalizationFilesGuard::new();
     let session_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     let (history_dir, candidate) = write_prunable_claude_history(&mut runtime, session_id).unwrap();
     let history_path = claude_history_path(history_dir.path(), session_id);
@@ -1468,7 +1472,7 @@ async fn success_checkpoint_keeps_live_history_when_compact_commit_fails() {
         then.status(500).header("Content-Type", "application/json");
     });
 
-    let error = create_bounded_checkpoint(&runtime).await.unwrap_err();
+    let error = create_bounded_finalization(&runtime).await.unwrap_err();
 
     assert!(error.to_string().contains("POST failed after 3 attempts"));
     prepare_mock.assert_calls_async(1).await;
@@ -1478,13 +1482,13 @@ async fn success_checkpoint_keeps_live_history_when_compact_commit_fails() {
 }
 
 #[tokio::test]
-async fn success_checkpoint_writes_large_final_identity_metadata()
+async fn success_finalization_writes_large_final_identity_metadata()
 -> Result<(), Box<dyn std::error::Error>> {
     let api = SharedApiMock::new().await;
     let server = api.server();
 
-    let mut runtime = checkpoint_runtime().unwrap();
-    let _files_guard = SessionCheckpointFilesGuard::new();
+    let mut runtime = finalization_runtime().unwrap();
+    let _files_guard = SessionFinalizationFilesGuard::new();
     let history = large_session_history();
     let _history_dir =
         write_literal_session_history(&mut runtime, "success-large-session", &history).unwrap();
@@ -1530,12 +1534,12 @@ async fn success_checkpoint_writes_large_final_identity_metadata()
 
     let result = guest_agent::finalization::prepare_finalization_for_runtime(
         &runtime,
-        &checkpoint_session_metadata(&runtime),
+        &finalization_session_metadata(&runtime),
     )
     .await;
 
-    let checkpoint = result.unwrap();
-    report_prepared_checkpoint(&runtime, 0, checkpoint).await?;
+    let finalization = result.unwrap();
+    report_prepared_finalization(&runtime, 0, finalization).await?;
     prepare_mock.assert_calls_async(1).await;
     upload_mock.assert_calls_async(1).await;
     complete_mock.assert_calls_async(1).await;
@@ -1563,13 +1567,13 @@ async fn success_checkpoint_writes_large_final_identity_metadata()
 }
 
 #[tokio::test]
-async fn success_checkpoint_propagates_zstd_prepare_bad_request()
+async fn success_finalization_propagates_zstd_prepare_bad_request()
 -> Result<(), Box<dyn std::error::Error>> {
     let api = SharedApiMock::new().await;
     let server = api.server();
 
-    let mut runtime = checkpoint_runtime().unwrap();
-    let _files_guard = SessionCheckpointFilesGuard::new();
+    let mut runtime = finalization_runtime().unwrap();
+    let _files_guard = SessionFinalizationFilesGuard::new();
     let history = large_session_history();
     let _history_dir =
         write_literal_session_history(&mut runtime, "zstd-bad-request-session", &history).unwrap();
@@ -1606,13 +1610,13 @@ async fn success_checkpoint_propagates_zstd_prepare_bad_request()
 
     let result = guest_agent::finalization::prepare_finalization_for_runtime(
         &runtime,
-        &checkpoint_session_metadata(&runtime),
+        &finalization_session_metadata(&runtime),
     )
     .await;
 
     let err = result
         .err()
-        .expect("mismatched existing blob should fail checkpoint preparation");
+        .expect("mismatched existing blob should fail finalization preparation");
     assert!(
         err.to_string()
             .contains("Session history encoded size does not match the existing blob"),
@@ -1625,13 +1629,13 @@ async fn success_checkpoint_propagates_zstd_prepare_bad_request()
 }
 
 #[tokio::test]
-async fn success_checkpoint_rejects_missing_zstd_encoding_acknowledgement()
+async fn success_finalization_rejects_missing_zstd_encoding_acknowledgement()
 -> Result<(), Box<dyn std::error::Error>> {
     let api = SharedApiMock::new().await;
     let server = api.server();
 
-    let mut runtime = checkpoint_runtime().unwrap();
-    let _files_guard = SessionCheckpointFilesGuard::new();
+    let mut runtime = finalization_runtime().unwrap();
+    let _files_guard = SessionFinalizationFilesGuard::new();
     let history = large_session_history();
     let _history_dir =
         write_literal_session_history(&mut runtime, "zstd-unack-session", &history).unwrap();
@@ -1667,13 +1671,13 @@ async fn success_checkpoint_rejects_missing_zstd_encoding_acknowledgement()
 
     let result = guest_agent::finalization::prepare_finalization_for_runtime(
         &runtime,
-        &checkpoint_session_metadata(&runtime),
+        &finalization_session_metadata(&runtime),
     )
     .await;
 
     let err = result
         .err()
-        .expect("missing zstd acknowledgement should fail checkpoint preparation");
+        .expect("missing zstd acknowledgement should fail finalization preparation");
     assert!(
         err.to_string()
             .contains("Prepare-history response did not acknowledge zstd"),
@@ -1686,13 +1690,13 @@ async fn success_checkpoint_rejects_missing_zstd_encoding_acknowledgement()
 }
 
 #[tokio::test]
-async fn success_checkpoint_rejects_new_zstd_with_mismatched_encoding_acknowledgement()
+async fn success_finalization_rejects_new_zstd_with_mismatched_encoding_acknowledgement()
 -> Result<(), Box<dyn std::error::Error>> {
     let api = SharedApiMock::new().await;
     let server = api.server();
 
-    let mut runtime = checkpoint_runtime().unwrap();
-    let _files_guard = SessionCheckpointFilesGuard::new();
+    let mut runtime = finalization_runtime().unwrap();
+    let _files_guard = SessionFinalizationFilesGuard::new();
     let history = large_session_history();
     let _history_dir =
         write_literal_session_history(&mut runtime, "zstd-new-mismatched-ack-session", &history)
@@ -1731,13 +1735,13 @@ async fn success_checkpoint_rejects_new_zstd_with_mismatched_encoding_acknowledg
 
     let result = guest_agent::finalization::prepare_finalization_for_runtime(
         &runtime,
-        &checkpoint_session_metadata(&runtime),
+        &finalization_session_metadata(&runtime),
     )
     .await;
 
     let err = result
         .err()
-        .expect("mismatched zstd acknowledgement should fail checkpoint preparation");
+        .expect("mismatched zstd acknowledgement should fail finalization preparation");
     assert!(
         err.to_string()
             .contains("Prepare-history response did not acknowledge zstd"),
@@ -1750,13 +1754,13 @@ async fn success_checkpoint_rejects_new_zstd_with_mismatched_encoding_acknowledg
 }
 
 #[tokio::test]
-async fn success_checkpoint_accepts_existing_gzip_for_zstd_history()
+async fn success_finalization_accepts_existing_gzip_for_zstd_history()
 -> Result<(), Box<dyn std::error::Error>> {
     let api = SharedApiMock::new().await;
     let server = api.server();
 
-    let mut runtime = checkpoint_runtime().unwrap();
-    let _files_guard = SessionCheckpointFilesGuard::new();
+    let mut runtime = finalization_runtime().unwrap();
+    let _files_guard = SessionFinalizationFilesGuard::new();
     let history = large_session_history();
     let _history_dir =
         write_literal_session_history(&mut runtime, "zstd-existing-gzip-session", &history)
@@ -1800,12 +1804,12 @@ async fn success_checkpoint_accepts_existing_gzip_for_zstd_history()
 
     let result = guest_agent::finalization::prepare_finalization_for_runtime(
         &runtime,
-        &checkpoint_session_metadata(&runtime),
+        &finalization_session_metadata(&runtime),
     )
     .await;
 
-    let checkpoint = result.unwrap();
-    report_prepared_checkpoint(&runtime, 0, checkpoint).await?;
+    let finalization = result.unwrap();
+    report_prepared_finalization(&runtime, 0, finalization).await?;
     prepare_mock.assert_calls_async(1).await;
     upload_mock.assert_calls_async(0).await;
     complete_mock.assert_calls_async(1).await;
@@ -1813,13 +1817,13 @@ async fn success_checkpoint_accepts_existing_gzip_for_zstd_history()
 }
 
 #[tokio::test]
-async fn success_checkpoint_propagates_zstd_auth_failure() -> Result<(), Box<dyn std::error::Error>>
-{
+async fn success_finalization_propagates_zstd_auth_failure()
+-> Result<(), Box<dyn std::error::Error>> {
     let api = SharedApiMock::new().await;
     let server = api.server();
 
-    let mut runtime = checkpoint_runtime().unwrap();
-    let _files_guard = SessionCheckpointFilesGuard::new();
+    let mut runtime = finalization_runtime().unwrap();
+    let _files_guard = SessionFinalizationFilesGuard::new();
     let history = large_session_history();
     let _history_dir =
         write_literal_session_history(&mut runtime, "zstd-auth-failure-session", &history).unwrap();
@@ -1839,7 +1843,7 @@ async fn success_checkpoint_propagates_zstd_auth_failure() -> Result<(), Box<dyn
             .header("Content-Type", "application/json")
             .json_body(json!({
                 "error": {
-                    "message": "unauthorized checkpoint history prepare"
+                    "message": "unauthorized finalization history prepare"
                 }
             }));
     });
@@ -1856,16 +1860,16 @@ async fn success_checkpoint_propagates_zstd_auth_failure() -> Result<(), Box<dyn
 
     let result = guest_agent::finalization::prepare_finalization_for_runtime(
         &runtime,
-        &checkpoint_session_metadata(&runtime),
+        &finalization_session_metadata(&runtime),
     )
     .await;
 
     let err = result
         .err()
-        .expect("authorization failure should fail checkpoint preparation");
+        .expect("authorization failure should fail finalization preparation");
     assert!(
         err.to_string()
-            .contains("unauthorized checkpoint history prepare"),
+            .contains("unauthorized finalization history prepare"),
         "expected auth failure to propagate, got: {err}"
     );
     zstd_prepare_mock.assert_calls_async(1).await;
@@ -1875,9 +1879,9 @@ async fn success_checkpoint_propagates_zstd_auth_failure() -> Result<(), Box<dyn
 }
 
 #[tokio::test]
-async fn success_checkpoint_uses_explicit_runtime_with_conflicting_process_env() {
+async fn success_finalization_uses_explicit_runtime_with_conflicting_process_env() {
     let tmp = tempfile::tempdir().unwrap();
-    let mut command = checkpoint_child_command(
+    let mut command = finalization_child_command(
         "integration_cases::finalization::success::explicit_runtime_with_conflicting_process_env_child",
     )
     .unwrap();
@@ -1888,7 +1892,7 @@ async fn success_checkpoint_uses_explicit_runtime_with_conflicting_process_env()
             guest_contracts::runtime_paths::CANONICAL_GUEST_RUNTIME_DIR_ENV,
             tmp.path().join("stale-runtime"),
         );
-    run_checkpoint_child(&mut command).await.unwrap();
+    run_finalization_child(&mut command).await.unwrap();
 }
 
 #[tokio::test]
@@ -1977,12 +1981,12 @@ async fn explicit_runtime_with_conflicting_process_env_child() {
 
     let result = guest_agent::finalization::prepare_finalization_for_runtime(
         &runtime,
-        &checkpoint_session_metadata(&runtime),
+        &finalization_session_metadata(&runtime),
     )
     .await;
 
-    let checkpoint = result.unwrap();
-    report_prepared_checkpoint(&runtime, 0, checkpoint)
+    let finalization = result.unwrap();
+    report_prepared_finalization(&runtime, 0, finalization)
         .await
         .unwrap();
     prepare_mock.assert_calls_async(1).await;
