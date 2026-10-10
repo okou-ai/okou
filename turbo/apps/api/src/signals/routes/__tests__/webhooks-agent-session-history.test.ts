@@ -196,9 +196,9 @@ describe("Sandbox session history upload preparation", () => {
       expect(mismatch.body.error.message).toBe(
         "Session history raw size does not match the existing blob",
       );
-      expect((await prepareHistory(body, headers, [200])).body.existing).toBe(
-        false,
-      );
+      expect(
+        (await prepareHistory(body, headers, [200])).body.existing,
+      ).toBeFalsy();
       objects.set(`blobs/${body.hash}.blob`, bytes);
       expect((await prepareHistory(body, headers, [200])).body).toStrictEqual({
         existing: true,
