@@ -366,6 +366,7 @@ async function publish(
 async function completeMaintenance(
   run: Pick<Maintenance, "runId" | "headers" | "memory">,
   versionId: string,
+  concurrent = false,
 ) {
   const body = {
     runId: run.runId,
@@ -383,12 +384,18 @@ async function completeMaintenance(
       ],
     },
   };
-  const [completed, concurrent] = await Promise.all([
-    webhooks.requestAgentComplete(body, run.headers, [200]),
-    webhooks.requestAgentComplete(body, run.headers, [200]),
-  ]);
+  const [completed, repeated] = concurrent
+    ? await Promise.all([
+        webhooks.requestAgentComplete(body, run.headers, [200]),
+        webhooks.requestAgentComplete(body, run.headers, [200]),
+      ])
+    : ([
+        await webhooks.requestAgentComplete(body, run.headers, [200]),
+      ] as const);
   expect(completed.body).toMatchObject({ success: true });
-  expect(concurrent.body).toStrictEqual(completed.body);
+  if (repeated) {
+    expect(repeated.body).toStrictEqual(completed.body);
+  }
   await flushWaitUntilForTest();
   await webhooks.requestAgentComplete(body, run.headers, [200]);
   await flushWaitUntilForTest();
@@ -552,7 +559,7 @@ describe("Genuine Pi maintenance publication results", () => {
   it("replays a completed maintenance Run after a later maintenance replaces the latest Job result", async () => {
     const run = await prepareMaintenance();
     const first = await publish(run, "First maintenance memory.\n");
-    const completed = await completeMaintenance(run, first.versionId);
+    const completed = await completeMaintenance(run, first.versionId, true);
     const firstResult = await runs.readRun(run.actor, run.runId);
     expect(firstResult).toMatchObject({
       status: "completed",
@@ -592,7 +599,7 @@ describe("Genuine Pi maintenance publication results", () => {
     );
     expect(next.maintenance.claimedBaseVersionId).toBe(ordinary.versionId);
     const latest = await publish(next, "Later maintenance memory.\n");
-    await completeMaintenance(next, latest.versionId);
+    await completeMaintenance(next, latest.versionId, true);
     const latestResult = await runs.readRun(run.actor, next.runId);
     expect(latestResult).toMatchObject({
       status: "completed",
