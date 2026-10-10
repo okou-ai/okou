@@ -9,6 +9,7 @@ import {
   CLIENT_TYPE_DESKTOP,
   CLIENT_TYPE_GUEST_AGENT,
   CLIENT_TYPE_HEADER,
+  CLIENT_TYPE_IOS,
   CLIENT_TYPE_MITM_ADDON,
   CLIENT_TYPE_RUNNER,
   CLIENT_VERSION_HEADER,
@@ -21,6 +22,7 @@ describe("client header contract", () => {
       cli: CLIENT_TYPE_CLI,
       desktop: CLIENT_TYPE_DESKTOP,
       guestAgent: CLIENT_TYPE_GUEST_AGENT,
+      ios: CLIENT_TYPE_IOS,
       mitmAddon: CLIENT_TYPE_MITM_ADDON,
       runner: CLIENT_TYPE_RUNNER,
     }).toStrictEqual({
@@ -28,6 +30,7 @@ describe("client header contract", () => {
       cli: "CLI",
       desktop: "Desktop",
       guestAgent: "GuestAgent",
+      ios: "iOS",
       mitmAddon: "MitmAddon",
       runner: "Runner",
     });

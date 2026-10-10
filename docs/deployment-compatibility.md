@@ -34,6 +34,19 @@ that App can make users reload into the same unsupported build. First deploy
 compatible API and App changes, then raise the floor and remove the old contract
 in a later cleanup release.
 
+Native iOS has an independent floor, enforced by the same API check. iOS
+clients advertise `X-Client-Type: iOS` (exact, case-sensitive) and their
+marketing version in `X-Client-Version`. The API rejects a parseable version
+below the floor in
+[`ios-client-compatibility.json`](../turbo/apps/api/src/lib/ios-client-compatibility.json)
+with `426 Upgrade Required`, `Cache-Control: no-store`, and the error envelope
+`{ "error": { "code": "IOS_UPDATE_REQUIRED", "message": "..." }, "minimumSupportedVersion": "x.y.z" }`,
+which iOS treats as a blocking update state. A `null` floor disables iOS
+enforcement. Like the web floor, it never rejects a missing or unparseable
+version, so builds that predate the client headers cannot be excluded. The floor
+must be a stable `x.y.z` version and changes only through a reviewed PR and an
+API release, never through environment configuration.
+
 ### Backend
 
 The API is the compatibility boundary for frontend and Runner traffic. App
