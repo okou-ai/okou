@@ -379,7 +379,7 @@ const INLINE_TEMPLATE_CHIP_CLASS = inlineReferenceVariants({
 
 const INLINE_TEMPLATE_NAME_ZONE_CLASS =
   "flex h-full min-w-0 items-center gap-1.5 px-2 text-foreground " +
-  "transition-colors hover:bg-primary/5 active:bg-primary/10 " +
+  "transition-colors hover:bg-state-hover active:bg-state-selected " +
   "focus-visible:outline-none focus-visible:ring-1 " +
   "focus-visible:ring-inset focus-visible:ring-ring/50";
 

@@ -21,8 +21,8 @@ export const STRUCTURED_INLINE_LINK_REFERENCE_CLASS = inlineReferenceVariants({
  * a chip inside Markdown looking like one in a user message.
  */
 const MARKDOWN_CHIP_RESET_CLASS =
-  "bg-primary/10! text-foreground! no-underline! " +
-  "hover:bg-primary/15! active:bg-primary/20!";
+  "bg-state-selected-hover! dark:bg-state-selected! text-foreground! " +
+  "no-underline! hover:bg-state-hover-overlay! active:bg-state-pressed-overlay!";
 
 /**
  * An in-App link to a chat thread, shown as an inline chip with its title.

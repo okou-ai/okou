@@ -495,7 +495,13 @@ single-line list rows.
 
 `inlineReferenceVariants` from `@okouai/ui` owns the shared treatment of
 references in editable and rendered text. It supplies a 28px height, `rounded-md`,
-the shared hairline with `border-primary/25`, and `bg-primary/10`. Labels use
+the shared hairline with `border-state-pressed`, and `bg-state-selected-hover`
+(`bg-state-selected` in dark). Both are translucent state layers, so a reference
+sits one fixed step off whatever it is drawn on: the composer card, the
+`bg-gray-200` user bubble, or the canvas behind an Agent reply. Do not fill it
+from `--primary`: a palette's primary lightness runs from 23% to 78%, so a
+`primary/10` fill lands on the user bubble's own colour under Cotton sky, and
+`bg-muted` resolves to that bubble's `gray-200` in every dark theme. Labels use
 `text-foreground` to retain contrast on filled message surfaces; reference glyphs
 use `text-selected-foreground` to follow the active palette in light and dark.
 Callers keep their native editor, link, button, or read-only span, the reference's
