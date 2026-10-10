@@ -30,7 +30,7 @@ export const noLegacySharedStateMarkers = createRule({
     schema: [],
     messages: {
       legacyMarker:
-        "Deleted shared-state convention '{{ marker }}' must not return. Use uniquely owned fixture state and scoped overrides instead.",
+        "Deleted shared-state convention '{{ marker }}' must not return. Use uniquely owned fixture state and scoped overrides instead. See docs/api/api-testing.md#shared-persistent-state.",
     },
   },
   create(context) {

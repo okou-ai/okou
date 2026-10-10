@@ -138,7 +138,7 @@ export const noCrossTestTimeStaggering = createRule({
     schema: [],
     messages: {
       sharedTime:
-        "Mocked time must not depend on a mutable package/describe-scope counter. Isolate cache state by owned keys and keep TTL advances inside the owning test.",
+        "Mocked time must not depend on a mutable package/describe-scope counter. Isolate cache state by owned keys and keep TTL advances inside the owning test. See docs/api/api-testing.md#shared-persistent-state.",
     },
   },
   create(context) {

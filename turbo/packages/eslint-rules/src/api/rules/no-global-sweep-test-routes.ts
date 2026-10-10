@@ -217,7 +217,7 @@ export const noGlobalSweepTestRoutes = createRule({
     schema: [],
     messages: {
       globalSweep:
-        "Production-global route '{{ routeName }}' is not an approved correctness boundary. Use the ordinary public lifecycle; contract coverage may pass it directly only to the fixed no-auth helper.",
+        "Production-global route '{{ routeName }}' is not an approved correctness boundary. Use the ordinary public lifecycle; contract coverage may pass it directly only to the fixed no-auth helper. See docs/api/api-testing.md#external-behavior-boundary.",
     },
   },
   create(context) {
