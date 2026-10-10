@@ -438,7 +438,7 @@ describe("CHAT-02: run-level model overrides", () => {
     await cancelChatRun(actor, second.runId);
   }, 90_000);
 
-  it("keeps incomplete context without rotating after a failure before the first native checkpoint", async () => {
+  it("keeps incomplete context without rotating after a failure before the first native history", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
@@ -452,7 +452,7 @@ describe("CHAT-02: run-level model overrides", () => {
     await failChatRun(
       first.runId,
       firstClaim.sandboxHeaders,
-      "Runtime failed before its first checkpoint",
+      "Runtime failed before its first history",
     );
     await waitForRunStatus(actor, first.runId, "failed");
 

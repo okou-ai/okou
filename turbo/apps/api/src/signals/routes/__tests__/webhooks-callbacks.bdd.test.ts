@@ -2519,7 +2519,7 @@ describe("WHCB-06: sandbox agent artifact webhook boundaries", () => {
     expectApiError(missingCompleteRun.body);
     expect(missingCompleteRun.body.error.code).toBe("NOT_FOUND");
 
-    const malformedCheckpoint = await api.requestAgentRunOutputsUnchecked(
+    const malformedOutputs = await api.requestAgentRunOutputsUnchecked(
       {
         runId,
         cliAgentType: "claude-code",
@@ -2529,10 +2529,10 @@ describe("WHCB-06: sandbox agent artifact webhook boundaries", () => {
       headers,
       [400],
     );
-    expectApiError(malformedCheckpoint.body);
-    expect(malformedCheckpoint.body.error.code).toBe("BAD_REQUEST");
+    expectApiError(malformedOutputs.body);
+    expect(malformedOutputs.body.error.code).toBe("BAD_REQUEST");
 
-    const uppercaseCheckpointHash = await api.requestAgentRunOutputsUnchecked(
+    const uppercaseHistoryHash = await api.requestAgentRunOutputsUnchecked(
       {
         runId,
         cliAgentType: "claude-code",
@@ -2542,10 +2542,10 @@ describe("WHCB-06: sandbox agent artifact webhook boundaries", () => {
       headers,
       [400],
     );
-    expectApiError(uppercaseCheckpointHash.body);
-    expect(uppercaseCheckpointHash.body.error.code).toBe("BAD_REQUEST");
+    expectApiError(uppercaseHistoryHash.body);
+    expect(uppercaseHistoryHash.body.error.code).toBe("BAD_REQUEST");
 
-    const missingCheckpointRun = await api.requestAgentRunOutputs(
+    const missingOutputsRun = await api.requestAgentRunOutputs(
       {
         runId,
         cliAgentType: "claude-code",
@@ -2555,10 +2555,10 @@ describe("WHCB-06: sandbox agent artifact webhook boundaries", () => {
       headers,
       [404],
     );
-    expectApiError(missingCheckpointRun.body);
-    expect(missingCheckpointRun.body.error.code).toBe("NOT_FOUND");
+    expectApiError(missingOutputsRun.body);
+    expect(missingOutputsRun.body.error.code).toBe("NOT_FOUND");
 
-    const mismatchedCheckpoint = await api.requestAgentRunOutputs(
+    const mismatchedOutputs = await api.requestAgentRunOutputs(
       {
         runId,
         cliAgentType: "claude-code",
@@ -2568,8 +2568,8 @@ describe("WHCB-06: sandbox agent artifact webhook boundaries", () => {
       mismatchedHeaders,
       [401],
     );
-    expectApiError(mismatchedCheckpoint.body);
-    expect(mismatchedCheckpoint.body.error.code).toBe("UNAUTHORIZED");
+    expectApiError(mismatchedOutputs.body);
+    expect(mismatchedOutputs.body.error.code).toBe("UNAUTHORIZED");
 
     const mismatchedHistoryPrepare =
       await api.requestAgentSessionHistoryPrepare(
@@ -2665,7 +2665,7 @@ describe("WHCB-06: sandbox agent artifact webhook boundaries", () => {
   });
 });
 
-describe("WHCB-09: sandbox storage writes and checkpoint history blobs land in the run organization", () => {
+describe("WHCB-09: sandbox storage writes and native history blobs land in the run organization", () => {
   it("prepares, commits, dedups, and bounds sandbox storage writes for the run org", async () => {
     const runs = createRunsApi(context);
     const fixture = await publicChatActor(context);
@@ -2687,7 +2687,7 @@ describe("WHCB-09: sandbox storage writes and checkpoint history blobs land in t
         authorization: `Bearer ${claim.sandboxToken}`,
       };
 
-      // Checkpoint history blobs: first prepare issues an upload URL, the
+      // Native history blobs: first prepare issues an upload URL, the
       // second sees the registered blob and skips the upload.
       const historyHash = createHash("sha256")
         .update(`bdd history blob ${run.runId}`)

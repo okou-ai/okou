@@ -43,7 +43,7 @@ pub async fn prepare_home_image_from_active_sandbox(
     reason: &'static str,
 ) -> Option<PreparedHomeImagePromotion> {
     let mut promotion = promotion?;
-    // Existing terminal callers have finished checkpoint/identity/log readers
+    // Existing terminal callers have finished finalization/identity/log readers
     // and own the sandbox exclusively. The helper captures a proof, cleans all
     // managed private namespaces, and returns before freeze. No body is copied.
     let result = AssertUnwindSafe(async {

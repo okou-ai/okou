@@ -556,7 +556,7 @@ describe("Pi memory Phase 2 filesystem", () => {
     }).toThrow(Phase2InputInvalidError);
   });
 
-  it("leaves an interrupted mounted apply unpublished for checkpoint recovery", async () => {
+  it("leaves an interrupted mounted apply unpublished for publication recovery", async () => {
     const memoryRoot = await mkdtemp(
       join(tmpdir(), "pi-memory-phase2-mounted-apply-test-"),
     );

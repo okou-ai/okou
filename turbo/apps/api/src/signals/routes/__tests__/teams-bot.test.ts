@@ -2514,7 +2514,7 @@ describe("POST /api/webhooks/teams/bot", () => {
         "Your name is Okou.",
       );
       // The stale card keeps the model and runtime unchanged. A missing
-      // native checkpoint does not rotate the session or replay prior turns.
+      // native history does not rotate the session or replay prior turns.
       expect(switchedModelClaim.appendSystemPrompt).not.toContain(
         "# Microsoft Teams Run Context",
       );

@@ -56,7 +56,7 @@ export const piMemoryPhase2Jobs = pgTable(
      * under #31067 only after the outgoing API and all legacy leases drain.
      */
     legacyLeaseToken: uuid("legacy_lease_token"),
-    /** Fence set only by the sandbox-checkpoint dispatcher. */
+    /** Fence set only by the sandbox maintenance dispatcher. */
     sandboxLeaseToken: uuid("sandbox_lease_token"),
     leaseExpiresAt: timestamp("lease_expires_at"),
     maintenanceRunId: uuid("maintenance_run_id"),
@@ -90,7 +90,8 @@ export const piMemoryPhase2Jobs = pgTable(
       "last_maintenance_selection_digest",
       { length: 64 },
     ),
-    lastMaintenanceCheckpointVersionId: varchar(
+    /** Published memory version; the physical column name is rollout-stable. */
+    lastMaintenancePublicationVersionId: varchar(
       "last_maintenance_checkpoint_version_id",
       { length: 64 },
     ),
@@ -165,7 +166,7 @@ export const piMemoryPhase2Jobs = pgTable(
           (${table.lastPublishedVersionId} IS NULL OR ${table.lastPublishedVersionId} ~ '^[0-9a-f]{64}$') AND
           (${table.lastMaintenanceBaseVersionId} IS NULL OR ${table.lastMaintenanceBaseVersionId} ~ '^[0-9a-f]{64}$') AND
           (${table.lastMaintenanceSelectionDigest} IS NULL OR ${table.lastMaintenanceSelectionDigest} ~ '^[0-9a-f]{64}$') AND
-          (${table.lastMaintenanceCheckpointVersionId} IS NULL OR ${table.lastMaintenanceCheckpointVersionId} ~ '^[0-9a-f]{64}$')`,
+          (${table.lastMaintenancePublicationVersionId} IS NULL OR ${table.lastMaintenancePublicationVersionId} ~ '^[0-9a-f]{64}$')`,
       ),
       check(
         "pi_memory_phase2_jobs_execution_fence_check",
@@ -195,7 +196,7 @@ export const piMemoryPhase2Jobs = pgTable(
           ${table.lastMaintenanceRevision} IS NULL AND
           ${table.lastMaintenanceBaseVersionId} IS NULL AND
           ${table.lastMaintenanceSelectionDigest} IS NULL AND
-          ${table.lastMaintenanceCheckpointVersionId} IS NULL AND
+          ${table.lastMaintenancePublicationVersionId} IS NULL AND
           ${table.lastMaintenanceOutcome} IS NULL
         ) OR (
           ${table.lastMaintenanceRunId} IS NOT NULL AND
@@ -207,10 +208,10 @@ export const piMemoryPhase2Jobs = pgTable(
           (
             (
               ${table.lastMaintenanceOutcome} = 'failed' AND
-              ${table.lastMaintenanceCheckpointVersionId} IS NULL
+              ${table.lastMaintenancePublicationVersionId} IS NULL
             ) OR (
               ${table.lastMaintenanceOutcome} IN ('published', 'no_diff') AND
-              ${table.lastMaintenanceCheckpointVersionId} IS NOT NULL
+              ${table.lastMaintenancePublicationVersionId} IS NOT NULL
             )
           )
         )`,

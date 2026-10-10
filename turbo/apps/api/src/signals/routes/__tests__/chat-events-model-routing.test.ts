@@ -34,7 +34,7 @@ const {
   cancelChatRun,
 
   readThreadProjection,
-  mockPiCheckpointObjectStore,
+  mockPiObjectStore,
   mockPiResourceArchiveDownloads,
 } = createChatEventsFixture(context);
 
@@ -733,7 +733,7 @@ describe("CHAT-02: model-first routing", () => {
       await configureSubscriptionPiModel(actor, {}, "gpt-6-sol");
 
       mockPiResourceArchiveDownloads(true);
-      mockPiCheckpointObjectStore();
+      mockPiObjectStore();
       const fast = await sendChatRun(actor, {
         agentId,
         prompt: "run codex fast",

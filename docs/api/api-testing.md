@@ -194,7 +194,7 @@ Use the construction and observation rules together:
 - Obtain Runner credentials through normal chat send, authenticated heartbeat
   and claim. A locally signed token for an invented Run does not establish that
   lifecycle or a real caller's permission combination. Preserve genuine provider
-  ingress, upload preparation, checkpoint and completion protocols. Upload only
+  ingress, upload preparation, output publication and completion protocols. Upload only
   to keys returned by the normal protocol.
 - In overlapping requests, use caller-supplied or already returned identifiers.
   Reading a server-selected identity from an internal write before the response

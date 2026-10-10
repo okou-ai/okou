@@ -10,12 +10,8 @@ import { mockEnv } from "../../../lib/env";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 
 const context = testContext();
-const {
-  api,
-  configureSubscriptionPiModel,
-  cancelChatRun,
-  mockPiCheckpointObjectStore,
-} = createChatEventsFixture(context);
+const { api, configureSubscriptionPiModel, cancelChatRun, mockPiObjectStore } =
+  createChatEventsFixture(context);
 
 describe("CHAT-02: model-first routing", () => {
   it("launches an at-capacity Pi send on a fresh session once a slot frees", async () => {
@@ -43,7 +39,7 @@ describe("CHAT-02: model-first routing", () => {
     await own(async () => {
       return await configureSubscriptionPiModel(actor, {}, "gpt-6-luna");
     });
-    mockPiCheckpointObjectStore();
+    mockPiObjectStore();
     const prompt = "keep the complete admission independent";
     const waiting = await sendWaitingChatInput(actor, {
       agentId,

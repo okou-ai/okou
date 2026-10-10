@@ -179,8 +179,8 @@ export function okouTokenFromClaim(claim: RunnerClaim): string {
 }
 
 /**
- * Checkpoint + exitCode-0 complete (completing without a checkpoint fails the
- * run).
+ * Complete with native history and exitCode 0. Successful completion requires
+ * the native session identity and output references.
  */
 export interface ChatRunCompletionOptions {
   readonly cliAgentSessionId?: string;
@@ -248,7 +248,7 @@ export function modelProviderSecretPlaceholder(
   return placeholder;
 }
 
-export interface PiCheckpointS3Command {
+export interface PiObjectStoreCommand {
   readonly constructor?: { readonly name?: string };
   readonly input?: {
     readonly Body?: unknown;
@@ -261,7 +261,7 @@ export interface PiCheckpointS3Command {
 }
 
 export function piS3ObjectKey(
-  candidate: PiCheckpointS3Command,
+  candidate: PiObjectStoreCommand,
 ): string | undefined {
   const bucket = candidate.input?.Bucket;
   const key = candidate.input?.Key;
@@ -272,7 +272,7 @@ export function piS3ObjectKey(
 
 function mockPiPutObject(
   objects: Map<string, Buffer>,
-  candidate: PiCheckpointS3Command,
+  candidate: PiObjectStoreCommand,
 ): Promise<unknown> | undefined {
   const objectKey = piS3ObjectKey(candidate);
   if (candidate.constructor?.name !== "PutObjectCommand" || !objectKey) {
@@ -291,7 +291,7 @@ function mockPiPutObject(
 
 function mockPiGetObject(
   objects: Map<string, Buffer>,
-  candidate: PiCheckpointS3Command,
+  candidate: PiObjectStoreCommand,
 ): Promise<unknown> | undefined {
   const objectKey = piS3ObjectKey(candidate);
   if (candidate.constructor?.name !== "GetObjectCommand" || !objectKey) {
@@ -310,7 +310,7 @@ function mockPiGetObject(
 
 function mockPiDeleteObjects(
   objects: Map<string, Buffer>,
-  candidate: PiCheckpointS3Command,
+  candidate: PiObjectStoreCommand,
 ): Promise<unknown> | undefined {
   const bucket = candidate.input?.Bucket;
   if (
@@ -990,12 +990,12 @@ export function createChatEventsFixture(context: TestContext) {
     });
   }
 
-  function mockPiCheckpointObjectStore(): Map<string, Buffer> {
+  function mockPiObjectStore(): Map<string, Buffer> {
     const objects = new Map<string, Buffer>();
     mockPiCheckpointUploads(context, objects);
     const fallback = context.mocks.s3.send.getMockImplementation();
     context.mocks.s3.send.mockImplementation((command: unknown) => {
-      const candidate = command as PiCheckpointS3Command;
+      const candidate = command as PiObjectStoreCommand;
       return (
         mockPiPutObject(objects, candidate) ??
         mockPiGetObject(objects, candidate) ??
@@ -1052,7 +1052,7 @@ export function createChatEventsFixture(context: TestContext) {
 
   function uploadedPiS3Object(objectKey: string): Buffer | undefined {
     for (const [command] of [...context.mocks.s3.send.mock.calls].reverse()) {
-      const candidate = command as PiCheckpointS3Command;
+      const candidate = command as PiObjectStoreCommand;
       if (
         candidate.constructor?.name === "PutObjectCommand" &&
         piS3ObjectKey(candidate) === objectKey
@@ -1293,7 +1293,7 @@ export function createChatEventsFixture(context: TestContext) {
     lastThreadPiAutomationRun,
     expectThreadPiTerminal,
     claimGptPiSandbox,
-    mockPiCheckpointObjectStore,
+    mockPiObjectStore,
     piSandboxBaseSession,
     uploadedPiS3Object,
     piS3Object,

@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 pub struct GuestPaths {
     runtime_dir: PathBuf,
     session_id_file: String,
-    checkpoint_error_file: String,
+    finalization_error_file: String,
     final_session_history_identity_file: String,
     failure_diagnostic_file: String,
     claude_append_system_prompt_file: String,
@@ -46,8 +46,8 @@ impl GuestPaths {
             session_id_file: path_to_string(guest_contracts::runtime_paths::session_id_file(
                 &runtime_dir,
             )),
-            checkpoint_error_file: path_to_string(
-                guest_contracts::runtime_paths::checkpoint_error_file(&runtime_dir),
+            finalization_error_file: path_to_string(
+                guest_contracts::runtime_paths::finalization_error_file(&runtime_dir),
             ),
             final_session_history_identity_file: path_to_string(
                 guest_contracts::runtime_paths::final_session_history_identity_file(&runtime_dir),
@@ -139,12 +139,12 @@ impl GuestPaths {
     /// The private text file contains a non-empty finalization or guest error
     /// message when one is recorded. This accessor returns a borrowed `&str`
     /// and only derives the path; it does not create, validate, or otherwise
-    /// access the file. See the canonical [checkpoint-error path helper][checkpoint_error_file]
+    /// access the file. See the canonical [checkpoint-error path helper][finalization_error_file]
     /// for the shared runtime layout.
     ///
-    /// [checkpoint_error_file]: guest_contracts::runtime_paths::checkpoint_error_file
-    pub fn checkpoint_error_file(&self) -> &str {
-        &self.checkpoint_error_file
+    /// [finalization_error_file]: guest_contracts::runtime_paths::finalization_error_file
+    pub fn finalization_error_file(&self) -> &str {
+        &self.finalization_error_file
     }
 
     /// Return the run-root `final-session-history-identity.json` path.
@@ -328,8 +328,8 @@ mod tests {
             guest_contracts::runtime_paths::session_id_file(&runtime_dir).to_string_lossy()
         );
         assert_eq!(
-            paths.checkpoint_error_file(),
-            guest_contracts::runtime_paths::checkpoint_error_file(&runtime_dir).to_string_lossy()
+            paths.finalization_error_file(),
+            guest_contracts::runtime_paths::finalization_error_file(&runtime_dir).to_string_lossy()
         );
         assert_eq!(
             paths.final_session_history_identity_file(),

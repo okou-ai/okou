@@ -223,8 +223,8 @@ async function waitForRunStatus(
 }
 
 /**
- * Checkpoint + exitCode-0 complete (completing without a checkpoint fails the
- * run).
+ * Complete with native history and exitCode 0. Successful completion requires
+ * the native session identity and output references.
  */
 async function completeChatRunOk(
   runId: string,
@@ -408,7 +408,7 @@ async function sendNoCreditMessage(
 }
 
 /**
- * Runs a full chat run (send, runner claim, checkpoint + complete) so the
+ * Runs a full chat run (send, runner claim, output publication + completion) so the
  * thread gains its run-finished marker through the production callback path.
  */
 async function completeChatRunInThread(

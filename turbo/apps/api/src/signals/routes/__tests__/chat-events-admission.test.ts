@@ -624,7 +624,7 @@ describe("CHAT-02: interrupting active chat runs", () => {
     ).toStrictEqual([]);
 
     // With the same model and runtime, both cancelled rounds are carried
-    // forward as incomplete context even without a native checkpoint.
+    // forward as incomplete context even without a native history.
     const third = await sendChatRun(actor, {
       agentId,
       threadId: first.threadId,

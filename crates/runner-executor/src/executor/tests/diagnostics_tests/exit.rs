@@ -224,7 +224,7 @@ fn unattributed_sigkill_resource_diagnostics_require_unattributed_fallback_failu
     .with_cli_observed_exit(CliObservedExitDiagnostic::from_signal(libc::SIGKILL))
     .with_failure_detail_source(FailureDetailSource::ClaudeResult);
     let non_cli_diagnostic = FailureDiagnostic::new(
-        FailureClass::CheckpointFailed,
+        FailureClass::FinalizationFailed,
         AgentFramework::ClaudeCode,
         PromptMetadata::from_prompt("/help"),
     )

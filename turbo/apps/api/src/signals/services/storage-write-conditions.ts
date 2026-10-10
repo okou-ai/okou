@@ -1,7 +1,7 @@
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
-import { piMemoryPhase2Checkpoints } from "@okouai/db/schema/pi-memory-phase2-checkpoint";
+import { piMemoryPhase2PublicationReceipts } from "@okouai/db/schema/pi-memory-phase2-publication-receipt";
 import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-candidate";
 import { storageVersionLineage } from "@okouai/db/schema/storage-version-lineage";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
@@ -13,7 +13,7 @@ type MaintenancePayload = ReturnType<
   typeof piMemoryPhase2MaintenanceCallbackPayloadSchema.parse
 >;
 export type MaintenanceReceiptBinding = Omit<
-  typeof piMemoryPhase2Checkpoints.$inferInsert,
+  typeof piMemoryPhase2PublicationReceipts.$inferInsert,
   "versionId" | "createdAt"
 >;
 export type StorageIdentity = Pick<
@@ -51,17 +51,26 @@ export function storageMaintenanceReceiptCondition(
   binding: MaintenanceReceiptBinding,
 ) {
   return and(
-    eq(piMemoryPhase2Checkpoints.runId, binding.runId),
-    eq(piMemoryPhase2Checkpoints.memoryStorageId, binding.memoryStorageId),
-    eq(piMemoryPhase2Checkpoints.orgId, binding.orgId),
-    eq(piMemoryPhase2Checkpoints.userId, binding.userId),
-    eq(piMemoryPhase2Checkpoints.leaseToken, binding.leaseToken),
-    eq(piMemoryPhase2Checkpoints.claimedRevision, binding.claimedRevision),
+    eq(piMemoryPhase2PublicationReceipts.runId, binding.runId),
     eq(
-      piMemoryPhase2Checkpoints.claimedBaseVersionId,
+      piMemoryPhase2PublicationReceipts.memoryStorageId,
+      binding.memoryStorageId,
+    ),
+    eq(piMemoryPhase2PublicationReceipts.orgId, binding.orgId),
+    eq(piMemoryPhase2PublicationReceipts.userId, binding.userId),
+    eq(piMemoryPhase2PublicationReceipts.leaseToken, binding.leaseToken),
+    eq(
+      piMemoryPhase2PublicationReceipts.claimedRevision,
+      binding.claimedRevision,
+    ),
+    eq(
+      piMemoryPhase2PublicationReceipts.claimedBaseVersionId,
       binding.claimedBaseVersionId,
     ),
-    eq(piMemoryPhase2Checkpoints.selectionDigest, binding.selectionDigest),
+    eq(
+      piMemoryPhase2PublicationReceipts.selectionDigest,
+      binding.selectionDigest,
+    ),
   );
 }
 export function storageMaintenanceJobCondition(
@@ -250,7 +259,7 @@ export function storageMaintenanceCompletionValues(
     lastMaintenanceRevision: payload.claimedRevision,
     lastMaintenanceBaseVersionId: payload.claimedBaseVersionId,
     lastMaintenanceSelectionDigest: payload.selectionDigest,
-    lastMaintenanceCheckpointVersionId: versionId,
+    lastMaintenancePublicationVersionId: versionId,
     lastMaintenanceOutcome: published
       ? ("published" as const)
       : ("no_diff" as const),

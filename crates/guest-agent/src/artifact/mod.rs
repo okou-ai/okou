@@ -60,7 +60,7 @@ pub(crate) struct SnapshotResult {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct PiMemoryPhase2CheckpointAttestation {
+pub(crate) struct PiMemoryPhase2PublicationAttestation {
     pub(crate) schema_version: u8,
     pub(crate) lease_token: String,
     pub(crate) claimed_revision: u32,
@@ -85,7 +85,7 @@ struct SnapshotRequest<'a> {
     run_id: &'a str,
     message: &'a str,
     parent_version_id: &'a str,
-    maintenance_attestation: Option<PiMemoryPhase2CheckpointAttestation>,
+    maintenance_attestation: Option<PiMemoryPhase2PublicationAttestation>,
 }
 
 impl<'a> From<CreateSnapshotRequest<'a>> for SnapshotRequest<'a> {
@@ -232,7 +232,7 @@ pub(crate) async fn create_snapshot(
 pub(crate) async fn create_snapshot_with_attestation(
     http: &HttpClient,
     request: CreateSnapshotRequest<'_>,
-    maintenance_attestation: Option<PiMemoryPhase2CheckpointAttestation>,
+    maintenance_attestation: Option<PiMemoryPhase2PublicationAttestation>,
 ) -> Result<SnapshotResult, AgentError> {
     let mut request = SnapshotRequest::from(request);
     request.maintenance_attestation = maintenance_attestation;

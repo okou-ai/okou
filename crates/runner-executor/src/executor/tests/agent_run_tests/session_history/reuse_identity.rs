@@ -46,7 +46,7 @@ use runner_types::types::{
 const SESSION_HISTORY_IDENTITY_REUSE_VERIFY_ERROR: &str =
     "session history identity reuse verification failed";
 
-fn context_with_checkpointed_session_identity(
+fn context_with_finalized_session_identity(
     session_id: &str,
     history: &[u8],
 ) -> (
@@ -81,10 +81,10 @@ fn context_with_checkpointed_session_identity(
     .unwrap();
     let identity =
         RestoredSessionIdentity::from_final_metadata(metadata.clone(), metadata_path, runtime_dir)
-            .expect("checkpointed identity");
+            .expect("finalized identity");
     (ctx, identity)
 }
-async fn assert_checkpointed_final_identity_helper_failure_falls_back(
+async fn assert_finalized_final_identity_helper_failure_falls_back(
     session_id: &str,
     helper_result: ExecResult,
     expected_reason_action: &str,
@@ -127,7 +127,7 @@ async fn assert_checkpointed_final_identity_helper_failure_falls_back(
     .unwrap();
     let idle_identity =
         RestoredSessionIdentity::from_final_metadata(metadata.clone(), metadata_path, runtime_dir)
-            .expect("checkpointed identity");
+            .expect("finalized identity");
     sandbox.push_exec_result(Ok(helper_result));
     sandbox.push_read_file_result(Ok(Some(metadata.to_json_vec().unwrap())));
     sandbox.push_read_file_result(Ok(None));
@@ -171,7 +171,7 @@ async fn assert_checkpointed_final_identity_helper_failure_falls_back(
     );
 }
 #[tokio::test]
-async fn run_in_sandbox_skips_checkpointed_final_session_history_restore() {
+async fn run_in_sandbox_skips_finalized_final_session_history_restore() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
     let sandbox = sandbox_mock::MockSandbox::new("test");
@@ -217,7 +217,7 @@ async fn run_in_sandbox_skips_checkpointed_final_session_history_restore() {
         previous_metadata_path,
         previous_runtime_dir,
     )
-    .expect("checkpointed identity");
+    .expect("finalized identity");
     let final_identity = RestoredSessionIdentity::from_final_metadata(
         metadata.clone(),
         metadata_path.clone(),
@@ -283,24 +283,24 @@ async fn run_in_sandbox_skips_checkpointed_final_session_history_restore() {
     assert!(
         ops.iter()
             .any(|op| op.0 == "session_history_identity_reuse_hit" && op.1),
-        "expected checkpointed identity reuse hit telemetry, got: {ops:?}"
+        "expected finalized identity reuse hit telemetry, got: {ops:?}"
     );
     assert!(
         ops.iter()
             .any(|op| op.0 == "session_history_restore_skip" && op.1),
-        "expected checkpointed skip telemetry, got: {ops:?}"
+        "expected finalized skip telemetry, got: {ops:?}"
     );
 }
 
 #[tokio::test]
-async fn run_in_sandbox_drops_checkpointed_identity_when_agent_is_cancelled() {
+async fn run_in_sandbox_drops_finalized_identity_when_agent_is_cancelled() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
     let start_process_gate = MockLifecycleGate::new();
     overrides.set_start_process_lifecycle_gate(start_process_gate.clone());
     let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
-    let (ctx, idle_identity) = context_with_checkpointed_session_identity(
+    let (ctx, idle_identity) = context_with_finalized_session_identity(
         "sess-cancelled-reuse-123",
         br#"{"type":"before"}"#,
     );
@@ -347,7 +347,7 @@ async fn run_in_sandbox_drops_checkpointed_identity_when_agent_is_cancelled() {
         }
     })
     .await
-    .expect("run should verify the checkpointed identity before starting the agent");
+    .expect("run should verify the finalized identity before starting the agent");
     assert_eq!(overrides.session_history_identity_verify_calls().len(), 1);
     assert!(overrides.exec_calls().is_empty());
 
@@ -371,7 +371,7 @@ async fn run_in_sandbox_drops_checkpointed_identity_when_agent_is_cancelled() {
 }
 
 #[tokio::test]
-async fn run_in_sandbox_drops_checkpointed_identity_when_agent_exits_nonzero() {
+async fn run_in_sandbox_drops_finalized_identity_when_agent_exits_nonzero() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
@@ -382,10 +382,8 @@ async fn run_in_sandbox_drops_checkpointed_identity_when_agent_exits_nonzero() {
         b"agent failed".to_vec(),
     ));
     let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
-    let (ctx, idle_identity) = context_with_checkpointed_session_identity(
-        "sess-nonzero-reuse-123",
-        br#"{"type":"before"}"#,
-    );
+    let (ctx, idle_identity) =
+        context_with_finalized_session_identity("sess-nonzero-reuse-123", br#"{"type":"before"}"#);
     let expected = crate::executor::home_history::expected_history(&ctx).unwrap();
     let source = claude_history_source(&ctx.resume_session.as_ref().unwrap().cli_agent_session_id);
     let live_metadata = SessionHistoryIdentity::new(
@@ -435,7 +433,7 @@ async fn run_in_sandbox_drops_checkpointed_identity_when_agent_exits_nonzero() {
 }
 
 #[tokio::test]
-async fn run_in_sandbox_classifies_checkpointed_final_identity_helper_failure_codes() {
+async fn run_in_sandbox_classifies_finalized_final_identity_helper_failure_codes() {
     let cases = [
         (
             "generic",
@@ -476,7 +474,7 @@ async fn run_in_sandbox_classifies_checkpointed_final_identity_helper_failure_co
 
     for (name, exit_code, expected_reason_action) in cases {
         let session_id = format!("sess-final-helper-{name}-123");
-        assert_checkpointed_final_identity_helper_failure_falls_back(
+        assert_finalized_final_identity_helper_failure_falls_back(
             &session_id,
             ExecResult::new(exit_code, Vec::new(), Vec::new()),
             expected_reason_action,
@@ -486,7 +484,7 @@ async fn run_in_sandbox_classifies_checkpointed_final_identity_helper_failure_co
 }
 
 #[tokio::test]
-async fn run_in_sandbox_restores_when_checkpointed_final_identity_helper_reports_mismatch() {
+async fn run_in_sandbox_restores_when_finalized_final_identity_helper_reports_mismatch() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
     let sandbox = sandbox_mock::MockSandbox::new("test");
@@ -529,7 +527,7 @@ async fn run_in_sandbox_restores_when_checkpointed_final_identity_helper_reports
         metadata_path.clone(),
         runtime_dir,
     )
-    .expect("checkpointed identity");
+    .expect("finalized identity");
     sandbox.push_exec_result(Ok(ExecResult::new(
         SESSION_HISTORY_IDENTITY_VERIFY_EXIT_HISTORY_MISMATCH,
         Vec::new(),
@@ -591,7 +589,7 @@ async fn run_in_sandbox_restores_when_checkpointed_final_identity_helper_reports
 }
 
 #[tokio::test]
-async fn run_in_sandbox_restores_when_checkpointed_final_identity_helper_exec_errors() {
+async fn run_in_sandbox_restores_when_finalized_final_identity_helper_exec_errors() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
     let sandbox = sandbox_mock::MockSandbox::new("test");
@@ -634,7 +632,7 @@ async fn run_in_sandbox_restores_when_checkpointed_final_identity_helper_exec_er
         metadata_path.clone(),
         runtime_dir,
     )
-    .expect("checkpointed identity");
+    .expect("finalized identity");
     sandbox.push_exec_result(Err(sandbox_exec_error("vsock exec failed")));
     sandbox.push_read_file_result(Ok(Some(metadata.to_json_vec().unwrap())));
     sandbox.push_read_file_result(Ok(None));
@@ -679,8 +677,8 @@ async fn run_in_sandbox_restores_when_checkpointed_final_identity_helper_exec_er
 }
 
 #[tokio::test]
-async fn run_in_sandbox_restores_when_checkpointed_final_identity_helper_times_out() {
-    assert_checkpointed_final_identity_helper_failure_falls_back(
+async fn run_in_sandbox_restores_when_finalized_final_identity_helper_times_out() {
+    assert_finalized_final_identity_helper_failure_falls_back(
         "sess-final-helper-timeout-123",
         ExecResult {
             termination: ExecTermination::TimedOut,
@@ -697,8 +695,8 @@ async fn run_in_sandbox_restores_when_checkpointed_final_identity_helper_times_o
 }
 
 #[tokio::test]
-async fn run_in_sandbox_restores_when_checkpointed_final_identity_helper_is_over_budget() {
-    assert_checkpointed_final_identity_helper_failure_falls_back(
+async fn run_in_sandbox_restores_when_finalized_final_identity_helper_is_over_budget() {
+    assert_finalized_final_identity_helper_failure_falls_back(
         "sess-final-helper-too-large-123",
         ExecResult::new(
             SESSION_HISTORY_IDENTITY_VERIFY_EXIT_HISTORY_TOO_LARGE,

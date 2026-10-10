@@ -385,8 +385,8 @@ function chatRunCompletion(runId: string): {
 }
 
 /**
- * Atomically checkpoint + exitCode-0 complete. Completing without a checkpoint
- * routes to the missing-checkpoint handler and FAILS the run.
+ * Atomically complete with native history and exitCode 0. Completing without
+ * the required session identity and output references fails the run.
  */
 async function completeChatRunOk(
   runId: string,
@@ -2372,7 +2372,7 @@ describe("CHAT-02/RUN-03: cancellation recovery barrier", () => {
     await flushWaitUntilForTest();
   }, 90_000);
 
-  it("records recovery when checkpointed completion follows cancellation", async () => {
+  it("records recovery when completion with native history follows cancellation", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     const run = await startChatRun(actor, {

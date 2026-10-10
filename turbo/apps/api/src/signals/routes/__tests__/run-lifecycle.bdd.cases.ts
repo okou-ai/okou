@@ -689,7 +689,7 @@ const piClaimFixture = createChatEventsFixture(context);
  * and then inspect the frozen claim.
  */
 function preparePiSandboxClaim(): void {
-  piClaimFixture.mockPiCheckpointObjectStore();
+  piClaimFixture.mockPiObjectStore();
 }
 
 async function entitledRunActor(
@@ -2966,7 +2966,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           return { cliSessionId, hash };
         };
         const firstClaim = await api.claimRunnerJob(first.runId);
-        const firstCheckpoint = await finalized(
+        const firstHistory = await finalized(
           first.runId,
           firstClaim.sandboxToken,
         );
@@ -2978,8 +2978,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         const resumedClaim = await api.claimRunnerJob(resumed.runId);
         expect(resumedClaim.resumeSession).toMatchObject({
-          sessionId: firstCheckpoint.cliSessionId,
-          historyRef: { kind: "blob", hash: firstCheckpoint.hash },
+          sessionId: firstHistory.cliSessionId,
+          historyRef: { kind: "blob", hash: firstHistory.hash },
         });
         await finalized(resumed.runId, resumedClaim.sandboxToken);
         await flushWaitUntilForTest();
@@ -12597,7 +12597,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             });
           const run = await api.createThreadRun(actor, {
             agentId,
-            prompt: `complete with ${cliAgentType} checkpoint`,
+            prompt: `complete with ${cliAgentType} history`,
             model,
           });
           const claim = await api.claimRunnerJob(run.runId);
@@ -12666,7 +12666,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             [200],
           );
           expect(conflictingExitDuplicate.body).toStrictEqual(completed.body);
-          const conflictingCheckpoint = await webhooks.requestAgentComplete(
+          const conflictingCompletion = await webhooks.requestAgentComplete(
             {
               ...body,
               completion: {
@@ -12677,8 +12677,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             sandboxHeaders,
             [400],
           );
-          expectApiError(conflictingCheckpoint.body);
-          expect(conflictingCheckpoint.body.error.message).toContain(
+          expectApiError(conflictingCompletion.body);
+          expect(conflictingCompletion.body.error.message).toContain(
             "Final output does not exactly match",
           );
           const runnerDuplicate = await webhooks.requestAgentComplete(
@@ -12699,7 +12699,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           const continued = await api.createThreadRun(actor, {
             agentId,
             threadId: run.threadId,
-            prompt: `resume combined ${cliAgentType} checkpoint`,
+            prompt: `resume combined ${cliAgentType} history`,
             model,
           });
           const continuedClaim = await api.claimRunnerJob(continued.runId);
@@ -12753,7 +12753,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           const afterRetry = await api.createThreadRun(actor, {
             agentId,
             threadId: run.threadId,
-            prompt: `resume successor ${cliAgentType} checkpoint`,
+            prompt: `resume successor ${cliAgentType} history`,
             model,
           });
           const afterRetryClaim = await api.claimRunnerJob(afterRetry.runId);
@@ -12886,7 +12886,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(expiredTelemetry.body.error.code).toBe("UNAUTHORIZED");
       });
 
-      it("continues from a recovery checkpoint posted after timeout completion", async () => {
+      it("continues from recovery outputs posted after timeout completion", async () => {
         const api = createRunsApi(context);
         const webhooks = createWebhookCallbackApi(context);
         const { actor, agentId } = await entitledRunActor(
@@ -12964,7 +12964,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await owned.run(async () => {
           const run = await owned.sendChatRun(actor, {
             agentId,
-            prompt: "complete without a checkpoint",
+            prompt: "complete without native session outputs",
           });
           const pat = await api.createCliToken(actor);
           const response = await owned.claimPatRun(
@@ -13110,7 +13110,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
           const run = await owned.sendChatRun(actor, {
             agentId,
-            prompt: "checkpoint, cancel, then complete",
+            prompt: "publish outputs, cancel, then complete",
           });
           const { claim } = await owned.claimChatRun(
             owned.runnerGroup,
@@ -13120,7 +13120,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             authorization: `Bearer ${claim.sandboxToken}`,
           };
           const historyHash = createHash("sha256")
-            .update(`bdd cancelled checkpoint ${run.runId}`)
+            .update(`bdd cancelled history ${run.runId}`)
             .digest("hex");
           await api.requestCancelRun(actor, run.runId, [200]);
 
@@ -13158,7 +13158,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           await api.ensurePersonalSubscriptionModel(actor, NATIVE_RUNNER_ROUTE);
           const run = await owned.sendChatRun(actor, {
             agentId,
-            prompt: "checkpoint without vars",
+            prompt: "publish outputs without vars",
           });
           const { claim } = await owned.claimChatRun(
             owned.runnerGroup,
@@ -13169,7 +13169,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           };
 
           const historyHash = createHash("sha256")
-            .update(`bdd null vars checkpoint ${run.runId}`)
+            .update(`bdd null vars history ${run.runId}`)
             .digest("hex");
           await webhooks.requestAgentComplete(
             {

@@ -661,7 +661,7 @@ async function executeConsolidation(
   });
 }
 
-/** Prepare owned local bytes; the mounted boundary owns application and checkpoint identity. */
+/** Prepare owned local bytes; the mounted boundary owns application and publication identity. */
 export async function runPiMemoryPhase2LocalConsolidation(
   args: PiMemoryPhase2LocalConsolidationArgs,
   signal: AbortSignal,

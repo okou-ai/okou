@@ -542,7 +542,7 @@ describe("official Pi AgentSession runtime", () => {
       expect(inspectPiSessionJsonl(sessionJsonl)).toMatchObject({
         messageCount: 7,
         hasPendingToolCalls: false,
-        isSettledCheckpoint: true,
+        isSettledHistory: true,
       });
       for (const marker of [
         "legacy reasoning context",

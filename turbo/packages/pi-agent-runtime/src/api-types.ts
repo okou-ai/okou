@@ -79,5 +79,5 @@ export interface PiSessionInspection {
   readonly messageCount: number;
   readonly hasPendingToolCalls: boolean;
   readonly pendingToolIds: readonly string[];
-  readonly isSettledCheckpoint: boolean;
+  readonly isSettledHistory: boolean;
 }

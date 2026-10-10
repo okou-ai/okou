@@ -267,7 +267,7 @@ async fn recovery_finalization_continues_without_partial_jsonl_history() {
         .await
         .unwrap();
     assert!(
-        !std::path::Path::new(runtime.paths.checkpoint_error_file()).exists(),
+        !std::path::Path::new(runtime.paths.finalization_error_file()).exists(),
         "recovery finalization must not write the success-path finalization error file"
     );
     prepare_mock.assert_calls_async(0).await;
@@ -315,7 +315,7 @@ async fn recovery_finalization_continues_without_non_utf8_session_history() {
         .await
         .unwrap();
     assert!(
-        !std::path::Path::new(runtime.paths.checkpoint_error_file()).exists(),
+        !std::path::Path::new(runtime.paths.finalization_error_file()).exists(),
         "recovery finalization must not write the success-path finalization error file"
     );
     prepare_mock.assert_calls_async(0).await;
@@ -354,7 +354,7 @@ async fn recovery_finalization_skips_when_session_id_is_missing() {
         "expected recovery finalization to fail on missing session ID, got: {err}"
     );
     assert!(
-        !std::path::Path::new(runtime.paths.checkpoint_error_file()).exists(),
+        !std::path::Path::new(runtime.paths.finalization_error_file()).exists(),
         "recovery finalization must not write the success-path finalization error file"
     );
     prepare_mock.assert_calls_async(0).await;
@@ -397,7 +397,7 @@ async fn recovery_finalization_continues_when_derived_history_is_missing() {
         .await
         .unwrap();
     assert!(
-        !std::path::Path::new(runtime.paths.checkpoint_error_file()).exists(),
+        !std::path::Path::new(runtime.paths.finalization_error_file()).exists(),
         "recovery finalization must not write the success-path finalization error file"
     );
     prepare_mock.assert_calls_async(0).await;
@@ -440,7 +440,7 @@ async fn recovery_finalization_continues_without_invalid_history_source() {
         .await
         .unwrap();
     assert!(
-        !std::path::Path::new(runtime.paths.checkpoint_error_file()).exists(),
+        !std::path::Path::new(runtime.paths.finalization_error_file()).exists(),
         "recovery finalization must not write the success-path finalization error file"
     );
     prepare_mock.assert_calls_async(0).await;

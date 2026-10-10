@@ -1272,12 +1272,12 @@ describe("Teams chat callbacks", () => {
       runId,
       sandboxToken: claim.sandboxToken,
       exitCode: 1,
-      error: "Cannot continue session from checkpoint",
+      error: "Cannot continue session from history",
     });
 
     expect(teamsApi.postedActivities).toHaveLength(1);
     expect(teamsApi.postedActivities[0]?.text).toContain(
-      "Cannot continue session from checkpoint",
+      "Cannot continue session from history",
     );
     expect(teamsApi.reactionRequests).toStrictEqual([
       {

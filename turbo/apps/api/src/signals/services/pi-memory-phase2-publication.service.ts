@@ -1,35 +1,44 @@
-import { piMemoryPhase2Checkpoints } from "@okouai/db/schema/pi-memory-phase2-checkpoint";
+import { piMemoryPhase2PublicationReceipts } from "@okouai/db/schema/pi-memory-phase2-publication-receipt";
 import { and, eq } from "drizzle-orm";
 
 import type { ApiDb, Tx } from "../../lib/db-types";
 
-type PublicationReceipt = typeof piMemoryPhase2Checkpoints.$inferInsert;
+type PublicationReceipt = typeof piMemoryPhase2PublicationReceipts.$inferInsert;
 
 export function piMemoryPhase2PublicationCondition(
   binding: Omit<PublicationReceipt, "versionId" | "createdAt">,
 ) {
   return and(
-    eq(piMemoryPhase2Checkpoints.runId, binding.runId),
-    eq(piMemoryPhase2Checkpoints.memoryStorageId, binding.memoryStorageId),
-    eq(piMemoryPhase2Checkpoints.orgId, binding.orgId),
-    eq(piMemoryPhase2Checkpoints.userId, binding.userId),
-    eq(piMemoryPhase2Checkpoints.leaseToken, binding.leaseToken),
-    eq(piMemoryPhase2Checkpoints.claimedRevision, binding.claimedRevision),
+    eq(piMemoryPhase2PublicationReceipts.runId, binding.runId),
     eq(
-      piMemoryPhase2Checkpoints.claimedBaseVersionId,
+      piMemoryPhase2PublicationReceipts.memoryStorageId,
+      binding.memoryStorageId,
+    ),
+    eq(piMemoryPhase2PublicationReceipts.orgId, binding.orgId),
+    eq(piMemoryPhase2PublicationReceipts.userId, binding.userId),
+    eq(piMemoryPhase2PublicationReceipts.leaseToken, binding.leaseToken),
+    eq(
+      piMemoryPhase2PublicationReceipts.claimedRevision,
+      binding.claimedRevision,
+    ),
+    eq(
+      piMemoryPhase2PublicationReceipts.claimedBaseVersionId,
       binding.claimedBaseVersionId,
     ),
-    eq(piMemoryPhase2Checkpoints.selectionDigest, binding.selectionDigest),
+    eq(
+      piMemoryPhase2PublicationReceipts.selectionDigest,
+      binding.selectionDigest,
+    ),
   );
 }
 
 export async function findPiMemoryPhase2Publication(
   db: ApiDb | Tx,
   binding: Omit<PublicationReceipt, "versionId" | "createdAt">,
-): Promise<typeof piMemoryPhase2Checkpoints.$inferSelect | undefined> {
+): Promise<typeof piMemoryPhase2PublicationReceipts.$inferSelect | undefined> {
   const [receipt] = await db
     .select()
-    .from(piMemoryPhase2Checkpoints)
+    .from(piMemoryPhase2PublicationReceipts)
     .where(piMemoryPhase2PublicationCondition(binding))
     .limit(1);
   return receipt;

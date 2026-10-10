@@ -6,7 +6,7 @@ import {
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
-import { piMemoryPhase2Checkpoints } from "@okouai/db/schema/pi-memory-phase2-checkpoint";
+import { piMemoryPhase2PublicationReceipts } from "@okouai/db/schema/pi-memory-phase2-publication-receipt";
 import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-candidate";
 import { piResourceVersionIndexes } from "@okouai/db/schema/pi-resource-version-index";
 import { memorySummaryProjections } from "@okouai/db/schema/memory-summary-projection";
@@ -59,7 +59,7 @@ import type {
   StorageRow,
   StorageVersionRow,
   VerifiedStorageCommit,
-  PiMemoryPhase2CheckpointAttestation,
+  PiMemoryPhase2PublicationAttestation,
 } from "./storage-write.service";
 
 export interface MaintenancePublicationInput {
@@ -67,7 +67,7 @@ export interface MaintenancePublicationInput {
   readonly storageId: string;
   readonly parentVersionId?: string;
   readonly versionId: string;
-  readonly attestation?: PiMemoryPhase2CheckpointAttestation;
+  readonly attestation?: PiMemoryPhase2PublicationAttestation;
 }
 
 // A plan never receives a database, transaction or clock. Its owner supplies
@@ -238,8 +238,8 @@ function callbackSnapshotSql(runId: string) {
 }
 function receiptSnapshotSql(binding: MaintenanceReceiptBinding) {
   return new QueryBuilder()
-    .select({ version_id: piMemoryPhase2Checkpoints.versionId })
-    .from(piMemoryPhase2Checkpoints)
+    .select({ version_id: piMemoryPhase2PublicationReceipts.versionId })
+    .from(piMemoryPhase2PublicationReceipts)
     .where(storageMaintenanceReceiptCondition(binding))
     .limit(1)
     .getSQL();
@@ -340,7 +340,7 @@ function* admitMaintenanceCommit(
     );
   }
   if (receipt && receipt.version_id !== input.versionId) {
-    return notFound("Pi memory maintenance checkpoint already committed");
+    return notFound("Pi memory maintenance publication already committed");
   }
   if (binding && !receipt && !active) {
     return notFound("Active Pi memory maintenance publication not found");
@@ -506,12 +506,15 @@ function* publishStorageCommit(
   return { size, fileCount, deduplicated: !inserted };
 }
 
-function* settleStorageCheckpoint(
+function* settleStoragePublication(
   binding: MaintenanceReceiptBinding,
   versionId: string,
 ): StorageSqlPlan<void> {
   yield writeStatement(
-    insertedStorageSql(piMemoryPhase2Checkpoints, { ...binding, versionId }),
+    insertedStorageSql(piMemoryPhase2PublicationReceipts, {
+      ...binding,
+      versionId,
+    }),
   );
   const [callback] = callbackRows.parse(
     yield readStatement(
@@ -519,7 +522,7 @@ function* settleStorageCheckpoint(
       callbackRows.element,
     ),
   );
-  const payload = checkpointPayload(callback?.payload);
+  const payload = maintenancePayload(callback?.payload);
   yield writeStatement(
     updatedStorageSql(
       piMemoryStage1Candidates,
@@ -664,7 +667,7 @@ export function* storageCommitPublicationPlan(
         deduplicated: true,
       };
   if (binding && !replay && !terminal) {
-    yield* settleStorageCheckpoint(binding, input.versionId);
+    yield* settleStoragePublication(binding, input.versionId);
   }
   yield* enqueueStorageIndex(input.versionId);
   return storageCommitSuccess({
@@ -687,7 +690,7 @@ export function maintenancePublicationBinding(
 ) {
   if (payload === undefined) {
     return args.attestation
-      ? badRequestMessage("Unexpected maintenance checkpoint attestation")
+      ? badRequestMessage("Unexpected maintenance publication attestation")
       : undefined;
   }
   const parsed =
@@ -699,16 +702,16 @@ export function maintenancePublicationBinding(
   ) {
     return notFound("Active Pi memory maintenance publication not found");
   }
-  const checkpoint = parsed.data;
+  const maintenance = parsed.data;
   return {
     runId: args.auth.runId,
-    memoryStorageId: checkpoint.memoryStorageId,
-    orgId: checkpoint.orgId,
-    userId: checkpoint.userId,
-    leaseToken: checkpoint.leaseToken,
-    claimedRevision: checkpoint.claimedRevision,
-    claimedBaseVersionId: checkpoint.claimedBaseVersionId,
-    selectionDigest: checkpoint.selectionDigest,
+    memoryStorageId: maintenance.memoryStorageId,
+    orgId: maintenance.orgId,
+    userId: maintenance.userId,
+    leaseToken: maintenance.leaseToken,
+    claimedRevision: maintenance.claimedRevision,
+    claimedBaseVersionId: maintenance.claimedBaseVersionId,
+    selectionDigest: maintenance.selectionDigest,
   };
 }
 
@@ -716,7 +719,7 @@ function matchesMaintenancePublication(
   payload: ReturnType<
     typeof piMemoryPhase2MaintenanceCallbackPayloadSchema.parse
   >,
-  attestation: PiMemoryPhase2CheckpointAttestation,
+  attestation: PiMemoryPhase2PublicationAttestation,
   args: MaintenancePublicationInput,
 ): boolean {
   return (
@@ -732,9 +735,7 @@ function matchesMaintenancePublication(
   );
 }
 
-export function maintenanceCheckpointBinding(
-  input: CommitStorageForStorageInput,
-) {
+export function maintenanceReceiptBinding(input: CommitStorageForStorageInput) {
   const auth = input.sandboxAuth;
   const attestation = input.maintenanceAttestation;
   if (
@@ -877,12 +878,12 @@ function requirePublicationRow(row: unknown, message: string) {
   }
 }
 
-function checkpointPayload(payload: unknown) {
+function maintenancePayload(payload: unknown) {
   const parsed = piMemoryPhase2MaintenanceCallbackPayloadSchema.parse(payload);
   if (
     piMemoryPhase2SelectionDigest(parsed.selected) !== parsed.selectionDigest
   ) {
-    throw new Error("Pi memory checkpoint selection mismatch");
+    throw new Error("Pi memory publication selection mismatch");
   }
   return parsed;
 }
