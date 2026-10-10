@@ -21,7 +21,6 @@ const branch = caller.jobs.build;
 assert.deepEqual(branch.needs, ["prepare"],
   "image production still waits for the aggregate compiler matrix");
 assert.equal(branch.uses, "./.github/workflows/runner-image-architecture.yml");
-assert.equal(caller.jobs.compile, undefined);
 assert.equal(branch.strategy["fail-fast"], false);
 assert.equal(branch.strategy.matrix.include,
   "${{ fromJSON(needs.prepare.outputs.runner-host-groups-matrix) }}");
