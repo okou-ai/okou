@@ -1172,7 +1172,9 @@ export function createRunsApi(
       statuses: readonly (200 | 400 | 401 | 403 | 404)[],
     ) {
       return await accept(
-        runApp(context)(runsCancelContract).cancel({
+        setupAppWithRoutes({ context, routes: runsCancelRoutes })(
+          runsCancelContract,
+        ).cancel({
           headers: authenticate(context, actor),
           params: { id: runId },
         }),

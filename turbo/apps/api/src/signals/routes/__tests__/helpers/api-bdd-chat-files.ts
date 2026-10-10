@@ -787,7 +787,9 @@ export function createChatFilesBddApi(context: TestContext) {
       threadId: string,
     ): Promise<ChatThreadDetail> {
       const response = await accept(
-        threadByIdClient().get({
+        setupAppWithRoutes({ context, routes: chatThreadRoutes })(
+          chatThreadByIdContract,
+        ).get({
           headers: authenticate(context, actor),
           params: { id: threadId },
         }),
@@ -1596,7 +1598,7 @@ export function createChatFilesBddApi(context: TestContext) {
     ) {
       const client = setupAppWithRoutes({
         context,
-        routes: chatFilesRoutes,
+        routes: chatEventsRoutes,
         ...(signal === undefined ? {} : { signal }),
         ...(options.systemSkillStorageResolution === undefined
           ? {}

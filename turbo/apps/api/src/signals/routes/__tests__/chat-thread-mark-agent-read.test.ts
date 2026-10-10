@@ -57,10 +57,9 @@ async function createAgentReadFixture(
       elapsedMs: Math.round(performance.now() - startedAt),
     });
   }
-  onTestFailed(async ({ annotate }) => {
-    await annotate(
-      JSON.stringify({ threadCount, phases }),
-      "unread-construction",
+  onTestFailed(() => {
+    process.stderr.write(
+      `Unread construction phases ${JSON.stringify({ threadCount, phases })}\n`,
     );
   });
   const lifecycle = createPublicComputerUseScenario(context, { tier: "team" });
