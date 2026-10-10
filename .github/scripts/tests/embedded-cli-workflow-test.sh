@@ -45,7 +45,8 @@ jq -e '
       .with.name == $steps[$upload].with.name)
   )) and
   any(.jobs.compile.steps[];
-    .run == ".github/scripts/runner-binary-transport.sh publish" and
+    .id == "published" and
+    .run == ".github/scripts/runner-binary-transport.sh ${{ steps.cache-recheck.outputs.reused == '\''true'\'' && '\''publish-cached'\'' || '\''publish'\'' }}" and
     .env.PRODUCER_HEAD_SHA == "${{ needs.prepare.outputs.producer-head-sha }}"
   )
 ' <<<"$runner_json" >/dev/null || {
