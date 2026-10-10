@@ -13,6 +13,7 @@ pub mod guest_timezone;
 pub mod home_image_cache;
 pub mod home_mount;
 pub mod home_promotion;
+pub mod host_memory_operations;
 pub mod host_memory_policy;
 pub mod idle_pool;
 pub mod idle_reuse_preparation;
