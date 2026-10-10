@@ -26,7 +26,7 @@ import { blobs } from "@okouai/db/schema/blob";
 import { conversations } from "@okouai/db/schema/conversation";
 import type { PersistedStorageMount } from "@okouai/db/types";
 import { command, computed } from "ccstate";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 
 import { env } from "../../lib/env";
 import { badRequestMessage, notFound } from "../../lib/error";
@@ -109,7 +109,6 @@ interface PreparedSessionHistoryBlob {
 }
 
 type SessionHistoryBlobReadDb = Pick<Db, "select">;
-type SessionHistoryBlobWriteDb = Pick<Db, "insert" | "select" | "update">;
 
 const L = logger("webhooks:agent:session-history");
 
@@ -454,69 +453,138 @@ async function loadSessionHistoryBlobMetadata(
   return blob;
 }
 
-async function ensureSessionHistoryBlobMetadata(
-  args: {
-    readonly db: SessionHistoryBlobWriteDb;
-    readonly body: PrepareHistoryBody;
-    readonly requestedEncoding: string;
+const ensureSessionHistoryBlobMetadata$ = command(
+  async (
+    { set },
+    args: {
+      readonly input: RunOutputAuthInput<PrepareHistoryBody>;
+      readonly requestedEncoding: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    const db = set(writeDb$);
+    const { input, requestedEncoding } = args;
+    const { body, auth } = input;
+    const run = db.$with("history_upload_run").as(
+      db
+        .select({ status: agentRuns.status })
+        .from(agentRuns)
+        .where(
+          and(eq(agentRuns.id, body.runId), eq(agentRuns.userId, auth.userId)),
+        )
+        .limit(1),
+    );
+    const inserted = db.$with("history_upload_blob").as(
+      db
+        .insert(blobs)
+        .select(
+          db
+            .select({
+              hash: sql`${body.hash}`.mapWith(blobs.hash).as("hash"),
+              rawSize: sql`${body.rawSize}`
+                .mapWith(blobs.rawSize)
+                .as("raw_size"),
+              encoding: sql`${requestedEncoding}`
+                .mapWith(blobs.encoding)
+                .as("encoding"),
+              encodedSize: sql`${body.encodedSize}`
+                .mapWith(blobs.encodedSize)
+                .as("encoded_size"),
+              refCount: sql`0`.mapWith(blobs.refCount).as("ref_count"),
+              createdAt: sql`now()`.mapWith(blobs.createdAt).as("created_at"),
+            })
+            .from(run)
+            .where(
+              inArray(
+                run.status,
+                runStatusSchema.options.filter((status) => {
+                  return status !== "timeout";
+                }),
+              ),
+            ),
+        )
+        .onConflictDoNothing()
+        .returning({
+          rawSize: blobs.rawSize,
+          encoding: blobs.encoding,
+          encodedSize: blobs.encodedSize,
+        }),
+    );
+    // Admission and the first metadata write share one statement snapshot.
+    const [admission] = await db
+      .with(run, inserted)
+      .select({
+        status: run.status,
+        blob: {
+          rawSize: inserted.rawSize,
+          encoding: inserted.encoding,
+          encodedSize: inserted.encodedSize,
+        },
+      })
+      .from(run)
+      .leftJoin(inserted, sql`true`);
+    signal.throwIfAborted();
+    if (!admission) {
+      return { kind: "not-found" } as const;
+    }
+    const status = runStatusSchema.parse(admission.status);
+    if (status === "timeout") {
+      return { kind: "timeout", status } as const;
+    }
+    const insertedNewBlob = admission.blob !== null;
+    let blob = admission.blob ?? undefined;
+    if (!blob) {
+      // A competing insert can be invisible to the admission statement's snapshot.
+      [blob] = await db
+        .select({
+          rawSize: blobs.rawSize,
+          encoding: blobs.encoding,
+          encodedSize: blobs.encodedSize,
+        })
+        .from(blobs)
+        .where(eq(blobs.hash, body.hash))
+        .limit(1);
+      signal.throwIfAborted();
+    }
+    if (!blob) {
+      throw new Error("failed to load session history blob metadata");
+    }
+    if (blob.rawSize === 0) {
+      const [updatedBlob] = await db
+        .update(blobs)
+        .set({
+          rawSize: body.rawSize,
+          encoding: requestedEncoding,
+          encodedSize: body.encodedSize,
+        })
+        .where(and(eq(blobs.hash, body.hash), eq(blobs.rawSize, 0)))
+        .returning({
+          rawSize: blobs.rawSize,
+          encoding: blobs.encoding,
+          encodedSize: blobs.encodedSize,
+        });
+      signal.throwIfAborted();
+      blob = updatedBlob;
+      if (!blob) {
+        [blob] = await db
+          .select({
+            rawSize: blobs.rawSize,
+            encoding: blobs.encoding,
+            encodedSize: blobs.encodedSize,
+          })
+          .from(blobs)
+          .where(eq(blobs.hash, body.hash))
+          .limit(1);
+        signal.throwIfAborted();
+      }
+      if (!blob) {
+        throw new Error("failed to load session history blob metadata");
+      }
+    }
+    const prepared: PreparedSessionHistoryBlob = { blob, insertedNewBlob };
+    return { kind: "admitted", prepared } as const;
   },
-  signal: AbortSignal,
-): Promise<PreparedSessionHistoryBlob> {
-  const { db, body, requestedEncoding } = args;
-  const [insertedBlob] = await db
-    .insert(blobs)
-    .values({
-      hash: body.hash,
-      rawSize: body.rawSize,
-      encoding: requestedEncoding,
-      encodedSize: body.encodedSize,
-      refCount: 0,
-    })
-    .onConflictDoNothing()
-    .returning({
-      rawSize: blobs.rawSize,
-      encoding: blobs.encoding,
-      encodedSize: blobs.encodedSize,
-    });
-  signal.throwIfAborted();
-
-  const insertedNewBlob = insertedBlob !== undefined;
-  let blob =
-    insertedBlob ?? (await loadSessionHistoryBlobMetadata(db, body.hash));
-  signal.throwIfAborted();
-
-  if (!blob) {
-    throw new Error("failed to load session history blob metadata");
-  }
-
-  if (blob.rawSize !== 0) {
-    return { blob, insertedNewBlob };
-  }
-
-  const [updatedBlob] = await db
-    .update(blobs)
-    .set({
-      rawSize: body.rawSize,
-      encoding: requestedEncoding,
-      encodedSize: body.encodedSize,
-    })
-    .where(and(eq(blobs.hash, body.hash), eq(blobs.rawSize, 0)))
-    .returning({
-      rawSize: blobs.rawSize,
-      encoding: blobs.encoding,
-      encodedSize: blobs.encodedSize,
-    });
-  signal.throwIfAborted();
-
-  blob = updatedBlob ?? (await loadSessionHistoryBlobMetadata(db, body.hash));
-  signal.throwIfAborted();
-
-  if (!blob) {
-    throw new Error("failed to load session history blob metadata");
-  }
-
-  return { blob, insertedNewBlob };
-}
+);
 
 export const prepareSessionHistoryUpload$ = command(
   async (
@@ -524,7 +592,6 @@ export const prepareSessionHistoryUpload$ = command(
     input: RunOutputAuthInput<PrepareHistoryBody>,
     signal: AbortSignal,
   ) => {
-    const db = set(writeDb$);
     const requestedEncoding =
       input.body.encoding ?? SESSION_HISTORY_ENCODING_IDENTITY;
     if (
@@ -536,39 +603,11 @@ export const prepareSessionHistoryUpload$ = command(
       );
     }
 
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0048; new non-billing transactions are prohibited.
-    const admission = await db.transaction(async (tx) => {
-      const [run] = await tx
-        .select({ status: agentRuns.status })
-        .from(agentRuns)
-        .where(
-          and(
-            eq(agentRuns.id, input.body.runId),
-            eq(agentRuns.userId, input.auth.userId),
-          ),
-        )
-        .for("update")
-        .limit(1);
-      signal.throwIfAborted();
-      if (!run) {
-        return { kind: "not-found" } as const;
-      }
-      const status = runStatusSchema.parse(run.status);
-      if (status === "timeout") {
-        return { kind: "timeout", status } as const;
-      }
-      return {
-        kind: "admitted",
-        prepared: await ensureSessionHistoryBlobMetadata(
-          {
-            db: tx,
-            body: input.body,
-            requestedEncoding,
-          },
-          signal,
-        ),
-      } as const;
-    });
+    const admission = await set(
+      ensureSessionHistoryBlobMetadata$,
+      { input, requestedEncoding },
+      signal,
+    );
     signal.throwIfAborted();
 
     if (admission.kind === "not-found") {

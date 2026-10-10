@@ -132,11 +132,6 @@
       "owner": "deleteAgentRows$"
     },
     {
-      "id": "TX-0048",
-      "file": "turbo/apps/api/src/signals/services/agent-run-output.service.ts",
-      "owner": "prepareSessionHistoryUpload$"
-    },
-    {
       "id": "TX-0049",
       "file": "turbo/apps/api/src/signals/services/agent-run-terminal-transition.service.ts",
       "owner": "cancelRun$"
