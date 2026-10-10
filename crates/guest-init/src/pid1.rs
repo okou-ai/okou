@@ -225,7 +225,7 @@ mod tests {
     use super::*;
     use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
     use std::process::Command;
-    use std::sync::Mutex;
+    use std::sync::{Mutex, mpsc};
     use std::thread;
 
     static PID1_TEST_LOCK: Mutex<()> = Mutex::new(());
@@ -419,6 +419,170 @@ mod tests {
     fn finish_signal_test(signals: &SignalContext) {
         drain_pending_signals(signals);
         signals.restore_child_mask().unwrap();
+    }
+
+    struct SignalTestCleanup<'a>(&'a SignalContext);
+
+    impl Drop for SignalTestCleanup<'_> {
+        fn drop(&mut self) {
+            while let Ok(SignalWait::Received(_)) | Err(Errno::EINTR) =
+                self.0.wait_timeout(Duration::ZERO)
+            {}
+            let _ = self.0.restore_child_mask();
+        }
+    }
+
+    fn wait_for_child_event(
+        read_fd: &OwnedFd,
+        expected: u8,
+        timeout: Duration,
+    ) -> Result<(), String> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Err(format!("timed out waiting for child event {expected}"));
+            }
+            let timeout_ms =
+                remaining.as_millis().clamp(1, libc::c_int::MAX as u128) as libc::c_int;
+            let mut pollfd = libc::pollfd {
+                fd: read_fd.as_raw_fd(),
+                events: libc::POLLIN,
+                revents: 0,
+            };
+            // SAFETY: pollfd is initialized and read_fd remains open during poll.
+            let result = unsafe { libc::poll(&mut pollfd, 1, timeout_ms) };
+            if result == 0 || (result == -1 && Errno::last() == Errno::EINTR) {
+                continue;
+            }
+            if result == -1 {
+                return Err(format!("poll failed with errno {}", Errno::last()));
+            }
+
+            let mut event = 0_u8;
+            // SAFETY: read_fd is a valid pipe and event is writable for one byte.
+            let result =
+                unsafe { libc::read(read_fd.as_raw_fd(), (&mut event as *mut u8).cast(), 1) };
+            if result == -1 && Errno::last() == Errno::EINTR {
+                continue;
+            }
+            if result != 1 || event != expected {
+                return Err(format!(
+                    "expected child event {expected}, read returned {result} with event {event}"
+                ));
+            }
+            return Ok(());
+        }
+    }
+
+    fn fork_sigterm_observing_child(child_mask: &SigSet) -> (ChildGuard, OwnedFd) {
+        let mut fds = [0; 2];
+        // SAFETY: fds points to two integers for pipe to initialize.
+        assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
+        // SAFETY: pipe initialized these descriptors; each is owned exactly once.
+        let read_fd = unsafe { OwnedFd::from_raw_fd(fds[0]) };
+        // SAFETY: the write end is distinct from the owned read end above.
+        let write_fd = unsafe { OwnedFd::from_raw_fd(fds[1]) };
+        let mut mask = *child_mask;
+        mask.add(Signal::SIGTERM);
+        let mut sigterm = SigSet::empty();
+        sigterm.add(Signal::SIGTERM);
+
+        // SAFETY: the child uses only async-signal-safe libc operations before _exit.
+        let pid = unsafe { libc::fork() };
+        assert!(pid >= 0, "fork failed with errno {}", Errno::last());
+        if pid == 0 {
+            // SAFETY: only raw libc calls run in this child, not Rust destructors
+            // or signal-disposition changes in the multithreaded parent.
+            unsafe {
+                libc::close(read_fd.as_raw_fd());
+                if libc::sigprocmask(libc::SIG_SETMASK, mask.as_ref(), std::ptr::null_mut()) != 0
+                    || libc::signal(libc::SIGTERM, libc::SIG_DFL) == libc::SIG_ERR
+                {
+                    libc::_exit(124);
+                }
+                let ready = 1_u8;
+                if libc::write(write_fd.as_raw_fd(), (&ready as *const u8).cast(), 1) != 1 {
+                    libc::_exit(125);
+                }
+                // SIGTERM stays blocked: acknowledge forwarding without exiting
+                // or installing an async handler in the test harness.
+                loop {
+                    let received = libc::sigwaitinfo(sigterm.as_ref(), std::ptr::null_mut());
+                    if received == libc::SIGTERM {
+                        break;
+                    }
+                    if received != -1 || *libc::__errno_location() != libc::EINTR {
+                        libc::_exit(126);
+                    }
+                }
+                let acknowledged = 2_u8;
+                if libc::write(write_fd.as_raw_fd(), (&acknowledged as *const u8).cast(), 1) != 1 {
+                    libc::_exit(127);
+                }
+                libc::close(write_fd.as_raw_fd());
+                loop {
+                    libc::pause();
+                }
+            }
+        }
+
+        drop(write_fd);
+        let child = ChildGuard::new(pid);
+        wait_for_child_event(&read_fd, 1, Duration::from_secs(5)).unwrap();
+        (child, read_fd)
+    }
+
+    fn drive_repeated_shutdown_signals(
+        supervisor_thread: libc::pthread_t,
+        child_pid: libc::pid_t,
+        acknowledgement: OwnedFd,
+        finished: mpsc::Receiver<()>,
+        grace_period: Duration,
+    ) -> Result<usize, String> {
+        let result = (|| {
+            wait_for_child_event(&acknowledgement, 2, Duration::from_secs(5))?;
+            // A generous independent bound, not a tight elapsed-time assertion.
+            // It must never be reset by the shutdown events being injected.
+            let deadline = Instant::now() + grace_period * 4;
+            let mut sent = 0;
+            loop {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() {
+                    return Err("shutdown exceeded the fixed-deadline watchdog".to_owned());
+                }
+                let signal = if sent % 2 == 0 {
+                    Signal::SIGTERM
+                } else {
+                    Signal::SIGINT
+                };
+                // SAFETY: the blocked supervisor thread stays alive until this
+                // scoped helper is joined, before its original mask is restored.
+                let error = unsafe { libc::pthread_kill(supervisor_thread, signal as libc::c_int) };
+                if error != 0 {
+                    return Err(format!("pthread_kill failed with errno {error}"));
+                }
+                sent += 1;
+                // Cancellation both paces the next event and promptly stops
+                // delivery when supervise returns; there are no fixture sleeps.
+                match finished.recv_timeout(remaining.min(Duration::from_millis(20))) {
+                    Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => return Ok(sent),
+                    Err(mpsc::RecvTimeoutError::Timeout) => {}
+                }
+            }
+        })();
+
+        if result.is_err() {
+            // Release supervision even when the deadline-reset mutant would
+            // otherwise hang. This kill is always reported as a test failure.
+            let _ = send_signal(child_pid, Signal::SIGKILL);
+            let _ = wait_until_waitable(child_pid);
+            // SAFETY: supervisor_thread remains alive and has SIGCHLD blocked.
+            unsafe {
+                let _ = libc::pthread_kill(supervisor_thread, libc::SIGCHLD);
+            }
+        }
+        result
     }
 
     #[test]
@@ -639,5 +803,54 @@ mod tests {
         finish_signal_test(&signals);
 
         assert_eq!(exit_code, 128 + libc::SIGKILL);
+    }
+
+    #[test]
+    fn shutdown_repeated_signals_do_not_extend_the_positive_grace_period() {
+        let _guard = PID1_TEST_LOCK.lock().unwrap();
+        let original_mask = SigSet::thread_get_mask().unwrap();
+        let signals = SignalContext::block().unwrap();
+        // Declared before the child: unwind cleanup kills/reaps first, then
+        // drains selected signals and restores this thread's original mask.
+        let signal_cleanup = SignalTestCleanup(&signals);
+        let (mut child, acknowledgement) = fork_sigterm_observing_child(&signals.child_mask);
+        let child_pid = child.pid();
+        let grace_period = Duration::from_millis(500);
+        // SAFETY: pthread_self identifies this blocked supervisor thread.
+        let supervisor_thread = unsafe { libc::pthread_self() };
+
+        let (exit_code, driver_result) = thread::scope(|scope| {
+            let (finished_tx, finished_rx) = mpsc::channel();
+            let driver = scope.spawn(move || {
+                drive_repeated_shutdown_signals(
+                    supervisor_thread,
+                    child_pid,
+                    acknowledgement,
+                    finished_rx,
+                    grace_period,
+                )
+            });
+            send_thread_signal(Signal::SIGINT);
+            let exit_code = supervise(&signals, child_pid, grace_period);
+            let _ = finished_tx.send(());
+            (exit_code, driver.join())
+        });
+
+        let child_state = check_child_reaped(child_pid);
+        if child_state != ReapCheck::StillPresent {
+            child.disarm();
+        }
+        // Do all cleanup before assertions, including on a watchdog failure.
+        drop(child);
+        drop(signal_cleanup);
+
+        assert_eq!(SigSet::thread_get_mask().unwrap(), original_mask);
+        let additional_signals = driver_result.unwrap().unwrap();
+        assert!(
+            additional_signals >= 2,
+            "both SIGTERM and SIGINT must be injected"
+        );
+        assert_eq!(exit_code, Ok(128 + libc::SIGKILL));
+        assert_eq!(child_state, ReapCheck::AlreadyReaped);
     }
 }
