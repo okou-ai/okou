@@ -344,6 +344,7 @@
     "src/signals/services/vnc-connection.service.ts",
     "src/signals/services/vnc-creation.service.ts",
     "src/signals/services/vnc-credential.service.ts",
+    "src/signals/services/vnc-kerberos.service.ts",
     "src/signals/services/vnc-owner-lifecycle.service.ts",
     "src/lib/file-url.ts",
     "src/lib/link-layout.ts",

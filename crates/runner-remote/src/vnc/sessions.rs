@@ -1,3 +1,5 @@
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::{
     collections::HashMap,
     io,
@@ -188,10 +190,11 @@ impl Run {
                 .try_acquire_owned()
                 .map_err(|_| Failure::ResourceExhausted)?,
         });
-        let root = tempfile::Builder::new()
-            .prefix("okou-vnc-kerberos-")
-            .tempdir()
-            .map_err(|_| Failure::Unavailable)?;
+        let mut root_builder = tempfile::Builder::new();
+        root_builder.prefix("okou-vnc-kerberos-");
+        #[cfg(unix)]
+        root_builder.permissions(std::fs::Permissions::from_mode(0o700));
+        let root = root_builder.tempdir().map_err(|_| Failure::Unavailable)?;
         let (completion, done) = tokio::sync::oneshot::channel();
         let private_root = root.path().to_owned();
         let native_work = Arc::new(NativeWork {

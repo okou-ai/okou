@@ -715,10 +715,11 @@ export const importVncKerberos$ = command(
             textField(form, "kerberosTicketInstance"),
           ]
         : null;
-    const bytes = new Uint8Array(await file.arrayBuffer());
+    let bytes: Uint8Array | undefined;
     const result = await settle(
       withCleanup(
         (async () => {
+          bytes = new Uint8Array(await file.arrayBuffer());
           signal.throwIfAborted();
           if (
             get(dialog$) !== dialog ||
@@ -751,7 +752,7 @@ export const importVncKerberos$ = command(
           set(saveMessage$, null);
         })(),
         () => {
-          bytes.fill(0);
+          bytes?.fill(0);
         },
       ),
       signal,

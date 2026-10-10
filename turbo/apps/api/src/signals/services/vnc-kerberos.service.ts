@@ -13,7 +13,10 @@ import {
 import type { vncCredentials } from "@okouai/db/schema/vnc-credential";
 import { nowDate } from "../../lib/time";
 
-export function canonicalizeVncKerberos(authentication: unknown) {
+export function canonicalizeVncKerberos(
+  authentication: unknown,
+  nowSeconds = Math.floor(nowDate().getTime() / 1000),
+) {
   const parsed = vncKerberosAuthenticationSchema.safeParse(authentication);
   if (!parsed.success) {
     throw new Error("Invalid Kerberos credential");
@@ -33,7 +36,7 @@ export function canonicalizeVncKerberos(authentication: unknown) {
           input,
           source.initiator,
           source.service,
-          Math.floor(nowDate().getTime() / 1000),
+          nowSeconds,
         )
       : {
           bytes: canonicalKerberosKeytab(input, source.initiator),
@@ -62,6 +65,7 @@ type Stored = Pick<
 export function parseStoredVncKerberos(
   row: Stored,
   plaintext: string,
+  nowSeconds: number,
 ): VncKerberosAuthentication {
   if (plaintext.length > 100_000 || !isVncKerberosMethod(row.authMethod)) {
     throw new Error("Invalid stored Kerberos credential");
@@ -76,7 +80,7 @@ export function parseStoredVncKerberos(
   ) {
     throw new Error("Invalid stored Kerberos credential");
   }
-  const canonical = canonicalizeVncKerberos(parsed.data);
+  const canonical = canonicalizeVncKerberos(parsed.data, nowSeconds);
   if (canonical.authentication.method === "qemu_kerberos_ticket") {
     if (
       row.kerberosService === null ||

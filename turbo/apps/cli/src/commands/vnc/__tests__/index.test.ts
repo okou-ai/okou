@@ -306,6 +306,29 @@ describe("VNC sessions and input", () => {
     expect(spawn).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    "kerberos_expired",
+    "kerberos_non_renewable",
+    "kerberos_renewal_exhausted",
+    "network_failure",
+    "authentication_failed",
+    "delivery_unknown",
+  ])(
+    "preserves the bounded Kerberos failure %s without replay",
+    async (reason) => {
+      helper.response = {
+        type: "result",
+        data: { outcome: "failed", reason },
+      };
+      expect(
+        await invoke("session", "start", connectionId, "--mode", "shared"),
+      ).toEqual({ outcome: "failed", reason });
+      expect(process.exitCode).toBe(1);
+      expect(spawn).toHaveBeenCalledTimes(1);
+      expect(helper.requests).toHaveLength(1);
+    },
+  );
+
   it.each(["shared", "exclusive"])(
     "forwards the explicit %s mode exactly once",
     async (mode) => {

@@ -22,7 +22,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -1079,6 +1079,244 @@ test("Kerberos profiles remain hidden without an API version acknowledgement", a
   expect(
     screen.queryByRole("option", { name: "Kerberos · service ticket" }),
   ).toBeNull();
+});
+
+const keytabHex =
+  "05020000004b0001000f4558414d504c452e494e56414c49440005616c69636500000001000000000200120020535353535353535353535353535353535353535353535353535353535353535300000002";
+function keytabBytes(lastKeyByte = 0x53) {
+  const bytes = Uint8Array.from(keytabHex.match(/../gu) ?? [], (pair) => {
+    return Number.parseInt(pair, 16);
+  });
+  bytes[bytes.length - 5] = lastKeyByte;
+  return bytes;
+}
+function keytabFile(name: string, lastKeyByte = 0x53) {
+  return new File([keytabBytes(lastKeyByte).buffer], name);
+}
+function mockKerberosImport() {
+  mockSettings({ connections: [], credentials: [] });
+  context.mocks.http.get("*/api/vnc/connections", () => {
+    return HttpResponse.json(
+      { connections: [] },
+      { headers: { "X-VNC-Profile-Version": "kerberos-v1" } },
+    );
+  });
+  const requests: unknown[] = [];
+  context.mocks.api(vncCredentialsContract.create, ({ body, respond }) => {
+    requests.push(body);
+    return respond(201, {
+      ...credential,
+      name: body.name,
+      authMethod: "qemu_kerberos_keytab",
+      initiator: { realm: "EXAMPLE.INVALID", components: ["alice"] },
+      hosts: [],
+    });
+  });
+  return requests;
+}
+async function openKeytabDialog() {
+  const dialog = await addCredential();
+  await choose(dialog, "Authentication method", "Kerberos · keytab");
+  await fill(
+    within(dialog).getByLabelText("Credential name"),
+    "Imported keytab",
+  );
+  await fill(
+    within(dialog).getByLabelText("Initiator realm"),
+    "EXAMPLE.INVALID",
+  );
+  await fill(within(dialog).getByLabelText("Initiator components"), "alice");
+  return dialog;
+}
+function pendingFileRead(file: File) {
+  const started = context.mocks.deferred<void>();
+  const read = context.mocks.deferred<ArrayBuffer>();
+  vi.spyOn(file, "arrayBuffer").mockImplementationOnce(() => {
+    started.resolve();
+    return read.promise;
+  });
+  return { started, read };
+}
+
+test("A replacement keytab is saved without a late file overwriting it", async () => {
+  const requests = mockKerberosImport();
+  await page();
+  const dialog = await openKeytabDialog();
+  const oldFile = keytabFile("old.keytab");
+  const pending = pendingFileRead(oldFile);
+  const input = within(dialog).getByLabelText("Keytab file (.keytab)");
+  await userEvent.upload(input, oldFile);
+  await pending.started.promise;
+  await userEvent.upload(input, keytabFile("replacement.keytab", 0x54));
+  await act(async () => {
+    pending.read.resolve(keytabBytes().buffer);
+    await pending.read.promise;
+  });
+  expect(dialog).toBeInTheDocument();
+  expect(requests).toStrictEqual([]);
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(requests).toStrictEqual([
+    {
+      id: expect.any(String),
+      name: "Imported keytab",
+      authentication: {
+        method: "qemu_kerberos_keytab",
+        initiator: { realm: "EXAMPLE.INVALID", components: ["alice"] },
+        keytab: btoa(String.fromCharCode(...keytabBytes(0x54))),
+      },
+    },
+  ]);
+});
+
+test("Changing an initiator away and back invalidates a pending keytab import", async () => {
+  const requests = mockKerberosImport();
+  await page();
+  const dialog = await openKeytabDialog();
+  const file = keytabFile("prior-identity.keytab");
+  const pending = pendingFileRead(file);
+  await userEvent.upload(
+    within(dialog).getByLabelText("Keytab file (.keytab)"),
+    file,
+  );
+  await pending.started.promise;
+  const realm = within(dialog).getByLabelText("Initiator realm");
+  await fill(realm, "OTHER.INVALID");
+  await fill(realm, "EXAMPLE.INVALID");
+  await act(async () => {
+    pending.read.resolve(keytabBytes().buffer);
+    await pending.read.promise;
+  });
+  click(getAction("button", "Save", dialog));
+  await within(dialog).findByRole("alert");
+  expect(requests).toStrictEqual([]);
+  expect(dialog).toBeInTheDocument();
+  await userEvent.upload(
+    within(dialog).getByLabelText("Keytab file (.keytab)"),
+    keytabFile("current-identity.keytab"),
+  );
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(requests).toHaveLength(1);
+});
+
+test("A closed dialog cannot deliver its pending keytab into a new dialog", async () => {
+  const requests = mockKerberosImport();
+  await page();
+  const prior = await openKeytabDialog();
+  const file = keytabFile("abandoned.keytab");
+  const pending = pendingFileRead(file);
+  await userEvent.upload(
+    within(prior).getByLabelText("Keytab file (.keytab)"),
+    file,
+  );
+  await pending.started.promise;
+  click(getAction("button", "Cancel", prior));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  const current = await openKeytabDialog();
+  await act(async () => {
+    pending.read.resolve(keytabBytes().buffer);
+    await pending.read.promise;
+  });
+  click(getAction("button", "Save", current));
+  await within(current).findByRole("alert");
+  expect(requests).toStrictEqual([]);
+  expect(current).toBeInTheDocument();
+});
+
+test("A keytab read failure is reported and a newly selected file can be saved", async () => {
+  const requests = mockKerberosImport();
+  await page();
+  const dialog = await openKeytabDialog();
+  const file = keytabFile("unreadable.keytab");
+  vi.spyOn(file, "arrayBuffer").mockRejectedValueOnce(
+    new DOMException("Synthetic file failure", "NotReadableError"),
+  );
+  await userEvent.upload(
+    within(dialog).getByLabelText("Keytab file (.keytab)"),
+    file,
+  );
+  await within(dialog).findByRole("alert");
+  expect(requests).toStrictEqual([]);
+  await userEvent.upload(
+    within(dialog).getByLabelText("Keytab file (.keytab)"),
+    keytabFile("readable.keytab"),
+  );
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(requests).toHaveLength(1);
+});
+
+test("Switching authentication profiles away and back discards a pending keytab", async () => {
+  const requests = mockKerberosImport();
+  await page();
+  const dialog = await openKeytabDialog();
+  const file = keytabFile("old-profile.keytab");
+  const pending = pendingFileRead(file);
+  await userEvent.upload(
+    within(dialog).getByLabelText("Keytab file (.keytab)"),
+    file,
+  );
+  await pending.started.promise;
+  await choose(dialog, "Authentication method", "Kerberos · password");
+  await within(dialog).findByLabelText("Password");
+  await choose(dialog, "Authentication method", "Kerberos · keytab");
+  await fill(
+    within(dialog).getByLabelText("Initiator realm"),
+    "EXAMPLE.INVALID",
+  );
+  await fill(within(dialog).getByLabelText("Initiator components"), "alice");
+  await act(async () => {
+    pending.read.resolve(keytabBytes().buffer);
+    await pending.read.promise;
+  });
+  click(getAction("button", "Save", dialog));
+  await within(dialog).findByRole("alert");
+  expect(requests).toStrictEqual([]);
+});
+
+test("Changing owners discards a pending keytab even after the original owner returns", async () => {
+  const requests = mockKerberosImport();
+  await page();
+  const original = await openKeytabDialog();
+  const file = keytabFile("old-owner.keytab");
+  const pending = pendingFileRead(file);
+  await userEvent.upload(
+    within(original).getByLabelText("Keytab file (.keytab)"),
+    file,
+  );
+  await pending.started.promise;
+  const clerk = context.mocks.clerk();
+  act(() => {
+    clerk.user(
+      { id: "different-kerberos-owner", fullName: "Other Owner" },
+      { token: "other-token" },
+    );
+    clerk.stateChanged();
+  });
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  act(() => {
+    clerk.user(auth.user, { token: "returned-token" });
+    clerk.stateChanged();
+  });
+  const current = await openKeytabDialog();
+  await act(async () => {
+    pending.read.resolve(keytabBytes().buffer);
+    await pending.read.promise;
+  });
+  click(getAction("button", "Save", current));
+  await within(current).findByRole("alert");
+  expect(requests).toStrictEqual([]);
 });
 
 test("Profile selection filters credentials and clears incompatible choices", async () => {
