@@ -149,6 +149,16 @@ describe("Builtin external-code session creation", () => {
           foreign.actor,
           foreignPending,
         );
+        const foreignReconnect = await connectors.requestExternalCodeStart(
+          actor,
+          "aws",
+          "cli",
+          [404],
+          { intent: "reconnect", connectionId: foreignAccount.connector.id },
+        );
+        expect(foreignReconnect.body).toStrictEqual({
+          error: { code: "NOT_FOUND", message: "Connector account not found" },
+        });
         await expect(
           completeSession(actor, replacement),
         ).resolves.toMatchObject({
