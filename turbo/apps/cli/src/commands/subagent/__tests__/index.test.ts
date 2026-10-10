@@ -9,7 +9,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { once } from "node:events";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -259,6 +259,28 @@ describe("okou subagent", () => {
     vi.unstubAllEnvs();
     log.mockClear();
     errorLog.mockClear();
+  });
+
+  it("starts a child in the writable default /tmp registry without a runtime-root override", async () => {
+    const runId = basename(root);
+    const directory = join("/tmp/pi", runId);
+    vi.stubEnv("OKOU_RUN_ID", runId);
+    vi.stubEnv("OKOU_PI_RUNTIME_ROOT", undefined);
+    try {
+      await run("start", "task using the default registry");
+      await nextRequest();
+      const child = inspectionSchema.parse(
+        JSON.parse((await run("inspect", "1"))[0] ?? ""),
+      );
+      expect(child.running).toBe(true);
+      expect(child.stdout).toBe(join(directory, "1", "stdout"));
+      expect((await run("list")).join("\n")).toContain("1\t");
+      await run("kill", "1");
+      await expect(access(join(directory, "1"))).rejects.toThrow();
+    } finally {
+      await run("kill", "1").catch(() => {});
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 
   it("starts concurrent independent sessions, lists and inspects only this Run, and kills them", async () => {
