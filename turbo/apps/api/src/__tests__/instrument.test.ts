@@ -64,6 +64,12 @@ describe("instrument", () => {
       envModule.mockEnv("GIT_COMMIT_SHA", "abc123");
     });
 
+    const {
+      filterDiscordOauthSentryEvent,
+      filterDiscordOauthSentryBreadcrumb,
+      isDiscordOauthTelemetryUrl,
+    } = await import("../lib/discord-oauth-telemetry");
+
     expect(context.mocks.sentry.init).toHaveBeenCalledWith({
       dsn: "https://examplePublicKey@o0.ingest.sentry.io/0",
       enableLogs: false,
@@ -73,8 +79,17 @@ describe("instrument", () => {
           app: "api",
         },
       },
+      beforeSend: filterDiscordOauthSentryEvent,
+      beforeBreadcrumb: filterDiscordOauthSentryBreadcrumb,
       integrations: [
-        { name: "Http", options: { spans: false, tracePropagation: false } },
+        {
+          name: "Http",
+          options: {
+            spans: false,
+            tracePropagation: false,
+            ignoreIncomingRequestBody: isDiscordOauthTelemetryUrl,
+          },
+        },
         { name: "NodeFetch", options: { tracePropagation: false } },
       ],
       release: "abc123",
@@ -86,6 +101,7 @@ describe("instrument", () => {
     expect(context.mocks.sentry.httpIntegration).toHaveBeenCalledWith({
       spans: false,
       tracePropagation: false,
+      ignoreIncomingRequestBody: isDiscordOauthTelemetryUrl,
     });
     expect(
       context.mocks.sentry.nativeNodeFetchIntegration,

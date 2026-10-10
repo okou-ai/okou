@@ -142,18 +142,12 @@ interface RenderedRunPrompts {
   readonly systemPrompt: string;
 }
 
-/** Run assembly may prepend already-rendered prompt contributions. */
-export function renderRunPrompts(
-  part: RunPromptAndSkills,
-  base: { readonly userPrompt?: string; readonly systemPrompt?: string } = {},
-): RenderedRunPrompts {
+/** Render the complete prompt contributions in their stable injection order. */
+export function renderRunPrompts(part: RunPromptAndSkills): RenderedRunPrompts {
   const variables = part.systemPromptVariables;
   return {
-    userPrompt: [base.userPrompt, part.userPromptVariables.message]
-      .filter(Boolean)
-      .join("\n\n"),
+    userPrompt: part.userPromptVariables.message ?? "",
     systemPrompt: [
-      base.systemPrompt,
       variables.agentIdentity,
       variables.executionLimit,
       variables.tools,

@@ -10,6 +10,7 @@
 pub mod active_runs;
 mod error;
 pub mod guest_timezone;
+pub mod host_memory_policy;
 pub mod idle_pool;
 pub mod idle_reuse_preparation;
 pub mod lifecycle;

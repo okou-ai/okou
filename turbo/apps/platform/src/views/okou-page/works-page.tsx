@@ -62,6 +62,10 @@ import type { DiscordOrgStatus } from "@okouai/api-contracts/contracts/integrati
 import { DiscordMark } from "./components/discord-mark.tsx";
 import {
   discordOrgData$,
+  discordAuthorizationFailed$,
+  discordAuthorizationPending$,
+  DiscordPopupBlockedError,
+  startDiscordAuthorization$,
   disconnectDiscordOrg$,
   uninstallDiscordOrg$,
   reloadDiscordOrg$,
@@ -69,6 +73,11 @@ import {
   showDiscordUninstallDialog$,
   setShowDiscordUninstallDialog$,
 } from "../../signals/okou-page/discord.ts";
+import {
+  approveDiscordAuthorization$,
+  discordApprovalAvailable$,
+  discordApprovalSucceeded$,
+} from "../../signals/okou-page/discord-oauth-approval.ts";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n/index.ts";
 
@@ -544,6 +553,191 @@ function DiscordDmSelection({
   );
 }
 
+function DiscordAuthorizationActions({
+  data,
+  disabled,
+}: {
+  data: DiscordOrgStatus | null;
+  disabled: boolean;
+}) {
+  const { t } = useTranslation();
+  const [authorizationState, authorize] = useLoadableSet(
+    startDiscordAuthorization$,
+  );
+  const authorizationFailed = useGet(discordAuthorizationFailed$);
+  const approvalAvailable = useGet(discordApprovalAvailable$);
+  const approvalSucceeded = useGet(discordApprovalSucceeded$);
+  const pageSignal = useGet(pageSignal$);
+  if (approvalAvailable || approvalSucceeded) {
+    return null;
+  }
+  const canAuthorize =
+    data?.isAvailable &&
+    ((!data.isInstalled && data.isAdmin) ||
+      (data.isInstalled && !data.isConnected));
+
+  return (
+    <div className="flex max-w-64 flex-col items-end gap-2">
+      {canAuthorize ? (
+        <Button
+          data-testid={
+            data.isInstalled
+              ? "discord-connect-button"
+              : "discord-install-button"
+          }
+          variant="outline"
+          size="sm"
+          className="h-8 shrink-0 gap-1.5 rounded-lg"
+          disabled={disabled || authorizationState.state === "loading"}
+          onClick={() => {
+            detach(
+              authorize(
+                data.isInstalled ? "connect" : "install",
+                data.guildId,
+                pageSignal,
+              ),
+              Reason.DomCallback,
+            );
+          }}
+        >
+          {!data.isInstalled && <Download size={14} />}
+          {authorizationState.state === "loading"
+            ? t(($) => {
+                return $.works.discord.authorizing;
+              })
+            : authorizationState.state === "hasError"
+              ? t(($) => {
+                  return $.works.discord.retry;
+                })
+              : data.isInstalled
+                ? t(($) => {
+                    return $.works.actions.connect;
+                  })
+                : t(($) => {
+                    return $.works.discord.install;
+                  })}
+        </Button>
+      ) : null}
+      {authorizationState.state === "loading" ? (
+        <p role="status" className="text-sm text-muted-foreground">
+          {t(($) => {
+            return $.works.discord.browserConsent;
+          })}
+        </p>
+      ) : null}
+      {authorizationState.state === "hasError" || authorizationFailed ? (
+        <p role="alert" className="text-sm text-destructive">
+          {authorizationState.state === "hasError" &&
+          authorizationState.error instanceof DiscordPopupBlockedError
+            ? t(($) => {
+                return $.works.discord.popupBlocked;
+              })
+            : t(($) => {
+                return $.works.discord.authorizationError;
+              })}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function DiscordApprovalPanel() {
+  const { t } = useTranslation();
+  const available = useGet(discordApprovalAvailable$);
+  const approved = useGet(discordApprovalSucceeded$);
+  const [loadable, approve] = useLoadableSet(approveDiscordAuthorization$);
+  const pageSignal = useGet(pageSignal$);
+  if (!available && !approved) {
+    return null;
+  }
+  return (
+    <div className="space-y-2 px-4 pb-3">
+      <p role="status" className="text-sm text-muted-foreground">
+        {approved
+          ? t(($) => {
+              return $.works.discord.approvalConfirmed;
+            })
+          : t(($) => {
+              return $.works.discord.approvalPrompt;
+            })}
+      </p>
+      {available ? (
+        <Button
+          type="button"
+          disabled={loadable.state === "loading"}
+          onClick={() => {
+            detach(approve(pageSignal), Reason.DomCallback);
+          }}
+        >
+          {loadable.state === "loading"
+            ? t(($) => {
+                return $.works.discord.approving;
+              })
+            : t(($) => {
+                return $.works.discord.approve;
+              })}
+        </Button>
+      ) : null}
+      {loadable.state === "hasError" ? (
+        <p role="alert" className="text-sm text-destructive">
+          {t(($) => {
+            return $.works.discord.approvalFailed;
+          })}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function DiscordAuthorizationPendingNotice() {
+  const { t } = useTranslation();
+  const pending = useGet(discordAuthorizationPending$);
+  const available = useGet(discordApprovalAvailable$);
+  const approved = useGet(discordApprovalSucceeded$);
+  return pending && !available && !approved ? (
+    <p role="status" className="px-4 pb-3 text-sm text-muted-foreground">
+      {t(($) => {
+        return $.works.discord.pendingConsent;
+      })}
+    </p>
+  ) : null;
+}
+
+function DiscordCardDescription({
+  data,
+  hasError,
+}: {
+  data: DiscordOrgStatus | null;
+  hasError: boolean;
+}) {
+  const { t } = useTranslation();
+  return (
+    <>
+      <p className="text-sm text-muted-foreground">
+        {hasError
+          ? t(($) => {
+              return $.works.discord.loadError;
+            })
+          : data
+            ? discordDescription(data)
+            : t(($) => {
+                return $.works.discord.loading;
+              })}
+      </p>
+      {data?.isInstalled && data.guildName ? (
+        <p className="text-sm text-muted-foreground">
+          {t(
+            ($) => {
+              return $.works.discord.server;
+            },
+            { name: data.guildName },
+          )}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
 function DiscordCard() {
   const { t } = useTranslation();
   const title = t(($) => {
@@ -574,27 +768,10 @@ function DiscordCard() {
           </div>
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <div className="text-sm font-medium text-foreground">{title}</div>
-            <p className="text-sm text-muted-foreground">
-              {status.state === "hasError"
-                ? t(($) => {
-                    return $.works.discord.loadError;
-                  })
-                : data
-                  ? discordDescription(data)
-                  : t(($) => {
-                      return $.works.discord.loading;
-                    })}
-            </p>
-            {data?.isInstalled && data.guildName ? (
-              <p className="text-sm text-muted-foreground">
-                {t(
-                  ($) => {
-                    return $.works.discord.server;
-                  },
-                  { name: data.guildName },
-                )}
-              </p>
-            ) : null}
+            <DiscordCardDescription
+              data={data}
+              hasError={status.state === "hasError"}
+            />
           </div>
           {status.state === "hasError" ? (
             <Button variant="outline" size="sm" onClick={reload}>
@@ -603,6 +780,13 @@ function DiscordCard() {
               })}
             </Button>
           ) : null}
+          <DiscordAuthorizationActions
+            data={data}
+            disabled={
+              disconnectState.state === "loading" ||
+              uninstallState.state === "loading"
+            }
+          />
           {data ? (
             <ProviderCardActions
               isConnected={data.isConnected}
@@ -632,6 +816,8 @@ function DiscordCard() {
             />
           ) : null}
         </div>
+        <DiscordApprovalPanel />
+        <DiscordAuthorizationPendingNotice />
         {data?.isInstalled && data.contextMode === "mentions_only" ? (
           <p className="border-t border-border px-4 py-3 text-sm text-muted-foreground">
             {t(($) => {

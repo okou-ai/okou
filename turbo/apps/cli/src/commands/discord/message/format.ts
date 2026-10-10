@@ -20,6 +20,11 @@ export function printDiscordMessages(result: DiscordHistoryResponse): void {
           : "[No text content; use --json to inspect attachments]"),
     );
     console.log(message.url);
+    if (message.replyTo) {
+      console.log(
+        `Reply to: ${message.replyTo.messageId}${message.replyTo.channelId ? ` (channel: ${message.replyTo.channelId})` : ""}`,
+      );
+    }
     if (message.attachments.length > 0) {
       console.log(
         `Attachments: ${message.attachments

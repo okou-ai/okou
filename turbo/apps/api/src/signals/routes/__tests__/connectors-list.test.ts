@@ -13,10 +13,8 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
-import {
-  readConnectorCredentialStorageState,
-  setConnectorDefaultState,
-} from "./helpers/connector-credential-storage-state";
+import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
+import { createPublicConnectorActor } from "./helpers/public-connector-actor";
 
 import { createRouteMocks } from "./helpers/route-test";
 import { connectorAccountRoutes } from "../connector-accounts";
@@ -195,48 +193,90 @@ describe("GET /api/connectors", () => {
     ]);
   });
 
-  it("projects only the default account for each connector target", async () => {
-    const fixture = seedAuthenticatedFixture();
-    seededFixtures.push(fixture);
-    await connectGitlab(fixture);
-    const state = await readConnectorCredentialStorageState(context, {
-      orgId: fixture.orgId,
-      userId: fixture.userId,
-      connectorSlug: "gitlab",
+  it("projects the selected default account and removes it after public disconnect", async () => {
+    const { actor, run: own } = createPublicConnectorActor(context);
+    const connectors = createConnectorBddApi(context);
+    await own(async () => {
+      const first = await own(() => {
+        return connectors.connectManualGrant(actor, "gitlab", "api-token", {
+          accessToken: "gl-first-token",
+          host: "first.gitlab.example.com",
+        });
+      });
+      const second = await own(() => {
+        return connectors.connectManualGrant(actor, "gitlab", "api-token", {
+          accessToken: "gl-second-token",
+          host: "second.gitlab.example.com",
+        });
+      });
+      expect(first.id).not.toBe(second.id);
+      await own(() => {
+        return connectors.setDefaultBuiltinConnectorAccount(
+          actor,
+          "gitlab",
+          second.id,
+        );
+      });
+      const accounts = await own(() => {
+        return connectors.listBuiltinConnectorAccounts(actor, "gitlab");
+      });
+      expect(accounts).toHaveLength(2);
+      expect(
+        accounts.find((account) => {
+          return account.id === first.id;
+        }),
+      ).toMatchObject({ isDefault: false });
+      expect(
+        accounts.find((account) => {
+          return account.id === second.id;
+        }),
+      ).toMatchObject({ isDefault: true });
+      const projected = await own(() => {
+        return connectors.listBuiltinConnectors(actor);
+      });
+      expect(projected.connectors).toMatchObject([
+        { id: second.id, slug: "gitlab", connectionStatus: "connected" },
+      ]);
+      expect(projected.connectors).toHaveLength(1);
+      await expect(
+        own(() => {
+          return connectors.readConnectorBySlug(actor, "gitlab");
+        }),
+      ).resolves.toMatchObject({ id: second.id });
+      for (const account of [first, second]) {
+        await own(() => {
+          return connectors.deleteBuiltinConnectorAccount(
+            actor,
+            "gitlab",
+            account.id,
+          );
+        });
+      }
+      const response = await own(() => {
+        return accept(
+          setupApp({ context, routes: builtinConnectorsRoutes })(
+            builtinConnectorsMainContract,
+          ).list({ headers: authHeaders() }),
+          [200],
+        );
+      });
+      expect(response.body).toStrictEqual({
+        connectors: [],
+        connectorProvidedBindings: [],
+      });
+      const detail = await own(() => {
+        return accept(
+          setupApp({ context, routes: builtinConnectorsRoutes })(
+            builtinConnectorsBySlugContract,
+          ).get({
+            params: { connectorSlug: "gitlab" },
+            headers: authHeaders(),
+          }),
+          [404],
+        );
+      });
+      expect(detail.body.error.code).toBe("NOT_FOUND");
     });
-    const connectorId = state.connector?.id;
-    if (!connectorId) {
-      throw new Error("Expected a stored GitLab connector account");
-    }
-    await setConnectorDefaultState(context, {
-      orgId: fixture.orgId,
-      userId: fixture.userId,
-      connectorId,
-      isDefault: false,
-    });
-
-    const response = await accept(
-      setupApp({ context, routes: builtinConnectorsRoutes })(
-        builtinConnectorsMainContract,
-      ).list({ headers: authHeaders() }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({
-      connectors: [],
-      connectorProvidedBindings: [],
-    });
-
-    const detail = await accept(
-      setupApp({ context, routes: builtinConnectorsRoutes })(
-        builtinConnectorsBySlugContract,
-      ).get({
-        params: { connectorSlug: "gitlab" },
-        headers: authHeaders(),
-      }),
-      [404],
-    );
-    expect(detail.body.error.code).toBe("NOT_FOUND");
   });
 
   it("keeps current-entry account and scope reads available after a capability change", async () => {

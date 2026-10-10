@@ -26,6 +26,10 @@ const entry = journal.entries.find((item) => {
   return item.tag.endsWith("_canonical_selected_model_history");
 });
 assert.ok(entry);
+const nextEntry = journal.entries.find((item) => {
+  return item.when > entry.when;
+});
+assert.ok(nextEntry);
 const migration = readMigrationFiles({
   migrationsFolder: DRIZZLE_MIGRATE_OUT,
 }).find((item) => {
@@ -86,7 +90,7 @@ try {
   await sql`INSERT INTO chat_events (chat_thread_id, event_type, context_type, seq_id, payload)
     VALUES (${thread}, 'input.prompt', 'web', 2, '{"userMessage":{"version":1,"parts":[{"type":"text","text":"uncaptured"}]}}')`;
   await assert.rejects(
-    applyPendingMigrations(sql),
+    applyPendingMigrations(sql, { beforeMillis: nextEntry.when }),
     /Unconsumed legacy model decisions/,
   );
   const [before] =
@@ -103,7 +107,8 @@ try {
   const retainedRun = await sql`SELECT * FROM agent_runs WHERE id = ${run}`;
   const retainedHistory =
     await sql`SELECT * FROM conversations WHERE run_id = ${run}`;
-  await applyPendingMigrations(sql);
+  // Isolate this historical transform from later additive columns and renames.
+  await applyPendingMigrations(sql, { beforeMillis: nextEntry.when });
   const [threads] =
     await sql`SELECT count(*)::int AS total, count(*) FILTER (WHERE selected_model = 'auto')::int AS auto,
     count(*) FILTER (WHERE model_settings = ${sql.json(personalSettings)})::int AS settings FROM chat_threads WHERE user_id = ${user}`;

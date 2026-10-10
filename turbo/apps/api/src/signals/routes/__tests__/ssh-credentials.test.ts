@@ -494,6 +494,120 @@ describe("reusable SSH credential owner routes", () => {
     );
   });
 
+  it.each(["deleted", "rebound"] as const)(
+    "publishes a prepared authentication edit after every observed host is %s",
+    async (hostChange) => {
+      useSecretKmsProbe();
+      owner();
+      const created = await accept(
+        credentials().create({
+          headers,
+          body: { id: randomUUID(), ...passwordBody },
+        }),
+        [201],
+      );
+      const replacement = await accept(
+        credentials().create({
+          headers,
+          body: { id: randomUUID(), ...passwordBody, name: "Replacement" },
+        }),
+        [201],
+      );
+      const host = await accept(
+        connections().create({
+          headers,
+          body: {
+            id: randomUUID(),
+            displayName: "Initially attached",
+            host: "ssh.example.com",
+            credential: { id: created.body.id },
+          },
+        }),
+        [201],
+      );
+      const entered = createDeferredPromise<void>(context.signal);
+      const release = createDeferredPromise<void>(context.signal);
+      useSecretKmsProbe(async (request) => {
+        entered.resolve();
+        await release.promise;
+        return {
+          keyId: request.keyId,
+          plaintext: Buffer.from("0123456789abcdef0123456789abcdef"),
+          encryptedDataKey: Buffer.from("test-wrapped-key"),
+        };
+      });
+      const delayed = accept(
+        credentials().update({
+          headers,
+          params: { credentialId: created.body.id },
+          body: {
+            expectedRevision: 1,
+            username: "rotated-user",
+            authentication: {
+              method: "private_key",
+              privateKey: "replacement-canary",
+            },
+          },
+        }),
+        [200],
+      );
+      await entered.promise;
+      const params = { connectionId: host.body.id };
+      if (hostChange === "deleted") {
+        await accept(connections().delete({ headers, params }), [204]);
+      } else {
+        await accept(
+          connections().update({
+            headers,
+            params,
+            body: {
+              expectedGeneration: host.body.generation,
+              credential: { id: replacement.body.id },
+            },
+          }),
+          [200],
+        );
+      }
+      release.resolve();
+      const saved = await delayed;
+      expect(saved.body).toMatchObject({
+        id: created.body.id,
+        name: created.body.name,
+        username: "rotated-user",
+        authMethod: "private_key",
+        revision: 2,
+        createdAt: created.body.createdAt,
+        hosts: [{ id: host.body.id, displayName: host.body.displayName }],
+      });
+      const current = await accept(credentials().list({ headers }), [200]);
+      expect(current.body.credentials).toStrictEqual(
+        expect.arrayContaining([
+          { ...saved.body, hosts: [] },
+          {
+            ...replacement.body,
+            hosts:
+              hostChange === "rebound"
+                ? [{ id: host.body.id, displayName: host.body.displayName }]
+                : [],
+          },
+        ]),
+      );
+      const remaining = await accept(connections().list({ headers }), [200]);
+      expect(remaining.body.connections).toStrictEqual(
+        hostChange === "rebound"
+          ? [
+              expect.objectContaining({
+                id: host.body.id,
+                credentialId: replacement.body.id,
+                username: replacement.body.username,
+                generation: host.body.generation + 1,
+              }),
+            ]
+          : [],
+      );
+    },
+  );
+
   it("leaves a recoverable credential state after deletion overlaps an edit", async () => {
     useSecretKmsProbe();
     owner();

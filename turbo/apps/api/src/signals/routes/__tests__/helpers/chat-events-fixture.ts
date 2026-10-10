@@ -97,8 +97,6 @@ export const GPT_PI_BDD_MODELS = [
 
 export type PiGptBddModel = (typeof GPT_PI_BDD_MODELS)[number];
 
-const GPT_PI_USAGE_MODELS = GPT_PI_BDD_MODELS;
-
 export const USER_OWNED_GPT_FAST_BDD_ROUTES = GPT_PI_BDD_MODELS.map(
   (selectedModel) => {
     return {
@@ -112,41 +110,8 @@ export const USER_OWNED_GPT_FAST_BDD_ROUTES = GPT_PI_BDD_MODELS.map(
   },
 );
 
-const GPT_USAGE_PRICING = [
-  "tokens.input",
-  "tokens.output",
-  "tokens.cache_read",
-  "tokens.cache_creation",
-  "tokens.input.long_context",
-  "tokens.output.long_context",
-  "tokens.cache_read.long_context",
-  "tokens.cache_creation.long_context",
-  "tokens.input.fast",
-  "tokens.output.fast",
-  "tokens.cache_read.fast",
-  "tokens.cache_creation.fast",
-  "tokens.input.long_context.fast",
-  "tokens.output.long_context.fast",
-  "tokens.cache_read.long_context.fast",
-  "tokens.cache_creation.long_context.fast",
-].flatMap((category) => {
-  return GPT_PI_USAGE_MODELS.map((provider) => {
-    return {
-      kind: "model",
-      provider,
-      category,
-      unitPrice: 1,
-      unitSize: 1_000_000,
-    };
-  });
-});
-
 export type PiUsageProvider =
-  | "claude-fable-5-1"
-  | "deepseek-v4-flash"
-  | "deepseek-v4.1-flash"
-  | "okou-1.0"
-  | (typeof GPT_PI_USAGE_MODELS)[number];
+  "claude-fable-5-1" | "deepseek-v4-flash" | "deepseek-v4.1-flash" | "okou-1.0";
 
 type UserMessage = Extract<
   ChatEvent,
@@ -220,26 +185,9 @@ export function requireOrgId(actor: ApiTestUser): string {
   return actor.orgId;
 }
 
-export async function createGptUsagePricingResolution(): Promise<
-  UsagePricingFixture["resolution"]
-> {
-  const pricing = await createUsagePricingFixture({
-    configured: GPT_USAGE_PRICING,
-  });
-  onTestFinished(pricing.cleanup);
-  return pricing.resolution;
-}
-
 export async function createPiUsagePricingResolution(
   provider: PiUsageProvider,
 ): Promise<UsagePricingFixture["resolution"]> {
-  if (
-    GPT_PI_USAGE_MODELS.some((model) => {
-      return model === provider;
-    })
-  ) {
-    return await createGptUsagePricingResolution();
-  }
   const categories =
     provider === "okou-1.0"
       ? [

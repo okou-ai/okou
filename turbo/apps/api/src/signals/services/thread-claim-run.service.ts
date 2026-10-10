@@ -1,41 +1,3 @@
-import { createDiscordThreadContext } from "./discord-thread-prompt-context.service";
-import { createAgentPrompt } from "./thread-run-prompt/agent";
-import { createUserPrompt } from "./thread-run-prompt/user";
-import { createAgentPhoneThreadPrompt } from "./thread-run-prompt/agentphone";
-import { createAutomationThreadPrompt } from "./thread-run-prompt/automation";
-import { createDiscordThreadPrompt } from "./thread-run-prompt/discord";
-import { createFeishuThreadPrompt } from "./thread-run-prompt/feishu";
-import { createRuntimePrompt } from "./thread-run-prompt/runtime";
-import {
-  mergeRunPromptAndSkills,
-  renderRunPrompts,
-  resolveRunSkillVolumes,
-  type RunPromptAndSkills,
-  type SkillVolume,
-} from "./run-prompt-and-skills";
-import { createRotatedPrompt } from "./thread-run-prompt/rotated";
-import { createConnectorsContext } from "./connectors-context.service";
-import { assertRequiredOfficialWorkflows } from "./official-workflow-observation.service";
-import { createSystemSkillsContext } from "./system-skills-context.service";
-import { createSlackThreadPrompt } from "./thread-run-prompt/slack";
-import { createTeamsThreadPrompt } from "./thread-run-prompt/teams";
-import { createTelegramThreadPrompt } from "./thread-run-prompt/telegram";
-import { createWebThreadPrompt } from "./thread-run-prompt/web";
-import type {
-  PickedThreadInputEvent,
-  ThreadPromptSource,
-} from "./thread-run-prompt/types";
-import {
-  type FeishuThreadContext,
-  type TeamsThreadContext,
-  type TelegramThreadContext,
-  createSlackThreadContext,
-  createFeishuThreadContext,
-  createTeamsThreadContext,
-  createTelegramThreadContext,
-  createAgentPhoneThreadContext,
-} from "./thread-run-context.service";
-import { createThreadAutomationContext } from "./thread-automation-context.service";
 import {
   agentRunConnectorDiagnosticRegistrationPayloadSchema,
   CANONICAL_CLAUDE_CONFIG_DIR,
@@ -59,13 +21,33 @@ import {
   type StoredStorageMountEntry,
 } from "@okouai/api-contracts/contracts/runners";
 import {
-  AUTO_RUN_KEY_VENDOR,
   autoRunBillingProvider,
   autoRunPricingLongContextMinTotalInputTokens,
   isAutoSelectedModel,
 } from "@okouai/core/auto-run-model";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
+import { assertRequiredOfficialWorkflows } from "./official-workflow-observation.service";
+import {
+  resolveRunSkillVolumes,
+  type SkillVolume,
+} from "./run-prompt-and-skills";
+import { createThreadContext } from "./thread-context.signals";
+import type {
+  QueuedModelContext,
+  ThreadModelError,
+} from "./thread-model.signals";
+import type {
+  FeishuThreadContext,
+  TeamsThreadContext,
+  TelegramThreadContext,
+} from "./thread-run-context.service";
+import {
+  createPromptAndSkillVolumesSignals,
+  type PromptAndSkillVolumes,
+  PromptAndSkillVolumesError,
+} from "./thread-run-prompt/prompt-and-skill-volumes";
+import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 
 import {
   parseRawRows,
@@ -82,7 +64,6 @@ import {
   badRequestMessage,
   conflict,
   notFound,
-  insufficientCredits as pickChatRunModelInsufficientCredits,
   providerUnavailable,
 } from "../../lib/error";
 import { logger } from "../../lib/log";
@@ -90,7 +71,6 @@ import { VERCEL_AUTOMATION_BYPASS_ENV } from "../../lib/preview-automation-bypas
 
 import { now, nowDate } from "../../lib/time";
 import { previewAutomationBypass$ } from "../context/hono";
-import { systemSkillStorageResolution$ } from "../context/system-skill-storage-resolution";
 import { usagePricingResolution$ } from "../context/usage-pricing-resolution";
 import { waitUntil } from "../context/wait-until";
 import { type Db, db$, type ReadonlyDb, writeDb$ } from "../external/db";
@@ -111,7 +91,6 @@ import {
   type AgentRunContextSignals,
   type BootstrapConnectorObservation,
   createEagerConnectorCredentialContext,
-  matchAgentRunContextSignals,
 } from "./agent-run-context.signals";
 import type {
   AgentRunModelPin,
@@ -126,7 +105,6 @@ import {
   AdmissionAttemptTiming,
 } from "./api-dispatch-admission-timing.service";
 import {
-  builtInRoutePricingFromSnapshot,
   prepareModelUsageContext,
   runRoutePricingFromSnapshot,
 } from "./built-in-route-pricing";
@@ -159,7 +137,6 @@ import {
   type CreateQueuedChatRunInput,
   deliverQueuedPromptRejection$,
   deliverUnexpectedQueuedPromptRejection$,
-  buildComputerUseSystemPrompt,
   type QueuedChatPromptData,
   queuedChatRunCallbackInputs,
   queuedIntegrationLaunchFields,
@@ -174,24 +151,15 @@ import {
   rejectedQueuedRunAdmissionFailure,
   routeQueuedMessagePiExecution,
 } from "./internal-chat-run-callback.service";
-import { memberSubscriptionModelRoutesFromCatalog } from "./member-subscription-models.service";
 import type { ModelCatalog } from "./model-catalog.service";
-import {
-  prepareManagedModelEnvironment,
-  prepareSubscriptionModelEnvironment,
-} from "./model-provider.service";
-import {
-  managedSourceFromSnapshot,
-  memberAccountSourceFromSnapshot,
-} from "./model-source-context.service";
 import {
   morningBriefScheduleClaimBound$,
   morningBriefScheduleClaimSupersededCondition,
 } from "./morning-brief-schedule-claim.service";
 import {
   OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE,
-  OfficialWorkflowRunAdmissionError,
   type OfficialWorkflowObservation,
+  OfficialWorkflowRunAdmissionError,
   type OfficialWorkflowRunObservation,
 } from "./official-workflow-run.service";
 import { pendingLaunchBillingAttributionSql } from "./pending-launch-billing-plan";
@@ -217,7 +185,6 @@ import {
   pendingLaunchTailRowSchema as tailRow,
 } from "./pending-launch-tail-plan";
 import {
-  materializePreparedPiProvider,
   type PiModelPreparationInput,
   resolvePreparedPiModelConfig,
   shouldUsePiExecution,
@@ -239,15 +206,9 @@ import {
   type ApiDispatchTimingDimensionsInput,
   measureApiDispatchTiming,
 } from "./api-dispatch-timing.service";
-import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import { INITIAL_AUTONOMY_BUDGET } from "./autonomy-budget.constants";
 import { childAutonomyBudget } from "./autonomy-budget.service";
-import {
-  type BuiltInModelRuntimeRoute,
-  builtInModelRuntimeRouteFromSnapshot,
-  isBuiltInModelRuntimeRoutePermitted,
-  unpricedBuiltInModelMessage,
-} from "./built-in-model-runtime-route.service";
+import type { BuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
 import {
   type BuiltinConnectorCredentialAccess,
   resolveBuiltinConnectorCredentialAccess,
@@ -269,8 +230,6 @@ import type {
 import { resolveReasoningEffortForDispatch } from "./chat-reasoning-effort.service";
 import {
   capturedChatThreadSessionSnapshot,
-  chatThreadSessionIdentity,
-  createChatThreadSessionRead,
   type ChatThreadExecutionSnapshot,
   type ChatThreadSessionResolution,
   type ChatThreadSessionResolutionAction,
@@ -322,14 +281,10 @@ import {
 } from "./custom-connector.service";
 
 import { DiscordQueuedLaunchUnavailableError } from "./discord-queued-launch-context.service";
-import {
-  isMemberSubscriptionRoute,
-  memberModelRouteContextFromAccounts,
-} from "./effective-model-route.service";
+import { isMemberSubscriptionRoute } from "./effective-model-route.service";
 import { ORG_SENTINEL_USER_ID } from "./feature-switch-scope";
 
 import { recordGetStartedWorkflowSql } from "./get-started-workflow.service";
-import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
 import { formatIntegrationRunError$ } from "./integration-run-errors.service";
 import type { InternalRunCallbackKind } from "./internal-run-callback";
 import {
@@ -350,17 +305,13 @@ import {
   connectorSlugSchema,
 } from "@okouai/api-contracts/contracts/connector-identity";
 import { isIntegrationManagedCustomConnectorProviderAdapter } from "@okouai/api-contracts/contracts/custom-connectors";
-import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
 import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import {
   getFrameworkForType,
   getModelProviderFirewall,
   isBuiltInModelProviderType,
-  MODEL_PROVIDER_TYPES,
   type ModelProviderCredentialScope,
-  type ModelProviderType,
-  modelProviderTypeSchema,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import {
@@ -405,13 +356,9 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import {
   getInstructionsFilename,
-  getValidatedFramework,
   type SupportedFramework,
 } from "@okouai/core/frameworks";
-import {
-  DEFAULT_IMAGE_MODEL,
-  type ImageModel,
-} from "@okouai/core/image-model-catalog";
+import type { ImageModel } from "@okouai/core/image-model-catalog";
 import { piCatalogModel } from "@okouai/core/pi-execution";
 import { isStaffOrg } from "@okouai/core/staff-org";
 import {
@@ -451,7 +398,6 @@ import {
 import { chatNetworkBodyCaptures } from "@okouai/db/schema/chat-network-body-capture";
 
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
-import { computerUseHosts } from "@okouai/db/schema/computer-use-host";
 
 import { memorySummaryProjections } from "@okouai/db/schema/memory-summary-projection";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
@@ -459,7 +405,7 @@ import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { systemStoragePresignedUrlCache } from "@okouai/db/schema/system-storage-presigned-url-cache";
 
-import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/schema/workflow";
 import type { PersistedStorageMount } from "@okouai/db/types";
 import {
   PI_AGENT_RUNTIME_VERSION,
@@ -473,7 +419,6 @@ import {
   eq,
   inArray,
   isNotNull,
-  isNull,
   like,
   ne,
   notExists,
@@ -515,14 +460,9 @@ import {
 import {
   type ModelFirstPin,
   modelProviderWriteTypeForLaunch,
-  type ProviderModelSupport,
-  resolveQueuedModelSelectionPinFromSnapshot,
 } from "./model-selection.service";
 import type { OfficialWorkflowContextFacts } from "./official-workflow-context.signals";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
-import { PiModelConfigurationError } from "./pi-model-configuration-error";
-import { additionalVolumesForRun } from "./presentation-template-data.service";
-import { createRunTemplates } from "./run-templates.service";
 import {
   environmentRecordToEntries,
   executionFirewallsToAxiomEntries,
@@ -567,6 +507,7 @@ import { isWebChatContextId } from "./web-chat-queue-context.service";
 
 import {
   EVENT_POLICY,
+  restoredWorkflowAutomationEventPayload,
   type WorkflowAutomationEventPayload,
   workflowAutomationEventTypeSchema,
 } from "./workflow-automation-context.service";
@@ -583,15 +524,6 @@ export interface ThreadClaim {
   readonly orgId: string;
   readonly chatThreadId: string;
   readonly claimId: string;
-}
-
-interface QueuedModelInput {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly threadId: string;
-  readonly eventId: string;
-  readonly featureSwitchContext?: FeatureSwitchContext;
-  readonly providerModelSupport?: ProviderModelSupport;
 }
 
 interface QueuedPromptGraphInput {
@@ -643,15 +575,6 @@ function queuedUserMessageAutonomyBudget(
     };
   }
   return childAutonomyBudget(sourceAutonomyBudget);
-}
-
-interface QueuedPromptAgent {
-  readonly agentId: string;
-  readonly expectedThreadAgentId?: string;
-  readonly producerBinding?: Extract<
-    ClaimProducerBinding,
-    { readonly kind: "reassign-agent" }
-  >;
 }
 
 function queuedFeishuDelivery(context: NonNullable<FeishuThreadContext>) {
@@ -720,8 +643,7 @@ class QueuedPromptLaunchUnavailableError extends Error {
 function queuedPromptRunInput(args: {
   readonly input: CreateQueuedChatRunInputArgs;
   readonly launch: QueuedLaunchMaterial;
-  readonly promptAndSkills: RunPromptAndSkills;
-  readonly userPrompt: RunPromptAndSkills;
+  readonly promptAndSkills: PromptAndSkillVolumes;
   readonly model: Exclude<
     QueuedMessageModelRouteResolution,
     { readonly error: unknown }
@@ -733,21 +655,6 @@ function queuedPromptRunInput(args: {
   readonly catalog: ModelCatalog;
 }): CreateQueuedChatRunInput {
   const { input, launch } = args;
-  const prompt = renderRunPrompts(
-    mergeRunPromptAndSkills([
-      args.promptAndSkills,
-      args.userPrompt,
-      {
-        systemPromptVariables: {
-          computerUseContext: args.host
-            ? buildComputerUseSystemPrompt(args.host.displayName)
-            : "",
-        },
-        userPromptVariables: {},
-        skillVolumes: [],
-      },
-    ]),
-  );
   if (input.queuedMessage.autonomyBudget.kind !== "ok") {
     throw new Error("Rejected autonomy input cannot become a run");
   }
@@ -762,11 +669,8 @@ function queuedPromptRunInput(args: {
     expectedThreadAgentId: input.expectedThreadAgentId,
     threadSessionResolution: args.session,
     featureSwitchContext: args.features,
-    prompt: prompt.userPrompt,
-    appendSystemPrompt: prompt.systemPrompt,
-    presentationTemplateVolumes: resolveRunSkillVolumes(
-      args.promptAndSkills.skillVolumes,
-    ).skillVolumes,
+    prompt: args.promptAndSkills.userPrompt,
+    appendSystemPrompt: args.promptAndSkills.appendedSystemPrompt,
     threadId: input.threadId,
     queuedMessage: input.queuedMessage,
     requiredOfficialWorkflowIds:
@@ -818,7 +722,8 @@ function queuedPromptPreparationRejection(
   if (
     !(error instanceof DiscordQueuedLaunchUnavailableError) &&
     !(error instanceof QueuedPromptLaunchUnavailableError) &&
-    !(error instanceof QueuedPromptInputInvalidError)
+    !(error instanceof QueuedPromptInputInvalidError) &&
+    !(error instanceof PromptAndSkillVolumesError)
   ) {
     throw error;
   }
@@ -828,11 +733,13 @@ function queuedPromptPreparationRejection(
       userId: head.userId,
       error: {
         code:
-          error instanceof DiscordQueuedLaunchUnavailableError
-            ? "DISCORD_ACCESS_REVOKED"
-            : error instanceof QueuedPromptInputInvalidError
-              ? "INTERNAL_ERROR"
-              : "CONFLICT",
+          error instanceof PromptAndSkillVolumesError
+            ? error.code
+            : error instanceof DiscordQueuedLaunchUnavailableError
+              ? "DISCORD_ACCESS_REVOKED"
+              : error instanceof QueuedPromptInputInvalidError
+                ? "INTERNAL_ERROR"
+                : "CONFLICT",
         message: error.message,
       },
     },
@@ -885,7 +792,6 @@ type AutonomyBudgetResult =
     };
 
 function buildWorkflowAutomationQueuedLaunchMaterial(args: {
-  readonly prompt: RunPromptAndSkills;
   readonly workflowName: string | null;
   readonly eventType: string | null;
   readonly eventPayload: WorkflowAutomationEventPayload | null;
@@ -896,14 +802,13 @@ function buildWorkflowAutomationQueuedLaunchMaterial(args: {
   if (
     args.workflowName === null ||
     args.eventType === null ||
-    args.eventPayload === null
+    args.eventPayload === null ||
+    !restoredWorkflowAutomationEventPayload(args.eventPayload)
   ) {
     return null;
   }
   const eventType = workflowAutomationEventTypeSchema.parse(args.eventType);
   return {
-    prompt: renderRunPrompts(args.prompt).userPrompt,
-    appendSystemPrompt: undefined,
     callbacks: buildWorkflowAutomationCallbacks(
       args.automation,
       args.agentId,
@@ -922,33 +827,6 @@ interface AssembleWorkflowAutomationRunArgs extends WorkflowAutomationLaunchArgs
 type RunFailure =
   | { readonly kind: "conflict"; readonly message: string }
   | { readonly kind: "run_error"; readonly response: RunErrorResponse };
-
-type ComputerUseHostGrant = {
-  readonly hostId: string;
-  readonly displayName: string;
-} | null;
-
-interface WorkflowAutomationRunInput {
-  readonly prompt: string;
-  readonly additionalVolumes: readonly AgentRunCreateAdditionalVolume[];
-  readonly appendSystemPrompt: string | undefined;
-  readonly callbacks: readonly InternalRunCallbackInput[];
-  readonly agentRunMetadata: ReturnType<typeof workflowAutomationRunMetadata>;
-}
-
-function appendComputerUseSystemPrompt(
-  prompt: string | undefined,
-  grant: ComputerUseHostGrant,
-): string | undefined {
-  if (!grant) {
-    return prompt;
-  }
-  return [
-    ...(prompt ? [prompt] : []),
-    "# Computer Use",
-    `Computer Use is enabled for this run on ${grant.displayName}.`,
-  ].join("\n\n");
-}
 
 function workflowAutomationRunMetadata(
   automation: AutomationRow,
@@ -1178,13 +1056,11 @@ function queuedAutomationLaunchArguments(args: {
     },
     queueEventId: event.id,
     apiStartTime: head.apiStartTime,
-    prompt: material.prompt,
     triggerBrief: event.triggerBrief ?? undefined,
     triggerSource,
     ...(event.connectorSourceId
       ? { connectorSourceId: event.connectorSourceId }
       : {}),
-    appendSystemPrompt: material.appendSystemPrompt,
     callbacks: material.callbacks,
     autonomyBudget,
     recordLastRunId: material.recordLastRunId,
@@ -1374,8 +1250,6 @@ type ClaimLaunchRecord =
     };
 
 interface WorkflowAutomationQueuedLaunchMaterial {
-  readonly prompt: string;
-  readonly appendSystemPrompt: string | undefined;
   readonly callbacks: ReturnType<typeof buildWorkflowAutomationCallbacks>;
   readonly recordLastRunId: boolean;
   readonly recordLastRunAt: boolean;
@@ -1429,11 +1303,9 @@ function buildWorkflowAutomationCallbacks(
 interface WorkflowAutomationLaunchArgs {
   readonly due: DueWorkflowAutomation;
   readonly apiStartTime: number;
-  readonly prompt: string;
   readonly triggerBrief?: string;
   readonly triggerSource?: TriggerSource;
   readonly connectorSourceId?: string;
-  readonly appendSystemPrompt: string | undefined;
   readonly callbacks: readonly InternalRunCallbackInput[];
   readonly autonomyBudget: number;
   readonly recordLastRunId: boolean;
@@ -1448,53 +1320,10 @@ type RunErrorResponse = {
   };
 };
 
-/**
- * A Built-in pin that found no route because every executable candidate
- * lacks usage pricing is rejected as unbillable (not as a temporary outage).
- */
-function unpricedBuiltInModelRejection(
-  args: Parameters<typeof builtInRoutePricingFromSnapshot>[0] & {
-    readonly catalog: ModelCatalog;
-    readonly model: string;
-  },
-  context: AgentRunContextSignals,
-) {
-  return computed(async (get): Promise<RunErrorResponse | undefined> => {
-    const message = unpricedBuiltInModelMessage(
-      args.catalog,
-      args.model,
-      builtInRoutePricingFromSnapshot(args, await get(context.modelPricing$)),
-    );
-    return message
-      ? {
-          status: 503,
-          body: { error: { code: "MODEL_PROVIDER_UNAVAILABLE", message } },
-        }
-      : undefined;
-  });
-}
-
 interface InternalRunCallbackInput {
   readonly internalKind: InternalRunCallbackKind;
   readonly payload: unknown;
 }
-
-type QueuedModelContext =
-  | RunErrorResponse
-  | {
-      readonly pin: ModelFirstPin;
-      readonly providerAdmission: {
-        readonly effectiveModelProvider: string | null | undefined;
-        readonly cliAgentType: string | null;
-        readonly error: RunErrorResponse | undefined;
-      };
-      readonly featureSwitchContext: FeatureSwitchContext;
-      readonly runCodexServiceTier: "fast" | undefined;
-      readonly reasoningEffort: ReasoningEffort | undefined;
-      readonly builtInModelRuntimeRoute:
-        BuiltInModelRuntimeRoute | null | undefined;
-      readonly memberAccountSnapshot: MemberModelAccountSnapshot | null;
-    };
 
 function workflowThreadSessionRoute(
   modelContext: Extract<ModelContext, { readonly ok: true }>,
@@ -1625,55 +1454,6 @@ function customConnectorSourceStorageRows(
       });
 }
 
-/**
- * Provider admission shared by the chat and workflow-automation picks: model
- * support on the pinned provider, org plan admission (the member's own
- * subscription route is plan-exempt), then the Built-in credit balance.
- */
-async function resolveQueuedProviderAdmission(params: {
-  readonly catalog: ModelCatalog;
-  readonly pin: ModelFirstPin;
-  readonly providerModelSupport: ProviderModelSupport | undefined;
-  readonly personalSubscription: () => Promise<boolean>;
-  readonly capabilities: () => Parameters<
-    typeof checkOrgPlanRunAdmission
-  >[0]["capabilities"];
-  readonly creditBalance: () => Promise<{
-    readonly spendableCredits: number;
-    readonly usagePackCredits: number;
-  } | null>;
-}) {
-  const { catalog, pin } = params;
-  const effectiveModelProvider = pin.modelProviderType;
-  const parsed = modelProviderTypeSchema.safeParse(effectiveModelProvider);
-  const cliAgentType = parsed.success ? getFrameworkForType(parsed.data) : null;
-  const personalSubscription = await params.personalSubscription();
-  const error = checkOrgPlanRunAdmission({
-    catalog,
-    capabilities: params.capabilities(),
-    modelProviderType: effectiveModelProvider,
-    selectedModel: pin.selectedModel,
-    personalSubscription,
-  });
-  if (error || !isBuiltInModelProviderType(effectiveModelProvider)) {
-    return {
-      effectiveModelProvider,
-      cliAgentType,
-      error,
-      hasSpendableCredits: true,
-    };
-  }
-  const balance = await params.creditBalance();
-  return {
-    effectiveModelProvider,
-    cliAgentType,
-    error: balance ? undefined : pickChatRunModelInsufficientCredits(),
-    hasSpendableCredits:
-      balance !== null &&
-      (balance.usagePackCredits > 0 || balance.spendableCredits > 0),
-  };
-}
-
 type PendingClaimRun = {
   readonly kind: "pending";
   readonly runId: string;
@@ -1737,10 +1517,7 @@ export function createThreadClaimRunObjects(
   requestFacts?: ChatThreadRequestFacts,
 ): ThreadClaimRunObjects {
   // Re-resolve the queued pin against one current catalog snapshot per claim.
-  const orgModels$ = context.modelFacts$;
-  const claimCatalog$ = computed(async (get) => {
-    return (await get(orgModels$)).catalog;
-  });
+  const claimCatalog$ = context.modelCatalog$;
   const pickStartedAt$ = computed(() => {
     return now();
   });
@@ -1822,16 +1599,6 @@ export function createThreadClaimRunObjects(
       .limit(1);
     return row ?? null;
   });
-  const sessionOrgId = claim.orgId;
-  const sessionUserId = context.userId;
-  const sessionRead$ = createChatThreadSessionRead(
-    threadRow$,
-    sessionOrgId,
-    sessionUserId,
-  );
-  const session$ = computed(async (get) => {
-    return chatThreadSessionIdentity(await get(sessionRead$));
-  });
   const pickedEvent$ = computed(
     async (get): Promise<PickedThreadInputEvent | null> => {
       const revoker = alias(chatEvents, "picked_input_revoker");
@@ -1900,103 +1667,24 @@ export function createThreadClaimRunObjects(
           : {}),
         userId: thread.userId,
         agentId: thread.agentId,
+        thread,
       };
     },
   );
-  const threadPromptSource$ = computed(
-    async (get): Promise<ThreadPromptSource | null> => {
-      const event = await get(pickedEvent$);
-      if (!event) {
-        return null;
-      }
-      return {
-        orgId: claim.orgId,
-        chatThreadId: claim.chatThreadId,
-        event,
-        featureSwitchContext: await get(context.featureSwitches$),
-      };
-    },
-  );
-  // Share channel reads between prompt and launch metadata.
-  const slackContext$ = createSlackThreadContext(threadPromptSource$);
-  const feishuContext$ = createFeishuThreadContext(threadPromptSource$);
-  const teamsContext$ = createTeamsThreadContext(threadPromptSource$);
-  const telegramContext$ = createTelegramThreadContext(threadPromptSource$);
-  const agentPhoneContext$ = createAgentPhoneThreadContext(threadPromptSource$);
-  const discordContext$ = createDiscordThreadContext(threadPromptSource$);
-  const automationContext$ = createThreadAutomationContext(threadPromptSource$);
-  const webPrompt$ = createWebThreadPrompt(threadPromptSource$);
-  const slackPrompt$ = createSlackThreadPrompt(
-    threadPromptSource$,
-    slackContext$,
-  );
-  const feishuPrompt$ = createFeishuThreadPrompt(
-    threadPromptSource$,
-    feishuContext$,
-  );
-  const teamsPrompt$ = createTeamsThreadPrompt(
-    threadPromptSource$,
-    teamsContext$,
-  );
-  const telegramPrompt$ = createTelegramThreadPrompt(
-    threadPromptSource$,
-    telegramContext$,
-  );
-  const agentPhonePrompt$ = createAgentPhoneThreadPrompt(
-    threadPromptSource$,
-    agentPhoneContext$,
-  );
-  const discordPrompt$ = createDiscordThreadPrompt(
-    threadPromptSource$,
-    discordContext$,
-  );
-  const automationPrompt$ = createAutomationThreadPrompt(
-    threadPromptSource$,
-    automationContext$,
-  );
-  const threadMemberMetadata$ = computed(async (get) => {
-    const selected = (await get(isAutomation$))
-      ? await get(queuedIdentityContext$)
-      : await get(promptExecutionContext$);
-    return get(selected.memberMetadata$);
-  });
-  const userPrompt$ = createUserPrompt(threadMemberMetadata$);
-  const selectedIntegrationPrompt$ = computed(async (get) => {
-    // Preserve canonical input validation before evaluating channel material.
-    const { queuedMessage } = await get(promptArgsArgs$);
-    switch (queuedMessage.contextType) {
-      case "web":
-      case "agent_run": {
-        return get(webPrompt$);
-      }
-      case "slack": {
-        return get(slackPrompt$);
-      }
-      case "feishu": {
-        return get(feishuPrompt$);
-      }
-      case "teams": {
-        return get(teamsPrompt$);
-      }
-      case "telegram": {
-        return get(telegramPrompt$);
-      }
-      case "agentphone": {
-        return get(agentPhonePrompt$);
-      }
-      case "discord": {
-        return get(discordPrompt$);
-      }
-      case "automation": {
-        throw new Error("Automation cannot enter the prompt assembler");
-      }
-    }
-  });
+  const threadContext = createThreadContext(context, pickedEvent$);
+  const sessionRead$ = threadContext.sessionRead$;
+  const slackContext$ = threadContext.slackContext$;
+  const feishuContext$ = threadContext.feishuContext$;
+  const teamsContext$ = threadContext.teamsContext$;
+  const telegramContext$ = threadContext.telegramContext$;
+  const agentPhoneContext$ = threadContext.agentPhoneContext$;
+  const discordContext$ = threadContext.discordContext$;
+  const automationContext$ = threadContext.automationContext$;
   // Per-claim dispatch timing collectors, created once per graph like the run
   // ids; commands record into them in their own order.
   const claimRunTiming$ = computed((get): ClaimRunTiming => {
     return {
-      run: new ApiDispatchTimingCollector(),
+      run: get(threadContext.dispatchTiming$),
       phase: new ApiDispatchPhaseCollector(get(pickStartedAt$)),
     };
   });
@@ -2039,278 +1727,8 @@ export function createThreadClaimRunObjects(
         }
       : null;
   });
-  // The head's model input: an automation's from its execution input, a
-  // prompt's from its prepared arguments and feature-switch context.
-  const queuedModelInputsInput$ = computed(
-    async (get): Promise<QueuedModelInput> => {
-      if ((await get(head$))?.contextType === "automation") {
-        const automation = await get(automationExecutionInput$);
-        if (!automation) {
-          throw new Error(
-            "Automation model resolution requires its automation",
-          );
-        }
-        return {
-          orgId: automation.due.automation.orgId,
-          userId: automation.due.automation.ownerUserId,
-          threadId: automation.due.chatThreadId,
-          eventId: automation.queueEventId,
-        };
-      }
-      const [args, features] = await Promise.all([
-        get(promptArgsArgs$),
-        get(promptFeaturesFeatures$),
-      ]);
-      return {
-        orgId: args.agent.orgId,
-        userId: args.userId,
-        threadId: args.threadId,
-        eventId: args.queuedMessage.id,
-        featureSwitchContext: features,
-        providerModelSupport: "trust-enqueued",
-      };
-    },
-  );
-  const queuedModelInputsSelection$ = computed(async (get) => {
-    const input = await get(queuedModelInputsInput$);
-    const head = await get(pickedEvent$);
-    if (head?.id !== input.eventId) {
-      throw new Error("Queued model selection must belong to the picked head");
-    }
-    return head.canonicalModelSelection;
-  });
-  const queuedModelInputsCapabilities$ = computed((get) => {
-    return get(context.plan$);
-  });
-  const queuedModelSources = {
-    input$: queuedModelInputsInput$,
-    selection$: queuedModelInputsSelection$,
-    capabilities$: queuedModelInputsCapabilities$,
-  };
-  const { input$: queuedMemberModelRoutesInput$ } = queuedModelSources;
-  const queuedMemberModelRoutesMemberAccountSnapshot$ = computed(
-    async (get) => {
-      const { orgId, userId } = await get(queuedMemberModelRoutesInput$);
-      const { accounts, providers } = await get(
-        (await get(queuedIdentityContext$)).memberModels$,
-      );
-      return { orgId, userId, accounts, providers };
-    },
-  );
-  const memberRoutes$ = computed(async (get) => {
-    const snapshot = await get(queuedMemberModelRoutesMemberAccountSnapshot$);
-    return memberModelRouteContextFromAccounts(
-      snapshot?.accounts.map((account) => {
-        return { ...account, providerId: account.modelProviderId };
-      }) ?? [],
-    );
-  });
-  const member = {
-    memberRoutes$: memberRoutes$,
-    memberAccountSnapshot$: queuedMemberModelRoutesMemberAccountSnapshot$,
-  };
-  const queuedModelRoutingInput$ = queuedModelSources.input$;
-  const queuedModelRoutingSelection$ = queuedModelSources.selection$;
-  const queuedModelRoutingMemberRoutes$ = member.memberRoutes$;
-  const queuedIdentityContext$ = computed(async (get) => {
-    const input = await get(queuedModelRoutingInput$);
-    return matchAgentRunContextSignals(
-      context,
-      input.userId,
-      input.orgId,
-      context.agentId,
-    );
-  });
-  const subscriptionModels$ = computed(async (get) => {
-    return memberSubscriptionModelRoutesFromCatalog(
-      await get(claimCatalog$),
-      await get(queuedModelRoutingMemberRoutes$),
-    );
-  });
-  const queuedModelRoutingModelPin$ = computed(async (get) => {
-    const selection = await get(queuedModelRoutingSelection$);
-    return selection
-      ? resolveQueuedModelSelectionPinFromSnapshot({
-          catalog: await get(claimCatalog$),
-          selectedModel: selection.selectedModel,
-          subscriptionModels: await get(subscriptionModels$),
-          memberProviderTypes: new Set(
-            (
-              await get(queuedMemberModelRoutesMemberAccountSnapshot$)
-            ).providers.map((provider) => {
-              return provider.type;
-            }),
-          ),
-        })
-      : badRequestMessage("Queued input is missing its model selection");
-  });
-  const routing = { modelPin$: queuedModelRoutingModelPin$ };
-  const { input$: queuedModelRuntimeInput$ } = queuedModelSources;
-  const { modelPin$: queuedModelRuntimeModelPin$ } = routing;
-  const queuedModelRuntimeFeatureSwitchContext$ = computed(
-    async (get): Promise<FeatureSwitchContext> => {
-      const input = await get(queuedModelRuntimeInput$);
-      if (input.featureSwitchContext) {
-        return input.featureSwitchContext;
-      }
-      return await get(context.featureSwitches$);
-    },
-  );
-  const modelKeyId$ = computed(async (get) => {
-    const rows = await get(context.managedModelKeys$);
-    return rows.find((row) => {
-      return row.vendor === AUTO_RUN_KEY_VENDOR;
-    })?.id;
-  });
-  const queuedModelRuntimeBuiltInRuntimeRoute$ = computed(async (get) => {
-    const pin = await get(queuedModelRuntimeModelPin$);
-    if (
-      "status" in pin ||
-      !isBuiltInModelProviderType(pin.modelProviderType) ||
-      !pin.selectedModel
-    ) {
-      return undefined;
-    }
-    const catalog = await get(claimCatalog$);
-    // A new run skips Built-in candidates that lack usage_pricing, like any
-    // unavailable one. Auto, the only Built-in model, has no service tier.
-    const routePricing = builtInRoutePricingFromSnapshot(
-      { serviceTier: undefined, resolution: get(usagePricingResolution$) },
-      await get(context.modelPricing$),
-    );
-    return builtInModelRuntimeRouteFromSnapshot({
-      catalog,
-      selectedModel: pin.selectedModel,
-      modelKeyId: await get(modelKeyId$),
-      routePricing,
-    });
-  });
-  const runtime = {
-    featureSwitchContext$: queuedModelRuntimeFeatureSwitchContext$,
-    builtInRuntimeRoute$: queuedModelRuntimeBuiltInRuntimeRoute$,
-  };
-  const credits = {
-    creditBalance$: computed(async (get) => {
-      return get((await get(queuedIdentityContext$)).credits$);
-    }),
-  };
-  const { input$: queuedProviderAdmissionInput$ } = queuedModelSources;
-  const { modelPin$: queuedProviderAdmissionModelPin$ } = routing;
-  const { creditBalance$: queuedProviderAdmissionCreditBalance$ } = credits;
-  /** The member's own valid subscription route is plan-exempt. */
-  const personalSubscription$ = computed(async (get) => {
-    const [pin, member, catalog] = await Promise.all([
-      get(queuedProviderAdmissionModelPin$),
-      get(queuedModelRoutingMemberRoutes$),
-      get(claimCatalog$),
-    ]);
-    return (
-      !("status" in pin) &&
-      isMemberSubscriptionRoute({
-        catalog,
-        member,
-        model: pin.selectedModel,
-        providerType: pin.modelProviderType,
-      })
-    );
-  });
-  const queuedProviderAdmissionProviderAdmission$ = computed(async (get) => {
-    const pin = await get(queuedProviderAdmissionModelPin$);
-    if ("status" in pin) {
-      throw new Error("Provider admission requires a valid queued model pin");
-    }
-    // Plan facts are prepared for every routed pin before admission.
-    const capabilities = await get(context.plan$);
-    return await resolveQueuedProviderAdmission({
-      catalog: await get(claimCatalog$),
-      pin,
-      providerModelSupport: (await get(queuedProviderAdmissionInput$))
-        .providerModelSupport,
-      personalSubscription: () => {
-        return get(personalSubscription$);
-      },
-      capabilities: () => {
-        return capabilities;
-      },
-      creditBalance: () => {
-        return get(queuedProviderAdmissionCreditBalance$);
-      },
-    });
-  });
-  const admission = {
-    providerAdmission$: queuedProviderAdmissionProviderAdmission$,
-  };
-  const { selection$, capabilities$ } = queuedModelSources;
-  const { modelPin$ } = routing;
-  const { memberAccountSnapshot$: queuedModelMemberAccountSnapshot$ } = member;
-  const {
-    featureSwitchContext$: queuedModelFeatureSwitchContext$,
-    builtInRuntimeRoute$,
-  } = runtime;
-  const { providerAdmission$ } = admission;
-  const queuedModelResolveQueuedModel$ = computed(async (get) => {
-    const [selection] = await Promise.all([
-      get(selection$),
-      get(capabilities$),
-      get(queuedModelFeatureSwitchContext$),
-    ]);
-    if (!selection) {
-      return badRequestMessage("Queued input is missing its model selection");
-    }
-    const pin = await get(modelPin$);
-    if ("status" in pin) {
-      return pin;
-    }
-    const [
-      admission,
-      featureSwitchContext,
-      builtInModelRuntimeRoute,
-      memberAccountSnapshot,
-    ] = await Promise.all([
-      get(providerAdmission$),
-      get(queuedModelFeatureSwitchContext$),
-      get(builtInRuntimeRoute$),
-      get(queuedModelMemberAccountSnapshot$),
-    ]);
-    // `null`: a Built-in pin with no available route.
-    const unpriced =
-      builtInModelRuntimeRoute === null && pin.selectedModel
-        ? await get(
-            unpricedBuiltInModelRejection(
-              {
-                catalog: await get(claimCatalog$),
-                model: pin.selectedModel,
-                serviceTier: undefined,
-                resolution: get(usagePricingResolution$),
-              },
-              context,
-            ),
-          )
-        : undefined;
-    return {
-      pin,
-      providerAdmission: {
-        effectiveModelProvider: admission.effectiveModelProvider,
-        cliAgentType: admission.cliAgentType,
-        error:
-          admission.error ??
-          unpriced ??
-          (admission.hasSpendableCredits
-            ? undefined
-            : pickChatRunModelInsufficientCredits()),
-      },
-      featureSwitchContext,
-      runCodexServiceTier: isAutoSelectedModel(pin.selectedModel)
-        ? undefined
-        : (selection.codexServiceTier ?? undefined),
-      reasoningEffort: isAutoSelectedModel(pin.selectedModel)
-        ? undefined
-        : (selection.reasoningEffort ?? undefined),
-      builtInModelRuntimeRoute,
-      memberAccountSnapshot,
-    };
-  });
-  const resolveQueuedModel$ = queuedModelResolveQueuedModel$;
+  const queuedIdentityContext$ = threadContext.executionBootstrap$;
+  const resolveQueuedModel$ = threadContext.queuedModel$;
   const promptInputInput$ = computed(
     async (get): Promise<QueuedPromptGraphInput> => {
       const head = await get(head$);
@@ -2414,57 +1832,8 @@ export function createThreadClaimRunObjects(
       };
     },
   );
-  const promptAgentAgent$ = computed(
-    async (get): Promise<QueuedPromptAgent | null> => {
-      const { head } = await get(promptInputInput$);
-      if (
-        ![
-          "slack",
-          "feishu",
-          "teams",
-          "discord",
-          "telegram",
-          "agentphone",
-        ].includes(head.contextType ?? "")
-      ) {
-        return { agentId: head.agentId };
-      }
-      const agentId = (await get(context.orgMetadata$))?.defaultAgentId;
-      if (!agentId) {
-        return null;
-      }
-      if (agentId === head.agentId) {
-        return { agentId };
-      }
-      return {
-        agentId,
-        expectedThreadAgentId: head.agentId,
-        producerBinding: {
-          kind: "reassign-agent",
-          agentId,
-          expectedAgentId: head.agentId,
-          userId: head.userId,
-          threadId: head.chatThreadId,
-          orgId: head.orgId,
-        },
-      };
-    },
-  );
-  const promptExecutionContext$ = computed(async (get) => {
-    const [{ head }, agent] = await Promise.all([
-      get(promptInputInput$),
-      get(promptAgentAgent$),
-    ]);
-    if (!agent) {
-      throw new Error("Prompt preparation lost its selected Agent");
-    }
-    return matchAgentRunContextSignals(
-      context,
-      head.userId,
-      head.orgId,
-      agent.agentId,
-    );
-  });
+  const promptAgentAgent$ = threadContext.agentSelection$;
+  const promptExecutionContext$ = threadContext.executionBootstrap$;
   const promptArgsArgs$ = computed(
     async (get): Promise<CreateQueuedChatRunInputArgs> => {
       const { head, timing } = await get(promptInputInput$);
@@ -2644,57 +2013,8 @@ export function createThreadClaimRunObjects(
       );
     },
   );
-  const rotatedPrompt$ = createRotatedPrompt(
-    pickedEvent$,
-    session$,
-    memberRoutes$,
-    claimCatalog$,
-  );
-  const templateOrgId = claim.orgId;
-  const runTemplates$ = createRunTemplates(
-    pickedEvent$,
-    templateOrgId,
-    promptFeaturesFeatures$,
-  );
-  const promptAndSkills$ = computed(async (get) => {
-    const [integration, continuation, templates] = await Promise.all([
-      get(selectedIntegrationPrompt$),
-      get(rotatedPrompt$),
-      get(runTemplates$),
-    ]);
-    if (!integration) {
-      return null;
-    }
-    if ("error" in templates) {
-      return templates;
-    }
-    return mergeRunPromptAndSkills([integration, continuation, templates]);
-  });
-  const promptHostHost$ = computed(async (get) => {
-    const [{ head }, thread] = await Promise.all([
-      get(promptInputInput$),
-      get(threadRow$),
-    ]);
-    if (!thread?.computerUseHostId) {
-      return null;
-    }
-    const [host] = await get(db$)
-      .select({
-        hostId: computerUseHosts.id,
-        displayName: computerUseHosts.displayName,
-      })
-      .from(computerUseHosts)
-      .where(
-        and(
-          eq(computerUseHosts.id, thread.computerUseHostId),
-          eq(computerUseHosts.orgId, head.orgId),
-          eq(computerUseHosts.userId, head.userId),
-          isNull(computerUseHosts.revokedAt),
-        ),
-      )
-      .limit(1);
-    return host ?? null;
-  });
+  const runTemplates$ = threadContext.templates$;
+  const promptHostHost$ = threadContext.computerUseHostGrant$;
   const promptCaptureCapture$ = computed(async (get) => {
     const { head } = await get(promptInputInput$);
     if (requestFacts?.input.id === head.id) {
@@ -2712,32 +2032,17 @@ export function createThreadClaimRunObjects(
     async (
       get,
     ): Promise<CreateQueuedChatRunInput | QueuedMessageAdmissionFailure> => {
-      const [
-        args,
-        launch,
-        context,
-        userPrompt,
-        model,
-        session,
-        host,
-        capture,
-        features,
-      ] = await Promise.all([
-        get(promptArgsArgs$),
-        get(promptMaterialMaterial$),
-        get(promptAndSkills$),
-        get(userPrompt$),
-        get(promptModelModel$),
-        get(promptSessionSession$),
-        get(promptHostHost$),
-        get(promptCaptureCapture$),
-        get(promptFeaturesFeatures$),
-      ]);
-      if (!context) {
-        throw args.queuedMessage.contextType === "discord"
-          ? new DiscordQueuedLaunchUnavailableError()
-          : new QueuedPromptLaunchUnavailableError();
-      }
+      const [args, launch, model, session, host, capture, features, templates] =
+        await Promise.all([
+          get(promptArgsArgs$),
+          get(promptMaterialMaterial$),
+          get(promptModelModel$),
+          get(promptSessionSession$),
+          get(promptHostHost$),
+          get(promptCaptureCapture$),
+          get(promptFeaturesFeatures$),
+          get(runTemplates$),
+        ]);
       const autonomy = args.queuedMessage.autonomyBudget;
       if (autonomy.kind !== "ok") {
         return queuedMessageAdmissionFailure(args, launch, {
@@ -2754,8 +2059,16 @@ export function createThreadClaimRunObjects(
       if ("error" in model) {
         return queuedMessageAdmissionFailure(args, launch, model.error);
       }
-      if ("error" in context) {
-        return queuedMessageAdmissionFailure(args, launch, context.error);
+      if ("error" in templates) {
+        return queuedMessageAdmissionFailure(args, launch, templates.error);
+      }
+      const promptAndSkills = await get(preparedPromptAndSkillVolumes$);
+      if (isRouteError(promptAndSkills)) {
+        return queuedMessageAdmissionFailure(
+          args,
+          launch,
+          promptAndSkills.body.error,
+        );
       }
       if (!session) {
         throw new Error("A valid prompt model is missing session preparation");
@@ -2764,8 +2077,7 @@ export function createThreadClaimRunObjects(
         catalog: await get(claimCatalog$),
         input: args,
         launch,
-        promptAndSkills: context,
-        userPrompt,
+        promptAndSkills,
         model,
         session,
         host,
@@ -3066,43 +2378,8 @@ export function createThreadClaimRunObjects(
     }
     return (await get(availableMaterial$))?.connectorSourceId;
   });
-  const promptExecutionResourcesStorageBody$ = computed(async (get) => {
-    if (await get(internalEarlyAssembly$)) {
-      return {};
-    }
-    const context = await settle(get(promptAndSkills$));
-    if (!context.ok) {
-      queuedPromptPreparationRejection(
-        context.error,
-        (await get(promptInputInput$)).head,
-      );
-      return {};
-    }
-    return !context.value || "error" in context.value
-      ? {}
-      : additionalVolumesForRun(
-          resolveRunSkillVolumes(context.value.skillVolumes).skillVolumes,
-        );
-  });
   const event$ = automationContext$;
-  const capturedAutomationTarget$ = computed(
-    async (get): Promise<LaunchTarget | null> => {
-      const event = await get(event$);
-      if (!event) {
-        return null;
-      }
-      const [row] = await get(db$)
-        .select({
-          automation: workflowAutomationColumns(),
-          agentId: workflows.agentId,
-        })
-        .from(workflowAutomations)
-        .innerJoin(workflows, eq(workflows.id, workflowAutomations.workflowId))
-        .where(eq(workflowAutomations.id, event.automationId))
-        .limit(1);
-      return row ?? null;
-    },
-  );
+  const capturedAutomationTarget$ = threadContext.automationTarget$;
   const target$ = capturedAutomationTarget$;
   const queuedAutomationRunSources = {
     event$: event$,
@@ -3200,16 +2477,14 @@ export function createThreadClaimRunObjects(
     target$: queuedAutomationMaterialTarget$,
   } = queuedAutomationRunSources;
   const launchMaterial$ = computed(async (get) => {
-    const [event, target, prompt] = await Promise.all([
+    const [event, target] = await Promise.all([
       get(queuedAutomationMaterialEvent$),
       get(queuedAutomationMaterialTarget$),
-      get(automationPrompt$),
     ]);
-    if (!event || !target || !prompt) {
+    if (!event || !target) {
       return null;
     }
     return buildWorkflowAutomationQueuedLaunchMaterial({
-      prompt,
       workflowName: event.workflowName,
       eventType: event.eventType,
       eventPayload: event.eventPayload,
@@ -3253,84 +2528,12 @@ export function createThreadClaimRunObjects(
   };
   const { input$: workflowAutomationLaunchReadGraphInput$ } =
     workflowAutomationLaunchReadGraphSources;
-  const { input$: automationLaunchMaterialsInput$ } =
-    workflowAutomationLaunchReadGraphSources;
-  const automationLaunchMaterialsComputerUseHostGrant$ = computed(
-    async (get): Promise<ComputerUseHostGrant> => {
-      const { automation, chatThreadId } = (
-        await get(automationLaunchMaterialsInput$)
-      ).due;
-      const [host] = await get(db$)
-        .select({
-          hostId: computerUseHosts.id,
-          displayName: computerUseHosts.displayName,
-        })
-        .from(chatThreads)
-        .innerJoin(
-          computerUseHosts,
-          eq(chatThreads.computerUseHostId, computerUseHosts.id),
-        )
-        .where(
-          and(
-            eq(chatThreads.id, chatThreadId),
-            eq(chatThreads.userId, automation.ownerUserId),
-            eq(computerUseHosts.orgId, automation.orgId),
-            eq(computerUseHosts.userId, automation.ownerUserId),
-            isNull(computerUseHosts.revokedAt),
-          ),
-        )
-        .limit(1);
-      return host ?? null;
-    },
-  );
-  const automationLaunchMaterialsRunInput$ = computed(
-    async (get): Promise<WorkflowAutomationRunInput> => {
-      const args = await get(automationLaunchMaterialsInput$);
-      const computerUseHostGrant = await get(
-        automationLaunchMaterialsComputerUseHostGrant$,
-      );
-      const integration = await get(automationPrompt$);
-      if (!integration) {
-        throw new Error("Admitted automation is missing its prompt");
-      }
-      const prompt = renderRunPrompts(
-        mergeRunPromptAndSkills([
-          integration,
-          await get(userPrompt$),
-          {
-            systemPromptVariables: {
-              computerUseContext:
-                appendComputerUseSystemPrompt(
-                  undefined,
-                  computerUseHostGrant,
-                ) ?? "",
-            },
-            userPromptVariables: {},
-            skillVolumes: [],
-          },
-        ]),
-      );
-      return {
-        prompt: prompt.userPrompt,
-        additionalVolumes: resolveRunSkillVolumes(integration.skillVolumes)
-          .skillVolumes,
-        appendSystemPrompt: prompt.systemPrompt,
-        callbacks: args.callbacks,
-        agentRunMetadata: workflowAutomationRunMetadata(
-          args.due.automation,
-          args.triggerBrief,
-          args.autonomyBudget,
-        ),
-      };
-    },
-  );
+  const automationLaunchMaterialsComputerUseHostGrant$ =
+    threadContext.computerUseHostGrant$;
   const workflowAutomationLaunchReadGraphComputerUseHostGrant$ =
     automationLaunchMaterialsComputerUseHostGrant$;
-  const workflowAutomationLaunchReadGraphRunInput$ =
-    automationLaunchMaterialsRunInput$;
   // Both claim paths share one queued model graph; its input follows the head.
-  const automationLaunchEffectsResolveQueuedModel$ =
-    queuedModelResolveQueuedModel$;
+  const automationLaunchEffectsResolveQueuedModel$ = resolveQueuedModel$;
   const automationLaunchEffectsRecordQueuedWorkflowReward$ = command(
     async (
       { set },
@@ -3429,8 +2632,6 @@ export function createThreadClaimRunObjects(
     workflowAutomationLaunchReadGraphInput$;
   const computerUseHostGrant$ =
     workflowAutomationLaunchReadGraphComputerUseHostGrant$;
-  const workflowAutomationLaunchRunInput$ =
-    workflowAutomationLaunchReadGraphRunInput$;
   const recordQueuedWorkflowReward$ =
     workflowAutomationLaunchReadGraphRecordQueuedWorkflowReward$;
   const timing$ = workflowAutomationLaunchReadGraphTiming$;
@@ -3443,15 +2644,17 @@ export function createThreadClaimRunObjects(
   const assembleWorkflowAutomationRun$ = computed(
     async (get): Promise<AssembledWorkflowAutomationRun | RunFailure> => {
       const args = await get(workflowAutomationLaunchInput$);
-      const [selection, model, computerUseHostGrant, runInput] =
-        await Promise.all([
-          get(workflowAutomationLaunchSelectionInput$),
-          get(workflowAutomationLaunchModel$),
-          get(computerUseHostGrant$),
-          get(workflowAutomationLaunchRunInput$),
-        ]);
+      const [selection, model, computerUseHostGrant] = await Promise.all([
+        get(workflowAutomationLaunchSelectionInput$),
+        get(workflowAutomationLaunchModel$),
+        get(computerUseHostGrant$),
+      ]);
       if (!model.ok) {
         return model.failure;
+      }
+      const promptAndSkills = await get(preparedPromptAndSkillVolumes$);
+      if (isRouteError(promptAndSkills)) {
+        return { kind: "run_error", response: promptAndSkills };
       }
       if (!selection) {
         throw new Error(
@@ -3465,13 +2668,16 @@ export function createThreadClaimRunObjects(
           triggerSource: args.triggerSource ?? "automation-schedule",
           body: {
             ...selection.command.body,
-            prompt: runInput.prompt,
-            ...additionalVolumesForRun(runInput.additionalVolumes),
+            prompt: promptAndSkills.userPrompt,
           },
           computerUseHostId: computerUseHostGrant?.hostId,
-          appendSystemPrompt: runInput.appendSystemPrompt,
-          callbacks: runInput.callbacks,
-          agentRunMetadata: runInput.agentRunMetadata,
+          appendSystemPrompt: promptAndSkills.appendedSystemPrompt,
+          callbacks: args.callbacks,
+          agentRunMetadata: workflowAutomationRunMetadata(
+            args.due.automation,
+            args.triggerBrief,
+            args.autonomyBudget,
+          ),
         },
         producerBinding: {
           kind: "automation",
@@ -3703,17 +2909,6 @@ export function createThreadClaimRunObjects(
     }
     return (await get(queuedAutomationAssemblerLaunchMaterial$))?.callbacks;
   });
-  const queuedAutomationAssemblerStorageBody$ = computed(async (get) => {
-    if (await get(queuedAutomationAssemblerInternalEarlyAssembly$)) {
-      return {};
-    }
-    const context = await get(automationPrompt$);
-    return context
-      ? additionalVolumesForRun(
-          resolveRunSkillVolumes(context.skillVolumes).skillVolumes,
-        )
-      : {};
-  });
   const queuedAutomationAssemblerConnectorSourceId$ = computed(async (get) => {
     return (
       (await get(queuedAutomationAssemblerEvent$))?.connectorSourceId ??
@@ -3765,13 +2960,6 @@ export function createThreadClaimRunObjects(
         : get(promptExecutionResourcesCallbackInputs$);
     },
   );
-  const storageBody$ = computed(async (get) => {
-    return get(
-      (await get(isAutomation$))
-        ? queuedAutomationAssemblerStorageBody$
-        : promptExecutionResourcesStorageBody$,
-    );
-  });
   const connectorSourceId$ = computed(async (get) => {
     return get(
       (await get(isAutomation$))
@@ -3861,29 +3049,7 @@ export function createThreadClaimRunObjects(
       );
     },
   );
-  const executionContext$ = computed(async (get) => {
-    const [{ command }, agentId] = await Promise.all([
-      get(selectedIdentityInputIdentityInput$),
-      get(preCreateAgentIdAgentId$),
-    ]);
-    if (!agentId) {
-      throw new Error("Execution context requires an Agent identity");
-    }
-    // Reconciled integrations may select a different default Agent. Preserve only
-    // groups whose authority key still matches, including their dependencies.
-    const supplied = (await get(isAutomation$))
-      ? await get(queuedIdentityContext$)
-      : await get(promptExecutionContext$);
-    return matchAgentRunContextSignals(
-      supplied,
-      command.owner.userId,
-      command.owner.orgId,
-      agentId,
-    );
-  });
-  const authorizedConnectors$ = computed(async (get) => {
-    return get((await get(executionContext$)).authorizedConnectors$);
-  });
+  const executionContext$ = threadContext.executionBootstrap$;
   const preCreateBootstrapMetadata$ = computed(async (get) => {
     const startedAt = now();
     const selected = await get(executionContext$);
@@ -3970,52 +3136,19 @@ export function createThreadClaimRunObjects(
     );
   });
   const preCreateSubscriptionAccountSubscriptionAccount$ = computed(
-    async (
-      get,
-    ): Promise<
-      | {
-          readonly command: ThreadRunIdentity;
-        }
-      | ReturnType<typeof conflict>
-    > => {
-      const { command, timing } = await get(preCreateInput$);
-      const pin = command.agentRunModelPin;
-      if (
-        !pin ||
-        !pin.modelProvider ||
-        !isPersonalSubscriptionProviderType(pin.modelProvider)
-      ) {
-        return { command };
+    async (get) => {
+      const { command } = await get(preCreateInput$);
+      const model = await get(threadContext.subscriptionSelection$);
+      if ("status" in model) {
+        return model;
       }
-      const providerType = pin.modelProvider;
-      return await measureAgentRunPreCreate(
-        timing,
-        "api_dispatch_pre_create_agent_capture_subscription_account",
-        async () => {
-          const accountCandidates = personalSubscriptionAccountCandidates({
-            command,
-            providerType,
-            modelProviderId: pin.modelProviderId,
-            snapshot: await get((await get(executionContext$)).memberModels$),
-          });
-          const account =
-            accountCandidates.find((candidate) => {
-              return candidate.id === pin.modelProviderId;
-            }) ?? accountCandidates[0];
-          if (!account || account.type !== providerType) {
-            return conflict(
-              "The selected subscription account is unavailable. Reconnect it before starting another run.",
-            );
-          }
-          return {
-            command: {
-              ...command,
-              modelProviderId: account.id,
-              agentRunModelPin: { ...pin, modelProviderId: account.id },
-            },
-          };
+      return {
+        command: {
+          ...command,
+          modelProviderId: model.modelProviderId,
+          agentRunModelPin: model.agentRunModelPin,
         },
-      );
+      };
     },
   );
   const preCreateConnectorCatalogConnectorCatalog$ = computed(
@@ -4062,9 +3195,7 @@ export function createThreadClaimRunObjects(
     return (await get(selectedCommand$))?.appendSystemPrompt;
   });
   const preCreatePostAuthorizationPostAuthorization$ = computed(
-    async (
-      get,
-    ): Promise<AgentRunAfterPreCreate | ReturnType<typeof conflict>> => {
+    async (get): Promise<AgentRunAfterPreCreate | CreateRunErrorResult> => {
       const { timing } = await get(preCreateInput$);
       const [
         bootstrapResult,
@@ -4109,21 +3240,7 @@ export function createThreadClaimRunObjects(
       };
     },
   );
-  const agentFeatureSwitches$ = computed(async (get) => {
-    return get((await get(executionContext$)).featureSwitches$);
-  });
-  const cloudBrowserEnabled$ = computed(async (get) => {
-    const thread = await get(threadRow$);
-    if (!thread) {
-      throw new Error("Agent prompt requires a chat thread");
-    }
-    return thread.cloudBrowserEnabled;
-  });
-  const agentPrompt$ = createAgentPrompt(
-    preCreateAgentAgent$,
-    agentFeatureSwitches$,
-    cloudBrowserEnabled$,
-  );
+  const cloudBrowserEnabled$ = threadContext.cloudBrowserEnabled$;
   const preCreatePreparedInput$ = computed(async (get) => {
     const [input, resolution, appendSystemPrompt, fullCommand, catalog] =
       await Promise.all([
@@ -4179,8 +3296,6 @@ export function createThreadClaimRunObjects(
   const preCreateExecutionIdentityInput$ = selectedIdentityInputIdentityInput$;
   const preCreateExecutionAgent$ = preCreateAgentAgent$;
   const preCreateExecutionBootstrapMetadata$ = preCreateBootstrapMetadata$;
-  const preCreateExecutionSubscriptionAccount$ =
-    preCreateSubscriptionAccountSubscriptionAccount$;
   const preCreateExecutionConnectorCatalog$ =
     preCreateConnectorCatalogConnectorCatalog$;
   const preCreateExecutionPermissionPolicies$ =
@@ -4214,294 +3329,47 @@ export function createThreadClaimRunObjects(
     member$: runMemberSnapshot$,
     environment$: runEnvironmentSnapshot$,
   };
-  const providerInput$ = computed(
-    async (get): Promise<RunModelProviderReadInput | CreateRunErrorResult> => {
-      const input = await get(preCreateExecutionInput$);
-      const [agent, account] = await Promise.all([
-        get(preCreateExecutionAgent$),
-        get(preCreateExecutionSubscriptionAccount$),
-      ]);
-      if ("status" in account) {
-        return account;
-      }
-      if (!agent) {
-        throw new Error("Agent disappeared after preparation authorization");
-      }
-      return {
-        db: get(db$),
-        timing: input.timing,
-        args: {
-          ...selectedRunModelProviderArgs(account.command),
-          catalog: await get(claimCatalog$),
-        },
-      };
-    },
-  );
   const preCreateModelFeatureSwitchContext$ = computed(async (get) => {
     const observed = await get(featureSwitchContext$);
     return observed === undefined
       ? (await get(preCreateExecutionBootstrapMetadata$)).featureSwitchContext
       : observed;
   });
-  const runFramework$ = computed(async (get) => {
-    const input = await get(providerInput$);
-    if (isRouteError(input)) {
-      return input;
-    }
-    const args = input.args;
-    if (args.modelProviderType && isModelProviderType(args.modelProviderType)) {
-      return getFrameworkForType(args.modelProviderType);
-    }
-    if (!args.modelProviderId) {
-      return getValidatedFramework(undefined);
-    }
-    const identity = await get(executionContext$);
-    const member = await get(identity.memberModels$);
-    const provider = member.providers.find((row) => {
-      return row.id === args.modelProviderId;
-    });
-    if (!provider) {
-      const account = member.accounts.find((account) => {
-        return account.id === args.modelProviderId;
-      });
-      return account && isModelProviderType(account.type)
-        ? getFrameworkForType(account.type)
-        : getValidatedFramework(undefined);
-    }
-    if (!provider || !isModelProviderType(provider.type)) {
-      return getValidatedFramework(undefined);
-    }
-    return getFrameworkForType(provider.type);
-  });
-  const providerContext$ = computed(async (get) => {
-    const input = await get(providerInput$);
-    if (isRouteError(input)) {
-      return input;
-    }
-    const requestedFramework = await get(runFramework$);
-    if (isRouteError(requestedFramework)) {
-      return requestedFramework;
-    }
-    const args = input.args;
-    const environmentArgs: ResolveModelProviderEnvironmentArgs = {
-      catalog: args.catalog,
-      orgId: args.orgId,
-      userId: args.userId,
-      framework: requestedFramework,
-      modelProviderId: args.modelProviderId,
-      modelProviderCredentialScope: args.modelProviderCredentialScope,
-      modelProviderType: args.modelProviderType,
-      selectedModelOverride: args.selectedModelOverride,
-      builtInModelRuntimeRoute: args.builtInModelRuntimeRoute,
-      piExecution: args.piExecution,
-    };
-    return {
-      input,
-      requestedFramework,
-      environmentArgs,
-    };
-  });
-  const pinnedContext$ = computed(async (get) => {
-    const context = await get(providerContext$);
-    if (isRouteError(context) || !context.input.args.queueFirstAssociation) {
-      return null;
-    }
-    return context;
-  });
-  const selectedModelSource$ = computed(async (get) => {
-    const context = await get(pinnedContext$);
-    if (!context) {
-      return null;
-    }
-    const args = context.environmentArgs;
-    const identity = await get(executionContext$);
-    if (identity.orgId !== args.orgId || identity.userId !== args.userId) {
-      throw new Error("Model source snapshot identity mismatch");
-    }
-    if (isBuiltInModelProviderType(args.modelProviderType)) {
-      const route = args.builtInModelRuntimeRoute;
-      if (
-        !route ||
-        route.selectedModel !== args.selectedModelOverride ||
-        !isBuiltInModelRuntimeRoutePermitted(route) ||
-        getFrameworkForType(route.providerType) !== args.framework
-      ) {
-        return null;
+  const runFramework$ = threadContext.requestedFramework$;
+  const modelRoute$ = threadContext.modelRoute$;
+  const promptAndSkillVolumes$ =
+    createPromptAndSkillVolumesSignals(threadContext);
+  const preparedPromptAndSkillVolumes$ = computed(
+    async (get): Promise<PromptAndSkillVolumes | CreateRunErrorResult> => {
+      if (!(await get(isAutomation$))) {
+        const templates = await get(runTemplates$);
+        if ("error" in templates) {
+          return badRequestMessage(templates.error.message);
+        }
       }
-      return managedSourceFromSnapshot(
-        (await get(identity.managedModelKeys$)).find((key) => {
-          return key.id === route.modelKeyId;
-        }),
-      );
-    }
-    if (
-      args.modelProviderId &&
-      args.modelProviderType &&
-      isPersonalSubscriptionProviderType(args.modelProviderType)
-    ) {
-      return memberAccountSourceFromSnapshot(
-        await get(identity.memberModels$),
-        args.modelProviderId,
-      );
-    }
-    return null;
-  });
-  // The selected source's model runtime. KMS decryption and captured
-  // managed-key values have no side effects, so the runtime is derived here
-  // (Ethan 2026-10-02); each graph resolves it once.
-  const preparedModelEnvironment$ = computed(
-    async (get): Promise<ResolvedModelProviderEnvironment | null> => {
-      const selection = await get(selectionInput$);
-      if (!selection) {
-        return null;
+      // Preserve model and official-workflow admission before final rendering.
+      const officialWorkflow = await get(officialWorkflow$);
+      if (isRouteError(officialWorkflow)) {
+        return officialWorkflow;
       }
-      const [context, source] = await Promise.all([
-        get(pinnedContext$),
-        get(selectedModelSource$),
-      ]);
-      if (!context || !source) {
-        return null;
+      const result = await settle(get(promptAndSkillVolumes$));
+      if (!result.ok) {
+        if (result.error instanceof PromptAndSkillVolumesError) {
+          // Source admission preserves the channel-specific rejection code;
+          // independent storage preparation must also return a failed result.
+          return result.error.code === "BAD_REQUEST"
+            ? badRequestMessage(result.error.message)
+            : conflict(result.error.message);
+        }
+        if (result.error instanceof OfficialWorkflowRunAdmissionError) {
+          return conflict(result.error.message);
+        }
+        throw result.error;
       }
-      if (source.identity.kind === "built-in") {
-        return await prepareManagedModelEnvironment(
-          source,
-          context.environmentArgs,
-        );
-      }
-      const selectedModel = context.environmentArgs.selectedModelOverride;
-      const type = source.configuration.providerType;
-      if (
-        !selectedModel ||
-        !isPersonalSubscriptionProviderType(type) ||
-        getFrameworkForType(type) !== context.environmentArgs.framework ||
-        (context.environmentArgs.modelProviderType !== undefined &&
-          context.environmentArgs.modelProviderType !== type)
-      ) {
-        return null;
-      }
-      const sourceId = context.environmentArgs.modelProviderId;
-      if (!sourceId) {
-        throw new Error("Selected subscription source has no identity");
-      }
-      return await prepareSubscriptionModelEnvironment(source, selectedModel, {
-        catalog: await get(claimCatalog$),
-        userId: context.environmentArgs.userId,
-        sourceId,
-        piExecution: context.environmentArgs.piExecution,
-      });
+      return result.value;
     },
   );
-  const pinnedBuiltInProviderSnapshot$ = computed(async (get) => {
-    const context = await get(pinnedContext$);
-    return context &&
-      isBuiltInModelProviderType(context.environmentArgs.modelProviderType)
-      ? await get(preparedModelEnvironment$)
-      : null;
-  });
-  const environment$ = computed(
-    async (get): Promise<ResolvedModelProviderEnvironment | null> => {
-      const context = await get(pinnedContext$);
-      if (!context) {
-        return null;
-      }
-      const args = context.environmentArgs;
-      if (isBuiltInModelProviderType(args.modelProviderType)) {
-        return await get(pinnedBuiltInProviderSnapshot$);
-      }
-      if (
-        args.modelProviderType &&
-        isPersonalSubscriptionProviderType(args.modelProviderType)
-      ) {
-        // Member subscription accounts use the exact selected account source.
-        return await get(preparedModelEnvironment$);
-      }
-      return null;
-    },
-  );
-  const queuedModelRoute$ = computed(async (get) => {
-    const context = await get(providerContext$);
-    if (isRouteError(context)) {
-      return context;
-    }
-    return await context.input.timing.measure(
-      "api_dispatch_prepare_context_resolve_model_provider",
-      "nested",
-      async () => {
-        return (
-          (await get(environment$)) ??
-          providerUnavailable("No model provider is available for this run")
-        );
-      },
-    );
-  });
-  const runModelProviderModelRoute$ = computed(async (get) => {
-    const context = await get(providerContext$);
-    if (isRouteError(context)) {
-      return context;
-    }
-    const providerResult = await settle(get(queuedModelRoute$));
-    if (!providerResult.ok) {
-      return piConfigurationRouteError(providerResult.error);
-    }
-    const provider = providerResult.value;
-    if (isRouteError(provider)) {
-      return provider;
-    }
-    const materialized = safeSync(() => {
-      return materializePreparedPiProvider(
-        piModelPreparationInput(context.input.args),
-        provider,
-      );
-    });
-    return "ok" in materialized
-      ? materialized.ok
-      : piConfigurationRouteError(materialized.error);
-  });
-  const modelRoute$ = runModelProviderModelRoute$;
-  const connectorsContext$ = createConnectorsContext(authorizedConnectors$);
-  const workflowSkills$ = computed(async (get) => {
-    return get((await get(executionContext$)).workflowSkills$);
-  });
-  const systemSkillsContext$ = createSystemSkillsContext(
-    systemSkillStorageResolution$,
-  );
-  const runtimePromptInput$ = computed(async (get) => {
-    const [requestedFramework, modelProvider, event, selectedImageModel] =
-      await Promise.all([
-        get(runFramework$),
-        get(modelRoute$),
-        get(pickedEvent$),
-        get(runMemberImageModel$),
-      ]);
-    if (
-      !event ||
-      isRouteError(requestedFramework) ||
-      isRouteError(modelProvider)
-    ) {
-      throw new Error("Runtime prompt requires a valid run model route");
-    }
-    return {
-      framework: modelProvider
-        ? modelProviderFramework(modelProvider)
-        : requestedFramework,
-      contextType: event.contextType,
-      chatThreadId: event.chatThreadId,
-      selectedImageModel,
-    };
-  });
-  const runtimePrompt$ = createRuntimePrompt(runtimePromptInput$);
-  const runtimePromptAndSkills$ = computed(async (get) => {
-    return mergeRunPromptAndSkills(
-      await Promise.all([
-        get(connectorsContext$),
-        get(workflowSkills$),
-        get(systemSkillsContext$),
-        get(runtimePrompt$),
-      ]),
-    );
-  });
   const model = {
-    providerInput$: providerInput$,
     featureSwitchContext$: preCreateModelFeatureSwitchContext$,
     framework$: runFramework$,
     modelRoute$: modelRoute$,
@@ -5501,8 +4369,6 @@ export function createThreadClaimRunObjects(
         requestedFramework,
         modelProvider,
         officialWorkflowRun,
-        bootstrap,
-        body,
       ] = await Promise.all([
         get(preCreateInput$),
         get(preCreateAgentAgent$),
@@ -5510,8 +4376,6 @@ export function createThreadClaimRunObjects(
         get(runFramework$),
         get(modelRoute$),
         get(officialWorkflow$),
-        get(preCreateBootstrapBootstrap$),
-        get(storageBody$),
       ]);
       if (!agent) {
         throw new Error("Agent disappeared after preparation authorization");
@@ -5541,13 +4405,16 @@ export function createThreadClaimRunObjects(
         },
         modelProvider,
       });
+      const promptAndSkills = await get(preparedPromptAndSkillVolumes$);
+      if (isRouteError(promptAndSkills)) {
+        return promptAndSkills;
+      }
       const metadata = prepareRunOutputMetadata({
-        createArgs: { injectSkillVolumes: { workflows: bootstrap.workflows } },
-        promptAndSkills: await get(runtimePromptAndSkills$),
+        skillVolumes: promptAndSkills.skillVolumes,
         officialWorkflow: officialWorkflowRun,
         framework,
         piSandbox,
-        body,
+        body: {},
         resolved,
       });
       return {
@@ -6109,16 +4976,12 @@ export function createThreadClaimRunObjects(
     };
   });
   const runContextRuntime = { runtimeContext$: runRuntimeRuntimeContext$ };
-  const runMemberUserTimezone$ = computed(async (get) => {
+  const runContextUserTimezone$ = computed(async (get) => {
     return selectedRunContextShared
       ? get(selectedRunContextShared.userTimezone$)
       : ((await get(runMemberSnapshot$)).member?.timezone ?? undefined);
   });
-  const runMemberImageModel$ = computed(async (get) => {
-    const stored = (await get(runMemberSnapshot$)).member?.selectedImageModel;
-    return isImageModelId(stored) ? stored : DEFAULT_IMAGE_MODEL;
-  });
-  const runContextUserTimezone$ = runMemberUserTimezone$;
+  const runMemberImageModel$ = threadContext.selectedImageModel$;
   const imageModel$ = runMemberImageModel$;
   const disabledPaidTools$ = computed(async (get) => {
     return (await get(selectedRunContextShared.disabledPaidTools$)).toolIds;
@@ -6190,9 +5053,12 @@ export function createThreadClaimRunObjects(
     if (validation) {
       return validation;
     }
+    const promptAndSkills = await get(preparedPromptAndSkillVolumes$);
+    if (isRouteError(promptAndSkills)) {
+      return promptAndSkills;
+    }
     const metadata = prepareRunOutputMetadata({
-      createArgs: args,
-      promptAndSkills: await get(runtimePromptAndSkills$),
+      skillVolumes: promptAndSkills.skillVolumes,
       officialWorkflow: officialWorkflowRun,
       framework,
       piSandbox,
@@ -6778,35 +5644,14 @@ export function createThreadClaimRunObjects(
           context.piSandbox === undefined ? context.framework : ("pi" as const),
         runnerProfile: DEFAULT_PROFILE,
       };
-      const [agentPrompt, runtime] = await Promise.all([
-        get(agentPrompt$),
-        get(runtimePromptAndSkills$),
-      ]);
-      const prompt = renderRunPrompts(
-        {
-          ...runtime,
-          systemPromptVariables: {
-            ...runtime.systemPromptVariables,
-            connectors:
-              args.includeOkouTokenSecret === true
-                ? runtime.systemPromptVariables.connectors
-                : undefined,
-          },
-        },
-        {
-          userPrompt: context.body.prompt,
-          systemPrompt: [
-            renderRunPrompts(agentPrompt).systemPrompt,
-            args.body.appendSystemPrompt,
-          ]
-            .filter(Boolean)
-            .join("\n\n"),
-        },
-      );
+      const promptAndSkills = await get(preparedPromptAndSkillVolumes$);
+      if (isRouteError(promptAndSkills)) {
+        return promptAndSkills;
+      }
       const body = {
         ...context.body,
-        prompt: prompt.userPrompt,
-        appendSystemPrompt: prompt.systemPrompt,
+        prompt: promptAndSkills.userPrompt,
+        appendSystemPrompt: promptAndSkills.appendedSystemPrompt,
       };
       const {
         officialWorkflowRun,
@@ -7774,10 +6619,6 @@ export function createThreadClaimRunObjects(
     },
   );
   return { hasFirstPickableChatEvent$, startRun$ };
-}
-
-function isModelProviderType(type: string): type is ModelProviderType {
-  return Object.hasOwn(MODEL_PROVIDER_TYPES, type);
 }
 
 // --- Thread-private implementation: storage manifest ---
@@ -11296,21 +10137,6 @@ function modelProviderFramework(
   return getFrameworkForType(modelProvider.type);
 }
 
-function piConfigurationRouteError(
-  error: unknown,
-): ReturnType<typeof badRequestMessage> {
-  if (error instanceof PiModelConfigurationError) {
-    return badRequestMessage(error.message);
-  }
-  throw error;
-}
-
-interface RunModelProviderReadInput {
-  readonly db: ReadonlyDb;
-  readonly timing: ApiDispatchTimingCollector;
-  readonly args: RunModelProviderArgs;
-}
-
 /** Post-reservation materializer. This never inserts a Run or invokes the API
  * first turn. Publication owns a fresh admission. */
 
@@ -11427,36 +10253,6 @@ type ThreadRunSelection = Omit<
 type ThreadRunIdentity = Omit<ThreadRunSelection, "piExecution"> & {
   readonly piExecution?: boolean;
 };
-
-function personalSubscriptionAccountCandidates(args: {
-  readonly command: ThreadRunIdentity;
-  readonly providerType: string;
-  readonly modelProviderId: string | null;
-  readonly snapshot: MemberModelAccountSnapshot;
-}) {
-  const snapshot = args.snapshot;
-  if (
-    snapshot.orgId !== args.command.owner.orgId ||
-    snapshot.userId !== args.command.owner.userId ||
-    !isPersonalSubscriptionProviderType(args.providerType)
-  ) {
-    throw new Error("Subscription account snapshot identity mismatch");
-  }
-  return snapshot.accounts.filter((account) => {
-    if (
-      account.disconnectedAt !== null ||
-      account.orgId !== snapshot.orgId ||
-      account.userId !== snapshot.userId
-    ) {
-      return false;
-    }
-    const activeType = account.type === args.providerType && account.isActive;
-    return args.modelProviderId === null
-      ? activeType
-      : account.id === args.modelProviderId ||
-          (account.modelProviderId === args.modelProviderId && activeType);
-  });
-}
 
 function selectedRunPiExecution(command: ThreadRunIdentity): boolean {
   if (command.piExecution === undefined) {
@@ -12779,7 +11575,6 @@ function createRunBody(args: {
   readonly permissionPolicies: FirewallPolicies | null | undefined;
   readonly triggerSource: TriggerSource | undefined;
   readonly appendSystemPrompt: string | undefined;
-  readonly standaloneIntegrationNote: string;
 }) {
   const triggerSource = args.triggerSource ?? "web";
   return {
@@ -12794,14 +11589,7 @@ function createRunBody(args: {
     settings: args.body.settings,
     permissionPolicies: args.permissionPolicies ?? undefined,
     triggerSource,
-    appendSystemPrompt: [
-      args.appendSystemPrompt,
-      args.appendSystemPrompt ? "" : args.standaloneIntegrationNote,
-    ]
-      .filter((part): part is string => {
-        return Boolean(part);
-      })
-      .join("\n\n"),
+    appendSystemPrompt: args.appendSystemPrompt,
     disallowedTools: [...DISALLOWED_TOOLS],
     vars: selectedAgentRunVariables(args.agent.id),
   };
@@ -12847,31 +11635,12 @@ interface ProductRunArgsInput {
   readonly authorizedRequestObservation?: AuthorizedAgentRunRequestObservation;
   readonly runPermissionPolicies: FirewallPolicies | null | undefined;
   readonly connectorCatalogSelection: RunConnectorCatalogSelection;
-  readonly workflows: readonly RunWorkflowRef[];
   readonly allowedConnectorSlugs: readonly ConnectorSlug[];
   readonly allowedCustomConnectorIds: readonly string[];
   readonly customConnectorGrants: readonly AgentCustomConnectorGrant[];
   readonly timing: ApiDispatchTimingCollector;
   readonly threadSessionResolution?: ChatThreadSessionResolution;
   readonly cloudBrowserEnabled: boolean;
-  readonly featureSwitchContext: FeatureSwitchContext;
-}
-
-/**
- * A run launched straight through the runs API has no conversational surface,
- * so nothing renders `# Current Integration` for the note to follow. Its
- * delivery rules still apply, so they close the caller-supplied prompt
- * instead. A run whose surface supplied an integration prompt already carries
- * the note inside that block.
- */
-function standaloneIntegrationNote(args: ProductRunArgsInput): string {
-  if (args.command.appendSystemPrompt) {
-    return "";
-  }
-  return resolveIntegrationNotePrompt({
-    triggerSource: args.command.triggerSource ?? "web",
-    featureSwitchContext: args.featureSwitchContext,
-  });
 }
 
 /**
@@ -12903,7 +11672,6 @@ interface ProductRunArgs {
   readonly okouTokenComputerUseHostId?: string;
   readonly okouTokenCloudBrowserEnabled?: boolean;
   readonly enforceBuiltInCredits?: boolean;
-  readonly injectSkillVolumes?: RunSkillVolumeInjection;
   readonly requiredOfficialWorkflowIds?: readonly string[];
   readonly connectorScope: ExplicitConnectorScope;
   readonly validateEnvironmentReferences?: boolean;
@@ -12923,7 +11691,6 @@ function buildProductRunArgs(args: ProductRunArgsInput): ProductRunArgs {
       permissionPolicies: args.runPermissionPolicies,
       triggerSource: command.triggerSource,
       appendSystemPrompt: command.appendSystemPrompt,
-      standaloneIntegrationNote: standaloneIntegrationNote(args),
     }),
     apiStartTime: command.apiStartTime,
     chatThreadId: command.chatThreadId,
@@ -12956,7 +11723,6 @@ function buildProductRunArgs(args: ProductRunArgsInput): ProductRunArgs {
     okouTokenComputerUseHostId: command.computerUseHostId,
     okouTokenCloudBrowserEnabled: args.cloudBrowserEnabled,
     enforceBuiltInCredits: true,
-    injectSkillVolumes: { workflows: args.workflows },
     requiredOfficialWorkflowIds: command.requiredOfficialWorkflowIds,
     connectorScope: {
       allowedConnectorSlugs: args.allowedConnectorSlugs,
@@ -13024,16 +11790,6 @@ function matchingAuthorizedRequestObservation(
   return observation;
 }
 // --- Thread-private implementation: execution context prompts ---
-
-/**
- * When set, system + workflow skill volumes are built and prepended in run
- * context preparation using the run's resolved (model-provider) framework.
- * Each workflow's volume is keyed by its id (storage name), while the skill
- * mounts at its slug. Slugs are not unique, so the id is required.
- */
-interface RunSkillVolumeInjection {
-  readonly workflows: readonly RunWorkflowRef[];
-}
 
 const AUTO_MEMORY_MISSING_ROOT_POLICY: ArtifactMissingRootPolicy =
   "preserveParentVersion";
@@ -13114,27 +11870,19 @@ function validateRunEnvironmentReferences(args: {
 }
 
 function preparedRunAdditionalVolumes(args: {
-  readonly createArgs: {
-    readonly injectSkillVolumes?: RunSkillVolumeInjection;
-  };
-  readonly promptAndSkills: RunPromptAndSkills;
+  readonly skillVolumes: readonly SkillVolume[];
   readonly skillsRoot: string;
   readonly body: Pick<CreateRunBody, "additionalVolumes">;
   readonly resolved: Pick<ResolvedRunExecution, "additionalVolumes">;
 }): PreparedAdditionalVolumes {
   const bodyAdditionalVolumes = args.body.additionalVolumes;
-  const rendered = resolveRunSkillVolumes(
-    args.promptAndSkills.skillVolumes.filter((volume) => {
-      return (
-        args.createArgs.injectSkillVolumes !== undefined ||
-        volume.source === "custom_connector_skill" ||
-        volume.source === "request_additional_volume"
-      );
-    }),
-    args.skillsRoot,
-  );
+  const rendered = resolveRunSkillVolumes(args.skillVolumes, args.skillsRoot);
+  const hasTemplateVolumes = args.skillVolumes.some((volume) => {
+    return volume.source === "request_additional_volume";
+  });
   const additionalVolumes =
-    bodyAdditionalVolumes ?? args.resolved.additionalVolumes ?? [];
+    bodyAdditionalVolumes ??
+    (hasTemplateVolumes ? [] : (args.resolved.additionalVolumes ?? []));
   return {
     volumes: [...rendered.skillVolumes, ...additionalVolumes],
     sources: [
@@ -13147,10 +11895,7 @@ function preparedRunAdditionalVolumes(args: {
 }
 
 function prepareRunOutputMetadata(args: {
-  readonly createArgs: {
-    readonly injectSkillVolumes?: RunSkillVolumeInjection;
-  };
-  readonly promptAndSkills: RunPromptAndSkills;
+  readonly skillVolumes: readonly SkillVolume[];
   readonly officialWorkflow: OfficialWorkflowObservation | undefined;
   readonly framework: SupportedFramework;
   readonly piSandbox: PiModelConfig | undefined;
@@ -13165,8 +11910,7 @@ function prepareRunOutputMetadata(args: {
 } {
   const skillsRoot = skillsRootForRun(args.framework, args.piSandbox);
   const additionalVolumes = preparedRunAdditionalVolumes({
-    createArgs: args.createArgs,
-    promptAndSkills: args.promptAndSkills,
+    skillVolumes: args.skillVolumes,
     skillsRoot,
     body: args.body,
     resolved: args.resolved,
@@ -14761,12 +13505,13 @@ type CreateRunRouteResult =
     })
   | ApiErrorResponse<402, "INSUFFICIENT_CREDITS">
   | ApiErrorResponse<402, "PRO_REQUIRED">
-  | ApiErrorResponse<503, "PROVIDER_UNAVAILABLE">;
+  | ApiErrorResponse<
+      503,
+      "PROVIDER_UNAVAILABLE" | "MODEL_PROVIDER_UNAVAILABLE"
+    >;
 
-type CreateRunErrorResult = Exclude<
-  CreateRunRouteResult,
-  { readonly status: 201 }
->;
+type CreateRunErrorResult =
+  Exclude<CreateRunRouteResult, { readonly status: 201 }> | ThreadModelError;
 
 /** The model-selection facts of one run that its model environment reads. */
 interface RunModelProviderArgs {
@@ -14784,20 +13529,6 @@ interface RunModelProviderArgs {
   readonly codexServiceTier?: "fast";
   readonly agentRunMetadata?: AgentRunMetadata;
   readonly queueFirstAssociation?: QueueFirstRunAssociation;
-}
-
-interface ResolveModelProviderEnvironmentArgs {
-  /** Loaded once per run and shared by every candidate route. */
-  readonly catalog: ModelCatalog;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly framework: SupportedFramework;
-  readonly modelProviderId?: string;
-  readonly modelProviderCredentialScope?: ModelProviderCredentialScope;
-  readonly modelProviderType?: string;
-  readonly selectedModelOverride?: string;
-  readonly builtInModelRuntimeRoute?: BuiltInModelRuntimeRoute;
-  readonly piExecution: boolean;
 }
 
 // Pending persistence uses connection-free SQL plans owned by one command.

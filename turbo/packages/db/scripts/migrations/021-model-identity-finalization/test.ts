@@ -178,7 +178,7 @@ try {
   await db.query(
     await readFile(
       new URL(
-        "../../../src/migrations/1363_prepare_canonical_auto_catalog.sql",
+        "../../../src/migrations/1364_prepare_canonical_auto_catalog.sql",
         import.meta.url,
       ),
       "utf8",

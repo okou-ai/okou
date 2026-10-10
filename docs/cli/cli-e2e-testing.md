@@ -157,18 +157,15 @@ invalid Creator Role response fail before creating identities. Single-organizati
 callers retain explicit admin setup because an added settings read would not
 reduce their request count.
 
-The CI publishable-key variables identified `informed-calf-6.clerk.accounts.dev`
-on September 17, 2026. A read-only GET of that instance's `/v1/environment`
-at 09:06:09 UTC returned `organization_settings.enabled: true` and
-`organization_settings.creator_role: "org:admin"`. Clerk's
+Clerk's
 [organization settings contract](https://github.com/clerk/openapi-specs/blob/a91bd1815277a236107ef325be6e138db32762cb/bapi/2026-05-12.yml)
 defines Creator Role as the role assigned after organization creation; its
 [roles documentation](https://clerk.com/docs/guides/organizations/control-access/roles-and-permissions)
-confirms that it is configurable. Every preparation reads current settings;
-the dated observation is not a permanent configuration guarantee. The observation
-is scoped to one short preparation, not cached across batches, and does not
-provide atomic isolation from administrator changes to Creator Roles or Role Sets
-during provisioning. No live configuration change is part of this optimization.
+confirms that it is configurable. Every preparation must read current settings;
+do not cache them across batches or treat an earlier observation as a permanent
+configuration guarantee. A preparation-scoped read does not provide atomic
+isolation from administrator changes to Creator Roles or Role Sets during
+provisioning. Account preparation does not change those instance settings.
 
 Clerk resource creation records exact IDs in `E2E_CLERK_RESOURCE_DIR`. Normal
 cleanup verifies those IDs' ownership against Clerk and deletes organizations
@@ -204,11 +201,9 @@ instance's shared quota. Recorded finalizers and other CI can still contend.
 Inventory and ownership selection must finish before deletion starts. Budget
 exhaustion fails the invocation; it never reports an incomplete scan as clean.
 If deletion is interrupted, remaining resources are reconsidered on the next
-sweep and unresolved organization owners stay retained. The observed 19,119
-organizations and 87 users require approximately 40 list requests, leaving
-headroom within the budget. If inventory alone grows beyond the budget, no
-resources are deleted: investigate the failed workflow and directory growth,
-then explicitly adjust capacity or design resumable discovery. Repeated passes
+sweep and unresolved organization owners stay retained. If inventory alone grows
+beyond the budget, no resources are deleted: investigate the failed workflow and
+directory growth, then explicitly adjust capacity or design resumable discovery. Repeated passes
 do not guarantee progress past that capacity limit. Do not delete skipped
 organizations or introduce blind retries to work around it.
 

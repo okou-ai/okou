@@ -1,14 +1,9 @@
-import type { SupportedFramework } from "@okouai/core/frameworks";
 import {
   IMAGE_MODEL_CONFIGS,
   type ImageModel,
 } from "@okouai/core/image-model-catalog";
 import { computed, type Computed } from "ccstate";
 import type { RunPromptAndSkills } from "../run-prompt-and-skills";
-import type { PickedThreadInputEvent } from "./types";
-
-const CODEX_WEB_IMAGE_GENERATION_UPLOAD_PROMPT =
-  "If you use the built-in image generation tool and it saves generated output image file(s) to local paths, upload each output file you intend to show with `okou web upload-file -f <path>` before telling the web chat user the image is available. Quote the path when needed. Do not provide only sandbox-local paths, because users cannot open local files.";
 
 const RESTRICTED_EXPLICIT_CONTENT_PROMPT = [
   "# Restricted Explicit Content",
@@ -37,25 +32,13 @@ function builtInImageModelPrompt(model: ImageModel): string {
 }
 
 export function createRuntimePrompt(
-  source$: Computed<
-    Promise<{
-      readonly framework: SupportedFramework;
-      readonly contextType: PickedThreadInputEvent["contextType"];
-      readonly chatThreadId: string | undefined;
-      readonly selectedImageModel: ImageModel;
-    }>
-  >,
+  selectedImageModel$: Computed<Promise<ImageModel>>,
 ): Computed<Promise<RunPromptAndSkills>> {
   return computed(async (get): Promise<RunPromptAndSkills> => {
-    const source = await get(source$);
+    const selectedImageModel = await get(selectedImageModel$);
     return {
       systemPromptVariables: {
-        ...(source.framework === "codex" &&
-        (source.contextType === "web" || source.contextType === "agent_run") &&
-        source.chatThreadId
-          ? { codexImageUpload: CODEX_WEB_IMAGE_GENERATION_UPLOAD_PROMPT }
-          : {}),
-        builtInImageModel: builtInImageModelPrompt(source.selectedImageModel),
+        builtInImageModel: builtInImageModelPrompt(selectedImageModel),
         restrictedExplicitContent: RESTRICTED_EXPLICIT_CONTENT_PROMPT,
       },
       userPromptVariables: {},

@@ -30,7 +30,7 @@ import {
   mockCodexDeviceAuthProvider,
   createAuthDeviceApiActions,
 } from "./helpers/api-bdd-auth-device";
-import type { TestTerminalRunStatus } from "./helpers/api-bdd-run-timeout";
+import type { TestTerminalRunStatus } from "./helpers/run-terminal-status";
 type SubscriptionType = "claude-code-oauth-token" | "codex-oauth-token";
 const context = testContext();
 const runs = createRunsApi(context);

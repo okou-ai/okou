@@ -1,3 +1,6 @@
+import { createPublicComputerUseHosts } from "./helpers/public-computer-use-hosts";
+import { publicChatActor } from "./helpers/public-chat-actor";
+import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createHash, randomUUID } from "node:crypto";
@@ -38,7 +41,6 @@ import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { createComputerUseBddApi } from "./helpers/api-bdd-computer-use";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -56,7 +58,6 @@ const TEST_APP_ROUTES = Object.freeze([
 ]);
 
 const context = testContext();
-const computerUse = createComputerUseBddApi(context);
 const BROWSER_USE_API_URL = "https://api.browser-use.com/api/v3";
 const STARTED_AT_MS = Date.parse("2026-07-24T10:00:00.000Z");
 const MINUTE_MS = 60_000;
@@ -5312,6 +5313,38 @@ async function setupBrowserScenario() {
   };
 }
 
+/** Own the two Computer Use selection scenarios without certifying adjacent browser fixtures. */
+async function setupOwnedComputerBrowserScenario() {
+  mockNow(STARTED_AT_MS);
+  mockEnv("OKOU_BROWSER_USE_API_KEY", "test-browser-use-key");
+  mockEnv("APP_URL", "https://app.okou.ai");
+  server.use(
+    http.delete(`${BROWSER_USE_API_URL}/profiles/:id`, () => {
+      return new HttpResponse(null, { status: 204 });
+    }),
+  );
+  const hosts = createPublicComputerUseHosts(context);
+  const owned = await publicChatActor(context, {
+    optionalEnvironmentNames: ["OKOU_BROWSER_USE_API_KEY"],
+    clockTime: STARTED_AT_MS,
+    beforeWorkspaceCleanup: hosts.cleanup,
+  });
+  const runs = createRunsApi(context);
+  const chat = createChatFilesBddApi(context);
+  createChatCallbacksApi(context).failIfChatCallbackRouteIsFetched();
+  await owned.run(() => {
+    return runs.updateUserModelPreference(owned.actor, "claude-fable-5-1");
+  });
+  return {
+    ...owned,
+    chat,
+    runs,
+    startHost() {
+      return hosts.start(owned.actor, owned.run);
+    },
+  };
+}
+
 async function createClaimedChatRun(
   chat: ReturnType<typeof createChatFilesBddApi>,
   runs: ReturnType<typeof createRunsApi>,
@@ -5376,30 +5409,37 @@ describe("okou browser route", () => {
   ] as const)(
     "honors an explicit %s selection over saved Chat preferences",
     async (selection) => {
-      const { runs, chat, actor, agent } = await setupBrowserScenario();
-      await createMiscRoutesApi(context).updatePreferences(
-        actor,
-        { cloudBrowserEnabledByDefault: selection !== "cloud browser" },
-        [200],
-      );
+      const owned = await setupOwnedComputerBrowserScenario();
+      const { runs, chat, actor, agentId } = owned;
+      await owned.run(() => {
+        return createMiscRoutesApi(context).updatePreferences(
+          actor,
+          { cloudBrowserEnabledByDefault: selection !== "cloud browser" },
+          [200],
+        );
+      });
       const host =
-        selection === "computer use"
-          ? await computerUse.startComputerUseHost(actor)
-          : null;
-      const sent = await chat.sendAndLaunch(actor, {
-        agentId: agent.agentId,
-        prompt: "Use this chat's explicit computer selection",
-        ...(selection === "disabled" || selection === "cloud browser"
-          ? { cloudBrowserEnabled: selection === "cloud browser" }
-          : { computerUseHostId: host?.hostId ?? null }),
+        selection === "computer use" ? await owned.startHost() : null;
+      const sent = await owned.run(() => {
+        return chat.sendAndLaunch(actor, {
+          agentId,
+          prompt: "Use this chat's explicit computer selection",
+          ...(selection === "disabled" || selection === "cloud browser"
+            ? { cloudBrowserEnabled: selection === "cloud browser" }
+            : { computerUseHostId: host?.hostId ?? null }),
+        });
       });
       await expect(
-        chat.readThreadMetadata(actor, sent.threadId),
+        owned.run(() => {
+          return chat.readThreadMetadata(actor, sent.threadId);
+        }),
       ).resolves.toMatchObject({
         cloudBrowserEnabled: selection === "cloud browser",
         computerUseHostId: host?.hostId ?? null,
       });
-      await runs.requestCancelRun(actor, sent.runId, [200]);
+      await owned.run(() => {
+        return runs.requestCancelRun(actor, sent.runId, [200]);
+      });
     },
   );
 
@@ -5548,30 +5588,34 @@ describe("okou browser route", () => {
   });
 
   it("disables cloud browser when a computer host is selected", async () => {
-    const { runs, chat, actor, agent } = await setupBrowserScenario();
-    const sent = await chat.sendAndLaunch(actor, {
-      agentId: agent.agentId,
-      prompt: "Open a managed browser before selecting this computer",
-      cloudBrowserEnabled: true,
+    const owned = await setupOwnedComputerBrowserScenario();
+    const { actor, agentId, chat } = owned;
+    const sent = await owned.run(() => {
+      return chat.sendAndLaunch(actor, {
+        agentId,
+        prompt: "Open a managed browser before selecting this computer",
+        cloudBrowserEnabled: true,
+      });
     });
-    const host = await computerUse.startComputerUseHost(actor);
+    const claimed = await owned.claimChatRun(owned.runnerGroup, sent.runId);
+    const browserToken = okouTokenFromClaim(claimed.claim);
+    const host = await owned.startHost();
 
-    await accept(
-      chatThreadComputerUseHostClient().update({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { id: sent.threadId },
-        body: { computerUseHostId: host.hostId },
-      }),
-      [204],
-    );
+    await owned.run(() => {
+      return accept(
+        chatThreadComputerUseHostClient().update({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { id: sent.threadId },
+          body: { computerUseHostId: host.hostId },
+        }),
+        [204],
+      );
+    });
 
-    const browserToken = runs.okouTokenForRunWithCapabilities(
-      actor,
-      sent.runId,
-      ["browser:read", "browser:write"],
-    );
-    const rejected = await requestBrowserUse({
-      authorization: `Bearer ${browserToken}`,
+    const rejected = await owned.run(() => {
+      return requestBrowserUse({
+        authorization: `Bearer ${browserToken}`,
+      });
     });
     expect(rejected.status).toBe(403);
     await expect(rejected.json()).resolves.toMatchObject({

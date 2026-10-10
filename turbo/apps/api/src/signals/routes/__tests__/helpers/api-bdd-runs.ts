@@ -514,12 +514,19 @@ export function createRunsApi(
         readonly periodEndUnix?: number;
         readonly subscriptionMetadata?: Record<string, string>;
         readonly cancelAtUnix?: number | null;
+        readonly run?: <T>(operation: () => Promise<T>) => Promise<T>;
+        readonly onExternalStateReady?: (restoreWebhook: () => void) => void;
       } = {},
     ): Promise<{
       readonly customerId: string;
       readonly subscriptionId: string;
       readonly invoiceId: string;
     }> {
+      const run =
+        options.run ??
+        (<T>(operation: () => Promise<T>) => {
+          return operation();
+        });
       mockStripeClient(context.mocks.stripe as unknown as StripeSDK);
       mockEnv("OKOU_PRICE_PRO", "price_bdd_pro");
       mockEnv("OKOU_PRICE_TEAM", "price_bdd_team");
@@ -590,20 +597,39 @@ export function createRunsApi(
       context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(
         invoicePaidEvent,
       );
-      await accept(
-        runApp(context)(webhookStripeContract).post({
-          body: JSON.stringify(invoicePaidEvent),
-          extraHeaders: { "stripe-signature": "t=1,v1=bdd" },
-        }),
-        [200],
-      );
+      // An operation owner may need to finish this accepted webhook after
+      // afterEach resets external mocks. Retain this exact provider event.
+      options.onExternalStateReady?.(() => {
+        context.mocks.stripe.webhooks.constructEvent.mockReset();
+        context.mocks.stripe.webhooks.constructEvent.mockImplementation(
+          (payload) => {
+            if (String(payload) !== JSON.stringify(invoicePaidEvent)) {
+              throw new Error(
+                "Unexpected Stripe webhook while draining actor setup",
+              );
+            }
+            return invoicePaidEvent;
+          },
+        );
+      });
+      await run(() => {
+        return accept(
+          runApp(context)(webhookStripeContract).post({
+            body: JSON.stringify(invoicePaidEvent),
+            extraHeaders: { "stripe-signature": "t=1,v1=bdd" },
+          }),
+          [200],
+        );
+      });
 
-      const billingStatus = await accept(
-        runApp(context)(billingStatusContract).get({
-          headers: authenticate(context, actor),
-        }),
-        [200],
-      );
+      const billingStatus = await run(() => {
+        return accept(
+          runApp(context)(billingStatusContract).get({
+            headers: authenticate(context, actor),
+          }),
+          [200],
+        );
+      });
       if (billingStatus.body.tier !== tier) {
         throw new Error(
           `Entitlement grant did not reach ${tier} tier: ${billingStatus.body.tier}`,
@@ -623,11 +649,15 @@ export function createRunsApi(
       // then creates a default agent without granting limited-free credits or
       // replacing metadata on an existing default agent.
       const bdd = createBddApi(context);
-      const onboarding = await bdd.readOnboardingStatus(actor);
+      const onboarding = await run(() => {
+        return bdd.readOnboardingStatus(actor);
+      });
       if (!onboarding.defaultAgentId) {
         throw new Error("Expected paid onboarding to create a default agent");
       }
-      const completed = await bdd.completeOnboarding(actor);
+      const completed = await run(() => {
+        return bdd.completeOnboarding(actor);
+      });
       if (completed.status !== 200) {
         throw new Error(
           `Expected paid onboarding completion, got ${completed.status}`,

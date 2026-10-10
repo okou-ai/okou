@@ -332,19 +332,13 @@ integer. Disk IOPS must parse directly as a nonzero `u64`.
 The concurrency override is independent of the I/O group, but it changes the
 resource budget used to calculate the I/O limits.
 
-## Completed Canonical Cutover and Rollback Floor
+## Rollback Floor and Promotion
 
-Production host configuration completed the canonical cutover with Runner
-`0.178.4` (`b1440bfb43d75590ea1d0a43d9b8f0c8340832ef`). All three production
-hosts started and passed readiness and health on that release before their old
-services drained. Successor promotions confirmed the same canonical files.
+Runner `0.178.4` is the rollback floor for hosts using this contract. Do not add an
+earlier rollback target unless its compatibility with the canonical host file
+has been established separately.
 
-Runner `0.178.4` is the rollback floor for hosts using this contract. The
-retained rollback targets `0.178.4`, `0.178.6`, and `0.178.7` all read the five
-canonical keys. Do not add an earlier rollback target unless its compatibility
-with the canonical host file has been established separately.
-
-Normal Runner promotion no longer mutates `host.env`. It installs, starts, and
+Normal Runner promotion does not mutate `host.env`. It installs, starts, and
 health-checks the target before draining old services. If target installation,
 readiness, or health fails, promotion stops the failed target and leaves the
 already-running old services available.

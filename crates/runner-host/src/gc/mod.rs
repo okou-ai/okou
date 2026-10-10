@@ -2,6 +2,7 @@
 
 mod filesystem;
 mod lock_file;
+pub mod workspaces;
 
 pub use filesystem::{
     DirStats, GcDirEntryReader, GcDirStatus, collect_dir_stats, dir_stats, gc_entry_is_real_dir,

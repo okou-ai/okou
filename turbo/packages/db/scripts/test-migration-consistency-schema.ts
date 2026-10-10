@@ -42,6 +42,7 @@ import { validateOfficialAutomationResultEmailSchema } from "./test-official-aut
 import { validatePermanentBuiltInModelKeyState } from "./test-built-in-model-keys-permanent";
 import { validatePermanentDiscordFoundation } from "./test-discord-foundation-permanent";
 import { validatePermanentDiscordChat } from "./test-discord-chat-permanent";
+import { validatePermanentDiscordGrants } from "./test-discord-grants-permanent";
 import { validatePermanentOrgPlanEntitlementState } from "./test-org-plan-entitlement-permanent";
 import { validatePermanentModelCatalogConstraints } from "./test-model-catalog-permanent";
 import { validateModelCatalogSeed } from "./test-model-catalog-seed";
@@ -934,6 +935,16 @@ async function generateFreshMigrations(): Promise<void> {
   await fs.appendFile(
     path.join(MIGRATIONS_DIR, finalSql),
     `\n--> statement-breakpoint\n${deferral}`,
+  );
+  // PostgreSQL exclusion constraints are not modeled by Drizzle. Install the
+  // complete canonical ownership contract on the independently generated side.
+  const discordOwnership = await fs.readFile(
+    path.join(PACKAGE_DIR, "src/constraints/discord-sender-ownership.sql"),
+    "utf-8",
+  );
+  await fs.appendFile(
+    path.join(MIGRATIONS_DIR, finalSql),
+    `\n--> statement-breakpoint\n${discordOwnership}`,
   );
 }
 
@@ -2671,6 +2682,7 @@ async function main(): Promise<void> {
     await validatePermanentBuiltInModelKeyState(dbUrl1);
     await validatePermanentDiscordFoundation(dbUrl1);
     await validatePermanentDiscordChat(dbUrl1);
+    await validatePermanentDiscordGrants(dbUrl1);
     await validatePermanentOrgPlanEntitlementState(dbUrl1);
     await validatePermanentConnectorCatalogColumns(dbUrl1);
     await validatePermanentModelCatalogConstraints(dbUrl1);
@@ -2701,6 +2713,7 @@ async function main(): Promise<void> {
     await validatePermanentBuiltInModelKeyState(dbUrl2);
     await validatePermanentDiscordFoundation(dbUrl2);
     await validatePermanentDiscordChat(dbUrl2);
+    await validatePermanentDiscordGrants(dbUrl2);
     await validatePermanentOrgPlanEntitlementState(dbUrl2);
     await validatePermanentConnectorCatalogColumns(dbUrl2);
     await validatePermanentModelCatalogConstraints(dbUrl2);

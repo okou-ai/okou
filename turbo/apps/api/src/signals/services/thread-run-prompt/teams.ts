@@ -1,17 +1,19 @@
+import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { computed, type Computed } from "ccstate";
 import { resolveIntegrationNotePrompt } from "../integration-note-prompt.service";
 import { appendTeamsFilesToPrompt, buildTeamsPrompt } from "../teams-prompt";
 import type { TeamsThreadContext } from "../thread-run-context.service";
 import type { RunPromptAndSkills } from "../run-prompt-and-skills";
-import type { ThreadPromptSource } from "./types";
+import type { PickedThreadInputEvent } from "./types";
 
 export function createTeamsThreadPrompt(
-  source$: Computed<Promise<ThreadPromptSource | null>>,
+  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   context$: Computed<Promise<TeamsThreadContext>>,
+  featureSwitches$: Computed<Promise<FeatureSwitchContext>>,
 ): Computed<Promise<RunPromptAndSkills | null>> {
   return computed(async (get) => {
-    const source = await get(source$);
-    if (source?.event.contextType !== "teams") {
+    const pickedEvent = await get(pickedEvent$);
+    if (pickedEvent?.contextType !== "teams") {
       return null;
     }
     const context = await get(context$);
@@ -61,7 +63,7 @@ export function createTeamsThreadPrompt(
           botName: context.installationBotName,
           integrationNote: resolveIntegrationNotePrompt({
             triggerSource: "teams",
-            featureSwitchContext: source.featureSwitchContext,
+            featureSwitchContext: await get(featureSwitches$),
           }),
           threadContext: context.threadContext,
         }),
