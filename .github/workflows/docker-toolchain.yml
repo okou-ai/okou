@@ -7,6 +7,8 @@ on:
   pull_request:
     paths:
       - "docker/toolchain/**"
+      - "crates/runner/scripts/build-template.sh"
+      - "scripts/toolchain-version.sh"
       - ".devcontainer/devcontainer.json"
       - ".devcontainer/devcontainer-lock.json"
       - ".devcontainer/link-agent-skills.sh"
@@ -49,7 +51,10 @@ jobs:
           PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           BASE_REF=$(.github/scripts/changed-base-ref.sh)
-          if git diff --quiet "$BASE_REF" HEAD -- docker/toolchain/; then
+          if git diff --quiet "$BASE_REF" HEAD -- \
+            docker/toolchain/ \
+            crates/runner/scripts/build-template.sh \
+            scripts/toolchain-version.sh; then
             echo "toolchain-changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "toolchain-changed=true" >> "$GITHUB_OUTPUT"
@@ -87,7 +92,7 @@ jobs:
       - name: Build development image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
-          context: ./docker/toolchain
+          context: .
           file: ./docker/toolchain/Dockerfile
           target: development
           platforms: ${{ matrix.platform }}

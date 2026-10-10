@@ -13,14 +13,16 @@ RUN apt-get update && apt-get install -y \
     gnupg \
     lsb-release \
     ca-certificates \
+    mawk \
     wget \
     jq \
     && rm -rf /var/lib/apt/lists/*
 
-# Keep these aligned with crates/runner/mitm-addon/.python-version and pyproject.toml.
-ARG PYTHON_VERSION=3.14.0
-ARG UV_VERSION=0.12.17
-RUN ARCH=$(dpkg --print-architecture) \
+# Install uv from the periodically updated template pin.
+# Build from the repository root; Dockerfile.dockerignore restricts the context.
+COPY crates/runner/scripts/build-template.sh scripts/toolchain-version.sh /tmp/toolchain-versions/
+RUN UV_VERSION=$(sh /tmp/toolchain-versions/toolchain-version.sh UV_VERSION /tmp/toolchain-versions/build-template.sh) \
+    && ARCH=$(dpkg --print-architecture) \
     && case "$ARCH" in \
         amd64) UV_TARGET="x86_64-unknown-linux-gnu" ;; \
         arm64) UV_TARGET="aarch64-unknown-linux-gnu" ;; \
@@ -34,10 +36,7 @@ RUN ARCH=$(dpkg --print-architecture) \
     && rmdir "/tmp/uv-${UV_TARGET}" \
     && test "$(uv --version)" = "uv ${UV_VERSION} (${UV_TARGET})" \
     && test "$(uvx --version)" = "uvx ${UV_VERSION} (${UV_TARGET})" \
-    && UV_PYTHON_INSTALL_DIR=/opt/python UV_PYTHON_BIN_DIR=/usr/local/bin \
-        uv python install --default "${PYTHON_VERSION}" \
-    && test "$(python --version)" = "Python ${PYTHON_VERSION}" \
-    && test "$(python3 --version)" = "Python ${PYTHON_VERSION}"
+    && rm -rf /tmp/toolchain-versions
 
 # Install Node.js 22
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \

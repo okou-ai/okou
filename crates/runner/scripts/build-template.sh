@@ -119,9 +119,7 @@ GWS_CLI_VERSION="0.22.5"
 XURL_VERSION="1.3.4"
 AGENT_BROWSER_VERSION="0.38.1-vm0.1"
 PNPM_VERSION="12.10.1"
-# Keep these aligned with mitm-addon/.python-version and pyproject.toml.
-PYTHON_VERSION="3.14.0"
-UV_VERSION="0.12.17"
+UV_VERSION="0.12.23"
 CHROMIUM_VERSION="154.0.8037.92-1~deb12u1"
 CHROMIUM_SECURITY_SNAPSHOT_URL="https://snapshot.debian.org/archive/debian-security/20261002T060000Z"
 
@@ -444,7 +442,6 @@ install_runtimes() {
 
   # uv (official standalone release)
   sudo chroot "$ROOTFS_DIR" bash -c "
-    set -e
     ARCH=\$(dpkg --print-architecture)
     case \"\$ARCH\" in
       amd64)
@@ -465,12 +462,6 @@ install_runtimes() {
     rmdir \"/tmp/uv-\${TARGET}\"
     test \"\$(/usr/local/bin/uv --version)\" = \"uv ${UV_VERSION} (\${TARGET})\"
     test \"\$(/usr/local/bin/uvx --version)\" = \"uvx ${UV_VERSION} (\${TARGET})\"
-
-    # Make the addon Python available to every user; APT tools keep /usr/bin/python3.
-    UV_PYTHON_INSTALL_DIR=/opt/python UV_PYTHON_BIN_DIR=/usr/local/bin \\
-      /usr/local/bin/uv python install --default ${PYTHON_VERSION}
-    test \"\$(/usr/local/bin/python --version)\" = \"Python ${PYTHON_VERSION}\"
-    test \"\$(/usr/local/bin/python3 --version)\" = \"Python ${PYTHON_VERSION}\"
   "
 
   # Rust (stable toolchain via rustup)

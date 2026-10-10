@@ -60,6 +60,7 @@
 2 setup-r2-sccache-test.sh
 2 smoke-okou-cli-artifact-test.sh
 2 staging-workflow-test.sh
+2 toolchain-version-test.sh
 2 verify-okou-cli-artifact-test.sh
 2 vm0-monitoring-runner-status-collect-test.sh
 2 wait-runner-image-groups-test.sh

@@ -40,10 +40,16 @@ prepare_setup_workspace() {
   mkdir -p \
     "$fake_bin" \
     "$workspace/home" \
+    "$workspace/home/.local/bin" \
     "$workspace/turbo" \
     "$workspace/crates/runner/mitm-addon"
   printf '[tool.uv]\nrequired-version = "==%s"\n' "$REQUIRED_UV_VERSION" \
     > "$workspace/crates/runner/mitm-addon/pyproject.toml"
+
+  # Keep installation tests independent of any uv on the host PATH.
+  printf '%s\n' '#!/usr/bin/env bash' "printf '%s\\n' 'uv 0.0.0 (test)'" \
+    > "$workspace/home/.local/bin/uv"
+  chmod +x "$workspace/home/.local/bin/uv"
 
   cat > "$fake_bin/sudo" <<'SCRIPT'
 #!/usr/bin/env bash

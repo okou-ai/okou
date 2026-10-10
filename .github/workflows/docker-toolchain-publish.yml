@@ -6,6 +6,8 @@ on:
       - main
     paths:
       - 'docker/toolchain/**'
+      - 'crates/runner/scripts/build-template.sh'
+      - 'scripts/toolchain-version.sh'
       - '.github/workflows/docker-toolchain-publish.yml'
 
 concurrency:
@@ -52,7 +54,7 @@ jobs:
         id: build-toolchain
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
-          context: ./docker/toolchain
+          context: .
           file: ./docker/toolchain/Dockerfile
           target: toolchain
           platforms: ${{ matrix.platform }}
@@ -67,7 +69,7 @@ jobs:
         id: build-toolchain-rust
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
-          context: ./docker/toolchain
+          context: .
           file: ./docker/toolchain/Dockerfile
           target: toolchain-rust
           platforms: ${{ matrix.platform }}
@@ -82,7 +84,7 @@ jobs:
         id: build-dev
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
-          context: ./docker/toolchain
+          context: .
           file: ./docker/toolchain/Dockerfile
           target: development
           platforms: ${{ matrix.platform }}
