@@ -67,6 +67,7 @@ readonly CHAT_EVENT_V8_PATH=.github/rollback-floors/chat-event-v8
 readonly CHECKPOINT_WRITER_PREPARATION_PATH=turbo/apps/api/src/signals/services/pi-memory-phase2-input-revision.ts
 readonly BROWSER_SESSION_MUTATIONS_PATH=.github/rollback-floors/browser-session-mutations
 readonly COMPUTER_USE_COMMAND_NOTIFICATIONS_PATH=.github/rollback-floors/computer-use-command-notifications
+readonly COMPUTER_USE_HOST_SESSION_ONLY_PATH=turbo/packages/db/src/runtime/computer-use-host.ts
 readonly RETIRED_PREFERENCE_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1274_drop_retired_voice_reasoning_collection_columns.sql
 readonly RETIRED_INTEGRATION_AGENT_TABLES_DROP_PATH=turbo/packages/db/src/migrations/1282_drop_retired_integration_agent_tables.sql
 readonly VIDEO_MODEL_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1283_drop_retired_video_model_columns.sql
@@ -123,6 +124,18 @@ fi
 
 if ! git merge-base --is-ancestor "$CHAT_THREAD_PROVENANCE_REMOVAL_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the chat thread provenance runtime removal: ${CHAT_THREAD_PROVENANCE_REMOVAL_COMMIT}."
+fi
+
+# The preparation clears retired host hashes without deleting devices or chat
+# bindings. Only the session-only runtime mapping can overlap the later DROP;
+# older APIs still name token_hash in implicit reads and writes.
+computer_use_host_session_only_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$COMPUTER_USE_HOST_SESSION_ONLY_PATH" | sed -n '1p')
+if [[ ! "$computer_use_host_session_only_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Computer Use session-only host mapping on main."
+fi
+if ! git merge-base --is-ancestor "$computer_use_host_session_only_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Computer Use session-only host mapping: ${computer_use_host_session_only_commit}."
 fi
 
 # The draft contraction requires every draft row to carry its owner and a
