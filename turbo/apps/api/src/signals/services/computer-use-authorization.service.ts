@@ -6,12 +6,10 @@ import type {
   ComputerUseAuthorizationSource,
   ComputerUseHostListResponse,
 } from "@okouai/api-contracts/contracts/computer-use";
+import { computerUseHosts } from "@okouai/db/runtime/computer-use-host";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import {
-  computerUseAuthorizationRequests,
-  computerUseHosts,
-} from "@okouai/db/schema/computer-use-host";
+import { computerUseAuthorizationRequests } from "@okouai/db/schema/computer-use-host";
 import { teamsOrgConnections } from "@okouai/db/schema/teams-org-connection";
 import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
 import { teamsChatThreadRoutes } from "@okouai/db/schema/teams-chat-thread-route";
@@ -197,7 +195,7 @@ const onlineHostExists$ = command(
     const [host] = await get(db$)
       .select({
         appVersion: computerUseHosts.appVersion,
-        tokenHash: computerUseHosts.tokenHash,
+        sessionId: computerUseHosts.sessionId,
         lastSeenAt: computerUseHosts.lastSeenAt,
         revokedAt: computerUseHosts.revokedAt,
         status: computerUseHosts.status,

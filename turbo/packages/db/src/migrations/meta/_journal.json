@@ -2038,6 +2038,13 @@
       "when": 1791615177394,
       "tag": "1368_validate_canonical_model_capture",
       "breakpoints": true
+    },
+    {
+      "idx": 1369,
+      "version": "7",
+      "when": 1791620818599,
+      "tag": "1369_prepare_computer_use_host_token_retirement",
+      "breakpoints": true
     }
   ]
 }
