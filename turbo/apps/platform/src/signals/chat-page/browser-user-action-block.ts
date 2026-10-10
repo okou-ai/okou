@@ -1829,6 +1829,7 @@ export function createBrowserUserActionSignals(
   const pendingReturnRefresh$ = state(false);
   const dialogRef$ = onRef(
     command(({ get, set }, _element: HTMLDivElement, signal: AbortSignal) => {
+      const pageSignal = get(pageSignal$);
       set(openDialogCount$, (count) => {
         return count + 1;
       });
@@ -1840,7 +1841,9 @@ export function createBrowserUserActionSignals(
           });
           if (get(openDialogCount$) === 0 && get(pendingReturnRefresh$)) {
             set(pendingReturnRefresh$, false);
-            set(requestSignals.refresh$);
+            if (!pageSignal.aborted) {
+              set(requestSignals.refresh$, pageSignal);
+            }
           }
         },
         { once: true },
@@ -1849,7 +1852,11 @@ export function createBrowserUserActionSignals(
   );
   const resumeRef$ = onRef(
     command(({ get, set }, _element: HTMLDivElement, signal: AbortSignal) => {
+      const pageSignal = get(pageSignal$);
       const refresh = () => {
+        if (pageSignal.aborted) {
+          return;
+        }
         if (get(recoverySignals.recoveryState$) === "checking") {
           return;
         }
@@ -1861,7 +1868,7 @@ export function createBrowserUserActionSignals(
           set(pendingReturnRefresh$, true);
           return;
         }
-        set(requestSignals.refresh$);
+        set(requestSignals.refresh$, pageSignal);
       };
       window.addEventListener("focus", refresh, { signal });
       document.addEventListener(

@@ -8,7 +8,13 @@ import {
 } from "@okouai/api-contracts/contracts/browser-user-actions";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { compile } from "tailwindcss";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
@@ -20,6 +26,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
+import { navigateTo$ } from "../../../signals/route.ts";
 import {
   CAPABILITY_AGENT_ID,
   context,
@@ -1406,6 +1413,58 @@ test("Closing the input dialog refreshes an action completed in another tab", as
 
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
   expect(buttonsByName("Enter information")).toHaveLength(0);
+});
+
+test("Leaving an open dialog discards its deferred return refresh", async () => {
+  const nextToken = `vm0_browser_user_action_${"z".repeat(43)}`;
+  installCapabilityChat({
+    events: completedConversation(`[Enter details](${browserInputUrl()})`),
+  });
+  context.mocks.api(browserUserActionsContract.get, ({ params, respond }) => {
+    if (params.requestToken === nextToken) {
+      return respond(200, {
+        ...browserInputAction("cancelled"),
+        requestToken: nextToken,
+      });
+    }
+    // A read for the abandoned card must not acquire the new route's lifetime.
+    expect(window.location.pathname).toBe(RUN_PATH);
+    return respond(200, browserInputAction("pending"));
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(200, browserInputAction("pending"));
+  });
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  await readyChat();
+  click(await findButton("Enter information"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Enter information in browser",
+  });
+  await within(dialog).findByLabelText("Account email");
+  act(() => {
+    window.dispatchEvent(new Event("focus"));
+  });
+  await act(async () => {
+    const next = new URL(browserInputUrl());
+    await context.store.set(
+      navigateTo$,
+      "/browser/actions/:browserActionToken",
+      {
+        pathParams: { browserActionToken: nextToken },
+        searchParams: next.searchParams,
+      },
+      context.signal,
+    );
+  });
+  await expect(
+    screen.findByText("Request cancelled"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.queryByRole("dialog")).toBeNull();
 });
 
 test("A freshly mounted transcript card reads accepted Browser callback delivery", async () => {
