@@ -288,12 +288,13 @@ function assistantEnds(records: Array<Record<string, unknown>>) {
 function assertSettlement(
   rpc: Awaited<ReturnType<typeof rpcFixture>>,
   requests: number,
+  aborted: boolean,
 ) {
   expect(
     rpc.records.filter((record) => {
       return record.type === "agent_settled";
     }),
-  ).toHaveLength(1);
+  ).toEqual([{ type: "agent_settled", aborted }]);
   for (const [type, count] of [
     ["tool-start", 1],
     ["http-start", requests],
@@ -360,9 +361,9 @@ describe("official sandbox RPC cancellation", () => {
           throw new Error("Expected assistant");
         return { type: "message_end", message: { ...message, timestamp: 0 } };
       }),
-      { type: "agent_settled" },
+      rpc.records[settledIndex],
     ]).toEqual(expected);
-    assertSettlement(rpc, 1);
+    assertSettlement(rpc, 1, true);
     const memory = await rpc.reopen();
     expect(memory.buildSessionContext().messages.at(-1)).toMatchObject({
       stopReason: "aborted",
@@ -395,7 +396,7 @@ describe("official sandbox RPC cancellation", () => {
       expect(await rpc.response("idle")).toMatchObject({
         data: { isStreaming: false, pendingMessageCount: 0 },
       });
-      assertSettlement(rpc, 2);
+      assertSettlement(rpc, 2, false);
       const memory = await rpc.reopen();
       expect(
         memory.buildSessionContext().messages.filter((message) => {
@@ -460,7 +461,7 @@ describe("official sandbox RPC cancellation", () => {
       expect(await rpc.response("idle")).toMatchObject({
         data: { isStreaming: false, pendingMessageCount: 0 },
       });
-      assertSettlement(rpc, 1);
+      assertSettlement(rpc, 1, true);
       const memory = await rpc.reopen();
       const messages = memory.buildSessionContext().messages;
       expect(
@@ -506,7 +507,7 @@ describe("official sandbox RPC cancellation", () => {
     }
     rpc.child.send("release-settlement");
     await rpc.settled();
-    assertSettlement(rpc, 5);
+    assertSettlement(rpc, 5, false);
     const memory = await rpc.reopen();
     const users = memory.buildSessionContext().messages.filter((message) => {
       return message.role === "user";

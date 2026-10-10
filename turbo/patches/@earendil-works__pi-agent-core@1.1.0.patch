@@ -1,27 +1,27 @@
 diff --git a/dist/agent-loop.d.ts b/dist/agent-loop.d.ts
-index e2616c0..3a4896c 100644
+index 7edd52b639924da5da07ccba8ff5f5fa46c974c9..a06137277a4371fe3225003b760d3166645649b4 100644
 --- a/dist/agent-loop.d.ts
 +++ b/dist/agent-loop.d.ts
 @@ -2,7 +2,7 @@
   * Agent loop that works with AgentMessage throughout.
   * Transforms to Message[] only at the LLM call boundary.
   */
--import { EventStream } from "@earendil-works/pi-ai";
+-import { type AssistantMessage, EventStream } from "@earendil-works/pi-ai";
 +import { type AssistantMessage, type ToolCall, EventStream } from "@earendil-works/pi-ai";
- import type { AgentContext, AgentEvent, AgentLoopConfig, AgentMessage, StreamFn } from "./types.ts";
+ import type { AgentContext, AgentEvent, AgentLoopConfig, AgentMessage, AgentTool, AgentToolCall, AgentToolCallOutcome, AgentToolResult, StreamFn } from "./types.ts";
  export type AgentEventSink = (event: AgentEvent) => Promise<void> | void;
  /**
-@@ -21,4 +21,7 @@ export declare function agentLoop(prompts: AgentMessage[], context: AgentContext
- export declare function agentLoopContinue(context: AgentContext, config: AgentLoopConfig, signal: AbortSignal | undefined, streamFn: StreamFn): EventStream<AgentEvent, AgentMessage[]>;
- export declare function runAgentLoop(prompts: AgentMessage[], context: AgentContext, config: AgentLoopConfig, emit: AgentEventSink, signal: AbortSignal | undefined, streamFn: StreamFn): Promise<AgentMessage[]>;
- export declare function runAgentLoopContinue(context: AgentContext, config: AgentLoopConfig, emit: AgentEventSink, signal: AbortSignal | undefined, streamFn: StreamFn): Promise<AgentMessage[]>;
+@@ -46,4 +46,7 @@ export interface RunToolCallOptions extends ToolCallHooks {
+  */
+ export declare function runToolCall(toolCall: AgentToolCall, options: RunToolCallOptions): Promise<AgentToolCallOutcome>;
+ export {};
 +/** Local pinned pending-tool integration. */
 +export declare function getPendingToolContinuation(context: AgentContext): { assistant: AssistantMessage; calls: ToolCall[] };
 +export declare function runAgentLoopPendingTools(context: AgentContext, pending: { assistant: AssistantMessage; calls: ToolCall[] }, config: AgentLoopConfig, emit: AgentEventSink, signal: AbortSignal, streamFn: StreamFn): Promise<AgentMessage[]>;
  //# sourceMappingURL=agent-loop.d.ts.map
 \ No newline at end of file
 diff --git a/dist/agent-loop.js b/dist/agent-loop.js
-index 4bbd0ce..20da356 100644
+index 77af9601821de97524d2f7dbb33c322b65705d2c..db46c25e62f4d162ee86e43372cb061a035d39d2 100644
 --- a/dist/agent-loop.js
 +++ b/dist/agent-loop.js
 @@ -70,27 +70,53 @@ export async function runAgentLoopContinue(context, config, emit, signal, stream
@@ -207,7 +207,7 @@ index 4bbd0ce..20da356 100644
      const response = await streamFunction(config.model, llmContext, {
          ...config,
          apiKey: resolvedApiKey,
-@@ -361,8 +401,7 @@ async function failToolCallsFromTruncatedMessage(toolCalls, emit) {
+@@ -363,8 +403,7 @@ async function failToolCallsFromTruncatedMessage(toolCalls, emit) {
  /**
   * Execute tool calls from an assistant message.
   */
@@ -217,7 +217,7 @@ index 4bbd0ce..20da356 100644
      const hasSequentialToolCall = toolCalls.some((tc) => currentContext.tools?.find((t) => t.name === tc.name)?.executionMode === "sequential");
      if (config.toolExecution === "sequential" || hasSequentialToolCall) {
          return executeToolCallsSequential(currentContext, assistantMessage, toolCalls, config, signal, emit);
-@@ -448,7 +487,7 @@ async function executeToolCallsParallel(currentContext, assistantMessage, toolCa
+@@ -450,7 +489,7 @@ async function executeToolCallsParallel(currentContext, assistantMessage, toolCa
              break;
          }
      }
@@ -226,7 +226,7 @@ index 4bbd0ce..20da356 100644
      const messages = [];
      for (const finalized of orderedFinalizedCalls) {
          const toolResultMessage = createToolResultMessage(finalized);
-@@ -460,6 +499,14 @@ async function executeToolCallsParallel(currentContext, assistantMessage, toolCa
+@@ -462,6 +501,14 @@ async function executeToolCallsParallel(currentContext, assistantMessage, toolCa
          terminate: shouldTerminateToolBatch(orderedFinalizedCalls),
      };
  }
@@ -241,7 +241,7 @@ index 4bbd0ce..20da356 100644
  function shouldTerminateToolBatch(finalizedCalls) {
      return finalizedCalls.length > 0 && finalizedCalls.every((finalized) => finalized.result.terminate === true);
  }
-@@ -486,6 +533,7 @@ async function prepareToolCall(currentContext, assistantMessage, toolCall, confi
+@@ -488,6 +535,7 @@ async function prepareToolCall(currentContext, assistantMessage, toolCall, confi
          };
      }
      try {
@@ -249,23 +249,24 @@ index 4bbd0ce..20da356 100644
          const preparedToolCall = prepareToolCallArguments(tool, toolCall);
          const validatedArgs = validateToolArguments(tool, preparedToolCall);
          if (config.beforeToolCall) {
-@@ -540,6 +588,7 @@ async function executePreparedToolCall(prepared, signal, emit) {
-     const updateEvents = [];
-     let acceptingUpdates = true;
+@@ -571,6 +619,7 @@ async function executePreparedToolCall(prepared, signal, onUpdate) {
+     const startedAt = performance.now();
+     const elapsed = () => Math.round(performance.now() - startedAt);
      try {
 +        signal?.throwIfAborted();
          const result = await prepared.tool.execute(prepared.toolCall.id, prepared.args, signal, (partialResult) => {
              if (!acceptingUpdates)
                  return;
-@@ -552,12 +601,12 @@ async function executePreparedToolCall(prepared, signal, emit) {
-             })));
+@@ -578,13 +627,13 @@ async function executePreparedToolCall(prepared, signal, onUpdate) {
          });
+         const durationMs = elapsed();
          acceptingUpdates = false;
 -        await Promise.all(updateEvents);
 +        await settleAll(updateEvents);
-         return { result, isError: false };
+         return { result, isError: result.isError === true, durationMs };
      }
      catch (error) {
+         const durationMs = elapsed();
          acceptingUpdates = false;
 -        await Promise.all(updateEvents);
 +        await settleAll(updateEvents);
@@ -273,10 +274,10 @@ index 4bbd0ce..20da356 100644
              result: createErrorToolResult(error instanceof Error ? error.message : String(error)),
              isError: true,
 diff --git a/dist/agent.d.ts b/dist/agent.d.ts
-index 59ec7e8..90ae67c 100644
+index 2429a213b6a95642effca6eec34a2772aabfec41..269513b9f4d43b9bce641fc409373259af009938 100644
 --- a/dist/agent.d.ts
 +++ b/dist/agent.d.ts
-@@ -88,6 +88,7 @@ export declare class Agent {
+@@ -90,6 +90,7 @@ export declare class Agent {
      steer(message: AgentMessage): void;
      /** Queue a message to run only after the agent would otherwise stop. */
      followUp(message: AgentMessage): void;
@@ -284,7 +285,7 @@ index 59ec7e8..90ae67c 100644
      /** Remove all queued steering messages. */
      clearSteeringQueue(): void;
      /** Remove all queued follow-up messages. */
-@@ -115,6 +116,16 @@ export declare class Agent {
+@@ -117,6 +118,16 @@ export declare class Agent {
      prompt(input: string, images?: ImageContent[]): Promise<void>;
      /** Continue from the current transcript. The last message must be a user or tool-result message. */
      continue(): Promise<void>;
@@ -302,7 +303,7 @@ index 59ec7e8..90ae67c 100644
      private runPromptMessages;
      private runContinuation;
 diff --git a/dist/agent.js b/dist/agent.js
-index a2f462f..c724850 100644
+index a8ccfc0bd9bd84895b5f158c9dfa328e65f200ca..baafc5d1ca67c29e059c9e7c37e4d90ef3871f7f 100644
 --- a/dist/agent.js
 +++ b/dist/agent.js
 @@ -1,5 +1,5 @@
@@ -322,7 +323,7 @@ index a2f462f..c724850 100644
      drain() {
          const drained = this.peek();
          this.messages = this.messages.slice(drained.length);
-@@ -180,12 +183,19 @@ export class Agent {
+@@ -182,12 +185,19 @@ export class Agent {
      }
      /** Queue a message to be injected after the current assistant turn finishes. */
      steer(message) {
@@ -342,7 +343,7 @@ index a2f462f..c724850 100644
      /** Remove all queued steering messages. */
      clearSteeringQueue() {
          this.steeringQueue.clear();
-@@ -214,7 +224,7 @@ export class Agent {
+@@ -216,7 +226,7 @@ export class Agent {
      }
      /** Abort the current run, if one is active. */
      abort() {
@@ -351,7 +352,7 @@ index a2f462f..c724850 100644
      }
      /**
       * Resolve when the current run and all awaited event listeners have finished.
-@@ -269,6 +279,53 @@ export class Agent {
+@@ -271,6 +281,53 @@ export class Agent {
          }
          await this.runContinuation();
      }
@@ -405,7 +406,7 @@ index a2f462f..c724850 100644
      normalizePromptInput(input, images) {
          if (Array.isArray(input)) {
              return input;
-@@ -330,12 +387,14 @@ export class Agent {
+@@ -333,12 +390,14 @@ export class Agent {
                      skipInitialSteeringPoll = false;
                      return [];
                  }
@@ -423,7 +424,7 @@ index a2f462f..c724850 100644
          if (this.activeRun) {
              throw new Error("Agent is already processing.");
          }
-@@ -344,7 +403,7 @@ export class Agent {
+@@ -347,7 +406,7 @@ export class Agent {
          const promise = new Promise((resolve) => {
              resolvePromise = resolve;
          });
@@ -432,7 +433,7 @@ index a2f462f..c724850 100644
          this._state.isStreaming = true;
          this._state.streamingMessage = undefined;
          this._state.errorMessage = undefined;
-@@ -355,7 +414,38 @@ export class Agent {
+@@ -358,7 +417,38 @@ export class Agent {
              await this.handleRunFailure(error, abortController.signal.aborted);
          }
          finally {
@@ -472,7 +473,7 @@ index a2f462f..c724850 100644
          }
      }
      async handleRunFailure(error, aborted) {
-@@ -400,6 +490,8 @@ export class Agent {
+@@ -403,6 +493,8 @@ export class Agent {
              case "message_end":
                  this._state.streamingMessage = undefined;
                  this._state.messages.push(event.message);
