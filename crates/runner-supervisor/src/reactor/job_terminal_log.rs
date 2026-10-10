@@ -1170,7 +1170,7 @@ mod tests {
                 Some("job execution failed")
             );
             assert_field_eq(&event, "failure_reason", reason.as_str());
-            assert_field_eq(&event, "failure_class", "checkpoint_failed");
+            assert_field_eq(&event, "failure_class", "finalization_failed");
         }
     }
 

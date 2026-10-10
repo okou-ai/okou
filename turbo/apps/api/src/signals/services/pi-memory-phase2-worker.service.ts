@@ -68,7 +68,6 @@ function createPiMemoryPhase2RecoveryCandidate() {
         orgId: piMemoryPhase2Jobs.orgId,
         userId: piMemoryPhase2Jobs.userId,
         leaseToken: piMemoryPhase2Jobs.leaseToken,
-        sandboxLeaseToken: piMemoryPhase2Jobs.sandboxLeaseToken,
         claimedRevision: piMemoryPhase2Jobs.claimedRevision,
         claimedBaseVersionId: piMemoryPhase2Jobs.claimedBaseVersionId,
         maintenanceRunId: piMemoryPhase2Jobs.maintenanceRunId,
@@ -119,7 +118,6 @@ function createPiMemoryPhase2Recovery() {
       if (
         !job?.maintenanceRunId ||
         !job.leaseToken ||
-        job.sandboxLeaseToken !== job.leaseToken ||
         !job.claimedRevision ||
         !job.claimedBaseVersionId
       ) {
@@ -162,7 +160,6 @@ function createPiMemoryPhase2Recovery() {
               eq(piMemoryPhase2Jobs.memoryStorageId, job.memoryStorageId),
               eq(piMemoryPhase2Jobs.maintenanceRunId, job.maintenanceRunId),
               eq(piMemoryPhase2Jobs.leaseToken, job.leaseToken),
-              eq(piMemoryPhase2Jobs.sandboxLeaseToken, job.leaseToken),
             ),
           );
         signal.throwIfAborted();
