@@ -1558,6 +1558,82 @@ print('actual partial copy refused; descriptors closed; completion record absent
                 self.assertEqual(self.producer.sha(base / 'held-original.tar.xz'), self.producer.QEMU_SHA256)
                 self.assertFalse((base / 'qemu-9.2.0').exists())
 
+    def test_source_acquisition_interrupts_close_actual_fd_and_restore_mask(self):
+        # Each isolated child changes only its own signal state and opens an
+        # inert public file. No decoder, pinned identity or provider is faked.
+        script = '''
+import errno, importlib.util, os, pathlib, signal, sys
+spec = importlib.util.spec_from_file_location('actual_producer', sys.argv[1])
+producer = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(producer)
+archive = pathlib.Path(sys.argv[2])
+case = sys.argv[3]
+mask = signal.pthread_sigmask(signal.SIG_BLOCK, set())
+before = len(list(pathlib.Path('/proc/self/fd').iterdir()))
+original_open, original_mask = os.open, signal.pthread_sigmask
+opened, blocked, terminated = [], [], []
+def terminate(signum, frame):
+    terminated.append(signum)
+    raise SystemExit(128 + signum)
+previous_handler = signal.signal(signal.SIGTERM, terminate)
+def acquire_then_interrupt(path, flags, *args, **kwargs):
+    descriptor = original_open(path, flags, *args, **kwargs)
+    if pathlib.Path(path) == archive:
+        opened.append(descriptor)
+        os.kill(os.getpid(), signal.SIGINT if case == 'sigint' else signal.SIGTERM)
+    return descriptor
+def mutate_then_fail(how, values):
+    result = original_mask(how, values)
+    if how == signal.SIG_BLOCK and values == {signal.SIGINT, signal.SIGTERM}:
+        blocked.append(original_mask(signal.SIG_BLOCK, set()))
+        raise KeyboardInterrupt('after actual native mask mutation')
+    return result
+try:
+    if case == 'mask-failure':
+        signal.pthread_sigmask = mutate_then_fail
+    else:
+        os.open = acquire_then_interrupt
+    try:
+        with producer.opened_qemu_archive(archive):
+            raise AssertionError('interrupted acquisition admitted input')
+    except KeyboardInterrupt:
+        assert case in ('sigint', 'mask-failure')
+    except SystemExit as error:
+        assert case == 'sigterm' and error.code == 128 + signal.SIGTERM
+    else:
+        raise AssertionError('interruption did not propagate')
+finally:
+    os.open, signal.pthread_sigmask = original_open, original_mask
+    signal.signal(signal.SIGTERM, previous_handler)
+assert len(opened) == (0 if case == 'mask-failure' else 1)
+if case == 'mask-failure':
+    assert len(blocked) == 1 and {signal.SIGINT, signal.SIGTERM}.issubset(blocked[0])
+assert terminated == ([signal.SIGTERM] if case == 'sigterm' else [])
+for descriptor in opened:
+    try:
+        os.fstat(descriptor)
+    except OSError as error:
+        assert error.errno == errno.EBADF
+    else:
+        raise AssertionError('real original descriptor leaked')
+assert len(list(pathlib.Path('/proc/self/fd').iterdir())) == before
+assert original_mask(signal.SIG_BLOCK, set()) == mask
+assert archive.read_bytes() == b'inert public open-only input'
+print('actual acquisition interrupted; original FD closed and caller mask restored')
+'''
+        for case in ('sigint', 'sigterm', 'mask-failure'):
+            with self.subTest(case=case), tempfile.TemporaryDirectory(dir=self.parent) as directory:
+                archive = pathlib.Path(directory) / 'public-open-only-input'
+                archive.write_bytes(b'inert public open-only input')
+                result = subprocess.run(
+                    [sys.executable, '-I', '-S', '-B', '-c', script,
+                     str(ROOT / '.github/scripts/prepare-qemu-gssapi-fixture.py'), str(archive), case],
+                    capture_output=True, text=True, timeout=10,
+                    env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C.UTF-8'})
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn('original FD closed and caller mask restored', result.stdout)
+                self.assertEqual(archive.read_bytes(), b'inert public open-only input')
+
     def test_source_fifo_refuses_without_waiting_for_a_writer_or_starting_decoder(self):
         with tempfile.TemporaryDirectory(dir=self.parent) as directory:
             base = pathlib.Path(directory)

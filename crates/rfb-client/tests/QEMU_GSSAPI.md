@@ -245,11 +245,20 @@ ordinary-owner regular file of that exact size. Incremental held-FD hashing and
 maintained XZ decoding borrow the same original inode, rather than reopening its
 pathname after the digest. Observed held-inode drift before or after decoding
 refuses; the owner closes its descriptor on success, borrower failure or SIGINT.
+The owner callback is registered before acquisition. The CLI's handled SIGINT
+and raising SIGTERM are deferred on the calling thread until the raw descriptor
+is assigned to that owner. A nonmutating empty mask query captures the caller's
+prior state before the guarded mutation; even a mutating mask call that raises
+after native success restores that prior mask. Isolated real-file/FD/signal tests
+cover both acquisition interrupts and an actual-mask-changed failure, checking
+EBADF, unchanged FD counts/input bytes and mask restoration. This does not admit
+arbitrary raising signal handlers, concurrent interpreter/reaper state or an
+external writer/controller seal.
 Real path-replacement tests read the original XZ bytes after swapping the named
 file, and a real FIFO with no writer refuses without blocking or creating a
 child. Exact-size wrong-digest, actual-writer and buffered-borrower cases cover
-separate refusal/FD-ownership outcomes. These are input-custody regressions, not
-an atomic acquisition-registration guarantee or an external-writer/source seal.
+separate refusal/FD-ownership outcomes. These are scoped input-custody and
+handled-interrupt regressions, not general atomic acquisition or an external-writer/source seal.
 The maintained in-parent XZ decoder's dictionary, decoded physical-byte, EOF,
 CPU/time and complete dependency/IO bounds remain independently unadmitted.
 Exact source admission also requires 81,379 logical members, 647,679,574 declared

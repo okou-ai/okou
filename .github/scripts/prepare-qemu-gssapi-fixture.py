@@ -1028,11 +1028,24 @@ def opened_qemu_archive(archive):
     fields = ("st_dev", "st_ino", "st_mode", "st_uid", "st_gid", "st_nlink",
               "st_size", "st_mtime_ns", "st_ctime_ns")
     with contextlib.ExitStack() as owned:
+        acquired = [None]
+        def close_original():
+            if acquired[0] is not None:
+                os.close(acquired[0])
+        owned.callback(close_original)  # Register the owner BEFORE acquisition.
+        # The CLI's handled interrupts cannot strand a raw FD before assignment.
+        # Query without mutating first: a mutating sigmask call can itself raise
+        # after changing the native mask, so it must be inside this restore guard.
+        previous = signal.pthread_sigmask(signal.SIG_BLOCK, set())
         try:
-            descriptor = os.open(archive, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC)
-        except OSError as error:
-            raise ValueError("source-pinned QEMU archive input refused") from error
-        owned.callback(os.close, descriptor)
+            signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT, signal.SIGTERM})
+            try:
+                acquired[0] = os.open(archive, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC)
+            except OSError as error:
+                raise ValueError("source-pinned QEMU archive input refused") from error
+        finally:
+            signal.pthread_sigmask(signal.SIG_SETMASK, previous)
+        descriptor = acquired[0]
         metadata = os.fstat(descriptor)
         if (not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.geteuid()
                 or metadata.st_size != QEMU_ARCHIVE_BYTES):
