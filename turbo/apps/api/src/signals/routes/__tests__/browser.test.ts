@@ -658,6 +658,243 @@ function mockNativeCheckboxTarget(args: {
   });
 }
 
+async function setupNativeMixedVerificationScenario(
+  control: "select-one" | "select-multiple" | "checkbox",
+  scalarKind: "text" | "username" | "password" | null = null,
+  verificationStarted?: () => void,
+) {
+  const { routeMocks, runs, chat, actor, agent } = await setupBrowserScenario();
+  const current = await createClaimedChatRun(
+    chat,
+    runs,
+    actor,
+    agent.agentId,
+    "Enter native input without submitting the website form",
+  );
+  await updateFeatureSwitchesForUser(context, actor, {
+    [FeatureSwitchKey.BrowserNativeInput]: true,
+  });
+  const providerId = randomUUID();
+  const state: {
+    verification:
+      "match" | "microtask-reset" | "error" | "malformed" | "timeout";
+    matches: boolean;
+    writes: number;
+    verifications: number;
+  } = { verification: "match", matches: true, writes: 0, verifications: 0 };
+  acceptBrowserUseCdpSessions([providerId], undefined, (command) => {
+    return (
+      state.verification === "timeout" &&
+      command.method === "Runtime.callFunctionOn" &&
+      nativeVerifyOnly(command.params.arguments)
+    );
+  });
+  context.mocks.browserUseCdp.command.mockImplementation((command) => {
+    switch (command.method) {
+      case "Target.getTargets": {
+        return {
+          targetInfos: [
+            {
+              targetId: "native-input-target",
+              type: "page",
+              url: "https://example.com/order",
+            },
+          ],
+        };
+      }
+      case "Browser.getWindowForTarget": {
+        return { windowId: 7 };
+      }
+      case "Target.attachToTarget": {
+        return { sessionId: "native-mixed-session" };
+      }
+      case "Page.getFrameTree": {
+        return {
+          frameTree: {
+            frame: {
+              id: "main-frame",
+              loaderId: "native-mixed-loader",
+              url: "https://example.com/order",
+            },
+          },
+        };
+      }
+      case "DOM.resolveNode": {
+        return {
+          object: {
+            objectId:
+              command.params.backendNodeId === 46
+                ? "native-scalar-object"
+                : "native-mixed-object",
+          },
+        };
+      }
+      case "Runtime.callFunctionOn": {
+        const declaration = String(command.params.functionDeclaration);
+        if (declaration.includes("firstSpec")) {
+          if (nativeVerifyOnly(command.params.arguments)) {
+            state.verifications += 1;
+            verificationStarted?.();
+            if (state.verification === "error") {
+              return new Error("Synthetic readback connection failure");
+            }
+            if (state.verification === "malformed") {
+              return {};
+            }
+            return { result: { value: state.matches } };
+          }
+          state.writes += 1;
+          // The provider returns the writer's same-task result before the
+          // website's event microtask resets a requested native/scalar value.
+          queueMicrotask(() => {
+            if (state.verification === "microtask-reset") {
+              state.matches = false;
+            }
+          });
+          return { result: { value: true } };
+        }
+        if (declaration.includes("cloneNode")) {
+          return { result: { value: true } };
+        }
+        const native = {
+          tagName: control === "checkbox" ? "INPUT" : "SELECT",
+          inputType: control,
+          connected: true,
+          mainDocument: true,
+          writable: true,
+          siteRequired: false,
+          multiple: control === "select-multiple",
+          ...(control === "checkbox"
+            ? { checked: true }
+            : {
+                options: [
+                  {
+                    index: 0,
+                    label: "Original",
+                    value: "original",
+                    disabled: false,
+                    selected: true,
+                    empty: false,
+                  },
+                  {
+                    index: 1,
+                    label: "Requested",
+                    value: "requested",
+                    disabled: false,
+                    selected: false,
+                    empty: false,
+                  },
+                ],
+              }),
+        };
+        const scalar = {
+          tagName: "INPUT",
+          inputType: scalarKind === "password" ? "password" : "text",
+          connected: true,
+          mainDocument: true,
+          writable: true,
+          siteRequired: false,
+          multiple: false,
+        };
+        return {
+          result: {
+            value:
+              scalarKind &&
+              Array.isArray(command.params.arguments) &&
+              command.params.arguments.length > 0
+                ? [native, scalar]
+                : [native],
+          },
+        };
+      }
+      default: {
+        return {};
+      }
+    }
+  });
+  server.use(
+    http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
+      const body = z
+        .strictObject({ name: z.string() })
+        .parse(await request.json());
+      return HttpResponse.json(providerProfile(randomUUID(), body.name), {
+        status: 201,
+      });
+    }),
+    http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
+      return HttpResponse.json(providerBrowser(providerId), { status: 201 });
+    }),
+    http.get(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
+      return HttpResponse.json(providerBrowser(String(params.id)));
+    }),
+  );
+  await accept(
+    client().use({ headers: current.claim.browserHeaders, body: {} }),
+    [200],
+  );
+  routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+  const create = async () => {
+    const created = await accept(
+      userActionClient().create({
+        headers: current.claim.browserHeaders,
+        body: {
+          kind: "input",
+          callbackPrompt: "Continue after verified native input",
+          pageTargetId: "native-input-target",
+          fields: [
+            {
+              key: "choice",
+              label: "Choice",
+              fieldKind: control === "checkbox" ? "checkbox" : "select",
+              required: false,
+              backendNodeId: 45,
+            },
+            ...(scalarKind
+              ? [
+                  {
+                    key: "note",
+                    label: "Note",
+                    fieldKind: scalarKind,
+                    required: true,
+                    backendNodeId: 46,
+                  },
+                ]
+              : []),
+          ],
+        },
+      }),
+      [201],
+    );
+    const requestToken = created.body.action.requestToken;
+    const observed = await accept(
+      userActionClient().preflight({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken },
+        body: {},
+      }),
+      [200],
+    );
+    const values: z.infer<
+      typeof browserUserActionsContract.apply.body
+    >["values"] = [];
+    if (control === "checkbox") {
+      values.push({ key: "choice", checked: false, observedChecked: true });
+    } else {
+      const optionSetFingerprint =
+        observed.body.fields[0]?.control.optionSetFingerprint;
+      if (!optionSetFingerprint) {
+        throw new Error("Missing public select option fingerprint");
+      }
+      values.push({ key: "choice", optionIndexes: [1], optionSetFingerprint });
+    }
+    if (scalarKind) {
+      values.push({ key: "note", value: "synthetic-native-input" });
+    }
+    return { requestToken, values };
+  };
+  return { state, create };
+}
+
 type NativeRadioMockState = {
   memberIds: readonly number[];
   name: string;
@@ -1656,6 +1893,114 @@ describe("Browser user-action route", () => {
     );
     expect(pending.body.state).toBe("pending");
   });
+
+  it.each([
+    { control: "select-one", scalarKind: null },
+    { control: "select-multiple", scalarKind: null },
+    { control: "checkbox", scalarKind: null },
+    { control: "select-one", scalarKind: "text" },
+    { control: "checkbox", scalarKind: "username" },
+    { control: "checkbox", scalarKind: "password" },
+  ] as const)(
+    "independently verifies $control/$scalarKind and reports event microtask resets as uncertain",
+    async ({ control, scalarKind }) => {
+      const { state, create } = await setupNativeMixedVerificationScenario(
+        control,
+        scalarKind,
+      );
+      const stable = await create();
+      const applied = await accept(
+        userActionClient().apply({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { requestToken: stable.requestToken },
+          body: { values: stable.values },
+        }),
+        [200],
+      );
+      expect(applied.body.state).toBe("succeeded");
+      expect(state.writes).toBe(1);
+
+      const reset = await create();
+      state.verification = "microtask-reset";
+      const uncertain = await accept(
+        userActionClient().apply({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { requestToken: reset.requestToken },
+          body: { values: reset.values },
+        }),
+        [200],
+      );
+      expect(uncertain.body.state).toBe("uncertain");
+      const persisted = await accept(
+        userActionClient().get({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { requestToken: reset.requestToken },
+        }),
+        [200],
+      );
+      expect(persisted.body).toMatchObject({
+        state: "uncertain",
+        callbackDelivered: false,
+      });
+      const repeated = await userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: reset.requestToken },
+        body: { values: reset.values },
+      });
+      expect(repeated.status).toBe(409);
+      expect(state).toMatchObject({ writes: 2, verifications: 2 });
+    },
+  );
+
+  it.each(["error", "malformed", "timeout"] as const)(
+    "keeps interrupted mixed verification uncertain without replay for %s responses",
+    async (failure) => {
+      const started = createDeferredPromise<void>(context.signal);
+      const { state, create } = await setupNativeMixedVerificationScenario(
+        "select-one",
+        "password",
+        () => {
+          started.resolve();
+        },
+      );
+      const action = await create();
+      const deadline = new AbortController();
+      context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
+        return milliseconds === 15_000 ? deadline.signal : undefined;
+      });
+      state.verification = failure;
+      const applying = userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: action.requestToken },
+        body: { values: action.values },
+      });
+      await started.promise;
+      if (failure === "timeout") {
+        deadline.abort(
+          new DOMException("CDP readback deadline", "TimeoutError"),
+        );
+      }
+      expect((await accept(applying, [200])).body.state).toBe("uncertain");
+      const persisted = await accept(
+        userActionClient().get({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { requestToken: action.requestToken },
+        }),
+        [200],
+      );
+      expect(persisted.body).toMatchObject({
+        state: "uncertain",
+        callbackDelivered: false,
+      });
+      const repeated = await userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: action.requestToken },
+        body: { values: action.values },
+      });
+      expect(repeated.status).toBe(409);
+      expect(state).toMatchObject({ writes: 1, verifications: 1 });
+    },
+  );
 
   it("applies explicit checkbox booleans, preserves untouched state, and rejects changed or required checkboxes", async () => {
     const { routeMocks, runs, chat, actor, agent } =
