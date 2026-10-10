@@ -47,7 +47,7 @@ interface AgentReadFixture {
 async function createAgentReadFixture(
   threadCount: number,
 ): Promise<AgentReadFixture> {
-  const lifecycle = createPublicComputerUseScenario(context);
+  const lifecycle = createPublicComputerUseScenario(context, { tier: "team" });
   const orgId = `org_${randomUUID()}`;
   const owner = lifecycle.user({ orgId });
   const actor = lifecycle.user({ orgId });
@@ -62,9 +62,9 @@ async function createAgentReadFixture(
       visibility: "public",
     });
     const threadIds: string[] = [];
-    // Each batch stays within the normal Pro concurrency allowance. Join every
-    // accepted send/cancel before changing identity or propagating an error.
-    const batchSize = 3;
+    // A normal Team subscription admits ten concurrent Runs. Join every
+    // accepted send/cancel before starting the next batch or propagating an error.
+    const batchSize = 10;
     for (let start = 0; start < threadCount; start += batchSize) {
       context.signal.throwIfAborted();
       const batch = await Promise.allSettled(

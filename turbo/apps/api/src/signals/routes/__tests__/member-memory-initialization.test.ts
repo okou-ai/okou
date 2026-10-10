@@ -64,6 +64,22 @@ async function membershipCreated(actor: ApiTestUser): Promise<void> {
   await flushWaitUntilForTest();
 }
 
+/** Set normal preference fields without invoking the memory-initializing route. */
+async function prepareReadablePreferences(actor: ApiTestUser): Promise<void> {
+  mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+  const preferences = setupApp({ context, routes: userPreferencesRoutes })(
+    userPreferencesContract,
+  );
+  const updated = await accept(
+    preferences.update({
+      headers: { authorization: "Bearer clerk-session" },
+      body: { timezone: "UTC", locale: "en-US" },
+    }),
+    [200],
+  );
+  expect(updated.body.memoryInitialized).toBeFalsy();
+}
+
 async function memoryInitialized(actor: ApiTestUser) {
   mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
   const preferences = setupApp({ context, routes: userPreferencesRoutes })(
@@ -117,6 +133,7 @@ describe("member memory account initialization", () => {
       const actor = owner.user({ orgRole });
       await owner.run(async () => {
         api.acceptAgentStorageWrites();
+        await prepareReadablePreferences(actor);
         await expect(memoryInitialized(actor)).resolves.toBeFalsy();
         const completions = await Promise.allSettled([
           completeOnboarding(actor),
@@ -151,6 +168,7 @@ describe("member memory account initialization", () => {
     const owner = createPublicComputerUseScenario(context);
     const actor = owner.user({ orgRole: "org:member" });
     await owner.run(async () => {
+      await prepareReadablePreferences(actor);
       await expect(memoryInitialized(actor)).resolves.toBeFalsy();
       await membershipCreated(actor);
       await expect(memoryInitialized(actor)).resolves.toBeTruthy();
@@ -189,6 +207,7 @@ describe("member memory account initialization", () => {
       api.acceptAgentStorageWrites();
       const memories = [];
       for (const actor of [first, anotherOrg, anotherMember]) {
+        await prepareReadablePreferences(actor);
         await expect(memoryInitialized(actor)).resolves.toBeFalsy();
         await completeOnboarding(actor);
         await expect(memoryInitialized(actor)).resolves.toBeTruthy();

@@ -2704,15 +2704,7 @@ describe("WHCB-09: sandbox storage writes and checkpoint history blobs land in t
 
       // Canonical writes land under the run organization's Storage prefix.
       const storageName = writebackMount.name;
-      const files = [
-        {
-          path: "index.html",
-          hash: createHash("sha256")
-            .update(`bdd artifact ${storageName}`)
-            .digest("hex"),
-          size: 2048,
-        },
-      ];
+      const files = [storageFile("index.html", 2048)];
       const prepared = await api.requestAgentStoragePrepare(
         {
           runId: run.runId,
@@ -2735,18 +2727,21 @@ describe("WHCB-09: sandbox storage writes and checkpoint history blobs land in t
       expect(prepared.body.uploads?.archive.presignedUrl).toMatch(/^https/);
       expect(prepared.body.uploads?.manifest.presignedUrl).toMatch(/^https/);
 
-      const committed = await api.requestAgentStorageCommit(
-        {
-          runId: run.runId,
-          storageId: writebackMount.storageId,
-          versionId: prepared.body.versionId,
-          parentVersionId: writebackMount.versionId,
-          files,
-          message: "bdd sandbox commit",
-        },
-        headers,
-        [200],
-      );
+      const committed = await fixture.run(() => {
+        acceptPreparedStorageBytes(prepared.body, files);
+        return api.requestAgentStorageCommit(
+          {
+            runId: run.runId,
+            storageId: writebackMount.storageId,
+            versionId: prepared.body.versionId,
+            parentVersionId: writebackMount.versionId,
+            files,
+            message: "bdd sandbox commit",
+          },
+          headers,
+          [200],
+        );
+      });
       if (committed.status !== 200) {
         throw new Error("Expected the sandbox storage commit to succeed");
       }

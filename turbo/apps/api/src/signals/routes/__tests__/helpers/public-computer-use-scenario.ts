@@ -25,6 +25,7 @@ import { createAuthOrgAgentsBddApi } from "./api-bdd-auth-org";
 export function createPublicComputerUseScenario(
   context: TestContext,
   options: {
+    readonly tier?: "pro" | "team";
     readonly optionalEnvironmentNames?: readonly string[];
     readonly retainProviderState?: () => () => void;
   } = {},
@@ -290,6 +291,7 @@ export function createPublicComputerUseScenario(
         const runnerGroup = runs.configureRunnerGroup();
         await run(() => {
           return runs.grantProEntitlement(actor, {
+            tier: options.tier,
             run,
             onExternalStateReady: (restore) => {
               restoreSetupWebhook = restore;
