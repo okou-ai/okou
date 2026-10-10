@@ -193,9 +193,9 @@ How to use them:
     API is still serving or draining. Every statement that API can issue must
     stay legal, including columns an ORM adds to `SELECT` or `RETURNING`.
   - **New code before migration** — the new API is serving before the migration
-    is visible to it. This is the direction that produced `42703`, `22P02`, and
-    `42P01` in production. New readers and writers must not require the new
-    column, enum value, relation, or constraint until the migration lands.
+    is visible to it. New readers and writers must not require the new column,
+    enum value, relation, or constraint until the migration lands; otherwise,
+    requests can fail with `42703`, `22P02`, or `42P01`.
 
   Remove a fallback only after its direction is safe. New-code fallbacks require
   a successful release and the expected schema. Old-code fallbacks require the
