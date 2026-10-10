@@ -1,3 +1,9 @@
+import { officialWorkflowsContract } from "@okouai/api-contracts/contracts/official-workflows";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { officialWorkflowRoutes } from "../official-workflows";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createRouteMocks } from "./helpers/route-test";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { randomUUID } from "node:crypto";
 
 import { HeadObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
@@ -8,11 +14,6 @@ import {
   type OfficialWorkflowSourceCatalog,
   type OfficialWorkflowSourceDefinition,
 } from "@okouai/api-contracts/contracts/official-workflow-catalog";
-import {
-  testOfficialWorkflowCatalogStateContract,
-  type TestOfficialWorkflowCatalogStateActionBody,
-} from "@okouai/api-contracts/contracts/test-official-workflow-catalog-state";
-import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -23,7 +24,6 @@ import {
   createCronOfficialWorkflowCatalogRoutes,
   cronOfficialWorkflowCatalogRoutes,
 } from "../cron-official-workflow-catalog";
-import { testOfficialWorkflowCatalogStateRoutes } from "../test-official-workflow-catalog-state";
 
 const context = testContext();
 const CRON_SECRET = "official-workflow-catalog-cron-secret";
@@ -210,27 +210,6 @@ async function syncCatalogUnauthorized(candidate: unknown) {
   );
 }
 
-async function stateClient() {
-  const app = await setupApp({
-    context,
-    routes: testOfficialWorkflowCatalogStateRoutes,
-    isolatePg: true,
-  });
-  return app(testOfficialWorkflowCatalogStateContract);
-}
-
-async function stateAction(body: TestOfficialWorkflowCatalogStateActionBody) {
-  return await accept((await stateClient()).action({ body }), [200]);
-}
-
-async function readState(definitionName?: string, revision?: string) {
-  return await stateAction({
-    action: "read",
-    ...(definitionName === undefined ? {} : { definitionName }),
-    ...(revision === undefined ? {} : { revision }),
-  });
-}
-
 function s3BodyBuffer(body: unknown): Buffer {
   if (Buffer.isBuffer(body)) {
     return Buffer.from(body);
@@ -338,49 +317,58 @@ function installVolumeS3Fixture() {
   };
 }
 
-beforeEach(() => {
-  mockEnv("CRON_SECRET", CRON_SECRET);
-  mockEnv(
-    "R2_USER_STORAGES_BUCKET_NAME",
-    `official-workflow-catalog-test-${randomUUID()}`,
-  );
-});
-
 describe("Official Workflow catalog release boundary", () => {
-  it("replaces a previous schema release with retained historical revisions", async () => {
-    const seeded = await stateAction({
-      action: "seed-previous-schema-release",
-    });
-    expect(seeded.body).toMatchObject({
-      catalog: null,
-      counts: {
-        releases: 1,
-        revisions: 1,
-        storages: 1,
-        storageVersions: 1,
-      },
-    });
+  let reader: ApiTestUser | undefined;
 
-    const synced = await syncCatalog(catalog([]));
-    expect(synced.body).toMatchObject({
-      outcome: "accepted",
-      diagnostics: [],
-    });
+  async function publicCatalogClient() {
+    const bdd = createBddApi(context);
+    if (!reader) {
+      reader = bdd.user({ orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" });
+      await updateFeatureSwitchesForUser(
+        context,
+        {
+          userId: reader.userId,
+          orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+        },
+        { [FeatureSwitchKey.OfficialWorkflows]: true },
+      );
+    }
+    createRouteMocks(context).clerk.session(
+      reader.userId,
+      reader.orgId,
+      reader.orgRole,
+    );
+    return setupApp({ context, routes: officialWorkflowRoutes })(
+      officialWorkflowsContract,
+    );
+  }
 
-    const state = await readState();
-    expect(state.body.catalog).toMatchObject({
-      releaseId: synced.body.releaseId,
-      payload: {
-        schemaVersion: OFFICIAL_WORKFLOW_CATALOG_SCHEMA_VERSION,
-        definitions: [],
-      },
-    });
-    expect(state.body.counts).toMatchObject({
-      releases: 2,
-      revisions: 1,
-      storages: 1,
-      storageVersions: 1,
-    });
+  async function readDefinition(definitionName: string) {
+    return await accept(
+      (await publicCatalogClient()).get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { definitionName },
+      }),
+      [200],
+    );
+  }
+
+  async function listDefinitions() {
+    return await accept(
+      (await publicCatalogClient()).list({
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+  }
+
+  beforeEach(() => {
+    reader = undefined;
+    mockEnv("CRON_SECRET", CRON_SECRET);
+    mockEnv(
+      "R2_USER_STORAGES_BUCKET_NAME",
+      `official-workflow-catalog-test-${randomUUID()}`,
+    );
   });
 
   it("authenticates sync and accepts an idempotent empty initial catalog", async () => {
@@ -402,17 +390,7 @@ describe("Official Workflow catalog release boundary", () => {
       },
     });
 
-    const state = await readState();
-    expect(state.body.catalog).toMatchObject({
-      releaseId: first.body.releaseId,
-      payload: { definitions: [] },
-    });
-    expect(state.body.counts).toStrictEqual({
-      releases: 1,
-      revisions: 0,
-      storages: 0,
-      storageVersions: 0,
-    });
+    expect((await listDefinitions()).body).toStrictEqual([]);
   });
 
   it("retires Connector Doctor while retaining its released identity and Morning Brief behavior", async () => {
@@ -441,14 +419,13 @@ describe("Official Workflow catalog release boundary", () => {
       diagnostics: [],
     });
     const releasedConnectorDoctor = requireValue(
-      (await readState("connector-doctor")).body.definition,
+      (await readDefinition("connector-doctor")).body,
       "Expected the released Connector Doctor Definition",
     );
     expect(releasedConnectorDoctor).toMatchObject({
       name: "connector-doctor",
       lifecycle: "active",
       blueprints: [{ key: "weekly-check" }],
-      releasedBlueprintKeys: ["weekly-check"],
     });
 
     const first = await syncDeployedCatalog();
@@ -457,28 +434,21 @@ describe("Official Workflow catalog release boundary", () => {
       diagnostics: [],
     });
 
-    const morningBriefState = await readState("morning-brief");
-    const connectorDoctorState = await readState("connector-doctor");
-    const deployedCatalog = requireValue(
-      morningBriefState.body.catalog,
-      "Expected the deployed catalog release",
-    );
+    const morningBriefState = await readDefinition("morning-brief");
+    const connectorDoctorState = await readDefinition("connector-doctor");
     const morningBriefDefinition = requireValue(
-      morningBriefState.body.definition,
+      morningBriefState.body,
       "Expected the Morning Brief Definition",
     );
     const connectorDoctorDefinition = requireValue(
-      connectorDoctorState.body.definition,
+      connectorDoctorState.body,
       "Expected the retired Connector Doctor Definition",
     );
     expect(
-      deployedCatalog.payload.definitions.map(({ name, lifecycle }) => {
-        return { name, lifecycle };
+      (await listDefinitions()).body.map(({ name }) => {
+        return name;
       }),
-    ).toStrictEqual([
-      { name: "connector-doctor", lifecycle: "retired" },
-      { name: "morning-brief", lifecycle: "active" },
-    ]);
+    ).toStrictEqual(["morning-brief"]);
     expect(morningBriefDefinition).toMatchObject({
       name: "morning-brief",
       lifecycle: "active",
@@ -501,55 +471,19 @@ describe("Official Workflow catalog release boundary", () => {
       name: "connector-doctor",
       lifecycle: "retired",
       blueprints: [{ key: "weekly-check" }],
-      releasedBlueprintKeys: ["weekly-check"],
       presentation: { category: "productivity" },
     });
     expect(connectorDoctorDefinition.revision).toBe(
       releasedConnectorDoctor.revision,
     );
-    expect(connectorDoctorDefinition.artifact).toStrictEqual(
-      releasedConnectorDoctor.artifact,
-    );
     expect(connectorDoctorDefinition.blueprints).toStrictEqual(
       releasedConnectorDoctor.blueprints,
     );
-    expect(connectorDoctorDefinition.releasedBlueprintKeys).toStrictEqual(
-      releasedConnectorDoctor.releasedBlueprintKeys,
-    );
-    expect(morningBriefState.body.storage).toMatchObject({
-      storageName: "official-workflow@morning-brief",
-      orgId: SYSTEM_ORG_ID,
-      userId: VOLUME_ORG_USER_ID,
-      headVersionId: morningBriefDefinition.artifact.storageVersion,
-      versionCount: 1,
-    });
-    expect(connectorDoctorState.body.storage).toMatchObject({
-      storageName: "official-workflow@connector-doctor",
-      orgId: SYSTEM_ORG_ID,
-      userId: VOLUME_ORG_USER_ID,
-      headVersionId: releasedConnectorDoctor.artifact.storageVersion,
-      versionCount: 1,
-    });
-    expect(morningBriefState.body.counts).toStrictEqual({
-      releases: 2,
-      revisions: 2,
-      storages: 2,
-      storageVersions: 2,
-    });
     expect(s3.objects.size).toBe(4);
 
     const morningBriefRevision = morningBriefDefinition.revision;
-    const exactMorningBrief = await readState(
-      "morning-brief",
-      morningBriefRevision,
-    );
-    const exactMorningBriefRevision = requireValue(
-      exactMorningBrief.body.revision,
-      "Expected the exact Morning Brief revision",
-    );
-    const morningBriefInstruction =
-      exactMorningBriefRevision.definition.workflow.instruction;
-    expect(exactMorningBriefRevision.definition.workflow).toMatchObject({
+    const morningBriefInstruction = morningBriefDefinition.workflow.instruction;
+    expect(morningBriefDefinition.workflow).toMatchObject({
       displayName: "Morning Brief",
       description:
         "Summarize today's email, GitHub, calendar, connected Slack activity from the past 24 hours, and unread Chat priorities.",
@@ -576,42 +510,19 @@ describe("Official Workflow catalog release boundary", () => {
       /morning-brief-(?:collect|run)|morning_brief|chat_morning_brief_context/,
     );
 
-    const exactConnectorDoctor = await readState(
-      "connector-doctor",
-      releasedConnectorDoctor.revision,
-    );
-    const exactConnectorDoctorRevision = requireValue(
-      exactConnectorDoctor.body.revision,
-      "Expected the exact historical Connector Doctor revision",
-    );
-    expect(exactConnectorDoctorRevision.definition.revision).toBe(
-      releasedConnectorDoctor.revision,
-    );
-    expect(exactConnectorDoctorRevision.definition.blueprints).toStrictEqual(
-      releasedConnectorDoctor.blueprints,
-    );
-    expect(exactConnectorDoctorRevision.artifact).toStrictEqual(
-      releasedConnectorDoctor.artifact,
-    );
-
     expect(morningBriefRevision).not.toBe(releasedConnectorDoctor.revision);
     expect(morningBriefDefinition.blueprints[0]?.fingerprint).not.toBe(
       connectorDoctorDefinition.blueprints[0]?.fingerprint,
-    );
-    expect(morningBriefDefinition.artifact.storageVersion).not.toBe(
-      connectorDoctorDefinition.artifact.storageVersion,
     );
     const firstIdentities = {
       morningBrief: {
         revision: morningBriefDefinition.revision,
         blueprintFingerprint: morningBriefDefinition.blueprints[0]?.fingerprint,
-        artifact: morningBriefDefinition.artifact,
       },
       connectorDoctor: {
         revision: connectorDoctorDefinition.revision,
         blueprintFingerprint:
           connectorDoctorDefinition.blueprints[0]?.fingerprint,
-        artifact: connectorDoctorDefinition.artifact,
       },
     };
     s3.clearWrites();
@@ -622,29 +533,27 @@ describe("Official Workflow catalog release boundary", () => {
       diagnostics: [],
     });
     const secondMorningBrief = requireValue(
-      (await readState("morning-brief")).body.definition,
+      (await readDefinition("morning-brief")).body,
       "Expected the unchanged Morning Brief Definition",
     );
     const secondConnectorDoctor = requireValue(
-      (await readState("connector-doctor")).body.definition,
+      (await readDefinition("connector-doctor")).body,
       "Expected the unchanged retired Connector Doctor Definition",
     );
     expect({
       morningBrief: {
         revision: secondMorningBrief.revision,
         blueprintFingerprint: secondMorningBrief.blueprints[0]?.fingerprint,
-        artifact: secondMorningBrief.artifact,
       },
       connectorDoctor: {
         revision: secondConnectorDoctor.revision,
         blueprintFingerprint: secondConnectorDoctor.blueprints[0]?.fingerprint,
-        artifact: secondConnectorDoctor.artifact,
       },
     }).toStrictEqual(firstIdentities);
     expect(s3.writes).toStrictEqual([]);
   });
 
-  it("accepts multiple Definitions as one release with exact system artifacts", async () => {
+  it("publishes multiple Definitions with exact public workflow content", async () => {
     const s3 = installVolumeS3Fixture();
     const alpha = `api-test-alpha-${TEST_SUFFIX}`;
     const beta = `api-test-beta-${TEST_SUFFIX}`;
@@ -659,31 +568,27 @@ describe("Official Workflow catalog release boundary", () => {
       diagnostics: [],
     });
 
-    const alphaState = await readState(alpha);
-    const betaDefinition = (await readState(beta)).body.definition;
-    expect(alphaState.body.catalog?.payload.definitions).toHaveLength(2);
-    expect(alphaState.body.definition?.blueprints).toStrictEqual([]);
+    const alphaState = await readDefinition(alpha);
+    const betaDefinition = (await readDefinition(beta)).body;
+    expect(
+      (await listDefinitions()).body.map(({ name }) => {
+        return name;
+      }),
+    ).toStrictEqual([alpha, beta]);
+    expect(alphaState.body?.blueprints).toStrictEqual([]);
     expect(betaDefinition?.blueprints).toHaveLength(1);
-    expect(alphaState.body.storage).toMatchObject({
-      storageName: `official-workflow@${alpha}`,
-      orgId: SYSTEM_ORG_ID,
-      userId: VOLUME_ORG_USER_ID,
-      headVersionId: alphaState.body.definition?.artifact.storageVersion,
-      versionCount: 1,
-    });
 
-    const revision = alphaState.body.definition?.revision;
-    expect(revision).toBeDefined();
-    const exact = await readState(alpha, revision);
-    expect(exact.body.revision).toMatchObject({
-      definition: { name: alpha, revision },
-      artifact: alphaState.body.definition?.artifact,
+    expect(alphaState.body?.workflow).toStrictEqual({
+      ...activeDefinition(alpha, { blueprints: [] }).workflow,
+      files: [...activeDefinition(alpha).workflow.files].sort((a, b) => {
+        return a.path.localeCompare(b.path);
+      }),
     });
-    expect(alphaState.body.counts).toStrictEqual({
-      releases: 1,
-      revisions: 2,
-      storages: 2,
-      storageVersions: 2,
+    expect(betaDefinition?.workflow).toStrictEqual({
+      ...activeDefinition(beta).workflow,
+      files: [...activeDefinition(beta).workflow.files].sort((a, b) => {
+        return a.path.localeCompare(b.path);
+      }),
     });
     expect(s3.objects.size).toBe(4);
   });
@@ -694,8 +599,8 @@ describe("Official Workflow catalog release boundary", () => {
     const daily = scheduleBlueprint("daily");
     const hourly = loopBlueprint("hourly");
     const initial = activeDefinition(name, { blueprints: [daily, hourly] });
-    await syncCatalog(catalog([initial]));
-    const first = (await readState(name)).body.definition;
+    const initialRelease = await syncCatalog(catalog([initial]));
+    const first = (await readDefinition(name)).body;
     expect(first).not.toBeNull();
     const firstFingerprints = new Map(
       first?.blueprints.map((blueprint) => {
@@ -718,7 +623,7 @@ describe("Official Workflow catalog release boundary", () => {
     const reorderSync = await syncCatalog(catalog([reordered]));
     expect(reorderSync.body).toMatchObject({
       outcome: "unchanged",
-      releaseId: (await readState()).body.catalog?.releaseId,
+      releaseId: initialRelease.body.releaseId,
     });
 
     const instructionSync = await syncCatalog(
@@ -730,7 +635,7 @@ describe("Official Workflow catalog release boundary", () => {
       ]),
     );
     expect(instructionSync.body.outcome).toBe("accepted");
-    const instructionChanged = (await readState(name)).body.definition;
+    const instructionChanged = (await readDefinition(name)).body;
     expect(instructionChanged?.revision).not.toBe(first?.revision);
     expect(
       instructionChanged?.blueprints.map((blueprint) => {
@@ -756,7 +661,7 @@ describe("Official Workflow catalog release boundary", () => {
       ]),
     );
     expect(filesSync.body.outcome).toBe("accepted");
-    const filesChanged = (await readState(name)).body.definition;
+    const filesChanged = (await readDefinition(name)).body;
     expect(filesChanged?.revision).not.toBe(instructionChanged?.revision);
     expect(filesChanged?.blueprints).toStrictEqual(
       instructionChanged?.blueprints,
@@ -772,7 +677,7 @@ describe("Official Workflow catalog release boundary", () => {
       ]),
     );
     expect(blueprintSync.body.outcome).toBe("accepted");
-    const blueprintChanged = (await readState(name)).body.definition;
+    const blueprintChanged = (await readDefinition(name)).body;
     expect(blueprintChanged?.revision).not.toBe(filesChanged?.revision);
     expect(
       blueprintChanged?.blueprints.find((blueprint) => {
@@ -797,17 +702,11 @@ describe("Official Workflow catalog release boundary", () => {
       ]),
     );
     expect(presentationSync.body.outcome).toBe("accepted");
-    const presentationChanged = await readState(name);
-    expect(presentationChanged.body.definition).toMatchObject({
+    const presentationChanged = await readDefinition(name);
+    expect(presentationChanged.body).toMatchObject({
       revision: blueprintChanged?.revision,
       blueprints: blueprintChanged?.blueprints,
       presentation: { category: "operations" },
-    });
-    expect(presentationChanged.body.counts).toStrictEqual({
-      releases: 5,
-      revisions: 4,
-      storages: 1,
-      storageVersions: 4,
     });
     expect(s3.writes).toStrictEqual([]);
   });
@@ -858,7 +757,7 @@ describe("Official Workflow catalog release boundary", () => {
       ]),
     );
     expect(accepted.body.outcome).toBe("accepted");
-    const initial = (await readState(name)).body.definition;
+    const initial = (await readDefinition(name)).body;
     expect(
       initial?.blueprints.find((blueprint) => {
         return blueprint.key === "chat";
@@ -894,7 +793,7 @@ describe("Official Workflow catalog release boundary", () => {
       ]),
     );
     expect(accepted.body.outcome).toBe("accepted");
-    const initial = (await readState(name)).body.definition;
+    const initial = (await readDefinition(name)).body;
 
     const changed = await syncCatalog(
       catalog([
@@ -904,7 +803,7 @@ describe("Official Workflow catalog release boundary", () => {
       ]),
     );
     expect(changed.body.outcome).toBe("accepted");
-    const revised = (await readState(name)).body.definition;
+    const revised = (await readDefinition(name)).body;
     expect(revised?.revision).not.toBe(initial?.revision);
     expect(
       revised?.blueprints.find((blueprint) => {
@@ -932,8 +831,7 @@ describe("Official Workflow catalog release boundary", () => {
     const baselineCatalog = catalog([activeDefinition(name)]);
     const accepted = await syncCatalog(baselineCatalog);
     const acceptedReleaseId = accepted.body.releaseId;
-    const acceptedRevision = (await readState(name)).body.definition?.revision;
-    expect(acceptedRevision).toBeDefined();
+    const acceptedDefinition = (await readDefinition(name)).body;
 
     const unknownFieldName = `api-test-invalid-${TEST_SUFFIX}`;
     const invalidDefinition = {
@@ -1114,15 +1012,8 @@ describe("Official Workflow catalog release boundary", () => {
       ],
     });
 
-    const state = await readState(name);
-    expect(state.body.catalog?.releaseId).toBe(acceptedReleaseId);
-    expect(state.body.definition?.revision).toBe(acceptedRevision);
-    expect(state.body.counts).toStrictEqual({
-      releases: 1,
-      revisions: 1,
-      storages: 1,
-      storageVersions: 1,
-    });
+    const state = await readDefinition(name);
+    expect(state.body).toStrictEqual(acceptedDefinition);
   });
 
   it("does not expose a partial candidate when later artifact preparation fails", async () => {
@@ -1140,87 +1031,66 @@ describe("Official Workflow catalog release boundary", () => {
       diagnostics: [{ code: "artifact-preparation-failed" }],
     });
 
-    const afterFailure = await readState();
-    expect(afterFailure.body.catalog).toMatchObject({
-      releaseId: empty.body.releaseId,
-      payload: { definitions: [] },
-    });
-    expect(afterFailure.body.counts).toStrictEqual({
-      releases: 1,
-      revisions: 0,
-      storages: 2,
-      storageVersions: 0,
-    });
-
+    expect((await listDefinitions()).body).toStrictEqual([]);
+    await accept(
+      (await publicCatalogClient()).get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { definitionName: alpha },
+      }),
+      [404],
+    );
     const retried = await syncCatalog(
       catalog([activeDefinition(alpha), activeDefinition(beta)]),
     );
     expect(retried.body.outcome).toBe("accepted");
-    expect((await readState()).body.counts).toStrictEqual({
-      releases: 2,
-      revisions: 2,
-      storages: 2,
-      storageVersions: 2,
-    });
+    expect(
+      (await listDefinitions()).body.map(({ name }) => {
+        return name;
+      }),
+    ).toStrictEqual([alpha, beta]);
   });
 
   it("reuses registered objects without changing the accepted identity", async () => {
     installVolumeS3Fixture();
     const name = `api-test-reuse-${TEST_SUFFIX}`;
     await syncCatalog(catalog([activeDefinition(name)]));
-    const initial = (await readState(name)).body.definition;
+    const initial = (await readDefinition(name)).body;
     context.mocks.s3.send.mockClear();
     const repeated = await syncCatalog(catalog([activeDefinition(name)]));
     expect(repeated.body.outcome).toBe("unchanged");
     expect(context.mocks.s3.send).not.toHaveBeenCalled();
-    const retained = await readState(name);
-    expect(retained.body.definition).toMatchObject({
-      revision: initial?.revision,
-      artifact: initial?.artifact,
-    });
-    expect(retained.body.counts).toStrictEqual({
-      releases: 1,
-      revisions: 1,
-      storages: 1,
-      storageVersions: 1,
-    });
+    const retained = await readDefinition(name);
+    expect(retained.body).toStrictEqual(initial);
   });
 
-  it("reuses the retained artifact through retirement and repeated sync", async () => {
+  it("retains public content through retirement and repeated sync", async () => {
     installVolumeS3Fixture();
     const name = `api-test-retired-reuse-${TEST_SUFFIX}`;
     await syncCatalog(catalog([activeDefinition(name)]));
-    const active = (await readState(name)).body.definition;
+    const active = (await readDefinition(name)).body;
     context.mocks.s3.send.mockClear();
     const retirement = await syncCatalog(catalog([retiredDefinition(name)]));
     expect(retirement.body.outcome).toBe("accepted");
     const repeated = await syncCatalog(catalog([retiredDefinition(name)]));
     expect(repeated.body.outcome).toBe("unchanged");
     expect(context.mocks.s3.send).not.toHaveBeenCalled();
-    const retained = await readState(name);
-    expect(retained.body.definition).toMatchObject({
+    const retained = await readDefinition(name);
+    expect(retained.body).toMatchObject({
       lifecycle: "retired",
       revision: active?.revision,
-      artifact: active?.artifact,
-    });
-    expect(retained.body.counts).toStrictEqual({
-      releases: 2,
-      revisions: 1,
-      storages: 1,
-      storageVersions: 1,
     });
   });
 
-  it("retains historical revisions without probing or rewriting their objects", async () => {
+  it("keeps the current revision stable without probing or rewriting objects", async () => {
     installVolumeS3Fixture();
     const name = `api-test-historical-reuse-${TEST_SUFFIX}`;
     await syncCatalog(catalog([activeDefinition(name)]));
-    const first = (await readState(name)).body.definition;
+    const first = (await readDefinition(name)).body;
     const currentCandidate = activeDefinition(name, {
       instruction: "Use the second durable revision.",
     });
     await syncCatalog(catalog([currentCandidate]));
-    const second = (await readState(name)).body.definition;
+    const second = (await readDefinition(name)).body;
     if (!first?.revision || !second?.revision) {
       throw new Error("Expected two exact registered revisions");
     }
@@ -1229,45 +1099,24 @@ describe("Official Workflow catalog release boundary", () => {
     const repeated = await syncCatalog(catalog([currentCandidate]));
     expect(repeated.body.outcome).toBe("unchanged");
     expect(context.mocks.s3.send).not.toHaveBeenCalled();
-    const retained = await readState(name);
-    expect(retained.body.definition).toMatchObject({
-      revision: second.revision,
-      artifact: second.artifact,
-    });
-    expect((await readState(name, first.revision)).body.revision).toMatchObject(
-      {
-        definition: { revision: first.revision },
-        artifact: first.artifact,
-      },
-    );
-    expect(
-      (await readState(name, second.revision)).body.revision,
-    ).toMatchObject({
-      definition: { revision: second.revision },
-      artifact: second.artifact,
-    });
-    expect(retained.body.counts).toStrictEqual({
-      releases: 2,
-      revisions: 2,
-      storages: 1,
-      storageVersions: 2,
-    });
+    const retained = await readDefinition(name);
+    expect(retained.body).toStrictEqual(second);
   });
 
-  it("reuses an exact ready artifact through A-B-A and repeated historical preparation", async () => {
+  it("restores the exact public A revision through A-B-A and repeated publication", async () => {
     installVolumeS3Fixture();
     const name = `api-test-index-aba-${TEST_SUFFIX}`;
     const firstCandidate = activeDefinition(name);
     const firstRelease = await syncCatalog(catalog([firstCandidate]));
     const first = requireValue(
-      (await readState(name)).body.definition,
+      (await readDefinition(name)).body,
       "Expected the first Definition",
     );
     await syncCatalog(
       catalog([activeDefinition(name, { instruction: "Publish revision B." })]),
     );
     const second = requireValue(
-      (await readState(name)).body.definition,
+      (await readDefinition(name)).body,
       "Expected the second Definition",
     );
     expect(second.revision).not.toBe(first.revision);
@@ -1278,26 +1127,15 @@ describe("Official Workflow catalog release boundary", () => {
       outcome: "accepted",
       releaseId: firstRelease.body.releaseId,
     });
-    expect((await readState(name)).body.definition).toMatchObject({
+    expect((await readDefinition(name)).body).toMatchObject({
       revision: first.revision,
-      artifact: first.artifact,
     });
     expect((await syncCatalog(catalog([firstCandidate]))).body.outcome).toBe(
       "unchanged",
     );
     expect(context.mocks.s3.send).not.toHaveBeenCalled();
-    const retained = await readState(name, second.revision);
-    expect(retained.body.revision).toMatchObject({
-      definition: { revision: second.revision },
-      artifact: second.artifact,
-    });
-    // Releases are content-addressed too: A-B-A reuses the first release ID.
-    expect(retained.body.counts).toStrictEqual({
-      releases: 2,
-      revisions: 2,
-      storages: 1,
-      storageVersions: 2,
-    });
+    const restored = await readDefinition(name);
+    expect(restored.body).toStrictEqual(first);
   });
 
   it("rejects silent deletion and retains identity through retirement and reactivation", async () => {
@@ -1313,7 +1151,7 @@ describe("Official Workflow catalog release boundary", () => {
     });
 
     await syncCatalog(catalog([activeDefinition(name)]));
-    const active = (await readState(name)).body.definition;
+    const active = (await readDefinition(name)).body;
     const silentDeletion = await syncCatalog(catalog([]));
     expect(silentDeletion.body).toMatchObject({
       outcome: "rejected",
@@ -1324,13 +1162,11 @@ describe("Official Workflow catalog release boundary", () => {
 
     const retirement = await syncCatalog(catalog([retiredDefinition(name)]));
     expect(retirement.body.outcome).toBe("accepted");
-    const retired = (await readState(name)).body.definition;
+    const retired = (await readDefinition(name)).body;
     expect(retired).toMatchObject({
       name,
       lifecycle: "retired",
       revision: active?.revision,
-      artifact: active?.artifact,
-      releasedBlueprintKeys: ["daily"],
     });
 
     const reactivation = await syncCatalog(
@@ -1341,11 +1177,10 @@ describe("Official Workflow catalog release boundary", () => {
       ]),
     );
     expect(reactivation.body.outcome).toBe("accepted");
-    const reactivated = (await readState(name)).body.definition;
+    const reactivated = (await readDefinition(name)).body;
     expect(reactivated).toMatchObject({
       name,
       lifecycle: "active",
-      releasedBlueprintKeys: ["daily"],
     });
     expect(reactivated?.revision).not.toBe(active?.revision);
 
@@ -1353,9 +1188,8 @@ describe("Official Workflow catalog release boundary", () => {
       catalog([activeDefinition(name, { blueprints: [] })]),
     );
     expect(blueprintRemoval.body.outcome).toBe("accepted");
-    expect((await readState(name)).body.definition).toMatchObject({
+    expect((await readDefinition(name)).body).toMatchObject({
       blueprints: [],
-      releasedBlueprintKeys: ["daily"],
     });
 
     const blueprintRestoration = await syncCatalog(
@@ -1364,16 +1198,10 @@ describe("Official Workflow catalog release boundary", () => {
       ]),
     );
     expect(blueprintRestoration.body.outcome).toBe("accepted");
-    expect((await readState(name)).body.definition).toMatchObject({
-      releasedBlueprintKeys: ["daily"],
-    });
-    expect(
-      (await readState(name, active?.revision)).body.revision?.definition
-        .revision,
-    ).toBe(active?.revision);
+    expect((await readDefinition(name)).body).toStrictEqual(active);
   });
 
-  it("serializes concurrent identical syncs into one durable release", async () => {
+  it("serializes concurrent identical syncs into one accepted release", async () => {
     installVolumeS3Fixture();
     const name = `api-test-concurrent-${TEST_SUFFIX}`;
     const candidate = catalog([activeDefinition(name)]);
@@ -1386,11 +1214,16 @@ describe("Official Workflow catalog release boundary", () => {
       "unchanged",
     ]);
     expect(left.body.releaseId).toBe(right.body.releaseId);
-    expect((await readState(name)).body.counts).toStrictEqual({
-      releases: 1,
-      revisions: 1,
-      storages: 1,
-      storageVersions: 1,
+    expect(
+      (await listDefinitions()).body.map(({ name }) => {
+        return name;
+      }),
+    ).toStrictEqual([name]);
+    expect((await readDefinition(name)).body.workflow).toStrictEqual({
+      ...activeDefinition(name).workflow,
+      files: [...activeDefinition(name).workflow.files].sort((a, b) => {
+        return a.path.localeCompare(b.path);
+      }),
     });
   });
 
@@ -1424,16 +1257,9 @@ describe("Official Workflow catalog release boundary", () => {
     });
     expect(slow.body.releaseId).not.toBe(initial.body.releaseId);
 
-    const state = await readState(name);
-    expect(state.body.catalog?.releaseId).toBe(fast.body.releaseId);
-    expect(state.body.definition?.blueprints[0]?.desiredState).toMatchObject({
+    const state = await readDefinition(name);
+    expect(state.body?.blueprints[0]?.desiredState).toMatchObject({
       schedule: { cronExpression: "30 8 * * *" },
-    });
-    expect(state.body.counts).toStrictEqual({
-      releases: 2,
-      revisions: 1,
-      storages: 1,
-      storageVersions: 1,
     });
   });
 });

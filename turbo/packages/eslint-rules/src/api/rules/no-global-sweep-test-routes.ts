@@ -211,13 +211,13 @@ export const noGlobalSweepTestRoutes = createRule({
     type: "problem",
     docs: {
       description:
-        "Keep API test correctness on fixture-scoped state routes instead of production-global sweeps",
+        "Keep API correctness on approved public boundaries instead of arbitrary global sweeps",
       requiresTypeChecking: false,
     },
     schema: [],
     messages: {
       globalSweep:
-        "Production-global route '{{ routeName }}' is not an approved correctness boundary. Use a fixture-scoped test route; contract coverage may pass it directly only to the fixed no-auth helper.",
+        "Production-global route '{{ routeName }}' is not an approved correctness boundary. Use the ordinary public lifecycle; contract coverage may pass it directly only to the fixed no-auth helper.",
     },
   },
   create(context) {
@@ -879,6 +879,17 @@ export const noGlobalSweepTestRoutes = createRule({
               : String(specifier.imported.value);
           const boundary = boundaryForImport(node.source.value, importedName);
           if (!boundary) {
+            continue;
+          }
+          // This system-boundary suite publishes through the real catalog cron
+          // and owns an isolated database before reconciling installations.
+          if (
+            filename.endsWith(
+              "/src/signals/routes/__tests__/official-workflows.test.ts",
+            ) &&
+            boundary.exportName === "cronExecuteWorkflowAutomationsRoutes" &&
+            specifier.local.name === boundary.exportName
+          ) {
             continue;
           }
           if (

@@ -40,7 +40,7 @@ export const API_TEST_CONNECTOR_CATALOG_SOURCE = connectorCatalogSource();
 
 export async function installSharedApiTestConnectorCatalog(): Promise<void> {
   const installation = await settleIncludingAbort(
-    installApiTestConnectorCatalog({ ifAbsent: true }),
+    installApiTestConnectorCatalog(),
   );
   // Startup owns this connection, not the case's database authority. Cases
   // may deliberately choose an unavailable endpoint before their first read.
@@ -52,9 +52,6 @@ export async function installSharedApiTestConnectorCatalog(): Promise<void> {
     throw shutdown.error;
   }
 }
-
-const DEFAULT_API_TEST_CONNECTOR_CATALOG_VERSION =
-  API_TEST_CONNECTOR_CATALOG.catalogVersion;
 
 const store = createStore();
 
@@ -81,7 +78,6 @@ async function publishFixtureGeneration<
   readonly database: PgDatabase<TQueryResult>;
   readonly catalog: ConnectorCatalogArtifact;
   readonly hash: string;
-  readonly ifAbsent: boolean;
 }): Promise<void> {
   // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0350; new non-billing transactions are prohibited.
   await args.database.transaction(async (tx) => {
@@ -104,15 +100,7 @@ async function publishFixtureGeneration<
     };
     // Shared installation never replaces a pointer that another suite owns;
     // concurrent workers wait on the conflicting insert instead.
-    await (args.ifAbsent
-      ? tx.insert(connectorCatalog).values(pointer).onConflictDoNothing()
-      : tx
-          .insert(connectorCatalog)
-          .values(pointer)
-          .onConflictDoUpdate({
-            target: connectorCatalog.schemaVersion,
-            set: { hash: args.hash },
-          }));
+    await tx.insert(connectorCatalog).values(pointer).onConflictDoNothing();
   });
 }
 
@@ -120,31 +108,16 @@ export async function installApiTestConnectorCatalog<
   TQueryResult extends PgQueryResultHKT,
 >(
   options: {
-    readonly catalogVersion?: string;
-    readonly catalog?: ConnectorCatalogArtifact;
-    readonly ifAbsent?: boolean;
     readonly database?: PgDatabase<TQueryResult>;
   } = {},
 ): Promise<void> {
-  const catalogVersion =
-    options.catalogVersion ??
-    options.catalog?.catalogVersion ??
-    DEFAULT_API_TEST_CONNECTOR_CATALOG_VERSION;
-  const catalog =
-    options.catalog ??
-    (catalogVersion === DEFAULT_API_TEST_CONNECTOR_CATALOG_VERSION
-      ? API_TEST_CONNECTOR_CATALOG
-      : connectorCatalogArtifactSchema.parse({
-          ...API_TEST_CONNECTOR_CATALOG_ARTIFACT,
-          catalogVersion,
-        }));
+  const catalog = API_TEST_CONNECTOR_CATALOG;
   validateConnectorCatalogArtifact(catalog);
   const rawBytes = Buffer.from(`${JSON.stringify(catalog)}\n`);
   const hash = sha256Digest(rawBytes);
   const publication = {
     catalog,
     hash,
-    ifAbsent: options.ifAbsent ?? false,
   };
   if (options.database) {
     await publishFixtureGeneration({

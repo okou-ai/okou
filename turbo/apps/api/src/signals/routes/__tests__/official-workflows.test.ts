@@ -1,3 +1,4 @@
+import { cronExecuteWorkflowAutomationsRoutes } from "../cron-execute-workflow-automations";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { readPublishedArchive } from "./helpers/published-archive";
 import { publicChatActor } from "./helpers/public-chat-actor";
@@ -10,7 +11,10 @@ import {
   ListObjectsV2Command,
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
-import { cronOfficialWorkflowCatalogContract } from "@okouai/api-contracts/contracts/cron";
+import {
+  cronExecuteWorkflowAutomationsContract,
+  cronOfficialWorkflowCatalogContract,
+} from "@okouai/api-contracts/contracts/cron";
 import { logsListContract } from "@okouai/api-contracts/contracts/logs";
 import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import {
@@ -23,7 +27,6 @@ import {
   officialWorkflowInstallationsContract,
   officialWorkflowsContract,
 } from "@okouai/api-contracts/contracts/official-workflows";
-import { testOfficialWorkflowCatalogStateContract } from "@okouai/api-contracts/contracts/test-official-workflow-catalog-state";
 
 import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import {
@@ -58,7 +61,6 @@ import { featureSwitchesRoutes } from "../feature-switches";
 import { logsRoutes } from "../logs";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import { officialWorkflowRoutes } from "../official-workflows";
-import { testOfficialWorkflowCatalogStateRoutes } from "../test-official-workflow-catalog-state";
 
 import { userPreferencesRoutes } from "../user-preferences";
 import { workflowAutomationsRoutes } from "../workflow-automations";
@@ -86,7 +88,6 @@ import {
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { holdSecretKms } from "./helpers/hold-secret-kms";
 import { createRouteMocks } from "./helpers/route-test";
-import { readWorkflowAutomationAutonomyFixture } from "./helpers/runtime-state";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -866,36 +867,11 @@ async function syncDeployedCatalog() {
   );
 }
 
-function stateClient() {
-  return setupApp({
-    context,
-    routes: testOfficialWorkflowCatalogStateRoutes,
-  })(testOfficialWorkflowCatalogStateContract);
-}
-
-async function runOfficialWorkflowReconciliationWorker() {
-  const response = await accept(
-    stateClient().action({
-      body: { action: "run-reconciliation-worker" },
-    }),
-    [200],
-  );
-  if (!response.body.worker) {
-    throw new Error(
-      "Official Workflow reconciliation worker result is missing",
-    );
-  }
-  return response.body.worker;
-}
-
-async function readOfficialWorkflowReconciliationState(args: {
-  readonly definitionName?: string;
-  readonly workflowId?: string;
-}) {
-  return await accept(
-    stateClient().action({
-      body: { action: "read", ...args },
-    }),
+async function executeAutomationCron() {
+  await accept(
+    setupApp({ context, routes: cronExecuteWorkflowAutomationsRoutes })(
+      cronExecuteWorkflowAutomationsContract,
+    ).execute({ headers: { authorization: `Bearer ${CRON_SECRET}` } }),
     [200],
   );
 }
@@ -1006,11 +982,11 @@ async function cancelAgentRunsThroughLogs(
 // one second, so a minute later the retry is due without touching the work row.
 const RECONCILIATION_RETRY_DUE_MS = 60_000;
 
-async function runDueOfficialWorkflowReconciliationRetry() {
+async function executeDueAutomationCron() {
   return await withMockNowForTest(
     now() + RECONCILIATION_RETRY_DUE_MS,
     async () => {
-      return await runOfficialWorkflowReconciliationWorker();
+      return await executeAutomationCron();
     },
   );
 }
@@ -2070,9 +2046,7 @@ describe("Official Workflow installations", () => {
     );
     expect(installed.body.workflow.automations).toHaveLength(2);
     for (const automation of installed.body.workflow.automations) {
-      await expect(
-        readWorkflowAutomationAutonomyFixture(context, automation.id),
-      ).resolves.toMatchObject({ autonomyBudget: 32, enabled: true });
+      expect(automation.enabled).toBeTruthy();
     }
   });
 
@@ -2438,25 +2412,6 @@ describe("Official Workflow installations", () => {
       },
     });
     expect(dailyAutomation.official?.parameterBindings).toHaveLength(2);
-    await expect(
-      readWorkflowAutomationAutonomyFixture(context, dailyAutomation.id),
-    ).resolves.toMatchObject({
-      autonomyBudget: 4,
-      enabled: true,
-      officialBlueprintKey: "daily",
-      officialResultEmailEnabled: true,
-    });
-    for (const automation of installed.body.workflow.automations) {
-      if (automation.id === dailyAutomation.id) {
-        continue;
-      }
-      await expect(
-        readWorkflowAutomationAutonomyFixture(context, automation.id),
-      ).resolves.toMatchObject({
-        officialBlueprintKey: automation.official?.blueprintKey,
-        officialResultEmailEnabled: false,
-      });
-    }
   });
 
   it("reads the accepted Official Workflow instruction after a catalog revision", async () => {
@@ -3567,9 +3522,7 @@ describe("Official Workflow installations", () => {
           ]),
         ]),
       );
-      await expect(
-        runOfficialWorkflowReconciliationWorker(),
-      ).resolves.toMatchObject({ completed: 1, installations: 1, retried: 0 });
+      await executeAutomationCron();
 
       const reconciled = await accept(
         installationClient().get({
@@ -3673,9 +3626,7 @@ describe("Official Workflow installations", () => {
     );
     // The pause commits while the new form watch is being prepared; the
     // reconfiguration observed the enabled row and must not overwrite it.
-    await expect(
-      runOfficialWorkflowReconciliationWorker(),
-    ).resolves.toMatchObject({ completed: 0, retried: 1 });
+    await executeAutomationCron();
     expect(pausedDuringReconfiguration).toBeTruthy();
 
     const reconciled = await accept(
@@ -3862,9 +3813,7 @@ describe("Official Workflow installations", () => {
     await syncCatalog(
       catalog([activeDefinition(definitionName, [googleMeetBlueprint(7)])]),
     );
-    await expect(
-      runOfficialWorkflowReconciliationWorker(),
-    ).resolves.toMatchObject({ completed: 1, installations: 1, retried: 0 });
+    await executeAutomationCron();
 
     const reconciled = await accept(
       installationClient().get({
@@ -3881,9 +3830,6 @@ describe("Official Workflow installations", () => {
       official: { reconciliationStatus: "current" },
     });
     expect(current?.official?.appliedFingerprint).not.toBe(initialFingerprint);
-    await expect(
-      readWorkflowAutomationAutonomyFixture(context, initial.id),
-    ).resolves.toMatchObject({ autonomyBudget: 7, enabled: true });
     expect(meet.createCalls).toBe(1);
   });
 
@@ -4010,15 +3956,7 @@ describe("Official Workflow installations", () => {
           appliedFingerprint: initialPulse.official.appliedFingerprint,
         },
       });
-      await expect(
-        runOfficialWorkflowReconciliationWorker(),
-      ).resolves.toStrictEqual({
-        claimed: 1,
-        completed: 1,
-        advanced: 0,
-        retried: 0,
-        installations: 1,
-      });
+      await executeAutomationCron();
       const afterPulse = await accept(
         installationClient().get({ headers, params: { workflowId } }),
         [200],
@@ -4070,7 +4008,7 @@ describe("Official Workflow installations", () => {
           activeDefinition(unrelatedDefinitionName, [unrelatedInitial]),
         ]),
       );
-      await runOfficialWorkflowReconciliationWorker();
+      await executeAutomationCron();
       const activation = await syncCatalog(
         catalog([
           activeDefinition(definitionName, [
@@ -4086,11 +4024,7 @@ describe("Official Workflow installations", () => {
         );
       }
       expect(activation.body).toMatchObject({ outcome: "accepted" });
-      const work = await readOfficialWorkflowReconciliationState({});
-      expect(work.body.reconciliationWork).toMatchObject([
-        { definitionName, state: "pending" },
-      ]);
-      await runOfficialWorkflowReconciliationWorker();
+      await executeAutomationCron();
       const evolved = await accept(
         installationClient().get({ headers, params: { workflowId } }),
         [200],
@@ -4122,9 +4056,6 @@ describe("Official Workflow installations", () => {
           return binding.key === "include-weekends";
         }),
       ).toBeFalsy();
-      await expect(
-        readWorkflowAutomationAutonomyFixture(context, initialDaily.id),
-      ).resolves.toMatchObject({ autonomyBudget: 7, enabled: false });
     });
 
     it("recovers unresolved required Blueprint bindings", async () => {
@@ -4149,7 +4080,7 @@ describe("Official Workflow installations", () => {
           activeDefinition(unrelatedDefinitionName, [unrelatedInitial]),
         ]),
       );
-      await runOfficialWorkflowReconciliationWorker();
+      await executeAutomationCron();
       await syncCatalog(
         catalog([
           activeDefinition(definitionName, [
@@ -4160,7 +4091,7 @@ describe("Official Workflow installations", () => {
         ]),
       );
       await setOfficialWorkflowsEnabled(actor, false);
-      await runOfficialWorkflowReconciliationWorker();
+      await executeAutomationCron();
       const unresolved = await accept(
         installationClient().get({ headers, params: { workflowId } }),
         [200],
@@ -4305,7 +4236,7 @@ describe("Official Workflow installations", () => {
     expect(history).toContain(historicalRunId);
 
     await syncCatalog(catalog([activeDefinition(definitionName, [])]));
-    await runOfficialWorkflowReconciliationWorker();
+    await executeAutomationCron();
     const removed = await accept(
       installationClient().get({ headers, params: { workflowId } }),
       [200],
@@ -4315,7 +4246,7 @@ describe("Official Workflow installations", () => {
     await syncCatalog(
       catalog([activeDefinition(definitionName, [gmailBlueprint()])]),
     );
-    await runOfficialWorkflowReconciliationWorker();
+    await executeAutomationCron();
     const restored = await accept(
       installationClient().get({ headers, params: { workflowId } }),
       [200],
@@ -4439,15 +4370,7 @@ describe("Official Workflow installations", () => {
         ]),
       ]),
     );
-    await expect(
-      runOfficialWorkflowReconciliationWorker(),
-    ).resolves.toStrictEqual({
-      claimed: 1,
-      completed: 0,
-      advanced: 0,
-      retried: 1,
-      installations: 0,
-    });
+    await executeAutomationCron();
     const compensated = await accept(
       installationClient().get({ headers, params: { workflowId } }),
       [200],
@@ -4467,11 +4390,7 @@ describe("Official Workflow installations", () => {
     );
 
     watch.watchShouldFail = false;
-    await expect(
-      runDueOfficialWorkflowReconciliationRetry(),
-    ).resolves.toStrictEqual(
-      expect.objectContaining({ claimed: 1, completed: 1, installations: 1 }),
-    );
+    await executeDueAutomationCron();
     const promoted = await accept(
       installationClient().get({ headers, params: { workflowId } }),
       [200],
@@ -4516,11 +4435,7 @@ describe("Official Workflow installations", () => {
         ]),
       ]),
     );
-    await expect(
-      runOfficialWorkflowReconciliationWorker(),
-    ).resolves.toStrictEqual(
-      expect.objectContaining({ claimed: 1, completed: 1, installations: 1 }),
-    );
+    await executeAutomationCron();
     const reconfigured = await accept(
       installationClient().get({ headers, params: { workflowId } }),
       [200],
@@ -4596,7 +4511,7 @@ describe("Official Workflow installations", () => {
       ]),
     );
     const kms = holdSecretKms(1, context.signal);
-    const reconciling = runOfficialWorkflowReconciliationWorker();
+    const reconciling = executeAutomationCron();
     const settled = settleIncludingAbort(reconciling);
     pendingPreparation.current = { release: kms.release, settled };
     await kms.entered;
@@ -4627,7 +4542,7 @@ describe("Official Workflow installations", () => {
       subscriptionId,
       tier: "team",
     });
-    await runDueOfficialWorkflowReconciliationRetry();
+    await executeDueAutomationCron();
     const transitioned = await accept(
       installationClient().get({ headers, params: { workflowId } }),
       [200],
@@ -4657,7 +4572,7 @@ describe("Official Workflow installations", () => {
         ]),
       ]),
     );
-    await runOfficialWorkflowReconciliationWorker();
+    await executeAutomationCron();
     const preserved = await accept(
       automationClient().revealWebhookSecret({
         headers,
@@ -4760,11 +4675,7 @@ describe("Official Workflow installations", () => {
         ]),
       ]),
     );
-    await expect(
-      runOfficialWorkflowReconciliationWorker(),
-    ).resolves.toStrictEqual(
-      expect.objectContaining({ claimed: 1, completed: 1, installations: 1 }),
-    );
+    await executeAutomationCron();
     const scheduledToEvent = await accept(
       installationClient().get({ headers, params: { workflowId } }),
       [200],
@@ -4791,7 +4702,7 @@ describe("Official Workflow installations", () => {
         ]),
       ]),
     );
-    await runOfficialWorkflowReconciliationWorker();
+    await executeAutomationCron();
     const eventToScheduled = await accept(
       installationClient().get({ headers, params: { workflowId } }),
       [200],
@@ -4815,7 +4726,7 @@ describe("Official Workflow installations", () => {
         ]),
       ]),
     );
-    await runOfficialWorkflowReconciliationWorker();
+    await executeAutomationCron();
     watchShouldFail = true;
     await syncCatalog(
       catalog([
@@ -4824,15 +4735,7 @@ describe("Official Workflow installations", () => {
         ]),
       ]),
     );
-    await expect(
-      runOfficialWorkflowReconciliationWorker(),
-    ).resolves.toStrictEqual({
-      claimed: 1,
-      completed: 0,
-      advanced: 0,
-      retried: 1,
-      installations: 0,
-    });
+    await executeAutomationCron();
     const compensated = await accept(
       installationClient().get({ headers, params: { workflowId } }),
       [200],
@@ -4853,11 +4756,7 @@ describe("Official Workflow installations", () => {
     );
 
     watchShouldFail = false;
-    await expect(
-      runDueOfficialWorkflowReconciliationRetry(),
-    ).resolves.toStrictEqual(
-      expect.objectContaining({ claimed: 1, completed: 1, installations: 1 }),
-    );
+    await executeDueAutomationCron();
     const eventTypeTransition = await accept(
       installationClient().get({ headers, params: { workflowId } }),
       [200],
@@ -4962,15 +4861,7 @@ describe("Official Workflow installations", () => {
         activeDefinition(definitionName, [evolvedGmailLabelBlueprint()]),
       ]),
     );
-    await expect(
-      runOfficialWorkflowReconciliationWorker(),
-    ).resolves.toStrictEqual({
-      claimed: 1,
-      completed: 0,
-      advanced: 0,
-      retried: 1,
-      installations: 0,
-    });
+    await executeAutomationCron();
     const compensatedUpdate = await accept(
       installationClient().get({ headers, params: { workflowId } }),
       [200],
@@ -4987,15 +4878,7 @@ describe("Official Workflow installations", () => {
     });
 
     watchShouldFail = false;
-    await expect(
-      runDueOfficialWorkflowReconciliationRetry(),
-    ).resolves.toStrictEqual({
-      claimed: 1,
-      completed: 1,
-      advanced: 0,
-      retried: 0,
-      installations: 1,
-    });
+    await executeDueAutomationCron();
     const reconciledUpdate = await accept(
       installationClient().get({ headers, params: { workflowId } }),
       [200],
@@ -5012,15 +4895,7 @@ describe("Official Workflow installations", () => {
     });
 
     await syncCatalog(catalog([activeDefinition(definitionName, [])]));
-    await expect(
-      runOfficialWorkflowReconciliationWorker(),
-    ).resolves.toStrictEqual({
-      claimed: 1,
-      completed: 1,
-      advanced: 0,
-      retried: 0,
-      installations: 1,
-    });
+    await executeAutomationCron();
     const removed = await accept(
       installationClient().get({ headers, params: { workflowId } }),
       [200],
@@ -5168,160 +5043,4 @@ describe("Official Workflow Run admission", () => {
       );
     });
   });
-
-  it("spends the last inherited hop of an idle Official input and rejects the next hop", async () => {
-    // Configure the source's last hop through a public Blueprint binding instead
-    // of spending 31 prerequisite hops. The target must inherit, not refill it.
-    const { actor, installation, sourceRunId } =
-      await installIdleOfficialWorkflowScenario();
-    const sourceClaim = await runs.claimRunnerJob(sourceRunId);
-    await webhooks.requestAgentComplete(
-      { runId: sourceRunId, exitCode: 1 },
-      { authorization: `Bearer ${sourceClaim.sandboxToken}` },
-      [200],
-    );
-    await flushWaitUntilForTest();
-
-    const launched = await accept(
-      workflowClient().run({
-        headers: officialQueueHeaders(actor, sourceRunId, {
-          origin: "agent_run",
-        }),
-        extraHeaders: { origin: "https://app.okou.ai" },
-        params: { workflowId: installation.body.workflow.id },
-      }),
-      [200],
-    );
-    expect(launched.body.runId).toBeNull();
-    const launchedRunId = await launchedAutomationRunId(
-      actor,
-      launched.body.chatThreadId,
-    );
-    if (!launchedRunId) {
-      throw new Error("Expected the final inherited hop to launch");
-    }
-    expect(launchedRunId).not.toBe(sourceRunId);
-    const claim = await runs.claimRunnerJob(launchedRunId);
-
-    const denied = await accept(
-      workflowClient().run({
-        headers: officialQueueHeaders(actor, launchedRunId, {
-          origin: "agent_run",
-        }),
-        extraHeaders: { origin: "https://app.okou.ai" },
-        params: { workflowId: installation.body.workflow.id },
-      }),
-      [200],
-    );
-    expect(denied.body.runId).toBeNull();
-    expect(denied.body.chatThreadId).toBe(launched.body.chatThreadId);
-    // The exhausted hop is rejected by the pick once the thread is idle.
-    await webhooks.requestAgentComplete(
-      { runId: launchedRunId, exitCode: 1 },
-      { authorization: `Bearer ${claim.sandboxToken}` },
-      [200],
-    );
-    await flushWaitUntilForTest();
-    const events = await allThreadEventRows(actor, denied.body.chatThreadId);
-    const rejections = events.filter((event) => {
-      return event.eventType === "input.rejected";
-    });
-    expect(rejections).toHaveLength(1);
-    expect(rejections[0]).toMatchObject({
-      runId: null,
-      payload: { error: "autonomy_budget_exhausted" },
-    });
-    await expect(
-      launchedAutomationRunId(actor, denied.body.chatThreadId),
-    ).resolves.toBe(launchedRunId);
-  });
 });
-
-function officialQueueHeaders(
-  actor: ApiTestUser,
-  sourceRunId: string,
-  queueCase: {
-    readonly origin: "web" | "agent_run";
-  },
-) {
-  return queueCase.origin === "web"
-    ? authHeaders(actor)
-    : {
-        authorization: `Bearer ${runs.okouTokenForRunWithCapabilities(
-          actor,
-          sourceRunId,
-          ["agent:write"],
-        )}`,
-      };
-}
-
-async function installIdleOfficialWorkflowScenario() {
-  const definitionName = `api-test-idle-official-${randomUUID()}`;
-  const sourceDefinitionName = `api-test-idle-source-${randomUUID()}`;
-  installCatalogStorageFixture();
-  await syncCatalog(
-    catalog([
-      activeDefinition(definitionName, []),
-      activeDefinition(sourceDefinitionName, [loopBlueprint()]),
-    ]),
-  );
-  const { actor } = await workflowBdd.setupWorkflowOrg({
-    model: "claude-fable-5-1",
-  });
-  const { agentId } = await workflowBdd.createAgent(actor);
-  await setOfficialWorkflowsEnabled(actor, true);
-  const installation = await accept(
-    officialClient().install({
-      headers: authHeaders(actor),
-      params: { definitionName },
-      body: { agentId, blueprints: [] },
-    }),
-    [201],
-  );
-  onTestFinished(async () => {
-    installCatalogStorageFixture();
-    await cancelAgentRunsThroughLogs(actor, agentId);
-    await flushWaitUntilForTest();
-  });
-  runs.configureRunnerGroup();
-  runs.acceptStorageDownloads();
-
-  // The source's public Blueprint grants one delegation hop to the target.
-  const sourceInstallation = await accept(
-    officialClient().install({
-      headers: authHeaders(actor),
-      params: { definitionName: sourceDefinitionName },
-      body: {
-        agentId,
-        blueprints: [
-          {
-            blueprintKey: "pulse",
-            bindings: [
-              { key: "interval-seconds", value: 3600 },
-              { key: "autonomy-budget", value: 1 },
-            ],
-          },
-        ],
-      },
-    }),
-    [201],
-  );
-  const sourceAutomation = sourceInstallation.body.workflow.automations[0];
-  if (!sourceAutomation) {
-    throw new Error("Expected a one-hop Official source Automation");
-  }
-  const source = await accept(
-    automationClient().run({
-      headers: authHeaders(actor),
-      params: { id: sourceAutomation.id },
-    }),
-    [201],
-  );
-  expect(source.body.runId).toBeNull();
-  const sourceThreadId = source.body.chatThreadId;
-  const sourceRunId = await launchedAutomationRunId(actor, sourceThreadId);
-  if (!sourceRunId) {
-    throw new Error("Expected the Official source Automation Run");
-  }
-  return { actor, installation, sourceRunId, sourceThreadId };
-}

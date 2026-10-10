@@ -97,11 +97,6 @@
       "owner": "failPoisonQueuedJob"
     },
     {
-      "id": "TX-0033",
-      "file": "turbo/apps/api/src/signals/routes/test-official-workflow-catalog-state.ts",
-      "owner": "seedPreviousSchemaRelease$"
-    },
-    {
       "id": "TX-0042",
       "file": "turbo/apps/api/src/signals/routes/user-templates.ts",
       "owner": "updateInner$"

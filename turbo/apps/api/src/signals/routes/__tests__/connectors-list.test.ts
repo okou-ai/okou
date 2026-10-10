@@ -12,7 +12,6 @@ import { afterEach } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
 import { createPublicConnectorActor } from "./helpers/public-connector-actor";
 
@@ -285,7 +284,7 @@ describe("GET /api/connectors", () => {
       "R2_USER_STORAGES_BUCKET_NAME",
       `legacy-list-unavailable-${randomUUID()}`,
     );
-    await installApiTestConnectorCatalog({ ifAbsent: true });
+
     const fixture = seedAuthenticatedFixture();
     seededFixtures.push(fixture);
     await connectGitlab(fixture);
@@ -330,7 +329,7 @@ describe("GET /api/connectors", () => {
       }),
     ]);
     mockOptionalEnv("BOX_OAUTH_CLIENT_ID", undefined);
-    await installApiTestConnectorCatalog({ ifAbsent: true });
+
     mocks.clerk.session(fixture.userId, fixture.orgId);
 
     const response = await accept(
