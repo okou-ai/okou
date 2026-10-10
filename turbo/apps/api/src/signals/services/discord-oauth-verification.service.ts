@@ -9,7 +9,6 @@ import {
 } from "../external/discord-client";
 import {
   DISCORD_CONNECT_SCOPES,
-  DISCORD_INSTALL_SCOPES,
   exchangeDiscordOauthCode,
   fetchDiscordOauthAuthorization,
   fetchDiscordOauthUser,
@@ -54,8 +53,9 @@ async function verifyIdentity(args: GrantArgs, signal: AbortSignal) {
     return exchanged;
   }
   const token = exchanged.data;
-  const scopes =
-    args.flow === "install" ? DISCORD_INSTALL_SCOPES : DISCORD_CONNECT_SCOPES;
+  // Installation scopes need not appear in the user token. Guild proof and
+  // live bot access are verified separately below.
+  const scopes = DISCORD_CONNECT_SCOPES;
   const missingTokenScopes = scopes.filter((scope) => {
     return !token.scope.split(/\s+/u).includes(scope);
   });
