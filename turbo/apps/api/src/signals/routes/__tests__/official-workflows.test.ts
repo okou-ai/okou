@@ -1397,7 +1397,7 @@ async function installOfficialWorkflowLifecycleScenario() {
 }
 
 async function ordinaryDelegationScenario(lastHop: boolean) {
-  const owned = await publicChatActor(context);
+  const owned = await publicChatActor(context, { isolatePg: lastHop });
   return await owned.run(async () => {
     await runs.updateUserModelPreference(owned.actor, "claude-fable-5-1");
     const workflowId = await workflowBdd.createWorkflow(owned.actor, {

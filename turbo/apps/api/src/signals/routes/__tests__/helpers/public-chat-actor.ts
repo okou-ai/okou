@@ -15,6 +15,7 @@ export async function publicChatActor(
   options: {
     readonly beforeRuns?: (actor: ApiTestUser) => Promise<void>;
     readonly tier?: "pro" | "team";
+    readonly isolatePg?: boolean;
     readonly restoreEnvironment?: () => void;
     readonly clockTime?: number | (() => number);
     readonly beforeWorkspaceCleanup?: () => Promise<void>;
@@ -57,7 +58,7 @@ export async function publicChatActor(
     },
     afterRuns: async () => {
       const features = await settleIncludingAbort(() => {
-        return ownsFeatures
+        return ownsFeatures && !options.isolatePg
           ? deleteFeatureSwitchesForUser(context, { ...actor, orgId })
           : Promise.resolve();
       });
@@ -65,7 +66,10 @@ export async function publicChatActor(
         return options.beforeWorkspaceCleanup?.() ?? Promise.resolve();
       });
       const workspace = await settleIncludingAbort(() => {
-        return deletePublicWorkspace(context, actor);
+        // The existing isolated engine disposes its rows after owned work.
+        return options.isolatePg
+          ? Promise.resolve()
+          : deletePublicWorkspace(context, actor);
       });
       const errors = [features, external, workspace].flatMap((result) => {
         return result.ok ? [] : [result.error];
@@ -104,6 +108,7 @@ export async function publicChatActor(
   const { customerId } = await run(() => {
     return fixture.api.grantProEntitlement(actor, {
       tier: options.tier,
+      isolatePg: options.isolatePg,
       onExternalStateReady: (restoreWebhook) => {
         restoreSetupWebhook = restoreWebhook;
       },

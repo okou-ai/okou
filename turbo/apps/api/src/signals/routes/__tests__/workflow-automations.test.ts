@@ -4379,7 +4379,7 @@ describe("okou workflow automations", () => {
   });
 
   it("derives automation budgets and blocks creation from budget zero", async () => {
-    const owned = await publicChatActor(context);
+    const owned = await publicChatActor(context, { isolatePg: true });
     const { actor, agentId } = owned;
     await owned.run(async () => {
       await runs.updateUserModelPreference(actor, "claude-fable-5-1");
@@ -4517,7 +4517,7 @@ describe("okou workflow automations", () => {
   });
 
   it("derives manual run budgets from the source and rejects exhausted agent callers", async () => {
-    const owned = await publicChatActor(context);
+    const owned = await publicChatActor(context, { isolatePg: true });
     const { actor, agentId } = owned;
     await owned.run(async () => {
       await runs.updateUserModelPreference(actor, "claude-fable-5-1");

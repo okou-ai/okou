@@ -384,6 +384,7 @@ describe("system storage presigned URL cache", () => {
         if (!mount?.archiveUrl || mount.archiveSize === undefined) {
           throw new Error("Expected a complete readonly connector mount");
         }
+        expect(mount.archiveSize).toBe(2048);
         expect(mount.mountPath).toBe(
           `/home/user/.claude/skills/custom-${connector.slug.slice(1, 49)}-${connector.id.replaceAll("-", "").slice(0, 8)}`,
         );

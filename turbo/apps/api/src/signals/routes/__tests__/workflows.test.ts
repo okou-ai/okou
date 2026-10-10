@@ -2479,7 +2479,7 @@ describe("workflows", () => {
   });
 
   it("inherits copied automation budgets from agent callers and rejects exhausted runs", async () => {
-    const owned = await publicChatActor(context);
+    const owned = await publicChatActor(context, { isolatePg: true });
     const { actor, agentId } = owned;
     await owned.run(async () => {
       await api.updateUserModelPreference(actor, "claude-fable-5-1");
