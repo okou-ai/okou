@@ -38,7 +38,7 @@ import {
   publishAgentPhoneUserLinked,
   resolveAgentPhoneUserLinkForEvent,
   sendAgentPhoneText,
-  storeInboundAgentPhoneMessage,
+  storeInboundAgentPhoneMessage$,
   verifyAgentPhoneConnectSignature,
   verifyAgentPhoneWebhook,
   type AgentPhoneRecentHistoryMessage,
@@ -1412,10 +1412,14 @@ const webhook$ = command(async ({ get, set }, signal: AbortSignal) => {
   const userLink = await resolveAgentPhoneUserLinkForEvent(writeDb, event);
   signal.throwIfAborted();
 
-  const stored = await storeInboundAgentPhoneMessage(writeDb, {
-    event: agentPhoneEventForStorage(event, userLink),
-    userLinkId: userLink?.id ?? null,
-  });
+  const stored = await set(
+    storeInboundAgentPhoneMessage$,
+    {
+      event: agentPhoneEventForStorage(event, userLink),
+      userLinkId: userLink?.id ?? null,
+    },
+    signal,
+  );
   signal.throwIfAborted();
   if (!stored.dispatch) {
     return okText();

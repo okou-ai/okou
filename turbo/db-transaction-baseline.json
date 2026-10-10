@@ -152,16 +152,6 @@
       "owner": "storeOutboundAgentPhoneMessage"
     },
     {
-      "id": "TX-0054",
-      "file": "turbo/apps/api/src/signals/services/agentphone.service.ts",
-      "owner": "storeInboundAgentPhoneMessage"
-    },
-    {
-      "id": "TX-0055",
-      "file": "turbo/apps/api/src/signals/services/agentphone.service.ts",
-      "owner": "storeInboundAgentPhoneMessage"
-    },
-    {
       "id": "TX-0056",
       "file": "turbo/apps/api/src/signals/services/artifact-catalog.service.ts",
       "owner": "syncHostedArtifact$"
