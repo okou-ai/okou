@@ -219,7 +219,12 @@ validation metadata before moving an owned payload into its fixture envelope,
 rather than cloning that payload solely to keep reading its length or hash.
 For length-only observations, count actual serialized bytes without retaining
 throwaway JSON strings. Borrow body text for literal observations while preserving
-the same decoding semantics and complete payload assertions.
+the same decoding semantics and complete payload assertions. When omitting a
+fixture field, preserve the map's removal order with key-only metadata and borrow
+the unchanged values. Source-only repeated JSONL may serialize invariant fragments
+once and encode every sequence between them; derive boundaries from map iteration,
+not text matching, and verify complete bytes across ordering and digit boundaries.
+Build expected reduced values directly rather than cloning large values to replace.
 
 Keep real process/socket deadlines, full payload/file/pixel boundaries, key/KDF
 strengths, every assertion and actual retained image buffers. Compare complete

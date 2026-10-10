@@ -1370,18 +1370,73 @@ mod tests {
             .collect()
     }
 
-    fn one_entry_per_batch_log_content(count: usize) -> String {
-        let mut log = one_entry_per_batch_log(0);
-        let mut content = Vec::new();
-        for sequence in 0..count {
-            *log.get_mut("sequence").unwrap() = json!(sequence);
-            serde_json::to_writer(&mut content, &log).unwrap();
-            content.push(b'\n');
+    fn sequenced_log_content(
+        log: &serde_json::Value,
+        sequences: impl IntoIterator<Item = usize>,
+    ) -> String {
+        let fields = log.as_object().unwrap();
+        assert!(fields.contains_key("sequence"));
+        let mut prefix = vec![b'{'];
+        let mut suffix = Vec::new();
+        let mut after_sequence = false;
+        for (index, (key, value)) in fields.iter().enumerate() {
+            let bytes = if after_sequence {
+                &mut suffix
+            } else {
+                &mut prefix
+            };
+            if index != 0 {
+                bytes.push(b',');
+            }
+            serde_json::to_writer(&mut *bytes, key).unwrap();
+            bytes.push(b':');
+            if key == "sequence" {
+                after_sequence = true;
+            } else {
+                serde_json::to_writer(bytes, value).unwrap();
+            }
         }
-        if count == 0 {
+        suffix.extend_from_slice(b"}\n");
+        let mut content = Vec::new();
+        for sequence in sequences {
+            content.extend_from_slice(&prefix);
+            serde_json::to_writer(&mut content, &sequence).unwrap();
+            content.extend_from_slice(&suffix);
+        }
+        if content.is_empty() {
             content.push(b'\n');
         }
         String::from_utf8(content).unwrap()
+    }
+
+    fn one_entry_per_batch_log_content(count: usize) -> String {
+        sequenced_log_content(&one_entry_per_batch_log(0), 0..count)
+    }
+
+    #[test]
+    fn sequenced_log_fixture_preserves_escaping_order_and_sequence_boundaries() {
+        for log in [
+            json!({"sequence":0}),
+            json!({"sequence":0,"body":"你好\"\\\n\0\"sequence\":0"}),
+            json!({"body":[null,true,19,{"sequence":0}],"sequence":0}),
+            json!({"before":{},"sequence":0,"after":{"z":[],"a":null}}),
+        ] {
+            let original = log.to_string();
+            for sequences in [vec![], vec![0], vec![1, 9, 10, 99, 100, usize::MAX]] {
+                let expected = sequences
+                    .iter()
+                    .map(|sequence| {
+                        let mut entry = log.clone();
+                        *entry.get_mut("sequence").unwrap() = json!(sequence);
+                        serde_json::to_string(&entry).unwrap()
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+                    + "\n";
+                assert_eq!(sequenced_log_content(&log, sequences), expected);
+                assert_eq!(log.to_string(), original);
+            }
+        }
     }
 
     #[test]
