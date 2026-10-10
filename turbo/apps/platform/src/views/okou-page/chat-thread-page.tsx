@@ -4272,7 +4272,7 @@ function ChatThreadComposer({ thread }: { thread: ChatPanelSignals }) {
         )}
       >
         <div className="mx-auto max-w-[900px]">
-          <ChatComposer signals={thread.composer} />
+          <ChatComposer signals={thread.composer} anchorSuggestionsToComposer />
           <PersonalClaudeCodeDeviceAuthDialog />
           <PersonalCodexDeviceAuthDialog />
         </div>

@@ -34,6 +34,7 @@ import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
 const WORKFLOW_NAME = "axiom-red";
 const SECOND_WORKFLOW_NAME = "axiom-status";
 const THIRD_WORKFLOW_NAME = "axiom-traces";
+const THREAD_ID = "b0000000-0000-4000-a000-000000000900";
 
 function setupModels(): void {
   mockAgent();
@@ -60,12 +61,13 @@ function setupModels(): void {
 async function openSlashMenu(
   query = "",
   composerAnchored = false,
+  path = composerAnchored ? `/chats/${THREAD_ID}` : `/agents/${AGENT_ID}/chat`,
 ): Promise<void> {
   setupModels();
-  mockChatLifecycle(context);
+  mockChatLifecycle(context, { threadId: THREAD_ID });
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path,
     featureSwitches: {
       [FeatureSwitchKey.ComposerAnchoredSuggestions]: composerAnchored,
     },
@@ -415,10 +417,10 @@ test("Composer-anchored slash suggestions keep the strongest match at the bottom
       composerWorkflow("axi", "Exact match"),
     ]);
   });
-  mockChatLifecycle(context);
+  mockChatLifecycle(context, { threadId: THREAD_ID });
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/chats/${THREAD_ID}`,
     featureSwitches: { [FeatureSwitchKey.ComposerAnchoredSuggestions]: true },
   });
   const editor = await findComposerEditor();
@@ -529,21 +531,31 @@ test("Composer-anchored slash suggestions hide the template flyout at the mobile
   expect(tabByText("Illustration")).toHaveAttribute("aria-selected", "true");
 });
 
-test("Disabling composer-anchored suggestions retains the original menu and mobile preview", async () => {
-  context.mocks.browser.matchMedia(false);
-  await openSlashMenu("", false);
-  await waitFor(() => {
-    expect(slashMenuButtonNames()).toStrictEqual([
-      "Presentation",
-      "Illustration",
-      "Website",
-      `/${WORKFLOW_NAME}`,
-      `/${SECOND_WORKFLOW_NAME}`,
-      `/${THIRD_WORKFLOW_NAME}`,
-      "Browse all templates",
-    ]);
-  });
-  expect(slashButton("Presentation")).toHaveAttribute("data-active", "true");
-  expect(detailPane()).toHaveAttribute("data-category", "slides");
-  expect(flyout()).toHaveAccessibleName("Presentation");
-});
+test.each([
+  ["Disabling composer-anchored suggestions", false, `/chats/${THREAD_ID}`],
+  [
+    "Enabling composer-anchored suggestions on the agent chat page",
+    true,
+    `/agents/${AGENT_ID}/chat`,
+  ],
+])(
+  "%s retains the original menu and mobile preview",
+  async (_, enabled, path) => {
+    context.mocks.browser.matchMedia(false);
+    await openSlashMenu("", enabled, path);
+    await waitFor(() => {
+      expect(slashMenuButtonNames()).toStrictEqual([
+        "Presentation",
+        "Illustration",
+        "Website",
+        `/${WORKFLOW_NAME}`,
+        `/${SECOND_WORKFLOW_NAME}`,
+        `/${THIRD_WORKFLOW_NAME}`,
+        "Browse all templates",
+      ]);
+    });
+    expect(slashButton("Presentation")).toHaveAttribute("data-active", "true");
+    expect(detailPane()).toHaveAttribute("data-category", "slides");
+    expect(flyout()).toHaveAccessibleName("Presentation");
+  },
+);
