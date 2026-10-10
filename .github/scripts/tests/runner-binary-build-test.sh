@@ -365,11 +365,11 @@ RUNNER_BINARY_CONTEXT_ROOT="$actual_context" \
 workflow_toolchain=$(awk '
   /^  compile:$/ { in_compile = 1; next }
   in_compile && /^      image: / { sub(/^      image: /, ""); print; exit }
-' "${REPO_ROOT}/.github/workflows/runner-image.yml")
+' "${REPO_ROOT}/.github/workflows/runner-image-architecture.yml")
 . "${REPO_ROOT}/.github/scripts/runner-binary-build/contract.env"
 [ "$RUNNER_BINARY_INPUT_SCHEMA_VERSION" = "6" ] \
   || fail "runner binary input schema must identify content-only CLI inputs"
-[ "$workflow_toolchain" = 'ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009' ] \
+[ "$workflow_toolchain" = "ghcr.io/\${{ github.repository_owner }}/vm0-toolchain-rust:20261009" ] \
   || fail "Runner Image workflow toolchain must derive its owner from GitHub context"
 expected_runtime_toolchain="ghcr.io/${GITHUB_REPOSITORY_OWNER:-okou-ai}/vm0-toolchain-rust:20261009"
 [ "$RUNNER_BINARY_TOOLCHAIN_IMAGE" = "$expected_runtime_toolchain" ] \

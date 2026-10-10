@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 CRATES_WORKFLOW="${REPO_ROOT}/.github/workflows/crates.yml"
-RUNNER_IMAGE_WORKFLOW="${REPO_ROOT}/.github/workflows/runner-image.yml"
+RUNNER_IMAGE_WORKFLOW="${REPO_ROOT}/.github/workflows/runner-image-architecture.yml"
 ACTION="${REPO_ROOT}/.github/actions/report-memory-peak/action.yml"
 
 fail() {
