@@ -150,24 +150,24 @@ fn optional_positive_duration_secs(
 // the run payload. If the value is unset or empty, there are no artifacts.
 // ---------------------------------------------------------------------------
 
-/// Checkpoint state materialized from one runner-provided artifact entry.
+/// Artifact publication inputs materialized from one Runner-provided entry.
 ///
 /// [`guest_contracts::env::RunArtifact`] owns the wire representation parsed
 /// before this guest-agent type is constructed.
 #[derive(Clone, Debug)]
 pub struct ArtifactEnv {
     /// VAS storage name for the mounted artifact. This is also the artifact
-    /// name reported in checkpoint snapshot payloads.
+    /// name reported in completion artifact snapshot payloads.
     pub name: String,
     /// Absolute path inside the guest where the artifact archive was mounted
-    /// and where the guest-agent walks files during checkpointing.
+    /// and where the guest-agent walks files during snapshot publication.
     pub mount_path: String,
     /// VAS storage id used when recomputing the mounted artifact's content hash.
     pub storage_id: String,
     /// VAS version id mounted at startup. This is the expected content hash used
     /// to skip unchanged snapshots and the parent version for new snapshots.
     pub version_id: String,
-    /// Optional internal checkpoint policy. Absence means strict failure on a
+    /// Optional internal artifact publication policy. Absence means strict failure on a
     /// missing or unreadable artifact root.
     pub missing_root_policy: Option<ArtifactEntryMissingRootPolicy>,
 }
@@ -461,7 +461,7 @@ pub struct GuestConfig {
     pub codex_home_dir: String,
     /// Artifact mounts parsed from the camelCase JSON array in
     /// [`guest_contracts::env::RunPayload`]. Empty input produces an empty
-    /// vector; checkpoint creation uses the entries for artifact snapshots.
+    /// vector; finalization uses the entries for artifact snapshots.
     pub artifacts: Vec<ArtifactEnv>,
     /// Feature flags parsed from the JSON object in
     /// [`guest_contracts::env::RunPayload`]. Empty input produces an empty map

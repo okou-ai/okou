@@ -1,6 +1,6 @@
 //! Event sending — forwards masked JSONL events to the webhook endpoint.
 //!
-//! Captures framework session metadata for checkpoint use and prepares masked
+//! Captures framework session metadata for finalization use and prepares masked
 //! event payloads for webhook delivery.
 
 use crate::constants;
@@ -578,7 +578,7 @@ pub(crate) fn extract_claude_tool_info(event: &Value) -> Vec<ClaudeToolEvent<'_>
     results
 }
 
-/// Capture session metadata needed by checkpoint.
+/// Capture session metadata needed by finalization.
 ///
 /// Both frameworks emit a single id-bearing event near the top of their
 /// JSONL stream:

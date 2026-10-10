@@ -192,7 +192,7 @@ struct ApiUrls {
     complete: String,
     heartbeat: String,
     telemetry: String,
-    checkpoint_prepare_history: String,
+    session_history_prepare: String,
     storage_prepare: String,
     storage_commit: String,
 }
@@ -393,8 +393,8 @@ impl HttpClient {
         Ok(&self.api_config()?.urls.telemetry)
     }
 
-    pub(crate) fn checkpoint_prepare_history_url(&self) -> Result<&str, AgentError> {
-        Ok(&self.api_config()?.urls.checkpoint_prepare_history)
+    pub(crate) fn session_history_prepare_url(&self) -> Result<&str, AgentError> {
+        Ok(&self.api_config()?.urls.session_history_prepare)
     }
 
     pub(crate) fn storage_prepare_url(&self) -> Result<&str, AgentError> {
@@ -451,7 +451,7 @@ impl ApiUrls {
             complete: urls::complete_url(base_url),
             heartbeat: urls::heartbeat_url(base_url),
             telemetry: urls::telemetry_url(base_url),
-            checkpoint_prepare_history: urls::checkpoint_prepare_history_url(base_url),
+            session_history_prepare: urls::session_history_prepare_url(base_url),
             storage_prepare: urls::storage_prepare_url(base_url),
             storage_commit: urls::storage_commit_url(base_url),
         }

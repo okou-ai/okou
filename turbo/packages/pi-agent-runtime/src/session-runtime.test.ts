@@ -121,7 +121,7 @@ const MEMORY_TOOL_SCHEMAS = [
   {
     name: "add_ad_hoc_note",
     description:
-      "Create one append-only ad-hoc memory note only after the user explicitly asks Pi to remember, forget, or update something. Use this tool, not Bash or a generic filesystem tool, for memory updates. Success means only sandbox-local staging; durable retention depends on the terminal artifact checkpoint.",
+      "Create one append-only ad-hoc memory note only after the user explicitly asks Pi to remember, forget, or update something. Use this tool, not Bash or a generic filesystem tool, for memory updates. Success means only sandbox-local staging; durable retention depends on successful artifact publication at the end of the run.",
     parameters: {
       additionalProperties: false,
       properties: {

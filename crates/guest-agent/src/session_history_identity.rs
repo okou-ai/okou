@@ -1,4 +1,4 @@
-//! Final session-history identity helpers for checkpoint and runner reuse.
+//! Final session-history identity helpers for finalization and runner reuse.
 
 use crate::env;
 use crate::error::AgentError;
@@ -23,7 +23,7 @@ use std::fmt;
 use std::io;
 use std::path::Path;
 
-/// Build final session-history identity metadata for a successful checkpoint.
+/// Build final session-history identity metadata for a successful finalization.
 pub(crate) fn build_final_session_history_identity(
     framework: env::Framework,
     cli_agent_session_id: &str,
@@ -143,22 +143,22 @@ fn verify_unique_pi_source(path: &str, session_id: &str) -> Result<(), AgentErro
         let source_path = Path::new(path);
         let parent = source_path
             .parent()
-            .ok_or_else(|| AgentError::Checkpoint("invalid Pi history source".into()))?;
+            .ok_or_else(|| AgentError::Finalization("invalid Pi history source".into()))?;
         let directory = crate::nofollow_fs::Dir::open_absolute(parent)
-            .map_err(|_| AgentError::Checkpoint("unsafe Pi history source".into()))?;
+            .map_err(|_| AgentError::Finalization("unsafe Pi history source".into()))?;
         let mut count = 0usize;
         for (index, entry) in directory
             .read_dir()
-            .map_err(|_| AgentError::Checkpoint("Pi history lookup failed".into()))?
+            .map_err(|_| AgentError::Finalization("Pi history lookup failed".into()))?
             .enumerate()
         {
             if index >= 16_384 {
-                return Err(AgentError::Checkpoint(
+                return Err(AgentError::Finalization(
                     "Pi history lookup exceeds budget".into(),
                 ));
             }
             let entry =
-                entry.map_err(|_| AgentError::Checkpoint("Pi history lookup failed".into()))?;
+                entry.map_err(|_| AgentError::Finalization("Pi history lookup failed".into()))?;
             let candidate = parent.join(entry.file_name());
             if candidate.to_str().is_some_and(|candidate| {
                 crate::session_metadata::is_pi_session_history_path(candidate, session_id)
@@ -166,28 +166,30 @@ fn verify_unique_pi_source(path: &str, session_id: &str) -> Result<(), AgentErro
                 // A competing symlink or nonregular entry is not silently ignored.
                 let file = directory
                     .open_child_file(&entry.file_name())
-                    .map_err(|_| AgentError::Checkpoint("unsafe Pi history candidate".into()))?;
+                    .map_err(|_| AgentError::Finalization("unsafe Pi history candidate".into()))?;
                 if !file.metadata().is_ok_and(|metadata| metadata.is_file()) {
-                    return Err(AgentError::Checkpoint(
+                    return Err(AgentError::Finalization(
                         "invalid Pi history candidate".into(),
                     ));
                 }
                 count += 1;
                 if candidate != source_path || count > 1 {
-                    return Err(AgentError::Checkpoint("ambiguous Pi history source".into()));
+                    return Err(AgentError::Finalization(
+                        "ambiguous Pi history source".into(),
+                    ));
                 }
             }
         }
         if count == 1 {
             Ok(())
         } else {
-            Err(AgentError::Checkpoint("Pi history source missing".into()))
+            Err(AgentError::Finalization("Pi history source missing".into()))
         }
     }
     #[cfg(not(target_os = "linux"))]
     {
         let _ = (path, session_id);
-        Err(AgentError::Checkpoint(
+        Err(AgentError::Finalization(
             "Pi history verification requires descriptor safety".into(),
         ))
     }

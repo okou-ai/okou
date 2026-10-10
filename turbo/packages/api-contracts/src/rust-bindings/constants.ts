@@ -528,7 +528,7 @@ export const rustConstantBindings = [
     value: rustString(CANONICAL_PI_SESSION_DIR),
     rustDoc: [
       "Official Pi JSONL session directory for the canonical guest workspace.",
-      "Guest checkpointing validates Pi session files under this directory and runner restore materializes resume history here.",
+      "Guest finalization validates Pi session files under this directory and runner restore materializes resume history here.",
     ],
   },
   {
@@ -537,7 +537,7 @@ export const rustConstantBindings = [
     value: rustU64(STORAGE_MANIFEST_MAX_FILES),
     rustDoc: [
       "Maximum file entries accepted in a storage manifest.",
-      "Guest artifact checkpointing and TypeScript storage webhook validation use this shared limit.",
+      "Guest artifact publication and TypeScript storage webhook validation use this shared limit.",
     ],
   },
   {
@@ -546,7 +546,7 @@ export const rustConstantBindings = [
     value: rustU64(STORAGE_MANIFEST_MAX_PATH_BYTES),
     rustDoc: [
       "Maximum cumulative UTF-8 path bytes accepted in a storage manifest.",
-      "Guest artifact checkpointing and TypeScript storage webhook validation use this shared limit.",
+      "Guest artifact publication and TypeScript storage webhook validation use this shared limit.",
     ],
   },
   ...codexOauthPlaceholderNames.map((name) => {

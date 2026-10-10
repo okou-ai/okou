@@ -734,7 +734,7 @@ export interface PiMemoryPhase2MountedConsolidationArgs {
 /**
  * Run Phase 2 from the exact mounted Storage epoch and apply only a fully
  * validated result back to that mount. Durable publication remains owned by
- * the ordinary terminal artifact checkpoint.
+ * the ordinary terminal artifact publication.
  */
 export async function runPiMemoryPhase2MountedConsolidation(
   args: PiMemoryPhase2MountedConsolidationArgs,

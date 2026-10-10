@@ -678,7 +678,8 @@ pub enum FailureClass {
     ClaudeZeroTurnNoHistory,
     /// Uploading events failed.
     EventUploadFailed,
-    /// Creating or uploading a checkpoint failed.
+    /// Publishing session history or artifacts during Run finalization failed.
+    /// The historical variant and wire value remain stable for captured diagnostics.
     CheckpointFailed,
 }
 
@@ -701,7 +702,7 @@ impl FailureClass {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FailureReason {
-    /// The session history exceeded the checkpoint size limit.
+    /// The session history exceeded the native-history upload size limit.
     SessionHistoryLimit,
     /// The run reached its execution time limit.
     ExecutionTimeout,
@@ -874,7 +875,7 @@ impl AgentFramework {
 /// When a probe runs, these states describe whether a producer could resolve a
 /// target and inspect its metadata. `Unknown` also covers diagnostics created
 /// before a probe can run. No status proves that the target is readable or can
-/// support a recovery checkpoint.
+/// support recovery finalization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SessionHistoryStatus {

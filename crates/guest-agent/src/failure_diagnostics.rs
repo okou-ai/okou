@@ -181,13 +181,13 @@ fn claude_history_target_status(
 }
 
 /// Persist a nonempty guest error message with private file permissions.
-pub fn write_guest_error_file(checkpoint_error_file: &str, message: &str) {
+pub fn write_guest_error_file(guest_error_file: &str, message: &str) {
     let message = message.trim();
     if message.is_empty() {
         return;
     }
 
-    if let Err(e) = paths::write_private(checkpoint_error_file, message) {
+    if let Err(e) = paths::write_private(guest_error_file, message) {
         log_warn!(LOG_TAG, "Failed to write guest error file: {e}");
     }
 }

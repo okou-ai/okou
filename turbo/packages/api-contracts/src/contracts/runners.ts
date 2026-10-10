@@ -540,7 +540,7 @@ export const runnersPollContract = c.router({
 
 const archiveSizeSchema = z.number().int().min(1).max(Number.MAX_SAFE_INTEGER);
 
-// Optional internal checkpoint behavior for a missing artifact root. Absence
+// Optional internal artifact publication behavior for a missing artifact root. Absence
 // is equivalent to "fail".
 export const artifactMissingRootPolicySchema = z.enum([
   "fail",

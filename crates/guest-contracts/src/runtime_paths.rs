@@ -171,7 +171,9 @@ pub fn session_id_file(run_dir: impl AsRef<Path>) -> PathBuf {
     file(run_dir, "session-id")
 }
 
-/// Return the run-root `checkpoint-error` file.
+/// Return the run-root Guest error file.
+///
+/// Its historical `checkpoint-error` filename remains stable for Runner readers.
 pub fn checkpoint_error_file(run_dir: impl AsRef<Path>) -> PathBuf {
     file(run_dir, "checkpoint-error")
 }

@@ -125,6 +125,7 @@ describe("native Pi history structural boundaries", () => {
     expect(inspectPiSessionJsonl(jsonl(entries))).toStrictEqual({
       sessionId: SESSION_ID,
       messageCount: 0,
+      pendingToolIds: [],
       hasPendingToolCalls: false,
       isSettledCheckpoint: false,
     });

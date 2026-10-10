@@ -40,17 +40,17 @@ pub enum AgentError {
         max_chars: u64,
     },
 
-    /// Checkpoint, session-history, or artifact snapshot workflow failure inside
+    /// Finalization, session-history, or artifact snapshot workflow failure inside
     /// the guest-agent; this does not refer to Firecracker/rootfs snapshots.
-    #[error("checkpoint: {0}")]
-    Checkpoint(String),
+    #[error("finalization: {0}")]
+    Finalization(String),
 
-    /// Session history exceeded the checkpoint size limit.
-    #[error("checkpoint: Session history exceeds maximum size of {max_bytes} bytes")]
-    CheckpointHistoryTooLarge { max_bytes: u64 },
+    /// Session history exceeded the native-history upload size limit.
+    #[error("finalization: Session history exceeds maximum size of {max_bytes} bytes")]
+    SessionHistoryTooLarge { max_bytes: u64 },
 
     /// Pi H2 needs a bounded native history; an unavailable hash cannot complete it.
-    #[error("checkpoint: Pi history has no safe bounded compact generation ({reason})")]
+    #[error("finalization: Pi history has no safe bounded compact generation ({reason})")]
     PiCompactGenerationUnavailable { reason: &'static str },
 
     /// Telemetry flush channel is unavailable because the uploader task was not

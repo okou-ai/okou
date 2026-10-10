@@ -10,7 +10,7 @@
 //!
 //! - End-to-end `send_event` -> session metadata capture for the Codex
 //!   `thread.started` event shape.
-//! - Checkpoint history is resolved from the launch-owned Codex sessions root.
+//! - Finalization history is resolved from the launch-owned Codex sessions root.
 //! - Invalid/non-Codex events do not persist Codex session metadata.
 
 mod common;
@@ -126,7 +126,7 @@ impl CodexResumeFixture {
     }
 }
 
-fn checkpoint_http_client(
+fn finalization_http_client(
     server: &MockServer,
 ) -> Result<guest_agent::http::HttpClient, guest_agent::error::AgentError> {
     guest_agent::http::HttpClient::with_api_config(
@@ -192,7 +192,7 @@ fn send_event_keeps_existing_codex_thread_id_for_ordinary_events() -> TestResult
 }
 
 #[test]
-fn recovery_checkpoint_resolves_history_from_codex_sessions_root() -> TestResult {
+fn recovery_finalization_resolves_history_from_codex_sessions_root() -> TestResult {
     let fixture = CodexResumeFixture::new()?;
     let thread_id = "0193abcd-ef01-7234-89ab-cdef01234567";
     let history = r#"{"type":"thread.started"}"#.to_string() + "\n";
@@ -231,7 +231,7 @@ fn recovery_checkpoint_resolves_history_from_codex_sessions_root() -> TestResult
     });
 
     let config = fixture.config(&server.base_url(), "test-token")?;
-    let http = checkpoint_http_client(&server)?;
+    let http = finalization_http_client(&server)?;
     let guest_runtime = guest_agent::run_context::GuestRuntime {
         config,
         paths: fixture.paths().clone(),
@@ -252,7 +252,7 @@ fn recovery_checkpoint_resolves_history_from_codex_sessions_root() -> TestResult
         ),
     );
     runtime.block_on(async {
-        let checkpoint = guest_agent::finalization::prepare_recovery_finalization_for_runtime(
+        let finalization = guest_agent::finalization::prepare_recovery_finalization_for_runtime(
             &guest_runtime,
             &session_metadata,
         )
@@ -263,7 +263,7 @@ fn recovery_checkpoint_resolves_history_from_codex_sessions_root() -> TestResult
             None,
             None,
             None,
-            checkpoint,
+            finalization,
         )
         .await
     })?;

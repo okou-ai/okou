@@ -1,6 +1,6 @@
 //! VAS artifact upload — SHA-256 hashing, tar.gz creation, S3 presigned upload.
 //!
-//! Flow (caller first walks the mount via [`walk_files_for_checkpoint`], then
+//! Flow (caller first walks the mount via [`walk_files_for_snapshot`], then
 //! invokes [`create_snapshot_with_attestation`] with the pre-walked file list):
 //! 1. POST `/storages/prepare` with file list to get version/upload metadata
 //! 2. If prepare found an existing version, validate the local archive inputs,
@@ -10,14 +10,14 @@
 //! 5. POST `/storages/commit`
 //!
 //! The pre-walked list intentionally defines artifact membership from files
-//! readable at checkpoint time. An unreadable descendant is omitted so one
-//! file or subtree does not fail the entire checkpoint; a new version can thus
+//! readable at finalization time. An unreadable descendant is omitted so one
+//! file or subtree does not fail the entire finalization; a new version can thus
 //! omit a path that existed in the mounted parent version. The list is not a
 //! completeness proof. The configured mount root must be opened and its
 //! directory listing initialized, but failures while enumerating descendants,
 //! opening child entries, reading metadata, or hashing file contents can omit an
-//! entry or subtree while the walk succeeds. The checkpoint caller at
-//! `crate::checkpoint::artifact::snapshot_artifact_entries` consumes this list
+//! entry or subtree while the walk succeeds. The finalization caller at
+//! `crate::finalization::artifact::snapshot_artifact_entries` consumes this list
 //! as the snapshot input; it does not add information about omitted entries.
 
 use crate::error::AgentError;
@@ -134,7 +134,7 @@ enum ManifestWriteError {
 #[derive(Debug)]
 pub(crate) enum WalkFilesError {
     Execution(String),
-    Checkpoint {
+    Finalization {
         message: String,
         elapsed: std::time::Duration,
         missing_root: bool,
@@ -145,7 +145,7 @@ impl WalkFilesError {
     pub(crate) fn is_missing_root(&self) -> bool {
         matches!(
             self,
-            Self::Checkpoint {
+            Self::Finalization {
                 missing_root: true,
                 ..
             }
@@ -153,7 +153,7 @@ impl WalkFilesError {
     }
 
     pub(crate) fn record_preserved_missing_root(self, storage_name: &str, mount_path: &str) {
-        if let Self::Checkpoint {
+        if let Self::Finalization {
             message, elapsed, ..
         } = self
         {
@@ -170,18 +170,18 @@ impl WalkFilesError {
     pub(crate) fn into_agent_error(self) -> AgentError {
         match self {
             Self::Execution(message) => AgentError::Execution(message),
-            Self::Checkpoint {
+            Self::Finalization {
                 message, elapsed, ..
             } => {
                 record_sandbox_op("artifact_hash_compute", elapsed, false, Some(&message));
                 log_error!(LOG_TAG, "{message}");
-                AgentError::Checkpoint(message)
+                AgentError::Finalization(message)
             }
         }
     }
 }
 
-pub(crate) async fn walk_files_for_checkpoint(
+pub(crate) async fn walk_files_for_snapshot(
     mount_path: &str,
 ) -> Result<Vec<FileEntry>, WalkFilesError> {
     log_info!(LOG_TAG, "Computing file hashes...");
@@ -205,7 +205,7 @@ pub(crate) async fn walk_files_for_checkpoint(
         Ok(files) => files,
         Err(e) => {
             let message = format!("Failed to walk artifact files: {e}");
-            return Err(WalkFilesError::Checkpoint {
+            return Err(WalkFilesError::Finalization {
                 message,
                 elapsed: hash_start.elapsed(),
                 missing_root: e.is_root_not_found(),
@@ -218,8 +218,8 @@ pub(crate) async fn walk_files_for_checkpoint(
 }
 
 /// Create a VAS snapshot using direct S3 upload. Caller provides the
-/// pre-walked file list (see [`walk_files_for_checkpoint`]) — this lets the
-/// checkpoint step share one walk between its skip-check fingerprint and the
+/// pre-walked file list (see [`walk_files_for_snapshot`]) — this lets the
+/// finalization step share one walk between its skip-check fingerprint and the
 /// snapshot upload.
 #[cfg(test)]
 pub(crate) async fn create_snapshot(
@@ -342,7 +342,7 @@ async fn validate_dedup_snapshot(
             false,
             None,
         );
-        return Err(AgentError::Checkpoint(
+        return Err(AgentError::Finalization(
             "Failed to validate archive inputs".into(),
         ));
     }
@@ -379,7 +379,7 @@ async fn commit_snapshot_step(
     .await
     {
         Ok(true) => Ok(()),
-        Ok(false) => Err(AgentError::Checkpoint("Commit failed".into())),
+        Ok(false) => Err(AgentError::Finalization("Commit failed".into())),
         Err(error) => Err(error),
     };
     record_sandbox_op(
@@ -392,7 +392,7 @@ async fn commit_snapshot_step(
 }
 
 fn extract_uploads(uploads: Option<PreparedUploads>) -> Result<PreparedUploads, AgentError> {
-    uploads.ok_or_else(|| AgentError::Checkpoint("No upload URLs in prepare response".into()))
+    uploads.ok_or_else(|| AgentError::Finalization("No upload URLs in prepare response".into()))
 }
 
 async fn create_archive_bundle(
@@ -423,11 +423,11 @@ async fn create_archive_bundle(
         match error {
             ArchiveBundleError::Archive(e) => {
                 log_error!(LOG_TAG, "Failed to create archive: {e}");
-                return Err(AgentError::Checkpoint("Failed to create archive".into()));
+                return Err(AgentError::Finalization("Failed to create archive".into()));
             }
             ArchiveBundleError::Manifest(e) => {
                 log_error!(LOG_TAG, "Failed to write manifest: {e}");
-                return Err(AgentError::Checkpoint(format!(
+                return Err(AgentError::Finalization(format!(
                     "Failed to write manifest: {e}"
                 )));
             }
@@ -485,7 +485,7 @@ async fn upload_archive_bundle(
         .await
     {
         record_sandbox_op("artifact_s3_upload", s3_start.elapsed(), false, None);
-        return Err(AgentError::Checkpoint(format!(
+        return Err(AgentError::Finalization(format!(
             "artifact archive upload failed: {e}"
         )));
     }
@@ -500,7 +500,7 @@ async fn upload_archive_bundle(
         .await
     {
         record_sandbox_op("artifact_s3_upload", s3_start.elapsed(), false, None);
-        return Err(AgentError::Checkpoint(format!(
+        return Err(AgentError::Finalization(format!(
             "artifact manifest upload failed: {e}"
         )));
     }
@@ -649,7 +649,7 @@ mod tests {
         assert!(
             matches!(
                 &err,
-                AgentError::Checkpoint(message) if message == "Empty prepare response"
+                AgentError::Finalization(message) if message == "Empty prepare response"
             ),
             "got: {err}"
         );
@@ -726,12 +726,12 @@ mod tests {
         let Err(err) = result else {
             panic!("create_snapshot unexpectedly succeeded");
         };
-        let AgentError::Checkpoint(checkpoint_message) = &err else {
-            panic!("expected checkpoint error, got: {err}");
+        let AgentError::Finalization(finalization_message) = &err else {
+            panic!("expected finalization error, got: {err}");
         };
         assert!(
-            checkpoint_message.contains("versionId"),
-            "got: {checkpoint_message}"
+            finalization_message.contains("versionId"),
+            "got: {finalization_message}"
         );
         prepare.assert_calls(1);
         archive_upload.assert_calls(0);
@@ -755,7 +755,7 @@ mod tests {
             .get("error")
             .and_then(serde_json::Value::as_str)
             .expect("artifact_prepare_api telemetry error");
-        assert_eq!(telemetry_error, checkpoint_message);
+        assert_eq!(telemetry_error, finalization_message);
         assert!(telemetry_error.contains("versionId"));
         Ok(())
     }
@@ -1106,8 +1106,8 @@ mod tests {
         )
         .await;
 
-        let Err(AgentError::Checkpoint(message)) = result else {
-            panic!("expected archive upload checkpoint error");
+        let Err(AgentError::Finalization(message)) = result else {
+            panic!("expected archive upload finalization error");
         };
         assert_eq!(
             message,
@@ -1205,8 +1205,8 @@ mod tests {
         )
         .await;
 
-        let Err(AgentError::Checkpoint(message)) = result else {
-            panic!("expected manifest upload checkpoint error");
+        let Err(AgentError::Finalization(message)) = result else {
+            panic!("expected manifest upload finalization error");
         };
         assert_eq!(
             message,
