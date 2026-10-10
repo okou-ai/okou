@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.1.42...runner-lifecycle-v0.2.0) (2026-10-10)
+
+
+### Features
+
+* **runner:** add passive host memory observation and calibration ([#38370](https://github.com/okou-ai/okou/issues/38370)) ([851e18c](https://github.com/okou-ai/okou/commit/851e18cbe272e59863a06cb3193c3c4e92891c1a))
+
 ## [0.1.42](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.1.41...runner-lifecycle-v0.1.42) (2026-10-09)
 
 ## [0.1.41](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.1.40...runner-lifecycle-v0.1.41) (2026-10-09)

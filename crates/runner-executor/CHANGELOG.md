@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.7.2](https://github.com/okou-ai/okou/compare/runner-executor-v0.7.1...runner-executor-v0.7.2) (2026-10-10)
+
+
+### Refactoring
+
+* **pi:** retire unversioned model config execution ([#38449](https://github.com/okou-ai/okou/issues/38449)) ([c628473](https://github.com/okou-ai/okou/commit/c62847319cb3ebbd41259d662f47905a1cb39863))
+
+
+### Performance Improvements
+
+* **test:** avoid rebuilding owned fixture buffers ([#38450](https://github.com/okou-ai/okou/issues/38450)) ([f5ad1ba](https://github.com/okou-ai/okou/commit/f5ad1ba1e2b4d6745ed80c869bf4fb9b222cfafc))
+
 ## [0.7.1](https://github.com/okou-ai/okou/compare/runner-executor-v0.7.0...runner-executor-v0.7.1) (2026-10-09)
 
 ## [0.7.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.6.3...runner-executor-v0.7.0) (2026-10-09)
