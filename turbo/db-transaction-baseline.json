@@ -1682,16 +1682,6 @@
       "owner": "<module>"
     },
     {
-      "id": "TX-0405",
-      "file": "turbo/packages/db/scripts/test-native-morning-brief-storage-retirement.ts",
-      "owner": "<module>"
-    },
-    {
-      "id": "TX-0406",
-      "file": "turbo/packages/db/scripts/test-native-morning-brief-storage-retirement.ts",
-      "owner": "<module>"
-    },
-    {
       "id": "TX-0407",
       "file": "turbo/packages/db/scripts/test-oauth-contract-hash-retirement.ts",
       "owner": "<module>"
