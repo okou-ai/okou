@@ -19,6 +19,7 @@ use runner_remote::guest_duplex::RunGuestChannels;
 use runner_types::ids::RunId;
 use sandbox::SandboxId;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use tokio::net::UnixStream;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
@@ -33,6 +34,11 @@ const PRE_AUTH_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_FRAME: usize = 64 * 1024;
 const MAX_CONNECTIONS: usize = 32;
 const MAX_HANDSHAKES: usize = 16;
+
+fn digest_of(ticket: &str) -> String {
+    hex::encode(Sha256::digest(ticket.as_bytes()))
+}
+
 mod authorization;
 use authorization::{Authorizations, Key, LEASE_WINDOW, RefreshTask};
 
@@ -74,7 +80,7 @@ pub(super) trait TicketConsumer: Send + Sync {
         runner_id: Uuid,
         origin: &str,
         ticket: &str,
-    ) -> Option<Uuid>;
+    ) -> Option<()>;
     async fn authorized(
         &self,
         runner_id: Uuid,
@@ -102,7 +108,7 @@ impl TicketConsumer for ApiTicketConsumer {
         runner_id: Uuid,
         origin: &str,
         ticket: &str,
-    ) -> Option<Uuid> {
+    ) -> Option<()> {
         let payload = ConsumeRequest {
             run_id,
             runner_id,
@@ -118,14 +124,13 @@ impl TicketConsumer for ApiTicketConsumer {
             .await
             .ok()?;
         let body: ConsumeResponse = read_authority_result(response).await?;
-        let epoch = Uuid::parse_str(&body.authorization_epoch).ok()?;
         (body.run_id.parse::<RunId>().ok() == Some(run_id)
             && body.runner_id.parse::<Uuid>().ok() == Some(runner_id)
             && body.origin == origin
             && !body.org_id.is_empty()
             && !body.user_id.is_empty()
-            && !epoch.is_nil())
-        .then_some(epoch)
+            && body.digest == digest_of(ticket))
+        .then_some(())
     }
 
     async fn authorized(
@@ -150,7 +155,7 @@ impl TicketConsumer for ApiTicketConsumer {
             .await
             .ok()?;
         let body: CheckResponse = read_authority_result(response).await?;
-        let unique: std::collections::HashSet<_> = body.authorized.iter().copied().collect();
+        let unique: std::collections::HashSet<_> = body.authorized.iter().cloned().collect();
         (unique.len() == body.authorized.len()
             && body.authorized.iter().all(|key| requested.contains(key)))
         .then_some(body.authorized)
@@ -491,14 +496,13 @@ async fn handle(
         }
         let origin = ctx.origin.as_deref()?;
         let started = tokio::time::Instant::now();
-        let authorization_epoch = ctx
-            .consumer
+        ctx.consumer
             .consume(first.run_id, ctx.runner_id, origin, &first.ticket)
             .await?;
         let lease = ctx.authorizations.track(
             Key {
                 run_id: first.run_id,
-                authorization_epoch,
+                digest: digest_of(&first.ticket),
             },
             started + LEASE_WINDOW,
         )?;

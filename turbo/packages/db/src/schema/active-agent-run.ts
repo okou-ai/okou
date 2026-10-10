@@ -51,11 +51,6 @@ export const activeAgentRuns = pgTable(
     nextAttemptAt: timestamp("next_attempt_at"),
     claimId: uuid("claim_id"),
     claimExpiresAt: timestamp("claim_expires_at"),
-    // Current WSS access revision, independent of Run/Guest execution lifetime.
-    // Old inserts use the default; owner revoke rotates it without stopping work.
-    wssAuthorizationEpoch: uuid("wss_authorization_epoch")
-      .notNull()
-      .defaultRandom(),
   },
   (table) => {
     return [

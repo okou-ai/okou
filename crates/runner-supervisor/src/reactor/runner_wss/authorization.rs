@@ -1,6 +1,6 @@
 //! Current WSS access only. These leases never own or cancel ordinary Runs.
-//! One listener-owned, bounded current-state read renews the consumed epoch;
-//! notifications and historical ticket rows are not authorization authority.
+//! One listener-owned, bounded writer read renews the exact consumed ticket
+//! together with current Run authority; notifications cannot renew access.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
@@ -14,11 +14,11 @@ pub(super) const LEASE_WINDOW: std::time::Duration = std::time::Duration::from_s
 const REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
 pub(super) const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(in crate::reactor) struct Key {
     pub run_id: RunId,
-    pub authorization_epoch: Uuid,
+    pub digest: String,
 }
 
 struct Entry {
@@ -35,7 +35,13 @@ pub(super) struct Authorizations {
 
 impl Authorizations {
     pub fn track(&self, key: Key, deadline: Instant) -> Option<Lease> {
-        if key.authorization_epoch.is_nil() || deadline <= Instant::now() {
+        if key.digest.len() != 64
+            || !key
+                .digest
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+            || deadline <= Instant::now()
+        {
             return None;
         }
         let mut entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
@@ -70,14 +76,14 @@ impl Authorizations {
                     .borrow()
                     .is_some_and(|deadline| deadline > now)
             })
-            .map(|entry| entry.key)
+            .map(|entry| entry.key.clone())
             .collect::<HashSet<_>>()
             .into_iter()
             .collect()
     }
 
     fn apply(&self, requested: &[Key], authorized: &[Key], deadline: Instant) {
-        let allowed: HashSet<_> = authorized.iter().copied().collect();
+        let allowed: HashSet<_> = authorized.iter().cloned().collect();
         if allowed.len() != authorized.len()
             || authorized.iter().any(|key| !requested.contains(key))
         {

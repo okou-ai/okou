@@ -150,7 +150,7 @@ export const rustTypeBindings = [
       {
         rustTypeName: "ConsumeResponse",
         rustDoc: [
-          "Exact redeemed audience/owner and current WSS access epoch; not Run cancellation.",
+          "Exact redeemed ticket digest, audience and owner; not Run cancellation.",
         ],
         fields: {
           runId: ["Exact redeemed Run."],
@@ -158,8 +158,8 @@ export const rustTypeBindings = [
           orgId: ["Verified owning organization."],
           userId: ["Verified owning user."],
           origin: ["Exact canonical WSS origin."],
-          authorizationEpoch: [
-            "Current WSS-only access revision, invalidated by owner revoke.",
+          digest: [
+            "SHA-256 of the one-use redeemed ticket; never the credential.",
           ],
         },
       },

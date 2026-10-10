@@ -2496,7 +2496,7 @@ pub mod runners {
 
     /// Official Runner ticket redemption and current WSS access authority.
     pub mod wss {
-        /// Exact redeemed audience/owner and current WSS access epoch; not Run cancellation.
+        /// Exact redeemed ticket digest, audience and owner; not Run cancellation.
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         #[serde(rename_all = "camelCase")]
         pub struct ConsumeResponse {
@@ -2510,8 +2510,8 @@ pub mod runners {
             pub user_id: String,
             /// Exact canonical WSS origin.
             pub origin: String,
-            /// Current WSS-only access revision, invalidated by owner revoke.
-            pub authorization_epoch: String,
+            /// SHA-256 of the one-use redeemed ticket; never the credential.
+            pub digest: String,
         }
     }
 }

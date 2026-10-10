@@ -1,12 +1,24 @@
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { runnerState } from "@okouai/db/schema/runner-state";
 import { runnerWssTickets } from "@okouai/db/schema/runner-wss-ticket";
 import { command } from "ccstate";
-import { and, eq, gt, inArray, isNull, lt, sql } from "drizzle-orm";
+import {
+  and,
+  eq,
+  gt,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  notExists,
+  or,
+  sql,
+} from "drizzle-orm";
 
+import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import {
@@ -40,7 +52,7 @@ export const issueRunnerWssTicket$ = command(
     const digest = digestOf(ticket);
     // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0240; new non-billing transactions are prohibited.
     return await set(writeDb$).transaction(async (tx) => {
-      // Serialize issue, consume and revoke with the run's terminal transition.
+      // Preserve the existing Run-row authority shared with consume/revoke.
       const [run] = await tx
         .select({ id: agentRuns.id })
         .from(agentRuns)
@@ -70,7 +82,7 @@ export const issueRunnerWssTicket$ = command(
         .innerJoin(runnerState, query.runnerStateJoin)
         .where(query.where);
       const target = runnerWssTargetFromRow(targetRow);
-      if (!target || !targetRow) {
+      if (!target) {
         return null;
       }
 
@@ -80,10 +92,6 @@ export const issueRunnerWssTicket$ = command(
         .where(
           and(
             eq(runnerWssTickets.runId, run.id),
-            eq(
-              runnerWssTickets.wssAuthorizationEpoch,
-              targetRow.authorizationEpoch,
-            ),
             gt(runnerWssTickets.expiresAt, databaseNow),
             isNull(runnerWssTickets.consumedAt),
             isNull(runnerWssTickets.revokedAt),
@@ -94,8 +102,8 @@ export const issueRunnerWssTicket$ = command(
         return null;
       }
 
-      // Opportunistic, indexed and bounded retention. Every issuance adds one
-      // row and can remove up to 100 rows older than a day; no broad DELETE.
+      // Indexed, bounded cleanup. Redemption expiry is NOT stream expiry:
+      // retain non-revoked consumed authority until its Run is retired.
       await tx.delete(runnerWssTickets).where(
         inArray(
           runnerWssTickets.digest,
@@ -103,15 +111,27 @@ export const issueRunnerWssTicket$ = command(
             .select({ digest: runnerWssTickets.digest })
             .from(runnerWssTickets)
             .where(
-              lt(
-                runnerWssTickets.expiresAt,
-                sql`${databaseNow} - interval '1 day'`,
+              and(
+                lt(
+                  runnerWssTickets.expiresAt,
+                  sql`${databaseNow} - interval '1 day'`,
+                ),
+                or(
+                  isNull(runnerWssTickets.consumedAt),
+                  isNotNull(runnerWssTickets.revokedAt),
+                  notExists(
+                    tx
+                      .select({ runId: activeAgentRuns.runId })
+                      .from(activeAgentRuns)
+                      .where(eq(activeAgentRuns.runId, runnerWssTickets.runId)),
+                  ),
+                ),
               ),
             )
             .orderBy(runnerWssTickets.expiresAt)
             .limit(100)
-            // Issuers hold different Run rows: do not wait on another issuer's
-            // cleanup row while holding a Run lock (cross-run deadlock risk).
+            // Retain the existing cleanup lock: never wait on another issuer's
+            // row while holding this Run (cross-run deadlock risk).
             .for("update", { skipLocked: true }),
         ),
       );
@@ -125,7 +145,6 @@ export const issueRunnerWssTicket$ = command(
           userId: args.owner.userId,
           runnerId: target.runnerId,
           origin: target.publicOrigin,
-          wssAuthorizationEpoch: targetRow.authorizationEpoch,
           createdAt: databaseNow,
           expiresAt: sql`${databaseNow} + interval '30 seconds'`,
         })
@@ -133,9 +152,6 @@ export const issueRunnerWssTicket$ = command(
       if (!issued) {
         throw new Error("WSS ticket insert returned no row");
       }
-
-      // Runner ID is a validated UUID from the winning official run claim; the
-      // browser receives this complete URL and never constructs its own host.
       return {
         wssUrl: `${target.publicOrigin}/ws/${target.runnerId}`,
         ticket,
@@ -159,14 +175,13 @@ export const consumeRunnerWssTicket$ = command(
         runId: string;
         runnerId: string;
         origin: string;
-        authorizationEpoch: string;
+        digest: string;
       })
     | null
   > => {
     const digest = digestOf(args.ticket);
     // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0241; new non-billing transactions are prohibited.
     return await set(writeDb$).transaction(async (tx) => {
-      // Digest lookup reveals no ticket or owner to the caller on failure.
       const [candidate] = await tx
         .select({ runId: runnerWssTickets.runId })
         .from(runnerWssTickets)
@@ -174,7 +189,6 @@ export const consumeRunnerWssTicket$ = command(
       if (!candidate || candidate.runId !== args.runId) {
         return null;
       }
-
       const [run] = await tx
         .select({ id: agentRuns.id })
         .from(agentRuns)
@@ -183,7 +197,6 @@ export const consumeRunnerWssTicket$ = command(
       if (!run) {
         return null;
       }
-
       const [stored] = await tx
         .select({
           runId: runnerWssTickets.runId,
@@ -191,7 +204,7 @@ export const consumeRunnerWssTicket$ = command(
           userId: runnerWssTickets.userId,
           runnerId: runnerWssTickets.runnerId,
           origin: runnerWssTickets.origin,
-          authorizationEpoch: runnerWssTickets.wssAuthorizationEpoch,
+          digest: runnerWssTickets.digest,
         })
         .from(runnerWssTickets)
         .where(
@@ -221,14 +234,10 @@ export const consumeRunnerWssTicket$ = command(
         .innerJoin(runnerState, query.runnerStateJoin)
         .where(query.where);
       const target = runnerWssTargetFromRow(targetRow);
-      // A revoke statement may miss a ticket committed during its Run-lock wait.
-      // Never let that old issuance adopt the newly rotated current epoch.
       if (
         !target ||
-        !targetRow ||
         target.runnerId !== stored.runnerId ||
-        target.publicOrigin !== stored.origin ||
-        targetRow.authorizationEpoch !== stored.authorizationEpoch
+        target.publicOrigin !== stored.origin
       ) {
         return null;
       }
@@ -238,10 +247,6 @@ export const consumeRunnerWssTicket$ = command(
         .where(
           and(
             eq(runnerWssTickets.digest, digest),
-            eq(
-              runnerWssTickets.wssAuthorizationEpoch,
-              stored.authorizationEpoch,
-            ),
             isNull(runnerWssTickets.consumedAt),
             isNull(runnerWssTickets.revokedAt),
             gt(runnerWssTickets.expiresAt, databaseNow),
@@ -253,7 +258,7 @@ export const consumeRunnerWssTicket$ = command(
   },
 );
 
-/** A one-off current-state read owned by the caller's cancellation. */
+/** Current consumed-ticket AND Run authority, owned by caller cancellation. */
 export const checkRunnerWssAuthorizations$ = command(
   async (
     { get },
@@ -262,94 +267,56 @@ export const checkRunnerWssAuthorizations$ = command(
       readonly origin: string;
       readonly authorizations: readonly {
         readonly runId: string;
-        readonly authorizationEpoch: string;
+        readonly digest: string;
       }[];
     },
     signal: AbortSignal,
   ) => {
     signal.throwIfAborted();
     const query = buildRunnerWssAuthorizationQuery({ ...args, now: nowDate() });
-    // db$ is a readonly handle to the DATABASE_URL writer, not a replica.
-    // Initial consume is still required locally; this cannot attach a Guest.
+    // db$ reads the same DATABASE_URL writer, never a replica. Initial one-use
+    // consumption and the local live Guest assignment remain mandatory.
     const rows = await get(db$)
       .select(query.selection)
       .from(agentRuns)
       .innerJoin(activeAgentRuns, query.activeRunJoin)
       .innerJoin(runnerState, query.runnerStateJoin)
+      .innerJoin(runnerWssTickets, query.ticketJoin)
       .where(query.where);
     signal.throwIfAborted();
     return rows.flatMap((row) => {
       const target = runnerWssTargetFromRow(row);
-      return target?.publicOrigin === args.origin
-        ? [{ runId: row.runId, authorizationEpoch: row.authorizationEpoch }]
+      return target?.publicOrigin === args.origin && row.origin === args.origin
+        ? [{ runId: row.runId, digest: row.digest }]
         : [];
     });
   },
 );
 
-/** Rotate current access and invalidate pending tickets in one committed result. */
+/** One atomic call revokes pending AND consumed tickets without cancelling work. */
 export const revokeRunnerWssTickets$ = command(
   async (
     { set },
     args: { readonly runId: string; readonly owner: RunOwner },
   ): Promise<boolean> => {
-    const db = set(writeDb$);
-    const ownedRun = db.$with("owned_run").as(
-      db
-        .select({ id: agentRuns.id })
-        .from(agentRuns)
-        .where(
-          and(
-            eq(agentRuns.id, args.runId),
-            eq(agentRuns.orgId, args.owner.orgId),
-            eq(agentRuns.userId, args.owner.userId),
-          ),
-        )
-        // Retain the same Run-row authority as issuance, consume and termination.
-        .for("update"),
-    );
-    const rotatedRun = db.$with("rotated_run").as(
-      db
-        .update(activeAgentRuns)
-        .set({ wssAuthorizationEpoch: randomUUID() })
-        .where(
-          and(
-            inArray(
-              activeAgentRuns.runId,
-              db.select({ id: ownedRun.id }).from(ownedRun),
-            ),
-            eq(activeAgentRuns.orgId, args.owner.orgId),
-            eq(activeAgentRuns.userId, args.owner.userId),
-          ),
-        )
-        .returning({ runId: activeAgentRuns.runId }),
-    );
-    const revokedTickets = db.$with("revoked_tickets").as(
-      db
-        .update(runnerWssTickets)
-        .set({ revokedAt: databaseNow })
-        .where(
-          and(
-            inArray(
-              runnerWssTickets.runId,
-              db.select({ id: ownedRun.id }).from(ownedRun),
-            ),
-            isNull(runnerWssTickets.consumedAt),
-            isNull(runnerWssTickets.revokedAt),
-          ),
-        )
-        .returning({ runId: runnerWssTickets.runId }),
-    );
-    // Epoch rotation and pending-ticket revocation commit in one statement.
-    // Issuance-epoch binding also fences tickets invisible to this snapshot.
-    // Keep success independent of active assignment or pending-ticket counts.
-    const [run] = await db
-      .with(ownedRun, rotatedRun, revokedTickets)
-      .select({ id: ownedRun.id })
-      .from(ownedRun)
-      .leftJoin(rotatedRun, eq(rotatedRun.runId, ownedRun.id))
-      .leftJoin(revokedTickets, eq(revokedTickets.runId, ownedRun.id))
+    // The routine retains this operation's existing Run-row lock, then takes
+    // a fresh UPDATE snapshot. A CTE's pre-lock snapshot can miss a concurrent
+    // issuer's commit. No new application transaction or coordination field.
+    const [result] = await set(writeDb$)
+      .select({
+        revoked: sql`public.revoke_runner_wss_tickets(
+          ${args.runId}::uuid, ${args.owner.orgId}, ${args.owner.userId}
+        )`.mapWith(pgBooleanDecoder),
+      })
+      .from(agentRuns)
+      .where(
+        and(
+          eq(agentRuns.id, args.runId),
+          eq(agentRuns.orgId, args.owner.orgId),
+          eq(agentRuns.userId, args.owner.userId),
+        ),
+      )
       .limit(1);
-    return Boolean(run);
+    return result?.revoked ?? false;
   },
 );

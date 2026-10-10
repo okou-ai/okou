@@ -11,7 +11,7 @@ const runIdSchema = z.uuid("Run ID must be a valid UUID").toLowerCase();
 const authorizationSchema = z
   .object({
     runId: runIdSchema,
-    authorizationEpoch: z.uuid().toLowerCase(),
+    digest: z.string().regex(/^[0-9a-f]{64}$/),
   })
   .strict();
 
@@ -54,7 +54,7 @@ export const runnerWssTicketsContract = c.router({
         orgId: z.string(),
         userId: z.string(),
         origin: z.string(),
-        authorizationEpoch: z.uuid(),
+        digest: z.string().regex(/^[0-9a-f]{64}$/),
       }),
       400: apiErrorSchema,
       401: apiErrorSchema,
@@ -80,7 +80,8 @@ export const runnerWssTicketsContract = c.router({
       401: apiErrorSchema,
       403: apiErrorSchema,
     },
-    summary: "Check current WSS authorization epochs from an official Runner",
+    summary:
+      "Check consumed WSS tickets and current Run authority from an official Runner",
   },
   revoke: {
     method: "POST",

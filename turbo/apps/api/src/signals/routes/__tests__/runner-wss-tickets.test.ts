@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { runnerWssTicketsContract } from "@okouai/api-contracts/contracts/runner-wss-tickets";
 import { describe, expect, it } from "vitest";
@@ -18,6 +18,10 @@ describe("direct Runner WSS ticket boundary", () => {
     authorization:
       "Bearer vm0_official_abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
   };
+
+  function digestOf(ticket: string) {
+    return createHash("sha256").update(ticket, "utf8").digest("hex");
+  }
 
   function client() {
     return setupApp({ context, routes: runnerWssTicketRoutes })(
@@ -181,9 +185,7 @@ describe("direct Runner WSS ticket boundary", () => {
       origin,
       orgId: f.actor.orgId,
       userId: f.actor.userId,
-      authorizationEpoch: expect.stringMatching(
-        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
-      ),
+      digest: digestOf(issued.body.ticket),
     });
     await f.api.requestCancelRun(f.actor, f.runId, [200]);
   });
@@ -252,9 +254,7 @@ describe("direct Runner WSS ticket boundary", () => {
       origin,
       orgId: f.actor.orgId,
       userId: f.actor.userId,
-      authorizationEpoch: expect.stringMatching(
-        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
-      ),
+      digest: digestOf(issued.body.ticket),
     });
     await accept(consume(f, issued.body.ticket), [404]);
     await f.api.requestCancelRun(f.actor, f.runId, [200]);
@@ -400,7 +400,7 @@ describe("direct Runner WSS ticket boundary", () => {
     const consumed = await accept(bootstrap(f), [200]);
     await accept(consume(f, consumed.body.ticket), [200]);
     const pending = [];
-    // A full old-epoch quota must not prevent fresh access after owner revoke.
+    // Revoked pending tickets must not consume the fresh 16-ticket quota.
     for (let index = 0; index < 16; index++) {
       pending.push(await accept(bootstrap(f), [200]));
     }
@@ -444,7 +444,7 @@ describe("direct Runner WSS ticket boundary", () => {
             authorizations: [
               {
                 runId: f.runId,
-                authorizationEpoch: raced.body.authorizationEpoch,
+                digest: raced.body.digest,
               },
             ],
           },
@@ -461,9 +461,7 @@ describe("direct Runner WSS ticket boundary", () => {
       origin,
       orgId: f.actor.orgId,
       userId: f.actor.userId,
-      authorizationEpoch: expect.stringMatching(
-        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
-      ),
+      digest: digestOf(fresh.body.ticket),
     });
     await f.api.requestCancelRun(f.actor, f.runId, [200]);
   });
@@ -474,7 +472,7 @@ describe("direct Runner WSS ticket boundary", () => {
     const admitted = await accept(consume(f, issued.body.ticket), [200]);
     const old = {
       runId: f.runId,
-      authorizationEpoch: admitted.body.authorizationEpoch,
+      digest: admitted.body.digest,
     };
     const check = (authorizations: (typeof old)[]) => {
       return client().check({
@@ -485,7 +483,7 @@ describe("direct Runner WSS ticket boundary", () => {
     const current = await accept(check([old]), [200]);
     expect(current.body).toStrictEqual({ authorized: [old] });
     expect(current.headers.get("Cache-Control")).toBe("no-store");
-    // Wrong owner cannot rotate a consumed stream's epoch.
+    // Wrong owner cannot revoke a consumed stream's ticket.
     await f.bdd.readMe(f.bdd.user({ orgId: f.actor.orgId }));
     await accept(
       client().revoke({
@@ -513,10 +511,10 @@ describe("direct Runner WSS ticket boundary", () => {
     // Same live Run remains eligible; only its WSS access changed.
     const fresh = await accept(bootstrap(f), [200]);
     const next = await accept(consume(f, fresh.body.ticket), [200]);
-    expect(next.body.authorizationEpoch).not.toBe(old.authorizationEpoch);
+    expect(next.body.digest).not.toBe(old.digest);
     const newer = {
       runId: f.runId,
-      authorizationEpoch: next.body.authorizationEpoch,
+      digest: next.body.digest,
     };
     expect((await accept(check([old, newer]), [200])).body).toStrictEqual({
       authorized: [newer],
@@ -533,7 +531,7 @@ describe("direct Runner WSS ticket boundary", () => {
     const admitted = await accept(consume(f, issued.body.ticket), [200]);
     const key = {
       runId: f.runId,
-      authorizationEpoch: admitted.body.authorizationEpoch,
+      digest: admitted.body.digest,
     };
     const body = { runnerId: f.runnerId, origin, authorizations: [key] };
     const missing = await accept(client().check({ headers: {}, body }), [401]);
@@ -552,7 +550,7 @@ describe("direct Runner WSS ticket boundary", () => {
       { ...body, authorizations: [{ ...key, runId: randomUUID() }] },
       {
         ...body,
-        authorizations: [{ ...key, authorizationEpoch: randomUUID() }],
+        authorizations: [{ ...key, digest: "0".repeat(64) }],
       },
     ]) {
       expect(
@@ -588,7 +586,7 @@ describe("direct Runner WSS ticket boundary", () => {
         headers: officialHeaders,
         body: {
           ...body,
-          authorizations: [{ ...key, authorizationEpoch: "invalid" }],
+          authorizations: [{ ...key, digest: "invalid" }],
         },
       }),
       [400],
@@ -605,6 +603,96 @@ describe("direct Runner WSS ticket boundary", () => {
       (await accept(client().check({ headers: officialHeaders, body }), [200]))
         .body,
     ).toStrictEqual({ authorized: [key] });
+    await f.api.requestCancelRun(f.actor, f.runId, [200]);
+  });
+
+  it("requires one-use consumption before a ticket can renew established access", async () => {
+    const f = await setup();
+    const issued = await accept(bootstrap(f), [200]);
+    const key = { runId: f.runId, digest: digestOf(issued.body.ticket) };
+    const check = () => {
+      return client().check({
+        headers: officialHeaders,
+        body: { runnerId: f.runnerId, origin, authorizations: [key] },
+      });
+    };
+    expect((await accept(check(), [200])).body).toStrictEqual({
+      authorized: [],
+    });
+    const consumed = await accept(consume(f, issued.body.ticket), [200]);
+    expect(consumed.body.digest).toBe(key.digest);
+    expect((await accept(check(), [200])).body).toStrictEqual({
+      authorized: [key],
+    });
+    await f.api.requestCancelRun(f.actor, f.runId, [200]);
+  });
+
+  it("retains consumed authority beyond redemption expiry and bounded daily cleanup", async () => {
+    const f = await setup();
+    const issued = await accept(bootstrap(f), [200]);
+    const consumed = await accept(consume(f, issued.body.ticket), [200]);
+    const key = { runId: f.runId, digest: consumed.body.digest };
+    mockNow(now() + 2 * 24 * 60 * 60 * 1000);
+    await f.api.requestHeartbeatRunner(true, [200], {
+      runnerId: f.runnerId,
+      group: f.group,
+      mode: "running",
+      snapshotSequence: 2,
+      wssIngressServiceActive: true,
+    });
+    // New issuance exercises the real cleanup path with the old row >1 day old.
+    await accept(bootstrap(f), [200]);
+    expect(
+      (
+        await accept(
+          client().check({
+            headers: officialHeaders,
+            body: { runnerId: f.runnerId, origin, authorizations: [key] },
+          }),
+          [200],
+        )
+      ).body,
+    ).toStrictEqual({ authorized: [key] });
+    await accept(consume(f, issued.body.ticket), [404]);
+    await accept(revoke(f), [204]);
+    expect(
+      (
+        await accept(
+          client().check({
+            headers: officialHeaders,
+            body: { runnerId: f.runnerId, origin, authorizations: [key] },
+          }),
+          [200],
+        )
+      ).body,
+    ).toStrictEqual({ authorized: [] });
+    await f.api.requestCancelRun(f.actor, f.runId, [200]);
+  });
+
+  it("revokes every consumed ticket, not just pending tickets or one connection", async () => {
+    const f = await setup();
+    const authorizations: { runId: string; digest: string }[] = [];
+    for (let index = 0; index < 2; index++) {
+      const issued = await accept(bootstrap(f), [200]);
+      const consumed = await accept(consume(f, issued.body.ticket), [200]);
+      authorizations.push({ runId: f.runId, digest: consumed.body.digest });
+    }
+    const check = () => {
+      return client().check({
+        headers: officialHeaders,
+        body: { runnerId: f.runnerId, origin, authorizations },
+      });
+    };
+    const granted = await accept(check(), [200]);
+    expect(granted.body.authorized).toHaveLength(2);
+    expect(granted.body.authorized).toStrictEqual(
+      expect.arrayContaining(authorizations),
+    );
+    await accept(revoke(f), [204]);
+    expect((await accept(check(), [200])).body).toStrictEqual({
+      authorized: [],
+    });
+    await accept(bootstrap(f), [200]);
     await f.api.requestCancelRun(f.actor, f.runId, [200]);
   });
 

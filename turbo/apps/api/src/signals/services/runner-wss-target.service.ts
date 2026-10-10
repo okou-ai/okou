@@ -1,8 +1,19 @@
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { runnerState } from "@okouai/db/schema/runner-state";
+import { runnerWssTickets } from "@okouai/db/schema/runner-wss-ticket";
 import { command } from "ccstate";
-import { and, eq, gt, inArray, like, lte, or } from "drizzle-orm";
+import {
+  and,
+  eq,
+  gt,
+  inArray,
+  isNotNull,
+  isNull,
+  like,
+  lte,
+  or,
+} from "drizzle-orm";
 
 import { wssOriginFromRunnerHostname } from "../../lib/runner-wss-target-config";
 
@@ -48,7 +59,6 @@ function targetSelection() {
     runnerHostname: agentRuns.runnerHostname,
     mode: runnerState.mode,
     lastSeenAt: runnerState.lastSeenAt,
-    authorizationEpoch: activeAgentRuns.wssAuthorizationEpoch,
   };
 }
 const activeRunJoin = and(
@@ -61,27 +71,39 @@ const runnerStateJoin = and(
   eq(runnerState.runnerGroup, agentRuns.runnerGroup),
 );
 
-/** Bounded exact current-epoch lookup; the command reads its writer connection. */
+/** Bounded consumed-ticket lookup joined to current writer-backed Run authority. */
 export function buildRunnerWssAuthorizationQuery(args: {
   readonly runnerId: string;
   readonly now: Date;
   readonly authorizations: readonly {
     readonly runId: string;
-    readonly authorizationEpoch: string;
+    readonly digest: string;
   }[];
 }) {
   return {
-    selection: targetSelection(),
+    selection: {
+      ...targetSelection(),
+      digest: runnerWssTickets.digest,
+      origin: runnerWssTickets.origin,
+    },
     activeRunJoin,
     runnerStateJoin,
+    ticketJoin: and(
+      eq(runnerWssTickets.runId, agentRuns.id),
+      eq(runnerWssTickets.orgId, agentRuns.orgId),
+      eq(runnerWssTickets.userId, agentRuns.userId),
+      eq(runnerWssTickets.runnerId, agentRuns.runnerId),
+    ),
     where: and(
       liveWssConditions(args.now),
       eq(agentRuns.runnerId, args.runnerId),
+      isNotNull(runnerWssTickets.consumedAt),
+      isNull(runnerWssTickets.revokedAt),
       or(
         ...args.authorizations.map((entry) => {
           return and(
             eq(agentRuns.id, entry.runId),
-            eq(activeAgentRuns.wssAuthorizationEpoch, entry.authorizationEpoch),
+            eq(runnerWssTickets.digest, entry.digest),
           );
         }),
       ),

@@ -15,9 +15,22 @@ use tokio_tungstenite::tungstenite::protocol::Message;
 struct MockTickets {
     run: RunId,
     seen: Mutex<HashSet<String>>,
-    epoch: Mutex<Uuid>,
+    revoked: Mutex<HashSet<String>>,
     available: std::sync::atomic::AtomicBool,
     checks: std::sync::atomic::AtomicUsize,
+}
+
+impl MockTickets {
+    fn revoke_all(&self) {
+        let digests: Vec<_> = self
+            .seen
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|ticket| digest_of(ticket))
+            .collect();
+        self.revoked.lock().unwrap().extend(digests);
+    }
 }
 
 #[async_trait]
@@ -28,7 +41,7 @@ impl TicketConsumer for MockTickets {
         runner_id: Uuid,
         origin: &str,
         ticket: &str,
-    ) -> Option<Uuid> {
+    ) -> Option<()> {
         if run_id != self.run || runner_id.is_nil() || origin != "wss://runner.okou.ai:443" {
             return None;
         }
@@ -36,7 +49,7 @@ impl TicketConsumer for MockTickets {
             .lock()
             .unwrap()
             .insert(ticket.to_owned())
-            .then(|| *self.epoch.lock().unwrap())
+            .then_some(())
     }
 
     async fn authorized(
@@ -53,12 +66,17 @@ impl TicketConsumer for MockTickets {
         {
             return None;
         }
-        let epoch = *self.epoch.lock().unwrap();
+        let seen = self.seen.lock().unwrap();
+        let revoked = self.revoked.lock().unwrap();
         Some(
             requested
                 .iter()
-                .copied()
-                .filter(|key| key.run_id == self.run && key.authorization_epoch == epoch)
+                .filter(|key| {
+                    key.run_id == self.run
+                        && !revoked.contains(&key.digest)
+                        && seen.iter().any(|ticket| digest_of(ticket) == key.digest)
+                })
+                .cloned()
                 .collect(),
         )
     }
@@ -77,10 +95,10 @@ impl TicketConsumer for HeldTickets {
         _runner_id: Uuid,
         _origin: &str,
         _ticket: &str,
-    ) -> Option<Uuid> {
+    ) -> Option<()> {
         let resume = self.resume.lock().unwrap().take().unwrap();
         self.started.notify_one();
-        resume.await.ok().map(|()| Uuid::from_u128(1))
+        resume.await.ok()
     }
 
     async fn authorized(
@@ -184,7 +202,7 @@ impl Fixture {
         let tickets = Arc::new(MockTickets {
             run,
             seen: Mutex::new(HashSet::new()),
-            epoch: Mutex::new(Uuid::from_u128(1)),
+            revoked: Mutex::new(HashSet::new()),
             available: std::sync::atomic::AtomicBool::new(true),
             checks: std::sync::atomic::AtomicUsize::new(0),
         });
@@ -544,7 +562,7 @@ async fn consume_uses_official_credential_and_checks_complete_api_result() {
     let consumer = ApiTicketConsumer::new(http, "official-test-token".to_owned());
     let matching = serde_json::json!({
         "runId": run, "runnerId": runner, "origin": origin,
-        "orgId": "org", "userId": "user", "authorizationEpoch": Uuid::from_u128(1)
+        "orgId": "org", "userId": "user", "digest": digest_of(&ticket)
     });
     for (label, change) in [
         ("matching", None),
@@ -563,17 +581,11 @@ async fn consume_uses_official_credential_and_checks_complete_api_result() {
         ("empty org", Some(("orgId", serde_json::json!("")))),
         ("empty user", Some(("userId", serde_json::json!("")))),
         ("invalid user", Some(("userId", serde_json::Value::Null))),
+        ("null digest", Some(("digest", serde_json::Value::Null))),
+        ("invalid digest", Some(("digest", serde_json::json!("bad")))),
         (
-            "null epoch",
-            Some(("authorizationEpoch", serde_json::Value::Null)),
-        ),
-        (
-            "invalid epoch",
-            Some(("authorizationEpoch", serde_json::json!("bad"))),
-        ),
-        (
-            "nil epoch",
-            Some(("authorizationEpoch", serde_json::json!(Uuid::nil()))),
+            "wrong ticket digest",
+            Some(("digest", serde_json::json!("0".repeat(64)))),
         ),
     ] {
         let expected = change.is_none();
@@ -604,10 +616,7 @@ async fn consume_uses_official_credential_and_checks_complete_api_result() {
         request.delete_async().await;
     }
     let mut old_api = matching.clone();
-    old_api
-        .as_object_mut()
-        .unwrap()
-        .remove("authorizationEpoch");
+    old_api.as_object_mut().unwrap().remove("digest");
     let mut oversized = matching.clone();
     oversized["orgId"] = serde_json::json!("x".repeat(5000));
     for (status, response) in [(200, old_api), (201, matching), (200, oversized)] {
@@ -1003,7 +1012,7 @@ async fn owner_revoke_cancels_pending_guest_activation_before_auth_ack() {
     tokio::time::timeout(Duration::from_secs(2), activation.started.notified())
         .await
         .expect("the actual registry must enter the pending provider activation");
-    *fixture.tickets.epoch.lock().unwrap() = Uuid::from_u128(2);
+    fixture.tickets.revoke_all();
     // Earlier than the five-second pre-auth timer: observed denial must cancel
     // an already pending Guest activation, not wait for that unrelated timeout.
     let closed = tokio::time::timeout(Duration::from_secs(4), ws.next())
@@ -1045,7 +1054,7 @@ async fn owner_revoke_closes_idle_wss_without_ending_run_and_fresh_ticket_reconn
         ws.next().await.unwrap().unwrap().into_text().unwrap(),
         r#"{"type":"auth.ok"}"#
     );
-    *fixture.tickets.epoch.lock().unwrap() = Uuid::from_u128(2);
+    fixture.tickets.revoke_all();
     let closed = tokio::time::timeout(LEASE_WINDOW + Duration::from_secs(1), ws.next())
         .await
         .unwrap();
@@ -1148,14 +1157,14 @@ async fn http_control_failure_closes_real_guest_wss_without_cancelling_execution
     use httpmock::prelude::*;
     let server = MockServer::start_async().await;
     let mut fixture = Fixture::new().await;
-    let epoch = Uuid::new_v4();
+    let digest = digest_of(&"A".repeat(43));
     let consume = server.mock_async(|when, then| {
         when.method(POST).path("/api/runners/wss/tickets/consume")
             .header("authorization", "Bearer official-test-token")
             .json_body_obj(&serde_json::json!({"runId": fixture.run, "runnerId": fixture.runner,
                 "origin": fixture.ctx.origin, "ticket": "A".repeat(43)}));
         then.status(200).json_body(serde_json::json!({"runId": fixture.run, "runnerId": fixture.runner,
-            "origin": fixture.ctx.origin, "orgId": "org-test", "userId": "owner-test", "authorizationEpoch": epoch}));
+            "origin": fixture.ctx.origin, "orgId": "org-test", "userId": "owner-test", "digest": digest}));
     }).await;
     let check = server
         .mock_async(|when, then| {
@@ -1164,7 +1173,7 @@ async fn http_control_failure_closes_real_guest_wss_without_cancelling_execution
                 .header("authorization", "Bearer official-test-token")
                 .json_body_obj(
                     &serde_json::json!({"runnerId": fixture.runner, "origin": fixture.ctx.origin,
-                "authorizations": [{"runId": fixture.run, "authorizationEpoch": epoch}]}),
+                "authorizations": [{"runId": fixture.run, "digest": digest}]}),
                 );
             then.status(503);
         })
@@ -1222,7 +1231,7 @@ async fn check_uses_official_auth_and_rejects_unsolicited_duplicate_and_malforme
     let runner = Uuid::new_v4();
     let key = Key {
         run_id: RunId::new_v4(),
-        authorization_epoch: Uuid::new_v4(),
+        digest: "1".repeat(64),
     };
     let origin = "wss://runner.okou.ai:443";
     let consumer = ApiTicketConsumer::new(
@@ -1240,11 +1249,11 @@ async fn check_uses_official_auth_and_rejects_unsolicited_duplicate_and_malforme
         (serde_json::json!({"authorized": []}), true),
         (serde_json::json!({"authorized": [key, key]}), false),
         (
-            serde_json::json!({"authorized": [{"runId": key.run_id, "authorizationEpoch": Uuid::new_v4()}]}),
+            serde_json::json!({"authorized": [{"runId": key.run_id, "digest": "2".repeat(64)}]}),
             false,
         ),
         (
-            serde_json::json!({"authorized": [{"runId": RunId::new_v4(), "authorizationEpoch": key.authorization_epoch}]}),
+            serde_json::json!({"authorized": [{"runId": RunId::new_v4(), "digest": key.digest}]}),
             false,
         ),
         (serde_json::json!({"authorized": "invalid"}), false),
@@ -1257,7 +1266,10 @@ async fn check_uses_official_auth_and_rejects_unsolicited_duplicate_and_malforme
             then.status(200).json_body(response);
         }).await;
         assert_eq!(
-            consumer.authorized(runner, origin, &[key]).await.is_some(),
+            consumer
+                .authorized(runner, origin, std::slice::from_ref(&key))
+                .await
+                .is_some(),
             valid
         );
         request.assert_async().await;
@@ -1270,6 +1282,47 @@ async fn check_uses_official_auth_and_rejects_unsolicited_duplicate_and_malforme
             .await
             .is_none()
     );
+}
+
+#[tokio::test]
+async fn maximum_distinct_ticket_batch_fits_the_bounded_control_response() {
+    use httpmock::prelude::*;
+    let server = MockServer::start_async().await;
+    let runner = Uuid::new_v4();
+    let run_id = RunId::new_v4();
+    let requested: Vec<_> = (0..MAX_CONNECTIONS)
+        .map(|index| Key {
+            run_id,
+            digest: format!("{index:064x}"),
+        })
+        .collect();
+    let response = serde_json::json!({"authorized": requested});
+    assert!(serde_json::to_vec(&response).unwrap().len() <= 4096);
+    let request = server
+        .mock_async(|when, then| {
+            when.method(POST)
+                .path("/api/runners/wss/authorizations/check")
+                .header("authorization", "Bearer official-test-token");
+            then.status(200).json_body(response);
+        })
+        .await;
+    let consumer = ApiTicketConsumer::new(
+        HttpClient::new(runner_provider::http::HttpClientConfig {
+            api_url: server.base_url(),
+            vercel_bypass: None,
+            client_session_id: "wss-max-batch-test".into(),
+            runner_version: env!("CARGO_PKG_VERSION"),
+        })
+        .unwrap(),
+        "official-test-token".into(),
+    );
+    assert_eq!(
+        consumer
+            .authorized(runner, "wss://runner.okou.ai:443", &requested)
+            .await,
+        Some(requested)
+    );
+    request.assert_async().await;
 }
 
 #[tokio::test]

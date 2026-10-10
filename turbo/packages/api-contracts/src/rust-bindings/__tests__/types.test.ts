@@ -351,7 +351,7 @@ describe("Rust type bindings", () => {
     );
   });
 
-  it("retains the complete WSS consume authority with a required epoch", () => {
+  it("retains the complete WSS consume proof with the existing ticket digest", () => {
     const binding = rustTypeBindings.find((entry) => {
       return (
         entry.rustModulePath.join("/") === "runners/wss" &&
@@ -364,15 +364,8 @@ describe("Rust type bindings", () => {
     expect(
       z.toJSONSchema(runnerWssTicketsContract.consume.responses[200]),
     ).toMatchObject({
-      required: [
-        "runId",
-        "runnerId",
-        "orgId",
-        "userId",
-        "origin",
-        "authorizationEpoch",
-      ],
-      properties: { authorizationEpoch: { type: "string", format: "uuid" } },
+      required: ["runId", "runnerId", "orgId", "userId", "origin", "digest"],
+      properties: { digest: { type: "string", pattern: "^[0-9a-f]{64}$" } },
     });
     const rendered = renderRustTypes(rustTypeBindings);
     const body = rendered.match(
@@ -384,7 +377,7 @@ describe("Rust type bindings", () => {
       "org_id",
       "user_id",
       "origin",
-      "authorization_epoch",
+      "digest",
     ]) {
       expect(body).toContain(`pub ${field}: String,`);
     }
