@@ -159,6 +159,44 @@ An explicitly accepted breaking cutover must record the affected consumers,
 accepted interruption, migration order, and rollback boundary in its owning
 issue or PR. Removing historical notes does not establish that acceptance.
 
+### Desktop Response Transforms
+
+Installed Desktop builds decode bound responses strictly and change only after
+a Desktop release reaches them, while the API deploys shortly after merge. A
+shape-only breaking change to a Desktop-consumed `2xx` response can keep serving
+the previous shape to those builds through a response transform registered in
+[`client-transforms/desktop.ts`](../turbo/packages/api-contracts/src/client-transforms/desktop.ts).
+
+- **Selection.** The API applies transforms only to `2xx` bodies of requests
+  that send `X-Client-Type: Desktop` (exact) and a stable `x.y.z`
+  `X-Client-Version`. An entry matches the contract method, path template, and
+  status; a version `v` receives it when `maxVersion` is `null` or
+  `v <= maxVersion`. Matching entries run in registry order. Other clients and
+  missing, prerelease, or unparseable versions receive the current body.
+- **Response-only.** Transforms never rewrite requests, non-`2xx` bodies, or
+  another client's responses. A change to request shapes, error contracts, or
+  semantics uses the prepare, migrate, and clean-up phases above instead.
+- **Validation order.** The handler's body is validated against the current
+  contract first. The transform receives that validated body, and its output is
+  not validated again because it is the old contract by design. Both
+  serialization paths, including observed response sizes, use the transformed
+  body.
+- **Writing a transform.** Make it a pure function of the current body: parse
+  it with the current response schema and build the old shape from the result.
+  Do not read request state, storage, or time. A transform that throws fails
+  the request with a server error; never fall back to the current shape.
+
+Test each transform by copying
+[the transform template](../turbo/packages/api-contracts/src/client-transforms/__tests__/transform-template.test.ts).
+Assert its output against an explicit JSON Schema of the old shape, taken from
+the route's `responses["<status>"].schema` in the production runtime API schema
+snapshot (`current.json` in the `runtime-api-schema-prod` release), and assert
+that the current body no longer satisfies it. The runtime selection and
+serialization are covered by
+[the API fixture test](../turbo/apps/api/src/signals/context/__tests__/client-response-transforms.test.ts),
+which injects a fixture registry through `createAppWithRoutes`; tests never
+edit the real registry.
+
 ### Coupled Guest Disk and Retained-Image Contracts
 
 A Guest disk cutover couples the Runner/Guest build, device and mount identity,
