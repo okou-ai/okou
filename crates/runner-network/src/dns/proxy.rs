@@ -5,7 +5,7 @@ use tokio::io::AsyncReadExt;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
-use sandbox_firecracker::{DNS_READINESS_HOSTNAME, DNS_READINESS_IPV4};
+use guest_contracts::dns_readiness::{DNS_READINESS_HOSTNAME, DNS_READINESS_IPV4};
 
 use super::log::tail_stderr;
 use super::port::DnsPortReservation;

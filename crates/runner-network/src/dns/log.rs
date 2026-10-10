@@ -3,7 +3,7 @@ use std::io::SeekFrom;
 use std::path::Path;
 
 use chrono::{DateTime, Utc};
-use sandbox_firecracker::DNS_READINESS_HOSTNAME;
+use guest_contracts::dns_readiness::DNS_READINESS_HOSTNAME;
 use tokio::io::{AsyncBufRead, AsyncReadExt, AsyncSeekExt};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
