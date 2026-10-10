@@ -95,6 +95,30 @@ class TestAnthropicSseUsageExtractor:
         )
         assert usage == {}
 
+    def test_completed_event_identity_does_not_leak_into_later_events(self):
+        parse_errors: list[tuple[str, str]] = []
+        accounting_events: list[str] = []
+        parse, usage = create_anthropic_messages_sse_usage_extractor(
+            on_parse_error=lambda event, error: parse_errors.append((event, error)),
+            on_accounting_event=accounting_events.append,
+        )
+        parse(
+            b"event: message_start\n"
+            b'data: {"type":"message_start","message":{"id":"msg_1",'
+            b'"model":"claude-sonnet-4-6","usage":{"input_tokens":3}}}\n\n'
+            # This malformed event has no usable identity of its own.
+            b'data: {"usage":{"output_tokens":99},invalid}\n\n'
+            b'data: {"type":"message_delta","usage":{"output_tokens":7}}\n\n'
+        )
+        assert usage == {
+            "message_id": "msg_1",
+            "model": "claude-sonnet-4-6",
+            "tokens.input": 3,
+            "tokens.output": 7,
+        }
+        assert accounting_events == ["message_start", "message_delta"]
+        assert parse_errors == []
+
     @pytest.mark.parametrize("with_parse_error_callback", [False, True])
     def test_malformed_usage_event_recovers_with_optional_parse_error_callback(
         self, with_parse_error_callback

@@ -56,7 +56,11 @@ def test_unsafe_url_codepoint_contract(value: str, expected: bool):
 def test_unsafe_url_codepoint_matches_numeric_policy_for_every_codepoint():
     for codepoint in range(0x110000):
         value = chr(codepoint)
-        expected = _numeric_unsafe_url_codepoint_policy(value)
+        expected = (
+            codepoint < url_syntax.ASCII_CONTROL_MAX
+            or codepoint == url_syntax.ASCII_DELETE
+            or 0xD800 <= codepoint <= 0xDFFF
+        )
         # Keep the exhaustive oracle without running pytest's assertion
         # explanation machinery for each of the 1,114,112 successful checks.
         if url_syntax.has_unsafe_url_codepoint(value) is not expected:
