@@ -62,12 +62,22 @@ async fn incomplete_headers_and_bodies_expire() {
         stream.write_all(&prefix_and_body).await.unwrap();
         streams.push(stream);
     }
-    futures_util::future::join_all(
+    // The listener assigns each deadline before spawning its handler. A later
+    // request's response proves all earlier FIFO connections were accepted.
+    expect_terminate_available(&fixture.sock_path).await;
+    let closed = futures_util::future::join_all(
         streams
             .iter_mut()
             .map(|stream| expect_closed(stream, Duration::from_secs(6))),
-    )
-    .await;
+    );
+    tokio::pin!(closed);
+    assert!(futures_util::poll!(closed.as_mut()).is_pending());
+    // Arm the unchanged six-second observers first, then expire only the
+    // server's five-second receive timers. Resume before any real socket I/O.
+    tokio::time::pause();
+    tokio::time::advance(Duration::from_secs(5)).await;
+    tokio::time::resume();
+    closed.await;
     expect_terminate_available(&fixture.sock_path).await;
     handle.shutdown().await;
 }
@@ -78,11 +88,8 @@ async fn receive_deadline_spans_header_and_body() {
     let mut handle = fixture.spawn_default(CancellationToken::new());
     let stream = UnixStream::connect(&fixture.sock_path).await.unwrap();
     let (mut reader, mut writer) = stream.into_split();
-    let send = async {
-        writer.write_all(&[0, 0]).await.unwrap();
-        tokio::time::sleep(Duration::from_secs(3)).await;
-        writer.write_all(&[4, 0, b'{']).await.unwrap();
-    };
+    writer.write_all(&[0, 0]).await.unwrap();
+    expect_terminate_available(&fixture.sock_path).await;
     let receive = async {
         let error = tokio::time::timeout(Duration::from_secs(6), reader.read_u8())
             .await
@@ -90,8 +97,23 @@ async fn receive_deadline_spans_header_and_body() {
             .unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::UnexpectedEof);
     };
-
-    tokio::join!(send, receive);
+    tokio::pin!(receive);
+    assert!(futures_util::poll!(receive.as_mut()).is_pending());
+    tokio::time::pause();
+    tokio::time::advance(Duration::from_secs(3)).await;
+    tokio::time::resume();
+    writer.write_all(&[4, 0, b'{']).await.unwrap();
+    expect_terminate_available(&fixture.sock_path).await;
+    assert!(
+        futures_util::poll!(receive.as_mut()).is_pending(),
+        "the incomplete request must stay open before its receive deadline"
+    );
+    // Keep the observer armed from the header phase: restarting the server's
+    // deadline after body progress must still miss the six-second bound.
+    tokio::time::pause();
+    tokio::time::advance(Duration::from_secs(2)).await;
+    tokio::time::resume();
+    receive.await;
     expect_terminate_available(&fixture.sock_path).await;
     handle.shutdown().await;
 }
@@ -147,7 +169,14 @@ async fn maximum_frame_expires_and_releases_entire_byte_budget() {
     let fixture = ControlServerFixture::new();
     let mut handle = fixture.spawn_default(CancellationToken::new());
     let mut stream = partial_body(&fixture.sock_path, MAX_FRAME_PAYLOAD_SIZE).await;
-    expect_closed(&mut stream, Duration::from_secs(6)).await;
+    // partial_body proves the handler consumed real bytes and armed its timer.
+    let closed = expect_closed(&mut stream, Duration::from_secs(6));
+    tokio::pin!(closed);
+    assert!(futures_util::poll!(closed.as_mut()).is_pending());
+    tokio::time::pause();
+    tokio::time::advance(Duration::from_secs(5)).await;
+    tokio::time::resume();
+    closed.await;
 
     let mut replacement = partial_body(&fixture.sock_path, MAX_FRAME_PAYLOAD_SIZE).await;
     handle.shutdown().await;
