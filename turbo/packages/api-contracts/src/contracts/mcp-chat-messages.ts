@@ -14,7 +14,8 @@ const messageAnchorSchema = z
     {
       message: "Provide eventId or seqId from a real message reference",
     },
-  );
+  )
+  .meta({ minProperties: 1 });
 
 export const mcpGetChatMessagesInputSchema = z
   .strictObject({
@@ -32,7 +33,8 @@ export const mcpGetChatMessagesInputSchema = z
       message:
         "Use around only for the first page; continue with cursor and the same threadId, runId and limit",
     },
-  );
+  )
+  .meta({ not: { required: ["around", "cursor"] } });
 
 const messageFileSchema = z.strictObject({
   fileId: z.string().min(1),

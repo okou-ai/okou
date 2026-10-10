@@ -12,7 +12,7 @@ export const mcpUpdateChatThreadInputSchema = z.strictObject({
         .string()
         .min(1)
         .max(200)
-        .regex(/\S/u, "Provide a nonblank title")
+        .regex(/^[\s\S]*\S[\s\S]*$/u, "Provide a nonblank title")
         .optional(),
       model: mcpChatModelIdSchema.nullable().optional(),
     })

@@ -4,7 +4,7 @@ export const mcpChatModelIdSchema = z
   .string()
   .min(1)
   .max(255)
-  .regex(/\S/u, "Provide a nonblank model id");
+  .regex(/^[\s\S]*\S[\s\S]*$/u, "Provide a nonblank model id");
 
 export const mcpListAgentsInputSchema = z.strictObject({
   limit: z.number().int().min(1).max(50).default(20),

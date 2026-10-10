@@ -9,12 +9,28 @@ import {
 
 export const mcpSearchChatMessagesInputSchema = z
   .strictObject({
-    query: z.string().trim().min(1).max(200),
+    query: z
+      .string()
+      .min(1)
+      .max(200)
+      .regex(/^[\s\S]*\S[\s\S]*$/u, "Provide a nonblank query")
+      .trim()
+      .describe(
+        "At most 200 characters before trimming. Use whole words or CJK phrases of at least two characters; every group must be searchable. Whitespace-only and punctuation/emoji-only queries are not supported.",
+      ),
     threadId: z.uuid().optional(),
     agentId: z.uuid().optional(),
     role: z.enum(["user", "assistant"]).optional(),
-    since: mcpFilterTimestampSchema.optional(),
-    before: mcpFilterTimestampSchema.optional(),
+    since: mcpFilterTimestampSchema
+      .optional()
+      .describe(
+        "Inclusive sourceEventAt lower bound; must be earlier than before.",
+      ),
+    before: mcpFilterTimestampSchema
+      .optional()
+      .describe(
+        "Exclusive sourceEventAt upper bound; must be later than since.",
+      ),
     limit: z.number().int().min(1).max(50).default(20),
     cursor: z.string().min(1).max(4096).optional(),
   })

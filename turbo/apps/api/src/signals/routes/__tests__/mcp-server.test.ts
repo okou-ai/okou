@@ -629,6 +629,32 @@ describe("MCP Web parity", () => {
       expect(JSON.stringify(send?.inputSchema)).not.toMatch(
         /requestId|inputRef|waitMs/u,
       );
+      if (!send) {
+        throw new Error("send_chat_message was not advertised");
+      }
+      const sendValidator = validator.getValidator(
+        send.inputSchema as JsonSchemaType,
+      );
+      expect(
+        sendValidator({
+          agentId: randomUUID(),
+          prompt: "Figma logo\n请展示最终方案",
+        }).valid,
+      ).toBeTruthy();
+      const messages = tools.tools.find((tool) => {
+        return tool.name === "get_chat_messages";
+      });
+      if (!messages) {
+        throw new Error("get_chat_messages was not advertised");
+      }
+      const messagesValidator = validator.getValidator(
+        messages.inputSchema as JsonSchemaType,
+      );
+      for (const around of [{ eventId: randomUUID() }, { seqId: 1 }]) {
+        expect(
+          messagesValidator({ threadId: randomUUID(), around }).valid,
+        ).toBeTruthy();
+      }
       const listed = await sdk.callTool({
         name: "list_chat_threads",
         arguments: {},
@@ -639,13 +665,92 @@ describe("MCP Web parity", () => {
     },
   );
 
+  it("advertises the same structural input constraints that calls enforce", async () => {
+    const auth = fixture();
+    const token = auth.token({ scope: defaultScopes });
+    const response = await accept(
+      client().request({
+        extraHeaders: protocolHeaders(token, "tools/list"),
+        body: requestBody("tools/list"),
+      }),
+      [200],
+    );
+    const { tools } = z
+      .object({
+        result: z.object({
+          tools: z.array(
+            z.object({
+              name: z.string(),
+              inputSchema: z.record(z.string(), z.unknown()),
+            }),
+          ),
+        }),
+      })
+      .parse(rpc(response.body)).result;
+    const validator = new AjvJsonSchemaValidator();
+    const threadId = randomUUID();
+    const cases = [
+      {
+        name: "get_chat_messages",
+        input: { threadId, around: {} },
+      },
+      {
+        name: "get_chat_messages",
+        input: {
+          threadId,
+          around: { eventId: randomUUID() },
+          cursor: "opaque",
+        },
+      },
+      {
+        name: "search_chat_messages",
+        input: { query: " \n\t" },
+      },
+      {
+        name: "search_chat_messages",
+        input: { query: `${" ".repeat(200)}Figma` },
+      },
+      {
+        name: "list_chat_threads",
+        input: { title: `${" ".repeat(200)}Figma` },
+      },
+      {
+        name: "send_chat_message",
+        input: { agentId: randomUUID(), prompt: " \n\t" },
+      },
+      {
+        name: "update_chat_thread",
+        input: { threadId, patch: {} },
+      },
+    ];
+    for (const { name, input } of cases) {
+      const tool = tools.find((candidate) => {
+        return candidate.name === name;
+      });
+      if (!tool) {
+        throw new Error(`${name} was not advertised`);
+      }
+      const validate = validator.getValidator(
+        tool.inputSchema as JsonSchemaType,
+      );
+      expect(validate(input).valid).toBeFalsy();
+      expect(
+        structuredToolError(await callTool(token, name, input)),
+      ).toMatchObject({
+        code: "invalid_arguments",
+        retryable: false,
+      });
+    }
+  });
+
   it("creates and continues ordinary conversations without a request identity", async () => {
     const f = await conversationFixture();
+    const prompt = "Figma logo\n请展示最终方案";
     const first = mcpSendChatMessageOutputSchema.parse(
       (
         await callTool(f.token, "send_chat_message", {
           agentId: f.agentId,
-          prompt: "First ordinary MCP input",
+          prompt,
         })
       ).structuredContent,
     );
@@ -675,7 +780,7 @@ describe("MCP Web parity", () => {
         .map((message) => {
           return message.text;
         }),
-    ).toStrictEqual(["First ordinary MCP input", "Second ordinary MCP input"]);
+    ).toStrictEqual([prompt, "Second ordinary MCP input"]);
     expect(
       history.messages.map((message) => {
         return message.ref.eventId;

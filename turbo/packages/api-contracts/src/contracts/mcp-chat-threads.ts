@@ -12,13 +12,24 @@ export const mcpListChatThreadsInputSchema = z
     agentId: z.uuid().optional(),
     title: z
       .string()
-      .trim()
       .min(1)
       .max(200)
-      .regex(/\S/u, "Provide a nonblank title")
-      .optional(),
-    since: mcpFilterTimestampSchema.optional(),
-    before: mcpFilterTimestampSchema.optional(),
+      .regex(/^[\s\S]*\S[\s\S]*$/u, "Provide a nonblank title")
+      .trim()
+      .optional()
+      .describe(
+        "Literal title substring, trimmed after the 200-character input limit.",
+      ),
+    since: mcpFilterTimestampSchema
+      .optional()
+      .describe(
+        "Inclusive lastMessageAt lower bound; must be earlier than before.",
+      ),
+    before: mcpFilterTimestampSchema
+      .optional()
+      .describe(
+        "Exclusive lastMessageAt upper bound; must be later than since.",
+      ),
     limit: z.number().int().min(1).max(50).default(20),
     cursor: z.string().min(1).max(4096).optional(),
   })

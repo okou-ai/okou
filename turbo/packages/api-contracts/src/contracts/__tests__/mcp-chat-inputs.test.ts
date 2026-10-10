@@ -8,6 +8,7 @@ import {
 import { mcpGetRunStatusInputSchema } from "../mcp-run-status";
 import { mcpUpdateChatThreadInputSchema } from "../mcp-chat-thread-update";
 import { mcpListChatThreadsInputSchema } from "../mcp-chat-threads";
+import { mcpSearchChatMessagesInputSchema } from "../mcp-chat-search";
 const id = "00000000-0000-4000-8000-000000000001";
 
 describe("MCP Web input adaptation", () => {
@@ -27,6 +28,21 @@ describe("MCP Web input adaptation", () => {
       additionalProperties: false,
     });
   });
+  it.each(["Figma", "微", "Figma logo\n请展示最终方案", "  Figma  "])(
+    "accepts nonblank prompt %j with full-string pattern validators",
+    (prompt) => {
+      const jsonSchema = z.toJSONSchema(mcpSendChatMessageInputSchema, {
+        io: "input",
+      });
+      const { pattern } = z
+        .object({ pattern: z.string() })
+        .parse(jsonSchema.properties?.prompt);
+      expect(new RegExp(`^(?:${pattern})$`, "u").test(prompt)).toBe(true);
+      expect(
+        mcpSendChatMessageInputSchema.parse({ agentId: id, prompt }).prompt,
+      ).toBe(prompt);
+    },
+  );
   it.each(["", " ", "\n\t"])("rejects blank prompt %j", (prompt) => {
     expect(
       mcpSendChatMessageInputSchema.safeParse({ agentId: id, prompt }).success,
@@ -89,6 +105,28 @@ describe("MCP Web input adaptation", () => {
     expect(
       mcpListChatThreadsInputSchema.parse({ title: " Trimmed filter " }).title,
     ).toBe("Trimmed filter");
+  });
+  it("trims search filters only after enforcing the advertised input length", () => {
+    expect(
+      mcpListChatThreadsInputSchema.parse({ title: "  Figma  " }).title,
+    ).toBe("Figma");
+    expect(
+      mcpSearchChatMessagesInputSchema.parse({ query: "  Figma  " }).query,
+    ).toBe("Figma");
+    for (const value of [" \n\t", `${" ".repeat(200)}Figma`]) {
+      expect(
+        mcpListChatThreadsInputSchema.safeParse({ title: value }).success,
+      ).toBe(false);
+      expect(
+        mcpSearchChatMessagesInputSchema.safeParse({ query: value }).success,
+      ).toBe(false);
+    }
+    expect(
+      mcpListChatThreadsInputSchema.parse({ title: "x".repeat(200) }).title,
+    ).toHaveLength(200);
+    expect(
+      mcpSearchChatMessagesInputSchema.parse({ query: "x".repeat(200) }).query,
+    ).toHaveLength(200);
   });
   it("distinguishes native Run selectors from original input recall selectors", () => {
     expect(mcpGetRunStatusInputSchema.parse({ runId: id })).toEqual({

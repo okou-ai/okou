@@ -5,7 +5,10 @@ import { mcpChatModelIdSchema } from "./mcp-chat-discovery";
 /** MCP adapts plain text to Web acceptance; each send is new intended work. */
 export const mcpSendChatMessageInputSchema = z.strictObject({
   agentId: z.uuid().toLowerCase(),
-  prompt: z.string().max(32_000).regex(/\S/u, "Prompt must not be blank"),
+  prompt: z
+    .string()
+    .max(32_000)
+    .regex(/^[\s\S]*\S[\s\S]*$/u, "Prompt must not be blank"),
   threadId: z.uuid().toLowerCase().optional(),
   /** Null selects Auto; omission keeps the thread's selection. */
   model: mcpChatModelIdSchema.nullable().optional(),
