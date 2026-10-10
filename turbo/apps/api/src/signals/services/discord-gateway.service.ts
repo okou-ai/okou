@@ -1,5 +1,6 @@
 import { command } from "ccstate";
 import { discordChatIngress } from "@okouai/db/schema/discord-chat-ingress";
+import { discordGatewayReceipts } from "@okouai/db/schema/discord-gateway-receipt";
 import { eq } from "drizzle-orm";
 import {
   createErrorResponse,
@@ -29,7 +30,7 @@ import { safeJsonParse, tapError } from "../utils";
 import { processCanonicalDiscordIngress$ } from "./canonical-discord-ingress-processor.service";
 import {
   admitCanonicalDiscordChatEvent$,
-  hasCanonicalDiscordMessageReceipt,
+  discordMessageReceiptDigest,
 } from "./discord-chat-ingress.service";
 import { getDiscordAppConfig } from "./discord-config";
 import {
@@ -84,7 +85,19 @@ async function existingMessageResponse(
     // even when the sender changes their selected DM organization meanwhile.
     return Response.json({ ok: true, outcome: "duplicate" });
   }
-  if (await hasCanonicalDiscordMessageReceipt(db, applicationId, message.id)) {
+  const receiptMessageId = message.id;
+  const [receipt] = await db
+    .select({ eventDigest: discordGatewayReceipts.eventDigest })
+    .from(discordGatewayReceipts)
+    .where(
+      eq(
+        discordGatewayReceipts.eventDigest,
+        discordMessageReceiptDigest(applicationId, receiptMessageId),
+      ),
+    )
+    .limit(1);
+  const hasReceipt = Boolean(receipt);
+  if (hasReceipt) {
     signal.throwIfAborted();
     return Response.json({ ok: true, outcome: "duplicate" });
   }
