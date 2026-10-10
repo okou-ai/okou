@@ -1,3 +1,4 @@
+import type { ComputerUseTestConnection } from "./helpers/api-bdd-computer-use";
 import { randomUUID } from "node:crypto";
 
 import { aroundEach, describe, expect, it } from "vitest";
@@ -46,7 +47,10 @@ function createScenario() {
 
   async function createRunningWriteCommand(args: {
     readonly actor: ApiTestUser & { readonly orgId: string };
-    readonly host: { readonly hostId: string; readonly hostToken: string };
+    readonly host: {
+      readonly hostId: string;
+      readonly connection: ComputerUseTestConnection;
+    };
     readonly timeoutMs: number;
     readonly app?: string;
   }): Promise<RunningCommand> {
@@ -60,7 +64,7 @@ function createScenario() {
       },
     );
     const claimed = await computerUse.claimNextComputerUseCommand(
-      args.host.hostToken,
+      args.host.connection,
     );
     expect(claimed).toMatchObject({
       status: "command",
@@ -210,7 +214,7 @@ describe("GET /api/computer-use/commands/:commandId", () => {
         });
 
         const claimed = await computerUse.claimNextComputerUseCommand(
-          host.hostToken,
+          host.connection,
         );
         expect(claimed).toMatchObject({
           status: "command",
@@ -232,7 +236,7 @@ describe("GET /api/computer-use/commands/:commandId", () => {
 
         const screenshot = Buffer.from("private screenshot bytes");
         await computerUse.completeComputerUseCommandWith(
-          host.hostToken,
+          host.connection,
           created.commandId,
           {
             status: "succeeded",
@@ -273,9 +277,9 @@ describe("GET /api/computer-use/commands/:commandId", () => {
           actor,
           { kind: "app.open", app: "Finder", timeoutMs: 15_000 },
         );
-        await computerUse.claimNextComputerUseCommand(host.hostToken);
+        await computerUse.claimNextComputerUseCommand(host.connection);
         await computerUse.completeComputerUseCommandWith(
-          host.hostToken,
+          host.connection,
           failedCommand.commandId,
           {
             status: "failed",
@@ -351,7 +355,7 @@ describe("GET /api/computer-use/commands/:commandId", () => {
         expect(audit.auditEvents).toHaveLength(1);
 
         await computerUse.completeComputerUseCommand(
-          host.hostToken,
+          host.connection,
           running.commandId,
         );
         await expect(

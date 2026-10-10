@@ -1,3 +1,4 @@
+import type { ComputerUseTestConnection } from "./helpers/api-bdd-computer-use";
 import { randomUUID } from "node:crypto";
 
 import { aroundEach, describe, expect, it } from "vitest";
@@ -73,7 +74,10 @@ function createScenario() {
     response: Awaited<
       ReturnType<typeof computerUse.requestStartComputerUseHost>
     >,
-  ): { readonly hostId: string; readonly hostToken: string } {
+  ): {
+    readonly hostId: string;
+    readonly connection: ComputerUseTestConnection;
+  } {
     if (response.status !== 200) {
       throw new Error(`Expected host START 200, received ${response.status}`);
     }
@@ -159,7 +163,7 @@ describe("Computer Use host START", () => {
 
         const { token: pat } = await authOrg.createCliToken(actor);
         mockClerkMembership(context, actor, "org:admin");
-        await computerUse.requestStartComputerUseHost({ bearer: pat }, [200], {
+        await computerUse.requestStartComputerUseHost({ bearer: pat }, [403], {
           installationId: randomUUID(),
           hostName: "PAT Desktop",
         });
@@ -195,7 +199,7 @@ describe("Computer Use host START", () => {
   );
 
   it(
-    "retains installation identity, token rotation, partial-index ownership, revoked-row and concurrent upsert semantics",
+    "retains installation identity, connection generation advancement, partial-index ownership, revoked-row and concurrent upsert semantics",
     { timeout: CASE_TIMEOUT_MS },
     async () => {
       const scenario = createScenario();
@@ -242,9 +246,12 @@ describe("Computer Use host START", () => {
           permissions: { accessibility: true, screenRecording: false },
         });
         await expectOneOwnerPublication(actor.userId);
-        await computerUse.requestComputerUseHeartbeat(initial.hostToken, [401]);
         await computerUse.requestComputerUseHeartbeat(
-          restarted.hostToken,
+          initial.connection,
+          [409],
+        );
+        await computerUse.requestComputerUseHeartbeat(
+          restarted.connection,
           [200],
         );
 
@@ -260,7 +267,7 @@ describe("Computer Use host START", () => {
           new Set([restarted.hostId, peerHost.hostId, foreignHost.hostId]).size,
         ).toBe(3);
 
-        await computerUse.stopComputerUseHost(restarted.hostToken);
+        await computerUse.stopComputerUseHost(restarted.connection);
         const afterStop = await computerUse.startComputerUseHost(
           actor,
           startOptions(installationId, "After Stop"),
@@ -285,17 +292,20 @@ describe("Computer Use host START", () => {
           ),
         ]);
         expect(first.hostId).toBe(second.hostId);
-        const credentialStatuses = await Promise.all([
-          computerUse.requestComputerUseHeartbeat(first.hostToken, [200, 401]),
-          computerUse.requestComputerUseHeartbeat(second.hostToken, [200, 401]),
+        const connectionStatuses = await Promise.all([
+          computerUse.requestComputerUseHeartbeat(first.connection, [200, 409]),
+          computerUse.requestComputerUseHeartbeat(
+            second.connection,
+            [200, 409],
+          ),
         ]);
         expect(
-          credentialStatuses
+          connectionStatuses
             .map((response) => {
               return response.status;
             })
             .sort(),
-        ).toStrictEqual([200, 401]);
+        ).toStrictEqual([200, 409]);
       });
     },
   );
