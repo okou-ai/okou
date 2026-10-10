@@ -9,6 +9,46 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.722.0](https://github.com/okou-ai/okou/compare/api-v1.721.1...api-v1.722.0) (2026-10-10)
+
+
+### Features
+
+* **discord:** complete oauth onboarding and slack conversation parity ([#37968](https://github.com/okou-ai/okou/issues/37968)) ([ccc74ac](https://github.com/okou-ai/okou/commit/ccc74ac9b9c74d70654fd0a0a547018cde7d55ed))
+
+
+### Bug Fixes
+
+* **api:** resume bounded chat event snapshot garbage collection ([#38424](https://github.com/okou-ai/okou/issues/38424)) ([8c424ef](https://github.com/okou-ai/okou/commit/8c424ef5ea95ccf438d3cd5e7bcd281ea4a6c20d))
+* finalize model identity writers and prepare bounded history repair ([#38477](https://github.com/okou-ai/okou/issues/38477)) ([b691971](https://github.com/okou-ai/okou/commit/b6919718b6d856dfa3a7c500b6e899dd3fde7674)), closes [#38114](https://github.com/okou-ai/okou/issues/38114)
+
+
+### Refactoring
+
+* **api:** activate personal accounts with atomic sql ([#38466](https://github.com/okou-ai/okou/issues/38466)) ([6938a74](https://github.com/okou-ai/okou/commit/6938a74c3941e71405ba5d905d8384d6d4fa8ab1))
+* **api:** own builtin device-auth session reads ([#38465](https://github.com/okou-ai/okou/issues/38465)) ([4935d23](https://github.com/okou-ai/okou/commit/4935d231376b7c40db912b1dc2451e71da673489))
+* **api:** own builtin external-code session claims ([#38483](https://github.com/okou-ai/okou/issues/38483)) ([bf223ca](https://github.com/okou-ai/okou/commit/bf223ca7fa9cc52888658e5699192728473db406))
+* **api:** own builtin external-code session reads ([#38472](https://github.com/okou-ai/okou/issues/38472)) ([ce53eea](https://github.com/okou-ai/okou/commit/ce53eea0e7f5a831716825f3c63a1a781189a683))
+* **api:** retire discord dm selection transaction ([#38488](https://github.com/okou-ai/okou/issues/38488)) ([381e809](https://github.com/okou-ai/okou/commit/381e809f7e7b1ff68d783eb8937a5c530aab94c7))
+* **api:** retire final clerk publication cleanup transaction ([#38487](https://github.com/okou-ai/okou/issues/38487)) ([7368f89](https://github.com/okou-ai/okou/commit/7368f89dd6f1df5eb528f1a1c986d0298a0ee847))
+* **api:** retire mcp agent discovery transaction ([#38468](https://github.com/okou-ai/okou/issues/38468)) ([4feb0b9](https://github.com/okou-ai/okou/commit/4feb0b93d1e2753b669c185fe46c6fd823b3062c))
+* **api:** retire ssh credential rotation transaction ([#38485](https://github.com/okou-ai/okou/issues/38485)) ([4e8f5a8](https://github.com/okou-ai/okou/commit/4e8f5a898d75bb2680f149127b2b8525b25c22c9))
+* **api:** retire tx-0182 thread metadata transaction ([#38470](https://github.com/okou-ai/okou/issues/38470)) ([9d6be5b](https://github.com/okou-ai/okou/commit/9d6be5b8903d0aefa3b56fd28e1c248c24364da9))
+* **api:** retire vnc credential update transaction ([#38490](https://github.com/okou-ai/okou/issues/38490)) ([9d45902](https://github.com/okou-ai/okou/commit/9d45902e5bdf6dbe38c452cbd1908a2419386b3c))
+* **api:** separate identity and thread preparation signals ([#38459](https://github.com/okou-ai/okou/issues/38459)) ([4483285](https://github.com/okou-ai/okou/commit/44832858d98d8d30c89fa52d1ecab1649e51a040))
+* **pi:** retire unversioned model config execution ([#38449](https://github.com/okou-ai/okou/issues/38449)) ([c628473](https://github.com/okou-ai/okou/commit/c62847319cb3ebbd41259d662f47905a1cb39863))
+* remove generic checkpoint persistence and protocols ([#38399](https://github.com/okou-ai/okou/issues/38399)) ([0c926e3](https://github.com/okou-ai/okou/commit/0c926e34ca09edaf2840ffcbfa56f3dc07a4588d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.547.0
+    * @okouai/core bumped to 8.739.2
+    * @okouai/db bumped to 1.329.0
+    * @okouai/pi-agent-runtime bumped to 1.49.2
+
 ## [1.721.1](https://github.com/okou-ai/okou/compare/api-v1.721.0...api-v1.721.1) (2026-10-09)
 
 

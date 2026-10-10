@@ -1,5 +1,25 @@
 # Changelog
 
+## [8.739.2](https://github.com/okou-ai/okou/compare/core-v8.739.1...core-v8.739.2) (2026-10-10)
+
+
+### Bug Fixes
+
+* finalize model identity writers and prepare bounded history repair ([#38477](https://github.com/okou-ai/okou/issues/38477)) ([b691971](https://github.com/okou-ai/okou/commit/b6919718b6d856dfa3a7c500b6e899dd3fde7674)), closes [#38114](https://github.com/okou-ai/okou/issues/38114)
+* resolve relative social images behind artifact previews ([#38454](https://github.com/okou-ai/okou/issues/38454)) ([c654ee4](https://github.com/okou-ai/okou/commit/c654ee497cd617799352398804e91504539f297b))
+
+
+### Refactoring
+
+* remove generic checkpoint persistence and protocols ([#38399](https://github.com/okou-ai/okou/issues/38399)) ([0c926e3](https://github.com/okou-ai/okou/commit/0c926e34ca09edaf2840ffcbfa56f3dc07a4588d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.547.0
+
 ## [8.739.1](https://github.com/okou-ai/okou/compare/core-v8.739.0...core-v8.739.1) (2026-10-09)
 
 

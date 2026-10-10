@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.104.13](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.12...guest-agent-v0.104.13) (2026-10-10)
+
+
+### Refactoring
+
+* remove generic checkpoint persistence and protocols ([#38399](https://github.com/okou-ai/okou/issues/38399)) ([0c926e3](https://github.com/okou-ai/okou/commit/0c926e34ca09edaf2840ffcbfa56f3dc07a4588d))
+
+
+### Performance Improvements
+
+* **test:** avoid rebuilding owned fixture buffers ([#38450](https://github.com/okou-ai/okou/issues/38450)) ([f5ad1ba](https://github.com/okou-ai/okou/commit/f5ad1ba1e2b4d6745ed80c869bf4fb9b222cfafc))
+
 ## [0.104.12](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.11...guest-agent-v0.104.12) (2026-10-09)
 
 ## [0.104.11](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.10...guest-agent-v0.104.11) (2026-10-09)
