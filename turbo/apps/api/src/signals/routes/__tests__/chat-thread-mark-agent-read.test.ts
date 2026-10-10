@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
-import { describe, expect, it, onTestFailed } from "vitest";
+import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import { testContext } from "../../../__tests__/test-context";
@@ -49,19 +49,6 @@ interface AgentReadFixture {
 async function createAgentReadFixture(
   threadCount: number,
 ): Promise<AgentReadFixture> {
-  const startedAt = performance.now();
-  const phases: { phase: string; elapsedMs: number }[] = [];
-  function recordPhase(phase: string): void {
-    phases.push({
-      phase,
-      elapsedMs: Math.round(performance.now() - startedAt),
-    });
-  }
-  onTestFailed(() => {
-    process.stderr.write(
-      `Unread construction phases ${JSON.stringify({ threadCount, phases })}\n`,
-    );
-  });
   const lifecycle = createPublicComputerUseScenario(context, {
     tier: "team",
     ...(threadCount > 10 ? { additionalConcurrency: 118 } : {}),
@@ -75,12 +62,10 @@ async function createAgentReadFixture(
   return await lifecycle.run(async () => {
     prepareChatRuntime();
     await lifecycle.prepareActor(actor);
-    recordPhase("actor prepared");
     const agent = await bdd.createAgent(owner, {
       displayName: `Shared ${randomUUID().slice(0, 8)}`,
       visibility: "public",
     });
-    recordPhase("agent created");
     const threadIds: string[] = [];
     // Team plus its normal paid concurrency add-on admits the largest matrix.
     // Join every accepted send/cancel before starting the next batch or propagating an error.
@@ -92,9 +77,6 @@ async function createAgentReadFixture(
           actor,
           agentId: agent.agentId,
           run: lifecycle.run,
-          recordPhase: (phase) => {
-            recordPhase(`${start}: ${phase}`);
-          },
           threads: Array.from(
             { length: Math.min(batchSize, threadCount - start) },
             () => {
@@ -104,7 +86,6 @@ async function createAgentReadFixture(
         })),
       );
     }
-    recordPhase("all threads constructed");
     return {
       actor,
       owner,
@@ -155,7 +136,6 @@ async function appendCancelledRuns(args: {
   readonly agentId: string;
   readonly threads: readonly { readonly threadId?: string }[];
   readonly run: AgentReadFixture["run"];
-  readonly recordPhase?: (phase: string) => void;
 }): Promise<readonly string[]> {
   return await args.run(async () => {
     const sends = await Promise.allSettled(
@@ -179,9 +159,7 @@ async function appendCancelledRuns(args: {
         return { prompt, threadId: sent.body.threadId };
       }),
     );
-    args.recordPhase?.("sends joined");
     await flushWaitUntilForTest();
-    args.recordPhase?.("launches joined");
     const accepted = sends.map((result) => {
       if (result.status === "rejected") {
         throw result.reason;
@@ -229,7 +207,6 @@ async function appendCancelledRuns(args: {
       }
       return result.value;
     });
-    args.recordPhase?.("logs read");
     const launched = accepted.map((sent) => {
       const matches = active.filter((item) => {
         return item.agentId === args.agentId && item.prompt === sent.prompt;
@@ -256,7 +233,6 @@ async function appendCancelledRuns(args: {
       }),
     );
     await flushWaitUntilForTest();
-    args.recordPhase?.("cancellations joined");
     for (const result of cancellations) {
       if (result.status === "rejected") {
         throw result.reason;
@@ -286,7 +262,6 @@ async function appendCancelledRuns(args: {
         return threadId;
       }),
     );
-    args.recordPhase?.("terminals verified");
     return verified.map((result) => {
       if (result.status === "rejected") {
         throw result.reason;
