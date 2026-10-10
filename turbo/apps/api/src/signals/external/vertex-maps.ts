@@ -306,13 +306,45 @@ function parseUsage(
   };
 }
 
+function responseFieldShape(value: unknown, key = "", depth = 0): unknown {
+  if (depth >= 10) {
+    return typeof value;
+  }
+  if (typeof value === "string") {
+    return (key === "type" || key === "model") &&
+      /^[a-z0-9_.-]{1,80}$/u.test(value)
+      ? value
+      : "string";
+  }
+  if (Array.isArray(value)) {
+    return value.slice(0, 4).map((item) => {
+      return responseFieldShape(item, "", depth + 1);
+    });
+  }
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .slice(0, 20)
+        .filter(([name]) => {
+          return /^[a-zA-Z0-9_]{1,64}$/u.test(name);
+        })
+        .map(([name, field]) => {
+          return [name, responseFieldShape(field, name, depth + 1)];
+        }),
+    );
+  }
+  return value;
+}
+
 function parseVertexMapsResponse(body: string): VertexMapsResult {
-  const parsed = responseSchema.safeParse(safeJsonParse(body));
+  const decoded = safeJsonParse(body);
+  const parsed = responseSchema.safeParse(decoded);
   if (!parsed.success) {
     L.warn("Google Maps response schema rejected", {
       issues: parsed.error.issues.slice(0, 10).map((issue) => {
         return { code: issue.code, path: issue.path };
       }),
+      responseShape: responseFieldShape(decoded),
     });
     throw new VertexMapsError(502, "invalid_response");
   }
