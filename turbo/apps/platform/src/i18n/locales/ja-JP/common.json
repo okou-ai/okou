@@ -2121,7 +2121,7 @@
       "empty": "会話を開始するとここに表示されます",
       "filteredTitle": "{{filter}} · {{title}}",
       "inbox": "受信トレイ",
-      "inboxEmpty": "受信トレイは空です。アーカイブ済みのチャットは、新しい返信があるとここに戻ります。",
+      "inboxEmpty": "受信トレイは空です",
       "markUnread": "未読にする",
       "movePinDown": "下に移動",
       "movePinUp": "上に移動",

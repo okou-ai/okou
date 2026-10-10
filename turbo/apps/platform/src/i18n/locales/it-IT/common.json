@@ -2176,7 +2176,7 @@
       "empty": "Avvia una conversazione e verrà visualizzata qui",
       "filteredTitle": "{{filter}} · {{title}}",
       "inbox": "Posta in arrivo",
-      "inboxEmpty": "La tua posta in arrivo è vuota. Le chat archiviate tornano qui quando ricevono una nuova risposta.",
+      "inboxEmpty": "La tua posta in arrivo è vuota",
       "markUnread": "Segna come non letta",
       "movePinDown": "Sposta giù",
       "movePinUp": "Sposta su",

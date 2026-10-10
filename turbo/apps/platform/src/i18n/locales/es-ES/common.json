@@ -2176,7 +2176,7 @@
       "empty": "Empieza una conversación y aparecerá aquí",
       "filteredTitle": "{{filter}} · {{title}}",
       "inbox": "Bandeja de entrada",
-      "inboxEmpty": "Tu bandeja de entrada está vacía. Los chats archivados vuelven aquí cuando reciben una respuesta nueva.",
+      "inboxEmpty": "Tu bandeja de entrada está vacía",
       "markUnread": "Marcar como no leído",
       "movePinDown": "Mover hacia abajo",
       "movePinUp": "Mover hacia arriba",

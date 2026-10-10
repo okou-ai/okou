@@ -388,9 +388,7 @@ test("Keep check-mark chats and archive controls unchanged when archiving is dis
     within(sidebar()).findByText("✅ Completed release"),
   ).resolves.toBeInTheDocument();
   expect(
-    within(sidebar()).queryByText(
-      "Your inbox is empty. Archived chats come back here when they get a new reply.",
-    ),
+    within(sidebar()).queryByText("Your inbox is empty"),
   ).not.toBeInTheDocument();
 });
 
@@ -718,9 +716,7 @@ test("Hide the current chat after archiving it without changing its title", asyn
 
   await waitFor(() => {
     expect(
-      within(sidebar()).getByText(
-        "Your inbox is empty. Archived chats come back here when they get a new reply.",
-      ),
+      within(sidebar()).getByText("Your inbox is empty"),
     ).toBeInTheDocument();
     expect(within(sidebar()).queryByText("New chat")).not.toBeInTheDocument();
   });
@@ -783,9 +779,7 @@ test("Archive and unarchive the current chat with the keyboard shortcut", async 
 
   await waitFor(() => {
     expect(
-      within(sidebar()).getByText(
-        "Your inbox is empty. Archived chats come back here when they get a new reply.",
-      ),
+      within(sidebar()).getByText("Your inbox is empty"),
     ).toBeInTheDocument();
     expect(
       within(sidebar()).queryByText("Release plan"),
@@ -798,9 +792,7 @@ test("Archive and unarchive the current chat with the keyboard shortcut", async 
     within(sidebar()).findByText("Release plan"),
   ).resolves.toBeInTheDocument();
   expect(
-    within(sidebar()).queryByText(
-      "Your inbox is empty. Archived chats come back here when they get a new reply.",
-    ),
+    within(sidebar()).queryByText("Your inbox is empty"),
   ).not.toBeInTheDocument();
 });
 

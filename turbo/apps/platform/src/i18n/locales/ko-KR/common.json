@@ -2121,7 +2121,7 @@
       "empty": "대화를 시작하면 여기에 표시됩니다",
       "filteredTitle": "{{filter}} · {{title}}",
       "inbox": "받은 편지함",
-      "inboxEmpty": "받은 편지함이 비어 있습니다. 보관된 채팅은 새 답장이 오면 여기로 돌아옵니다.",
+      "inboxEmpty": "받은 편지함이 비어 있습니다",
       "markUnread": "읽지 않음으로 표시",
       "movePinDown": "아래로 이동",
       "movePinUp": "위로 이동",

@@ -2176,7 +2176,7 @@
       "empty": "Commencez une conversation et elle apparaîtra ici",
       "filteredTitle": "{{filter}} · {{title}}",
       "inbox": "Boîte de réception",
-      "inboxEmpty": "Votre boîte de réception est vide. Les discussions archivées y reviennent dès qu'elles reçoivent une nouvelle réponse.",
+      "inboxEmpty": "Votre boîte de réception est vide",
       "markUnread": "Marquer comme non lu",
       "movePinDown": "Déplacer vers le bas",
       "movePinUp": "Déplacer vers le haut",

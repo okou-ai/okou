@@ -2121,7 +2121,7 @@
       "empty": "发起对话后，会显示在这里",
       "filteredTitle": "{{filter}} · {{title}}",
       "inbox": "收件箱",
-      "inboxEmpty": "收件箱是空的。已归档的聊天收到新回复时会回到这里。",
+      "inboxEmpty": "收件箱是空的",
       "markUnread": "标为未读",
       "movePinDown": "下移",
       "movePinUp": "上移",

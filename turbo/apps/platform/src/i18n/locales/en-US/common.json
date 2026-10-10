@@ -2130,7 +2130,7 @@
       "empty": "Start a conversation and it'll show up here",
       "filteredTitle": "{{filter}} · {{title}}",
       "inbox": "Inbox",
-      "inboxEmpty": "Your inbox is empty. Archived chats come back here when they get a new reply.",
+      "inboxEmpty": "Your inbox is empty",
       "markUnread": "Mark unread",
       "movePinDown": "Move down",
       "movePinUp": "Move up",

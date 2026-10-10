@@ -2130,7 +2130,7 @@
       "empty": "Starten Sie eine Konversation; sie wird dann hier angezeigt",
       "filteredTitle": "{{filter}} · {{title}}",
       "inbox": "Posteingang",
-      "inboxEmpty": "Dein Posteingang ist leer. Archivierte Chats kehren hierher zurück, sobald eine neue Antwort eingeht.",
+      "inboxEmpty": "Dein Posteingang ist leer",
       "markUnread": "Als ungelesen markieren",
       "movePinDown": "Nach unten verschieben",
       "movePinUp": "Nach oben verschieben",
