@@ -13,6 +13,20 @@ previous artifacts as controls, without silently repairing either side. This
 is still experimental, **not a production-ready fidelity replacement**.
 Do not treat a successful `--verify` result as visual acceptance.
 
+## Native export policy
+
+HTML text and CSS shapes/effects must not become generated image replacements.
+The CLI no longer captures page regions. The pinned renderer is adapted before
+its image jobs run: original `img`, `svg`, `canvas`, and CSS image URL assets are
+allowed; generated decoration/icon images are omitted and reported in JSON as
+`unsupported`. This is a capability gap, not a visual success. CSS properties
+that the renderer silently approximates still need source/PPT screenshot review.
+
+The adapter requires exact pinned-bundle anchors and uses a separate cache key.
+Local and remote sessions use the same policy. A changed bundle fails explicitly
+instead of restoring image fallback. Keep the original source text denominator
+before layout fragmentation, including text that the native exporter misses.
+
 | Input                                     | Cases     | Observation target                                                                                                                                                                     |
 | ----------------------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `minimal-cases.html`                      | N01–N12   | Plain text, natural/hard wrapping, rich runs, inline highlights, nested lists, CJK fallback, whitespace, table heights, ancestor background, complex corners, and regional font stacks |

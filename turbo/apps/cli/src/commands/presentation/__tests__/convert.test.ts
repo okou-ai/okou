@@ -17,7 +17,6 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { crc32, inflateRawSync } from "zlib";
 
-import { PNG } from "pngjs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { presentationCommand } from "../index";
@@ -123,20 +122,7 @@ const state = {
   /** Text the fake renderer writes into the deck; differs to force a shortfall. */
   deckTexts: undefined as string[] | undefined,
   sourcePages: undefined as string[][] | undefined,
-  measuredPages: undefined as string[][] | undefined,
-  paintRegions: [] as {
-    id: number;
-    mode: "background" | "content";
-    features: string[];
-    tag: string;
-    textStrings: number;
-    x: number;
-    y: number;
-    w: number;
-    h: number;
-    padding: number;
-  }[],
-  badScreenshot: false,
+  unsupported: [] as { page: number; tag: string; images: number }[],
   deckPages: undefined as string[][] | undefined,
   slideXml: undefined as string[] | undefined,
   textBoxes: [] as {
@@ -221,30 +207,9 @@ function fakeEval(expression: string): string {
   // `.length`, so a looser branch above it would answer for both.
   if (expression.includes("scored.sort")) return encoded(".stage");
   if (expression.includes("No visible slide supplies")) return "0";
-  if (expression.includes("window.__okouPaintTargets=targets")) {
-    return encoded({
-      pages: (
-        state.sourcePages ?? [
-          state.pageTexts.slice(0, 1),
-          state.pageTexts.slice(1),
-        ]
-      ).map((texts, index) => {
-        return {
-          width: 1600,
-          height: 900,
-          texts,
-          regions: index === 0 ? state.paintRegions : [],
-        };
-      }),
-    });
-  }
-  if (expression.includes("viewportWidth:window.innerWidth")) {
-    return encoded({ x: 0, y: 0, viewportWidth: 1600, viewportHeight: 900 });
-  }
   if (expression.includes("window.__okouRestoreLayout =")) {
     return encoded({
       pages: (
-        state.measuredPages ??
         state.sourcePages ?? [
           state.pageTexts.slice(0, 1),
           state.pageTexts.slice(1),
@@ -268,6 +233,7 @@ function fakeEval(expression: string): string {
     state.transferable = deckBase64();
     return encoded({
       slides: state.slideCount,
+      unsupported: state.unsupported,
       length: state.transferable.length,
     });
   }
@@ -303,14 +269,6 @@ vi.mock("child_process", () => {
           if (verb === "open") {
             state.openedUrls.push(args[args.length - 1] ?? "");
           }
-          if (verb === "screenshot") {
-            const image = new PNG({ width: 1600, height: 900 });
-            image.data.fill(255);
-            writeFileSync(
-              args[args.length - 1] ?? "",
-              state.badScreenshot ? "invalid PNG" : PNG.sync.write(image),
-            );
-          }
           return "";
         }
         if (command === "npm") {
@@ -320,7 +278,15 @@ vi.mock("child_process", () => {
         }
         if (command === "tar") {
           const target = args[args.indexOf("-C") + 1] ?? ".";
-          writeFileSync(join(target, "dom-to-pptx.bundle.js"), "bundle");
+          writeFileSync(
+            join(target, "dom-to-pptx.bundle.js"),
+            [
+              "      if (result) {\n        if (result.items) {",
+              "items.push(bgItem);",
+              "async function elementToCanvasImage(node, widthPx, heightPx) {",
+              "async function capturePseudoElementCanvas(node, pseudoType, widthPx, heightPx) {",
+            ].join("\n"),
+          );
           return "";
         }
         throw new Error(`unexpected command: ${command}`);
@@ -380,9 +346,7 @@ describe("okou presentation convert", () => {
     state.pageTexts = ["Hello deck", "Second line"];
     state.deckTexts = undefined;
     state.sourcePages = undefined;
-    state.measuredPages = undefined;
-    state.paintRegions = [];
-    state.badScreenshot = false;
+    state.unsupported = [];
     state.deckPages = undefined;
     state.slideXml = undefined;
     state.textBoxes = [];
@@ -616,7 +580,7 @@ describe("okou presentation convert", () => {
     await convert([]);
 
     expect(state.evaluated.join("")).toContain(
-      `file://${join(cacheHome, "okou", "presentation-convert", "v1", RENDERER_BUNDLE)}`,
+      `file://${join(cacheHome, "okou", "presentation-convert", "native-v1", RENDERER_BUNDLE)}`,
     );
   });
 
@@ -634,7 +598,13 @@ describe("okou presentation convert", () => {
     // Nothing on this machine is needed, so nothing is fetched into the cache.
     expect(
       existsSync(
-        join(cacheHome, "okou", "presentation-convert", "v1", RENDERER_BUNDLE),
+        join(
+          cacheHome,
+          "okou",
+          "presentation-convert",
+          "native-v1",
+          RENDERER_BUNDLE,
+        ),
       ),
     ).toBe(false);
   });
@@ -643,22 +613,8 @@ describe("okou presentation convert", () => {
     await expect(convert(["--verify"])).resolves.toBeUndefined();
   });
 
-  it("reports browser-painted regions without dropping the original text denominator", async () => {
-    state.paintRegions = [
-      {
-        id: 0,
-        mode: "content",
-        features: ["text-paint"],
-        tag: "P",
-        textStrings: 1,
-        x: 80,
-        y: 120,
-        w: 400,
-        h: 100,
-        padding: 0,
-      },
-    ];
-    state.measuredPages = [[], ["Second line"]];
+  it("reports unsupported image exports and retains the native source text diagnostic", async () => {
+    state.unsupported = [{ page: 1, tag: "DIV", images: 1 }];
     state.deckPages = [[], ["Second line"]];
     await expect(convert(["--verify", "--json"])).rejects.toThrow(
       /process\.exit/u,
@@ -666,39 +622,9 @@ describe("okou presentation convert", () => {
     const output = String(vi.mocked(console.log).mock.calls[0]?.[0]);
     expect(JSON.parse(output)).toMatchObject({
       verify: { sourceStrings: 2, matchedStrings: 1, scope: "native-text" },
-      paint: {
-        regions: [
-          {
-            page: 1,
-            mode: "content",
-            features: ["text-paint"],
-            textStrings: 1,
-          },
-        ],
-      },
+      unsupported: [{ page: 1, tag: "DIV", images: 1 }],
     });
     expect(existsSync(outPath)).toBe(true);
-  });
-
-  it("fails without a deck when the browser returns an invalid screenshot", async () => {
-    state.paintRegions = [
-      {
-        id: 0,
-        mode: "background",
-        features: ["background-image"],
-        tag: "DIV",
-        textStrings: 0,
-        x: 10,
-        y: 10,
-        w: 100,
-        h: 100,
-        padding: 0,
-      },
-    ];
-    state.badScreenshot = true;
-    await expect(convert([])).rejects.toThrow(/process\.exit/u);
-    expect(existsSync(outPath)).toBe(false);
-    expect(stderr()).toContain("Browser did not return a PNG screenshot");
   });
 
   it("requires separate native characters for a title and its repeated single-character label", async () => {

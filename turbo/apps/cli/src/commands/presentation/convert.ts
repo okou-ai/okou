@@ -31,12 +31,12 @@ import {
   PREPARE_PAGES,
   type Layout,
 } from "./layout";
-import { capturePaint, type PaintRegion } from "./paint";
+import { nativeRenderer } from "./renderer";
 import { browser, childPath, operatorPath, SETTLE, TIMEOUT_MS } from "./shared";
 
 const RENDERER_PACKAGE = "dom-to-pptx@2.1.2";
 const RENDERER_BUNDLE = "dom-to-pptx.bundle.js";
-const RENDERER_CACHE_VERSION = "v1";
+const RENDERER_CACHE_VERSION = "native-v1";
 const RENDERER_CDN = `https://cdn.jsdelivr.net/npm/${RENDERER_PACKAGE}/dist/${RENDERER_BUNDLE}`;
 const DEFAULT_VIEWPORT_WIDTH = 1600;
 const DEFAULT_VIEWPORT_HEIGHT = 900;
@@ -93,7 +93,11 @@ interface Rendered {
   readonly texts: readonly string[];
   readonly pageTexts: readonly (readonly string[])[];
   readonly layout: Layout;
-  readonly paint: readonly PaintRegion[];
+  readonly unsupported: readonly {
+    page: number;
+    tag: string;
+    images: number;
+  }[];
 }
 
 function positiveNumber(value: string): number {
@@ -148,7 +152,10 @@ function ensureRenderer(): string {
       ],
       { stdio: ["ignore", "ignore", process.stderr], timeout: TIMEOUT_MS },
     );
-    writeFileSync(bundle, readFileSync(childPath(staging, RENDERER_BUNDLE)));
+    writeFileSync(
+      bundle,
+      nativeRenderer(readFileSync(childPath(staging, RENDERER_BUNDLE), "utf8")),
+    );
     return bundle;
   } finally {
     rmSync(staging, { force: true, recursive: true });
@@ -262,20 +269,11 @@ function render(options: Options): Rendered {
     if (typeof activated !== "number" || !Number.isInteger(activated)) {
       throw new Error("Page activation returned no count");
     }
-    const paint = capturePaint(page, selector);
-    const measured = layoutSchema.parse(
+    const layout = layoutSchema.parse(
       page.evaluate(
         `${PREPARE_LAYOUT}(${JSON.stringify(selector)},${activated.toString()})`,
       ),
     );
-    const layout: Layout = {
-      ...measured,
-      pages: measured.pages.map((page, index) => {
-        const texts = paint.texts[index];
-        if (texts === undefined) throw new Error("Missing original page text");
-        return { ...page, texts: [...texts] };
-      }),
-    };
 
     // Network pages and remote borrowed browsers cannot load local scripts.
     const local = !borrowed && deckUrl.startsWith("file://");
@@ -283,13 +281,25 @@ function render(options: Options): Rendered {
     page.call([
       "eval",
       `(async()=>{
-        await new Promise((resolve, reject) => {
+        ${
+          local
+            ? ""
+            : `const response = await fetch(${JSON.stringify(source)});
+        if (!response.ok) throw new Error("Cannot fetch renderer: " + response.status);
+        const code = (${nativeRenderer.toString()})(await response.text());
+        (0, eval)(code);`
+        }
+        ${
+          local
+            ? `await new Promise((resolve, reject) => {
           const tag = document.createElement("script");
           tag.src = ${JSON.stringify(source)};
           tag.addEventListener("load", () => resolve(), { once: true });
           tag.addEventListener("error", () => reject(new Error("cannot load " + ${JSON.stringify(source)})), { once: true });
           document.head.append(tag);
-        });
+        });`
+            : ""
+        }
         if (!window.domToPptx || !window.domToPptx.exportToPptx) {
           throw new Error("renderer bundle exposed no exportToPptx");
         }
@@ -299,11 +309,13 @@ function render(options: Options): Rendered {
     const meta = page.evaluate(`(async()=>{
       const nodes = Array.from(document.querySelectorAll(${JSON.stringify(selector)}));
       if (nodes.length === 0) throw new Error("No slides matched " + ${JSON.stringify(selector)});
+      const unsupported = [];
       const blob = await window.domToPptx.exportToPptx(nodes, {
         width: ${options.width.toString()},
         height: ${options.height.toString()},
         includePseudoElements: true,
         skipDownload: true,
+        onUnsupported: item => unsupported.push(item),
       });
       const bytes = new Uint8Array(await blob.arrayBuffer());
       let binary = "";
@@ -312,7 +324,7 @@ function render(options: Options): Rendered {
         binary += String.fromCharCode.apply(null, bytes.subarray(index, index + step));
       }
       window.__okouPptx = btoa(binary);
-      return JSON.stringify({ slides: nodes.length, length: window.__okouPptx.length });
+      return JSON.stringify({ slides: nodes.length, length: window.__okouPptx.length, unsupported });
     })()`);
     if (
       typeof meta !== "object" ||
@@ -321,7 +333,11 @@ function render(options: Options): Rendered {
     ) {
       throw new Error("Renderer returned no deck");
     }
-    const { slides, length } = meta as { slides: number; length: number };
+    const { slides, length, unsupported } = meta as {
+      slides: number;
+      length: number;
+      unsupported: Rendered["unsupported"];
+    };
     return {
       deck: applyGeometry(
         transfer(page, length),
@@ -338,7 +354,7 @@ function render(options: Options): Rendered {
         return page.texts;
       }),
       layout,
-      paint: paint.regions,
+      unsupported,
     };
   } finally {
     page.quiet(["eval", "window.__okouRestoreLayout?.()"]);
@@ -448,7 +464,7 @@ function requirePresentationConvertCapability(): void {
 function coverageFailure(report: VerifyReport): string {
   const percent = (report.coverage * 100).toFixed(1);
   const floor = (TEXT_COVERAGE_FLOOR * 100).toFixed(0);
-  return `Editable-text coverage ${percent}% is below the ${floor}% floor; listed source text is not native editable text. Browser-painted regions may preserve its appearance; compare page screenshots`;
+  return `Editable-text coverage ${percent}% is below the ${floor}% floor; listed source text is not native editable text. Compare the source and PPT page screenshots`;
 }
 
 async function convert(options: Options): Promise<void> {
@@ -473,11 +489,7 @@ async function convert(options: Options): Promise<void> {
           activatedSlides: rendered.layout.activated,
           fragmentedOwners: rendered.layout.fragmented,
         },
-        paint: {
-          regions: rendered.paint,
-          editability:
-            "rasterized regions are images, not native text or shapes",
-        },
+        unsupported: rendered.unsupported,
       }),
     );
     if (failed) {
@@ -485,9 +497,9 @@ async function convert(options: Options): Promise<void> {
     }
     return;
   }
-  if (rendered.paint.length > 0) {
+  if (rendered.unsupported.length > 0) {
     process.stderr.write(
-      `Browser paint: ${rendered.paint.length.toString()} regions are PNG images; their content is not editable.\n`,
+      `${rendered.unsupported.length.toString()} elements require unsupported image-based exports; those images were omitted. Compare the source and PPT page screenshots.\n`,
     );
   }
   if (failed) {
@@ -523,9 +535,7 @@ async function convert(options: Options): Promise<void> {
 
 export const presentationConvertCommand = new Command()
   .name("convert")
-  .description(
-    "Convert an HTML deck with native objects and explicit browser-painted regions",
-  )
+  .description("Convert an HTML deck with native objects and source images")
   .requiredOption("--input <path>", "HTML deck file or URL")
   .option("--out <path>", "Output .pptx path (default: <input>.pptx)")
   .option(
@@ -580,11 +590,11 @@ Notes:
   - Wrapped inline text is exported as measured native line fragments
   - Fixed geometry preserves font size; the viewer does not resize measured boxes
   - Table row heights and solid cell backgrounds come from browser measurements
-  - Unsupported paint is captured by the browser as explicitly reported PNG regions
-  - Background-only images retain separately measured native text
-  - Text inside a composited region is an image, not editable native text
-  - --json lists each region and the CSS features requiring browser paint
-  - --verify retains the original text denominator; image text does not pass it
+  - HTML text and CSS effects never fall back to screenshots or generated images
+  - Source images, SVG/canvas assets, and image URL backgrounds remain images
+  - Unsupported effects can be missing or inaccurate; native export is not visual acceptance
+  - --json lists elements whose synthetic image exports were omitted
+  - --verify checks original source text; it does not grade appearance
   - Complex effects still require rendered-page comparison
   - Use okou presentation screenshot and compare each page before delivery`,
   )

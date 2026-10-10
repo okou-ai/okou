@@ -126,7 +126,7 @@ export const PREPARE_PAGES = String.raw`(async (selector) => {
   return activated;
 })`;
 
-/** Measure native text after independently capturing unsupported browser paint. */
+/** Measure native text and retain the original source text for verification. */
 export const PREPARE_LAYOUT = String.raw`((selector, activated) => {
   const slides = Array.from(document.querySelectorAll(selector));
   ${RESTORABLE}
@@ -193,9 +193,10 @@ export const PREPARE_LAYOUT = String.raw`((selector, activated) => {
     }
     return result.filter(part => part.text.trim());
   };
+  const sourceTexts = slides.map(slide => textNodes(slide).map(node => node.nodeValue.trim()));
   const inlineTree = owner => Array.from(owner.querySelectorAll('*')).every(child => {
     const style = getComputedStyle(child);
-    return child.hasAttribute('data-okou-raster') || child.tagName === 'BR' || ((style.display === 'inline' || style.display === 'inline-block' || style.display === 'contents') && !child.matches('svg,img,canvas,math,ruby,rt,video,iframe'));
+    return child.tagName === 'BR' || ((style.display === 'inline' || style.display === 'inline-block' || style.display === 'contents') && !child.matches('svg,img,canvas,math,ruby,rt,video,iframe'));
   });
   // visibility is inherited but can be overridden. Unlike display:none, it
   // must not prune visible descendants from the renderer's traversal.
@@ -249,7 +250,7 @@ export const PREPARE_LAYOUT = String.raw`((selector, activated) => {
       // Rotated/scaled bounds are axis-aligned unions too, but require affine
       // composition, not the untransformed line-fragment contract below.
       if (transformed) continue;
-      const decorated = owner.querySelector('[data-okou-raster]') || color(style.backgroundColor) || style.backgroundImage !== 'none' || parseFloat(style.borderTopWidth) > 0 || Array.from(owner.querySelectorAll('*')).some(child => {
+      const decorated = color(style.backgroundColor) || style.backgroundImage !== 'none' || parseFloat(style.borderTopWidth) > 0 || Array.from(owner.querySelectorAll('*')).some(child => {
         const s = getComputedStyle(child);
         return s.backgroundImage !== 'none' || color(s.backgroundColor) || parseFloat(s.borderTopWidth) > 0;
       });
@@ -278,7 +279,6 @@ export const PREPARE_LAYOUT = String.raw`((selector, activated) => {
       return color(style.backgroundColor) || style.backgroundImage !== 'none' || parseFloat(style.borderTopWidth) > 0;
     }).map(child => ({style:snapshotStyle(child),opacity:relativeOpacity(child,owner),rects:Array.from(child.getClientRects())}));
     const originalChildren = Array.from(owner.childNodes);
-    const pictures = Array.from(owner.querySelectorAll('img[data-okou-raster]')).map(image => ({image,rect:image.getBoundingClientRect()}));
     save(owner);
     undo.push(() => owner.replaceChildren(...originalChildren));
     owner.replaceChildren();
@@ -289,11 +289,6 @@ export const PREPARE_LAYOUT = String.raw`((selector, activated) => {
     // Absolute child coordinates are relative to the padding box, not the border box.
     const originX = root.left + parseFloat(sourceStyle.borderLeftWidth);
     const originY = root.top + parseFloat(sourceStyle.borderTopWidth);
-    for (const {image,rect} of pictures) {
-      image.style.setProperty('left',(rect.left-originX)+'px','important');
-      image.style.setProperty('top',(rect.top-originY)+'px','important');
-      owner.append(image);
-    }
     for (const decoration of decorations) {
       for (const rect of decoration.rects) {
         const paint = document.createElement('span');
@@ -315,7 +310,7 @@ export const PREPARE_LAYOUT = String.raw`((selector, activated) => {
     }
     fragmented += 1;
   }
-  const pages = slides.map(slide => {
+  const pages = slides.map((slide,index) => {
     const rect = slide.getBoundingClientRect();
     const box = element => {
       const r = element.getBoundingClientRect();
@@ -334,31 +329,35 @@ export const PREPARE_LAYOUT = String.raw`((selector, activated) => {
     }));
     const orderedLists = Array.from(slide.querySelectorAll('ol')).filter(list => {
       const rect = list.getBoundingClientRect();
-      return visible(list) && rect.width>0 && rect.height>0 && Array.from(list.children).some(child=>child.tagName==='LI');
-    }).map(list => {
+      return visible(list) && rect.width>0 && rect.height>0 && !list.reversed && getComputedStyle(list).listStyleType==='decimal' && Array.from(list.children).some(child=>child.tagName==='LI');
+    }).flatMap(list => {
       let number = list.hasAttribute('start') ? Number(list.getAttribute('start')) : 1;
       const items = Array.from(list.children).filter(child => child.tagName === 'LI');
       const numbers = items.map(item => {
         if (item.hasAttribute('value')) number = Number(item.getAttribute('value'));
         return number++;
       });
+      // DrawingML automatic decimal starts are positive 16-bit values. Other
+      // list formats stay with the renderer and need separate visual review.
+      if (numbers.some(number => !Number.isInteger(number) || number<1 || number>32767)) return [];
       const context = document.createElement('canvas').getContext('2d');
       if (!context) throw new Error('No canvas context for native marker measurement');
       const rect = list.getBoundingClientRect(), listStyle = getComputedStyle(list);
       const markers = items.map((item,index) => {
         const marker = getComputedStyle(item,'::marker');
         const first = textNodes(item)[0];
-        if (!first) throw new Error('Native list item has no visible text');
+        if (!first) return null;
         const range = document.createRange();
         range.selectNodeContents(first);
         const text = Array.from(range.getClientRects()).find(rect => rect.width>0 && rect.height>0);
-        if (!text) throw new Error('Native list item has no text geometry');
+        if (!text) return null;
         context.font = marker.fontStyle+' '+marker.fontWeight+' '+marker.fontSize+' '+marker.fontFamily;
         const lineHeight = parseFloat(getComputedStyle(item).lineHeight);
         const leading = Number.isFinite(lineHeight) ? Math.max(0,(lineHeight-text.height)/2) : 0;
         return {color:color(marker.color),font:families(marker)[0],size:parseFloat(marker.fontSize),gap:context.measureText(numbers[index]+'. ').width,offset:text.left-rect.left-parseFloat(listStyle.paddingLeft),leading};
       });
-      return {...box(list),numbers,markers};
+      if (markers.some(marker => marker===null)) return [];
+      return [{...box(list),numbers,markers}];
     });
     const roundedTextShapes = [];
     for (const owner of slide.querySelectorAll('*')) {
@@ -405,7 +404,7 @@ export const PREPARE_LAYOUT = String.raw`((selector, activated) => {
       underlineColor:part.style.textDecorationLine.includes('underline') ? color(part.style.textDecorationColor) : '',
       underlineWidth:parseFloat(part.style.textDecorationThickness) || 0,
     }));
-    return {width:rect.width,height:rect.height,tables,orderedLists,textBoxes,roundedTextShapes,texts:textNodes(slide).map(node => node.nodeValue.trim())};
+    return {width:rect.width,height:rect.height,tables,orderedLists,textBoxes,roundedTextShapes,texts:sourceTexts[index]};
   });
   return JSON.stringify({pages,activated,fragmented});
 })`;
