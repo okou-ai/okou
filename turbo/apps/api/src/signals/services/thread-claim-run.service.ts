@@ -78,7 +78,7 @@ import {
 } from "../../lib/error";
 import { logger } from "../../lib/log";
 
-import { now, nowDate } from "../../lib/time";
+import { monotonicNow, now, nowDate } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
 import { type Db, db$, type ReadonlyDb, writeDb$ } from "../external/db";
 import {
@@ -4500,16 +4500,20 @@ export function createThreadClaimRunObjects(
         "api_dispatch_insert_run_with_concurrency",
         "top_level",
         async () => {
-          const result = await set(
-            commitPreparedPendingLaunch$,
-            preparedCommit,
-            {
-              orgId: claim.orgId,
-              chatThreadId: claim.chatThreadId,
-              claimId: claim.claimId,
-              producer: context.producerBinding,
+          const result = await admissionTiming.capturePoolAcquisition(
+            async () => {
+              return await set(
+                commitPreparedPendingLaunch$,
+                preparedCommit,
+                {
+                  orgId: claim.orgId,
+                  chatThreadId: claim.chatThreadId,
+                  claimId: claim.claimId,
+                  producer: context.producerBinding,
+                },
+                signal,
+              );
             },
-            signal,
           );
           if ("kind" in result && result.kind === "pending") {
             set(internalCommittedRunId$, result.run.id);
@@ -7249,17 +7253,35 @@ export const commitPreparedPendingLaunch$ = command(
               admission,
               capabilities,
             );
-            const rowsPersisted = await timing.measure(
+            const rowsPersisted = await timing.measureDatabase(
               "api_dispatch_persist_atomic_launch",
-              "nested",
+              "api_dispatch_persist_atomic_launch_sql_call",
+              "api_dispatch_persist_atomic_launch_application_remainder",
               async () => {
                 const { rows, context } = prepared;
+                const buildStartedAt = monotonicNow();
                 const plan = pendingAtomicLaunchPlan(rows, context);
+                timing.recordDuration(
+                  "api_dispatch_persist_atomic_launch_build",
+                  "nested",
+                  monotonicNow() - buildStartedAt,
+                  now(),
+                );
                 const [row] = parseRawRows(
                   pendingLaunchRowSchema,
                   await tx.execute(plan),
                 );
-                return pendingAtomicLaunchResult(rows, context, row).persisted;
+                // ORM/schema decoding stays in the application remainder;
+                // this child measures only projection of the validated row.
+                const materializeStartedAt = monotonicNow();
+                const result = pendingAtomicLaunchResult(rows, context, row);
+                timing.recordDuration(
+                  "api_dispatch_persist_atomic_launch_materialize",
+                  "nested",
+                  monotonicNow() - materializeStartedAt,
+                  now(),
+                );
+                return result.persisted;
               },
             );
             if (claim) {

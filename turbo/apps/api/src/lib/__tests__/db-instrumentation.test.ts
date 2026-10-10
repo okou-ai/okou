@@ -26,7 +26,9 @@ import {
   createInstrumentedPgStream,
   instrumentPgPool,
   withPgPoolAcquisitionCapture,
+  withPgQueryExecutionCapture,
   type PgPoolAcquisition,
+  type PgQueryExecution,
 } from "../db-instrumentation";
 import { env } from "../env";
 
@@ -375,16 +377,126 @@ describe("instrumentPgPool", () => {
     // write must still deliver and release the real query's client.
     const pool = createPool();
     const acquisitions: PgPoolAcquisition[] = [];
+    const executions: PgQueryExecution[] = [];
     Object.freeze(acquisitions);
+    Object.freeze(executions);
     const result = await withPgPoolAcquisitionCapture(
       { acquisitions },
       async () => {
-        return await pool.query("SELECT 406 AS capture_write_failure");
+        return await withPgQueryExecutionCapture({ executions }, async () => {
+          return await pool.query("SELECT 406 AS capture_write_failure");
+        });
       },
     );
     expect(result.rowCount).toBe(1);
+    const directResult = await withPgPoolAcquisitionCapture(
+      { acquisitions },
+      async () => {
+        const client = await pool.connect();
+        return await withPgQueryExecutionCapture({ executions }, async () => {
+          return await client.query("SELECT 408 AS direct_capture_failure");
+        }).finally(() => {
+          client.release();
+        });
+      },
+    );
+    expect(directResult.rowCount).toBe(1);
     const next = await pool.query("SELECT 407 AS capture_write_recovery");
     expect(next.rowCount).toBe(1);
+  });
+
+  it("isolates callback and Promise query captures across queued requests", async () => {
+    // Infrastructure exception: real callers cannot select pg transport style
+    // or the process tracer. Exercise both against one real, saturated pool.
+    const pool = createPool(
+      {},
+      new ProxyTracerProvider().getTracer("db-capture-noop-test"),
+    );
+    const firstPool = { acquisitions: [] as PgPoolAcquisition[] };
+    const secondPool = { acquisitions: [] as PgPoolAcquisition[] };
+    const firstQuery = { executions: [] as PgQueryExecution[] };
+    const secondQuery = { executions: [] as PgQueryExecution[] };
+    await withPgPoolAcquisitionCapture(firstPool, async () => {
+      await withPgQueryExecutionCapture(firstQuery, async () => {
+        await pool.query("SELECT 411 AS callback_capture");
+      });
+    });
+    const heldClient = await pool.connect();
+    const first = withPgPoolAcquisitionCapture(firstPool, async () => {
+      return await withPgQueryExecutionCapture(firstQuery, async () => {
+        const client = await pool.connect();
+        return await client
+          .query("SELECT 412 AS promise_capture")
+          .finally(() => {
+            client.release();
+          });
+      });
+    });
+    const second = withPgPoolAcquisitionCapture(secondPool, async () => {
+      return await withPgQueryExecutionCapture(secondQuery, async () => {
+        return await pool.query("SELECT 413 AS second_callback_capture");
+      });
+    });
+    const uncaptured = pool.query("SELECT 415 AS uncaptured_callback");
+    const waitingCount = pool.waitingCount;
+    heldClient.release();
+    expect(waitingCount).toBe(3);
+    const results = await Promise.all([first, second, uncaptured]);
+    expect(
+      results.map((result) => {
+        return result.rowCount;
+      }),
+    ).toStrictEqual([1, 1, 1]);
+    expect(
+      firstPool.acquisitions.map((entry) => {
+        return entry.path;
+      }),
+    ).toStrictEqual(["new", "queued"]);
+    expect(
+      secondPool.acquisitions.map((entry) => {
+        return entry.path;
+      }),
+    ).toStrictEqual(["queued"]);
+    expect(firstQuery.executions).toHaveLength(2);
+    expect(secondQuery.executions).toHaveLength(1);
+    for (const execution of [
+      ...firstQuery.executions,
+      ...secondQuery.executions,
+    ]) {
+      expect(Number.isFinite(execution.durationMs)).toBeTruthy();
+      expect(execution.durationMs).toBeGreaterThanOrEqual(0);
+      expect(Number.isFinite(execution.finishedAt)).toBeTruthy();
+    }
+    expect(exporter.getFinishedSpans()).toHaveLength(0);
+  });
+
+  it("captures failed Promise acquisition without inventing SQL execution", async () => {
+    const pool = createPool({ connectionTimeoutMillis: 25 });
+    const heldClient = await pool.connect();
+    const capture = { acquisitions: [] as PgPoolAcquisition[] };
+    const query = { executions: [] as PgQueryExecution[] };
+    const error = await captureRejection(
+      withPgPoolAcquisitionCapture(capture, async () => {
+        return await withPgQueryExecutionCapture(query, async () => {
+          return await pool.connect();
+        });
+      }),
+    );
+    heldClient.release();
+    expect(error).toHaveProperty(
+      "message",
+      "timeout exceeded when trying to connect",
+    );
+    expect(capture.acquisitions).toStrictEqual([
+      {
+        durationMs: expect.any(Number),
+        path: "queued",
+        finishedAt: expect.any(Number),
+      },
+    ]);
+    expect(query.executions).toHaveLength(0);
+    const recovered = await pool.query("SELECT 414 AS acquisition_recovered");
+    expect(recovered.rowCount).toBe(1);
   });
 
   it("reserves idle and new capacity for earlier synchronous queries", async () => {
@@ -512,9 +624,22 @@ describe("instrumentPgPool", () => {
     const invalidStatement =
       "SELECT * FROM okou_missing_db_instrumentation_table";
     const recoveryStatement = "SELECT 302 AS recovered";
+    const failureCapture = { executions: [] as PgQueryExecution[] };
     const queryError = await captureRejection(
-      failurePool.query(invalidStatement),
+      withPgQueryExecutionCapture(failureCapture, async () => {
+        return await failurePool.query(invalidStatement);
+      }),
     );
+    const client = await failurePool.connect();
+    const directError = await captureRejection(
+      withPgQueryExecutionCapture(failureCapture, async () => {
+        return await client.query(invalidStatement);
+      }).finally(() => {
+        client.release();
+      }),
+    );
+    expect(directError).toBeInstanceOf(Error);
+    expect(failureCapture.executions).toHaveLength(2);
     const recoveryResult = await failurePool.query(recoveryStatement);
 
     expect(queryError).toBeInstanceOf(Error);
@@ -522,7 +647,7 @@ describe("instrumentPgPool", () => {
     const failureSpan = findSpan(invalidStatement);
     expect(failureSpan.status.code).toBe(SpanStatusCode.ERROR);
     expectAcquisition(failureSpan, "new");
-    expectAcquisition(findSpan(recoveryStatement), "new");
+    expectAcquisition(findSpan(recoveryStatement), "idle");
   });
 
   it("preserves direct callbacks and instruments reused clients only once", async () => {
