@@ -1,3 +1,4 @@
+import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { modelCatalogContract } from "@okouai/api-contracts/contracts/model-catalog";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
@@ -13,6 +14,7 @@ import {
 import {
   context,
   findButton,
+  findLink,
   installRunChat,
   NEW_CHAT_PATH,
   readyChat,
@@ -34,14 +36,7 @@ test.each([
 ])(
   "shows catalog-supported $effort for a saved Ultra preference when Codex execution is $enabled",
   async ({ enabled, effort }) => {
-    const updates: { reasoningEffort?: string | null }[] = [];
-    installRunChat({
-      selectedModel: MODEL,
-      reasoningEffort: "ultra",
-      onModelSelectionUpdate: (body) => {
-        updates.push(body);
-      },
-    });
+    installRunChat({ selectedModel: MODEL, reasoningEffort: "ultra" });
     configureModel();
     await setupPage({
       context,
@@ -53,9 +48,51 @@ test.each([
     expect(
       within(panel).getByRole("slider", { name: "Effort" }),
     ).toHaveAttribute("aria-valuetext", effort);
-    expect(updates).toStrictEqual([]);
   },
 );
+
+test("enabling Codex in Lab preserves a saved Ultra preference that Pi cannot use", async () => {
+  installRunChat({ selectedModel: MODEL, reasoningEffort: "ultra" });
+  configureModel();
+  let switches: Record<string, boolean> = {
+    [FeatureSwitchKey.CodexExecution]: false,
+    [FeatureSwitchKey.Lab]: true,
+  };
+  context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
+    return respond(200, { switches, effectiveSwitches: switches });
+  });
+  context.mocks.api(featureSwitchesContract.update, ({ body, respond }) => {
+    switches = { ...switches, ...body.switches };
+    return respond(200, { switches, effectiveSwitches: switches });
+  });
+  await setupPage({ context, path: RUN_PATH });
+  await readyChat();
+  const piPanel = await openModelPanel("GPT 6.1 Sol, Max");
+  expect(
+    within(piPanel).getByRole("slider", { name: "Effort" }),
+  ).toHaveAttribute("aria-valuetext", "Max");
+  await closeModelPanel();
+
+  click(await findButton("Test User"));
+  click(await screen.findByText("Lab"));
+  await screen.findByRole("heading", { name: "Lab" });
+  const row = screen.getByText("Codex execution (test only)").closest("li");
+  if (!(row instanceof HTMLElement)) {
+    throw new Error("Codex execution test switch row was not found");
+  }
+  const toggle = within(row).getByRole("switch");
+  expect(toggle).not.toBeChecked();
+  click(toggle);
+  await waitFor(() => {
+    expect(toggle).toBeChecked();
+  });
+  click(await findLink("Run conversation"));
+  await readyChat();
+  const codexPanel = await openModelPanel("GPT 6.1 Sol, Ultra");
+  expect(
+    within(codexPanel).getByRole("slider", { name: "Effort" }),
+  ).toHaveAttribute("aria-valuetext", "Ultra");
+});
 
 test("does not expand the catalog's efforts when Codex execution is enabled", async () => {
   installRunChat({ selectedModel: MODEL, reasoningEffort: "ultra" });

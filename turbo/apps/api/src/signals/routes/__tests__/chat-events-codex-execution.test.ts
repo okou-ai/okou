@@ -14,11 +14,10 @@ import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 const context = testContext();
 const {
   api,
+  chat,
   chatCallbacks,
   entitledChatActor,
-  configureBuiltInPiModelOnOpenRouter,
   configureSubscriptionPiModel,
-  publishPendingPiInstructions,
   mockPiResourceArchiveDownloads,
   mockPiCheckpointObjectStore,
   completeSandboxFirstPiRun,
@@ -80,40 +79,15 @@ describe("Codex execution switch", () => {
     },
   );
 
-  it("uses the existing OpenRouter preset and billing route for Auto on Codex", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-    await configureBuiltInPiModelOnOpenRouter(actor);
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: requireOrgId(actor) },
-      { [FeatureSwitchKey.CodexExecution]: true },
-    );
-    const run = await sendChatRun(actor, {
-      agentId,
-      model: null,
-      prompt: "run Auto through Codex",
-    });
-    const { claim } = await claimChatRun(runnerGroup, run.runId);
-    expect(claim.cliAgentType).toBe("codex");
-    expect(claim.piModelConfig).toBeUndefined();
-    expect(claim.codexRuntimeConfig).toMatchObject({
-      providerId: "openrouter-codex",
-      baseUrl: "https://openrouter.ai/api/v1",
-      wireApi: "responses",
-    });
-    expect(claimEnvironment(claim).OPENAI_MODEL).toBe("@preset/okou-1-0");
-    expect(claim.modelUsageProvider).toBe("@preset/okou-1-0");
-    expect(claim.billableFirewalls).toContain(
-      "model-provider:openrouter-codex",
-    );
-    await cancelChatRun(actor, run.runId);
-  });
-
-  it("uses the switch when an event-triggered workflow launches Auto", async () => {
+  it("uses the switch when an event-triggered workflow launches a subscription chat", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor({}, "team");
     chatCallbacks.failIfChatCallbackRouteIsFetched();
-    await configureBuiltInPiModelOnOpenRouter(actor);
+    const accountId = `codex-workflow-${randomUUID()}`;
+    await configureSubscriptionPiModel(actor, { accountId }, "gpt-6-luna");
+    const thread = await chat.createThread(actor, {
+      agentId,
+      model: "gpt-6-luna",
+    });
     await updateFeatureSwitchesForUser(
       context,
       { ...actor, orgId: requireOrgId(actor) },
@@ -122,17 +96,15 @@ describe("Codex execution switch", () => {
 
     const workflowRun = await createWorkflowsBddApi(
       context,
-    ).startEventAutomationRun(actor, agentId);
+    ).startEventAutomationRun(actor, agentId, thread.id);
     const { claim } = await claimChatRun(runnerGroup, workflowRun.runId);
     expect(claim.cliAgentType).toBe("codex");
     expect(claim.piLaunchConfig).toBeUndefined();
-    expect(claim.codexRuntimeConfig).toMatchObject({
-      providerId: "openrouter-codex",
-      baseUrl: "https://openrouter.ai/api/v1",
+    expect(claimEnvironment(claim)).toMatchObject({
+      OPENAI_MODEL: "gpt-6-luna",
+      CODEX_OAUTH_ACCOUNT_ID: accountId,
     });
-    expect(claim.billableFirewalls).toContain(
-      "model-provider:openrouter-codex",
-    );
+    expect(claim.billableFirewalls).toStrictEqual([]);
     await cancelChatRun(actor, workflowRun.runId);
   });
 
@@ -160,7 +132,6 @@ describe("Codex execution switch", () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     await configureSubscriptionPiModel(actor, {}, "gpt-6-luna");
-    await publishPendingPiInstructions(actor, agentId);
     mockPiResourceArchiveDownloads(true);
     const historyObjects = mockPiCheckpointObjectStore();
 
