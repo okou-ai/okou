@@ -323,8 +323,7 @@ impl CompletionPayload {
                     error,
                     sandbox_id: Some(sandbox_id),
                     sandbox_reuse_result: Some(reuse_result),
-                    // Prepared outgoing wire contract until PR5 reader retirement.
-                    workspace_reuse_result: home_reuse_result,
+                    home_reuse_result,
                 },
                 completion_auth,
             )

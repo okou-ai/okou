@@ -43,14 +43,13 @@ pub enum RunnerPreferenceTier {
     ExactSandbox,
     FinalizingPredecessor,
     ReusableSandbox,
-    WorkspaceCache,
     HomeCache,
 }
 
 impl RunnerPreferenceTier {
     pub fn rank(self) -> u8 {
         match self {
-            Self::WorkspaceCache | Self::HomeCache => 1,
+            Self::HomeCache => 1,
             Self::ReusableSandbox => 2,
             Self::FinalizingPredecessor => 3,
             Self::ExactSandbox => 4,
@@ -838,7 +837,7 @@ pub trait JobProvider: Send + Sync {
 
     /// Report job completion. Called concurrently from spawned executor tasks.
     ///
-    /// The request carries the exit status and optional sandbox/workspace reuse
+    /// The request carries the exit status and optional sandbox/home reuse
     /// outcomes. Reuse fields remain optional for failures that happen before
     /// the corresponding decision is final.
     ///

@@ -328,9 +328,9 @@ async function applyCancelledCompletionMetadata(
           sandboxReuseResult: sql`coalesce(${agentRuns.sandboxReuseResult}, ${input.body.sandboxReuseResult})`,
         }
       : {}),
-    ...(input.body.workspaceReuseResult !== undefined
+    ...(input.body.homeReuseResult !== undefined
       ? {
-          workspaceReuseResult: sql`coalesce(${agentRuns.workspaceReuseResult}, ${input.body.workspaceReuseResult})`,
+          homeReuseResult: sql`coalesce(${agentRuns.homeReuseResult}, ${input.body.homeReuseResult})`,
         }
       : {}),
   };
@@ -382,7 +382,7 @@ async function applyTerminalCompletion(
       ...(prepared.result !== undefined ? { result: prepared.result } : {}),
       sandboxId: input.body.sandboxId,
       sandboxReuseResult: input.body.sandboxReuseResult,
-      workspaceReuseResult: input.body.workspaceReuseResult,
+      homeReuseResult: input.body.homeReuseResult,
     },
     conditions: [
       eq(agentRuns.id, input.body.runId),

@@ -2153,7 +2153,7 @@ mod tests {
                         "runnerId": "00000000-0000-0000-0000-000000000005",
                         "heartbeatGeneration": 0
                     },
-                    "tier": "workspaceCache",
+                    "tier": "homeCache",
                     "expiresAt": "2999-01-01T00:00:00.000Z"
                 }
             }),

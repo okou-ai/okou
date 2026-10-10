@@ -286,10 +286,10 @@ describe("Sandbox transient session output", () => {
   });
 });
 
-describe("workspace history restore telemetry", () => {
+describe("home history restore telemetry", () => {
   const operation = {
     ts: "2026-09-15T00:00:00Z",
-    action_type: "session_history_workspace_cache_guest_restore",
+    action_type: "session_history_home_cache_guest_restore",
     duration_ms: 1234,
     success: true,
   };
@@ -366,7 +366,7 @@ describe("workspace history restore telemetry", () => {
       action_type: "session_history_transfer",
       session_history_framework: "codex",
       session_history_restore_representation: "raw",
-      session_history_transfer_source: "workspace_cache",
+      session_history_transfer_source: "home_cache",
       session_history_wire_codec: "zstd",
       session_history_transfer_bytes: RESUME_SESSION_HISTORY_MAX_BYTES,
       session_history_wire_bytes: 144 * 1024 * 1024,
@@ -656,8 +656,8 @@ describe("agent completion reuse outcomes", () => {
     }
   });
 
-  it("accepts coherent final sandbox and workspace outcomes", () => {
-    const workspaceMisses = [
+  it("accepts coherent final sandbox and home outcomes", () => {
+    const homeMisses = [
       "cacheMiss",
       "noReuseKey",
       "invalidWorkingDir",
@@ -670,17 +670,17 @@ describe("agent completion reuse outcomes", () => {
     const coherentPairs = [
       ["reused", "sandboxReused"],
       ["noReuseKey", "reused"],
-      ...workspaceMisses.map((workspaceResult) => {
-        return ["poolMiss", workspaceResult] as const;
+      ...homeMisses.map((homeResult) => {
+        return ["poolMiss", homeResult] as const;
       }),
     ] as const;
 
-    for (const [sandboxReuseResult, workspaceReuseResult] of coherentPairs) {
+    for (const [sandboxReuseResult, homeReuseResult] of coherentPairs) {
       expect(
         webhookCompleteContract.complete.body.safeParse({
           ...baseBody,
           sandboxReuseResult,
-          workspaceReuseResult,
+          homeReuseResult,
         }).success,
       ).toBe(true);
     }
@@ -688,18 +688,18 @@ describe("agent completion reuse outcomes", () => {
 
   it("rejects missing, legacy, or contradictory sandbox context", () => {
     const incoherentBodies = [
-      { workspaceReuseResult: "cacheMiss" },
+      { homeReuseResult: "cacheMiss" },
       {
         sandboxReuseResult: "reused",
-        workspaceReuseResult: "cacheMiss",
+        homeReuseResult: "cacheMiss",
       },
       {
         sandboxReuseResult: "poolMiss",
-        workspaceReuseResult: "sandboxReused",
+        homeReuseResult: "sandboxReused",
       },
       {
         sandboxReuseResult: "noSessionId",
-        workspaceReuseResult: "cacheMiss",
+        homeReuseResult: "cacheMiss",
       },
     ] as const;
 

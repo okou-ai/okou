@@ -844,7 +844,7 @@ fn build_env_json_with_host_env_inner(
     );
     if let Some(home_reuse_result) = home_reuse_result {
         env.insert(
-            guest_contracts::env::CANONICAL_WORKSPACE_REUSE_RESULT_ENV.into(),
+            guest_contracts::env::CANONICAL_HOME_REUSE_RESULT_ENV.into(),
             home_reuse_result.as_wire().into(),
         );
     }

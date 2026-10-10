@@ -33,8 +33,8 @@ pub const CANONICAL_SANDBOX_ID_ENV: &str = "OKOU_SANDBOX_ID";
 /// not happen, such as `poolMiss` or `noReuseKey`.
 pub const CANONICAL_SANDBOX_REUSE_RESULT_ENV: &str = "OKOU_SANDBOX_REUSE_RESULT";
 
-/// Wire value for the runner's final workspace-reuse decision.
-pub const CANONICAL_WORKSPACE_REUSE_RESULT_ENV: &str = "OKOU_WORKSPACE_REUSE_RESULT";
+/// Wire value for the runner's final home-reuse decision.
+pub const CANONICAL_HOME_REUSE_RESULT_ENV: &str = "OKOU_HOME_REUSE_RESULT";
 
 /// Logical run-payload field name for the user prompt.
 pub const PROMPT_RUN_PAYLOAD_FIELD: &str = "OKOU_PROMPT";
@@ -553,7 +553,7 @@ const EXPLICIT_RUNNER_OWNED_ENV_KEYS: &[&str] = &[
     RUN_ID_ENV,
     CANONICAL_SANDBOX_ID_ENV,
     CANONICAL_SANDBOX_REUSE_RESULT_ENV,
-    CANONICAL_WORKSPACE_REUSE_RESULT_ENV,
+    CANONICAL_HOME_REUSE_RESULT_ENV,
     CANONICAL_API_START_TIME_ENV,
     PI_SESSION_ID_ENV,
     PI_LAUNCH_CONFIG_ENV,
@@ -716,10 +716,7 @@ mod tests {
             CANONICAL_SANDBOX_REUSE_RESULT_ENV,
             "OKOU_SANDBOX_REUSE_RESULT"
         );
-        assert_eq!(
-            CANONICAL_WORKSPACE_REUSE_RESULT_ENV,
-            "OKOU_WORKSPACE_REUSE_RESULT"
-        );
+        assert_eq!(CANONICAL_HOME_REUSE_RESULT_ENV, "OKOU_HOME_REUSE_RESULT");
         assert_eq!(CANONICAL_RESUME_SESSION_ID_ENV, "OKOU_RESUME_SESSION_ID");
         assert_eq!(CANONICAL_API_START_TIME_ENV, "OKOU_API_START_TIME");
         assert_eq!(PI_SESSION_ID_ENV, "OKOU_PI_SESSION_ID");
@@ -961,7 +958,7 @@ mod tests {
             CANONICAL_API_TOKEN_ENV,
             CANONICAL_SANDBOX_ID_ENV,
             CANONICAL_SANDBOX_REUSE_RESULT_ENV,
-            CANONICAL_WORKSPACE_REUSE_RESULT_ENV,
+            CANONICAL_HOME_REUSE_RESULT_ENV,
             CANONICAL_RESUME_SESSION_ID_ENV,
             CANONICAL_API_START_TIME_ENV,
             PI_SESSION_ID_ENV,

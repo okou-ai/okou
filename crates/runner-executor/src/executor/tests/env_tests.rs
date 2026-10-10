@@ -478,7 +478,7 @@ fn build_env_json_required_keys() {
         Some("reused")
     );
     assert_eq!(
-        env.get(guest_contracts::env::CANONICAL_WORKSPACE_REUSE_RESULT_ENV)
+        env.get(guest_contracts::env::CANONICAL_HOME_REUSE_RESULT_ENV)
             .map(String::as_str),
         Some("sandboxReused")
     );
@@ -523,8 +523,8 @@ fn build_env_json_sandbox_reuse_result_wire_format() {
             Some(expected)
         );
         assert!(
-            !env.contains_key(guest_contracts::env::CANONICAL_WORKSPACE_REUSE_RESULT_ENV),
-            "no-workspace builder emitted canonical workspace reuse metadata"
+            !env.contains_key(guest_contracts::env::CANONICAL_HOME_REUSE_RESULT_ENV),
+            "builder without a home outcome emitted canonical home reuse metadata"
         );
     }
 }

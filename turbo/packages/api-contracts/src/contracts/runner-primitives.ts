@@ -35,8 +35,8 @@ export const sandboxReuseResultSchema = z.enum([
 
 export type SandboxReuseResult = z.infer<typeof sandboxReuseResultSchema>;
 
-/** Final workspace reuse outcome after sandbox preparation has settled. */
-export const workspaceReuseResultSchema = z.enum([
+/** Final home reuse outcome after sandbox preparation has settled. */
+export const homeReuseResultSchema = z.enum([
   "reused",
   "sandboxReused",
   "cacheMiss",
@@ -49,7 +49,7 @@ export const workspaceReuseResultSchema = z.enum([
   "sandboxPrepareFallback",
 ]);
 
-export type WorkspaceReuseResult = z.infer<typeof workspaceReuseResultSchema>;
+export type HomeReuseResult = z.infer<typeof homeReuseResultSchema>;
 
 export const runnerHeartbeatGenerationSchema = z
   .number()

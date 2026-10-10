@@ -13,11 +13,7 @@ use crate::ids::RunId;
 use crate::storage_manifest::StorageManifest;
 
 pub const MAX_HELD_SANDBOX_STATES: usize = 1024;
-pub const MAX_HELD_WORKSPACE_STATES: usize = 1024;
 pub const MAX_ACTIVE_REUSE_PRODUCERS: usize = 1024;
-pub const MAX_WORKSPACE_CACHES_PER_REUSE_KEY: usize = 8;
-pub const MAX_WORKSPACE_CACHES_PER_HEARTBEAT: usize = 1024;
-pub const WORKSPACE_AFFINITY_VERSION: u8 = 1;
 pub const MAX_HELD_HOME_STATES: usize = 1024;
 pub const MAX_HOME_CACHES_PER_REUSE_KEY: usize = 8;
 pub const MAX_HOME_CACHES_PER_HEARTBEAT: usize = 1024;
@@ -1751,13 +1747,6 @@ impl SessionHistorySizeBucket {
     }
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkspaceCacheCapability {
-    pub profile: String,
-    pub workspace_affinity_version: u8,
-}
-
 /// Reusable sandbox state keyed by the runner-owned reuse identity.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -1765,16 +1754,6 @@ pub struct HeldSandboxState {
     pub reuse_key: String,
     pub last_completed_at: String,
     pub reusable_sandbox: ReusableSandboxState,
-}
-
-/// Workspace cache state owned by a runner reuse key rather than a provider
-/// session identity.
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct HeldWorkspaceState {
-    pub reuse_key: String,
-    pub last_completed_at: String,
-    pub workspace_caches: Vec<WorkspaceCacheCapability>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -1819,10 +1798,7 @@ pub struct HeartbeatState {
     pub running_count: usize,
     pub admittable_profiles: Vec<String>,
     pub held_sandbox_states: Vec<HeldSandboxState>,
-    pub held_workspace_states: Vec<HeldWorkspaceState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub home_affinity_version: Option<u8>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    // Empty inventory must clear a previous observation under the shared order.
     pub held_home_states: Vec<HeldHomeState>,
     pub active_reuse_producers: Vec<ActiveReuseProducer>,
     /// Host-local WSS ingress service state, not public WSS reachability.
@@ -1853,13 +1829,9 @@ pub struct CompleteRequest {
     /// that the caller could not determine it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sandbox_reuse_result: Option<SandboxReuseResult>,
-    /// Final outcome of the workspace-reuse decision. `None` means the run
-    /// failed before the runner reached a reliable final decision.
+    /// Final home reuse outcome; absent when no reliable decision was reached.
     #[serde(skip_serializing_if = "Option::is_none")]
-    /// Bounded outgoing result envelope during PR2's mixed-reader window. The home-drive
-    /// Runner may report these unchanged outcomes here; this is not an old-image reader
-    /// or a conversion of home evidence into held workspace state. PR5 owns retirement.
-    pub workspace_reuse_result: Option<HomeReuseResult>,
+    pub home_reuse_result: Option<HomeReuseResult>,
 }
 
 /// Outcome of the sandbox-reuse decision made at job dispatch time. `Reused`
@@ -1892,8 +1864,7 @@ impl SandboxReuseResult {
 }
 
 /// Final outcome of home reuse after sandbox preparation has settled.
-/// The temporary completion envelope still uses `workspaceReuseResult` until
-/// PR5 retires mixed-reader protocol fields. This type never reads old images.
+/// Reported as `homeReuseResult`; this type never reads old images.
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum HomeReuseResult {
@@ -2316,7 +2287,7 @@ mod tests {
             error: None,
             sandbox_id: None,
             sandbox_reuse_result: None,
-            workspace_reuse_result: None,
+            home_reuse_result: None,
         };
         let json = serde_json::to_value(&req).unwrap();
         assert!(json.get("runId").is_some());
@@ -2326,7 +2297,7 @@ mod tests {
         assert!(json.get("failureReason").is_none());
         assert!(json.get("sandboxId").is_none());
         assert!(json.get("sandboxReuseResult").is_none());
-        assert!(json.get("workspaceReuseResult").is_none());
+        assert!(json.get("homeReuseResult").is_none());
     }
 
     #[test]
@@ -2340,14 +2311,14 @@ mod tests {
             error: Some("timeout".into()),
             sandbox_id: None,
             sandbox_reuse_result: None,
-            workspace_reuse_result: None,
+            home_reuse_result: None,
         };
         let json = serde_json::to_value(&req).unwrap();
         assert_eq!(json["error"], "timeout");
         assert_eq!(json["failureReason"], "provider_rate_limited");
         assert!(json.get("sandboxId").is_none());
         assert!(json.get("sandboxReuseResult").is_none());
-        assert!(json.get("workspaceReuseResult").is_none());
+        assert!(json.get("homeReuseResult").is_none());
     }
 
     #[test]
@@ -2364,7 +2335,7 @@ mod tests {
             ),
             sandbox_id: None,
             sandbox_reuse_result: None,
-            workspace_reuse_result: None,
+            home_reuse_result: None,
         };
 
         let json = serde_json::to_value(&req).unwrap();
@@ -2384,12 +2355,12 @@ mod tests {
             error: None,
             sandbox_id: Some(sid),
             sandbox_reuse_result: Some(SandboxReuseResult::Reused),
-            workspace_reuse_result: Some(HomeReuseResult::SandboxReused),
+            home_reuse_result: Some(HomeReuseResult::SandboxReused),
         };
         let json = serde_json::to_value(&req).unwrap();
         assert_eq!(json["sandboxId"], "11111111-2222-3333-4444-555555555555");
         assert_eq!(json["sandboxReuseResult"], "reused");
-        assert_eq!(json["workspaceReuseResult"], "sandboxReused");
+        assert_eq!(json["homeReuseResult"], "sandboxReused");
     }
 
     #[test]
@@ -2857,16 +2828,14 @@ mod tests {
                     ),
                 },
             }],
-            held_workspace_states: vec![HeldWorkspaceState {
+            held_home_states: vec![HeldHomeState {
                 reuse_key: "thread:thread-abc".into(),
                 last_completed_at: "2026-05-28T00:00:00.000Z".into(),
-                workspace_caches: vec![WorkspaceCacheCapability {
+                home_caches: vec![HomeCacheCapability {
                     profile: "vm0/large".into(),
-                    workspace_affinity_version: WORKSPACE_AFFINITY_VERSION,
+                    home_affinity_version: HOME_AFFINITY_VERSION,
                 }],
             }],
-            home_affinity_version: None,
-            held_home_states: Vec::new(),
             active_reuse_producers: vec![ActiveReuseProducer {
                 run_id: "22222222-2222-4222-8222-222222222222".parse().unwrap(),
                 reuse_key: "thread:thread-abc".into(),
@@ -2898,12 +2867,12 @@ mod tests {
                         "historyGenerationRunId": "11111111-1111-4111-8111-111111111111"
                     }
                 }],
-                "heldWorkspaceStates": [{
+                "heldHomeStates": [{
                     "reuseKey": "thread:thread-abc",
                     "lastCompletedAt": "2026-05-28T00:00:00.000Z",
-                    "workspaceCaches": [{
+                    "homeCaches": [{
                         "profile": "vm0/large",
-                        "workspaceAffinityVersion": 1
+                        "homeAffinityVersion": 1
                     }]
                 }],
                 "activeReuseProducers": [{
@@ -2951,8 +2920,6 @@ mod tests {
             running_count: 0,
             admittable_profiles: vec!["vm0/default".into()],
             held_sandbox_states: Vec::new(),
-            held_workspace_states: Vec::new(),
-            home_affinity_version: None,
             held_home_states: Vec::new(),
             active_reuse_producers: Vec::new(),
             wss_ingress_service_active: false,
@@ -2961,7 +2928,7 @@ mod tests {
 
         let serialized = serde_json::to_value(state).unwrap();
         assert_eq!(serialized["heldSandboxStates"], json!([]));
-        assert_eq!(serialized["heldWorkspaceStates"], json!([]));
+        assert_eq!(serialized["heldHomeStates"], json!([]));
         assert_eq!(serialized["activeReuseProducers"], json!([]));
     }
 }

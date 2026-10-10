@@ -1285,7 +1285,7 @@ fn log_poll_recovery(provider: &ApiProvider, reason: PollReason, recovery: Degra
 
 fn log_heartbeat_failure(state: &HeartbeatState, error: &ProviderError) {
     let reusable_sandboxes = state.held_sandbox_states.len();
-    let workspace_states = state.held_workspace_states.len();
+    let home_states = state.held_home_states.len();
     if let ProviderError::ApiTransport(api_error) = error {
         let request = &api_error.request;
         warn!(
@@ -1305,7 +1305,7 @@ fn log_heartbeat_failure(state: &HeartbeatState, error: &ProviderError) {
             mode = %state.mode,
             running = state.running_count,
             reusable_sandboxes,
-            workspace_states,
+            home_states,
             "heartbeat failed"
         );
         return;
@@ -1318,7 +1318,7 @@ fn log_heartbeat_failure(state: &HeartbeatState, error: &ProviderError) {
         mode = %state.mode,
         running = state.running_count,
         reusable_sandboxes,
-        workspace_states,
+        home_states,
         "heartbeat failed"
     );
 }
@@ -1355,7 +1355,7 @@ fn log_retryable_heartbeat_failure(
 ) {
     let request = &api_error.request;
     let reusable_sandboxes = state.held_sandbox_states.len();
-    let workspace_states = state.held_workspace_states.len();
+    let home_states = state.held_home_states.len();
     let failure_elapsed_ms = duration_ms(observation.failure_elapsed);
 
     if observation.emit_degradation {
@@ -1376,7 +1376,7 @@ fn log_retryable_heartbeat_failure(
             mode = %state.mode,
             running = state.running_count,
             reusable_sandboxes,
-            workspace_states,
+            home_states,
             consecutive_failures = observation.consecutive_failures,
             failure_elapsed_ms,
             will_retry = true,
@@ -1403,7 +1403,7 @@ fn log_retryable_heartbeat_failure(
         mode = %state.mode,
         running = state.running_count,
         reusable_sandboxes,
-        workspace_states,
+        home_states,
         consecutive_failures = observation.consecutive_failures,
         failure_elapsed_ms,
         will_retry = true,
@@ -1419,7 +1419,7 @@ fn log_heartbeat_recovery(state: &HeartbeatState, recovery: DegradationRecovery)
         mode = %state.mode,
         running = state.running_count,
         reusable_sandboxes = state.held_sandbox_states.len(),
-        workspace_states = state.held_workspace_states.len(),
+        home_states = state.held_home_states.len(),
         recovered_after_failures = recovery.recovered_after_failures,
         failure_elapsed_ms = duration_ms(recovery.failure_elapsed),
         was_degraded = recovery.was_degraded,
@@ -2695,16 +2695,14 @@ mod tests {
                     history_generation_run_id: None,
                 },
             }],
-            held_workspace_states: vec![runner_types::types::HeldWorkspaceState {
+            held_home_states: vec![runner_types::types::HeldHomeState {
                 reuse_key: "thread:heartbeat-test".to_string(),
                 last_completed_at: "2026-07-08T00:00:00.000Z".to_string(),
-                workspace_caches: vec![runner_types::types::WorkspaceCacheCapability {
+                home_caches: vec![runner_types::types::HomeCacheCapability {
                     profile: crate::profile::DEFAULT_PROFILE.to_string(),
-                    workspace_affinity_version: runner_types::types::WORKSPACE_AFFINITY_VERSION,
+                    home_affinity_version: runner_types::types::HOME_AFFINITY_VERSION,
                 }],
             }],
-            home_affinity_version: None,
-            held_home_states: Vec::new(),
             active_reuse_producers: vec![],
             wss_ingress_service_active: false,
             mode: "running".to_string(),
@@ -2911,7 +2909,7 @@ mod tests {
             error: None,
             sandbox_id: None,
             sandbox_reuse_result: None,
-            workspace_reuse_result: None,
+            home_reuse_result: None,
         }
     }
 
@@ -2949,7 +2947,7 @@ mod tests {
             assert_eq!(event_field(event, "mode"), "running");
             assert_eq!(event_field(event, "running"), "1");
             assert_eq!(event_field(event, "reusable_sandboxes"), "1");
-            assert_eq!(event_field(event, "workspace_states"), "1");
+            assert_eq!(event_field(event, "home_states"), "1");
             assert_eq!(event_field(event, "endpoint"), "heartbeat");
             assert_eq!(event_field(event, "method"), "POST");
             assert_eq!(
@@ -3182,7 +3180,7 @@ mod tests {
                     assert_eq!(event_field(recovery, "mode"), "running");
                     assert_eq!(event_field(recovery, "running"), "1");
                     assert_eq!(event_field(recovery, "reusable_sandboxes"), "1");
-                    assert_eq!(event_field(recovery, "workspace_states"), "1");
+                    assert_eq!(event_field(recovery, "home_states"), "1");
                 }
             }
 
@@ -3420,7 +3418,7 @@ mod tests {
 
         assert_eq!(event.level, Level::WARN);
         assert_eq!(event_field(event, "reusable_sandboxes"), "1");
-        assert_eq!(event_field(event, "workspace_states"), "1");
+        assert_eq!(event_field(event, "home_states"), "1");
         assert!(
             provider
                 .heartbeat_degradation_tracker
@@ -3754,7 +3752,7 @@ mod tests {
     fn claim_request_body_serializes_canonical_preference_at_claim_time() {
         let active_preference = ActiveRunnerPreference::new(
             test_runner_identity(),
-            RunnerPreferenceTier::WorkspaceCache,
+            RunnerPreferenceTier::HomeCache,
             Instant::now() + Duration::from_secs(60),
         );
         let active = JobCandidate::new(
@@ -3769,7 +3767,7 @@ mod tests {
         );
         assert_eq!(
             active_body["telemetry"]["runnerPreference"]["tier"],
-            "workspaceCache"
+            "homeCache"
         );
         assert_eq!(
             active_body["telemetry"]["runnerPreference"]["runnerIdentity"]["runnerId"],
@@ -4338,7 +4336,7 @@ mod tests {
                                 "runnerId": TEST_RUNNER_ID,
                                 "heartbeatGeneration": 0
                             },
-                            "tier": "workspaceCache",
+                            "tier": "homeCache",
                             "expiresAt": "2999-01-01T00:00:00.000Z"
                         }
                     }
@@ -5771,7 +5769,7 @@ mod tests {
                     error: Some("boom".to_string()),
                     sandbox_id: None,
                     sandbox_reuse_result: None,
-                    workspace_reuse_result: None,
+                    home_reuse_result: None,
                 },
             )
             .await
@@ -5799,7 +5797,7 @@ mod tests {
                         "runId": run_id,
                         "exitCode": 0,
                         "sandboxReuseResult": "noReuseKey",
-                        "workspaceReuseResult": "noReuseKey",
+                        "homeReuseResult": "noReuseKey",
                     }));
                 then.status(200);
             })
@@ -5815,7 +5813,7 @@ mod tests {
                 error: None,
                 sandbox_id: None,
                 sandbox_reuse_result: Some(SandboxReuseResult::NoReuseKey),
-                workspace_reuse_result: Some(HomeReuseResult::NoReuseKey),
+                home_reuse_result: Some(HomeReuseResult::NoReuseKey),
             },
         )
         .await

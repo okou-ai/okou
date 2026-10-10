@@ -23,8 +23,8 @@ const RUN_METADATA_ENV_SPECS: [RunMetadataEnvSpec; 5] = [
         value: |raw| &raw.sandbox_reuse_result,
     },
     RunMetadataEnvSpec {
-        canonical: guest_contracts::env::CANONICAL_WORKSPACE_REUSE_RESULT_ENV,
-        value: |raw| &raw.workspace_reuse_result,
+        canonical: guest_contracts::env::CANONICAL_HOME_REUSE_RESULT_ENV,
+        value: |raw| &raw.home_reuse_result,
     },
     RunMetadataEnvSpec {
         canonical: guest_contracts::env::CANONICAL_RESUME_SESSION_ID_ENV,
@@ -139,7 +139,7 @@ fn assert_guest_config_uses_canonical_values(tmp: &Path) -> TestResult {
 
     assert_eq!(config.sandbox_id, values[0]);
     assert_eq!(config.sandbox_reuse_result, values[1]);
-    assert_eq!(config.workspace_reuse_result, values[2]);
+    assert_eq!(config.home_reuse_result, values[2]);
     assert_eq!(config.resume_session_id, values[3]);
     assert_eq!(config.api_start_time, values[4]);
 

@@ -2134,7 +2134,7 @@ async fn pending_finalizing_fallback_skips_home_cache_lock_retry() {
         .await
         .expect("known long-lived home lock should not enter bounded retry");
     assert_eq!(
-        completion.workspace_reuse_result,
+        completion.home_reuse_result,
         Some(HomeReuseResult::LockBusy),
     );
 

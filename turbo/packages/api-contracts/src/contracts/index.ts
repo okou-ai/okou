@@ -446,9 +446,9 @@ export {
 } from "./chat-threads";
 export {
   sandboxReuseResultSchema,
-  workspaceReuseResultSchema,
+  homeReuseResultSchema,
   type SandboxReuseResult,
-  type WorkspaceReuseResult,
+  type HomeReuseResult,
 } from "./runner-primitives";
 export {
   runnersPollContract,

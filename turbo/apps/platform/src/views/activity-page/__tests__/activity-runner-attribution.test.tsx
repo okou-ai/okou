@@ -129,7 +129,7 @@ test("Runner diagnostics identify the exact environment used for an activity", a
       status: "completed",
       runner: {
         sandboxReuseResult: "reused",
-        workspaceReuseResult: "sandboxReused",
+        homeReuseResult: "sandboxReused",
         runnerHostname: "prod-1.aws.vm3.ai",
         runnerVersion: "0.168.14",
         runnerId: "b0000000-0000-4000-a000-000000000001",
@@ -141,7 +141,7 @@ test("Runner diagnostics identify the exact environment used for an activity", a
       framework: "codex",
       runner: {
         sandboxReuseResult: "reused",
-        workspaceReuseResult: "sandboxReused",
+        homeReuseResult: "sandboxReused",
         runnerHostname: "prod-2.aws.vm3.ai",
         runnerVersion: "0.168.14",
         runnerId: "b0000000-0000-4000-a000-000000000002",
@@ -198,21 +198,28 @@ test("Runner diagnostics explain how the activity environment started", async ()
     {
       runId: "a0000000-0000-4000-a000-000000000306",
       sandboxReuseResult: "reused",
-      workspaceReuseResult: "sandboxReused",
+      homeReuseResult: "sandboxReused",
       label: "Sandbox reuse",
       description: "The sandbox and its workspace were reused.",
     },
     {
+      runId: "a0000000-0000-4000-a000-000000000307",
+      sandboxReuseResult: "poolMiss",
+      homeReuseResult: "reused",
+      label: "Home reuse",
+      description: "A fresh sandbox restored a cached home directory.",
+    },
+    {
       runId: "a0000000-0000-4000-a000-000000000308",
       sandboxReuseResult: "poolMiss",
-      workspaceReuseResult: "cacheMiss",
+      homeReuseResult: "cacheMiss",
       label: "Cold start",
       description: "A fresh sandbox and workspace were prepared.",
     },
   ] as const satisfies readonly {
     runId: string;
     sandboxReuseResult: RunRunnerResponse["sandboxReuseResult"];
-    workspaceReuseResult: RunRunnerResponse["workspaceReuseResult"];
+    homeReuseResult: RunRunnerResponse["homeReuseResult"];
     label: string;
     description: string;
   }[];
@@ -225,7 +232,7 @@ test("Runner diagnostics explain how the activity environment started", async ()
             status: "completed",
             runner: {
               sandboxReuseResult: entry.sandboxReuseResult,
-              workspaceReuseResult: entry.workspaceReuseResult,
+              homeReuseResult: entry.homeReuseResult,
             },
           } satisfies ActivityFixture,
         ];

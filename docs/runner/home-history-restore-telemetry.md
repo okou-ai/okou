@@ -87,11 +87,11 @@ already completed Run. A frozen sandbox cannot return to idle/handoff. Cleanup
 proves namespace absence, not forensic erasure of deleted ext4 blocks.
 
 Deploy compatible schema/API and strict telemetry/webhook readers before
-activating writers, together with paired Guest/Runner artifacts. Retained old
-source tags are accepted only for their bounded draining reader/writer population;
-they do not authorize a local old-image reader. Unknown old-reader capability uses
-generic scheduling and normal authoritative execution. Merge and CI are not
-activation or deployment receipts.
+activating writers, together with paired Guest/Runner artifacts. Follow
+[deployment compatibility](../deployment-compatibility.md) for independently
+deployed readers, captured callbacks and inventory observation ownership.
+Invalid or unavailable evidence still uses generic scheduling and normal
+authoritative execution. Merge and CI are not activation or deployment receipts.
 
 Remove executing protocol and SQL dependencies before physical schema
 contraction. Deploy that column-independent application first, then drain the

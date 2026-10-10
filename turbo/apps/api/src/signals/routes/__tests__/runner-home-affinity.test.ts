@@ -64,21 +64,15 @@ async function heartbeat(
     group: f.group,
     snapshotGeneration: 7,
     snapshotSequence: 1,
-    homeAffinityVersion: 1,
     heldHomeStates: f.heldHomeStates,
     ...args,
   });
 }
-async function poll(
-  f: Fixture,
-  runnerId = f.runnerId,
-  generation: number | null = 7,
-) {
+async function poll(f: Fixture, runnerId = f.runnerId) {
   const response = await f.api.requestPollRunner(
     true,
     {
       runnerId,
-      ...(generation === null ? {} : { heartbeatGeneration: generation }),
       group: f.group,
       supportedProfiles: ["vm0/default"],
     },
@@ -96,8 +90,8 @@ async function cancel(f: Fixture) {
 
 // Construction and observations use normal chat, provider auth and official
 // Runner heartbeat/poll/claim. No DB schemas, private services or fixture routes.
-describe("prepared API home affinity", () => {
-  it("projects a current home preference but lets an older process claim the queued job without that token", async () => {
+describe("canonical API home affinity", () => {
+  it("keeps home affinity advisory when another canonical runner claims the job", async () => {
     const f = await setup();
     await heartbeat(f);
     const job = await poll(f);
@@ -106,16 +100,15 @@ describe("prepared API home affinity", () => {
       tier: "homeCache",
       runnerIdentity: { runnerId: f.runnerId, heartbeatGeneration: 7 },
     });
-    const oldRunnerId = randomUUID();
+    const otherRunnerId = randomUUID();
     await heartbeat(f, {
-      runnerId: oldRunnerId,
-      homeAffinityVersion: undefined,
+      runnerId: otherRunnerId,
       heldHomeStates: [],
     });
-    const oldPoll = await poll(f, oldRunnerId);
-    expect(oldPoll?.runnerPreference).toMatchObject({ kind: "noPreference" });
+    const otherPoll = await poll(f, otherRunnerId);
+    expect(otherPoll?.runnerPreference).toMatchObject({ tier: "homeCache" });
     const claim = await f.api.requestClaimRunnerJob(true, f.run.runId, [200], {
-      runnerIdentity: { runnerId: oldRunnerId, heartbeatGeneration: 7 },
+      runnerIdentity: { runnerId: otherRunnerId, heartbeatGeneration: 7 },
       telemetry: { runnerPreference: job?.runnerPreference },
     });
     if (claim.status !== 200) {
@@ -133,7 +126,7 @@ describe("prepared API home affinity", () => {
     );
   });
 
-  it("recognizes a capable empty-state reader independently of another holder's images", async () => {
+  it("finds another holder and clears its preference after an accepted empty state", async () => {
     const f = await setup();
     await heartbeat(f);
     const reader = randomUUID();
@@ -150,54 +143,39 @@ describe("prepared API home affinity", () => {
     await cancel(f);
   });
 
-  it.each([
-    "missing-capability",
-    "missing-poll-generation",
-    "unknown-reader",
-    "wrong-generation",
-    "wrong-group",
-    "draining",
-    "wrong-profile",
-  ] as const)("keeps execution generic for %s evidence", async (scenario) => {
-    const f = await setup();
-    await heartbeat(f, {
-      ...(scenario === "missing-capability"
-        ? { homeAffinityVersion: undefined }
-        : {}),
-      ...(scenario === "wrong-group" ? { group: "vm0/another-group" } : {}),
-      ...(scenario === "draining" ? { mode: "draining" } : {}),
-      ...(scenario === "wrong-profile"
-        ? {
-            heldHomeStates: [
-              {
-                reuseKey: f.reuseKey,
-                lastCompletedAt: nowDate().toISOString(),
-                homeCaches: [{ profile: "vm0/large", homeAffinityVersion: 1 }],
-              },
-            ],
-          }
-        : {}),
-    });
-    const job = await poll(
-      f,
-      scenario === "unknown-reader" ? randomUUID() : f.runnerId,
-      scenario === "wrong-generation"
-        ? 8
-        : scenario === "missing-poll-generation"
-          ? null
-          : 7,
-    );
-    expect(job?.runnerPreference).toMatchObject({ kind: "noPreference" });
-    await cancel(f);
-  });
+  it.each(["wrong-group", "draining", "wrong-profile"] as const)(
+    "keeps execution generic for %s evidence",
+    async (scenario) => {
+      const f = await setup();
+      await heartbeat(f, {
+        ...(scenario === "wrong-group" ? { group: "vm0/another-group" } : {}),
+        ...(scenario === "draining" ? { mode: "draining" } : {}),
+        ...(scenario === "wrong-profile"
+          ? {
+              heldHomeStates: [
+                {
+                  reuseKey: f.reuseKey,
+                  lastCompletedAt: nowDate().toISOString(),
+                  homeCaches: [
+                    { profile: "vm0/large", homeAffinityVersion: 1 },
+                  ],
+                },
+              ],
+            }
+          : {}),
+      });
+      const job = await poll(f);
+      expect(job?.runnerPreference).toMatchObject({ kind: "noPreference" });
+      await cancel(f);
+    },
+  );
 
-  it("fences replayed snapshots and requires the current generation after a reset", async () => {
+  it("fences replayed snapshots and preserves the current holder generation after a reset", async () => {
     const f = await setup();
     await heartbeat(f, { snapshotSequence: 10 });
     for (const sequence of [9, 10]) {
       await heartbeat(f, {
         snapshotSequence: sequence,
-        homeAffinityVersion: undefined,
         heldHomeStates: [],
       });
       expect((await poll(f))?.runnerPreference).toMatchObject({
@@ -207,24 +185,22 @@ describe("prepared API home affinity", () => {
     await heartbeat(f, {
       snapshotGeneration: 8,
       snapshotSequence: 1,
-      homeAffinityVersion: undefined,
+      heldHomeStates: [],
     });
-    expect((await poll(f, f.runnerId, 8))?.runnerPreference).toMatchObject({
+    expect((await poll(f))?.runnerPreference).toMatchObject({
       kind: "noPreference",
     });
     await heartbeat(f, { snapshotGeneration: 8, snapshotSequence: 2 });
     expect((await poll(f))?.runnerPreference).toMatchObject({
-      kind: "noPreference",
-    });
-    expect((await poll(f, f.runnerId, 8))?.runnerPreference).toMatchObject({
       tier: "homeCache",
+      runnerIdentity: { runnerId: f.runnerId, heartbeatGeneration: 8 },
     });
     await heartbeat(f, {
       snapshotGeneration: 7,
       snapshotSequence: 99,
       heldHomeStates: [],
     });
-    expect((await poll(f, f.runnerId, 8))?.runnerPreference).toMatchObject({
+    expect((await poll(f))?.runnerPreference).toMatchObject({
       tier: "homeCache",
     });
     await cancel(f);
@@ -246,7 +222,6 @@ describe("prepared API home affinity", () => {
       group: f.group,
       snapshotGeneration: 7,
       snapshotSequence: 2,
-      homeAffinityVersion: 1,
       heldHomeStates: Array.from({ length: 129 }, (_, index) => {
         return {
           reuseKey: `thread:${index}`,
@@ -266,7 +241,7 @@ describe("prepared API home affinity", () => {
     await cancel(f);
   });
 
-  it("keeps an unknown-recipient Ably broadcast outgoing-safe even when poll can read home", async () => {
+  it("publishes the same canonical home preference through Ably and poll", async () => {
     const f = await setup();
     await heartbeat(f);
     await cancel(f);
@@ -274,7 +249,7 @@ describe("prepared API home affinity", () => {
     const run = await f.api.createThreadRun(f.actor, {
       agentId: f.agentId,
       threadId: f.run.threadId,
-      prompt: "Broadcast stays compatible",
+      prompt: "Broadcast carries canonical home affinity",
     });
     const next = { ...f, run };
     expect((await poll(next))?.runnerPreference).toMatchObject({
@@ -284,7 +259,11 @@ describe("prepared API home affinity", () => {
       "job",
       expect.objectContaining({
         runId: run.runId,
-        runnerPreference: { kind: "noPreference", reason: "noViableHolder" },
+        runnerPreference: expect.objectContaining({
+          kind: "preference",
+          tier: "homeCache",
+          runnerIdentity: { runnerId: f.runnerId, heartbeatGeneration: 7 },
+        }),
       }),
     );
     await cancel(next);
@@ -318,7 +297,7 @@ describe("prepared API home affinity", () => {
     await cancel(f);
   });
 
-  it("does not use a stale holder or reader for a newly queued job", async () => {
+  it("does not use a stale holder for a newly queued job", async () => {
     const f = await setup();
     await heartbeat(f);
     await cancel(f);
@@ -335,14 +314,13 @@ describe("prepared API home affinity", () => {
     await cancel(next);
   });
 
-  it("does not establish official home capability from a PAT heartbeat", async () => {
+  it("does not accept official home inventory from a PAT heartbeat", async () => {
     const f = await setup();
     const pat = await f.api.createCliToken(f.actor);
     await f.api.requestHeartbeatRunnerAs(`Bearer ${pat.token}`, [200], {
       runnerId: f.runnerId,
       group: f.group,
       snapshotGeneration: 7,
-      homeAffinityVersion: 1,
       heldHomeStates: f.heldHomeStates,
     });
     expect((await poll(f))?.runnerPreference).toMatchObject({

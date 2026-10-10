@@ -17,8 +17,6 @@ fn heartbeat() -> HeartbeatState {
         running_count: 0,
         admittable_profiles: vec!["vm0/default".into()],
         held_sandbox_states: vec![],
-        held_workspace_states: vec![],
-        home_affinity_version: None,
         held_home_states: vec![],
         active_reuse_producers: Vec::<ActiveReuseProducer>::new(),
         wss_ingress_service_active: false,
@@ -27,20 +25,16 @@ fn heartbeat() -> HeartbeatState {
 }
 
 #[test]
-fn preparation_does_not_advertise_home_support_from_outgoing_heartbeat() {
+fn heartbeat_serializes_empty_home_inventory() {
     let body = serde_json::to_value(heartbeat()).unwrap();
-    assert!(body.get("homeAffinityVersion").is_none());
-    assert!(body.get("heldHomeStates").is_none());
-    assert_eq!(body["heldWorkspaceStates"], json!([]));
+    assert_eq!(body["heldHomeStates"], json!([]));
 }
 
 #[test]
-fn capable_empty_heartbeat_keeps_capability_independent_of_held_images() {
+fn home_inventory_keeps_the_per_cache_format_discriminator() {
     let mut state = heartbeat();
-    state.home_affinity_version = Some(HOME_AFFINITY_VERSION);
     let body = serde_json::to_value(&state).unwrap();
-    assert_eq!(body["homeAffinityVersion"], 1);
-    assert!(body.get("heldHomeStates").is_none());
+    assert_eq!(body["heldHomeStates"], json!([]));
     state.held_home_states.push(HeldHomeState {
         reuse_key: "thread:thread-a".into(),
         last_completed_at: "2026-10-09T00:00:00.000Z".into(),
@@ -58,5 +52,4 @@ fn capable_empty_heartbeat_keeps_capability_independent_of_held_images() {
             "homeCaches": [{"profile": "vm0/default", "homeAffinityVersion": 1}]
         }])
     );
-    assert_eq!(body["heldWorkspaceStates"], json!([]));
 }

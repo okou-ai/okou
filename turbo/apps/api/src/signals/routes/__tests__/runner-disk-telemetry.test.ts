@@ -43,8 +43,6 @@ describe("Runner disk telemetry HTTP compatibility", () => {
       runningCount: 0,
       admittableProfiles: ["vm0/default"],
       heldSandboxStates: [],
-      heldWorkspaceStates: [],
-      homeAffinityVersion: 1,
       heldHomeStates: [],
       activeReuseProducers: [],
       mode: "running",
@@ -54,7 +52,6 @@ describe("Runner disk telemetry HTTP compatibility", () => {
       {
         runnerId,
         group,
-        heartbeatGeneration: 1,
         supportedProfiles: ["vm0/default"],
       },
       [200],
