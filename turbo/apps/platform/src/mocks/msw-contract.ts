@@ -6,6 +6,7 @@
  * all derived from the contract itself. Returning a body that doesn't match
  * the contract's declared response schema for the given status becomes a
  * TypeScript error at the call site.
+ * Handlers can add response headers while retaining those contract checks.
  *
  * Scope note: introduced as the foundation helper for #9707. Phase 0 adds
  * typed `params`/`query`/`body` to the handler context on top of the Phase
@@ -30,6 +31,7 @@ export interface SignalContextLike {
 type AnyResponse<R extends AppRoute> = ServerInferResponses<R> & {
   readonly status: number;
   readonly body?: unknown;
+  readonly headers?: HeadersInit;
 };
 
 type Respond<R extends AppRoute> = <
@@ -214,10 +216,11 @@ function createBoundMockApi(context?: SignalContextLike) {
         ),
         signal,
       );
+      const responseInit = { status: result.status, headers: result.headers };
       if (result.body === null || result.body === undefined) {
-        return new HttpResponse(null, { status: result.status });
+        return new HttpResponse(null, responseInit);
       }
-      return HttpResponse.json(result.body, { status: result.status });
+      return HttpResponse.json(result.body, responseInit);
     });
   };
 }
