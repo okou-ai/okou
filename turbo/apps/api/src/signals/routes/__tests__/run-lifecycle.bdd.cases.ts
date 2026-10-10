@@ -65,7 +65,7 @@ import { afterEach, describe, expect, it, onTestFinished } from "vitest";
 import { mockAxiomSdkTelemetryFailure } from "../../../__tests__/mocks";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { env, mockEnv, mockOptionalEnv, optionalEnv } from "../../../lib/env";
 import {
   getSecretKmsClient,
   setSecretKmsClientForTests,
@@ -116,7 +116,6 @@ import {
   expectCanonicalStorageManifest,
 } from "./helpers/api-bdd-runs";
 import { storageTextFile } from "./helpers/api-bdd-storage-files";
-import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
@@ -690,6 +689,16 @@ function codexAuthJson(): string {
  */
 const NATIVE_RUNNER_ROUTE = { model: "claude-fable-5-1" } as const;
 
+function customSkillMount(
+  storageManifest: Parameters<typeof expectCanonicalStorageManifest>[0],
+  connectorId: string,
+) {
+  return expectCanonicalStorageManifest(storageManifest)?.storageMounts.find(
+    (mount) => {
+      return mount.name === getCustomConnectorSkillStorageName(connectorId);
+    },
+  );
+}
 const piClaimFixture = createChatEventsFixture(context);
 
 /**
@@ -7721,162 +7730,199 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = createRunsApi(context);
         createBddApi(context).acceptAgentStorageWrites();
         const connectors = createConnectorBddApi(context);
-        const storages = createStoragesBddApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor(
-          {},
-          NATIVE_RUNNER_ROUTE,
-        );
-        const slug = `_bdd-permission-skill-${randomUUID().slice(0, 8)}`;
-        const custom = await connectors.createCustomConnector(actor, {
-          slug,
-          displayName: "BDD Permissioned API",
-          prefixTemplates: [
-            "https://{{variables.workspace}}.permissioned.example.test/api/",
-          ],
-          fields: [
-            {
-              key: "workspace",
-              label: "Workspace",
-              kind: "variable",
-              required: true,
-            },
-          ],
-          headerInjections: [],
-          queryInjections: [
-            {
-              name: "workspace",
-              valueTemplate: "{{variables.workspace}}",
-            },
-          ],
-          authMode: "manual",
-          permissionBundleRef: "builtin:slack@1",
-          skillMarkdown: "Use the selected Slack-compatible operations only.",
-        });
-        const initialSkill = await storages.downloadStorage(actor, {
-          name: getCustomConnectorSkillStorageName(custom.id),
-          owner: "organization",
-        });
-        const grant = {
-          customConnectorId: custom.id,
-          permissionNames: ["chat:write"],
-        };
-        const grantResponse =
-          await connectors.requestUpdateAgentCustomConnectorGrants(
-            actor,
+        const fixture = await publicChatActor(context);
+        const { actor, agentId, runnerGroup } = fixture;
+        await fixture.run(async () => {
+          const slug = `_bdd-permission-skill-${randomUUID().slice(0, 8)}`;
+          const custom = await connectors.createCustomConnector(actor, {
+            slug,
+            displayName: "BDD Permissioned API",
+            prefixTemplates: [
+              "https://{{variables.workspace}}.permissioned.example.test/api/",
+            ],
+            fields: [
+              {
+                key: "workspace",
+                label: "Workspace",
+                kind: "variable",
+                required: true,
+              },
+            ],
+            headerInjections: [],
+            queryInjections: [
+              {
+                name: "workspace",
+                valueTemplate: "{{variables.workspace}}",
+              },
+            ],
+            authMode: "manual",
+            permissionBundleRef: "builtin:slack@1",
+            skillMarkdown: "Use the selected Slack-compatible operations only.",
+          });
+          const grant = {
+            customConnectorId: custom.id,
+            permissionNames: ["chat:write"],
+          };
+          const grantResponse =
+            await connectors.requestUpdateAgentCustomConnectorGrants(
+              actor,
+              agentId,
+              [grant],
+              [200],
+            );
+          if (grantResponse.status !== 200) {
+            throw new Error(
+              "Expected custom connector permission grant to succeed",
+            );
+          }
+          expect(grantResponse.body.grants).toStrictEqual([grant]);
+          const internalName = `custom_connector_${custom.id.replaceAll("-", "")}`;
+          const initialRun = await fixture.sendChatRun(actor, {
             agentId,
-            [grant],
-            [200],
+            prompt: "Observe the initial skill version",
+          });
+          const initialClaim = await fixture.claimChatRun(
+            runnerGroup,
+            initialRun.runId,
           );
-        if (grantResponse.status !== 200) {
-          throw new Error(
-            "Expected custom connector permission grant to succeed",
+          const initialSkill = customSkillMount(
+            initialClaim.claim.storageManifest,
+            custom.id,
           );
-        }
-        expect(grantResponse.body.grants).toStrictEqual([grant]);
+          if (!initialSkill) {
+            throw new Error("Expected an independently observed initial skill");
+          }
+          await createChatEventsFixture(context).cancelChatRun(
+            actor,
+            initialRun.runId,
+            initialClaim.sandboxHeaders,
+          );
+          const disconnectedRun = await fixture.sendChatRun(actor, {
+            agentId,
+            prompt: "use the disconnected custom connector skill",
+          });
+          await connectors.updateCustomConnector(actor, custom.id, {
+            displayName: custom.displayName,
+            prefixTemplates: custom.prefixTemplates,
+            fields: custom.fields,
+            headerInjections: custom.headerInjections,
+            queryInjections: custom.queryInjections,
+            authMode: custom.authMode,
+            permissionBundleRef: custom.permissionBundleRef,
+            skillMarkdown: "Use the updated Slack-compatible operations only.",
+            storageVersion: custom.storageVersion,
+          });
+          await api.heartbeatRunner(runnerGroup);
+          const disconnected = await fixture.claimChatRun(
+            runnerGroup,
+            disconnectedRun.runId,
+          );
+          const disconnectedClaim = disconnected.claim;
+          expect(
+            findFirewallEntry(disconnectedClaim.firewalls, internalName),
+          ).toBeUndefined();
+          expect(disconnectedClaim.networkPolicies ?? {}).not.toHaveProperty(
+            internalName,
+          );
+          expect(disconnectedClaim.connectorRuntimeTargets).not.toContainEqual(
+            expect.objectContaining({
+              kind: "custom",
+              customConnectorId: custom.id,
+            }),
+          );
+          const disconnectedSkillMount = expectCanonicalStorageManifest(
+            disconnectedClaim.storageManifest,
+          )?.storageMounts.find((storage) => {
+            return (
+              storage.name === getCustomConnectorSkillStorageName(custom.id)
+            );
+          });
+          expect(disconnectedSkillMount?.mountPath).toBe(
+            `/home/user/.claude/skills/custom-${slug.slice(1, 49)}-${custom.id.replaceAll("-", "").slice(0, 8)}`,
+          );
+          expect(disconnectedSkillMount?.versionId).toBe(
+            initialSkill.versionId,
+          );
 
-        const internalName = `custom_connector_${custom.id.replaceAll("-", "")}`;
-        const disconnectedRun = await api.createThreadRun(actor, {
-          agentId,
-          prompt: "use the disconnected custom connector skill",
-        });
-        await connectors.updateCustomConnector(actor, custom.id, {
-          displayName: custom.displayName,
-          prefixTemplates: custom.prefixTemplates,
-          fields: custom.fields,
-          headerInjections: custom.headerInjections,
-          queryInjections: custom.queryInjections,
-          authMode: custom.authMode,
-          permissionBundleRef: custom.permissionBundleRef,
-          skillMarkdown: "Use the updated Slack-compatible operations only.",
-          storageVersion: custom.storageVersion,
-        });
-        const updatedSkill = await storages.downloadStorage(actor, {
-          name: getCustomConnectorSkillStorageName(custom.id),
-          owner: "organization",
-        });
-        expect(updatedSkill.versionId).not.toBe(initialSkill.versionId);
-        await api.heartbeatRunner(runnerGroup);
-        const disconnectedClaim = await api.claimRunnerJob(
-          disconnectedRun.runId,
-        );
-        expect(
-          findFirewallEntry(disconnectedClaim.firewalls, internalName),
-        ).toBeUndefined();
-        expect(disconnectedClaim.networkPolicies ?? {}).not.toHaveProperty(
-          internalName,
-        );
-        expect(disconnectedClaim.connectorRuntimeTargets).not.toContainEqual(
-          expect.objectContaining({
+          await connectors.setCustomConnectorValues(actor, custom.id, [
+            { key: "workspace", kind: "variable", value: "restored" },
+          ]);
+          await createChatEventsFixture(context).cancelChatRun(
+            actor,
+            disconnectedRun.runId,
+            disconnected.sandboxHeaders,
+          );
+          const restoredRun = await fixture.sendChatRun(actor, {
+            agentId,
+            prompt: "use the reconnected custom connector",
+          });
+          const restored = await fixture.claimChatRun(
+            runnerGroup,
+            restoredRun.runId,
+          );
+          const restoredClaim = restored.claim;
+          const customApis = inlineFirewallApis(
+            restoredClaim.firewalls,
+            internalName,
+          );
+          expect(customApis[0]?.permissions).toStrictEqual(
+            expect.arrayContaining([
+              expect.objectContaining({ name: "chat:write" }),
+            ]),
+          );
+          expect(
+            restoredClaim.networkPolicies?.[internalName]?.allow,
+          ).toContain("chat:write");
+          expect(
+            restoredClaim.networkPolicies?.[internalName]?.deny.length,
+          ).toBeGreaterThan(0);
+          expect(
+            restoredClaim.networkPolicies?.[internalName]?.unknownPolicy,
+          ).toBe("deny");
+          expect(
+            findFirewallEntry(restoredClaim.firewalls, internalName),
+          ).toMatchObject({
+            kind: "inline",
+            customConnectorId: custom.id,
+          });
+          expect(
+            findFirewallEntry(restoredClaim.firewalls, "slack"),
+          ).toBeUndefined();
+          expect(restoredClaim.networkPolicies ?? {}).not.toHaveProperty(
+            "slack",
+          );
+          expect(restoredClaim.connectorRuntimeTargets).toContainEqual({
             kind: "custom",
             customConnectorId: custom.id,
-          }),
-        );
-        const disconnectedSkillMount = expectCanonicalStorageManifest(
-          disconnectedClaim.storageManifest,
-        )?.storageMounts.find((storage) => {
-          return storage.name === getCustomConnectorSkillStorageName(custom.id);
-        });
-        expect(disconnectedSkillMount?.mountPath).toBe(
-          `/home/user/.claude/skills/custom-${slug.slice(1, 49)}-${custom.id.replaceAll("-", "").slice(0, 8)}`,
-        );
-        expect(disconnectedSkillMount?.versionId).toBe(initialSkill.versionId);
+            baseUrlVars: { workspace: "restored" },
+            sourceId: expect.any(String),
+          });
+          expect(restoredClaim).not.toHaveProperty(
+            "connectorPermissionBaseline",
+          );
+          const restoredSkillMount = expectCanonicalStorageManifest(
+            restoredClaim.storageManifest,
+          )?.storageMounts.find((storage) => {
+            return (
+              storage.name === getCustomConnectorSkillStorageName(custom.id)
+            );
+          });
+          expect(restoredSkillMount?.mountPath).toBe(
+            disconnectedSkillMount?.mountPath,
+          );
+          expect(restoredSkillMount?.versionId).toStrictEqual(
+            expect.any(String),
+          );
+          expect(restoredSkillMount?.versionId).not.toBe(
+            initialSkill.versionId,
+          );
 
-        await connectors.setCustomConnectorValues(actor, custom.id, [
-          { key: "workspace", kind: "variable", value: "restored" },
-        ]);
-        await api.requestCancelRun(actor, disconnectedRun.runId, [200]);
-
-        const restoredRun = await api.createThreadRun(actor, {
-          agentId,
-          prompt: "use the reconnected custom connector",
+          await createChatEventsFixture(context).cancelChatRun(
+            actor,
+            restoredRun.runId,
+            restored.sandboxHeaders,
+          );
         });
-        const restoredClaim = await api.claimRunnerJob(restoredRun.runId);
-        const customApis = inlineFirewallApis(
-          restoredClaim.firewalls,
-          internalName,
-        );
-        expect(customApis[0]?.permissions).toStrictEqual(
-          expect.arrayContaining([
-            expect.objectContaining({ name: "chat:write" }),
-          ]),
-        );
-        expect(restoredClaim.networkPolicies?.[internalName]?.allow).toContain(
-          "chat:write",
-        );
-        expect(
-          restoredClaim.networkPolicies?.[internalName]?.deny.length,
-        ).toBeGreaterThan(0);
-        expect(
-          restoredClaim.networkPolicies?.[internalName]?.unknownPolicy,
-        ).toBe("deny");
-        expect(
-          findFirewallEntry(restoredClaim.firewalls, internalName),
-        ).toMatchObject({
-          kind: "inline",
-          customConnectorId: custom.id,
-        });
-        expect(
-          findFirewallEntry(restoredClaim.firewalls, "slack"),
-        ).toBeUndefined();
-        expect(restoredClaim.networkPolicies ?? {}).not.toHaveProperty("slack");
-        expect(restoredClaim.connectorRuntimeTargets).toContainEqual({
-          kind: "custom",
-          customConnectorId: custom.id,
-          baseUrlVars: { workspace: "restored" },
-          sourceId: expect.any(String),
-        });
-        expect(restoredClaim).not.toHaveProperty("connectorPermissionBaseline");
-        const restoredSkillMount = expectCanonicalStorageManifest(
-          restoredClaim.storageManifest,
-        )?.storageMounts.find((storage) => {
-          return storage.name === getCustomConnectorSkillStorageName(custom.id);
-        });
-        expect(restoredSkillMount?.mountPath).toBe(
-          disconnectedSkillMount?.mountPath,
-        );
-        expect(restoredSkillMount?.versionId).toBe(updatedSkill.versionId);
-
-        await api.requestCancelRun(actor, restoredRun.runId, [200]);
       });
 
       it("fails expired custom OAuth without a refresh token at matched auth", async () => {
@@ -12183,314 +12229,238 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
     });
 
     describe("CHAIN-RUN: sandbox snapshot and telemetry reporting through run webhooks", () => {
-      it("reports artifacts, volumes, model usage, and telemetry through sandbox webhooks", async () => {
+      it("reports snapshots and telemetry HTTP outcomes through authenticated sandbox webhooks", async () => {
         const api = createRunsApi(context);
-        const storages = createStoragesBddApi(context);
         const webhooks = createWebhookCallbackApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor(
-          {},
-          NATIVE_RUNNER_ROUTE,
-        );
+        const telemetryToken = optionalEnv("AXIOM_TOKEN_TELEMETRY");
+        const fixture = await publicChatActor(context, {
+          optionalEnvironmentNames: ["AXIOM_TOKEN_TELEMETRY"],
+        });
+        const { actor, agentId, runnerGroup } = fixture;
+        await fixture.run(async () => {
+          // An Agent workflow's Storage is the run's versioned read-only volume.
+          const workflowName = `bdd-cache-${randomUUID().slice(0, 8)}`;
+          const workflow = await createMiscRoutesApi(context).createWorkflow(
+            actor,
+            agentId,
+            workflowName,
+            { content: "# Cache\nUse for snapshot reporting." },
+            [201],
+          );
+          if (workflow.status !== 201) {
+            throw new Error("Expected workflow creation to succeed");
+          }
+          const cacheVolume = getCustomSkillStorageName(workflow.body.id);
 
-        // An Agent workflow's Storage is the run's versioned read-only volume.
-        const workflowName = `bdd-cache-${randomUUID().slice(0, 8)}`;
-        const workflow = await createMiscRoutesApi(context).createWorkflow(
-          actor,
-          agentId,
-          workflowName,
-          { content: "# Cache\nUse for snapshot reporting." },
-          [201],
-        );
-        if (workflow.status !== 201) {
-          throw new Error("Expected workflow creation to succeed");
-        }
-        const cacheVolume = getCustomSkillStorageName(workflow.body.id);
-        const cachePrepared = await storages.downloadStorage(actor, {
-          name: cacheVolume,
-          owner: "organization",
-        });
-        const cacheMountPath = `/home/user/.claude/skills/${workflowName}`;
+          const cacheMountPath = `/home/user/.claude/skills/${workflowName}`;
 
-        const created = await api.createThreadRun(actor, {
-          agentId,
-          prompt: "report snapshots and telemetry",
-        });
-        await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(created.runId);
-        const storageMounts =
-          expectCanonicalStorageManifest(claim.storageManifest)
-            ?.storageMounts ?? [];
-        const mountPaths = storageMounts.map((storage) => {
-          return storage.mountPath;
-        });
-        expect(mountPaths).toContain(cacheMountPath);
-        const memoryArtifact = storageMounts.find((mount) => {
-          return mount.name === "memory";
-        });
-        if (!memoryArtifact) {
-          throw new Error("Expected the run to mount memory");
-        }
-        const sandboxHeaders = {
-          authorization: `Bearer ${claim.sandboxToken}`,
-        };
-        const telemetryIngests: {
-          readonly dataset: string;
-          readonly events: readonly unknown[];
-        }[] = [];
-        server.use(
-          http.post(
-            "https://api.axiom.co/v1/datasets/:dataset/ingest",
-            async ({ params, request }) => {
-              const events: unknown = await request.json();
-              if (!Array.isArray(events)) {
-                throw new Error("Expected an Axiom telemetry event array");
-              }
-              telemetryIngests.push({
-                dataset: String(params.dataset),
-                events,
-              });
-              return HttpResponse.json({
-                ingested: events.length,
-                failed: 0,
-                processedBytes: 123,
-                blocksCreated: 1,
-                walLength: 456,
-              });
+          const created = await fixture.sendChatRun(actor, {
+            agentId,
+            prompt: "report snapshots and telemetry",
+          });
+          await api.heartbeatRunner(runnerGroup);
+          const { claim } = await fixture.claimChatRun(
+            runnerGroup,
+            created.runId,
+          );
+          const storageMounts =
+            expectCanonicalStorageManifest(claim.storageManifest)
+              ?.storageMounts ?? [];
+          const cachePrepared = storageMounts.find((mount) => {
+            return mount.name === cacheVolume;
+          });
+          if (!cachePrepared) {
+            throw new Error(
+              "Expected the workflow version from the actual Runner claim",
+            );
+          }
+          const mountPaths = storageMounts.map((storage) => {
+            return storage.mountPath;
+          });
+          expect(mountPaths).toContain(cacheMountPath);
+          const memoryArtifact = storageMounts.find((mount) => {
+            return mount.name === "memory";
+          });
+          if (!memoryArtifact) {
+            throw new Error("Expected the run to mount memory");
+          }
+          const sandboxHeaders = {
+            authorization: `Bearer ${claim.sandboxToken}`,
+          };
+          await webhooks.requestAgentTelemetryUnchecked(
+            {
+              runId: created.runId,
+              networkLogs: [
+                {
+                  timestamp: nowDate().toISOString(),
+                  host: "api.example.test",
+                  port: 443,
+                  method: "GET",
+                  url: "[truncated]",
+                  url_truncated: true,
+                  url_original_char_count: 1_000_001,
+                  status: 200,
+                  latency_ms: 12,
+                  request_size: 100,
+                  response_size: 256,
+                  request_headers: { accept: "application/json" },
+                  request_headers_truncated: true,
+                  response_headers: { server: "***" },
+                  response_headers_truncated: true,
+                  model_catalog_cache_status: "model_catalog_cold_stored",
+                  model_catalog_cache_upstream_encoding: "br",
+                  model_catalog_cache_entry_age_ms: 4000,
+                  connector_diagnostic_slug: "github",
+                },
+                {
+                  timestamp: nowDate().toISOString(),
+                  type: "http",
+                  action: "BLOCK",
+                  host: "blocked.example.test",
+                  port: 443,
+                  method: "POST",
+                  url: "https://blocked.example.test/v1/connect",
+                  status: 424,
+                  latency_ms: 4,
+                  request_size: 0,
+                  response_size: 128,
+                  firewall_name: "blocked-service",
+                  firewall_error: "connector_not_configured",
+                  connector_diagnostic_slug: "slack",
+                },
+              ],
+              sandboxOperations: [
+                {
+                  ts: nowDate().toISOString(),
+                  action_type: "session_history_download",
+                  duration_ms: 8,
+                  success: false,
+                  error: "download timed out",
+                  encoding: "gzip",
+                  session_history_raw_size_bucket: "64_256_kib",
+                  session_history_encoded_size_bucket: "lt_64_kib",
+                  session_history_compression_ratio_bucket: "lt_0_25",
+                  session_history_ref_seen_recently: "true",
+                  session_history_ref_download_inflight: "false",
+                  session_history_content_length_state: "matches_expected",
+                  session_history_content_encoding_state: "absent",
+                  session_history_transfer_encoding_state: "chunked",
+                  session_history_download_source: "configured_public_endpoint",
+                  session_history_ref_hash: "should-not-forward",
+                },
+                {
+                  ts: nowDate().toISOString(),
+                  action_type: "api_to_spawn",
+                  duration_ms: 125,
+                  success: true,
+                  runner_startup_path: "workspace",
+                  sandbox_reuse_result: "poolMiss",
+                },
+                {
+                  ts: nowDate().toISOString(),
+                  action_type: "session_history_prune",
+                  duration_ms: 4,
+                  success: true,
+                  outcome: "ineligible",
+                  reason: "source_within_guard",
+                },
+                {
+                  ts: nowDate().toISOString(),
+                  action_type: "storage_cache_fresh_delivery_scan_suffix",
+                  duration_ms: 0,
+                  success: true,
+                  outcome: "5_8",
+                  reason: "3_4",
+                },
+              ],
             },
-          ),
-        );
-
-        await webhooks.requestAgentTelemetryUnchecked(
-          {
-            runId: created.runId,
-            networkLogs: [
-              {
-                timestamp: nowDate().toISOString(),
-                host: "api.example.test",
-                port: 443,
-                method: "GET",
-                url: "[truncated]",
-                url_truncated: true,
-                url_original_char_count: 1_000_001,
-                status: 200,
-                latency_ms: 12,
-                request_size: 100,
-                response_size: 256,
-                request_headers: { accept: "application/json" },
-                request_headers_truncated: true,
-                response_headers: { server: "***" },
-                response_headers_truncated: true,
-                model_catalog_cache_status: "model_catalog_cold_stored",
-                model_catalog_cache_upstream_encoding: "br",
-                model_catalog_cache_entry_age_ms: 4000,
-                connector_diagnostic_slug: "github",
-              },
-              {
-                timestamp: nowDate().toISOString(),
-                type: "http",
-                action: "BLOCK",
-                host: "blocked.example.test",
-                port: 443,
-                method: "POST",
-                url: "https://blocked.example.test/v1/connect",
-                status: 424,
-                latency_ms: 4,
-                request_size: 0,
-                response_size: 128,
-                firewall_name: "blocked-service",
-                firewall_error: "connector_not_configured",
-                connector_diagnostic_slug: "slack",
-              },
-            ],
-            sandboxOperations: [
-              {
-                ts: nowDate().toISOString(),
-                action_type: "session_history_download",
-                duration_ms: 8,
-                success: false,
-                error: "download timed out",
-                encoding: "gzip",
-                session_history_raw_size_bucket: "64_256_kib",
-                session_history_encoded_size_bucket: "lt_64_kib",
-                session_history_compression_ratio_bucket: "lt_0_25",
-                session_history_ref_seen_recently: "true",
-                session_history_ref_download_inflight: "false",
-                session_history_content_length_state: "matches_expected",
-                session_history_content_encoding_state: "absent",
-                session_history_transfer_encoding_state: "chunked",
-                session_history_download_source: "configured_public_endpoint",
-                session_history_ref_hash: "should-not-forward",
-              },
-              {
-                ts: nowDate().toISOString(),
-                action_type: "api_to_spawn",
-                duration_ms: 125,
-                success: true,
-                runner_startup_path: "workspace",
-                sandbox_reuse_result: "poolMiss",
-              },
-              {
-                ts: nowDate().toISOString(),
-                action_type: "session_history_prune",
-                duration_ms: 4,
-                success: true,
-                outcome: "ineligible",
-                reason: "source_within_guard",
-              },
-              {
-                ts: nowDate().toISOString(),
-                action_type: "storage_cache_fresh_delivery_scan_suffix",
-                duration_ms: 0,
-                success: true,
-                outcome: "5_8",
-                reason: "3_4",
-              },
-            ],
-          },
-          sandboxHeaders,
-          [200],
-        );
-        const networkIngestCall = telemetryIngests.find((call) => {
-          return call.dataset === "sandbox-telemetry-network";
-        });
-        expect(networkIngestCall).toBeDefined();
-        expect(networkIngestCall?.events).toHaveLength(2);
-        expect(networkIngestCall?.events).toStrictEqual([
-          expect.objectContaining({
-            runId: created.runId,
-            host: "api.example.test",
-            status: 200,
-            url: "[truncated]",
-            url_truncated: true,
-            url_original_char_count: 1_000_001,
-            request_headers: { accept: "application/json" },
-            request_headers_truncated: true,
-            response_headers: { server: "***" },
-            response_headers_truncated: true,
-            model_catalog_cache_status: "model_catalog_cold_stored",
-            model_catalog_cache_upstream_encoding: "br",
-            model_catalog_cache_entry_age_ms: 4000,
-            connector_diagnostic_slug: "github",
-          }),
-          expect.objectContaining({
-            runId: created.runId,
-            action: "BLOCK",
-            host: "blocked.example.test",
-            firewall_error: "connector_not_configured",
-            connector_diagnostic_slug: "slack",
-          }),
-        ]);
-
-        let failedTelemetryRequests = 0;
-        server.use(
-          http.post(
-            "https://api.axiom.co/v1/datasets/sandbox-telemetry-network/ingest",
-            () => {
-              failedTelemetryRequests += 1;
-              return HttpResponse.text("unavailable", { status: 503 });
+            sandboxHeaders,
+            [200],
+          );
+          mockOptionalEnv("AXIOM_TOKEN_TELEMETRY", undefined);
+          const unconfiguredTelemetry = await webhooks.requestAgentTelemetry(
+            {
+              runId: created.runId,
+              networkLogs: [
+                {
+                  timestamp: nowDate().toISOString(),
+                  host: "unconfigured.example.test",
+                },
+              ],
             },
-          ),
-        );
-        const failedTelemetry = await webhooks.requestAgentTelemetry(
-          {
-            runId: created.runId,
-            networkLogs: [
-              {
-                timestamp: nowDate().toISOString(),
-                host: "failed.example.test",
-              },
-            ],
-          },
-          sandboxHeaders,
-          [500],
-        );
-        expect(failedTelemetry.status).toBe(500);
-        expect(failedTelemetryRequests).toBe(1);
+            sandboxHeaders,
+            [200],
+          );
+          expect(unconfiguredTelemetry.status).toBe(200);
+          mockOptionalEnv("AXIOM_TOKEN_TELEMETRY", telemetryToken);
 
-        mockOptionalEnv("AXIOM_TOKEN_TELEMETRY", undefined);
-        const unconfiguredTelemetry = await webhooks.requestAgentTelemetry(
-          {
-            runId: created.runId,
-            networkLogs: [
-              {
-                timestamp: nowDate().toISOString(),
-                host: "unconfigured.example.test",
-              },
-            ],
-          },
-          sandboxHeaders,
-          [200],
-        );
-        expect(unconfiguredTelemetry.status).toBe(200);
-        expect(failedTelemetryRequests).toBe(1);
-        mockOptionalEnv("AXIOM_TOKEN_TELEMETRY", "xaat-test-telemetry");
-
-        const artifactSnapshots = [
-          {
-            name: memoryArtifact.name,
-            version: memoryArtifact.versionId,
-            mountPath: memoryArtifact.mountPath,
-            ...(memoryArtifact.missingRootPolicy === undefined
-              ? {}
-              : { missingRootPolicy: memoryArtifact.missingRootPolicy }),
-          },
-        ];
-        const historyHash = createHash("sha256")
-          .update(`bdd snapshot history ${created.runId}`)
-          .digest("hex");
-        const completion = await webhooks.requestAgentComplete(
-          {
-            runId: created.runId,
-            exitCode: 0,
-            lastEventSequence: 3,
-            completion: {
-              cliAgentType: "claude-code",
-              cliAgentSessionId: `bdd-snapshot-cli-${created.runId}`,
-              cliAgentSessionHistoryHash: historyHash,
-              artifactSnapshots,
-              volumeVersionsSnapshot: {
-                versions: { [cacheVolume]: cachePrepared.versionId },
+          const artifactSnapshots = [
+            {
+              name: memoryArtifact.name,
+              version: memoryArtifact.versionId,
+              mountPath: memoryArtifact.mountPath,
+              ...(memoryArtifact.missingRootPolicy === undefined
+                ? {}
+                : { missingRootPolicy: memoryArtifact.missingRootPolicy }),
+            },
+          ];
+          const historyHash = createHash("sha256")
+            .update(`bdd snapshot history ${created.runId}`)
+            .digest("hex");
+          const completion = await webhooks.requestAgentComplete(
+            {
+              runId: created.runId,
+              exitCode: 0,
+              lastEventSequence: 3,
+              completion: {
+                cliAgentType: "claude-code",
+                cliAgentSessionId: `bdd-snapshot-cli-${created.runId}`,
+                cliAgentSessionHistoryHash: historyHash,
+                artifactSnapshots,
+                volumeVersionsSnapshot: {
+                  versions: { [cacheVolume]: cachePrepared.versionId },
+                },
               },
             },
-          },
-          sandboxHeaders,
-          [200],
-        );
-        expect(completion.body).toStrictEqual({
-          success: true,
-          status: "completed",
-        });
+            sandboxHeaders,
+            [200],
+          );
+          expect(completion.body).toStrictEqual({
+            success: true,
+            status: "completed",
+          });
 
-        const completed = await api.readRun(actor, created.runId);
-        expect(completed.status).toBe("completed");
-        expect(completed.result?.artifact).toStrictEqual({
-          memory: memoryArtifact.versionId,
-        });
-        expect(completed.result?.volumes).toStrictEqual({
-          [cacheVolume]: cachePrepared.versionId,
-        });
+          const completed = await api.readRun(actor, created.runId);
+          expect(completed.status).toBe("completed");
+          expect(completed.result?.artifact).toStrictEqual({
+            memory: memoryArtifact.versionId,
+          });
+          expect(completed.result?.volumes).toStrictEqual({
+            [cacheVolume]: cachePrepared.versionId,
+          });
 
-        // A late duplicate report cannot flip the settled run.
-        const duplicate = await webhooks.requestAgentComplete(
-          {
-            runId: created.runId,
-            exitCode: 1,
-            error: "late crash report",
-            lastEventSequence: 9,
-          },
-          sandboxHeaders,
-          [200],
-        );
-        if (duplicate.status !== 200) {
-          throw new Error("Expected the duplicate completion to be accepted");
-        }
-        expect(duplicate.body).toStrictEqual({
-          success: true,
-          status: "completed",
+          // A late duplicate report cannot flip the settled run.
+          const duplicate = await webhooks.requestAgentComplete(
+            {
+              runId: created.runId,
+              exitCode: 1,
+              error: "late crash report",
+              lastEventSequence: 9,
+            },
+            sandboxHeaders,
+            [200],
+          );
+          if (duplicate.status !== 200) {
+            throw new Error("Expected the duplicate completion to be accepted");
+          }
+          expect(duplicate.body).toStrictEqual({
+            success: true,
+            status: "completed",
+          });
+          const settled = await api.readRun(actor, created.runId);
+          expect(settled.status).toBe("completed");
+          expect(settled.error ?? null).toBeNull();
         });
-        const settled = await api.readRun(actor, created.runId);
-        expect(settled.status).toBe("completed");
-        expect(settled.error ?? null).toBeNull();
       });
     });
 

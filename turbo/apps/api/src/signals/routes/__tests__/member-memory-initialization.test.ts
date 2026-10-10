@@ -13,13 +13,18 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { onboardingCompleteRoutes } from "../onboarding-complete";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { storageTextFile } from "./helpers/api-bdd-storage-files";
-import { createStoragesBddApi } from "./helpers/api-bdd-storages";
+import { createPublicComputerUseScenario } from "./helpers/public-computer-use-scenario";
+import {
+  createRunsApi,
+  expectCanonicalStorageManifest,
+} from "./helpers/api-bdd-runs";
+import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
+import { userPreferencesRoutes } from "../user-preferences";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const api = createBddApi(context);
-const storages = createStoragesBddApi(context);
 const webhooks = createWebhookCallbackApi(context);
 const mocks = createRouteMocks(context);
 
@@ -59,60 +64,153 @@ async function membershipCreated(actor: ApiTestUser): Promise<void> {
   await flushWaitUntilForTest();
 }
 
-async function memoryDownload(actor: ApiTestUser) {
-  return await storages.downloadStorage(actor, {
-    name: "memory",
-    owner: "user",
+async function memoryInitialized(actor: ApiTestUser) {
+  mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+  const preferences = setupApp({ context, routes: userPreferencesRoutes })(
+    userPreferencesContract,
+  );
+  return (
+    await accept(
+      preferences.get({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    )
+  ).body.memoryInitialized;
+}
+async function observeMemory(
+  owner: ReturnType<typeof createPublicComputerUseScenario>,
+  actor: ApiTestUser,
+) {
+  const runs = createRunsApi(context);
+  if (actor.orgRole === "org:member") {
+    await owner.prepareActor(
+      owner.user({ orgId: actor.orgId, orgRole: "org:admin" }),
+    );
+  }
+  const { agentId, runnerGroup } = await owner.prepareActor(actor);
+  const run = await runs.createThreadRun(actor, {
+    agentId,
+    prompt: "Observe this member's initialized Memory",
+    model: "claude-fable-5-1",
   });
+  await runs.heartbeatRunner(runnerGroup);
+  const claim = await owner.claimExisting(actor, run.runId);
+  const memories =
+    expectCanonicalStorageManifest(claim.storageManifest)?.storageMounts.filter(
+      (mount) => {
+        return mount.name === "memory";
+      },
+    ) ?? [];
+  expect(memories).toHaveLength(1);
+  const memory = memories[0];
+  if (!memory) {
+    throw new Error("Expected the member's real Memory mount");
+  }
+  await owner.cancelRun(actor, run.runId);
+  return memory;
 }
 
 describe("member memory account initialization", () => {
   it.each(["org:admin", "org:member"] as const)(
     "synchronously initializes one memory for duplicate %s onboarding completions",
     async (orgRole) => {
-      const actor = api.user({ orgRole });
-      api.acceptAgentStorageWrites();
-      await Promise.all([completeOnboarding(actor), completeOnboarding(actor)]);
-      const initial = await memoryDownload(actor);
-      expect(initial).toMatchObject({ empty: true, fileCount: 0, size: 0 });
-      await completeOnboarding(actor);
-      await expect(memoryDownload(actor)).resolves.toStrictEqual(initial);
-      expect(
-        (await storages.listStorages(actor, "user")).filter((storage) => {
-          return storage.name === "memory";
-        }),
-      ).toHaveLength(1);
+      const owner = createPublicComputerUseScenario(context);
+      const actor = owner.user({ orgRole });
+      await owner.run(async () => {
+        api.acceptAgentStorageWrites();
+        await expect(memoryInitialized(actor)).resolves.toBeFalsy();
+        const completions = await Promise.allSettled([
+          completeOnboarding(actor),
+          completeOnboarding(actor),
+        ]);
+        for (const result of completions) {
+          if (result.status === "rejected") {
+            throw result.reason;
+          }
+        }
+        await expect(memoryInitialized(actor)).resolves.toBeTruthy();
+        const initial = await observeMemory(owner, actor);
+        expect(initial).toMatchObject({
+          empty: true,
+          name: "memory",
+          storageId: expect.any(String),
+          versionId: expect.any(String),
+        });
+        await completeOnboarding(actor);
+        await expect(memoryInitialized(actor)).resolves.toBeTruthy();
+        const repeated = await observeMemory(owner, actor);
+        expect(repeated).toMatchObject({
+          empty: true,
+          storageId: initial.storageId,
+          versionId: initial.versionId,
+        });
+      });
     },
   );
 
   it("initializes memory on a membership webhook without Web onboarding", async () => {
-    const actor = api.user({ orgRole: "org:member" });
-    await expect(storages.listStorages(actor, "user")).resolves.toStrictEqual(
-      [],
-    );
-    await membershipCreated(actor);
-    const initial = await memoryDownload(actor);
-    expect(initial).toMatchObject({ empty: true, fileCount: 0, size: 0 });
-    await membershipCreated(actor);
-    await expect(memoryDownload(actor)).resolves.toStrictEqual(initial);
+    const owner = createPublicComputerUseScenario(context);
+    const actor = owner.user({ orgRole: "org:member" });
+    await owner.run(async () => {
+      await expect(memoryInitialized(actor)).resolves.toBeFalsy();
+      await membershipCreated(actor);
+      await expect(memoryInitialized(actor)).resolves.toBeTruthy();
+      // Observe webhook replay before any later funding/onboarding can initialize Memory.
+      await membershipCreated(actor);
+      await expect(memoryInitialized(actor)).resolves.toBeTruthy();
+      const initial = await observeMemory(owner, actor);
+      expect(initial).toMatchObject({
+        empty: true,
+        name: "memory",
+        storageId: expect.any(String),
+        versionId: expect.any(String),
+      });
+      await membershipCreated(actor);
+      const repeated = await observeMemory(owner, actor);
+      expect(repeated).toMatchObject({
+        empty: true,
+        storageId: initial.storageId,
+        versionId: initial.versionId,
+      });
+    });
   });
 
   it("isolates memory by both organization and user", async () => {
-    const first = api.user({ orgRole: "org:member" });
-    const anotherOrg = api.user({
+    const owner = createPublicComputerUseScenario(context);
+    const first = owner.user({ orgRole: "org:member" });
+    const anotherOrg = owner.user({
       userId: first.userId,
       orgRole: "org:member",
     });
-    const anotherMember = api.user({
+    const anotherMember = owner.user({
       orgId: first.orgId,
       orgRole: "org:member",
     });
-    const versions = [];
-    for (const actor of [first, anotherOrg, anotherMember]) {
-      await completeOnboarding(actor);
-      versions.push((await memoryDownload(actor)).versionId);
-    }
-    expect(new Set(versions).size).toBe(3);
+    await owner.run(async () => {
+      api.acceptAgentStorageWrites();
+      const memories = [];
+      for (const actor of [first, anotherOrg, anotherMember]) {
+        await expect(memoryInitialized(actor)).resolves.toBeFalsy();
+        await completeOnboarding(actor);
+        await expect(memoryInitialized(actor)).resolves.toBeTruthy();
+        const memory = await observeMemory(owner, actor);
+        expect(memory.empty).toBeTruthy();
+        memories.push(memory);
+      }
+      expect(
+        new Set(
+          memories.map((memory) => {
+            return memory.storageId;
+          }),
+        ).size,
+      ).toBe(3);
+      expect(
+        new Set(
+          memories.map((memory) => {
+            return memory.versionId;
+          }),
+        ).size,
+      ).toBe(3);
+    });
   });
 
   it("preserves published memory when either initialization entry is repeated", async () => {

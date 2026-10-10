@@ -4,7 +4,6 @@ import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import { socialDataJobs } from "@okouai/db/schema/social-data-job";
 import { command } from "ccstate";
 import { and, asc, eq, inArray } from "drizzle-orm";
-import { usagePricingResolution$ } from "../context/usage-pricing-resolution";
 import { writeDb$ } from "../external/db";
 import {
   socialWhere,
@@ -20,7 +19,7 @@ import {
 
 export const prepareUsageSettlementBatch$ = command(
   async (
-    { get, set },
+    { set },
     args: {
       readonly orgId: string;
       readonly idempotencyKeys?: readonly string[];
@@ -65,10 +64,7 @@ export const prepareUsageSettlementBatch$ = command(
     const events = snapshots.filter(({ event }) => {
       return event.status === "pending";
     });
-    const pricingKeys = settlementPricingKeys(
-      events,
-      get(usagePricingResolution$),
-    );
+    const pricingKeys = settlementPricingKeys(events);
     const prices = await db
       .select()
       .from(usagePricing)
@@ -77,13 +73,7 @@ export const prepareUsageSettlementBatch$ = command(
     const records = events.map(({ event }) => {
       return event;
     });
-    const priced = priceUsageEvents(
-      records,
-      prices,
-      args.orgId,
-      get(usagePricingResolution$),
-      false,
-    );
+    const priced = priceUsageEvents(records, prices, args.orgId, false);
     const social = prepareSocialSettlement(job);
     return {
       events,

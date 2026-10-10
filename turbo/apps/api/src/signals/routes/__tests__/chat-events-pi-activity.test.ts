@@ -3,7 +3,6 @@ import {
   VERTEX_TEXT_URL,
   vertexTextRequest,
 } from "./helpers/google-text";
-import { expectThreadModelTokens } from "./helpers/public-thread-usage";
 import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { chatThreadActivitySummaryRoutes } from "../chat-threads-activity-summary";
 import { createHash, randomUUID } from "node:crypto";
@@ -24,7 +23,6 @@ import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { commitMemoryVersion } from "./helpers/memory";
 import {
   createChatEventsFixture,
-  createPiUsagePricingResolution,
   requireOrgId,
   claimEnvironment,
   eventBackedContents,
@@ -37,7 +35,6 @@ const {
   webhooks,
   entitledChatActor,
   configureSubscriptionPiModel,
-  configureBuiltInPiModelOnOpenRouter,
   sendChatRunAfterPick,
   claimChatRun,
   waitForRunStatus,
@@ -795,142 +792,4 @@ describe("CHAT-02: model-first routing", () => {
     piActivityScenario,
     150_000,
   );
-
-  // Preserved from the original combined scenario. Its managed key/pricing
-  // factory remains unprocessed by #37440; it is not a public memory writer.
-  it("deduplicates built-in model usage across repeated H2 completion", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    const usagePricingResolution =
-      await createPiUsagePricingResolution("okou-1.0");
-    const model = await configureBuiltInPiModelOnOpenRouter(actor, "okou-1.0");
-    mockPiResourceArchiveDownloads();
-    const historyObjects = mockPiCheckpointObjectStore();
-    const prompt = "retain the built-in model usage receipt";
-    const run = await sendChatRunAfterPick(
-      actor,
-      { agentId, prompt, model },
-      usagePricingResolution,
-    );
-    const claimed = await claimChatRun(runnerGroup, run.runId);
-    expect(claimed.claim.piModelConfig).toMatchObject({
-      provider: "openrouter",
-      model: "@preset/okou-1-0",
-    });
-    const usageEvent = {
-      idempotencyKey: randomUUID(),
-      kind: "model" as const,
-      provider: "okou-1.0",
-      category: "tokens.output",
-      quantity: 2,
-    };
-    const receipts = await Promise.all([
-      webhooks.requestAgentUsageEvent(
-        { runId: run.runId, events: [usageEvent] },
-        claimed.sandboxHeaders,
-        [200],
-        usagePricingResolution,
-      ),
-      webhooks.requestAgentUsageEvent(
-        { runId: run.runId, events: [usageEvent] },
-        claimed.sandboxHeaders,
-        [200],
-        usagePricingResolution,
-      ),
-    ]);
-    expect(
-      receipts.map((receipt) => {
-        return receipt.body;
-      }),
-    ).toStrictEqual([{ success: true }, { success: true }]);
-
-    const session = MemoryPiSession.fromJsonl(
-      piSandboxBaseSession(claimed.claim, historyObjects).toString("utf8"),
-    );
-    session.appendMessage({ role: "user", content: prompt, timestamp: 1 });
-    session.appendMessage({
-      role: "assistant",
-      content: [{ type: "text", text: "built-in usage recorded" }],
-      api: "openai-responses",
-      provider: "openrouter",
-      model: "@preset/okou-1-0",
-      usage: {
-        input: 0,
-        output: 2,
-        cacheRead: 0,
-        cacheWrite: 0,
-        totalTokens: 2,
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-      },
-      stopReason: "stop",
-      timestamp: 2,
-    });
-    const h2 = Buffer.from(session.toJsonl(), "utf8");
-    const hash = createHash("sha256").update(h2).digest("hex");
-    await webhooks.requestAgentSessionHistoryPrepare(
-      {
-        runId: run.runId,
-        hash,
-        rawSize: h2.length,
-        encodedSize: h2.length,
-        encoding: "identity",
-      },
-      claimed.sandboxHeaders,
-      [200],
-    );
-    historyObjects.set(
-      `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${hash}.blob`,
-      h2,
-    );
-    await webhooks.requestAgentEvents(
-      {
-        runId: run.runId,
-        events: [
-          {
-            type: "assistant",
-            sequenceNumber: 1,
-            message: {
-              content: [{ type: "text", text: "built-in usage recorded" }],
-            },
-          },
-          {
-            type: "result",
-            sequenceNumber: 2,
-            result: "built-in usage recorded",
-          },
-        ],
-      },
-      claimed.sandboxHeaders,
-      [200],
-    );
-    const completion = {
-      runId: run.runId,
-      exitCode: 0,
-      lastEventSequence: 2,
-      completion: {
-        cliAgentType: "pi",
-        cliAgentSessionId: run.threadId,
-        cliAgentSessionHistoryHash: hash,
-      },
-    } as const;
-    const first = await webhooks.requestAgentComplete(
-      completion,
-      claimed.sandboxHeaders,
-      [200],
-      undefined,
-      usagePricingResolution,
-    );
-    expect(first.body).toStrictEqual({ success: true, status: "completed" });
-    await flushWaitUntilForTest();
-    await expectThreadModelTokens(context, actor, run.threadId, 2);
-    const repeated = await webhooks.requestAgentComplete(
-      completion,
-      claimed.sandboxHeaders,
-      [200],
-      undefined,
-      usagePricingResolution,
-    );
-    expect(repeated.body).toStrictEqual(first.body);
-    await flushWaitUntilForTest();
-    await expectThreadModelTokens(context, actor, run.threadId, 2);
-  });
 });

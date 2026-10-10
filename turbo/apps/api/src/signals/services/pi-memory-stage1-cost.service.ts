@@ -6,10 +6,6 @@ import { command } from "ccstate";
 
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import {
-  resolveUsagePricingProvider,
-  type UsagePricingResolution,
-} from "../context/usage-pricing-resolution";
 import { rawSqlReadDb$ } from "../external/db";
 import { safeSync, settleIncludingAbort } from "../utils";
 import {
@@ -33,7 +29,6 @@ export const observePiMemoryStage1Cost$ = command(
     { get },
     args: RecordPiMemoryStage1UsageArgs,
     receipt: PiMemoryStage1UsageReceipt | null,
-    pricingResolution: UsagePricingResolution,
   ): Promise<void> => {
     // Own both pricing and synchronous logging failures, including abort errors.
     // Neither may turn already consumed provider work into a paid retry.
@@ -75,11 +70,7 @@ export const observePiMemoryStage1Cost$ = command(
           });
           return;
         }
-        const pricingProvider = resolveUsagePricingProvider(
-          pricingResolution,
-          "model",
-          args.model,
-        );
+        const pricingProvider = args.model;
         // The transaction scopes SET LOCAL to this best-effort read.
         const prices = await settleIncludingAbort(
           // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0226; new non-billing transactions are prohibited.

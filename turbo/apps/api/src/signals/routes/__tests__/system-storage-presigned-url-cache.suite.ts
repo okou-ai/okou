@@ -27,7 +27,6 @@ import {
   createRunsApi,
   expectCanonicalStorageManifest,
 } from "./helpers/api-bdd-runs";
-import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 
 describe("system storage presigned URL cache", () => {
   const context = testContext();
@@ -545,8 +544,7 @@ describe("system storage presigned URL cache", () => {
     if (!actor.orgId) {
       throw new Error("Expected an organization-scoped cache actor");
     }
-    const storages = createStoragesBddApi(context);
-    storages.mockStorageObjectsExist(2048);
+    context.mocks.s3.send.mockResolvedValue({ ContentLength: 2048 });
     // All selected mounts come from normal workflow and connector creation.
     const misc = createMiscRoutesApi(context);
     const storageNames: string[] = [];

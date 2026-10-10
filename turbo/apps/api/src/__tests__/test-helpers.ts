@@ -1,4 +1,3 @@
-import type { UsagePricingResolution } from "../signals/context/usage-pricing-resolution";
 import type { SystemSkillStorageResolution } from "../signals/context/system-skill-storage-resolution";
 import type { RouteEntry } from "../signals/route-entry";
 import { setupAppWithRoutes, setupRawAppRequestWithRoutes } from "./test-app";
@@ -15,7 +14,6 @@ interface SetupAppOptions extends SetupRawAppOptions {
   readonly isolatePg?: boolean;
   readonly baseUrl?: string;
   readonly rethrowErrors?: boolean;
-  readonly usagePricingResolution?: UsagePricingResolution;
   readonly systemSkillStorageResolution?: SystemSkillStorageResolution;
 }
 

@@ -67,7 +67,6 @@ import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
-import type { UsagePricingResolution } from "../../../context/usage-pricing-resolution";
 import {
   buildArtifactKey,
   sanitizeArtifactFilename,
@@ -140,7 +139,6 @@ type BddSendEventBody =
     };
 
 interface RequestSendEventOptions {
-  readonly usagePricingResolution?: UsagePricingResolution;
   /** Request headers beyond authentication, such as a preview bypass. */
   readonly extraHeaders?: Readonly<Record<string, string>>;
   /** Request-owned system skill storage lookups for the send's pick. */
@@ -1600,9 +1598,6 @@ export function createChatFilesBddApi(context: TestContext) {
         context,
         routes: chatFilesRoutes,
         ...(signal === undefined ? {} : { signal }),
-        ...(options.usagePricingResolution === undefined
-          ? {}
-          : { usagePricingResolution: options.usagePricingResolution }),
         ...(options.systemSkillStorageResolution === undefined
           ? {}
           : {

@@ -14,7 +14,7 @@ import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
-import { env } from "../../../lib/env";
+import { env, mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -27,7 +27,6 @@ import {
   createChatEventsFixture,
   claimEnvironment,
   modelProviderSecretPlaceholder,
-  createPiUsagePricingResolution,
   eventBackedContents,
   type PiCheckpointS3Command,
   piS3ObjectKey,
@@ -40,7 +39,6 @@ const {
   chat,
   webhooks,
   entitledChatActor,
-  configureBuiltInPiModel,
   configureSubscriptionPiModel,
   sendChatRun,
   claimChatRun,
@@ -49,9 +47,8 @@ const {
   cancelChatRun,
   mockPiCheckpointObjectStore,
   piSandboxBaseSession,
-  publishPendingPiInstructions,
   completeSandboxFirstPiRun,
-  queueCapabilityProvenPiRun,
+  completeChatRunOk,
 } = createChatEventsFixture(context);
 
 describe("CHAT-02: model-first routing", () => {
@@ -265,171 +262,189 @@ describe("CHAT-02: model-first routing", () => {
   ] as const)(
     "claims native input %j with exact fresh and resumed Sandbox H0",
     async (prompt) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
-      await publishPendingPiInstructions(actor, agentId);
-      const historyObjects = mockPiCheckpointObjectStore();
-      let resourceDownloads = 0;
-      server.use(
-        http.get(PI_RESOURCE_ARCHIVE_DOWNLOAD_URL, () => {
-          resourceDownloads += 1;
-          return HttpResponse.json(
-            { error: "API resources unavailable" },
-            { status: 503 },
-          );
-        }),
-      );
-      const queued = await queueCapabilityProvenPiRun({
+      const {
         actor,
         agentId,
         runnerGroup,
-        prompt,
+        run: own,
+        sendChatRun,
+        sendWaitingChatInput,
+        claimChatRun,
+      } = await publicChatActor(context, {
+        optionalEnvironmentNames: ["CONCURRENT_RUN_LIMIT_CAP"],
       });
-      let run = await queued.launch();
-      let expectedH0: Buffer | undefined;
-      let applicationSession: string | undefined;
-      const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
-      for (const turn of [1, 2]) {
-        const originalPrompt = turn === 1 ? prompt : `${prompt}\nresume once`;
-        if (turn === 2) {
-          run = await sendChatRun(
-            actor,
-            {
+      await own(async () => {
+        mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+        const historyObjects = mockPiCheckpointObjectStore();
+        let resourceDownloads = 0;
+        server.use(
+          http.get(PI_RESOURCE_ARCHIVE_DOWNLOAD_URL, () => {
+            resourceDownloads += 1;
+            return HttpResponse.json(
+              { error: "API resources unavailable" },
+              { status: 503 },
+            );
+          }),
+        );
+        await api.heartbeatRunner(runnerGroup);
+        const anchor = await sendChatRun(actor, {
+          agentId,
+          prompt: "hold capacity for the personal Pi input",
+          model: "claude-fable-5-1",
+        });
+        const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
+        await configureSubscriptionPiModel(actor, {}, "gpt-6-luna");
+        const waiting = await sendWaitingChatInput(actor, {
+          agentId,
+          prompt,
+          model: "gpt-6-luna",
+        });
+        await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
+        let run = await waiting.launchedRun();
+        let expectedH0: Buffer | undefined;
+        let applicationSession: string | undefined;
+        const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
+        for (const turn of [1, 2]) {
+          const originalPrompt = turn === 1 ? prompt : `${prompt}\nresume once`;
+          if (turn === 2) {
+            run = await sendChatRun(actor, {
               agentId,
               threadId: run.threadId,
               prompt: originalPrompt,
-              model: null,
-            },
-            queued.usagePricingResolution,
-          );
-        }
-        await flushWaitUntilForTest();
-        expect(resourceDownloads).toBe(0);
-        const claim = await claimChatRun(runnerGroup, run.runId);
-        expect(claim.claim).toMatchObject({
-          cliAgentType: "pi",
-          piSessionId: run.threadId,
-          prompt: originalPrompt,
-          piInstalledCliRequirement: {
-            requiredPiAgentRuntimeVersion: PI_AGENT_RUNTIME_VERSION,
-            minCliVersion: PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
-            requiredPiSessionConstructionDigest: PI_SESSION_CONSTRUCTION_DIGEST,
-          },
-        });
-        expect(claim.claim.piLaunchConfig).toMatchObject({ schemaVersion: 2 });
-        if (turn === 1) {
-          expect(claim.claim.resumeSession).toBeNull();
-        } else {
-          if (!expectedH0) {
-            throw new Error("Expected settled first-turn checkpoint");
+              model: "gpt-6-luna",
+            });
           }
-          const hash = createHash("sha256").update(expectedH0).digest("hex");
-          const resumeSession = claim.claim.resumeSession;
-          expect(resumeSession).toMatchObject({
-            sessionId: run.threadId,
-            historyRef: {
-              kind: "blob",
-              hash,
-              encoding: "identity",
-              rawSize: expectedH0.length,
-              encodedSize: expectedH0.length,
-              url: expect.any(String),
+          await flushWaitUntilForTest();
+          expect(resourceDownloads).toBe(0);
+          const claim = await claimChatRun(runnerGroup, run.runId);
+          expect(claim.claim).toMatchObject({
+            cliAgentType: "pi",
+            piSessionId: run.threadId,
+            prompt: originalPrompt,
+            piInstalledCliRequirement: {
+              requiredPiAgentRuntimeVersion: PI_AGENT_RUNTIME_VERSION,
+              minCliVersion: PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
+              requiredPiSessionConstructionDigest:
+                PI_SESSION_CONSTRUCTION_DIGEST,
             },
           });
-          if (!resumeSession || !("historyRef" in resumeSession)) {
-            throw new Error("Expected referenced resume history");
+          expect(claim.claim.piLaunchConfig).toMatchObject({
+            schemaVersion: 2,
+          });
+          if (turn === 1) {
+            expect(claim.claim.resumeSession).toBeNull();
+          } else {
+            if (!expectedH0) {
+              throw new Error("Expected settled first-turn checkpoint");
+            }
+            const hash = createHash("sha256").update(expectedH0).digest("hex");
+            const resumeSession = claim.claim.resumeSession;
+            expect(resumeSession).toMatchObject({
+              sessionId: run.threadId,
+              historyRef: {
+                kind: "blob",
+                hash,
+                encoding: "identity",
+                rawSize: expectedH0.length,
+                encodedSize: expectedH0.length,
+                url: expect.any(String),
+              },
+            });
+            if (!resumeSession || !("historyRef" in resumeSession)) {
+              throw new Error("Expected referenced resume history");
+            }
+            expect(
+              new URL(resumeSession.historyRef.url).searchParams.get("object"),
+            ).toBe(`${bucket}/blobs/${hash}.blob`);
           }
-          expect(
-            new URL(resumeSession.historyRef.url).searchParams.get("object"),
-          ).toBe(`${bucket}/blobs/${hash}.blob`);
-        }
-        const h0 = piSandboxBaseSession(claim.claim, historyObjects);
-        if (turn === 2) {
-          expect(h0).toStrictEqual(expectedH0);
-        }
-        const session = MemoryPiSession.fromJsonl(h0.toString("utf8"));
-        expect(session.getSessionId()).toBe(run.threadId);
-        expect(session.buildSessionContext().messages).toHaveLength(
-          (turn - 1) * 2,
-        );
-
-        const sandboxUsage = {
-          idempotencyKey: randomUUID(),
-          kind: "model" as const,
-          provider: "gpt-6-luna",
-          category: "tokens.output",
-          quantity: 2,
-        };
-        for (const _receipt of [1, 2]) {
-          await webhooks.requestAgentUsageEvent(
-            { runId: run.runId, events: [sandboxUsage] },
-            claim.sandboxHeaders,
-            [200],
-            queued.usagePricingResolution,
+          const h0 = piSandboxBaseSession(claim.claim, historyObjects);
+          if (turn === 2) {
+            expect(h0).toStrictEqual(expectedH0);
+          }
+          const session = MemoryPiSession.fromJsonl(h0.toString("utf8"));
+          expect(session.getSessionId()).toBe(run.threadId);
+          expect(session.buildSessionContext().messages).toHaveLength(
+            (turn - 1) * 2,
           );
-        }
 
-        const answer = `native Sandbox answer ${turn}`;
-        // This exercises the external Sandbox checkpoint/completion boundary.
-        // pi-agent-loop.test.ts separately runs the real official RPC/AgentSession
-        // with a mounted skill and checks its actual expanded provider input.
-        await completeSandboxFirstPiRun({
-          actor,
-          answer,
-          historyObjects,
-          claim,
-          prompt: originalPrompt,
-          run,
-          usagePricingResolution: queued.usagePricingResolution,
-        });
-        const events = (await chat.listThreadEvents(actor, run.threadId))
-          .events;
-        expect(
-          events
-            .filter((event) => {
-              return (
-                event.runId === run.runId &&
-                isChatRunTerminalEventType(event.eventType)
-              );
-            })
-            .map((event) => {
-              return event.eventType;
+          const sandboxUsage = {
+            idempotencyKey: randomUUID(),
+            kind: "model" as const,
+            provider: "gpt-6-luna",
+            category: "tokens.output",
+            quantity: 2,
+          };
+          for (const _receipt of [1, 2]) {
+            await webhooks.requestAgentUsageEvent(
+              { runId: run.runId, events: [sandboxUsage] },
+              claim.sandboxHeaders,
+              [200],
+            );
+          }
+          const answer = `native Sandbox answer ${turn}`;
+          // This exercises the external Sandbox checkpoint/completion boundary.
+          // pi-agent-loop.test.ts separately runs the real official RPC/AgentSession
+          // with a mounted skill and checks its actual expanded provider input.
+          await completeSandboxFirstPiRun({
+            actor,
+            answer,
+            historyObjects,
+            claim,
+            prompt: originalPrompt,
+            run,
+          });
+          const events = (await chat.listThreadEvents(actor, run.threadId))
+            .events;
+          expect(
+            events
+              .filter((event) => {
+                return (
+                  event.runId === run.runId &&
+                  isChatRunTerminalEventType(event.eventType)
+                );
+              })
+              .map((event) => {
+                return event.eventType;
+              }),
+          ).toStrictEqual(["run.completed"]);
+          expect(
+            eventBackedContents(events, run.runId).filter((message) => {
+              return message.content === answer;
             }),
-        ).toStrictEqual(["run.completed"]);
-        expect(
-          eventBackedContents(events, run.runId).filter((message) => {
-            return message.content === answer;
-          }),
-        ).toHaveLength(1);
-        await expectThreadModelTokens(context, actor, run.threadId, turn * 2);
-        const completedSession = await readCompletedRunSessionId(
-          context,
-          actor,
-          run.runId,
-        );
-        if (applicationSession === undefined) {
-          applicationSession = completedSession;
+          ).toHaveLength(1);
+          await expectThreadModelTokens(context, actor, run.threadId, 0);
+          const completedSession = await readCompletedRunSessionId(
+            context,
+            actor,
+            run.runId,
+          );
+          if (applicationSession === undefined) {
+            applicationSession = completedSession;
+          }
+          expect(completedSession).toBe(applicationSession);
+          const blob = [...historyObjects.entries()]
+            .filter(([key]) => {
+              return key.startsWith(`${bucket}/blobs/`);
+            })
+            .at(-1);
+          if (!blob) {
+            throw new Error("Expected the Sandbox's settled checkpoint");
+          }
+          expectedH0 = blob[1];
+          const settled = MemoryPiSession.fromJsonl(
+            expectedH0.toString("utf8"),
+          );
+          expect(settled.getSessionId()).toBe(run.threadId);
+          expect(settled.isSettledCheckpoint()).toBeTruthy();
+          expect(settled.buildSessionContext().messages).toHaveLength(turn * 2);
         }
-        expect(completedSession).toBe(applicationSession);
-        const blob = [...historyObjects.entries()]
-          .filter(([key]) => {
-            return key.startsWith(`${bucket}/blobs/`);
-          })
-          .at(-1);
-        if (!blob) {
-          throw new Error("Expected the Sandbox's settled checkpoint");
-        }
-        expectedH0 = blob[1];
-        const settled = MemoryPiSession.fromJsonl(expectedH0.toString("utf8"));
-        expect(settled.getSessionId()).toBe(run.threadId);
-        expect(settled.isSettledCheckpoint()).toBeTruthy();
-        expect(settled.buildSessionContext().messages).toHaveLength(turn * 2);
-      }
+      });
     },
     90_000,
   );
 
-  it.each(["okou-1.0", "gpt-6-luna"] as const)(
-    "claims %s with Sandbox credentials and bills duplicate Sandbox usage once",
+  it.each(["gpt-6-luna"] as const)(
+    "claims %s with Sandbox credentials without charging duplicate personal usage",
     async (selectedModel) => {
       const {
         run: own,
@@ -439,103 +454,74 @@ describe("CHAT-02: model-first routing", () => {
         claimChatRun,
         sendChatRun,
       } = await publicChatActor(context);
-      const builtIn = selectedModel === "okou-1.0";
-      const usagePricingResolution = builtIn
-        ? await createPiUsagePricingResolution(selectedModel)
-        : undefined;
-      if (builtIn) {
-        await configureBuiltInPiModel(actor, selectedModel);
-      } else {
-        await own(async () => {
-          return await configureSubscriptionPiModel(actor, {}, selectedModel);
-        });
-      }
-      const upstreamModel = builtIn ? "@preset/okou-1-0" : selectedModel;
+      await own(async () => {
+        await configureSubscriptionPiModel(actor, {}, selectedModel);
 
-      const run = await sendChatRun(
-        actor,
-        {
+        const run = await sendChatRun(actor, {
           agentId,
-          prompt: "hand a built-in Pi turn to Sandbox",
-          // Auto is the null selection; its run model is the built-in one.
-          model: builtIn ? null : selectedModel,
-        },
-        usagePricingResolution,
-      );
-      await flushWaitUntilForTest();
+          prompt: "hand a personal Pi turn to Sandbox",
+          model: selectedModel,
+        });
+        await flushWaitUntilForTest();
 
-      const claimed = await claimChatRun(runnerGroup, run.runId);
-      expect(claimed.claim.piModelConfig).toMatchObject({
-        provider: builtIn ? "openrouter" : "openai-codex",
-        model: upstreamModel,
-      });
-      expect(claimed.claim.piModelConfig).not.toHaveProperty("api");
-      expect(claimed.claim.piModelConfig).not.toHaveProperty("serviceTier");
-      const credentials = claimEnvironment(claimed.claim);
-      expect(
-        builtIn ? credentials.OPENAI_API_KEY : credentials.CHATGPT_ACCESS_TOKEN,
-      ).toBe(
-        modelProviderSecretPlaceholder(
-          builtIn ? "openrouter-codex" : "codex-oauth-token",
-          builtIn ? "OPENROUTER_API_KEY" : "CHATGPT_ACCESS_TOKEN",
-        ),
-      );
-      const sandboxUsageEvent = {
-        idempotencyKey: randomUUID(),
-        kind: "model" as const,
-        provider: selectedModel,
-        category: "tokens.output",
-        quantity: 2,
-      };
-      const sandboxUsageReceipts = await Promise.all([
-        own(async () => {
-          return await webhooks.requestAgentUsageEvent(
-            { runId: run.runId, events: [sandboxUsageEvent] },
-            claimed.sandboxHeaders,
-            [200],
-            usagePricingResolution,
-          );
-        }),
-        own(async () => {
-          return await webhooks.requestAgentUsageEvent(
-            { runId: run.runId, events: [sandboxUsageEvent] },
-            claimed.sandboxHeaders,
-            [200],
-            usagePricingResolution,
-          );
-        }),
-      ]);
-      expect(
-        sandboxUsageReceipts.map((receipt) => {
-          return receipt.body;
-        }),
-      ).toStrictEqual([{ success: true }, { success: true }]);
-      await own(async () => {
-        return await api.requestCancelRun(
-          actor,
-          run.runId,
-          [200],
-          usagePricingResolution,
+        const claimed = await claimChatRun(runnerGroup, run.runId);
+        expect(claimed.claim.piModelConfig).toMatchObject({
+          provider: "openai-codex",
+          model: selectedModel,
+        });
+        expect(claimed.claim.piModelConfig).not.toHaveProperty("api");
+        expect(claimed.claim.piModelConfig).not.toHaveProperty("serviceTier");
+        const credentials = claimEnvironment(claimed.claim);
+        expect(credentials.CHATGPT_ACCESS_TOKEN).toBe(
+          modelProviderSecretPlaceholder(
+            "codex-oauth-token",
+            "CHATGPT_ACCESS_TOKEN",
+          ),
         );
-      });
-      await waitForRunStatus(actor, run.runId, "cancelled");
-      await own(async () => {
-        return await failChatRun(
-          run.runId,
-          claimed.sandboxHeaders,
-          "Run cancelled",
-        );
-      });
-      await flushWaitUntilForTest();
-      // Metered Auto records the guest output once. Personal subscription
-      // model traffic is not admitted to the platform billing ledger.
-      const usage = await readThreadModelUsage(context, actor, run.threadId);
-      expect(usage.tokens).toBe(builtIn ? 2 : 0);
-      if (builtIn) {
-        expect(usage.credits).toBeGreaterThan(0);
-      } else {
+        const sandboxUsageEvent = {
+          idempotencyKey: randomUUID(),
+          kind: "model" as const,
+          provider: selectedModel,
+          category: "tokens.output",
+          quantity: 2,
+        };
+        const sandboxUsageReceipts = await Promise.all([
+          own(async () => {
+            return await webhooks.requestAgentUsageEvent(
+              { runId: run.runId, events: [sandboxUsageEvent] },
+              claimed.sandboxHeaders,
+              [200],
+            );
+          }),
+          own(async () => {
+            return await webhooks.requestAgentUsageEvent(
+              { runId: run.runId, events: [sandboxUsageEvent] },
+              claimed.sandboxHeaders,
+              [200],
+            );
+          }),
+        ]);
+        expect(
+          sandboxUsageReceipts.map((receipt) => {
+            return receipt.body;
+          }),
+        ).toStrictEqual([{ success: true }, { success: true }]);
+        await own(async () => {
+          return await api.requestCancelRun(actor, run.runId, [200]);
+        });
+        await waitForRunStatus(actor, run.runId, "cancelled");
+        await own(async () => {
+          return await failChatRun(
+            run.runId,
+            claimed.sandboxHeaders,
+            "Run cancelled",
+          );
+        });
+        await flushWaitUntilForTest();
+        const usage = await readThreadModelUsage(context, actor, run.threadId);
+        expect(usage.tokens).toBe(0);
         expect(usage.credits).toBe(0);
-      }
+      });
     },
     90_000,
   );

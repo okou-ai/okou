@@ -1537,11 +1537,6 @@
       "owner": "publishFixtureGeneration"
     },
     {
-      "id": "TX-0351",
-      "file": "turbo/apps/api/src/test-fixtures/org-metadata.ts",
-      "owner": "upsertOrgMetadataFixture"
-    },
-    {
       "id": "TX-0352",
       "file": "turbo/packages/db/scripts/audit-historical-session-blob-references.sql",
       "owner": "<module>"

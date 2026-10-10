@@ -1,7 +1,13 @@
+import { installDurableUserExportStorage } from "./helpers/durable-user-export-storage";
+import { createPublicConnectorActor } from "./helpers/public-connector-actor";
+import {
+  agentInstructionsContract,
+  agentsByIdContract,
+} from "@okouai/api-contracts/contracts/agents";
+import { agentInstructionsRoutes } from "../agent-instructions";
 import { randomUUID } from "node:crypto";
 
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
-import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
 import { createApp } from "../../../app-factory";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -14,13 +20,11 @@ import {
 } from "./helpers/api-bdd";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { agentsRoutes } from "../agents";
 
 const context = testContext();
 const bdd = createBddApi(context);
 const api = createRunsApi(context);
-const storages = createStoragesBddApi(context);
 
 function currentSecond(): number {
   return Math.floor(now() / 1000);
@@ -421,72 +425,51 @@ describe("DELETE /api/agents/:id", () => {
     });
   });
 
-  it("sweeps the agent instructions volume after deleting the agent", async () => {
-    const actor = bdd.user();
-    if (!actor.orgId) {
-      throw new Error("Expected org-scoped actor");
-    }
-    const baselineVolumes = await storages.listStorages(actor, "organization");
-    const agent = await createAgent(actor, {
-      displayName: "Sweep Agent",
-    });
-
-    const volumesAfterCreate = await storages.listStorages(
-      actor,
-      "organization",
-    );
-    const createdVolumes = volumesAfterCreate.filter((volume) => {
-      return !baselineVolumes.some((baseline) => {
-        return baseline.name === volume.name;
+  it("removes agent access and requests deletion of its instructions objects", async () => {
+    const owner = createPublicConnectorActor(context);
+    const actor = owner.actor;
+    await owner.run(async () => {
+      bdd.acceptAgentStorageWrites();
+      const uploadedKeys = new Set<string>();
+      const storage = installDurableUserExportStorage(context, {
+        prefixes: [actor.orgId + "/"],
+        afterWrite: (command) => {
+          if (command.input.Key) {
+            uploadedKeys.add(command.input.Key);
+          }
+          return Promise.resolve();
+        },
       });
-    });
-    expect(createdVolumes).toHaveLength(1);
-    const instructionsVolume = createdVolumes[0];
-    if (!instructionsVolume) {
-      throw new Error("Expected an instructions volume");
-    }
-
-    let listedPrefix = "";
-    context.mocks.s3.send.mockClear();
-    context.mocks.s3.send.mockImplementation((command: unknown) => {
-      const input = commandInput(command);
-      if (typeof input.Prefix === "string") {
-        listedPrefix = input.Prefix;
-        return Promise.resolve({
-          Contents: [
-            {
-              Key: `${input.Prefix}v1/archive.tar.gz`,
-              Size: 1024,
-              LastModified: new Date("2025-01-01T00:00:00.000Z"),
-            },
-            {
-              Key: `${input.Prefix}v1/manifest.json`,
-              Size: 256,
-              LastModified: new Date("2025-01-01T00:00:00.000Z"),
-            },
-          ],
-        });
+      const agent = await bdd.createAgent(actor, {
+        displayName: "Sweep Agent",
+      });
+      await bdd.updateAgentInstructions(
+        actor,
+        agent.agentId,
+        "Owned instructions to delete",
+      );
+      expect(uploadedKeys.size).toBeGreaterThan(0);
+      context.mocks.s3.send.mockClear();
+      await bdd.deleteAgent(actor, agent.agentId);
+      const deleted = new Set(s3DeletedObjectKeys());
+      for (const key of uploadedKeys) {
+        expect(key).toMatch(new RegExp("^" + actor.orgId + "/[0-9a-f-]{36}/"));
+        expect(deleted.has(key)).toBeTruthy();
+        expect(storage.hasObject(key)).toBeFalsy();
       }
-      return Promise.resolve({});
+      await bdd.requestReadAgent(actor, agent.agentId, [404]);
+      const instructions = setupApp({
+        context,
+        routes: agentInstructionsRoutes,
+      })(agentInstructionsContract);
+      await accept(
+        instructions.get({
+          params: { id: agent.agentId },
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [404],
+      );
     });
-
-    await bdd.deleteAgent(actor, agent.agentId);
-
-    expect(listedPrefix).toMatch(
-      new RegExp(
-        `^${actor.orgId}/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/$`,
-      ),
-    );
-    expect(s3DeletedObjectKeys()).toStrictEqual([
-      `${listedPrefix}v1/archive.tar.gz`,
-      `${listedPrefix}v1/manifest.json`,
-    ]);
-    const afterVolumes = await storages.listStorages(actor, "organization");
-    expect(
-      afterVolumes.some((volume) => {
-        return volume.name === instructionsVolume.name;
-      }),
-    ).toBeFalsy();
   });
 
   it("allows an owner API key to delete a private agent", async () => {

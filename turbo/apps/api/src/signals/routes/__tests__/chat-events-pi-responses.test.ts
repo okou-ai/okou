@@ -94,7 +94,6 @@ async function configureResponsesWithOwnedRuns(args: {
     string,
     {
       readonly actor: ApiTestUser;
-      readonly usagePricingResolution: Parameters<typeof sendChatRun>[2];
       readonly restoreExternalState: () => void;
       sandboxToken?: string;
       finished: boolean;
@@ -118,12 +117,7 @@ async function configureResponsesWithOwnedRuns(args: {
         cleanupRuns.acceptTelemetryIngest();
         context.mocks.ably.publish.mockResolvedValue(undefined);
         if (current.status !== "cancelled") {
-          await cleanupRuns.requestCancelRun(
-            run.actor,
-            runId,
-            [200],
-            run.usagePricingResolution,
-          );
+          await cleanupRuns.requestCancelRun(run.actor, runId, [200]);
         }
         if (run.sandboxToken) {
           await cleanupWebhooks.requestAgentComplete(
@@ -131,7 +125,6 @@ async function configureResponsesWithOwnedRuns(args: {
             { authorization: `Bearer ${run.sandboxToken}` },
             [200],
             undefined,
-            run.usagePricingResolution,
           );
         }
       }
@@ -168,7 +161,6 @@ async function configureResponsesWithOwnedRuns(args: {
     const run = await sendChatRun(...parameters);
     owned.set(run.runId, {
       actor: parameters[0],
-      usagePricingResolution: parameters[2],
       finished: false,
       restoreExternalState,
     });

@@ -1,3 +1,5 @@
+import { mockEnv } from "../../../lib/env";
+import { publicChatActor } from "./helpers/public-chat-actor";
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
@@ -5,7 +7,6 @@ import { now } from "../../../lib/time";
 
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { expectApiError, type ApiTestUser } from "./helpers/api-bdd";
-import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 
 import {
   createChatEventsFixture,
@@ -14,7 +15,6 @@ import {
   claimEnvironment,
   userMessages,
 } from "./helpers/chat-events-fixture";
-import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 const context = testContext();
 const {
@@ -25,8 +25,6 @@ const {
   entitledChatActor,
 
   seedBuiltInModelKey,
-  configureBuiltInPiModel,
-  configureBuiltInPiModelOnOpenRouter,
   configureSubscriptionPiModel,
   sendChatRun,
   requestSendEventRaw,
@@ -38,7 +36,6 @@ const {
 
   readThreadProjection,
   mockPiCheckpointObjectStore,
-  publishPendingPiInstructions,
   mockPiResourceArchiveDownloads,
 } = createChatEventsFixture(context);
 
@@ -73,17 +70,6 @@ function codexAuthJson(): string {
       }),
     },
   });
-}
-
-// Keep Pi's sandbox launch resource handoff deterministic for tests that
-// inspect the frozen Sandbox claim.
-async function preparePiResourceHandoff(
-  actor: ApiTestUser,
-  agentId: string,
-): Promise<void> {
-  await publishPendingPiInstructions(actor, agentId);
-  mockPiResourceArchiveDownloads(true);
-  mockPiCheckpointObjectStore();
 }
 
 /**
@@ -281,162 +267,230 @@ describe("CHAT-02: model-first routing", () => {
     ).resolves.toMatchObject({ selectedModel: "claude-fable-5-1" });
   });
 
-  it("stores canonical Auto on a new thread and captures its runtime billing model", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    // Clears the member preference, so Auto is the default.
-    await configureBuiltInPiModel(actor);
-    await preparePiResourceHandoff(actor, agentId);
-    const clientThreadId = randomUUID();
-    const clientEventId = randomUUID();
-    const prompt = "start a thread without naming a model";
-    const sent = await requestSendEventRaw(actor, {
-      agentId,
-      clientThreadId,
-      clientEventId,
-      prompt,
-      userMessage: { version: 1, parts: [{ type: "text", text: prompt }] },
-      hasTextContent: true,
-    });
-    expect(sent).toMatchObject({
-      status: 201,
-      body: { threadId: clientThreadId },
-    });
-    await expect(
-      chat.readThreadMetadata(actor, clientThreadId),
-    ).resolves.toMatchObject({ selectedModel: "auto" });
-    await expectThreadCreatedModelEvent(actor, clientThreadId, "auto");
-
-    const { picked } = await waitForPickedInput(
-      actor,
-      clientThreadId,
-      clientEventId,
-    );
-    expect(picked).toMatchObject({
-      eventType: "input.prompt",
-      userMessage: {
-        parts: expect.arrayContaining([
-          expect.objectContaining({ type: "model", selectedModel: "auto" }),
-        ]),
+  it("stores canonical Auto when the first send omits a model with no member preference", async () => {
+    const queuedThreads = new Set<string>();
+    const fixture = await publicChatActor(context, {
+      optionalEnvironmentNames: ["CONCURRENT_RUN_LIMIT_CAP"],
+      beforeRuns: async (actor) => {
+        for (const threadId of queuedThreads) {
+          await chat.requestDeleteThread(actor, threadId, [204, 404]);
+        }
+        await flushWaitUntilForTest();
       },
     });
-    if (picked.runId === undefined) {
-      throw new Error("Expected the Auto input to launch a run");
-    }
-    const { claim } = await claimChatRun(runnerGroup, picked.runId);
-    expect(claim.modelUsageProvider).toBe("@preset/okou-1-0");
-    await expect(
-      chat.readThreadMetadata(actor, clientThreadId),
-    ).resolves.toMatchObject({ selectedModel: "auto" });
-    await cancelChatRun(actor, picked.runId);
+    const { actor, agentId, runnerGroup } = fixture;
+    await fixture.run(async () => {
+      mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+      const anchor = await fixture.sendChatRun(actor, {
+        agentId,
+        model: "claude-fable-5-1",
+        prompt: "Keep the native run slot occupied",
+      });
+      const { sandboxHeaders } = await fixture.claimChatRun(
+        runnerGroup,
+        anchor.runId,
+      );
+      await api.updateUserModelPreference(actor, null);
+      const threadId = randomUUID();
+      queuedThreads.add(threadId);
+      const clientEventId = randomUUID();
+      const prompt = "Queue this input with canonical Auto";
+      const response = await requestSendEventRaw(actor, {
+        agentId,
+        clientThreadId: threadId,
+        clientEventId,
+        prompt,
+        userMessage: { version: 1, parts: [{ type: "text", text: prompt }] },
+        hasTextContent: true,
+      });
+      expect(response.status).toBe(201);
+      expect(response.body).toMatchObject({ threadId, runId: null });
+      await flushWaitUntilForTest();
+      await expect(
+        chat.readThreadMetadata(actor, threadId),
+      ).resolves.toMatchObject({ selectedModel: "auto" });
+      await expectThreadCreatedModelEvent(actor, threadId, "auto");
+      const queued = (
+        await chat.listThreadEvents(actor, threadId)
+      ).events.filter((event) => {
+        return event.id === clientEventId;
+      });
+      expect(queued).toHaveLength(1);
+      expect(queued[0]).toMatchObject({
+        eventType: "input.prompt",
+        userMessage: { version: 1, parts: [{ type: "text", text: prompt }] },
+      });
+      expect(queued[0]?.runId).toBeUndefined();
+      await chat.requestSendEvent(
+        actor,
+        { agentId, threadId, revokesEventId: clientEventId },
+        [201],
+      );
+      await chat.requestDeleteThread(actor, threadId, [204]);
+      queuedThreads.delete(threadId);
+      await cancelChatRun(actor, anchor.runId, sandboxHeaders);
+    });
   }, 90_000);
 
   it("switches a subscription-pinned thread to Auto when a send selects null", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    await seedBuiltInModelKey(SEEDED_SYSTEM_DEFAULT_MODEL);
-    await preparePiResourceHandoff(actor, agentId);
-    const thread = await chat.createThread(actor, {
-      agentId,
-      model: "claude-fable-5-1",
-    });
-
-    const run = await sendChatRun(actor, {
-      agentId,
-      threadId: thread.id,
-      prompt: "continue this thread on Auto",
-      model: null,
-    });
-    await expect(
-      chat.readThreadMetadata(actor, thread.id),
-    ).resolves.toMatchObject({ selectedModel: "auto" });
-    await expect(
-      chat.requestThreadEvents(actor, {}, [200]),
-    ).resolves.toMatchObject({
-      body: {
-        events: expect.arrayContaining([
-          expect.objectContaining({
-            kind: "model_selection_updated",
-            chatThreadId: thread.id,
-            selectedModel: "auto",
-          }),
-        ]),
+    const queuedThreads = new Set<string>();
+    const fixture = await publicChatActor(context, {
+      optionalEnvironmentNames: ["CONCURRENT_RUN_LIMIT_CAP"],
+      beforeRuns: async (actor) => {
+        for (const threadId of queuedThreads) {
+          await chat.requestDeleteThread(actor, threadId, [204, 404]);
+        }
+        await flushWaitUntilForTest();
       },
     });
-    const { claim } = await claimChatRun(runnerGroup, run.runId);
-    expect(claim.modelUsageProvider).toBe("@preset/okou-1-0");
-    await cancelChatRun(actor, run.runId);
+    const { actor, agentId, runnerGroup } = fixture;
+    await fixture.run(async () => {
+      mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+      const anchor = await fixture.sendChatRun(actor, {
+        agentId,
+        model: "claude-fable-5-1",
+        prompt: "Keep the native run slot occupied",
+      });
+      const { sandboxHeaders } = await fixture.claimChatRun(
+        runnerGroup,
+        anchor.runId,
+      );
+      const thread = await chat.createThread(actor, {
+        agentId,
+        model: "claude-fable-5-1",
+      });
+      const threadId = thread.id;
+      queuedThreads.add(threadId);
+      const clientEventId = randomUUID();
+      const prompt = "Queue this input with canonical Auto";
+      const response = await fixture.requestSendEvent(
+        actor,
+        { agentId, threadId, clientEventId, prompt, model: null },
+        [201],
+      );
+      expect(response.status).toBe(201);
+      expect(response.body).toMatchObject({ threadId, runId: null });
+      await flushWaitUntilForTest();
+      await expect(
+        chat.readThreadMetadata(actor, threadId),
+      ).resolves.toMatchObject({ selectedModel: "auto" });
+      await expect(
+        chat.requestThreadEvents(actor, {}, [200]),
+      ).resolves.toMatchObject({
+        body: {
+          events: expect.arrayContaining([
+            expect.objectContaining({
+              kind: "model_selection_updated",
+              chatThreadId: threadId,
+              selectedModel: "auto",
+            }),
+          ]),
+        },
+      });
+      const queued = (
+        await chat.listThreadEvents(actor, threadId)
+      ).events.filter((event) => {
+        return event.id === clientEventId;
+      });
+      expect(queued).toHaveLength(1);
+      expect(queued[0]).toMatchObject({
+        eventType: "input.prompt",
+        userMessage: { version: 1, parts: [{ type: "text", text: prompt }] },
+      });
+      expect(queued[0]?.runId).toBeUndefined();
+      await chat.requestSendEvent(
+        actor,
+        { agentId, threadId, revokesEventId: clientEventId },
+        [201],
+      );
+      await chat.requestDeleteThread(actor, threadId, [204]);
+      queuedThreads.delete(threadId);
+      await cancelChatRun(actor, anchor.runId, sandboxHeaders);
+    });
   }, 90_000);
 
   it("rejects a disconnected thread subscription until its owner explicitly selects Auto", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-    await api.ensurePersonalSubscriptionModel(actor, {
-      model: "claude-fable-5-1",
-    });
-
-    const first = await sendChatRun(actor, {
+    const {
+      actor,
       agentId,
-      prompt: "start before the thread model is removed",
-      model: "claude-fable-5-1",
-    });
-    const firstClaim = await claimChatRun(runnerGroup, first.runId);
-    expect(firstClaim.claim.cliAgentType).toBe("claude-code");
-    expect(claimEnvironment(firstClaim.claim).ANTHROPIC_MODEL).toBe(
-      "claude-fable-5-1",
-    );
-    chatCallbacks.mockChatOutputEvents([]);
-    await completeChatRunOk(first.runId, firstClaim.sandboxHeaders);
-    await flushWaitUntilForTest();
-
-    await seedBuiltInModelKey(SEEDED_SYSTEM_DEFAULT_MODEL);
-    await misc.deletePersonalModelProvider(
-      actor,
-      "claude-code-oauth-token",
-      [204],
-    );
-    // The member preference does not replace an unavailable thread model.
-    await api.updateUserModelPreference(actor, null);
-    await preparePiResourceHandoff(actor, agentId);
-
-    const clientEventId = randomUUID();
-    await chat.requestSendEvent(
-      actor,
-      {
+      runnerGroup,
+      run: own,
+      sendChatRun,
+      claimChatRun,
+    } = await publicChatActor(context);
+    await own(async () => {
+      chatCallbacks.failIfChatCallbackRouteIsFetched();
+      await api.ensurePersonalSubscriptionModel(actor, {
+        model: "claude-fable-5-1",
+      });
+      const first = await sendChatRun(actor, {
         agentId,
-        threadId: first.threadId,
-        prompt: "continue through my disconnected subscription",
+        prompt: "start before the thread model is removed",
+        model: "claude-fable-5-1",
+      });
+      const firstClaim = await claimChatRun(runnerGroup, first.runId);
+      expect(firstClaim.claim.cliAgentType).toBe("claude-code");
+      expect(claimEnvironment(firstClaim.claim).ANTHROPIC_MODEL).toBe(
+        "claude-fable-5-1",
+      );
+      chatCallbacks.mockChatOutputEvents([]);
+      await completeChatRunOk(first.runId, firstClaim.sandboxHeaders);
+      await flushWaitUntilForTest();
+
+      await misc.deletePersonalModelProvider(
+        actor,
+        "claude-code-oauth-token",
+        [204],
+      );
+      // The member preference does not replace an unavailable thread model.
+      await api.updateUserModelPreference(actor, null);
+
+      const clientEventId = randomUUID();
+      await chat.requestSendEvent(
+        actor,
+        {
+          agentId,
+          threadId: first.threadId,
+          prompt: "continue through my disconnected subscription",
+          clientEventId,
+        },
+        [201],
+      );
+      const { picked } = await waitForPickedInput(
+        actor,
+        first.threadId,
         clientEventId,
-      },
-      [201],
-    );
-    const { picked } = await waitForPickedInput(
-      actor,
-      first.threadId,
-      clientEventId,
-    );
-    expect(picked).toMatchObject({
-      eventType: "input.rejected",
-      error: "conflict",
+      );
+      expect(picked).toMatchObject({
+        eventType: "input.rejected",
+        error: "conflict",
+      });
+      expect(picked.runId).toBeUndefined();
+      await expect(
+        chat.readThreadMetadata(actor, first.threadId),
+      ).resolves.toMatchObject({
+        selectedModel: "claude-fable-5-1",
+      });
+      await chat.updateThreadModelSelection(actor, first.threadId, null);
+      await expect(
+        chat.readThreadMetadata(actor, first.threadId),
+      ).resolves.toMatchObject({
+        selectedModel: "auto",
+      });
+      await expect(
+        chat.requestThreadEvents(actor, {}, [200]),
+      ).resolves.toMatchObject({
+        body: {
+          events: expect.arrayContaining([
+            expect.objectContaining({
+              kind: "model_selection_updated",
+              chatThreadId: first.threadId,
+              selectedModel: "auto",
+            }),
+          ]),
+        },
+      });
     });
-    expect(picked.runId).toBeUndefined();
-    await expect(
-      chat.readThreadMetadata(actor, first.threadId),
-    ).resolves.toMatchObject({
-      selectedModel: "claude-fable-5-1",
-    });
-    await chat.updateThreadModelSelection(actor, first.threadId, null);
-    const fallback = await sendChatRun(actor, {
-      agentId,
-      threadId: first.threadId,
-      prompt: "continue after explicitly selecting Auto",
-    });
-    const fallbackClaim = await claimChatRun(runnerGroup, fallback.runId);
-    expect(fallbackClaim.claim.modelUsageProvider).toBe("@preset/okou-1-0");
-    await expect(
-      chat.readThreadMetadata(actor, first.threadId),
-    ).resolves.toMatchObject({
-      selectedModel: "auto",
-    });
-    await cancelChatRun(actor, fallback.runId, fallbackClaim.sandboxHeaders);
   }, 90_000);
 
   it("rejects a requested retired Claude alias once its subscription account is deleted", async () => {
@@ -664,220 +718,183 @@ describe("CHAT-02: model-first routing", () => {
   }, 90_000);
 
   it("passes Fast only on a supported personal Codex route", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-    await api.ensurePersonalSubscriptionModel(actor, {
-      model: "claude-sonnet-5-5",
-    });
-    await configureSubscriptionPiModel(actor, {}, "gpt-6-sol");
-
-    await preparePiResourceHandoff(actor, agentId);
-    const fast = await sendChatRun(actor, {
+    const {
+      actor,
       agentId,
-      prompt: "run codex fast",
-      model: "gpt-6-sol",
-      runOptions: { codexServiceTier: "fast" },
-    });
-    expect((await readThreadProjection(actor, fast.threadId)).serviceTier).toBe(
-      "priority",
-    );
-    const fastMessages = await waitForThreadMessages(
-      actor,
-      fast.threadId,
-      (events) => {
-        return userMessages(events).some((event) => {
-          return event.runId === fast.runId;
-        });
-      },
-    );
-    const fastUserMessage = userMessages(fastMessages.events).find(
-      (event): event is PromptMessage => {
-        return event.eventType === "input.prompt" && event.runId === fast.runId;
-      },
-    )?.userMessage;
-    expect(
-      fastUserMessage?.parts.find((part) => {
-        return part.type === "model";
-      }),
-    ).toStrictEqual({
-      type: "model",
-      selectedModel: "gpt-6-sol",
-      serviceTier: "priority",
-    });
-    const fastClaim = await claimChatRun(runnerGroup, fast.runId);
-    expect(fastClaim.claim.cliAgentType).toBe("pi");
-    expect(fastClaim.claim.piModelConfig).toMatchObject({
-      provider: "openai-codex",
-      model: "gpt-6-sol",
-      serviceTier: "fast",
-    });
-    await cancelChatRun(actor, fast.runId, fastClaim.sandboxHeaders);
-    expect((await readThreadProjection(actor, fast.threadId)).serviceTier).toBe(
-      "priority",
-    );
-
-    const invalidFastPatch = await chat.requestUpdateThreadModelSelection(
-      actor,
-      fast.threadId,
-      "claude-sonnet-5-5",
-      [400],
-      { codexServiceTier: "fast" },
-    );
-    expectApiError(invalidFastPatch.body);
-    expect(invalidFastPatch.body.error.message).toBe(
-      "Fast mode is unavailable for this model route",
-    );
-    expect((await readThreadProjection(actor, fast.threadId)).serviceTier).toBe(
-      "priority",
-    );
-
-    await chat.updateThreadModelSelection(
-      actor,
-      fast.threadId,
-      "claude-sonnet-5-5",
-      {
-        codexServiceTier: null,
-      },
-    );
-    expect(
-      (await readThreadProjection(actor, fast.threadId)).serviceTier,
-    ).toBeNull();
-    const updatedFastThreadEvents = await chat.requestThreadEvents(
-      actor,
-      {},
-      [200],
-    );
-    expect(updatedFastThreadEvents.status).toBe(200);
-    if (updatedFastThreadEvents.status !== 200) {
-      throw new Error("Expected chat thread events to load");
-    }
-    expect(updatedFastThreadEvents.body.events).toContainEqual(
-      expect.objectContaining({
-        kind: "model_selection_updated",
-        chatThreadId: fast.threadId,
-        selectedModel: "claude-sonnet-5-5",
-      }),
-    );
-    expect(updatedFastThreadEvents.body.events).toContainEqual(
-      expect.objectContaining({
-        kind: "created",
-        chatThreadId: fast.threadId,
-        serviceTier: "priority",
-      }),
-    );
-    expect(updatedFastThreadEvents.body.events).toContainEqual(
-      expect.objectContaining({
-        kind: "service_tier_updated",
-        chatThreadId: fast.threadId,
-        serviceTier: null,
-      }),
-    );
-
-    const standard = await sendChatRun(actor, {
-      agentId,
-      threadId: fast.threadId,
-      prompt: "run codex standard",
-      model: "gpt-6.1-sol",
-    });
-    expect(
-      (await readThreadProjection(actor, standard.threadId)).serviceTier,
-    ).toBeNull();
-    const standardMessages = await waitForThreadMessages(
-      actor,
-      standard.threadId,
-      (events) => {
-        return userMessages(events).some((event) => {
-          return event.runId === standard.runId;
-        });
-      },
-    );
-    const standardUserMessage = userMessages(standardMessages.events).find(
-      (event): event is PromptMessage => {
-        return (
-          event.eventType === "input.prompt" && event.runId === standard.runId
-        );
-      },
-    )?.userMessage;
-    expect(
-      standardUserMessage?.parts.find((part) => {
-        return part.type === "model";
-      }),
-    ).toStrictEqual({
-      type: "model",
-      selectedModel: "gpt-6.1-sol",
-    });
-    const { claim: standardClaim } = await claimChatRun(
       runnerGroup,
-      standard.runId,
-    );
-    expect(standardClaim.cliAgentType).toBe("pi");
-    expect(standardClaim.piModelConfig).toMatchObject({
-      provider: "openai-codex",
-      model: "gpt-6.1-sol",
-    });
-    expect(standardClaim.piModelConfig).not.toHaveProperty("serviceTier");
-    await cancelChatRun(actor, standard.runId);
-
-    const rejectedThreadId = randomUUID();
-    const rejected = await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        prompt: "Claude cannot use Codex fast mode",
-        clientThreadId: rejectedThreadId,
+      run: own,
+      sendChatRun,
+      claimChatRun,
+    } = await publicChatActor(context);
+    await own(async () => {
+      chatCallbacks.failIfChatCallbackRouteIsFetched();
+      await api.ensurePersonalSubscriptionModel(actor, {
         model: "claude-sonnet-5-5",
-        runOptions: { codexServiceTier: "fast" },
-      },
-      [400],
-    );
-    expectApiError(rejected.body);
-    expect(rejected.body.error.message).toBe(
-      "Codex fast mode is only available for GPT 5.6 runs",
-    );
-    await chat.requestReadThread(actor, rejectedThreadId, [404]);
-  }, 90_000);
+      });
+      await configureSubscriptionPiModel(actor, {}, "gpt-6-sol");
 
-  it("routes built-in okou-1.0 through global OpenRouter and resolves its firewall credential", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    const model = await configureBuiltInPiModelOnOpenRouter(actor, "okou-1.0");
-    await preparePiResourceHandoff(actor, agentId);
-    const run = await sendChatRun(actor, {
-      agentId,
-      model,
-      prompt: "capture the managed okou-1.0 route",
-    });
-    const { claim, sandboxHeaders } = await claimChatRun(
-      runnerGroup,
-      run.runId,
-    );
-    expect(claim.cliAgentType).toBe("pi");
-    expect(claim.piModelConfig).toMatchObject({
-      provider: "openrouter",
-      baseUrl: "https://openrouter.ai/api/v1",
-      model: "@preset/okou-1-0",
-    });
-    expect(claim.billableFirewalls).toContain(
-      "model-provider:openrouter-codex",
-    );
-    if (!claim.encryptedSecrets) {
-      throw new Error("Missing managed credential bundle");
-    }
-    const auth = await createFirewallApi(context).requestFirewallAuth(
-      sandboxHeaders,
-      {
-        encryptedSecrets: claim.encryptedSecrets,
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate("OPENROUTER_API_KEY")}`,
+      mockPiResourceArchiveDownloads(true);
+      mockPiCheckpointObjectStore();
+      const fast = await sendChatRun(actor, {
+        agentId,
+        prompt: "run codex fast",
+        model: "gpt-6-sol",
+        runOptions: { codexServiceTier: "fast" },
+      });
+      expect(
+        (await readThreadProjection(actor, fast.threadId)).serviceTier,
+      ).toBe("priority");
+      const fastMessages = await waitForThreadMessages(
+        actor,
+        fast.threadId,
+        (events) => {
+          return userMessages(events).some((event) => {
+            return event.runId === fast.runId;
+          });
         },
-        secretConnectorMap: claim.secretConnectorMap ?? undefined,
-        secretConnectorMetadataMap:
-          claim.secretConnectorMetadataMap ?? undefined,
-      },
-      [200],
-    );
-    expect(auth.body).toMatchObject({
-      resolvedSecrets: ["OPENROUTER_API_KEY"],
+      );
+      const fastUserMessage = userMessages(fastMessages.events).find(
+        (event): event is PromptMessage => {
+          return (
+            event.eventType === "input.prompt" && event.runId === fast.runId
+          );
+        },
+      )?.userMessage;
+      expect(
+        fastUserMessage?.parts.find((part) => {
+          return part.type === "model";
+        }),
+      ).toStrictEqual({
+        type: "model",
+        selectedModel: "gpt-6-sol",
+        serviceTier: "priority",
+      });
+      const fastClaim = await claimChatRun(runnerGroup, fast.runId);
+      expect(fastClaim.claim.cliAgentType).toBe("pi");
+      expect(fastClaim.claim.piModelConfig).toMatchObject({
+        provider: "openai-codex",
+        model: "gpt-6-sol",
+        serviceTier: "fast",
+      });
+      await cancelChatRun(actor, fast.runId, fastClaim.sandboxHeaders);
+      expect(
+        (await readThreadProjection(actor, fast.threadId)).serviceTier,
+      ).toBe("priority");
+      const invalidFastPatch = await chat.requestUpdateThreadModelSelection(
+        actor,
+        fast.threadId,
+        "claude-sonnet-5-5",
+        [400],
+        { codexServiceTier: "fast" },
+      );
+      expectApiError(invalidFastPatch.body);
+      expect(invalidFastPatch.body.error.message).toBe(
+        "Fast mode is unavailable for this model route",
+      );
+      expect(
+        (await readThreadProjection(actor, fast.threadId)).serviceTier,
+      ).toBe("priority");
+
+      await chat.updateThreadModelSelection(
+        actor,
+        fast.threadId,
+        "claude-sonnet-5-5",
+        {
+          codexServiceTier: null,
+        },
+      );
+      expect(
+        (await readThreadProjection(actor, fast.threadId)).serviceTier,
+      ).toBeNull();
+      const updatedFastThreadEvents = await chat.requestThreadEvents(
+        actor,
+        {},
+        [200],
+      );
+      expect(updatedFastThreadEvents.status).toBe(200);
+      if (updatedFastThreadEvents.status !== 200) {
+        throw new Error("Expected chat thread events to load");
+      }
+      expect(updatedFastThreadEvents.body.events).toContainEqual(
+        expect.objectContaining({
+          kind: "model_selection_updated",
+          chatThreadId: fast.threadId,
+          selectedModel: "claude-sonnet-5-5",
+        }),
+      );
+      expect(updatedFastThreadEvents.body.events).toContainEqual(
+        expect.objectContaining({
+          kind: "created",
+          chatThreadId: fast.threadId,
+          serviceTier: "priority",
+        }),
+      );
+      expect(updatedFastThreadEvents.body.events).toContainEqual(
+        expect.objectContaining({
+          kind: "service_tier_updated",
+          chatThreadId: fast.threadId,
+          serviceTier: null,
+        }),
+      );
+      const standard = await sendChatRun(actor, {
+        agentId,
+        threadId: fast.threadId,
+        prompt: "run codex standard",
+        model: "gpt-6.1-sol",
+      });
+      expect(
+        (await readThreadProjection(actor, standard.threadId)).serviceTier,
+      ).toBeNull();
+      const standardMessages = await waitForThreadMessages(
+        actor,
+        standard.threadId,
+        (events) => {
+          return userMessages(events).some((event) => {
+            return event.runId === standard.runId;
+          });
+        },
+      );
+      const standardUserMessage = userMessages(standardMessages.events).find(
+        (event): event is PromptMessage => {
+          return (
+            event.eventType === "input.prompt" && event.runId === standard.runId
+          );
+        },
+      )?.userMessage;
+      expect(
+        standardUserMessage?.parts.find((part) => {
+          return part.type === "model";
+        }),
+      ).toStrictEqual({
+        type: "model",
+        selectedModel: "gpt-6.1-sol",
+      });
+      const { claim: standardClaim, sandboxHeaders: standardHeaders } =
+        await claimChatRun(runnerGroup, standard.runId);
+      expect(standardClaim.cliAgentType).toBe("pi");
+      expect(standardClaim.piModelConfig).toMatchObject({
+        provider: "openai-codex",
+        model: "gpt-6.1-sol",
+      });
+      expect(standardClaim.piModelConfig).not.toHaveProperty("serviceTier");
+      await cancelChatRun(actor, standard.runId, standardHeaders);
+      const rejectedThreadId = randomUUID();
+      const rejected = await chat.requestSendEvent(
+        actor,
+        {
+          agentId,
+          prompt: "Claude cannot use Codex fast mode",
+          clientThreadId: rejectedThreadId,
+          model: "claude-sonnet-5-5",
+          runOptions: { codexServiceTier: "fast" },
+        },
+        [400],
+      );
+      expectApiError(rejected.body);
+      expect(rejected.body.error.message).toBe(
+        "Codex fast mode is only available for GPT 5.6 runs",
+      );
+      await chat.requestReadThread(actor, rejectedThreadId, [404]);
     });
-    await cancelChatRun(actor, run.runId);
   }, 90_000);
 });

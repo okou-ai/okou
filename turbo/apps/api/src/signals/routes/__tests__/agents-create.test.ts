@@ -1,9 +1,13 @@
-import { randomUUID } from "node:crypto";
-
+import { createBddApi } from "./helpers/api-bdd";
+import { installDurableUserExportStorage } from "./helpers/durable-user-export-storage";
+import { createPublicConnectorActor } from "./helpers/public-connector-actor";
 import {
+  agentInstructionsContract,
   agentsByIdContract,
   agentsMainContract,
 } from "@okouai/api-contracts/contracts/agents";
+import { agentInstructionsRoutes } from "../agent-instructions";
+import { randomUUID } from "node:crypto";
 import { parseAvatarComposerUrl } from "@okouai/core/agent-avatar";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -14,13 +18,11 @@ import {
   createAuthOrgAgentsBddApi,
   type ApiTestUser,
 } from "./helpers/api-bdd-auth-org";
-import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createRouteMocks } from "./helpers/route-test";
 import { agentsRoutes } from "../agents";
 
 const context = testContext();
 const authOrgApi = createAuthOrgAgentsBddApi(context);
-const storageApi = createStoragesBddApi(context);
 const mocks = createRouteMocks(context);
 
 type AgentsFixture = ApiTestUser & { readonly orgId: string };
@@ -53,15 +55,6 @@ function agentsByIdClient() {
 
 function currentSecond(): number {
   return Math.floor(now() / 1000);
-}
-
-async function instructionStorageCount(
-  fixture: AgentsFixture,
-): Promise<number> {
-  const storages = await storageApi.listStorages(fixture, "organization");
-  return storages.filter((storage) => {
-    return storage.name.startsWith("agent-instructions@");
-  }).length;
 }
 
 describe("POST /api/agents", () => {
@@ -297,70 +290,92 @@ describe("POST /api/agents", () => {
   });
 
   it("keeps concurrent public creates consistent and rejects later creates once full", async () => {
-    const fixture = agentsFixture("concurrent-limit");
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-    context.mocks.s3.send.mockClear();
-    context.mocks.s3.send.mockResolvedValue({});
+    const owner = createPublicConnectorActor(context);
+    const fixture = owner.actor;
+    await owner.run(async () => {
+      mocks.clerk.session(fixture.userId, fixture.orgId);
+      context.mocks.s3.send.mockClear();
+      context.mocks.s3.send.mockResolvedValue({});
+      installDurableUserExportStorage(context, {
+        prefixes: [`${fixture.orgId}/`],
+      });
+      for (let index = 0; index < 6; index += 1) {
+        await accept(
+          agentsClient().create({
+            headers: authHeaders(),
+            body: {
+              displayName: `Concurrent Limit ${index + 1}`,
+              visibility: "public",
+            },
+          }),
+          [201],
+        );
+      }
+      const requests = ["First contender", "Second contender"].map(
+        async (displayName) => {
+          return await accept(
+            agentsClient().create({
+              headers: authHeaders(),
+              body: { displayName, visibility: "public" },
+            }),
+            [201, 409],
+          );
+        },
+      );
 
-    for (let index = 0; index < 6; index += 1) {
-      await accept(
+      const settled = await Promise.allSettled(requests);
+      const responses = settled.map((result) => {
+        if (result.status === "rejected") {
+          throw result.reason;
+        }
+        return result.value;
+      });
+      const createdIds = responses.flatMap((response) => {
+        return response.status === 201 ? [response.body.agentId] : [];
+      });
+      // The count is a soft limit: both concurrent requests may see a free slot.
+      expect([1, 2]).toContain(createdIds.length);
+      const listResponse = await accept(
+        agentsClient().list({ headers: authHeaders() }),
+        [200],
+      );
+      expect(
+        listResponse.body.filter((agent) => {
+          return agent.visibility === "public";
+        }),
+      ).toHaveLength(6 + createdIds.length);
+      for (const agentId of createdIds) {
+        expect(listResponse.body).toContainEqual(
+          expect.objectContaining({ agentId, visibility: "public" }),
+        );
+      }
+      for (const agentId of createdIds) {
+        await createBddApi(context).updateAgentInstructions(
+          fixture,
+          agentId,
+          `Instructions for ${agentId}`,
+        );
+        const instructions = setupApp({
+          context,
+          routes: agentInstructionsRoutes,
+        })(agentInstructionsContract);
+        const response = await accept(
+          instructions.get({ params: { id: agentId }, headers: authHeaders() }),
+          [200],
+        );
+        expect(response.body.content).toBe(`Instructions for ${agentId}`);
+      }
+      const blocked = await accept(
         agentsClient().create({
           headers: authHeaders(),
           body: {
-            displayName: `Concurrent Limit ${index + 1}`,
+            displayName: "After concurrent creates",
             visibility: "public",
           },
         }),
-        [201],
+        [409],
       );
-    }
-    const baselineStorageCount = await instructionStorageCount(fixture);
-    expect(baselineStorageCount).toBe(6);
-
-    const requests = ["First contender", "Second contender"].map(
-      async (displayName) => {
-        return await accept(
-          agentsClient().create({
-            headers: authHeaders(),
-            body: { displayName, visibility: "public" },
-          }),
-          [201, 409],
-        );
-      },
-    );
-
-    const responses = await Promise.all(requests);
-    const createdIds = responses.flatMap((response) => {
-      return response.status === 201 ? [response.body.agentId] : [];
+      expect(blocked.body.error.code).toBe("CONFLICT");
     });
-    // The count is a soft limit: both concurrent requests may see a free slot.
-    expect([1, 2]).toContain(createdIds.length);
-
-    const listResponse = await accept(
-      agentsClient().list({ headers: authHeaders() }),
-      [200],
-    );
-    expect(
-      listResponse.body.filter((agent) => {
-        return agent.visibility === "public";
-      }),
-    ).toHaveLength(6 + createdIds.length);
-    for (const agentId of createdIds) {
-      expect(listResponse.body).toContainEqual(
-        expect.objectContaining({ agentId, visibility: "public" }),
-      );
-    }
-    await expect(instructionStorageCount(fixture)).resolves.toBe(
-      baselineStorageCount + createdIds.length,
-    );
-
-    const blocked = await accept(
-      agentsClient().create({
-        headers: authHeaders(),
-        body: { displayName: "After concurrent creates", visibility: "public" },
-      }),
-      [409],
-    );
-    expect(blocked.body.error.code).toBe("CONFLICT");
   });
 });

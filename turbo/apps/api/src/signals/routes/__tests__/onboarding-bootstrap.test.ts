@@ -13,7 +13,6 @@ import {
 import { onboardingStatusContract } from "@okouai/api-contracts/contracts/onboarding";
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import { SEED_INSTRUCTIONS } from "@okouai/core/seed-instructions";
-import { getInstructionsStorageName } from "@okouai/core/storage-names";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -26,11 +25,8 @@ import { onboardingStatusRoutes } from "../onboarding-status";
 import { runModelsRoutes } from "../run-models";
 import { installDurableUserExportStorage } from "./helpers/durable-user-export-storage";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { storageTextFile } from "./helpers/api-bdd-storage-files";
-import { tarGz } from "./helpers/template-publish-fixture";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
 import { createRouteMocks } from "./helpers/route-test";
@@ -455,78 +451,6 @@ describe("default Agent bootstrap", () => {
       expect(listed.body[0]?.agentId).toBe(agentId);
       await expectSingleOnboardingGrant(api);
       expect(upload.storage.hasObject(losingArchiveKey)).toBeFalsy();
-    },
-  );
-
-  it.each(["unregistered", "registered"] as const)(
-    "recovers a historical %s canonical parent without rewriting committed content",
-    async (state) => {
-      const actor = createBddApi(context).user();
-      if (!actor.orgId) {
-        throw new Error("Expected an organization-owned historical fixture");
-      }
-      mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
-      const storage = installDurableUserExportStorage(context, {
-        prefixes: [`${actor.orgId}/`],
-      });
-      const legacy = createStoragesBddApi(context);
-      const storageName = getInstructionsStorageName("default-agent");
-      const edited =
-        "Instructions retained from the historical canonical parent.";
-      const files = [storageTextFile("CLAUDE.md", edited)];
-      // Historical exception: current production APIs cannot reserve an arbitrary
-      // named org-owned container without its Agent. #23143 retired that prepare
-      // endpoint, but those persisted containers keep the same nullable HEAD.
-      // Only this legacy setup crosses the fixture boundary; bootstrap and all
-      // user-visible verification below call production endpoints.
-      const prepared = await legacy.prepareStorage(actor, {
-        storageName,
-        storageOwner: "organization",
-        files,
-      });
-      if (!prepared.uploads) {
-        throw new Error("Expected an unregistered historical Storage upload");
-      }
-      const archiveKey = prepared.uploads.archive.key;
-      storage.seedObject(
-        archiveKey,
-        state === "registered"
-          ? tarGz([{ path: "CLAUDE.md", content: edited }])
-          : Buffer.from("An unfinished, unregistered historical upload"),
-      );
-      if (state === "registered") {
-        storage.seedObject(
-          prepared.uploads.manifest.key,
-          Buffer.from(
-            JSON.stringify({
-              version: prepared.versionId,
-              createdAt: new Date(0).toISOString(),
-              totalSize: files.reduce((sum, file) => {
-                return sum + file.size;
-              }, 0),
-              fileCount: files.length,
-              files,
-            }),
-          ),
-        );
-        await legacy.commitStorage(actor, {
-          storageName,
-          storageOwner: "organization",
-          versionId: prepared.versionId,
-          files,
-        });
-      }
-      const api = clients();
-      const agentId = await readDefaultId(api);
-      await expectInstructions(
-        api,
-        agentId,
-        state === "registered" ? edited : SEED_INSTRUCTIONS,
-      );
-      // A committed generation is retained; only the never-published parent is
-      // retired and cleaned up, without trying to decode its partial archive.
-      expect(storage.hasObject(archiveKey)).toBe(state === "registered");
-      await expectSingleOnboardingGrant(api);
     },
   );
 

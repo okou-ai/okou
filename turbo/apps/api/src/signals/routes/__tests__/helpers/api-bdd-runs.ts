@@ -62,7 +62,6 @@ import {
   signSandboxJwtForTests,
 } from "../../../auth/tokens";
 import type { SystemSkillStorageResolution } from "../../../context/system-skill-storage-resolution";
-import type { UsagePricingResolution } from "../../../context/usage-pricing-resolution";
 import { mockStripeClient } from "../../../external/stripe-client";
 import { agentsRoutes } from "../../agents";
 import { billingStatusRoutes } from "../../billing-status";
@@ -167,13 +166,11 @@ const runRoutes = [
 
 function runApp(
   context: TestContext,
-  usagePricingResolution?: UsagePricingResolution,
   systemSkillStorageResolution?: SystemSkillStorageResolution,
 ) {
   return setupAppWithRoutes({
     context,
     routes: runRoutes,
-    ...(usagePricingResolution === undefined ? {} : { usagePricingResolution }),
     systemSkillStorageResolution,
   });
 }
@@ -1173,13 +1170,9 @@ export function createRunsApi(
       actor: ApiTestUser | null,
       runId: string,
       statuses: readonly (200 | 400 | 401 | 403 | 404)[],
-      usagePricingResolution?: UsagePricingResolution,
     ) {
       return await accept(
-        runApp(
-          context,
-          usagePricingResolution,
-        )(runsCancelContract).cancel({
+        runApp(context)(runsCancelContract).cancel({
           headers: authenticate(context, actor),
           params: { id: runId },
         }),

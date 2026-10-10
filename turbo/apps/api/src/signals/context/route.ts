@@ -8,10 +8,6 @@ import type { ContentfulStatusCode, StatusCode } from "hono/utils/http-status";
 
 import { monotonicNow, now } from "../../lib/time";
 import { logger } from "../../lib/log";
-import {
-  setUsagePricingResolution$,
-  type UsagePricingResolution,
-} from "./usage-pricing-resolution";
 import { initHono$ } from "./hono";
 import { requestValidation$ } from "./request";
 import { setRootSignal$ } from "./root";
@@ -37,7 +33,6 @@ export type JsonResponseObserver = (
 
 interface HonoSignalHandlerOptions {
   readonly initializeServices$: Command<void, []>;
-  readonly usagePricingResolution?: UsagePricingResolution;
   readonly systemSkillStorageResolution?: SystemSkillStorageResolution;
   readonly observeJsonResponse?: JsonResponseObserver;
 }
@@ -127,7 +122,6 @@ export function honoSignalHandler(
   signal: AbortSignal,
   {
     initializeServices$,
-    usagePricingResolution,
     systemSkillStorageResolution,
     observeJsonResponse,
   }: HonoSignalHandlerOptions,
@@ -138,9 +132,6 @@ export function honoSignalHandler(
     store.set(setRootSignal$, signal);
     store.set(initHono$, context, contract, apiStartTime);
     store.set(initializeServices$);
-    if (usagePricingResolution) {
-      store.set(setUsagePricingResolution$, usagePricingResolution);
-    }
     if (systemSkillStorageResolution) {
       store.set(setSystemSkillStorageResolution$, systemSkillStorageResolution);
     }

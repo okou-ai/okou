@@ -46,7 +46,6 @@ import {
   createRunsApi,
   expectCanonicalStorageManifest,
 } from "./helpers/api-bdd-runs";
-import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createUserConfigBddApi } from "./helpers/api-bdd-user-config";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 
@@ -2626,220 +2625,217 @@ describe("WHCB-06: sandbox agent artifact webhook boundaries", () => {
 
 describe("WHCB-09: sandbox storage writes and checkpoint history blobs land in the run organization", () => {
   it("prepares, commits, dedups, and bounds sandbox storage writes for the run org", async () => {
-    const bdd = createBddApi(context);
     const runs = createRunsApi(context);
-    const storages = createStoragesBddApi(context);
-    const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    const runnerGroup = runs.configureRunnerGroup();
-    await runs.heartbeatRunner(runnerGroup);
-    await runs.grantProEntitlement(actor);
-    await runs.ensurePersonalSubscriptionModel(actor);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "BDD sandbox storage agent",
-      visibility: "private",
-    });
-    const run = await runs.createThreadRun(actor, {
-      agentId: agent.agentId,
-      prompt: "write artifacts from the sandbox",
-    });
-    const claim = await runs.claimRunnerJob(run.runId);
-    const manifest = expectCanonicalStorageManifest(claim.storageManifest);
-    const writebackMount = manifest?.storageMounts.find((mount) => {
-      return mount.writeback === true;
-    });
-    if (!writebackMount) {
-      throw new Error("Expected a canonical writeback mount");
-    }
-    const headers = {
-      authorization: `Bearer ${claim.sandboxToken}`,
-    };
+    const fixture = await publicChatActor(context);
+    const { actor, agentId, runnerGroup } = fixture;
+    await fixture.run(async () => {
+      const run = await fixture.sendChatRun(actor, {
+        agentId,
+        prompt: "write artifacts from the sandbox",
+      });
+      const { claim } = await fixture.claimChatRun(runnerGroup, run.runId);
+      const manifest = expectCanonicalStorageManifest(claim.storageManifest);
+      const writebackMount = manifest?.storageMounts.find((mount) => {
+        return mount.writeback === true;
+      });
+      if (!writebackMount) {
+        throw new Error("Expected a canonical writeback mount");
+      }
+      const headers = {
+        authorization: `Bearer ${claim.sandboxToken}`,
+      };
 
-    // Checkpoint history blobs: first prepare issues an upload URL, the
-    // second sees the registered blob and skips the upload.
-    const historyHash = createHash("sha256")
-      .update(`bdd history blob ${run.runId}`)
-      .digest("hex");
-    const firstHistory = await api.requestAgentSessionHistoryPrepare(
-      { runId: run.runId, hash: historyHash, rawSize: 456, encodedSize: 456 },
-      headers,
-      [200],
-    );
-    if (firstHistory.status !== 200) {
-      throw new Error("Expected the first history prepare to succeed");
-    }
-    expect(firstHistory.body.existing).toBeFalsy();
-    expect(firstHistory.body.presignedUrl).toMatch(/^https/);
+      // Checkpoint history blobs: first prepare issues an upload URL, the
+      // second sees the registered blob and skips the upload.
+      const historyHash = createHash("sha256")
+        .update(`bdd history blob ${run.runId}`)
+        .digest("hex");
+      const firstHistory = await api.requestAgentSessionHistoryPrepare(
+        { runId: run.runId, hash: historyHash, rawSize: 456, encodedSize: 456 },
+        headers,
+        [200],
+      );
+      if (firstHistory.status !== 200) {
+        throw new Error("Expected the first history prepare to succeed");
+      }
+      expect(firstHistory.body.existing).toBeFalsy();
+      expect(firstHistory.body.presignedUrl).toMatch(/^https/);
 
-    const repeatedHistory = await api.requestAgentSessionHistoryPrepare(
-      { runId: run.runId, hash: historyHash, rawSize: 456, encodedSize: 456 },
-      headers,
-      [200],
-    );
-    if (repeatedHistory.status !== 200) {
-      throw new Error("Expected the repeated history prepare to succeed");
-    }
-    expect(repeatedHistory.body).toStrictEqual({
-      existing: true,
-      encoding: "identity",
-    });
+      const repeatedHistory = await api.requestAgentSessionHistoryPrepare(
+        { runId: run.runId, hash: historyHash, rawSize: 456, encodedSize: 456 },
+        headers,
+        [200],
+      );
+      if (repeatedHistory.status !== 200) {
+        throw new Error("Expected the repeated history prepare to succeed");
+      }
+      expect(repeatedHistory.body).toStrictEqual({
+        existing: true,
+        encoding: "identity",
+      });
 
-    const ghostRunId = randomUUID();
-    const missingHistoryRun = await api.requestAgentSessionHistoryPrepare(
-      { runId: ghostRunId, hash: historyHash, rawSize: 456, encodedSize: 456 },
-      {
-        authorization: `Bearer ${runs.sandboxTokenForRun(actor, ghostRunId)}`,
-      },
-      [404],
-    );
-    expectApiError(missingHistoryRun.body);
-    expect(missingHistoryRun.body.error.message).toBe("Agent run not found");
+      // A real Run token cannot authorize a different, unknown Run identity.
+      const foreignHistory = await api.requestAgentSessionHistoryPrepare(
+        {
+          runId: randomUUID(),
+          hash: historyHash,
+          rawSize: 456,
+          encodedSize: 456,
+        },
+        headers,
+        [401],
+      );
+      expectApiError(foreignHistory.body);
+      expect(foreignHistory.body.error.code).toBe("UNAUTHORIZED");
 
-    const unmountedStorage = await api.requestAgentStoragePrepare(
-      {
-        runId: run.runId,
-        storageId: randomUUID(),
-        files: [],
-      },
-      headers,
-      [404],
-    );
-    expectApiError(unmountedStorage.body);
-    expect(unmountedStorage.body.error.message).toBe(
-      "Writeback storage not found",
-    );
+      const unmountedStorage = await api.requestAgentStoragePrepare(
+        {
+          runId: run.runId,
+          storageId: randomUUID(),
+          files: [],
+        },
+        headers,
+        [404],
+      );
+      expectApiError(unmountedStorage.body);
+      expect(unmountedStorage.body.error.message).toBe(
+        "Writeback storage not found",
+      );
 
-    // Canonical writes land under the run organization's Storage prefix.
-    const storageName = writebackMount.name;
-    const files = [
-      {
-        path: "index.html",
-        hash: createHash("sha256")
-          .update(`bdd artifact ${storageName}`)
-          .digest("hex"),
-        size: 2048,
-      },
-    ];
-    const prepared = await api.requestAgentStoragePrepare(
-      {
-        runId: run.runId,
-        storageId: writebackMount.storageId,
-        parentVersionId: writebackMount.versionId,
-        files,
-      },
-      headers,
-      [200],
-    );
-    if (prepared.status !== 200) {
-      throw new Error("Expected the sandbox storage prepare to succeed");
-    }
-    expect(prepared.body.existing).toBeFalsy();
-    expect(prepared.body.uploads?.archive.key).toMatch(
-      new RegExp(
-        `^${orgOf(actor)}/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/${prepared.body.versionId}/archive\\.tar\\.gz$`,
-      ),
-    );
-    expect(prepared.body.uploads?.archive.presignedUrl).toMatch(/^https/);
-    expect(prepared.body.uploads?.manifest.presignedUrl).toMatch(/^https/);
-
-    const committed = await api.requestAgentStorageCommit(
-      {
-        runId: run.runId,
-        storageId: writebackMount.storageId,
-        versionId: prepared.body.versionId,
-        parentVersionId: writebackMount.versionId,
-        files,
-        message: "bdd sandbox commit",
-      },
-      headers,
-      [200],
-    );
-    if (committed.status !== 200) {
-      throw new Error("Expected the sandbox storage commit to succeed");
-    }
-    expect(committed.body).toStrictEqual({
-      success: true,
-      versionId: prepared.body.versionId,
-      storageName,
-      size: 2048,
-      fileCount: 1,
-    });
-
-    // Re-preparing identical content reuses the committed version without
-    // new upload URLs.
-    const reprepared = await api.requestAgentStoragePrepare(
-      { runId: run.runId, storageId: writebackMount.storageId, files },
-      headers,
-      [200],
-    );
-    if (reprepared.status !== 200) {
-      throw new Error("Expected the duplicate prepare to succeed");
-    }
-    expect(reprepared.body).toStrictEqual({
-      versionId: prepared.body.versionId,
-      existing: true,
-    });
-
-    const mismatchedCommit = await api.requestAgentStorageCommit(
-      {
-        runId: run.runId,
-        storageId: writebackMount.storageId,
-        versionId: "f".repeat(64),
-        files,
-      },
-      headers,
-      [400],
-    );
-    expectApiError(mismatchedCommit.body);
-    expect(mismatchedCommit.body.error.message).toBe(
-      "Version ID mismatch - files may have changed",
-    );
-
-    const oversized = await api.requestAgentStoragePrepare(
-      {
-        runId: run.runId,
-        storageId: writebackMount.storageId,
-        files: [
-          {
-            path: "a.bin",
-            hash: "1".repeat(64),
-            size: MAX_FILE_SIZE_BYTES,
-          },
-          { path: "b.bin", hash: "2".repeat(64), size: 1 },
-        ],
-      },
-      headers,
-      [413],
-    );
-    expectApiError(oversized.body);
-    expect(oversized.body.error.code).toBe("PAYLOAD_TOO_LARGE");
-
-    // The committed writeback is visible through fixture-only state reads.
-    const listed = await storages.listStorages(actor, "user");
-    expect(listed).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          name: storageName,
+      // Canonical writes land under the run organization's Storage prefix.
+      const storageName = writebackMount.name;
+      const files = [
+        {
+          path: "index.html",
+          hash: createHash("sha256")
+            .update(`bdd artifact ${storageName}`)
+            .digest("hex"),
           size: 2048,
-          fileCount: 1,
-        }),
-      ]),
-    );
-    const downloaded = await storages.downloadStorage(actor, {
-      name: storageName,
-      owner: "user",
-    });
-    expect(downloaded).toMatchObject({
-      versionId: prepared.body.versionId,
-      size: 2048,
-      fileCount: 1,
-    });
+        },
+      ];
+      const prepared = await api.requestAgentStoragePrepare(
+        {
+          runId: run.runId,
+          storageId: writebackMount.storageId,
+          parentVersionId: writebackMount.versionId,
+          files,
+        },
+        headers,
+        [200],
+      );
+      if (prepared.status !== 200) {
+        throw new Error("Expected the sandbox storage prepare to succeed");
+      }
+      expect(prepared.body.existing).toBeFalsy();
+      expect(prepared.body.uploads?.archive.key).toMatch(
+        new RegExp(
+          `^${orgOf(actor)}/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/${prepared.body.versionId}/archive\\.tar\\.gz$`,
+        ),
+      );
+      expect(prepared.body.uploads?.archive.presignedUrl).toMatch(/^https/);
+      expect(prepared.body.uploads?.manifest.presignedUrl).toMatch(/^https/);
 
-    await runs.requestCancelRun(actor, run.runId, [200]);
-    const cancelled = await runs.readRun(actor, run.runId);
-    expect(cancelled.status).toBe("cancelled");
+      const committed = await api.requestAgentStorageCommit(
+        {
+          runId: run.runId,
+          storageId: writebackMount.storageId,
+          versionId: prepared.body.versionId,
+          parentVersionId: writebackMount.versionId,
+          files,
+          message: "bdd sandbox commit",
+        },
+        headers,
+        [200],
+      );
+      if (committed.status !== 200) {
+        throw new Error("Expected the sandbox storage commit to succeed");
+      }
+      expect(committed.body).toStrictEqual({
+        success: true,
+        versionId: prepared.body.versionId,
+        storageName,
+        size: 2048,
+        fileCount: 1,
+      });
+
+      // Re-preparing identical content reuses the committed version without
+      // new upload URLs.
+      const reprepared = await api.requestAgentStoragePrepare(
+        { runId: run.runId, storageId: writebackMount.storageId, files },
+        headers,
+        [200],
+      );
+      if (reprepared.status !== 200) {
+        throw new Error("Expected the duplicate prepare to succeed");
+      }
+      expect(reprepared.body).toStrictEqual({
+        versionId: prepared.body.versionId,
+        existing: true,
+      });
+
+      const mismatchedCommit = await api.requestAgentStorageCommit(
+        {
+          runId: run.runId,
+          storageId: writebackMount.storageId,
+          versionId: "f".repeat(64),
+          files,
+        },
+        headers,
+        [400],
+      );
+      expectApiError(mismatchedCommit.body);
+      expect(mismatchedCommit.body.error.message).toBe(
+        "Version ID mismatch - files may have changed",
+      );
+
+      const oversized = await api.requestAgentStoragePrepare(
+        {
+          runId: run.runId,
+          storageId: writebackMount.storageId,
+          files: [
+            {
+              path: "a.bin",
+              hash: "1".repeat(64),
+              size: MAX_FILE_SIZE_BYTES,
+            },
+            { path: "b.bin", hash: "2".repeat(64), size: 1 },
+          ],
+        },
+        headers,
+        [413],
+      );
+      expectApiError(oversized.body);
+      expect(oversized.body.error.code).toBe("PAYLOAD_TOO_LARGE");
+      await runs.requestCancelRun(actor, run.runId, [200]);
+      const cancelled = await runs.readRun(actor, run.runId);
+      expect(cancelled.status).toBe("cancelled");
+      await api.requestAgentComplete(
+        { runId: run.runId, exitCode: 1, error: "Storage writer cancelled" },
+        headers,
+        [200],
+      );
+      const next = await fixture.sendChatRun(actor, {
+        agentId,
+        prompt: "Read the committed Memory",
+      });
+      const nextClaim = await fixture.claimChatRun(runnerGroup, next.runId);
+      expect(
+        expectCanonicalStorageManifest(
+          nextClaim.claim.storageManifest,
+        )?.storageMounts.find((mount) => {
+          return mount.storageId === writebackMount.storageId;
+        }),
+      ).toMatchObject({
+        name: storageName,
+        versionId: prepared.body.versionId,
+        archiveUrl: expect.any(String),
+      });
+      await createChatEventsFixture(context).cancelChatRun(
+        actor,
+        next.runId,
+        nextClaim.sandboxHeaders,
+      );
+    });
   });
 });
 

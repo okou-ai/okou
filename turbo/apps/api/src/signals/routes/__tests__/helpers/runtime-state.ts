@@ -10,7 +10,6 @@ import { onTestFinished } from "vitest";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import { createAppWithRoutes } from "../../../../app-factory-core";
-import type { UsagePricingResolution } from "../../../context/usage-pricing-resolution";
 
 import { testRuntimeStateRoutes } from "../../test-runtime-state";
 
@@ -20,12 +19,10 @@ function requestRuntimeState(
   context: TestContext,
   path: string,
   init?: RequestInit,
-  usagePricingResolution?: UsagePricingResolution,
 ): Promise<Response> {
   const app = createAppWithRoutes({
     signal: context.signal,
     routes: testRuntimeStateRoutes,
-    usagePricingResolution,
   });
   return Promise.resolve(app.request(path, init));
 }
@@ -44,7 +41,6 @@ function expectOk(response: Response, operation: string): void {
 async function postAction(
   context: TestContext,
   body: TestRuntimeStateActionBody,
-  usagePricingResolution?: UsagePricingResolution,
 ): Promise<TestRuntimeStateActionResponse> {
   const response = await requestRuntimeState(
     context,
@@ -54,7 +50,6 @@ async function postAction(
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     },
-    usagePricingResolution,
   );
   await expectOk(response, `runtime state action ${body.action}`);
   return await readJson<TestRuntimeStateActionResponse>(response);

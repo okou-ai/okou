@@ -54,7 +54,6 @@ import { command } from "ccstate";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
-import { usagePricingResolution$ } from "../context/usage-pricing-resolution";
 import {
   claimUsageWhere,
   settlementObservation,
@@ -224,7 +223,7 @@ const commitUsageBatch$ = command(
  * other failure, including a deadlock victim's rollback, propagates.
  */
 export const settleOrgUsage$ = command(
-  async ({ get, set }, args: UsageSettlementArgs, signal: AbortSignal) => {
+  async ({ set }, args: UsageSettlementArgs, signal: AbortSignal) => {
     const batch = await set(prepareUsageSettlementBatch$, args, signal);
     const financial = args.social
       ? undefined
@@ -249,11 +248,7 @@ export const settleOrgUsage$ = command(
     }
     const { result, startedAt } = outcome.value;
     if (result?.work.pendingEvents && !args.social) {
-      reportCommittedSettlementPricing(
-        args.orgId,
-        batch,
-        get(usagePricingResolution$),
-      );
+      reportCommittedSettlementPricing(args.orgId, batch);
     }
     return result ? completeSettlementReceipt(result, startedAt) : null;
   },
