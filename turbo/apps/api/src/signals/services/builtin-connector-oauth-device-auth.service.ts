@@ -35,7 +35,7 @@ import { command } from "ccstate";
 import { and, eq, inArray, lt, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
-import { executeRawRows } from "../../lib/db-raw-rows";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { badRequestMessage, notFound } from "../../lib/error";
 import { optionalEnv } from "../../lib/env";
 import { nowDate } from "../../lib/time";
@@ -1084,17 +1084,16 @@ const createDeviceAuthSession$ = command(
           ne(sessions.id, sql`(SELECT id FROM created_device_auth_session)`),
         ),
       );
-    const [session] = await executeRawRows(
-      writeDb,
-      sql`
+    const [session] = parseRawRows(
+      createdDeviceAuthSessionSchema,
+      await writeDb.execute(sql`
         WITH created_device_auth_session AS (
           ${createSession.getSQL()}
         ), superseded_device_auth_sessions AS (
           ${supersedeActiveSessions.getSQL()}
         )
         SELECT id FROM created_device_auth_session
-      `,
-      createdDeviceAuthSessionSchema,
+      `),
     );
     signal.throwIfAborted();
     if (!session) {
