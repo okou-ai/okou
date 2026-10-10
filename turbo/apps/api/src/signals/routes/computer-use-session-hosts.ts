@@ -91,7 +91,7 @@ const register$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const result = await set(
     startComputerUseHost$,
-    { ...body.data, ...identity, session: identity },
+    { ...body.data, ...identity },
     signal,
   );
   if (result.status === "upgrade_required") {
@@ -127,7 +127,7 @@ const heartbeat$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal,
   );
   signal.throwIfAborted();
-  if (result.status === "invalid_token") {
+  if (result.status === "invalid_connection") {
     return invalidConnection;
   }
   return {
@@ -154,7 +154,7 @@ const stop$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal,
   );
   signal.throwIfAborted();
-  if (result.status === "invalid_token") {
+  if (result.status === "invalid_connection") {
     return invalidConnection;
   }
   return {
@@ -184,7 +184,7 @@ const next$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (result.status === "upgrade_required") {
     return desktopUpgradeRequired(result.minimumSupportedVersion);
   }
-  if (result.status === "invalid_token") {
+  if (result.status === "invalid_connection") {
     return invalidConnection;
   }
   return result.status === "idle"
@@ -213,7 +213,7 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal,
   );
   signal.throwIfAborted();
-  if (result.status === "invalid_token") {
+  if (result.status === "invalid_connection") {
     return invalidConnection;
   }
   if (result.status === "not_found") {

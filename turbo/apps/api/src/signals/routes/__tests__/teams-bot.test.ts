@@ -3737,7 +3737,7 @@ describe("POST /api/webhooks/teams/bot", () => {
       expect(okouAuth?.capabilities).toContain("computer-use:write");
 
       await scenario.cancelRun(actor, secondRunId);
-      await computerUseApi.stopComputerUseHost(host.hostToken);
+      await computerUseApi.stopComputerUseHost(host.connection);
     });
   });
 
