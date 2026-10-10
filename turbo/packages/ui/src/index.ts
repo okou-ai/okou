@@ -8,6 +8,7 @@ export {
   buttonVariants,
   type ButtonProps,
 } from "./components/ui/button";
+export { LoadErrorRow, LoadErrorSection } from "./components/ui/load-error";
 export {
   surfaceVariants,
   Card,

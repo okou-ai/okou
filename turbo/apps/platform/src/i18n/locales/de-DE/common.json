@@ -3813,6 +3813,9 @@
     }
   },
   "global": {
+    "actions": {
+      "tryAgain": "Erneut versuchen"
+    },
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "Die Anfrage ist fehlgeschlagen"
@@ -6342,8 +6345,6 @@
       "dmServer": "Standardserver für Direktnachrichten",
       "install": "Auf Discord installieren",
       "limitedContext": "Begrenzter Kontext: Okou empfängt möglicherweise keine normalen Kanalnachrichten. Erwähnen Sie Okou und geben Sie die benötigten Details an.",
-      "loadError": "Der Discord-Status konnte nicht geladen werden.",
-      "loading": "Discord-Status wird geladen…",
       "memberSetup": "Bitten Sie einen Organisationsadministrator, Okou auf Ihrem Discord-Server zu installieren.",
       "moreOptions": "Weitere Discord-Optionen",
       "pendingConsent": "Dieser Tab hat keinen Autorisierungsnachweis. Schließen Sie ihn und starten Sie die Autorisierung im ursprünglichen Works-Tab erneut.",

@@ -26,16 +26,31 @@ import {
   createTelegramThreadContext,
 } from "./thread-run-context.service";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
+import {
+  createThreadWorkflowContext,
+  type ThreadWorkflowContext,
+} from "./thread-workflow-context.signals";
 
 export interface ThreadAutomationTarget {
   readonly automation: typeof workflowAutomations.$inferSelect;
   readonly agentId: string;
+  readonly workflow: Pick<
+    typeof workflows.$inferSelect,
+    | "id"
+    | "orgId"
+    | "agentId"
+    | "name"
+    | "ownerUserId"
+    | "visibility"
+    | "officialDefinitionName"
+    | "officialInstallationState"
+  >;
 }
 
 type ThreadModels = ReturnType<typeof createThreadModelSignals>;
 
 /** Read-only facts for one picked event, shared by admission and prompting. */
-export interface ThreadContext {
+export interface ThreadContext extends ThreadWorkflowContext {
   readonly sessionRead$: ReturnType<typeof createChatThreadSessionRead>;
   readonly session$: Computed<
     Promise<ReturnType<typeof chatThreadSessionIdentity>>
@@ -93,6 +108,12 @@ export function createThreadContext(
   const discordContext$ = createDiscordThreadContext(pickedEvent$, orgId);
   const automationContext$ = createThreadAutomationContext(pickedEvent$);
   const automationTarget$ = createAutomationTarget(automationContext$);
+  const workflowContext = createThreadWorkflowContext(
+    bootstrap,
+    pickedEvent$,
+    automationContext$,
+    automationTarget$,
+  );
   const templates$ = createRunTemplates(
     pickedEvent$,
     orgId,
@@ -123,6 +144,12 @@ export function createThreadContext(
     discordContext$,
     automationContext$,
     automationTarget$,
+    workflows$: workflowContext.workflows$,
+    officialWorkflows$: workflowContext.officialWorkflows$,
+    officialWorkflowObservation$: workflowContext.officialWorkflowObservation$,
+    workflowSkills$: workflowContext.workflowSkills$,
+    storage$: workflowContext.storage$,
+    storageCache$: workflowContext.storageCache$,
     templates$,
     queuedModel$: model.queuedModel$,
     subscriptionSelection$: model.subscriptionSelection$,
@@ -150,6 +177,16 @@ function createAutomationTarget(
       .select({
         automation: workflowAutomationColumns(),
         agentId: workflows.agentId,
+        workflow: {
+          id: workflows.id,
+          orgId: workflows.orgId,
+          agentId: workflows.agentId,
+          name: workflows.name,
+          ownerUserId: workflows.ownerUserId,
+          visibility: workflows.visibility,
+          officialDefinitionName: workflows.officialDefinitionName,
+          officialInstallationState: workflows.officialInstallationState,
+        },
       })
       .from(workflowAutomations)
       .innerJoin(workflows, eq(workflows.id, workflowAutomations.workflowId))

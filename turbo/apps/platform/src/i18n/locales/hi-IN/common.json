@@ -3813,6 +3813,9 @@
     }
   },
   "global": {
+    "actions": {
+      "tryAgain": "पुनः प्रयास करें"
+    },
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "अनुरोध विफल रहा"
@@ -6342,8 +6345,6 @@
       "dmServer": "सीधे संदेशों के लिए डिफ़ॉल्ट सर्वर",
       "install": "Discord पर इंस्टॉल करें",
       "limitedContext": "सीमित संदर्भ: Okou को चैनल के सामान्य संदेश शायद न मिलें। Okou को मेंशन करें और उसे ज़रूरी जानकारी दें।",
-      "loadError": "Discord की स्थिति लोड नहीं हो सकी।",
-      "loading": "Discord की स्थिति लोड हो रही है…",
       "memberSetup": "संगठन के एडमिन से अपने Discord सर्वर पर Okou इंस्टॉल करने को कहें।",
       "moreOptions": "Discord के और विकल्प",
       "pendingConsent": "इस टैब में अनुमति का प्रमाण नहीं है। इसे बंद करके मूल Works टैब से अनुमति फिर शुरू करें।",

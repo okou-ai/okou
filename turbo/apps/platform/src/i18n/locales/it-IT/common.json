@@ -3873,6 +3873,9 @@
     }
   },
   "global": {
+    "actions": {
+      "tryAgain": "Riprova"
+    },
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "Richiesta non riuscita"
@@ -6425,8 +6428,6 @@
       "dmServer": "Server predefinito per i messaggi diretti",
       "install": "Installa su Discord",
       "limitedContext": "Contesto limitato: Okou potrebbe non ricevere i normali messaggi dei canali. Menziona Okou e includi i dettagli di cui ha bisogno.",
-      "loadError": "Impossibile caricare lo stato di Discord.",
-      "loading": "Caricamento dello stato di Discord…",
       "memberSetup": "Chiedi a un amministratore dell’organizzazione di installare Okou sul tuo server Discord.",
       "moreOptions": "Altre opzioni di Discord",
       "pendingConsent": "Questa scheda non ha una prova di autorizzazione. Chiudila e riavvia l’autorizzazione dalla scheda Works originale.",

@@ -50,6 +50,7 @@ import { validateXResourceUsageSchema } from "./test-x-resource-usage";
 import { validatePermanentConnectorCatalogColumns } from "./test-connector-catalog-columns-permanent";
 import { validatePermanentChatThreadStorage } from "./test-chat-thread-storage-permanent";
 import { validateMemberMetadataRuntimePreparation } from "./test-member-metadata-runtime-preparation";
+import { validatePermanentComputerUseHostStorage } from "./test-computer-use-host-storage-permanent";
 import { validatePermanentPlatformGenerationReceipts } from "./test-platform-generation-receipts-permanent";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -2690,6 +2691,7 @@ async function main(): Promise<void> {
     await validatePermanentConnectorCatalogColumns(dbUrl1);
     await validatePermanentChatThreadStorage(dbUrl1);
     await validateMemberMetadataRuntimePreparation(dbUrl1);
+    await validatePermanentComputerUseHostStorage(dbUrl1);
     await validatePermanentPlatformGenerationReceipts(dbUrl1);
     await validatePermanentModelCatalogConstraints(dbUrl1);
     await validateCanonicalModelSelections(dbUrl1);
@@ -2724,6 +2726,7 @@ async function main(): Promise<void> {
     await validatePermanentConnectorCatalogColumns(dbUrl2);
     await validatePermanentChatThreadStorage(dbUrl2);
     await validateMemberMetadataRuntimePreparation(dbUrl2);
+    await validatePermanentComputerUseHostStorage(dbUrl2);
     await validatePermanentPlatformGenerationReceipts(dbUrl2);
     await validatePermanentModelCatalogConstraints(dbUrl2);
     await validateCanonicalModelSelections(dbUrl2);

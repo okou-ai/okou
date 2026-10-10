@@ -54,6 +54,7 @@ import {
   mergeEnvironments,
 } from "./run-environment";
 import { createOfficialWorkflowSignals } from "./thread-official-workflow.signals";
+import { OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE } from "./official-workflow-constants";
 import type {
   QueuedModelContext,
   ThreadModelError,
@@ -122,12 +123,11 @@ import {
 } from "./built-in-route-pricing";
 import { chatEventCommandResultSchema } from "./chat-event-append.service";
 import { recordThreadRunActivationMarkers } from "./chat-first-assistant-event-metric.service";
-import {
-  isWebChatContextType,
-  type QueuedUserMessage,
-  type QueuedUserMessageContextType,
-  type QueueFirstRunAssociation,
-  type QueueFirstRunClaimResult,
+import type {
+  QueuedUserMessage,
+  QueuedUserMessageContextType,
+  QueueFirstRunAssociation,
+  QueueFirstRunClaimResult,
 } from "./chat-queued-event.service";
 import { finalizeClaimedRunUserMessage } from "./chat-run-event.service";
 import { chatThreadEventInsertSql } from "./chat-thread-event.service";
@@ -243,7 +243,6 @@ import {
   type ChatThreadSessionRoute,
   resolveChatThreadSessionSnapshot,
 } from "./chat-session-continuity.service";
-import { agentRunSourceAnnotation } from "./chat-user-message.service";
 import { compactRecord } from "./connector-runtime-preparation.service";
 
 import { DiscordQueuedLaunchUnavailableError } from "./discord-queued-launch-context.service";
@@ -457,31 +456,23 @@ interface QueuedPromptGraphInput {
 
 class QueuedPromptInputInvalidError extends Error {}
 
-function resolveQueuedOfficialWorkflowContext(args: {
+function assertQueuedPromptContext(args: {
   readonly contextType: QueuedUserMessageContextType;
   readonly contextId: string | null;
   readonly requiredOfficialWorkflowIds: readonly string[] | null;
-}) {
-  const hasClaim = args.requiredOfficialWorkflowIds !== null;
-  if (hasClaim && !isWebChatContextType(args.contextType)) {
-    throw new QueuedPromptInputInvalidError(
-      `Queued ${args.contextType} input cannot carry an Official Workflow source claim`,
+}): void {
+  if (args.requiredOfficialWorkflowIds !== null) {
+    throw new QueuedPromptLaunchUnavailableError(
+      OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE,
     );
   }
   const hasWebContextId = isWebChatContextId(args.contextId);
   if (args.contextType === "web" && !hasWebContextId) {
     throw new QueuedPromptInputInvalidError("Invalid Web chat context");
   }
-  // Official agent inputs use Web identity, never a source Run pointer. Their
-  // private claim and server-owned annotation retain source/budget authority.
-  const officialAgentClaim =
-    args.contextType === "agent_run" && hasWebContextId;
-  if ((officialAgentClaim && !hasClaim) || (hasClaim && !hasWebContextId)) {
-    throw new QueuedPromptInputInvalidError(
-      "Queued Official Workflow context and source claim do not match",
-    );
+  if (args.contextType === "agent_run" && hasWebContextId) {
+    throw new QueuedPromptInputInvalidError("Invalid Agent Run chat context");
   }
-  return officialAgentClaim;
 }
 
 function queuedUserMessageAutonomyBudget(
@@ -557,8 +548,8 @@ function queuedTelegramDelivery(context: NonNullable<TelegramThreadContext>) {
 }
 
 class QueuedPromptLaunchUnavailableError extends Error {
-  constructor() {
-    super("This conversation is no longer available.");
+  constructor(message = "This conversation is no longer available.") {
+    super(message);
     this.name = "QueuedPromptLaunchUnavailableError";
   }
 }
@@ -1603,7 +1594,7 @@ export function createThreadClaimRunObjects(
       );
     }
     const requiredOfficialWorkflowIds = parsedClaim.ok;
-    const officialAgentClaim = resolveQueuedOfficialWorkflowContext({
+    assertQueuedPromptContext({
       contextType: event.contextType,
       contextId: event.contextId,
       requiredOfficialWorkflowIds,
@@ -1613,7 +1604,6 @@ export function createThreadClaimRunObjects(
       userMessage: event.userMessage,
       contextType: event.contextType,
       requiredOfficialWorkflowIds,
-      officialAgentClaim,
     };
   });
   const promptSourceAutonomyBudgetSourceAutonomyBudget$ = computed(
@@ -1622,22 +1612,7 @@ export function createThreadClaimRunObjects(
       if (!event) {
         return null;
       }
-      if (!event.officialAgentClaim) {
-        return event.sourceAutonomyBudget;
-      }
-      const source = agentRunSourceAnnotation(event.userMessage);
-      if (!source) {
-        throw new QueuedPromptInputInvalidError(
-          "Queued Official agent input is missing its source Run annotation",
-        );
-      }
-      const db = get(db$);
-      const [run] = await db
-        .select({ autonomyBudget: agentRuns.autonomyBudget })
-        .from(agentRuns)
-        .where(eq(agentRuns.id, source.runId))
-        .limit(1);
-      return run?.autonomyBudget ?? null;
+      return event.sourceAutonomyBudget;
     },
   );
   const promptQueuedMessageQueuedMessage$ = computed(
@@ -2597,6 +2572,14 @@ export function createThreadClaimRunObjects(
           ),
         );
       }
+      if (
+        loadedTarget.workflow.officialDefinitionName !== null &&
+        event.eventType === "manual"
+      ) {
+        return rejectedAutomationLaunch(
+          unreadable(OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE),
+        );
+      }
       const target = loadedTarget;
       const [material, autonomyBudget] = await Promise.all([
         get(initializeQueuedAutomationLaunchMaterial$),
@@ -3052,11 +3035,7 @@ export function createThreadClaimRunObjects(
     },
   );
   const prepared = { environment$ };
-  const workflow = createOfficialWorkflowSignals(
-    bootstrap,
-    pickedEvent$,
-    threadContext,
-  );
+  const workflow = createOfficialWorkflowSignals(pickedEvent$, threadContext);
   const { officialWorkflow$ } = workflow;
   const userTimezone$ = computed(async (get) => {
     return (
@@ -3260,7 +3239,7 @@ export function createThreadClaimRunObjects(
       requests: selection.requests,
       timing: selection.args.timing,
     };
-    const prefetched = await get(bootstrap.storage$);
+    const prefetched = await get(threadContext.storage$);
     const ownedRequests = input.requests.filter((request) => {
       return !prefetched.lookupKeys.has(
         storageIndexKey(
@@ -3436,7 +3415,7 @@ export function createThreadClaimRunObjects(
       selected.plan.requested.input.storageIndex,
       selected.plan.sessionWriteback?.input.storageIndex ?? new Map(),
     );
-    const cache = await get(bootstrap.storageCache$);
+    const cache = await get(threadContext.storageCache$);
     const versions = exactStorageVersionsFromIndex(mounts, storageIndex);
     const rows = [
       ...cache.rows,

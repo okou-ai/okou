@@ -51,8 +51,12 @@ expired transition validator must be deleted.
   session-only Computer Use mapping and its preparation migration: retired
   hashes are cleared, session-less hosts become offline, and device identities,
   chat bindings, generations and command/audit history survive. It exercises
-  runtime and root-schema reads/writes before and after a disposable column
-  deletion. Retain it until physical contraction is released and incompatible
+  runtime and root-schema reads/writes before and after the actual contraction,
+  rejects unexpected index, constraint, view and routine dependencies before
+  deletion, and checks that a rejected migration cannot advance the journal.
+  `test-computer-use-host-storage-permanent.ts` exercises the current host
+  storage contract against replayed and freshly generated schemas. Retain the
+  transition validator until physical contraction is released and incompatible
   serving/rollback APIs have drained; promote surviving invariants to the
   permanent suite before retiring this transition validator.
 

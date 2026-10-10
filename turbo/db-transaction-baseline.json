@@ -367,11 +367,6 @@
       "owner": "setDefaultConnectorAccount$"
     },
     {
-      "id": "TX-0113",
-      "file": "turbo/apps/api/src/signals/services/connector-catalog-sync.service.ts",
-      "owner": "publishCandidate$/result"
-    },
-    {
       "id": "TX-0115",
       "file": "turbo/apps/api/src/signals/services/connector-credential-storage-write.service.ts",
       "owner": "deleteConnectorCredentialStorageConnectionsWhere"
@@ -867,11 +862,6 @@
       "owner": "claimPiMemoryPhase2Job$"
     },
     {
-      "id": "TX-0224",
-      "file": "turbo/apps/api/src/signals/services/pi-memory-phase2-maintenance.service.ts",
-      "owner": "observeTerminalMaintenance$"
-    },
-    {
       "id": "TX-0225",
       "file": "turbo/apps/api/src/signals/services/pi-memory-stage1-candidate.service.ts",
       "owner": "commitPiMemoryStage1Candidate$"
@@ -935,11 +925,6 @@
       "id": "TX-0241",
       "file": "turbo/apps/api/src/signals/services/runner-wss-ticket.service.ts",
       "owner": "consumeRunnerWssTicket$"
-    },
-    {
-      "id": "TX-0243",
-      "file": "turbo/apps/api/src/signals/services/slack-chat-ingress.service.ts",
-      "owner": "findSlackChatThreadRoute$"
     },
     {
       "id": "TX-0244",

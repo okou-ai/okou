@@ -53,11 +53,6 @@ import {
   createManagedModelKeys,
   createModelPricing,
 } from "./model-source-context.service";
-import {
-  createOfficialWorkflowCatalog,
-  createOfficialWorkflowFacts,
-  type OfficialWorkflowContextFacts,
-} from "./official-workflow-context.signals";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { readStorageBaseIndex } from "./storage-index.service";
 import { variables } from "@okouai/db/schema/variable";
@@ -87,10 +82,6 @@ import { customConnectorPermissionBundleDependencySlug } from "./custom-connecto
 import type { AgentConnectorSelection } from "./execution-agent-connectors.service";
 import { createAgentSelectionContext } from "./execution-agent-selection-context.service";
 import type { SelectedAgentWorkflow } from "./execution-agent-workflows.service";
-import { createWorkflowSkills } from "./workflow-skills.service";
-import { createOfficialWorkflowObservation } from "./official-workflow-observation.service";
-import type { OfficialWorkflowObservation } from "./official-workflow-run.service";
-import type { RunPromptAndSkills } from "./run-prompt-and-skills";
 import type { ConnectorPermissionGrant } from "./execution-connector-permissions.service";
 import {
   contextJsonProjection,
@@ -167,12 +158,6 @@ export interface AgentRunContextSignals {
     Promise<readonly ConnectorPermissionGrant[]>
   >;
   readonly workflows$: Computed<Promise<readonly SelectedAgentWorkflow[]>>;
-  readonly officialCatalog$: ReturnType<typeof createOfficialWorkflowCatalog>;
-  readonly officialWorkflows$: Computed<Promise<OfficialWorkflowContextFacts>>;
-  readonly officialWorkflowObservation$: Computed<
-    Promise<OfficialWorkflowObservation | undefined>
-  >;
-  readonly workflowSkills$: Computed<Promise<RunPromptAndSkills>>;
   readonly storage$: Computed<Promise<AgentStorageContext>>;
   readonly storageCache$: Computed<
     Promise<{
@@ -299,18 +284,6 @@ export function matchAgentRunContextSignals(
     return supplied;
   }
   return createIdentityContext(userId, orgId, agentId, supplied);
-}
-
-function reusedOfficialCatalog(supplied: AgentRunContextSignals | undefined) {
-  return supplied?.officialCatalog$ ?? createOfficialWorkflowCatalog();
-}
-
-function hasSelectedOfficialWorkflow(
-  workflows: readonly SelectedAgentWorkflow[],
-) {
-  return workflows.some((workflow) => {
-    return workflow.officialDefinitionName !== null;
-  });
 }
 
 function contextAgentSelection() {
@@ -529,23 +502,6 @@ function createIdentityContext(
     });
   const connectorContext = createConnectorContextGroups(userId, orgId, agentId);
   const { workflows$ } = connectorContext.signals;
-  const officialCatalog$ = reusedOfficialCatalog(supplied);
-  const officialWorkflows$ = computed(async (get) => {
-    const workflows = await get(workflows$);
-    return hasSelectedOfficialWorkflow(workflows)
-      ? await get(
-          createOfficialWorkflowFacts(workflows, await get(officialCatalog$)),
-        )
-      : null;
-  });
-  const officialWorkflowObservation$ = createOfficialWorkflowObservation(
-    workflows$,
-    officialWorkflows$,
-  );
-  const workflowSkills$ = createWorkflowSkills(
-    workflows$,
-    officialWorkflowObservation$,
-  );
   const storage$ = computed(async (get): Promise<AgentStorageContext> => {
     const plan = agentStorageReadPlan(
       scope,
@@ -554,7 +510,7 @@ function createIdentityContext(
         get(workflows$),
         get(connectorContext.signals.connectorSelection$),
         get(connectorContext.signals.catalog$),
-        get(officialWorkflows$),
+        null,
       ]),
     );
     return captureAgentStorageContext(
@@ -598,10 +554,6 @@ function createIdentityContext(
       sharedMember?.selectedImageModel$ ??
       createSelectedImageModel(memberMetadata$),
     ...connectorContext.signals,
-    officialCatalog$,
-    officialWorkflows$,
-    officialWorkflowObservation$,
-    workflowSkills$,
     storage$,
     storageCache$,
     featureSwitches$: featureSwitchContext$,
@@ -640,8 +592,6 @@ export const preloadAgentRunContext$ = command(
       signals.connectorSelection$,
       signals.permissionGrants$,
       signals.workflows$,
-      signals.officialWorkflows$,
-      signals.workflowSkills$,
       signals.storageCache$,
       signals.featureSwitches$,
       signals.disabledPaidTools$,

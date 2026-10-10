@@ -114,7 +114,7 @@ test("Chat VNC discovery can retry a failed summary", async () => {
   expect(within(dialog).queryByText("No connector matches “vnc”")).toBeNull();
   expect(dialog.textContent).not.toContain("private VNC error");
   failed = false;
-  click(await findFastControl("button", "Retry", dialog));
+  click(await findFastControl("button", "Try again", dialog));
   await expect(
     within(dialog).findByText("Loading VNC configuration…"),
   ).resolves.toBeInTheDocument();

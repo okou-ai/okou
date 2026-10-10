@@ -15,6 +15,10 @@
     "./contracts/*": {
       "import": "./src/contracts/*.ts",
       "types": "./src/contracts/*.ts"
+    },
+    "./client-transforms/*": {
+      "import": "./src/client-transforms/*.ts",
+      "types": "./src/client-transforms/*.ts"
     }
   },
   "scripts": {
@@ -26,7 +30,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "oxlint && oxlint --type-aware -c ../../.oxlintrc.typeaware.json && eslint . --max-warnings 0",
-    "check-types": "tsc -p tsconfig.contracts.json --noEmit && tsc -p tsconfig.python-bindings.json --noEmit && tsc -p tsconfig.rust-bindings.json --noEmit && tsc -p tsconfig.runtime-api-schema.json --noEmit && tsc -p tsconfig.swift-bindings.json --noEmit"
+    "check-types": "tsc -p tsconfig.contracts.json --noEmit && tsc -p tsconfig.client-transforms.json --noEmit && tsc -p tsconfig.python-bindings.json --noEmit && tsc -p tsconfig.rust-bindings.json --noEmit && tsc -p tsconfig.runtime-api-schema.json --noEmit && tsc -p tsconfig.swift-bindings.json --noEmit"
   },
   "dependencies": {
     "@okouai/connectors": "workspace:*",

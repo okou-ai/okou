@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { useGet, useLoadable, useLastResolved, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Plus } from "lucide-react";
-import { Button } from "@okouai/ui";
+import { Button, LoadErrorRow } from "@okouai/ui";
 import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
 import { reloadBuiltinConnectors$ } from "../../signals/external/connectors.ts";
 import { isOrgAdmin$ } from "../../signals/org.ts";
@@ -54,17 +54,13 @@ function DirectoryLoadError({
 }) {
   const { t } = useTranslation();
   return (
-    <div
-      role="alert"
-      className="flex items-center justify-between gap-3 text-sm text-muted-foreground"
-    >
-      <p>{message}</p>
-      <Button variant="outline" size="sm" onClick={retry}>
-        {t(($) => {
-          return $.connectors.catalog.directory.retry;
-        })}
-      </Button>
-    </div>
+    <LoadErrorRow
+      message={message}
+      retryLabel={t(($) => {
+        return $.connectors.catalog.directory.retry;
+      })}
+      onRetry={retry}
+    />
   );
 }
 

@@ -3794,6 +3794,9 @@
     }
   },
   "global": {
+    "actions": {
+      "tryAgain": "再試行"
+    },
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "リクエストが失敗しました"
@@ -6317,8 +6320,6 @@
       "dmServer": "ダイレクトメッセージの既定のサーバー",
       "install": "Discord にインストール",
       "limitedContext": "コンテキストの制限: Okou は通常のチャンネルメッセージを受信できない場合があります。Okou にメンションし、必要な詳細情報を含めてください。",
-      "loadError": "Discord の状態を読み込めませんでした。",
-      "loading": "Discord の状態を読み込み中…",
       "memberSetup": "組織の管理者に Discord サーバーへの Okou のインストールを依頼してください。",
       "moreOptions": "その他の Discord オプション",
       "pendingConsent": "このタブには認証の証明がありません。閉じて、元の Works タブから認証をやり直してください。",

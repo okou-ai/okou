@@ -3794,6 +3794,9 @@
     }
   },
   "global": {
+    "actions": {
+      "tryAgain": "Coba lagi"
+    },
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "Permintaan gagal"
@@ -6317,8 +6320,6 @@
       "dmServer": "Server default untuk pesan langsung",
       "install": "Instal ke Discord",
       "limitedContext": "Konteks terbatas: Okou mungkin tidak menerima pesan biasa di kanal. Tandai Okou dan sertakan detail yang dibutuhkannya.",
-      "loadError": "Tidak dapat memuat status Discord.",
-      "loading": "Memuat status Discord…",
       "memberSetup": "Minta admin organisasi menginstal Okou ke server Discord Anda.",
       "moreOptions": "Opsi Discord lainnya",
       "pendingConsent": "Tab ini tidak memiliki bukti otorisasi. Tutup dan mulai ulang otorisasi dari tab Works semula.",

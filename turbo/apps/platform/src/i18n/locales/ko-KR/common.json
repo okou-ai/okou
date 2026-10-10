@@ -3794,6 +3794,9 @@
     }
   },
   "global": {
+    "actions": {
+      "tryAgain": "다시 시도"
+    },
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "요청 실패"
@@ -6317,8 +6320,6 @@
       "dmServer": "다이렉트 메시지용 기본 서버",
       "install": "Discord에 설치",
       "limitedContext": "컨텍스트 제한: Okou가 일반 채널 메시지를 받지 못할 수 있습니다. Okou를 멘션하고 필요한 세부 정보를 함께 알려 주세요.",
-      "loadError": "Discord 상태를 불러올 수 없습니다.",
-      "loading": "Discord 상태를 불러오는 중…",
       "memberSetup": "조직 관리자에게 Discord 서버에 Okou를 설치해 달라고 요청하세요.",
       "moreOptions": "Discord 추가 옵션",
       "pendingConsent": "이 탭에는 인증 증명이 없습니다. 탭을 닫고 원래 Works 탭에서 인증을 다시 시작하세요.",

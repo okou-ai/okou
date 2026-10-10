@@ -3873,6 +3873,9 @@
     }
   },
   "global": {
+    "actions": {
+      "tryAgain": "Réessayer"
+    },
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "La requête a échoué"
@@ -6425,8 +6428,6 @@
       "dmServer": "Serveur par défaut pour les messages privés",
       "install": "Installer sur Discord",
       "limitedContext": "Contexte limité : Okou peut ne pas recevoir les messages ordinaires des canaux. Mentionnez Okou et incluez les détails dont il a besoin.",
-      "loadError": "Impossible de charger le statut de Discord.",
-      "loading": "Chargement du statut de Discord…",
       "memberSetup": "Demandez à un administrateur de l’organisation d’installer Okou sur votre serveur Discord.",
       "moreOptions": "Plus d’options Discord",
       "pendingConsent": "Cet onglet n’a plus de preuve d’autorisation. Fermez-le et recommencez l’autorisation depuis l’onglet Works d’origine.",

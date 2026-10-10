@@ -1708,6 +1708,9 @@ export const applyBrowserUserAction$ = command(
     if (payload.kind !== "input") {
       return conflict("This Browser request does not accept input values");
     }
+    if (located.status !== "pending") {
+      return conflict("Browser input has already been claimed");
+    }
     const valuesResult = submittedValues(payload, args.input);
     if (valuesResult.kind === "error") {
       return valuesResult;

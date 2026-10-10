@@ -134,12 +134,12 @@ impl GuestPaths {
         &self.session_id_file
     }
 
-    /// Return the run-root `checkpoint-error` path.
+    /// Return the run-root `finalization-error` path.
     ///
     /// The private text file contains a non-empty finalization or guest error
     /// message when one is recorded. This accessor returns a borrowed `&str`
     /// and only derives the path; it does not create, validate, or otherwise
-    /// access the file. See the canonical [checkpoint-error path helper][finalization_error_file]
+    /// access the file. See the canonical [finalization-error path helper][finalization_error_file]
     /// for the shared runtime layout.
     ///
     /// [finalization_error_file]: guest_contracts::runtime_paths::finalization_error_file

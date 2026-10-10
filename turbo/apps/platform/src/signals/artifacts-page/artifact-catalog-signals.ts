@@ -75,6 +75,8 @@ export const setArtifactCatalogKind$ = command(
 
 export const reloadArtifactCatalog$ = pageCatalog.reload$;
 
+export const retryArtifactCatalog$ = pageCatalog.retry$;
+
 export const artifactCatalog$ = pageCatalog.catalog$;
 
 export const loadMoreArtifactCatalog$ = pageCatalog.loadMore$;

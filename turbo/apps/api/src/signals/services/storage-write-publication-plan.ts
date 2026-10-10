@@ -42,7 +42,6 @@ import {
   storageIdentityCondition,
   storageVersionCondition,
   maintenanceCallbackCondition,
-  storageMaintenanceReceiptCondition,
   storageMaintenanceJobCondition,
   storageCommitLineageCondition,
   memoryCandidateOwnerCondition,
@@ -50,8 +49,12 @@ import {
   externalMemoryHeadChangeCondition,
   externalMemoryHeadChangeValues,
   storageMaintenanceCompletionValues,
-  type MaintenanceReceiptBinding,
 } from "./storage-write-conditions";
+import {
+  maintenancePublicationResultCondition,
+  maintenancePublicationResultVersion,
+  type MaintenancePublicationBinding,
+} from "./pi-memory-phase2-result";
 import type {
   CommitStorageForStorageInput,
   CommitStorageResponse,
@@ -152,7 +155,7 @@ const integerRow = z.union([z.int(), pgInt8ToSafeIntegerSchema]);
 const dateRow = z.union([z.date(), pgTimestampWithoutTimezoneToDateSchema]);
 const idRows = z.array(z.object({ id: z.string() }));
 const callbackRows = z.array(z.object({ payload: z.unknown() }));
-const receiptRows = z.array(z.object({ version_id: z.string() }));
+const resultRows = z.array(z.object({ version_id: z.string() }));
 const mountRow = z.object({
   storageId: z.string(),
   orgId: z.string(),
@@ -236,11 +239,11 @@ function callbackSnapshotSql(runId: string) {
     .limit(1)
     .getSQL();
 }
-function receiptSnapshotSql(binding: MaintenanceReceiptBinding) {
+function resultSnapshotSql(binding: MaintenancePublicationBinding) {
   return new QueryBuilder()
-    .select({ version_id: piMemoryPhase2PublicationReceipts.versionId })
-    .from(piMemoryPhase2PublicationReceipts)
-    .where(storageMaintenanceReceiptCondition(binding))
+    .select({ version_id: maintenancePublicationResultVersion() })
+    .from(piMemoryPhase2Jobs)
+    .where(maintenancePublicationResultCondition(binding))
     .limit(1)
     .getSQL();
 }
@@ -257,7 +260,7 @@ function runSnapshotSql(auth: SandboxAuth) {
     .getSQL();
 }
 function maintenanceJobLockSql(
-  binding: MaintenanceReceiptBinding,
+  binding: MaintenancePublicationBinding,
   currentTime: Date,
 ) {
   return new QueryBuilder()
@@ -292,8 +295,8 @@ function lineageSnapshotSql(
 interface AdmittedCommit {
   readonly storage: StorageRow;
   readonly runStatus?: string;
-  readonly binding?: MaintenanceReceiptBinding;
-  readonly receiptVersionId?: string;
+  readonly binding?: MaintenancePublicationBinding;
+  readonly resultVersionId?: string;
   readonly version?: StorageVersionRow;
 }
 
@@ -303,8 +306,8 @@ function* admitMaintenanceCommit(
   payload: unknown,
 ): StorageSqlPlan<
   | {
-      readonly binding?: MaintenanceReceiptBinding;
-      readonly receiptVersionId?: string;
+      readonly binding?: MaintenancePublicationBinding;
+      readonly resultVersionId?: string;
     }
   | StorageErrorResponse
 > {
@@ -319,13 +322,13 @@ function* admitMaintenanceCommit(
   if ("status" in binding) {
     return binding;
   }
-  let [receipt] = binding
-    ? receiptRows.parse(
-        yield readStatement(receiptSnapshotSql(binding), receiptRows.element),
+  let [result] = binding
+    ? resultRows.parse(
+        yield readStatement(resultSnapshotSql(binding), resultRows.element),
       )
     : [];
   const [active] =
-    binding && !receipt
+    binding && !result
       ? idRows.parse(
           yield readStatement(
             maintenanceJobLockSql(binding, yield* publicationTimestampPlan()),
@@ -333,19 +336,19 @@ function* admitMaintenanceCommit(
           ),
         )
       : [];
-  if (binding && !receipt && !active) {
+  if (binding && !result && !active) {
     // Settlement while waiting on the job lock requires a fresh statement snapshot.
-    [receipt] = receiptRows.parse(
-      yield readStatement(receiptSnapshotSql(binding), receiptRows.element),
+    [result] = resultRows.parse(
+      yield readStatement(resultSnapshotSql(binding), resultRows.element),
     );
   }
-  if (receipt && receipt.version_id !== input.versionId) {
+  if (result && result.version_id !== input.versionId) {
     return notFound("Pi memory maintenance publication already committed");
   }
-  if (binding && !receipt && !active) {
+  if (binding && !result && !active) {
     return notFound("Active Pi memory maintenance publication not found");
   }
-  return { binding, receiptVersionId: receipt?.version_id };
+  return { binding, resultVersionId: result?.version_id };
 }
 
 function* admitStorageCommit(
@@ -507,9 +510,11 @@ function* publishStorageCommit(
 }
 
 function* settleStoragePublication(
-  binding: MaintenanceReceiptBinding,
+  binding: MaintenancePublicationBinding,
   versionId: string,
 ): StorageSqlPlan<void> {
+  // Transitional output for outgoing API readers. Current readers use the Job result.
+  // Retire this write only in a separate deployed writer-preparation release.
   yield writeStatement(
     insertedStorageSql(piMemoryPhase2PublicationReceipts, {
       ...binding,
@@ -628,7 +633,7 @@ export function* storageCommitPublicationPlan(
   }
   const { storage, version, binding } = admitted;
   const replay =
-    version !== undefined && admitted.receiptVersionId === version.id;
+    version !== undefined && admitted.resultVersionId === version.id;
   const terminal =
     admitted.runStatus !== undefined &&
     !sandboxStorageRunIsActive(admitted.runStatus);
@@ -656,7 +661,7 @@ export function* storageCommitPublicationPlan(
       return notFound("Active agent run not found");
     }
   }
-  // A validated no-diff receipt acknowledges its epoch without restoring it as
+  // A validated no-diff result acknowledges its epoch without restoring it as
   // HEAD when an ordinary writer has already published another version.
   const publish = shouldPublishStorageHead(admitted, input, replay, terminal);
   const result = publish
@@ -733,29 +738,6 @@ function matchesMaintenancePublication(
     args.parentVersionId === attestation.claimedBaseVersionId &&
     args.versionId === attestation.validatedVersionId
   );
-}
-
-export function maintenanceReceiptBinding(input: CommitStorageForStorageInput) {
-  const auth = input.sandboxAuth;
-  const attestation = input.maintenanceAttestation;
-  if (
-    !auth ||
-    !attestation ||
-    input.parentVersionId !== attestation.claimedBaseVersionId ||
-    input.versionId !== attestation.validatedVersionId
-  ) {
-    return undefined;
-  }
-  return {
-    runId: auth.runId,
-    memoryStorageId: input.storageId,
-    orgId: auth.orgId,
-    userId: auth.userId,
-    leaseToken: attestation.leaseToken,
-    claimedRevision: attestation.claimedRevision,
-    claimedBaseVersionId: attestation.claimedBaseVersionId,
-    selectionDigest: attestation.selectionDigest,
-  };
 }
 
 export function totalSize(files: readonly FileEntryWithHash[]): number {

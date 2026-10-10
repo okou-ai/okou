@@ -1,6 +1,6 @@
 import { connectorCatalogEntryColumns } from "@okouai/connectors/connector-catalog/entry-columns";
 import { command } from "ccstate";
-import { eq, ne } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import {
   connectorCatalog,
   connectorCatalogEntries,
@@ -9,7 +9,7 @@ import {
   SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
   type ConnectorCatalogArtifact,
 } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import {
   prepareConnectorCatalogSkills,
   registerPreparedConnectorCatalogSkills$,
@@ -97,25 +97,3 @@ export const prepareImmutableCatalogEntries$ = command(
     }
   },
 );
-
-// Last writer wins: one scheduled cron owns production publication. The
-// caller has completed every entry at `hash` before calling this, so the
-// pointer never references a partial generation. The conditional upsert
-// returns a row only when it created the pointer or changed its hash, so
-// exactly one concurrent writer observes a given switch, even for the first
-// publication, and the caller applies switch effects in the same transaction.
-export async function publishImmutableCatalogPointer(
-  tx: Db,
-  args: { readonly schemaVersion: number; readonly hash: string },
-): Promise<{ readonly switched: boolean }> {
-  const changed = await tx
-    .insert(connectorCatalog)
-    .values({ schemaVersion: args.schemaVersion, hash: args.hash })
-    .onConflictDoUpdate({
-      target: connectorCatalog.schemaVersion,
-      set: { hash: args.hash },
-      setWhere: ne(connectorCatalog.hash, args.hash),
-    })
-    .returning({ hash: connectorCatalog.hash });
-  return { switched: changed.length === 1 };
-}
