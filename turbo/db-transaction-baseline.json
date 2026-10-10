@@ -267,11 +267,6 @@
       "owner": "publishAutomaticConnection$"
     },
     {
-      "id": "TX-0078",
-      "file": "turbo/apps/api/src/signals/services/builtin-connector-automatic-dcr.service.ts",
-      "owner": "retireBuiltinDcrRegistration$"
-    },
-    {
       "id": "TX-0079",
       "file": "turbo/apps/api/src/signals/services/builtin-connector-automatic-oauth.service.ts",
       "owner": "refreshAutomatic"
