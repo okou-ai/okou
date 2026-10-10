@@ -1,5 +1,26 @@
 # Changelog
 
+## [9.384.0](https://github.com/okou-ai/okou/compare/cli-v9.383.1...cli-v9.384.0) (2026-10-10)
+
+
+### Features
+
+* **discord:** complete oauth onboarding and slack conversation parity ([#37968](https://github.com/okou-ai/okou/issues/37968)) ([ccc74ac](https://github.com/okou-ai/okou/commit/ccc74ac9b9c74d70654fd0a0a547018cde7d55ed))
+
+
+### Refactoring
+
+* **pi:** retire unversioned model config execution ([#38449](https://github.com/okou-ai/okou/issues/38449)) ([c628473](https://github.com/okou-ai/okou/commit/c62847319cb3ebbd41259d662f47905a1cb39863))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.547.0
+    * @okouai/core bumped to 8.739.2
+    * @okouai/pi-agent-runtime bumped to 1.49.2
+
 ## [9.383.1](https://github.com/okou-ai/okou/compare/cli-v9.383.0...cli-v9.383.1) (2026-10-09)
 
 

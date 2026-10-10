@@ -16,7 +16,7 @@ describe("Auto and personal-subscription Pi execution", () => {
     } as const;
     expect(isPiExecutionRoute(args)).toBe(true);
     expect(piRouteCatalogIdentities(args)).toStrictEqual([
-      { provider: "openrouter", model: "okou-1.0" },
+      { provider: "openrouter", model: "auto" },
     ]);
   });
 

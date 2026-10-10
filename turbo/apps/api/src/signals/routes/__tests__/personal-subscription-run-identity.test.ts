@@ -1034,12 +1034,26 @@ describe("exact subscription selection", () => {
       onTestFinished(async () => {
         await runs.requestCancelRun(f.actor, runId, [200]);
       });
+      const launched = await reads.requestReadLogById(f.actor, runId, [200]);
+      expect(launched.body).toMatchObject({
+        selectedModel: model,
+        modelRuntimeProvider: type,
+        modelRuntimeModel: model,
+      });
       const claim = await f.claim(runId);
       expect(claim.environment?.[modelEnv]).toBe(model);
       expect(Object.values(claim.environment ?? {})).not.toContain(
         f.connected.token,
       );
       expect(accountId(claim, type)).toBe(f.connected.id);
+      // Queue claim consumes the transient context; a later preference is not execution provenance.
+      await runs.updateUserModelPreference(f.actor, f.model);
+      const captured = await reads.requestReadLogById(f.actor, runId, [200]);
+      expect(captured.body).toMatchObject({
+        selectedModel: model,
+        modelRuntimeProvider: type,
+        modelRuntimeModel: claim.environment?.[modelEnv],
+      });
       await expect(resolve(claim, type)).resolves.toMatchObject({
         Authorization: `Bearer ${f.connected.token}`,
         ...(type === "codex-oauth-token"

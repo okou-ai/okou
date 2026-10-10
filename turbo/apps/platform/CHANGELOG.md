@@ -12,6 +12,27 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1008.0](https://github.com/okou-ai/okou/compare/app-v0.1007.1...app-v0.1008.0) (2026-10-10)
+
+
+### Features
+
+* **discord:** complete oauth onboarding and slack conversation parity ([#37968](https://github.com/okou-ai/okou/issues/37968)) ([ccc74ac](https://github.com/okou-ai/okou/commit/ccc74ac9b9c74d70654fd0a0a547018cde7d55ed))
+
+
+### Bug Fixes
+
+* **platform:** align custom template picker with workflow layout ([#38401](https://github.com/okou-ai/okou/issues/38401)) ([c6386b8](https://github.com/okou-ai/okou/commit/c6386b84dd6c0ade208deb08e0e9e4747c7aa15c))
+* **platform:** keep quest intro content during dialog exit ([#38464](https://github.com/okou-ai/okou/issues/38464)) ([01ea1bc](https://github.com/okou-ai/okou/commit/01ea1bc53052141955509b4e73aa9d1dd3b68c2e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.547.0
+    * @okouai/core bumped to 8.739.2
+
 ## [0.1007.1](https://github.com/okou-ai/okou/compare/app-v0.1007.0...app-v0.1007.1) (2026-10-09)
 
 

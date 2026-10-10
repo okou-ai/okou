@@ -15,7 +15,7 @@ vi.mock("../pi-runtime-capability", async (importOriginal) => {
   return {
     ...actual,
     isPiRuntimeIdentityResolvable: (identity: PiRuntimeIdentity): boolean => {
-      return identity.provider === "openrouter" && identity.model === "okou-1.0"
+      return identity.provider === "openrouter" && identity.model === "auto"
         ? false
         : actual.isPiRuntimeIdentityResolvable(identity);
     },
