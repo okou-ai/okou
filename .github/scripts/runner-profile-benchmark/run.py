@@ -194,7 +194,7 @@ def main():
                 "One cold seed is descriptive; three warm samples do not establish P95.",
                 "Child CPU excludes work delegated to the separately running sccache server; cgroup CPU is container scoped.",
                 "Maximum child RSS is not aggregate memory; container memory is sampled, not a reset kernel memory.peak.",
-                "Cargo units/linker invocations overlap; rustc frontend/codegen/LTO/payload work is not separately attributed.",
+                "Cargo units/linker invocations overlap; binary-unit frontend/codegen/LTO/payload work is not separately attributed.",
             ],
         }
         save(report / "manifest.json", manifest)

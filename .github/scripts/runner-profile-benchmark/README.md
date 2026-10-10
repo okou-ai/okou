@@ -20,13 +20,17 @@ Maximum child RSS is a process high-water mark (including the statistics-reset
 child), not aggregate memory. Container memory is sampled every 100ms; it is
 not reset kernel `memory.peak`. Unavailable cgroup observations are `null`.
 `linker-*.json` observes the existing musl GCC driver, retaining mold/static
-arguments. Cargo HTML identifies compiler units and their overlap.
+arguments. Cargo HTML identifies compiler units and their overlap; some library
+units also expose frontend/codegen sections. Binary units do not expose that split.
 
 Compare the three individual warm observations and their median/range within
 each target after checking identities, host limits and cache statistics. Do not
 sum overlapping unit/linker durations or label all runner time as linking:
-stable instrumentation does not separately measure frontend, codegen, LTO or
-payload work. The cold sample is descriptive, three warm samples do not
+these binary observations do not separate frontend, codegen, LTO or payload
+work. The cold sample is descriptive, three warm samples do not
 establish P95, and this local-cache experiment does not establish production
 R2, queue/setup/download or end-to-end required-check improvements. It cannot
 justify adopting a profile without the existing runtime/performance gates.
+
+The [2026-10-10 measurements](results-2026-10-10.md) retain the first complete
+experiment's inputs, individual observations, attribution limits and decision.
