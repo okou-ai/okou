@@ -13,7 +13,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "oxlint --deny-warnings && GOMAXPROCS=1 oxlint src --type-aware -c ../../.oxlintrc.typeaware.json --ignore-pattern '**/__tests__/**' --deny-warnings && GOMAXPROCS=1 oxlint $(find src -type d -name __tests__) --type-aware -c ../../.oxlintrc.typeaware.json --deny-warnings && eslint . --max-warnings 0",
-    "check-types": "bash scripts/check-types.sh && pnpm check-types:chat-event-acceptance",
+    "check-types": "bash scripts/check-types.sh",
     "check-types:deps": "bash scripts/check-types.sh deps",
     "check-types:boundaries": "bash scripts/check-types.sh boundaries",
     "check-types:gateways": "tsc -p tsconfig.gateways.json --checkers $(node ../../scripts/tsc-checkers.mjs)",
@@ -22,11 +22,7 @@
     "check-types:core": "bash scripts/check-types.sh core",
     "check-types:bootstrap": "bash scripts/check-types.sh bootstrap",
     "check-types:tests": "bash scripts/check-types.sh tests",
-    "check-types:bootstrap-wiring": "bash scripts/check-types.sh bootstrap-wiring",
-    "test:chat-event-sequences": "tsx scripts/chat-event-sequences/acceptance.ts",
-    "test:chat-event-context": "tsx scripts/chat-event-context/acceptance.ts",
-    "test:chat-event-auxiliary": "tsx scripts/chat-event-auxiliary/acceptance.ts",
-    "check-types:chat-event-acceptance": "tsc -p scripts/chat-event-acceptance/tsconfig.json --checkers $(node ../../scripts/tsc-checkers.mjs)"
+    "check-types:bootstrap-wiring": "bash scripts/check-types.sh bootstrap-wiring"
   },
   "dependencies": {
     "@aws-sdk/client-kms": "^3.1144.0",

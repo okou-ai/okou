@@ -438,10 +438,6 @@ export default [
       "**/test-fixtures/**",
       "**/*.test.ts",
       "**/*.spec.ts",
-      ...exactTestPaths("no-database-trigger acceptance exemptions", [
-        "scripts/chat-event-context/acceptance.ts",
-        "scripts/chat-event-auxiliary/acceptance.ts",
-      ]),
     ],
     rules: { "api/no-database-trigger": "error" },
   },
@@ -885,11 +881,6 @@ export default [
   },
   {
     files: ["src/**/__tests__/**/*.ts", "src/**/*.test.ts"],
-    ignores: exactTestPaths("logger import exemptions", [
-      // The logger is the subject here, not a diagnostic: this suite covers the
-      // app factory's log wiring and flush ownership, which no route exposes.
-      "src/__tests__/app-factory.test.ts",
-    ]),
     rules: {
       "no-restricted-imports": [
         "error",
@@ -949,9 +940,6 @@ export default [
       "src/lib/__tests__/log-axiom-transport.test.ts",
       // The telemetry SDK client is the subject of this suite.
       "src/signals/external/__tests__/axiom.test.ts",
-      // The app factory's log wiring and flush ownership is the subject here,
-      // and no route exposes it.
-      "src/__tests__/app-factory.test.ts",
     ]),
     rules: {
       "no-restricted-syntax": [

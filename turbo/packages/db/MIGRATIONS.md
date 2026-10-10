@@ -94,11 +94,18 @@ The chat event sequence bridge, backfill and routing-preparation validators are
 retired. Migration `1236_contract_chat_event_sequence_bridge` shipped in API
 1.676.0 (release #36823): the production migration job succeeded and
 `chat_threads.last_chat_event_seq_id` is absent. The expand and contract cycle is
-complete; no API that rollback can select writes the retired counter. The
-permanent tier of `apps/api/scripts/chat-event-sequences/acceptance.ts` keeps
-first-append initialization, concurrent and cross-thread batches, idempotent
-conflicts, gaps, statement rollback, retention, event FK lock compatibility and
-cascade cleanup against the current schema.
+complete; no API that rollback can select writes the retired counter.
+
+The chat event sequence, context and auxiliary acceptance scripts
+(`apps/api/scripts/chat-event-{sequences,context,auxiliary}`) were deleted on
+2026-10-10 by Ethan's decision in #37440, and CI no longer runs them. They drove
+private SQL, service, fault and lock paths. Their guarantees are not replaced
+by another test: first-append sequence initialization, concurrent and
+cross-thread batches, idempotent conflicts, gaps, statement rollback,
+retention, event FK lock compatibility and cascade cleanup for chat event
+sequences; rejection of a channel input when its chat event context insert
+fails; and append behavior, including `last_message_at` ordering, when the
+auxiliary thread touch or thread-event sort write fails.
 
 ### Retired lock-driven validators (2026-09-26)
 

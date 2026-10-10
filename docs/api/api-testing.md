@@ -475,8 +475,9 @@ case.
 API tests must not import the logger or read the logger and telemetry stubs
 (`axiomLogging`, `sdkIngest`, `useRealTelemetry`) through `context.mocks`.
 Assert HTTP responses and their observable effects. Only the suites whose
-subject is the logger, its Axiom transport, the telemetry SDK client or the app
-factory's log wiring are named exceptions.
+subject is the logger, its Axiom transport or the telemetry SDK client are named
+exceptions. Request-log wiring and flush ownership have no route-observable
+contract and are not tested.
 
 ### Boundary Test Controls
 
