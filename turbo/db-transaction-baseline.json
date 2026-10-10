@@ -942,11 +942,6 @@
       "owner": "seedPreviewConnectorCatalog$"
     },
     {
-      "id": "TX-0233",
-      "file": "turbo/apps/api/src/signals/services/private-artifact-storage.service.ts",
-      "owner": "completePrivateArtifact$"
-    },
-    {
       "id": "TX-0234",
       "file": "turbo/apps/api/src/signals/services/provider-usage-publication.service.ts",
       "owner": "recordRunnerUsageBatch$"

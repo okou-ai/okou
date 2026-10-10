@@ -21,6 +21,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { env } from "../../lib/env";
 import { sanitizeArtifactFilename } from "../../lib/file-url";
 import { nowDate } from "../../lib/time";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { apiBackendUrl } from "../../lib/api-backend-url";
 import { db$, writeDb$ } from "../external/db";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
@@ -30,7 +31,7 @@ import {
   artifactReferenceRecord$,
 } from "./artifact-reference.service";
 import {
-  queueArtifactCatalogFileSql,
+  queueChangedArtifactCatalogFileSql,
   syncArtifactCatalogForFile$,
 } from "./artifact-catalog.service";
 
@@ -329,27 +330,38 @@ export const completePrivateArtifact$ = command(
   ) => {
     const db = set(writeDb$);
     // A completed file and its durable catalog handoff must commit together.
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0233; new non-billing transactions are prohibited.
-    const changed = await db.transaction(async (tx) => {
-      const [row] = await tx
-        .update(runUploadedFiles)
-        .set({
-          url: args.url,
-          contentType: args.contentType,
-          sizeBytes: args.size,
-          materializationStatus: "ready",
-          updatedAt: nowDate(),
-        })
-        .where(eq(runUploadedFiles.id, args.id))
-        .returning({ id: runUploadedFiles.id });
-      if (row) {
-        await tx.execute(queueArtifactCatalogFileSql(row.id));
-        signal.throwIfAborted();
-      }
-      return Boolean(row);
-    });
+    const [outcome] = parseRawRows(
+      z.object({ changed: z.boolean() }),
+      await db.execute(
+        queueChangedArtifactCatalogFileSql(
+          args.id,
+          db
+            .update(runUploadedFiles)
+            .set({
+              url: args.url,
+              contentType: args.contentType,
+              sizeBytes: args.size,
+              materializationStatus: "ready",
+              updatedAt: nowDate(),
+            })
+            .where(eq(runUploadedFiles.id, args.id))
+            .returning({
+              id: runUploadedFiles.id,
+              orgId: runUploadedFiles.orgId,
+              userId: runUploadedFiles.userId,
+              chatThreadId: runUploadedFiles.chatThreadId,
+              runId: runUploadedFiles.runId,
+              url: runUploadedFiles.url,
+            })
+            .getSQL(),
+        ),
+      ),
+    );
     signal.throwIfAborted();
-    if (changed) {
+    if (!outcome) {
+      throw new Error("Private artifact completion returned no outcome");
+    }
+    if (outcome.changed) {
       await set(syncArtifactCatalogForFile$, args.id, signal);
     }
   },
