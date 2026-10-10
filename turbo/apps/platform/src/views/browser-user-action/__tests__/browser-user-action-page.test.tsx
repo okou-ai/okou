@@ -77,6 +77,32 @@ function action(
   };
 }
 
+function sensitiveAction(
+  state: BrowserUserActionResponse["state"],
+): Extract<BrowserUserActionResponse, { kind: "input" }> {
+  const request = action(state);
+  return {
+    ...request,
+    fields: [
+      ...request.fields,
+      {
+        key: "password",
+        label: "Password",
+        fieldKind: "password",
+        required: true,
+        control: { tagName: "INPUT", inputType: "password" },
+      },
+      {
+        key: "code",
+        label: "Verification code",
+        fieldKind: "one_time_code",
+        required: false,
+        control: { tagName: "INPUT", inputType: "number" },
+      },
+    ],
+  };
+}
+
 function rangeAction(required: boolean, preflight: boolean) {
   return {
     ...action("pending"),
@@ -2161,19 +2187,8 @@ test("Changed site constraints require a fresh preflight without losing ordinary
   expect(within(form).getByLabelText(/Remembered answer/u)).toHaveValue("abcd");
 });
 
-test("Returning to a pending standalone form keeps its password draft", async () => {
-  const pending = {
-    ...action("pending"),
-    fields: [
-      {
-        key: "password",
-        label: "Password",
-        fieldKind: "password" as const,
-        required: true,
-        control: { tagName: "INPUT" as const, inputType: "password" as const },
-      },
-    ],
-  };
+test("Tab return keeps password and code drafts in an active standalone form", async () => {
+  const pending = sensitiveAction("pending");
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
     return respond(200, pending);
   });
@@ -2190,11 +2205,17 @@ test("Returning to a pending standalone form keeps its password draft", async ()
 
   const password = await screen.findByLabelText("Password");
   await fill(password, "temporary-secret");
+  await fill(screen.getByLabelText("Verification code"), "012345");
   act(() => {
     window.dispatchEvent(new Event("focus"));
   });
-  expect(screen.getByLabelText("Password")).toBe(password);
-  expect(password).toHaveValue("temporary-secret");
+  expect(screen.getByLabelText("Password")).toHaveValue("temporary-secret");
+  expect(screen.getByLabelText("Verification code")).toHaveValue("012345");
+  act(() => {
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  expect(screen.getByLabelText("Password")).toHaveValue("temporary-secret");
+  expect(screen.getByLabelText("Verification code")).toHaveValue("012345");
 });
 
 test("The standalone form records cancellation before notifying the agent", async () => {
@@ -2354,9 +2375,11 @@ test.each(["apply", "cancel"] as const)(
     let current: BrowserUserActionResponse["state"] = "pending";
     let notificationFailed = false;
     context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-      return respond(200, action(current));
+      return respond(200, sensitiveAction(current));
     });
-    mockPendingPreflight();
+    context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+      return respond(200, sensitiveAction("pending"));
+    });
     context.mocks.http.post(
       `*${browserUserActionsContract[operation].path.replace(":requestToken", REQUEST_TOKEN)}`,
       () => {
@@ -2396,6 +2419,8 @@ test.each(["apply", "cancel"] as const)(
       name: "Enter information in browser",
     });
     await fill(within(form).getByLabelText(/Email/u), "owner@example.test");
+    await fill(within(form).getByLabelText("Password"), "synthetic-password");
+    await fill(within(form).getByLabelText("Verification code"), "012345");
     click(button(operation === "apply" ? "Add to browser" : "Cancel"));
 
     await expect(
@@ -2404,6 +2429,8 @@ test.each(["apply", "cancel"] as const)(
       ),
     ).resolves.toBeInTheDocument();
     expect(screen.queryByDisplayValue("owner@example.test")).toBeNull();
+    expect(screen.queryByDisplayValue("synthetic-password")).toBeNull();
+    expect(screen.queryByDisplayValue("012345")).toBeNull();
     click(button("Notify agent"));
     await waitFor(() => {
       expect(screen.getByText("Agent not notified.")).toBeInTheDocument();
@@ -2413,6 +2440,55 @@ test.each(["apply", "cancel"] as const)(
     await expect(
       screen.findByText("Agent notified"),
     ).resolves.toBeInTheDocument();
+  },
+);
+
+test.each([
+  ["stale", "Fields changed"],
+  ["uncertain", "Check the browser"],
+  ["expired", "Request expired"],
+] as const)(
+  "A populated standalone form removes sensitive inputs after %s feedback",
+  async (outcome, title) => {
+    let current: BrowserUserActionResponse["state"] = "pending";
+    let expired = false;
+    context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+      return expired
+        ? respond(410, {
+            error: { code: "BROWSER_USER_ACTION_EXPIRED", message: "Expired" },
+          })
+        : respond(200, sensitiveAction(current));
+    });
+    context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+      return respond(200, sensitiveAction("pending"));
+    });
+    context.mocks.api(browserUserActionsContract.apply, ({ respond }) => {
+      if (outcome === "expired") {
+        expired = true;
+        return respond(410, {
+          error: { code: "BROWSER_USER_ACTION_EXPIRED", message: "Expired" },
+        });
+      }
+      current = outcome;
+      return respond(200, sensitiveAction(current));
+    });
+    await setupPage({
+      context,
+      path: route(),
+      host: "app.okou.ai",
+      featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+    });
+    const form = await screen.findByRole("form", {
+      name: "Enter information in browser",
+    });
+    await fill(within(form).getByLabelText(/Email/u), "owner@example.test");
+    await fill(within(form).getByLabelText("Password"), "synthetic-password");
+    await fill(within(form).getByLabelText("Verification code"), "012345");
+    click(button("Add to browser"));
+    await expect(screen.findByText(title)).resolves.toBeInTheDocument();
+    expect(screen.queryByRole("form")).toBeNull();
+    expect(screen.queryByDisplayValue("synthetic-password")).toBeNull();
+    expect(screen.queryByDisplayValue("012345")).toBeNull();
   },
 );
 
