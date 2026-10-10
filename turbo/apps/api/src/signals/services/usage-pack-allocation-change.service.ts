@@ -37,6 +37,7 @@ import {
   or,
   sql,
 } from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 import { command } from "ccstate";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 import {
@@ -4855,11 +4856,10 @@ export const repairUsagePackConfigurationBeforeConfirmation$ = command(
 );
 
 function activeAllocationSourceCondition(
-  db: Pick<Db, "select">,
   change: UsagePackAllocationChangeRow,
   source: typeof usagePackAllocations.$inferSelect,
 ) {
-  return sql`EXISTS (${db
+  return sql`EXISTS (${new QueryBuilder()
     .select({ id: usagePackAllocations.id })
     .from(usagePackAllocations)
     .where(
@@ -4990,7 +4990,7 @@ export const prepareUsagePackChangeConfirmation$ = command(
           and(
             previewedChange,
             sql`NOT EXISTS (${conflictingUsagePackMutationSql({ subscriptionId: change.usagePackSubscriptionId, allocationChangeId: change.id })})`,
-            activeAllocationSourceCondition(tx, change, source),
+            activeAllocationSourceCondition(change, source),
           ),
         )
         .returning();
