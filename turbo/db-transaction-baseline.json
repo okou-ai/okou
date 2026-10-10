@@ -367,11 +367,6 @@
       "owner": "setDefaultConnectorAccount$"
     },
     {
-      "id": "TX-0113",
-      "file": "turbo/apps/api/src/signals/services/connector-catalog-sync.service.ts",
-      "owner": "publishCandidate$/result"
-    },
-    {
       "id": "TX-0115",
       "file": "turbo/apps/api/src/signals/services/connector-credential-storage-write.service.ts",
       "owner": "deleteConnectorCredentialStorageConnectionsWhere"
