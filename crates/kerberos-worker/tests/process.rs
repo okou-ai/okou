@@ -736,15 +736,18 @@ async fn actual_idle_deadline_reaps_without_a_waiter_and_new_admission_is_availa
 
     let root = root();
     let path = root.path().canonicalize().unwrap();
+    let occupied_deadline = Instant::now() + Duration::from_secs(30);
     let (occupied, _) = kerberos_worker::open(
         &path,
         credentials("fixture"),
         policy(),
-        Instant::now() + Duration::from_secs(30),
+        occupied_deadline,
         &mut NoKdc,
     )
     .await
     .unwrap();
+    let occupied_pid = Pid::from_raw(i32::try_from(occupied.process_id()).unwrap()).unwrap();
+    let occupied_pidfd = pidfd_open(occupied_pid, PidfdFlags::empty()).unwrap();
     // The public deadline includes package verification and native bootstrap.
     // Use the normal operation budget so this tests idle expiry, not startup speed.
     let deadline = Instant::now() + Duration::from_secs(10);
@@ -786,17 +789,29 @@ async fn actual_idle_deadline_reaps_without_a_waiter_and_new_admission_is_availa
         Instant::now() >= deadline,
         "idle worker exited before expiry"
     );
-    // The other slot is occupied, so admission proves automatic capacity release
-    // before close/drop of the expired context.
+    // Admit before the other worker's deadline and confirm it remains alive, so
+    // success proves capacity release before close/drop of the expired context.
     let (replacement, _) = kerberos_worker::open(
         &path,
         credentials("fixture"),
         policy(),
-        Instant::now() + Duration::from_secs(10),
+        occupied_deadline.min(Instant::now() + Duration::from_secs(10)),
         &mut NoKdc,
     )
     .await
     .unwrap();
+    let mut occupied_events = [PollFd::new(&occupied_pidfd, PollFlags::IN)];
+    let no_wait = Duration::ZERO.try_into().unwrap();
+    let occupied_ready = loop {
+        match poll(&mut occupied_events, Some(&no_wait)) {
+            Err(rustix::io::Errno::INTR) => continue,
+            result => break result.unwrap(),
+        }
+    };
+    assert_eq!(
+        occupied_ready, 0,
+        "capacity blocker exited before admission"
+    );
     context.close().await.unwrap();
     replacement.close().await.unwrap();
     occupied.close().await.unwrap();
