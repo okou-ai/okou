@@ -1502,11 +1502,6 @@
       "owner": "upsertOrgMetadataFixture"
     },
     {
-      "id": "TX-0352",
-      "file": "turbo/packages/db/scripts/audit-historical-session-blob-references.sql",
-      "owner": "<module>"
-    },
-    {
       "id": "TX-0355",
       "file": "turbo/packages/db/scripts/billing-attribution.ts",
       "owner": "<module>"
