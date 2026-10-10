@@ -107,8 +107,10 @@ elif sys.argv[1] in ["--zero-stats", "--show-stats"]:
     env = {key: value for key, value in os.environ.items()
            if not key.startswith(("CARGO_PROFILE_", "SCCACHE_")) and key not in ["RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS"]}
     env.update({"PATH": str(mocks) + os.pathsep + env["PATH"], "FIXTURE_LOG": str(log),
-        "RUNNER_TEMP": str(scratch), "GUEST_CLI_PATH": str(cli), "GUEST_CLI_MANIFEST_PATH": str(cli_manifest),
-        "RUNNER_BINARY_ACTUAL_TOOLCHAIN_IMAGE": "ghcr.io/" + env.get("GITHUB_REPOSITORY_OWNER", "okou-ai") + "/vm0-toolchain-rust:20261009"})
+        "RUNNER_TEMP": str(scratch), "GUEST_CLI_PATH": str(cli), "GUEST_CLI_MANIFEST_PATH": str(cli_manifest)})
+    env["RUNNER_BINARY_ACTUAL_TOOLCHAIN_IMAGE"] = subprocess.check_output(
+        ["bash", "-c", '. "$1"; printf "%s" "$RUNNER_BINARY_TOOLCHAIN_IMAGE"', "contract",
+         str(scripts / "runner-binary-build/contract.env")], env=env, text=True)
     run = ["python3", str(scripts / "runner-profile-benchmark/run.py")]
     identities = set()
     for profile, target in [("baseline", "x86_64-unknown-linux-musl"), ("thin-cgu8", "x86_64-unknown-linux-musl"), ("off-cgu4", "aarch64-unknown-linux-musl")]:
@@ -138,6 +140,11 @@ elif sys.argv[1] in ["--zero-stats", "--show-stats"]:
     contaminated = subprocess.run([*run, "baseline", "x86_64-unknown-linux-musl", str(scratch / "contaminated")],
                                  cwd=repo, env={**env, "SCCACHE_BUCKET": "shared"}, capture_output=True, text=True)
     assert contaminated.returncode != 0 and "clean profile/rustflags/sccache environment" in contaminated.stderr
+    linked_cli = scratch / "linked-package.tgz"
+    linked_cli.symlink_to(cli)
+    rejected = subprocess.run([*run, "baseline", "x86_64-unknown-linux-musl", str(scratch / "linked-input")],
+                              cwd=repo, env={**env, "GUEST_CLI_PATH": str(linked_cli)}, capture_output=True, text=True)
+    assert rejected.returncode != 0 and "not a nonempty regular file" in rejected.stderr
 
 print("runner-profile-benchmark tool-boundary tests: ok")
 PY
