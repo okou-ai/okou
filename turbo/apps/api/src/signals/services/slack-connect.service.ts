@@ -28,18 +28,6 @@ import { userFeatureSwitchContext } from "./feature-switches.service";
 
 type SlackInstallation = typeof slackOrgInstallations.$inferSelect;
 
-async function resolveDefaultComposeId(
-  db: Db,
-  orgId: string,
-): Promise<string | null> {
-  const [metadata] = await db
-    .select({ defaultAgentId: orgMetadata.defaultAgentId })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.orgId, orgId))
-    .limit(1);
-  return metadata?.defaultAgentId ?? null;
-}
-
 async function getWorkspaceAgentName(
   db: Db,
   composeId: string,
@@ -111,10 +99,12 @@ async function refreshSlackAppHome(args: {
 
   let agentName: string | undefined;
   if (args.installation.orgId) {
-    const defaultAgentId = await resolveDefaultComposeId(
-      args.db,
-      args.installation.orgId,
-    );
+    const [metadata] = await args.db
+      .select({ defaultAgentId: orgMetadata.defaultAgentId })
+      .from(orgMetadata)
+      .where(eq(orgMetadata.orgId, args.installation.orgId))
+      .limit(1);
+    const defaultAgentId = metadata?.defaultAgentId ?? null;
     if (defaultAgentId) {
       agentName = await getWorkspaceAgentName(args.db, defaultAgentId);
     }
@@ -372,8 +362,13 @@ export const notifySlackConnect$ = command(
         await get(userFeatureSwitchContext(args.orgId, args.userId)),
       ),
     );
-    const defaultAgentId = await resolveDefaultComposeId(writeDb, args.orgId);
+    const [metadata] = await writeDb
+      .select({ defaultAgentId: orgMetadata.defaultAgentId })
+      .from(orgMetadata)
+      .where(eq(orgMetadata.orgId, args.orgId))
+      .limit(1);
     signal.throwIfAborted();
+    const defaultAgentId = metadata?.defaultAgentId ?? null;
     const agentName = defaultAgentId
       ? await getWorkspaceAgentName(writeDb, defaultAgentId)
       : undefined;
