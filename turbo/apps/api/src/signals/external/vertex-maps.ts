@@ -309,6 +309,11 @@ function parseUsage(
 function parseVertexMapsResponse(body: string): VertexMapsResult {
   const parsed = responseSchema.safeParse(safeJsonParse(body));
   if (!parsed.success) {
+    L.warn("Google Maps response schema rejected", {
+      issues: parsed.error.issues.slice(0, 10).map((issue) => {
+        return { code: issue.code, path: issue.path };
+      }),
+    });
     throw new VertexMapsError(502, "invalid_response");
   }
   if (parsed.data.status !== "completed") {
@@ -324,6 +329,12 @@ function parseVertexMapsResponse(body: string): VertexMapsResult {
     !parsed.data.steps ||
     parsed.data.errors?.length
   ) {
+    L.warn("Google Maps response metadata rejected", {
+      modelMatches: parsed.data.model === VERTEX_MAPS_MODEL,
+      hasModel: parsed.data.model !== undefined,
+      hasSteps: parsed.data.steps !== undefined,
+      hasErrors: Boolean(parsed.data.errors?.length),
+    });
     throw new VertexMapsError(502, "invalid_response");
   }
   const contents = parsed.data.steps.flatMap((step) => {
