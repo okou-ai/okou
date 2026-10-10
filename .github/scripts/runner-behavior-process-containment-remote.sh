@@ -490,10 +490,12 @@ for name in ("first", "second"):
     assert task_path.parent == main_runtime.parent / "tools"
     assert task_path.name.startswith("task-") and ready["runtime"].endswith("/runtime")
     assert (task_path / "runtime/cgroup.procs").read_text().strip() == str(ready["pid"])
+    status = pathlib.Path(f"/proc/{ready['pid']}/status").read_text()
+    assert next(line.split(":", 1)[1].strip() for line in status.splitlines() if line.startswith("PPid:")) == "1"
     assert not (state / "done").exists(), "start waited for the worker to finish"
-    batch_tasks.append((state, task_path))
+    batch_tasks.append((state, task_path, ready["pid"]))
 assert batch_tasks[0][1] != batch_tasks[1][1]
-for state, task_path in batch_tasks:
+for state, task_path, pid in batch_tasks:
     (state / "release-worker").touch()
     waited = subprocess.run([cli, "generate", "image-batch", "wait", str(state), "--timeout", "10"],
                             env=batch_env, check=True, capture_output=True, text=True, timeout=20)
@@ -501,6 +503,7 @@ for state, task_path in batch_tasks:
     assert "Image batch joined:" in waited.stdout
     assert "image-batch-worker-output" in (state / "output.log").read_text()
     gone(task_path)
+    gone(pathlib.Path(f"/proc/{pid}"))
 print("image-batch-native-task-consumer-passed", flush=True)
 
 assert not list((main_runtime.parent / "tools").glob("task-*"))

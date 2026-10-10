@@ -122,8 +122,16 @@ exec. Standard IO, argv, cwd, environment and other explicitly inherited
 application pipes survive. Placement/socket descriptors do not. The PID remains
 the launcher's PID; metadata proves containment, not successful exec/application
 readiness. Invalid admission/reporting exits before target code; failed target
-exec exits 126 and the lifetime owner cleans up. Consumers must observe their
-own runtime readiness and reap the process they spawned.
+exec exits 126 and the lifetime owner cleans up. Consumers own application
+readiness and normal child reaping. When a background CLI returns after admission,
+Guest-init (PID 1) adopts and reaps its orphaned runtime; task pidfd cleanup remains
+separate from this waitpid owner.
+
+The existing `okou generate image-batch start` launches its worker through this
+helper and returns after publishing PID state. Its log and completion files remain
+the application boundary for `image-batch wait`. Failed startup publication stops
+the opaque task and collects the owned child; failed native cleanup retains the
+state directory and reports an error.
 
 `guest-task-exec stop <handle>` is authenticated from the owning main
 runtime/top-level tools domain. Handles are operation-owned identities, not
