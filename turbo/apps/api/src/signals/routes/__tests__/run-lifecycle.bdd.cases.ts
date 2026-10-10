@@ -5027,7 +5027,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
       it("claims managed Auto runs without delivering the managed provider key", async () => {
         // The fixed test seed holds the same obvious fake managed key as
-        // dev-seed; prove the seed really carries it before asserting absence.
+        // dev-seed. This guards the two copies against drift; the database
+        // row itself is proven by the managed route the claim reports.
         const managedKeySeed = API_DATABASE_SEED_FILES.find((file) => {
           return file.pathname.endsWith("/managed-model-key.sql");
         });

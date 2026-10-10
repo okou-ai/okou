@@ -22,7 +22,7 @@ function buildVendorKeys(
   values: Readonly<Record<string, string | undefined>>,
 ): ReturnType<typeof buildBuiltInModelKeys> {
   return buildBuiltInModelKeys(readEnvFrom(values), () => {
-    // Suppress expected skip logs for vendors that are not configured in tests.
+    // Suppress the seed progress log in builder assertions.
   }).filter((key) => {
     return key.vendor === vendor;
   });
