@@ -135,7 +135,7 @@ describe("standalone Computer Use host directory", () => {
         });
         mockNow(STARTED_AT_MS + 1000);
         const stopped = await startRetainedHost(actor, "Stopped Desktop");
-        await computerUse.stopComputerUseHost(stopped.hostToken);
+        await computerUse.stopComputerUseHost(stopped.connection);
         mockNow(STARTED_AT_MS + 2000);
         const current = await computerUse.startComputerUseHost(actor, {
           hostName: "Current Desktop",
@@ -150,7 +150,7 @@ describe("standalone Computer Use host directory", () => {
         });
 
         mockNow(STARTED_AT_MS + 120_000);
-        await computerUse.heartbeatComputerUseHost(current.hostToken, {
+        await computerUse.heartbeatComputerUseHost(current.connection, {
           hostName: "Current Desktop",
           supportedCapabilities: ["apps.list", "element.click"],
           permissions: { accessibility: true, screenRecording: false },
@@ -172,7 +172,7 @@ describe("standalone Computer Use host directory", () => {
           id: current.hostId,
           hostName: "Current Desktop",
           displayName: "Current Desktop",
-          appVersion: "0.1.0",
+          appVersion: "0.52.1",
           osVersion: "macOS 15",
           supportedCapabilities: ["apps.list", "element.click"],
           permissions: {
@@ -205,7 +205,7 @@ describe("standalone Computer Use host directory", () => {
         const other = await startRetainedHost(actor, "Other Desktop");
         const bound = await startRetainedHost(actor, "Bound Offline Desktop");
         const claim = await scenario.claim(actor, bound.hostId);
-        await computerUse.stopComputerUseHost(bound.hostToken);
+        await computerUse.stopComputerUseHost(bound.connection);
         const listed = await computerUse.listComputerUseHosts({
           bearer: claim.token,
         });

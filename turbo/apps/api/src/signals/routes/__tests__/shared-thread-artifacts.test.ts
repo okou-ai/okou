@@ -16,6 +16,7 @@ import sharp from "sharp";
 import { server } from "../../../mocks/server";
 import { createDeferredPromise } from "../../utils";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { ARTIFACT_OG_BRAND } from "@okouai/core/artifact-og";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
 import { artifactOgContract } from "@okouai/api-contracts/contracts/artifact-og";
@@ -744,11 +745,10 @@ test.each(["missing", "unavailable"] as const)(
     ).toStrictEqual({ available: false });
     const disabledImage = await accept(
       og.image({ query: { ...disabledQuery, version: "published" } }),
-      [200],
+      [302],
     );
-    const generic = await accept(og.defaultImage(), [200]);
-    expect(Buffer.from(await disabledImage.body.arrayBuffer())).toStrictEqual(
-      Buffer.from(await generic.body.arrayBuffer()),
+    expect(disabledImage.headers.get("location")).toBe(
+      ARTIFACT_OG_BRAND.imageUrl,
     );
     await accept(
       api()(featureSwitchesContract).update({
@@ -767,7 +767,7 @@ test.each(["missing", "unavailable"] as const)(
       og.image({
         query: { kind: "reference", id: reference, version: "published" },
       }),
-      [ogStatus],
+      [failure === "missing" ? 302 : 500],
     );
     expect(image.headers.get("cache-control")).toBe("private, no-store");
     const downloaded = await accept(
@@ -1407,12 +1407,7 @@ test("oG uses the published thread snapshot and revokes its old image URL with t
   ).toStrictEqual({
     available: false,
   });
-  const revoked = await accept(og.image({ query }), [200]);
+  const revoked = await accept(og.image({ query }), [302]);
   expect(revoked.headers.get("cache-control")).toBe("private, no-store");
-  const revokedBytes = Buffer.from(await revoked.body.arrayBuffer());
-  expect(revokedBytes).not.toStrictEqual(publishedBytes);
-  await expect(sharp(revokedBytes).metadata()).resolves.toMatchObject({
-    width: 1280,
-    height: 800,
-  });
+  expect(revoked.headers.get("location")).toBe(ARTIFACT_OG_BRAND.imageUrl);
 });

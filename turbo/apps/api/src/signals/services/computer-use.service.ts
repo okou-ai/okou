@@ -1,5 +1,4 @@
 import { desktopVersionIsSupported } from "../../lib/desktop-version";
-import { createHash, randomBytes } from "node:crypto";
 
 import { command, computed, type Computed } from "ccstate";
 import {
@@ -129,17 +128,16 @@ type ResolveComputerUseCommandTargetsResult =
 interface StartComputerUseHostResult {
   readonly status: "started";
   readonly hostId: string;
-  readonly hostToken: string | null;
   readonly connectionGeneration: number;
 }
 
 type HeartbeatComputerUseHostResult =
   | { readonly status: "ok"; readonly hostId: string }
-  | { readonly status: "invalid_token" };
+  | { readonly status: "invalid_connection" };
 
 type StopComputerUseHostResult =
   | { readonly status: "stopped"; readonly hostId: string }
-  | { readonly status: "invalid_token" };
+  | { readonly status: "invalid_connection" };
 
 type DesktopUpgradeRequired = {
   readonly status: "upgrade_required";
@@ -148,7 +146,7 @@ type DesktopUpgradeRequired = {
 
 type ClaimNextComputerUseHostCommandResult =
   | DesktopUpgradeRequired
-  | { readonly status: "invalid_token" }
+  | { readonly status: "invalid_connection" }
   | { readonly status: "idle" }
   | {
       readonly status: "command";
@@ -171,21 +169,9 @@ type CompleteComputerUseHostCommandParams = ComputerUseHostAuthority &
 
 type CompleteComputerUseHostCommandResult =
   | { readonly status: "completed" }
-  | { readonly status: "invalid_token" }
+  | { readonly status: "invalid_connection" }
   | { readonly status: "not_found" }
   | { readonly status: "not_running" };
-
-function hashSecret(value: string): string {
-  return createHash("sha256").update(value).digest("hex");
-}
-
-function generateOpaqueToken(prefix: string): string {
-  return `${prefix}_${randomBytes(32).toString("base64url")}`;
-}
-
-function invalidatedHostTokenHash(): string {
-  return hashSecret(generateOpaqueToken("vm0_computer_use_host_stopped"));
-}
 
 function normalizeHostName(hostName: string): string {
   return hostName.trim().slice(0, 253);
@@ -270,9 +256,8 @@ export function computerUseHostIsOnline(
 ): boolean {
   const minimum = desktopMinimumSupportedVersion();
   return (
-    (minimum === null ||
-      (host.tokenHash === null &&
-        desktopVersionIsSupported(host.appVersion, minimum))) &&
+    host.tokenHash === null &&
+    (minimum === null || desktopVersionIsSupported(host.appVersion, minimum)) &&
     host.status === "online" &&
     host.revokedAt === null &&
     now.getTime() - host.lastSeenAt.getTime() <=
@@ -846,16 +831,13 @@ function resolveComputerUseCommandTargets(params: {
 /**
  * Registers or reactivates the Desktop installation's host with one upsert:
  * one active host per (org, user, installation), keeping its id and
- * `created_at` and rotating its credential.
+ * `created_at` and advancing its connection generation.
  */
 export const startComputerUseHost$ = command(
   async (
     { get, set },
-    params: {
-      readonly orgId: string;
-      readonly userId: string;
+    params: ComputerUseSessionIdentity & {
       readonly installationId: string;
-      readonly session?: ComputerUseSessionIdentity;
       readonly hostName: string;
       readonly appVersion: string;
       readonly osVersion: string;
@@ -877,24 +859,16 @@ export const startComputerUseHost$ = command(
       params.supportedCapabilities,
     );
     const now = nowDate();
-    if (
-      params.session &&
-      !(await verifyComputerUseSession(get(clerk$), params.session, signal))
-    ) {
+    if (!(await verifyComputerUseSession(get(clerk$), params, signal))) {
       return { status: "invalid_session" };
     }
     const minimum = desktopMinimumSupportedVersion();
     if (
       minimum !== null &&
-      (!params.session ||
-        !desktopVersionIsSupported(params.appVersion, minimum))
+      !desktopVersionIsSupported(params.appVersion, minimum)
     ) {
       return { status: "upgrade_required", minimumSupportedVersion: minimum };
     }
-    const hostToken = params.session
-      ? null
-      : generateOpaqueToken("vm0_computer_use_host");
-    const tokenHash = hostToken ? hashSecret(hostToken) : null;
     const [host] = await db
       .insert(computerUseHosts)
       .values({
@@ -902,9 +876,9 @@ export const startComputerUseHost$ = command(
         userId: params.userId,
         installationId: params.installationId,
         displayName,
-        tokenHash,
-        sessionId: params.session?.sessionId ?? null,
-        sessionValidatedAt: params.session ? now : null,
+        tokenHash: null,
+        sessionId: params.sessionId,
+        sessionValidatedAt: now,
         connectionGeneration: 1,
         appVersion,
         osVersion,
@@ -927,9 +901,9 @@ export const startComputerUseHost$ = command(
         ),
         set: {
           displayName,
-          tokenHash,
-          sessionId: params.session?.sessionId ?? null,
-          sessionValidatedAt: params.session ? now : null,
+          tokenHash: null,
+          sessionId: params.sessionId,
+          sessionValidatedAt: now,
           connectionGeneration: sql`${computerUseHosts.connectionGeneration} + 1`,
           appVersion,
           osVersion,
@@ -953,7 +927,6 @@ export const startComputerUseHost$ = command(
     return {
       status: "started",
       hostId: host.id,
-      hostToken,
       connectionGeneration: host.connectionGeneration,
     };
   },
@@ -1016,7 +989,7 @@ export const heartbeatComputerUseHost$ = command(
     const host = await resolveComputerUseHost(db, get(clerk$), params, signal);
     signal.throwIfAborted();
     if (!host) {
-      return { status: "invalid_token" };
+      return { status: "invalid_connection" };
     }
 
     const now = nowDate();
@@ -1074,14 +1047,14 @@ export const stopComputerUseHost$ = command(
   ): Promise<StopComputerUseHostResult> => {
     const db = set(writeDb$);
     if (!(await resolveComputerUseHost(db, get(clerk$), params, signal))) {
-      return { status: "invalid_token" };
+      return { status: "invalid_connection" };
     }
     const now = nowDate();
     const [stopped] = await db
       .update(computerUseHosts)
       .set({
         status: "offline",
-        tokenHash: "hostToken" in params ? invalidatedHostTokenHash() : null,
+        tokenHash: null,
         connectionGeneration: sql`${computerUseHosts.connectionGeneration} + 1`,
         updatedAt: now,
       })
@@ -1092,7 +1065,7 @@ export const stopComputerUseHost$ = command(
       });
     signal.throwIfAborted();
     if (!stopped) {
-      return { status: "invalid_token" };
+      return { status: "invalid_connection" };
     }
     await publishComputerUseHostsChanged(stopped.userId);
     signal.throwIfAborted();
@@ -1418,13 +1391,12 @@ export const claimNextComputerUseHostCommand$ = command(
     const host = await resolveComputerUseHost(db, get(clerk$), params, signal);
     signal.throwIfAborted();
     if (!host) {
-      return { status: "invalid_token" };
+      return { status: "invalid_connection" };
     }
     const minimum = desktopMinimumSupportedVersion();
     if (
       minimum !== null &&
-      ("hostToken" in params ||
-        !desktopVersionIsSupported(host.appVersion, minimum))
+      !desktopVersionIsSupported(host.appVersion, minimum)
     ) {
       return { status: "upgrade_required", minimumSupportedVersion: minimum };
     }
@@ -1492,8 +1464,7 @@ export const claimNextComputerUseHostCommand$ = command(
           hostId: host.id,
           status: "running",
           claimedAt: now,
-          claimedConnectionGeneration:
-            "hostToken" in params ? null : params.connectionGeneration,
+          claimedConnectionGeneration: params.connectionGeneration,
           updatedAt: now,
         })
         .where(
@@ -1648,7 +1619,7 @@ async function resolveMissedComputerUseCompletion(
     .where(computerUseHostAuthorityCondition(authority))
     .limit(1);
   signal.throwIfAborted();
-  return { status: authorized ? "completed" : "invalid_token" };
+  return { status: authorized ? "completed" : "invalid_connection" };
 }
 
 /**
@@ -1667,7 +1638,7 @@ export const completeComputerUseHostCommand$ = command(
     const host = await resolveComputerUseHost(db, get(clerk$), params, signal);
     signal.throwIfAborted();
     if (!host) {
-      return { status: "invalid_token" };
+      return { status: "invalid_connection" };
     }
     const [commandRow] = await db
       .select({ status: computerUseCommands.status })
@@ -1676,12 +1647,10 @@ export const completeComputerUseHostCommand$ = command(
         and(
           eq(computerUseCommands.id, params.commandId),
           eq(computerUseCommands.hostId, host.id),
-          "hostToken" in params
-            ? undefined
-            : eq(
-                computerUseCommands.claimedConnectionGeneration,
-                params.connectionGeneration,
-              ),
+          eq(
+            computerUseCommands.claimedConnectionGeneration,
+            params.connectionGeneration,
+          ),
         ),
       )
       .limit(1);

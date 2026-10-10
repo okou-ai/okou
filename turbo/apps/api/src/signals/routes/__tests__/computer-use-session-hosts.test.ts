@@ -3,9 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   computerUseSessionHostsContract as contract,
   computerUseHostsContract,
-  computerUseHeartbeatContract,
   computerUseCommandContract,
-  computerUseHostCommandsContract,
 } from "@okouai/api-contracts/contracts/computer-use";
 
 import {
@@ -68,7 +66,7 @@ async function app() {
 }
 
 describe("Native Computer Use session authentication", () => {
-  it("requires an upgrade at registration, including legacy clients that claim a supported version", async () => {
+  it("enforces the supported Native version at registration", async () => {
     const api = await app();
     authenticate(identity());
     desktopCompatibility.minimumSupportedVersion = "0.51.0";
@@ -80,13 +78,6 @@ describe("Native Computer Use session authentication", () => {
       error: { code: "DESKTOP_UPDATE_REQUIRED" },
       minimumSupportedVersion: "0.51.0",
     });
-    await accept(
-      api(computerUseHostsContract).start({
-        headers,
-        body: { ...runtimeBody, appVersion: "99.0.0" },
-      }),
-      [426],
-    );
     await accept(
       api(contract).register({
         headers,
@@ -171,71 +162,6 @@ describe("Native Computer Use session authentication", () => {
       result: { apps: [] },
     });
     await accept(client.stop({ headers, params, body }), [200]);
-  });
-
-  it("drains legacy work after activation even when its stored version claims to be current", async () => {
-    const api = await app();
-    authenticate(identity());
-    const runtime = { ...runtimeBody, appVersion: "99.0.0" };
-    const legacy = (
-      await accept(
-        api(computerUseHostsContract).start({ headers, body: runtime }),
-        [200],
-      )
-    ).body;
-    const legacyHeaders = { authorization: `Bearer ${legacy.hostToken}` };
-    const created = (
-      await accept(
-        api(computerUseCommandContract).create({
-          headers,
-          body: { kind: "apps.list" },
-        }),
-        [200],
-      )
-    ).body;
-    await accept(
-      api(computerUseHostCommandsContract).next({
-        headers: legacyHeaders,
-        body: {},
-      }),
-      [200],
-    );
-    desktopCompatibility.minimumSupportedVersion = "0.51.0";
-    await accept(
-      api(computerUseHostCommandsContract).next({
-        headers: legacyHeaders,
-        body: {},
-      }),
-      [426],
-    );
-    const listed = (
-      await accept(api(computerUseHostsContract).list({ headers }), [200])
-    ).body;
-    expect(listed.hosts).toContainEqual(
-      expect.objectContaining({ id: legacy.hostId, status: "offline" }),
-    );
-    await accept(
-      api(computerUseHeartbeatContract).heartbeat({
-        headers: legacyHeaders,
-        body: runtime,
-      }),
-      [200],
-    );
-    await accept(
-      api(computerUseHostCommandsContract).complete({
-        headers: legacyHeaders,
-        params: { commandId: created.commandId },
-        body: { status: "succeeded", result: { apps: [] } },
-      }),
-      [200],
-    );
-    await accept(
-      api(computerUseHeartbeatContract).stop({
-        headers: legacyHeaders,
-        body: {},
-      }),
-      [200],
-    );
   });
 
   it("registers, claims, reports, and stops using only a Clerk session", async () => {
@@ -428,49 +354,6 @@ describe("Native Computer Use session authentication", () => {
     expect(inactive.body.error.code).toBe("UNAUTHORIZED");
   });
 
-  it("preserves legacy routes without issuing a host token to the Native protocol", async () => {
-    const api = await app();
-    const actor = identity();
-    authenticate(actor);
-    const legacy = (
-      await accept(
-        api(computerUseHostsContract).start({ headers, body: runtimeBody }),
-        [200],
-      )
-    ).body;
-    await accept(
-      api(computerUseHeartbeatContract).heartbeat({
-        headers: { authorization: `Bearer ${legacy.hostToken}` },
-        body: runtimeBody,
-      }),
-      [200],
-    );
-    const native = (
-      await accept(
-        api(contract).register({ headers, body: runtimeBody }),
-        [200],
-      )
-    ).body;
-    expect(native.hostId).toBe(legacy.hostId);
-    await accept(
-      api(computerUseHostCommandsContract).next({
-        headers: { authorization: `Bearer ${legacy.hostToken}` },
-        body: {},
-      }),
-      [401],
-    );
-    await accept(
-      api(contract).heartbeat({
-        headers,
-        params: { hostId: native.hostId },
-        body: {
-          ...runtimeBody,
-          connectionGeneration: native.connectionGeneration,
-        },
-      }),
-      [200],
-    );
-  });
   it("does not let a new connection report an older connection's action", async () => {
     const api = await app();
     const client = api(contract);

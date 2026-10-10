@@ -1172,11 +1172,6 @@
       "owner": "refundPurchase$"
     },
     {
-      "id": "TX-0280",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
-      "owner": "claimAcceptedPurchaseActivation$"
-    },
-    {
       "id": "TX-0281",
       "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
       "owner": "activateAcceptedPurchase$"
@@ -1509,11 +1504,6 @@
     {
       "id": "TX-0352",
       "file": "turbo/packages/db/scripts/audit-historical-session-blob-references.sql",
-      "owner": "<module>"
-    },
-    {
-      "id": "TX-0353",
-      "file": "turbo/packages/db/scripts/audit-hosted-publication-history.sql",
       "owner": "<module>"
     },
     {

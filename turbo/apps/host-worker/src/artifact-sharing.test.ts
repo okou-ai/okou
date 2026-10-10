@@ -14,6 +14,7 @@ import {
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { type ArtifactSharePolicy } from "@okouai/api-contracts/contracts/artifact-shares";
+import { ARTIFACT_OG_BRAND } from "@okouai/core/artifact-og";
 import worker from "./index";
 import { fetchWorker, memoryCache } from "./test-helpers";
 
@@ -217,14 +218,22 @@ test.each(
       contentType: "application/xml",
       body: '<?xml version="1.0" encoding="UTF-8"?><report>Report 🚀</report>',
     },
-  ].flatMap((file) => {
-    return (["publication", "legacy-file"] as const).map((delivery) => {
-      return { ...file, delivery };
-    });
-  }),
+  ]
+    .flatMap((file) => {
+      return (["publication", "legacy-file"] as const).map((delivery) => {
+        return { ...file, delivery };
+      });
+    })
+    .flatMap((file) => {
+      return (file.extension === "html" ? [true, false] : [true]).map(
+        (enabled) => {
+          return { ...file, enabled };
+        },
+      );
+    }),
 )(
-  "$delivery $extension previews preserve bytes inline on fresh, warm and old cached reads",
-  async ({ extension, contentType, body, delivery }) => {
+  "$delivery $extension previews preserve bytes inline on fresh, warm and old cached reads with OG enabled=$enabled",
+  async ({ extension, contentType, body, delivery, enabled }) => {
     const f = fixture(
       false,
       extension,
@@ -257,13 +266,18 @@ test.each(
     server.use(
       http.get("https://authority.test/api/artifact-og/metadata", () => {
         metadataRequests += 1;
-        return HttpResponse.json({
-          available: true,
-          title: "Published report",
-          description: "Public summary",
-          imageUrl: "https://authority.test/api/artifact-og/image?version=one",
-          url: siteOrigin,
-        });
+        return HttpResponse.json(
+          enabled
+            ? {
+                available: true,
+                title: "Published report",
+                description: "Public summary",
+                imageUrl:
+                  "https://authority.test/api/artifact-og/image?version=one",
+                url: siteOrigin,
+              }
+            : { available: false },
+        );
       }),
     );
     const env = {
@@ -363,7 +377,9 @@ test("rechecks OG metadata on cached HTML and denies revoked shares before readi
   const second = await fetchWorker(new Request(siteOrigin), env);
   expect(second.status).toBe(200);
   expect(second.headers.get("Content-Type")).toBe("text/html");
-  expect(await second.text()).not.toContain('property="og:image"');
+  expect(await second.text()).toContain(
+    `property="og:image" content="${ARTIFACT_OG_BRAND.imageUrl}"`,
+  );
   expect(f.cache.match.mock.calls.length).toBeGreaterThan(cachedReads);
   expect(lookups).toBe(2);
   f.policy.status = "revoked";
@@ -374,8 +390,9 @@ test("rechecks OG metadata on cached HTML and denies revoked shares before readi
 
 test("rechecks the preview switch for relative images on cached HTML and denies revoked shares", async () => {
   const f = fixture(true);
-  const original =
-    '<head><meta property="og:image" content="image.png"></head><body>Report</body>';
+  const documentMetadata =
+    '<title>Original report</title><meta name="description" content="Original summary"><link rel="canonical" href="https://reports.example/report">';
+  const original = `<head>${documentMetadata}<meta property="og:image" content="image.png"></head><body>Report</body>`;
   f.objects.set(
     `shared-artifacts/okou/${snapshotId}/${fileId}/index.html`,
     original,
@@ -406,7 +423,18 @@ test("rechecks the preview switch for relative images on cached HTML and denies 
   }
   enabled = false;
   const disabled = await fetchWorker(new Request(siteOrigin), env);
-  expect(await disabled.text()).toBe(original);
+  const html = await disabled.text();
+  expect(html).toContain(
+    `property="og:image" content="${ARTIFACT_OG_BRAND.imageUrl}"`,
+  );
+  expect(html).toContain(
+    `name="twitter:image" content="${ARTIFACT_OG_BRAND.imageUrl}"`,
+  );
+  expect(html).toContain(documentMetadata);
+  expect(html).toContain('property="og:title" content="Okou"');
+  expect(html).toContain("<body>Report</body>");
+  expect(disabled.headers.get("ETag")).toBeNull();
+  expect(disabled.headers.get("Cache-Control")).toBe("private, no-store");
   f.policy.status = "revoked";
   f.objects.set(policyKey, JSON.stringify(f.policy));
   expect((await fetchWorker(new Request(siteOrigin), env)).status).toBe(404);

@@ -1604,11 +1604,16 @@ describe("POST /api/voice-io/transcribe/segment", () => {
 });
 
 describe("voice provider immediate failures", () => {
-  it.each([GOOGLE_STS_URL, GOOGLE_IMPERSONATION_URL, VERTEX_VOICE_URL])(
-    "returns provider-unavailability for a connection failure at %s",
-    async (url) => {
+  it.each([
+    { url: GOOGLE_STS_URL, attempts: 3 },
+    { url: GOOGLE_IMPERSONATION_URL, attempts: 3 },
+    { url: VERTEX_VOICE_URL, attempts: 1 },
+  ])(
+    "returns provider-unavailability for a connection failure at $url",
+    async ({ url, attempts }) => {
       const owner = await publicVoiceActor();
       await owner.run(async () => {
+        context.mocks.signalTimers.delay.mockResolvedValue(undefined);
         let calls = 0;
         server.use(
           http.post(url, () => {
@@ -1624,7 +1629,7 @@ describe("voice provider immediate failures", () => {
           [503],
         );
         expect(response.body.error.code).toBe("PROVIDER_UNAVAILABLE");
-        expect(calls).toBe(1);
+        expect(calls).toBe(attempts);
       });
     },
   );

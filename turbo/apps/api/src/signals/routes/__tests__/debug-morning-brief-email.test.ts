@@ -34,7 +34,7 @@ const preferences = () => {
   );
 };
 
-async function actor(debug = true, notify = true) {
+async function actor(debug = true) {
   const userId = `user_${randomUUID()}`;
   const orgId = `org_${randomUUID()}`;
   const email = `${randomUUID()}@example.com`;
@@ -50,7 +50,7 @@ async function actor(debug = true, notify = true) {
     features().update({
       headers,
       body: {
-        switches: { [FeatureSwitchKey.OkouDebug]: debug, notifyMail: notify },
+        switches: { [FeatureSwitchKey.OkouDebug]: debug },
       },
     }),
     [200],
@@ -155,11 +155,8 @@ describe("Debug Morning Brief test email", () => {
     ).toStrictEqual(first.body);
   });
 
-  it.each([
-    [false, true],
-    [true, false],
-  ])("requires both switches (%s, %s)", async (debug, notify) => {
-    await actor(debug, notify);
+  it("requires Okou Debug", async () => {
+    await actor(false);
     await accept(
       client().send({ headers, body: { requestId: randomUUID() } }),
       [403],
@@ -262,7 +259,7 @@ describe("Debug Morning Brief test email", () => {
       features().update({
         headers,
         body: {
-          switches: { [FeatureSwitchKey.OkouDebug]: true, notifyMail: true },
+          switches: { [FeatureSwitchKey.OkouDebug]: true },
         },
       }),
       [200],

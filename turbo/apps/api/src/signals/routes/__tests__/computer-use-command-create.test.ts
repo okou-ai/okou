@@ -1,3 +1,4 @@
+import type { ComputerUseTestConnection } from "./helpers/api-bdd-computer-use";
 import { aroundEach, describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
@@ -94,12 +95,12 @@ function createScenario() {
   }
 
   async function claimAndComplete(args: {
-    readonly hostToken: string;
+    readonly connection: ComputerUseTestConnection;
     readonly commandId: string;
     readonly capabilities?: readonly string[];
   }): Promise<void> {
     const claimed = await computerUse.claimNextComputerUseCommand(
-      args.hostToken,
+      args.connection,
       args.capabilities ?? HOST_CAPABILITIES,
     );
     expect(claimed).toMatchObject({
@@ -107,7 +108,7 @@ function createScenario() {
       command: { id: args.commandId, status: "running" },
     });
     await computerUse.completeComputerUseCommandWith(
-      args.hostToken,
+      args.connection,
       args.commandId,
       {
         status: "failed",
@@ -182,7 +183,7 @@ describe("Computer Use command creation", () => {
         ).toStrictEqual([]);
         expectNoExternalEffects();
         await claimAndComplete({
-          hostToken: sessionHost.hostToken,
+          connection: sessionHost.connection,
           commandId: sessionCreated.commandId,
         });
 
@@ -192,7 +193,7 @@ describe("Computer Use command creation", () => {
         mockClerkMembership(context, patActor, "org:admin");
         const patCreated = await createCommand("write", { bearer: pat });
         const patClaimed = await computerUse.claimNextComputerUseCommand(
-          patHost.hostToken,
+          patHost.connection,
           HOST_CAPABILITIES,
         );
         expect(patClaimed).toMatchObject({
@@ -206,7 +207,7 @@ describe("Computer Use command creation", () => {
           },
         });
         await computerUse.completeComputerUseCommand(
-          patHost.hostToken,
+          patHost.connection,
           patCreated.commandId,
         );
         const patAudit = await computerUse.listComputerUseAuditEvents(
@@ -231,7 +232,7 @@ describe("Computer Use command creation", () => {
           bearer: agent.bearer,
         });
         const agentClaimed = await computerUse.claimNextComputerUseCommand(
-          agentHost.hostToken,
+          agentHost.connection,
           HOST_CAPABILITIES,
         );
         expect(agentClaimed).toMatchObject({
@@ -245,7 +246,7 @@ describe("Computer Use command creation", () => {
           },
         });
         await computerUse.completeComputerUseCommandWith(
-          agentHost.hostToken,
+          agentHost.connection,
           agentCreated.commandId,
           {
             status: "succeeded",
