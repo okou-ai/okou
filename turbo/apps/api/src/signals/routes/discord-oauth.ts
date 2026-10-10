@@ -7,6 +7,7 @@ import { discordOauthStates } from "@okouai/db/schema/discord-oauth-state";
 import { discordOrgInstallations } from "@okouai/db/schema/discord-org-installation";
 import { discordOrgGrants } from "@okouai/db/schema/discord-org-grant";
 import { env } from "../../lib/env";
+import { logger } from "../../lib/log";
 import { getOAuthApiOrigin } from "../../lib/oauth-origin";
 import { now, nowDate } from "../../lib/time";
 import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
@@ -37,6 +38,7 @@ import {
 } from "../services/discord-oauth-binding.service";
 import type { RouteEntry } from "../route-entry";
 
+const L = logger("DiscordOauth");
 const CALLBACK = "/api/integrations/discord/oauth/callback";
 const TTL_SECONDS = 600;
 const PROOF = /^[A-Za-z0-9_-]{43}$/u;
@@ -370,6 +372,9 @@ const verifyCallback$ = command(
       return await set(failCallback$, attempt, "cancelled", signal);
     }
     if (!query.code || query.code.length > 2048) {
+      L.warn(
+        "Discord OAuth callback code is missing or exceeds its size limit",
+      );
       return await set(failCallback$, attempt, "invalid_authorization", signal);
     }
     const config = getDiscordAppConfig();
