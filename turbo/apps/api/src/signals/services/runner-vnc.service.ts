@@ -23,6 +23,7 @@ import { currentRunnerVncAuthority$ } from "./runner-vnc-authority.service";
 import { isVncProfileCompatible } from "./vnc-configuration.utils";
 import { parseStoredVncClientIdentity } from "./vnc-client-identity.service";
 import { parseStoredVncKerberos } from "./vnc-kerberos.service";
+import { nowDate } from "../../lib/time";
 import {
   isVncKerberosMethod,
   sameKerberosPrincipal,
@@ -32,6 +33,19 @@ import {
 type CurrentVncAuthority = NonNullable<
   Awaited<ReturnType<(typeof currentRunnerVncAuthority$)["write"]>>
 >;
+
+function hasLiveKerberosTicket(
+  row: CurrentVncAuthority,
+  nowSeconds = Math.floor(nowDate().getTime() / 1000),
+) {
+  if (row.authMethod !== "qemu_kerberos_ticket") {
+    return true;
+  }
+  if (row.kerberosDeclaredExpiresAt === null) {
+    throw new Error("Missing stored VNC Kerberos ticket expiry");
+  }
+  return row.kerberosDeclaredExpiresAt > nowSeconds;
+}
 
 type TransportSnapshot =
   | { readonly type: "direct" }
@@ -235,7 +249,8 @@ async function isSameCurrentHandoff(
       current.credentialRevision === initial.credentialRevision) &&
     current.generation === initial.generation &&
     sameTransport(currentTransport, transport) &&
-    (await hasCurrentVncMembership(clerk, current, signal))
+    (await hasCurrentVncMembership(clerk, current, signal)) &&
+    hasLiveKerberosTicket(current)
   );
 }
 
@@ -253,7 +268,11 @@ export const checkRunnerVnc$ = command(
     }
     validateStoredProfile(row);
     const transport = storedTransportSnapshot(row);
-    if (!hasTransportAuthority(row, transport) || !hasKdcAuthority(row)) {
+    if (
+      !hasTransportAuthority(row, transport) ||
+      !hasKdcAuthority(row) ||
+      !hasLiveKerberosTicket(row)
+    ) {
       return { outcome: "unavailable" };
     }
     if (!hasValidAppleRoute(row, transport)) {
@@ -440,6 +459,10 @@ async function decryptKerberosAuthentication(
   if (!decrypted.ok) {
     throw new Error("VNC credential decryption failed");
   }
+  const nowSeconds = Math.floor(nowDate().getTime() / 1000);
+  if (!hasLiveKerberosTicket(row, nowSeconds)) {
+    return null;
+  }
   const parsed = safeSync(() => {
     return parseStoredVncKerberos(
       {
@@ -449,6 +472,7 @@ async function decryptKerberosAuthentication(
         kerberosDeclaredExpiresAt: row.kerberosDeclaredExpiresAt,
       },
       decrypted.value,
+      nowSeconds,
     );
   });
   if (!("ok" in parsed)) {
@@ -542,7 +566,9 @@ async function decryptRunnerAuthentication(
 
 function validateRsaAesHandoffPair(
   security: ReturnType<typeof storedRunnerSecurity>,
-  authentication: Awaited<ReturnType<typeof decryptRunnerAuthentication>>,
+  authentication: NonNullable<
+    Awaited<ReturnType<typeof decryptRunnerAuthentication>>
+  >,
 ): void {
   const rsaAuthentication =
     authentication.method === "rsa_aes_password" ||
@@ -556,7 +582,9 @@ function resolvedKerberosResponse(
   row: CurrentVncAuthority,
   transport: TransportSnapshot,
   security: ReturnType<typeof storedRunnerSecurity>,
-  authentication: Awaited<ReturnType<typeof decryptRunnerAuthentication>>,
+  authentication: NonNullable<
+    Awaited<ReturnType<typeof decryptRunnerAuthentication>>
+  >,
 ): RunnerVncResolveResponse {
   if (
     !isVncKerberosMethod(authentication.method) ||
@@ -581,7 +609,9 @@ function resolvedRunnerResponse(
   row: CurrentVncAuthority,
   transport: TransportSnapshot,
   security: ReturnType<typeof storedRunnerSecurity>,
-  authentication: Awaited<ReturnType<typeof decryptRunnerAuthentication>>,
+  authentication: NonNullable<
+    Awaited<ReturnType<typeof decryptRunnerAuthentication>>
+  >,
 ): RunnerVncResolveResponse {
   validateRsaAesHandoffPair(security, authentication);
   const resolved = {
@@ -695,7 +725,11 @@ export const resolveRunnerVnc$ = command(
     }
     validateStoredProfile(row);
     const transport = storedTransportSnapshot(row);
-    if (!hasTransportAuthority(row, transport) || !hasKdcAuthority(row)) {
+    if (
+      !hasTransportAuthority(row, transport) ||
+      !hasKdcAuthority(row) ||
+      !hasLiveKerberosTicket(row)
+    ) {
       return { outcome: "unavailable" };
     }
     const capability = selectedCapability(
@@ -708,6 +742,9 @@ export const resolveRunnerVnc$ = command(
     }
     const security = storedRunnerSecurity(row, transport);
     const authentication = await decryptRunnerAuthentication(row, signal);
+    if (authentication === null) {
+      return { outcome: "unavailable" };
+    }
     const current = await set(currentRunnerVncAuthority$, input, signal);
     if (!(await isSameCurrentHandoff(current, row, transport, clerk, signal))) {
       return { outcome: "unavailable" };

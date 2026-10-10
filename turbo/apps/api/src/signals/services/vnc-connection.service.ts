@@ -13,7 +13,7 @@ import { and, asc, count, eq, sql } from "drizzle-orm";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import { command } from "ccstate";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import {
   canonicalizeVncHost,
@@ -419,21 +419,6 @@ function ownedSshConnection(owner: VncOwner, sshConnectionId: string) {
   );
 }
 
-async function hasOwnedKdcSsh(
-  tx: Parameters<Parameters<Db["transaction"]>[0]>[0],
-  owner: VncOwner,
-  id: string | null,
-) {
-  if (id === null) {
-    return true;
-  }
-  const [ssh] = await tx
-    .select({ id: sshConnections.id })
-    .from(sshConnections)
-    .where(ownedSshConnection(owner, id));
-  return ssh !== undefined;
-}
-
 function ownedCredential(owner: VncOwner, credentialId: string) {
   return and(
     eq(vncCredentials.id, credentialId),
@@ -499,6 +484,18 @@ const prepareCreateVncConnection$ = command(
     if (invalidCredential) {
       return vncFailure(invalidCredential);
     }
+    if (security.value.kdcSshConnectionId !== null) {
+      const [ssh] = await set(writeDb$)
+        .select({ id: sshConnections.id })
+        .from(sshConnections)
+        .where(
+          ownedSshConnection(args.owner, security.value.kdcSshConnectionId),
+        );
+      signal.throwIfAborted();
+      if (!ssh) {
+        return vncFailure("sshConnectionNotFound");
+      }
+    }
     const preparedCredential =
       "type" in args.body.credential
         ? null
@@ -550,17 +547,6 @@ export const createVncConnection$ = command(
             .from(sshConnections)
             .where(ownedSshConnection(owner, transport.value.sshConnectionId));
           if (ssh === undefined) {
-            return vncFailure("sshConnectionNotFound");
-          }
-        }
-        if (security.value.kdcSshConnectionId !== null) {
-          const [ssh] = await tx
-            .select({ id: sshConnections.id })
-            .from(sshConnections)
-            .where(
-              ownedSshConnection(owner, security.value.kdcSshConnectionId),
-            );
-          if (!ssh) {
             return vncFailure("sshConnectionNotFound");
           }
         }
@@ -673,6 +659,19 @@ const prepareUpdateVncConnection$ = command(
     );
     if (invalidCredential) {
       return vncFailure(invalidCredential);
+    }
+    const selectedSecurity = security?.value ?? initial;
+    if (selectedSecurity.kdcSshConnectionId !== null) {
+      const [ssh] = await db
+        .select({ id: sshConnections.id })
+        .from(sshConnections)
+        .where(
+          ownedSshConnection(args.owner, selectedSecurity.kdcSshConnectionId),
+        );
+      signal.throwIfAborted();
+      if (!ssh) {
+        return vncFailure("sshConnectionNotFound");
+      }
     }
     const preparedCredential =
       args.body.credential === undefined || "type" in args.body.credential
@@ -818,15 +817,6 @@ export const updateVncConnection$ = command(
         }
         const { newHost, newPort, transport, securityType } = resolved.value;
         const selectedSecurity = security?.value ?? current;
-        if (
-          !(await hasOwnedKdcSsh(
-            tx,
-            owner,
-            selectedSecurity.kdcSshConnectionId,
-          ))
-        ) {
-          return vncFailure("sshConnectionNotFound");
-        }
         if (transport.value.sshConnectionId !== null) {
           const [ssh] = await tx
             .select({ id: sshConnections.id })
