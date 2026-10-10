@@ -587,7 +587,10 @@ describe("Discord account preferences through private controls", () => {
         channelId: scope.channelId,
         ...(surface === "server" ? { guildId: scope.binding.guildId } : {}),
       };
-      const discord = discordHttp([scope], sender);
+      const discord = discordHttp(
+        [scope],
+        surface === "DM" ? sender : undefined,
+      );
       const message = await discord.send(commandPayload(sender, "connect"));
 
       expect(message.content).toContain("already has a verified connection");
