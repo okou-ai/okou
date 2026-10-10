@@ -537,6 +537,7 @@ async fn park_idle_transition(
                                 resources,
                                 metadata,
                                 budget_lease,
+                                retirement_backing: None,
                             };
                             IdleParkFailureOwnership::Parked {
                                 rejected: Box::new(candidate.into_rejected()),
@@ -575,6 +576,7 @@ async fn park_idle_transition(
                         resources,
                         metadata,
                         budget_lease,
+                        retirement_backing: None,
                     };
                     match outcome.park_outcome {
                         SandboxParkOutcome::Reusable => IdleParkOutcome::Reusable(candidate),
@@ -651,6 +653,7 @@ impl SpeculativeIdleSandbox {
             metadata,
             budget_lease,
             parked_at,
+            ..
         } = entry;
         let reuse_key = metadata.reuse_key().map(str::to_owned);
         let profile_name = metadata.profile_name.clone();

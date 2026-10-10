@@ -8,7 +8,7 @@ use runner_lifecycle::host_memory_operations::{
     HostMemoryOperations, MemoryOperationError, MemoryOperationPolicy, ProcMemoryObservationSource,
 };
 use runner_lifecycle::host_memory_policy::HostMemoryBounds;
-use runner_lifecycle::idle_pool::{GuardedIdleRetirement, IdleRetirementEnvelope};
+use runner_lifecycle::idle_pool::IdleRetirementEnvelope;
 use runner_types::ids::RunId;
 use sandbox::{
     EXEC_OUTPUT_LIMIT_64_KIB, ExecRequest, ExecTermination, ResourceLimits, Sandbox, SandboxConfig,
@@ -69,17 +69,6 @@ impl Inputs {
             tail_growth_bytes: self.tail_growth_bytes,
         }
     }
-}
-
-pub async fn grant(retirement: &mut GuardedIdleRetirement) -> Result<(), MemoryOperationError> {
-    // Retry only a contemporaneous accounting revision, never insufficient capacity.
-    for _ in 0..16 {
-        match retirement.try_grant().await {
-            Err(MemoryOperationError::AccountingChanged) => tokio::task::yield_now().await,
-            result => return result,
-        }
-    }
-    Err(MemoryOperationError::AccountingChanged)
 }
 
 pub async fn checkout(

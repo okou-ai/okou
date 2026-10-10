@@ -161,6 +161,7 @@ impl ParkedIdleCandidateBuilder {
             },
             metadata,
             budget_lease,
+            retirement_backing: None,
         }
     }
 }

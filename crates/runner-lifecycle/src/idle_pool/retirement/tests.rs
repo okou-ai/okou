@@ -1,4 +1,5 @@
 mod admission;
+mod inventory;
 mod phases;
 mod settlement;
 
@@ -132,6 +133,7 @@ struct JobFixture {
     overrides: Arc<MockSandboxOverrides>,
     budget: Arc<ResourceBudget>,
     job: Option<IdleDestroyJob>,
+    sandbox_id: sandbox::SandboxId,
 }
 
 impl JobFixture {
@@ -170,11 +172,28 @@ impl JobFixture {
                 reuse_key: Some(key.to_owned()),
                 profile_name: "vm0/default".into(),
             }),
+            sandbox_id: home.sandbox_id,
         }
     }
 
     fn pending(&mut self, env: &Env) -> GuardedIdleRetirement {
         GuardedIdleRetirement::new(self.job.take().unwrap(), &env.operations, envelope()).unwrap()
+    }
+
+    fn candidate(&mut self) -> crate::idle_pool::ParkedIdleCandidate {
+        use crate::idle_pool::test_support::ParkedIdleCandidateBuilder;
+        let job = self.job.take().unwrap();
+        let IdleSandboxResources {
+            sandbox,
+            factory,
+            home_promotion,
+        } = job.payload.resources;
+        ParkedIdleCandidateBuilder::new(&self.reuse_key, job.budget_lease)
+            .with_sandbox(sandbox)
+            .with_factory(factory)
+            .with_sandbox_id(self.sandbox_id)
+            .with_home_promotion(home_promotion.unwrap())
+            .build()
     }
 
     async fn untouched(&self) {

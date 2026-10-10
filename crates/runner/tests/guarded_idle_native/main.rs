@@ -12,12 +12,12 @@ use runner_lifecycle::home_image_cache::{
 };
 use runner_lifecycle::home_mount::ensure_home_drive_mounted;
 use runner_lifecycle::idle_pool::{
-    DestroyOutcome, GuardedIdleRetirement, IdlePool, IdlePoolConfig, ParkResult,
+    DestroyOutcome, IdlePool, IdlePoolConfig, IdleSandboxIdentity, ParkResult,
     test_support::ParkedIdleCandidateBuilder,
 };
 use runner_lifecycle::resource_budget::ResourceBudget;
 use runner_storage::storage_fingerprints::StorageFingerprints;
-use runner_supervisor::idle_lifecycle::IdleDestroyTracker;
+use runner_supervisor::idle_lifecycle::{IdleDestroyTracker, IdlePoolRetirementRequest};
 use runner_types::ids::RunId;
 use sandbox::{
     FactoryConfig, RuntimeConfig, SandboxFactory, SandboxId, SandboxParkOutcome, SandboxRuntime,
@@ -141,51 +141,50 @@ async fn exercise_retirement(
         }
     };
     let mut pool = IdlePool::new(IdlePoolConfig { max_idle: 1 });
-    assert!(matches!(
-        pool.park(
-            ParkedIdleCandidateBuilder::new(&reuse_key, lease)
-                .with_sandbox(sandbox)
-                .with_factory(factory.clone())
-                .with_sandbox_id(sandbox_id)
-                .with_profile_name(fixture::PROFILE)
-                .with_rootfs_hash(&rootfs_hash)
-                .with_home_promotion(promotion)
-                .build()
-        ),
-        ParkResult::Parked
-    ));
-    let job = pool
-        .drain()
-        .pop()
-        .ok_or_else(|| io::Error::other("missing native idle job"))?;
-    let mut retirement = match GuardedIdleRetirement::new(job, &operations, inputs.envelope()) {
-        Ok(retirement) => retirement,
-        Err(failure) => {
-            let error = io::Error::other(failure.error().to_string());
-            failure
-                .into_job()
-                .run_with_context("native_fixture_registration_cleanup")
-                .await;
-            return Err(error.into());
-        }
-    };
-    if let Err(error) = fixture::grant(&mut retirement).await {
-        retirement
-            .into_job()
-            .run_with_context("native_fixture_grant_cleanup")
-            .await;
+    let tracker = IdleDestroyTracker::new(Arc::new(Notify::new()));
+    let mut candidate = ParkedIdleCandidateBuilder::new(&reuse_key, lease)
+        .with_sandbox(sandbox)
+        .with_factory(factory.clone())
+        .with_sandbox_id(sandbox_id)
+        .with_profile_name(fixture::PROFILE)
+        .with_rootfs_hash(&rootfs_hash)
+        .with_home_promotion(promotion)
+        .build();
+    if let Err(error) = candidate.capture_retirement_backing() {
+        // Explicit disposal of this invocation's native fixture, never a
+        // production guarded-admission fallback.
+        let (payload, lease) = candidate.into_active_destroy_parts();
+        tracker
+            .spawn_payload_retaining_lease(payload, lease, "native_fixture_capture_cleanup")
+            .join()
+            .await?;
         return Err(error.into());
     }
-    let tracker = IdleDestroyTracker::new(Arc::new(Notify::new()));
-    let mut task = match tracker.spawn_guarded_retirement(retirement, "native_guarded_idle") {
-        Ok(task) => task,
-        Err(failure) => {
-            let error = io::Error::other(failure.error().to_string());
-            failure
-                .into_retirement()
-                .into_job()
-                .run_with_context("native_fixture_start_cleanup")
-                .await;
+    assert!(matches!(pool.park(candidate), ParkResult::Parked));
+    let candidate = pool.retirement_candidate(&IdleSandboxIdentity::Exact(reuse_key.clone()))?;
+    let pool = Arc::new(tokio::sync::Mutex::new(pool));
+    let mut task = match tracker
+        .retire_pool_entry(
+            &pool,
+            &operations,
+            IdlePoolRetirementRequest {
+                candidate,
+                envelope: inputs.envelope(),
+                context: "native_guarded_idle",
+            },
+        )
+        .await
+    {
+        Ok(started) => {
+            assert!(started.snapshot.idle_sandboxes.is_empty());
+            started.task
+        }
+        Err(error) => {
+            let jobs = pool.lock().await.drain();
+            for job in jobs {
+                job.run_with_context("native_fixture_admission_cleanup")
+                    .await;
+            }
             return Err(error.into());
         }
     };
