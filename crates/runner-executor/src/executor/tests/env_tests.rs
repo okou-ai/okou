@@ -524,7 +524,7 @@ fn build_env_json_sandbox_reuse_result_wire_format() {
         );
         assert!(
             !env.contains_key(guest_contracts::env::CANONICAL_HOME_REUSE_RESULT_ENV),
-            "no-workspace builder emitted canonical workspace reuse metadata"
+            "builder without a home outcome emitted canonical home reuse metadata"
         );
     }
 }
