@@ -53,8 +53,12 @@ describe("Button", () => {
     );
     const button = screen.getByRole("button", { name: "Try again" });
     expect(button).toHaveAttribute("aria-busy", "true");
-    // The label stays in the layout so the button keeps its width.
-    expect(screen.getByText("Try again")).toHaveClass("invisible");
+    // The label stays in the layout so the button keeps its width, and stays
+    // in the accessibility tree: `visibility: hidden` text would leave the
+    // focused busy button without a name.
+    const label = screen.getByText("Try again");
+    expect(label).toHaveClass("opacity-0");
+    expect(label).not.toHaveClass("invisible");
     // Still reachable by keyboard, so focus is not dropped mid-retry.
     button.focus();
     expect(button).toHaveFocus();

@@ -79,7 +79,7 @@ interface StyledButtonProps
     VariantProps<typeof buttonVariants> {
   /**
    * The action this button started is still running. The label stays in the
-   * layout (invisible) so the button keeps its width, a spinner sits on top,
+   * layout (transparent) so the button keeps its width, a spinner sits on top,
    * and the button stays focusable but inert, so a keyboard user who pressed
    * it is not thrown out of place when it settles.
    */
@@ -117,7 +117,9 @@ const Button = React.forwardRef<HTMLElement, ButtonProps>(
         )}
         ref={ref}
       >
-        <span className="invisible inline-flex items-center gap-2">
+        {/* `opacity-0`, not `invisible`: hidden text drops out of the
+            accessible name, and the focused busy button would be unnamed. */}
+        <span className="inline-flex items-center gap-2 opacity-0">
           {children}
         </span>
         <span className="absolute inset-0 flex items-center justify-center">
