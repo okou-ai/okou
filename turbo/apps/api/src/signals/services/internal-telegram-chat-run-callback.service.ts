@@ -90,28 +90,6 @@ function recordDelivery(args: {
   });
 }
 
-async function claimTelegramChatDelivery(
-  db: Db,
-  callbackId: string,
-): Promise<ClaimedTelegramChatDelivery | undefined> {
-  const [callback] = await db
-    .update(agentRunCallbacks)
-    .set({ attempts: 1, lastAttemptAt: nowDate() })
-    .where(
-      and(
-        eq(agentRunCallbacks.id, callbackId),
-        eq(agentRunCallbacks.internalKind, "telegram:chat"),
-        eq(agentRunCallbacks.status, "pending"),
-        eq(agentRunCallbacks.attempts, 0),
-      ),
-    )
-    .returning({
-      runId: agentRunCallbacks.runId,
-      payload: agentRunCallbacks.payload,
-    });
-  return callback;
-}
-
 function telegramOwnerWhere(ownerLink: TelegramOwnerLink) {
   return eq(telegramChatThreadRoutes.telegramOfficialUserLinkId, ownerLink.id);
 }
@@ -484,7 +462,21 @@ export async function dispatchTelegramChatDeliveryOnce(
 ): Promise<void> {
   const startedAt = now();
   signal.throwIfAborted();
-  const callback = await claimTelegramChatDelivery(db, callbackId);
+  const [callback] = await db
+    .update(agentRunCallbacks)
+    .set({ attempts: 1, lastAttemptAt: nowDate() })
+    .where(
+      and(
+        eq(agentRunCallbacks.id, callbackId),
+        eq(agentRunCallbacks.internalKind, "telegram:chat"),
+        eq(agentRunCallbacks.status, "pending"),
+        eq(agentRunCallbacks.attempts, 0),
+      ),
+    )
+    .returning({
+      runId: agentRunCallbacks.runId,
+      payload: agentRunCallbacks.payload,
+    });
   if (!callback) {
     return;
   }
