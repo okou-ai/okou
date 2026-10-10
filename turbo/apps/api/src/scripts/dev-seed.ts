@@ -26,6 +26,7 @@ import { immutableCatalogHash$ } from "../signals/services/connector-catalog-imm
 import { syncConnectorCatalog$ } from "../signals/services/connector-catalog-sync.service";
 import { seedPreviewConnectorCatalog$ } from "../signals/services/preview-connector-catalog.service";
 import { onRejection } from "../signals/utils";
+import { DEV_SEED_SENTINEL_MANAGED_MODEL_KEY } from "./dev-seed-managed-model-key";
 import rawDevSeedSkillVolumes from "./dev-seed-skill-volumes.json";
 
 function writeLine(message: string): void {
@@ -38,7 +39,8 @@ function writeLine(message: string): void {
  * Pricing convention: 1 USD = 1000 credits.
  * Token prices use integer credits with a per-row token unit size.
  *
- * The managed OpenRouter Auto key is read from DEV_MODEL_OPENROUTER_KEY.
+ * The managed OpenRouter Auto key is read from DEV_MODEL_OPENROUTER_KEY; the
+ * fake sentinel key is seeded when it is not configured.
  */
 
 /** 1 USD = 1000 credits */
@@ -711,7 +713,11 @@ export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
 type OptionalEnvReader = (name: string) => string | undefined;
 type LineWriter = (message: string) => void;
 
-/** Build the managed OpenRouter built_in_model_keys row from the environment. */
+/**
+ * Build the managed OpenRouter built_in_model_keys row from the environment.
+ * Without a configured key, seed the obvious fake sentinel so the managed
+ * route exists locally; the provider rejects it like any invalid key.
+ */
 export function buildBuiltInModelKeys(
   readEnv: OptionalEnvReader = optionalEnv,
   logLine: LineWriter = writeLine,
@@ -719,8 +725,16 @@ export function buildBuiltInModelKeys(
   const envVar = "DEV_MODEL_OPENROUTER_KEY";
   const apiKey = readEnv(envVar);
   if (!apiKey) {
-    logLine(`Skipping ${AUTO_RUN_KEY_VENDOR}: ${envVar} is not configured`);
-    return [];
+    logLine(
+      `Seeding the fake ${AUTO_RUN_KEY_VENDOR} sentinel key: ${envVar} is not configured`,
+    );
+    return [
+      {
+        vendor: AUTO_RUN_KEY_VENDOR,
+        apiKey: DEV_SEED_SENTINEL_MANAGED_MODEL_KEY,
+        label: "dev-seed sentinel",
+      },
+    ];
   }
   return [{ vendor: AUTO_RUN_KEY_VENDOR, apiKey, label: "dev-seed" }];
 }

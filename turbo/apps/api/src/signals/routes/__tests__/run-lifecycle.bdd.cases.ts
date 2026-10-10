@@ -7,6 +7,7 @@ import { publicRunOwner } from "./helpers/public-run-owner";
 import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 /* oxlint-disable jest/no-export -- Each test entrypoint imports one deterministic group from this shared case registry. */
 import { createHash, randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import {
   createPublicRunnerMemory,
@@ -64,6 +65,8 @@ import { afterEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { mockAxiomSdkTelemetryFailure } from "../../../__tests__/mocks";
 import { accept, testContext } from "../../../__tests__/test-context";
+import { DEV_SEED_SENTINEL_MANAGED_MODEL_KEY } from "../../../scripts/dev-seed-managed-model-key";
+import { API_DATABASE_SEED_FILES } from "../../../test-fixtures/database-seeds";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { env, mockEnv, mockOptionalEnv, optionalEnv } from "../../../lib/env";
 import {
@@ -5020,6 +5023,77 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         }
         const queue = await api.readRunQueue(actor);
         expect(queue.body.concurrency.active).toBe(0);
+      });
+
+      it("claims managed Auto runs without delivering the managed provider key", async () => {
+        // The fixed test seed holds the same obvious fake managed key as
+        // dev-seed; prove the seed really carries it before asserting absence.
+        const managedKeySeed = API_DATABASE_SEED_FILES.find((file) => {
+          return file.pathname.endsWith("/managed-model-key.sql");
+        });
+        if (!managedKeySeed) {
+          throw new Error("Expected the managed model key test seed");
+        }
+        expect(readFileSync(managedKeySeed, "utf8")).toContain(
+          `'${DEV_SEED_SENTINEL_MANAGED_MODEL_KEY}'`,
+        );
+
+        const bdd = createBddApi(context);
+        const api = createRunsApi(context);
+        const chat = createChatFilesBddApi(context);
+        const actor = bdd.user();
+        bdd.acceptAgentStorageWrites();
+        api.acceptStorageDownloads();
+        api.acceptTelemetryIngest();
+        const runnerGroup = api.configureRunnerGroup();
+        await api.grantProEntitlement(actor);
+        const agent = await bdd.createAgent(actor, {
+          displayName: "BDD managed key agent",
+          visibility: "private",
+        });
+        preparePiSandboxClaim();
+
+        // No personal subscription and an Auto send: the managed route.
+        const run = await api.createThreadRun(actor, {
+          agentId: agent.agentId,
+          prompt: `managed Auto run ${randomUUID()}`,
+          model: null,
+        });
+        await api.heartbeatRunner(runnerGroup);
+        const poll = await api.pollRunner(runnerGroup);
+        expect(poll.body.job).toMatchObject({ runId: run.runId });
+        const claim = await api.claimRunnerJob(run.runId);
+
+        // The managed provider firewall is configured, and its key travels
+        // only inside the encrypted firewall secrets.
+        expect(
+          claim.firewalls?.map((firewall) => {
+            return firewallEntryName(firewall);
+          }),
+        ).toContain("model-provider:openrouter-codex");
+        expect(claim.encryptedSecrets).toStrictEqual(expect.any(String));
+
+        const runRead = await api.readRun(actor, run.runId);
+        const threadEvents = await chat.listThreadEvents(actor, run.threadId);
+        const logs = await createRunReadsApi(context).requestListLogs(
+          actor,
+          { limit: 100 },
+          [200],
+        );
+        for (const delivered of [
+          poll.body,
+          claim,
+          runRead,
+          threadEvents,
+          logs.body,
+        ]) {
+          expect(JSON.stringify(delivered)).not.toContain(
+            DEV_SEED_SENTINEL_MANAGED_MODEL_KEY,
+          );
+        }
+
+        await api.requestCancelRun(actor, run.runId, [200]);
+        await finishCancelledRun(run.runId, claim.sandboxToken);
       });
 
       it("claims personal Codex GPT 6 chat runs through Pi without platform model billing", async () => {

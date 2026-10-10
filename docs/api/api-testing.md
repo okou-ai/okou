@@ -382,7 +382,10 @@ repeat gzip/tar decoding, replay migrations, or reseed their database. The catal
 publishes entries and their schema-version pointer in one atomic statement,
 inserting only a missing pointer and never replacing existing catalog authority.
 The pricing seed preserves existing rows on their `(kind, provider, category)`
-key. To update the fixed baseline, review the declarative data alongside its
+key. The managed model key seed inserts the obvious fake OpenRouter key that
+`dev-seed` also uses when no real key is configured, so every case has the
+managed Auto route and can assert that its key never reaches a sandbox or
+Runner. To update the fixed baseline, review the declarative data alongside its
 source artifact/pricing projection; do not add case-specific variants. This common application baseline is infrastructure; it does
 not authorize changing prices, catalog entries, or business rows to manufacture
 a case's decisive state.

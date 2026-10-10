@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { DEV_SEED_SENTINEL_MANAGED_MODEL_KEY } from "../dev-seed-managed-model-key";
 import rawDevSeedSkillVolumes from "../dev-seed-skill-volumes.json";
 import {
   buildBuiltInModelKeys,
@@ -58,6 +59,16 @@ describe("official skill volume seeds", () => {
 });
 
 describe("buildBuiltInModelKeys", () => {
+  it("seeds the fake sentinel key when no OpenRouter key is configured", () => {
+    expect(buildVendorKeys("openrouter", {})).toStrictEqual([
+      {
+        apiKey: DEV_SEED_SENTINEL_MANAGED_MODEL_KEY,
+        label: "dev-seed sentinel",
+        vendor: "openrouter",
+      },
+    ]);
+  });
+
   it("builds the OpenRouter built-in model key row", () => {
     const openRouterKeys = buildVendorKeys("openrouter", {
       DEV_MODEL_OPENROUTER_KEY: "dev-openrouter-key",
