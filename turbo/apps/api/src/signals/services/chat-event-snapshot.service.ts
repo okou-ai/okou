@@ -4,7 +4,7 @@ import {
   type ChatEventCursor,
 } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import { command, computed, type Computed } from "ccstate";
-import { and, asc, eq, gt, inArray, or, sql } from "drizzle-orm";
+import { and, asc, eq, exists, gt, inArray, or, sql } from "drizzle-orm";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatEventSnapshots } from "@okouai/db/schema/chat-event-snapshot";
@@ -66,6 +66,7 @@ type ChatEventRowsPage =
 interface ChatEventRowsBaseArgs {
   readonly threadId: string;
   readonly userId: string;
+  readonly orgId?: string;
   readonly limit: number;
 }
 
@@ -78,8 +79,15 @@ type ChatEventRowsArgs = ChatEventRowsBaseArgs &
       }
   );
 
-const ownedThread = (threadId: string, userId: string) => {
-  return and(eq(chatThreads.id, threadId), eq(chatThreads.userId, userId));
+const ownedThread = (threadId: string, userId: string, orgId?: string) => {
+  return and(
+    eq(chatThreads.id, threadId),
+    eq(chatThreads.userId, userId),
+    orgId === undefined
+      ? undefined
+      : exists(sql`(SELECT 1 FROM ${agents}
+      WHERE ${agents.id} = ${chatThreads.agentId} AND ${agents.orgId} = ${orgId})`),
+  );
 };
 
 interface SnapshotPointer {
@@ -439,6 +447,7 @@ export function catchUpChatThreadEvents(args: {
 export function chatThreadEventSnapshot(args: {
   readonly threadId: string;
   readonly userId: string;
+  readonly orgId?: string;
 }) {
   return command(
     async (
@@ -449,7 +458,7 @@ export function chatThreadEventSnapshot(args: {
       const [owned] = await db
         .select({ id: chatThreads.id })
         .from(chatThreads)
-        .where(ownedThread(args.threadId, args.userId))
+        .where(ownedThread(args.threadId, args.userId, args.orgId))
         .limit(1);
       signal.throwIfAborted();
       if (!owned) {
@@ -512,7 +521,7 @@ export function chatThreadEventRows(
     const [owned] = await db
       .select({ id: chatThreads.id })
       .from(chatThreads)
-      .where(ownedThread(args.threadId, args.userId))
+      .where(ownedThread(args.threadId, args.userId, args.orgId))
       .limit(1);
     if (!owned) {
       return { kind: "thread-not-found" } as const;

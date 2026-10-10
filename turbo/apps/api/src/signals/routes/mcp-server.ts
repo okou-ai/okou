@@ -1,40 +1,64 @@
+import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
+import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
+import {
+  chatEventsContract,
+  chatSearchContract,
+  chatThreadEventsContract,
+  chatThreadModelSelectionContract,
+  chatThreadRenameContract,
+  chatThreadsContract,
+} from "@okouai/api-contracts/contracts/chat-threads";
 import { mcpServerContract } from "@okouai/api-contracts/contracts/mcp-server";
+import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
+import { runsCancelContract } from "@okouai/api-contracts/contracts/run-routes";
+import type { AppRoute } from "@okouai/api-contracts/contracts/trpc-contract";
 import { command, computed } from "ccstate";
-import { setAuthContext$ } from "../auth/auth-context";
-
+import { createAppWithRoutes } from "../../app-factory-core";
 import {
   MCP_DEFAULT_SCOPES,
-  MCP_READ_SCOPE,
   MCP_REQUIRED_SCOPES,
   mcpServerConfig,
 } from "../../lib/mcp-server-config";
-import type { ApiOrgRole } from "../../types/auth";
-import type { McpPrincipal } from "../../types/mcp";
+import { VERCEL_PROTECTION_BYPASS_HEADER } from "../../lib/preview-automation-bypass";
 import { request$ } from "../context/hono";
 import { verifyClerkOAuthAccessToken } from "../external/clerk";
 import { serveMcpRequest } from "../external/mcp-server";
 import type { RouteEntry } from "../route-entry";
 import { getMemberRoleAndUpdateCache$ } from "../services/auth.service";
-import { chatIndicators } from "../services/chat-thread.service";
-import {
-  cancelMcpRun$,
-  revokeQueuedMcpMessage$,
-} from "../services/mcp-chat-cancellation.service";
-import {
-  listMcpAgents$,
-  listMcpModels$,
-} from "../services/mcp-chat-discovery.service";
-import { getMcpChatMessages$ } from "../services/mcp-chat-messages.service";
-import { searchMcpChatMessages$ } from "../services/mcp-chat-search.service";
-import { sendMcpChatMessage$ } from "../services/mcp-chat-send.service";
-import { getMcpRunStatus$ } from "../services/mcp-run-status.service";
-import { getMcpChatInput$ } from "../services/mcp-chat-input.service";
-import { updateMcpChatThread$ } from "../services/mcp-chat-thread-update.service";
-import {
-  getMcpChatThread$,
-  listMcpChatThreads$,
-} from "../services/mcp-chat-threads.service";
 import { awaitWithSignal, settle } from "../utils";
+import { agentsRoutes } from "./agents";
+import { chatEventsRoutes } from "./chat-events";
+import { chatThreadRoutes } from "./chat-threads";
+import { runModelsRoutes } from "./run-models";
+import { runsCancelRoutes } from "./runs-cancel";
+
+// These are the production Web route entries, not an MCP business registry.
+const webContracts: ReadonlySet<AppRoute> = Object.freeze(
+  new Set([
+    agentsMainContract.list,
+    runModelsMainContract.list,
+    chatThreadsContract.snapshot,
+    chatThreadsContract.events,
+    chatThreadsContract.indicators,
+    chatThreadEventsContract.snapshot,
+    chatThreadEventsContract.rows,
+    chatSearchContract.search,
+    chatThreadActivitySummaryContract.summarize,
+    chatEventsContract.send,
+    chatThreadRenameContract.rename,
+    chatThreadModelSelectionContract.update,
+    runsCancelContract.cancel,
+  ]),
+);
+const webRoutes = [
+  ...agentsRoutes,
+  ...runModelsRoutes,
+  ...chatThreadRoutes,
+  ...chatEventsRoutes,
+  ...runsCancelRoutes,
+].filter((entry) => {
+  return webContracts.has(entry.route);
+});
 
 function unavailable() {
   return Response.json(
@@ -98,8 +122,7 @@ const mcpRequest$ = command(async ({ get, set }, rootSignal: AbortSignal) => {
   if (!authorization) {
     return challenge(config.metadataUrl);
   }
-  const match = /^Bearer ([^\s,]+)$/iu.exec(authorization);
-  const token = match?.[1];
+  const token = /^Bearer ([^\s,]+)$/iu.exec(authorization)?.[1];
   if (!token || token.length > 16 * 1024) {
     return challenge(config.metadataUrl, "invalid_token");
   }
@@ -113,7 +136,7 @@ const mcpRequest$ = command(async ({ get, set }, rootSignal: AbortSignal) => {
   if (!verified.value) {
     return challenge(config.metadataUrl, "invalid_token");
   }
-  const principal: McpPrincipal = { tokenType: "oauth", ...verified.value };
+  const principal = verified.value;
   if (
     !MCP_REQUIRED_SCOPES.every((scope) => {
       return principal.scopes.includes(scope);
@@ -136,111 +159,31 @@ const mcpRequest$ = command(async ({ get, set }, rootSignal: AbortSignal) => {
   if (membership.value.kind !== "member") {
     return challenge(config.metadataUrl, "invalid_token");
   }
-  const orgRole = membership.value.role;
-  set(setAuthContext$, { ...principal, orgRole });
-  return set(
-    serveAuthorizedMcp$,
+  return await serveMcpRequest(
+    new Request(original, { signal }),
     {
-      principal: { ...principal, orgRole },
-      request: new Request(original, { signal }),
+      scopes: principal.scopes,
+      requestWebApi: async (webRequest, operationSignal) => {
+        const headers = new Headers(webRequest.headers);
+        headers.set("Authorization", authorization);
+        for (const name of [VERCEL_PROTECTION_BYPASS_HEADER, "cookie"]) {
+          const value = original.headers.get(name);
+          if (value) {
+            headers.set(name, value);
+          }
+        }
+        // In-process HTTP dispatch still runs the production Web validation,
+        // scoped OAuth authentication, ownership checks and side effects.
+        const app = createAppWithRoutes({
+          routes: webRoutes,
+          signal: operationSignal,
+        });
+        return await app.fetch(new Request(webRequest, { headers }));
+      },
     },
     signal,
   );
 });
-
-const serveAuthorizedMcp$ = command(
-  (
-    { get, set },
-    {
-      principal,
-      request,
-    }: {
-      readonly principal: McpPrincipal & { readonly orgRole: ApiOrgRole };
-      readonly request: Request;
-    },
-    signal: AbortSignal,
-  ) => {
-    return serveMcpRequest(
-      request,
-      {
-        readScope: MCP_READ_SCOPE,
-        scopes: principal.scopes,
-        listAgents: (input, readSignal) => {
-          return set(listMcpAgents$, principal, input, readSignal);
-        },
-        listModels: (readSignal) => {
-          return set(listMcpModels$, principal, readSignal);
-        },
-        updateThread: (input, operationSignal) => {
-          return set(
-            updateMcpChatThread$,
-            { principal, input },
-            operationSignal,
-          );
-        },
-        getRunStatus: (input, readSignal) => {
-          return set(getMcpRunStatus$, principal, input, readSignal);
-        },
-        getInput: (input, readSignal) => {
-          return set(getMcpChatInput$, principal, input, readSignal);
-        },
-        sendMessage: (input, operationSignal) => {
-          return set(
-            sendMcpChatMessage$,
-            { principal, input },
-            operationSignal,
-          );
-        },
-        revokeQueuedMessage: (input, operationSignal) => {
-          return set(
-            revokeQueuedMcpMessage$,
-            { principal, input },
-            operationSignal,
-          );
-        },
-        cancelRun: (input, operationSignal) => {
-          return set(cancelMcpRun$, { principal, input }, operationSignal);
-        },
-        searchMessages: async (input, readSignal) => {
-          return await set(
-            searchMcpChatMessages$,
-            principal,
-            input,
-            readSignal,
-          );
-        },
-        getMessages: async (input, readSignal) => {
-          return await set(getMcpChatMessages$, principal, input, readSignal);
-        },
-        getIndicators: async (readSignal) => {
-          const data = await awaitWithSignal(
-            get(
-              chatIndicators({
-                userId: principal.userId,
-                orgId: principal.orgId,
-              }),
-            ),
-            readSignal,
-          );
-          return { kind: "ok" as const, data };
-        },
-        listThreads: async (input, readSignal) => {
-          return await awaitWithSignal(
-            set(listMcpChatThreads$, principal, input, readSignal),
-            readSignal,
-          );
-        },
-        getThread: async (input, readSignal) => {
-          return await awaitWithSignal(
-            set(getMcpChatThread$, principal, input, readSignal),
-            readSignal,
-          );
-        },
-      },
-      signal,
-    );
-  },
-);
 
 export const mcpServerRoutes: readonly RouteEntry[] = [
   { route: mcpServerContract.metadata, handler: metadata$ },

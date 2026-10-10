@@ -677,16 +677,6 @@
       "owner": "recordManagedUsage$"
     },
     {
-      "id": "TX-0180",
-      "file": "turbo/apps/api/src/signals/services/mcp-chat-message-history.service.ts",
-      "owner": "readHistorySnapshot$"
-    },
-    {
-      "id": "TX-0181",
-      "file": "turbo/apps/api/src/signals/services/mcp-chat-search-query.ts",
-      "owner": "mcpChatSearchCandidates$"
-    },
-    {
       "id": "TX-0183",
       "file": "turbo/apps/api/src/signals/services/member-memory-initialization.service.ts",
       "owner": "initializeMemberMemory$"

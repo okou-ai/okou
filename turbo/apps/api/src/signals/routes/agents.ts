@@ -893,7 +893,10 @@ export const agentsRoutes: readonly RouteEntry[] = [
   },
   {
     route: agentsMainContract.list,
-    handler: authRoute(agentReadAuth, agentListResponse$),
+    handler: authRoute(
+      { ...agentReadAuth, oauthScope: "okou:chat:read" },
+      agentListResponse$,
+    ),
   },
   {
     route: agentsByIdContract.get,

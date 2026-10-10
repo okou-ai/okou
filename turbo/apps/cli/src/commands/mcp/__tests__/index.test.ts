@@ -1242,6 +1242,50 @@ describe("okou mcp command", () => {
     ).toHaveLength(1);
   });
 
+  it("preserves Web API tool errors without lowercasing their codes", async () => {
+    const toolError = {
+      content: [
+        {
+          type: "text",
+          text: '{"error":{"code":"NOT_FOUND","message":"Chat thread not found"}}',
+        },
+      ],
+      structuredContent: {
+        error: { code: "NOT_FOUND", message: "Chat thread not found" },
+      },
+      isError: true,
+    } satisfies CallToolResult;
+    stubConnectorList();
+    stubMcpServer({
+      era: "modern",
+      pages: [[{ name: "get_chat_messages", inputSchema: { type: "object" } }]],
+      callResult: toolError,
+    });
+    await mcpCommand.parseAsync([
+      "node",
+      "okou",
+      "call",
+      "_acme-mcp",
+      "get_chat_messages",
+      "--input",
+      "{}",
+      "--json",
+    ]);
+    expect(consoleLog).toHaveBeenCalledWith(
+      JSON.stringify({
+        status: "error",
+        error: {
+          kind: "tool",
+          message: toolError.structuredContent.error.message,
+          code: toolError.structuredContent.error.code,
+          retryable: false,
+        },
+        result: toolError,
+      }),
+    );
+    expect(process.exitCode).toBe(1);
+  });
+
   it("distinguishes protocol errors in JSON", async () => {
     stubConnectorList();
     const seen = stubMcpServer({
