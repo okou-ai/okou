@@ -44,12 +44,23 @@ public actor HostRuntime {
   private struct Connection: Sendable {
     let hostId: String
     let generation: Int
+    init?(registration: ComputerUseHostRegistration) {
+      guard UUID(uuidString: registration.hostId) != nil, registration.connectionGeneration > 0
+      else { return nil }
+      hostId = registration.hostId
+      generation = registration.connectionGeneration
+    }
     func body(_ value: JSONValue) -> JSONValue {
       guard case .object(var fields) = value else { return value }
       fields["connectionGeneration"] = .number(Double(generation))
       return .object(fields)
     }
-    func path(_ suffix: String) -> String { "api/computer-use/hosts/\(hostId)/\(suffix)" }
+    var heartbeat: ApiRoute { ApiRoutes.computerUseHostHeartbeat(hostId: hostId) }
+    var stop: ApiRoute { ApiRoutes.computerUseHostStop(hostId: hostId) }
+    var nextCommand: ApiRoute { ApiRoutes.computerUseHostCommandNext(hostId: hostId) }
+    func complete(commandId: String) -> ApiRoute {
+      ApiRoutes.computerUseHostCommandComplete(hostId: hostId, commandId: commandId)
+    }
   }
   private var connection: Connection?
   private var heartbeatTask: Task<Void, Never>?
@@ -91,20 +102,16 @@ public actor HostRuntime {
       "supportedCapabilities": .strings(CommandExecutor.capabilities), "permissions": permissions,
     ])
   }
-  private func parsedConnection(_ body: JSONValue) -> Connection? {
-    guard let id = body["hostId"].string, UUID(uuidString: id) != nil,
-      let number = body["connectionGeneration"].number,
-      let revision = Int(exactly: number), revision > 0
-    else { return nil }
-    return Connection(hostId: id, generation: revision)
+  private func parsedConnection(_ response: APIResponse) -> Connection? {
+    (try? response.decode(ComputerUseHostRegistration.self)).flatMap(Connection.init(registration:))
   }
   private func request(
-    _ path: String, connection: Connection, body: JSONValue, timeout: TimeInterval,
+    _ route: ApiRoute, connection: Connection, body: JSONValue, timeout: TimeInterval,
     generation current: Int
   ) async throws -> APIResponse {
     let provider = tokenProvider
     return try await api.authenticatedRequest(
-      path, body: connection.body(body), timeout: timeout,
+      route, body: connection.body(body), timeout: timeout,
       tokenProvider: { forceRefresh in
         let token = try await provider(forceRefresh)
         try await self.checkGeneration(current)
@@ -148,11 +155,11 @@ public actor HostRuntime {
   }
   private func register(generation current: Int) async throws {
     let response = try await api.authenticatedRequest(
-      "api/computer-use/hosts/register", body: body(), timeout: 10, tokenProvider: tokenProvider)
+      ApiRoutes.computerUseHostRegister, body: body(), timeout: 10, tokenProvider: tokenProvider)
     guard running, current == generation else {
-      if let lateConnection = parsedConnection(response.body) {
+      if let lateConnection = parsedConnection(response) {
         _ = try? await api.authenticatedRequest(
-          lateConnection.path("stop"), body: lateConnection.body(.object([:])),
+          lateConnection.stop, body: lateConnection.body(.object([:])),
           timeout: 5, tokenProvider: tokenProvider)
       }
       return
@@ -178,19 +185,18 @@ public actor HostRuntime {
       throw DesktopFailure(
         "network_error", "Unable to register Computer Use host (HTTP \(response.status))")
     }
-    guard let connection = parsedConnection(response.body) else {
+    let registration = try response.decode(ComputerUseHostRegistration.self)
+    guard let connection = Connection(registration: registration) else {
       throw DesktopFailure("invalid_response", "Host registration response is missing its identity")
     }
     self.connection = connection
-    guard let channelName = response.body["commandNotifications"]["channelName"].string,
-      !channelName.isEmpty,
-      let eventName = response.body["commandNotifications"]["eventName"].string,
-      !eventName.isEmpty
+    guard let notifications = registration.commandNotifications,
+      !notifications.channelName.isEmpty, !notifications.eventName.isEmpty
     else {
       // A new Desktop cannot operate against a pre-notification API. Retire
       // the registered connection instead of leaving an online, inactive host.
       _ = try? await api.authenticatedRequest(
-        connection.path("stop"), body: connection.body(.object([:])), timeout: 5,
+        connection.stop, body: connection.body(.object([:])), timeout: 5,
         tokenProvider: tokenProvider)
       self.connection = nil
       running = false
@@ -210,7 +216,7 @@ public actor HostRuntime {
     guard running, acceptingCommands, generation == current else { return }
     heartbeatTask = Task { await self.heartbeatLoop(generation: current, connection: connection) }
     let subscription = CommandNotificationSubscription(
-      channelName: channelName, eventName: eventName)
+      channelName: notifications.channelName, eventName: notifications.eventName)
     notificationTask = Task {
       await self.notificationLoop(
         subscription: subscription, generation: current, connection: connection)
@@ -254,7 +260,7 @@ public actor HostRuntime {
     if let connection {
       do {
         let response = try await api.authenticatedRequest(
-          connection.path("stop"), body: connection.body(.object([:])), timeout: 5,
+          connection.stop, body: connection.body(.object([:])), timeout: 5,
           tokenProvider: tokenProvider)
         if response.status != 401 && !(200..<300).contains(response.status) {
           throw DesktopFailure("network_error", "Unable to stop host (HTTP \(response.status))")
@@ -288,16 +294,14 @@ public actor HostRuntime {
         try Task.checkCancellation()
         guard running, generation == current else { return }
         let response = try await request(
-          connection.path("heartbeat"), connection: connection, body: body(), timeout: 10,
+          connection.heartbeat, connection: connection, body: body(), timeout: 10,
           generation: current)
         guard running, generation == current else { return }
         if await rejectAuthority(response) { return }
         guard (200..<300).contains(response.status) else {
           throw DesktopFailure("network_error", "Heartbeat failed (HTTP \(response.status))")
         }
-        guard let hasPendingCommands = response.body["hasPendingCommands"].bool else {
-          throw DesktopFailure("invalid_response", "Heartbeat is missing its pending-command hint")
-        }
+        let heartbeat = try response.decode(ComputerUseHostHeartbeat.self)
         state.lastHeartbeat = Date()
         if acceptingCommands { state.status = "online" }
         state.lastError = nil
@@ -305,7 +309,7 @@ public actor HostRuntime {
         state.recoveryAttempt = 0
         attempt = 0
         wait = 15
-        if hasPendingCommands {
+        if heartbeat.hasPendingCommands {
           requestCommandRefresh(generation: current, connection: connection)
         }
         await publish()
@@ -353,7 +357,8 @@ public actor HostRuntime {
   }
   private func recordUpgradeRequirement(_ response: APIResponse) {
     state.updateRequired = true
-    state.minimumSupportedVersion = response.body["minimumSupportedVersion"].string
+    state.minimumSupportedVersion =
+      (try? response.decode(DesktopUpgradeRequired.self))?.minimumSupportedVersion
     state.lastError = "This version of Okou must be updated."
   }
   private func stopNotifications() async {
@@ -377,7 +382,7 @@ public actor HostRuntime {
         subscription: subscription,
         tokenProvider: {
           let response = try await api.authenticatedRequest(
-            "api/realtime/token", body: .object([:]), timeout: 10,
+            ApiRoutes.platformRealtimeToken, body: .object([:]), timeout: 10,
             tokenProvider: { forceRefresh in
               let token = try await provider(forceRefresh)
               try await self.checkGeneration(current)
@@ -422,30 +427,28 @@ public actor HostRuntime {
         pendingRefresh = false
         let claimStarted = ContinuousClock.now
         let response = try await request(
-          connection.path("commands/next"), connection: connection,
+          connection.nextCommand, connection: connection,
           body: .object(["supportedCapabilities": .strings(CommandExecutor.capabilities)]),
           timeout: 5, generation: current)
         if await rejectAuthority(response) { return }
         guard (200..<300).contains(response.status) else {
           throw DesktopFailure("network_error", "Command claim failed (HTTP \(response.status))")
         }
-        let body = response.body
-        if body["status"].string == "command" {
-          let command = body["command"]
-          guard let id = command["id"].string, let kind = command["kind"].string else {
-            throw DesktopFailure("invalid_response", "Invalid command claim")
-          }
+        switch try response.decode(ComputerUseCommandClaim.self) {
+        case .command(let command):
           // A late successful claim still owns a completion report,
           // even when logout/stop retired its local execution grant.
           var result: JSONValue
           if running && acceptingCommands && generation == current {
             state.commands.insert(
-              CommandLog(id: id, kind: kind, payload: command["payload"], startedAt: Date()), at: 0)
+              CommandLog(
+                id: command.id, kind: command.kind.rawValue, payload: .object(command.payload),
+                startedAt: Date()), at: 0)
             state.commands = Array(state.commands.prefix(100))
             state.lastCommand = Date()
             await publish()
             result = await executor.execute(command, claimStarted: claimStarted)
-            if let index = state.commands.firstIndex(where: { $0.id == id }) {
+            if let index = state.commands.firstIndex(where: { $0.id == command.id }) {
               state.commands[index].response = result
               state.commands[index].completedAt = Date()
             }
@@ -457,14 +460,12 @@ public actor HostRuntime {
                 "command_timeout", "Host stopped before dispatch; no action was started"
               ).response
           }
-          try await complete(id: id, connection: connection, result: result)
-        } else if body["status"].string == "idle" {
+          try await complete(id: command.id, connection: connection, result: result)
+        case .idle:
           commandRecoveryAttempt = 0
           // No await between checking the sticky flag and retiring this task:
           // a later actor callback observes nil and starts the next drain.
           if !pendingRefresh { return }
-        } else {
-          throw DesktopFailure("invalid_response", "Unknown command poll response")
         }
         guard running, acceptingCommands, generation == current else { return }
         commandRecoveryAttempt = 0
@@ -500,10 +501,14 @@ public actor HostRuntime {
       guard remaining > 0 else { break }
       do {
         let response = try await api.authenticatedRequest(
-          connection.path("commands/\(id)/complete"), body: connection.body(result),
+          connection.complete(commandId: id), body: connection.body(result),
           timeout: remaining, tokenProvider: tokenProvider)
         if (200..<300).contains(response.status) { return }
-        if response.status == 409 && response.body["error"]["code"].string == "CONFLICT" { return }
+        if response.status == 409,
+          (try? response.decode(ApiError.self))?.error.code == ApiConstants.apiErrorCodeConflict
+        {
+          return
+        }
         if await rejectAuthority(response) {
           throw DesktopFailure(
             "result_unconfirmed",

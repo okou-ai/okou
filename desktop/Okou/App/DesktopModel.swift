@@ -185,7 +185,7 @@ final class DesktopModel: ObservableObject {
       defer { compatibilityChecking = false }
       do {
         let revision = compatibilityRevision
-        let response = try await api.request("api/desktop/compatibility", timeout: 10)
+        let response = try await api.request(ApiRoutes.desktopCompatibility, timeout: 10)
         try Task.checkCancellation()
         guard compatibilityRevision == revision else { return }
         let wasRequired = compatibility.required
@@ -240,9 +240,11 @@ final class DesktopModel: ObservableObject {
   }
   func stopForUpdate() async { await host.stop() }
   func downloadLatest() {
-    NSWorkspace.shared.open(
-      configuration.apiURL.appendingPathComponent(
-        "api/desktop/updates/ai-okou-desktop/stable/darwin/arm64/dmg"))
+    let route = ApiRoutes.desktopProductDmgDownload(
+      product: ApiConstants.desktopUpdateLineOkou, channel: "stable", platform: "darwin",
+      arch: "arm64")
+    guard let url = try? APIClient.url(for: route, baseURL: configuration.apiURL) else { return }
+    NSWorkspace.shared.open(url)
   }
   private func sessionToken(forceRefresh: Bool) async throws -> String {
     let expected = identityGeneration
@@ -277,54 +279,53 @@ final class DesktopModel: ObservableObject {
       await clearIdentity(expected: expected)
       return
     }
-    let me = try await api.request("api/auth/me", token: token)
+    let me = try await api.request(ApiRoutes.authMe, token: token)
     try checkIdentityGeneration(expected)
     if me.status == 401 {
       await clearIdentity(expected: expected)
       return
     }
-    guard me.status == 200, let userId = me.body["userId"].string else {
+    guard me.status == 200, let user = try? me.decode(AuthenticatedUser.self) else {
       throw DesktopFailure(
         "authentication_unavailable", "Unable to verify Desktop account (HTTP \(me.status))")
     }
-    let orgId = me.body["orgId"].string
-    let currentIdentity = "\(userId):\(orgId ?? ""): \(me.body["sessionId"].string ?? "")"
+    let userId = user.userId
+    let orgId = user.orgId
+    let currentIdentity = "\(userId):\(orgId ?? ""): \(user.sessionId ?? "")"
     if let identity, identity != currentIdentity { await host.stop() }
     var orgName: String?
     if let orgId {
-      let org = try await api.request("api/org", token: token)
+      let org = try await api.request(ApiRoutes.org, token: token)
       try checkIdentityGeneration(expected)
       if org.status == 401 || org.status == 404 {
         await clearIdentity(expected: expected)
         return
       }
-      guard org.status == 200, org.body["id"].string == orgId, let name = org.body["name"].string
+      guard org.status == 200, let workspace = try? org.decode(Organization.self),
+        workspace.id == orgId
       else {
         throw DesktopFailure("authentication_unavailable", "Unable to verify Desktop workspace")
       }
-      orgName = name
+      orgName = workspace.name
     }
     try checkIdentityGeneration(expected)
     guard Clerk.shared.user?.id == userId,
-      Clerk.shared.session?.id == me.body["sessionId"].string,
+      Clerk.shared.session?.id == user.sessionId,
       Clerk.shared.session?.lastActiveOrganizationId == orgId
     else { throw CancellationError() }
     identity = currentIdentity
     verifiedUserId = userId
     verifiedOrganizationId = orgId
-    verifiedSessionId = me.body["sessionId"].string
+    verifiedSessionId = user.sessionId
     signedIn = true
-    email = me.body["email"].string ?? "Signed in"
+    email = user.email
     organizationID = orgId
     organization = orgName
-    let switches = try await api.request("api/feature-switches", token: token)
+    let switches = try await api.request(ApiRoutes.featureSwitches, token: token)
     try checkIdentityGeneration(expected)
-    if switches.status == 200 {
-      developerToolsAvailable =
-        switches.body["effectiveSwitches"]["_debug"].bool == true
-    } else {
-      developerToolsAvailable = false
-    }
+    developerToolsAvailable =
+      switches.status == 200
+      && (try? switches.decode(FeatureSwitches.self))?.effectiveSwitches["_debug"] == true
     if !developerToolsAvailable { developerToolsEnabled = false }
     didChange?()
   }

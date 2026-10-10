@@ -21,11 +21,12 @@
     "build:runtime-api-schema": "tsx src/runtime-api-schema/cli.ts build",
     "generate:python": "tsx src/python-bindings/generate.ts",
     "generate:rust": "tsx src/rust-bindings/generate.ts",
+    "generate:swift": "tsx src/swift-bindings/generate.ts",
     "lint-runtime-api-compat": "tsx src/runtime-api-schema/cli.ts lint",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "oxlint && oxlint --type-aware -c ../../.oxlintrc.typeaware.json && eslint . --max-warnings 0",
-    "check-types": "tsc -p tsconfig.contracts.json --noEmit && tsc -p tsconfig.python-bindings.json --noEmit && tsc -p tsconfig.rust-bindings.json --noEmit && tsc -p tsconfig.runtime-api-schema.json --noEmit"
+    "check-types": "tsc -p tsconfig.contracts.json --noEmit && tsc -p tsconfig.python-bindings.json --noEmit && tsc -p tsconfig.rust-bindings.json --noEmit && tsc -p tsconfig.runtime-api-schema.json --noEmit && tsc -p tsconfig.swift-bindings.json --noEmit"
   },
   "dependencies": {
     "@okouai/connectors": "workspace:*",
