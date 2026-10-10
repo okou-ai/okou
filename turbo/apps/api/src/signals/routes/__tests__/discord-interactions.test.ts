@@ -68,8 +68,7 @@ function command(name: string) {
     data: {
       id: "1464000000000000005",
       type: 1,
-      name: "okou",
-      options: [{ type: 1, name }],
+      name,
     },
   };
 }
@@ -158,7 +157,7 @@ describe("Discord private account interactions", () => {
     const request = signedRequest(command("help"));
     await accept(client().post(request), [202]);
     const message = await replies.delivered;
-    expect(message.content).toContain("/okou disconnect");
+    expect(message.content).toContain("/disconnect");
     expect(message.content).toContain("[Works](https://app.okou.ai/works)");
     expect(message.content).toContain("official Discord browser consent");
     await accept(client().post(request), [202]);
@@ -170,16 +169,21 @@ describe("Discord private account interactions", () => {
     expect(replies.messages[0]?.allowed_mentions.parse).toStrictEqual([]);
   });
 
-  it("gives an unbound sender honest setup guidance without pretending to connect", async () => {
-    const replies = privateResponses();
-    await accept(client().post(signedRequest(command("connect"))), [202]);
-    const message = await replies.delivered;
-    expect(message.content).toContain("[Works](https://app.okou.ai/works)");
-    expect(message.content).toContain("sign in to Okou");
-    expect(message.content).toContain("ask an organization admin");
-    expect(message.content).toContain("does not connect or verify an account");
-    expect(message.components).toStrictEqual([]);
-  });
+  it.each(["connect", "disconnect", "switch", "model"])(
+    "gives an unbound sender setup guidance for /%s",
+    async (name) => {
+      const replies = privateResponses();
+      await accept(client().post(signedRequest(command(name))), [202]);
+      const message = await replies.delivered;
+      expect(message.content).toContain("[Works](https://app.okou.ai/works)");
+      expect(message.content).toContain("sign in to Okou");
+      expect(message.content).toContain("ask an organization admin");
+      expect(message.content).toContain(
+        "does not connect or verify an account",
+      );
+      expect(message.components).toStrictEqual([]);
+    },
+  );
 
   it("rejects a forged picker without reading or changing another account", async () => {
     const replies = privateResponses();
@@ -281,7 +285,7 @@ describe("Discord private account interactions", () => {
       expect(result.status).toBe(202);
       const message = await replies.delivered;
       expect(message.content).toContain("no changes were made");
-      expect(message.content).not.toContain("/okou disconnect");
+      expect(message.content).not.toContain("/disconnect");
       expect(message.components).toStrictEqual([]);
       expect(replies.messages).toHaveLength(1);
     },
