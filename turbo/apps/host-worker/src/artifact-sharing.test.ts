@@ -14,6 +14,7 @@ import {
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { type ArtifactSharePolicy } from "@okouai/api-contracts/contracts/artifact-shares";
+import { ARTIFACT_OG_BRAND } from "@okouai/core/artifact-og";
 import worker from "./index";
 import { fetchWorker, memoryCache } from "./test-helpers";
 
@@ -192,42 +193,50 @@ afterEach(() => {
   server.resetHandlers();
 });
 
-test("preserves HTML attachment bytes on fresh and cached reads when OG is enabled", async () => {
-  const f = fixture(false, "html");
-  if (f.policy.target.kind !== "file") {
-    throw new Error("Expected a file fixture");
-  }
-  f.policy.target.contentType = "text/html";
-  const html =
-    '<!doctype html><html><head><title>Original report</title><meta property="og:image" content="cover.png"></head><body>Downloaded report</body></html>';
-  f.objects.set(policyKey, JSON.stringify(f.policy));
-  f.objects.set(f.policy.target.key, html);
-  server.use(
-    http.get("https://authority.test/api/artifact-og/metadata", () => {
-      return HttpResponse.json({
-        available: true,
-        title: "Published report",
-        description: "Public summary",
-        imageUrl: "https://authority.test/api/artifact-og/image?version=one",
-        url: siteOrigin,
-      });
-    }),
-  );
-  const env = { ...f.env, ARTIFACT_OG_API_ORIGIN: "https://authority.test" };
-  for (let read = 0; read < 2; read += 1) {
-    const response = await fetchWorker(
-      new Request(`https://a.okou.io/${publicToken}.html`),
-      env,
+test.each([true, false])(
+  "preserves HTML attachment bytes on fresh and cached reads with previews enabled=%s",
+  async (enabled) => {
+    const f = fixture(false, "html");
+    if (f.policy.target.kind !== "file") {
+      throw new Error("Expected a file fixture");
+    }
+    f.policy.target.contentType = "text/html";
+    const html =
+      '<!doctype html><html><head><title>Original report</title><meta property="og:image" content="cover.png"></head><body>Downloaded report</body></html>';
+    f.objects.set(policyKey, JSON.stringify(f.policy));
+    f.objects.set(f.policy.target.key, html);
+    server.use(
+      http.get("https://authority.test/api/artifact-og/metadata", () => {
+        return HttpResponse.json(
+          enabled
+            ? {
+                available: true,
+                title: "Published report",
+                description: "Public summary",
+                imageUrl:
+                  "https://authority.test/api/artifact-og/image?version=one",
+                url: siteOrigin,
+              }
+            : { available: false },
+        );
+      }),
     );
-    expect(response.status).toBe(200);
-    expect(response.headers.get("Content-Disposition")).toBe(
-      "attachment; filename*=UTF-8''report.html",
-    );
-    expect(await response.text()).toBe(html);
-    expect(response.headers.get("Content-Length")).toBe(String(html.length));
-    expect(response.headers.get("ETag")).toBe('"file"');
-  }
-});
+    const env = { ...f.env, ARTIFACT_OG_API_ORIGIN: "https://authority.test" };
+    for (let read = 0; read < 2; read += 1) {
+      const response = await fetchWorker(
+        new Request(`https://a.okou.io/${publicToken}.html`),
+        env,
+      );
+      expect(response.status).toBe(200);
+      expect(response.headers.get("Content-Disposition")).toBe(
+        "attachment; filename*=UTF-8''report.html",
+      );
+      expect(await response.text()).toBe(html);
+      expect(response.headers.get("Content-Length")).toBe(String(html.length));
+      expect(response.headers.get("ETag")).toBe('"file"');
+    }
+  },
+);
 
 test("rechecks OG metadata on cached HTML and denies revoked shares before reading the cache", async () => {
   const f = fixture(true);
@@ -268,7 +277,9 @@ test("rechecks OG metadata on cached HTML and denies revoked shares before readi
   const second = await fetchWorker(new Request(siteOrigin), env);
   expect(second.status).toBe(200);
   expect(second.headers.get("Content-Type")).toBe("text/html");
-  expect(await second.text()).not.toContain('property="og:image"');
+  expect(await second.text()).toContain(
+    `property="og:image" content="${ARTIFACT_OG_BRAND.imageUrl}"`,
+  );
   expect(f.cache.match.mock.calls.length).toBeGreaterThan(cachedReads);
   expect(lookups).toBe(2);
   f.policy.status = "revoked";
@@ -311,7 +322,16 @@ test("rechecks the preview switch for relative images on cached HTML and denies 
   }
   enabled = false;
   const disabled = await fetchWorker(new Request(siteOrigin), env);
-  expect(await disabled.text()).toBe(original);
+  const html = await disabled.text();
+  expect(html).toContain(
+    `property="og:image" content="${ARTIFACT_OG_BRAND.imageUrl}"`,
+  );
+  expect(html).toContain(
+    `name="twitter:image" content="${ARTIFACT_OG_BRAND.imageUrl}"`,
+  );
+  expect(html).toContain("<body>Report</body>");
+  expect(disabled.headers.get("ETag")).toBeNull();
+  expect(disabled.headers.get("Cache-Control")).toBe("private, no-store");
   f.policy.status = "revoked";
   f.objects.set(policyKey, JSON.stringify(f.policy));
   expect((await fetchWorker(new Request(siteOrigin), env)).status).toBe(404);

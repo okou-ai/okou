@@ -5,7 +5,6 @@ import sharp from "sharp";
 import {
   artifactHtmlMetadata,
   GENERIC_ARTIFACT_DESCRIPTION,
-  GENERIC_ARTIFACT_TITLE,
 } from "@okouai/core/artifact-og";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -18,6 +17,7 @@ import { env } from "../../lib/env";
 import { apiBackendUrl } from "../../lib/api-backend-url";
 import { db$ } from "../external/db";
 import {
+  downloadHostedSitesS3Buffer,
   downloadS3BufferWithMaxBytes,
   isS3NotFoundError,
   S3ObjectSizeLimitError,
@@ -334,10 +334,10 @@ export const artifactOgMetadata$ = command(
       ? artifactHtmlMetadata(
           (
             await get(
-              downloadS3BufferWithMaxBytes(
+              downloadHostedSitesS3Buffer(
                 source.html.bucket,
                 source.html.key,
-                4 * 1024 * 1024,
+                { maxBytes: 4 * 1024 * 1024 },
                 signal,
               ),
             )
@@ -363,22 +363,16 @@ export const artifactOgMetadata$ = command(
   },
 );
 
-const DEFAULT_COVER = `<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="800"><rect width="1280" height="800" fill="#f5f5f2"/><rect x="552" y="216" width="176" height="176" rx="32" fill="#e5e5df"/><path d="M604 284h72m-72 24h72m-72 24h48" stroke="#66665e" stroke-width="8" stroke-linecap="round"/><text x="640" y="476" text-anchor="middle" font-family="sans-serif" font-size="42" fill="#292925">${GENERIC_ARTIFACT_TITLE}</text><text x="640" y="530" text-anchor="middle" font-family="sans-serif" font-size="26" fill="#66665e">${GENERIC_ARTIFACT_DESCRIPTION}</text></svg>`;
-
-export function defaultArtifactOgImage(): Promise<Buffer> {
-  return sharp(Buffer.from(DEFAULT_COVER)).png().toBuffer();
-}
-
 export const artifactOgImage$ = command(
   async (
     { get, set },
     target: ArtifactOgTarget,
     version: string,
     signal: AbortSignal,
-  ): Promise<Buffer> => {
+  ): Promise<Buffer | null> => {
     const source = await set(authorizedOgSource$, target, signal);
     if (!source?.image || source.version !== version) {
-      return defaultArtifactOgImage();
+      return null;
     }
     const downloaded = await settle(
       get(
@@ -397,7 +391,7 @@ export const artifactOgImage$ = command(
         isS3NotFoundError(downloaded.error) ||
         downloaded.error instanceof S3ObjectSizeLimitError
       ) {
-        return defaultArtifactOgImage();
+        return null;
       }
       throw downloaded.error;
     }
@@ -412,12 +406,10 @@ export const artifactOgImage$ = command(
       !["png", "jpeg", "webp"].includes(metadata.format) ||
       (metadata.pages ?? 1) !== 1
     ) {
-      return defaultArtifactOgImage();
+      return null;
     }
     const normalized = await image.rotate().png().toBuffer();
     signal.throwIfAborted();
-    return normalized.length <= 5 * 1024 * 1024
-      ? normalized
-      : await defaultArtifactOgImage();
+    return normalized.length <= 5 * 1024 * 1024 ? normalized : null;
   },
 );

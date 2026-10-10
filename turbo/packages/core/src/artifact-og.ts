@@ -8,7 +8,12 @@ export interface ArtifactOgMetadata {
   readonly url: string;
 }
 
-export const GENERIC_ARTIFACT_TITLE = "Shared artifact";
+export const ARTIFACT_OG_BRAND = {
+  title: "Okou",
+  description: "Okou, your team's shared AI teammate.",
+  imageUrl: "https://static.okou.io/web/okou-og-image-373c892e.png",
+} as const;
+
 export const GENERIC_ARTIFACT_DESCRIPTION =
   "Open in Okou to view this artifact.";
 

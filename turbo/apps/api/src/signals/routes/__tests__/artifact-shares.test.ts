@@ -22,6 +22,7 @@ import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { ARTIFACT_OG_BRAND } from "@okouai/core/artifact-og";
 import sharp from "sharp";
 import { artifactOgContract } from "@okouai/api-contracts/contracts/artifact-og";
 import { artifactOgRoutes } from "../artifact-og";
@@ -2064,9 +2065,8 @@ test("oG checks anonymous sharing again for old image URLs after a public share 
   await expect(
     sharp(Buffer.from(await image.body.arrayBuffer())).metadata(),
   ).resolves.toMatchObject({ width: 32, height: 20 });
-  const generic = Buffer.from(
-    await (await accept(og.defaultImage(), [200])).body.arrayBuffer(),
-  );
+  const brand = await accept(og.defaultImage(), [302]);
+  expect(brand.headers.get("location")).toBe(ARTIFACT_OG_BRAND.imageUrl);
   await accept(
     api()(featureSwitchesContract).update({
       headers,
@@ -2087,8 +2087,8 @@ test("oG checks anonymous sharing again for old image URLs after a public share 
   expect((await accept(og.metadata({ query }), [200])).body).toStrictEqual({
     available: false,
   });
-  const disabled = await accept(og.image({ query: imageQuery }), [200]);
-  expect(Buffer.from(await disabled.body.arrayBuffer())).toStrictEqual(generic);
+  const disabled = await accept(og.image({ query: imageQuery }), [302]);
+  expect(disabled.headers.get("location")).toBe(ARTIFACT_OG_BRAND.imageUrl);
   context.mocks.s3.send.mockImplementation(workingStorage);
   await accept(
     api()(featureSwitchesContract).update({
@@ -2108,8 +2108,8 @@ test("oG checks anonymous sharing again for old image URLs after a public share 
     expect((await accept(og.metadata({ query }), [200])).body).toStrictEqual({
       available: false,
     });
-    const denied = await accept(og.image({ query: imageQuery }), [200]);
-    expect(Buffer.from(await denied.body.arrayBuffer())).toStrictEqual(generic);
+    const denied = await accept(og.image({ query: imageQuery }), [302]);
+    expect(denied.headers.get("location")).toBe(ARTIFACT_OG_BRAND.imageUrl);
     expect(denied.headers.get("cache-control")).toBe("private, no-store");
   }
   await accept(
@@ -2119,11 +2119,6 @@ test("oG checks anonymous sharing again for old image URLs after a public share 
     }),
     [200],
   );
-  expect(
-    Buffer.from(
-      await (
-        await accept(og.image({ query: imageQuery }), [200])
-      ).body.arrayBuffer(),
-    ),
-  ).toStrictEqual(generic);
+  const stale = await accept(og.image({ query: imageQuery }), [302]);
+  expect(stale.headers.get("location")).toBe(ARTIFACT_OG_BRAND.imageUrl);
 });
