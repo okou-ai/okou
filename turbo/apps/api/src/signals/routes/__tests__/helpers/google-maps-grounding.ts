@@ -3,15 +3,18 @@ import { HttpResponse } from "msw";
 import { mockGoogleLlm } from "./google-voice";
 
 export const VERTEX_MAPS_URL =
-  /^https:\/\/aiplatform\.googleapis\.com\/v1beta1\/projects\/[^/]+\/locations\/global\/interactions:create$/u;
+  /^https:\/\/aiplatform\.googleapis\.com\/v1beta1\/projects\/[^/]+\/locations\/global\/interactions$/u;
 
 interface PlaceCitation {
-  readonly placeCitation: { readonly name: string; readonly url: string };
-  readonly startIndex?: number;
-  readonly endIndex?: number;
+  readonly type: "place_citation";
+  readonly name: string;
+  readonly url: string;
+  readonly start_index?: number;
+  readonly end_index?: number;
 }
 
 interface TextContent {
+  readonly type: "text";
   readonly text: string;
   readonly annotations?: readonly PlaceCitation[];
 }
@@ -29,76 +32,66 @@ interface VertexMapsResponseOptions {
 export function vertexMapsInteraction(options: VertexMapsResponseOptions = {}) {
   const answer = options.answer ?? "Café Central is open nearby.";
   const mapsQueries = options.mapsQueries ?? 1;
-  const content = options.content ?? [
-    {
-      text: answer,
-      annotations:
-        mapsQueries === 0
-          ? []
-          : [
-              {
-                placeCitation: {
-                  name: "Café Central",
-                  url: "https://maps.google.com/?cid=123",
-                },
-                startIndex: 0,
-                endIndex: Buffer.byteLength(answer),
-              },
-            ],
-    },
-  ];
   return {
     id: "maps-interaction",
-    modelInteraction: { model: "gemini-3.5-flash-lite" },
-    status: "COMPLETED",
+    model: "gemini-3.5-flash-lite",
+    status: "completed",
     steps: [
-      { thought: { signature: "private-reasoning-signature" } },
+      { type: "thought", signature: "private-reasoning-signature" },
       ...(mapsQueries === 0
         ? []
         : [
             {
-              toolCall: {
-                id: "maps-call",
-                googleMapsCall: {
-                  arguments: { queries: ["coffee in Vienna"] },
-                },
-              },
+              type: "google_maps_call",
+              id: "maps-call",
+              arguments: { queries: ["coffee in Vienna"] },
             },
             {
-              toolResult: {
-                callId: "maps-call",
-                googleMapsResult: {
-                  result: [
+              type: "google_maps_result",
+              call_id: "maps-call",
+              result: [
+                {
+                  places: [
                     {
-                      places: [
-                        {
-                          name: "Café Central",
-                          url: "https://maps.google.com/?cid=123",
-                          placeId: "places/123",
-                        },
-                      ],
+                      name: "Café Central",
+                      url: "https://maps.google.com/?cid=123",
+                      place_id: "places/123",
                     },
                   ],
                 },
-              },
+              ],
             },
           ]),
       {
-        modelOutput: {
-          content: content.map((text) => {
-            return { text };
-          }),
-        },
+        type: "model_output",
+        content: options.content ?? [
+          {
+            type: "text",
+            text: answer,
+            annotations:
+              mapsQueries === 0
+                ? []
+                : [
+                    {
+                      type: "place_citation",
+                      name: "Café Central",
+                      url: "https://maps.google.com/?cid=123",
+                      start_index: 0,
+                      end_index: Buffer.byteLength(answer),
+                    },
+                  ],
+          },
+        ],
       },
     ],
     usage: {
-      totalInputTokens: options.inputTokens ?? 100,
-      totalCachedTokens: options.cachedInputTokens ?? 0,
-      totalOutputTokens: options.outputTokens ?? 40,
-      totalThoughtTokens: options.thoughtTokens ?? 10,
+      total_input_tokens: options.inputTokens ?? 100,
+      total_cached_tokens: options.cachedInputTokens ?? 0,
+      total_output_tokens: options.outputTokens ?? 40,
+      total_thought_tokens: options.thoughtTokens ?? 10,
       // Maps-provided tool input is reported separately and is not billable.
-      totalToolUseTokens: 999,
-      groundingToolCount: [{ type: "GOOGLE_MAPS", count: mapsQueries }],
+      total_tool_use_tokens: 999,
+      grounding_tool_count: [{ type: "google_maps", count: mapsQueries }],
     },
   };
 }

@@ -11,7 +11,12 @@ import {
 import { z } from "zod";
 
 import { logger } from "../../lib/log";
-import { onRejection, readBoundedResponseText, safeJsonParse } from "../utils";
+import {
+  onRejection,
+  readBoundedResponseText,
+  safeJsonParse,
+  startUntrackedBestEffortCleanup,
+} from "../utils";
 import { gcpLlmAccessToken, gcpLlmConfiguration } from "./gcp-llm-auth";
 import {
   gcpLlmTransportReason,
@@ -22,6 +27,7 @@ const L = logger("VertexMaps");
 export const VERTEX_MAPS_MODEL = "gemini-3.5-flash-lite";
 export const VERTEX_MAPS_PROVIDER = "google-maps-grounding";
 const LOCATION = "global";
+const INTERACTIONS_API_REVISION = "2026-05-20";
 const PROVIDER_TIMEOUT_MS = 30_000;
 const MAX_PROVIDER_RESPONSE_BYTES = 512 * 1024;
 
@@ -36,11 +42,14 @@ const MAPS_SYSTEM_INSTRUCTION = [
 
 const tokenCountSchema = z.number().int().nonnegative().safe();
 const placeCitationSchema = z.object({
-  placeCitation: z.object({ name: z.string(), url: z.string() }),
-  startIndex: tokenCountSchema.optional(),
-  endIndex: tokenCountSchema.optional(),
+  type: z.literal("place_citation"),
+  name: z.string(),
+  url: z.string(),
+  start_index: tokenCountSchema.optional(),
+  end_index: tokenCountSchema.optional(),
 });
 const textContentSchema = z.object({
+  type: z.literal("text"),
   text: z.string(),
   annotations: z
     .array(placeCitationSchema)
@@ -48,31 +57,30 @@ const textContentSchema = z.object({
     .optional(),
 });
 const responseSchema = z.object({
-  modelInteraction: z.object({ model: z.string() }).optional(),
+  model: z.string().optional(),
   status: z.string(),
   errors: z.array(z.object({ code: z.string().optional() })).optional(),
   steps: z
     .array(
-      z.union([
+      z.discriminatedUnion("type", [
         z.object({
-          modelOutput: z.object({
-            content: z.array(z.object({ text: textContentSchema })),
-          }),
+          type: z.literal("model_output"),
+          content: z.array(textContentSchema),
         }),
-        z.object({ thought: z.object({}) }),
-        z.object({ toolCall: z.object({ googleMapsCall: z.object({}) }) }),
-        z.object({ toolResult: z.object({ googleMapsResult: z.object({}) }) }),
+        z.object({
+          type: z.enum(["thought", "google_maps_call", "google_maps_result"]),
+        }),
       ]),
     )
     .optional(),
   usage: z.unknown().optional(),
 });
 const usageSchema = z.object({
-  totalInputTokens: tokenCountSchema,
-  totalCachedTokens: tokenCountSchema.optional(),
-  totalOutputTokens: tokenCountSchema,
-  totalThoughtTokens: tokenCountSchema.optional(),
-  groundingToolCount: z.array(
+  total_input_tokens: tokenCountSchema,
+  total_cached_tokens: tokenCountSchema.optional(),
+  total_output_tokens: tokenCountSchema,
+  total_thought_tokens: tokenCountSchema.optional(),
+  grounding_tool_count: z.array(
     z.object({ type: z.string(), count: tokenCountSchema }),
   ),
 });
@@ -118,33 +126,35 @@ export interface VertexMapsResult {
 }
 
 function vertexEndpoint(project: string): string {
-  return `https://aiplatform.googleapis.com/v1beta1/projects/${project}/locations/${LOCATION}/interactions:create`;
+  return `https://aiplatform.googleapis.com/v1beta1/projects/${project}/locations/${LOCATION}/interactions`;
 }
 
-function vertexModelResource(project: string): string {
-  return `projects/${project}/locations/${LOCATION}/publishers/google/models/${VERTEX_MAPS_MODEL}`;
-}
-
-function providerRequestBody(project: string, request: MapsSearchRequest) {
+function providerRequestBody(request: MapsSearchRequest) {
   return {
+    model: VERTEX_MAPS_MODEL,
+    input: request.query,
+    system_instruction: request.languageCode
+      ? `${MAPS_SYSTEM_INSTRUCTION}\nUse language ${request.languageCode} for the answer and Maps search queries.`
+      : MAPS_SYSTEM_INSTRUCTION,
     store: false,
     stream: false,
     background: false,
-    interaction: {
-      modelInteraction: {
-        model: vertexModelResource(project),
-        generationConfig: {
-          thinkingLevel: "THINKING_LEVEL_MINIMAL",
-          thinkingSummaries: "THINKING_SUMMARIES_NONE",
-          maxOutputTokens: 2048,
-        },
+    service_tier: "standard",
+    tools: [
+      {
+        type: "google_maps",
+        ...(request.location
+          ? {
+              latitude: request.location.latitude,
+              longitude: request.location.longitude,
+            }
+          : {}),
       },
-      stringContent: request.query,
-      systemInstruction: request.languageCode
-        ? `${MAPS_SYSTEM_INSTRUCTION}\nUse language ${request.languageCode} for the answer and Maps search queries.`
-        : MAPS_SYSTEM_INSTRUCTION,
-      serviceTier: "SERVICE_TIER_STANDARD",
-      tools: [{ googleMaps: request.location ?? {} }],
+    ],
+    generation_config: {
+      thinking_level: "minimal",
+      thinking_summaries: "none",
+      max_output_tokens: 2048,
     },
   };
 }
@@ -199,8 +209,8 @@ function parseAnswer(contents: readonly TextContent[]) {
   for (const content of contents) {
     for (const annotation of content.annotations ?? []) {
       const source = safeSource({
-        title: annotation.placeCitation.name,
-        uri: annotation.placeCitation.url,
+        title: annotation.name,
+        uri: annotation.url,
       });
       if (!source) {
         throw new VertexMapsError(502, "invalid_source");
@@ -217,25 +227,25 @@ function parseAnswer(contents: readonly TextContent[]) {
       if (sources.length > MAPS_SEARCH_MAX_SOURCES) {
         throw new VertexMapsError(502, "invalid_source");
       }
-      if (annotation.endIndex === undefined) {
-        if (annotation.startIndex !== undefined) {
+      if (annotation.end_index === undefined) {
+        if (annotation.start_index !== undefined) {
           throw new VertexMapsError(502, "invalid_citation");
         }
         // The provider may supply attribution without a text span.
         continue;
       }
-      const localStartByte = annotation.startIndex ?? 0;
+      const localStartByte = annotation.start_index ?? 0;
       const text = utf8Segment(
         content.text,
         localStartByte,
-        annotation.endIndex,
+        annotation.end_index,
       );
       if (!text || citations.length >= MAPS_SEARCH_MAX_CITATIONS) {
         throw new VertexMapsError(502, "invalid_citation");
       }
       citations.push({
         startByte: startByte + localStartByte,
-        endByte: startByte + annotation.endIndex,
+        endByte: startByte + annotation.end_index,
         text,
         sourceIndices: [sourceIndex],
       });
@@ -265,95 +275,67 @@ function parseUsage(
   if (!parsed.success) {
     throw new VertexMapsError(502, "invalid_usage");
   }
-  const mapsCounts = parsed.data.groundingToolCount.filter((item) => {
-    return item.type === "GOOGLE_MAPS";
+  const mapsCounts = parsed.data.grounding_tool_count.filter((item) => {
+    return item.type === "google_maps";
   });
   const mapsQueries = mapsCounts[0]?.count;
-  const cachedInputTokens = parsed.data.totalCachedTokens ?? 0;
-  // Maps tool input is separately reported in totalToolUseTokens and free.
+  const cachedInputTokens = parsed.data.total_cached_tokens ?? 0;
+  // Maps tool input is separately reported in total_tool_use_tokens and free.
   // Thought tokens are charged at the output rate.
   const outputTokens =
-    parsed.data.totalOutputTokens + (parsed.data.totalThoughtTokens ?? 0);
+    parsed.data.total_output_tokens + (parsed.data.total_thought_tokens ?? 0);
   // Require an explicit aggregate count, including zero. Tool steps, places,
   // and citation counts are not substitutes for provider usage telemetry.
   if (
     mapsCounts.length !== 1 ||
     mapsQueries === undefined ||
     (hasMapsActivity && mapsQueries === 0) ||
-    cachedInputTokens > parsed.data.totalInputTokens ||
+    cachedInputTokens > parsed.data.total_input_tokens ||
     !Number.isSafeInteger(outputTokens) ||
-    parsed.data.groundingToolCount.some((item) => {
-      return item.type !== "GOOGLE_MAPS" && item.count !== 0;
+    parsed.data.grounding_tool_count.some((item) => {
+      return item.type !== "google_maps" && item.count !== 0;
     })
   ) {
     throw new VertexMapsError(502, "invalid_usage");
   }
   return {
-    inputTokens: parsed.data.totalInputTokens,
+    inputTokens: parsed.data.total_input_tokens,
     cachedInputTokens,
     outputTokens,
     mapsQueries,
   };
 }
 
-function nativeResponseShape(value: unknown, path = "", depth = 0): string[] {
-  if (depth > 8 || value === null || typeof value !== "object") {
-    return [];
-  }
-  if (Array.isArray(value)) {
-    return value.slice(0, 3).flatMap((item) => {
-      return nativeResponseShape(item, `${path}[]`, depth + 1);
-    });
-  }
-  return Object.entries(value)
-    .slice(0, 30)
-    .flatMap(([key, item]) => {
-      const childPath = `${path}.${key}`;
-      return [childPath, ...nativeResponseShape(item, childPath, depth + 1)];
-    });
-}
-
-function parseVertexMapsResponse(
-  body: string,
-  project: string,
-): VertexMapsResult {
-  const decoded = safeJsonParse(body);
-  L.warn("Native Maps response field paths", {
-    paths: [...new Set(nativeResponseShape(decoded))],
-  });
-  const parsed = responseSchema.safeParse(decoded);
+function parseVertexMapsResponse(body: string): VertexMapsResult {
+  const parsed = responseSchema.safeParse(safeJsonParse(body));
   if (!parsed.success) {
     throw new VertexMapsError(502, "invalid_response");
   }
-  if (parsed.data.status !== "COMPLETED") {
+  if (parsed.data.status !== "completed") {
     throw new VertexMapsError(
       502,
-      parsed.data.status === "INCOMPLETE"
+      parsed.data.status === "incomplete"
         ? "output_truncated"
         : "not_completed",
     );
   }
   if (
-    ![VERTEX_MAPS_MODEL, vertexModelResource(project)].includes(
-      parsed.data.modelInteraction?.model ?? "",
-    ) ||
+    parsed.data.model !== VERTEX_MAPS_MODEL ||
     !parsed.data.steps ||
     parsed.data.errors?.length
   ) {
     throw new VertexMapsError(502, "invalid_response");
   }
   const contents = parsed.data.steps.flatMap((step) => {
-    return "modelOutput" in step
-      ? step.modelOutput.content.map((content) => {
-          return content.text;
-        })
-      : [];
+    return step.type === "model_output" ? step.content : [];
   });
   const answer = parseAnswer(contents);
   const hasMapsActivity =
     answer.sources.length > 0 ||
     parsed.data.steps.some((step) => {
-      return "toolCall" in step || "toolResult" in step;
+      return (
+        step.type === "google_maps_call" || step.type === "google_maps_result"
+      );
     });
   return {
     ...answer,
@@ -391,46 +373,17 @@ async function requestVertexMaps(
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json; charset=utf-8",
+        "Api-Revision": INTERACTIONS_API_REVISION,
       },
-      body: JSON.stringify(providerRequestBody(project, request)),
+      body: JSON.stringify(providerRequestBody(request)),
       signal: requestSignal,
     }),
     rejectTransport,
   );
   assertProviderActive();
   if (!response.ok) {
-    const errorBody = await readBoundedResponseText(response, 4096);
-    assertProviderActive();
-    if (errorBody.kind === "text") {
-      const providerError = z
-        .object({
-          error: z.object({
-            code: z.number().optional(),
-            status: z.string().optional(),
-            message: z.string().optional(),
-            details: z
-              .array(
-                z.object({
-                  reason: z.string().optional(),
-                  fieldViolations: z
-                    .array(z.object({ field: z.string() }))
-                    .optional(),
-                }),
-              )
-              .optional(),
-          }),
-        })
-        .safeParse(safeJsonParse(errorBody.text));
-      if (providerError.success) {
-        L.warn("Native Maps request contract rejected", {
-          status: providerError.data.error.status,
-          code: providerError.data.error.code,
-          details: providerError.data.error.details,
-          message: providerError.data.error.message
-            ?.replace(/"[^"\n]*"|'[^'\n]*'/gu, "[redacted]")
-            .slice(0, 600),
-        });
-      }
+    if (response.body) {
+      startUntrackedBestEffortCleanup(response.body.cancel());
     }
     throw new VertexMapsError(response.status, "http");
   }
@@ -442,7 +395,7 @@ async function requestVertexMaps(
   if (body.kind !== "text") {
     throw new VertexMapsError(502, "response_too_large");
   }
-  return parseVertexMapsResponse(body.text, project);
+  return parseVertexMapsResponse(body.text);
 }
 
 export async function generateVertexMapsSearch(
