@@ -26,7 +26,6 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
-import { navigateTo$ } from "../../../signals/route.ts";
 import {
   CAPABILITY_AGENT_ID,
   context,
@@ -1575,17 +1574,10 @@ test("Closing the input dialog refreshes an action completed in another tab", as
 });
 
 test("Leaving an open dialog clears sensitive drafts and discards its deferred return refresh", async () => {
-  const nextToken = `vm0_browser_user_action_${"z".repeat(43)}`;
   installCapabilityChat({
     events: completedConversation(`[Enter details](${browserInputUrl()})`),
   });
-  context.mocks.api(browserUserActionsContract.get, ({ params, respond }) => {
-    if (params.requestToken === nextToken) {
-      return respond(200, {
-        ...browserInputAction("cancelled"),
-        requestToken: nextToken,
-      });
-    }
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
     // A read for the abandoned card must not acquire the new route's lifetime.
     expect(window.location.pathname).toBe(RUN_PATH);
     return respond(200, browserInputAction("pending"));
@@ -1595,10 +1587,15 @@ test("Leaving an open dialog clears sensitive drafts and discards its deferred r
   });
   await setupPage({
     context,
-    path: RUN_PATH,
+    path: "/connectors",
     host: "app.okou.ai",
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
+  click(
+    await waitFor(() => {
+      return linkByName("Capability conversation");
+    }),
+  );
   await readyChat();
   click(await findButton("Enter information"));
   const dialog = await screen.findByRole("dialog", {
@@ -1610,32 +1607,21 @@ test("Leaving an open dialog clears sensitive drafts and discards its deferred r
   act(() => {
     window.dispatchEvent(new Event("focus"));
   });
-  await act(async () => {
-    const next = new URL(browserInputUrl());
-    await context.store.set(
-      navigateTo$,
-      "/browser/actions/:browserActionToken",
-      {
-        pathParams: { browserActionToken: nextToken },
-        searchParams: next.searchParams,
-      },
-      context.signal,
-    );
+  act(() => {
+    window.history.back();
   });
-  await expect(
-    screen.findByText("Request cancelled"),
-  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(window.location.pathname).toBe("/connectors");
+    expect(dialog).not.toBeInTheDocument();
+  });
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(screen.queryByDisplayValue("synthetic-password")).toBeNull();
   expect(screen.queryByDisplayValue("123456")).toBeNull();
-  await act(async () => {
-    await context.store.set(
-      navigateTo$,
-      "/chats/:threadId",
-      { pathParams: { threadId: RUN_THREAD_ID } },
-      context.signal,
-    );
-  });
+  click(
+    await waitFor(() => {
+      return linkByName("Capability conversation");
+    }),
+  );
   await readyChat();
   click(await findButton("Enter information"));
   const reopened = await screen.findByRole("dialog", {
