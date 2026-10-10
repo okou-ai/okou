@@ -814,9 +814,10 @@ function createDraftSignals(): BrowserDraftSignals {
   const ownForm$ = command(
     ({ set }, form: HTMLFormElement, signal: AbortSignal): void => {
       signal.throwIfAborted();
-      const passwordKeys = [...form.elements].flatMap((element) => {
+      const sensitiveKeys = [...form.elements].flatMap((element) => {
         return element instanceof HTMLInputElement &&
-          element.type === "password" &&
+          (element.type === "password" ||
+            element.autocomplete === "one-time-code") &&
           element.name !== ""
           ? [element.name]
           : [];
@@ -830,7 +831,7 @@ function createDraftSignals(): BrowserDraftSignals {
           set(ownerCount$, (count) => {
             const next = Math.max(0, count - 1);
             if (next === 0) {
-              set(clearDraftKeys$, passwordKeys);
+              set(clearDraftKeys$, sensitiveKeys);
               set(fileSignals.internalFileDraft$, new Map());
             }
             return next;
