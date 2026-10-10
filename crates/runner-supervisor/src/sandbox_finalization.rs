@@ -3307,31 +3307,115 @@ mod tests {
         cancel.request_hard_cancellation().await;
         let run_id = RunId::new_v4();
         let sandbox_id = SandboxId::new_v4();
+        let overrides = Arc::new(MockSandboxOverrides::new());
+        let destroy_gate = MockLifecycleGate::new();
+        overrides.set_destroy_lifecycle_gate(destroy_gate.clone());
+        let (factory, sandbox) = sandbox_with_overrides(sandbox_id, overrides).await;
+        let mut context = fixture.finalize_context(
+            run_id,
+            sandbox_id,
+            "sess-network-log-cancel",
+            network_log_session,
+            cancel,
+        );
+        context.factory = factory;
 
-        let _finalization_ready = finalize_sandbox_for_completion(
-            Some(Box::new(MockSandbox::new("network-log-cancel"))),
+        let finalize_task = tokio::spawn(finalize_sandbox_for_completion(
+            Some(sandbox),
             ActiveBudgetLease::new(lease),
-            fixture.finalize_context(
-                run_id,
-                sandbox_id,
-                "sess-network-log-cancel",
-                network_log_session,
-                cancel,
-            ),
-        )
-        .await;
+            context,
+        ));
 
-        assert_eq!(fixture.idle_pool.lock().await.len(), 0);
+        destroy_gate
+            .wait_entered(1, Duration::from_secs(5))
+            .await
+            .expect("hard-cancelled active sandbox should enter destroy gate");
         assert!(
             !fixture
                 .network_log_manager
                 .append_for_ip(
                     "10.0.0.1",
-                    serde_json::json!({"type":"dns","host":"after-destroy.test"})
+                    serde_json::json!({"type":"dns","host":"before-destroy.test"})
                 )
                 .await,
-            "cancelled destroyed sandbox must not retain network-log attribution",
+            "hard-cancelled active sandbox must close network-log attribution before destroy",
         );
+
+        destroy_gate.release_one();
+        let _finalization_ready = tokio::time::timeout(Duration::from_secs(5), finalize_task)
+            .await
+            .expect("finalizer should complete after destroy is released")
+            .expect("finalizer task should join");
+        assert_eq!(fixture.idle_pool.lock().await.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn finalizer_flushes_accepted_network_log_writes_before_cancel_completion() {
+        let (_budget, lease) = test_budget_lease();
+        let mut fixture = FinalizeTestFixture::new().await;
+        let write_started = Arc::new(tokio::sync::Notify::new());
+        let write_release = Arc::new(tokio::sync::Semaphore::new(0));
+        fixture.network_log_manager = NetworkLogManager::new_with_write_gate(
+            Arc::clone(&write_started),
+            Arc::clone(&write_release),
+        );
+        let network_log_session = fixture.network_log_session().await;
+        let accepted_row = serde_json::json!({"type":"dns","host":"accepted-before-cancel.test"});
+        assert!(
+            fixture
+                .network_log_manager
+                .append_for_ip("10.0.0.1", accepted_row.clone())
+                .await,
+            "network-log row should be accepted before hard cancellation",
+        );
+        tokio::time::timeout(Duration::from_secs(5), write_started.notified())
+            .await
+            .expect("accepted network-log write should enter the write gate");
+
+        let cancel = RunCancellationHandle::new();
+        cancel.request_hard_cancellation().await;
+        // Keep stop/destroy ungated and home promotion absent, so polling reaches
+        // session closure rather than an unrelated cleanup wait.
+        let mut finalizer = std::pin::pin!(finalize_sandbox_for_completion(
+            Some(Box::new(MockSandbox::new("network-log-cancel-flush"))),
+            ActiveBudgetLease::new(lease),
+            fixture.finalize_context(
+                RunId::new_v4(),
+                SandboxId::new_v4(),
+                "sess-network-log-cancel-flush",
+                network_log_session,
+                cancel,
+            ),
+        ));
+        assert!(
+            finalizer.as_mut().now_or_never().is_none(),
+            "hard-cancelled finalization must wait for the accepted network-log write",
+        );
+        assert!(
+            !fixture
+                .network_log_manager
+                .append_for_ip(
+                    "10.0.0.1",
+                    serde_json::json!({"type":"dns","host":"after-close.test"})
+                )
+                .await,
+            "finalizer must reach session closure before waiting for the accepted write",
+        );
+
+        write_release.add_permits(1);
+        let _finalization_ready = tokio::time::timeout(Duration::from_secs(5), finalizer)
+            .await
+            .expect("finalizer should complete after the accepted write is released");
+        let contents = tokio::fs::read_to_string(fixture.dir.path().join("network.jsonl"))
+            .await
+            .expect("accepted network-log row should be persisted before finalization returns");
+        let rows: Vec<serde_json::Value> = contents
+            .lines()
+            .map(serde_json::from_str)
+            .collect::<Result<_, _>>()
+            .expect("persisted network-log rows should be valid JSON");
+        assert_eq!(rows, vec![accepted_row]);
+        assert_eq!(fixture.idle_pool.lock().await.len(), 0);
     }
 
     #[tokio::test]
