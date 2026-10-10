@@ -522,6 +522,146 @@ test("a reviewed deletion is stale when a member removes the last reference", as
   ).toContainEqual(expect.objectContaining({ id: shared.id }));
 });
 
+test("removing one reviewed peer host rejects deletion without detaching the remaining host", async () => {
+  useSecretKmsProbe();
+  const admin = await actor();
+  const shared = await createConfig("organization");
+  const member = await actor(admin.orgId, "member");
+  const removed = await createHost(shared.id);
+  const retained = await createHost(shared.id);
+  session(admin, "admin");
+  const preview = (
+    await accept(
+      configs().impactPreview({
+        headers,
+        params: { configId: shared.id },
+        query: { operation: "delete" },
+      }),
+      [200],
+    )
+  ).body;
+  session(member, "member");
+  await accept(
+    hosts().delete({ headers, params: { connectionId: removed.id } }),
+    [204],
+  );
+  const before = (await accept(hosts().list({ headers }), [200])).body;
+  session(admin, "admin");
+  const rejected = await accept(
+    configs().delete({
+      headers,
+      query,
+      params: { configId: shared.id },
+      body: {
+        expectedRevision: preview.expectedRevision,
+        impactSnapshot: preview.impactSnapshot,
+      },
+    }),
+    [409],
+  );
+  expect(rejected.body.error.code).toBe("CLOUDFLARE_ACCESS_IMPACT_CONFLICT");
+  expect(
+    (await accept(configs().list({ headers, query }), [200])).body.configs,
+  ).toContainEqual(expect.objectContaining({ id: shared.id }));
+  session(member, "member");
+  expect((await accept(hosts().list({ headers }), [200])).body).toStrictEqual(
+    before,
+  );
+  expect(before.connections).toContainEqual(
+    expect.objectContaining({
+      id: retained.id,
+      generation: retained.generation,
+      transport: { type: "cloudflare_access", configId: shared.id },
+    }),
+  );
+});
+
+test("changing a reviewed peer host generation requires a fresh review before deletion", async () => {
+  useSecretKmsProbe();
+  const admin = await actor();
+  const shared = await createConfig("organization");
+  const member = await actor(admin.orgId, "member");
+  const host = await createHost(shared.id);
+  session(admin, "admin");
+  const preview = (
+    await accept(
+      configs().impactPreview({
+        headers,
+        params: { configId: shared.id },
+        query: { operation: "delete" },
+      }),
+      [200],
+    )
+  ).body;
+  session(member, "member");
+  const changed = await accept(
+    hosts().update({
+      headers,
+      params: { connectionId: host.id },
+      body: {
+        expectedGeneration: host.generation,
+        displayName: "Renamed peer",
+      },
+    }),
+    [200],
+  );
+  expect(changed.body.generation).toBe(host.generation + 1);
+  session(admin, "admin");
+  const rejected = await accept(
+    configs().delete({
+      headers,
+      query,
+      params: { configId: shared.id },
+      body: {
+        expectedRevision: preview.expectedRevision,
+        impactSnapshot: preview.impactSnapshot,
+      },
+    }),
+    [409],
+  );
+  expect(rejected.body.error.code).toBe("CLOUDFLARE_ACCESS_IMPACT_CONFLICT");
+  const latest = (
+    await accept(
+      configs().impactPreview({
+        headers,
+        params: { configId: shared.id },
+        query: { operation: "delete" },
+      }),
+      [200],
+    )
+  ).body;
+  expect(latest.impactSnapshot).not.toBe(preview.impactSnapshot);
+  expect(latest.expectedRevision).toBe(preview.expectedRevision);
+  session(member, "member");
+  expect(
+    (await accept(hosts().list({ headers }), [200])).body.connections,
+  ).toContainEqual(changed.body);
+  session(admin, "admin");
+  await accept(
+    configs().delete({
+      headers,
+      query,
+      params: { configId: shared.id },
+      body: {
+        expectedRevision: latest.expectedRevision,
+        impactSnapshot: latest.impactSnapshot,
+      },
+    }),
+    [204],
+  );
+  session(member, "member");
+  expect(
+    (await accept(hosts().list({ headers }), [200])).body.connections,
+  ).toContainEqual(
+    expect.objectContaining({
+      id: host.id,
+      displayName: changed.body.displayName,
+      generation: changed.body.generation + 1,
+      transport: { type: "cloudflare_access", needsRebind: true },
+    }),
+  );
+});
+
 test("losing admin role after a deletion preview cannot detach another member's host", async () => {
   useSecretKmsProbe();
   const admin = await actor();
@@ -620,6 +760,104 @@ test("binding and reviewed deletion serialize without leaving a broken SSH refer
     expect(deleted.status).toBe(204);
     expect(remaining).toStrictEqual([]);
     expect(listed).toStrictEqual([]);
+  }
+});
+
+test("a competing new binding cannot leave a reviewed peer detached while its configuration remains", async () => {
+  useSecretKmsProbe();
+  const admin = await actor();
+  const shared = await createConfig("organization");
+  const direct = (
+    await accept(
+      hosts().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          displayName: "Independent host",
+          host: "direct.example.com",
+          port: 22,
+          credential: {
+            create: {
+              name: "Reusable login",
+              username: "deploy",
+              authentication: {
+                method: "password",
+                password: "synthetic-password",
+              },
+            },
+          },
+          transport: { type: "direct" },
+        },
+      }),
+      [201],
+    )
+  ).body;
+  const member = await actor(admin.orgId, "member");
+  const peer = await createHost(shared.id);
+  session(admin, "admin");
+  const preview = (
+    await accept(
+      configs().impactPreview({
+        headers,
+        params: { configId: shared.id },
+        query: { operation: "delete" },
+      }),
+      [200],
+    )
+  ).body;
+  const [bound, deleted] = await Promise.all([
+    accept(
+      hosts().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          displayName: "New binding",
+          host: "new.example.com",
+          port: 443,
+          credential: { id: direct.credentialId },
+          transport: { type: "cloudflare_access", configId: shared.id },
+        },
+      }),
+      [201, 404, 409],
+    ),
+    accept(
+      configs().delete({
+        headers,
+        query,
+        params: { configId: shared.id },
+        body: {
+          expectedRevision: preview.expectedRevision,
+          impactSnapshot: preview.impactSnapshot,
+        },
+      }),
+      [204, 409],
+    ),
+  ]);
+  const remaining = (await accept(configs().list({ headers, query }), [200]))
+    .body.configs;
+  const ownHosts = (await accept(hosts().list({ headers }), [200])).body
+    .connections;
+  session(member, "member");
+  const peers = (await accept(hosts().list({ headers }), [200])).body
+    .connections;
+  if (bound.status === 201) {
+    expect(deleted.status).toBe(409);
+    expect(remaining).toContainEqual(
+      expect.objectContaining({ id: shared.id }),
+    );
+    expect(ownHosts).toContainEqual(bound.body);
+    expect(peers).toContainEqual(peer);
+  } else {
+    expect(deleted.status).toBe(204);
+    expect(remaining).toStrictEqual([]);
+    expect(ownHosts).toStrictEqual([direct]);
+    expect(peers).toContainEqual(
+      expect.objectContaining({
+        id: peer.id,
+        generation: peer.generation + 1,
+        transport: { type: "cloudflare_access", needsRebind: true },
+      }),
+    );
   }
 });
 

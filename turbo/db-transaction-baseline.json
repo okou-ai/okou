@@ -332,11 +332,6 @@
       "owner": "updateCloudflareAccessConfig$"
     },
     {
-      "id": "TX-0105",
-      "file": "turbo/apps/api/src/signals/services/cloudflare-access.service.ts",
-      "owner": "deleteCloudflareAccessConfig$"
-    },
-    {
       "id": "TX-0106",
       "file": "turbo/apps/api/src/signals/services/cloudflare-access.service.ts",
       "owner": "convertCloudflareAccessToOrganization$"

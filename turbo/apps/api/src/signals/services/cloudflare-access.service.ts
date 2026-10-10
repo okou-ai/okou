@@ -13,11 +13,25 @@ import { CLOUDFLARE_ACCESS_ERROR_CODES } from "@okouai/api-contracts/contracts/c
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
-import { and, asc, count, eq, lt, ne, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  eq,
+  exists,
+  gte,
+  inArray,
+  lt,
+  ne,
+  notExists,
+  or,
+  sql,
+} from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
-import { isUniqueViolation } from "../../lib/pg-errors";
+import { isForeignKeyViolation, isUniqueViolation } from "../../lib/pg-errors";
+import { pgTextDecoder } from "../../lib/db-structured-result";
 import { settle } from "../utils";
 import { encryptStoredSecretValue } from "./crypto.utils";
 import { publishCloudflareAccessClientInvalidation } from "./cloudflare-access-client-invalidation.service";
@@ -565,89 +579,211 @@ interface DeleteCloudflareAccessConfigArgs {
   readonly configId: string;
   readonly body: DeleteCloudflareAccessRequest;
 }
+function createCloudflareDeletionReads(args: DeleteCloudflareAccessConfigArgs) {
+  const qb = new QueryBuilder();
+  const hosts = qb
+    .$with("locked_cloudflare_deletion_hosts")
+    .as(qb.select().from(referencingHostsQuery(args.owner, args.configId)));
+  const gathered = qb
+    .$with("gathered_cloudflare_deletion_hosts")
+    .as(qb.select({ count: count().as("count") }).from(hosts));
+  // Retain the existing Host -> config lock order and modes. Consuming the
+  // aggregate finishes the Host read before taking the existing config lock;
+  // it does not create a new statement snapshot after a wait.
+  const current = qb.$with("current_cloudflare_deletion").as(
+    qb
+      .select({ ...metadata })
+      .from(cloudflareAccessConfigs)
+      .crossJoin(gathered)
+      .where(
+        and(visibleConfig(args.owner, args.configId), gte(gathered.count, 0)),
+      )
+      .for("update", { of: cloudflareAccessConfigs }),
+  );
+  const ownHosts = qb
+    .select({ id: hosts.id })
+    .from(hosts)
+    .where(eq(hosts.userId, args.owner.userId));
+  const exhaustedHosts = qb
+    .select({ id: hosts.id })
+    .from(hosts)
+    .where(eq(hosts.generation, 2_147_483_647));
+  // Match JSON.stringify's compact separators and independently escaped
+  // opaque IDs. Hashing json/jsonb's spaced aggregate text changes the token.
+  const serializedHosts = qb
+    .select({
+      value: sql`coalesce(string_agg(
+        '[' || to_json(${hosts.id})::text || ',' || to_json(${hosts.userId})::text || ',' ||
+        ${hosts.generation}::text || ']', ',' ORDER BY ${hosts.id}), '')`.mapWith(
+        pgTextDecoder,
+      ),
+    })
+    .from(hosts);
+  const digest = sql`encode(sha256(convert_to(
+    '[' || to_json(${current.id})::text || ',' || ${current.revision}::text || ',[' ||
+    ${serializedHosts} ||
+    ']]', 'UTF8')), 'hex')`;
+  const snapshot = args.body.impactSnapshot;
+  const eligible = qb.$with("eligible_cloudflare_deletion").as(
+    qb
+      .select({ id: current.id })
+      .from(current)
+      .where(
+        and(
+          args.owner.orgRole === "admin"
+            ? undefined
+            : eq(current.scope, "personal"),
+          eq(current.revision, args.body.expectedRevision),
+          notExists(ownHosts),
+          snapshot === undefined
+            ? notExists(qb.select({ id: hosts.id }).from(hosts))
+            : and(
+                eq(digest, snapshot),
+                or(
+                  eq(current.scope, "organization"),
+                  notExists(qb.select({ id: hosts.id }).from(hosts)),
+                ),
+              ),
+          notExists(exhaustedHosts),
+        ),
+      ),
+  );
+  return { hosts, gathered, current, eligible };
+}
+function cloudflareDeletionFailure(
+  args: DeleteCloudflareAccessConfigArgs,
+  config: Metadata,
+  hosts: readonly ReferencingHost[],
+) {
+  const snapshot = args.body.impactSnapshot;
+  const denied = managementFailure(config, args.owner);
+  if (denied) {
+    return denied;
+  }
+  if (config.revision !== args.body.expectedRevision) {
+    return cloudflareAccessFailure("conflict");
+  }
+  if (
+    hosts.some((host) => {
+      return host.userId === args.owner.userId;
+    })
+  ) {
+    return cloudflareAccessFailure("inUse");
+  }
+  if (
+    (snapshot !== undefined && snapshot !== impactSnapshot(config, hosts)) ||
+    (hosts.length > 0 &&
+      (config.scope !== "organization" || snapshot === undefined))
+  ) {
+    return cloudflareAccessFailure("impactConflict");
+  }
+  if (
+    hosts.some((host) => {
+      return host.generation === 2_147_483_647;
+    })
+  ) {
+    return cloudflareAccessFailure("exhausted");
+  }
+  return null;
+}
 export const deleteCloudflareAccessConfig$ = command(
   async ({ set }, args: DeleteCloudflareAccessConfigArgs) => {
     const db = set(writeDb$);
-
-    // Protected detachment and config deletion must commit together under the
-    // restrictive FK, with a fresh reference count after the config fence.
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0105; new non-billing transactions are prohibited.
-    const result = await db.transaction(async (tx) => {
-      const hosts = await tx
-        .select()
-        .from(referencingHostsQuery(args.owner, args.configId));
-      const [config] = await tx
-        .select(metadata)
-        .from(cloudflareAccessConfigs)
-        .where(visibleConfig(args.owner, args.configId))
-        .for("update");
-      if (!config) {
-        return cloudflareAccessFailure("notFound");
-      }
-      const denied = managementFailure(config, args.owner);
-      if (denied) {
-        return denied;
-      }
-      const [references] = await tx
-        .select({ count: count() })
-        .from(sshConnections)
-        .where(referencingHosts(args.owner, args.configId));
-      if (referenceSetExpanded(hosts.length, references)) {
-        return cloudflareAccessFailure("conflict");
-      }
-      if (config.revision !== args.body.expectedRevision) {
-        return cloudflareAccessFailure("conflict");
-      }
-      if (
-        hosts.some((host) => {
-          return host.userId === args.owner.userId;
+    const { hosts, gathered, current, eligible } =
+      createCloudflareDeletionReads(args);
+    const detached = db.$with("detached_cloudflare_deletion_hosts").as(
+      db
+        .update(sshConnections)
+        .set({
+          cloudflareAccessId: null,
+          transport: "cloudflare_access",
+          legacyNeedsRebind: true,
+          generation: sql`${sshConnections.generation} + 1`,
+          updatedAt: nowDate(),
         })
-      ) {
-        return cloudflareAccessFailure("inUse");
-      }
-      if (
-        (args.body.impactSnapshot !== undefined &&
-          args.body.impactSnapshot !== impactSnapshot(config, hosts)) ||
-        (hosts.length > 0 &&
-          (config.scope !== "organization" ||
-            args.body.impactSnapshot === undefined))
-      ) {
-        return cloudflareAccessFailure("impactConflict");
-      }
-      if (
-        hosts.some((host) => {
-          return host.generation === 2_147_483_647;
-        })
-      ) {
-        return cloudflareAccessFailure("exhausted");
-      }
-      if (hosts.length > 0) {
-        await tx
-          .update(sshConnections)
-          .set({
-            cloudflareAccessId: null,
-            transport: "cloudflare_access",
-            legacyNeedsRebind: true,
-            generation: sql`${sshConnections.generation} + 1`,
-            updatedAt: nowDate(),
-          })
-          .where(
-            and(
-              eq(sshConnections.orgId, args.owner.orgId),
-              eq(sshConnections.cloudflareAccessId, args.configId),
-              ne(sshConnections.userId, args.owner.userId),
-            ),
-          );
-      }
-      await tx
+        .from(eligible)
+        .where(
+          and(
+            eq(sshConnections.orgId, args.owner.orgId),
+            eq(sshConnections.cloudflareAccessId, eligible.id),
+            ne(sshConnections.userId, args.owner.userId),
+            inArray(sshConnections.id, db.select({ id: hosts.id }).from(hosts)),
+          ),
+        )
+        .returning({ id: sshConnections.id }),
+    );
+    const deleted = db.$with("deleted_cloudflare_access_config").as(
+      db
         .delete(cloudflareAccessConfigs)
-        .where(visibleConfig(args.owner, args.configId));
-      return { ok: true as const, value: undefined, scope: config.scope };
-    });
-    if (result.ok) {
-      await publishCloudflareAccessClientInvalidation(args.owner, result.scope);
+        .where(
+          and(
+            visibleConfig(args.owner, args.configId),
+            exists(db.select({ id: eligible.id }).from(eligible)),
+            gte(db.select({ count: count() }).from(detached), 0),
+          ),
+        )
+        .returning({ id: cloudflareAccessConfigs.id }),
+    );
+    // Detach only the locked, reviewed identities. A binding invisible to this
+    // statement's snapshot remains bound: the existing RESTRICT FK rejects the
+    // deletion and rolls back every detachment, rather than detaching a new owner.
+    const result = await settle(
+      db
+        .with(hosts, gathered, current, eligible, detached, deleted)
+        .select({
+          config: {
+            id: current.id,
+            name: current.name,
+            revision: current.revision,
+            generation: current.generation,
+            scope: current.scope,
+            createdAt: current.createdAt,
+            updatedAt: current.updatedAt,
+          },
+          deletedId: deleted.id,
+          host: {
+            id: hosts.id,
+            userId: hosts.userId,
+            displayName: hosts.displayName,
+            generation: hosts.generation,
+          },
+        })
+        .from(current)
+        .leftJoin(deleted, eq(deleted.id, current.id))
+        .leftJoin(hosts, eq(current.id, args.configId))
+        .orderBy(asc(hosts.id)),
+    );
+    if (!result.ok) {
+      if (
+        isForeignKeyViolation(result.error) &&
+        result.error instanceof Error &&
+        typeof result.error.cause === "object" &&
+        result.error.cause !== null &&
+        "constraint" in result.error.cause &&
+        result.error.cause.constraint ===
+          "ssh_connections_cloudflare_access_org_fk"
+      ) {
+        return cloudflareAccessFailure("conflict");
+      }
+      throw result.error;
     }
-    return result;
+    const [first] = result.value;
+    if (!first) {
+      return cloudflareAccessFailure("notFound");
+    }
+    const config = first.config;
+    const capturedHosts = result.value.flatMap(({ host }) => {
+      return host ? [host] : [];
+    });
+    const failed = cloudflareDeletionFailure(args, config, capturedHosts);
+    if (failed) {
+      return failed;
+    }
+    if (!first.deletedId) {
+      throw new Error("Cloudflare Access deletion returned no row");
+    }
+    await publishCloudflareAccessClientInvalidation(args.owner, config.scope);
+    return { ok: true as const, value: undefined, scope: config.scope };
   },
 );
 
