@@ -373,8 +373,10 @@ records the evidence and its limits:
 The expired [1093/1094 validator](https://github.com/vm0-ai/vm0/blob/1cd69b0219c6fe67b7d2fd15bcb7e914ffd8f52e/turbo/packages/db/scripts/test-goal-retirement-migration.ts)
 and [1105/1106 validator](https://github.com/vm0-ai/vm0/blob/1cd69b0219c6fe67b7d2fd15bcb7e914ffd8f52e/turbo/packages/db/scripts/test-goal-schema-contraction.ts)
 remain immutable historical evidence for replay, locks and the measured census.
-Keep shipped SQL, snapshots, journal and numbered external-data operation 014
-(including its original README/code/exports) unchanged. The
+Keep shipped SQL, snapshots and journal unchanged. The accepted numbered
+external-data operation 014 is retired; recover its exact
+[historical source](https://github.com/okou-ai/okou/tree/6249c11bb1b9ba8e2f2deb03771b5084fc209abf/turbo/packages/db/scripts/migrations/014-goal-archive-search)
+only after revalidating targets, prerequisites and authorization. The
 [completed 014 record](https://github.com/okou-ai/okou/blob/9813db4b51faa42c982dcfec1720caf5bd5b1b82/docs/goal-archive-search-recovery.md) is not an
 execution entry for the contracted schema. Unrelated transition validators and
 the complete migration consistency command remain active.
@@ -394,8 +396,11 @@ it. Every earlier
 API writes the old tables, so it is not rolling-compatible; the interruption
 while the previous API drains is accepted by explicit owner decision
 (2026-10-07). The production rollback resolver enforces a floor on the
-first-parent `main` commit that adds 1343. Numbered operation 017 remains as a
-historical record and no longer has tables to act on. See
+first-parent `main` commit that adds 1343. Numbered operation 017 is retired and
+no longer has tables to act on. Its exact
+[historical source](https://github.com/okou-ai/okou/tree/6249c11bb1b9ba8e2f2deb03771b5084fc209abf/turbo/packages/db/scripts/migrations/017-pi-stable-context)
+is recoverable from Git, not an execution entry for the contracted schema;
+revalidate targets, prerequisites and authorization before restoring it. See
 [deployment compatibility](https://github.com/okou-ai/okou/blob/9813db4b51faa42c982dcfec1720caf5bd5b1b82/docs/deployment-compatibility.md#pi-stable-context-tables-retired-2026-10-07).
 
 ## Model catalog
