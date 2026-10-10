@@ -1159,7 +1159,7 @@ mod tests {
             home.root().join("mitmproxy"),
             home.mitmproxy_dir("v1"),
             home.storages_dir(),
-            home.workspace_image_cache_dir(),
+            home.home_image_cache_dir(),
         ];
         for root in shared_roots {
             for path in [root.clone(), root.join("runner-state")] {

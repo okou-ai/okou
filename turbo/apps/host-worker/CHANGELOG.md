@@ -1,5 +1,59 @@
 # Changelog
 
+## [1.6.5](https://github.com/okou-ai/okou/compare/host-worker-v1.6.4...host-worker-v1.6.5) (2026-10-10)
+
+
+### Bug Fixes
+
+* restore inline artifact previews ([#38579](https://github.com/okou-ai/okou/issues/38579)) ([4b9ce32](https://github.com/okou-ai/okou/commit/4b9ce32d5a84048aba394dd6f4297303002bdf0f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.741.0
+
+## [1.6.4](https://github.com/okou-ai/okou/compare/host-worker-v1.6.3...host-worker-v1.6.4) (2026-10-10)
+
+
+### Bug Fixes
+
+* use hosted og credentials and restore the okou brand cover ([#38510](https://github.com/okou-ai/okou/issues/38510)) ([2d2ec67](https://github.com/okou-ai/okou/commit/2d2ec676fbf7ab4bc0db3cd5439715869ff2d6b9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.549.0
+    * @okouai/core bumped to 8.740.1
+
+## [1.6.3](https://github.com/okou-ai/okou/compare/host-worker-v1.6.2...host-worker-v1.6.3) (2026-10-10)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.548.0
+    * @okouai/core bumped to 8.740.0
+
+## [1.6.2](https://github.com/okou-ai/okou/compare/host-worker-v1.6.1...host-worker-v1.6.2) (2026-10-10)
+
+
+### Bug Fixes
+
+* resolve relative social images behind artifact previews ([#38454](https://github.com/okou-ai/okou/issues/38454)) ([c654ee4](https://github.com/okou-ai/okou/commit/c654ee497cd617799352398804e91504539f297b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.547.0
+    * @okouai/core bumped to 8.739.2
+
 ## [1.6.1](https://github.com/okou-ai/okou/compare/host-worker-v1.6.0...host-worker-v1.6.1) (2026-10-09)
 
 

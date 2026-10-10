@@ -1,3 +1,5 @@
+import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
+import { signSandboxJwtForTests } from "../../../auth/tokens";
 import { randomUUID } from "node:crypto";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { mockClaudeCodeTokenEndpoint } from "./api-bdd-auth-device";
@@ -8,7 +10,6 @@ import {
   billingStatusContract,
   billingUsagePackCreditsContract,
 } from "@okouai/api-contracts/contracts/billing";
-import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import {
   cliAuthApproveContract,
   cliAuthDeviceContract,
@@ -57,12 +58,6 @@ import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { createAppWithRoutes } from "../../../../app-factory-core";
 import { mockEnv, mockOptionalEnv } from "../../../../lib/env";
 import { now, withNowScopeForTest } from "../../../../lib/time";
-import {
-  generateSandboxToken,
-  signSandboxJwtForTests,
-} from "../../../auth/tokens";
-import type { SystemSkillStorageResolution } from "../../../context/system-skill-storage-resolution";
-import type { UsagePricingResolution } from "../../../context/usage-pricing-resolution";
 import { mockStripeClient } from "../../../external/stripe-client";
 import { agentsRoutes } from "../../agents";
 import { billingStatusRoutes } from "../../billing-status";
@@ -165,16 +160,10 @@ const runRoutes = [
   ...userModelPreferenceRoutes,
 ] as const;
 
-function runApp(
-  context: TestContext,
-  usagePricingResolution?: UsagePricingResolution,
-  systemSkillStorageResolution?: SystemSkillStorageResolution,
-) {
+function runApp(context: TestContext) {
   return setupAppWithRoutes({
     context,
     routes: runRoutes,
-    ...(usagePricingResolution === undefined ? {} : { usagePricingResolution }),
-    systemSkillStorageResolution,
   });
 }
 
@@ -282,10 +271,7 @@ function runnerHeartbeatBody(
   };
 }
 
-export function createRunsApi(
-  context: TestContext,
-  systemSkillStorageResolution?: SystemSkillStorageResolution,
-) {
+export function createRunsApi(context: TestContext) {
   /**
    * A run started through the real Thread entrypoint: a chat send on a new
    * thread, picked once its enqueue-owned background work completes.
@@ -321,9 +307,6 @@ export function createRunsApi(
           : { captureNetworkBodies: body.captureNetworkBodies }),
       },
       [201],
-      systemSkillStorageResolution === undefined
-        ? {}
-        : { systemSkillStorageResolution },
     );
     if (sent.status !== 201) {
       throw new Error("Expected the Thread run send to be accepted");
@@ -892,19 +875,6 @@ export function createRunsApi(
       );
     },
 
-    /**
-     * Signs a sandbox webhook token for an API-created run, so sandbox
-     * report webhooks (heartbeat/complete/...) can act on runs that were
-     * never claimed by a runner.
-     */
-    sandboxTokenForRun(actor: ApiTestUser, runId: string): string {
-      if (!actor.orgId) {
-        throw new Error("Sandbox run tokens require an org-scoped actor");
-      }
-      return generateSandboxToken(actor.userId, runId, actor.orgId);
-    },
-
-    /** Mints a route-test token without changing production capability issuance. */
     okouTokenForRunWithCapabilities(
       actor: ApiTestUser,
       runId: string,
@@ -1173,13 +1143,11 @@ export function createRunsApi(
       actor: ApiTestUser | null,
       runId: string,
       statuses: readonly (200 | 400 | 401 | 403 | 404)[],
-      usagePricingResolution?: UsagePricingResolution,
     ) {
       return await accept(
-        runApp(
-          context,
-          usagePricingResolution,
-        )(runsCancelContract).cancel({
+        setupAppWithRoutes({ context, routes: runsCancelRoutes })(
+          runsCancelContract,
+        ).cancel({
           headers: authenticate(context, actor),
           params: { id: runId },
         }),

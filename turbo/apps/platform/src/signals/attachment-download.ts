@@ -123,6 +123,7 @@ async function writePublicationArchive(
   triggerBlobDownload(
     new Blob(chunks as BlobPart[], { type: "application/zip" }),
     `${site.publicSlug}.zip`,
+    signal,
   );
   return true;
 }

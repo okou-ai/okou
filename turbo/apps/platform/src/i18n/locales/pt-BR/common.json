@@ -927,20 +927,6 @@
     }
   },
   "auth": {
-    "desktop": {
-      "phases": {
-        "completed": "Você entrou no Desktop. Pode fechar esta janela.",
-        "connecting": "Conectando sua sessão do desktop.",
-        "consumed": "Finalizando a entrada no Desktop. Mantenha esta janela aberta.",
-        "failed": "Não foi possível concluir a entrada. Comece novamente pelo Desktop ou tente de novo neste navegador.",
-        "no-workspaces": "Crie ou entre em um espaço de trabalho no aplicativo web e entre novamente pelo Desktop.",
-        "pending": "Abra o Desktop para continuar entrando.",
-        "selecting": "Escolha um espaço de trabalho para este computador."
-      },
-      "reopen": "Abrir Desktop",
-      "retry": "Tentar novamente",
-      "title": "Entrar no Desktop"
-    },
     "documentTitles": {
       "signIn": "Entrar",
       "signUp": "Criar conta"

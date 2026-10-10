@@ -158,6 +158,36 @@ async fn test_home_with_artifacts(dir: &std::path::Path, hashes: &[(&str, &str)]
     home
 }
 
+#[tokio::test]
+async fn paired_home_profile_round_trips_and_rejects_workspace_only_or_mixed_config() {
+    let fixture = ConfigFixture::new().await;
+    let profile = ProfileConfig {
+        rootfs_hash: TEST_ROOTFS_HASH.into(),
+        snapshot_hash: TEST_SNAPSHOT_HASH.into(),
+        vcpu: 2,
+        memory_mb: 4096,
+        rootfs_disk_mb: 12288,
+        home_disk_mb: 24576,
+    };
+    let yaml = fixture.yaml_with_profile("vm0/default", profile.clone(), "");
+    let loaded = fixture.load_config(&yaml, true).await.unwrap();
+    assert_eq!(loaded.profiles["vm0/default"], profile);
+    let serialized = serde_yaml_ng::to_string(&loaded).unwrap();
+    assert!(serialized.contains("home_disk_mb: 24576"));
+    let reparsed: RunnerConfig = serde_yaml_ng::from_str(&serialized).unwrap();
+    assert_eq!(reparsed, loaded);
+
+    let old = yaml.replace("home_disk_mb: 24576", "workspace_disk_mb: 24576");
+    let mixed = yaml.replace(
+        "home_disk_mb: 24576",
+        "home_disk_mb: 24576\n    workspace_disk_mb: 24576",
+    );
+    for incompatible in [old, mixed] {
+        let error = fixture.load_config(&incompatible, true).await.unwrap_err();
+        assert!(error.to_string().contains("workspace_disk_mb"), "{error}");
+    }
+}
+
 fn make_profiles() -> BTreeMap<String, ProfileConfig> {
     let mut profiles = BTreeMap::new();
     profiles.insert("vm0/default".into(), default_profile_config());
@@ -171,7 +201,7 @@ fn default_profile_config() -> ProfileConfig {
         vcpu: 2,
         memory_mb: 4096,
         rootfs_disk_mb: 8192,
-        workspace_disk_mb: 16384,
+        home_disk_mb: 16384,
     }
 }
 
@@ -347,7 +377,7 @@ profiles:
     vcpu: 2
     memory_mb: 4096
     rootfs_disk_mb: 8192
-    workspace_disk_mb: 16384
+    home_disk_mb: 16384
 sandbox:
   max_concurrent: 8
   concurrency_factor: 2.0
@@ -367,7 +397,7 @@ server:
     assert_eq!(default.vcpu, 2);
     assert_eq!(default.rootfs_hash, TEST_ROOTFS_HASH);
     assert_eq!(default.rootfs_disk_mb, 8192);
-    assert_eq!(default.workspace_disk_mb, 16384);
+    assert_eq!(default.home_disk_mb, 16384);
     assert_eq!(config.sandbox.max_concurrent, 8);
     assert!((config.sandbox.concurrency_factor - 2.0).abs() < f64::EPSILON);
     let server = config.server.unwrap();
@@ -528,7 +558,7 @@ profiles:
 
     let err = fixture.load_config(&yaml, true).await.unwrap_err();
     assert!(
-        err.to_string().contains("rootfs_disk_mb") || err.to_string().contains("workspace_disk_mb"),
+        err.to_string().contains("rootfs_disk_mb") || err.to_string().contains("home_disk_mb"),
         "unexpected error: {err}"
     );
 }
@@ -711,12 +741,12 @@ async fn load_rejects_zero_rootfs_disk_mb_in_profile() {
 }
 
 #[tokio::test]
-async fn load_rejects_zero_workspace_disk_mb_in_profile() {
+async fn load_rejects_zero_home_disk_mb_in_profile() {
     let fixture = ConfigFixture::without_image_artifacts().await;
     let yaml = fixture.yaml_with_profile(
         "vm0/default",
         ProfileConfig {
-            workspace_disk_mb: 0,
+            home_disk_mb: 0,
             ..default_profile_config()
         },
         "",
@@ -792,12 +822,12 @@ async fn load_rejects_excessive_rootfs_disk_mb_in_profile() {
 }
 
 #[tokio::test]
-async fn load_rejects_excessive_workspace_disk_mb_in_profile() {
+async fn load_rejects_excessive_home_disk_mb_in_profile() {
     let fixture = ConfigFixture::without_image_artifacts().await;
     let yaml = fixture.yaml_with_profile(
         "vm0/default",
         ProfileConfig {
-            workspace_disk_mb: 2000000,
+            home_disk_mb: 2000000,
             ..default_profile_config()
         },
         "",
@@ -899,7 +929,7 @@ async fn validate_profile_image_artifacts_rejects_missing_cow_bitmap() {
         vcpu: 2,
         memory_mb: 4096,
         rootfs_disk_mb: 8192,
-        workspace_disk_mb: 16384,
+        home_disk_mb: 16384,
     };
     let err = validate_profile_image_artifacts("vm0/default", &profile, &home)
         .await
@@ -1192,7 +1222,7 @@ async fn generate_then_load_round_trip() {
     let config_path = runner_dir.join("runner.yaml");
     let generated = tokio::fs::read_to_string(&config_path).await.unwrap();
     assert!(generated.contains("rootfs_disk_mb: 8192"));
-    assert!(generated.contains("workspace_disk_mb: 16384"));
+    assert!(generated.contains("home_disk_mb: 16384"));
     assert!(
         generated
             .lines()
@@ -1279,7 +1309,7 @@ profiles:
     vcpu: 2
     memory_mb: 4096
     rootfs_disk_mb: 8192
-    workspace_disk_mb: 16384
+    home_disk_mb: 16384
 "#,
         hash = TEST_ROOTFS_HASH,
         snap_hash = TEST_SNAPSHOT_HASH,

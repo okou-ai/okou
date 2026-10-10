@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.105.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.15...guest-agent-v0.105.0) (2026-10-10)
+
+
+### Features
+
+* **runner:** retain home images with verified history ([#38498](https://github.com/okou-ai/okou/issues/38498)) ([8b100e4](https://github.com/okou-ai/okou/commit/8b100e433e5933242c418dbfe1c1f3efd15a9b87))
+
+## [0.104.15](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.14...guest-agent-v0.104.15) (2026-10-10)
+
+
+### Bug Fixes
+
+* classify codex model-access verification failures safely ([#38578](https://github.com/okou-ai/okou/issues/38578)) ([ac4f149](https://github.com/okou-ai/okou/commit/ac4f1498f0574326fff8f73991aabc100012c36c))
+
+
+### Performance Improvements
+
+* **test:** reduce fixture observation allocations ([#38473](https://github.com/okou-ai/okou/issues/38473)) ([65e3292](https://github.com/okou-ai/okou/commit/65e3292dcf4cc635182ab1ffb88354726aae7402))
+
+## [0.104.14](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.13...guest-agent-v0.104.14) (2026-10-10)
+
+## [0.104.13](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.12...guest-agent-v0.104.13) (2026-10-10)
+
+
+### Refactoring
+
+* remove generic checkpoint persistence and protocols ([#38399](https://github.com/okou-ai/okou/issues/38399)) ([0c926e3](https://github.com/okou-ai/okou/commit/0c926e34ca09edaf2840ffcbfa56f3dc07a4588d))
+
+
+### Performance Improvements
+
+* **test:** avoid rebuilding owned fixture buffers ([#38450](https://github.com/okou-ai/okou/issues/38450)) ([f5ad1ba](https://github.com/okou-ai/okou/commit/f5ad1ba1e2b4d6745ed80c869bf4fb9b222cfafc))
+
 ## [0.104.12](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.11...guest-agent-v0.104.12) (2026-10-09)
 
 ## [0.104.11](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.10...guest-agent-v0.104.11) (2026-10-09)

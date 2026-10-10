@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.7.0](https://github.com/okou-ai/okou/compare/runner-provider-v0.6.5...runner-provider-v0.7.0) (2026-10-10)
+
+
+### Features
+
+* **runner:** retain home images with verified history ([#38498](https://github.com/okou-ai/okou/issues/38498)) ([8b100e4](https://github.com/okou-ai/okou/commit/8b100e433e5933242c418dbfe1c1f3efd15a9b87))
+
+## [0.6.5](https://github.com/okou-ai/okou/compare/runner-provider-v0.6.4...runner-provider-v0.6.5) (2026-10-10)
+
+## [0.6.4](https://github.com/okou-ai/okou/compare/runner-provider-v0.6.3...runner-provider-v0.6.4) (2026-10-10)
+
+## [0.6.3](https://github.com/okou-ai/okou/compare/runner-provider-v0.6.2...runner-provider-v0.6.3) (2026-10-10)
+
+
+### Refactoring
+
+* **pi:** retire unversioned model config execution ([#38449](https://github.com/okou-ai/okou/issues/38449)) ([c628473](https://github.com/okou-ai/okou/commit/c62847319cb3ebbd41259d662f47905a1cb39863))
+
 ## [0.6.2](https://github.com/okou-ai/okou/compare/runner-provider-v0.6.1...runner-provider-v0.6.2) (2026-10-09)
 
 ## [0.6.1](https://github.com/okou-ai/okou/compare/runner-provider-v0.6.0...runner-provider-v0.6.1) (2026-10-09)

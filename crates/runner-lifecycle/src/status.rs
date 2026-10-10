@@ -1576,6 +1576,7 @@ mod tests {
                 ResourceBudget::try_reserve_lease(&budget, 2, 2048).unwrap(),
                 blank_id,
                 "vm0/default".into(),
+                "test-rootfs".into(),
                 None,
             )),
             ParkResult::Parked

@@ -12,6 +12,83 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1009.0](https://github.com/okou-ai/okou/compare/app-v0.1008.2...app-v0.1009.0) (2026-10-10)
+
+
+### Features
+
+* add sidebar-first artifact previews behind a switch ([#38605](https://github.com/okou-ai/okou/issues/38605)) ([81341fb](https://github.com/okou-ai/okou/commit/81341fbbe6bd58b7a0e80823203a429e62e2887a))
+
+
+### Bug Fixes
+
+* **platform:** remove legacy fast model picker options ([#38619](https://github.com/okou-ai/okou/issues/38619)) ([7454454](https://github.com/okou-ai/okou/commit/745445415e26882f1ff09b1dd60fbe85adb5fbf8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.741.0
+
+## [0.1008.2](https://github.com/okou-ai/okou/compare/app-v0.1008.1...app-v0.1008.2) (2026-10-10)
+
+
+### Bug Fixes
+
+* **app:** gate stable preview fullscreen layout ([#38444](https://github.com/okou-ai/okou/issues/38444)) ([dfa059a](https://github.com/okou-ai/okou/commit/dfa059a8d9a778ee720c3e744712dee718c3b8a7))
+* **app:** retain artifact blobs during browser download handoff ([#38475](https://github.com/okou-ai/okou/issues/38475)) ([4122701](https://github.com/okou-ai/okou/commit/4122701f28a142ad0cd0876e2cacbcfee8848a58))
+* **app:** use external-link icon for live browser open action ([#38583](https://github.com/okou-ai/okou/issues/38583)) ([2f5e522](https://github.com/okou-ai/okou/commit/2f5e522b6b9feb423f108e4af080810112b5d6ac))
+* limit composer-anchored suggestions to chat threads ([#38575](https://github.com/okou-ai/okou/issues/38575)) ([f78ed44](https://github.com/okou-ai/okou/commit/f78ed443d2cb55aba7f34dbdba644acd85687d15))
+* **platform:** record bootstrap and shared worker failures as telemetry ([#38581](https://github.com/okou-ai/okou/issues/38581)) ([6b19212](https://github.com/okou-ai/okou/commit/6b19212474d62ea17b72507c59c79be46e8548a5))
+* show try again for safety policy refusals ([#38555](https://github.com/okou-ai/okou/issues/38555)) ([fb88a24](https://github.com/okou-ai/okou/commit/fb88a24dea118969c07fb2d2827c9fcf18f1a1a9))
+
+
+### Refactoring
+
+* **platform:** remove redundant standalone page z-index ([#38515](https://github.com/okou-ai/okou/issues/38515)) ([799c61c](https://github.com/okou-ai/okou/commit/799c61c30d213a870205bea2e7e32c79629cd3e4))
+* remove notify mail feature switch ([#38561](https://github.com/okou-ai/okou/issues/38561)) ([7f40f95](https://github.com/okou-ai/okou/commit/7f40f954492838ac72a4d291848b2ef24266a9a7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.549.0
+    * @okouai/core bumped to 8.740.1
+    * @okouai/ui bumped to 1.13.2
+
+## [0.1008.1](https://github.com/okou-ai/okou/compare/app-v0.1008.0...app-v0.1008.1) (2026-10-10)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.548.0
+    * @okouai/core bumped to 8.740.0
+
+## [0.1008.0](https://github.com/okou-ai/okou/compare/app-v0.1007.1...app-v0.1008.0) (2026-10-10)
+
+
+### Features
+
+* **discord:** complete oauth onboarding and slack conversation parity ([#37968](https://github.com/okou-ai/okou/issues/37968)) ([ccc74ac](https://github.com/okou-ai/okou/commit/ccc74ac9b9c74d70654fd0a0a547018cde7d55ed))
+
+
+### Bug Fixes
+
+* **platform:** align custom template picker with workflow layout ([#38401](https://github.com/okou-ai/okou/issues/38401)) ([c6386b8](https://github.com/okou-ai/okou/commit/c6386b84dd6c0ade208deb08e0e9e4747c7aa15c))
+* **platform:** keep quest intro content during dialog exit ([#38464](https://github.com/okou-ai/okou/issues/38464)) ([01ea1bc](https://github.com/okou-ai/okou/commit/01ea1bc53052141955509b4e73aa9d1dd3b68c2e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.547.0
+    * @okouai/core bumped to 8.739.2
+
 ## [0.1007.1](https://github.com/okou-ai/okou/compare/app-v0.1007.0...app-v0.1007.1) (2026-10-09)
 
 

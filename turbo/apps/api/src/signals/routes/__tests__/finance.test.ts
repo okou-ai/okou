@@ -1,9 +1,5 @@
 import { HttpResponse, http } from "msw";
-import { describe, expect, it, onTestFinished } from "vitest";
-import {
-  createUsagePricingFixture,
-  type UsagePricingFixture,
-} from "../../../test-fixtures/system-config-seeds";
+import { describe, expect, it } from "vitest";
 
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import { financeContract } from "@okouai/api-contracts/contracts/finance";
@@ -40,8 +36,8 @@ function authenticate(actor: ApiTestUser) {
   return { authorization: "Bearer clerk-session" };
 }
 
-function client(usagePricingResolution?: UsagePricingFixture["resolution"]) {
-  return setupApp({ context, routes: FINANCE_ROUTES, usagePricingResolution });
+function client() {
+  return setupApp({ context, routes: FINANCE_ROUTES });
 }
 
 async function fundActor(actor: ApiTestUser): Promise<void> {
@@ -63,43 +59,6 @@ function configureProvider(): void {
 }
 
 describe("okou finance routes", () => {
-  it("returns a quote when billing fails after provider success", async () => {
-    const actor = createBddApi(context).user();
-    await fundActor(actor);
-    configureProvider();
-    const pricing = await createUsagePricingFixture({
-      configured: [
-        {
-          kind: "finance",
-          provider: "apidojo",
-          category: "request",
-          unitPrice: 1,
-          unitSize: 1,
-        },
-      ],
-    });
-    onTestFinished(pricing.cleanup);
-    server.use(
-      http.get(`${APIDOJO_BASE_URL}/market/v2/get-quotes`, async () => {
-        await pricing.cleanup();
-        return HttpResponse.json({
-          quoteResponse: { result: [{ symbol: "AAPL" }] },
-        });
-      }),
-    );
-    const response = await accept(
-      client(pricing.resolution)(financeContract).quote({
-        headers: authenticate(actor),
-        body: { symbol: "AAPL" },
-      }),
-      [200],
-    );
-    expect(response.body).toMatchObject({
-      creditsCharged: null,
-      result: { quoteResponse: { result: [{ symbol: "AAPL" }] } },
-    });
-  });
-
   it("rejects agent tokens without finance:read capability", async () => {
     const actor = createBddApi(context).user();
     if (!actor.orgId) {

@@ -1,5 +1,5 @@
 import { command } from "ccstate";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { builtinConnectorDcrRegistrations } from "@okouai/db/schema/connector-dcr-registration";
 import { builtinConnectorAccountOauthBindings } from "@okouai/db/schema/connector-account-oauth-binding";
 import { connectors } from "@okouai/db/schema/connector";
@@ -12,6 +12,7 @@ import {
 import type {
   McpAutomaticOAuthDcrRegistration,
   McpAutomaticOAuthDcrRegistrationInput,
+  McpAutomaticOAuthDcrClientStore,
   McpAutomaticOAuthDcrStore,
 } from "./mcp-automatic-oauth.service";
 
@@ -36,50 +37,52 @@ function registration(
 }
 
 /**
- * Retires one exact registration in the caller's transaction without explicit
- * row locks. Accounts are written first, the order account writers use; the
- * binding condition selects only accounts still bound to this registration,
- * and deleting its bindings before the registration satisfies the binding
- * foreign key. Every statement is conditional on the exact id and owner, so a
- * registration already retired by another writer is a no-op.
+ * Accounts precede bindings, matching account writers. Each deleted binding
+ * consumes its updated account's identity; registration deletion requires all
+ * of its snapshot bindings to have been removed. RETURNING carries these real
+ * dependencies, including the empty-binding case, within one atomic statement.
  */
-async function retireRegistration(
-  db: Db,
+export function retireBuiltinDcrRegistrationSql(
   owner: BuiltinConnectorAutomaticContractOwner,
   id: string,
-): Promise<void> {
+) {
   const boundToRegistration = and(
     eq(builtinConnectorAccountOauthBindings.dcrRegistrationId, id),
     eq(builtinConnectorAccountOauthBindings.orgId, owner.orgId),
     eq(builtinConnectorAccountOauthBindings.connectorSlug, owner.connectorSlug),
     eq(builtinConnectorAccountOauthBindings.authMethod, owner.authMethod),
   );
-  await db
-    .update(connectors)
-    .set({
-      needsReconnect: true,
-      reconnectReason: "authorization_expired_or_revoked",
-      updatedAt: nowDate(),
-    })
-    .where(
-      inArray(
+  return sql`
+    WITH reconnected_accounts AS (
+      UPDATE ${connectors}
+      SET needs_reconnect = true,
+          reconnect_reason = 'authorization_expired_or_revoked',
+          updated_at = ${sql.param(nowDate(), connectors.updatedAt)}
+      WHERE ${inArray(
         connectors.id,
-        db
-          .select({
-            id: builtinConnectorAccountOauthBindings.connectorAccountId,
-          })
-          .from(builtinConnectorAccountOauthBindings)
-          .where(boundToRegistration),
-      ),
-    );
-  await db
-    .delete(builtinConnectorAccountOauthBindings)
-    .where(boundToRegistration);
-  await db
-    .delete(builtinConnectorDcrRegistrations)
-    .where(
-      and(eq(builtinConnectorDcrRegistrations.id, id), ownerCondition(owner)),
-    );
+        sql`(SELECT ${builtinConnectorAccountOauthBindings.connectorAccountId}
+            FROM ${builtinConnectorAccountOauthBindings}
+            WHERE ${boundToRegistration})`,
+      )}
+      RETURNING ${connectors.id}
+    ), removed_bindings AS (
+      DELETE FROM ${builtinConnectorAccountOauthBindings}
+      WHERE ${boundToRegistration}
+        AND ${inArray(
+          builtinConnectorAccountOauthBindings.connectorAccountId,
+          sql`(SELECT id FROM reconnected_accounts)`,
+        )}
+      RETURNING ${builtinConnectorAccountOauthBindings.connectorAccountId}
+    )
+    DELETE FROM ${builtinConnectorDcrRegistrations}
+    WHERE ${and(eq(builtinConnectorDcrRegistrations.id, id), ownerCondition(owner))}
+      AND NOT EXISTS (
+        SELECT ${builtinConnectorAccountOauthBindings.connectorAccountId}
+        FROM ${builtinConnectorAccountOauthBindings}
+        WHERE ${boundToRegistration}
+        EXCEPT SELECT connector_account_id FROM removed_bindings
+      )
+  `;
 }
 
 interface BuiltinDcrStoreArgs {
@@ -180,26 +183,9 @@ export const createBuiltinDcrRegistration$ = command(
 
 export function builtinConnectorAutomaticDcrStore(
   args: BuiltinDcrStoreArgs,
-): Omit<McpAutomaticOAuthDcrStore, "create"> {
+): McpAutomaticOAuthDcrClientStore {
   const { db, owner } = args;
   return {
-    async readByIssuer(issuer) {
-      const [row] = await db
-        .select()
-        .from(builtinConnectorDcrRegistrations)
-        .where(
-          and(
-            ownerCondition(owner),
-            eq(builtinConnectorDcrRegistrations.issuer, issuer),
-          ),
-        )
-        .orderBy(
-          desc(builtinConnectorDcrRegistrations.issuedAt),
-          desc(builtinConnectorDcrRegistrations.id),
-        )
-        .limit(1);
-      return row ? registration(row) : null;
-    },
     async readBoundClient(id) {
       const [row] = await db
         .select()
@@ -222,17 +208,6 @@ export function builtinConnectorAutomaticDcrStore(
             : await decryptStoredSecretValue(row.encryptedClientSecret),
       };
     },
-    async hasLinkedAccounts(id) {
-      const [account] = await db
-        .select({ id: builtinConnectorAccountOauthBindings.connectorAccountId })
-        .from(builtinConnectorAccountOauthBindings)
-        .where(eq(builtinConnectorAccountOauthBindings.dcrRegistrationId, id))
-        .limit(1);
-      return account !== undefined;
-    },
-    async retire(id) {
-      await retireRegistration(db, owner, id);
-    },
   };
 }
 
@@ -248,10 +223,7 @@ export const retireBuiltinDcrRegistration$ = command(
   ): Promise<void> => {
     const db = set(writeDb$);
     const { owner, id } = args;
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0078; new non-billing transactions are prohibited.
-    await db.transaction(async (tx) => {
-      await retireRegistration(tx, owner, id);
-    });
+    await db.execute(retireBuiltinDcrRegistrationSql(owner, id));
     signal.throwIfAborted();
   },
 );

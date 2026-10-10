@@ -12,15 +12,15 @@ use guest_contracts::epoch_milliseconds::{
 use tracing::warn;
 
 use crate::guest_timezone::GuestTimezoneAssumption;
+use crate::home_image_cache::{HomeCacheCheckoutResult, HomeImageLease};
 use crate::idle_pool::ExactIdleReservationMiss;
 use crate::resource_budget::ResourceBudget;
 use crate::telemetry::{
     JobTelemetry, RunnerPreSpawnAttribution, RunnerPreSpawnConcurrencyBucket,
     RunnerResourceBudgetOccupancy, RunnerStartupPath,
 };
-use crate::workspace_image_cache::{WorkspaceCacheCheckoutResult, WorkspaceImageLease};
 use runner_provider::ApiClaimTiming;
-use runner_types::types::{ExecutionContext, SandboxReuseResult, WorkspaceReuseResult};
+use runner_types::types::{ExecutionContext, HomeReuseResult, SandboxReuseResult};
 
 static INVALID_API_START_TIME_WARNED: AtomicBool = AtomicBool::new(false);
 
@@ -87,8 +87,8 @@ pub enum RunnerPreSpawnPhase {
     SessionHistoryMaterializerStart,
     DeviceRateLimits,
     IdleReuseLookup,
-    WorkspaceCacheStateLookup,
-    WorkspacePromotionValidation,
+    HomeCacheStateLookup,
+    HomePromotionValidation,
     IdleUnpark,
     ActiveStatusPublish,
     SpawnJobSetup,
@@ -273,8 +273,8 @@ impl RunnerPreSpawnPhase {
         Self::SessionHistoryMaterializerStart,
         Self::DeviceRateLimits,
         Self::IdleReuseLookup,
-        Self::WorkspaceCacheStateLookup,
-        Self::WorkspacePromotionValidation,
+        Self::HomeCacheStateLookup,
+        Self::HomePromotionValidation,
         Self::IdleUnpark,
         Self::ActiveStatusPublish,
         Self::SpawnJobSetup,
@@ -289,8 +289,8 @@ impl RunnerPreSpawnPhase {
             }
             Self::DeviceRateLimits => "runner_claim_device_rate_limits",
             Self::IdleReuseLookup => "runner_claim_idle_reuse_lookup",
-            Self::WorkspaceCacheStateLookup => "runner_claim_workspace_cache_state_lookup",
-            Self::WorkspacePromotionValidation => "runner_claim_workspace_promotion_validation",
+            Self::HomeCacheStateLookup => "runner_claim_home_cache_state_lookup",
+            Self::HomePromotionValidation => "runner_claim_home_promotion_validation",
             Self::IdleUnpark => "runner_claim_idle_unpark",
             Self::ActiveStatusPublish => "runner_claim_active_status_publish",
             Self::SpawnJobSetup => "runner_claim_spawn_job_setup",
@@ -305,8 +305,8 @@ struct RunnerPreSpawnPhaseDurations {
     session_history_materializer_start: Option<Duration>,
     device_rate_limits: Option<Duration>,
     idle_reuse_lookup: Option<Duration>,
-    workspace_cache_state_lookup: Option<Duration>,
-    workspace_promotion_validation: Option<Duration>,
+    home_cache_state_lookup: Option<Duration>,
+    home_promotion_validation: Option<Duration>,
     idle_unpark: Option<Duration>,
     active_status_publish: Option<Duration>,
     spawn_job_setup: Option<Duration>,
@@ -322,12 +322,8 @@ impl RunnerPreSpawnPhaseDurations {
             }
             RunnerPreSpawnPhase::DeviceRateLimits => &mut self.device_rate_limits,
             RunnerPreSpawnPhase::IdleReuseLookup => &mut self.idle_reuse_lookup,
-            RunnerPreSpawnPhase::WorkspaceCacheStateLookup => {
-                &mut self.workspace_cache_state_lookup
-            }
-            RunnerPreSpawnPhase::WorkspacePromotionValidation => {
-                &mut self.workspace_promotion_validation
-            }
+            RunnerPreSpawnPhase::HomeCacheStateLookup => &mut self.home_cache_state_lookup,
+            RunnerPreSpawnPhase::HomePromotionValidation => &mut self.home_promotion_validation,
             RunnerPreSpawnPhase::IdleUnpark => &mut self.idle_unpark,
             RunnerPreSpawnPhase::ActiveStatusPublish => &mut self.active_status_publish,
             RunnerPreSpawnPhase::SpawnJobSetup => &mut self.spawn_job_setup,
@@ -343,10 +339,8 @@ impl RunnerPreSpawnPhaseDurations {
             }
             RunnerPreSpawnPhase::DeviceRateLimits => self.device_rate_limits,
             RunnerPreSpawnPhase::IdleReuseLookup => self.idle_reuse_lookup,
-            RunnerPreSpawnPhase::WorkspaceCacheStateLookup => self.workspace_cache_state_lookup,
-            RunnerPreSpawnPhase::WorkspacePromotionValidation => {
-                self.workspace_promotion_validation
-            }
+            RunnerPreSpawnPhase::HomeCacheStateLookup => self.home_cache_state_lookup,
+            RunnerPreSpawnPhase::HomePromotionValidation => self.home_promotion_validation,
             RunnerPreSpawnPhase::IdleUnpark => self.idle_unpark,
             RunnerPreSpawnPhase::ActiveStatusPublish => self.active_status_publish,
             RunnerPreSpawnPhase::SpawnJobSetup => self.spawn_job_setup,
@@ -675,23 +669,18 @@ pub(super) fn record_reuse_result(telemetry: &mut JobTelemetry, result: SandboxR
     telemetry.record(action_type, Duration::ZERO, true, None);
 }
 
-pub(super) fn record_workspace_cache_result(
-    telemetry: &mut JobTelemetry,
-    lease: &WorkspaceImageLease,
-) {
+pub(super) fn record_home_cache_result(telemetry: &mut JobTelemetry, lease: &HomeImageLease) {
     let result = lease.result();
     let action_type = match result {
-        WorkspaceCacheCheckoutResult::Hit => "workspace_image_cache_hit",
-        WorkspaceCacheCheckoutResult::Miss => "workspace_image_cache_miss",
-        WorkspaceCacheCheckoutResult::NoReuseKey => "workspace_image_cache_no_reuse_key",
-        WorkspaceCacheCheckoutResult::InvalidWorkingDir => {
-            "workspace_image_cache_invalid_working_dir"
-        }
-        WorkspaceCacheCheckoutResult::LockBusy => "workspace_image_cache_lock_busy",
-        WorkspaceCacheCheckoutResult::InvalidMetadata => "workspace_image_cache_invalid_metadata",
-        WorkspaceCacheCheckoutResult::DiskPressure => "workspace_image_cache_disk_pressure",
+        HomeCacheCheckoutResult::Hit => "home_image_cache_hit",
+        HomeCacheCheckoutResult::Miss => "home_image_cache_miss",
+        HomeCacheCheckoutResult::NoReuseKey => "home_image_cache_no_reuse_key",
+        HomeCacheCheckoutResult::InvalidWorkingDir => "home_image_cache_invalid_working_dir",
+        HomeCacheCheckoutResult::LockBusy => "home_image_cache_lock_busy",
+        HomeCacheCheckoutResult::InvalidMetadata => "home_image_cache_invalid_metadata",
+        HomeCacheCheckoutResult::DiskPressure => "home_image_cache_disk_pressure",
     };
-    if result == WorkspaceCacheCheckoutResult::LockBusy {
+    if result == HomeCacheCheckoutResult::LockBusy {
         if let Some((outcome, reason)) = lease.lock_outcome_and_reason() {
             telemetry.record_bounded_outcome(action_type, true, outcome, reason);
         } else {
@@ -716,14 +705,14 @@ pub(super) fn record_api_startup_boundaries(
     context: &ExecutionContext,
     telemetry: &mut JobTelemetry,
     sandbox_reuse_result: SandboxReuseResult,
-    workspace_reuse_result: WorkspaceReuseResult,
+    home_reuse_result: HomeReuseResult,
     shell_started_at: Instant,
     agent_ready_at: Instant,
 ) {
     let runner_startup_path = if sandbox_reuse_result == SandboxReuseResult::Reused {
         RunnerStartupPath::Sandbox
-    } else if workspace_reuse_result == WorkspaceReuseResult::Reused {
-        RunnerStartupPath::Workspace
+    } else if home_reuse_result == HomeReuseResult::Reused {
+        RunnerStartupPath::Home
     } else {
         RunnerStartupPath::Cold
     };

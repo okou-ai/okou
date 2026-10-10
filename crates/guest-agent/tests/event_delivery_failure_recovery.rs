@@ -22,7 +22,7 @@ struct EventFailureRun {
 }
 
 #[tokio::test]
-async fn successful_cli_with_exhausted_event_delivery_uses_recovery_checkpoint()
+async fn successful_cli_with_exhausted_event_delivery_uses_recovery_finalization()
 -> Result<(), Box<dyn std::error::Error>> {
     let run = run_event_failure_case("event-delivery-failure-recovery", 0, 500).await?;
 
@@ -34,10 +34,10 @@ async fn successful_cli_with_exhausted_event_delivery_uses_recovery_checkpoint()
     );
     assert!(
         run.stderr
-            .contains("Attempting best-effort recovery checkpoint")
+            .contains("Attempting best-effort recovery finalization")
     );
-    assert!(run.stderr.contains("Recovery checkpoint created"));
-    assert!(!run.stderr.contains("▷ Checkpoint"));
+    assert!(run.stderr.contains("Recovery finalization created"));
+    assert!(!run.stderr.contains("▷ Finalization"));
     assert_eq!(
         run.diagnostic.failure_class,
         FailureClass::EventUploadFailed
@@ -62,10 +62,10 @@ async fn successful_cli_with_nonretryable_event_rejection_reports_failed_batch()
     );
     assert!(
         run.stderr
-            .contains("Attempting best-effort recovery checkpoint")
+            .contains("Attempting best-effort recovery finalization")
     );
-    assert!(run.stderr.contains("Recovery checkpoint created"));
-    assert!(!run.stderr.contains("▷ Checkpoint"));
+    assert!(run.stderr.contains("Recovery finalization created"));
+    assert!(!run.stderr.contains("▷ Finalization"));
     assert_eq!(
         run.diagnostic.failure_class,
         FailureClass::EventUploadFailed

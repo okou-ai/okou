@@ -37,7 +37,6 @@ import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { seedBuiltInModelKey } from "./helpers/runtime-state";
 const context = testContext();
 const bdd = createBddApi(context);
 const api = createRunsApi(context);
@@ -3274,28 +3273,10 @@ describe("CHAT-02: failed chat callbacks", () => {
       expected: "insufficient_credits",
       publicReason: "insufficient_credits",
     },
-    {
-      name: "built-in balance",
-      builtIn: true,
-      reason: "provider_insufficient_credits",
-      error: "Credit balance is too low",
-      expected: "The current model is unavailable.",
-      publicReason: undefined,
-    },
-    {
-      name: "vm0 credits during built-in run",
-      builtIn: true,
-      reason: "insufficient_credits",
-      error:
-        "Insufficient credits. Add credits or connect a personal Codex or Claude subscription to continue.",
-      expected: "insufficient_credits",
-      publicReason: "insufficient_credits",
-    },
   ] as const)(
     "presents $name using persisted ownership across chat and detail reads",
     async (scenario) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
-      await seedBuiltInModelKey(context, "okou-1.0");
       await api.updateUserModelPreference(actor, "claude-fable-5-1");
       const run = await startChatRun(actor, {
         agentId,
@@ -3353,14 +3334,11 @@ describe("CHAT-02: failed chat callbacks", () => {
 
   it.each([
     [false, false],
-    [true, false],
     [false, true],
-    [true, true],
   ])(
     "protects built-in=%s multi-block=%s billing events and network exports while preserving ordinary output",
     async (builtIn, multipleBlocks) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
-      await seedBuiltInModelKey(context, "okou-1.0");
       await api.updateUserModelPreference(
         actor,
         builtIn ? null : "claude-fable-5-1",
@@ -3664,7 +3642,7 @@ describe("CHAT-02: failed chat callbacks", () => {
 
   it("formats failed-run errors and notifies, without auto-sending", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    await seedBuiltInModelKey(context, "okou-1.0");
+    await integrations.configureNativeSubscriptionModels(actor);
     await api.updateUserModelPreference(actor, "claude-fable-5-1");
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     await chatCallbacks.registerPushSubscription(actor);
@@ -3710,14 +3688,6 @@ describe("CHAT-02: failed chat callbacks", () => {
         failureReason: "provider_rate_limited",
       },
       {
-        prompt: "round seven",
-        error: usageLimitError,
-        expectedError:
-          "Selected model is at capacity. Please try a different model.",
-        failureReason: "provider_overloaded",
-        selectedModel: null,
-      },
-      {
         prompt: "round eight",
         error:
           "Claude Fable 5.1 is overloaded. Please wait a few minutes and try again, or switch to another model.",
@@ -3757,7 +3727,7 @@ describe("CHAT-02: failed chat callbacks", () => {
         error: codexAccessProgramError,
         expectedError: CHAT_RUN_CODEX_ACCESS_PROGRAM_UNAVAILABLE_MESSAGE,
         failureReason: "codex_access_program_unavailable",
-        selectedModel: null,
+        selectedModel: "gpt-6-astra",
       },
     ];
 

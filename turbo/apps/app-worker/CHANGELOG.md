@@ -1,5 +1,49 @@
 # Changelog
 
+## [1.9.5](https://github.com/okou-ai/okou/compare/app-worker-v1.9.4...app-worker-v1.9.5) (2026-10-10)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.741.0
+
+## [1.9.4](https://github.com/okou-ai/okou/compare/app-worker-v1.9.3...app-worker-v1.9.4) (2026-10-10)
+
+
+### Bug Fixes
+
+* use hosted og credentials and restore the okou brand cover ([#38510](https://github.com/okou-ai/okou/issues/38510)) ([2d2ec67](https://github.com/okou-ai/okou/commit/2d2ec676fbf7ab4bc0db3cd5439715869ff2d6b9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.549.0
+    * @okouai/core bumped to 8.740.1
+
+## [1.9.3](https://github.com/okou-ai/okou/compare/app-worker-v1.9.2...app-worker-v1.9.3) (2026-10-10)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.548.0
+    * @okouai/core bumped to 8.740.0
+
+## [1.9.2](https://github.com/okou-ai/okou/compare/app-worker-v1.9.1...app-worker-v1.9.2) (2026-10-10)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.547.0
+    * @okouai/core bumped to 8.739.2
+
 ## [1.9.1](https://github.com/okou-ai/okou/compare/app-worker-v1.9.0...app-worker-v1.9.1) (2026-10-09)
 
 

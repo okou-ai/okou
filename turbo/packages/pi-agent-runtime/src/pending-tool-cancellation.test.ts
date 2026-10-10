@@ -1036,11 +1036,14 @@ describe("native pending-tool cancellation", () => {
           });
       };
       const persistedAtSettlement: string[][] = [];
+      const settledOutcomes: boolean[] = [];
       session.subscribe((event) => {
         if (event.type === "message_end" && event.message.role === "custom")
           customEvents.push(event.message.customType);
-        if (event.type === "agent_settled")
+        if (event.type === "agent_settled") {
           persistedAtSettlement.push(customEntries());
+          settledOutcomes.push(event.aborted);
+        }
       });
       const run = session.continuePendingTools();
       await toolStarted.promise;
@@ -1065,6 +1068,7 @@ describe("native pending-tool cancellation", () => {
       expect(customEntries()).toEqual(["tool-note", "settlement-note"]);
       expect(customEvents).toEqual(["tool-note", "settlement-note"]);
       expect(persistedAtSettlement).toEqual([["tool-note", "settlement-note"]]);
+      expect(settledOutcomes).toEqual([cancel]);
       expect(
         session.messages
           .filter((message) => {

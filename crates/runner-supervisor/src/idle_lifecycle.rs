@@ -57,7 +57,7 @@ impl IdleDestroyTracker {
         let reuse_state_notify = Arc::clone(&self.reuse_state_notify);
         drop(self.tasks.spawn(async move {
             let result = destroy_idle_payload_and_wait(payload, context).await;
-            if result.workspace_cache_promoted {
+            if result.home_cache_promoted {
                 reuse_state_notify.notify_one();
             }
         }));
@@ -120,7 +120,7 @@ pub async fn prune_exact_idle_pool(
                     DestroyOutcome::Completed => report.completed += 1,
                     DestroyOutcome::Uncertain => report.uncertain += 1,
                 }
-                if result.workspace_cache_promoted {
+                if result.home_cache_promoted {
                     tracker.notify_reuse_state();
                 }
                 drop(result.budget_lease);
@@ -551,14 +551,14 @@ pub async fn destroy_idle_jobs_and_wait(jobs: Vec<IdleDestroyJob>, context: &'st
     for job in jobs {
         set.spawn(destroy_idle_job(job, context));
     }
-    let mut workspace_cache_promoted = false;
+    let mut home_cache_promoted = false;
     while let Some(result) = set.join_next().await {
         match result {
-            Ok(promoted) => workspace_cache_promoted |= promoted,
+            Ok(promoted) => home_cache_promoted |= promoted,
             Err(e) => warn!(context, error = %e, "idle entry destroy task panicked"),
         }
     }
-    workspace_cache_promoted
+    home_cache_promoted
 }
 
 /// Destroy an idle sandbox entry. Its budget lease is released by Drop.
@@ -570,14 +570,14 @@ pub async fn destroy_idle_payload_and_wait(
     payload: IdleDestroyPayload,
     context: &'static str,
 ) -> IdleDestroyResult {
-    let handle = tokio::spawn(payload.finalize_workspace_and_destroy(context));
+    let handle = tokio::spawn(payload.finalize_home_and_destroy(context));
     match handle.await {
         Ok(outcome) => outcome,
         Err(e) => {
             warn!(context, error = %e, "idle payload destroy task panicked");
             IdleDestroyResult {
                 outcome: DestroyOutcome::Uncertain,
-                workspace_cache_promoted: false,
+                home_cache_promoted: false,
             }
         }
     }
@@ -590,15 +590,13 @@ mod tests {
     use sandbox::{ResourceLimits, SandboxConfig, SandboxFactory};
     use sandbox_mock::MockSandboxFactory;
 
+    use runner_lifecycle::home_promotion::test_support::{HomePromotionFixture, TEST_COMPLETED_AT};
     use runner_lifecycle::idle_pool::{
         ExactIdleReservationMiss, IdleParkRequest, IdleParkRequestParts, IdlePool, IdlePoolConfig,
         ParkResult, ParkingGate, test_support::ParkedIdleCandidateBuilder,
     };
     use runner_lifecycle::idle_reuse_preparation::add_healthy_reuse_preparation_matcher;
     use runner_lifecycle::resource_budget::ResourceBudget;
-    use runner_lifecycle::workspace_promotion::test_support::{
-        TEST_COMPLETED_AT, WorkspacePromotionFixture,
-    };
     use runner_storage::storage_fingerprints::StorageFingerprints;
 
     fn claimed_idle_pool(
@@ -838,7 +836,7 @@ mod tests {
                         memory_mb: 2048,
                     },
                     device_rate_limits: None,
-                    workspace_drive: None,
+                    home_drive: None,
                 })
                 .await
                 .unwrap();
@@ -901,11 +899,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn destroy_idle_jobs_and_wait_reports_workspace_cache_promotion() {
-        let fixture = WorkspacePromotionFixture::new("thread:idle-destroy-cache").await;
+    async fn destroy_idle_jobs_and_wait_reports_home_cache_promotion() {
+        let fixture = HomePromotionFixture::new("thread:idle-destroy-cache").await;
         let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
         add_healthy_reuse_preparation_matcher(&overrides);
-        runner_lifecycle::workspace_promotion::test_support::add_healthy_cache_preparation_matcher(
+        runner_lifecycle::home_promotion::test_support::add_healthy_cache_preparation_matcher(
             &overrides,
         );
         let factory: Arc<Box<dyn SandboxFactory>> =
@@ -918,7 +916,7 @@ mod tests {
                     memory_mb: 4096,
                 },
                 device_rate_limits: None,
-                workspace_drive: None,
+                home_drive: None,
             })
             .await
             .expect("create sandbox");
@@ -931,6 +929,7 @@ mod tests {
             reuse_key: fixture.reuse_key.clone(),
             sandbox_id: fixture.sandbox_id,
             profile_name: "vm0/default".into(),
+            rootfs_hash: "test-rootfs".into(),
             device_rate_limits: None,
             budget_lease: lease,
             source_ip: "10.0.0.1".into(),
@@ -938,8 +937,9 @@ mod tests {
             restored_session_identity: None,
             history_generation_run_id: None,
             guest_timezone_intent: runner_lifecycle::guest_timezone::GuestTimezoneIntent::Unknown,
-            workspace_image_size_bytes: b"workspace image".len() as u64,
-            workspace_promotion: Some(fixture.promotion),
+            home_image_size_bytes:
+                runner_lifecycle::home_promotion::test_support::TEST_HOME_IMAGE_SIZE_BYTES,
+            home_promotion: Some(fixture.promotion),
             handoff: None,
         });
         let candidate = match request.park_for_idle().await {
@@ -955,7 +955,7 @@ mod tests {
 
         assert!(promoted);
         assert_eq!(budget.allocated(), (0, 0, 0));
-        let held = fixture.cache.held_workspace_states().await;
+        let held = fixture.cache.held_home_states().await;
         assert_eq!(held.len(), 1);
         assert_eq!(held[0].reuse_key, fixture.reuse_key);
     }

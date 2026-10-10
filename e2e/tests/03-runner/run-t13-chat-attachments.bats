@@ -41,11 +41,11 @@ teardown() {
     first_marker="ATTACHMENTS_OK_${TEST_ID}"
     first_prompt=$(cat <<'EOF'
 set -euo pipefail
-test "$npm_config_cache" = "/home/user/workspace/.vm0/cache/npm"
+test "$(npm config get cache)" = "/home/user/.npm"
 # Prove the artifact supports the canonical executable and guest-agent boundary
 # before using Okou for attachment operations.
 okou_help="$(npx --yes --package="${CLI_PKG_URL}" okou --help)"
-test -d "$npm_config_cache"
+test -d /home/user/.npm
 grep -F 'Usage: okou' <<<"$okou_help"
 agent_loop_help="$(npx --yes --package="${CLI_PKG_URL}" okou __agent-loop --help)"
 grep -F 'Internal sandbox Pi agent loop' <<<"$agent_loop_help"
@@ -116,11 +116,13 @@ EOF
     local continuation_prompt
     continuation_prompt=$(cat <<'EOF'
 set -euo pipefail
-test "$npm_config_cache" = "/home/user/workspace/.vm0/cache/npm"
+test "$(npm config get cache)" = "/home/user/.npm"
 # Continuation can restore session history in a fresh sandbox, so re-download
 # the attachments instead of depending on runner-local files from the first run.
 npx --yes --package="${CLI_PKG_URL}" okou web download-file '__CONTENT_ID__' -o /tmp/runner-content-continuation.txt
-test -d "$npm_config_cache"
+test -d /home/user/.npm
+# Explicit per-command cache settings are still honored; no forced home/workspace routing.
+test "$(npm_config_cache=/tmp/runner-explicit-npm-cache npm config get cache)" = /tmp/runner-explicit-npm-cache
 npx --yes --package="${CLI_PKG_URL}" okou web download-file '__EMPTY_ID__' -o /tmp/runner-empty-continuation.txt
 grep -F '__CONTENT_MARKER__' /tmp/runner-content-continuation.txt
 test ! -s /tmp/runner-empty-continuation.txt

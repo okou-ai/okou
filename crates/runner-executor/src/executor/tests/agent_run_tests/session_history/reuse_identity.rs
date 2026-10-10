@@ -80,7 +80,7 @@ fn context_with_checkpointed_session_identity(
     )
     .unwrap();
     let identity =
-        RestoredSessionIdentity::from_final_metadata(metadata, metadata_path, runtime_dir)
+        RestoredSessionIdentity::from_final_metadata(metadata.clone(), metadata_path, runtime_dir)
             .expect("checkpointed identity");
     (ctx, identity)
 }
@@ -126,9 +126,10 @@ async fn assert_checkpointed_final_identity_helper_failure_falls_back(
     )
     .unwrap();
     let idle_identity =
-        RestoredSessionIdentity::from_final_metadata(metadata, metadata_path, runtime_dir)
+        RestoredSessionIdentity::from_final_metadata(metadata.clone(), metadata_path, runtime_dir)
             .expect("checkpointed identity");
     sandbox.push_exec_result(Ok(helper_result));
+    sandbox.push_read_file_result(Ok(Some(metadata.to_json_vec().unwrap())));
     sandbox.push_read_file_result(Ok(None));
     let mut telemetry = test_telemetry(&config, &ctx);
 
@@ -139,7 +140,7 @@ async fn assert_checkpointed_final_identity_helper_failure_falls_back(
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::Reused,
-            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::SandboxReused,
+            home_reuse_result: runner_types::types::HomeReuseResult::SandboxReused,
             prev_storage: None,
         },
         &mut telemetry,
@@ -225,6 +226,7 @@ async fn run_in_sandbox_skips_checkpointed_final_session_history_restore() {
     .expect("final identity");
     sandbox.push_exec_result(Ok(ExecResult::new(0, Vec::new(), Vec::new())));
     sandbox.push_read_file_result(Ok(Some(metadata.to_json_vec().unwrap())));
+    sandbox.push_read_file_result(Ok(Some(metadata.to_json_vec().unwrap())));
     let mut telemetry = test_telemetry(&config, &ctx);
 
     let result = run_in_sandbox(
@@ -234,7 +236,7 @@ async fn run_in_sandbox_skips_checkpointed_final_session_history_restore() {
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::Reused,
-            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::SandboxReused,
+            home_reuse_result: runner_types::types::HomeReuseResult::SandboxReused,
             prev_storage: None,
         },
         &mut telemetry,
@@ -256,8 +258,9 @@ async fn run_in_sandbox_skips_checkpointed_final_session_history_restore() {
         Some(metadata_path.as_str())
     );
     let read_calls = sandbox.read_file_calls();
-    assert_eq!(read_calls.len(), 1);
-    assert_eq!(read_calls[0].path, metadata_path);
+    assert_eq!(read_calls.len(), 2);
+    assert_eq!(read_calls[0].path, previous_metadata_path);
+    assert_eq!(read_calls[1].path, metadata_path);
     assert_eq!(
         read_calls[0].max_bytes,
         FINAL_SESSION_HISTORY_IDENTITY_MAX_BYTES + 1
@@ -302,6 +305,18 @@ async fn run_in_sandbox_drops_checkpointed_identity_when_agent_is_cancelled() {
         br#"{"type":"before"}"#,
     );
     let cancel = tokio_util::sync::CancellationToken::new();
+    let expected = crate::executor::home_history::expected_history(&ctx).unwrap();
+    let source = claude_history_source(&ctx.resume_session.as_ref().unwrap().cli_agent_session_id);
+    let live_metadata = SessionHistoryIdentity::new(
+        expected.framework,
+        expected.session_id_hash,
+        expected.history_ref_kind,
+        expected.history_hash,
+        expected.history_size_bytes,
+        source,
+    )
+    .unwrap();
+    overrides.push_read_file_result(Ok(Some(live_metadata.to_json_vec().unwrap())));
     let mut telemetry = test_telemetry(&config, &ctx);
     let run = run_in_sandbox(
         sandbox.as_ref(),
@@ -310,7 +325,7 @@ async fn run_in_sandbox_drops_checkpointed_identity_when_agent_is_cancelled() {
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::Reused,
-            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::SandboxReused,
+            home_reuse_result: runner_types::types::HomeReuseResult::SandboxReused,
             prev_storage: None,
         },
         &mut telemetry,
@@ -371,6 +386,18 @@ async fn run_in_sandbox_drops_checkpointed_identity_when_agent_exits_nonzero() {
         "sess-nonzero-reuse-123",
         br#"{"type":"before"}"#,
     );
+    let expected = crate::executor::home_history::expected_history(&ctx).unwrap();
+    let source = claude_history_source(&ctx.resume_session.as_ref().unwrap().cli_agent_session_id);
+    let live_metadata = SessionHistoryIdentity::new(
+        expected.framework,
+        expected.session_id_hash,
+        expected.history_ref_kind,
+        expected.history_hash,
+        expected.history_size_bytes,
+        source,
+    )
+    .unwrap();
+    overrides.push_read_file_result(Ok(Some(live_metadata.to_json_vec().unwrap())));
     let mut telemetry = test_telemetry(&config, &ctx);
 
     let result = run_in_sandbox(
@@ -380,7 +407,7 @@ async fn run_in_sandbox_drops_checkpointed_identity_when_agent_exits_nonzero() {
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::Reused,
-            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::SandboxReused,
+            home_reuse_result: runner_types::types::HomeReuseResult::SandboxReused,
             prev_storage: None,
         },
         &mut telemetry,
@@ -497,14 +524,18 @@ async fn run_in_sandbox_restores_when_checkpointed_final_identity_helper_reports
         claude_history_source(session_id),
     )
     .unwrap();
-    let idle_identity =
-        RestoredSessionIdentity::from_final_metadata(metadata, metadata_path.clone(), runtime_dir)
-            .expect("checkpointed identity");
+    let idle_identity = RestoredSessionIdentity::from_final_metadata(
+        metadata.clone(),
+        metadata_path.clone(),
+        runtime_dir,
+    )
+    .expect("checkpointed identity");
     sandbox.push_exec_result(Ok(ExecResult::new(
         SESSION_HISTORY_IDENTITY_VERIFY_EXIT_HISTORY_MISMATCH,
         Vec::new(),
         Vec::new(),
     )));
+    sandbox.push_read_file_result(Ok(Some(metadata.to_json_vec().unwrap())));
     sandbox.push_read_file_result(Ok(None));
     let mut telemetry = test_telemetry(&config, &ctx);
 
@@ -515,7 +546,7 @@ async fn run_in_sandbox_restores_when_checkpointed_final_identity_helper_reports
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::Reused,
-            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::SandboxReused,
+            home_reuse_result: runner_types::types::HomeReuseResult::SandboxReused,
             prev_storage: None,
         },
         &mut telemetry,
@@ -598,10 +629,14 @@ async fn run_in_sandbox_restores_when_checkpointed_final_identity_helper_exec_er
         claude_history_source(session_id),
     )
     .unwrap();
-    let idle_identity =
-        RestoredSessionIdentity::from_final_metadata(metadata, metadata_path.clone(), runtime_dir)
-            .expect("checkpointed identity");
+    let idle_identity = RestoredSessionIdentity::from_final_metadata(
+        metadata.clone(),
+        metadata_path.clone(),
+        runtime_dir,
+    )
+    .expect("checkpointed identity");
     sandbox.push_exec_result(Err(sandbox_exec_error("vsock exec failed")));
+    sandbox.push_read_file_result(Ok(Some(metadata.to_json_vec().unwrap())));
     sandbox.push_read_file_result(Ok(None));
     let mut telemetry = test_telemetry(&config, &ctx);
 
@@ -612,7 +647,7 @@ async fn run_in_sandbox_restores_when_checkpointed_final_identity_helper_exec_er
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::Reused,
-            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::SandboxReused,
+            home_reuse_result: runner_types::types::HomeReuseResult::SandboxReused,
             prev_storage: None,
         },
         &mut telemetry,
@@ -731,7 +766,7 @@ async fn run_in_sandbox_restores_when_skip_verified_identity_mismatches_request(
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::Reused,
-            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::SandboxReused,
+            home_reuse_result: runner_types::types::HomeReuseResult::SandboxReused,
             prev_storage: None,
         },
         &mut telemetry,
@@ -860,7 +895,7 @@ async fn run_in_sandbox_records_mismatch_fallback_and_restores_prestarted_histor
             RunStart {
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::Reused,
-                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::SandboxReused,
+                home_reuse_result: runner_types::types::HomeReuseResult::SandboxReused,
                 prev_storage: None,
             },
             &mut telemetry,
@@ -973,7 +1008,7 @@ async fn run_in_sandbox_records_requested_larger_prefix_outcomes_without_changin
             RunStart {
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::Reused,
-                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::SandboxReused,
+                home_reuse_result: runner_types::types::HomeReuseResult::SandboxReused,
                 prev_storage: None,
             },
             &mut telemetry,
@@ -1090,7 +1125,7 @@ async fn run_in_sandbox_records_missing_idle_identity_reuse_fallback() {
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::Reused,
-            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::SandboxReused,
+            home_reuse_result: runner_types::types::HomeReuseResult::SandboxReused,
             prev_storage: None,
         },
         &mut telemetry,
@@ -1183,7 +1218,7 @@ async fn reused_sandbox_fallback_materializes_prune_eligible_codex_zstd_as_raw()
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::Reused,
-            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::SandboxReused,
+            home_reuse_result: runner_types::types::HomeReuseResult::SandboxReused,
             prev_storage: None,
         },
         &mut telemetry,

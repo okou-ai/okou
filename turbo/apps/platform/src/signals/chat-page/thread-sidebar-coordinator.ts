@@ -48,6 +48,11 @@ export const activeThreadSidebar$ = computed(
   },
 );
 
+export const activeThreadSidebarFullscreen$ = computed((get) => {
+  const active = get(activeThreadSidebar$);
+  return active ? get(active.thread.sidebar.fullscreen$) : false;
+});
+
 export const syncActiveBrowserFitAction$ = command(({ get, set }) => {
   const active = get(activeThreadSidebar$);
   if (active?.target.type !== "browser") {
@@ -153,6 +158,24 @@ export const openThreadArtifactSplitView$ = command(
       return;
     }
     set(openAttachmentOnThread$, thread, input, get(pageSignal$));
+  },
+);
+
+/** Open directly on the initiating thread, replacing any utility sidebar. */
+export const openArtifactSidebar$ = command(
+  ({ get, set }, input: ArtifactRefInput, threadId?: string): boolean => {
+    const left = get(currentLeftThread$);
+    const right = get(currentRightThread$);
+    const thread = threadId
+      ? [left, right].find((candidate) => {
+          return candidate?.threadId === threadId;
+        })
+      : (get(activeThreadSidebar$)?.thread ?? left ?? right);
+    if (!thread) {
+      return false;
+    }
+    set(openAttachmentOnThread$, thread, input, get(pageSignal$));
+    return true;
   },
 );
 

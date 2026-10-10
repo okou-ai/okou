@@ -35,11 +35,12 @@ pub struct MockSandbox {
     id: String,
     source_ip: String,
     run_control_id: Option<String>,
+    backing_process: Option<Arc<dyn SandboxBackingProcess>>,
     exec_results: Mutex<VecDeque<Result<ExecResult>>>,
     exec_calls: Mutex<Vec<ExecCall>>,
     storage_manifest_calls: Mutex<Vec<StorageManifestCall>>,
-    workspace_drive_mount_results: Mutex<VecDeque<Result<ExecResult>>>,
-    workspace_drive_mount_calls: Mutex<u32>,
+    home_drive_mount_results: Mutex<VecDeque<Result<ExecResult>>>,
+    home_drive_mount_calls: Mutex<u32>,
     session_history_identity_verify_calls: Mutex<Vec<SessionHistoryIdentityVerifyCall>>,
     codex_session_cleanup_calls: Mutex<Vec<CodexSessionCleanupCall>>,
     guest_state_restore_calls: Mutex<Vec<GuestStateRestoreCall>>,
@@ -87,11 +88,12 @@ impl MockSandbox {
             id: id.into(),
             source_ip: "10.0.0.1".into(),
             run_control_id: None,
+            backing_process: None,
             exec_results: Mutex::new(VecDeque::new()),
             exec_calls: Mutex::new(Vec::new()),
             storage_manifest_calls: Mutex::new(Vec::new()),
-            workspace_drive_mount_results: Mutex::new(VecDeque::new()),
-            workspace_drive_mount_calls: Mutex::new(0),
+            home_drive_mount_results: Mutex::new(VecDeque::new()),
+            home_drive_mount_calls: Mutex::new(0),
             session_history_identity_verify_calls: Mutex::new(Vec::new()),
             codex_session_cleanup_calls: Mutex::new(Vec::new()),
             guest_state_restore_calls: Mutex::new(Vec::new()),
@@ -114,6 +116,15 @@ impl MockSandbox {
             overrides,
             stdout_tx: Mutex::new(None),
         }
+    }
+
+    /// Attach an explicit external backing capability for this exact instance.
+    ///
+    /// Generic stop/kill success does not complete its provider wait. Use a
+    /// distinct capability for each backing even if Sandbox labels match.
+    pub fn with_backing_process(mut self, backing: Arc<dyn SandboxBackingProcess>) -> Self {
+        self.backing_process = Some(backing);
+        self
     }
 
     /// Override the source IP returned by this sandbox.
@@ -278,19 +289,19 @@ impl MockSandbox {
         self.storage_manifest_calls.lock_ignoring_poison().clone()
     }
 
-    /// Queue a fixed workspace-drive mount result. Results are consumed in FIFO order.
+    /// Queue a fixed home-drive mount result. Results are consumed in FIFO order.
     ///
     /// Local results, including errors, take precedence over shared overrides.
     /// Shared results are consumed only when this sandbox's queue is empty.
-    pub fn push_workspace_drive_mount_result(&self, result: Result<ExecResult>) {
-        self.workspace_drive_mount_results
+    pub fn push_home_drive_mount_result(&self, result: Result<ExecResult>) {
+        self.home_drive_mount_results
             .lock_ignoring_poison()
             .push_back(result);
     }
 
-    /// Return the total fixed workspace-drive mount calls.
-    pub fn workspace_drive_mount_calls(&self) -> u32 {
-        *self.workspace_drive_mount_calls.lock_ignoring_poison()
+    /// Return the total fixed home-drive mount calls.
+    pub fn home_drive_mount_calls(&self) -> u32 {
+        *self.home_drive_mount_calls.lock_ignoring_poison()
     }
 
     /// Return this sandbox's recorded fixed live identity verifier calls.
@@ -505,6 +516,16 @@ impl MockSandbox {
         {
             return Err(error);
         }
+        if controlled
+            && let Some(overrides) = &self.overrides
+            && let Some(handle) = overrides
+                .process
+                .start_agent_process_handles
+                .lock_ignoring_poison()
+                .pop_front()
+        {
+            return Ok(handle);
+        }
         let (mut tx, rx) = match request.output {
             ProcessOutputMode::Stream { queue_capacity, .. } => {
                 let (tx, rx) = tokio::sync::mpsc::channel(queue_capacity.max(1));
@@ -676,6 +697,10 @@ fn apply_exec_output_limits(mut result: ExecResult, limits: ExecOutputLimits) ->
 
 #[async_trait]
 impl Sandbox for MockSandbox {
+    fn backing_process(&self) -> Option<Arc<dyn SandboxBackingProcess>> {
+        self.backing_process.clone()
+    }
+
     fn id(&self) -> &str {
         &self.id
     }
@@ -953,21 +978,15 @@ impl Sandbox for MockSandbox {
         Ok(apply_exec_output_limits(result, EXEC_OUTPUT_LIMIT_1_MIB))
     }
 
-    async fn mount_workspace_drive(&self) -> Result<ExecResult> {
-        *self.workspace_drive_mount_calls.lock_ignoring_poison() += 1;
+    async fn mount_home_drive(&self) -> Result<ExecResult> {
+        *self.home_drive_mount_calls.lock_ignoring_poison() += 1;
         if let Some(overrides) = &self.overrides {
-            *overrides
-                .exec
-                .workspace_drive_mount_calls
-                .lock_ignoring_poison() += 1;
-            overrides
-                .exec
-                .workspace_drive_mount_call_notify
-                .notify_waiters();
-            wait_lifecycle_gate(&overrides.exec.workspace_drive_mount_lifecycle_gate).await;
+            *overrides.exec.home_drive_mount_calls.lock_ignoring_poison() += 1;
+            overrides.exec.home_drive_mount_call_notify.notify_waiters();
+            wait_lifecycle_gate(&overrides.exec.home_drive_mount_lifecycle_gate).await;
         }
         let local_result = self
-            .workspace_drive_mount_results
+            .home_drive_mount_results
             .lock_ignoring_poison()
             .pop_front();
         let result = local_result
@@ -975,7 +994,7 @@ impl Sandbox for MockSandbox {
                 self.overrides.as_ref().and_then(|overrides| {
                     overrides
                         .exec
-                        .workspace_drive_mount_results
+                        .home_drive_mount_results
                         .lock_ignoring_poison()
                         .pop_front()
                 })

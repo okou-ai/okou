@@ -50,6 +50,7 @@ function stsToken() {
 beforeEach(async () => {
   mockGoogleVoice();
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+  context.mocks.signalTimers.delay.mockResolvedValue(undefined);
   const actor = createBddApi(context).user();
   if (!actor.orgId) {
     throw new Error("Expected an organization");
@@ -81,7 +82,7 @@ describe("Google voice workload identity through the public API", () => {
       bodyFailure: true,
     },
   ])(
-    "reports temporary $stage I/O failure (body=$bodyFailure) without replay",
+    "reports temporary $stage I/O failure (body=$bodyFailure) after bounded token retries",
     async ({ url, bodyFailure }) => {
       let calls = 0;
       server.use(
@@ -104,7 +105,7 @@ describe("Google voice workload identity through the public API", () => {
       );
       const response = await accept(polish(), [503]);
       expect(response.body.error.code).toBe("PROVIDER_UNAVAILABLE");
-      expect(calls).toBe(1);
+      expect(calls).toBe(3);
     },
   );
 
@@ -358,8 +359,8 @@ describe("Google voice workload identity through the public API", () => {
     },
   );
 
-  it.each([403, 503])(
-    "does not retry auth HTTP %i and permits a later request to recover",
+  it.each([401, 403])(
+    "does not retry denied auth HTTP %i and permits a later request to recover",
     async (status) => {
       let attempts = 0;
       server.use(
@@ -377,7 +378,7 @@ describe("Google voice workload identity through the public API", () => {
         }),
       );
       const failed = await polish();
-      expect(failed.status).toBe(status === 403 ? 502 : 503);
+      expect(failed.status).toBe(502);
       expect(JSON.stringify(failed.body)).not.toContain(
         "private-provider-detail",
       );

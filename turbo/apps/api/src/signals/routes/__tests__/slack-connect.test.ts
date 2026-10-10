@@ -200,6 +200,116 @@ describe("GET /api/integrations/slack/connect", () => {
     });
   });
 
+  it("offers connect when the requested account is not linked", async () => {
+    const fixture = await slackOrgs.installOrg();
+    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+    const client = setupApp({ context, routes: slackConnectRoutes })(
+      slackConnectContract,
+    );
+
+    const response = await accept(
+      client.getLinkStatus({
+        headers: { authorization: "Bearer clerk-session" },
+        query: {
+          workspaceId: fixture.slackWorkspaceId,
+          slackUserId: fixture.slackUserId,
+        },
+      }),
+      [200],
+    );
+
+    expect(response.body).toStrictEqual({
+      isConnected: false,
+      isAdmin: true,
+      linkStatus: { kind: "connect" },
+    });
+  });
+
+  it.each(["org:admin", "org:member"] as const)(
+    "keeps unbound workspace link eligibility for %s",
+    async (role) => {
+      const fixture = await slackOrgs.installOrg({ installation: "unbound" });
+      mocks.clerk.session(fixture.userId, fixture.orgId, role);
+      const client = setupApp({ context, routes: slackConnectRoutes })(
+        slackConnectContract,
+      );
+
+      const response = await accept(
+        client.getLinkStatus({
+          headers: { authorization: "Bearer clerk-session" },
+          query: {
+            workspaceId: fixture.slackWorkspaceId,
+            slackUserId: fixture.slackUserId,
+          },
+        }),
+        [200],
+      );
+
+      expect(response.body).toStrictEqual({
+        isConnected: false,
+        isAdmin: role === "org:admin",
+        linkStatus: {
+          kind: role === "org:admin" ? "connect" : "workspace_mismatch",
+        },
+      });
+    },
+  );
+
+  it("keeps the current connection when an admin requests another unbound workspace", async () => {
+    const current = await slackOrgs.installOrg({ withConnection: true });
+    const requested = await slackOrgs.installOrg({ installation: "unbound" });
+    mocks.clerk.session(current.userId, current.orgId, "org:admin");
+    const client = setupApp({ context, routes: slackConnectRoutes })(
+      slackConnectContract,
+    );
+
+    const response = await accept(
+      client.getLinkStatus({
+        headers: { authorization: "Bearer clerk-session" },
+        query: {
+          workspaceId: requested.slackWorkspaceId,
+          slackUserId: requested.slackUserId,
+        },
+      }),
+      [200],
+    );
+
+    expect(response.body).toStrictEqual({
+      isConnected: true,
+      isAdmin: true,
+      workspaceName: current.slackWorkspaceName,
+      defaultAgentName: null,
+      linkStatus: {
+        kind: "workspace_mismatch",
+        currentWorkspaceName: current.slackWorkspaceName,
+      },
+    });
+  });
+
+  it("reports a missing workspace without inventing a current workspace name", async () => {
+    mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
+    const client = setupApp({ context, routes: slackConnectRoutes })(
+      slackConnectContract,
+    );
+
+    const response = await accept(
+      client.getLinkStatus({
+        headers: { authorization: "Bearer clerk-session" },
+        query: {
+          workspaceId: `T_${randomUUID()}`,
+          slackUserId: `U_${randomUUID()}`,
+        },
+      }),
+      [200],
+    );
+
+    expect(response.body).toStrictEqual({
+      isConnected: false,
+      isAdmin: true,
+      linkStatus: { kind: "workspace_mismatch" },
+    });
+  });
+
   it("returns isAdmin: true for admin users", async () => {
     const fixture = await slackOrgs.installOrg({ withConnection: true });
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");

@@ -16,7 +16,8 @@ pub(super) fn heartbeat_profiles(
                 HeartbeatProfile {
                     vcpu: profile.vcpu,
                     memory_mb: profile.memory_mb,
-                    workspace_disk_mb: profile.workspace_disk_mb,
+                    rootfs_hash: profile.rootfs_hash.clone(),
+                    home_disk_mb: profile.home_disk_mb,
                 },
             )
         })

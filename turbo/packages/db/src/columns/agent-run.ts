@@ -115,6 +115,12 @@ export function agentRunColumns(sessionId: () => AnyPgColumn) {
     selectedModel: varchar("selected_model", { length: 255 }),
     modelRuntimeProvider: varchar("model_runtime_provider", { length: 100 }),
     modelRuntimeModel: varchar("model_runtime_model", { length: 255 }),
+    /** Immutable usage identity; independent of the mutable selected projection. */
+    modelUsageProvider: text("model_usage_provider"),
+    /** Inclusive execution-time category boundary; NULL for personal subscriptions. */
+    modelLongContextMinTotalInputTokens: integer(
+      "model_long_context_min_total_input_tokens",
+    ),
     builtInModelKeyId: uuid("built_in_model_key_id"),
     reasoningEffort: varchar("reasoning_effort", {
       length: 20,

@@ -23,6 +23,14 @@
  * route and fails when this module and the runtime disagree in either
  * direction.
  */
+/** Platform-owned preset capabilities, independent of selected aliases or catalog edits. */
+export const AUTO_PI_RUNTIME_CAPABILITIES = {
+  contextWindow: 1_000_000,
+  maxTokens: 128_000,
+  reasoning: false,
+  input: ["text", "image"],
+} as const;
+
 export const PI_CATALOG_PROVIDERS = ["openai-codex", "openrouter"] as const;
 
 export type PiCatalogProvider = (typeof PI_CATALOG_PROVIDERS)[number];
@@ -41,7 +49,8 @@ export const PI_RUNTIME_RESOLVABLE_MODELS = {
     "gpt-5.6-sol",
     "gpt-5.6-luna",
   ],
-  openrouter: ["okou-1.0"],
+  // Legacy identity remains resolvable for already-captured installed executions.
+  openrouter: ["auto", "okou-1.0"],
 } as const satisfies Record<PiCatalogProvider, readonly string[]>;
 
 const RESOLVABLE_BY_PROVIDER: Readonly<

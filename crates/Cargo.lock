@@ -149,7 +149,7 @@ dependencies = [
 
 [[package]]
 name = "api-contracts"
-version = "0.52.5"
+version = "0.53.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -983,7 +983,7 @@ checksum = "1c133bc6a41be0d194c306b5506d15e6feeea7b1d6604bd3f8310dfb2ca96486"
 
 [[package]]
 name = "claude-mock"
-version = "0.22.29"
+version = "0.22.32"
 dependencies = [
  "api-contracts",
  "guest-contracts",
@@ -1021,7 +1021,7 @@ checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
 
 [[package]]
 name = "codex-mock"
-version = "0.11.61"
+version = "0.11.65"
 dependencies = [
  "chrono",
  "clap",
@@ -1762,7 +1762,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.104.12"
+version = "0.105.0"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -1801,7 +1801,7 @@ dependencies = [
 
 [[package]]
 name = "guest-contracts"
-version = "0.19.0"
+version = "0.20.0"
 dependencies = [
  "api-contracts",
  "base64 0.23.1",
@@ -1816,7 +1816,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-client"
-version = "0.22.33"
+version = "0.23.0"
 dependencies = [
  "guest-contracts",
  "guest-control-proto",
@@ -1835,7 +1835,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-proto"
-version = "0.21.57"
+version = "0.22.0"
 dependencies = [
  "guest-contracts",
  "proptest",
@@ -1843,7 +1843,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-server"
-version = "0.22.13"
+version = "0.23.0"
 dependencies = [
  "chrono",
  "guest-contracts",
@@ -1859,7 +1859,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-tests"
-version = "0.12.48"
+version = "0.12.52"
 dependencies = [
  "guest-contracts",
  "guest-control-client",
@@ -1874,11 +1874,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "guest-home-mount"
+version = "0.2.0"
+dependencies = [
+ "guest-contracts",
+ "libc",
+ "linux-mountinfo",
+ "nix",
+ "rustix",
+ "tempfile",
+]
+
+[[package]]
 name = "guest-init"
-version = "0.17.13"
+version = "0.18.0"
 dependencies = [
  "guest-contracts",
  "guest-control-server",
+ "guest-home-mount",
  "libc",
  "nix",
  "tempfile",
@@ -1894,7 +1907,7 @@ dependencies = [
 
 [[package]]
 name = "guest-storage-apply"
-version = "0.25.0"
+version = "0.25.3"
 dependencies = [
  "flate2",
  "guest-contracts",
@@ -1913,7 +1926,7 @@ dependencies = [
 
 [[package]]
 name = "guest-telemetry"
-version = "0.3.127"
+version = "0.3.130"
 dependencies = [
  "chrono",
  "guest-contracts",
@@ -1925,7 +1938,7 @@ dependencies = [
 
 [[package]]
 name = "guest-tool-exec"
-version = "0.1.116"
+version = "0.1.119"
 dependencies = [
  "guest-contracts",
  "libc",
@@ -1936,18 +1949,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "guest-workspace-mount"
-version = "0.1.2"
-dependencies = [
- "libc",
- "linux-mountinfo",
- "nix",
- "rustix",
-]
-
-[[package]]
 name = "guest-write-file"
-version = "0.1.211"
+version = "0.1.214"
 dependencies = [
  "guest-contracts",
  "guest-control-proto",
@@ -2507,7 +2510,7 @@ checksum = "ce5d3ddc6d3fa000eb1536d85e147bfe31aacaba692ed6a876f95cb7c855be78"
 
 [[package]]
 name = "linux-mountinfo"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "linux-raw-sys"
@@ -3432,7 +3435,7 @@ dependencies = [
 
 [[package]]
 name = "rfb-client"
-version = "0.21.4"
+version = "0.21.5"
 dependencies = [
  "aes",
  "base64 0.23.1",
@@ -3572,7 +3575,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.222.1"
+version = "0.224.0"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3588,11 +3591,11 @@ dependencies = [
  "guest-agent",
  "guest-contracts",
  "guest-control-client",
+ "guest-home-mount",
  "guest-init",
  "guest-state-restore",
  "guest-storage-apply",
  "guest-tool-exec",
- "guest-workspace-mount",
  "guest-write-file",
  "hex",
  "http-body",
@@ -3639,7 +3642,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.7.1"
+version = "0.8.0"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3650,6 +3653,7 @@ dependencies = [
  "flate2",
  "futures-util",
  "guest-contracts",
+ "guest-control-client",
  "guest-control-proto",
  "guest-storage-apply",
  "hex",
@@ -3686,7 +3690,7 @@ dependencies = [
 
 [[package]]
 name = "runner-host"
-version = "0.2.18"
+version = "0.4.0"
 dependencies = [
  "chrono",
  "futures-util",
@@ -3710,7 +3714,7 @@ dependencies = [
 
 [[package]]
 name = "runner-lifecycle"
-version = "0.1.42"
+version = "0.3.0"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3741,7 +3745,7 @@ dependencies = [
 
 [[package]]
 name = "runner-network"
-version = "0.2.16"
+version = "0.2.20"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3772,7 +3776,7 @@ dependencies = [
 
 [[package]]
 name = "runner-provider"
-version = "0.6.2"
+version = "0.7.0"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -3807,7 +3811,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.10.15"
+version = "0.11.2"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -3882,7 +3886,7 @@ dependencies = [
 
 [[package]]
 name = "runner-storage"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3923,7 +3927,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.4.1"
+version = "0.6.0"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3961,7 +3965,7 @@ dependencies = [
 
 [[package]]
 name = "runner-types"
-version = "0.5.1"
+version = "0.6.0"
 dependencies = [
  "api-contracts",
  "idna",
@@ -4220,7 +4224,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox"
-version = "0.24.1"
+version = "0.26.0"
 dependencies = [
  "async-trait",
  "serde",
@@ -4234,7 +4238,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.44.15"
+version = "0.46.0"
 dependencies = [
  "async-trait",
  "clap",
@@ -4269,7 +4273,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-mock"
-version = "0.11.46"
+version = "0.13.0"
 dependencies = [
  "async-trait",
  "guest-contracts",
@@ -4517,7 +4521,7 @@ dependencies = [
 
 [[package]]
 name = "session-history-selector"
-version = "0.3.141"
+version = "0.3.144"
 dependencies = [
  "guest-contracts",
  "proptest",

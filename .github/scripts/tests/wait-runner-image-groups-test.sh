@@ -142,7 +142,7 @@ make_manifest() {
         "guest-tool-exec": "guest-tool-exec-sha",
         "runner-rpc-client": "runner-rpc-client-sha",
         "guest-write-file": "guest-write-file-sha",
-        "guest-workspace-mount": "guest-workspace-mount-sha"
+        "guest-home-mount": "guest-home-mount-sha"
       },
       hosts: $hosts
     }' >"$file"

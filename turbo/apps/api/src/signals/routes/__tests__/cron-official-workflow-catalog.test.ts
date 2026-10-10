@@ -493,7 +493,7 @@ describe("Official Workflow catalog release boundary", () => {
               cronExpression: "0 7 * * *",
             },
           },
-          runtime: { resultEmail: true },
+          runtime: { resultEmail: false },
         },
       ],
     });
@@ -566,7 +566,12 @@ describe("Official Workflow catalog release boundary", () => {
     expect(morningBriefInstruction).toContain(
       "Never invent, infer, or claim source data",
     );
-    expect(morningBriefInstruction).toContain("Do not send email");
+    expect(morningBriefInstruction).toContain(
+      "okou notify mail --kind morning-brief",
+    );
+    expect(morningBriefInstruction).toContain(
+      "morning-brief:<automationId>:<automationEventId>",
+    );
     expect(morningBriefInstruction).not.toMatch(
       /morning-brief-(?:collect|run)|morning_brief|chat_morning_brief_context/,
     );

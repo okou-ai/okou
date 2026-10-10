@@ -37,8 +37,8 @@ use tokio_util::sync::CancellationToken;
 
 const LOG_TAG: &str = "sandbox:guest-agent";
 
-fn checkpoint_failure_reason(error: &AgentError) -> Option<FailureReason> {
-    matches!(error, AgentError::CheckpointHistoryTooLarge { .. })
+fn finalization_failure_reason(error: &AgentError) -> Option<FailureReason> {
+    matches!(error, AgentError::SessionHistoryTooLarge { .. })
         .then_some(FailureReason::SessionHistoryLimit)
 }
 
@@ -115,31 +115,20 @@ fn helper_exit_code_from_args() -> Option<i32> {
                 },
             )
         }
-        "export-session-history-sidecar" => {
-            let Some(metadata_path) = args.next() else {
-                return Some(SESSION_HISTORY_IDENTITY_VERIFY_EXIT_INVALID_ARGS);
-            };
-            let Some(export_path) = args.next() else {
-                return Some(SESSION_HISTORY_IDENTITY_VERIFY_EXIT_INVALID_ARGS);
-            };
+        "verify-home-cache-history" => {
             if args.next().is_some() {
                 return Some(SESSION_HISTORY_IDENTITY_VERIFY_EXIT_INVALID_ARGS);
             }
-            Some(
-                match session_history_identity::export_final_session_history_sidecar_file(
-                    metadata_path,
-                    export_path,
-                ) {
-                    Ok(metadata) => match serde_json::to_string(&metadata) {
-                        Ok(json) => {
-                            println!("{json}");
-                            SESSION_HISTORY_IDENTITY_VERIFY_EXIT_SUCCESS
-                        }
-                        Err(_) => SESSION_HISTORY_IDENTITY_VERIFY_EXIT_FAILURE,
-                    },
-                    Err(error) => session_history_sidecar_export_helper_exit_code(&error),
+            Some(match guest_agent::home_cache_history::verify_from_stdin() {
+                Ok(report) => match serde_json::to_string(&report) {
+                    Ok(json) => {
+                        println!("{json}");
+                        0
+                    }
+                    Err(_) => 1,
                 },
-            )
+                Err(_) => SESSION_HISTORY_IDENTITY_VERIFY_EXIT_INVALID_ARGS,
+            })
         }
         "prepare-for-reuse" | "prepare-for-cache" => {
             if args.next().is_some() {
@@ -148,20 +137,27 @@ fn helper_exit_code_from_args() -> Option<i32> {
                 );
             }
             let result = if command == "prepare-for-cache" {
-                reuse_preparation::prepare_for_cache_from_stdin()
+                reuse_preparation::prepare_for_cache_from_stdin().and_then(|report| {
+                    serde_json::to_string(&report).map_err(|error| {
+                        reuse_preparation::ReusePreparationError::Inspection(std::io::Error::other(
+                            error,
+                        ))
+                    })
+                })
             } else {
-                reuse_preparation::prepare_from_stdin()
+                reuse_preparation::prepare_from_stdin().and_then(|report| {
+                    serde_json::to_string(&report).map_err(|error| {
+                        reuse_preparation::ReusePreparationError::Inspection(std::io::Error::other(
+                            error,
+                        ))
+                    })
+                })
             };
             Some(match result {
-                Ok(report) => match serde_json::to_string(&report) {
-                    Ok(json) => {
-                        println!("{json}");
-                        guest_contracts::reuse_preparation::REUSE_PREPARATION_EXIT_SUCCESS
-                    }
-                    Err(_) => {
-                        guest_contracts::reuse_preparation::REUSE_PREPARATION_EXIT_INSPECTION_FAILED
-                    }
-                },
+                Ok(json) => {
+                    println!("{json}");
+                    guest_contracts::reuse_preparation::REUSE_PREPARATION_EXIT_SUCCESS
+                }
                 Err(error) => {
                     eprintln!("{error}");
                     error.exit_code()
@@ -204,22 +200,6 @@ fn session_history_identity_helper_exit_code(
         SESSION_HISTORY_IDENTITY_VERIFY_EXIT_FAILURE
     } else {
         exit_code
-    }
-}
-
-fn session_history_sidecar_export_helper_exit_code(
-    error: &session_history_identity::SessionHistorySidecarExportError,
-) -> i32 {
-    let exit_code = error.helper_exit_code();
-    let Some(failure) = error.output_failure() else {
-        return exit_code;
-    };
-    match serde_json::to_string(&failure) {
-        Ok(json) => {
-            println!("{json}");
-            exit_code
-        }
-        Err(_) => SESSION_HISTORY_IDENTITY_VERIFY_EXIT_FAILURE,
     }
 }
 
@@ -368,8 +348,8 @@ async fn run(runtime: GuestRuntime) -> i32 {
     log_info!(LOG_TAG, "Metrics collector started");
     record_sandbox_op("metrics_collector_start", t.elapsed(), true, None);
 
-    // Execute main logic (init + CLI + checkpoint/recovery + /complete).
-    // On the success path, `execute` overlaps the pre-checkpoint telemetry
+    // Execute main logic (init + CLI + finalization/recovery + /complete).
+    // On the success path, `execute` overlaps the pre-finalization telemetry
     // flush with output finalization. The EOF-consuming final flush runs below,
     // after background producers stop, so `/complete` logs still upload without
     // racing metrics or heartbeat writes.
@@ -416,8 +396,8 @@ struct ExecutionControls {
     cli_cancellation: CancellationToken,
 }
 
-/// Main execution logic: working dir, CLI, checkpoint/recovery, and `/complete`.
-/// The success path overlaps the pre-checkpoint telemetry flush with
+/// Main execution logic: working dir, CLI, finalization/recovery, and `/complete`.
+/// The success path overlaps the pre-finalization telemetry flush with
 /// output finalization. Final telemetry is owned by [`run`] after producer
 /// shutdown.
 async fn execute(
@@ -764,7 +744,7 @@ struct PersistenceFailure<'a> {
 /// Record a failed run-settling persistence step so the runner's fallback
 /// `/complete` marks the run failed.
 ///
-/// Both the checkpoint and the Pi artifact snapshot must fail the run: settling
+/// Both the finalization and the Pi artifact snapshot must fail the run: settling
 /// as successful would silently discard the writeback Storage mutations the
 /// sandbox just made.
 fn record_persistence_failure(
@@ -791,7 +771,7 @@ fn record_persistence_failure(
         FailureClass::CheckpointFailed,
     )
     .with_cli_exit_code(failure.cli_exit_code);
-    if let Some(reason) = checkpoint_failure_reason(failure.error) {
+    if let Some(reason) = finalization_failure_reason(failure.error) {
         diagnostic = diagnostic.with_failure_reason(reason);
     }
     let diagnostic = diagnostic.with_session_history_status(
@@ -846,27 +826,28 @@ async fn complete_execution(
         .is_some_and(|termination| termination.reason == CliTerminationReason::UserCancellation);
     let mut guest_completion_reported = false;
 
-    // Checkpoint on success (skip when no API — local/test mode). The
-    // pre-checkpoint flush runs in `tokio::join!` with the snapshot work so
-    // its ~1s upload overlaps the ~4s checkpoint. The EOF-consuming final
+    // Finalization on success (skip when no API — local/test mode). The
+    // pre-finalization flush runs in `tokio::join!` with the snapshot work so
+    // its ~1s upload overlaps the ~4s finalization. The EOF-consuming final
     // pass runs from the top-level shutdown path after telemetry producers
-    // stop, so it can safely catch checkpoint and `/complete` logs.
+    // stop, so it can safely catch finalization and `/complete` logs.
     let agent_type = config.framework.agent_type();
-    if should_create_success_checkpoint(exit_code) && http.has_api() {
+    if should_finalize_success(exit_code) && http.has_api() {
         log_info!(LOG_TAG, "{agent_type} completed successfully");
 
-        log_info!(LOG_TAG, "▷ Checkpoint");
-        let cp_start = Instant::now();
-        let checkpoint = async {
+        log_info!(LOG_TAG, "▷ Finalization");
+        let finalization_start = Instant::now();
+        let finalization = async {
             let session_metadata = state.session_metadata.ok_or_else(|| {
-                AgentError::Checkpoint("No valid CLI session ID was captured".to_string())
+                AgentError::Finalization("No valid CLI session ID was captured".to_string())
             })?;
             finalization::prepare_finalization_for_runtime(runtime, session_metadata).await
         };
-        let (cp_result, _) = tokio::join!(checkpoint, telemetry.flush(UploadMode::Live),);
-        match cp_result {
-            Ok(checkpoint) => {
-                // Persist the prepared checkpoint and terminal state together
+        let (finalization_result, _) =
+            tokio::join!(finalization, telemetry.flush(UploadMode::Live),);
+        match finalization_result {
+            Ok(finalization) => {
+                // Persist the prepared finalization and terminal state together
                 // before returning to the top-level final telemetry pass. See
                 // the `complete` module docs for the runner's idempotent fallback
                 // and provider-specific finalization ordering.
@@ -877,7 +858,7 @@ async fn complete_execution(
                     None,
                     None,
                     state.last_event_sequence,
-                    checkpoint,
+                    finalization,
                 )
                 .await;
                 match result {
@@ -885,16 +866,16 @@ async fn complete_execution(
                         guest_completion_reported = true;
                         log_info!(
                             LOG_TAG,
-                            "✓ Checkpoint complete ({}s)",
-                            cp_start.elapsed().as_secs()
+                            "✓ Finalization complete ({}s)",
+                            finalization_start.elapsed().as_secs()
                         );
                     }
                     Err(e) => {
                         record_persistence_failure(
                             PersistenceFailure {
-                                label: "Checkpoint",
+                                label: "Finalization",
                                 error: &e,
-                                elapsed: cp_start.elapsed(),
+                                elapsed: finalization_start.elapsed(),
                                 cli_exit_code,
                                 wrote_failure_diagnostic,
                             },
@@ -908,9 +889,9 @@ async fn complete_execution(
             Err(e) => {
                 record_persistence_failure(
                     PersistenceFailure {
-                        label: "Checkpoint",
+                        label: "Finalization",
                         error: &e,
-                        elapsed: cp_start.elapsed(),
+                        elapsed: finalization_start.elapsed(),
                         cli_exit_code,
                         wrote_failure_diagnostic,
                     },
@@ -937,14 +918,14 @@ async fn complete_execution(
 
         if http.has_api() {
             if let Some(session_metadata) = state.session_metadata {
-                log_info!(LOG_TAG, "Attempting best-effort recovery checkpoint");
+                log_info!(LOG_TAG, "Attempting best-effort recovery finalization");
                 match finalization::prepare_recovery_finalization_for_runtime(
                     runtime,
                     session_metadata,
                 )
                 .await
                 {
-                    Ok(checkpoint) => {
+                    Ok(finalization) => {
                         match complete::report_finalization_for_run(
                             runtime,
                             exit_code,
@@ -954,25 +935,25 @@ async fn complete_execution(
                                 .and_then(|diagnostic| diagnostic.failure_reason),
                             state.failure_message,
                             state.last_event_sequence,
-                            checkpoint,
+                            finalization,
                         )
                         .await
                         {
                             Ok(()) => {
                                 guest_completion_reported = true;
-                                log_info!(LOG_TAG, "Recovery checkpoint created");
+                                log_info!(LOG_TAG, "Recovery finalization created");
                             }
                             Err(e) => {
-                                log_warn!(LOG_TAG, "Recovery checkpoint skipped: {e}");
+                                log_warn!(LOG_TAG, "Recovery finalization skipped: {e}");
                             }
                         }
                     }
-                    Err(e) => log_warn!(LOG_TAG, "Recovery checkpoint skipped: {e}"),
+                    Err(e) => log_warn!(LOG_TAG, "Recovery finalization skipped: {e}"),
                 }
             } else {
                 log_warn!(
                     LOG_TAG,
-                    "Recovery checkpoint skipped because no valid CLI session ID was captured"
+                    "Recovery finalization skipped because no valid CLI session ID was captured"
                 );
             }
         }
@@ -1051,7 +1032,7 @@ async fn stop_heartbeat(handle: tokio::task::JoinHandle<()>) {
     }
 }
 
-fn should_create_success_checkpoint(exit_code: i32) -> bool {
+fn should_finalize_success(exit_code: i32) -> bool {
     exit_code == 0
 }
 
@@ -1085,19 +1066,19 @@ mod tests {
     static TEST_STATE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[test]
-    fn checkpoint_history_limit_errors_have_a_stable_failure_reason() {
+    fn finalization_history_limit_errors_have_a_stable_failure_reason() {
         assert_eq!(
-            checkpoint_failure_reason(&AgentError::CheckpointHistoryTooLarge { max_bytes: 1 }),
+            finalization_failure_reason(&AgentError::SessionHistoryTooLarge { max_bytes: 1 }),
             Some(FailureReason::SessionHistoryLimit)
         );
         assert_eq!(
-            checkpoint_failure_reason(&AgentError::Checkpoint(
+            finalization_failure_reason(&AgentError::Finalization(
                 "Session history exceeds maximum size of 134217728 bytes".to_string(),
             )),
             None
         );
         assert_eq!(
-            checkpoint_failure_reason(&AgentError::Checkpoint(
+            finalization_failure_reason(&AgentError::Finalization(
                 "artifact upload failed".to_string()
             )),
             None
@@ -1134,7 +1115,7 @@ mod tests {
 
     fn test_guest_config(server: &MockServer, prompt: Option<&str>) -> env::GuestConfig {
         env::GuestConfig::from_raw(env::GuestConfigRaw {
-            run_id: "main-recovery-checkpoint".to_string(),
+            run_id: "main-recovery-finalization".to_string(),
             api_url: server.base_url(),
             api_token: "test-token".to_string(),
             home: Some("/home/vm0".to_string()),
@@ -1158,7 +1139,7 @@ mod tests {
     }
 
     fn test_runtime_dir() -> std::path::PathBuf {
-        MAIN_TEST_RUNTIME_ROOT.join("main-recovery-checkpoint")
+        MAIN_TEST_RUNTIME_ROOT.join("main-recovery-finalization")
     }
 
     fn write_test_run_payload(prompt: Option<&str>) -> std::path::PathBuf {
@@ -1340,9 +1321,9 @@ mod tests {
     }
 
     #[test]
-    fn success_checkpoint_follows_semantic_run_success() {
-        assert!(should_create_success_checkpoint(0));
-        assert!(!should_create_success_checkpoint(1));
+    fn success_finalization_follows_semantic_run_success() {
+        assert!(should_finalize_success(0));
+        assert!(!should_finalize_success(1));
     }
 
     #[test]
@@ -1561,7 +1542,7 @@ mod tests {
     }
 
     #[test]
-    fn complete_execution_creates_recovery_checkpoint_after_cli_failure() {
+    fn complete_execution_creates_recovery_finalization_after_cli_failure() {
         let _test_state_guard = lock_test_state();
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -1593,7 +1574,7 @@ mod tests {
     }
 
     #[test]
-    fn complete_execution_reports_timeout_reason_with_recovery_checkpoint() {
+    fn complete_execution_reports_timeout_reason_with_recovery_finalization() {
         let _test_state_guard = lock_test_state();
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -1619,24 +1600,24 @@ mod tests {
     }
 
     #[test]
-    fn complete_execution_writes_checkpoint_failure_diagnostic() {
+    fn complete_execution_writes_finalization_failure_diagnostic() {
         let _test_state_guard = lock_test_state();
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .unwrap()
-            .block_on(complete_execution_writes_checkpoint_failure_diagnostic_inner());
+            .block_on(complete_execution_writes_finalization_failure_diagnostic_inner());
     }
 
     #[test]
-    fn complete_execution_treats_combined_report_failure_as_checkpoint_failure() {
+    fn complete_execution_treats_combined_report_failure_as_finalization_failure() {
         let _test_state_guard = lock_test_state();
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .unwrap()
             .block_on(
-                complete_execution_treats_combined_report_failure_as_checkpoint_failure_inner(),
+                complete_execution_treats_combined_report_failure_as_finalization_failure_inner(),
             );
     }
 
@@ -1801,7 +1782,7 @@ mod tests {
         (exit_code, written_error, written_diagnostic)
     }
 
-    async fn complete_execution_writes_checkpoint_failure_diagnostic_inner() {
+    async fn complete_execution_writes_finalization_failure_diagnostic_inner() {
         let server = &*COMPLETE_EXECUTION_MOCK_SERVER;
         server.reset_async().await;
         let _runtime_root_guard = TestRuntimeRootGuard::new();
@@ -1819,7 +1800,7 @@ mod tests {
                 .json_body(json!({}));
         });
 
-        let config = test_guest_config(server, Some("/checkpoint-failure"));
+        let config = test_guest_config(server, Some("/finalization-failure"));
         let masker = Arc::new(masker::SecretMasker::from_config(&config));
         let http = test_http_client(server);
         let telemetry =
@@ -1843,7 +1824,7 @@ mod tests {
 
         assert_eq!(exit_code, 1);
         let error = std::fs::read_to_string(guest_paths.checkpoint_error_file()).unwrap();
-        assert!(error.contains("Checkpoint failed"), "got: {error}");
+        assert!(error.contains("Finalization failed"), "got: {error}");
         let diagnostic: FailureDiagnostic =
             serde_json::from_slice(&std::fs::read(guest_paths.failure_diagnostic_file()).unwrap())
                 .unwrap();
@@ -1858,7 +1839,7 @@ mod tests {
         }
     }
 
-    async fn complete_execution_treats_combined_report_failure_as_checkpoint_failure_inner() {
+    async fn complete_execution_treats_combined_report_failure_as_finalization_failure_inner() {
         let server = &*COMPLETE_EXECUTION_MOCK_SERVER;
         server.reset_async().await;
         let _runtime_root_guard = TestRuntimeRootGuard::new();
@@ -1884,7 +1865,7 @@ mod tests {
                 .json_body(json!({}));
         });
 
-        let config = test_guest_config(server, Some("/combined-checkpoint-failure"));
+        let config = test_guest_config(server, Some("/combined-finalization-failure"));
         let masker = Arc::new(masker::SecretMasker::from_config(&config));
         let http = test_http_client(server);
         let telemetry =
@@ -2033,7 +2014,7 @@ mod tests {
         let prepare_mock = server.mock(|when, then| {
             when.method(POST)
                 .path("/api/webhooks/agent/session-history/prepare")
-                .json_body_includes(r#"{"runId":"main-recovery-checkpoint"}"#);
+                .json_body_includes(r#"{"runId":"main-recovery-finalization"}"#);
             then.status(200)
                 .header("Content-Type", "application/json")
                 .json_body(json!({

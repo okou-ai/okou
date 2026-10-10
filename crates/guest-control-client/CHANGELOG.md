@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.23.0](https://github.com/okou-ai/okou/compare/guest-control-client-v0.22.36...guest-control-client-v0.23.0) (2026-10-10)
+
+
+### Features
+
+* **runner:** retain home images with verified history ([#38498](https://github.com/okou-ai/okou/issues/38498)) ([8b100e4](https://github.com/okou-ai/okou/commit/8b100e433e5933242c418dbfe1c1f3efd15a9b87))
+
+
+### Bug Fixes
+
+* **runner:** bound active-input shutdown under guest backpressure ([#38591](https://github.com/okou-ai/okou/issues/38591)) ([648671b](https://github.com/okou-ai/okou/commit/648671bd07f959e25864029a81dbab13edef83c7))
+
+## [0.22.36](https://github.com/okou-ai/okou/compare/guest-control-client-v0.22.35...guest-control-client-v0.22.36) (2026-10-10)
+
+## [0.22.35](https://github.com/okou-ai/okou/compare/guest-control-client-v0.22.34...guest-control-client-v0.22.35) (2026-10-10)
+
+## [0.22.34](https://github.com/okou-ai/okou/compare/guest-control-client-v0.22.33...guest-control-client-v0.22.34) (2026-10-10)
+
 ## [0.22.33](https://github.com/okou-ai/okou/compare/guest-control-client-v0.22.32...guest-control-client-v0.22.33) (2026-10-09)
 
 ## [0.22.32](https://github.com/okou-ai/okou/compare/guest-control-client-v0.22.31...guest-control-client-v0.22.32) (2026-10-09)

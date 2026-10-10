@@ -6,8 +6,6 @@ use super::CliRuntimeConfig;
 
 const DEFAULT_PATH: &str = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 const DEFAULT_SHELL: &str = "/bin/bash";
-const NPM_CACHE_ENV_KEY: &str = "npm_config_cache";
-const WORKSPACE_NPM_CACHE_RELATIVE_PATH: &str = ".vm0/cache/npm";
 // The sandbox CLI needs the same API origin as the guest-agent in local
 // development. The managed-CLI reader floor is complete, so expose only the
 // canonical spelling. Tokens and all other bootstrap controls must stay private
@@ -50,9 +48,7 @@ pub(super) fn values_with_inputs(
         values.push((key.to_string(), value));
     }
     for (key, value) in user_env {
-        if key == guest_contracts::env::CANONICAL_API_URL_ENV
-            || key.eq_ignore_ascii_case(NPM_CACHE_ENV_KEY)
-        {
+        if key == guest_contracts::env::CANONICAL_API_URL_ENV {
             continue;
         }
         values.push((key.clone(), value.clone()));
@@ -60,14 +56,6 @@ pub(super) fn values_with_inputs(
     apply_runner_visible_env(api_url, |key, value| {
         values.push((key.to_string(), value));
     });
-    values.push((
-        NPM_CACHE_ENV_KEY.to_string(),
-        format!(
-            "{}/{}",
-            crate::paths::CANONICAL_WORKING_DIR,
-            WORKSPACE_NPM_CACHE_RELATIVE_PATH
-        ),
-    ));
     normalize_values(values)
 }
 
@@ -195,6 +183,25 @@ mod tests {
                 .filter(|(key, _)| key == guest_contracts::env::CANONICAL_API_URL_ENV)
                 .count(),
             1
+        );
+    }
+
+    #[test]
+    fn explicit_npm_settings_are_preserved_and_home_is_the_default() {
+        let settings = HashMap::from([
+            ("npm_config_cache".into(), "/home/user/custom-npm".into()),
+            ("NPM_CONFIG_CACHE".into(), "/tmp/explicit-npm".into()),
+        ]);
+        let values = values_with_inputs("/home/user", &settings, "");
+        for (key, value) in &settings {
+            assert!(values.contains(&(key.clone(), value.clone())));
+        }
+        let defaults = values_with_inputs("/home/user", &HashMap::new(), "");
+        assert!(defaults.contains(&("HOME".into(), "/home/user".into())));
+        assert!(
+            !defaults
+                .iter()
+                .any(|(key, _)| key.eq_ignore_ascii_case("npm_config_cache"))
         );
     }
 

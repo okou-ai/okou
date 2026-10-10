@@ -1,11 +1,11 @@
-//! Checkpoint-specific artifact snapshot planning and scheduling.
+//! Artifact snapshot planning and publication for Run finalization.
 //!
-//! Artifact checkpointing is intentionally split into two phases. The first
+//! Artifact snapshot publication is intentionally split into two phases. The first
 //! phase walks and plans every configured artifact locally, with at most
-//! [`ARTIFACT_CHECKPOINT_CONCURRENCY`] walks in flight. Only after the complete
+//! [`ARTIFACT_SNAPSHOT_CONCURRENCY`] walks in flight. Only after the complete
 //! preflight succeeds does the second phase start remote VAS snapshot work.
 //! Keeping that boundary prevents a later invalid artifact root from creating
-//! a partial remote checkpoint. The second phase retains input indices so it
+//! a partial remote publication. The second phase retains input indices so it
 //! can overlap remote work without changing result order or error selection.
 
 use super::{FinalizationMode, LOG_TAG};
@@ -23,7 +23,7 @@ use guest_telemetry::telemetry::record_sandbox_op;
 use serde::Deserialize;
 use std::path::Path;
 
-const ARTIFACT_CHECKPOINT_CONCURRENCY: usize = 2;
+const ARTIFACT_SNAPSHOT_CONCURRENCY: usize = 2;
 const PI_MEMORY_PHASE2_VALIDATION_FILENAME: &str = "maintenance-validation.json";
 const PI_MEMORY_PHASE2_VALIDATION_MAX_BYTES: u64 = 4096;
 
@@ -51,13 +51,13 @@ struct MaintenanceValidationMarker {
     validated_version_id: String,
 }
 
-struct MaintenanceCheckpointGuard {
+struct MaintenancePublicationGuard {
     launch: MaintenanceLaunch,
     attestation: Option<vas::PiMemoryPhase2CheckpointAttestation>,
 }
 
-fn maintenance_checkpoint_error() -> AgentError {
-    AgentError::Checkpoint("Pi memory maintenance checkpoint validation failed".into())
+fn maintenance_publication_error() -> AgentError {
+    AgentError::Finalization("Pi memory maintenance publication validation failed".into())
 }
 
 fn maintenance_launch(raw: &str) -> Result<Option<MaintenanceLaunch>, AgentError> {
@@ -65,29 +65,29 @@ fn maintenance_launch(raw: &str) -> Result<Option<MaintenanceLaunch>, AgentError
         return Ok(None);
     }
     let value: serde_json::Value =
-        serde_json::from_str(raw).map_err(|_| maintenance_checkpoint_error())?;
+        serde_json::from_str(raw).map_err(|_| maintenance_publication_error())?;
     let Some(maintenance) = value.get("maintenance") else {
         return Ok(None);
     };
     serde_json::from_value(maintenance.clone())
         .map(Some)
-        .map_err(|_| maintenance_checkpoint_error())
+        .map_err(|_| maintenance_publication_error())
 }
 
-fn maintenance_checkpoint_guard(
+fn maintenance_publication_guard(
     raw_launch: &str,
     launch_payload_file: &str,
     run_id: &str,
     mode: FinalizationMode,
-) -> Result<Option<MaintenanceCheckpointGuard>, AgentError> {
+) -> Result<Option<MaintenancePublicationGuard>, AgentError> {
     let Some(launch) = maintenance_launch(raw_launch)? else {
         return Ok(None);
     };
     if launch.schema_version != 1 {
-        return Err(maintenance_checkpoint_error());
+        return Err(maintenance_publication_error());
     }
     if mode == FinalizationMode::Recovery {
-        return Ok(Some(MaintenanceCheckpointGuard {
+        return Ok(Some(MaintenancePublicationGuard {
             launch,
             attestation: None,
         }));
@@ -95,14 +95,14 @@ fn maintenance_checkpoint_guard(
     let marker_path =
         Path::new(launch_payload_file).with_file_name(PI_MEMORY_PHASE2_VALIDATION_FILENAME);
     let metadata =
-        std::fs::symlink_metadata(&marker_path).map_err(|_| maintenance_checkpoint_error())?;
+        std::fs::symlink_metadata(&marker_path).map_err(|_| maintenance_publication_error())?;
     if !metadata.file_type().is_file() || metadata.len() > PI_MEMORY_PHASE2_VALIDATION_MAX_BYTES {
-        return Err(maintenance_checkpoint_error());
+        return Err(maintenance_publication_error());
     }
     let marker: MaintenanceValidationMarker = serde_json::from_slice(
-        &std::fs::read(marker_path).map_err(|_| maintenance_checkpoint_error())?,
+        &std::fs::read(marker_path).map_err(|_| maintenance_publication_error())?,
     )
-    .map_err(|_| maintenance_checkpoint_error())?;
+    .map_err(|_| maintenance_publication_error())?;
     if marker.schema_version != 1
         || marker.run_id != run_id
         || marker.memory_storage_id != launch.memory_storage_id
@@ -111,7 +111,7 @@ fn maintenance_checkpoint_guard(
         || marker.lease_token != launch.lease_token
         || marker.selection_digest != launch.selection_digest
     {
-        return Err(maintenance_checkpoint_error());
+        return Err(maintenance_publication_error());
     }
     let attestation = vas::PiMemoryPhase2CheckpointAttestation {
         // v2 requires commit receipts; an old API rejects prepare before upload.
@@ -122,14 +122,14 @@ fn maintenance_checkpoint_guard(
         selection_digest: marker.selection_digest,
         validated_version_id: marker.validated_version_id,
     };
-    Ok(Some(MaintenanceCheckpointGuard {
+    Ok(Some(MaintenancePublicationGuard {
         launch,
         attestation: Some(attestation),
     }))
 }
 
 /// Build an artifact snapshot using the type generated from the canonical
-/// checkpoint webhook contract.
+/// completion webhook contract.
 fn build_artifact_snapshot_entry(
     name: &str,
     version: &str,
@@ -165,7 +165,7 @@ async fn build_artifact_snapshot_plan(
     );
     // A successful walk is the artifact's readable subset by policy. Use it
     // even when an unreadable descendant was present in the parent version.
-    match vas::walk_files_for_checkpoint(&entry.mount_path).await {
+    match vas::walk_files_for_snapshot(&entry.mount_path).await {
         Ok(files) => Ok(ArtifactSnapshotPlan::Snapshot { entry, files }),
         Err(error)
             if error.is_missing_root()
@@ -225,7 +225,7 @@ async fn snapshot_artifact_plan(
     // was originally mounted. `version_id` in VAS *is* the content hash
     // (same SHA-256 the web producer emits), so an equality check on the
     // locally-recomputed hash is sufficient — no extra metadata needed.
-    // See #10967 for the ~3.9s-per-checkpoint motivation.
+    // See #10967 for the ~3.9s-per-finalization motivation.
     // Attested maintenance plans were already hash-validated before remote
     // scheduling and must always publish for server-side settlement.
     if maintenance_attestation.is_none() {
@@ -258,7 +258,7 @@ async fn snapshot_artifact_plan(
         "Creating VAS snapshot for artifact '{}'",
         entry.name
     );
-    let message = format!("Checkpoint from run {run_id}");
+    let message = format!("Artifact snapshot from run {run_id}");
     let snapshot = vas::create_snapshot_with_attestation(
         http,
         vas::CreateSnapshotRequest {
@@ -289,12 +289,12 @@ async fn snapshot_artifact_plan(
 /// Snapshot artifact entries.
 ///
 /// Memory rides in the private run-payload artifact list, so there is no
-/// separate memory arm. The generated checkpoint contract preserves the
+/// separate memory arm. The generated completion contract preserves the
 /// optional missing-root policy for every snapshot path.
 ///
 /// This is a two-phase operation. First, every entry is walked and converted
 /// into a local snapshot plan with at most
-/// [`ARTIFACT_CHECKPOINT_CONCURRENCY`] walks in flight. The complete preflight
+/// [`ARTIFACT_SNAPSHOT_CONCURRENCY`] walks in flight. The complete preflight
 /// result set is collected before any plan can call VAS prepare, upload, or
 /// commit APIs. This separation is what makes a later invalid entry fail
 /// without remote side effects; see
@@ -309,11 +309,11 @@ async fn snapshot_artifact_plan(
 /// guarantee is covered by
 /// `artifact_snapshot_pipelines_overlap_and_preserve_result_order`.
 ///
-/// The checkpoint caller in `checkpoint/mod.rs` runs this prerequisite with
+/// The finalization caller in `finalization/mod.rs` runs this prerequisite with
 /// session-history preparation in `prepare_finalization_impl` via
 /// `tokio::join!` and waits for both results before constructing the combined
 /// completion request.
-pub(super) async fn snapshot_artifact_entries_for_checkpoint(
+pub(super) async fn snapshot_artifact_entries(
     http: &HttpClient,
     run_id: &str,
     entries: &[env::ArtifactEnv],
@@ -324,22 +324,22 @@ pub(super) async fn snapshot_artifact_entries_for_checkpoint(
     if entries.is_empty() {
         log_info!(
             LOG_TAG,
-            "No artifact configured, creating checkpoint without artifact snapshot"
+            "No artifact configured, creating finalization without artifact snapshot"
         );
         return Ok(None);
     }
 
     let maintenance =
-        maintenance_checkpoint_guard(pi_launch_config, pi_launch_payload_file, run_id, mode)?;
+        maintenance_publication_guard(pi_launch_config, pi_launch_payload_file, run_id, mode)?;
     if let Some(guard) = maintenance.as_ref() {
         let [entry] = entries else {
-            return Err(maintenance_checkpoint_error());
+            return Err(maintenance_publication_error());
         };
         if entry.name != "memory"
             || entry.storage_id != guard.launch.memory_storage_id
             || entry.version_id != guard.launch.claimed_base_version_id
         {
-            return Err(maintenance_checkpoint_error());
+            return Err(maintenance_publication_error());
         }
         if mode == FinalizationMode::Recovery {
             return Ok(Some(vec![build_artifact_snapshot_entry(
@@ -353,7 +353,7 @@ pub(super) async fn snapshot_artifact_entries_for_checkpoint(
 
     let mut indexed_plans = stream::iter(entries.iter().enumerate())
         .map(|(index, entry)| async move { (index, build_artifact_snapshot_plan(entry).await) })
-        .buffer_unordered(ARTIFACT_CHECKPOINT_CONCURRENCY)
+        .buffer_unordered(ARTIFACT_SNAPSHOT_CONCURRENCY)
         .collect::<Vec<_>>()
         .await;
     indexed_plans.sort_unstable_by_key(|(index, _)| *index);
@@ -364,14 +364,14 @@ pub(super) async fn snapshot_artifact_entries_for_checkpoint(
 
     if let Some(guard) = maintenance.as_ref() {
         let Some(attestation) = guard.attestation.as_ref() else {
-            return Err(maintenance_checkpoint_error());
+            return Err(maintenance_publication_error());
         };
         let [ArtifactSnapshotPlan::Snapshot { entry, files }] = plans.as_slice() else {
-            return Err(maintenance_checkpoint_error());
+            return Err(maintenance_publication_error());
         };
         let local_hash = compute_artifact_content_hash(entry, files);
         if local_hash != attestation.validated_version_id {
-            return Err(maintenance_checkpoint_error());
+            return Err(maintenance_publication_error());
         }
     }
 
@@ -388,7 +388,7 @@ pub(super) async fn snapshot_artifact_entries_for_checkpoint(
         }
     };
     let mut in_flight = FuturesUnordered::new();
-    for _ in 0..ARTIFACT_CHECKPOINT_CONCURRENCY {
+    for _ in 0..ARTIFACT_SNAPSHOT_CONCURRENCY {
         if let Some(plan) = pending.next() {
             in_flight.push(snapshot(plan));
         }
@@ -430,20 +430,12 @@ pub(super) async fn snapshot_artifact_entries_for_checkpoint(
 }
 
 #[cfg(test)]
-async fn snapshot_artifact_entries(
+async fn snapshot_artifact_entries_for_test(
     http: &HttpClient,
     run_id: &str,
     entries: &[env::ArtifactEnv],
 ) -> Result<Option<Vec<complete::RequestCompletionArtifactSnapshot>>, AgentError> {
-    snapshot_artifact_entries_for_checkpoint(
-        http,
-        run_id,
-        entries,
-        FinalizationMode::Success,
-        "",
-        "",
-    )
-    .await
+    snapshot_artifact_entries(http, run_id, entries, FinalizationMode::Success, "", "").await
 }
 
 #[cfg(test)]
@@ -465,7 +457,7 @@ mod tests {
 
     fn assert_artifact_hash_failure(telemetry_path: &std::path::Path, expected_error: &str) {
         let expected_error = expected_error
-            .strip_prefix("checkpoint: ")
+            .strip_prefix("finalization: ")
             .unwrap_or(expected_error);
         let telemetry_entries = std::fs::read_to_string(telemetry_path)
             .unwrap()
@@ -533,7 +525,7 @@ mod tests {
             missing_root_policy: None,
         }];
 
-        let error = snapshot_artifact_entries(&http, "test-run", &entries)
+        let error = snapshot_artifact_entries_for_test(&http, "test-run", &entries)
             .await
             .unwrap_err();
         let message = error.to_string();
@@ -544,7 +536,7 @@ mod tests {
         message
     }
 
-    async fn start_artifact_checkpoint_test_server(
+    async fn start_artifact_finalization_test_server(
         artifact_count: usize,
     ) -> (String, tokio::task::JoinHandle<Vec<String>>) {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -696,7 +688,7 @@ mod tests {
         }];
         let launch_payload_file = dir.path().join("pi-launch-payload/payload.json");
 
-        let snapshots = snapshot_artifact_entries_for_checkpoint(
+        let snapshots = snapshot_artifact_entries(
             &http,
             "maintenance-run",
             &entries,
@@ -828,7 +820,7 @@ mod tests {
             missing_root_policy: Some(ArtifactEntryMissingRootPolicy::Fail),
         }];
 
-        let snapshots = snapshot_artifact_entries_for_checkpoint(
+        let snapshots = snapshot_artifact_entries(
             &http,
             "maintenance-run-success",
             &entries,
@@ -928,7 +920,7 @@ mod tests {
             missing_root_policy: None,
         }];
 
-        let err = snapshot_artifact_entries(&http, "test-run", &entries)
+        let err = snapshot_artifact_entries_for_test(&http, "test-run", &entries)
             .await
             .unwrap_err();
 
@@ -965,7 +957,7 @@ mod tests {
             std::fs::File::create(mount.join(format!("{index:05}"))).unwrap();
         }
 
-        let exact_files = vas::walk_files_for_checkpoint(mount.to_str().unwrap())
+        let exact_files = vas::walk_files_for_snapshot(mount.to_str().unwrap())
             .await
             .unwrap();
         assert_eq!(exact_files.len(), max_files);
@@ -1008,7 +1000,7 @@ mod tests {
             missing_root_policy: None,
         }];
 
-        let count_error = snapshot_artifact_entries(&http, "test-run", &entries)
+        let count_error = snapshot_artifact_entries_for_test(&http, "test-run", &entries)
             .await
             .unwrap_err();
         let count_message = count_error.to_string();
@@ -1034,7 +1026,7 @@ mod tests {
         assert_artifact_hash_failure(&telemetry_path, &count_message);
 
         std::fs::remove_file(over_limit_path).unwrap();
-        let path_error = vas::walk_files_for_checkpoint(dir.path().to_str().unwrap())
+        let path_error = vas::walk_files_for_snapshot(dir.path().to_str().unwrap())
             .await
             .unwrap_err()
             .into_agent_error();
@@ -1174,7 +1166,7 @@ mod tests {
             missing_root_policy: Some(ArtifactEntryMissingRootPolicy::Fail),
         }];
 
-        let err = snapshot_artifact_entries(&http, "test-run", &entries)
+        let err = snapshot_artifact_entries_for_test(&http, "test-run", &entries)
             .await
             .unwrap_err();
 
@@ -1231,7 +1223,7 @@ mod tests {
             },
         ];
 
-        let err = snapshot_artifact_entries(&http, "test-run", &entries)
+        let err = snapshot_artifact_entries_for_test(&http, "test-run", &entries)
             .await
             .unwrap_err();
 
@@ -1270,14 +1262,14 @@ mod tests {
                 missing_root_policy: None,
             },
         ];
-        let (base_url, server) = start_artifact_checkpoint_test_server(entries.len()).await;
+        let (base_url, server) = start_artifact_finalization_test_server(entries.len()).await;
         let http =
             HttpClient::with_api_config(base_url, "test-token", "", "test-run-001", Duration::ZERO)
                 .unwrap();
 
         let snapshots = tokio::time::timeout(
             REQUEST_OVERLAP_TIMEOUT,
-            snapshot_artifact_entries(&http, "test-run", &entries),
+            snapshot_artifact_entries_for_test(&http, "test-run", &entries),
         )
         .await
         .expect("both artifact pipelines must reach prepare concurrently")
@@ -1339,7 +1331,7 @@ mod tests {
             missing_root_policy: Some(ArtifactEntryMissingRootPolicy::PreserveParentVersion),
         }];
 
-        let snapshots = snapshot_artifact_entries(&http, "test-run", &entries)
+        let snapshots = snapshot_artifact_entries_for_test(&http, "test-run", &entries)
             .await
             .unwrap()
             .unwrap();
@@ -1393,7 +1385,7 @@ mod tests {
             missing_root_policy: Some(ArtifactEntryMissingRootPolicy::PreserveParentVersion),
         }];
 
-        let err = snapshot_artifact_entries(&http, "test-run", &entries)
+        let err = snapshot_artifact_entries_for_test(&http, "test-run", &entries)
             .await
             .unwrap_err();
 

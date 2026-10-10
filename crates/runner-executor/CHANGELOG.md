@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.8.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.7.4...runner-executor-v0.8.0) (2026-10-10)
+
+
+### Features
+
+* **runner:** retain home images with verified history ([#38498](https://github.com/okou-ai/okou/issues/38498)) ([8b100e4](https://github.com/okou-ai/okou/commit/8b100e433e5933242c418dbfe1c1f3efd15a9b87))
+
+
+### Bug Fixes
+
+* **runner:** bound active-input shutdown under guest backpressure ([#38591](https://github.com/okou-ai/okou/issues/38591)) ([648671b](https://github.com/okou-ai/okou/commit/648671bd07f959e25864029a81dbab13edef83c7))
+
+## [0.7.4](https://github.com/okou-ai/okou/compare/runner-executor-v0.7.3...runner-executor-v0.7.4) (2026-10-10)
+
+## [0.7.3](https://github.com/okou-ai/okou/compare/runner-executor-v0.7.2...runner-executor-v0.7.3) (2026-10-10)
+
+## [0.7.2](https://github.com/okou-ai/okou/compare/runner-executor-v0.7.1...runner-executor-v0.7.2) (2026-10-10)
+
+
+### Refactoring
+
+* **pi:** retire unversioned model config execution ([#38449](https://github.com/okou-ai/okou/issues/38449)) ([c628473](https://github.com/okou-ai/okou/commit/c62847319cb3ebbd41259d662f47905a1cb39863))
+
+
+### Performance Improvements
+
+* **test:** avoid rebuilding owned fixture buffers ([#38450](https://github.com/okou-ai/okou/issues/38450)) ([f5ad1ba](https://github.com/okou-ai/okou/commit/f5ad1ba1e2b4d6745ed80c869bf4fb9b222cfafc))
+
 ## [0.7.1](https://github.com/okou-ai/okou/compare/runner-executor-v0.7.0...runner-executor-v0.7.1) (2026-10-09)
 
 ## [0.7.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.6.3...runner-executor-v0.7.0) (2026-10-09)

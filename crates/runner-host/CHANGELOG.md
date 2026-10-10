@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.4.0](https://github.com/okou-ai/okou/compare/runner-host-v0.3.2...runner-host-v0.4.0) (2026-10-10)
+
+
+### Features
+
+* **runner:** retain home images with verified history ([#38498](https://github.com/okou-ai/okou/issues/38498)) ([8b100e4](https://github.com/okou-ai/okou/commit/8b100e433e5933242c418dbfe1c1f3efd15a9b87))
+
+## [0.3.2](https://github.com/okou-ai/okou/compare/runner-host-v0.3.1...runner-host-v0.3.2) (2026-10-10)
+
+## [0.3.1](https://github.com/okou-ai/okou/compare/runner-host-v0.3.0...runner-host-v0.3.1) (2026-10-10)
+
+## [0.3.0](https://github.com/okou-ai/okou/compare/runner-host-v0.2.18...runner-host-v0.3.0) (2026-10-10)
+
+
+### Features
+
+* **runner:** add passive host memory observation and calibration ([#38370](https://github.com/okou-ai/okou/issues/38370)) ([851e18c](https://github.com/okou-ai/okou/commit/851e18cbe272e59863a06cb3193c3c4e92891c1a))
+
+
+### Refactoring
+
+* **runner:** move orphan workspace gc ownership into host ([#38476](https://github.com/okou-ai/okou/issues/38476)) ([46ed3bd](https://github.com/okou-ai/okou/commit/46ed3bd317356e59b9811bdbd788ce4245a216a8))
+
 ## [0.2.18](https://github.com/okou-ai/okou/compare/runner-host-v0.2.17...runner-host-v0.2.18) (2026-10-09)
 
 

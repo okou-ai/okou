@@ -1,5 +1,68 @@
 # Changelog
 
+## [9.385.0](https://github.com/okou-ai/okou/compare/cli-v9.384.2...cli-v9.385.0) (2026-10-10)
+
+
+### Features
+
+* **morning-brief:** let agents choose email delivery ([#38612](https://github.com/okou-ai/okou/issues/38612)) ([0f93208](https://github.com/okou-ai/okou/commit/0f93208a3ab70effb1b4bea0a9c3fd8b20dc6ee0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.741.0
+    * @okouai/pi-agent-runtime bumped to 1.49.5
+
+## [9.384.2](https://github.com/okou-ai/okou/compare/cli-v9.384.1...cli-v9.384.2) (2026-10-10)
+
+
+### Refactoring
+
+* remove notify mail feature switch ([#38561](https://github.com/okou-ai/okou/issues/38561)) ([7f40f95](https://github.com/okou-ai/okou/commit/7f40f954492838ac72a4d291848b2ef24266a9a7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.549.0
+    * @okouai/core bumped to 8.740.1
+    * @okouai/pi-agent-runtime bumped to 1.49.4
+
+## [9.384.1](https://github.com/okou-ai/okou/compare/cli-v9.384.0...cli-v9.384.1) (2026-10-10)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.548.0
+    * @okouai/core bumped to 8.740.0
+    * @okouai/pi-agent-runtime bumped to 1.49.3
+
+## [9.384.0](https://github.com/okou-ai/okou/compare/cli-v9.383.1...cli-v9.384.0) (2026-10-10)
+
+
+### Features
+
+* **discord:** complete oauth onboarding and slack conversation parity ([#37968](https://github.com/okou-ai/okou/issues/37968)) ([ccc74ac](https://github.com/okou-ai/okou/commit/ccc74ac9b9c74d70654fd0a0a547018cde7d55ed))
+
+
+### Refactoring
+
+* **pi:** retire unversioned model config execution ([#38449](https://github.com/okou-ai/okou/issues/38449)) ([c628473](https://github.com/okou-ai/okou/commit/c62847319cb3ebbd41259d662f47905a1cb39863))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.547.0
+    * @okouai/core bumped to 8.739.2
+    * @okouai/pi-agent-runtime bumped to 1.49.2
+
 ## [9.383.1](https://github.com/okou-ai/okou/compare/cli-v9.383.0...cli-v9.383.1) (2026-10-09)
 
 

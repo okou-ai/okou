@@ -106,13 +106,13 @@ describe("Pi memory recall compatibility", () => {
       "A successful tool result means only that the note is staged in the current sandbox",
     );
     expect(rendered).toContain(
-      "Durable retention still depends on the terminal artifact checkpoint succeeding",
+      "Durable retention still depends on successful artifact publication at the end of the run",
     );
     expect(rendered).toContain(
       "Do not claim that the update is durable, published, or persistently saved before the run completes successfully",
     );
     expect(sha256(rendered ?? "")).toBe(
-      "af9644be2dbc7f7f6a7456e574842b8f88286ebba1bf5cff0b842b41605805f3",
+      "5e194adb4175043ed220b513e866156737b47fba914a5227458b4f267368f4ba",
     );
 
     const oversized = Array.from({ length: 4000 }, (_, index) => {
@@ -535,6 +535,6 @@ describe("Pi memory recall bounded injection", () => {
       sha256(
         renderPiMemoryRecall("Prefer focused targeted tests.")?.block ?? "",
       ),
-    ).toBe("af9644be2dbc7f7f6a7456e574842b8f88286ebba1bf5cff0b842b41605805f3");
+    ).toBe("5e194adb4175043ed220b513e866156737b47fba914a5227458b4f267368f4ba");
   });
 });

@@ -45,7 +45,22 @@ export class ModelRequestEventStream extends AssistantMessageEventStream {
         message.errorMessage ?? "",
         this.observation.httpStatus,
       );
-      const observedReason = this.observation.failureReason;
+      // Codex SSE errors can lose their code when the SDK formats the message.
+      // Its failed-result owner preserves only known codes, without payloads.
+      const providerCode = message.diagnostics
+        ?.slice()
+        .reverse()
+        .find((diagnostic) => {
+          return diagnostic.type === "okou_codex_provider_error";
+        })?.details?.code;
+      const codeReason =
+        typeof providerCode === "string"
+          ? classifyProviderFailure(
+              JSON.stringify({ error: { code: providerCode } }),
+              this.observation.httpStatus,
+            )
+          : undefined;
+      const observedReason = codeReason ?? this.observation.failureReason;
       const failureReason =
         terminalReason === "provider_queue_timeout" &&
         (observedReason === undefined ||

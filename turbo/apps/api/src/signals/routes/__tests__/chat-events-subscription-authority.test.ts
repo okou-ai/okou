@@ -388,124 +388,142 @@ describe("CHAT-02: run-level model overrides", () => {
   )(
     "promotes queued and immediate $name Fast from $origin into the runner claim",
     async ({ route, origin }) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
-      await api.ensurePersonalSubscriptionModel(actor, {
-        model: "claude-fable-5-1",
-      });
-      const source = await sendChatRun(actor, {
-        agentId,
-        prompt: "source run for Luna handoff",
-        model: "claude-fable-5-1",
-      });
-      const anchor = await sendChatRun(actor, {
-        agentId,
-        prompt: "hold the Luna target thread",
-        model: "claude-fable-5-1",
-      });
-      const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
-      const token = api.okouTokenForRunWithCapabilities(actor, source.runId, [
-        "chat-thread:read",
-        "chat-thread:write",
-        "chat-event:read",
-        "chat-event:write",
-      ]);
-      await configureUserOwnedGptPiModel(actor, route);
-      mockPiResourceArchiveDownloads();
-      mockPiCheckpointObjectStore();
-      const fastTier = route.type === "codex-oauth-token" ? "fast" : "priority";
-      const queuedId = randomUUID();
-      const body = {
-        agentId,
-        threadId: anchor.threadId,
-        clientEventId: queuedId,
-        prompt: "queued Luna Fast",
-        model: route.selectedModel,
-        runOptions: { codexServiceTier: "fast" as const },
-      };
-      const queued =
-        origin === "agent"
-          ? await requestSendEventWithBearer(token, body, [201])
-          : await chat.requestSendEvent(actor, body, [201]);
-      if (queued.status !== 201) {
-        throw new Error("Expected queued subscription send");
-      }
-      expect(queued.body.runId).toBeNull();
-      chatCallbacks.mockChatOutputEvents([]);
-      await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
-      await flushWaitUntilForTest();
-      const messages = await waitForThreadMessages(
-        actor,
-        anchor.threadId,
-        (events) => {
-          return userMessages(events).some((event) => {
-            return (
-              event.revokesEventId === queuedId && event.runId !== undefined
-            );
-          });
-        },
-      );
-      const promoted = userMessages(messages.events).find((event) => {
-        return event.revokesEventId === queuedId;
-      });
-      if (!promoted?.runId) {
-        throw new Error("Expected queued subscription promotion");
-      }
-      const promotedClaim = await claimChatRun(runnerGroup, promoted.runId);
-      expect(promotedClaim.claim.piModelConfig).toMatchObject({
-        model: route.runtimeModel,
-        serviceTier: fastTier,
-      });
-      await cancelChatRun(actor, promoted.runId, promotedClaim.sandboxHeaders);
-      await expectThreadModelCredits(context, actor, anchor.threadId, 0);
+      const owned = await publicChatActor(context);
+      const { actor, agentId, runnerGroup } = owned;
+      await owned.run(async () => {
+        await api.ensurePersonalSubscriptionModel(actor, {
+          model: "claude-fable-5-1",
+        });
+        const source = await owned.sendChatRun(actor, {
+          agentId,
+          prompt: "source run for Luna handoff",
+          model: "claude-fable-5-1",
+        });
+        const anchor = await owned.sendChatRun(actor, {
+          agentId,
+          prompt: "hold the Luna target thread",
+          model: "claude-fable-5-1",
+        });
+        const anchorClaim = await owned.claimChatRun(runnerGroup, anchor.runId);
+        const sourceClaim = await owned.claimChatRun(runnerGroup, source.runId);
+        const token = sourceClaim.claim.platformEnvironment.OKOU_TOKEN;
+        if (!token) {
+          throw new Error("Expected a claimed agent token");
+        }
+        await configureUserOwnedGptPiModel(actor, route);
+        mockPiResourceArchiveDownloads();
+        mockPiCheckpointObjectStore();
+        const fastTier =
+          route.type === "codex-oauth-token" ? "fast" : "priority";
+        const queuedId = randomUUID();
+        const body = {
+          agentId,
+          threadId: anchor.threadId,
+          clientEventId: queuedId,
+          prompt: "queued Luna Fast",
+          model: route.selectedModel,
+          runOptions: { codexServiceTier: "fast" as const },
+        };
+        const queued =
+          origin === "agent"
+            ? await requestSendEventWithBearer(token, body, [201])
+            : await chat.requestSendEvent(actor, body, [201]);
+        if (queued.status !== 201) {
+          throw new Error("Expected queued subscription send");
+        }
+        expect(queued.body.runId).toBeNull();
+        chatCallbacks.mockChatOutputEvents([]);
+        await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
+        await flushWaitUntilForTest();
+        const messages = await waitForThreadMessages(
+          actor,
+          anchor.threadId,
+          (events) => {
+            return userMessages(events).some((event) => {
+              return (
+                event.revokesEventId === queuedId && event.runId !== undefined
+              );
+            });
+          },
+        );
+        const promoted = userMessages(messages.events).find((event) => {
+          return event.revokesEventId === queuedId;
+        });
+        if (!promoted?.runId) {
+          throw new Error("Expected queued subscription promotion");
+        }
+        const promotedClaim = await owned.claimChatRun(
+          runnerGroup,
+          promoted.runId,
+        );
+        expect(promotedClaim.claim.piModelConfig).toMatchObject({
+          model: route.runtimeModel,
+          serviceTier: fastTier,
+        });
+        await cancelChatRun(
+          actor,
+          promoted.runId,
+          promotedClaim.sandboxHeaders,
+        );
+        await expectThreadModelCredits(context, actor, anchor.threadId, 0);
 
-      const immediateId = randomUUID();
-      const immediateBody = {
-        agentId,
-        clientEventId: immediateId,
-        prompt: "immediate Luna Fast",
-        model: route.selectedModel,
-        runOptions: { codexServiceTier: "fast" as const },
-      };
-      const immediate =
-        origin === "agent"
-          ? await requestSendEventWithBearer(token, immediateBody, [201])
-          : await chat.requestSendEvent(actor, immediateBody, [201]);
-      if (immediate.status !== 201) {
-        throw new Error("Expected immediate subscription send");
-      }
-      // The idle new thread's input is picked in the background.
-      const immediateMessages = await waitForThreadMessages(
-        actor,
-        immediate.body.threadId,
-        (events) => {
-          return userMessages(events).some((event) => {
-            return (
-              event.revokesEventId === immediateId && event.runId !== undefined
-            );
-          });
-        },
-      );
-      const immediateRunId = userMessages(immediateMessages.events).find(
-        (event) => {
-          return event.revokesEventId === immediateId;
-        },
-      )?.runId;
-      if (!immediateRunId) {
-        throw new Error("Expected immediate subscription run");
-      }
-      const immediateClaim = await claimChatRun(runnerGroup, immediateRunId);
-      expect(immediateClaim.claim.piModelConfig).toMatchObject({
-        model: route.runtimeModel,
-        serviceTier: fastTier,
+        const immediateId = randomUUID();
+        const immediateBody = {
+          agentId,
+          clientEventId: immediateId,
+          prompt: "immediate Luna Fast",
+          model: route.selectedModel,
+          runOptions: { codexServiceTier: "fast" as const },
+        };
+        const immediate =
+          origin === "agent"
+            ? await requestSendEventWithBearer(token, immediateBody, [201])
+            : await chat.requestSendEvent(actor, immediateBody, [201]);
+        if (immediate.status !== 201) {
+          throw new Error("Expected immediate subscription send");
+        }
+        // The idle new thread's input is picked in the background.
+        const immediateMessages = await waitForThreadMessages(
+          actor,
+          immediate.body.threadId,
+          (events) => {
+            return userMessages(events).some((event) => {
+              return (
+                event.revokesEventId === immediateId &&
+                event.runId !== undefined
+              );
+            });
+          },
+        );
+        const immediateRunId = userMessages(immediateMessages.events).find(
+          (event) => {
+            return event.revokesEventId === immediateId;
+          },
+        )?.runId;
+        if (!immediateRunId) {
+          throw new Error("Expected immediate subscription run");
+        }
+        const immediateClaim = await owned.claimChatRun(
+          runnerGroup,
+          immediateRunId,
+        );
+        expect(immediateClaim.claim.piModelConfig).toMatchObject({
+          model: route.runtimeModel,
+          serviceTier: fastTier,
+        });
+        await cancelChatRun(
+          actor,
+          immediateRunId,
+          immediateClaim.sandboxHeaders,
+        );
+        await expectThreadModelCredits(
+          context,
+          actor,
+          immediate.body.threadId,
+          0,
+        );
+        await cancelChatRun(actor, source.runId, sourceClaim.sandboxHeaders);
       });
-      await cancelChatRun(actor, immediateRunId, immediateClaim.sandboxHeaders);
-      await expectThreadModelCredits(
-        context,
-        actor,
-        immediate.body.threadId,
-        0,
-      );
-      await cancelChatRun(actor, source.runId);
     },
     90_000,
   );

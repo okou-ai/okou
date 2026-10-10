@@ -14,15 +14,15 @@ use crate::config;
 use crate::deps::MITMPROXY_VERSION;
 use crate::error::{RunnerError, RunnerResult};
 use crate::executor;
+use crate::home_mount::ensure_home_drive_mounted;
 use crate::prefetch;
 use crate::proxy;
-use crate::workspace_mount::ensure_workspace_drive_mounted;
 use runner_host::paths::{HomePaths, RunnerPaths};
 
 #[derive(Default)]
 struct Timing {
     boot_ms: Option<u128>,
-    workspace_mount_ms: Option<u128>,
+    home_mount_ms: Option<u128>,
     guest_restore_ms: Option<u128>,
     exec_ms: Option<u128>,
 }
@@ -273,8 +273,8 @@ pub async fn run_benchmark(
             memory_mb: profile_config.memory_mb,
         },
         device_rate_limits: None,
-        workspace_drive: Some(sandbox::WorkspaceDriveConfig {
-            size_mb: profile_config.workspace_disk_mb,
+        home_drive: Some(sandbox::HomeDriveConfig {
+            size_mb: profile_config.home_disk_mb,
             seed_image: None,
         }),
     };
@@ -290,7 +290,7 @@ pub async fn run_benchmark(
     // 5. Log timing summary (always, even on error)
     let Timing {
         boot_ms,
-        workspace_mount_ms,
+        home_mount_ms,
         guest_restore_ms,
         exec_ms,
     } = timing;
@@ -310,7 +310,7 @@ pub async fn run_benchmark(
                 proxy_ms,
                 factory_ms,
                 boot_ms = ?boot_ms,
-                workspace_mount_ms = ?workspace_mount_ms,
+                home_mount_ms = ?home_mount_ms,
                 guest_restore_ms = ?guest_restore_ms,
                 exec_ms = ?exec_ms,
                 total_ms,
@@ -320,10 +320,10 @@ pub async fn run_benchmark(
             );
         }
         (Ok(_), Some(e)) => {
-            info!(proxy_ms, factory_ms, boot_ms = ?boot_ms, workspace_mount_ms = ?workspace_mount_ms, guest_restore_ms = ?guest_restore_ms, exec_ms = ?exec_ms, total_ms, error = %e, "benchmark failed");
+            info!(proxy_ms, factory_ms, boot_ms = ?boot_ms, home_mount_ms = ?home_mount_ms, guest_restore_ms = ?guest_restore_ms, exec_ms = ?exec_ms, total_ms, error = %e, "benchmark failed");
         }
         (Err(e), _) => {
-            info!(proxy_ms, factory_ms, boot_ms = ?boot_ms, workspace_mount_ms = ?workspace_mount_ms, guest_restore_ms = ?guest_restore_ms, exec_ms = ?exec_ms, total_ms, error = %e, "benchmark failed");
+            info!(proxy_ms, factory_ms, boot_ms = ?boot_ms, home_mount_ms = ?home_mount_ms, guest_restore_ms = ?guest_restore_ms, exec_ms = ?exec_ms, total_ms, error = %e, "benchmark failed");
         }
     }
     if !proxy_stop_would_be_primary && let Err(e) = &proxy_stop_result {
@@ -506,8 +506,8 @@ async fn run_in_sandbox(
     }
 
     let t_mount = Instant::now();
-    let mount_result = ensure_workspace_drive_mounted(sandbox, sandbox.id()).await;
-    timing.workspace_mount_ms = Some(t_mount.elapsed().as_millis());
+    let mount_result = ensure_home_drive_mounted(sandbox, sandbox.id()).await;
+    timing.home_mount_ms = Some(t_mount.elapsed().as_millis());
     if let Err(e) = mount_result {
         return (Err(e.error.into()), timing);
     }
@@ -843,7 +843,7 @@ mod tests {
     enum BenchmarkLifecycleCase {
         Success,
         StartFailure,
-        WorkspaceMountFailure,
+        HomeMountFailure,
         GuestRestoreFailure,
         ExecFailure,
     }
@@ -852,7 +852,7 @@ mod tests {
         const ALL: [Self; 5] = [
             Self::Success,
             Self::StartFailure,
-            Self::WorkspaceMountFailure,
+            Self::HomeMountFailure,
             Self::GuestRestoreFailure,
             Self::ExecFailure,
         ];
@@ -865,8 +865,8 @@ mod tests {
                         message: self.primary_error().unwrap().to_string(),
                     }));
                 }
-                Self::WorkspaceMountFailure => overrides.push_workspace_drive_mount_result(Err(
-                    sandbox_workspace_mount_error(self.primary_error().unwrap()),
+                Self::HomeMountFailure => overrides.push_home_drive_mount_result(Err(
+                    sandbox_home_mount_error(self.primary_error().unwrap()),
                 )),
                 Self::GuestRestoreFailure => overrides.push_guest_state_restore_result(Err(
                     sandbox_exec_error(self.primary_error().unwrap()),
@@ -882,7 +882,7 @@ mod tests {
             match self {
                 Self::Success => None,
                 Self::StartFailure => Some("benchmark start primary failure"),
-                Self::WorkspaceMountFailure => Some("benchmark workspace primary failure"),
+                Self::HomeMountFailure => Some("benchmark workspace primary failure"),
                 Self::GuestRestoreFailure => Some("benchmark guest restore primary failure"),
                 Self::ExecFailure => Some("benchmark exec primary failure"),
             }
@@ -897,9 +897,9 @@ mod tests {
         }
     }
 
-    fn sandbox_workspace_mount_error(message: impl Into<String>) -> SandboxError {
+    fn sandbox_home_mount_error(message: impl Into<String>) -> SandboxError {
         SandboxError::Operation {
-            operation: SandboxOperation::MountWorkspaceDrive,
+            operation: SandboxOperation::MountHomeDrive,
             reason: SandboxOperationReason::Guest,
             message: message.into(),
         }
@@ -925,7 +925,7 @@ mod tests {
                 memory_mb: 4096,
             },
             device_rate_limits: None,
-            workspace_drive: Some(sandbox::WorkspaceDriveConfig {
+            home_drive: Some(sandbox::HomeDriveConfig {
                 size_mb: 1024,
                 seed_image: None,
             }),
@@ -1054,11 +1054,10 @@ mod tests {
 
         let proxy = BenchmarkProxyHarness::new().await;
         let overrides = Arc::new(MockSandboxOverrides::new());
-        overrides
-            .push_workspace_drive_mount_result(Err(sandbox_workspace_mount_error(PRIMARY_ERROR)));
+        overrides.push_home_drive_mount_result(Err(sandbox_home_mount_error(PRIMARY_ERROR)));
         queue_stop_failures(&overrides);
-        let workspace_mount_gate = MockLifecycleGate::new();
-        overrides.set_workspace_drive_mount_lifecycle_gate(workspace_mount_gate.clone());
+        let home_mount_gate = MockLifecycleGate::new();
+        overrides.set_home_drive_mount_lifecycle_gate(home_mount_gate.clone());
         let destroy_gate = MockLifecycleGate::new();
         overrides.set_destroy_lifecycle_gate(destroy_gate.clone());
         let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
@@ -1075,11 +1074,11 @@ mod tests {
         )
         .with_subscriber(subscriber);
         let corrupt_registry_and_observe_destroy = async {
-            let workspace_mount_seen = overrides
-                .wait_workspace_drive_mount_call_count(1, BENCHMARK_LIFECYCLE_TEST_TIMEOUT)
+            let home_mount_seen = overrides
+                .wait_home_drive_mount_call_count(1, BENCHMARK_LIFECYCLE_TEST_TIMEOUT)
                 .await;
             let corrupt_result = tokio::fs::write(&proxy.registry_path, b"{invalid-json").await;
-            workspace_mount_gate.release_one();
+            home_mount_gate.release_one();
 
             let destroy_entry = destroy_gate
                 .wait_entered(1, BENCHMARK_LIFECYCLE_TEST_TIMEOUT)
@@ -1088,7 +1087,7 @@ mod tests {
             let events = captured.entries();
             destroy_gate.release_one();
             (
-                workspace_mount_seen,
+                home_mount_seen,
                 corrupt_result,
                 destroy_entry,
                 destroy_calls,
@@ -1103,13 +1102,10 @@ mod tests {
             .await
             .expect("benchmark cleanup failure scenario timed out");
         let (result, _timing) = run_output;
-        let (workspace_mount_seen, corrupt_result, destroy_entry, destroy_calls, events_at_destroy) =
+        let (home_mount_seen, corrupt_result, destroy_entry, destroy_calls, events_at_destroy) =
             observation;
 
-        assert!(
-            workspace_mount_seen,
-            "workspace setup mount was not observed"
-        );
+        assert!(home_mount_seen, "workspace setup mount was not observed");
         corrupt_result.expect("corrupt temporary proxy registry");
         assert_eq!(destroy_entry.unwrap(), 1);
         assert_eq!(destroy_calls, 1);

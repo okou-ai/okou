@@ -8,16 +8,16 @@ use sandbox::{
 };
 
 use crate::guest_timezone::GuestTimezoneIntent;
+use crate::home_image_cache::{
+    HomeImageCache, HomeImagePromotionContext, HomeImagePromotionIdentityMismatch,
+    HomeImagePromotionIdentityRequest,
+};
+use crate::home_promotion::{
+    abandon_unpublished_home_promotion, prepare_home_image_from_parked_sandbox,
+};
 use crate::resource_budget::BudgetLease;
 use crate::restored_session_identity::RestoredSessionIdentity;
 use crate::storage_fingerprints::StorageFingerprints;
-use crate::workspace_image_cache::{
-    WorkspaceImageCache, WorkspaceImagePromotionContext, WorkspaceImagePromotionIdentityMismatch,
-    WorkspaceImagePromotionIdentityRequest,
-};
-use crate::workspace_promotion::{
-    abandon_unpublished_workspace_promotion, prepare_workspace_image_from_parked_sandbox,
-};
 use runner_types::ids::RunId;
 
 use super::park_transition::IdleParkCandidate;
@@ -62,9 +62,10 @@ pub(super) struct IdleSandboxMetadata {
     pub(super) identity: IdleSandboxIdentity,
     /// Identity of the parked sandbox. Survives reuse (next job's `run_id`
     /// differs, but `sandbox_id` stays the same) and is the join key for
-    /// doctor / kill / workspace-dir naming.
+    /// doctor / kill / home-dir naming.
     pub(super) sandbox_id: SandboxId,
     pub(super) profile_name: String,
+    pub(super) rootfs_hash: String,
     pub(super) device_rate_limits: Option<DeviceRateLimits>,
     pub(super) source_ip: String,
     /// Version fingerprints of storages downloaded in the previous turn.
@@ -103,31 +104,28 @@ pub(super) struct IdleSandboxResources {
     /// Required for idle-owned/rejected destroy. Reuse discards this because
     /// the active job already has the runner's current sandbox factory.
     pub(super) factory: Arc<Box<dyn SandboxFactory>>,
-    pub(super) workspace_promotion: Option<WorkspaceImagePromotionContext>,
+    pub(super) home_promotion: Option<HomeImagePromotionContext>,
 }
 
 impl IdleSandboxResources {
-    pub(super) fn into_destroy_payload(
-        self,
-        policy: WorkspacePromotionPolicy,
-    ) -> IdleDestroyPayload {
+    pub(super) fn into_destroy_payload(self, policy: HomePromotionPolicy) -> IdleDestroyPayload {
         IdleDestroyPayload {
             resources: self,
-            workspace_promotion_policy: policy,
+            home_promotion_policy: policy,
         }
     }
 
-    fn into_reuse_parts(self) -> (Box<dyn Sandbox>, Option<WorkspaceImagePromotionContext>) {
+    fn into_reuse_parts(self) -> (Box<dyn Sandbox>, Option<HomeImagePromotionContext>) {
         let Self {
             sandbox,
             factory: _,
-            workspace_promotion,
+            home_promotion,
         } = self;
-        (sandbox, workspace_promotion)
+        (sandbox, home_promotion)
     }
 }
 
-pub(super) enum WorkspacePromotionPolicy {
+pub(super) enum HomePromotionPolicy {
     Promote,
     AbandonUnpublished(&'static str),
 }
@@ -185,6 +183,7 @@ impl ParkedIdleCandidate {
         budget_lease: BudgetLease,
         sandbox_id: SandboxId,
         profile_name: String,
+        rootfs_hash: String,
         device_rate_limits: Option<DeviceRateLimits>,
     ) -> Self {
         let source_ip = sandbox.source_ip().to_owned();
@@ -192,12 +191,13 @@ impl ParkedIdleCandidate {
             resources: IdleSandboxResources {
                 sandbox,
                 factory,
-                workspace_promotion: None,
+                home_promotion: None,
             },
             metadata: IdleSandboxMetadata {
                 identity: IdleSandboxIdentity::Blank(sandbox_id),
                 sandbox_id,
                 profile_name,
+                rootfs_hash,
                 device_rate_limits,
                 source_ip,
                 storage_fingerprints: StorageFingerprints::default(),
@@ -252,7 +252,7 @@ impl ParkedIdleCandidate {
             ..
         } = self;
         (
-            resources.into_destroy_payload(WorkspacePromotionPolicy::Promote),
+            resources.into_destroy_payload(HomePromotionPolicy::Promote),
             budget_lease,
         )
     }
@@ -265,7 +265,7 @@ impl ParkedIdleCandidate {
         } = self;
 
         RejectedParkedIdleCandidate {
-            payload: resources.into_destroy_payload(WorkspacePromotionPolicy::Promote),
+            payload: resources.into_destroy_payload(HomePromotionPolicy::Promote),
             budget_lease,
         }
     }
@@ -300,7 +300,7 @@ impl ImmediateHandoffCandidate {
     pub fn into_active_destroy_parts(self) -> (IdleDestroyPayload, BudgetLease) {
         (
             self.resources
-                .into_destroy_payload(WorkspacePromotionPolicy::AbandonUnpublished(
+                .into_destroy_payload(HomePromotionPolicy::AbandonUnpublished(
                     "running_handoff_not_activated",
                 )),
             self.budget_lease,
@@ -334,12 +334,12 @@ impl ImmediateHandoffCandidate {
         };
         match result {
             Ok(()) => {
-                let (sandbox, workspace_promotion) = self.resources.into_reuse_parts();
+                let (sandbox, home_promotion) = self.resources.into_reuse_parts();
                 IdleUnparkResult::Reused {
                     sandbox: Box::new(ReusableIdleSandbox {
                         sandbox,
                         metadata: self.metadata,
-                        workspace_promotion,
+                        home_promotion,
                         guest_state_prepared: false,
                     }),
                     budget_lease: self.budget_lease,
@@ -437,7 +437,7 @@ pub enum DestroyOutcome {
 pub struct ReusableIdleSandbox {
     sandbox: Box<dyn Sandbox>,
     metadata: IdleSandboxMetadata,
-    workspace_promotion: Option<WorkspaceImagePromotionContext>,
+    home_promotion: Option<HomeImagePromotionContext>,
     guest_state_prepared: bool,
 }
 
@@ -446,8 +446,9 @@ pub struct ReusableIdleSandboxParts {
     pub identity: IdleSandboxIdentity,
     pub source_ip: String,
     pub storage_fingerprints: StorageFingerprints,
+    pub rootfs_hash: String,
     pub restored_session_identity: Option<RestoredSessionIdentity>,
-    pub workspace_promotion: Option<WorkspaceImagePromotionContext>,
+    pub home_promotion: Option<HomeImagePromotionContext>,
     pub guest_state_prepared: bool,
 }
 
@@ -483,13 +484,14 @@ impl ReusableIdleSandbox {
         let Self {
             sandbox,
             metadata,
-            workspace_promotion,
+            home_promotion,
             guest_state_prepared,
         } = self;
         let IdleSandboxMetadata {
             identity,
             sandbox_id: _,
             profile_name: _,
+            rootfs_hash,
             device_rate_limits: _,
             source_ip,
             storage_fingerprints,
@@ -502,10 +504,11 @@ impl ReusableIdleSandbox {
         ReusableIdleSandboxParts {
             sandbox,
             identity,
+            rootfs_hash,
             source_ip,
             storage_fingerprints,
             restored_session_identity,
-            workspace_promotion,
+            home_promotion,
             guest_state_prepared,
         }
     }
@@ -519,7 +522,7 @@ impl ReusableIdleSandbox {
         let Self {
             sandbox,
             metadata,
-            workspace_promotion,
+            home_promotion,
             guest_state_prepared: _,
         } = self;
         let IdleSandboxMetadata {
@@ -531,9 +534,9 @@ impl ReusableIdleSandbox {
             payload: IdleSandboxResources {
                 sandbox,
                 factory,
-                workspace_promotion,
+                home_promotion,
             }
-            .into_destroy_payload(WorkspacePromotionPolicy::AbandonUnpublished(reason)),
+            .into_destroy_payload(HomePromotionPolicy::AbandonUnpublished(reason)),
             budget_lease,
             reuse_key: identity.into_reuse_key(),
             profile_name,
@@ -544,17 +547,17 @@ impl ReusableIdleSandbox {
 /// Physical resources needed to destroy an idle sandbox, without its budget lease.
 pub struct IdleDestroyPayload {
     pub(super) resources: IdleSandboxResources,
-    pub(super) workspace_promotion_policy: WorkspacePromotionPolicy,
+    pub(super) home_promotion_policy: HomePromotionPolicy,
 }
 
 pub struct IdleDestroyResult {
     pub outcome: DestroyOutcome,
-    pub workspace_cache_promoted: bool,
+    pub home_cache_promoted: bool,
 }
 
 pub struct RetainedIdleDestroyResult {
     pub outcome: DestroyOutcome,
-    pub workspace_cache_promoted: bool,
+    pub home_cache_promoted: bool,
     pub budget_lease: BudgetLease,
 }
 
@@ -562,26 +565,24 @@ impl IdleDestroyPayload {
     /// Finalize the idle sandbox and destroy it via its factory.
     #[cfg(any(test, feature = "test-support"))]
     pub async fn stop_and_destroy(self) -> DestroyOutcome {
-        self.finalize_workspace_and_destroy("idle_destroy")
-            .await
-            .outcome
+        self.finalize_home_and_destroy("idle_destroy").await.outcome
     }
 
-    pub async fn finalize_workspace_and_destroy(self, context: &'static str) -> IdleDestroyResult {
+    pub async fn finalize_home_and_destroy(self, context: &'static str) -> IdleDestroyResult {
         let IdleSandboxResources {
             mut sandbox,
             factory,
-            workspace_promotion,
+            home_promotion,
         } = self.resources;
         // Waiting reclamation jobs must remain parked. The export-only gate is
         // too late to bound resumed guests and their memory recovery work.
         let mut reclamation_permit = None;
-        let prepared_promotion = match (self.workspace_promotion_policy, workspace_promotion) {
-            (WorkspacePromotionPolicy::Promote, Some(promotion)) => {
-                match promotion.acquire_idle_workspace_reclamation_permit().await {
+        let prepared_promotion = match (self.home_promotion_policy, home_promotion) {
+            (HomePromotionPolicy::Promote, Some(promotion)) => {
+                match promotion.acquire_idle_home_reclamation_permit().await {
                     Ok(permit) => {
                         reclamation_permit = Some(permit);
-                        prepare_workspace_image_from_parked_sandbox(
+                        prepare_home_image_from_parked_sandbox(
                             sandbox.as_mut(),
                             Some(promotion),
                             context,
@@ -590,14 +591,14 @@ impl IdleDestroyPayload {
                     }
                     Err(error) => {
                         tracing::warn!(%error, "idle workspace reclamation admission failed");
-                        abandon_unpublished_workspace_promotion(Some(promotion), context).await;
+                        abandon_unpublished_home_promotion(Some(promotion), context).await;
                         None
                     }
                 }
             }
-            (WorkspacePromotionPolicy::Promote, None) => None,
-            (WorkspacePromotionPolicy::AbandonUnpublished(reason), promotion) => {
-                abandon_unpublished_workspace_promotion(promotion, reason).await;
+            (HomePromotionPolicy::Promote, None) => None,
+            (HomePromotionPolicy::AbandonUnpublished(reason), promotion) => {
+                abandon_unpublished_home_promotion(promotion, reason).await;
                 None
             }
         };
@@ -619,7 +620,7 @@ impl IdleDestroyPayload {
             // need not hold up the next parked sandbox's reclamation.
             drop(reclamation_permit.take());
         }
-        let workspace_cache_promoted = match (prepared_promotion, terminated) {
+        let home_cache_promoted = match (prepared_promotion, terminated) {
             (Some(promotion), true) => promotion.publish().await,
             (Some(promotion), false) => {
                 promotion.abandon("idle_sandbox_kill_failed").await;
@@ -640,12 +641,12 @@ impl IdleDestroyPayload {
         if uncertain {
             IdleDestroyResult {
                 outcome: DestroyOutcome::Uncertain,
-                workspace_cache_promoted,
+                home_cache_promoted,
             }
         } else {
             IdleDestroyResult {
                 outcome: DestroyOutcome::Completed,
-                workspace_cache_promoted,
+                home_cache_promoted,
             }
         }
     }
@@ -670,7 +671,7 @@ impl IdleDestroyJob {
     pub async fn run_with_context(self, context: &'static str) -> bool {
         let result = self.run_retaining_lease(context).await;
         drop(result.budget_lease);
-        result.workspace_cache_promoted
+        result.home_cache_promoted
     }
 
     pub async fn run_retaining_lease(self, context: &'static str) -> RetainedIdleDestroyResult {
@@ -680,10 +681,10 @@ impl IdleDestroyJob {
             reuse_key: _,
             profile_name: _,
         } = self;
-        let result = payload.finalize_workspace_and_destroy(context).await;
+        let result = payload.finalize_home_and_destroy(context).await;
         RetainedIdleDestroyResult {
             outcome: result.outcome,
-            workspace_cache_promoted: result.workspace_cache_promoted,
+            home_cache_promoted: result.home_cache_promoted,
             budget_lease,
         }
     }
@@ -762,6 +763,10 @@ impl IdleEntry {
         &self.metadata.profile_name
     }
 
+    pub fn rootfs_hash(&self) -> &str {
+        &self.metadata.rootfs_hash
+    }
+
     pub fn device_rate_limits(&self) -> &Option<DeviceRateLimits> {
         &self.metadata.device_rate_limits
     }
@@ -794,13 +799,13 @@ impl IdleEntry {
             }
             Err(IdleActivationFailure::Returned(error)) => IdleUnparkResult::Failed {
                 destroy_job: Box::new(
-                    self.into_destroy_job_abandoning_workspace_promotion("unpark_failed"),
+                    self.into_destroy_job_abandoning_home_promotion("unpark_failed"),
                 ),
                 error,
             },
             Err(IdleActivationFailure::Panicked) => IdleUnparkResult::Failed {
                 destroy_job: Box::new(
-                    self.into_destroy_job_abandoning_workspace_promotion("unpark_panicked"),
+                    self.into_destroy_job_abandoning_home_promotion("unpark_panicked"),
                 ),
                 error: "sandbox unpark panicked".into(),
             },
@@ -828,13 +833,13 @@ impl IdleEntry {
             budget_lease,
             ..
         } = self;
-        let (sandbox, workspace_promotion) = resources.into_reuse_parts();
+        let (sandbox, home_promotion) = resources.into_reuse_parts();
 
         (
             ReusableIdleSandbox {
                 sandbox,
                 metadata,
-                workspace_promotion,
+                home_promotion,
                 guest_state_prepared: false,
             },
             budget_lease,
@@ -842,31 +847,36 @@ impl IdleEntry {
     }
 
     pub fn into_destroy_job(self) -> IdleDestroyJob {
-        self.into_destroy_job_with_workspace_promotion(WorkspacePromotionPolicy::Promote)
+        self.into_destroy_job_with_home_promotion(HomePromotionPolicy::Promote)
     }
 
-    pub fn into_destroy_job_without_workspace_promotion_for_mismatch(self) -> IdleDestroyJob {
-        self.into_destroy_job_abandoning_workspace_promotion("promotion_identity_mismatch")
+    pub fn into_destroy_job_without_home_promotion_for_mismatch(self) -> IdleDestroyJob {
+        self.into_destroy_job_abandoning_home_promotion("promotion_identity_mismatch")
     }
 
-    pub fn validate_workspace_promotion_identity(
+    pub fn validate_home_promotion_identity(
         &self,
-        cache: &WorkspaceImageCache,
+        cache: &HomeImageCache,
+        rootfs_hash: &str,
         working_dir: &str,
         image_size_bytes: u64,
-    ) -> Result<(), WorkspaceImagePromotionIdentityMismatch> {
-        let Some(promotion) = self.resources.workspace_promotion.as_ref() else {
+    ) -> Result<(), HomeImagePromotionIdentityMismatch> {
+        if self.metadata.rootfs_hash != rootfs_hash {
+            return Err(HomeImagePromotionIdentityMismatch::RootfsHash);
+        }
+        let Some(promotion) = self.resources.home_promotion.as_ref() else {
             return Ok(());
         };
         let reuse_key = self
             .metadata
             .reuse_key()
-            .ok_or(WorkspaceImagePromotionIdentityMismatch::ReuseKey)?;
+            .ok_or(HomeImagePromotionIdentityMismatch::ReuseKey)?;
         promotion.validate_expected_identity(
             cache,
-            WorkspaceImagePromotionIdentityRequest {
+            HomeImagePromotionIdentityRequest {
                 sandbox_id: self.metadata.sandbox_id,
                 profile_name: &self.metadata.profile_name,
+                rootfs_hash,
                 reuse_key,
                 working_dir,
                 image_size_bytes,
@@ -874,18 +884,13 @@ impl IdleEntry {
         )
     }
 
-    fn into_destroy_job_abandoning_workspace_promotion(
-        self,
-        reason: &'static str,
-    ) -> IdleDestroyJob {
-        self.into_destroy_job_with_workspace_promotion(
-            WorkspacePromotionPolicy::AbandonUnpublished(reason),
-        )
+    fn into_destroy_job_abandoning_home_promotion(self, reason: &'static str) -> IdleDestroyJob {
+        self.into_destroy_job_with_home_promotion(HomePromotionPolicy::AbandonUnpublished(reason))
     }
 
-    fn into_destroy_job_with_workspace_promotion(
+    fn into_destroy_job_with_home_promotion(
         self,
-        workspace_promotion_policy: WorkspacePromotionPolicy,
+        home_promotion_policy: HomePromotionPolicy,
     ) -> IdleDestroyJob {
         let Self {
             resources,
@@ -900,7 +905,7 @@ impl IdleEntry {
         } = metadata;
 
         IdleDestroyJob {
-            payload: resources.into_destroy_payload(workspace_promotion_policy),
+            payload: resources.into_destroy_payload(home_promotion_policy),
             budget_lease,
             reuse_key: identity.into_reuse_key(),
             profile_name,
@@ -949,6 +954,10 @@ impl ReservedIdleSandbox {
         &self.metadata().profile_name
     }
 
+    pub fn rootfs_hash(&self) -> &str {
+        &self.metadata().rootfs_hash
+    }
+
     pub fn device_rate_limits(&self) -> &Option<DeviceRateLimits> {
         &self.metadata().device_rate_limits
     }
@@ -957,29 +966,37 @@ impl ReservedIdleSandbox {
         &self.metadata().guest_timezone_intent
     }
 
-    pub fn validate_workspace_promotion_identity(
+    pub fn validate_home_promotion_identity(
         &self,
-        cache: &WorkspaceImageCache,
+        cache: &HomeImageCache,
+        rootfs_hash: &str,
         working_dir: &str,
         image_size_bytes: u64,
-    ) -> Result<(), WorkspaceImagePromotionIdentityMismatch> {
+    ) -> Result<(), HomeImagePromotionIdentityMismatch> {
+        if self.metadata().rootfs_hash != rootfs_hash {
+            return Err(HomeImagePromotionIdentityMismatch::RootfsHash);
+        }
         match &self.state {
-            ReservedIdleSandboxState::Parked(entry) => {
-                entry.validate_workspace_promotion_identity(cache, working_dir, image_size_bytes)
-            }
+            ReservedIdleSandboxState::Parked(entry) => entry.validate_home_promotion_identity(
+                cache,
+                rootfs_hash,
+                working_dir,
+                image_size_bytes,
+            ),
             ReservedIdleSandboxState::Running(candidate) => {
-                let Some(promotion) = candidate.resources.workspace_promotion.as_ref() else {
+                let Some(promotion) = candidate.resources.home_promotion.as_ref() else {
                     return Ok(());
                 };
                 let reuse_key = candidate
                     .metadata
                     .reuse_key()
-                    .ok_or(WorkspaceImagePromotionIdentityMismatch::ReuseKey)?;
+                    .ok_or(HomeImagePromotionIdentityMismatch::ReuseKey)?;
                 promotion.validate_expected_identity(
                     cache,
-                    WorkspaceImagePromotionIdentityRequest {
+                    HomeImagePromotionIdentityRequest {
                         sandbox_id: candidate.metadata.sandbox_id,
                         profile_name: &candidate.metadata.profile_name,
+                        rootfs_hash,
                         reuse_key,
                         working_dir,
                         image_size_bytes,
@@ -1012,18 +1029,16 @@ impl ReservedIdleSandbox {
             Ok(()) => {
                 SpeculativeIdleUnparkResult::Ready(Box::new(SpeculativeIdleSandbox { entry }))
             }
-            Err(IdleActivationFailure::Returned(error)) => {
-                SpeculativeIdleUnparkResult::Failed {
-                    destroy_job: Box::new(entry.into_destroy_job_abandoning_workspace_promotion(
-                        "speculative_unpark_failed",
-                    )),
-                    error,
-                }
-            }
+            Err(IdleActivationFailure::Returned(error)) => SpeculativeIdleUnparkResult::Failed {
+                destroy_job: Box::new(
+                    entry.into_destroy_job_abandoning_home_promotion("speculative_unpark_failed"),
+                ),
+                error,
+            },
             Err(IdleActivationFailure::Panicked) => SpeculativeIdleUnparkResult::Failed {
-                destroy_job: Box::new(entry.into_destroy_job_abandoning_workspace_promotion(
-                    "speculative_unpark_panicked",
-                )),
+                destroy_job: Box::new(
+                    entry.into_destroy_job_abandoning_home_promotion("speculative_unpark_panicked"),
+                ),
                 error: "sandbox unpark panicked".into(),
             },
         }
@@ -1036,10 +1051,10 @@ impl ReservedIdleSandbox {
         }
     }
 
-    pub fn into_destroy_job_without_workspace_promotion_for_mismatch(self) -> IdleDestroyJob {
+    pub fn into_destroy_job_without_home_promotion_for_mismatch(self) -> IdleDestroyJob {
         match self.state {
             ReservedIdleSandboxState::Parked(entry) => {
-                entry.into_destroy_job_without_workspace_promotion_for_mismatch()
+                entry.into_destroy_job_without_home_promotion_for_mismatch()
             }
             ReservedIdleSandboxState::Running(candidate) => candidate.into_destroy_job(),
         }
@@ -1055,18 +1070,27 @@ impl SpeculativeIdleSandbox {
         self.entry.reuse_key()
     }
 
+    pub fn rootfs_hash(&self) -> &str {
+        self.entry.rootfs_hash()
+    }
+
     pub fn guest_timezone_intent(&self) -> &GuestTimezoneIntent {
         &self.entry.metadata.guest_timezone_intent
     }
 
-    pub fn validate_workspace_promotion_identity(
+    pub fn validate_home_promotion_identity(
         &self,
-        cache: &WorkspaceImageCache,
+        cache: &HomeImageCache,
+        rootfs_hash: &str,
         working_dir: &str,
         image_size_bytes: u64,
-    ) -> Result<(), WorkspaceImagePromotionIdentityMismatch> {
-        self.entry
-            .validate_workspace_promotion_identity(cache, working_dir, image_size_bytes)
+    ) -> Result<(), HomeImagePromotionIdentityMismatch> {
+        self.entry.validate_home_promotion_identity(
+            cache,
+            rootfs_hash,
+            working_dir,
+            image_size_bytes,
+        )
     }
 
     pub fn commit(self, guest_state_prepared: bool) -> (ReusableIdleSandbox, BudgetLease) {
@@ -1077,12 +1101,12 @@ impl SpeculativeIdleSandbox {
             budget_lease,
             ..
         } = entry;
-        let (sandbox, workspace_promotion) = resources.into_reuse_parts();
+        let (sandbox, home_promotion) = resources.into_reuse_parts();
         (
             ReusableIdleSandbox {
                 sandbox,
                 metadata,
-                workspace_promotion,
+                home_promotion,
                 guest_state_prepared,
             },
             budget_lease,
@@ -1091,6 +1115,6 @@ impl SpeculativeIdleSandbox {
 
     pub fn into_destroy_job(self, reason: &'static str) -> IdleDestroyJob {
         self.entry
-            .into_destroy_job_abandoning_workspace_promotion(reason)
+            .into_destroy_job_abandoning_home_promotion(reason)
     }
 }

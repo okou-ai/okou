@@ -10,7 +10,7 @@ const TEST_WORKSPACE_REUSE_RESULT: &str = "sandboxReused";
 // =========================================================================
 // Complete webhook
 //
-// Checkpoint-less completion is retained only for explicit cancellation when
+// Finalization-less completion is retained only for explicit cancellation when
 // recovery preparation or combined reporting cannot be acknowledged. The
 // runner's POST still fires on VM exit and is absorbed by idempotency.
 // =========================================================================

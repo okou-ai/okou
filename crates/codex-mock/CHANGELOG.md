@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.11.65](https://github.com/okou-ai/okou/compare/codex-mock-v0.11.64...codex-mock-v0.11.65) (2026-10-10)
+
+## [0.11.64](https://github.com/okou-ai/okou/compare/codex-mock-v0.11.63...codex-mock-v0.11.64) (2026-10-10)
+
+
+### Performance Improvements
+
+* **test:** reduce fixture observation allocations ([#38473](https://github.com/okou-ai/okou/issues/38473)) ([65e3292](https://github.com/okou-ai/okou/commit/65e3292dcf4cc635182ab1ffb88354726aae7402))
+
+## [0.11.63](https://github.com/okou-ai/okou/compare/codex-mock-v0.11.62...codex-mock-v0.11.63) (2026-10-10)
+
+## [0.11.62](https://github.com/okou-ai/okou/compare/codex-mock-v0.11.61...codex-mock-v0.11.62) (2026-10-10)
+
 ## [0.11.61](https://github.com/okou-ai/okou/compare/codex-mock-v0.11.60...codex-mock-v0.11.61) (2026-10-09)
 
 ## [0.11.60](https://github.com/okou-ai/okou/compare/codex-mock-v0.11.59...codex-mock-v0.11.60) (2026-10-09)

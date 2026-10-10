@@ -18,7 +18,7 @@ import { createApp } from "../../../app-factory";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { clearMockedEnv, mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { nowDate } from "../../../lib/time";
+import { mockNow, nowDate } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
@@ -1754,6 +1754,175 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     expect(run?.prompt).toBe(`@${OFFICIAL_BOT_USERNAME} help from a group`);
     expect(run?.appendSystemPrompt).toContain(
       "Bot username: @official_okou_bot",
+    );
+  });
+
+  it("publishes fresh Telegram group threads with ordered owner-scoped creation events", async () => {
+    const fixture = await createTelegramPostFixture({ linkOfficial: true });
+    const outsider = await createTelegramPostFixture();
+    const actor = actorForFixture(fixture);
+    telegramApiMocks();
+    const preference = await accept(
+      userModelPreferenceClient().update({
+        headers: authOrgApi.authenticate(actor),
+        body: {
+          selectedModel: "claude-fable-5-1",
+          serviceTier: null,
+          modelSettingsPatch: { model: "claude-fable-5-1", effort: "high" },
+        },
+      }),
+      [200],
+    );
+    const before = await chatApi.requestThreadEvents(actor, {}, [200]);
+    if (before.status !== 200) {
+      throw new Error("Expected the owner's initial thread lifecycle");
+    }
+    const createdAt = new Date("2026-10-10T02:00:00.123Z");
+    mockNow(createdAt);
+    const updates = [4601, 4602].map((messageId) => {
+      return {
+        update_id: messageId,
+        message: {
+          message_id: messageId,
+          chat: { id: -10_099_460, type: "supergroup" },
+          from: { id: Number(fixture.telegramUserId), first_name: "Alice" },
+          text: `@${OFFICIAL_BOT_USERNAME} fresh task ${messageId}`,
+          entities: [mentionEntity(OFFICIAL_BOT_USERNAME)],
+        },
+      };
+    });
+    const responses = await Promise.all(
+      updates.map((body) => {
+        return postWebhook({
+          telegramBotId: OFFICIAL_TELEGRAM_BOT_ID,
+          secret: OFFICIAL_WEBHOOK_SECRET,
+          body,
+        });
+      }),
+    );
+    expect(
+      responses.map((response) => {
+        return response.status;
+      }),
+    ).toStrictEqual([200, 200]);
+    await flushWaitUntilForTest();
+
+    const lifecycle = await chatApi.requestThreadEvents(actor, {}, [200]);
+    if (lifecycle.status !== 200) {
+      throw new Error("Expected the owner's Telegram thread lifecycle");
+    }
+    const created = lifecycle.body.events.filter((event) => {
+      return (
+        event.kind === "created" &&
+        !before.body.events.some((previous) => {
+          return previous.id === event.id;
+        })
+      );
+    });
+    expect(created).toHaveLength(2);
+    const [first, second] = created;
+    if (!first || !second) {
+      throw new Error("Expected both fresh Telegram thread creation events");
+    }
+    expect(first.chatThreadId).not.toBe(second.chatThreadId);
+    expect(first.seqId).toBeLessThan(second.seqId);
+    for (const event of created) {
+      expect(event).toMatchObject({
+        agentId: fixture.composeId,
+        title: null,
+        selectedModel: "claude-fable-5-1",
+        modelSettings: preference.body.modelSettings,
+        serviceTier: null,
+        computerUseHostId: null,
+        cloudBrowserEnabled: true,
+        createdAt: createdAt.toISOString(),
+      });
+      const thread = await chatApi.readThreadMetadata(
+        actor,
+        event.chatThreadId,
+      );
+      expect(thread).toMatchObject({
+        agentId: event.agentId,
+        selectedModel: event.selectedModel,
+        modelSettings: event.modelSettings,
+        serviceTier: event.serviceTier,
+        cloudBrowserEnabled: event.cloudBrowserEnabled,
+      });
+      expect(
+        (await chatApi.readThread(actor, event.chatThreadId)).lastReadAt,
+      ).toBe(event.createdAt);
+    }
+    for (const update of updates) {
+      await threadIdWhere(fixture, (event) => {
+        return (
+          event.eventType === "input.prompt" &&
+          event.userMessage.parts.some((part) => {
+            return (
+              part.type === "text" && part.text.includes(update.message.text)
+            );
+          })
+        );
+      });
+    }
+    const tail = await chatApi.requestThreadEvents(
+      actor,
+      { sinceSeqId: first.seqId },
+      [200],
+    );
+    if (tail.status !== 200) {
+      throw new Error("Expected a retained Telegram thread lifecycle cursor");
+    }
+    expect(tail.body.events).toStrictEqual(
+      lifecycle.body.events.filter((event) => {
+        return event.seqId > first.seqId;
+      }),
+    );
+    expect(
+      replayChatThreadEvents(
+        replayChatThreadEvents(
+          [],
+          lifecycle.body.events.filter((event) => {
+            return event.seqId <= first.seqId;
+          }),
+        ),
+        tail.body.events,
+      ),
+    ).toStrictEqual(replayChatThreadEvents([], lifecycle.body.events));
+
+    expect(
+      (
+        await postWebhook({
+          telegramBotId: OFFICIAL_TELEGRAM_BOT_ID,
+          secret: OFFICIAL_WEBHOOK_SECRET,
+          body: updates[0],
+        })
+      ).status,
+    ).toBe(200);
+    await flushWaitUntilForTest();
+    const repeated = await chatApi.requestThreadEvents(actor, {}, [200]);
+    if (repeated.status !== 200) {
+      throw new Error("Expected the owner's lifecycle after webhook replay");
+    }
+    expect(repeated.body.events).toStrictEqual(lifecycle.body.events);
+    const isolated = await chatApi.requestThreadEvents(
+      actorForFixture(outsider),
+      {},
+      [200],
+    );
+    if (isolated.status !== 200) {
+      throw new Error("Expected the unrelated owner's thread lifecycle");
+    }
+    expect(
+      isolated.body.events.some((event) => {
+        return created.some((owned) => {
+          return owned.chatThreadId === event.chatThreadId;
+        });
+      }),
+    ).toBeFalsy();
+    await chatApi.requestReadThreadMetadata(
+      actorForFixture(outsider),
+      first.chatThreadId,
+      [404],
     );
   });
 

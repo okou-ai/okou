@@ -1709,21 +1709,30 @@ export const materializeCanonicalPublishedAsset$ = command(
     }
 
     // Materialization and the durable catalog handoff must commit together.
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0087; new non-billing transactions are prohibited.
-    await db.transaction(async (tx) => {
-      await tx
-        .update(runUploadedFiles)
-        .set({
-          url,
-          sizeBytes: head.contentLength,
-          materializationStatus: "ready",
-          materializationError: null,
-          updatedAt: sql`now()`,
-        })
-        .where(eq(runUploadedFiles.id, asset.id));
-      await tx.execute(queueArtifactCatalogFileSql(asset.id));
-      signal.throwIfAborted();
-    });
+    await db.execute(
+      queueArtifactCatalogFileSql(
+        asset.id,
+        db
+          .update(runUploadedFiles)
+          .set({
+            url,
+            sizeBytes: head.contentLength,
+            materializationStatus: "ready",
+            materializationError: null,
+            updatedAt: sql`now()`,
+          })
+          .where(eq(runUploadedFiles.id, asset.id))
+          .returning({
+            id: runUploadedFiles.id,
+            orgId: runUploadedFiles.orgId,
+            userId: runUploadedFiles.userId,
+            chatThreadId: runUploadedFiles.chatThreadId,
+            runId: runUploadedFiles.runId,
+            url: runUploadedFiles.url,
+          })
+          .getSQL(),
+      ),
+    );
     signal.throwIfAborted();
     await set(syncArtifactCatalogForFile$, asset.id, signal);
     if (args.runId !== null) {

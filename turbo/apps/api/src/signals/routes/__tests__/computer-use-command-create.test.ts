@@ -1,3 +1,4 @@
+import type { ComputerUseTestConnection } from "./helpers/api-bdd-computer-use";
 import { aroundEach, describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
@@ -5,6 +6,7 @@ import { mockNow, withMockNowForTest } from "../../../lib/time";
 import { expectApiError, type ApiTestUser } from "./helpers/api-bdd";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createPublicComputerUseScenario } from "./helpers/public-computer-use-scenario";
+import { channelsPublishedTo } from "./helpers/realtime-publications";
 
 const context = testContext();
 
@@ -88,18 +90,27 @@ function createScenario() {
     context.mocks.s3.send.mockClear();
   }
 
-  function expectNoExternalEffects(): void {
-    expect(context.mocks.ably.publish).not.toHaveBeenCalled();
-    expect(context.mocks.s3.send).not.toHaveBeenCalled();
+  function expectCommandNotification(
+    connection: ComputerUseTestConnection,
+  ): void {
+    expect(channelsPublishedTo(context.mocks, "commandsChanged")).toStrictEqual(
+      [
+        `computer-use-host:${connection.actor.userId}:${connection.actor.orgId}:${connection.hostId}:${connection.connectionGeneration}`,
+      ],
+    );
+    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+      "commandsChanged",
+      null,
+    );
   }
 
   async function claimAndComplete(args: {
-    readonly hostToken: string;
+    readonly connection: ComputerUseTestConnection;
     readonly commandId: string;
     readonly capabilities?: readonly string[];
   }): Promise<void> {
     const claimed = await computerUse.claimNextComputerUseCommand(
-      args.hostToken,
+      args.connection,
       args.capabilities ?? HOST_CAPABILITIES,
     );
     expect(claimed).toMatchObject({
@@ -107,7 +118,7 @@ function createScenario() {
       command: { id: args.commandId, status: "running" },
     });
     await computerUse.completeComputerUseCommandWith(
-      args.hostToken,
+      args.connection,
       args.commandId,
       {
         status: "failed",
@@ -126,7 +137,7 @@ function createScenario() {
     createCommand,
     startCapableHost,
     clearExternalEffects,
-    expectNoExternalEffects,
+    expectCommandNotification,
     claimAndComplete,
   };
 }
@@ -146,7 +157,7 @@ describe("Computer Use command creation", () => {
         createCommand,
         startCapableHost,
         clearExternalEffects,
-        expectNoExternalEffects,
+        expectCommandNotification,
         claimAndComplete,
       } = scenario;
       return await scenario.run(async () => {
@@ -180,9 +191,10 @@ describe("Computer Use command creation", () => {
             })
           ).auditEvents,
         ).toStrictEqual([]);
-        expectNoExternalEffects();
+        expectCommandNotification(sessionHost.connection);
+        expect(context.mocks.s3.send).not.toHaveBeenCalled();
         await claimAndComplete({
-          hostToken: sessionHost.hostToken,
+          connection: sessionHost.connection,
           commandId: sessionCreated.commandId,
         });
 
@@ -190,9 +202,11 @@ describe("Computer Use command creation", () => {
         const patHost = await startCapableHost(patActor, "PAT Desktop");
         const { token: pat } = await authOrg.createCliToken(patActor);
         mockClerkMembership(context, patActor, "org:admin");
+        clearExternalEffects();
         const patCreated = await createCommand("write", { bearer: pat });
+        expectCommandNotification(patHost.connection);
         const patClaimed = await computerUse.claimNextComputerUseCommand(
-          patHost.hostToken,
+          patHost.connection,
           HOST_CAPABILITIES,
         );
         expect(patClaimed).toMatchObject({
@@ -206,7 +220,7 @@ describe("Computer Use command creation", () => {
           },
         });
         await computerUse.completeComputerUseCommand(
-          patHost.hostToken,
+          patHost.connection,
           patCreated.commandId,
         );
         const patAudit = await computerUse.listComputerUseAuditEvents(
@@ -227,11 +241,13 @@ describe("Computer Use command creation", () => {
           actor: agentActor,
           hostId: agentHost.hostId,
         });
+        clearExternalEffects();
         const agentCreated = await createCommand("write", {
           bearer: agent.bearer,
         });
+        expectCommandNotification(agentHost.connection);
         const agentClaimed = await computerUse.claimNextComputerUseCommand(
-          agentHost.hostToken,
+          agentHost.connection,
           HOST_CAPABILITIES,
         );
         expect(agentClaimed).toMatchObject({
@@ -245,7 +261,7 @@ describe("Computer Use command creation", () => {
           },
         });
         await computerUse.completeComputerUseCommandWith(
-          agentHost.hostToken,
+          agentHost.connection,
           agentCreated.commandId,
           {
             status: "succeeded",

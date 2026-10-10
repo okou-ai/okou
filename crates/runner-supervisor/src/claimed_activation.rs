@@ -42,11 +42,12 @@ pub struct ReadyClaimedResource {
 /// All owned inputs held across active-status publication and executor request construction.
 pub struct ClaimedJobSetup {
     pub claimed: ClaimedJob,
+    pub rootfs_hash: String,
     pub cancellation: RunCancellationRegistration,
     pub profile_name: String,
     pub vcpu: u32,
     pub memory_mb: u32,
-    pub workspace_disk_mb: u32,
+    pub home_disk_mb: u32,
     pub restore_guest_state: bool,
     pub device_rate_limits: Option<DeviceRateLimits>,
     pub factory: SharedFactory,
@@ -241,7 +242,8 @@ async fn recover_claimed_activation_failure(
         profile_name: _,
         vcpu: _,
         memory_mb: _,
-        workspace_disk_mb: _,
+        rootfs_hash: _,
+        home_disk_mb: _,
         restore_guest_state: _,
         device_rate_limits: _,
         factory,
@@ -292,7 +294,7 @@ async fn recover_claimed_activation_failure(
             .into_destroy_job(factory, active_lease, reason)
             .run_retaining_lease(reason)
             .await;
-        if cleanup.workspace_cache_promoted {
+        if cleanup.home_cache_promoted {
             ctx.reuse_state_notify.notify_one();
         }
         drop(cleanup.budget_lease);

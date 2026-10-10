@@ -1971,11 +1971,6 @@ interface ResolvedBrowserUseUserActionField {
   readonly inspection: BrowserUseControlInspection;
 }
 
-interface WritableBrowserUseUserActionField {
-  readonly objectId: string;
-  readonly value: string;
-}
-
 async function openBrowserUseApplyPage(
   socket: WebSocket,
   target: BrowserUseUserActionExactTarget,
@@ -2302,27 +2297,6 @@ export async function preflightBrowserUseUserAction(
   });
 }
 
-function writableBrowserUseFields(
-  fields: readonly ResolvedBrowserUseUserActionField[],
-): readonly WritableBrowserUseUserActionField[] {
-  const writable: WritableBrowserUseUserActionField[] = [];
-  for (const field of fields) {
-    if (field.value !== undefined) {
-      writable.push({ objectId: field.objectId, value: field.value });
-    }
-  }
-  return writable;
-}
-
-function browserUseAggregateValueArguments(
-  fields: readonly WritableBrowserUseUserActionField[],
-): readonly Readonly<Record<string, unknown>>[] {
-  const [, ...otherFields] = fields;
-  return otherFields.flatMap((field) => {
-    return [{ objectId: field.objectId }, { value: field.value }];
-  });
-}
-
 function validSelectApplyFields(
   fields: readonly ResolvedBrowserUseUserActionField[],
 ): boolean {
@@ -2466,105 +2440,7 @@ async function validateBrowserUseApplyValues(
   return checked.result.value === true;
 }
 
-async function writeBrowserUseApplyFields(
-  socket: WebSocket,
-  args: {
-    readonly sessionId: string;
-    readonly fields: readonly ResolvedBrowserUseUserActionField[];
-    readonly commandId: number;
-  },
-  mutation: { writeStarted: boolean },
-  signal: AbortSignal,
-): Promise<void> {
-  const fields = writableBrowserUseFields(args.fields);
-  const [firstField] = fields;
-  if (!firstField) {
-    return;
-  }
-  const remainingArguments = browserUseAggregateValueArguments(fields);
-  mutation.writeStarted = true;
-  const wrote = browserUseCdpValueSchema.parse(
-    await sendBrowserUseCdpCommand(
-      socket,
-      {
-        id: args.commandId,
-        method: "Runtime.callFunctionOn",
-        params: {
-          objectId: firstField.objectId,
-          functionDeclaration: `function (nextValue, ...otherControlValues) {
-            const controls = [this];
-            const values = [nextValue];
-            for (let index = 0; index < otherControlValues.length; index += 2) {
-              controls.push(otherControlValues[index]);
-              values.push(otherControlValues[index + 1]);
-            }
-            const inMainDocument = (control) => control.isConnected &&
-              control.ownerDocument === document && control.getRootNode() === document;
-            if (!controls.every(inMainDocument)) return false;
-            for (let index = 0; index < controls.length; index += 1) {
-              const control = controls[index];
-              if (!inMainDocument(control)) return false;
-              const prototype = control instanceof HTMLTextAreaElement
-                ? HTMLTextAreaElement.prototype
-                : HTMLInputElement.prototype;
-              const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
-              if (!setter) throw new Error("native setter unavailable");
-              setter.call(control, values[index]);
-              control.dispatchEvent(new Event("input", { bubbles: true }));
-              control.dispatchEvent(new Event("change", { bubbles: true }));
-            }
-            return true;
-          }`,
-          arguments: [{ value: firstField.value }, ...remainingArguments],
-          awaitPromise: false,
-          returnByValue: true,
-        },
-        sessionId: args.sessionId,
-      },
-      signal,
-    ),
-    { reportInput: true },
-  );
-  if (wrote.result.value !== true) {
-    throw new BrowserUseUserActionMutationError(true);
-  }
-  const verified = browserUseCdpValueSchema.parse(
-    await sendBrowserUseCdpCommand(
-      socket,
-      {
-        id: args.commandId + 1,
-        method: "Runtime.callFunctionOn",
-        params: {
-          objectId: firstField.objectId,
-          functionDeclaration: `function (expected, ...otherControlValues) {
-            const controls = [this];
-            const expectedValues = [expected];
-            for (let index = 0; index < otherControlValues.length; index += 2) {
-              controls.push(otherControlValues[index]);
-              expectedValues.push(otherControlValues[index + 1]);
-            }
-            return controls.every((control, index) => {
-              return control.isConnected &&
-                control.ownerDocument === document &&
-                control.getRootNode() === document &&
-                control.value === expectedValues[index];
-            });
-          }`,
-          arguments: [{ value: firstField.value }, ...remainingArguments],
-          returnByValue: true,
-        },
-        sessionId: args.sessionId,
-      },
-      signal,
-    ),
-    { reportInput: true },
-  );
-  if (verified.result.value !== true) {
-    throw new BrowserUseUserActionMutationError(true);
-  }
-}
-
-function browserUseMixedControlWriterFunction(): string {
+function browserUseControlWriterFunction(): string {
   return `function (firstSpec, otherCount, ...rest) {
           const controls = [this];
           const specs = [firstSpec];
@@ -2693,26 +2569,7 @@ function browserUseMixedControlWriterFunction(): string {
         }`;
 }
 
-function needsIndependentBrowserUseVerification(
-  fields: readonly ResolvedBrowserUseUserActionField[],
-): boolean {
-  return fields.some((field) => {
-    return (
-      field.radio !== undefined ||
-      [
-        "date",
-        "time",
-        "datetime-local",
-        "month",
-        "week",
-        "range",
-        "color",
-      ].includes(field.inspection.inputType)
-    );
-  });
-}
-
-async function writeBrowserUseMixedControlFields(
+async function writeBrowserUseControlFields(
   socket: WebSocket,
   args: {
     readonly sessionId: string;
@@ -2793,7 +2650,7 @@ async function writeBrowserUseMixedControlFields(
   ];
   const params = {
     objectId: first.objectId,
-    functionDeclaration: browserUseMixedControlWriterFunction(),
+    functionDeclaration: browserUseControlWriterFunction(),
     arguments: writerArguments,
     returnByValue: true,
   };
@@ -2814,30 +2671,29 @@ async function writeBrowserUseMixedControlFields(
   if (result.result.value !== true) {
     throw new BrowserUseUserActionMutationError(true);
   }
-  if (needsIndependentBrowserUseVerification(args.fields)) {
-    // A separate CDP task observes microtasks queued by the website's event handlers.
-    const verified = browserUseCdpValueSchema.parse(
-      await sendBrowserUseCdpCommand(
-        socket,
-        {
-          id: args.commandId + 1,
-          method: "Runtime.callFunctionOn",
-          params: {
-            ...params,
-            arguments: [
-              { value: { ...firstSpec, verifyOnly: true } },
-              ...writerArguments.slice(1),
-            ],
-          },
-          sessionId: args.sessionId,
+  // Every batch needs a separate CDP task to observe microtasks queued
+  // by the website's event handlers, including those affecting scalar controls.
+  const verified = browserUseCdpValueSchema.parse(
+    await sendBrowserUseCdpCommand(
+      socket,
+      {
+        id: args.commandId + 1,
+        method: "Runtime.callFunctionOn",
+        params: {
+          ...params,
+          arguments: [
+            { value: { ...firstSpec, verifyOnly: true } },
+            ...writerArguments.slice(1),
+          ],
         },
-        signal,
-      ),
-      { reportInput: true },
-    );
-    if (verified.result.value !== true) {
-      throw new BrowserUseUserActionMutationError(true);
-    }
+        sessionId: args.sessionId,
+      },
+      signal,
+    ),
+    { reportInput: true },
+  );
+  if (verified.result.value !== true) {
+    throw new BrowserUseUserActionMutationError(true);
   }
 }
 
@@ -3124,32 +2980,7 @@ async function applyBrowserUseUserActionOnSocket(
     fields: resolved.fields,
     commandId: resolved.commandId + (resolved.fields.length > 0 ? 1 : 0),
   };
-  if (
-    resolved.fields.some((field) => {
-      return (
-        field.inspection.tagName === "SELECT" ||
-        field.inspection.inputType === "checkbox" ||
-        field.inspection.inputType === "radio" ||
-        field.inspection.inputType === "range" ||
-        field.inspection.inputType === "color" ||
-        (resolved.fields.some((candidate) => {
-          return candidate.value !== undefined;
-        }) &&
-          ["date", "time", "datetime-local", "month", "week"].includes(
-            field.inspection.inputType,
-          ))
-      );
-    })
-  ) {
-    await writeBrowserUseMixedControlFields(
-      socket,
-      writeArgs,
-      mutation,
-      signal,
-    );
-  } else {
-    await writeBrowserUseApplyFields(socket, writeArgs, mutation, signal);
-  }
+  await writeBrowserUseControlFields(socket, writeArgs, mutation, signal);
   return "succeeded";
 }
 

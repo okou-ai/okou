@@ -3,6 +3,97 @@ import XCTest
 
 @testable import OkouCore
 
+private func registeredHostResponse(generation: Int = 1) -> JSONValue {
+  .object([
+    "hostId": .string("00000000-0000-0000-0000-000000000001"),
+    "connectionGeneration": .number(Double(generation)),
+    "commandNotifications": .object([
+      "channelName": .string(
+        "computer-use-host:user_test:org_test:00000000-0000-0000-0000-000000000001:\(generation)"),
+      "eventName": .string("commandsChanged"),
+    ]),
+  ])
+}
+
+private actor NotificationBoundary: CommandNotifications {
+  private let attachedOnStart: Bool
+  private let onStart: @Sendable () -> Void
+  private var continuation: AsyncStream<CommandNotificationEvent>.Continuation?
+  private var tokenProvider: (@Sendable () async throws -> JSONValue)?
+
+  init(attachedOnStart: Bool = true, onStart: @escaping @Sendable () -> Void = {}) {
+    self.attachedOnStart = attachedOnStart
+    self.onStart = onStart
+  }
+
+  func start(
+    subscription: CommandNotificationSubscription,
+    tokenProvider: @escaping @Sendable () async throws -> JSONValue
+  ) async throws -> AsyncStream<CommandNotificationEvent> {
+    try Task.checkCancellation()
+    let stream = AsyncStream<CommandNotificationEvent>.makeStream()
+    continuation = stream.continuation
+    self.tokenProvider = tokenProvider
+    onStart()
+    if attachedOnStart { continuation?.yield(.refresh) }
+    return stream.stream
+  }
+  func refresh() { continuation?.yield(.refresh) }
+  func renew() async throws -> JSONValue {
+    guard let tokenProvider else { throw CancellationError() }
+    return try await tokenProvider()
+  }
+  func tokenCallback() -> (@Sendable () async throws -> JSONValue)? { tokenProvider }
+  func stop() {
+    continuation?.finish()
+    continuation = nil
+    tokenProvider = nil
+  }
+}
+
+private final class RequestCount: @unchecked Sendable {
+  private let lock = NSLock()
+  private var count = 0
+  func next() -> Int {
+    lock.withLock {
+      count += 1
+      return count
+    }
+  }
+  var value: Int { lock.withLock { count } }
+}
+
+private func commandResponse(_ id: String) -> JSONValue {
+  .object([
+    "status": .string("command"),
+    "command": .object([
+      "id": .string(id), "kind": .string("apps.list"), "payload": .object([:]),
+      "claimedAt": .string(ISO8601DateFormatter().string(from: Date())),
+      "timeoutMs": .number(30_000),
+    ]),
+  ])
+}
+
+private func notificationTestSession() -> URLSession {
+  let configuration = URLSessionConfiguration.ephemeral
+  configuration.protocolClasses = [URLProtocolFixture.self]
+  return URLSession(configuration: configuration)
+}
+
+private func notificationTestRuntime(
+  session: URLSession, notifications: NotificationBoundary,
+  tokenProvider: @escaping @Sendable (Bool) async throws -> String = { _ in "clerk-session" },
+  onChange: @escaping @MainActor @Sendable (RuntimeState) -> Void = { _ in }
+) -> HostRuntime {
+  HostRuntime(
+    api: APIClient(
+      baseURL: URL(string: "https://api.example.test")!, version: "0.52.0", session: session),
+    executor: CommandExecutor(
+      helper: NativeProcess(executable: URL(fileURLWithPath: "/nonexistent/helper"))),
+    installationId: UUID().uuidString, hostName: "Test Mac", version: "0.52.0",
+    notifications: notifications, tokenProvider: tokenProvider, onChange: onChange)
+}
+
 private final class HTTPBoundary: @unchecked Sendable {
   private let lock = NSLock()
   private var handler: (@Sendable (URLProtocolFixture) -> Void)?
@@ -73,6 +164,272 @@ private final class StateTransitions: @unchecked Sendable {
 }
 
 final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
+  func testIdleHostWaitsForAnotherNotificationAndKeepsHeartbeatOperational() async throws {
+    let first = expectation(description: "Initial subscription checks the queue")
+    let unexpected = expectation(description: "Idle host must not poll")
+    unexpected.isInverted = true
+    let resumed = expectation(description: "Reconnect notification checks the queue")
+    let heartbeat = expectation(description: "Idle heartbeat remains operational")
+    let claims = RequestCount()
+    let beats = RequestCount()
+    let allowRefresh = CompletionFlag()
+    let notifications = NotificationBoundary()
+    let session = notificationTestSession()
+    defer { session.invalidateAndCancel() }
+    URLProtocolFixture.boundary.set { connection in
+      let path = connection.request.url!.path
+      if path.hasSuffix("/register") {
+        connection.reply(registeredHostResponse())
+      } else if path.hasSuffix("/next") {
+        if claims.next() == 1 {
+          first.fulfill()
+        } else if allowRefresh.value {
+          resumed.fulfill()
+        } else {
+          unexpected.fulfill()
+        }
+        connection.reply(.object(["status": .string("idle")]))
+      } else if path.hasSuffix("/heartbeat") {
+        if beats.next() == 1 { heartbeat.fulfill() }
+        connection.reply(.object(["hasPendingCommands": .bool(false)]))
+      } else {
+        connection.reply(.object([:]))
+      }
+    }
+    let runtime = notificationTestRuntime(session: session, notifications: notifications)
+    await runtime.start()
+    await fulfillment(of: [first], timeout: 3)
+    await fulfillment(of: [unexpected], timeout: 5.2)
+    await fulfillment(of: [heartbeat], timeout: 1)
+    XCTAssertEqual(claims.value, 1)
+    allowRefresh.finish()
+    await notifications.refresh()
+    await fulfillment(of: [resumed], timeout: 1)
+    await runtime.stop()
+  }
+
+  func testOneNotificationDrainsMultipleCommandsAndCoalescesNotificationsDuringReporting()
+    async throws
+  {
+    let reporting = expectation(description: "First command waits for its completion response")
+    let secondReported = expectation(description: "Second queued command is reported")
+    let idle = expectation(description: "Queue is drained")
+    let firstReport = PendingResponse()
+    let claims = RequestCount()
+    let notifications = NotificationBoundary()
+    let session = notificationTestSession()
+    defer { session.invalidateAndCancel() }
+    URLProtocolFixture.boundary.set { connection in
+      let path = connection.request.url!.path
+      if path.hasSuffix("/register") {
+        connection.reply(registeredHostResponse())
+      } else if path.hasSuffix("/next") {
+        switch claims.next() {
+        case 1: connection.reply(commandResponse("first"))
+        case 2: connection.reply(commandResponse("second"))
+        default:
+          connection.reply(.object(["status": .string("idle")]))
+          idle.fulfill()
+        }
+      } else if path.hasSuffix("/first/complete") {
+        firstReport.hold(connection)
+        reporting.fulfill()
+      } else if path.hasSuffix("/second/complete") {
+        connection.reply(.object([:]))
+        secondReported.fulfill()
+      } else if path.hasSuffix("/heartbeat") {
+        connection.reply(.object(["hasPendingCommands": .bool(false)]))
+      } else {
+        connection.reply(.object([:]))
+      }
+    }
+    let runtime = notificationTestRuntime(session: session, notifications: notifications)
+    await runtime.start()
+    await fulfillment(of: [reporting], timeout: 3)
+    for _ in 0..<20 { await notifications.refresh() }
+    XCTAssertEqual(claims.value, 1, "Notifications must not create a concurrent drain")
+    firstReport.reply(.object([:]))
+    await fulfillment(of: [secondReported, idle], timeout: 3, enforceOrder: true)
+    await runtime.stop()
+  }
+
+  func testNotificationDuringIdleResponseTriggersAnotherClaim() async throws {
+    let first = expectation(description: "First claim is pending")
+    let second = expectation(description: "Notification near idle is not lost")
+    let pending = PendingResponse()
+    let claims = RequestCount()
+    let notifications = NotificationBoundary()
+    let session = notificationTestSession()
+    defer { session.invalidateAndCancel() }
+    URLProtocolFixture.boundary.set { connection in
+      let path = connection.request.url!.path
+      if path.hasSuffix("/register") {
+        connection.reply(registeredHostResponse())
+      } else if path.hasSuffix("/next") {
+        if claims.next() == 1 {
+          pending.hold(connection)
+          first.fulfill()
+        } else {
+          connection.reply(.object(["status": .string("idle")]))
+          second.fulfill()
+        }
+      } else if path.hasSuffix("/heartbeat") {
+        connection.reply(.object(["hasPendingCommands": .bool(false)]))
+      } else {
+        connection.reply(.object([:]))
+      }
+    }
+    let runtime = notificationTestRuntime(session: session, notifications: notifications)
+    await runtime.start()
+    await fulfillment(of: [first], timeout: 3)
+    await notifications.refresh()
+    pending.reply(.object(["status": .string("idle")]))
+    await fulfillment(of: [second], timeout: 1)
+    await runtime.stop()
+  }
+
+  func testHeartbeatRecoversPendingCommandsWithoutAnAttachedNotificationChannel() async throws {
+    let reported = expectation(description: "Heartbeat recovers the missed wakeup")
+    let claims = RequestCount()
+    let notifications = NotificationBoundary(attachedOnStart: false)
+    let session = notificationTestSession()
+    defer { session.invalidateAndCancel() }
+    URLProtocolFixture.boundary.set { connection in
+      let path = connection.request.url!.path
+      if path.hasSuffix("/register") {
+        connection.reply(registeredHostResponse())
+      } else if path.hasSuffix("/heartbeat") {
+        XCTAssertEqual(claims.value, 0, "Startup must wait for attachment or a pending-work hint")
+        connection.reply(.object(["hasPendingCommands": .bool(true)]))
+      } else if path.hasSuffix("/next") {
+        connection.reply(
+          claims.next() == 1 ? commandResponse("missed") : .object(["status": .string("idle")]))
+      } else if path.hasSuffix("/complete") {
+        connection.reply(.object([:]))
+        reported.fulfill()
+      } else {
+        connection.reply(.object([:]))
+      }
+    }
+    let runtime = notificationTestRuntime(session: session, notifications: notifications)
+    await runtime.start()
+    await fulfillment(of: [reported], timeout: 4)
+    await runtime.stop()
+  }
+
+  func testFailedClaimRetriesWithoutAnotherNotification() async throws {
+    let retried = expectation(description: "Failed refresh retains its retry")
+    let claims = RequestCount()
+    let notifications = NotificationBoundary()
+    let session = notificationTestSession()
+    defer { session.invalidateAndCancel() }
+    URLProtocolFixture.boundary.set { connection in
+      let path = connection.request.url!.path
+      if path.hasSuffix("/register") {
+        connection.reply(registeredHostResponse())
+      } else if path.hasSuffix("/next") {
+        if claims.next() == 1 {
+          connection.reply(.object([:]), status: 503)
+        } else {
+          connection.reply(.object(["status": .string("idle")]))
+          retried.fulfill()
+        }
+      } else if path.hasSuffix("/heartbeat") {
+        connection.reply(.object(["hasPendingCommands": .bool(false)]))
+      } else {
+        connection.reply(.object([:]))
+      }
+    }
+    let runtime = notificationTestRuntime(session: session, notifications: notifications)
+    await runtime.start()
+    await fulfillment(of: [retried], timeout: 4)
+    XCTAssertEqual(claims.value, 2)
+    await runtime.stop()
+  }
+
+  func testRealtimeRenewalUsesTheSharedEndpointAndCurrentSessionToken() async throws {
+    let started = expectation(description: "Notification adapter is ready")
+    let rotated = CompletionFlag()
+    let requests = RequestCount()
+    let notifications = NotificationBoundary(attachedOnStart: false, onStart: { started.fulfill() })
+    let session = notificationTestSession()
+    defer { session.invalidateAndCancel() }
+    URLProtocolFixture.boundary.set { connection in
+      let path = connection.request.url!.path
+      if path.hasSuffix("/register") {
+        connection.reply(registeredHostResponse())
+      } else if path == "/api/realtime/token" {
+        XCTAssertEqual(connection.body, .object([:]))
+        XCTAssertEqual(
+          connection.request.value(forHTTPHeaderField: "Authorization"),
+          rotated.value ? "Bearer renewed-session" : "Bearer first-session")
+        connection.reply(.object(["nonce": .string("request-\(requests.next())")]))
+      } else {
+        connection.reply(.object([:]))
+      }
+    }
+    let runtime = notificationTestRuntime(
+      session: session, notifications: notifications,
+      tokenProvider: { _ in rotated.value ? "renewed-session" : "first-session" })
+    await runtime.start()
+    await fulfillment(of: [started], timeout: 1)
+    let first = try await notifications.renew()
+    XCTAssertEqual(first["nonce"].string, "request-1")
+    rotated.finish()
+    let second = try await notifications.renew()
+    XCTAssertEqual(second["nonce"].string, "request-2")
+    await runtime.stop()
+    XCTAssertEqual(requests.value, 2)
+  }
+
+  func testRetiredNotificationCallbackCannotMintTokensForAReplacementConnection() async throws {
+    let firstStarted = expectation(description: "First notification source is ready")
+    let replacementStarted = expectation(description: "Replacement notification source is ready")
+    let starts = RequestCount()
+    let registrations = RequestCount()
+    let tokenRequests = RequestCount()
+    let notifications = NotificationBoundary(
+      attachedOnStart: false,
+      onStart: {
+        if starts.next() == 1 { firstStarted.fulfill() } else { replacementStarted.fulfill() }
+      })
+    let session = notificationTestSession()
+    defer { session.invalidateAndCancel() }
+    URLProtocolFixture.boundary.set { connection in
+      let path = connection.request.url!.path
+      if path.hasSuffix("/register") {
+        connection.reply(registeredHostResponse(generation: registrations.next()))
+      } else if path == "/api/realtime/token" {
+        connection.reply(.object(["nonce": .string("request-\(tokenRequests.next())")]))
+      } else {
+        connection.reply(.object([:]))
+      }
+    }
+    let runtime = notificationTestRuntime(session: session, notifications: notifications)
+    await runtime.start()
+    await fulfillment(of: [firstStarted], timeout: 1)
+    // Capture what a late SDK auth callback owns before retiring this connection.
+    guard let retired = await notifications.tokenCallback() else {
+      XCTFail("Notification source must own its token callback")
+      await runtime.stop()
+      return
+    }
+    await runtime.stop()
+    await runtime.start()
+    await fulfillment(of: [replacementStarted], timeout: 1)
+    do {
+      _ = try await retired()
+      XCTFail("A retired callback must not obtain credentials")
+    } catch is CancellationError {
+    } catch {
+      XCTFail("Expected lifecycle cancellation, received \(error)")
+    }
+    XCTAssertEqual(tokenRequests.value, 0)
+    _ = try await notifications.renew()
+    XCTAssertEqual(tokenRequests.value, 1)
+    await runtime.stop()
+  }
+
   func testStopWaitsForDelayedRegistrationAndStopsItsConnection() async throws {
     let received = expectation(description: "Server received registration")
     let stopping = expectation(description: "Admission is closed")
@@ -107,6 +464,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
       executor: CommandExecutor(
         helper: NativeProcess(executable: URL(fileURLWithPath: "/nonexistent/helper"))),
       installationId: UUID().uuidString, hostName: "Test Mac", version: "0.49.72",
+      notifications: NotificationBoundary(),
       tokenProvider: { _ in "clerk-session" },
       onChange: { state in
         if state.status == "stopping" { transitions.notify("stopping", expectation: stopping) }
@@ -123,10 +481,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
     try await Task.sleep(for: .milliseconds(100))
     XCTAssertFalse(finished.value)
     pending.reply(
-      .object([
-        "connectionGeneration": .number(1),
-        "hostId": .string("00000000-0000-0000-0000-000000000001"),
-      ]))
+      registeredHostResponse())
     await fulfillment(of: [retired, returned], timeout: 3, enforceOrder: true)
     await starting.value
     await drain.value
@@ -146,10 +501,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
         connection.request.value(forHTTPHeaderField: "Authorization"), "Bearer clerk-session")
       if path.hasSuffix("/hosts/register") {
         connection.reply(
-          .object([
-            "hostId": .string("00000000-0000-0000-0000-000000000001"),
-            "connectionGeneration": .number(1),
-          ]))
+          registeredHostResponse())
       } else if path.hasSuffix("/next") {
         connection.reply(.object(["minimumSupportedVersion": .string("0.51.0")]), status: 426)
       } else if path.hasSuffix("/stop") {
@@ -165,6 +517,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
       executor: CommandExecutor(
         helper: NativeProcess(executable: URL(fileURLWithPath: "/nonexistent/helper"))),
       installationId: UUID().uuidString, hostName: "Test Mac", version: "0.50.1",
+      notifications: NotificationBoundary(),
       tokenProvider: { _ in "clerk-session" },
       onChange: { state in
         if state.updateRequired {
@@ -238,10 +591,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
       let path = connection.request.url!.path
       if path.hasSuffix("/hosts/register") {
         connection.reply(
-          .object([
-            "connectionGeneration": .number(1),
-            "hostId": .string("00000000-0000-0000-0000-000000000001"),
-          ]))
+          registeredHostResponse())
       } else if path.hasSuffix("/next") {
         connection.reply(
           .object([
@@ -274,7 +624,8 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
         baseURL: URL(string: "https://api.example.test")!, version: "0.49.71", session: session),
       executor: CommandExecutor(helper: NativeProcess(executable: helper)),
       installationId: UUID().uuidString,
-      hostName: "Test Mac", version: "0.49.71", tokenProvider: { _ in "clerk-session" },
+      hostName: "Test Mac", version: "0.49.71", notifications: NotificationBoundary(),
+      tokenProvider: { _ in "clerk-session" },
       onChange: { state in
         if state.busy && state.status == "online" {
           transitions.notify("began", expectation: began)
@@ -328,10 +679,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
       let path = connection.request.url!.path
       if path.hasSuffix("/hosts/register") {
         connection.reply(
-          .object([
-            "connectionGeneration": .number(1),
-            "hostId": .string("00000000-0000-0000-0000-000000000001"),
-          ]))
+          registeredHostResponse())
       } else if path.hasSuffix("/next") {
         connection.reply(
           .object([
@@ -364,7 +712,8 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
         baseURL: URL(string: "https://api.example.test")!, version: "0.49.71", session: session),
       executor: CommandExecutor(helper: NativeProcess(executable: helper)),
       installationId: UUID().uuidString,
-      hostName: "Test Mac", version: "0.49.71", tokenProvider: { _ in "clerk-session" },
+      hostName: "Test Mac", version: "0.49.71", notifications: NotificationBoundary(),
+      tokenProvider: { _ in "clerk-session" },
       onChange: { state in
         if state.busy && state.status == "online" {
           transitions.notify("began", expectation: began)
@@ -396,10 +745,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(connection.request.value(forHTTPHeaderField: "X-Client-Type"), "Desktop")
         XCTAssertEqual(connection.body["installationId"].string, installation)
         connection.reply(
-          .object([
-            "connectionGeneration": .number(1),
-            "hostId": .string("00000000-0000-0000-0000-000000000001"),
-          ]))
+          registeredHostResponse())
       } else {
         XCTAssertEqual(
           connection.request.value(forHTTPHeaderField: "Authorization"),
@@ -433,6 +779,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
       executor: CommandExecutor(
         helper: NativeProcess(executable: URL(fileURLWithPath: "/nonexistent/helper"))),
       installationId: installation, hostName: "Test Mac", version: "0.49.71",
+      notifications: NotificationBoundary(),
       tokenProvider: { _ in await tokens.next() },
       onChange: { state in
         if state.status == "stopping" { stopping.fulfill() }
@@ -463,10 +810,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
       let path = connection.request.url!.path
       if path.hasSuffix("/hosts/register") {
         connection.reply(
-          .object([
-            "connectionGeneration": .number(1),
-            "hostId": .string("00000000-0000-0000-0000-000000000001"),
-          ]))
+          registeredHostResponse())
       } else if path.hasSuffix("/next") {
         connection.reply(
           .object([
@@ -493,6 +837,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
       executor: CommandExecutor(
         helper: NativeProcess(executable: URL(fileURLWithPath: "/nonexistent/helper"))),
       installationId: UUID().uuidString, hostName: "Test Mac", version: "0.49.71",
+      notifications: NotificationBoundary(),
       tokenProvider: { _ in "clerk-session" }, onChange: { _ in })
     await runtime.start()
     await fulfillment(of: [reported], timeout: 3)
@@ -569,6 +914,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
       executor: CommandExecutor(
         helper: NativeProcess(executable: URL(fileURLWithPath: "/nonexistent/helper"))),
       installationId: UUID().uuidString, hostName: "Mac", version: "0.50.0",
+      notifications: NotificationBoundary(),
       tokenProvider: { _ in "clerk-session" },
       onChange: { state in if state.status == "error" { unavailable.fulfill() } })
     await runtime.start()

@@ -1,19 +1,25 @@
 -- #34230: aggregate observations, never a repair manifest.
--- Run this whole file in a fresh psql -X session with ON_ERROR_STOP=1.
+-- Run once in a disposable session:
+-- psql "$DATABASE_URL" -X --set ON_ERROR_STOP=1 --file audit-historical-session-blob-references.sql
+-- Use psql's default autocommit, without --single-transaction or other commands.
+-- Each SET must finish before the SELECT starts. Do not send the whole file as
+-- one driver query or psql -c request: defaults do not reconfigure that request's
+-- already-started implicit transaction. The psql process exits after the file,
+-- disposing of its connection and settings on success or failure.
 -- Revalidate all live reference owners and the current schema before execution.
 -- Historical census: https://github.com/okou-ai/okou/blob/9813db4b51faa42c982dcfec1720caf5bd5b1b82/docs/database/historical-session-blob-audit.md
--- eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0352; new non-billing transactions are prohibited.
-BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
-SET LOCAL statement_timeout = '30s';
-SET LOCAL lock_timeout = '3s';
-SET LOCAL idle_in_transaction_session_timeout = '15s';
-SET LOCAL work_mem = '16MB';
-SET LOCAL hash_mem_multiplier = 2;
-SET LOCAL max_parallel_workers_per_gather = 0;
-SET LOCAL jit = off;
-SET LOCAL row_security = off;
-SET LOCAL timezone = 'UTC';
-SET LOCAL search_path = pg_catalog, public;
+SET default_transaction_read_only = on;
+SET default_transaction_isolation = 'repeatable read';
+SET statement_timeout = '30s';
+SET lock_timeout = '3s';
+SET idle_in_transaction_session_timeout = '15s';
+SET work_mem = '16MB';
+SET hash_mem_multiplier = 2;
+SET max_parallel_workers_per_gather = 0;
+SET jit = off;
+SET row_security = off;
+SET timezone = 'UTC';
+SET search_path = pg_catalog, public;
 
 -- Audit query: one statement, including all populations and catalog observations.
 WITH parameters AS MATERIALIZED (
@@ -160,7 +166,7 @@ WITH parameters AS MATERIALIZED (
         'public.agent_runs'::regclass) AND (relrowsecurity OR relkind <> 'r')) AS unexpected_relation_configuration
 )
 SELECT jsonb_build_object(
-  'receipt_version', 'historical_session_blob_references_v1',
+  'receipt_version', 'historical_session_blob_references_v2',
   'inventory_revision', '7247fe035f88b8e5c59d0151c9a1ef44a411a238',
   'scope', 'all public.blobs union all non-null conversation and candidate source hashes',
   'observed_at', p.observed_at,
@@ -171,7 +177,7 @@ SELECT jsonb_build_object(
     'read_only', current_setting('transaction_read_only'),
     'isolation', current_setting('transaction_isolation'),
     'started_at', transaction_timestamp(),
-    'ending', 'rollback',
+    'ending', 'implicit_commit',
     'statement_timeout', current_setting('statement_timeout'),
     'lock_timeout', current_setting('lock_timeout'),
     'idle_timeout', current_setting('idle_in_transaction_session_timeout'),
@@ -207,4 +213,3 @@ SELECT jsonb_build_object(
 FROM parameters p CROSS JOIN population n CROSS JOIN reconciliation a
   CROSS JOIN candidate_reconciliation c CROSS JOIN candidate_integrity i
   CROSS JOIN conversation_integrity v CROSS JOIN catalog k;
-ROLLBACK;

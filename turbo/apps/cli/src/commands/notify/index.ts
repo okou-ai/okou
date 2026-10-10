@@ -141,10 +141,10 @@ Examples:
   okou notify mail --kind morning-brief --subject "Morning Brief" --file brief.md --idempotency-key morning-brief:2026-10-08 --json
   printf 'A useful update' | okou notify mail --subject "Update" --idempotency-key update:123 --json
 
-Requires an active Okou run with notify:write and notifyMail enabled.
+Requires an active Okou run with notify:write.
 Uses Okou's sender and your account email; no Gmail or Outlook connector is needed.
 notification is the default. morning-brief requires a run from the official Morning Brief automation
-and uses its original artwork and Manage link; it does not disable the completion email.
+and uses its original artwork and Manage link. The automation's accepted revision controls any completion email.
 queued means awaiting delivery; sent means provider accepted, not inbox delivered.
 skipped means opt-out, suppression, or no account email stopped delivery.
 Provider requests already in flight cannot be recalled.

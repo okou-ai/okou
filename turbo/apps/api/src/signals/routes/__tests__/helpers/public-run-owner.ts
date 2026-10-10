@@ -21,6 +21,7 @@ export function publicRunOwner(
   context: TestContext,
   actor: ApiTestUser,
   options: {
+    readonly continueAcceptedOperations?: boolean;
     readonly restoreEnvironment?: () => void;
     readonly clockTime?: number | (() => number);
     readonly beforeRuns?: () => Promise<void>;
@@ -127,15 +128,18 @@ export function publicRunOwner(
     cleaned = true;
   }
   let previousCleanupRunnerGroup: string | undefined;
-  const operations = createFixtureOperationOwner(async () => {
-    const result = await settleIncludingAbort(() => {
-      return scoped(cleanup, true);
-    });
-    mockOptionalEnv("RUNNER_DEFAULT_GROUP", previousCleanupRunnerGroup);
-    if (!result.ok) {
-      throw result.error;
-    }
-  });
+  const operations = createFixtureOperationOwner(
+    async () => {
+      const result = await settleIncludingAbort(() => {
+        return scoped(cleanup, true);
+      });
+      mockOptionalEnv("RUNNER_DEFAULT_GROUP", previousCleanupRunnerGroup);
+      if (!result.ok) {
+        throw result.error;
+      }
+    },
+    { continueAcceptedOperations: options.continueAcceptedOperations },
+  );
   // Finished callbacks run in reverse order, after testContext clears env in
   // afterEach. Restore the accepted requests' environment before draining them.
   onTestFinished(() => {

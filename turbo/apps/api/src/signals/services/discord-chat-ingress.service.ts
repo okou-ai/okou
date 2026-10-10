@@ -31,7 +31,7 @@ export interface DiscordChatThreadRouteBinding extends DiscordChatThreadRouteKey
   readonly destinationChannelId: string | null;
 }
 
-function discordChatThreadRouteWhere(key: DiscordChatThreadRouteKey) {
+export function discordChatThreadRouteWhere(key: DiscordChatThreadRouteKey) {
   return and(
     eq(discordChatThreadRoutes.connectionId, key.connectionId),
     key.sessionKey === INTEGRATION_DM_SESSION_KEY
@@ -42,11 +42,27 @@ function discordChatThreadRouteWhere(key: DiscordChatThreadRouteKey) {
   );
 }
 
-export async function refreshDiscordDirectMessageRouteDestination(
-  db: Pick<Db, "update">,
-  route: DiscordChatThreadRouteBinding,
-  channelId: string,
-): Promise<DiscordChatThreadRouteBinding> {
+async function loadDiscordChatThreadRoute(
+  db: Pick<Db, "select" | "update">,
+  key: DiscordChatThreadRouteKey,
+): Promise<DiscordChatThreadRouteBinding | undefined> {
+  const [route] = await db
+    .select({
+      id: discordChatThreadRoutes.id,
+      connectionId: discordChatThreadRoutes.connectionId,
+      channelId: discordChatThreadRoutes.channelId,
+      sessionKey: discordChatThreadRoutes.sessionKey,
+      userId: discordChatThreadRoutes.userId,
+      chatThreadId: discordChatThreadRoutes.chatThreadId,
+      destinationChannelId: discordChatThreadRoutes.destinationChannelId,
+    })
+    .from(discordChatThreadRoutes)
+    .where(discordChatThreadRouteWhere(key))
+    .limit(1);
+  if (!route) {
+    return undefined;
+  }
+  const channelId = key.channelId;
   if (
     route.sessionKey !== INTEGRATION_DM_SESSION_KEY ||
     (route.channelId === channelId &&
@@ -72,32 +88,6 @@ export async function refreshDiscordDirectMessageRouteDestination(
     throw new Error("Failed to update Discord DM route destination");
   }
   return { ...route, ...updated };
-}
-
-async function loadDiscordChatThreadRoute(
-  db: Pick<Db, "select" | "update">,
-  key: DiscordChatThreadRouteKey,
-): Promise<DiscordChatThreadRouteBinding | undefined> {
-  const [route] = await db
-    .select({
-      id: discordChatThreadRoutes.id,
-      connectionId: discordChatThreadRoutes.connectionId,
-      channelId: discordChatThreadRoutes.channelId,
-      sessionKey: discordChatThreadRoutes.sessionKey,
-      userId: discordChatThreadRoutes.userId,
-      chatThreadId: discordChatThreadRoutes.chatThreadId,
-      destinationChannelId: discordChatThreadRoutes.destinationChannelId,
-    })
-    .from(discordChatThreadRoutes)
-    .where(discordChatThreadRouteWhere(key))
-    .limit(1);
-  return route
-    ? await refreshDiscordDirectMessageRouteDestination(
-        db,
-        route,
-        key.channelId,
-      )
-    : undefined;
 }
 
 export async function findDiscordChatThreadRoute(

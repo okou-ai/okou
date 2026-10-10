@@ -11,9 +11,9 @@ pub(crate) use connection::{
     start_guest_connection_with_exec_drain_deadline,
     start_guest_connection_with_guest_agent_program,
     start_guest_connection_with_guest_state_restore_program,
+    start_guest_connection_with_home_drive_mount_program,
     start_guest_connection_with_memory_snapshot_path,
-    start_guest_connection_with_storage_manifest_program,
-    start_guest_connection_with_workspace_drive_mount_program, wait_for_guest_connection,
+    start_guest_connection_with_storage_manifest_program, wait_for_guest_connection,
 };
 pub(crate) use exec::{
     LARGE_ENV_COMMAND, LONG_RUNNING_EXEC_TIMEOUT_MS, assert_large_env_stdout, large_env_entries,

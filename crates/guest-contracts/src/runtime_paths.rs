@@ -171,7 +171,9 @@ pub fn session_id_file(run_dir: impl AsRef<Path>) -> PathBuf {
     file(run_dir, "session-id")
 }
 
-/// Return the run-root `checkpoint-error` file.
+/// Return the run-root Guest error file.
+///
+/// Its historical `checkpoint-error` filename remains stable for Runner readers.
 pub fn checkpoint_error_file(run_dir: impl AsRef<Path>) -> PathBuf {
     file(run_dir, "checkpoint-error")
 }
@@ -179,11 +181,6 @@ pub fn checkpoint_error_file(run_dir: impl AsRef<Path>) -> PathBuf {
 /// Return the run-root `final-session-history-identity.json` file.
 pub fn final_session_history_identity_file(run_dir: impl AsRef<Path>) -> PathBuf {
     file(run_dir, "final-session-history-identity.json")
-}
-
-/// Return the run-root session-history sidecar export file.
-pub fn session_history_sidecar_export_file(run_dir: impl AsRef<Path>) -> PathBuf {
-    file(run_dir, "session-history-sidecar")
 }
 
 /// Return the run-root `failure-diagnostic.json` file.

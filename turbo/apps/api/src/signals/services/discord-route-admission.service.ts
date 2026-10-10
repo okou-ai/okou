@@ -20,9 +20,9 @@ import {
 } from "../external/discord-client";
 import { requireDiscordConversationAccess$ } from "./discord-access.service";
 import {
+  discordChatThreadRouteWhere,
   ensureCanonicalDiscordChatThreadRoute$,
   findDiscordChatThreadRoute,
-  refreshDiscordDirectMessageRouteDestination,
   type DiscordChatThreadRouteBinding,
 } from "./discord-chat-ingress.service";
 import {
@@ -244,38 +244,6 @@ const resolveDiscordAdmissionSource$ = command(
   },
 );
 
-async function loadAssignedDiscordRoute(
-  db: Db,
-  { ingress, source: { binding, routeChannelId } }: DiscordAdmissionContext,
-  signal: AbortSignal,
-): Promise<DiscordChatThreadRouteBinding | undefined> {
-  if (!ingress.routeId) {
-    return undefined;
-  }
-  const [assignedRoute] = await db
-    .select()
-    .from(discordChatThreadRoutes)
-    .where(
-      and(
-        eq(discordChatThreadRoutes.id, ingress.routeId),
-        eq(discordChatThreadRoutes.connectionId, binding.connectionId),
-        eq(discordChatThreadRoutes.userId, binding.userId),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  if (!assignedRoute) {
-    throw new Error("Discord ingress route ownership is inconsistent");
-  }
-  const route = await refreshDiscordDirectMessageRouteDestination(
-    db,
-    assignedRoute,
-    routeChannelId,
-  );
-  signal.throwIfAborted();
-  return route;
-}
-
 const terminalAgentUnavailable$ = command(
   async (
     { set },
@@ -355,27 +323,6 @@ const createDiscordAdmissionRoute$ = command(
   },
 );
 
-async function attachDiscordAdmissionRoute(
-  db: Db,
-  { ingress, claim }: DiscordAdmissionContext,
-  routeId: string,
-  signal: AbortSignal,
-): Promise<boolean> {
-  const [attached] = await db
-    .update(discordChatIngress)
-    .set({ routeId })
-    .where(
-      and(
-        eq(discordChatIngress.id, ingress.id),
-        eq(discordChatIngress.claimToken, claim.claimToken),
-        eq(discordChatIngress.status, "processing"),
-      ),
-    )
-    .returning({ id: discordChatIngress.id });
-  signal.throwIfAborted();
-  return Boolean(attached);
-}
-
 const resolveCanonicalDiscordRoute$ = command(
   async (
     { get, set },
@@ -385,7 +332,63 @@ const resolveCanonicalDiscordRoute$ = command(
     const db = set(writeDb$);
     const { ingress, message, source } = context;
     const { binding, channel, isDm, isThread, routeChannelId } = source;
-    const assignedRoute = await loadAssignedDiscordRoute(db, context, signal);
+    const {
+      ingress: assignedIngress,
+      source: {
+        binding: assignedBinding,
+        routeChannelId: assignedRouteChannelId,
+      },
+    } = context;
+    let assignedRoute: DiscordChatThreadRouteBinding | undefined;
+    if (assignedIngress.routeId) {
+      const [selectedAssignedRoute] = await db
+        .select()
+        .from(discordChatThreadRoutes)
+        .where(
+          and(
+            eq(discordChatThreadRoutes.id, assignedIngress.routeId),
+            eq(
+              discordChatThreadRoutes.connectionId,
+              assignedBinding.connectionId,
+            ),
+            eq(discordChatThreadRoutes.userId, assignedBinding.userId),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      if (!selectedAssignedRoute) {
+        throw new Error("Discord ingress route ownership is inconsistent");
+      }
+      const route = selectedAssignedRoute;
+      const channelId = assignedRouteChannelId;
+      assignedRoute = route;
+      if (
+        route.sessionKey === INTEGRATION_DM_SESSION_KEY &&
+        (route.channelId !== channelId ||
+          (route.destinationChannelId !== null &&
+            route.destinationChannelId !== channelId))
+      ) {
+        const [updated] = await db
+          .update(discordChatThreadRoutes)
+          .set({ channelId, destinationChannelId: channelId })
+          .where(
+            and(
+              eq(discordChatThreadRoutes.id, route.id),
+              discordChatThreadRouteWhere(route),
+            ),
+          )
+          .returning({
+            channelId: discordChatThreadRoutes.channelId,
+            destinationChannelId: discordChatThreadRoutes.destinationChannelId,
+          });
+        signal.throwIfAborted();
+        if (!updated) {
+          throw new Error("Failed to update Discord DM route destination");
+        }
+        assignedRoute = { ...route, ...updated };
+      }
+      signal.throwIfAborted();
+    }
     signal.throwIfAborted();
     const effectiveAgent =
       isDm && !assignedRoute ? await get(discordEffectiveAgent(binding)) : null;
@@ -417,11 +420,25 @@ const resolveCanonicalDiscordRoute$ = command(
         signal,
       );
     }
-    if (
-      !ingress.routeId &&
-      !(await attachDiscordAdmissionRoute(db, context, route.id, signal))
-    ) {
-      return undefined;
+    if (!ingress.routeId) {
+      const routeId = route.id;
+      const { ingress: attachmentIngress, claim } = context;
+      const [attached] = await db
+        .update(discordChatIngress)
+        .set({ routeId })
+        .where(
+          and(
+            eq(discordChatIngress.id, attachmentIngress.id),
+            eq(discordChatIngress.claimToken, claim.claimToken),
+            eq(discordChatIngress.status, "processing"),
+          ),
+        )
+        .returning({ id: discordChatIngress.id });
+      signal.throwIfAborted();
+      const routeAttached = Boolean(attached);
+      if (!routeAttached) {
+        return undefined;
+      }
     }
     return route;
   },

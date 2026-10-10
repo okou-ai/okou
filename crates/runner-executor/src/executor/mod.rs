@@ -34,6 +34,7 @@ mod codex_model_catalog_prefetch;
 mod diagnostics;
 mod env;
 mod guest_state;
+mod home_history;
 mod reused_sandbox;
 mod sandbox_run;
 mod session_history_cpu;
@@ -43,7 +44,6 @@ mod session_id;
 mod session_restore;
 mod storage;
 mod telemetry;
-mod workspace_session_history_materializer;
 
 pub(crate) use crate::restored_session_identity::RestoredSessionIdentity;
 pub(crate) use cli_framework::effective_cli_framework;
@@ -155,22 +155,21 @@ const AGENT_ABNORMAL_EXIT_DIAGNOSTIC_SCRIPT: &str = concat!(
 );
 
 use crate::error::{RunnerError, RunnerResult};
+use crate::home_image_cache::{
+    HomeImageCache, HomeImageLease, HomeImageLeaseIdentity, HomeImageLeaseRequest,
+    HomeImagePrepareLockPolicy, HomeImagePromotionContext, HomeImagePromotionIdentityFailure,
+    HomeImagePromotionIdentityMismatch, HomeImagePromotionIdentityRequest,
+};
+use crate::home_promotion::abandon_unpublished_home_promotion;
 use crate::idle_pool::{IdleSandboxKind, ReusableIdleSandbox, ReusableIdleSandboxParts};
 use crate::network_log_drain::NetworkLogDrainCoordinator;
 use crate::network_log_manager::NetworkLogManager;
 use crate::network_log_manager::NetworkLogSession;
 use crate::proxy::{MitmJsonlFlushHandle, ProxyRegistryHandle};
 use crate::telemetry::JobTelemetry;
-use crate::workspace_image_cache::{
-    WorkspaceImageActiveLeaseRequest, WorkspaceImageCache, WorkspaceImageLease,
-    WorkspaceImageLeaseIdentity, WorkspaceImagePrepareLockPolicy, WorkspaceImagePromotionContext,
-    WorkspaceImagePromotionIdentityFailure, WorkspaceImagePromotionIdentityMismatch,
-    WorkspaceImagePromotionIdentityRequest,
-};
-use crate::workspace_promotion::abandon_unpublished_workspace_promotion;
 use runner_host::paths::{HomePaths, LogPaths};
 use runner_provider::http::HttpClient;
-use runner_types::types::{ExecutionContext, SandboxReuseResult, WorkspaceReuseResult};
+use runner_types::types::{ExecutionContext, HomeReuseResult, SandboxReuseResult};
 
 fn guest_runtime_dir(run_id: RunId) -> RunnerResult<String> {
     let run_id = run_id.to_string();
@@ -212,7 +211,7 @@ pub struct ExecutorConfig {
     pub decoded_cache: crate::storage_cache::decoded::DecodedCache,
     pub pre_spawn_admission: crate::pre_spawn_admission::PreSpawnAdmission,
     pub home: HomePaths,
-    pub workspace_cache: Option<WorkspaceImageCache>,
+    pub home_cache: Option<HomeImageCache>,
 }
 
 /// Per-job sandbox parameters resolved from the profile config.
@@ -220,10 +219,11 @@ pub struct JobParams {
     pub profile_name: String,
     pub vcpu: u32,
     pub memory_mb: u32,
-    pub workspace_disk_mb: u32,
+    pub home_disk_mb: u32,
+    pub rootfs_hash: String,
     pub restore_guest_state: bool,
     pub device_rate_limits: Option<sandbox::DeviceRateLimits>,
-    pub workspace_image_prepare_lock_policy: WorkspaceImagePrepareLockPolicy,
+    pub home_image_prepare_lock_policy: HomeImagePrepareLockPolicy,
 }
 
 #[derive(Clone)]
@@ -384,9 +384,9 @@ pub struct ExecuteOutcome {
     pub sandbox: Option<Box<dyn Sandbox>>,
     pub source_ip: String,
     pub network_log_session: Option<NetworkLogSession>,
-    pub workspace_image: Option<WorkspaceImageLease>,
+    pub home_image: Option<HomeImageLease>,
     /// Final workspace-reuse outcome, when execution reached `RunStart`.
-    pub workspace_reuse_result: Option<WorkspaceReuseResult>,
+    pub home_reuse_result: Option<HomeReuseResult>,
     /// CLI-generated session ID read from the guest after execution.
     /// Used for late session tracking and finalization when `resume_session`
     /// is absent.
@@ -402,8 +402,8 @@ impl ExecuteOutcome {
             sandbox: None,
             source_ip: String::new(),
             network_log_session: None,
-            workspace_image: None,
-            workspace_reuse_result: None,
+            home_image: None,
+            home_reuse_result: None,
             discovered_cli_agent_session_id: None,
             restored_session_identity: None,
         }
@@ -413,7 +413,7 @@ impl ExecuteOutcome {
         failure: ExecutionFailure,
         sandbox: Box<dyn Sandbox>,
         source_ip: String,
-        workspace_image: Option<WorkspaceImageLease>,
+        home_image: Option<HomeImageLease>,
     ) -> Self {
         Self {
             failure: Some(failure),
@@ -421,8 +421,8 @@ impl ExecuteOutcome {
             sandbox: Some(sandbox),
             source_ip,
             network_log_session: None,
-            workspace_image,
-            workspace_reuse_result: None,
+            home_image,
+            home_reuse_result: None,
             discovered_cli_agent_session_id: None,
             restored_session_identity: None,
         }
@@ -662,8 +662,8 @@ pub async fn execute_job_with_prepared_notifier(
             sandbox: None,
             source_ip: String::new(),
             network_log_session: None,
-            workspace_image: None,
-            workspace_reuse_result: None,
+            home_image: None,
+            home_reuse_result: None,
             discovered_cli_agent_session_id: None,
             restored_session_identity: None,
         },
@@ -692,8 +692,8 @@ pub async fn execute_job_with_prepared_notifier(
                 sandbox: None,
                 source_ip: String::new(),
                 network_log_session: None,
-                workspace_image: None,
-                workspace_reuse_result: None,
+                home_image: None,
+                home_reuse_result: None,
                 discovered_cli_agent_session_id: None,
                 restored_session_identity: None,
             },
@@ -781,10 +781,28 @@ pub async fn execute_job_reuse_with_hooks(
         identity,
         source_ip,
         storage_fingerprints: prev_storage,
+        rootfs_hash,
         restored_session_identity: _restored_session_identity,
-        workspace_promotion,
+        home_promotion,
         guest_state_prepared,
     } = idle_sandbox.into_parts();
+
+    // Dispatch normally rejects this before unpark and starts a fresh sandbox.
+    // Do not let a bypassed caller consume a retained VM with a different build,
+    // including when image caching is disabled and no promotion is attached.
+    if rootfs_hash != params.rootfs_hash {
+        abandon_unpublished_home_promotion(home_promotion, "retained_rootfs_identity_mismatch")
+            .await;
+        return (
+            ExecuteOutcome::reused_sandbox_failure(
+                ExecutionFailure::from_error("retained sandbox rootfs identity mismatch"),
+                sandbox,
+                source_ip,
+                None,
+            ),
+            telemetry,
+        );
+    }
 
     let kind = identity.kind();
     let idle_reuse_key = identity.reuse_key();
@@ -795,9 +813,9 @@ pub async fn execute_job_reuse_with_hooks(
     } else {
         idle_reuse_key.map(|exact_key| claimed_reuse_key.unwrap_or(exact_key))
     };
-    let workspace_image = match resolve_reused_workspace_promotion(
-        config.workspace_cache.as_ref(),
-        workspace_promotion,
+    let home_image = match resolve_reused_home_promotion(
+        config.home_cache.as_ref(),
+        home_promotion,
         run_id,
         sandbox_id,
         params,
@@ -805,7 +823,7 @@ pub async fn execute_job_reuse_with_hooks(
     )
     .await
     {
-        Ok(workspace_image) => workspace_image,
+        Ok(home_image) => home_image,
         Err(failure) => {
             return (
                 ExecuteOutcome::reused_sandbox_failure(*failure, sandbox, source_ip, None),
@@ -820,26 +838,27 @@ pub async fn execute_job_reuse_with_hooks(
                 ExecutionFailure::from_error(error),
                 sandbox,
                 source_ip,
-                workspace_image,
+                home_image,
             ),
             telemetry,
         );
     }
 
-    let workspace_image = match (config.workspace_cache.as_ref(), workspace_image) {
-        (_, Some(workspace_image)) => Some(workspace_image),
+    let home_image = match (config.home_cache.as_ref(), home_image) {
+        (_, Some(home_image)) => Some(home_image),
         (Some(cache), None) => Some(
             cache
-                .lease_active(WorkspaceImageActiveLeaseRequest {
-                    identity: WorkspaceImageLeaseIdentity {
+                .lease_active(HomeImageLeaseRequest {
+                    identity: HomeImageLeaseIdentity {
                         run_id,
                         sandbox_id,
                         profile_name: &params.profile_name,
+                        rootfs_hash: &params.rootfs_hash,
                         reuse_key: claimed_reuse_key,
                         working_dir: CANONICAL_WORKING_DIR,
-                        image_size_bytes: u64::from(params.workspace_disk_mb) * 1024 * 1024,
+                        image_size_bytes: u64::from(params.home_disk_mb) * 1024 * 1024,
                     },
-                    workspace_drive_available: true,
+                    home_drive_available: true,
                 })
                 .await,
         ),
@@ -859,7 +878,7 @@ pub async fn execute_job_reuse_with_hooks(
             ExecutionFailure::from_error(error),
             sandbox,
             source_ip,
-            workspace_image,
+            home_image,
         ),
         Ok(prepared_run_payload) => {
             execute_reused_sandbox(
@@ -869,7 +888,7 @@ pub async fn execute_job_reuse_with_hooks(
                     params,
                     sandbox,
                     source_ip,
-                    workspace_image,
+                    home_image,
                     kind,
                 },
                 &context,
@@ -880,9 +899,9 @@ pub async fn execute_job_reuse_with_hooks(
                         IdleSandboxKind::Blank => params.restore_guest_state,
                     },
                     reuse_result,
-                    workspace_reuse_result: match kind {
-                        IdleSandboxKind::Exact => WorkspaceReuseResult::SandboxReused,
-                        IdleSandboxKind::Blank => blank_workspace_reuse_result(&context, config),
+                    home_reuse_result: match kind {
+                        IdleSandboxKind::Exact => HomeReuseResult::SandboxReused,
+                        IdleSandboxKind::Blank => blank_home_reuse_result(&context, config),
                     },
                     prev_storage: (kind == IdleSandboxKind::Exact).then_some(&prev_storage),
                 },
@@ -902,41 +921,34 @@ pub async fn execute_job_reuse_with_hooks(
     (outcome, telemetry)
 }
 
-fn blank_workspace_reuse_result(
-    context: &ExecutionContext,
-    config: &ExecutorConfig,
-) -> WorkspaceReuseResult {
-    if config.workspace_cache.is_none() {
-        WorkspaceReuseResult::NotConfigured
+fn blank_home_reuse_result(context: &ExecutionContext, config: &ExecutorConfig) -> HomeReuseResult {
+    if config.home_cache.is_none() {
+        HomeReuseResult::NotConfigured
     } else if context.reuse_key().is_some() {
-        WorkspaceReuseResult::CacheMiss
+        HomeReuseResult::CacheMiss
     } else {
-        WorkspaceReuseResult::NoReuseKey
+        HomeReuseResult::NoReuseKey
     }
 }
 
-async fn resolve_reused_workspace_promotion(
-    cache: Option<&WorkspaceImageCache>,
-    promotion: Option<WorkspaceImagePromotionContext>,
+async fn resolve_reused_home_promotion(
+    cache: Option<&HomeImageCache>,
+    promotion: Option<HomeImagePromotionContext>,
     run_id: RunId,
     sandbox_id: SandboxId,
     params: &JobParams,
     reuse_key: Option<&str>,
-) -> Result<Option<WorkspaceImageLease>, Box<ExecutionFailure>> {
+) -> Result<Option<HomeImageLease>, Box<ExecutionFailure>> {
     let Some(promotion) = promotion else {
         return Ok(None);
     };
     let Some(reuse_key) = reuse_key else {
-        abandon_unpublished_workspace_promotion(
-            Some(promotion),
-            "reuse_workspace_promotion_mismatch",
-        )
-        .await;
-        return Err(workspace_promotion_identity_failure(
+        abandon_unpublished_home_promotion(Some(promotion), "reuse_home_promotion_mismatch").await;
+        return Err(home_promotion_identity_failure(
             run_id,
             sandbox_id,
             &params.profile_name,
-            WorkspaceImagePromotionIdentityMismatch::ReuseKey,
+            HomeImagePromotionIdentityMismatch::ReuseKey,
         )
         .into());
     };
@@ -957,41 +969,35 @@ async fn resolve_reused_workspace_promotion(
     ) {
         Ok(lease) => Ok(Some(lease)),
         Err(identity_failure) => {
-            let WorkspaceImagePromotionIdentityFailure {
+            let HomeImagePromotionIdentityFailure {
                 promotion,
                 mismatch,
             } = *identity_failure;
-            let failure = workspace_promotion_identity_failure(
-                run_id,
-                sandbox_id,
-                &params.profile_name,
-                mismatch,
-            );
-            abandon_unpublished_workspace_promotion(
-                Some(promotion),
-                "reuse_workspace_promotion_mismatch",
-            )
-            .await;
+            let failure =
+                home_promotion_identity_failure(run_id, sandbox_id, &params.profile_name, mismatch);
+            abandon_unpublished_home_promotion(Some(promotion), "reuse_home_promotion_mismatch")
+                .await;
             Err(failure.into())
         }
     }
 }
 
 fn reused_promotion_into_active_lease(
-    cache: &WorkspaceImageCache,
-    promotion: WorkspaceImagePromotionContext,
+    cache: &HomeImageCache,
+    promotion: HomeImagePromotionContext,
     run_id: RunId,
     sandbox_id: SandboxId,
     params: &JobParams,
     reuse_key: &str,
-) -> Result<WorkspaceImageLease, Box<WorkspaceImagePromotionIdentityFailure>> {
+) -> Result<HomeImageLease, Box<HomeImagePromotionIdentityFailure>> {
     let expected = match cache
-        .expected_promotion_identity(WorkspaceImagePromotionIdentityRequest {
+        .expected_promotion_identity(HomeImagePromotionIdentityRequest {
             sandbox_id,
             profile_name: &params.profile_name,
+            rootfs_hash: &params.rootfs_hash,
             reuse_key,
             working_dir: CANONICAL_WORKING_DIR,
-            image_size_bytes: u64::from(params.workspace_disk_mb) * 1024 * 1024,
+            image_size_bytes: u64::from(params.home_disk_mb) * 1024 * 1024,
         })
         .inspect_err(|mismatch| {
             tracing::warn!(
@@ -1004,7 +1010,7 @@ fn reused_promotion_into_active_lease(
         }) {
         Ok(expected) => expected,
         Err(mismatch) => {
-            return Err(Box::new(WorkspaceImagePromotionIdentityFailure {
+            return Err(Box::new(HomeImagePromotionIdentityFailure {
                 promotion,
                 mismatch,
             }));
@@ -1013,11 +1019,11 @@ fn reused_promotion_into_active_lease(
     promotion.try_into_active_lease_preserving_context(&expected, true)
 }
 
-fn workspace_promotion_identity_failure(
+fn home_promotion_identity_failure(
     run_id: RunId,
     sandbox_id: SandboxId,
     profile_name: &str,
-    mismatch: WorkspaceImagePromotionIdentityMismatch,
+    mismatch: HomeImagePromotionIdentityMismatch,
 ) -> ExecutionFailure {
     tracing::warn!(
         run_id = %run_id,

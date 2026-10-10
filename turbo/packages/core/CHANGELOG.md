@@ -1,5 +1,67 @@
 # Changelog
 
+## [8.741.0](https://github.com/okou-ai/okou/compare/core-v8.740.1...core-v8.741.0) (2026-10-10)
+
+
+### Features
+
+* add sidebar-first artifact previews behind a switch ([#38605](https://github.com/okou-ai/okou/issues/38605)) ([81341fb](https://github.com/okou-ai/okou/commit/81341fbbe6bd58b7a0e80823203a429e62e2887a))
+
+## [8.740.1](https://github.com/okou-ai/okou/compare/core-v8.740.0...core-v8.740.1) (2026-10-10)
+
+
+### Bug Fixes
+
+* **app:** gate stable preview fullscreen layout ([#38444](https://github.com/okou-ai/okou/issues/38444)) ([dfa059a](https://github.com/okou-ai/okou/commit/dfa059a8d9a778ee720c3e744712dee718c3b8a7))
+* use hosted og credentials and restore the okou brand cover ([#38510](https://github.com/okou-ai/okou/issues/38510)) ([2d2ec67](https://github.com/okou-ai/okou/commit/2d2ec676fbf7ab4bc0db3cd5439715869ff2d6b9))
+
+
+### Refactoring
+
+* **api:** retire legacy computer-use host tokens ([#38559](https://github.com/okou-ai/okou/issues/38559)) ([829d10f](https://github.com/okou-ai/okou/commit/829d10ffe05819dca15432cee1d392cf56847cf7))
+* remove notify mail feature switch ([#38561](https://github.com/okou-ai/okou/issues/38561)) ([7f40f95](https://github.com/okou-ai/okou/commit/7f40f954492838ac72a4d291848b2ef24266a9a7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.549.0
+
+## [8.740.0](https://github.com/okou-ai/okou/compare/core-v8.739.2...core-v8.740.0) (2026-10-10)
+
+
+### Features
+
+* **notify:** enable mail notifications for everyone ([#38513](https://github.com/okou-ai/okou/issues/38513)) ([90da609](https://github.com/okou-ai/okou/commit/90da609107a1612fa3d9039862f02c09f2ed09d2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.548.0
+
+## [8.739.2](https://github.com/okou-ai/okou/compare/core-v8.739.1...core-v8.739.2) (2026-10-10)
+
+
+### Bug Fixes
+
+* finalize model identity writers and prepare bounded history repair ([#38477](https://github.com/okou-ai/okou/issues/38477)) ([b691971](https://github.com/okou-ai/okou/commit/b6919718b6d856dfa3a7c500b6e899dd3fde7674)), closes [#38114](https://github.com/okou-ai/okou/issues/38114)
+* resolve relative social images behind artifact previews ([#38454](https://github.com/okou-ai/okou/issues/38454)) ([c654ee4](https://github.com/okou-ai/okou/commit/c654ee497cd617799352398804e91504539f297b))
+
+
+### Refactoring
+
+* remove generic checkpoint persistence and protocols ([#38399](https://github.com/okou-ai/okou/issues/38399)) ([0c926e3](https://github.com/okou-ai/okou/commit/0c926e34ca09edaf2840ffcbfa56f3dc07a4588d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.547.0
+
 ## [8.739.1](https://github.com/okou-ai/okou/compare/core-v8.739.0...core-v8.739.1) (2026-10-09)
 
 

@@ -101,14 +101,14 @@ async fn spawn_for_paths_uploads_explicit_runtime_files() {
 // =========================================================================
 // Telemetry flush delta semantics
 //
-// Backs the parallel-checkpoint-with-catch-up pattern in `main.rs`: the
+// Backs the parallel-finalization-with-catch-up pattern in `main.rs`: the
 // first `flush(UploadMode::Live)` runs concurrently with
-// `finalization::create_checkpoint` and reads the `sandbox_ops` log before
-// checkpoint's sub-op records are written; a second
+// `finalization::prepare_finalization_for_runtime` and reads the `sandbox_ops` log before
+// finalization's sub-op records are written; a second
 // `flush(UploadMode::Final)` after the join picks up the delta. If the
 // uploader ever stopped being incremental — re-reading from offset 0 —
 // that pattern would duplicate records; if position-tracking broke in
-// the other direction, checkpoint sub-ops would be lost entirely.
+// the other direction, finalization sub-ops would be lost entirely.
 // =========================================================================
 
 #[tokio::test]
@@ -152,7 +152,7 @@ async fn flush_is_incremental_between_calls() {
         http_client!(),
     );
 
-    // Pre-checkpoint record → first flush captures it.
+    // Pre-finalization record → first flush captures it.
     guest_telemetry::telemetry::record_sandbox_op(
         "first_op",
         Duration::from_millis(10),
@@ -172,7 +172,7 @@ async fn flush_is_incremental_between_calls() {
     // Its teardown must not clear the active producer's destination either.
     drop(independent_files);
 
-    // Simulates a checkpoint sub-op written AFTER the parallel pass read
+    // Simulates a finalization sub-op written AFTER the parallel pass read
     // the sandbox_ops file. The catch-up flush must pick it up.
     guest_telemetry::telemetry::record_sandbox_op(
         "second_op",
@@ -365,7 +365,7 @@ async fn telemetry_preserves_runtime_session_id_and_masks_secrets() {
     let files = ExplicitTelemetryFiles::new("runtime-session-mask").unwrap();
     let _sandbox_ops_override = SandboxOpsOverrideGuard::set(&api, &files);
     let paths = &files.paths;
-    let _session_files = SessionCheckpointFilesGuard::new();
+    let _session_files = SessionFinalizationFilesGuard::new();
 
     let system_log = paths.system_log_file();
     ensure_parent_dir(system_log);

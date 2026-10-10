@@ -6,7 +6,6 @@ import { useTranslation } from "react-i18next";
 import type { AuthBrandContext } from "../../signals/auth.ts";
 import { setTheme$, theme$ } from "../../signals/theme.ts";
 import { ProductBrandMark } from "../components/product-brand-mark.tsx";
-import { isDesktopAuthFlow } from "../../lib/desktop-auth-flow.ts";
 
 interface AuthShellProps {
   readonly authBrand: AuthBrandContext;
@@ -73,23 +72,21 @@ export function AuthShell({ authBrand, children }: AuthShellProps) {
         })}
       </span>
 
-      {!isDesktopAuthFlow() && (
-        <a
-          href={authBrand.homeUrl}
-          aria-label={t(
-            ($) => {
-              return $.auth.homeLink;
-            },
-            { brandName: authBrand.brandName },
-          )}
-          className={cn(
-            "absolute flex items-center gap-2 hover:opacity-75 focus-visible:opacity-75 focus-visible:outline-none",
-            "left-6 top-6",
-          )}
-        >
-          <ProductBrandMark size="compact" />
-        </a>
-      )}
+      <a
+        href={authBrand.homeUrl}
+        aria-label={t(
+          ($) => {
+            return $.auth.homeLink;
+          },
+          { brandName: authBrand.brandName },
+        )}
+        className={cn(
+          "absolute flex items-center gap-2 hover:opacity-75 focus-visible:opacity-75 focus-visible:outline-none",
+          "left-6 top-6",
+        )}
+      >
+        <ProductBrandMark size="compact" />
+      </a>
 
       <main className="relative z-10 m-auto flex w-full min-w-0 justify-center py-14 sm:py-16">
         {children}

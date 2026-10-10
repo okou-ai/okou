@@ -340,6 +340,100 @@ test.each([
   },
 );
 
+test.each([
+  { filename: "report.html", contentType: "text/html" },
+  { filename: "chart.svg", contentType: "image/svg+xml" },
+  { filename: "report.xml", contentType: "application/xml" },
+])(
+  "$filename previews do not reuse attachment-bearing download credentials",
+  async ({ filename, contentType }) => {
+    const { actor, bdd, members, share } = await fixture();
+    context.mocks.s3.getSignedUrl.mockImplementation((_client, command) => {
+      const url = new URL(apiTestS3PresignedUrl(command));
+      if (
+        command instanceof GetObjectCommand &&
+        command.input.ResponseContentDisposition
+      ) {
+        url.searchParams.set(
+          "response-content-disposition",
+          command.input.ResponseContentDisposition,
+        );
+      }
+      return Promise.resolve(url.href);
+    });
+    session(actor);
+    const prepared = await accept(
+      api()(uploadsContract).prepare({
+        headers,
+        body: { filename, contentType, size: 13, purpose: "artifact" },
+      }),
+      [200],
+    );
+    const completed = await accept(
+      api()(uploadsContract).complete({
+        headers,
+        body: { id: prepared.body.id },
+      }),
+      [200],
+    );
+    const ownerPreview = await accept(
+      api()(artifactReferencesContract).read({
+        headers,
+        params: { reference: reference(completed.body.url) },
+      }),
+      [200],
+    );
+    expect(ownerPreview.body).toMatchObject({ filename, contentType });
+    expect(
+      new URL(ownerPreview.body.url).searchParams.has(
+        "response-content-disposition",
+      ),
+    ).toBeFalsy();
+
+    const shared = await share(
+      { kind: "file", id: prepared.body.id },
+      "organization",
+    );
+    if (!shared.url) {
+      throw new Error("Expected a shared file URL");
+    }
+    const recipient = bdd.user({ orgId: actor.orgId });
+    members.add(recipient.userId);
+    // Warm the explicit-download cache before resolving the same shared file.
+    const downloaded = await download(recipient, shared.url);
+    if (downloaded.body.kind !== "file") {
+      throw new Error("Expected a single-file download");
+    }
+    expect(downloaded.body).toMatchObject({ filename, contentType });
+    expect(
+      new URL(downloaded.body.url).searchParams.get(
+        "response-content-disposition",
+      ),
+    ).toBe(`attachment; filename="${filename}"`);
+    for (const viewer of [actor, recipient]) {
+      session(viewer);
+      const preview = await accept(
+        api()(artifactReferencesContract).read({
+          headers,
+          params: { reference: reference(shared.url) },
+        }),
+        [200],
+      );
+      expect(preview.body).toMatchObject({ filename, contentType });
+      expect(
+        new URL(preview.body.url).searchParams.has(
+          "response-content-disposition",
+        ),
+      ).toBeFalsy();
+      if (viewer === recipient) {
+        expect(storageKey(preview.body.url)).toBe(
+          storageKey(downloaded.body.url),
+        );
+      }
+    }
+  },
+);
+
 test("legacy public sites are cloneable outside their originating organization", async () => {
   const { bdd, host, deploy } = await fixture(false);
   const site = await deploy();

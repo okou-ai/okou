@@ -12,13 +12,13 @@ import {
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { runnersJobClaimContract } from "@okouai/api-contracts/contracts/runners";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, test } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { now, nowDate } from "../../../lib/time";
-import { createDeferredPromise, onRejection } from "../../utils";
+import { createDeferredPromise, joinAll, onRejection } from "../../utils";
 import { runnerSshRoutes } from "../runner-ssh";
 import { runnersRoutes } from "../runners";
 import { chatRemoteAccessRoutes } from "../chat-remote-access";
@@ -1569,3 +1569,126 @@ describe("official Runner SSH authority", () => {
     await expect(pin(f)).resolves.toStrictEqual({ outcome: "unavailable" });
   });
 });
+
+const mutationClaimedFixture = useClaimedFixture();
+
+test("concurrent winning-Runner pins publish exactly one trust generation", async () => {
+  const f = await mutationClaimedFixture();
+  const [before] = await list(f);
+  if (!before) {
+    throw new Error("Expected the claimed SSH Host");
+  }
+  const results = await joinAll([pin(f), pin(f)]);
+  expect(
+    results
+      .map((result) => {
+        return result.outcome;
+      })
+      .sort(),
+  ).toStrictEqual(["matched", "pinned"]);
+  for (const result of results) {
+    expect(result).toStrictEqual({ outcome: result.outcome, generation: 2 });
+  }
+  const [after] = await list(f);
+  if (!after) {
+    throw new Error("Expected the pinned SSH Host");
+  }
+  expect(after).toStrictEqual({
+    ...before,
+    generation: 2,
+    learnedHostKey: hostKey,
+    updatedAt: after.updatedAt,
+  });
+});
+
+test("overlapping winning-Runner observations retain the newest clock without changing Host metadata", async () => {
+  const f = await mutationClaimedFixture();
+  const before = await list(f);
+  const newer = nowDate().toISOString();
+  const older = new Date(now() - 1000).toISOString();
+  const observe = async (
+    observedAt: string,
+    failureReason: "authentication_failed" | null,
+  ) => {
+    return (
+      await accept(
+        client().observe({
+          params: { runId: f.runId },
+          headers: runnerHeaders,
+          body: {
+            connectionId: f.connectionId,
+            runnerIdentity: f.runnerIdentity,
+            expectedGeneration: 1,
+            observedAt,
+            failureReason,
+          },
+        }),
+        [200],
+      )
+    ).body;
+  };
+  const [oldResult, newResult] = await joinAll([
+    observe(older, "authentication_failed"),
+    observe(newer, null),
+  ]);
+  expect(["recorded", "ignored"]).toContain(oldResult.outcome);
+  expect(newResult).toStrictEqual({ outcome: "recorded" });
+  authenticate(f);
+  const result = await accept(
+    config().observations({ headers: sessionHeaders }),
+    [200],
+  );
+  expect(result.body.observations).toStrictEqual([
+    {
+      connectionId: f.connectionId,
+      generation: 1,
+      observedAt: newer,
+      failureReason: null,
+    },
+  ]);
+  await expect(list(f)).resolves.toStrictEqual(before);
+});
+
+test.each(["insert", "replace", "remove"] as const)(
+  "ssh override %s revocation preserves metadata and refuses the winning Runner",
+  async (operation) => {
+    const f = await mutationClaimedFixture();
+    if (operation !== "insert") {
+      authenticate(f);
+      const remote = setupApp({ context, routes: chatRemoteAccessRoutes })(
+        chatRemoteAccessContract,
+      );
+      await accept(
+        remote.updateHostDefault({
+          headers: sessionHeaders,
+          params: { protocol: "ssh", connectionId: f.connectionId },
+          body: { enabled: false },
+        }),
+        [200],
+      );
+      await setThreadHostOverride(f, true);
+    }
+    const before = await list(f);
+    await setThreadHostOverride(f, operation === "remove" ? null : false);
+    const kms = useSecretKmsProbe();
+    await expect(resolve(f)).resolves.toStrictEqual({ outcome: "unavailable" });
+    await expect(pin(f)).resolves.toStrictEqual({ outcome: "unavailable" });
+    const observed = await accept(
+      client().observe({
+        params: { runId: f.runId },
+        headers: runnerHeaders,
+        body: {
+          connectionId: f.connectionId,
+          runnerIdentity: f.runnerIdentity,
+          expectedGeneration: 1,
+          observedAt: nowDate().toISOString(),
+          failureReason: "authentication_failed",
+        },
+      }),
+      [200],
+    );
+    expect(observed.body).toStrictEqual({ outcome: "unavailable" });
+    expect(kms.decryptCalls).toBe(0);
+    await expect(list(f)).resolves.toStrictEqual(before);
+  },
+);

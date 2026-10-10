@@ -1,3 +1,4 @@
+import { publicChatActor } from "./helpers/public-chat-actor";
 import { randomUUID } from "node:crypto";
 
 import { HttpResponse, http } from "msw";
@@ -956,21 +957,13 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
 
 describe("CHAIN-BILLING-MEDIA/FILE-01: run-scoped agent-token attribution", () => {
   it("attributes maps usage and hosted-site artifacts through a run-scoped token [HOST-B/MAPS-B]", async () => {
-    const bdd = createBddApi(context);
     const api = createHostMapsBddApi(context);
     const billing = createMapsBillingApi(context);
     const runs = createRunsApi(context);
-    const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
-    await runs.grantProEntitlement(actor);
-    runs.configureRunnerGroup();
-    await runs.ensurePersonalSubscriptionModel(actor, {
-      model: "claude-fable-5-1",
-    });
-    const agent = await bdd.createAgent(actor, {
-      displayName: "BDD host maps agent",
-      description: "Run-scoped maps and host attribution.",
-      visibility: "private",
+    const owned = await publicChatActor(context);
+    const { actor, agentId, runnerGroup } = owned;
+    await owned.run(() => {
+      return runs.updateUserModelPreference(actor, "claude-fable-5-1");
     });
     billing.configureMapsProvider();
     let mapsRequests = 0;
@@ -981,58 +974,60 @@ describe("CHAIN-BILLING-MEDIA/FILE-01: run-scoped agent-token attribution", () =
       }),
     );
 
-    const created = await runs.createThreadRun(actor, {
-      agentId: agent.agentId,
+    const created = await owned.sendChatRun(actor, {
+      agentId,
       prompt: "attribute maps and host usage",
     });
-    const okouToken = runs.okouTokenForRunWithCapabilities(
-      actor,
-      created.runId,
-      ["maps:read", "host:write"],
-    );
-    expect(okouToken).toMatch(/^vm0_sandbox_/);
+    const { claim } = await owned.claimChatRun(runnerGroup, created.runId);
+    await owned.run(async () => {
+      const okouToken = claim.platformEnvironment.OKOU_TOKEN;
+      if (!okouToken) {
+        throw new Error("Expected a claimed agent token");
+      }
+      expect(okouToken).toMatch(/^vm0_sandbox_/);
 
-    const before = await billing.readBillingStatus(actor);
+      const before = await billing.readBillingStatus(actor);
 
-    const mapsSearch = await api.requestMapsSearchWithBearer(
-      okouToken,
-      { query: "coffee near 1 Infinite Loop, Cupertino" },
-      [200],
-    );
-    expect(mapsSearch.body).toMatchObject({
-      provider: "google-maps-grounding",
-      billingCategory: "provider_cost_usd_micros",
-      billingQuantity: 25_155,
-      creditsCharged: 32,
+      const mapsSearch = await api.requestMapsSearchWithBearer(
+        okouToken,
+        { query: "coffee near 1 Infinite Loop, Cupertino" },
+        [200],
+      );
+      expect(mapsSearch.body).toMatchObject({
+        provider: "google-maps-grounding",
+        billingCategory: "provider_cost_usd_micros",
+        billingQuantity: 25_155,
+        creditsCharged: 32,
+      });
+      expect(mapsRequests).toBe(1);
+
+      api.captureHostedSitesS3();
+      const bearer = { bearerToken: okouToken };
+      const site = `bdd-run-artifact-${randomUUID().slice(0, 8)}`;
+      const prepared = await api.prepareHostedSite(bearer, {
+        site,
+        slugSuffix: "run-01",
+        artifactKind: "hosted-site",
+        spaFallback: false,
+        files: [hostedTextFile("/index.html", "<main>run artifact</main>")],
+      });
+      expect(prepared.publicSlug).toBe(site);
+      expect(prepared.deploymentVersion).toBe(1);
+
+      const completed = await api.completeHostedSite(
+        bearer,
+        prepared.deploymentId,
+      );
+      expect(completed.status).toBe("ready");
+      // Completing again exercises the idempotent artifact upsert.
+      const recompleted = await api.completeHostedSite(
+        bearer,
+        prepared.deploymentId,
+      );
+      expect(recompleted).toStrictEqual(completed);
+
+      const settled = await billing.readBillingStatus(actor);
+      expect(settled.credits).toBe(before.credits - 32);
     });
-    expect(mapsRequests).toBe(1);
-
-    api.captureHostedSitesS3();
-    const bearer = { bearerToken: okouToken };
-    const site = `bdd-run-artifact-${randomUUID().slice(0, 8)}`;
-    const prepared = await api.prepareHostedSite(bearer, {
-      site,
-      slugSuffix: "run-01",
-      artifactKind: "hosted-site",
-      spaFallback: false,
-      files: [hostedTextFile("/index.html", "<main>run artifact</main>")],
-    });
-    expect(prepared.publicSlug).toBe(site);
-    expect(prepared.deploymentVersion).toBe(1);
-
-    const completed = await api.completeHostedSite(
-      bearer,
-      prepared.deploymentId,
-    );
-    expect(completed.status).toBe("ready");
-    // Completing again exercises the idempotent artifact upsert.
-    const recompleted = await api.completeHostedSite(
-      bearer,
-      prepared.deploymentId,
-    );
-    expect(recompleted).toStrictEqual(completed);
-
-    const settled = await billing.readBillingStatus(actor);
-    expect(settled.credits).toBe(before.credits - 32);
   });
 });

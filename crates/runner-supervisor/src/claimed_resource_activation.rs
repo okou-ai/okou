@@ -13,15 +13,13 @@ use runner_executor::executor::{
 };
 use runner_host::paths::short_digest;
 use runner_lifecycle::guest_timezone::{GuestTimezoneAssumption, GuestTimezoneIntent};
+use runner_lifecycle::home_image_cache::{HomeImageCache, snapshot::HomeCacheStateSnapshot};
 use runner_lifecycle::idle_pool::{
     BlankIdleReservationMiss, DestroyOutcome, IdlePoolSnapshot, IdleSandboxKind, IdleUnparkResult,
     RestoreReservedIdleResult, ReusableIdleSandbox, SpeculativeIdleSandbox,
 };
 use runner_lifecycle::resource_budget::{BudgetLease, ResourceBudget};
 use runner_lifecycle::status::StatusTracker;
-use runner_lifecycle::workspace_image_cache::{
-    WorkspaceImageCache, snapshot::WorkspaceCacheStateSnapshot,
-};
 use runner_provider::RunCancellationHandle;
 use runner_types::ids::RunId;
 use runner_types::types::{ExecutionContext, SandboxReuseResult, reuse_key_kind};
@@ -52,8 +50,8 @@ pub struct ActivationResources<'a> {
     pub orphaned_active_runs: &'a OrphanedActiveRuns,
     pub reuse_state_notify: &'a Notify,
     pub budget: &'a Arc<ResourceBudget>,
-    pub workspace_cache: Option<&'a WorkspaceImageCache>,
-    pub workspace_cache_snapshot: &'a WorkspaceCacheStateSnapshot,
+    pub home_cache: Option<&'a HomeImageCache>,
+    pub home_cache_snapshot: &'a HomeCacheStateSnapshot,
     pub blank_pool_diagnostics: &'a BlankPoolDiagnostics,
     /// Runs after durable preparing status and before unpark; supplied only for Runner tests.
     pub on_preparing_committed: Option<Arc<dyn Fn(RunId) -> BoxFuture<'static, ()> + Send + Sync>>,
@@ -69,8 +67,9 @@ impl ActivationResources<'_> {
 
 pub struct ReuseAdmissionRequest<'a> {
     pub profile_name: &'a str,
+    pub rootfs_hash: &'a str,
     pub device_rate_limits: &'a Option<DeviceRateLimits>,
-    pub workspace_disk_mb: u32,
+    pub home_disk_mb: u32,
     pub context: &'a ExecutionContext,
     pub job_lease: BudgetLease,
 }
@@ -92,9 +91,10 @@ pub struct ReuseFromPoolReady {
 
 pub struct ReservedActivationRequest<'a> {
     pub run_id: RunId,
+    pub rootfs_hash: &'a str,
     pub profile_name: &'a str,
     pub device_rate_limits: &'a Option<DeviceRateLimits>,
-    pub workspace_disk_mb: u32,
+    pub home_disk_mb: u32,
     pub context: &'a ExecutionContext,
 }
 
@@ -183,7 +183,7 @@ impl CancelledExactResource {
     pub async fn rollback(
         self,
         run_id: RunId,
-        workspace_disk_mb: u32,
+        home_disk_mb: u32,
         resources: &PreClaimResources<'_>,
     ) {
         match self.0 {
@@ -191,7 +191,7 @@ impl CancelledExactResource {
                 rollback_exact_speculation_outcome(
                     ExactSpeculationOutcome::Prepared(sandbox),
                     run_id,
-                    workspace_disk_mb,
+                    home_disk_mb,
                     resources,
                 )
                 .await;
@@ -241,9 +241,10 @@ async fn prepare_speculated_exact(
 ) -> PendingExactActivation {
     let ReservedActivationRequest {
         run_id,
+        rootfs_hash,
         profile_name,
         device_rate_limits: _,
-        workspace_disk_mb,
+        home_disk_mb,
         context,
     } = request;
     let ExactSpeculation {
@@ -317,17 +318,29 @@ async fn prepare_speculated_exact(
         .await;
     }
 
-    if let Some(cache) = ctx.workspace_cache {
+    if sandbox.rootfs_hash() != rootfs_hash {
+        return cleanup_claimed_speculation_for_fresh_fallback(
+            sandbox.into_destroy_job("speculative_rootfs_identity_mismatch"),
+            SandboxReuseResult::ProfileMismatch,
+            "speculative_rootfs_identity_mismatch",
+            run_id,
+            sandbox_id,
+            &idle_snapshot,
+            ctx,
+        )
+        .await;
+    }
+
+    if let Some(cache) = ctx.home_cache {
         let started_at = Instant::now();
-        let validation = sandbox.validate_workspace_promotion_identity(
+        let validation = sandbox.validate_home_promotion_identity(
             cache,
+            rootfs_hash,
             CANONICAL_WORKING_DIR,
-            u64::from(workspace_disk_mb) * 1024 * 1024,
+            u64::from(home_disk_mb) * 1024 * 1024,
         );
-        pre_spawn_timing.record_phase_elapsed(
-            RunnerPreSpawnPhase::WorkspacePromotionValidation,
-            started_at,
-        );
+        pre_spawn_timing
+            .record_phase_elapsed(RunnerPreSpawnPhase::HomePromotionValidation, started_at);
         if let Err(mismatch) = validation {
             warn!(
                 run_id = %run_id,
@@ -335,12 +348,12 @@ async fn prepare_speculated_exact(
                 reuse_key_kind = reserved_reuse_key.as_deref().map(reuse_key_kind),
                 profile = %profile_name,
                 mismatch = mismatch.as_str(),
-                "workspace promotion identity mismatch after speculative preparation"
+                "home promotion identity mismatch after speculative preparation"
             );
             return cleanup_claimed_speculation_for_fresh_fallback(
-                sandbox.into_destroy_job("speculative_workspace_promotion_mismatch"),
+                sandbox.into_destroy_job("speculative_home_promotion_mismatch"),
                 SandboxReuseResult::PoolMiss,
-                "speculative_workspace_promotion_mismatch",
+                "speculative_home_promotion_mismatch",
                 run_id,
                 sandbox_id,
                 &idle_snapshot,
@@ -530,9 +543,10 @@ pub async fn activate_reserved_idle(
     let (reservation, idle_snapshot) = reservation.into_parts();
     let ReservedActivationRequest {
         run_id,
+        rootfs_hash,
         profile_name,
         device_rate_limits,
-        workspace_disk_mb,
+        home_disk_mb,
         context,
     } = request;
     let started_at = Instant::now();
@@ -586,24 +600,24 @@ pub async fn activate_reserved_idle(
     };
     pre_spawn_timing.record_phase_elapsed(RunnerPreSpawnPhase::IdleReuseLookup, started_at);
 
-    let claimed_workspace_cache_reuse_key = if reservation_kind == IdleSandboxKind::Blank {
+    let claimed_home_cache_reuse_key = if reservation_kind == IdleSandboxKind::Blank {
         let started_at = Instant::now();
-        let possible = ctx.workspace_cache.is_some()
+        let possible = ctx.home_cache.is_some()
             && requested_reuse_key.is_some_and(|reuse_key| {
-                ctx.workspace_cache_snapshot
-                    .might_contain_workspace_cache_reuse_key(reuse_key)
+                ctx.home_cache_snapshot
+                    .might_contain_home_cache_reuse_key(reuse_key)
             });
         pre_spawn_timing
-            .record_phase_elapsed(RunnerPreSpawnPhase::WorkspaceCacheStateLookup, started_at);
+            .record_phase_elapsed(RunnerPreSpawnPhase::HomeCacheStateLookup, started_at);
         possible
     } else {
         false
     };
-    if claimed_workspace_cache_reuse_key {
+    if claimed_home_cache_reuse_key {
         return cleanup_reserved_for_fresh_fallback(
             reservation.into_destroy_job(),
             fallback_reuse_result,
-            "reserved_blank_workspace_cache_priority",
+            "reserved_blank_home_cache_priority",
             ctx,
         )
         .await
@@ -611,6 +625,7 @@ pub async fn activate_reserved_idle(
     }
 
     if reservation.profile_name() != profile_name
+        || reservation.rootfs_hash() != rootfs_hash
         || reservation.device_rate_limits() != device_rate_limits
     {
         let reuse_key_fingerprint = reserved_reuse_key
@@ -655,17 +670,16 @@ pub async fn activate_reserved_idle(
         .into();
     }
 
-    if let Some(cache) = ctx.workspace_cache {
+    if let Some(cache) = ctx.home_cache {
         let started_at = Instant::now();
-        let validation = reservation.validate_workspace_promotion_identity(
+        let validation = reservation.validate_home_promotion_identity(
             cache,
+            rootfs_hash,
             CANONICAL_WORKING_DIR,
-            u64::from(workspace_disk_mb) * 1024 * 1024,
+            u64::from(home_disk_mb) * 1024 * 1024,
         );
-        pre_spawn_timing.record_phase_elapsed(
-            RunnerPreSpawnPhase::WorkspacePromotionValidation,
-            started_at,
-        );
+        pre_spawn_timing
+            .record_phase_elapsed(RunnerPreSpawnPhase::HomePromotionValidation, started_at);
         if let Err(mismatch) = validation {
             warn!(
                 run_id = %run_id,
@@ -673,12 +687,12 @@ pub async fn activate_reserved_idle(
                 reuse_key_kind = reserved_reuse_key.as_deref().map(reuse_key_kind),
                 profile = %profile_name,
                 mismatch = mismatch.as_str(),
-                "workspace promotion identity mismatch, destroying reserved idle sandbox before fresh fallback"
+                "home promotion identity mismatch, destroying reserved idle sandbox before fresh fallback"
             );
             return cleanup_reserved_for_fresh_fallback(
-                reservation.into_destroy_job_without_workspace_promotion_for_mismatch(),
+                reservation.into_destroy_job_without_home_promotion_for_mismatch(),
                 fallback_reuse_result,
-                "reserved_reuse_workspace_promotion_mismatch",
+                "reserved_reuse_home_promotion_mismatch",
                 ctx,
             )
             .await
@@ -864,8 +878,9 @@ pub async fn try_reuse_from_pool(
 ) -> Result<ReuseFromPoolReady, ReuseFromPoolFailure> {
     let ReuseAdmissionRequest {
         profile_name,
+        rootfs_hash,
         device_rate_limits,
-        workspace_disk_mb,
+        home_disk_mb,
         context,
         job_lease,
     } = request;
@@ -887,16 +902,15 @@ pub async fn try_reuse_from_pool(
     };
     pre_spawn_timing.record_phase_elapsed(RunnerPreSpawnPhase::IdleReuseLookup, started_at);
     let started_at = Instant::now();
-    let claimed_workspace_cache_reuse_key = ctx.workspace_cache.is_some()
+    let claimed_home_cache_reuse_key = ctx.home_cache.is_some()
         && reuse_key.is_some_and(|reuse_key| {
-            ctx.workspace_cache_snapshot
-                .might_contain_workspace_cache_reuse_key(reuse_key)
+            ctx.home_cache_snapshot
+                .might_contain_home_cache_reuse_key(reuse_key)
         });
-    pre_spawn_timing
-        .record_phase_elapsed(RunnerPreSpawnPhase::WorkspaceCacheStateLookup, started_at);
+    pre_spawn_timing.record_phase_elapsed(RunnerPreSpawnPhase::HomeCacheStateLookup, started_at);
     let (taken, blank_pool_selection) = match exact {
         Some(exact) => (Some(exact), None),
-        None if !claimed_workspace_cache_reuse_key => {
+        None if !claimed_home_cache_reuse_key => {
             let mut pool = ctx.idle_pool.lock().await;
             let exact = reuse_key
                 .and_then(|reuse_key| pool.take_reserved(reuse_key))
@@ -937,10 +951,11 @@ pub async fn try_reuse_from_pool(
         pre_spawn_timing.record_blank_pool_selection(selection);
     }
     let took_idle_session = taken.is_some();
-    let needs_reuse_state_refresh = took_idle_session || claimed_workspace_cache_reuse_key;
+    let needs_reuse_state_refresh = took_idle_session || claimed_home_cache_reuse_key;
     match taken {
         Some((entry, snapshot))
             if entry.profile_name() == profile_name
+                && entry.rootfs_hash() == rootfs_hash
                 && entry.device_rate_limits() == device_rate_limits =>
         {
             let entry_kind = entry.kind();
@@ -957,17 +972,16 @@ pub async fn try_reuse_from_pool(
                 IdleSandboxKind::Exact => SandboxReuseResult::UnparkFailed,
                 IdleSandboxKind::Blank => miss_result,
             };
-            if let Some(cache) = ctx.workspace_cache {
+            if let Some(cache) = ctx.home_cache {
                 let started_at = Instant::now();
-                let validation = entry.validate_workspace_promotion_identity(
+                let validation = entry.validate_home_promotion_identity(
                     cache,
+                    rootfs_hash,
                     CANONICAL_WORKING_DIR,
-                    u64::from(workspace_disk_mb) * 1024 * 1024,
+                    u64::from(home_disk_mb) * 1024 * 1024,
                 );
-                pre_spawn_timing.record_phase_elapsed(
-                    RunnerPreSpawnPhase::WorkspacePromotionValidation,
-                    started_at,
-                );
+                pre_spawn_timing
+                    .record_phase_elapsed(RunnerPreSpawnPhase::HomePromotionValidation, started_at);
                 if let Err(mismatch) = validation {
                     warn!(
                         run_id = %run_id,
@@ -975,12 +989,12 @@ pub async fn try_reuse_from_pool(
                         reuse_key_kind = entry_reuse_key.as_deref().map(reuse_key_kind),
                         profile = %profile_name,
                         mismatch = mismatch.as_str(),
-                        "workspace promotion identity mismatch, destroying idle sandbox and falling through to fresh create"
+                        "home promotion identity mismatch, destroying idle sandbox and falling through to fresh create"
                     );
                     spawn_idle_destroy_job(
                         ctx.idle_destroy_tracker,
-                        entry.into_destroy_job_without_workspace_promotion_for_mismatch(),
-                        "reuse_workspace_promotion_mismatch",
+                        entry.into_destroy_job_without_home_promotion_for_mismatch(),
+                        "reuse_home_promotion_mismatch",
                     );
                     return Ok(ReuseFromPoolReady {
                         reuse_entry: None,
@@ -1088,7 +1102,7 @@ pub async fn try_reuse_from_pool(
                         "unpark failed, destroying idle sandbox and falling through to fresh create"
                     );
                     let cleanup = destroy_job.run_retaining_lease("reuse_unpark_failed").await;
-                    if cleanup.workspace_cache_promoted {
+                    if cleanup.home_cache_promoted {
                         ctx.reuse_state_notify.notify_one();
                     }
                     drop(transfer_guard);
@@ -1124,7 +1138,9 @@ pub async fn try_reuse_from_pool(
                 }
             }
         }
-        Some((stale, snapshot)) if stale.profile_name() == profile_name => {
+        Some((stale, snapshot))
+            if stale.profile_name() == profile_name && stale.rootfs_hash() == rootfs_hash =>
+        {
             let stale_reuse_key = stale.reuse_key().map(str::to_owned);
             info!(
                 run_id = %run_id,
@@ -1177,7 +1193,7 @@ pub async fn try_reuse_from_pool(
                     run_id = %run_id,
                     reuse_key_fingerprint = %diagnostic_reuse_key_fingerprint(reuse_key),
                     reuse_key_kind = reuse_key_kind(reuse_key),
-                    workspace_cache_possible = claimed_workspace_cache_reuse_key,
+                    home_cache_possible = claimed_home_cache_reuse_key,
                     "no compatible idle sandbox found for reuse key"
                 ),
                 None => info!(run_id = %run_id, "no compatible blank sandbox found"),

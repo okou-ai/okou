@@ -1,3 +1,4 @@
+import { publicChatActor } from "./helpers/public-chat-actor";
 import { randomUUID } from "node:crypto";
 
 import {
@@ -20,8 +21,8 @@ import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
 import {
-  readRunAutonomyBudgetFixture,
   readWorkflowAutomationAutonomyFixture,
+  readRunAutonomyBudgetFixture,
   setRunAutonomyBudgetFixture,
   setWorkflowAutomationAutonomyBudgetFixture,
 } from "./helpers/runtime-state";
@@ -1357,48 +1358,60 @@ describe("okou workflow automations", () => {
 
   it("uses configured webhook URLs for agent run tokens", async () => {
     mockEnv("OKOU_WEB_URL", "https://api.okou.ai");
-    const { actor, agentId, workflowId } = await setupFixture("team");
-    const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        extraHeaders: { origin: "https://app.okou.ai" },
-        params: { workflowId },
-        body: { kind: "event", eventType: "webhook-received" },
-      }),
-      [201],
-    );
-    if (
-      created.body.kind !== "event" ||
-      created.body.eventType !== "webhook-received" ||
-      !created.body.webhookUrl ||
-      !created.body.webhookSecret
-    ) {
-      throw new Error("Expected a webhook automation with credentials");
-    }
-    const createdUrl = new URL(created.body.webhookUrl);
-    expect(createdUrl.hostname).toBe("api.okou.ai");
+    const owned = await publicChatActor(context, { tier: "team" });
+    const { actor, agentId } = owned;
+    await owned.run(async () => {
+      await runs.updateUserModelPreference(actor, "claude-fable-5-1");
+      const workflowId = await wf.createWorkflow(actor, {
+        agentId,
+        name: WORKFLOW_NAME,
+      });
+      const created = await accept(
+        automationsClient().create({
+          headers: authHeaders(),
+          extraHeaders: { origin: "https://app.okou.ai" },
+          params: { workflowId },
+          body: { kind: "event", eventType: "webhook-received" },
+        }),
+        [201],
+      );
+      if (
+        created.body.kind !== "event" ||
+        created.body.eventType !== "webhook-received" ||
+        !created.body.webhookUrl ||
+        !created.body.webhookSecret
+      ) {
+        throw new Error("Expected a webhook automation with credentials");
+      }
+      const createdUrl = new URL(created.body.webhookUrl);
+      expect(createdUrl.hostname).toBe("api.okou.ai");
 
-    runs.configureRunnerGroup();
-    const sourceRun = await runs.createThreadRun(actor, {
-      agentId,
-      prompt: "read configured webhook credentials",
+      const sourceRun = await owned.sendChatRun(actor, {
+        agentId,
+        prompt: "read configured webhook credentials",
+      });
+
+      const { claim } = await owned.claimChatRun(
+        owned.runnerGroup,
+        sourceRun.runId,
+      );
+      const token = claim.platformEnvironment.OKOU_TOKEN;
+      if (!token) {
+        throw new Error("Expected an authenticated agent token");
+      }
+      const revealed = await accept(
+        automationsClient().revealWebhookSecret({
+          headers: { authorization: `Bearer ${token}` },
+          params: { id: created.body.id },
+          body: undefined,
+        }),
+        [200],
+      );
+      const revealedUrl = new URL(revealed.body.webhookUrl);
+      expect(revealedUrl.hostname).toBe("api.okou.ai");
+      expect(revealedUrl.pathname).toBe(createdUrl.pathname);
+      expect(revealed.body.webhookSecret).toBe(created.body.webhookSecret);
     });
-
-    const token = runs.okouTokenForRunWithCapabilities(actor, sourceRun.runId, [
-      "agent:write",
-    ]);
-    const revealed = await accept(
-      automationsClient().revealWebhookSecret({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: created.body.id },
-        body: undefined,
-      }),
-      [200],
-    );
-    const revealedUrl = new URL(revealed.body.webhookUrl);
-    expect(revealedUrl.hostname).toBe("api.okou.ai");
-    expect(revealedUrl.pathname).toBe(createdUrl.pathname);
-    expect(revealed.body.webhookSecret).toBe(created.body.webhookSecret);
   });
 
   it("rejects webhook re-enable for Pro", async () => {

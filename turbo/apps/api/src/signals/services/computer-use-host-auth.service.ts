@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { and, eq, isNull, getTableColumns, sql } from "drizzle-orm";
 import { computerUseHosts } from "@okouai/db/schema/computer-use-host";
 
@@ -14,42 +13,29 @@ import {
   type ClerkClient,
 } from "../external/clerk";
 
-function hashSecret(value: string): string {
-  return createHash("sha256").update(value).digest("hex");
-}
-
 export interface ComputerUseSessionIdentity {
   readonly userId: string;
   readonly orgId: string;
   readonly sessionId: string;
 }
 
-export type ComputerUseHostAuthority =
-  | { readonly hostToken: string }
-  | (ComputerUseSessionIdentity & {
-      readonly hostId: string;
-      readonly connectionGeneration: number;
-    });
+export type ComputerUseHostAuthority = ComputerUseSessionIdentity & {
+  readonly hostId: string;
+  readonly connectionGeneration: number;
+};
 
 export function computerUseHostAuthorityCondition(
   authority: ComputerUseHostAuthority,
 ) {
   return and(
     isNull(computerUseHosts.revokedAt),
-    "hostToken" in authority
-      ? eq(computerUseHosts.tokenHash, hashSecret(authority.hostToken))
-      : and(
-          eq(computerUseHosts.id, authority.hostId),
-          eq(computerUseHosts.userId, authority.userId),
-          eq(computerUseHosts.orgId, authority.orgId),
-          eq(computerUseHosts.sessionId, authority.sessionId),
-          eq(
-            computerUseHosts.connectionGeneration,
-            authority.connectionGeneration,
-          ),
-          isNull(computerUseHosts.tokenHash),
-          eq(computerUseHosts.status, "online"),
-        ),
+    eq(computerUseHosts.id, authority.hostId),
+    eq(computerUseHosts.userId, authority.userId),
+    eq(computerUseHosts.orgId, authority.orgId),
+    eq(computerUseHosts.sessionId, authority.sessionId),
+    eq(computerUseHosts.connectionGeneration, authority.connectionGeneration),
+    isNull(computerUseHosts.tokenHash),
+    eq(computerUseHosts.status, "online"),
   );
 }
 
@@ -112,8 +98,8 @@ export async function resolveComputerUseHost(
     .where(condition)
     .limit(1);
   signal.throwIfAborted();
-  if (!host || "hostToken" in authority) {
-    return host ?? null;
+  if (!host) {
+    return null;
   }
   const now = nowDate();
   if (

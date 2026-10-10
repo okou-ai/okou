@@ -35,6 +35,7 @@ import {
   readBuiltinDcrBoundClient$,
   readBuiltinDcrRegistrationByIssuer$,
   retireBuiltinDcrRegistration$,
+  retireBuiltinDcrRegistrationSql,
   type BuiltinConnectorAutomaticContractOwner,
 } from "./builtin-connector-automatic-dcr.service";
 import type { ResolvedConnectorActionMethod } from "./connector-action-resolver.service";
@@ -872,7 +873,6 @@ type CredentialResult =
     };
 
 interface ResolveAutomaticCredentialArgs {
-  readonly db: Db;
   readonly orgId: string;
   readonly userId: string;
   readonly connectorId: string;
@@ -900,118 +900,124 @@ async function markReconnect(
  * Provider refresh runs outside any transaction; one short transaction then
  * writes the refreshed tokens and account metadata.
  */
-async function refreshAutomatic(
-  context: {
-    readonly args: ResolveAutomaticCredentialArgs;
-    readonly contract: BuiltinAutomaticContract;
-    readonly binding: NonNullable<
-      Awaited<ReturnType<typeof readBuiltinConnectorAutomaticOAuthBinding>>
-    >;
-    readonly account: typeof connectors.$inferSelect;
-    readonly encryptedRefreshToken: string;
-  },
-  signal: AbortSignal,
-): Promise<CredentialResult> {
-  const { args, contract, binding, account, encryptedRefreshToken } = context;
-  const store = dcrStore(args.db, args.orgId, contract);
-  const refreshToken = await decryptStoredSecretValue(encryptedRefreshToken);
-  signal.throwIfAborted();
-  const metadata = configuredOkouMcpOAuthClientMetadata();
-  const redirectUri = metadata.redirect_uris.find((uri) => {
-    return new URL(uri).pathname === "/api/connectors/automatic/callback";
-  });
-  if (!redirectUri) {
-    throw new Error("Builtin Automatic OAuth redirect URI is unavailable");
-  }
-  const refreshed = await settle(
-    refreshMcpAutomaticOAuthToken(
-      {
-        dcrStore: store,
-        binding,
-        endpoint: contract.endpoint,
-        redirectUri,
-        cimdClientId: metadata.client_id,
-        refreshToken,
-      },
-      signal,
-    ),
-    signal,
-  );
-  if (!refreshed.ok) {
-    if (
-      isAutomaticOAuthInvalidClient(refreshed.error) &&
-      binding.registrationMethod === "dcr"
-    ) {
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0079; new non-billing transactions are prohibited.
-      await args.db.transaction(async (tx) => {
-        await dcrStore(tx, args.orgId, contract).retire(
-          binding.dcrRegistration.id,
-        );
-      });
-      return { kind: "unavailable", reason: "reconnect" };
-    }
-    if (
-      isAutomaticOAuthInvalidClient(refreshed.error) ||
-      isAutomaticOAuthInvalidGrant(refreshed.error) ||
-      (refreshed.error instanceof McpAutomaticOAuthError &&
-        refreshed.error.kind === "binding-drift")
-    ) {
-      return await markReconnect(args.db, account.id);
-    }
-    if (
-      refreshed.error instanceof McpAutomaticOAuthError &&
-      refreshed.error.kind === "temporary"
-    ) {
-      return { kind: "unavailable", reason: "temporary" };
-    }
-    throw refreshed.error;
-  }
-  const identity = resolveRefreshedOAuthIdentity(
-    {
-      externalId: account.externalId,
-      externalUsername: account.externalUsername,
-      externalEmail: account.externalEmail,
+const refreshAutomatic = command(
+  async (
+    { set },
+    context: {
+      readonly args: ResolveAutomaticCredentialArgs;
+      readonly contract: BuiltinAutomaticContract;
+      readonly binding: NonNullable<
+        Awaited<ReturnType<typeof readBuiltinConnectorAutomaticOAuthBinding>>
+      >;
+      readonly account: typeof connectors.$inferSelect;
+      readonly encryptedRefreshToken: string;
     },
-    refreshed.value.userInfo,
-  );
-  const tokens = await encryptAutomaticTokens(
-    { contract, token: refreshed.value, fallbackRefreshToken: refreshToken },
-    signal,
-  );
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0080; new non-billing transactions are prohibited.
-  await args.db.transaction(async (tx) => {
-    await writeEncryptedTokens(tx, {
-      orgId: args.orgId,
-      userId: args.userId,
-      connectorId: account.id,
-      contract,
-      tokens,
+    signal: AbortSignal,
+  ): Promise<CredentialResult> => {
+    const { args, contract, binding, account, encryptedRefreshToken } = context;
+    const db = set(writeDb$);
+    const store = dcrStore(db, args.orgId, contract);
+    const refreshToken = await decryptStoredSecretValue(encryptedRefreshToken);
+    signal.throwIfAborted();
+    const metadata = configuredOkouMcpOAuthClientMetadata();
+    const redirectUri = metadata.redirect_uris.find((uri) => {
+      return new URL(uri).pathname === "/api/connectors/automatic/callback";
     });
-    await tx
-      .update(connectors)
-      .set({
-        tokenExpiresAt: refreshed.value.expiresAt,
-        oauthGrantedScopes:
-          refreshed.value.scopes === null
-            ? account.oauthGrantedScopes
-            : JSON.stringify(refreshed.value.scopes),
-        ...(identity.kind === "update"
-          ? {
-              externalId: identity.externalId,
-              externalUsername: identity.externalUsername,
-              externalEmail: identity.externalEmail,
-            }
-          : {}),
-        updatedAt: sql`clock_timestamp()`,
-      })
-      .where(eq(connectors.id, account.id));
-  });
-  return {
-    kind: "oauth",
-    accessToken: refreshed.value.accessToken,
-    tokenExpiresAt: refreshed.value.expiresAt,
-  };
-}
+    if (!redirectUri) {
+      throw new Error("Builtin Automatic OAuth redirect URI is unavailable");
+    }
+    const refreshed = await settle(
+      refreshMcpAutomaticOAuthToken(
+        {
+          dcrStore: store,
+          binding,
+          endpoint: contract.endpoint,
+          redirectUri,
+          cimdClientId: metadata.client_id,
+          refreshToken,
+        },
+        signal,
+      ),
+      signal,
+    );
+    if (!refreshed.ok) {
+      if (
+        isAutomaticOAuthInvalidClient(refreshed.error) &&
+        binding.registrationMethod === "dcr"
+      ) {
+        await db.execute(
+          retireBuiltinDcrRegistrationSql(
+            contractOwner(args.orgId, contract),
+            binding.dcrRegistration.id,
+          ),
+        );
+        signal.throwIfAborted();
+        return { kind: "unavailable", reason: "reconnect" };
+      }
+      if (
+        isAutomaticOAuthInvalidClient(refreshed.error) ||
+        isAutomaticOAuthInvalidGrant(refreshed.error) ||
+        (refreshed.error instanceof McpAutomaticOAuthError &&
+          refreshed.error.kind === "binding-drift")
+      ) {
+        return await markReconnect(db, account.id);
+      }
+      if (
+        refreshed.error instanceof McpAutomaticOAuthError &&
+        refreshed.error.kind === "temporary"
+      ) {
+        return { kind: "unavailable", reason: "temporary" };
+      }
+      throw refreshed.error;
+    }
+    const identity = resolveRefreshedOAuthIdentity(
+      {
+        externalId: account.externalId,
+        externalUsername: account.externalUsername,
+        externalEmail: account.externalEmail,
+      },
+      refreshed.value.userInfo,
+    );
+    const tokens = await encryptAutomaticTokens(
+      { contract, token: refreshed.value, fallbackRefreshToken: refreshToken },
+      signal,
+    );
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0080; new non-billing transactions are prohibited.
+    await db.transaction(async (tx) => {
+      await writeEncryptedTokens(tx, {
+        orgId: args.orgId,
+        userId: args.userId,
+        connectorId: account.id,
+        contract,
+        tokens,
+      });
+      await tx
+        .update(connectors)
+        .set({
+          tokenExpiresAt: refreshed.value.expiresAt,
+          oauthGrantedScopes:
+            refreshed.value.scopes === null
+              ? account.oauthGrantedScopes
+              : JSON.stringify(refreshed.value.scopes),
+          ...(identity.kind === "update"
+            ? {
+                externalId: identity.externalId,
+                externalUsername: identity.externalUsername,
+                externalEmail: identity.externalEmail,
+              }
+            : {}),
+          updatedAt: sql`clock_timestamp()`,
+        })
+        .where(eq(connectors.id, account.id));
+    });
+    signal.throwIfAborted();
+    return {
+      kind: "oauth",
+      accessToken: refreshed.value.accessToken,
+      tokenExpiresAt: refreshed.value.expiresAt,
+    };
+  },
+);
 
 function accessTokenRemainsValid(
   expiresAt: Date | null,
@@ -1024,7 +1030,7 @@ function accessTokenRemainsValid(
 }
 
 async function acceptedCredentialContract(
-  args: ResolveAutomaticCredentialArgs,
+  args: ResolveAutomaticCredentialArgs & { readonly db: Db },
   signal: AbortSignal,
 ): Promise<{
   readonly contract: BuiltinAutomaticContract;
@@ -1043,102 +1049,111 @@ async function acceptedCredentialContract(
   return { contract, accessName };
 }
 
-export async function resolveBuiltinConnectorAutomaticMcpCredential(
-  args: ResolveAutomaticCredentialArgs,
-  signal: AbortSignal,
-): Promise<CredentialResult> {
-  const { db } = args;
-  const [account] = await db
-    .select()
-    .from(connectors)
-    .where(
-      and(
-        eq(connectors.id, args.connectorId),
-        eq(connectors.orgId, args.orgId),
-        eq(connectors.userId, args.userId),
-        eq(connectors.connectorSlug, args.connectorSlug),
-        eq(connectors.authMethod, args.authMethodId),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  if (!account) {
-    return { kind: "unavailable", reason: "reconnect" };
-  }
-  // A public MCP has no credential contract to validate or refresh.
-  if (account.automaticAuthType === "none") {
-    return { kind: "none" };
-  }
-  const accepted = await acceptedCredentialContract(args, signal);
-  if (!accepted) {
-    return { kind: "unavailable", reason: "stale-contract" };
-  }
-  const { contract, accessName } = accepted;
-  if (account.automaticAuthType !== "oauth" || account.needsReconnect) {
-    return { kind: "unavailable", reason: "reconnect" };
-  }
-  const binding = await readBuiltinConnectorAutomaticOAuthBinding(
-    db,
-    account.id,
-  );
-  if (!binding) {
-    return await markReconnect(db, account.id);
-  }
-  if (
-    binding.registrationMethod === "dcr" &&
-    binding.dcrRegistration.expiresAt !== null &&
-    binding.dcrRegistration.expiresAt <= nowDate()
-  ) {
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0081; new non-billing transactions are prohibited.
-    await db.transaction(async (tx) => {
-      await dcrStore(tx, args.orgId, contract).retire(
-        binding.dcrRegistration.id,
-      );
-    });
-    return { kind: "unavailable", reason: "reconnect" };
-  }
-  const tokenRows = await db
-    .select({ name: secrets.name, encryptedValue: secrets.encryptedValue })
-    .from(secrets)
-    .where(
-      and(
-        eq(secrets.connectorId, account.id),
-        eq(secrets.orgId, args.orgId),
-        eq(secrets.userId, args.userId),
-      ),
+export const resolveBuiltinConnectorAutomaticMcpCredential = command(
+  async (
+    { set },
+    args: ResolveAutomaticCredentialArgs,
+    signal: AbortSignal,
+  ): Promise<CredentialResult> => {
+    const db = set(writeDb$);
+    const [account] = await db
+      .select()
+      .from(connectors)
+      .where(
+        and(
+          eq(connectors.id, args.connectorId),
+          eq(connectors.orgId, args.orgId),
+          eq(connectors.userId, args.userId),
+          eq(connectors.connectorSlug, args.connectorSlug),
+          eq(connectors.authMethod, args.authMethodId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!account) {
+      return { kind: "unavailable", reason: "reconnect" };
+    }
+    // A public MCP has no credential contract to validate or refresh.
+    if (account.automaticAuthType === "none") {
+      return { kind: "none" };
+    }
+    const accepted = await acceptedCredentialContract({ ...args, db }, signal);
+    if (!accepted) {
+      return { kind: "unavailable", reason: "stale-contract" };
+    }
+    const { contract, accessName } = accepted;
+    if (account.automaticAuthType !== "oauth" || account.needsReconnect) {
+      return { kind: "unavailable", reason: "reconnect" };
+    }
+    const binding = await readBuiltinConnectorAutomaticOAuthBinding(
+      db,
+      account.id,
     );
-  signal.throwIfAborted();
-  const access = tokenRows.find((token) => {
-    return token.name === accessName;
-  });
-  const refresh = tokenRows.find((token) => {
-    return token.name === tokenStorageName(contract, "refreshToken");
-  });
-  if (!access) {
-    return await markReconnect(db, account.id);
-  }
-  // Providers may omit refresh tokens: use a still-valid access token until expiry.
-  if (
-    !args.forceRefresh &&
-    accessTokenRemainsValid(account.tokenExpiresAt, refresh ? 60_000 : 0)
-  ) {
-    return {
-      kind: "oauth",
-      accessToken: await decryptStoredSecretValue(access.encryptedValue),
-      tokenExpiresAt: account.tokenExpiresAt,
-    };
-  }
-  if (!refresh) {
-    return await markReconnect(db, account.id);
-  }
-  return await refreshAutomatic(
-    {
-      args,
-      contract,
-      binding,
-      account,
-      encryptedRefreshToken: refresh.encryptedValue,
-    },
-    signal,
-  );
-}
+    signal.throwIfAborted();
+    if (!binding) {
+      return await markReconnect(db, account.id);
+    }
+    if (
+      binding.registrationMethod === "dcr" &&
+      binding.dcrRegistration.expiresAt !== null &&
+      binding.dcrRegistration.expiresAt <= nowDate()
+    ) {
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0081; new non-billing transactions are prohibited.
+      await db.transaction(async (tx) => {
+        await tx.execute(
+          retireBuiltinDcrRegistrationSql(
+            contractOwner(args.orgId, contract),
+            binding.dcrRegistration.id,
+          ),
+        );
+      });
+      signal.throwIfAborted();
+      return { kind: "unavailable", reason: "reconnect" };
+    }
+    const tokenRows = await db
+      .select({ name: secrets.name, encryptedValue: secrets.encryptedValue })
+      .from(secrets)
+      .where(
+        and(
+          eq(secrets.connectorId, account.id),
+          eq(secrets.orgId, args.orgId),
+          eq(secrets.userId, args.userId),
+        ),
+      );
+    signal.throwIfAborted();
+    const access = tokenRows.find((token) => {
+      return token.name === accessName;
+    });
+    const refresh = tokenRows.find((token) => {
+      return token.name === tokenStorageName(contract, "refreshToken");
+    });
+    if (!access) {
+      return await markReconnect(db, account.id);
+    }
+    // Providers may omit refresh tokens: use a still-valid access token until expiry.
+    if (
+      !args.forceRefresh &&
+      accessTokenRemainsValid(account.tokenExpiresAt, refresh ? 60_000 : 0)
+    ) {
+      return {
+        kind: "oauth",
+        accessToken: await decryptStoredSecretValue(access.encryptedValue),
+        tokenExpiresAt: account.tokenExpiresAt,
+      };
+    }
+    if (!refresh) {
+      return await markReconnect(db, account.id);
+    }
+    return await set(
+      refreshAutomatic,
+      {
+        args,
+        contract,
+        binding,
+        account,
+        encryptedRefreshToken: refresh.encryptedValue,
+      },
+      signal,
+    );
+  },
+);

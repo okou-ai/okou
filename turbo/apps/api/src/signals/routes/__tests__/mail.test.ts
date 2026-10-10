@@ -1,3 +1,4 @@
+import { publicChatActor } from "./helpers/public-chat-actor";
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 
@@ -447,7 +448,10 @@ async function readThreadSelections(
 }
 
 async function linkDraft(
-  fixture: Awaited<ReturnType<typeof seedGmailMailCardFixture>>,
+  fixture: {
+    readonly agent: { readonly agentId: string };
+    readonly thread: { readonly id: string };
+  },
   headers = authHeaders(),
 ) {
   return await accept(
@@ -906,110 +910,153 @@ describe("POST /api/mail/drafts/link", () => {
 
   it("links without injecting a duplicate card and sends without rebuilding MIME", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
-    const fixture = await seedGmailMailCardFixture();
-    const gmail = mockGmailDraftApi();
-
-    const okouToken = runs.okouTokenForRunWithCapabilities(
-      fixture.actor,
-      randomUUID(),
-      ["connector:read"],
-    );
-    const linked = await linkDraft(fixture, {
-      authorization: `Bearer ${okouToken}`,
-    });
-    expect(linked.body.mailDraftUrl).toBe(
-      `https://app.okou.ai/mail/drafts/${linked.body.mailDraftId}`,
-    );
-
-    const duplicateLink = await linkDraft(fixture);
-    expect(duplicateLink.body).toStrictEqual({
-      mailDraftId: linked.body.mailDraftId,
-      mailDraftUrl: `https://app.okou.ai/mail/drafts/${linked.body.mailDraftId}`,
-    });
-
-    const loaded = await accept(
-      client().getDraft({
-        headers: authHeaders(),
-        params: { mailDraftId: linked.body.mailDraftId },
-      }),
-      [200],
-    );
-    expect(loaded.body.mailDraftUrl).toBe(
-      `https://app.okou.ai/mail/drafts/${linked.body.mailDraftId}`,
-    );
-    expect(loaded.body.mailDraft).toMatchObject({
-      version: 3,
-      provider: "gmail",
-      from: "sender@example.com",
-      fromName: "Sender",
-      to: ["recipient@example.com"],
-      cc: ["copy@example.com"],
-      subject: "Attachment review",
-      body: "Mail body",
-      bodyHtml: GMAIL_HTML_BODY,
-      inlineImages: [
-        {
-          contentId: "email-test-illustration",
-          partId: "2",
-          alt: "Cheerful envelope illustration",
-        },
-      ],
-      status: "draft",
-      attachments: [
-        {
-          filename: "report.pdf",
-          contentType: "application/pdf",
-          size: 248_192,
-          partId: "1",
-        },
+    const owned = await publicChatActor(context, {
+      optionalEnvironmentNames: [
+        "GOOGLE_OAUTH_CLIENT_ID",
+        "GOOGLE_OAUTH_CLIENT_SECRET",
       ],
     });
+    await owned.run(async () => {
+      mockGmailConnectorOAuth({
+        accessToken: "gmail-mail-card-token",
+        email: "sender@example.com",
+      });
+      const gmail = mockGmailDraftApi();
+      const start = await connectors.startOauth(owned.actor, "gmail", "oauth");
+      const state = new URL(start.authorizationUrl).searchParams.get("state");
+      if (!state) {
+        throw new Error("Expected Gmail OAuth state");
+      }
+      await connectors.completeOauthCallback("gmail", {
+        code: "okou-mail-code",
+        state,
+      });
+      await runs.enableAgentConnectors(owned.actor, owned.agentId, ["gmail"]);
+      const fixture = {
+        actor: owned.actor,
+        agent: { agentId: owned.agentId },
+        thread: await chat.createThread(owned.actor, {
+          agentId: owned.agentId,
+          title: "Mail review",
+        }),
+        gmail: await connectors.readConnectorBySlug(owned.actor, "gmail"),
+      };
+      const source = await owned.sendChatRun(owned.actor, {
+        agentId: owned.agentId,
+        prompt: "Link the existing Gmail draft",
+      });
+      const { claim } = await owned.claimChatRun(
+        owned.runnerGroup,
+        source.runId,
+      );
+      const okouToken = claim.platformEnvironment.OKOU_TOKEN;
+      if (!okouToken) {
+        throw new Error("Expected the Runner-issued connector token");
+      }
+      const linked = await linkDraft(fixture, {
+        authorization: `Bearer ${okouToken}`,
+      });
+      expect(linked.body.mailDraftUrl).toBe(
+        `https://app.okou.ai/mail/drafts/${linked.body.mailDraftId}`,
+      );
 
-    const attachment = await accept(
-      client().getAttachment({
-        headers: authHeaders(),
-        params: {
-          mailDraftId: linked.body.mailDraftId,
-          partId: "2",
-        },
-      }),
-      [200],
-    );
-    expect(attachment.body).toBeInstanceOf(Blob);
-    expect(
-      Buffer.from(await attachment.body.arrayBuffer()).equals(
-        GMAIL_IMAGE_BYTES,
-      ),
-    ).toBeTruthy();
-    expect(attachment.headers.get("content-type")).toBe("image/png");
-    expect(attachment.headers.get("content-disposition")).toBe(
-      "attachment; filename*=UTF-8''email-test-illustration.png",
-    );
+      const duplicateLink = await linkDraft(fixture);
+      expect(duplicateLink.body).toStrictEqual({
+        mailDraftId: linked.body.mailDraftId,
+        mailDraftUrl: `https://app.okou.ai/mail/drafts/${linked.body.mailDraftId}`,
+      });
 
-    const sent = await accept(
-      client().sendDraft({
-        headers: authHeaders(),
-        params: { mailDraftId: linked.body.mailDraftId },
-      }),
-      [200],
-    );
-    expect(sent.body.mailDraft.status).toBe("sent");
-    expect(sent.body.mailDraft.sentGmailMessageId).toBe(GMAIL_SENT_MESSAGE_ID);
-    expect(gmail.sentBody).toStrictEqual({ id: GMAIL_DRAFT_ID });
-    expect(gmail.sendCount).toBe(1);
+      const loaded = await accept(
+        client().getDraft({
+          headers: authHeaders(),
+          params: { mailDraftId: linked.body.mailDraftId },
+        }),
+        [200],
+      );
+      expect(loaded.body.mailDraftUrl).toBe(
+        `https://app.okou.ai/mail/drafts/${linked.body.mailDraftId}`,
+      );
+      expect(loaded.body.mailDraft).toMatchObject({
+        version: 3,
+        provider: "gmail",
+        from: "sender@example.com",
+        fromName: "Sender",
+        to: ["recipient@example.com"],
+        cc: ["copy@example.com"],
+        subject: "Attachment review",
+        body: "Mail body",
+        bodyHtml: GMAIL_HTML_BODY,
+        inlineImages: [
+          {
+            contentId: "email-test-illustration",
+            partId: "2",
+            alt: "Cheerful envelope illustration",
+          },
+        ],
+        status: "draft",
+        attachments: [
+          {
+            filename: "report.pdf",
+            contentType: "application/pdf",
+            size: 248_192,
+            partId: "1",
+          },
+        ],
+      });
 
-    const duplicateSend = await accept(
-      client().sendDraft({
-        headers: authHeaders(),
-        params: { mailDraftId: linked.body.mailDraftId },
-      }),
-      [409],
-    );
-    expect(duplicateSend.body.error.message).toContain("can no longer be sent");
-    expect(gmail.sendCount).toBe(1);
+      const attachment = await accept(
+        client().getAttachment({
+          headers: authHeaders(),
+          params: {
+            mailDraftId: linked.body.mailDraftId,
+            partId: "2",
+          },
+        }),
+        [200],
+      );
+      expect(attachment.body).toBeInstanceOf(Blob);
+      expect(
+        Buffer.from(await attachment.body.arrayBuffer()).equals(
+          GMAIL_IMAGE_BYTES,
+        ),
+      ).toBeTruthy();
+      expect(attachment.headers.get("content-type")).toBe("image/png");
+      expect(attachment.headers.get("content-disposition")).toBe(
+        "attachment; filename*=UTF-8''email-test-illustration.png",
+      );
 
-    const page = await chat.listThreadEvents(fixture.actor, fixture.thread.id);
-    expect(page.events).toHaveLength(0);
+      const sent = await accept(
+        client().sendDraft({
+          headers: authHeaders(),
+          params: { mailDraftId: linked.body.mailDraftId },
+        }),
+        [200],
+      );
+      expect(sent.body.mailDraft.status).toBe("sent");
+      expect(sent.body.mailDraft.sentGmailMessageId).toBe(
+        GMAIL_SENT_MESSAGE_ID,
+      );
+      expect(gmail.sentBody).toStrictEqual({ id: GMAIL_DRAFT_ID });
+      expect(gmail.sendCount).toBe(1);
+
+      const duplicateSend = await accept(
+        client().sendDraft({
+          headers: authHeaders(),
+          params: { mailDraftId: linked.body.mailDraftId },
+        }),
+        [409],
+      );
+      expect(duplicateSend.body.error.message).toContain(
+        "can no longer be sent",
+      );
+      expect(gmail.sendCount).toBe(1);
+
+      const page = await chat.listThreadEvents(
+        fixture.actor,
+        fixture.thread.id,
+      );
+      expect(page.events).toHaveLength(0);
+    });
   });
 
   it.each([false, true])(

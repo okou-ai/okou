@@ -1085,6 +1085,9 @@ describe("MCP canonical message reads", () => {
 describe("MCP original input observations", () => {
   it("rejects an oversized relevant input instead of returning partial queued state", async () => {
     const f = await messageFixture();
+    onTestFinished(async () => {
+      await f.bdd.deleteAgent(f.actor, f.agent.agentId);
+    });
     const sent = await f.send("x".repeat(33 * 1024 * 1024));
     expect(
       structuredToolError(

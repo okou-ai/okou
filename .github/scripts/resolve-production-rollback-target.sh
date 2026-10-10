@@ -50,6 +50,9 @@ readonly PI_MEMORY_LUNA_ROUTING_COMMIT=77357abdb29ce96b2caf9ee679299602757844dc
 # API/Runner/CLI readers no longer execute unversioned contexts, so a rollback
 # must not restore the generation 1 writer or its disabled-switch path.
 readonly PI_OPENROUTER_VERSIONED_WRITER_COMMIT=a635ec3afa20cdb5df9c8125afe6cec24ef53e16
+# #38431 removed chat_threads.provenance from runtime and root-schema SQL.
+# The later physical contraction cannot serve earlier implicit column lists.
+readonly CHAT_THREAD_PROVENANCE_REMOVAL_COMMIT=9fa8da0d3d25e75e0dcfdd3292e1e2bbe6fe262f
 readonly PUBLIC_BRAND_RETIREMENT_PATH=turbo/packages/db/src/migrations/1255_retire_public_brand.sql
 readonly AGENT_RUN_HEARTBEAT_DROP_PATH=turbo/packages/db/src/migrations/1259_drop_agent_runs_last_heartbeat_at.sql
 readonly PERSONAL_SUBSCRIPTION_ACCOUNT_ONLY_PATH=turbo/packages/db/src/migrations/1260_personal_subscription_account_only.sql
@@ -59,6 +62,7 @@ readonly CHAT_EVENT_SCHEMA_HEADER_RETIRED_PATH=.github/rollback-floors/chat-even
 readonly CHAT_EVENT_V8_PATH=.github/rollback-floors/chat-event-v8
 readonly CHECKPOINT_WRITER_PREPARATION_PATH=turbo/apps/api/src/signals/services/pi-memory-phase2-input-revision.ts
 readonly BROWSER_SESSION_MUTATIONS_PATH=.github/rollback-floors/browser-session-mutations
+readonly COMPUTER_USE_COMMAND_NOTIFICATIONS_PATH=.github/rollback-floors/computer-use-command-notifications
 readonly RETIRED_PREFERENCE_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1274_drop_retired_voice_reasoning_collection_columns.sql
 readonly RETIRED_INTEGRATION_AGENT_TABLES_DROP_PATH=turbo/packages/db/src/migrations/1282_drop_retired_integration_agent_tables.sql
 readonly VIDEO_MODEL_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1283_drop_retired_video_model_columns.sql
@@ -111,6 +115,10 @@ fi
 release_tags=$(git tag --points-at "$TARGET_COMMIT" | grep -E -- '-v[0-9]' || true)
 if [ -z "$release_tags" ]; then
   fail "Target commit has no release tags: ${TARGET_COMMIT}"
+fi
+
+if ! git merge-base --is-ancestor "$CHAT_THREAD_PROVENANCE_REMOVAL_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the chat thread provenance runtime removal: ${CHAT_THREAD_PROVENANCE_REMOVAL_COMMIT}."
 fi
 
 # The draft contraction requires every draft row to carry its owner and a
@@ -420,6 +428,17 @@ if [[ ! "$browser_session_mutations_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$browser_session_mutations_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Browser session mutation contract: ${browser_session_mutations_commit}."
+fi
+
+# Installed Native Desktop versions use Ably wakeups and heartbeat hints rather
+# than periodic claims. Earlier APIs cannot authorize or recover that protocol.
+computer_use_command_notifications_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$COMPUTER_USE_COMMAND_NOTIFICATIONS_PATH" | sed -n '1p')
+if [[ ! "$computer_use_command_notifications_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Computer Use command notification contract on main."
+fi
+if ! git merge-base --is-ancestor "$computer_use_command_notifications_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Computer Use command notification contract: ${computer_use_command_notifications_commit}."
 fi
 
 # Generic checkpoint contraction requires the already deployed explicit-column

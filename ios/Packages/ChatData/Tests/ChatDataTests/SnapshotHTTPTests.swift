@@ -17,7 +17,9 @@ final class SnapshotHTTPTests: XCTestCase {
     configuration.timeoutIntervalForResource = 10
     let session = URLSession(configuration: configuration)
     defer { session.invalidateAndCancel() }
-    let client = APIClient(baseURL: baseURL, session: session) { "local-gzip-test-session" }
+    let client = APIClient(baseURL: baseURL, clientVersion: "4.5.6", session: session) {
+      "local-gzip-test-session"
+    }
 
     let threads = try await ChatSync(client: client).threads()
 
@@ -32,14 +34,20 @@ final class SnapshotHTTPTests: XCTestCase {
     let archiveRequest = try XCTUnwrap(
       server.requests.first { $0.path == "/thread-snapshot.json.gz" })
     XCTAssertNil(archiveRequest.authorization)
+    XCTAssertEqual(archiveRequest.clientHeaders, [:])
     XCTAssertTrue(archiveRequest.acceptEncoding?.contains("gzip") == true)
     XCTAssertEqual(
       server.requests.first { $0.path == "/api/chat-threads/events" }?.query,
       "sinceSeqId=2")
-    XCTAssertTrue(
-      server.requests.filter { $0.path.hasPrefix("/api/") }.allSatisfy {
-        $0.authorization == "Bearer local-gzip-test-session"
-      })
+    let apiRequests = server.requests.filter { $0.path.hasPrefix("/api/") }
+    XCTAssertTrue(apiRequests.allSatisfy { $0.authorization == "Bearer local-gzip-test-session" })
+    let sessionID = try XCTUnwrap(apiRequests.first?.clientHeaders["x-client-session-id"])
+    for request in apiRequests {
+      XCTAssertEqual(request.clientHeaders["x-client-type"], "iOS")
+      XCTAssertEqual(request.clientHeaders["x-client-version"], "4.5.6")
+      XCTAssertEqual(request.clientHeaders["x-client-session-id"], sessionID)
+      XCTAssertNotNil(request.clientHeaders["x-client-request-id"])
+    }
   }
 
   func testRealHTTPGzipSnapshotDecodesThroughChatService() async throws {
@@ -51,7 +59,9 @@ final class SnapshotHTTPTests: XCTestCase {
     configuration.timeoutIntervalForResource = 10
     let session = URLSession(configuration: configuration)
     defer { session.invalidateAndCancel() }
-    let client = APIClient(baseURL: baseURL, session: session) { "local-gzip-test-session" }
+    let client = APIClient(baseURL: baseURL, clientVersion: "4.5.6", session: session) {
+      "local-gzip-test-session"
+    }
 
     let history = try await ChatSync(client: client).history(
       threadID: SnapshotLoopbackServer.threadID)
@@ -62,6 +72,7 @@ final class SnapshotHTTPTests: XCTestCase {
     XCTAssertEqual(history.persistedEventIDs.count, 2)
     let snapshotRequest = try XCTUnwrap(server.requests.first { $0.path == "/snapshot.ndjson" })
     XCTAssertNil(snapshotRequest.authorization)
+    XCTAssertEqual(snapshotRequest.clientHeaders, [:])
     XCTAssertTrue(snapshotRequest.acceptEncoding?.contains("gzip") == true)
     XCTAssertTrue(
       server.requests.filter { $0.path.hasPrefix("/api/") }.allSatisfy {
@@ -91,6 +102,7 @@ private final class SnapshotLoopbackServer: Sendable {
     let query: String?
     let authorization: String?
     let acceptEncoding: String?
+    let clientHeaders: [String: String]
   }
 
   private let listener: NWListener
@@ -206,7 +218,8 @@ private final class SnapshotLoopbackServer: Sendable {
         Request(
           path: requestURL.path, query: requestURL.query,
           authorization: headers["authorization"],
-          acceptEncoding: headers["accept-encoding"]))
+          acceptEncoding: headers["accept-encoding"],
+          clientHeaders: headers.filter { $0.key.hasPrefix("x-client-") }))
     }
     let body: Data
     let contentHeaders: String

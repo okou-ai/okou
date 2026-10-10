@@ -5,7 +5,6 @@ import {
   pgTable,
   unique,
   uniqueIndex,
-  varchar,
 } from "drizzle-orm/pg-core";
 import { chatThreadColumns } from "../columns/chat-thread";
 
@@ -16,12 +15,7 @@ import { chatThreadColumns } from "../columns/chat-thread";
  */
 export const chatThreads = pgTable(
   "chat_threads",
-  {
-    ...chatThreadColumns(),
-    // Physical-only until the runtime projection is deployed and outgoing APIs
-    // and incompatible rollback artifacts have drained. Drop in a later release.
-    provenance: varchar("provenance", { length: 32 }),
-  },
+  chatThreadColumns(),
   (table) => {
     return [
       unique("uq_chat_threads_id_user").on(table.id, table.userId),

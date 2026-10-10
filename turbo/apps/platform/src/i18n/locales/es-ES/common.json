@@ -927,20 +927,6 @@
     }
   },
   "auth": {
-    "desktop": {
-      "phases": {
-        "completed": "Has iniciado sesión en Desktop. Puedes cerrar esta ventana.",
-        "connecting": "Conectando tu sesión de escritorio.",
-        "consumed": "Finalizando el inicio de sesión en Desktop. Mantén esta ventana abierta.",
-        "failed": "No se pudo completar el inicio de sesión. Empieza de nuevo desde Desktop o reinténtalo en este navegador.",
-        "no-workspaces": "Crea un espacio de trabajo o únete a uno en la aplicación web y vuelve a iniciar sesión desde Desktop.",
-        "pending": "Abre Desktop para continuar iniciando sesión.",
-        "selecting": "Elige un espacio de trabajo para este ordenador."
-      },
-      "reopen": "Abrir Desktop",
-      "retry": "Reintentar",
-      "title": "Iniciar sesión en Desktop"
-    },
     "documentTitles": {
       "signIn": "Iniciar sesión",
       "signUp": "Crear una cuenta"

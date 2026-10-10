@@ -249,7 +249,7 @@ impl MockCallObserver {
     }
 }
 
-fn cleanup_session_checkpoint_files() {
+fn cleanup_session_finalization_files() {
     let paths = shared_guest_paths();
     let _ = std::fs::remove_file(paths.session_id_file());
     let _ = std::fs::remove_file(paths.final_session_history_identity_file());
@@ -257,17 +257,17 @@ fn cleanup_session_checkpoint_files() {
     let _ = std::fs::remove_file(paths.failure_diagnostic_file());
 }
 
-pub(crate) struct SessionCheckpointFilesGuard;
+pub(crate) struct SessionFinalizationFilesGuard;
 
-impl SessionCheckpointFilesGuard {
+impl SessionFinalizationFilesGuard {
     pub(crate) fn new() -> Self {
-        cleanup_session_checkpoint_files();
+        cleanup_session_finalization_files();
         Self
     }
 }
 
-impl Drop for SessionCheckpointFilesGuard {
+impl Drop for SessionFinalizationFilesGuard {
     fn drop(&mut self) {
-        cleanup_session_checkpoint_files();
+        cleanup_session_finalization_files();
     }
 }

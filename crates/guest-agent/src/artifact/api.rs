@@ -102,7 +102,7 @@ pub(super) async fn prepare_snapshot(
         Ok(Some(value)) => value,
         Ok(None) => {
             return Err(PrepareSnapshotError {
-                error: AgentError::Checkpoint("Empty prepare response".into()),
+                error: AgentError::Finalization("Empty prepare response".into()),
                 telemetry_error: None,
             });
         }
@@ -118,7 +118,7 @@ pub(super) async fn prepare_snapshot(
         serde_json::from_value(response).map_err(|error| {
             let message = error.to_string();
             PrepareSnapshotError {
-                error: AgentError::Checkpoint(message.clone()),
+                error: AgentError::Finalization(message.clone()),
                 telemetry_error: Some(message),
             }
         })?;

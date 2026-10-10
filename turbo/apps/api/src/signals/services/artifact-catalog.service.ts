@@ -310,40 +310,116 @@ const readCatalogFileRow$ = command(
   },
 );
 
-/** SQL-only handoff, executed by the command that owns the file mutation. */
-export function queueArtifactCatalogFileSql(fileId: string): SQL {
-  return sql`
-    WITH eligible_file AS (
-      SELECT ${runUploadedFiles.id} AS file_id,
-             ${runUploadedFiles.orgId} AS org_id,
+/**
+ * SQL-only handoff, executed by the command that owns the file mutation.
+ * An optional mutation must return id, org_id, user_id, chat_thread_id, run_id
+ * and url. Its RETURNING rows supply the handoff's current file values because
+ * a sibling CTE cannot see the mutation by rereading the base table.
+ * `if-mutated` also gates ineligible cleanup on a returned row; the default
+ * retains cleanup for a missing file, including an empty mutation result.
+ */
+export function queueArtifactCatalogFileSql(
+  fileId: string,
+  fileMutation?: SQL,
+): SQL;
+export function queueArtifactCatalogFileSql(
+  fileId: string,
+  fileMutation: SQL,
+  handoff: "if-mutated",
+): SQL;
+export function queueArtifactCatalogFileSql(
+  fileId: string,
+  fileMutation?: SQL,
+  handoff?: "if-mutated",
+): SQL {
+  const { ctes, queue } = artifactCatalogFileHandoffSql(
+    fileId,
+    fileMutation,
+    handoff,
+  );
+  return sql`${ctes}${queue}`;
+}
+
+/** Skip all handoff work for an unchanged file and return the mutation outcome. */
+export function queueChangedArtifactCatalogFileSql(
+  fileId: string,
+  fileMutation: SQL,
+): SQL {
+  const { ctes, queue } = artifactCatalogFileHandoffSql(
+    fileId,
+    fileMutation,
+    "if-mutated",
+  );
+  return sql`${ctes}, queued_file AS (${queue})
+    SELECT EXISTS(SELECT 1 FROM mutated_file) AS changed
+  `;
+}
+
+function artifactCatalogFileHandoffSql(
+  fileId: string,
+  fileMutation?: SQL,
+  handoff?: "if-mutated",
+) {
+  const file = fileMutation
+    ? {
+        id: sql`mutated_file.id`,
+        orgId: sql`mutated_file.org_id`,
+        userId: sql`mutated_file.user_id`,
+        chatThreadId: sql`mutated_file.chat_thread_id`,
+        runId: sql`mutated_file.run_id`,
+        url: sql`mutated_file.url`,
+      }
+    : runUploadedFiles;
+  const source = fileMutation ? sql`mutated_file` : sql`${runUploadedFiles}`;
+  const mutationCte = fileMutation
+    ? sql`mutated_file AS (${fileMutation}),`
+    : sql.empty();
+  const identityCondition = fileMutation
+    ? eq(sql`mutated_file.id`, fileId)
+    : eq(runUploadedFiles.id, fileId);
+  const nonEmptyUrl = fileMutation
+    ? ne(sql`mutated_file.url`, "")
+    : ne(runUploadedFiles.url, "");
+  const nonEmptyOrg = fileMutation
+    ? ne(sql`mutated_file.org_id`, "")
+    : ne(runUploadedFiles.orgId, "");
+  const cleanupCondition =
+    handoff === "if-mutated"
+      ? sql`${exists(sql`(SELECT 1 FROM mutated_file)`)} AND ${notExists(sql`(SELECT 1 FROM eligible_file)`)}`
+      : notExists(sql`(SELECT 1 FROM eligible_file)`);
+  const ctes = sql`
+    WITH ${mutationCte}eligible_file AS (
+      SELECT ${file.id} AS file_id,
+             ${file.orgId} AS org_id,
              COALESCE((
                SELECT ${chatThreads.userId}
                FROM ${chatThreads}
                WHERE ${eq(
                  chatThreads.id,
                  sql`COALESCE(
-                 ${runUploadedFiles.chatThreadId},
+                 ${file.chatThreadId},
                  (SELECT ${chatEvents.chatThreadId}
                   FROM ${chatEvents}
-                  WHERE ${runOwnedChatEventForRunCondition({ runId: runUploadedFiles.runId })}
+                  WHERE ${runOwnedChatEventForRunCondition({ runId: file.runId })}
                   ORDER BY ${asc(chatEvents.seqId)} LIMIT 1)
                )`,
                )}
                LIMIT 1
-             ), ${runUploadedFiles.userId}) AS author_user_id
-      FROM ${runUploadedFiles}
-      WHERE ${eq(runUploadedFiles.id, fileId)}
-        AND ${isNotNull(runUploadedFiles.url)} AND ${ne(runUploadedFiles.url, "")}
-        AND ${isNotNull(runUploadedFiles.orgId)} AND ${ne(runUploadedFiles.orgId, "")}
+             ), ${file.userId}) AS author_user_id
+      FROM ${source}
+      WHERE ${identityCondition}
+        AND ${isNotNull(file.url)} AND ${nonEmptyUrl}
+        AND ${isNotNull(file.orgId)} AND ${nonEmptyOrg}
     ), removed_artifacts AS (
       DELETE FROM ${artifacts}
       WHERE ${eq(artifacts.projectionFileId, fileId)}
-        AND ${notExists(sql`(SELECT 1 FROM eligible_file)`)}
+        AND ${cleanupCondition}
     ), removed_pending AS (
       DELETE FROM ${artifactCatalogPendingFiles}
       WHERE ${eq(artifactCatalogPendingFiles.fileId, fileId)}
-        AND ${notExists(sql`(SELECT 1 FROM eligible_file)`)}
-    )
+        AND ${cleanupCondition}
+    )`;
+  const queue = sql`
     INSERT INTO ${artifactCatalogPendingFiles} (file_id, org_id, author_user_id, queued_at)
     SELECT file_id, org_id, author_user_id, clock_timestamp() FROM eligible_file
     ON CONFLICT (file_id) DO UPDATE SET
@@ -351,6 +427,7 @@ export function queueArtifactCatalogFileSql(fileId: string): SQL {
       author_user_id = excluded.author_user_id,
       queued_at = clock_timestamp()
   `;
+  return { ctes, queue };
 }
 
 interface UpsertArtifactArgs {

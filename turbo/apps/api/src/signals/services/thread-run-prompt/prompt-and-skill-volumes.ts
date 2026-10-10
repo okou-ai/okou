@@ -1,5 +1,4 @@
 import { computed, type Computed } from "ccstate";
-import { systemSkillStorageResolution$ } from "../../context/system-skill-storage-resolution";
 import type { AgentRunContextSignals } from "../agent-run-context.signals";
 import { createConnectorsContext } from "../connectors-context.service";
 import {
@@ -179,9 +178,7 @@ export function createPromptAndSkillVolumesSignals(
   );
   const connectors$ = createConnectorsContext(authorizedConnectors$);
   const runtimePrompt$ = createRuntimePrompt(selectedImageModel$);
-  const systemSkills$ = createSystemSkillsContext(
-    systemSkillStorageResolution$,
-  );
+  const systemSkills$ = createSystemSkillsContext();
 
   return computed(async (get): Promise<PromptAndSkillVolumes> => {
     const contextType = (await get(pickedEvent$))?.contextType;

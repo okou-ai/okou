@@ -15,6 +15,7 @@ use tracing::Level;
 use tracing_subscriber::prelude::*;
 use tracing_test_support::{CapturedEvent, CapturedEvents};
 
+mod backing_process;
 mod guest_connection_timing;
 mod guest_rpc;
 mod managed_exit;
@@ -165,7 +166,7 @@ fn test_sandbox_with_state(state: SandboxState) -> FirecrackerSandbox {
             id,
             resources: test_resources(),
             device_rate_limits: None,
-            workspace_drive: None,
+            home_drive: None,
         },
         factory_config: FirecrackerConfig {
             binary_path: base_dir.join("firecracker"),
@@ -696,7 +697,7 @@ fn test_rate_limits() -> FirecrackerDeviceRateLimits {
 }
 
 fn fresh_boot_config_json(
-    workspace_device_path: Option<String>,
+    home_device_path: Option<String>,
     rate_limits: Option<&FirecrackerDeviceRateLimits>,
 ) -> serde_json::Value {
     let invariant = InvariantConfig::new();
@@ -705,7 +706,7 @@ fn fresh_boot_config_json(
         &test_resources(),
         "/kernel".to_string(),
         "/dev/nbd0".to_string(),
-        workspace_device_path,
+        home_device_path,
         "/run/vsock.sock".to_string(),
         rate_limits,
     )
@@ -757,14 +758,14 @@ fn fresh_boot_config_includes_rate_limiters_when_enabled() {
 }
 
 #[test]
-fn fresh_boot_config_includes_workspace_drive_without_rate_limiters() {
-    let config = fresh_boot_config_json(Some("/workspaces/test/workspace.ext4".to_string()), None);
+fn fresh_boot_config_includes_home_drive_without_rate_limiters() {
+    let config = fresh_boot_config_json(Some("/workspaces/test/home.ext4".to_string()), None);
 
     assert_eq!(config["drives"][0]["drive_id"], "rootfs");
-    assert_eq!(config["drives"][1]["drive_id"], "workspace");
+    assert_eq!(config["drives"][1]["drive_id"], "home");
     assert_eq!(
         config["drives"][1]["path_on_host"],
-        "/workspaces/test/workspace.ext4"
+        "/workspaces/test/home.ext4"
     );
     assert_eq!(config["drives"][1]["is_root_device"], false);
     assert_eq!(config["drives"][1]["is_read_only"], false);
@@ -773,18 +774,18 @@ fn fresh_boot_config_includes_workspace_drive_without_rate_limiters() {
 }
 
 #[test]
-fn fresh_boot_config_includes_workspace_drive_and_splits_block_limiters() {
+fn fresh_boot_config_includes_home_drive_and_splits_block_limiters() {
     let rate_limits = test_rate_limits();
     let config = fresh_boot_config_json(
-        Some("/workspaces/test/workspace.ext4".to_string()),
+        Some("/workspaces/test/home.ext4".to_string()),
         Some(&rate_limits),
     );
 
     assert_eq!(config["drives"][0]["drive_id"], "rootfs");
-    assert_eq!(config["drives"][1]["drive_id"], "workspace");
+    assert_eq!(config["drives"][1]["drive_id"], "home");
     assert_eq!(
         config["drives"][1]["path_on_host"],
-        "/workspaces/test/workspace.ext4"
+        "/workspaces/test/home.ext4"
     );
     assert_eq!(config["drives"][1]["is_root_device"], false);
     assert_eq!(config["drives"][1]["is_read_only"], false);
@@ -2934,20 +2935,81 @@ async fn apply_storage_manifest_preserves_terminal_metadata() {
 }
 
 #[tokio::test]
-async fn mount_workspace_drive_maps_empty_request_and_terminal_metadata() {
+async fn attached_home_validation_reobserves_guest_and_rejects_failed_or_truncated_results() {
+    let sandbox = test_sandbox_with_state(SandboxState::Running);
+    let mut peer = attach_mock_shutdown_guest(&sandbox).await;
+    let guest = sandbox.guest.lock().await.as_ref().unwrap().clone();
+    for (termination, truncated, success) in [
+        (
+            guest_control_proto::ExecTermination::Exited { exit_code: 0 },
+            false,
+            true,
+        ),
+        (
+            guest_control_proto::ExecTermination::Exited { exit_code: 0 },
+            false,
+            true,
+        ),
+        (
+            guest_control_proto::ExecTermination::Exited { exit_code: 64 },
+            false,
+            false,
+        ),
+        (
+            guest_control_proto::ExecTermination::WaitFailed,
+            false,
+            false,
+        ),
+        (
+            guest_control_proto::ExecTermination::Exited { exit_code: 0 },
+            true,
+            false,
+        ),
+    ] {
+        let validation = validate_guest_home_drive(&guest);
+        let respond = async {
+            let request = read_vsock_message(&mut peer).await;
+            assert_eq!(request.msg_type, guest_control_proto::MSG_HOME_DRIVE_MOUNT);
+            guest_control_proto::decode_home_drive_mount_request(&request.payload).unwrap();
+            let payload = guest_control_proto::encode_home_drive_mount_result(
+                termination,
+                1,
+                guest_control_proto::ExecCapturedOutput::Captured {
+                    bytes: b"",
+                    truncated: false,
+                },
+                guest_control_proto::ExecCapturedOutput::Captured {
+                    bytes: b"mount diagnostic",
+                    truncated,
+                },
+                "fixed helper",
+            )
+            .unwrap();
+            let response = guest_control_proto::encode(
+                guest_control_proto::MSG_HOME_DRIVE_MOUNT_RESULT,
+                request.seq,
+                &payload,
+            )
+            .unwrap();
+            peer.write_all(&response).await.unwrap();
+        };
+        let (result, ()) = tokio::join!(validation, respond);
+        assert_eq!(result.is_ok(), success);
+    }
+}
+
+#[tokio::test]
+async fn mount_home_drive_maps_paired_layout_request_and_terminal_metadata() {
     let sandbox = test_sandbox_with_state(SandboxState::Running);
     let mut guest = attach_mock_shutdown_guest(&sandbox).await;
 
-    let mount = sandbox.mount_workspace_drive();
+    let mount = sandbox.mount_home_drive();
     let respond = async {
         let request = read_vsock_message(&mut guest).await;
-        assert_eq!(
-            request.msg_type,
-            guest_control_proto::MSG_WORKSPACE_DRIVE_MOUNT
-        );
-        guest_control_proto::decode_workspace_drive_mount_request(&request.payload).unwrap();
+        assert_eq!(request.msg_type, guest_control_proto::MSG_HOME_DRIVE_MOUNT);
+        guest_control_proto::decode_home_drive_mount_request(&request.payload).unwrap();
 
-        let payload = guest_control_proto::encode_workspace_drive_mount_result(
+        let payload = guest_control_proto::encode_home_drive_mount_result(
             guest_control_proto::ExecTermination::WaitFailed,
             17,
             guest_control_proto::ExecCapturedOutput::Captured {
@@ -2962,7 +3024,7 @@ async fn mount_workspace_drive_maps_empty_request_and_terminal_metadata() {
         )
         .unwrap();
         let response = guest_control_proto::encode(
-            guest_control_proto::MSG_WORKSPACE_DRIVE_MOUNT_RESULT,
+            guest_control_proto::MSG_HOME_DRIVE_MOUNT_RESULT,
             request.seq,
             &payload,
         )
@@ -6759,7 +6821,7 @@ async fn snapshot_restore_with_limiters_loads_paused_patches_then_resumes() {
     assert_eq!(
         reqs.len(),
         5,
-        "expected load, rootfs drive patch, workspace drive patch, network patch, resume"
+        "expected load, rootfs drive patch, home drive patch, network patch, resume"
     );
     assert_eq!(reqs[0].method, "PUT");
     assert_eq!(reqs[0].path, "/snapshot/load");
@@ -6773,7 +6835,7 @@ async fn snapshot_restore_with_limiters_loads_paused_patches_then_resumes() {
     );
 
     assert_eq!(reqs[2].method, "PATCH");
-    assert_eq!(reqs[2].path, "/drives/workspace");
+    assert_eq!(reqs[2].path, "/drives/home");
     assert_eq!(
         mock_request_body_json(&reqs[2])["rate_limiter"]["bandwidth"]["size"],
         512
@@ -6854,7 +6916,7 @@ async fn snapshot_restore_workspace_limiter_patch_failure_does_not_resume() {
     .unwrap_err()
     .to_string();
 
-    assert!(err.contains("snapshot workspace drive rate limiter patch failed"));
+    assert!(err.contains("snapshot home drive rate limiter patch failed"));
     let reqs = api.drain_requests();
     assert_eq!(
         reqs.len(),
@@ -6864,7 +6926,7 @@ async fn snapshot_restore_workspace_limiter_patch_failure_does_not_resume() {
     assert_eq!(reqs[0].path, "/snapshot/load");
     assert_eq!(mock_request_body_json(&reqs[0])["resume_vm"], false);
     assert_eq!(reqs[1].path, "/drives/rootfs");
-    assert_eq!(reqs[2].path, "/drives/workspace");
+    assert_eq!(reqs[2].path, "/drives/home");
     assert!(
         reqs.iter()
             .all(|request| request.path != "/network-interfaces/eth0")
@@ -6895,7 +6957,7 @@ async fn snapshot_restore_network_limiter_patch_failure_does_not_resume() {
     assert_eq!(reqs[0].path, "/snapshot/load");
     assert_eq!(mock_request_body_json(&reqs[0])["resume_vm"], false);
     assert_eq!(reqs[1].path, "/drives/rootfs");
-    assert_eq!(reqs[2].path, "/drives/workspace");
+    assert_eq!(reqs[2].path, "/drives/home");
     assert_eq!(reqs[3].path, "/network-interfaces/eth0");
     assert!(reqs.iter().all(|request| request.path != "/vm"));
 }

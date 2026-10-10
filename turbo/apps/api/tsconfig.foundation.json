@@ -155,7 +155,6 @@
     "src/lib/require-agent-permission.ts",
     "src/lib/tar.ts",
     "src/lib/web-url.ts",
-    "src/signals/context/usage-pricing-resolution.ts",
     "src/signals/external/clerk-users.ts",
     "src/signals/services/agent-connector-scope.service.ts",
     "src/signals/services/agent-data.service.ts",

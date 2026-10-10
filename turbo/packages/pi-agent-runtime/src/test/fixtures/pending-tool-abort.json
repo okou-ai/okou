@@ -32,6 +32,7 @@
     }
   },
   {
-    "type": "agent_settled"
+    "type": "agent_settled",
+    "aborted": true
   }
 ]

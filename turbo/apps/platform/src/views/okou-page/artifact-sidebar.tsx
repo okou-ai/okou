@@ -10,6 +10,7 @@ import {
   X,
 } from "lucide-react";
 import {
+  useGet,
   useLastLoadable,
   useLastResolved,
   useLoadable,
@@ -25,6 +26,8 @@ import {
   cn,
 } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import type { ArtifactRef } from "../../signals/chat-page/thread-sidebar.ts";
 import {
   CsvPreviewTable,
@@ -99,6 +102,7 @@ type ArtifactSidebarItem = {
 
 type ArtifactSidebarContentProps = {
   agentId?: string | null;
+  artifactKind?: ChatThreadArtifactFile["artifactKind"];
   artifactRef: ArtifactRef;
   fullscreenState: ArtifactSidebarFullscreenState;
   imageCanvasSignals: ZoomableImageCanvasSignals;
@@ -198,8 +202,9 @@ function artifactSidebarSyncTargetForItem({
     : undefined;
 }
 
-function ArtifactSidebarContent({
+export function ArtifactSidebarContent({
   agentId,
+  artifactKind,
   artifactRef,
   fullscreenState,
   imageCanvasSignals,
@@ -217,7 +222,11 @@ function ArtifactSidebarContent({
   const toggleFullscreen = fullscreenState.toggle;
   const resourceUrl = useLastResolved(artifactRef.resourceUrl$) ?? null;
   const shareUrl = useLastResolved(artifactRef.shareUrl$);
-  const display = resolveArtifactDisplay(artifactRef, item);
+  const resolvedDisplay = resolveArtifactDisplay(artifactRef, item);
+  const display = {
+    ...resolvedDisplay,
+    artifactKind: artifactKind ?? resolvedDisplay.artifactKind,
+  };
   const syncTarget = artifactSidebarSyncTargetForItem({
     agentId,
     item,
@@ -272,9 +281,17 @@ function ArtifactSidebarResolvedContent({
   text$,
   toggleFullscreen,
 }: ArtifactSidebarResolvedContentProps) {
+  const stableHost =
+    useGet(featureSwitch$)[FeatureSwitchKey.StablePreviewFullscreen];
   return (
     <FullscreenPanel
       fullscreen={fullscreen}
+      relocate={!stableHost}
+      className={
+        stableHost && fullscreen
+          ? "h-viewport max-h-viewport min-h-viewport"
+          : undefined
+      }
       data-testid="artifact-sidebar"
       scrollAnchor={
         display.kind === "markdown"

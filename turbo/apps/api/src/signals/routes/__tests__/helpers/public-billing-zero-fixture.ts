@@ -35,6 +35,7 @@ export function createPublicBillingZeroFixture(
       readonly webhookSecret: string;
     };
     readonly retainExternalState?: () => () => void;
+    readonly continueAcceptedOperations?: boolean;
     readonly beforeOrganizationCleanup?: () => Promise<void>;
     readonly afterOrganizationCleanup?: () => Promise<void>;
   } = {},
@@ -152,6 +153,7 @@ export function createPublicBillingZeroFixture(
       }
     },
     {
+      continueAcceptedOperations: options.continueAcceptedOperations,
       beforeDrain() {
         previous ??= options.retainExternalState?.();
         accepted?.();
@@ -241,6 +243,7 @@ export function createPublicBillingZeroFixture(
               },
             },
             [200],
+            run,
           );
           await flushWaitUntilForTest();
           expect((await readStatus()).body).toMatchObject({
@@ -286,6 +289,7 @@ export function createPublicBillingZeroFixture(
               data: { object: subscription },
             },
             [200],
+            run,
           );
         }
         await flushWaitUntilForTest();

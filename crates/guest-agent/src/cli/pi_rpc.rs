@@ -2417,7 +2417,7 @@ mod tests {
                 &responses,
                 0,
             )
-            .expect_err("checkpoint failure should terminate projection");
+            .expect_err("native history validation failure should terminate projection");
         assert!(error.to_string().contains("forced extension failure"));
 
         assert!(

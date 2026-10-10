@@ -82,6 +82,7 @@ import {
   ScrollBar,
   Dialog,
   DialogContent,
+  DialogClose,
   DialogDescription,
   DialogFooter,
   DialogHeader,
@@ -279,6 +280,7 @@ import { localizedRunError } from "../../lib/run-error.ts";
 import { PlainTextWithLinks } from "../components/plain-text-with-links.tsx";
 import {
   ChatThreadLinkChip,
+  STRUCTURED_INLINE_REFERENCE_CLASS,
   STRUCTURED_INLINE_LINK_REFERENCE_CLASS,
 } from "../components/chat-thread-link-chip.tsx";
 import { userMessageFileAttachments } from "../../signals/chat-page/user-message-files.ts";
@@ -2958,37 +2960,43 @@ function ThreadAutomationsSidebarSlot({
   return <HeaderAutomationSidebar thread={thread} onClose={close} />;
 }
 
+export function ChatThreadSidebarPane() {
+  const active = useGet(activeThreadSidebar$);
+  if (!active) {
+    return null;
+  }
+  return active.target.type === "automations" ? (
+    <ThreadAutomationsSidebarSlot thread={active.thread} />
+  ) : (
+    <ThreadSidebarSlot thread={active.thread} target={active.target} />
+  );
+}
+
 export function ChatThreadPage({
   layout,
 }: {
   readonly layout: ChatLayoutSignals;
 }) {
   const activeThreadSidebar = useGet(activeThreadSidebar$);
+  const stableHost =
+    useGet(featureSwitch$)[FeatureSwitchKey.StablePreviewFullscreen];
   const leftPane = useGet(currentLeftPane$);
   const rightPane = useGet(currentRightPane$);
+  const threads = <ChatThreadArea leftPane={leftPane} rightPane={rightPane} />;
   return withChatScrollLayout(
     <>
-      <ChatThreadSidebarShell
-        layout={layout}
-        animateEntry={activeThreadSidebar?.animateEntry ?? true}
-        open={activeThreadSidebar !== null}
-        sidebar={
-          activeThreadSidebar ? (
-            activeThreadSidebar.target.type === "automations" ? (
-              <ThreadAutomationsSidebarSlot
-                thread={activeThreadSidebar.thread}
-              />
-            ) : (
-              <ThreadSidebarSlot
-                thread={activeThreadSidebar.thread}
-                target={activeThreadSidebar.target}
-              />
-            )
-          ) : null
-        }
-      >
-        <ChatThreadArea leftPane={leftPane} rightPane={rightPane} />
-      </ChatThreadSidebarShell>
+      {stableHost ? (
+        threads
+      ) : (
+        <ChatThreadSidebarShell
+          layout={layout}
+          animateEntry={activeThreadSidebar?.animateEntry ?? true}
+          open={activeThreadSidebar !== null}
+          sidebar={<ChatThreadSidebarPane />}
+        >
+          {threads}
+        </ChatThreadSidebarShell>
+      )}
       <ChatConnectorActionConnectModal />
     </>,
   );
@@ -4266,7 +4274,7 @@ function ChatThreadComposer({ thread }: { thread: ChatPanelSignals }) {
         )}
       >
         <div className="mx-auto max-w-[900px]">
-          <ChatComposer signals={thread.composer} />
+          <ChatComposer signals={thread.composer} anchorSuggestionsToComposer />
           <PersonalClaudeCodeDeviceAuthDialog />
           <PersonalCodexDeviceAuthDialog />
         </div>
@@ -6419,9 +6427,11 @@ function isMediaAttachment(attachment: ResolvedMessageAttachment): boolean {
 }
 
 function MessageAttachment({
+  threadId,
   attachment: a,
   onImageClick,
 }: {
+  threadId: string;
   attachment: ResolvedMessageAttachment;
   onImageClick: OpenMessageImagePreview;
 }) {
@@ -6471,6 +6481,7 @@ function MessageAttachment({
         filename={a.filename}
         onPreview={() => {
           openVideoLightbox({
+            threadId,
             url: a.url,
             filename: a.filename,
             preview: a.signals,
@@ -6492,6 +6503,7 @@ function MessageAttachment({
   ) {
     return (
       <PreviewableFileAttachmentChip
+        threadId={threadId}
         filename={a.filename}
         url={a.url}
         kind={a.kind}
@@ -6504,6 +6516,7 @@ function MessageAttachment({
   if (a.kind === "audio") {
     return (
       <PreviewableAudioAttachmentChip
+        threadId={threadId}
         filename={a.filename}
         url={a.url}
         contentType={a.contentType}
@@ -6514,6 +6527,7 @@ function MessageAttachment({
   }
   return (
     <FileAttachmentChip
+      threadId={threadId}
       filename={a.filename}
       url={a.url}
       contentType={a.contentType}
@@ -6524,10 +6538,12 @@ function MessageAttachment({
 }
 
 function UserMessageAttachmentRow({
+  threadId,
   attachments,
   onImageClick,
   testId,
 }: {
+  threadId: string;
   attachments: ResolvedMessageAttachment[];
   onImageClick: OpenMessageImagePreview;
   testId: string;
@@ -6542,6 +6558,7 @@ function UserMessageAttachmentRow({
         return (
           <MessageAttachment
             key={a.id ?? a.url}
+            threadId={threadId}
             attachment={a}
             onImageClick={onImageClick}
           />
@@ -6552,9 +6569,11 @@ function UserMessageAttachmentRow({
 }
 
 function UserMessageAttachments({
+  threadId,
   attachments,
   onImageClick,
 }: {
+  threadId: string;
   attachments: ReturnType<typeof userMessageRenderAttachments>;
   onImageClick: OpenMessageImagePreview;
 }) {
@@ -6565,11 +6584,13 @@ function UserMessageAttachments({
   return (
     <div className="mb-2 flex max-w-[85%] flex-col items-end gap-2 self-end">
       <UserMessageAttachmentRow
+        threadId={threadId}
         attachments={attachments.filter(isMediaAttachment)}
         onImageClick={onImageClick}
         testId="message-media-attachments"
       />
       <UserMessageAttachmentRow
+        threadId={threadId}
         attachments={attachments.filter((a) => {
           return !isMediaAttachment(a);
         })}
@@ -7042,11 +7063,6 @@ function AgentRunSourceMessageAnnotation({
 // surrounding sentence than a borderless inline mention does.
 const INLINE_FILE_REFERENCE_SPACING_CLASS = "mx-1";
 
-// Template references are display-only (no link, no hover), so they carry no
-// fill or accent colour: they read as quiet inline text with an icon.
-const STRUCTURED_TEMPLATE_REFERENCE_CLASS =
-  "relative -top-px mx-0.5 inline-flex h-7 max-w-[240px] items-center gap-1.5 align-middle text-[13px] font-medium text-muted-foreground";
-
 function UserMessageTemplateReference({
   part,
 }: {
@@ -7057,19 +7073,21 @@ function UserMessageTemplateReference({
   return (
     <span
       data-structured-template-reference=""
-      className={STRUCTURED_TEMPLATE_REFERENCE_CLASS}
+      className={STRUCTURED_INLINE_REFERENCE_CLASS}
       title={label}
     >
-      <SwatchBook size={13} className="shrink-0" />
+      <SwatchBook size={13} className="shrink-0 text-selected-foreground" />
       <span className="min-w-0 truncate">{part.titleSnapshot}</span>
     </span>
   );
 }
 
 function UserMessageFileReference({
+  threadId,
   part,
   signals,
 }: {
+  threadId: string;
   part: Extract<UserMessagePart, { type: "file" }>;
   signals: ArtifactSignals;
 }) {
@@ -7094,6 +7112,7 @@ function UserMessageFileReference({
         filename={part.filenameSnapshot}
         onPreview={() => {
           openVideoLightbox({
+            threadId,
             url: signals.url,
             filename: part.filenameSnapshot,
             preview: signals,
@@ -7114,6 +7133,7 @@ function UserMessageFileReference({
   ) {
     reference = (
       <PreviewableFileAttachmentChip
+        threadId={threadId}
         filename={part.filenameSnapshot}
         url={signals.url}
         kind={signals.kind}
@@ -7124,6 +7144,7 @@ function UserMessageFileReference({
   } else if (signals.kind === "audio") {
     reference = (
       <PreviewableAudioAttachmentChip
+        threadId={threadId}
         filename={part.filenameSnapshot}
         url={signals.url}
         contentType={part.contentType}
@@ -7134,6 +7155,7 @@ function UserMessageFileReference({
   } else {
     reference = (
       <FileAttachmentChip
+        threadId={threadId}
         contentType={part.contentType}
         filename={part.filenameSnapshot}
         preview={signals}
@@ -7367,8 +7389,10 @@ type UserMessageStandaloneRenderPart = Exclude<
 >;
 
 function UserMessagePartView({
+  threadId,
   renderPart,
 }: {
+  threadId: string;
   renderPart: UserMessageStandaloneRenderPart;
 }): ReactNode {
   if (renderPart.type === "text") {
@@ -7397,6 +7421,7 @@ function UserMessagePartView({
   if (renderPart.type === "file") {
     return (
       <UserMessageFileReference
+        threadId={threadId}
         part={renderPart.part}
         signals={renderPart.signals}
       />
@@ -7407,9 +7432,11 @@ function UserMessagePartView({
 }
 
 function UserMessageView({
+  threadId,
   document,
   elevatedFileIds,
 }: {
+  threadId: string;
   document: UserMessageRenderDocument;
   elevatedFileIds: ReadonlySet<string>;
 }) {
@@ -7465,6 +7492,7 @@ function UserMessageView({
     renderedParts.push(
       <UserMessagePartView
         key={`${identity}:${String(occurrence)}`}
+        threadId={threadId}
         renderPart={renderPart}
       />,
     );
@@ -7487,11 +7515,13 @@ function isElevatedUserMessagePart(
 }
 
 function UserMessageContent({
+  threadId,
   document,
   attachments,
   onImageClick,
   leading,
 }: {
+  threadId: string;
   document: UserMessageRenderDocument;
   attachments: ReturnType<typeof userMessageRenderAttachments>;
   onImageClick: OpenMessageImagePreview;
@@ -7519,6 +7549,7 @@ function UserMessageContent({
   return (
     <>
       <UserMessageAttachments
+        threadId={threadId}
         attachments={elevatedAttachments}
         onImageClick={onImageClick}
       />
@@ -7531,6 +7562,7 @@ function UserMessageContent({
           <ChatUserMessageBubble>
             <div className="px-4 py-3">
               <UserMessageView
+                threadId={threadId}
                 document={document}
                 elevatedFileIds={elevatedFileIds}
               />
@@ -7764,6 +7796,7 @@ function PagedUserMessage({
           {renderDocument ? (
             <>
               <UserMessageContent
+                threadId={thread.threadId}
                 document={renderDocument}
                 attachments={allAttachments}
                 onImageClick={openLightbox}
@@ -8330,13 +8363,15 @@ function RelatedArtifactIcon({ kind }: { readonly kind: ArtifactKind }) {
 function RelatedArtifactRow({ card }: { readonly card: RelatedArtifactCard }) {
   const { t } = useTranslation();
   const openArtifact = useSet(openMarkdownArtifact$);
+  const sidebarPreview =
+    useGet(featureSwitch$)[FeatureSwitchKey.ArtifactSidebarPreview];
   const name = relatedArtifactDisplayName(card);
   const host = relatedArtifactHost(card.signals.url);
   const kind = artifactFallbackSubtitle(
     card.signals.kind,
     card.signals.filename,
   );
-  return (
+  const row = (
     <Button
       type="button"
       variant="quiet"
@@ -8370,6 +8405,7 @@ function RelatedArtifactRow({ card }: { readonly card: RelatedArtifactCard }) {
       />
     </Button>
   );
+  return sidebarPreview ? <DialogClose render={row} /> : row;
 }
 
 function RelatedArtifactsDialog({

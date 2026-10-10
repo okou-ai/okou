@@ -98,21 +98,21 @@ pub struct DeviceRateLimits {
     pub network: NetworkRateLimits,
 }
 
-/// Host-local ext4 image seeding behavior for one sandbox workspace image.
+/// Host-local ext4 image seeding behavior for one sandbox home image.
 ///
 /// A supplied seed image must have the logical size described by
-/// [`WorkspaceDriveConfig::size_mb`]. The Firecracker provider requires the
+/// [`HomeDriveConfig::size_mb`]. The Firecracker provider requires the
 /// seed to be a regular file whose length is exactly
 /// `size_mb * 1024 * 1024` bytes and does not resize it; a size mismatch fails
 /// sandbox creation before the copy or move consumes the source. Other
 /// providers may prepare seed images differently.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum WorkspaceDriveSeedImage {
-    /// Copy the host-local ext4 image into this sandbox's active workspace
+pub enum HomeDriveSeedImage {
+    /// Copy the host-local ext4 image into this sandbox's active home
     /// image. The caller retains ownership, and the source must remain intact
     /// and must never be mounted read-write by the provider.
     Copy(PathBuf),
-    /// Move the host-local ext4 image into this sandbox's active workspace
+    /// Move the host-local ext4 image into this sandbox's active home
     /// image. The caller retains ownership until the provider completes the
     /// transfer and consumes the source from its original path. If the
     /// transfer fails before that boundary, the source remains caller-owned.
@@ -121,24 +121,24 @@ pub enum WorkspaceDriveSeedImage {
     Move(PathBuf),
 }
 
-/// Provider-neutral workspace block image configuration for one sandbox.
+/// Provider-neutral home block image configuration for one sandbox.
 ///
-/// The image is mounted by runner-controlled guest setup at the canonical
-/// execution workspace. Providers only need to expose it as a writable non-root
-/// block device.
+/// The image is mounted by runner-controlled guest setup at `/home/user`,
+/// with execution cwd unchanged at `/home/user/workspace`. Providers expose
+/// it as the writable non-root `/dev/vdb` device paired with a home-layout Guest.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct WorkspaceDriveConfig {
-    /// Logical size in MiB for the workspace image.
+pub struct HomeDriveConfig {
+    /// Logical size in MiB for the home image.
     ///
     /// This size applies both when a provider initializes a fresh image and
-    /// when it prepares a supplied [`WorkspaceDriveSeedImage`]. A supplied seed
-    /// image must have this logical size; see [`WorkspaceDriveSeedImage`] for
+    /// when it prepares a supplied [`HomeDriveSeedImage`]. A supplied seed
+    /// image must have this logical size; see [`HomeDriveSeedImage`] for
     /// the provider-specific preparation contract.
     pub size_mb: u32,
     /// Optional host-local ext4 image used to seed this sandbox's active
-    /// workspace image. The seed variant determines whether providers must
+    /// home image. The seed variant determines whether providers must
     /// preserve the source image or consume it with a move.
-    pub seed_image: Option<WorkspaceDriveSeedImage>,
+    pub seed_image: Option<HomeDriveSeedImage>,
 }
 
 /// Per-sandbox creation configuration passed to [`crate::SandboxFactory::create`].
@@ -156,8 +156,8 @@ pub struct SandboxConfig {
     pub resources: ResourceLimits,
     /// Optional provider-neutral I/O limits to apply to this sandbox.
     pub device_rate_limits: Option<DeviceRateLimits>,
-    /// Optional writable workspace block image.
-    pub workspace_drive: Option<WorkspaceDriveConfig>,
+    /// Optional writable home block image.
+    pub home_drive: Option<HomeDriveConfig>,
 }
 
 /// Reference to a pre-built snapshot for fast VM boot.

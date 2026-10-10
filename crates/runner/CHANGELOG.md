@@ -1,5 +1,54 @@
 # Changelog
 
+## [0.224.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.223.2...runner-rs-v0.224.0) (2026-10-10)
+
+
+### Features
+
+* **runner:** retain home images with verified history ([#38498](https://github.com/okou-ai/okou/issues/38498)) ([8b100e4](https://github.com/okou-ai/okou/commit/8b100e433e5933242c418dbfe1c1f3efd15a9b87))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.223.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.223.1...runner-rs-v0.223.2) (2026-10-10)
+
+
+### Documentation
+
+* **runner:** document api url transport requirements ([#38565](https://github.com/okou-ai/okou/issues/38565)) ([e62fecc](https://github.com/okou-ai/okou/commit/e62feccc9d2db53682bea05758375690a3152f77))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.223.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.223.0...runner-rs-v0.223.1) (2026-10-10)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.223.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.222.1...runner-rs-v0.223.0) (2026-10-10)
+
+
+### Features
+
+* **runner:** add passive host memory observation and calibration ([#38370](https://github.com/okou-ai/okou/issues/38370)) ([851e18c](https://github.com/okou-ai/okou/commit/851e18cbe272e59863a06cb3193c3c4e92891c1a))
+
+
+### Bug Fixes
+
+* **runner:** decouple firewall auth from upstream socket lifetime ([#38391](https://github.com/okou-ai/okou/issues/38391)) ([1e7370e](https://github.com/okou-ai/okou/commit/1e7370eba0e52c39c6d86a21fab1d63eb4329666))
+
+
+### Refactoring
+
+* **runner:** move orphan workspace gc ownership into host ([#38476](https://github.com/okou-ai/okou/issues/38476)) ([46ed3bd](https://github.com/okou-ai/okou/commit/46ed3bd317356e59b9811bdbd788ce4245a216a8))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.222.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.222.0...runner-rs-v0.222.1) (2026-10-09)
 
 

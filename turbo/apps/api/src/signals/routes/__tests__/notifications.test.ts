@@ -1,18 +1,17 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { notificationsContract } from "@okouai/api-contracts/contracts/notifications";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { emailSubscriptionContract } from "@okouai/api-contracts/contracts/email-subscription";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { notificationsRoutes } from "../notifications";
-import { featureSwitchesRoutes } from "../feature-switches";
 import { emailSubscriptionRoutes } from "../email-subscription";
 import { workflowAutomationsRoutes } from "../workflow-automations";
-import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createBddApi, type ApiTestUserOptions } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
 import { mockClerkUsers } from "./helpers/clerk-users";
@@ -29,34 +28,18 @@ const client = () => {
     notificationsContract,
   );
 };
-const features = () => {
-  return setupApp({ context, routes: featureSwitchesRoutes })(
-    featureSwitchesContract,
-  );
-};
 const preferences = () => {
   return setupApp({ context, routes: emailSubscriptionRoutes })(
     emailSubscriptionContract,
   );
 };
 
-async function feature(actor: ApiTestUser, enabled: boolean) {
-  mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-  await accept(
-    features().update({
-      headers: humanHeaders,
-      body: { switches: { notifyMail: enabled } },
-    }),
-    [200],
-  );
-}
-
-async function runningAgent(enabled = true) {
+async function runningAgent(options: ApiTestUserOptions = {}) {
   mockEnv("RESEND_API_KEY", "test-key");
   mockEnv("RESEND_FROM_DOMAIN", "okou.io");
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
-  const actor = bdd.user();
+  const actor = bdd.user(options);
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
@@ -69,9 +52,6 @@ async function runningAgent(enabled = true) {
     displayName: "Mail notification agent",
     visibility: "private",
   });
-  if (enabled) {
-    await feature(actor, true);
-  }
   await runs.heartbeatRunner(runnerGroup);
   const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,
@@ -166,7 +146,6 @@ describe("agent mail notifications", () => {
       agentId,
       name: "morning-brief",
     });
-    await feature(actor, true);
     const automation = await accept(
       setupApp({ context, routes: workflowAutomationsRoutes })(
         workflowAutomationsContract,
@@ -330,32 +309,13 @@ describe("agent mail notifications", () => {
     );
   });
 
-  it("requires capability issuance and a currently enabled feature; human sessions cannot send", async () => {
-    const fixture = await runningAgent(false);
-    await accept(
-      client().mail({ headers: fixture.headers, body: body() }),
-      [403],
-    );
-    await feature(fixture.actor, true);
-    await accept(
-      client().mail({ headers: fixture.headers, body: body() }),
-      [403],
-    );
+  it("requires an Okou run token; human sessions cannot send", async () => {
+    await runningAgent();
     const human = await accept(
       client().mail({ headers: humanHeaders, body: body() }),
       [403],
     );
     expect(human.body.error.code).toBe("FORBIDDEN");
-    const enabled = await runningAgent();
-    await feature(enabled.actor, false);
-    await accept(
-      client().mail({ headers: enabled.headers, body: body() }),
-      [403],
-    );
-    await accept(
-      client().get({ headers: enabled.headers, params: { id: randomUUID() } }),
-      [403],
-    );
   });
 
   it("records an unsubscribe skip and keeps it on replay after resubscription", async () => {
@@ -457,7 +417,7 @@ describe("agent mail notifications", () => {
     );
     expect(result.body.status).toBe("queued");
     const other = createBddApi(context).user();
-    await feature(other, true);
+    mocks.clerk.session(other.userId, other.orgId, other.orgRole);
     await accept(
       client().get({
         headers: humanHeaders,
@@ -466,7 +426,11 @@ describe("agent mail notifications", () => {
       [404],
     );
     const otherWorkspace = { ...fixture.actor, orgId: `org_${randomUUID()}` };
-    await feature(otherWorkspace, true);
+    mocks.clerk.session(
+      otherWorkspace.userId,
+      otherWorkspace.orgId,
+      otherWorkspace.orgRole,
+    );
     await accept(
       client().get({
         headers: humanHeaders,
@@ -493,13 +457,109 @@ describe("agent mail notifications", () => {
       client().mail({ headers: fixture.headers, body: body() }),
       [400],
     );
+  });
+
+  it("erases queued and skipped receipts on departure, preserves other owners, and permits a living member to rejoin", async () => {
+    const fixture = await runningAgent();
+    const queued = await accept(
+      client().mail({ headers: fixture.headers, body: body() }),
+      [200],
+    );
     mocks.clerk.session(fixture.actor.userId, fixture.actor.orgId);
     await accept(
-      client().get({
+      preferences().update({
         headers: humanHeaders,
-        params: { id: result.body.notificationId },
+        body: { subscribed: false },
       }),
-      [404],
+      [200],
     );
+    const skipped = await accept(
+      client().mail({ headers: fixture.headers, body: body() }),
+      [200],
+    );
+    expect(skipped.body).toMatchObject({
+      status: "skipped",
+      reason: "unsubscribed",
+    });
+    await accept(
+      preferences().update({
+        headers: humanHeaders,
+        body: { subscribed: true },
+      }),
+      [200],
+    );
+
+    const elsewhere = await runningAgent({
+      userId: fixture.actor.userId,
+      email: fixture.actor.email,
+    });
+    const elsewhereReceipt = await accept(
+      client().mail({ headers: elsewhere.headers, body: body() }),
+      [200],
+    );
+    const peer = await runningAgent({ orgId: fixture.actor.orgId });
+    const peerReceipt = await accept(
+      client().mail({ headers: peer.headers, body: body() }),
+      [200],
+    );
+    const webhooks = createWebhookCallbackApi(context);
+    webhooks.configureClerkWebhookSecret();
+    const departure = {
+      type: "organizationMembership.deleted",
+      data: {
+        id: `orgmem_${randomUUID()}`,
+        organization_id: fixture.actor.orgId,
+        user_id: fixture.actor.userId,
+      },
+    };
+    for (let delivery = 0; delivery < 2; delivery++) {
+      webhooks.verifyNextClerkWebhook(departure);
+      await webhooks.requestClerkWebhook("{}", {}, [200]);
+      await flushWaitUntilForTest();
+    }
+
+    // Clerk reports a new membership for this still-living user, not a revived account.
+    webhooks.verifyNextClerkWebhook({
+      type: "organizationMembership.created",
+      data: {
+        id: `orgmem_${randomUUID()}`,
+        organization_id: fixture.actor.orgId,
+        user_id: fixture.actor.userId,
+        role: "org:member",
+        created_at: now(),
+      },
+    });
+    await webhooks.requestClerkWebhook("{}", {}, [200]);
+    await flushWaitUntilForTest();
+    mocks.clerk.session(fixture.actor.userId, fixture.actor.orgId);
+    for (const receipt of [queued, skipped]) {
+      await accept(
+        client().get({
+          headers: humanHeaders,
+          params: { id: receipt.body.notificationId },
+        }),
+        [404],
+      );
+    }
+    for (const { actor, receipt } of [
+      { actor: elsewhere.actor, receipt: elsewhereReceipt },
+      { actor: peer.actor, receipt: peerReceipt },
+    ]) {
+      mocks.clerk.session(actor.userId, actor.orgId);
+      expect(
+        (
+          await accept(
+            client().get({
+              headers: humanHeaders,
+              params: { id: receipt.body.notificationId },
+            }),
+            [200],
+          )
+        ).body,
+      ).toMatchObject({
+        notificationId: receipt.body.notificationId,
+        status: "queued",
+      });
+    }
   });
 });

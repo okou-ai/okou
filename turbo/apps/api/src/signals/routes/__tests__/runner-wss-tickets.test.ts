@@ -89,6 +89,15 @@ describe("direct Runner WSS ticket boundary", () => {
     });
   }
 
+  async function revoke(f: Fixture, actor = f.actor, runId = f.runId) {
+    await f.bdd.readMe(actor);
+    return client().revoke({
+      params: { runId },
+      headers: { authorization: "Bearer clerk-session" },
+      body: undefined,
+    });
+  }
+
   function consume(
     f: Fixture,
     ticket: string,
@@ -331,6 +340,80 @@ describe("direct Runner WSS ticket boundary", () => {
     }
     await accept(consume(f, first.body.ticket), [200]);
     await accept(bootstrap(f), [200]);
+    await f.api.requestCancelRun(f.actor, f.runId, [200]);
+  });
+
+  it("accepts repeated owned-run revocation with no pending tickets, including a terminal run", async () => {
+    const f = await setup();
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const response = await accept(revoke(f), [204]);
+      expect(response.headers.get("Cache-Control")).toBe("no-store");
+    }
+    await f.api.requestCancelRun(f.actor, f.runId, [200]);
+    await accept(revoke(f), [204]);
+    await accept(revoke(f), [204]);
+    await accept(bootstrap(f), [404]);
+  });
+
+  it("rejects unauthorized and unavailable revocation without invalidating the owner's ticket", async () => {
+    const f = await setup();
+    const issued = await accept(bootstrap(f), [200]);
+    const unauthenticated = await accept(
+      client().revoke({
+        params: { runId: f.runId },
+        headers: {},
+        body: undefined,
+      }),
+      [401],
+    );
+    expect(unauthenticated.headers.get("Cache-Control")).toBe("no-store");
+    const pat = await f.api.createCliToken(f.actor);
+    const forbidden = await accept(
+      client().revoke({
+        params: { runId: f.runId },
+        headers: { authorization: `Bearer ${pat.token}` },
+        body: undefined,
+      }),
+      [403],
+    );
+    expect(forbidden.headers.get("Cache-Control")).toBe("no-store");
+    const foreignUser = f.bdd.user({ orgId: f.actor.orgId });
+    const otherOrg = f.bdd.user({ userId: f.actor.userId });
+    const unavailable = [
+      await accept(revoke(f, foreignUser), [404]),
+      await accept(revoke(f, otherOrg), [404]),
+      await accept(revoke(f, f.actor, randomUUID()), [404]),
+    ];
+    for (const response of unavailable) {
+      expect(response.body.error).toStrictEqual({
+        code: "NOT_FOUND",
+        message: "WSS connection unavailable",
+      });
+      expect(response.headers.get("Cache-Control")).toBe("no-store");
+    }
+    const accepted = await accept(consume(f, issued.body.ticket), [200]);
+    expect(accepted.body.userId).toBe(f.actor.userId);
+    expect(accepted.body.orgId).toBe(f.actor.orgId);
+    await f.api.requestCancelRun(f.actor, f.runId, [200]);
+  });
+
+  it("revokes every pending ticket while preserving one-use consumption and later issuance", async () => {
+    const f = await setup();
+    const consumed = await accept(bootstrap(f), [200]);
+    await accept(consume(f, consumed.body.ticket), [200]);
+    const pending = [];
+    for (let index = 0; index < 3; index++) {
+      pending.push(await accept(bootstrap(f), [200]));
+    }
+    await accept(revoke(f), [204]);
+    await accept(revoke(f), [204]);
+    await accept(consume(f, consumed.body.ticket), [404]);
+    for (const issued of pending) {
+      const denied = await accept(consume(f, issued.body.ticket), [404]);
+      expect(denied.body.error.code).toBe("NOT_FOUND");
+    }
+    const fresh = await accept(bootstrap(f), [200]);
+    await accept(consume(f, fresh.body.ticket), [200]);
     await f.api.requestCancelRun(f.actor, f.runId, [200]);
   });
 

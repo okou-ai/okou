@@ -685,21 +685,30 @@ const renderAndStoreArtifactPreview$ = command(
     }
     const db = set(writeDb$);
     // Publish the preview reference and its recoverable catalog handoff together.
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0058; new non-billing transactions are prohibited.
-    await db.transaction(async (tx) => {
-      const [row] = await tx
-        .update(runUploadedFiles)
-        .set({
-          previewImageUrl: artifact.url,
-          updatedAt: nowDate(),
-        })
-        .where(eq(runUploadedFiles.id, args.id))
-        .returning({ id: runUploadedFiles.id });
-      if (row) {
-        await tx.execute(queueArtifactCatalogFileSql(row.id));
-        signal.throwIfAborted();
-      }
-    });
+    await db.execute(
+      queueArtifactCatalogFileSql(
+        args.id,
+        db
+          .update(runUploadedFiles)
+          .set({
+            previewImageUrl: artifact.url,
+            updatedAt: nowDate(),
+          })
+          .where(eq(runUploadedFiles.id, args.id))
+          .returning({
+            id: runUploadedFiles.id,
+            orgId: runUploadedFiles.orgId,
+            userId: runUploadedFiles.userId,
+            chatThreadId: runUploadedFiles.chatThreadId,
+            runId: runUploadedFiles.runId,
+            url: runUploadedFiles.url,
+          })
+          .getSQL(),
+        "if-mutated",
+      ),
+    );
+    // An application abort after commit leaves both writes durable and skips
+    // subsequent sync/notices; it cannot roll back this atomic statement.
     signal.throwIfAborted();
 
     await set(syncArtifactCatalogForFile$, args.id, signal);

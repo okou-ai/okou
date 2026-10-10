@@ -7,10 +7,10 @@ use nbd_cow::pool::DevicePoolHandle;
 
 use crate::api::ApiError;
 use crate::paths::{SandboxPaths, SnapshotOutputPaths, SockPaths};
-use crate::snapshot::cow::{snapshot_attempt_cow_file, snapshot_attempt_workspace_image_file};
+use crate::snapshot::cow::{snapshot_attempt_cow_file, snapshot_attempt_home_image_file};
 use crate::snapshot::publish::SnapshotPublishAttempt;
 
-use super::cleanup::{AttemptWorkspaceImage, SnapshotCleanupPresence, SnapshotCleanupReport};
+use super::cleanup::{AttemptHomeImage, SnapshotCleanupPresence, SnapshotCleanupReport};
 
 use super::*;
 
@@ -70,7 +70,7 @@ async fn snapshot_cleanup_resources_presence_tracks_all_handoff_resources() {
             has_device_pool: true,
             has_netns_pool: true,
             has_cow_device: false,
-            has_workspace_image: false,
+            has_home_image: false,
             has_publish_attempt: true,
             has_network: true,
             has_child: true,
@@ -89,7 +89,7 @@ async fn snapshot_cleanup_resources_presence_tracks_all_handoff_resources() {
     assert!(report.stderr_forwarder_finished);
     assert!(report.network_released);
     assert!(report.publish_cleaned);
-    assert!(report.workspace_image_cleaned);
+    assert!(report.home_image_cleaned);
     assert!(report.device_pool_cleaned);
     assert!(report.netns_pool_cleaned);
 }
@@ -123,33 +123,32 @@ async fn snapshot_cleanup_finalizer_resolves_publish_before_device_pool_cleanup(
 }
 
 #[tokio::test]
-async fn snapshot_cleanup_finalizer_removes_workspace_image() {
+async fn snapshot_cleanup_finalizer_removes_home_image() {
     let dir = tempfile::tempdir().expect("tempdir");
     let (mut attempt, _sock_dir) = snapshot_attempt_for_test(&dir);
-    let workspace_image =
-        snapshot_attempt_workspace_image_file(attempt.paths().workspace(), "default-test");
+    let home_image = snapshot_attempt_home_image_file(attempt.paths().workspace(), "default-test");
     let (tx, rx) = tokio::sync::oneshot::channel();
 
-    tokio::fs::create_dir_all(workspace_image.parent().expect("workspace image parent"))
+    tokio::fs::create_dir_all(home_image.parent().expect("home image parent"))
         .await
-        .expect("create workspace image parent");
-    tokio::fs::write(&workspace_image, b"workspace")
+        .expect("create home image parent");
+    tokio::fs::write(&home_image, b"home")
         .await
-        .expect("write workspace image");
-    attempt.track_workspace_image_for_test(workspace_image.clone());
+        .expect("write home image");
+    attempt.track_home_image_for_test(home_image.clone());
     attempt.notify_cleanup_complete_for_test(tx);
 
     drop(attempt);
     let report = wait_for_snapshot_cleanup(rx).await;
 
-    assert!(report.workspace_image_cleaned);
-    assert_eq!(report.cleanup_events, vec!["workspace_image"]);
+    assert!(report.home_image_cleaned);
+    assert_eq!(report.cleanup_events, vec!["home_image"]);
     assert!(
-        !tokio::fs::try_exists(&workspace_image).await.unwrap(),
-        "detached cleanup should remove temporary workspace image"
+        !tokio::fs::try_exists(&home_image).await.unwrap(),
+        "detached cleanup should remove temporary home image"
     );
     assert!(
-        !tokio::fs::try_exists(workspace_image.parent().expect("workspace image parent"))
+        !tokio::fs::try_exists(home_image.parent().expect("home image parent"))
             .await
             .unwrap(),
         "detached cleanup should remove the empty attempt dir"
@@ -157,37 +156,36 @@ async fn snapshot_cleanup_finalizer_removes_workspace_image() {
 }
 
 #[tokio::test]
-async fn snapshot_workspace_image_cleanup_preserves_nonempty_attempt_dir() {
+async fn snapshot_home_image_cleanup_preserves_nonempty_attempt_dir() {
     let dir = tempfile::tempdir().expect("tempdir");
     let (mut attempt, _sock_dir) = snapshot_attempt_for_test(&dir);
-    let workspace_image =
-        snapshot_attempt_workspace_image_file(attempt.paths().workspace(), "default-test");
-    let attempt_dir = workspace_image
+    let home_image = snapshot_attempt_home_image_file(attempt.paths().workspace(), "default-test");
+    let attempt_dir = home_image
         .parent()
-        .expect("workspace image parent")
+        .expect("home image parent")
         .to_path_buf();
     let cow_file = attempt_dir.join("cow.img");
 
     tokio::fs::create_dir_all(&attempt_dir)
         .await
         .expect("create attempt dir");
-    tokio::fs::write(&workspace_image, b"workspace")
+    tokio::fs::write(&home_image, b"home")
         .await
-        .expect("write workspace image");
+        .expect("write home image");
     tokio::fs::write(&cow_file, b"cow")
         .await
         .expect("write cow");
-    attempt.track_workspace_image_for_test(workspace_image.clone());
+    attempt.track_home_image_for_test(home_image.clone());
 
     assert!(
         attempt
             .cleanup_resources
-            .cleanup_workspace_image("failed to cleanup workspace image in test")
+            .cleanup_home_image("failed to cleanup home image in test")
     );
 
     assert!(
-        !tokio::fs::try_exists(&workspace_image).await.unwrap(),
-        "workspace image should be removed"
+        !tokio::fs::try_exists(&home_image).await.unwrap(),
+        "home image should be removed"
     );
     assert!(
         tokio::fs::try_exists(&attempt_dir).await.unwrap(),
@@ -201,19 +199,18 @@ async fn snapshot_workspace_image_cleanup_preserves_nonempty_attempt_dir() {
 }
 
 #[tokio::test]
-async fn snapshot_setup_error_cleanup_removes_workspace_image_inline() {
+async fn snapshot_setup_error_cleanup_removes_home_image_inline() {
     let dir = tempfile::tempdir().expect("tempdir");
     let (mut attempt, _sock_dir) = snapshot_attempt_for_test(&dir);
-    let workspace_image =
-        snapshot_attempt_workspace_image_file(attempt.paths().workspace(), "default-test");
+    let home_image = snapshot_attempt_home_image_file(attempt.paths().workspace(), "default-test");
 
-    tokio::fs::create_dir_all(workspace_image.parent().expect("workspace image parent"))
+    tokio::fs::create_dir_all(home_image.parent().expect("home image parent"))
         .await
-        .expect("create workspace image parent");
-    tokio::fs::write(&workspace_image, b"workspace")
+        .expect("create home image parent");
+    tokio::fs::write(&home_image, b"home")
         .await
-        .expect("write workspace image");
-    attempt.track_workspace_image_for_test(workspace_image.clone());
+        .expect("write home image");
+    attempt.track_home_image_for_test(home_image.clone());
 
     attempt
         .cleanup_resources
@@ -221,12 +218,12 @@ async fn snapshot_setup_error_cleanup_removes_workspace_image_inline() {
         .await;
 
     assert!(matches!(
-        attempt.cleanup_resources.workspace_image,
-        AttemptWorkspaceImage::Cleaned
+        attempt.cleanup_resources.home_image,
+        AttemptHomeImage::Cleaned
     ));
     assert!(
-        !tokio::fs::try_exists(&workspace_image).await.unwrap(),
-        "setup error cleanup should remove temporary workspace image inline"
+        !tokio::fs::try_exists(&home_image).await.unwrap(),
+        "setup error cleanup should remove temporary home image inline"
     );
 }
 
@@ -242,19 +239,15 @@ async fn snapshot_cleanup_finalizer_removes_attempt_dir_after_workspace_and_publ
         .parent()
         .expect("attempt dir")
         .to_path_buf();
-    let workspace_image = attempt_dir.join("workspace.ext4");
+    let home_image = attempt_dir.join("home.ext4");
     let (tx, rx) = tokio::sync::oneshot::channel();
 
-    tokio::fs::write(&workspace_image, b"workspace")
+    tokio::fs::write(&home_image, b"home")
         .await
-        .expect("write workspace image");
-    let mut attempt = SnapshotAttempt::new_without_cow_for_test(
-        paths,
-        sock_paths,
-        output,
-        workspace_image.clone(),
-    );
-    attempt.track_workspace_image_for_test(workspace_image);
+        .expect("write home image");
+    let mut attempt =
+        SnapshotAttempt::new_without_cow_for_test(paths, sock_paths, output, home_image.clone());
+    attempt.track_home_image_for_test(home_image);
     attempt.track_publish_attempt_for_test(SnapshotPublishAttempt::new_with_kept_cow_for_test(
         kept_cow,
     ));
@@ -263,16 +256,16 @@ async fn snapshot_cleanup_finalizer_removes_attempt_dir_after_workspace_and_publ
     drop(attempt);
     let report = wait_for_snapshot_cleanup(rx).await;
 
-    assert!(report.workspace_image_cleaned);
+    assert!(report.home_image_cleaned);
     assert!(report.publish_cleaned);
     assert_eq!(
         report.cleanup_events,
-        vec!["workspace_image", "publish"],
-        "workspace image must be removed before COW publish cleanup removes the attempt dir"
+        vec!["home_image", "publish"],
+        "home image must be removed before COW publish cleanup removes the attempt dir"
     );
     assert!(
         !tokio::fs::try_exists(&attempt_dir).await.unwrap(),
-        "attempt dir should be removed after workspace image and kept COW cleanup"
+        "attempt dir should be removed after home image and kept COW cleanup"
     );
 }
 
@@ -366,7 +359,7 @@ async fn snapshot_attempt_prepare_firecracker_files_rejects_socket_symlink() {
         output_dir: dir.path().join("output"),
         vcpu_count: 2,
         memory_mb: 512,
-        workspace_disk_mb: 1024,
+        home_disk_mb: 1024,
     };
 
     let err = attempt
@@ -388,10 +381,9 @@ async fn snapshot_attempt_routes_socket_cleanup_through_owner() {
     let sock_dir = dir.path().join("sock");
     let sock_paths = SockPaths::new(sock_dir.clone());
     let stale_socket = sock_dir.join("api.sock");
-    let workspace_image =
-        snapshot_attempt_workspace_image_file(paths.workspace(), "socket-cleanup-test");
+    let home_image = snapshot_attempt_home_image_file(paths.workspace(), "socket-cleanup-test");
     let mut attempt =
-        SnapshotAttempt::new_without_cow_for_test(paths, sock_paths, output, workspace_image);
+        SnapshotAttempt::new_without_cow_for_test(paths, sock_paths, output, home_image);
 
     tokio::fs::create_dir_all(&sock_dir)
         .await
@@ -414,9 +406,9 @@ fn snapshot_attempt_for_test(dir: &tempfile::TempDir) -> (SnapshotAttempt, std::
     let paths = SandboxPaths::new(output.work_dir());
     let sock_dir = dir.path().join("sock");
     let sock_paths = SockPaths::new(sock_dir.clone());
-    let workspace_image = snapshot_attempt_workspace_image_file(paths.workspace(), "default-test");
+    let home_image = snapshot_attempt_home_image_file(paths.workspace(), "default-test");
     (
-        SnapshotAttempt::new_without_cow_for_test(paths, sock_paths, output, workspace_image),
+        SnapshotAttempt::new_without_cow_for_test(paths, sock_paths, output, home_image),
         sock_dir,
     )
 }

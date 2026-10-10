@@ -24,6 +24,7 @@ import { command } from "ccstate";
 import {
   and,
   asc,
+  count,
   desc,
   eq,
   exists,
@@ -279,21 +280,30 @@ const storeVerificationToken$ = command(
       args.token,
     );
     signal.throwIfAborted();
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0191; new non-billing transactions are prohibited.
-    await db.transaction(async (tx) => {
-      await tx
-        .update(notionWebhookSecrets)
-        .set({ active: false, updatedAt: currentTime })
-        .where(eq(notionWebhookSecrets.active, true));
-      signal.throwIfAborted();
-      await tx.insert(notionWebhookSecrets).values({
-        encryptedVerificationToken,
+    const retiredSecrets = db
+      .$with("retired_secrets")
+      .as(
+        db
+          .update(notionWebhookSecrets)
+          .set({ active: false, updatedAt: currentTime })
+          .where(eq(notionWebhookSecrets.active, true))
+          .returning({ id: notionWebhookSecrets.id }),
+      );
+    await db
+      .with(retiredSecrets)
+      .insert(notionWebhookSecrets)
+      .values({
+        // Consume the retirement before checking the single-active unique index.
+        // The aggregate yields one value even when there is no previous secret.
+        encryptedVerificationToken: sql`(
+        SELECT ${encryptedVerificationToken}
+        FROM (SELECT ${count()} FROM ${retiredSecrets}) AS retirement
+      )`,
         active: true,
         createdAt: currentTime,
         updatedAt: currentTime,
       });
-      signal.throwIfAborted();
-    });
+    signal.throwIfAborted();
   },
 );
 

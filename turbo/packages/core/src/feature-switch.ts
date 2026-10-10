@@ -44,14 +44,23 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.StablePreviewFullscreen]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Stable preview fullscreen",
+    description:
+      "Keep thread sidebars in a shell-owned host and expand artifact previews without moving DOM nodes.",
+    enabled: false,
+  },
+  [FeatureSwitchKey.ArtifactSidebarPreview]: {
+    maintainer: "ethan@okou.ai",
+    displayName: "Artifact sidebar preview",
+    description:
+      "Open chat artifacts and artifacts-page previews directly in a sidebar instead of a lightbox.",
+    enabled: false,
+  },
   [FeatureSwitchKey.ArtifactPreviews]: {
     maintainer: "bingjie@okou.ai",
     description: "Capture and publish sandbox covers for HTML artifacts.",
-    enabled: false,
-  },
-  [FeatureSwitchKey.NotifyMail]: {
-    maintainer: "lancy@okou.ai",
-    description: "Allow agents to send Okou email notifications to their user",
     enabled: false,
   },
   [FeatureSwitchKey.HomeTaskRecommendations]: {
@@ -94,9 +103,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "bingjie@okou.ai",
     description:
       "Keep the chat header and input anchored, with a single bottom safe-area reserve.",
-    enabled: false,
-    enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
-    enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
+    enabled: true,
   },
   [FeatureSwitchKey.BrowserNativeInput]: {
     maintainer: "liangyou@okou.ai",

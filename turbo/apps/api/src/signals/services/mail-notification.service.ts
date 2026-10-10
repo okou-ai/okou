@@ -4,8 +4,6 @@ import type {
   NotificationResponse,
   NotifyMailBody,
 } from "@okouai/api-contracts/contracts/notifications";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { emailOutbox } from "@okouai/db/schema/email-outbox";
 import { emailSuppressions } from "@okouai/db/schema/email-suppression";
@@ -23,7 +21,6 @@ import {
 import { env, optionalEnv } from "../../lib/env";
 import { isMorningBriefNotificationSource } from "../../lib/morning-brief-notification-source";
 import { db$, writeDb$ } from "../external/db";
-import { userFeatureSwitchOverrides } from "./feature-switches.service";
 import { emailSubscription$ } from "./email-subscription.service";
 import {
   buildFromAddress,
@@ -50,17 +47,6 @@ function response(
     reason: receipt.reason,
     deduplicated,
   };
-}
-
-export function mailNotificationsEnabled(owner: Owner) {
-  const overrides$ = userFeatureSwitchOverrides(owner.orgId, owner.userId);
-  return computed(async (get) => {
-    const overrides = await get(overrides$);
-    return isFeatureEnabled(FeatureSwitchKey.NotifyMail, {
-      ...owner,
-      overrides,
-    });
-  });
 }
 
 function notificationKeyScope(owner: Owner, key: string) {
@@ -363,25 +349,30 @@ export const eraseMailNotifications$ = command(
     if (!owner.userId && !owner.orgId) {
       throw new Error("Mail notification erasure requires an owner");
     }
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0177; new non-billing transactions are prohibited.
-    await set(writeDb$).transaction(async (tx) => {
-      const scope = and(
-        owner.userId ? eq(mailNotifications.userId, owner.userId) : undefined,
-        owner.orgId ? eq(mailNotifications.orgId, owner.orgId) : undefined,
+    const db = set(writeDb$);
+    const scope = and(
+      owner.userId ? eq(mailNotifications.userId, owner.userId) : undefined,
+      owner.orgId ? eq(mailNotifications.orgId, owner.orgId) : undefined,
+    );
+    const erased = db
+      .$with("erased_mail_notifications")
+      .as(
+        db
+          .delete(mailNotifications)
+          .where(scope)
+          .returning({ outboxId: mailNotifications.outboxId }),
       );
-      await tx
-        .delete(emailOutbox)
-        .where(
-          inArray(
-            emailOutbox.id,
-            tx
-              .select({ id: mailNotifications.outboxId })
-              .from(mailNotifications)
-              .where(scope),
-          ),
-        );
-      await tx.delete(mailNotifications).where(scope);
-      signal.throwIfAborted();
-    });
+    // Use the deleted receipts' identities; receipts may have no surviving outbox.
+    await db
+      .with(erased)
+      .delete(emailOutbox)
+      .where(
+        inArray(
+          emailOutbox.id,
+          db.select({ id: erased.outboxId }).from(erased),
+        ),
+      );
+    // SQL has committed; cancellation stops the caller's remaining cleanup.
+    signal.throwIfAborted();
   },
 );

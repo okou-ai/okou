@@ -8,18 +8,10 @@ import type { ContentfulStatusCode, StatusCode } from "hono/utils/http-status";
 
 import { monotonicNow, now } from "../../lib/time";
 import { logger } from "../../lib/log";
-import {
-  setUsagePricingResolution$,
-  type UsagePricingResolution,
-} from "./usage-pricing-resolution";
 import { initHono$ } from "./hono";
 import { requestValidation$ } from "./request";
 import { setRootSignal$ } from "./root";
 import { safeSync } from "../utils";
-import {
-  setSystemSkillStorageResolution$,
-  type SystemSkillStorageResolution,
-} from "./system-skill-storage-resolution";
 
 export type SignalRouteHandler<T> = Computed<T> | Command<T, [AbortSignal]>;
 
@@ -37,8 +29,7 @@ export type JsonResponseObserver = (
 
 interface HonoSignalHandlerOptions {
   readonly initializeServices$: Command<void, []>;
-  readonly usagePricingResolution?: UsagePricingResolution;
-  readonly systemSkillStorageResolution?: SystemSkillStorageResolution;
+
   readonly observeJsonResponse?: JsonResponseObserver;
 }
 
@@ -127,8 +118,7 @@ export function honoSignalHandler(
   signal: AbortSignal,
   {
     initializeServices$,
-    usagePricingResolution,
-    systemSkillStorageResolution,
+
     observeJsonResponse,
   }: HonoSignalHandlerOptions,
 ): Handler {
@@ -138,12 +128,6 @@ export function honoSignalHandler(
     store.set(setRootSignal$, signal);
     store.set(initHono$, context, contract, apiStartTime);
     store.set(initializeServices$);
-    if (usagePricingResolution) {
-      store.set(setUsagePricingResolution$, usagePricingResolution);
-    }
-    if (systemSkillStorageResolution) {
-      store.set(setSystemSkillStorageResolution$, systemSkillStorageResolution);
-    }
 
     // Mirror the contract client order: path/query validation
     // precedes auth and downstream services, so a malformed request returns

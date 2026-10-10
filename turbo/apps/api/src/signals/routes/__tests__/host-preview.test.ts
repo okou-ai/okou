@@ -10,6 +10,7 @@ import { artifactReferencesContract } from "@okouai/api-contracts/contracts/arti
 import { artifactOgContract } from "@okouai/api-contracts/contracts/artifact-og";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { ARTIFACT_OG_BRAND } from "@okouai/core/artifact-og";
 import type { HostedSitePrepareResponse } from "@okouai/api-contracts/contracts/host";
 import { http, HttpResponse } from "msw";
 import sharp from "sharp";
@@ -159,6 +160,69 @@ async function upload(prepared: HostedSitePrepareResponse, bytes: Buffer) {
 }
 
 describe("sandbox hosted previews", () => {
+  it("reads authored HTML metadata with the hosted-sites credentials even without an uploaded cover", async () => {
+    const owner = createBddApi(context).user();
+    if (!owner.orgId) {
+      throw new Error("Expected an organization");
+    }
+    const actor = { ...owner, orgId: owner.orgId };
+    await updateFeatureSwitchesForUser(context, actor, {
+      artifactPreviews: true,
+    });
+    host.captureHostedSitesS3();
+    const html =
+      '<html><head><title>Morning coffee</title><meta name="description" content="Fresh coffee daily"><meta property="og:image" content="social-card.png"></head><body>Coffee menu</body></html>';
+    const provider = context.mocks.s3.send.getMockImplementation()!;
+    context.mocks.s3.send.mockImplementation((cmd, ...args) => {
+      if (
+        cmd instanceof GetObjectCommand &&
+        cmd.input.Key?.endsWith("/index.html")
+      ) {
+        return Promise.resolve({
+          Body: Readable.from([Buffer.from(html)]),
+          ContentLength: Buffer.byteLength(html),
+        });
+      }
+      return provider(cmd, ...args);
+    });
+    const prepared = await host.prepareHostedSite(actor, {
+      site: `og-html-${randomUUID().slice(0, 8)}`,
+      artifactKind: "hosted-site",
+      spaFallback: false,
+      files: [hostedTextFile("/index.html", html)],
+    });
+    await host.completeHostedSite(actor, prepared.deploymentId);
+    const og = setupAppWithRoutes({ context, routes: artifactOgRoutes })(
+      artifactOgContract,
+    );
+    context.mocks.s3.clientConfig.mockClear();
+    const metadata = await accept(
+      og.metadata({ query: { kind: "host", id: prepared.deploymentId } }),
+      [200],
+    );
+    expect(metadata.body).toMatchObject({
+      available: true,
+      title: "Morning coffee",
+      description: "Fresh coffee daily",
+    });
+    expect(context.mocks.s3.clientConfig).toHaveBeenCalledWith(
+      expect.objectContaining({
+        credentials: {
+          accessKeyId: "test-hosted-sites-access-key",
+          secretAccessKey: "test-hosted-sites-secret-key",
+        },
+      }),
+    );
+    expect(context.mocks.s3.clientConfig).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        credentials: {
+          accessKeyId: "test-access-key",
+          secretAccessKey: "test-secret-key",
+        },
+      }),
+    );
+  });
+
   it("serves the exact published cover anonymously, retains older versions, and revokes OG on disable or deletion", async () => {
     const owner = createBddApi(context).user();
     if (!owner.orgId) {
@@ -229,23 +293,14 @@ describe("sandbox hosted previews", () => {
     expect(original.headers.get("cloudflare-cdn-cache-control")).toBe(
       "no-store",
     );
-    const generic = Buffer.from(
-      await (await accept(og.defaultImage(), [200])).body.arrayBuffer(),
+    const brand = await accept(og.defaultImage(), [302]);
+    expect(brand.headers.get("location")).toBe(ARTIFACT_OG_BRAND.imageUrl);
+    expect(brand.headers.get("cache-control")).toBe("private, no-store");
+    const stale = await accept(
+      og.image({ query: { ...imageQuery, version: "wrong" } }),
+      [302],
     );
-    await expect(sharp(generic).metadata()).resolves.toMatchObject({
-      width: 1280,
-      height: 800,
-    });
-    expect(
-      Buffer.from(
-        await (
-          await accept(
-            og.image({ query: { ...imageQuery, version: "wrong" } }),
-            [200],
-          )
-        ).body.arrayBuffer(),
-      ),
-    ).toStrictEqual(generic);
+    expect(stale.headers.get("location")).toBe(ARTIFACT_OG_BRAND.imageUrl);
 
     const nextBytes = await image("#1122ee");
     const second = await host.prepareHostedSite(actor, {
@@ -272,34 +327,22 @@ describe("sandbox hosted previews", () => {
     ).toStrictEqual({
       available: false,
     });
-    expect(
-      Buffer.from(
-        await (
-          await accept(og.image({ query: imageQuery }), [200])
-        ).body.arrayBuffer(),
-      ),
-    ).toStrictEqual(generic);
+    const disabled = await accept(og.image({ query: imageQuery }), [302]);
+    expect(disabled.headers.get("location")).toBe(ARTIFACT_OG_BRAND.imageUrl);
     await updateFeatureSwitchesForUser(context, actor, {
       artifactPreviews: true,
     });
     previewObjects.clear();
-    const missing = await accept(og.image({ query: imageQuery }), [200]);
-    expect(Buffer.from(await missing.body.arrayBuffer())).toStrictEqual(
-      generic,
-    );
+    const missing = await accept(og.image({ query: imageQuery }), [302]);
+    expect(missing.headers.get("location")).toBe(ARTIFACT_OG_BRAND.imageUrl);
     await host.deleteHostedSite(actor, first.publicSlug);
     expect(
       (await accept(og.metadata({ query: target }), [200])).body,
     ).toStrictEqual({
       available: false,
     });
-    expect(
-      Buffer.from(
-        await (
-          await accept(og.image({ query: imageQuery }), [200])
-        ).body.arrayBuffer(),
-      ),
-    ).toStrictEqual(generic);
+    const deleted = await accept(og.image({ query: imageQuery }), [302]);
+    expect(deleted.headers.get("location")).toBe(ARTIFACT_OG_BRAND.imageUrl);
     expect(
       (
         await accept(

@@ -45,7 +45,7 @@ async fn fresh_and_restore_entrypoints_bind_before_backend_launch_and_clean_up_o
                 memory_path: dir.path().join("memory.bin"),
                 cow_path: dir.path().join("cow.img"),
                 drive_bind_path: dir.path().join("drive"),
-                workspace_drive_bind_path: dir.path().join("workspace"),
+                home_drive_bind_path: dir.path().join("workspace"),
                 vsock_bind_dir: dir.path().join("snapshot-vsock"),
             });
         }
@@ -59,11 +59,11 @@ async fn fresh_and_restore_entrypoints_bind_before_backend_launch_and_clean_up_o
             .await
             .unwrap_err();
         // Fail at the real backend prerequisite, after the guest RPC bind succeeded.
-        assert!(error.to_string().contains(if restore {
-            "workspace drive"
-        } else {
-            "COW device"
-        }));
+        assert!(
+            error
+                .to_string()
+                .contains(if restore { "home drive" } else { "COW device" })
+        );
         assert!(observer.observed);
         assert!(!observer.rpc_path.exists());
         assert!(!observer.duplex_path.exists());

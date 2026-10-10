@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { promisify } from "node:util";
 import { Client } from "pg";
 import postgres from "postgres";
 import { z } from "zod";
@@ -30,10 +32,18 @@ const source = await readFile(path, "utf8");
 const queryStart = source.indexOf("WITH parameters AS MATERIALIZED");
 assert.ok(queryStart > 0);
 const preamble = source.slice(0, queryStart);
-const query = source.slice(queryStart, source.lastIndexOf("ROLLBACK;"));
+const query = source.slice(queryStart);
+
+async function applyAuditSettings() {
+  // Match psql -f: await each SET separately, before the report's implicit
+  // transaction starts. This dedicated connection is disposed in finally.
+  for (const statement of preamble.split(";")) {
+    if (statement.trim()) await auditor.query(statement);
+  }
+}
 const counts = z.record(z.string(), z.number().int());
 const receiptSchema = z.strictObject({
-  receipt_version: z.literal("historical_session_blob_references_v1"),
+  receipt_version: z.literal("historical_session_blob_references_v2"),
   inventory_revision: z.string().regex(/^[0-9a-f]{40}$/),
   scope: z.string(),
   observed_at: z.string(),
@@ -44,7 +54,7 @@ const receiptSchema = z.strictObject({
     read_only: z.literal("on"),
     isolation: z.literal("repeatable read"),
     started_at: z.string(),
-    ending: z.literal("rollback"),
+    ending: z.literal("implicit_commit"),
     statement_timeout: z.literal("30s"),
     lock_timeout: z.literal("3s"),
     idle_timeout: z.literal("15s"),
@@ -116,10 +126,43 @@ async function runSqlFile(sqlFile: string | readonly string[]) {
   }
 }
 
+async function runPsqlFile(sqlFile: string) {
+  // Exercise the shipped psql interface, including separate SET messages,
+  // ON_ERROR_STOP and process/connection disposal. -qAt emits only the JSON row.
+  const execution = promisify(execFile)(
+    "psql",
+    [
+      "-X",
+      "-qAt",
+      "--set",
+      "ON_ERROR_STOP=1",
+      "--set",
+      "VERBOSITY=sqlstate",
+      "--file",
+      "-",
+    ],
+    {
+      env: {
+        ...process.env,
+        PGDATABASE: database,
+        PGHOST: fixtureUrl.hostname,
+        PGPORT: fixtureUrl.port,
+        PGUSER: decodeURIComponent(fixtureUrl.username),
+        PGPASSWORD: decodeURIComponent(fixtureUrl.password),
+        // Prove that the file sets its own defaults and does not inherit these.
+        PGOPTIONS:
+          "-c default_transaction_read_only=off -c default_transaction_isolation=serializable -c timezone=Asia/Shanghai -c search_path=pg_catalog",
+      },
+    },
+  );
+  execution.child.stdin?.end(sqlFile);
+  const { stdout } = await execution;
+  const result: unknown = JSON.parse(stdout.trim());
+  return result;
+}
+
 async function runFile() {
-  return z
-    .object({ historical_session_blob_reference_audit: receiptSchema })
-    .parse(await runSqlFile(source)).historical_session_blob_reference_audit;
+  return receiptSchema.parse(await runPsqlFile(source));
 }
 
 async function state() {
@@ -216,62 +259,58 @@ async function seedScale() {
 }
 
 async function measurePlan() {
-  await auditor.query(preamble);
-  try {
-    const result = await auditor.query(
-      `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${query}`,
-    );
-    // Keep plan evidence aggregate-only too: no conditions, identifiers or SQL.
-    const planSchema: z.ZodType<PlanNode> = z.lazy(() => {
-      return z.object({
-        "Node Type": z.string(),
-        "Relation Name": z.string().optional(),
-        "Index Name": z.string().optional(),
-        "Actual Rows": z.number(),
-        "Actual Loops": z.number(),
-        "Shared Hit Blocks": z.number(),
-        "Shared Read Blocks": z.number(),
-        "Temp Read Blocks": z.number(),
-        "Temp Written Blocks": z.number(),
-        "Peak Memory Usage": z.number().optional(),
-        "Sort Space Used": z.number().optional(),
-        "Sort Space Type": z.string().optional(),
-        "Hash Batches": z.number().optional(),
-        "HashAgg Batches": z.number().optional(),
-        Plans: z.array(planSchema).optional(),
-      });
+  await applyAuditSettings();
+  const result = await auditor.query(
+    `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${query}`,
+  );
+  // Keep plan evidence aggregate-only too: no conditions, identifiers or SQL.
+  const planSchema: z.ZodType<PlanNode> = z.lazy(() => {
+    return z.object({
+      "Node Type": z.string(),
+      "Relation Name": z.string().optional(),
+      "Index Name": z.string().optional(),
+      "Actual Rows": z.number(),
+      "Actual Loops": z.number(),
+      "Shared Hit Blocks": z.number(),
+      "Shared Read Blocks": z.number(),
+      "Temp Read Blocks": z.number(),
+      "Temp Written Blocks": z.number(),
+      "Peak Memory Usage": z.number().optional(),
+      "Sort Space Used": z.number().optional(),
+      "Sort Space Type": z.string().optional(),
+      "Hash Batches": z.number().optional(),
+      "HashAgg Batches": z.number().optional(),
+      Plans: z.array(planSchema).optional(),
     });
-    const parsed = z
-      .array(
-        z.object({
-          "QUERY PLAN": z.array(
-            z.object({
-              Plan: planSchema,
-              "Planning Time": z.number(),
-              "Execution Time": z.number(),
-            }),
-          ),
-        }),
-      )
-      .parse(result.rows);
-    const plan = parsed[0]?.["QUERY PLAN"][0];
-    assert.ok(plan);
-    console.log(
-      JSON.stringify({ evidence: "synthetic_current_scale_plan", ...plan }),
-    );
-    const receipt = await readReceipt();
-    assert.equal(receipt.population.blob_rows, 313033);
-    assert.equal(receipt.population.conversation_references, 277197);
-    assert.equal(receipt.population.candidate_references, 1341);
-    assert.equal(receipt.reconciliation.balanced_owned_hashes, 278538);
-    assert.equal(receipt.reconciliation.unowned_zero_count_metadata, 34495);
-    assert.equal(receipt.reconciliation.all_excess_hashes, 0);
-    console.log(
-      JSON.stringify({ evidence: "synthetic_current_scale_receipt", receipt }),
-    );
-  } finally {
-    await auditor.query("ROLLBACK");
-  }
+  });
+  const parsed = z
+    .array(
+      z.object({
+        "QUERY PLAN": z.array(
+          z.object({
+            Plan: planSchema,
+            "Planning Time": z.number(),
+            "Execution Time": z.number(),
+          }),
+        ),
+      }),
+    )
+    .parse(result.rows);
+  const plan = parsed[0]?.["QUERY PLAN"][0];
+  assert.ok(plan);
+  console.log(
+    JSON.stringify({ evidence: "synthetic_current_scale_plan", ...plan }),
+  );
+  const receipt = await readReceipt();
+  assert.equal(receipt.population.blob_rows, 313033);
+  assert.equal(receipt.population.conversation_references, 277197);
+  assert.equal(receipt.population.candidate_references, 1341);
+  assert.equal(receipt.reconciliation.balanced_owned_hashes, 278538);
+  assert.equal(receipt.reconciliation.unowned_zero_count_metadata, 34495);
+  assert.equal(receipt.reconciliation.all_excess_hashes, 0);
+  console.log(
+    JSON.stringify({ evidence: "synthetic_current_scale_receipt", receipt }),
+  );
 }
 
 interface PlanNode {
@@ -354,8 +393,25 @@ try {
     VALUES ('audit-user', 1, '2026-09-14', 'audit-org', '${randomUUID()}', '${storage}',
       'frozen-selection', '${randomUUID()}', '${hash(6)}', '2026-09-10', '2026-09-10');`);
 
+  assert.deepEqual(
+    await runPsqlFile(`${preamble}SELECT jsonb_build_object(
+      'read_only', current_setting('transaction_read_only'),
+      'isolation', current_setting('transaction_isolation'),
+      'timezone', current_setting('timezone'),
+      'search_path', current_setting('search_path'),
+      'jit', current_setting('jit'));`),
+    {
+      read_only: "on",
+      isolation: "repeatable read",
+      timezone: "UTC",
+      search_path: "pg_catalog, public",
+      jit: "off",
+    },
+  );
   const before = await state();
   const receipt = await runFile();
+  assert.equal(receipt.transaction.started_at, receipt.observed_at);
+  assert.ok(Date.parse(receipt.finished_at) >= Date.parse(receipt.observed_at));
   assert.deepEqual(
     await state(),
     before,
@@ -507,17 +563,21 @@ try {
     "CREATE TABLE forbidden_write (id integer)",
     "SELECT * FROM blobs FOR UPDATE",
   ]) {
-    await auditor.query(preamble);
-    await assert.rejects(auditor.query(forbidden), { code: "25006" });
-    await auditor.query("ROLLBACK");
+    await assert.rejects(runPsqlFile(`${preamble}${forbidden};\nSELECT 1;`), {
+      code: 3,
+      stderr: /25006/,
+      stdout: "",
+    });
   }
   assert.deepEqual(await state(), before);
   console.log(
-    "PASS PostgreSQL rejects DML, DDL and row write locks under the audit transaction",
+    "PASS PostgreSQL rejects DML, DDL and row write locks under the audit session settings",
   );
 
-  await auditor.query(preamble);
+  await applyAuditSettings();
   const pinned = await readReceipt();
+  const pinnedOwnerReferences = pinned.population.owner_references;
+  assert.ok(pinnedOwnerReferences !== undefined);
   // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0389; new non-billing transactions are prohibited.
   await writer.query("BEGIN; SET LOCAL statement_timeout = '2s'");
   await conversation(1);
@@ -526,20 +586,21 @@ try {
     [hash(1)],
   );
   await writer.query("COMMIT");
-  assert.deepEqual((await readReceipt()).population, pinned.population);
-  await auditor.query("ROLLBACK");
+  assert.equal(
+    (await readReceipt()).population.owner_references,
+    pinnedOwnerReferences + 1,
+  );
   assert.equal((await runFile()).population.owner_references, 15);
   console.log(
-    "PASS concurrent writer commits without an audit write lock; repeated report reads retain one snapshot",
+    "PASS concurrent writer commits without an audit write lock; each report observes a new statement snapshot",
   );
 
   // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0390; new non-billing transactions are prohibited.
   await writer.query("BEGIN; LOCK TABLE blobs IN ACCESS EXCLUSIVE MODE");
   try {
-    await auditor.query(preamble);
+    await applyAuditSettings();
     await assert.rejects(readReceipt(), { code: "55P03" });
   } finally {
-    await auditor.query("ROLLBACK");
     await writer.query("ROLLBACK");
   }
   console.log(
@@ -589,16 +650,28 @@ try {
     "UPDATE conversations SET cli_agent_session_history_hash = 'unknown-history-format' WHERE cli_agent_session_history_hash IS NULL",
   );
   assert.equal((await runFile()).population.unrecognized_hash_format, 1);
-  await auditor.query(preamble);
+  await applyAuditSettings();
   await assert.rejects(
     auditor.query(
       query.replace("timestamp '2026-09-14 01:11:38'", "timestamp 'infinity'"),
     ),
     { code: "22012" },
   );
-  await auditor.query("ROLLBACK");
   console.log(
     "PASS recent excess, invalid namespace, unknown hashes and invalid cutoff cannot become repair eligibility",
+  );
+
+  await writer.query("ALTER TABLE blobs ENABLE ROW LEVEL SECURITY");
+  try {
+    await assert.rejects(
+      runPsqlFile(`${preamble}SET ROLE pg_read_all_data;\n${query}\nSELECT 1;`),
+      { code: 3, stderr: /42501/, stdout: "" },
+    );
+  } finally {
+    await writer.query("ALTER TABLE blobs DISABLE ROW LEVEL SECURITY");
+  }
+  console.log(
+    "PASS row_security=off rejects an incomplete RLS-filtered report",
   );
 
   await seedScale();

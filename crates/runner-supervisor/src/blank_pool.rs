@@ -18,6 +18,7 @@ use crate::idle_lifecycle::{
 };
 use runner_executor::executor::{BlankPoolSelection, BlankPoolSelectionReason};
 use runner_executor::pre_spawn_admission::{BackgroundPreSpawnAdmissionLease, PreSpawnAdmission};
+use runner_lifecycle::home_mount::ensure_home_drive_mounted;
 use runner_lifecycle::idle_pool::{
     DestroyOutcome, IdleDestroyJob, IdlePool, ParkResult, ParkedIdleCandidate,
 };
@@ -26,7 +27,6 @@ use runner_lifecycle::resource_budget::{
     BudgetLease, ReservationWithHeadroomStatus, ResourceBudget,
 };
 use runner_lifecycle::status::StatusTracker;
-use runner_lifecycle::workspace_mount::ensure_workspace_drive_mounted;
 
 const TARGET_PERCENT: usize = 10;
 const EXACT_IDLE_CAPACITY_YIELD_AGE: Duration = Duration::from_secs(30 * 60);
@@ -36,7 +36,8 @@ const EXACT_IDLE_CAPACITY_YIELD_AGE: Duration = Duration::from_secs(30 * 60);
 pub struct BlankProfile {
     pub vcpu: u32,
     pub memory_mb: u32,
-    pub workspace_disk_mb: u32,
+    pub rootfs_hash: String,
+    pub home_disk_mb: u32,
 }
 
 struct BlankPoolPlan {
@@ -540,7 +541,7 @@ impl BlankPoolReplenisher {
                         idle_destroy_tracker.spawn_cleanup(
                             async move {
                                 payload
-                                    .finalize_workspace_and_destroy("blank_pool_rejected")
+                                    .finalize_home_and_destroy("blank_pool_rejected")
                                     .await;
                                 drop(lease);
                             },
@@ -684,8 +685,8 @@ async fn prepare_blank_sandbox(
             memory_mb: profile.memory_mb,
         },
         device_rate_limits: device_rate_limits.clone(),
-        workspace_drive: Some(sandbox::WorkspaceDriveConfig {
-            size_mb: profile.workspace_disk_mb,
+        home_drive: Some(sandbox::HomeDriveConfig {
+            size_mb: profile.home_disk_mb,
             seed_image: None,
         }),
     };
@@ -735,7 +736,7 @@ async fn prepare_blank_sandbox(
     }
 
     match run_background_stage(
-        ensure_workspace_drive_mounted(sandbox.as_ref(), sandbox_id),
+        ensure_home_drive_mounted(sandbox.as_ref(), sandbox_id),
         &cancel,
         &mut pre_spawn_lease,
     )
@@ -746,7 +747,7 @@ async fn prepare_blank_sandbox(
             drop(pre_spawn_lease.take());
             destroy_sandbox(&factory, sandbox).await;
             return BlankPrepareResult::Failed(BlankPrepareFailure {
-                stage: "workspace_mount",
+                stage: "home_mount",
                 error: Some(error.error.to_string()),
             });
         }
@@ -754,7 +755,7 @@ async fn prepare_blank_sandbox(
         | BackgroundStageResult::CancelledAfterStart(_) => {
             destroy_sandbox(&factory, sandbox).await;
             return BlankPrepareResult::Failed(BlankPrepareFailure {
-                stage: "workspace_mount",
+                stage: "home_mount",
                 error: None,
             });
         }
@@ -762,8 +763,8 @@ async fn prepare_blank_sandbox(
             drop(pre_spawn_lease.take());
             destroy_sandbox(&factory, sandbox).await;
             return BlankPrepareResult::Failed(BlankPrepareFailure {
-                stage: "workspace_mount",
-                error: Some("workspace drive mount panicked".into()),
+                stage: "home_mount",
+                error: Some("home drive mount panicked".into()),
             });
         }
     }
@@ -778,6 +779,7 @@ async fn prepare_blank_sandbox(
                     budget_lease,
                     sandbox_id,
                     profile_name,
+                    profile.rootfs_hash,
                     device_rate_limits,
                 )),
                 retired_exact,
@@ -834,7 +836,7 @@ async fn retire_exact_before_blank(
         }
         result = &mut cleanup => (false, result),
     };
-    if result.workspace_cache_promoted {
+    if result.home_cache_promoted {
         idle_destroy_tracker.notify_reuse_state();
     }
     if cancelled || cancel.is_cancelled() {
@@ -929,7 +931,7 @@ async fn destroy_sandbox(factory: &SharedFactory, mut sandbox: Box<dyn Sandbox>)
 
 async fn destroy_candidate(candidate: ParkedIdleCandidate, context: &'static str) {
     let (payload, lease) = candidate.into_active_destroy_parts();
-    payload.finalize_workspace_and_destroy(context).await;
+    payload.finalize_home_and_destroy(context).await;
     drop(lease);
 }
 
@@ -944,7 +946,8 @@ mod tests {
         BlankProfile {
             vcpu,
             memory_mb,
-            workspace_disk_mb: 10240,
+            rootfs_hash: "test-rootfs".into(),
+            home_disk_mb: 10240,
         }
     }
 

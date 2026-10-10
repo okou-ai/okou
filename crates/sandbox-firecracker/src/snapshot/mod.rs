@@ -24,7 +24,7 @@ use crate::runtime_dirs::checked_runtime_sock_dir;
 use self::attempt::{SnapshotAttempt, cleanup_existing_snapshot_sock_dir};
 use self::cow::{
     SnapshotAttemptDirGuard, create_sparse_cow_file, snapshot_attempt_cow_file,
-    snapshot_attempt_dir, snapshot_attempt_token, snapshot_attempt_workspace_image_file,
+    snapshot_attempt_dir, snapshot_attempt_home_image_file, snapshot_attempt_token,
 };
 use self::output::prepare_snapshot_output;
 use self::publish::FirecrackerPendingSnapshotPublish;
@@ -132,8 +132,7 @@ async fn create_uncommitted_snapshot(
         .map_err(|e| SnapshotError::Setup(format!("create snapshot attempt dir: {e}")))?;
     let attempt_dir_guard = SnapshotAttemptDirGuard::new(attempt_dir);
     let cow_file = snapshot_attempt_cow_file(paths.workspace(), &attempt_token);
-    let workspace_image_file =
-        snapshot_attempt_workspace_image_file(paths.workspace(), &attempt_token);
+    let home_image_file = snapshot_attempt_home_image_file(paths.workspace(), &attempt_token);
     create_sparse_cow_file(&cow_file, base_size)?;
 
     let device_pool =
@@ -152,7 +151,7 @@ async fn create_uncommitted_snapshot(
         output,
         device_pool,
         cow_device.into(),
-        workspace_image_file,
+        home_image_file,
         attempt_dir_guard,
     );
 
@@ -203,7 +202,7 @@ mod tests {
             output_dir,
             vcpu_count: 2,
             memory_mb: 512,
-            workspace_disk_mb: 1024,
+            home_disk_mb: 1024,
         })
         .await;
 
@@ -237,7 +236,7 @@ mod tests {
             output_dir,
             vcpu_count: 2,
             memory_mb: 512,
-            workspace_disk_mb: 1024,
+            home_disk_mb: 1024,
         })
         .await;
 

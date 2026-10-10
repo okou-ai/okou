@@ -6,12 +6,12 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
-use guest_contracts::workspace_mount::WORKSPACE_DRIVE_MOUNT_REQUEST_DEADLINE;
+use guest_contracts::home_mount::HOME_DRIVE_MOUNT_REQUEST_DEADLINE;
 use guest_control_client::{
     ExecOwnedCapturedOutput, FencedExecError, FrameWriteObserver, GuestControlClient,
-    GuestStateRestoreResult, GuestStorageManifestResult, NormalOperationFence,
-    NormalOperationFenceRejection, SupervisedExecControl, SupervisedExecRequest,
-    SupervisedExecStartTiming, WorkspaceDriveMountResult,
+    GuestStateRestoreResult, GuestStorageManifestResult, HomeDriveMountResult,
+    NormalOperationFence, NormalOperationFenceRejection, SupervisedExecControl,
+    SupervisedExecRequest, SupervisedExecStartTiming,
 };
 use guest_control_proto::{
     ExecOutputPolicy, ExecProcessRole, ExecTimeoutPolicy,
@@ -253,7 +253,7 @@ pub(crate) fn build_fresh_boot_firecracker_config(
     resources: &sandbox::ResourceLimits,
     kernel_path: String,
     cow_device_path: String,
-    workspace_device_path: Option<String>,
+    home_device_path: Option<String>,
     vsock_path: String,
     device_rate_limits: Option<&FirecrackerDeviceRateLimits>,
 ) -> sandbox::Result<FirecrackerBootConfig> {
@@ -263,7 +263,7 @@ pub(crate) fn build_fresh_boot_firecracker_config(
         memory_mb: resources.memory_mb,
         kernel_path,
         rootfs_path: cow_device_path,
-        workspace_path: workspace_device_path,
+        home_path: home_device_path,
         vsock_path,
     });
     match device_rate_limits {
@@ -1198,11 +1198,11 @@ impl FirecrackerSandbox {
         let invariant = InvariantConfig::new();
         let kernel_path = self.factory_config.kernel_path.display().to_string();
         let cow_device_path = self.cow_device()?.device_path().display().to_string();
-        let workspace_device_path = self
+        let home_device_path = self
             .config
-            .workspace_drive
+            .home_drive
             .as_ref()
-            .map(|_| self.sandbox_paths.workspace_image().display().to_string());
+            .map(|_| self.sandbox_paths.home_image().display().to_string());
         let vsock_path = self.sock_paths.vsock().display().to_string();
 
         build_fresh_boot_firecracker_config(
@@ -1210,7 +1210,7 @@ impl FirecrackerSandbox {
             &self.config.resources,
             kernel_path,
             cow_device_path,
-            workspace_device_path,
+            home_device_path,
             vsock_path,
             self.device_rate_limits.as_ref(),
         )
@@ -1347,9 +1347,9 @@ impl FirecrackerSandbox {
                 .ok_or_else(|| SandboxError::Start {
                     message: "missing snapshot config".into(),
                 })?;
-        if self.config.workspace_drive.is_none() {
+        if self.config.home_drive.is_none() {
             return Err(SandboxError::Start {
-                message: "snapshot restore requires a workspace drive".into(),
+                message: "snapshot restore requires a home drive".into(),
             });
         }
 
@@ -1361,7 +1361,7 @@ impl FirecrackerSandbox {
         })?;
 
         ensure_snapshot_drive_bind_target(&snapshot.drive_bind_path).await?;
-        ensure_snapshot_drive_bind_target(&snapshot.workspace_drive_bind_path).await?;
+        ensure_snapshot_drive_bind_target(&snapshot.home_drive_bind_path).await?;
 
         // Verify sock dir exists before spawning — if this fails, we know
         // the directory was never created or was removed before spawn.
@@ -1374,13 +1374,13 @@ impl FirecrackerSandbox {
             });
         }
         let cow_device_path = self.cow_device()?.device_path();
-        let workspace_image_path = self.sandbox_paths.workspace_image();
+        let home_image_path = self.sandbox_paths.home_image();
         info!(
             id = %self.id,
             api_sock = %api_sock.display(),
             sock_dir = %sock_dir.display(),
             cow_device = %cow_device_path.display(),
-            workspace_image = %workspace_image_path.display(),
+            home_image = %home_image_path.display(),
             netns = %self.network.name(),
             binary = %self.factory_config.binary_path.display(),
             "spawning firecracker (snapshot restore)"
@@ -1405,10 +1405,7 @@ impl FirecrackerSandbox {
             SnapshotMountMode::Restore {
                 vsock: BindMount::new(&self.sock_paths.vsock_dir(), &snapshot.vsock_bind_dir),
                 rootfs: BindMount::new(cow_device_path, &snapshot.drive_bind_path),
-                workspace: BindMount::new(
-                    &workspace_image_path,
-                    &snapshot.workspace_drive_bind_path,
-                ),
+                home: BindMount::new(&home_image_path, &snapshot.home_drive_bind_path),
             },
             self.network.name(),
             &self.factory_config.binary_path,
@@ -1597,6 +1594,18 @@ impl FirecrackerSandbox {
         };
 
         let guest_control_client = Arc::new(guest_control_client);
+
+        // Fresh boot, blank creation, and restored snapshots all observe the
+        // actual attached home before user operations become available. The
+        // executor repeats this fixed operation for exact reuse and handoff.
+        if self.config.home_drive.is_some()
+            && let Err(error) = validate_guest_home_drive(guest_control_client.as_ref()).await
+        {
+            self.runtime.kill_process().await;
+            return Err(SandboxError::Start {
+                message: format!("validate attached home drive: {error}"),
+            });
+        }
 
         if let Some(dns_port) = self.factory_config.dns_port {
             let dns_started = Instant::now();
@@ -2482,6 +2491,13 @@ impl Sandbox for FirecrackerSandbox {
         self.process_group_pid
     }
 
+    fn backing_process(&self) -> Option<Arc<dyn sandbox::SandboxBackingProcess>> {
+        self.runtime.process_exit.as_ref().map(|exit| {
+            let retained: Arc<dyn sandbox::SandboxBackingProcess> = Arc::new(exit.clone());
+            retained
+        })
+    }
+
     fn bind_run_control(&mut self, run_id: &str) -> sandbox::Result<()> {
         if run_id.is_empty() {
             return Err(SandboxError::Configuration {
@@ -2797,14 +2813,14 @@ impl Sandbox for FirecrackerSandbox {
         .await
     }
 
-    async fn mount_workspace_drive(&self) -> sandbox::Result<ExecResult> {
-        let operation = SandboxOperation::MountWorkspaceDrive;
+    async fn mount_home_drive(&self) -> sandbox::Result<ExecResult> {
+        let operation = SandboxOperation::MountHomeDrive;
 
         self.run_bounded_guest_operation(operation, |guest| async move {
             guest
-                .mount_workspace_drive(WORKSPACE_DRIVE_MOUNT_REQUEST_DEADLINE)
+                .mount_home_drive(HOME_DRIVE_MOUNT_REQUEST_DEADLINE)
                 .await
-                .map(workspace_drive_mount_exec_result)
+                .map(home_drive_mount_exec_result)
         })
         .await
     }
@@ -3127,7 +3143,27 @@ fn storage_manifest_exec_result(result: GuestStorageManifestResult) -> ExecResul
     }
 }
 
-fn workspace_drive_mount_exec_result(result: WorkspaceDriveMountResult) -> ExecResult {
+pub(crate) async fn validate_guest_home_drive(guest: &GuestControlClient) -> io::Result<()> {
+    let result = guest
+        .mount_home_drive(HOME_DRIVE_MOUNT_REQUEST_DEADLINE)
+        .await?;
+    if result.termination != (guest_control_proto::ExecTermination::Exited { exit_code: 0 }) {
+        return Err(io::Error::other(format!(
+            "home mount failed ({:?}): {} {}",
+            result.termination,
+            String::from_utf8_lossy(&result.stderr),
+            result.diagnostic,
+        )));
+    }
+    if result.stdout_truncated || result.stderr_truncated {
+        return Err(io::Error::other(
+            "home mount output exceeded the fixed capture bound",
+        ));
+    }
+    Ok(())
+}
+
+fn home_drive_mount_exec_result(result: HomeDriveMountResult) -> ExecResult {
     ExecResult {
         termination: exec_termination_from_vsock_termination(result.termination),
         guest_duration_ms: Some(result.duration_ms),

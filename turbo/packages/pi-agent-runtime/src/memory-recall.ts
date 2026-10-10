@@ -150,7 +150,7 @@ function piMemoryRecallTemplatePrefix(truncated: boolean): string {
     `- The tool stages one new file in ${PI_MEMORY_ROOT}/extensions/ad_hoc/notes/; do not use Bash or another generic filesystem tool as the memory-update interface.`,
     "- Each update must be one small file containing what you want to add/delete/update from the memories.",
     "- The name of this file must be `<timestamp>-<short slug>.md`",
-    "- A successful tool result means only that the note is staged in the current sandbox. Durable retention still depends on the terminal artifact checkpoint succeeding.",
+    "- A successful tool result means only that the note is staged in the current sandbox. Durable retention still depends on successful artifact publication at the end of the run.",
     "- Do not claim that the update is durable, published, or persistently saved before the run completes successfully.",
     "- Do not edit consolidated memory files directly; stage one append-only update note instead.",
     "",

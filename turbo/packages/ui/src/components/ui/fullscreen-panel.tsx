@@ -15,6 +15,8 @@ import {
 type FullscreenPanelProps = ComponentPropsWithoutRef<"div"> & {
   readonly as?: "div" | "aside";
   readonly fullscreen: boolean;
+  /** Disable relocation only inside a stable, shell-owned fullscreen host. */
+  readonly relocate?: boolean;
   /** Opt in a reflowing document to reading-position preservation. */
   readonly scrollAnchor?: {
     readonly viewportSelector: string;
@@ -84,7 +86,9 @@ class FullscreenPanelPortal extends Component<
   }
 
   public componentDidMount() {
-    movePortal(this.props.mount, this.props.fullscreen);
+    if (this.props.relocate !== false) {
+      movePortal(this.props.mount, this.props.fullscreen);
+    }
   }
 
   public componentDidUpdate(
@@ -93,7 +97,9 @@ class FullscreenPanelPortal extends Component<
     snapshot: ScrollAnchorSnapshot | null,
   ) {
     try {
-      movePortal(this.props.mount, this.props.fullscreen);
+      if (this.props.relocate !== false) {
+        movePortal(this.props.mount, this.props.fullscreen);
+      }
       if (snapshot) {
         restoreScrollAnchor(snapshot);
       }
@@ -111,6 +117,7 @@ class FullscreenPanelPortal extends Component<
       className,
       fullscreen,
       mount,
+      relocate: _relocate,
       scrollAnchor: _scrollAnchor,
       ...props
     } = this.props;

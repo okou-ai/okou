@@ -570,18 +570,6 @@ function parseRevisionPreviewToken(
   return result.success ? result.data : null;
 }
 
-async function loadMigrationSelections(
-  db: Pick<Db, "select">,
-  migrationId: string,
-): Promise<readonly MigrationSelectionRow[]> {
-  return await db
-    .select()
-    .from(usagePackSubscriptionMigrationSelections)
-    .where(
-      eq(usagePackSubscriptionMigrationSelections.migrationId, migrationId),
-    );
-}
-
 function legacyPlanItem(
   subscription: StripeSubscription,
   tier: SubscriptionCheckoutTier,
@@ -2859,7 +2847,12 @@ const reconcileMigration$ = command(
   ): Promise<AppliedMigrationResult> => {
     const db = set(writeDb$);
     const { migration, eventInvoice } = args;
-    const selections = await loadMigrationSelections(db, migration.id);
+    const selections: readonly MigrationSelectionRow[] = await db
+      .select()
+      .from(usagePackSubscriptionMigrationSelections)
+      .where(
+        eq(usagePackSubscriptionMigrationSelections.migrationId, migration.id),
+      );
     signal.throwIfAborted();
     const subscription = await getStripeClient().subscriptions.retrieve(
       migration.stripeSubscriptionId,
@@ -3056,37 +3049,6 @@ export const confirmUsagePackSubscriptionMigration$ = command(
   },
 );
 
-async function migrationForInvoice(
-  db: Pick<Db, "select">,
-  invoice: Pick<UsagePackInvoiceInput, "id" | "parent">,
-): Promise<MigrationRow | null> {
-  const subscriptionId = stripeObjectId(
-    invoice.parent?.subscription_details?.subscription,
-  );
-  const [migration] = await db
-    .select()
-    .from(usagePackSubscriptionMigrations)
-    .where(
-      or(
-        eq(usagePackSubscriptionMigrations.stripeInvoiceId, invoice.id),
-        subscriptionId
-          ? and(
-              eq(
-                usagePackSubscriptionMigrations.stripeSubscriptionId,
-                subscriptionId,
-              ),
-              inArray(usagePackSubscriptionMigrations.status, [
-                ...RECONCILING_MIGRATION_STATUSES,
-              ]),
-            )
-          : sql`false`,
-      ),
-    )
-    .orderBy(desc(usagePackSubscriptionMigrations.createdAt))
-    .limit(1);
-  return migration ?? null;
-}
-
 export const handleUsagePackMigrationInvoicePaid$ = command(
   async (
     { set },
@@ -3094,7 +3056,30 @@ export const handleUsagePackMigrationInvoicePaid$ = command(
     signal: AbortSignal,
   ): Promise<UsagePackMigrationLifecycleOutcome> => {
     const db = set(writeDb$);
-    const migration = await migrationForInvoice(db, invoice);
+    const subscriptionId = stripeObjectId(
+      invoice.parent?.subscription_details?.subscription,
+    );
+    const [migration] = await db
+      .select()
+      .from(usagePackSubscriptionMigrations)
+      .where(
+        or(
+          eq(usagePackSubscriptionMigrations.stripeInvoiceId, invoice.id),
+          subscriptionId
+            ? and(
+                eq(
+                  usagePackSubscriptionMigrations.stripeSubscriptionId,
+                  subscriptionId,
+                ),
+                inArray(usagePackSubscriptionMigrations.status, [
+                  ...RECONCILING_MIGRATION_STATUSES,
+                ]),
+              )
+            : sql`false`,
+        ),
+      )
+      .orderBy(desc(usagePackSubscriptionMigrations.createdAt))
+      .limit(1);
     signal.throwIfAborted();
     if (!migration) {
       return { handled: false, orgId: null };
@@ -3102,7 +3087,15 @@ export const handleUsagePackMigrationInvoicePaid$ = command(
     const currentInvoice = await retrieveMigrationInvoice(invoice.id);
     signal.throwIfAborted();
     if (migration.stripeInvoiceId !== currentInvoice.id) {
-      const selections = await loadMigrationSelections(db, migration.id);
+      const selections: readonly MigrationSelectionRow[] = await db
+        .select()
+        .from(usagePackSubscriptionMigrationSelections)
+        .where(
+          eq(
+            usagePackSubscriptionMigrationSelections.migrationId,
+            migration.id,
+          ),
+        );
       signal.throwIfAborted();
       if (
         !migrationInvoiceMatchesSelections(

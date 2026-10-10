@@ -21,11 +21,6 @@ import { pgInt8ToSafeIntegerDecoder } from "../../lib/db-structured-result";
 import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
 import type { AuthContext } from "../../types/auth";
-import {
-  resolveUsagePricingProvider,
-  usagePricingResolution$,
-  type UsagePricingResolution,
-} from "../context/usage-pricing-resolution";
 import { writeDb$, type Db } from "../external/db";
 import { settle, settleIncludingAbort } from "../utils";
 import { completeProcessedOrgUsage$ } from "./credit-usage.service";
@@ -176,16 +171,8 @@ function replayJob(
       );
 }
 
-async function loadPricing(
-  db: Db,
-  platform: SocialDataRequest["platform"],
-  resolution: UsagePricingResolution,
-) {
-  const provider = resolveUsagePricingProvider(
-    resolution,
-    "social",
-    providerFor(platform),
-  );
+async function loadPricing(db: Db, platform: SocialDataRequest["platform"]) {
+  const provider = providerFor(platform);
   const [pricing] = await db
     .select()
     .from(usagePricing)
@@ -209,7 +196,7 @@ async function loadPricing(
 
 export const quoteSocialData$ = command(
   async (
-    { get, set },
+    { set },
     args: { readonly auth: Actor; readonly body: SocialDataRequest },
     signal: AbortSignal,
   ): Promise<
@@ -224,11 +211,7 @@ export const quoteSocialData$ = command(
           signal,
         );
         signal.throwIfAborted();
-        const pricing = await loadPricing(
-          db,
-          args.body.platform,
-          get(usagePricingResolution$),
-        );
+        const pricing = await loadPricing(db, args.body.platform);
         signal.throwIfAborted();
         const credits = creditsFor(
           estimate.estimatedCostUsdMicros,
@@ -261,7 +244,6 @@ async function checkBudget(
     readonly estimate: SocialDataProviderQuote;
     readonly estimatedCredits: number;
     readonly maxCredits: number;
-    readonly resolution: UsagePricingResolution;
   },
   signal: AbortSignal,
 ): Promise<ErrorResponse | null> {
@@ -314,7 +296,6 @@ async function checkBudget(
         (reservation?.credits ?? 0) + args.maxCredits - args.estimatedCredits,
       enforceBalance: true,
     },
-    args.resolution,
     signal,
   );
 }
@@ -326,7 +307,6 @@ async function admitJob(
     readonly body: SocialDataCreateRequest;
     readonly plan: SocialDataProviderPlan;
     readonly estimate: SocialDataProviderQuote;
-    readonly resolution: UsagePricingResolution;
   },
   signal: AbortSignal,
 ): Promise<CreatedResponse | ErrorResponse> {
@@ -348,7 +328,7 @@ async function admitJob(
     return replayJob(duplicate, args.body);
   }
   const request = requestOf(args.body);
-  const pricing = await loadPricing(tx, request.platform, args.resolution);
+  const pricing = await loadPricing(tx, request.platform);
   signal.throwIfAborted();
   const estimatedCredits = creditsFor(
     args.estimate.estimatedCostUsdMicros,
@@ -395,7 +375,7 @@ async function admitJob(
 
 export const createSocialDataJob$ = command(
   async (
-    { get, set },
+    { set },
     args: { readonly auth: Actor; readonly body: SocialDataCreateRequest },
     signal: AbortSignal,
   ): Promise<CreatedResponse | ErrorResponse> => {
@@ -413,10 +393,9 @@ export const createSocialDataJob$ = command(
         const plan = prepareSocialDataProviderPlan(requestOf(args.body));
         const estimate = await inspectSocialDataProviderPlan(plan, signal);
         signal.throwIfAborted();
-        const resolution = get(usagePricingResolution$);
         // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0249; new non-billing transactions are prohibited.
         return await db.transaction((tx) => {
-          return admitJob(tx, { ...args, plan, estimate, resolution }, signal);
+          return admitJob(tx, { ...args, plan, estimate }, signal);
         });
       })(),
       signal,

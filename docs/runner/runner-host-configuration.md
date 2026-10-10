@@ -139,7 +139,45 @@ Pool sizing, full-profile admission, exact-first reuse and blank-first pressure
 eviction are unchanged. Preserving blank memory can increase physical idle
 memory usage; the profile budget is not a measurement of resident memory.
 
-## Idle Workspace Reclamation Concurrency
+## Home layout, identity and retention
+
+The paired Guest/Runner layout mounts writable `/dev/vdb` at fixed `/home/user`;
+rootfs remains `/dev/vda`. Profiles use `home_disk_mb: 24576` (24 GiB) and
+`rootfs_disk_mb: 12288` (12 GiB). Execution cwd remains
+`/home/user/workspace`. Home initialization creates only the bounded intended
+non-private skeleton where missing/pristine, without copying a previously used
+rootfs home over hit-owned files. Fresh, snapshot, blank, exact-reuse and handoff
+paths retain mount/device/no-symlink and user UID/GID validation.
+
+`HomeImageCache` uses `home-image-cache`, `home-drive-v1` and canonical metadata.
+Eligibility binds the group, profile, **full configured rootfs hash**, reuse key,
+layout and exact home image bytes. A normalized/display hash or shared prefix
+cannot establish eligibility. The fixed home scope is independent of cwd.
+There is no old workspace-image/config/key/layout decoder, alias or migration;
+old images remain a separate retired domain. New build/snapshot identities require
+a supported Guest/Runner pair.
+
+Home captures ordinary tools/framework files, `/home/user/.npm` and user files
+outside cwd. Current captured instructions, skills, memory, storage, account,
+model, auth, permissions and proxy state remain authoritative over stale managed
+state. Canonical known/tainted fingerprints retain unknown versus known-empty
+and the union of current/previous taint; storage and artifact ownership remain
+separate. Home persistence does not widen user artifact export: collection stays
+within the declared/cwd artifact boundary, not a full-home export. Explicit npm
+cache settings remain honored, without an out-of-home persistence promise.
+
+Default retention keeps the total allocated-byte maximum at 50% of host capacity,
+the GC target at 75% of that maximum and the free reserve at max(10%, 50 GiB).
+Individual eligibility uses the exact configured profile shape, not an unrelated
+percentage-of-host single-image cap. Fresh accounting includes image generations,
+metadata, candidate/orphan staging and cross-device sparse-copy peak headroom.
+Locked or unavailable observations are not zero. Entry/capacity/reference/age
+locks and routine single-flight GC remain authoritative. Unlink in the Guest is
+not proof that host allocation was reclaimed. Retention controls must not resize
+configured disks or widen thread isolation. These defaults are safety policy,
+not measured fleet sizing.
+
+## Idle Home Reclamation Concurrency
 
 ### One-shot CI idle reclamation
 
@@ -157,134 +195,86 @@ generation-scoped local socket. Missing services, old binaries without the
 command, generation changes and control failures fail visibly without signals
 or a fallback to another process.
 
-The command reports selected, completed and uncertain counts only after the
-selected reclamation attempts finish; uncertain destruction fails the command.
-Transport/status failures also fail. A client timeout or disconnect does not
-cancel admitted destruction. Normal Runner shutdown waits for these tasks.
-Workspace promotion and workspace/session-history disk caches are preserved;
-the existing reclamation limits below still apply. Later runs may lose exact
-hot reuse but retain blank/cache paths. Blank replenishment may use newly freed
-capacity under its unchanged policy, so reclaimed budget is not an RSS savings
-measurement.
+Selected/completed/uncertain counts are returned only after selected reclamation
+attempts finish; uncertain destruction fails the command. A client disconnect
+or timeout does not cancel admitted destruction. Normal shutdown joins these
+tasks. Home promotion and ordinary history/download/storage caches are preserved.
+Later Runs can lose hot VM reuse but retain blank/home-cache paths. Released
+profile budget is not an RSS savings measurement.
 
-### Reclamation admission
+### Reclamation admission and publication
 
-Workspace promotion uses two independent runner-process-local admission gates,
-each sized as `(host_cpus / 2).clamp(1, 4)`. Cache clones share the gates.
-The existing sidecar export gate covers guest export execution only. Idle
-reclamation additionally acquires admission **before unpark** and holds it
-through terminal unpark, export, host copy, terminal private cleanup, workspace
-freeze and immediate sandbox termination. Waiting reclamation jobs remain parked.
-Terminal unpark uses the same physical-deflation readiness boundary as normal
-reuse. Direct completion and parked reclamation use the same cleanup gate after
-the required readers and host sidecar copy finish; publication still waits for
-successful sandbox termination.
+Home reclamation uses one runner-process-local admission gate sized as
+`(host_cpus / 2).clamp(1, 4)`, shared by cache clones. Acquire it **before unpark**
+and retain it through terminal unpark, bounded proof capture, namespace/auth
+cleanup, home freeze and immediate termination. Waiting jobs remain parked.
+Terminal unpark keeps the normal physical-deflation readiness boundary. Direct
+and parked terminal callers use the same cleanup/promotion helper after required
+history, identity and log readers finish. Idle/handoff preparation remains its
+separate non-destructive reader-preservation contract.
 
-The fixed `guest-agent prepare-for-cache` helper validates containment and the
-canonical `/home/user/.vm0/guest-agent/runs` parent with the existing no-follow,
-mount and file-identity checks. It removes completed managed runtime children,
-including exported sidecar temporaries, and managed `.codex/auth.json`. It does
-not sweep user files, framework histories/catalogs or package caches. Unlike
-`prepare-for-reuse`, it does not retain current/history runtime readers and does
-not impose the idle rootfs reserve. Idle/handoff preparation remains unchanged.
-A missing helper, unsafe/unsupported runtime parent, failed cleanup, malformed or
-truncated report, or uncertain freeze skips optional cache publication without
-changing the completed Run outcome. Deletion proves filesystem absence, not
-forensic erasure of freed ext4 blocks.
+The fixed `guest-agent prepare-for-cache` receives typed current/retained runtime
+anchors and publication generation. It validates containment and canonical
+`/home/user/.vm0/guest-agent/runs` ownership using no-follow, mount and file-identity
+checks. Eligible finalized history is verified against actual supported source
+and live bytes, then captured as small identity/source/hash/size-only evidence in
+`/home/user/.vm0/home-cache/session-history-proof.json`; it has no body. Missing
+or invalid evidence clears stale proof and never manufactures a verified history.
+The helper removes completed managed runtime children and managed
+`.codex/auth.json`, not ordinary user files, histories, catalogs or package caches.
+It does not widen deletion to a custom runtime parent or invoke an internal Codex
+auth RPC. Cleanup establishes namespace absence, not forensic block erasure.
 
-After successful termination, cache publication and factory destruction run
-without holding idle admission. If termination fails or panics, publication is
-abandoned and admission remains held through the factory destruction attempt.
-Missing or explicitly abandoned promotion does not acquire this gate. Normal
-startup/reuse and active sandbox promotion do not acquire idle reclamation
-admission.
+A missing helper, unsafe anchor, remaining writer, failed cleanup, malformed or
+truncated report, uncertain freeze or unsuccessful stop rejects optional
+publication without failing an already completed Run. A prepared/frozen sandbox
+must never be thawed or returned to idle/handoff. After successful termination,
+publication and factory destruction release idle admission; a stop failure or
+panic abandons publication and retains admission through destruction.
 
-This limits simultaneous resumed idle guests, not total sandboxes or team run
-concurrency. A bulk drain can take longer and retain parked budget leases while
-waiting; capacity-pressure reclamation can consequently take longer too.
-Overlapping runner versions have independent limits. Four is an initial policy,
-not a measured optimum or a guarantee that large-history export/copy latency
-disappears. No operator setting or persistent cache format changes are required.
+Publication stages an immutable generation-owned stopped image. Synchronize the
+image, metadata staging and affected directories before the one atomic metadata
+commit exposes its image/fingerprint/taint/proof tuple. The cache checks proof
+digest/generation and retains entry/capacity lock ordering. Failed/uncertain
+commits can leave owned orphan allocation, not authority for mixed-generation
+bytes. Normal startup/reuse and active completion do not take idle reclamation
+admission. This bounds concurrent resumed guests, not team Run concurrency;
+capacity-pressure reclamation can therefore take longer. Four is an initial
+policy, not a measured optimum or a latency promise.
 
 ### Managed terminal private-state inventory
 
-The destinations below are relative to the canonical per-Run runtime directory
-`/home/user/.vm0/guest-agent/runs/<run-id>`, except the explicitly named Codex
-auth file. [Shared runtime paths](../../crates/guest-contracts/src/runtime_paths.rs)
-and [private-input contracts](../../crates/guest-contracts/src/env.rs) own their
-names. This inventory covers the first-party writers and required readers in
-the current layout, not arbitrary files written by user tools.
+These paths are relative to `/home/user/.vm0/guest-agent/runs/<run-id>` except
+Codex auth and the surviving proof. This is the first-party managed inventory,
+not an arbitrary-user-file privacy audit. [Runtime paths](../../crates/guest-contracts/src/runtime_paths.rs)
+and [private-input contracts](../../crates/guest-contracts/src/env.rs) own the names.
 
-| Managed state / destination                                                                                   | Writer and required reader lifetime                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Environment inputs: `user-env/env.json`                                                                       | Runner [`write_required_agent_files`](../../crates/runner-executor/src/executor/env.rs) writes current captured values. Guest [configuration loading](../../crates/guest-agent/src/env.rs) consumes and removes the file at startup; terminal cleanup removes any remaining managed subtree.                                                                                                                                                                                        |
-| Prompt, settings, model/launch configuration and secret-mask inputs: `run-payload/payload.json`               | The same Runner writer supplies the typed Run payload, including `secret_values`; these are not a separate secret-mask file. Guest configuration consumes/removes the file and owns the resulting values through CLI execution and checkpointing.                                                                                                                                                                                                                                   |
-| Connector account projection: `connector-account-context/context.json`                                        | The same Runner writer supplies per-Run account identifiers. The [CLI account-context reader](../../turbo/apps/cli/src/commands/connector/run-account-context.ts) uses it during the workload; it must not be removed while those readers are live.                                                                                                                                                                                                                                 |
-| Claude appended prompt and Pi launch payload: `claude-append-system-prompt`, `pi-launch-payload/payload.json` | Guest [CLI launch](../../crates/guest-agent/src/cli/mod.rs) writes them. CLI children and Pi [finalization](../../crates/guest-agent/src/finalization/mod.rs) finish before terminal cleanup.                                                                                                                                                                                                                                                                                       |
-| Session/final identity: `session-id`, `final-session-history-identity.json`                                   | Guest [session metadata](../../crates/guest-agent/src/session_metadata.rs) and [history finalization](../../crates/guest-agent/src/finalization/session_history.rs) write them. Executor [session/diagnostic reads](../../crates/runner-executor/src/executor/diagnostics/guest_files.rs), [identity verification](../../crates/runner-executor/src/executor/agent_run.rs) and the sidecar exporter finish before deletion. Idle/handoff retains the referenced generation instead. |
-| Failure/checkpoint diagnostics: `checkpoint-error`, `failure-diagnostic.json`                                 | Guest [failure handling](../../crates/guest-agent/src/main.rs) writes them; executor diagnostic reads complete before supervisor finalization.                                                                                                                                                                                                                                                                                                                                      |
-| Guest logs and upload positions: `logs/`, `telemetry/`                                                        | Guest log/metrics producers and the [single-writer telemetry uploader](../../crates/guest-agent/src/telemetry.rs) own these derivatives. Guest background work/final telemetry and executor stdout drain/[post-job log copying](../../crates/runner-executor/src/executor/sandbox_run.rs) finish before terminal preparation. Host stream/network logs have independent lifetimes outside this Guest tree.                                                                          |
-| Exported history body: `session-history-sidecar`                                                              | The fixed [Guest exporter](../../crates/guest-agent/src/session_history_identity.rs) writes under the finalized identity's runtime directory, which can be retained from an earlier Run. Lifecycle [export/host-copy ownership](../../crates/runner-lifecycle/src/workspace_promotion.rs) finishes before removing current/retained runtime children; host sidecar staging remains guarded until publication or discard.                                                            |
-| `/home/user/.codex/auth.json`                                                                                 | Guest [Codex auth reconciliation](../../crates/guest-agent/src/codex_auth.rs) owns API-key or placeholder/account state read by Codex. The shared [preparation helper](../../crates/guest-agent/src/reuse_preparation.rs) scrubs it independently of framework, after containment excludes other live workloads.                                                                                                                                                                    |
+| Managed state / destination                                     | Writer and required reader lifetime                                                                                                                                                             |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `user-env/env.json`                                             | Runner current captured values; Guest configuration consumes/removes at startup; terminal cleanup removes any remainder after the workload                                                      |
+| `run-payload/payload.json`                                      | Runner typed payload, including mask inputs; Guest config and CLI/finalization readers finish before cleanup                                                                                    |
+| `connector-account-context/context.json`                        | Runner account projection; CLI readers finish before deletion                                                                                                                                   |
+| `claude-append-system-prompt`, `pi-launch-payload/payload.json` | Guest CLI launch; CLI and Pi finalization finish before cleanup                                                                                                                                 |
+| `session-id`, `final-session-history-identity.json`             | Guest session metadata/final history identity; executor diagnostic/identity readers and terminal proof capture finish before deletion; idle/handoff retains the referenced generation           |
+| `checkpoint-error`, `failure-diagnostic.json`                   | Guest failure handling; executor diagnostics finish before finalization                                                                                                                         |
+| `logs/`, `telemetry/`                                           | Guest producers/final uploader, executor stdout drain and post-job copying finish before cleanup; host logs have independent lifetimes                                                          |
+| `/home/user/.codex/auth.json`                                   | Current Guest auth reconciliation and CLI readers; terminal cleanup scrubs after containment excludes other workloads                                                                           |
+| `/home/user/.vm0/home-cache/session-history-proof.json`         | Bounded terminal source/live-byte verification; survives runtime cleanup, bound to the same committed image generation; the next Run must reverify after current preparation and at consumption |
 
-Both terminal callers use the same lifecycle helper: direct [supervisor
-finalization](../../crates/runner-supervisor/src/sandbox_finalization.rs) and parked
-[idle destruction](../../crates/runner-lifecycle/src/idle_pool/entry.rs). They do not
-return a terminally prepared sandbox to idle or handoff. A missing/unsafe current
-or retained anchor rejects publication; it does not broaden deletion authority
-to a captured custom runtime parent.
+Direct [supervisor finalization](../../crates/runner-supervisor/src/sandbox_finalization.rs)
+and parked [idle destruction](../../crates/runner-lifecycle/src/idle_pool/entry.rs)
+share the terminal helper. They do not return a terminally prepared sandbox to
+idle or handoff. A missing or unsafe current/retained anchor rejects publication;
+it does not broaden deletion authority to a captured custom runtime parent.
+General remote checkpoint/restore, CPU/download work, cancellation/drain and
+supported exact-resource verification remain intact. See
+[home history telemetry](home-history-restore-telemetry.md) for source/fallback
+and measurement semantics.
 
-Framework histories, the Codex model catalog and ordinary user files/package
-caches outside this managed scope remain intact. Storage-manifest temporaries
-under `/tmp` and host archives/logs keep their separate owners. This inventory is
-not a whole-home privacy audit, a home-cache activation receipt or a forensic
-erasure guarantee.
+## Host-Local Overrides
 
-### Sidecar export resource diagnostics
-
-The existing `workspace image cache session history sidecar export completed`
-event includes per-stage resource counters alongside wall-clock timings. The
-`helper_read_verify_` and `helper_write_` prefixes each expose:
-
-- `resources_available`: whether both resource snapshots produced valid deltas.
-- `user_cpu_us` and `system_cpu_us`: CPU time in microseconds.
-- `minor_faults` and `major_faults`: page faults without and with I/O, respectively.
-- `input_blocks` and `output_blocks`: Linux `ru_inblock` and `ru_oublock`
-  filesystem I/O accounting counters, not bytes or disk latency.
-- `voluntary_context_switches` and `involuntary_context_switches`: scheduler
-  context-switch counts.
-
-These are deltas for the synchronous exporting thread, not all guest processes
-or threads. Read/verify includes decoding, buffering and hashing. Write includes
-private export-file creation and writing, but not the subsequent host copy.
-Zero is a measured value. If collection fails, a counter decreases, or the
-platform is not Linux, affected stage counters are absent and
-`resources_available` is false; export success and failure handling are unchanged.
-
-Faults can reflect buffer allocation and cache effects, and block counters do
-not describe physical-device service time. Wall time minus CPU time also includes
-scheduling and other waits: it is not disk-wait time or proof of a balloon-related
-cause. Correlate these fields with the exact artifact and guest/host evidence.
-
-Collection uses three fixed `getrusage(RUSAGE_THREAD)` calls per successful
-export, with no per-chunk sampling, second history read, new RPC or run-startup
-wait. The bounded numeric summary is private helper output, not persisted cache
-metadata. Existing export admission, timeouts and the 5-second warning threshold
-remain unchanged.
-
-## Runner Operator Server Configuration
-
-`runner config` requires the control-plane URL and Runner token through the
-explicit `--api-url` and `--token` flags or the canonical
-`OKOU_API_BACKEND_URL` and `OKOU_RUNNER_TOKEN` environment variables.
-`runner start` accepts the same flags and canonical environment variables as
-overrides, then falls back to the `server` values in `runner.yaml`.
-
-The API URL must be an absolute HTTP(S) URL without credentials, a query
-string, or a fragment. The Runner normalizes the accepted URL before storing or
-using it. Clap help and diagnostics identify the supported environment names
-without displaying their values, and the token is preserved without trimming
-or logging it.
+For control-plane URL and authentication options, use `runner config --help`
+and `runner start --help`.
 
 The runner reads host-local overrides from `/etc/vm0-runner/host.env` once
 during startup. A missing file is equivalent to an empty file: the runner uses

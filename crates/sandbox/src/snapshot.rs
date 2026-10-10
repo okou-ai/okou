@@ -45,8 +45,8 @@ pub struct SnapshotCreateConfig {
     pub vcpu_count: u32,
     /// Memory size in MiB for the VM.
     pub memory_mb: u32,
-    /// Workspace disk size in MiB for the temporary workspace image used by the snapshot VM.
-    pub workspace_disk_mb: u32,
+    /// Home disk size in MiB for the temporary home image used by the snapshot VM.
+    pub home_disk_mb: u32,
 }
 
 /// Output paths from a successful snapshot creation.

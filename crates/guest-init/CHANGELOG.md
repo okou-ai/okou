@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.18.0](https://github.com/okou-ai/okou/compare/guest-init-v0.17.15...guest-init-v0.18.0) (2026-10-10)
+
+
+### Features
+
+* **runner:** retain home images with verified history ([#38498](https://github.com/okou-ai/okou/issues/38498)) ([8b100e4](https://github.com/okou-ai/okou/commit/8b100e433e5933242c418dbfe1c1f3efd15a9b87))
+
+## [0.17.15](https://github.com/okou-ai/okou/compare/guest-init-v0.17.14...guest-init-v0.17.15) (2026-10-10)
+
+## [0.17.14](https://github.com/okou-ai/okou/compare/guest-init-v0.17.13...guest-init-v0.17.14) (2026-10-10)
+
 ## [0.17.13](https://github.com/okou-ai/okou/compare/guest-init-v0.17.12...guest-init-v0.17.13) (2026-10-09)
 
 ## [0.17.12](https://github.com/okou-ai/okou/compare/guest-init-v0.17.11...guest-init-v0.17.12) (2026-10-09)

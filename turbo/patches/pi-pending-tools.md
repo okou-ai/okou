@@ -1,13 +1,37 @@
-# Pi 0.87.1 pending-tool integration
+# Pi 1.1.0 pending-tool integration
 
 `AgentSession.continuePendingTools()` is a local additive API, paired with
 `Agent.continuePendingTools()` and their declarations. Upstream `continue()`
 and both low-level continuation APIs reject a trailing assistant; consuming
 queued input is not an equivalent handoff. Keep the version pinned at exactly
-0.87.1; the three patches are based on the official npm distribution for that
+1.1.0; the three patches are based on the official npm distribution for that
 version.
 
-## 0.87.1 rebase and model admission
+## 1.1.0 rebase
+
+The three local patches are rebased onto the stable 1.1.0 npm release. Pending
+tool ownership, cancellation, request projection, queue-expiry and structured
+retry policy, terminal safety refusals, Photon loading, and JSON wire boundary
+projection remain intact. The pending-tool settlement path now reports the
+native `agent_settled.aborted` field at both extension preparation and public
+settlement; the latter reflects cancellation accepted during preparation.
+
+The tool executor retains 1.1.0's `durationMs` and `result.isError` semantics
+alongside the local sibling/update joining guarantees. Bash nonzero exits now
+return an error result with structured output rather than throwing; signal exits
+remain failed tool results with the shell-standard `128 + signal` code. The
+spool integration retains the new bounded `readFullOutput()` API and upstream's
+user-only, exclusive output-file creation, without restoring its old file factory.
+
+Codex now honors the configured `User-Agent` while keeping the explicit account
+binding. Existing request-body, session construction, tool loadout, and model
+policy contracts remain covered by their focused suites. The upgrade does not
+enable codemode/MCP, admit new Okou models, change defaults or billing policy, or
+turn on cache warming. Session format remains v3; historical context-edit and
+rollback constraints below still apply. No release or production acceptance is
+implied by these local checks.
+
+## Historical 0.87.1 rebase and model admission
 
 Pi 0.87.1 adds native catalog entries for Claude Opus 5.5, GPT 6 Sol and GPT 6
 Luna. The core patch retains unresolved-tool continuation while preserving
@@ -216,7 +240,7 @@ unchanged; absent or unclassified diagnostics retain native text matching.
 and code-less HTTP 503 with canonical, numeric and redacted links, plus a real
 unclassified HTTP-200 transient. Original error text remains intact.
 
-The existing `pi-coding-agent@0.87.1` patch also keeps a failed assistant message
+The existing `pi-coding-agent@1.1.0` patch also keeps a failed assistant message
 whose latest owned diagnostic is `safety_policy_refusal` out of `_checkCompaction`.
 This applies before automatic overflow recovery and threshold summarization:
 opaque link text such as `context_length_exceeded` must not cause another model

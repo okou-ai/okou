@@ -59,6 +59,23 @@
 			"isa" = "XCLocalSwiftPackageReference";
 			"relativePath" = ".";
 		};
+		"000000000000000000000042" = {
+			"isa" = "XCRemoteSwiftPackageReference";
+			"repositoryURL" = "https://github.com/ably/ably-cocoa.git";
+			"requirement" = {
+				"kind" = "exactVersion";
+				"version" = "1.4.0";
+			};
+		};
+		"000000000000000000000043" = {
+			"isa" = "XCSwiftPackageProductDependency";
+			"package" = "000000000000000000000042";
+			"productName" = "Ably";
+		};
+		"000000000000000000000044" = {
+			"isa" = "PBXBuildFile";
+			"productRef" = "000000000000000000000043";
+		};
 		"00000000000000000000001E" = {
 			"isa" = "XCSwiftPackageProductDependency";
 			"package" = "000000000000000000000014";
@@ -95,7 +112,7 @@
 		"000000000000000000000033" = {
 			"isa" = "PBXFrameworksBuildPhase";
 			"buildActionMask" = 2147483647;
-			"files" = ("000000000000000000000028","000000000000000000000029","00000000000000000000002A",);
+			"files" = ("000000000000000000000028","000000000000000000000029","00000000000000000000002A","000000000000000000000044",);
 			"runOnlyForDeploymentPostprocessing" = 0;
 		};
 		"000000000000000000000034" = {
@@ -191,7 +208,7 @@
 			"buildRules" = ();
 			"dependencies" = ();
 			"fileSystemSynchronizedGroups" = ("000000000000000000000002","000000000000000000000004",);
-			"packageProductDependencies" = ("00000000000000000000001E","00000000000000000000001F","000000000000000000000020",);
+			"packageProductDependencies" = ("00000000000000000000001E","00000000000000000000001F","000000000000000000000020","000000000000000000000043",);
 		};
 		"000000000000000000000001" = {
 			"isa" = "PBXProject";
@@ -207,7 +224,7 @@
 			"projectDirPath" = "";
 			"projectRoot" = "";
 			"targets" = ("00000000000000000000000A",);
-			"packageReferences" = ("000000000000000000000014","000000000000000000000015","000000000000000000000016",);
+			"packageReferences" = ("000000000000000000000014","000000000000000000000015","000000000000000000000016","000000000000000000000042",);
 			"preferredProjectObjectVersion" = 77;
 		};
 	};

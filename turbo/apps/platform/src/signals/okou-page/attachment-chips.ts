@@ -3,7 +3,12 @@ import {
   type AttachmentPreviewSignals,
 } from "../attachment-resource-url.ts";
 import { command, computed, state } from "ccstate";
-import { openArtifactInOpenSidebar$ } from "../chat-page/thread-sidebar-coordinator.ts";
+import {
+  openArtifactInOpenSidebar$,
+  openArtifactSidebar$,
+} from "../chat-page/thread-sidebar-coordinator.ts";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../external/feature-switch.ts";
 import {
   createMarkdownPreviewTree,
   type MarkdownPreviewTreeComputed,
@@ -53,6 +58,7 @@ export type AttachmentArtifactMetadata = {
 };
 
 interface AttachmentNamedLightboxBase {
+  readonly threadId?: string;
   readonly url: string;
   readonly filename: string;
   /** Reuse the initiating surface's already resolved credential. */
@@ -229,15 +235,17 @@ export const closeLightboxWithDialogExit$ = command(
  * the preview swaps the sidebar content instead of stacking a dialog over it.
  * Previews that cannot move into the sidebar keep the lightbox.
  *
- * This is opt-out: a new lightbox caller is routed unless it explicitly targets
- * the lightbox or sets `splitViewAvailable: false`. An explicit target lets a
- * modal stack its preview without disabling the preview's split-view action.
+ * Without sidebar-first previews, an explicit lightbox target lets a modal
+ * stack its preview without disabling the split-view action. Sidebar-first
+ * previews instead open a sidebar directly, including explicit lightbox targets.
  * Disable split view for previews that do not belong in the thread sidebar,
  * such as a pending composer upload. File-backed previews pass
  * the File metadata so each destination can create an object URL for its own
  * consumer lifetime while preserving the name and content type.
  */
 type AttachmentSidebarPreviewInput = AttachmentPreviewSource & {
+  readonly threadId?: string;
+  readonly artifact?: AttachmentArtifactMetadata;
   readonly filename?: string;
   readonly contentType?: string;
   readonly shareAvailable?: boolean;
@@ -272,14 +280,26 @@ export function attachmentSidebarRef(
 
 const routeToOpenArtifactSidebar$ = command(
   (
-    { set },
+    { get, set },
     value: AttachmentSidebarPreviewInput,
     target?: "lightbox",
   ): boolean => {
-    if (target === "lightbox" || value.splitViewAvailable === false) {
+    // Composer drafts and standalone previews retain their own preview surface.
+    if (value.splitViewAvailable === false) {
       return false;
     }
-    return set(openArtifactInOpenSidebar$, attachmentSidebarRef(value));
+    const ref = attachmentSidebarRef(value);
+    if (get(featureSwitch$)[FeatureSwitchKey.ArtifactSidebarPreview]) {
+      return set(
+        openArtifactSidebar$,
+        ref,
+        value.threadId ?? value.artifact?.threadId,
+      );
+    }
+    if (target === "lightbox") {
+      return false;
+    }
+    return set(openArtifactInOpenSidebar$, ref);
   },
 );
 

@@ -19,6 +19,11 @@ import {
   type StoredExecutionContext,
   type StoredStorageMountEntry,
 } from "@okouai/api-contracts/contracts/runners";
+import {
+  autoRunBillingProvider,
+  autoRunPricingLongContextMinTotalInputTokens,
+  isAutoSelectedModel,
+} from "@okouai/core/auto-run-model";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import {
@@ -89,7 +94,6 @@ import { VERCEL_AUTOMATION_BYPASS_ENV } from "../../lib/preview-automation-bypas
 
 import { now, nowDate } from "../../lib/time";
 import { previewAutomationBypass$ } from "../context/hono";
-import { usagePricingResolution$ } from "../context/usage-pricing-resolution";
 import { waitUntil } from "../context/wait-until";
 import { type Db, db$, type ReadonlyDb, writeDb$ } from "../external/db";
 import {
@@ -3799,7 +3803,6 @@ export function createThreadClaimRunObjects(
         {
           modelProvider,
           serviceTier: (await get(contextInput$)).args.codexServiceTier,
-          resolution: get(usagePricingResolution$),
         },
         await get(context.modelPricing$),
       ),
@@ -4517,6 +4520,7 @@ export function createThreadClaimRunObjects(
                 id: modelProvider.id,
                 type: modelProvider.type,
                 selectedModel: modelProvider.selectedModel,
+                upstreamModel: modelProvider.upstreamModel,
                 builtInModelRuntimeRoute:
                   modelProvider.builtInModelRuntimeRoute,
               }
@@ -7186,6 +7190,7 @@ interface PendingRunContext {
     | "type"
     | "selectedModel"
     | "builtInModelRuntimeRoute"
+    | "upstreamModel"
   > | null;
 }
 
@@ -7271,6 +7276,7 @@ interface LaunchRunRowsArgs {
     | "type"
     | "selectedModel"
     | "builtInModelRuntimeRoute"
+    | "upstreamModel"
   > | null;
   readonly agentRunModelPin: AgentRunModelPin | undefined;
   readonly selectedImageModel: ImageModel;
@@ -7341,22 +7347,31 @@ function launchRunValues(
   };
 }
 
-type BuiltInModelLaunchMetadataValues = Pick<
+type ModelLaunchMetadataValues = Pick<
   RunMetadataValues,
   "modelRuntimeProvider" | "modelRuntimeModel" | "builtInModelKeyId"
 >;
 
-function builtInModelLaunchMetadataValues(
+function modelLaunchMetadataValues(
   modelProvider: Pick<
     ResolvedModelProviderEnvironment,
-    "builtInModelRuntimeRoute"
+    "builtInModelRuntimeRoute" | "type" | "upstreamModel"
   > | null,
-): BuiltInModelLaunchMetadataValues {
+): ModelLaunchMetadataValues {
   const runtimeRoute = modelProvider?.builtInModelRuntimeRoute;
   if (!runtimeRoute) {
     return {
-      modelRuntimeProvider: null,
-      modelRuntimeModel: null,
+      // The compiled subscription environment and Runner use this same upstream.
+      // Failed preparation has no execution to capture; member keys are not managed keys.
+      modelRuntimeProvider:
+        modelProvider?.upstreamModel &&
+        isPersonalSubscriptionProviderType(modelProvider.type)
+          ? modelProvider.type
+          : null,
+      modelRuntimeModel:
+        modelProvider && isPersonalSubscriptionProviderType(modelProvider.type)
+          ? (modelProvider.upstreamModel ?? null)
+          : null,
       builtInModelKeyId: null,
     };
   }
@@ -7399,7 +7414,21 @@ function launchRunMetadataValues(args: LaunchRunRowsArgs): RunMetadataValues {
     modelProviderId: exactSubscriptionId ?? modelPin.modelProviderId,
     modelProviderCredentialScope: modelPin.modelProviderCredentialScope,
     selectedModel: modelPin.selectedModel,
-    ...builtInModelLaunchMetadataValues(args.modelProvider),
+    ...modelLaunchMetadataValues(args.modelProvider),
+    ...(args.modelProvider?.builtInModelRuntimeRoute &&
+    modelPin.selectedModel &&
+    isAutoSelectedModel(modelPin.selectedModel)
+      ? {
+          modelUsageProvider: autoRunBillingProvider(
+            modelPin.selectedModel,
+            args.modelProvider.builtInModelRuntimeRoute.upstreamModel,
+          ),
+          modelLongContextMinTotalInputTokens:
+            autoRunPricingLongContextMinTotalInputTokens(
+              modelPin.selectedModel,
+            ),
+        }
+      : {}),
     selectedImageModel: args.selectedImageModel,
     chatThreadId: args.chatThreadId ?? null,
     apiStartedAt: new Date(args.apiStartTime),

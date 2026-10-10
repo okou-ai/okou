@@ -23,7 +23,6 @@ import { createApp } from "../../../../app-factory";
 import { env, mockEnv, mockOptionalEnv } from "../../../../lib/env";
 import { now } from "../../../../lib/time";
 import { generateSandboxToken } from "../../../auth/tokens";
-import type { UsagePricingResolution } from "../../../context/usage-pricing-resolution";
 import { mockStripeClient } from "../../../external/stripe-client";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
@@ -273,24 +272,44 @@ export function createWebhookCallbackApi(context: TestContext) {
     async postStripeEvent(
       event: unknown,
       statuses: readonly (200 | 500)[],
+      run?: <T>(operation: () => Promise<T>) => Promise<T>,
     ): Promise<StripeWebhookResponse> {
-      context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
-      const response = await createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      }).request("/api/webhooks/stripe", {
-        method: "POST",
-        headers: { "stripe-signature": "t=1,v1=bdd" },
-        body: serializedContractBody(event),
-      });
-      const body = await parseRawResponseBody(response);
-      const status = response.status;
-      if ((status !== 200 && status !== 500) || !statuses.includes(status)) {
-        throw new Error(
-          `Expected Stripe webhook status in [${statuses.join(", ")}], received ${status}: ${JSON.stringify(body)}`,
+      const bodyText = serializedContractBody(event);
+      if (run) {
+        let consumed = false;
+        context.mocks.stripe.webhooks.constructEvent.mockImplementation(
+          (payload) => {
+            if (consumed || String(payload) !== bodyText) {
+              throw new Error(
+                "Unexpected owned Stripe webhook body or duplicate verification",
+              );
+            }
+            consumed = true;
+            return event;
+          },
         );
+      } else {
+        context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
       }
-      return { status, body };
+      const execute = async (): Promise<StripeWebhookResponse> => {
+        const response = await createApp({
+          signal: context.signal,
+          routes: TEST_APP_ROUTES,
+        }).request("/api/webhooks/stripe", {
+          method: "POST",
+          headers: { "stripe-signature": "t=1,v1=bdd" },
+          body: bodyText,
+        });
+        const body = await parseRawResponseBody(response);
+        const status = response.status;
+        if ((status !== 200 && status !== 500) || !statuses.includes(status)) {
+          throw new Error(
+            `Expected Stripe webhook status in [${statuses.join(", ")}], received ${status}: ${JSON.stringify(body)}`,
+          );
+        }
+        return { status, body };
+      };
+      return await (run ? run(execute) : execute());
     },
 
     acceptNextStripeWebhookEvent(event: unknown): void {
@@ -478,7 +497,6 @@ export function createWebhookCallbackApi(context: TestContext) {
       headers: SandboxWebhookHeaders,
       statuses: readonly (200 | 400 | 401 | 404 | 500)[],
       signal?: AbortSignal,
-      usagePricingResolution?: UsagePricingResolution,
     ) {
       const historyHash = body.completion?.cliAgentSessionHistoryHash;
       if (historyHash !== undefined) {
@@ -509,9 +527,6 @@ export function createWebhookCallbackApi(context: TestContext) {
         context,
         routes: webhooksAgentCompleteRoutes,
         ...(signal === undefined ? {} : { signal }),
-        ...(usagePricingResolution === undefined
-          ? {}
-          : { usagePricingResolution }),
       })(webhookCompleteContract);
       return await accept(
         client.complete({
@@ -665,15 +680,11 @@ export function createWebhookCallbackApi(context: TestContext) {
       body: AgentUsageEventBody,
       headers: SandboxWebhookHeaders,
       statuses: readonly (200 | 400 | 401 | 404 | 500)[],
-      usagePricingResolution?: UsagePricingResolution,
     ) {
       return await accept(
         setupApp({
           context,
           routes: webhooksAgentHealthUsageTelemetryRoutes,
-          ...(usagePricingResolution === undefined
-            ? {}
-            : { usagePricingResolution }),
         })(webhookUsageEventContract).send({ headers, body }),
         statuses,
       );
