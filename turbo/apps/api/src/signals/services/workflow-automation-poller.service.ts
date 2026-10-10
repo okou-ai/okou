@@ -1,6 +1,6 @@
 import { MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
-import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import {
   workflowAutomations,
   workflows,

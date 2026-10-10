@@ -6,7 +6,7 @@ import type {
 } from "@okouai/api-contracts/contracts/mcp-chat-discovery";
 import { agentDisplayName } from "@okouai/core/brand-presentation";
 import { agents } from "@okouai/db/schema/agent";
-import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { command } from "ccstate";
 import { and, asc, eq, gt, sql } from "drizzle-orm";

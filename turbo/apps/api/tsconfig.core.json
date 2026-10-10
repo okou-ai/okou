@@ -289,7 +289,7 @@
     "src/signals/services/model-source-context.service.ts",
     "src/signals/services/morning-brief-enrollment-data.service.ts",
     "src/signals/services/morning-brief-membership.service.ts",
-    "src/signals/services/morning-brief-migration-state.service.ts",
+    "src/signals/services/morning-brief-state.service.ts",
     "src/signals/services/notion-automation-account.service.ts",
     "src/signals/services/official-automation-result-email-renderer.ts",
     "src/lib/agent-notification-email-renderer.ts",

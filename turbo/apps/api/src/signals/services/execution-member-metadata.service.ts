@@ -1,5 +1,5 @@
 import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { userCache } from "@okouai/db/schema/user-cache";
 import { command } from "ccstate";
 import { and, eq, sql } from "drizzle-orm";

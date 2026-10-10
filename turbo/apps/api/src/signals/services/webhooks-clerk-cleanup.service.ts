@@ -20,7 +20,7 @@ import { orgCache } from "@okouai/db/schema/org-cache";
 import { orgConcurrencyEntitlements } from "@okouai/db/schema/org-concurrency-entitlement";
 import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
-import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { piMemoryStage1Days } from "@okouai/db/schema/pi-memory-stage1-schedule";
 import { secrets } from "@okouai/db/schema/secret";
