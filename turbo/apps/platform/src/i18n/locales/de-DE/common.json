@@ -3934,22 +3934,6 @@
         "continue": "Weiter",
         "notNow": "Jetzt nicht"
       },
-      "compliance": {
-        "frameworks": {
-          "ccpa": "CCPA / CPRA",
-          "gdpr": "GDPR",
-          "hipaa": "HIPAA",
-          "iso27001": "ISO/IEC 27001",
-          "soc2": "SOC 2 Type II"
-        },
-        "link": "Sicherheitsdetails",
-        "status": {
-          "aligned": "Ausgerichtet",
-          "compliant": "Konform",
-          "inProgress": "In Arbeit"
-        },
-        "title": "Okous Compliance – gebaut für dein Vertrauen"
-      },
       "documentTitles": {
         "experience": "Deine KI-Erfahrung",
         "industry": "Bereich wählen",
@@ -5177,6 +5161,22 @@
   },
   "shared": {
     "breadcrumb": "Brotkrümelnavigation",
+    "compliance": {
+      "frameworks": {
+        "ccpa": "CCPA / CPRA",
+        "gdpr": "GDPR",
+        "hipaa": "HIPAA",
+        "iso27001": "ISO/IEC 27001",
+        "soc2": "SOC 2 Type II"
+      },
+      "link": "Sicherheitsdetails",
+      "status": {
+        "aligned": "Ausgerichtet",
+        "compliant": "Konform",
+        "inProgress": "In Arbeit"
+      },
+      "title": "Okous Compliance – gebaut für dein Vertrauen"
+    },
     "errorBoundary": {
       "contactSupport": "Support",
       "description": "Versuchen Sie es noch einmal oder kontaktieren Sie uns",

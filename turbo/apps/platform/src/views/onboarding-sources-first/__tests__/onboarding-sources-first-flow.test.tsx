@@ -280,7 +280,10 @@ test("The first step introduces Okou and its compliance progress", async () => {
   const link = queryAllByRoleFast("link").find((candidate) => {
     return candidate.textContent?.trim() === "Security details";
   });
-  expect(link).toHaveAttribute("href", "https://www.okou.ai/en/security");
+  expect(link).toHaveAttribute(
+    "href",
+    "https://www.okou.ai/en/security#security-compliance-title",
+  );
 });
 
 test.each([

@@ -3915,22 +3915,6 @@
         "continue": "Lanjutkan",
         "notNow": "Nanti saja"
       },
-      "compliance": {
-        "frameworks": {
-          "ccpa": "CCPA / CPRA",
-          "gdpr": "GDPR",
-          "hipaa": "HIPAA",
-          "iso27001": "ISO/IEC 27001",
-          "soc2": "SOC 2 Type II"
-        },
-        "link": "Detail keamanan",
-        "status": {
-          "aligned": "Selaras",
-          "compliant": "Patuh",
-          "inProgress": "Berlangsung"
-        },
-        "title": "Kepatuhan Okou, dibangun untuk kepercayaan Anda"
-      },
       "documentTitles": {
         "experience": "Pengalaman AI Anda",
         "industry": "Pilih bidang Anda",
@@ -5156,6 +5140,22 @@
   },
   "shared": {
     "breadcrumb": "Breadcrumb",
+    "compliance": {
+      "frameworks": {
+        "ccpa": "CCPA / CPRA",
+        "gdpr": "GDPR",
+        "hipaa": "HIPAA",
+        "iso27001": "ISO/IEC 27001",
+        "soc2": "SOC 2 Type II"
+      },
+      "link": "Detail keamanan",
+      "status": {
+        "aligned": "Selaras",
+        "compliant": "Patuh",
+        "inProgress": "Berlangsung"
+      },
+      "title": "Kepatuhan Okou, dibangun untuk kepercayaan Anda"
+    },
     "errorBoundary": {
       "contactSupport": "dukungan",
       "description": "Coba lagi atau hubungi kami",
