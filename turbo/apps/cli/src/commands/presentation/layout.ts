@@ -284,10 +284,11 @@ export const PREPARE_LAYOUT = String.raw`((selector, activated) => {
         const s = getComputedStyle(child);
         return s.backgroundImage !== 'none' || color(s.backgroundColor) || parseFloat(s.borderTopWidth) > 0;
       });
+      const textDecoration = nodes.some(node => getComputedStyle(node.parentElement).textDecorationLine !== 'none');
       const naturalWrap = nodes.some(node => fragment(node,false).length > 1);
       const spacing = nodes.some(node => parseFloat(getComputedStyle(node.parentElement).wordSpacing) > 0 || /\t|\u00a0{2}/.test(node.nodeValue));
       const scripts = nodes.some(node => /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/.test(node.nodeValue) || getComputedStyle(node.parentElement).direction === 'rtl');
-      if (decorated || naturalWrap || spacing || scripts || owner.querySelector('sup,sub,br') || style.whiteSpace.startsWith('pre') || nodes.some(node=>fragment(node,false).clipped)) candidates.push({owner,nodes,decorated});
+      if (decorated || textDecoration || naturalWrap || spacing || scripts || owner.querySelector('sup,sub,br') || style.whiteSpace.startsWith('pre') || nodes.some(node=>fragment(node,false).clipped)) candidates.push({owner,nodes,decorated});
     }
   }
   const relativeOpacity = (element,owner) => {
