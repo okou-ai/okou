@@ -19,7 +19,7 @@ describe("desktop update routes", () => {
     expect(feedResponse.body.error.code).toBe("DESKTOP_UPDATE_UNAVAILABLE");
 
     // The redirect routes read the same manifest, so they share the status.
-    // This one is the migration wall's `Download Okou` target.
+    // The Platform download button uses this neutral DMG route.
     const dmgResponse = await appRequest(
       "http://api.test/api/desktop/updates/stable/darwin/arm64/dmg",
     );
