@@ -144,7 +144,7 @@ pub enum SandboxOperation {
     CleanupCodexSession,
     /// [`Sandbox::mount_workspace_drive`](crate::Sandbox::mount_workspace_drive).
     MountWorkspaceDrive,
-    /// [`GuestProcessControlHandle::control`](crate::GuestProcessControlHandle::control).
+    /// [`GuestProcessControlHandle::control_outcome`](crate::GuestProcessControlHandle::control_outcome).
     ProcessControl,
     /// [`Sandbox::wait_process`](crate::Sandbox::wait_process).
     WaitProcess,

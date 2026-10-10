@@ -161,10 +161,12 @@ async fn start_agent_process_returns_mandatory_control_handle() {
         .await
         .unwrap();
     let (_process, control) = with_control.into_parts();
-    let ack = control
-        .control("msg-1", b"payload", Duration::from_secs(5))
-        .await
-        .unwrap();
+    let outcome = control
+        .control_outcome("msg-1", b"payload", Duration::from_secs(5))
+        .await;
+    let ProcessControlOutcome::Delivered(ack) = outcome else {
+        panic!("expected delivered process-control outcome, got {outcome:?}");
+    };
     assert_eq!(ack.message_id, "msg-1");
 }
 
@@ -212,10 +214,13 @@ async fn process_control_calls_are_recorded_when_overrides_are_enabled() {
         .unwrap();
     let (_process, control) = handle.into_parts();
 
-    control
-        .control("msg-1", b"payload", Duration::from_millis(250))
-        .await
-        .unwrap();
+    let outcome = control
+        .control_outcome("msg-1", b"payload", Duration::from_millis(250))
+        .await;
+    assert!(matches!(
+        outcome,
+        ProcessControlOutcome::Delivered(ack) if ack.message_id == "msg-1"
+    ));
 
     assert_eq!(
         overrides.process_control_calls(),
@@ -258,14 +263,27 @@ async fn queued_process_control_errors_are_consumed_fifo() {
         }
         other => panic!("expected failed process-control outcome, got {other:?}"),
     };
-    let second_error = control
-        .control("msg-2", b"payload-2", Duration::from_secs(1))
-        .await
-        .unwrap_err();
-    let ack = control
-        .control("msg-3", b"payload-3", Duration::from_secs(1))
-        .await
-        .unwrap();
+    let outcome = control
+        .control_outcome("msg-2", b"payload-2", Duration::from_secs(1))
+        .await;
+    let second_error = match outcome {
+        ProcessControlOutcome::Failed {
+            kind,
+            write_state,
+            error,
+        } => {
+            assert_eq!(kind, ProcessControlFailureKind::Operation);
+            assert_eq!(write_state, ProcessControlWriteState::PossiblyWritten);
+            error
+        }
+        other => panic!("expected failed process-control outcome, got {other:?}"),
+    };
+    let outcome = control
+        .control_outcome("msg-3", b"payload-3", Duration::from_secs(1))
+        .await;
+    let ProcessControlOutcome::Delivered(ack) = outcome else {
+        panic!("expected delivered process-control outcome, got {outcome:?}");
+    };
 
     assert!(first_error.to_string().contains("first control failed"));
     assert!(second_error.to_string().contains("second control failed"));
@@ -336,16 +354,10 @@ async fn structured_process_control_distinguishes_timeout_write_state() {
                 assert_eq!(kind, ProcessControlFailureKind::Operation);
                 assert_eq!(actual_write_state, write_state);
                 assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
+                assert_eq!(error.to_string(), "process control timed out");
             }
             other => panic!("expected failed process-control outcome, got {other:?}"),
         }
-
-        let error = control
-            .control("msg-1", b"payload-1", Duration::from_secs(1))
-            .await
-            .unwrap_err();
-        assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
-        assert_eq!(error.to_string(), "process control timed out");
     }
 }
 
