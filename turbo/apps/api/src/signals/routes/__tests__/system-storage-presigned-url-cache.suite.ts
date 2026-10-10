@@ -1,3 +1,4 @@
+import { readPublishedArchive } from "./helpers/published-archive";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { cronPruneStoragePresignedUrlsContract } from "@okouai/api-contracts/contracts/cron";
@@ -66,7 +67,7 @@ describe("system storage presigned URL cache", () => {
     await owned.run(() => {
       return api.updateUserModelPreference(owned.actor, "claude-fable-5-1");
     });
-    context.mocks.s3.send.mockResolvedValue({ ContentLength: 2048 });
+    const publicationStart = context.mocks.s3.send.mock.calls.length;
     const connector = await owned.run(() => {
       return connectors.createCustomConnector(owned.actor, {
         displayName: "Readonly lifetime cache connector",
@@ -82,6 +83,7 @@ describe("system storage presigned URL cache", () => {
         skillMarkdown: "Use this readonly skill archive.",
       });
     });
+    const published = readPublishedArchive(context, publicationStart);
     await owned.run(() => {
       return connectors.updateAgentCustomConnectors(
         owned.actor,
@@ -112,7 +114,8 @@ describe("system storage presigned URL cache", () => {
         if (!mount?.archiveUrl || mount.archiveSize === undefined) {
           throw new Error("Expected a complete readonly connector mount");
         }
-        expect(mount.archiveSize).toBe(2048);
+        expect(mount.archiveSize).toBe(published.archiveSize);
+        expect(mount.versionId).toBe(published.versionId);
         expect(mount.mountPath).toBe(
           `/home/user/.claude/skills/custom-${connector.slug.slice(1, 49)}-${connector.id.replaceAll("-", "").slice(0, 8)}`,
         );
