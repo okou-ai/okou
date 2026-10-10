@@ -44,7 +44,7 @@ pub struct Completion {
     pub error: Option<String>,
     pub sandbox_id: Option<SandboxId>,
     pub reuse_result: Option<SandboxReuseResult>,
-    pub workspace_reuse_result: Option<HomeReuseResult>,
+    pub home_reuse_result: Option<HomeReuseResult>,
 }
 
 struct MockClaim {
@@ -761,7 +761,7 @@ impl JobProvider for MockJobProvider {
                         error: request.error,
                         sandbox_id: request.sandbox_id,
                         reuse_result: request.sandbox_reuse_result,
-                        workspace_reuse_result: request.workspace_reuse_result,
+                        home_reuse_result: request.home_reuse_result,
                     });
                 // Wake all pending `wait_completion` waiters — they re-scan the vec
                 // and return if their run_id is now present.
@@ -825,7 +825,7 @@ mod tests {
             error: None,
             sandbox_id: None,
             sandbox_reuse_result: None,
-            workspace_reuse_result: None,
+            home_reuse_result: None,
         }
     }
 

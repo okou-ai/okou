@@ -259,7 +259,7 @@ type TerminalRunValues = Readonly<
       | "result"
       | "sandboxId"
       | "sandboxReuseResult"
-      | "workspaceReuseResult"
+      | "homeReuseResult"
     >
   >
 >;

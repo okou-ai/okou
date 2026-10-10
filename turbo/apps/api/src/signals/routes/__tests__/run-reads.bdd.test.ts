@@ -2193,12 +2193,12 @@ describe("RUN-04: agent run telemetry families", () => {
       {
         name: "legacy no session ID",
         sandboxResult: "noSessionId",
-        workspaceResult: undefined,
+        homeResult: undefined,
       },
       {
         name: "no reuse key",
         sandboxResult: "noReuseKey",
-        workspaceResult: "reused",
+        homeResult: "reused",
       },
     ] as const;
 
@@ -2222,7 +2222,7 @@ describe("RUN-04: agent run telemetry families", () => {
               .digest("hex"),
           },
           sandboxReuseResult: scenario.sandboxResult,
-          workspaceReuseResult: scenario.workspaceResult,
+          homeReuseResult: scenario.homeResult,
         },
         headers,
         [200],
@@ -2235,7 +2235,7 @@ describe("RUN-04: agent run telemetry families", () => {
       const runner = await api.requestRunRunner(actor, run.runId, [200]);
       expect(runner.body).toStrictEqual({
         sandboxReuseResult: scenario.sandboxResult,
-        workspaceReuseResult: scenario.workspaceResult ?? null,
+        homeReuseResult: scenario.homeResult ?? null,
         runnerHostname: null,
         runnerVersion: null,
         runnerId: expect.any(String),
@@ -2366,7 +2366,7 @@ describe("RUN-04: agent run telemetry families", () => {
             .digest("hex"),
         },
         sandboxReuseResult: "reused",
-        workspaceReuseResult: "sandboxReused",
+        homeReuseResult: "sandboxReused",
       },
       headers,
       [200],
@@ -2907,7 +2907,7 @@ describe("RUN-04: agent run telemetry families", () => {
     const runner = await api.requestRunRunner(actor, runId, [200]);
     expect(runner.body).toStrictEqual({
       sandboxReuseResult: "reused",
-      workspaceReuseResult: "sandboxReused",
+      homeReuseResult: "sandboxReused",
       runnerHostname: null,
       runnerVersion: null,
       runnerId: expect.any(String),
@@ -2916,7 +2916,7 @@ describe("RUN-04: agent run telemetry families", () => {
     const bareRunner = await api.requestRunRunner(actor, bareRun.runId, [200]);
     expect(bareRunner.body).toStrictEqual({
       sandboxReuseResult: null,
-      workspaceReuseResult: null,
+      homeReuseResult: null,
       runnerHostname: null,
       runnerVersion: null,
       runnerId: null,

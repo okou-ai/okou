@@ -57,7 +57,7 @@ struct CompletePayload<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     sandbox_reuse_result: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    workspace_reuse_result: Option<&'a str>,
+    home_reuse_result: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     completion: Option<&'a complete::RequestCompletion>,
 }
@@ -124,7 +124,7 @@ pub async fn report_user_cancellation_for_run(
     run_id: &str,
     sandbox_id: &str,
     sandbox_reuse_result: &str,
-    workspace_reuse_result: &str,
+    home_reuse_result: &str,
     last_event_sequence: Option<u32>,
 ) {
     if !http.has_api() {
@@ -138,7 +138,7 @@ pub async fn report_user_cancellation_for_run(
             1,
             sandbox_id,
             sandbox_reuse_result,
-            workspace_reuse_result,
+            home_reuse_result,
             last_event_sequence,
         ),
         1,
@@ -171,7 +171,7 @@ fn payload_for_runtime<'a>(
         last_event_sequence,
         sandbox_id: as_optional(&config.sandbox_id),
         sandbox_reuse_result: as_optional(&config.sandbox_reuse_result),
-        workspace_reuse_result: as_optional(&config.workspace_reuse_result),
+        home_reuse_result: as_optional(&config.home_reuse_result),
         completion,
     }
 }
@@ -181,7 +181,7 @@ fn metadata_free_payload_for_run<'a>(
     exit_code: i32,
     sandbox_id: &'a str,
     sandbox_reuse_result: &'a str,
-    workspace_reuse_result: &'a str,
+    home_reuse_result: &'a str,
     last_event_sequence: Option<u32>,
 ) -> CompletePayload<'a> {
     CompletePayload {
@@ -192,7 +192,7 @@ fn metadata_free_payload_for_run<'a>(
         last_event_sequence,
         sandbox_id: as_optional(sandbox_id),
         sandbox_reuse_result: as_optional(sandbox_reuse_result),
-        workspace_reuse_result: as_optional(workspace_reuse_result),
+        home_reuse_result: as_optional(home_reuse_result),
         completion: None,
     }
 }
@@ -221,7 +221,7 @@ mod tests {
             last_event_sequence: None,
             sandbox_id: None,
             sandbox_reuse_result: None,
-            workspace_reuse_result: None,
+            home_reuse_result: None,
             completion: None,
         };
         let json = serde_json::to_string(&payload).unwrap();
@@ -238,13 +238,13 @@ mod tests {
             last_event_sequence: None,
             sandbox_id: Some("abc"),
             sandbox_reuse_result: Some("reused"),
-            workspace_reuse_result: Some("sandboxReused"),
+            home_reuse_result: Some("sandboxReused"),
             completion: None,
         };
         let json = serde_json::to_string(&payload).unwrap();
         assert!(json.contains(r#""sandboxId":"abc""#));
         assert!(json.contains(r#""sandboxReuseResult":"reused""#));
-        assert!(json.contains(r#""workspaceReuseResult":"sandboxReused""#));
+        assert!(json.contains(r#""homeReuseResult":"sandboxReused""#));
     }
 
     #[test]
@@ -257,7 +257,7 @@ mod tests {
             last_event_sequence: None,
             sandbox_id: None,
             sandbox_reuse_result: None,
-            workspace_reuse_result: None,
+            home_reuse_result: None,
             completion: None,
         };
 
@@ -277,7 +277,7 @@ mod tests {
             last_event_sequence: None,
             sandbox_id: None,
             sandbox_reuse_result: Some("poolMiss"),
-            workspace_reuse_result: None,
+            home_reuse_result: None,
             completion: None,
         };
         let json = serde_json::to_string(&payload).unwrap();
@@ -295,13 +295,13 @@ mod tests {
             last_event_sequence: None,
             sandbox_id: Some("sid"),
             sandbox_reuse_result: None,
-            workspace_reuse_result: Some("cacheMiss"),
+            home_reuse_result: Some("cacheMiss"),
             completion: None,
         };
         let json = serde_json::to_string(&payload).unwrap();
         assert!(json.contains(r#""sandboxId":"sid""#));
         assert!(!json.contains("sandboxReuseResult"));
-        assert!(json.contains(r#""workspaceReuseResult":"cacheMiss""#));
+        assert!(json.contains(r#""homeReuseResult":"cacheMiss""#));
     }
 
     #[test]
@@ -320,7 +320,7 @@ mod tests {
             last_event_sequence: Some(7),
             sandbox_id: None,
             sandbox_reuse_result: None,
-            workspace_reuse_result: None,
+            home_reuse_result: None,
             completion: None,
         };
         let json = serde_json::to_string(&payload).unwrap();

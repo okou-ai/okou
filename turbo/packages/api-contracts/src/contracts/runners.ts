@@ -33,9 +33,9 @@ export {
   runnerHostnameSchema,
   runnerVersionSchema,
   sandboxReuseResultSchema,
-  workspaceReuseResultSchema,
+  homeReuseResultSchema,
   type SandboxReuseResult,
-  type WorkspaceReuseResult,
+  type HomeReuseResult,
 } from "./runner-primitives";
 
 const c = initContract();
@@ -201,7 +201,6 @@ export const runnerPreferenceSchema = z.discriminatedUnion("kind", [
         "exactSandbox",
         "finalizingPredecessor",
         "reusableSandbox",
-        "workspaceCache",
         "homeCache",
       ]),
       expiresAt: z.string().datetime({ offset: true }),
@@ -452,8 +451,6 @@ export const DEFAULT_PROFILE = "vm0/default";
 
 const runnersPollBodySchema = z.object({
   runnerId: z.uuid().optional(),
-  // Additive process identity; never extend the strict claim capabilities.
-  heartbeatGeneration: runnerHeartbeatGenerationSchema.optional(),
   group: runnerGroupSchema,
   supportedProfiles: runnerSupportedProfileListSchema,
   excludedRunIds: z
@@ -478,11 +475,6 @@ export const jobSchema = z.object({
   runnerPreference: runnerPreferenceSchema,
 });
 
-const heldWorkspaceCacheSchema = z.object({
-  profile: z.string(),
-  workspaceAffinityVersion: z.literal(1),
-});
-
 export const heldSandboxStateSchema = z.object({
   reuseKey: z.string(),
   lastCompletedAt: z.string().datetime({ offset: true }),
@@ -496,12 +488,6 @@ export const activeReuseProducerSchema = z.object({
   runId: z.uuid(),
   reuseKey: z.string(),
   profile: z.string(),
-});
-
-export const heldWorkspaceStateSchema = z.object({
-  reuseKey: z.string(),
-  lastCompletedAt: z.string().datetime({ offset: true }),
-  workspaceCaches: z.array(heldWorkspaceCacheSchema).min(1).max(8),
 });
 
 export const heldHomeStateSchema = z.object({
@@ -1591,10 +1577,7 @@ export const heartbeatBodySchema = z
     runningCount: z.number().int().nonnegative(),
     admittableProfiles: runnerProfileListSchema,
     heldSandboxStates: z.array(heldSandboxStateSchema).max(1024),
-    heldWorkspaceStates: z.array(heldWorkspaceStateSchema).max(1024),
-    heldHomeStates: z.array(heldHomeStateSchema).max(1024).default([]),
-    // Capability exists even when a prepared Runner holds no home images.
-    homeAffinityVersion: z.literal(1).optional(),
+    heldHomeStates: z.array(heldHomeStateSchema).max(1024),
     activeReuseProducers: z.array(activeReuseProducerSchema).max(1024),
     // This shared endpoint also accepts PAT and older Runner heartbeats without
     // a host observation. Absence is a first-class unknown, never WSS-eligible.
@@ -1602,19 +1585,6 @@ export const heartbeatBodySchema = z
     mode: z.enum(["starting", "running", "draining", "stopping"]),
   })
   .superRefine((heartbeat, ctx) => {
-    const workspaceCacheCount = heartbeat.heldWorkspaceStates.reduce(
-      (count, state) => {
-        return count + state.workspaceCaches.length;
-      },
-      0,
-    );
-    if (workspaceCacheCount > 1024) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["heldWorkspaceStates"],
-        message: "heartbeat may contain at most 1024 workspace caches",
-      });
-    }
     const homeCacheCount = heartbeat.heldHomeStates.reduce((count, state) => {
       return count + state.homeCaches.length;
     }, 0);
@@ -1662,7 +1632,6 @@ export type RunnerPreferenceClaimState = z.infer<
 >;
 export type ActiveReuseProducer = z.infer<typeof activeReuseProducerSchema>;
 export type HeldSandboxState = z.infer<typeof heldSandboxStateSchema>;
-export type HeldWorkspaceState = z.infer<typeof heldWorkspaceStateSchema>;
 export type HeldHomeState = z.infer<typeof heldHomeStateSchema>;
 export type ExecutionContext = z.infer<typeof executionContextSchema>;
 export type StoredExecutionContext = z.infer<

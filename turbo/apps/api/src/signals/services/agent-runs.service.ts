@@ -15,8 +15,8 @@ import type {
 import {
   sandboxReuseResultSchema,
   type SandboxReuseResult,
-  workspaceReuseResultSchema,
-  type WorkspaceReuseResult,
+  homeReuseResultSchema,
+  type HomeReuseResult,
 } from "@okouai/api-contracts/contracts/runner-primitives";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -313,7 +313,7 @@ export function agentRunRunner(args: {
 }): Computed<
   Promise<{
     readonly sandboxReuseResult: SandboxReuseResult | null;
-    readonly workspaceReuseResult: WorkspaceReuseResult | null;
+    readonly homeReuseResult: HomeReuseResult | null;
     readonly runnerHostname: string | null;
     readonly runnerVersion: string | null;
     readonly runnerId: string | null;
@@ -324,7 +324,7 @@ export function agentRunRunner(args: {
     const [row] = await get(db$)
       .select({
         sandboxReuseResult: agentRuns.sandboxReuseResult,
-        workspaceReuseResult: agentRuns.workspaceReuseResult,
+        homeReuseResult: agentRuns.homeReuseResult,
         runnerHostname: agentRuns.runnerHostname,
         runnerVersion: agentRuns.runnerVersion,
         runnerId: agentRuns.runnerId,
@@ -347,14 +347,10 @@ export function agentRunRunner(args: {
     const sandboxResult = sandboxReuseResultSchema.safeParse(
       row.sandboxReuseResult,
     );
-    const workspaceResult = workspaceReuseResultSchema.safeParse(
-      row.workspaceReuseResult,
-    );
+    const homeResult = homeReuseResultSchema.safeParse(row.homeReuseResult);
     return {
       sandboxReuseResult: sandboxResult.success ? sandboxResult.data : null,
-      workspaceReuseResult: workspaceResult.success
-        ? workspaceResult.data
-        : null,
+      homeReuseResult: homeResult.success ? homeResult.data : null,
       runnerHostname: row.runnerHostname,
       runnerVersion: row.runnerVersion,
       runnerId: row.runnerId,
