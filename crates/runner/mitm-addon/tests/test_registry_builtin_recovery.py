@@ -54,6 +54,41 @@ def _fail_catalog_reads(cache_path: Path) -> Iterator[None]:
         yield
 
 
+@contextmanager
+def _foreign_catalog_owner(cache_path: Path) -> Iterator[None]:
+    catalog_stat = cache_path.stat()
+    real_stat = os.stat
+    real_fstat = os.fstat
+
+    def foreign_owner(st: os.stat_result) -> os.stat_result:
+        if (st.st_dev, st.st_ino) != (catalog_stat.st_dev, catalog_stat.st_ino):
+            return st
+        fields = list(st)
+        fields[4] = st.st_uid + 1
+        # The sequence alone loses nanosecond timestamps and other extra fields.
+        # Python 3.14 rejects named sequence fields repeated in the extra map.
+        extra_fields = {
+            name: getattr(st, name)
+            for name in dir(st)
+            if name.startswith("st_")
+            and name
+            not in {"st_mode", "st_ino", "st_dev", "st_nlink", "st_uid", "st_gid", "st_size"}
+        }
+        return os.stat_result(fields, extra_fields)
+
+    def stat_path(path, *args, **kwargs) -> os.stat_result:
+        return foreign_owner(real_stat(path, *args, **kwargs))
+
+    def fstat(fd: int) -> os.stat_result:
+        return foreign_owner(real_fstat(fd))
+
+    with (
+        patch.object(os, "stat", side_effect=stat_path),
+        patch.object(os, "fstat", side_effect=fstat),
+    ):
+        yield
+
+
 def test_catalog_recovers_after_same_identity_read_error(tmp_path, mitm_ctx):
     _, cache_path = _write_recovery_files(tmp_path)
 
@@ -153,6 +188,70 @@ async def test_request_recovers_after_catalog_read_error(
 
     assert recovered_flow.response is None
     assert recovered_flow.request.headers["Authorization"] == "Bearer recovered"
+
+
+@pytest.mark.parametrize("cached", [False, True], ids=["cold-load", "cached-owner-change"])
+async def test_request_rejects_foreign_catalog_owner_and_recovers(
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, cached
+):
+    registry_path, cache_path = _write_recovery_files(tmp_path)
+    cache_path.chmod(0o644)
+    original_stat = cache_path.stat()
+    original_contents = cache_path.read_bytes()
+    assert original_stat.st_uid == os.geteuid()
+
+    with (
+        mitm_ctx(registry_path=str(registry_path)),
+        fake_firewall_headers(headers={"Authorization": "Bearer recovered"}) as auth_fetch,
+    ):
+        if cached:
+            healthy = real_flow(with_response=False, host="cache.example.com", path="/items")
+            await mitm_addon.request(healthy)
+            assert healthy.response is None
+            assert healthy.request.headers["Authorization"] == "Bearer recovered"
+            auth_fetch.assert_called_once()
+            auth_fetch.reset_mock()
+
+        with _foreign_catalog_owner(cache_path):
+            foreign_stat = cache_path.stat()
+            assert foreign_stat.st_uid != os.geteuid()
+            assert foreign_stat.st_mode == original_stat.st_mode
+            assert (
+                foreign_stat.st_dev,
+                foreign_stat.st_ino,
+                foreign_stat.st_size,
+                foreign_stat.st_mtime_ns,
+            ) == (
+                original_stat.st_dev,
+                original_stat.st_ino,
+                original_stat.st_size,
+                original_stat.st_mtime_ns,
+            )
+
+            blocked = real_flow(with_response=False, host="cache.example.com", path="/items")
+            # Enter the request before probing either cache, including the warm case.
+            await mitm_addon.request(blocked)
+            assert blocked.response is not None
+            assert blocked.response.status_code == 503
+            assert blocked.response.json()["error"] == "invalid_registry_sandbox"
+            assert "cache_untrusted" in blocked.response.json()["message"]
+            assert "Authorization" not in blocked.request.headers
+            auth_fetch.assert_not_called()
+
+            snapshot = builtin_firewall_cache.load_catalog_snapshot(str(cache_path))
+            assert snapshot.catalog is None
+            assert snapshot.unavailable_reason == "cache_untrusted"
+
+        recovered = real_flow(with_response=False, host="cache.example.com", path="/items")
+        await mitm_addon.request(recovered)
+        assert recovered.response is None
+        assert recovered.request.headers["Authorization"] == "Bearer recovered"
+        auth_fetch.assert_called_once()
+
+    restored_stat = cache_path.stat()
+    for field in ("st_uid", "st_mode", "st_dev", "st_ino", "st_size", "st_mtime_ns"):
+        assert getattr(restored_stat, field) == getattr(original_stat, field)
+    assert cache_path.read_bytes() == original_contents
 
 
 @pytest.mark.parametrize("invalid_content", ["json", "schema", "oversized"])
