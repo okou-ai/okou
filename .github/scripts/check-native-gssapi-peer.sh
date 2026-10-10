@@ -4,7 +4,7 @@
 # namespaces. No host packages, policy, /run, external KDCs or real credentials.
 set -euo pipefail
 [[ $# == 0 ]] || { echo 'usage: check-native-gssapi-peer.sh' >&2; exit 1; }
-cd "$(git rev-parse --show-toplevel)"
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.."
 source .github/scripts/native-test-environment.sh
 arch=$(uname -m)
 case "$arch" in x86_64|aarch64) ;; *) echo 'unsupported native GSSAPI architecture' >&2; exit 1 ;; esac

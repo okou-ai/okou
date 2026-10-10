@@ -11,7 +11,7 @@ elif [[ $# != 0 ]]; then
   echo 'usage: check-native-kerberos.sh [--privileged-synthetic]' >&2
   exit 1
 fi
-cd "$(git rev-parse --show-toplevel)"
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.."
 source .github/scripts/native-test-environment.sh
 arch=$(uname -m)
 uid=$native_uid

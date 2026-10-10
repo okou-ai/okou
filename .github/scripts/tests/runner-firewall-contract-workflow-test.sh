@@ -151,6 +151,58 @@ with tempfile.TemporaryDirectory(prefix='firewall-contract-workflow-', dir=targe
     else:
         owner = run(['id', '-un'], native).strip()
         root_command = ['sudo', '-n']
+    # Bootstrap each real wrapper prefix from an unrelated working directory,
+    # with a root caller but an ordinary-owned Git repository. No compiler,
+    # signed provider, KDC or native runtime is invoked by this canary.
+    bootstrap_repo = directory / 'bootstrap-repo'
+    bootstrap_repo.mkdir()
+    (bootstrap_repo / 'crates').mkdir()
+    scripts = bootstrap_repo / '.github/scripts'
+    scripts.mkdir(parents=True)
+    shutil.copy2(helper, scripts / 'native-test-environment.sh')
+    run(['git', 'init', '-q', '--initial-branch=main'], bootstrap_repo)
+    bootstrap_uid = int(run(['id', '-u', owner], native).strip())
+    bootstrap_gid = int(run(['id', '-g', owner], native).strip())
+    assert bootstrap_uid != 0
+    if os.geteuid() == 0:
+        for path in (bootstrap_repo, bootstrap_repo / '.git'):
+            assert not path.is_symlink() and path.is_dir()
+            os.chown(path, bootstrap_uid, bootstrap_gid, follow_symlinks=False)
+    assert bootstrap_repo.stat().st_uid == bootstrap_uid
+    assert (bootstrap_repo / '.git').stat().st_uid == bootstrap_uid
+    bootstrap_home = directory / 'bootstrap-home'
+    bootstrap_home.mkdir()
+    bootstrap_env = host_env | {'HOME': str(bootstrap_home), 'GIT_CONFIG_NOSYSTEM': '1',
+                               'GIT_CONFIG_GLOBAL': '/dev/null'}
+    for wrapper in ['check-native-kerberos.sh', 'check-native-gssapi-peer.sh']:
+        source = (root / '.github/scripts' / wrapper).read_text()
+        prefix, separator, _ = source.partition('source .github/scripts/native-test-environment.sh\n')
+        assert separator, f'{wrapper}: native environment bootstrap missing'
+        program = scripts / wrapper
+        program.write_text(prefix + separator + '''
+[[ $PWD == "$EXPECTED_BOOTSTRAP_ROOT" ]]
+[[ $(native_build git rev-parse --show-toplevel) == "$EXPECTED_BOOTSTRAP_ROOT" ]]
+native_build python3 - "$native_uid" "$native_gid" <<'BOOTSTRAP'
+import os
+from pathlib import Path
+import sys
+assert os.geteuid() == int(sys.argv[1]) != 0
+assert os.getegid() == int(sys.argv[2])
+assert os.getgroups() == []
+status = dict(line.split(':', 1) for line in Path('/proc/self/status').read_text().splitlines())
+for name in ('CapInh', 'CapPrm', 'CapEff', 'CapBnd', 'CapAmb'):
+    assert int(status[name].strip(), 16) == 0
+assert int(status['NoNewPrivs'].strip()) == 1
+BOOTSTRAP
+''')
+        result = subprocess.run(root_command + [
+            'env', '-i', f'PATH={os.environ["PATH"]}', f'HOME={bootstrap_home}',
+            'GIT_CONFIG_NOSYSTEM=1', 'GIT_CONFIG_GLOBAL=/dev/null',
+            f'NATIVE_TEST_OWNER={owner}', f'EXPECTED_BOOTSTRAP_ROOT={bootstrap_repo}',
+            'bash', str(program)], cwd=directory, env=bootstrap_env, text=True, capture_output=True)
+        assert result.returncode == 0 and 'fatal:' not in result.stderr, \
+            f'{wrapper}: root bootstrap refused or hid a Git ownership error: exit={result.returncode}: {result.stderr}'
+
     # Exercise the actual setpriv/UID/capability/environment boundary, not a
     # fabricated compiler or a namespace mock. This is not Docker/native success.
     container_check = '''source "$1"

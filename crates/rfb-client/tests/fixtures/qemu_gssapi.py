@@ -18,6 +18,7 @@ import signal
 import socket
 import stat
 import subprocess
+import sys
 import tempfile
 import time
 
@@ -54,6 +55,27 @@ def wait_port(process, value):
         except OSError:
             time.sleep(0.025)
     raise RuntimeError("independent fixture readiness exhausted")
+
+
+def verify_loopback_listeners(ports):
+    # Read the current network namespace's kernel tables, not a host iproute2
+    # program absent from the Rust image. Missing/unreadable tables refuse.
+    # This validates bind addresses only; it does not attest process custody.
+    listeners = {value: set() for value in ports}
+    for name in ("tcp", "tcp6"):
+        with (pathlib.Path("/proc/net") / name).open() as rows:
+            next(rows)  # kernel column header
+            for row in rows:
+                fields = row.split()
+                if fields[3] != "0A":  # TCP_LISTEN, not a connected/TIME_WAIT socket
+                    continue
+                address, value = fields[1].split(":")
+                value = int(value, 16)
+                if value in listeners:
+                    listeners[value].add((name, address))
+    loopback = f'{int.from_bytes(socket.inet_aton("127.0.0.1"), sys.byteorder):08X}'
+    if any(actual != {("tcp", loopback)} for actual in listeners.values()):
+        raise RuntimeError("independent fixture loopback-only listener required")
 
 
 def run(argv, env, data=None):
@@ -477,8 +499,7 @@ def fixture(parent, index, runtime, qemu, ports, children, files, multiarch="x86
         # Explicit independent-acceptor mode, never a substituted QEMU server.
         for path in work.rglob("*"):
             if path.is_file(): path.chmod(0o600)
-        inventory = subprocess.check_output(["ss", "-ltn"], text=True)
-        assert f"127.0.0.1:{kdcp}" in inventory and f"0.0.0.0:{kdcp}" not in inventory and f"[::]:{kdcp}" not in inventory
+        verify_loopback_listeners([kdcp])
         return kdc
     (work / "sasl/qemu.conf").write_text(f"mech_list: GSSAPI\nkeytab: {work}/server.keytab\n")
     run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-noenc", "-days", "1", "-subj", "/CN=Issue37612Fixture", "-keyout", work / "ca.key", "-out", work / "tls/ca-cert.pem"], env)
@@ -494,9 +515,7 @@ def fixture(parent, index, runtime, qemu, ports, children, files, multiarch="x86
             f"tls-creds-x509,id=tls0,endpoint=server,dir={work}/tls,verify-peer=off", "-S", "-monitor", "none", "-serial", "none"]
     server = subprocess.Popen(args, env=env, stdin=subprocess.DEVNULL, stdout=qlog, stderr=qlog)
     children.append(server);wait_port(server, vncp)
-    inventory = subprocess.check_output(["ss", "-ltn"], text=True)
-    for value in (kdcp, vncp):
-        assert f"127.0.0.1:{value}" in inventory and f"0.0.0.0:{value}" not in inventory and f"[::]:{value}" not in inventory
+    verify_loopback_listeners([kdcp, vncp])
     return kdc
 
 

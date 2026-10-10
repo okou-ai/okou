@@ -13,6 +13,7 @@ import stat
 import pathlib
 import platform
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
@@ -20,6 +21,49 @@ import unittest
 import unittest.mock as mock
 
 import qemu_gssapi
+
+
+class LoopbackListeners(unittest.TestCase):
+    def listener(self, address="127.0.0.1", family=socket.AF_INET, value=0):
+        stream = socket.socket(family)
+        self.addCleanup(stream.close)
+        if family == socket.AF_INET6:
+            stream.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+        stream.bind((address, value))
+        stream.listen(1)
+        return stream
+
+    def test_real_ipv4_loopback_listeners_are_verified_without_external_tools(self):
+        first, second = self.listener(), self.listener()
+        driver = '''import sys
+sys.path.insert(0, sys.argv[1])
+import qemu_gssapi
+qemu_gssapi.verify_loopback_listeners([int(value) for value in sys.argv[2:]])
+'''
+        result = subprocess.run(
+            [sys.executable, "-I", "-S", "-B", "-c", driver,
+             str(pathlib.Path(qemu_gssapi.__file__).parent),
+             str(first.getsockname()[1]), str(second.getsockname()[1])],
+            env=os.environ | {"PATH": ""}, capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_a_bound_but_nonlistening_port_is_not_readiness(self):
+        with socket.socket() as stream:
+            stream.bind(("127.0.0.1", 0))
+            with self.assertRaisesRegex(RuntimeError, "loopback-only listener required"):
+                qemu_gssapi.verify_loopback_listeners([stream.getsockname()[1]])
+
+    def test_another_loopback_address_does_not_match_the_fixture_contract(self):
+        stream = self.listener("127.0.0.2")
+        with self.assertRaisesRegex(RuntimeError, "loopback-only listener required"):
+            qemu_gssapi.verify_loopback_listeners([stream.getsockname()[1]])
+
+    def test_ipv6_listener_cannot_hide_behind_a_valid_ipv4_listener(self):
+        first = self.listener()
+        second = self.listener("::1", socket.AF_INET6, first.getsockname()[1])
+        self.assertEqual(first.getsockname()[1], second.getsockname()[1])
+        with self.assertRaisesRegex(RuntimeError, "loopback-only listener required"):
+            qemu_gssapi.verify_loopback_listeners([first.getsockname()[1]])
 
 
 class RuntimeInputs(unittest.TestCase):
