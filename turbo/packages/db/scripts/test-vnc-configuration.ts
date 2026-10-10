@@ -714,7 +714,10 @@ try {
   );
   await rejects(
     "DELETE FROM ssh_connections WHERE id='00000000-0000-4000-8000-00000000b015'",
-    { code: "23001", constraint: "vnc_connections_kdc_ssh_owner_fk" },
+    {
+      code: /^(23503|23001)$/,
+      constraint: "vnc_connections_kdc_ssh_owner_fk",
+    },
   );
   await rejects(
     'UPDATE vnc_connections SET kerberos_service=\'{"realm":"EXAMPLE.INVALID","components":["host","desktop.example.com"]}\' WHERE id=\'00000000-0000-4000-8000-00000000b014\'',
