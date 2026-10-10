@@ -173,9 +173,9 @@ percentage-of-host single-image cap. Fresh accounting includes image generations
 metadata, candidate/orphan staging and cross-device sparse-copy peak headroom.
 Locked or unavailable observations are not zero. Entry/capacity/reference/age
 locks and routine single-flight GC remain authoritative. Unlink in the Guest is
-not proof that host allocation was reclaimed. PR4 owns later independent absolute
-host overrides and detailed rootfs/home byte/inode visibility; these do not resize
-disks or alter thread isolation. This is safety policy, not measured fleet sizing.
+not proof that host allocation was reclaimed. Retention controls must not resize
+configured disks or widen thread isolation. These defaults are safety policy,
+not measured fleet sizing.
 
 ## Idle Home Reclamation Concurrency
 
