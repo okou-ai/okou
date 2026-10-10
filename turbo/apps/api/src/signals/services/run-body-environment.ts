@@ -1,9 +1,6 @@
 import type { unifiedRunRequestSchema } from "@okouai/api-contracts/contracts/runs";
-import { computed } from "ccstate";
 import type { z } from "zod";
-import { compactRecord } from "./connector-runtime-preparation.service";
 import { ORG_SENTINEL_USER_ID } from "./feature-switch-scope";
-import type { AgentRunContextSignals } from "./agent-run-context.signals";
 
 export type RunRequestBody = z.infer<typeof unifiedRunRequestSchema>;
 
@@ -26,7 +23,7 @@ export function withoutLegacyAgentRunEnvironmentEntries<T>(
       canonical[key] = value;
     }
   }
-  return compactRecord(canonical);
+  return Object.keys(canonical).length > 0 ? canonical : undefined;
 }
 
 interface PersistedRunEnvironmentVariable {
@@ -85,25 +82,4 @@ export function resolveRunBodyEnvironment(args: {
 
 export function selectedAgentRunVariables(agentId: string) {
   return { OKOU_AGENT_ID: agentId };
-}
-
-/** The Run body's own variables and secrets for one execution identity. */
-export function createRunBodyEnvironmentSignal(
-  execution: AgentRunContextSignals,
-) {
-  return computed(async (get) => {
-    const [agent, environment] = await Promise.all([
-      get(execution.agent$),
-      get(execution.environment$),
-    ]);
-    if (!agent) {
-      throw new Error("Agent disappeared after preparation authorization");
-    }
-    return resolveRunBodyEnvironment({
-      runVars: selectedAgentRunVariables(agent.id),
-      runSecrets: pendingOkouTokenSecrets(undefined),
-      persistedEnvironment: environment,
-      canonicalOkouRuntime: true,
-    });
-  });
 }
