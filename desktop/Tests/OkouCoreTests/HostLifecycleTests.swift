@@ -69,8 +69,8 @@ private func commandResponse(_ id: String) -> JSONValue {
     "status": .string("command"),
     "command": .object([
       "id": .string(id), "kind": .string("apps.list"), "status": .string("running"),
-      "payload": .object([:]), "createdAt": .string(timestamp), "claimedAt": .string(timestamp),
-      "timeoutMs": .number(30_000),
+      "hostId": .null, "hostName": .null, "payload": .object([:]), "timeoutMs": .number(30_000),
+      "createdAt": .string(timestamp), "claimedAt": .string(timestamp), "completedAt": .null,
     ]),
   ])
 }
@@ -615,9 +615,10 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
             "status": .string("command"),
             "command": .object([
               "id": .string("running"), "kind": .string("apps.list"),
-              "status": .string("running"), "payload": .object([:]),
-              "timeoutMs": .number(60000),
+              "status": .string("running"), "hostId": .null, "hostName": .null,
+              "payload": .object([:]), "timeoutMs": .number(60000),
               "createdAt": .string(timestamp), "claimedAt": .string(timestamp),
+              "completedAt": .null,
             ]),
           ]))
       } else if path.hasSuffix("/heartbeat") {
@@ -704,9 +705,10 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
             "status": .string("command"),
             "command": .object([
               "id": .string("running"), "kind": .string("apps.list"),
-              "status": .string("running"), "payload": .object([:]),
-              "timeoutMs": .number(60000),
+              "status": .string("running"), "hostId": .null, "hostName": .null,
+              "payload": .object([:]), "timeoutMs": .number(60000),
               "createdAt": .string(timestamp), "claimedAt": .string(timestamp),
+              "completedAt": .null,
             ]),
           ]))
       } else if path.hasSuffix("/heartbeat") {
@@ -812,9 +814,10 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
         "status": .string("command"),
         "command": .object([
           "id": .string("command-1"), "kind": .string("app.open"),
-          "status": .string("running"),
-          "payload": .object(["app": .string("com.apple.calculator")]),
-          "createdAt": .string("2026-10-07T00:00:00.000Z"),
+          "status": .string("running"), "hostId": .null, "hostName": .null,
+          "payload": .object(["app": .string("com.apple.calculator")]), "timeoutMs": .null,
+          "createdAt": .string("2026-10-07T00:00:00.000Z"), "claimedAt": .null,
+          "completedAt": .null,
         ]),
       ]))
     await fulfillment(of: [complete, stopped], timeout: 3, enforceOrder: true)
@@ -838,10 +841,10 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
             "status": .string("command"),
             "command": .object([
               "id": .string("expired"), "kind": .string("apps.list"),
-              "status": .string("running"), "payload": .object([:]),
-              "timeoutMs": .number(1000),
+              "status": .string("running"), "hostId": .null, "hostName": .null,
+              "payload": .object([:]), "timeoutMs": .number(1000),
               "createdAt": .string("2026-10-07T00:00:00.000Z"),
-              "claimedAt": .string("2026-10-07T00:00:02.000Z"),
+              "claimedAt": .string("2026-10-07T00:00:02.000Z"), "completedAt": .null,
             ]),
           ]))
       } else if path.hasSuffix("/complete") {

@@ -223,6 +223,28 @@ function docLines(doc: readonly string[]): readonly string[] {
   });
 }
 
+/** Renders a call `prefix a, b)` on one line, on one continuation line, or one argument per line. */
+function callLines(
+  prefix: string,
+  args: readonly string[],
+  indentWidth: number,
+): readonly string[] {
+  const single = `${prefix}${args.join(", ")})`;
+  if (single.length + indentWidth <= maxLineWidth) {
+    return [single];
+  }
+  const continuation = `  ${args.join(", ")})`;
+  if (continuation.length + indentWidth <= maxLineWidth) {
+    return [prefix, continuation];
+  }
+  return [
+    prefix,
+    ...args.map((arg, index) => {
+      return `  ${arg}${index === args.length - 1 ? ")" : ","}`;
+    }),
+  ];
+}
+
 /** Renders `prefix(a, b)suffix` on one line, or one argument per line when too wide. */
 function wrapArguments(
   prefix: string,
@@ -578,6 +600,7 @@ function renderStruct(
   const fields: string[] = [];
   const parameters: string[] = [];
   const assignments: string[] = [];
+  const members: StructMember[] = [];
   for (const [wireName, propertySchema] of Object.entries(properties)) {
     if (!isJsonObject(propertySchema)) {
       throw new Error(`${context.label}.${path}.${wireName} is malformed`);
@@ -600,16 +623,24 @@ function renderStruct(
       nested.push(resolved.declarations);
     }
     const override = optionalFields.get(wireName);
-    const swiftType = optionalMarker(
-      resolved,
-      !required.has(wireName) || override !== undefined,
-    );
+    const optional = !required.has(wireName) || override !== undefined;
+    const swiftType = optionalMarker(resolved, optional);
     if (override !== undefined) {
       fields.push(...docLines([override]));
     }
     fields.push(`public let ${name}: ${swiftType}`);
     parameters.push(`${name}: ${swiftType}`);
     assignments.push(`self.${name} = ${name}`);
+    members.push({
+      wireName,
+      name,
+      baseType: resolved.swiftType,
+      presence: optional
+        ? "optional"
+        : resolved.nullable
+          ? "nullable"
+          : "required",
+    });
   }
   const body: string[] = [];
   const nestedLines = joinDeclarations(nested);
@@ -627,10 +658,85 @@ function renderStruct(
       "}",
     );
   }
+  if (
+    members.some((member) => {
+      return member.presence === "nullable";
+    })
+  ) {
+    body.push("", ...renderExplicitCodable(members));
+  }
   return [
     ...docLines(doc),
     `public struct ${typeName}: Codable, Equatable, Sendable {`,
     ...indent(body, 1),
+    "}",
+  ];
+}
+
+interface StructMember {
+  readonly wireName: string;
+  readonly name: string;
+  /** Swift type without the optional marker. */
+  readonly baseType: string;
+  /** `nullable` is a contract-required key whose value may be `null`. */
+  readonly presence: "required" | "optional" | "nullable";
+}
+
+/**
+ * Synthesized Codable treats a missing key and `null` alike. A contract-required
+ * nullable field must reject a missing key and encode an explicit `null`, as the
+ * Rust bindings do, so such structs get explicit coding.
+ */
+function renderExplicitCodable(
+  members: readonly StructMember[],
+): readonly string[] {
+  const decodeLines = members.flatMap((member) => {
+    const key = `.${member.name}`;
+    const decode = (method: string): readonly string[] => {
+      return callLines(
+        `${member.name} = try container.${method}(`,
+        [`${member.baseType}.self`, `forKey: ${key}`],
+        assumedNestedIndent,
+      );
+    };
+    switch (member.presence) {
+      case "required":
+        return decode("decode");
+      case "optional":
+        return decode("decodeIfPresent");
+      case "nullable":
+        return [
+          `guard container.contains(${key}) else {`,
+          "  throw DecodingError.keyNotFound(",
+          `    CodingKeys.${member.name},`,
+          "    DecodingError.Context(",
+          "      codingPath: container.codingPath,",
+          `      debugDescription: ${swiftStringLiteral(`${member.wireName} is required`)}))`,
+          "}",
+          ...decode("decodeIfPresent"),
+        ];
+    }
+  });
+  const encodeLines = members.map((member) => {
+    const method =
+      member.presence === "optional" ? "encodeIfPresent" : "encode";
+    return `try container.${method}(${member.name}, forKey: .${member.name})`;
+  });
+  return [
+    "private enum CodingKeys: String, CodingKey {",
+    ...members.map((member) => {
+      return `  case ${member.name} = ${swiftStringLiteral(member.wireName)}`;
+    }),
+    "}",
+    "",
+    "public init(from decoder: any Decoder) throws {",
+    "  let container = try decoder.container(keyedBy: CodingKeys.self)",
+    ...indent(decodeLines, 1),
+    "}",
+    "",
+    "public func encode(to encoder: any Encoder) throws {",
+    "  var container = encoder.container(keyedBy: CodingKeys.self)",
+    ...indent(encodeLines, 1),
     "}",
   ];
 }

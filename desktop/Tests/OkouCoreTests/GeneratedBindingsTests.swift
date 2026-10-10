@@ -117,4 +117,15 @@ final class GeneratedBindingsTests: XCTestCase {
       XCTAssertTrue((error as? DesktopFailure)?.message.contains("missing hostId") == true)
     }
   }
+
+  func testRequiredNullableFieldsRejectAMissingKeyButAcceptNull() throws {
+    XCTAssertThrowsError(try decode(DesktopCompatibilityPolicy.self, "{}")) { error in
+      XCTAssertTrue(
+        (error as? DesktopFailure)?.message.contains("missing minimumSupportedVersion") == true)
+    }
+    XCTAssertThrowsError(
+      try decode(AuthenticatedUser.self, #"{"userId":"user_1","email":"a@b.test"}"#))
+    let encoded = try JSONEncoder().encode(DesktopCompatibilityPolicy(minimumSupportedVersion: nil))
+    XCTAssertEqual(String(decoding: encoded, as: UTF8.self), #"{"minimumSupportedVersion":null}"#)
+  }
 }

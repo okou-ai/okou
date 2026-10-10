@@ -138,6 +138,45 @@ describe("renderSwiftTypes", () => {
     expect(swift).toContain("  public init(\n    id: String,\n    count: Int,");
   });
 
+  it("decodes contract-required nullable fields explicitly", () => {
+    const swift = renderSwiftTypes([
+      {
+        schema: z.object({
+          id: z.string(),
+          orgId: z.string().nullable(),
+          note: z.string().optional(),
+        }),
+        swiftTypeName: "Member",
+        doc: [],
+      },
+    ]);
+    expect(swift).toContain(
+      "  public init(from decoder: any Decoder) throws {",
+    );
+    expect(swift).toContain(
+      "    id = try container.decode(String.self, forKey: .id)",
+    );
+    expect(swift).toContain("    guard container.contains(.orgId) else {");
+    expect(swift).toContain(
+      "    orgId = try container.decodeIfPresent(String.self, forKey: .orgId)",
+    );
+    expect(swift).toContain(
+      "    note = try container.decodeIfPresent(String.self, forKey: .note)",
+    );
+    expect(swift).toContain("    try container.encode(orgId, forKey: .orgId)");
+    expect(swift).toContain(
+      "    try container.encodeIfPresent(note, forKey: .note)",
+    );
+    const synthesized = renderSwiftTypes([
+      {
+        schema: z.object({ id: z.string(), note: z.string().optional() }),
+        swiftTypeName: "Plain",
+        doc: [],
+      },
+    ]);
+    expect(synthesized).not.toContain("init(from decoder");
+  });
+
   it("renders string enums as extensible raw-value structs", () => {
     const swift = renderSwiftTypes([
       {

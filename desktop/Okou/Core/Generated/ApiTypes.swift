@@ -198,6 +198,88 @@ public enum ComputerUseCommandClaim: Codable, Equatable, Sendable {
       self.claimedAt = claimedAt
       self.completedAt = completedAt
     }
+
+    private enum CodingKeys: String, CodingKey {
+      case id = "id"
+      case kind = "kind"
+      case status = "status"
+      case hostId = "hostId"
+      case hostName = "hostName"
+      case payload = "payload"
+      case result = "result"
+      case error = "error"
+      case timeoutMs = "timeoutMs"
+      case createdAt = "createdAt"
+      case claimedAt = "claimedAt"
+      case completedAt = "completedAt"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let container = try decoder.container(keyedBy: CodingKeys.self)
+      id = try container.decode(String.self, forKey: .id)
+      kind = try container.decode(Kind.self, forKey: .kind)
+      status = try container.decode(Status.self, forKey: .status)
+      guard container.contains(.hostId) else {
+        throw DecodingError.keyNotFound(
+          CodingKeys.hostId,
+          DecodingError.Context(
+            codingPath: container.codingPath,
+            debugDescription: "hostId is required"))
+      }
+      hostId = try container.decodeIfPresent(String.self, forKey: .hostId)
+      guard container.contains(.hostName) else {
+        throw DecodingError.keyNotFound(
+          CodingKeys.hostName,
+          DecodingError.Context(
+            codingPath: container.codingPath,
+            debugDescription: "hostName is required"))
+      }
+      hostName = try container.decodeIfPresent(String.self, forKey: .hostName)
+      payload = try container.decode([String: JSONValue].self, forKey: .payload)
+      result = try container.decodeIfPresent([String: JSONValue].self, forKey: .result)
+      error = try container.decodeIfPresent(ErrorValue.self, forKey: .error)
+      guard container.contains(.timeoutMs) else {
+        throw DecodingError.keyNotFound(
+          CodingKeys.timeoutMs,
+          DecodingError.Context(
+            codingPath: container.codingPath,
+            debugDescription: "timeoutMs is required"))
+      }
+      timeoutMs = try container.decodeIfPresent(Int.self, forKey: .timeoutMs)
+      createdAt = try container.decode(String.self, forKey: .createdAt)
+      guard container.contains(.claimedAt) else {
+        throw DecodingError.keyNotFound(
+          CodingKeys.claimedAt,
+          DecodingError.Context(
+            codingPath: container.codingPath,
+            debugDescription: "claimedAt is required"))
+      }
+      claimedAt = try container.decodeIfPresent(String.self, forKey: .claimedAt)
+      guard container.contains(.completedAt) else {
+        throw DecodingError.keyNotFound(
+          CodingKeys.completedAt,
+          DecodingError.Context(
+            codingPath: container.codingPath,
+            debugDescription: "completedAt is required"))
+      }
+      completedAt = try container.decodeIfPresent(String.self, forKey: .completedAt)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var container = encoder.container(keyedBy: CodingKeys.self)
+      try container.encode(id, forKey: .id)
+      try container.encode(kind, forKey: .kind)
+      try container.encode(status, forKey: .status)
+      try container.encode(hostId, forKey: .hostId)
+      try container.encode(hostName, forKey: .hostName)
+      try container.encode(payload, forKey: .payload)
+      try container.encodeIfPresent(result, forKey: .result)
+      try container.encodeIfPresent(error, forKey: .error)
+      try container.encode(timeoutMs, forKey: .timeoutMs)
+      try container.encode(createdAt, forKey: .createdAt)
+      try container.encode(claimedAt, forKey: .claimedAt)
+      try container.encode(completedAt, forKey: .completedAt)
+    }
   }
 
   case idle
@@ -262,6 +344,28 @@ public struct DesktopCompatibilityPolicy: Codable, Equatable, Sendable {
   public init(minimumSupportedVersion: String?) {
     self.minimumSupportedVersion = minimumSupportedVersion
   }
+
+  private enum CodingKeys: String, CodingKey {
+    case minimumSupportedVersion = "minimumSupportedVersion"
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    guard container.contains(.minimumSupportedVersion) else {
+      throw DecodingError.keyNotFound(
+        CodingKeys.minimumSupportedVersion,
+        DecodingError.Context(
+          codingPath: container.codingPath,
+          debugDescription: "minimumSupportedVersion is required"))
+    }
+    minimumSupportedVersion = try container.decodeIfPresent(
+      String.self, forKey: .minimumSupportedVersion)
+  }
+
+  public func encode(to encoder: any Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(minimumSupportedVersion, forKey: .minimumSupportedVersion)
+  }
 }
 
 /// `GET /api/auth/me` success body.
@@ -276,6 +380,36 @@ public struct AuthenticatedUser: Codable, Equatable, Sendable {
     self.email = email
     self.orgId = orgId
     self.sessionId = sessionId
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case userId = "userId"
+    case email = "email"
+    case orgId = "orgId"
+    case sessionId = "sessionId"
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    userId = try container.decode(String.self, forKey: .userId)
+    email = try container.decode(String.self, forKey: .email)
+    guard container.contains(.orgId) else {
+      throw DecodingError.keyNotFound(
+        CodingKeys.orgId,
+        DecodingError.Context(
+          codingPath: container.codingPath,
+          debugDescription: "orgId is required"))
+    }
+    orgId = try container.decodeIfPresent(String.self, forKey: .orgId)
+    sessionId = try container.decodeIfPresent(String.self, forKey: .sessionId)
+  }
+
+  public func encode(to encoder: any Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(userId, forKey: .userId)
+    try container.encode(email, forKey: .email)
+    try container.encode(orgId, forKey: .orgId)
+    try container.encodeIfPresent(sessionId, forKey: .sessionId)
   }
 }
 
