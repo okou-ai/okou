@@ -58,6 +58,13 @@ import {
   type SQL,
 } from "drizzle-orm";
 import { z } from "zod";
+import { normalizeBuildCommitSha } from "../../lib/build-info";
+import {
+  withPgPoolAcquisitionCapture,
+  withPgQueryExecutionCapture,
+  type PgPoolAcquisitionCapture,
+  type PgQueryExecutionCapture,
+} from "../../lib/db-instrumentation";
 import { executeRawRows } from "../../lib/db-raw-rows";
 import {
   nullableDriverValueDecoder,
@@ -67,7 +74,7 @@ import {
 import { env } from "../../lib/env";
 import { badRequestMessage, notFound } from "../../lib/error";
 import { logger } from "../../lib/log";
-import { now, nowDate } from "../../lib/time";
+import { monotonicNow, now, nowDate } from "../../lib/time";
 import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { runnerAuth$, type RunnerAuthContext } from "../auth/runner-auth";
@@ -132,7 +139,7 @@ import {
   networkPolicyRefreshesRecord,
   resolveActiveNetworkPolicyRefreshes,
 } from "../services/user-permission-grants.service";
-import { settle, tapError } from "../utils";
+import { safeSync, settle, tapError } from "../utils";
 
 const L = logger("Runners");
 
@@ -239,6 +246,10 @@ type ClaimRouteTimingActionType =
   | "claim_route_request_to_response_ready"
   | "claim_route_request_prepare"
   | "claim_route_lookup_authorization"
+  | "claim_route_lookup_query"
+  | "claim_route_lookup_pool_acquire"
+  | "claim_route_lookup_sql_call"
+  | "claim_route_lookup_application_remainder"
   | "claim_route_context_parse"
   | "claim_route_secret_materialization"
   | "claim_route_response_assembly"
@@ -254,10 +265,88 @@ interface ClaimRouteTimingRecord {
   readonly timestamp: string;
   readonly fallbackReason?: "invalid_keys";
   readonly policyRefreshPath?: ClaimNetworkPolicyRefreshPath;
+  readonly dimensions?: Readonly<Record<string, string>>;
 }
 
 class ClaimRouteTimingCollector {
   private readonly records: ClaimRouteTimingRecord[] = [];
+
+  async measureLookup<T>(operation: () => Promise<T>): Promise<T> {
+    const pool: PgPoolAcquisitionCapture = { acquisitions: [] };
+    const query: PgQueryExecutionCapture = { executions: [] };
+    const startedAt = monotonicNow();
+    return await withPgPoolAcquisitionCapture(pool, async () => {
+      return await withPgQueryExecutionCapture(query, operation);
+    }).finally(() => {
+      safeSync(() => {
+        const durationMs = monotonicNow() - startedAt;
+        const timestamp = nowDate().toISOString();
+        const dimensions = {
+          db_pool_capture:
+            pool.acquisitions.length === 1
+              ? "single"
+              : pool.acquisitions.length === 0
+                ? "missing"
+                : "multiple",
+          db_query_capture:
+            query.executions.length === 1
+              ? "single"
+              : query.executions.length === 0
+                ? "missing"
+                : "multiple",
+        };
+        this.records.push({
+          actionType: "claim_route_lookup_query",
+          spanKind: "nested",
+          durationMs,
+          timestamp,
+          dimensions,
+        });
+        const [acquisition] = pool.acquisitions;
+        const [execution] = query.executions;
+        if (pool.acquisitions.length === 1 && acquisition) {
+          this.records.push({
+            actionType: "claim_route_lookup_pool_acquire",
+            spanKind: "nested",
+            durationMs: acquisition.durationMs,
+            timestamp: new Date(acquisition.finishedAt).toISOString(),
+            dimensions: {
+              ...dimensions,
+              db_pool_acquire_path: acquisition.path,
+            },
+          });
+        }
+        if (query.executions.length === 1 && execution) {
+          this.records.push({
+            actionType: "claim_route_lookup_sql_call",
+            spanKind: "nested",
+            durationMs: execution.durationMs,
+            timestamp: new Date(execution.finishedAt).toISOString(),
+            dimensions,
+          });
+        }
+        // The one lookup acquires once and executes once, sequentially. The
+        // remainder includes query construction and Drizzle result mapping.
+        // Missing/ambiguous coverage must not become zero wait or SQL time.
+        if (
+          pool.acquisitions.length === 1 &&
+          query.executions.length === 1 &&
+          acquisition &&
+          execution &&
+          durationMs >= acquisition.durationMs + execution.durationMs
+        ) {
+          this.records.push({
+            actionType: "claim_route_lookup_application_remainder",
+            spanKind: "nested",
+            durationMs:
+              durationMs - acquisition.durationMs - execution.durationMs,
+            timestamp,
+            dimensions,
+          });
+        }
+      });
+    });
+  }
 
   recordElapsed(
     actionType: ClaimRouteTimingActionType,
@@ -337,6 +426,10 @@ class ClaimRouteTimingCollector {
       profile: args.profile,
       auth_type: args.authType,
     };
+    const apiCommitSha = normalizeBuildCommitSha(env("GIT_COMMIT_SHA"));
+    if (apiCommitSha) {
+      dimensions.api_commit_sha = apiCommitSha;
+    }
     if (args.discoverySource) {
       dimensions.discovery_source = args.discoverySource;
     }
@@ -355,6 +448,7 @@ class ClaimRouteTimingCollector {
           timestamp: record.timestamp,
           dimensions: {
             ...dimensions,
+            ...record.dimensions,
             span_kind: record.spanKind,
             ...(record.spanKind === "nested"
               ? runnerClaimAttributionDimensions(args.runnerAttribution)
@@ -2676,7 +2770,10 @@ const claimInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
 
   const lookupAuthorizationStartedAt = now();
-  const jobWithRun = await getClaimableJob(db, runId, signal);
+  const jobWithRun = await claimRouteTiming.measureLookup(async () => {
+    return await getClaimableJob(db, runId, signal);
+  });
+  signal.throwIfAborted();
   if (!isClaimableJob(jobWithRun)) {
     return jobWithRun;
   }
