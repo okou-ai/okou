@@ -227,11 +227,6 @@
       "owner": "completeClaimedSession$"
     },
     {
-      "id": "TX-0085",
-      "file": "turbo/apps/api/src/signals/services/builtin-connector-oauth-device-auth.service.ts",
-      "owner": "createDeviceAuthSession"
-    },
-    {
       "id": "TX-0086",
       "file": "turbo/apps/api/src/signals/services/canonical-asset.service.ts",
       "owner": "ensureCanonicalDelivery$"
