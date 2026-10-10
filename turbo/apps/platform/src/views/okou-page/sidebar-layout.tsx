@@ -1,4 +1,12 @@
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { chatLayout } from "../../signals/chat-page/chat-layout.ts";
+import {
+  activeThreadSidebar$,
+  activeThreadSidebarFullscreen$,
+} from "../../signals/chat-page/thread-sidebar-coordinator.ts";
+import { ChatThreadSidebarShell } from "./chat-thread-sidebar-shell.tsx";
 import type { ReactNode } from "react";
 import {
   useGet,
@@ -14,6 +22,7 @@ import { Sidebar, ThreeColumnSearchDialogContainer } from "./sidebar.tsx";
 import {
   AutomationMenuButton,
   ChatThreadHeaderTitle,
+  ChatThreadSidebarPane,
   SettledChatThreadActions,
 } from "./chat-thread-page.tsx";
 import { currentChatAgent$ } from "../../signals/agent-chat.ts";
@@ -398,6 +407,40 @@ function MobileSidebarMount() {
   );
 }
 
+function StableChatWorkspace({
+  children,
+  beside,
+  header,
+  footer,
+  pwaNavigation,
+}: {
+  readonly children: ReactNode;
+  readonly beside: "chat-list" | "nav-rail";
+  readonly header: ReactNode;
+  readonly footer: ReactNode;
+  readonly pwaNavigation: boolean;
+}) {
+  const active = useGet(activeThreadSidebar$);
+  const fullscreen = useGet(activeThreadSidebarFullscreen$);
+  return (
+    <ChatThreadSidebarShell
+      layout={chatLayout}
+      animateEntry={active?.animateEntry ?? true}
+      open={active !== null}
+      sidebar={<ChatThreadSidebarPane />}
+      workspace={{ beside, header, footer, pwaNavigation, fullscreen }}
+    >
+      <WorkspaceInset
+        beside={beside}
+        framed={false}
+        className={active ? "md:rounded-l-xl" : "md:rounded-xl"}
+      >
+        {children}
+      </WorkspaceInset>
+    </ChatThreadSidebarShell>
+  );
+}
+
 function SidebarLayoutInner({ children }: { children: ReactNode }) {
   const paletteColorTheme = useGet(paletteColorTheme$);
   const isDesktop = useMediaQuery(SIDEBAR_DESKTOP_MEDIA_QUERY);
@@ -406,10 +449,39 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
   const pwaNavigation = useGet(pwaNavigationEnabled$);
   const chatListVisible = useGet(pwaChatListVisible$);
   const activeRoute = useGet(activeRoute$);
+  const stableHost =
+    useGet(featureSwitch$)[FeatureSwitchKey.StablePreviewFullscreen];
 
   if (activeRoute === "me" && !pwaNavigation) {
     return <NotFoundPage />;
   }
+
+  const workspaceHeader = (
+    <>
+      <InstallBanner />
+      <IosInstallModal />
+      {!isDesktop &&
+        !(
+          pwaNavigation &&
+          (activeRoute === "me" ||
+            (activeRoute === "agentChat" && chatListVisible))
+        ) &&
+        (pwaNavigation ? (
+          <MobileTopBar pwaNavigation />
+        ) : (
+          <MobileSidebarMount />
+        ))}
+    </>
+  );
+  const workspaceContent = pwaNavigation ? (
+    <div className="flex min-h-0 flex-1 flex-col [--okou-safe-b:0px]">
+      {children}
+    </div>
+  ) : (
+    children
+  );
+  const workspaceFooter = pwaNavigation ? <PwaBottomNavigation /> : null;
+  const beside = chatListHidden ? "nav-rail" : "chat-list";
 
   return withChatScrollLayout(
     <div
@@ -437,31 +509,22 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
       ) : isDesktop ? (
         <Sidebar isDesktop />
       ) : null}
-      <WorkspaceInset beside={chatListHidden ? "nav-rail" : "chat-list"}>
-        <InstallBanner />
-        <IosInstallModal />
-        {!isDesktop &&
-          !(
-            pwaNavigation &&
-            (activeRoute === "me" ||
-              (activeRoute === "agentChat" && chatListVisible))
-          ) &&
-          (pwaNavigation ? (
-            <MobileTopBar pwaNavigation />
-          ) : (
-            <MobileSidebarMount />
-          ))}
-        {pwaNavigation ? (
-          <>
-            <div className="flex min-h-0 flex-1 flex-col [--okou-safe-b:0px]">
-              {children}
-            </div>
-            <PwaBottomNavigation />
-          </>
-        ) : (
-          children
-        )}
-      </WorkspaceInset>
+      {stableHost && activeRoute === "chat" ? (
+        <StableChatWorkspace
+          beside={beside}
+          header={workspaceHeader}
+          footer={workspaceFooter}
+          pwaNavigation={pwaNavigation}
+        >
+          {workspaceContent}
+        </StableChatWorkspace>
+      ) : (
+        <WorkspaceInset beside={beside}>
+          {workspaceHeader}
+          {workspaceContent}
+          {workspaceFooter}
+        </WorkspaceInset>
+      )}
     </div>,
   );
 }

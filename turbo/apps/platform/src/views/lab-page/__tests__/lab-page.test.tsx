@@ -12,7 +12,8 @@ const context = testContext();
 const PINNED_AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 
 function featureSwitchRow(feature: FeatureSwitchKey): HTMLElement {
-  const row = screen.getByText(feature).closest("li");
+  const label = getFeatureSwitchMetadata()[feature].displayName ?? feature;
+  const row = screen.getByText(label).closest("li");
   if (!(row instanceof HTMLElement)) {
     throw new Error(`${feature} feature row not found`);
   }
@@ -86,7 +87,9 @@ test("Lab groups active feature switches", async () => {
   const keys = Object.values(FeatureSwitchKey);
   for (const key of keys) {
     const group = featureSwitchGroup(stageGroups[metadata[key].rolloutStage]);
-    expect(within(group).getByText(key)).toBeInTheDocument();
+    expect(
+      within(group).getByText(metadata[key].displayName ?? key),
+    ).toBeInTheDocument();
   }
   expect(screen.getAllByRole("switch")).toHaveLength(keys.length);
   expect(
@@ -103,6 +106,11 @@ test("Lab groups active feature switches", async () => {
     ),
   ).toBeVisible();
   expect(buttonNamed("Reset all")).toBeEnabled();
+  expect(
+    within(
+      featureSwitchRow(FeatureSwitchKey.StablePreviewFullscreen),
+    ).getByRole("switch"),
+  ).not.toBeChecked();
 });
 
 test("Maintainer filters narrow the feature list", async () => {
@@ -144,7 +152,10 @@ test("Maintainer filters narrow the feature list", async () => {
   expect(screen.getAllByRole("switch")).toHaveLength(totalCount);
 });
 
-test("A user can toggle a Lab feature and reset all overrides", async () => {
+test.each([
+  FeatureSwitchKey.TestOauthConnector,
+  FeatureSwitchKey.StablePreviewFullscreen,
+])("Toggle and reset a Lab override (%s)", async (featureKey) => {
   const user = userEvent.setup();
   const updatedSwitches: Record<string, boolean>[] = [];
   let resetRequested = false;
@@ -154,14 +165,14 @@ test("A user can toggle a Lab feature and reset all overrides", async () => {
     path: "/_/lab",
     featureSwitches: {
       [FeatureSwitchKey.Lab]: true,
-      [FeatureSwitchKey.TestOauthConnector]: false,
+      [featureKey]: false,
     },
   });
   await screen.findByRole("heading", { name: "Lab" });
 
   let effectiveSwitches: Record<string, boolean> = {
     [FeatureSwitchKey.Lab]: true,
-    [FeatureSwitchKey.TestOauthConnector]: false,
+    [featureKey]: false,
   };
   context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
     return respond(200, {
@@ -183,7 +194,7 @@ test("A user can toggle a Lab feature and reset all overrides", async () => {
     return respond(200, { deleted: true });
   });
 
-  const feature = featureSwitchRow(FeatureSwitchKey.TestOauthConnector);
+  const feature = featureSwitchRow(featureKey);
   const featureControl = within(feature).getByRole("switch");
   expect(featureControl).not.toBeChecked();
 
@@ -192,9 +203,7 @@ test("A user can toggle a Lab feature and reset all overrides", async () => {
   await waitFor(() => {
     expect(featureControl).toBeChecked();
   });
-  expect(updatedSwitches).toStrictEqual([
-    { [FeatureSwitchKey.TestOauthConnector]: true },
-  ]);
+  expect(updatedSwitches).toStrictEqual([{ [featureKey]: true }]);
 
   await user.click(buttonNamed("Reset all"));
 

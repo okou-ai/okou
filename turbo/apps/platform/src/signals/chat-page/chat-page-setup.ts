@@ -16,12 +16,10 @@ import {
 import { createThreadMetaLookup } from "./chat-thread-event-sourcing.ts";
 import { recordBootstrapThreadMetadataTiming$ } from "../../lib/posthog.ts";
 
-import { createChatLayoutSignals } from "./chat-layout.ts";
+import { chatLayout } from "./chat-layout.ts";
 
 const resolveLeftThreadMeta$ = createThreadMetaLookup();
 const resolveRightThreadMeta$ = createThreadMetaLookup();
-// The mounted shell survives thread navigation, so its owner must too.
-const chatLayout = createChatLayoutSignals();
 
 const CHAT_EVENT_HASH_PREFIX = "#event-";
 

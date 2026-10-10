@@ -11,8 +11,13 @@ import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
 import {
   testContext,
   warmMermaidParser,
@@ -70,6 +75,16 @@ function artifactPreview(): HTMLElement {
 
 function openArtifactsControl(): HTMLElement {
   return buttonNamed("Open artifacts");
+}
+
+function menuItemNamed(name: string): HTMLElement {
+  const item = queryAllByRoleFast("menuitem").find((candidate) => {
+    return candidate.textContent?.trim() === name;
+  });
+  if (!item) {
+    throw new Error(`Expected menu item ${name}`);
+  }
+  return item;
 }
 
 function officeFileEvents(
@@ -483,7 +498,7 @@ test("Explain empty and unavailable CSV previews", async () => {
   });
 });
 
-test("Expand a diagram from a Markdown artifact", async () => {
+test.each([false, true])("Expand diagram / stable=%s", async (stableHost) => {
   const browser = context.mocks.browser.blobDownload();
   vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(
     1600,
@@ -521,6 +536,9 @@ test("Expand a diagram from a Markdown artifact", async () => {
     context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     host: "app.okou.ai",
+    featureSwitches: {
+      [FeatureSwitchKey.StablePreviewFullscreen]: stableHost,
+    },
   });
 
   await waitFor(() => {
@@ -589,7 +607,7 @@ test("Expand a diagram from a Markdown artifact", async () => {
   expect(buttonNamed("Exit fullscreen", artifactPreview())).toBeInTheDocument();
 });
 
-test("Preview a hosted site artifact in the thread sidebar", async () => {
+test.each([false, true])("Preview site / stable=%s", async (stableHost) => {
   useWideScreen();
   const summary = artifactSummary(HOSTED_SITE_ID, "hosted-site", "Launch site");
   mockArtifactConversation(context, {
@@ -610,6 +628,9 @@ test("Preview a hosted site artifact in the thread sidebar", async () => {
     context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     host: "app.okou.ai",
+    featureSwitches: {
+      [FeatureSwitchKey.StablePreviewFullscreen]: stableHost,
+    },
   });
 
   await waitFor(() => {
@@ -641,9 +662,41 @@ test("Preview a hosted site artifact in the thread sidebar", async () => {
     expect(frame).toHaveAttribute("src", HOSTED_SITE_URL);
     expect(frame).toHaveAccessibleName("Launch site preview");
   });
+
+  click(buttonNamed("Enter fullscreen", artifactPreview()));
+  await waitFor(() => {
+    expect(buttonNamed("Exit fullscreen", artifactPreview())).toBeVisible();
+    expect(screen.getByTitle("Launch site preview")).toHaveAttribute(
+      "src",
+      HOSTED_SITE_URL,
+    );
+  });
+  click(buttonNamed("Exit fullscreen", artifactPreview()));
+  await waitFor(() => {
+    expect(buttonNamed("Enter fullscreen", artifactPreview())).toBeVisible();
+    expect(screen.getByTitle("Launch site preview")).toHaveAttribute(
+      "src",
+      HOSTED_SITE_URL,
+    );
+  });
+  click(buttonNamed("Enter fullscreen", artifactPreview()));
+  await waitFor(() => {
+    expect(buttonNamed("Exit fullscreen", artifactPreview())).toBeVisible();
+  });
+  click(buttonNamed("More artifact actions", artifactPreview()));
+  click(
+    await waitFor(() => {
+      return menuItemNamed("Close preview menu");
+    }),
+  );
+  await waitFor(() => {
+    expect(screen.queryByTitle("Launch site preview")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("artifact-sidebar")).not.toBeInTheDocument();
+    expect(openArtifactsControl()).toBeVisible();
+  });
 });
 
-test("Keep image preview controls usable when toggling fullscreen", async () => {
+test.each([false, true])("Image zoom reset / stable=%s", async (stableHost) => {
   vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(
     1600,
   );
@@ -670,6 +723,9 @@ test("Keep image preview controls usable when toggling fullscreen", async () => 
     context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     host: "app.okou.ai",
+    featureSwitches: {
+      [FeatureSwitchKey.StablePreviewFullscreen]: stableHost,
+    },
   });
 
   await waitFor(() => {
@@ -744,6 +800,66 @@ test("Keep image preview controls usable when toggling fullscreen", async () => 
         "artifact-sidebar-image-zoom-level",
       ),
     ).toHaveTextContent("100%");
+  });
+});
+
+test("Keep PWA navigation and clean up an artifact when leaving the mobile pane", async () => {
+  context.mocks.browser.matchMedia((query) => {
+    return query === "(display-mode: standalone)";
+  });
+  const summary = artifactSummary(HOSTED_SITE_ID, "hosted-site", "Launch site");
+  mockArtifactConversation(context, {
+    catalog: [summary],
+    details: new Map([
+      [
+        HOSTED_SITE_ID,
+        hostedSiteArtifactDetail(summary, {
+          siteId: HOSTED_SITE_RECORD_ID,
+          slug: "launch-site",
+          url: HOSTED_SITE_URL,
+        }),
+      ],
+    ]),
+  });
+  await setupPage({
+    context,
+    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
+    host: "app.okou.ai",
+    featureSwitches: {
+      [FeatureSwitchKey.PwaNavigation]: true,
+      [FeatureSwitchKey.StablePreviewFullscreen]: true,
+    },
+  });
+  await waitFor(() => {
+    expect(buttonNamed("More actions")).toBeVisible();
+  });
+  click(buttonNamed("More actions"));
+  click(
+    await waitFor(() => {
+      return menuItemNamed("Artifacts");
+    }),
+  );
+  await waitFor(() => {
+    expect(buttonNamed("Preview Launch site", artifactList())).toBeVisible();
+  });
+  click(buttonNamed("Preview Launch site", artifactList()));
+  await waitFor(() => {
+    expect(screen.getByTitle("Launch site preview")).toBeVisible();
+    expect(
+      screen.getByRole("navigation", { name: "Main navigation" }),
+    ).toBeVisible();
+    expect(screen.getByLabelText("Back to chats")).toBeVisible();
+  });
+  click(screen.getByLabelText("Back to chats"));
+  await waitFor(() => {
+    expect(window.location.pathname).not.toBe(
+      `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
+    );
+    expect(screen.queryByTitle("Launch site preview")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("artifact-sidebar")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("navigation", { name: "Main navigation" }),
+    ).toBeVisible();
   });
 });
 
