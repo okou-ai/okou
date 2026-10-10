@@ -46,6 +46,10 @@ FIRMWARE = {
     "bios-256k.bin": "f1d4f396011197eb989029659cde250751cc711c336b8fbbe6f77cfe0dc5dcd8",
     "vgabios-stdvga.bin": "651513519f9e0d5b99d3b051a8f5c68db69e987339b59a441d371068c34c146b",
 }
+RUNTIME_DATA = {
+    "keymaps/en-us": "52cf4c523e686078699ed58761c7e1443080305237a5f67a3716832570c5c8e5",
+    "kvmvapic.bin": "cdf057a71b07e3b52b19cbe210bdefa59250d01a9810b960f7fe1f98eed95a27",
+}
 CONFIGURE = ["--prefix=/usr", "--sysconfdir=/etc", "--localstatedir=/var",
              "--target-list=x86_64-softmmu", "--without-default-features",
              "--enable-tcg", "--enable-vnc", "--enable-vnc-sasl", "--enable-gnutls",
@@ -511,6 +515,8 @@ class PackageExtractionBudget:
         for name in ("usr/bin/qemu-system-x86_64", "usr/share/seabios/bios.bin",
                      "usr/share/seabios/vgabios-stdvga.bin", "etc/ssl/certs/ca-certificates.crt"):
             self.reserve_output_path(name, 128 * 1024 * 1024)
+        for name in RUNTIME_DATA:
+            self.reserve_output_path("usr/share/qemu/" + name, 128 * 1024 * 1024)
         for name in ("bin", "sbin", "lib", "lib64", "usr/bin/cc", "usr/bin/c++", "usr/bin/awk",
                      "usr/bin/pkg-config", "usr/sbin/rmt", "etc/localtime", "usr/share/qemu",
                      "proc", "dev", "run", "repo", "contract", "build", "source", "tmp"):
@@ -1185,7 +1191,37 @@ def extract_source(archive, source):
     for name, digest in FIRMWARE.items():
         if sha(source / "pc-bios" / name) != digest:
             raise ValueError("source-pinned QEMU firmware refused")
+    for name, digest in RUNTIME_DATA.items():
+        if sha(source / "pc-bios" / name) != digest:
+            raise ValueError("source-pinned QEMU runtime data refused")
     return epoch
+
+
+def stage_qemu_runtime_data(root, source):
+    # The VNC default keymap and PC's APIC ROM are actual startup inputs even
+    # with a paused VM and KVM disabled. Use the same pinned release, never host
+    # data directories or a keyboard/machine-option workaround.
+    selected = {
+        "bios-256k.bin": ("usr/share/seabios/bios.bin", FIRMWARE["bios-256k.bin"]),
+        "vgabios-stdvga.bin": ("usr/share/seabios/vgabios-stdvga.bin", FIRMWARE["vgabios-stdvga.bin"]),
+        **{name: ("usr/share/qemu/" + name, digest) for name, digest in RUNTIME_DATA.items()},
+    }
+    for name, (destination, digest) in selected.items():
+        original = source / "pc-bios" / name
+        target = root / destination
+        if (original.is_symlink() or not original.is_file() or sha(original) != digest
+                or not original.resolve(strict=True).is_relative_to(source)
+                or target.is_symlink() or target.exists()
+                or not target.parent.resolve().is_relative_to(root)):
+            raise ValueError("source-pinned QEMU runtime data refused")
+    for name, (destination, digest) in selected.items():
+        target = root / destination
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with target.open("xb") as output, (source / "pc-bios" / name).open("rb") as original:
+            shutil.copyfileobj(original, output)
+        target.chmod(0o644)
+        if sha(target) != digest:
+            raise ValueError("source-pinned QEMU runtime data copy refused")
 
 
 def build(base, source, epoch, arch):
@@ -1211,10 +1247,11 @@ for attempt in first second; do
   /usr/sbin/chroot --userspec="$4:$5" "$1" /usr/bin/env -i PATH=/usr/bin:/bin HOME=/tmp LANG=C.UTF-8 TZ=UTC SOURCE_DATE_EPOCH="$6" CFLAGS="-O2 -g0 -ffile-prefix-map=/build/$attempt=. -ffile-prefix-map=/source=../source" CXXFLAGS="-O2 -g0 -ffile-prefix-map=/build/$attempt=. -ffile-prefix-map=/source=../source" /bin/bash -c 'set -euo pipefail; cd "/build/$1"; shift; /source/configure "$@"; /usr/bin/ninja -j 1 qemu-system-x86_64' bash "$attempt" "${@:7}"
 done
 '''
-    result = subprocess.run(["sudo", "timeout", "--signal=TERM", "--kill-after=5s", "2400s", "unshare", "--mount", "--net", "--pid", "--fork", "--kill-child", "--propagation", "private",
-                             "bash", "-c", script, "bash", str(root), str(output), str(source), str(os.geteuid()), str(os.getegid()), str(epoch), *CONFIGURE],
-                            stdout=(base / "build.log").open("w"), stderr=subprocess.STDOUT, timeout=2410,
-                            env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LANG": "C.UTF-8"})
+    with (base / "build.log").open("w") as build_log:
+        result = subprocess.run(["sudo", "timeout", "--signal=TERM", "--kill-after=5s", "2400s", "unshare", "--mount", "--net", "--pid", "--fork", "--kill-child", "--propagation", "private",
+                                 "bash", "-c", script, "bash", str(root), str(output), str(source), str(os.geteuid()), str(os.getegid()), str(epoch), *CONFIGURE],
+                                stdout=build_log, stderr=subprocess.STDOUT, timeout=2410,
+                                env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LANG": "C.UTF-8"})
     if result.returncode:
         raise RuntimeError("source-pinned QEMU build refused; retain build.log")
     first, second = [output / attempt / "qemu-system-x86_64" for attempt in ("first", "second")]
@@ -1243,13 +1280,9 @@ done
     destination = root / "usr/bin/qemu-system-x86_64"
     shutil.copyfile(first, destination)
     destination.chmod(0o755)
-    firmware = root / "usr/share/seabios"
-    firmware.mkdir(parents=True, exist_ok=True)
-    for name, destination_name in (("bios-256k.bin", "bios.bin"), ("vgabios-stdvga.bin", "vgabios-stdvga.bin")):
-        shutil.copyfile(source / "pc-bios" / name, firmware / destination_name)
-    (root / "usr/share/qemu").mkdir(exist_ok=True)
+    stage_qemu_runtime_data(root, source)
     return {"version": "9.2.0", "sourceArchiveSha256": QEMU_SHA256, "vncSourceSha256": VNC_SHA256,
-            "firmware": FIRMWARE, "configure": CONFIGURE, "sourceDateEpoch": epoch,
+            "firmware": FIRMWARE, "runtimeData": RUNTIME_DATA, "configure": CONFIGURE, "sourceDateEpoch": epoch,
             "sourceAdmission": {"memberCount": QEMU_MEMBER_COUNT, "memberBytes": QEMU_MEMBER_BYTES,
                                 "excludedNonbuildAlias": list(EXCLUDED_SOURCE_ALIAS)},
 

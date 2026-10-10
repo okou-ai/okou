@@ -345,6 +345,7 @@ def verify_local_source_qemu(runtime, baseline, multiarch):
             or build["sourceArchiveSha256"] != pins["QEMU_SHA256"]
             or build["vncSourceSha256"] != pins["VNC_SHA256"]
             or build["firmware"] != pins["FIRMWARE"]
+            or build["runtimeData"] != pins["RUNTIME_DATA"]
             or build["configure"] != pins["CONFIGURE"]
             or build["recipeSha256"] != hashlib.sha256(recipe.read_bytes()).hexdigest()
             or binary.is_symlink() or not binary.is_file()
@@ -355,6 +356,10 @@ def verify_local_source_qemu(runtime, baseline, multiarch):
         raise ValueError("local source-built QEMU identity refused")
     with binary.open("rb") as stream:
         pins["verify_elf_header"](stream.read(64), native)
+    for name in pins["RUNTIME_DATA"]:
+        path = (runtime / "usr/share/qemu" / name).resolve(strict=True)
+        if not path.is_relative_to(runtime) or str(path.relative_to(runtime)) not in baseline["files"]:
+            raise ValueError("local source-built QEMU runtime data has no verified file record")
     full_private_inventory(runtime, baseline)
 
 
@@ -450,6 +455,7 @@ def verify_runtime(runtime, multiarch, full_qemu, source_pinned_full=False, cont
             or closure_digest != expected.get("inputClosureSha256")
             or build["sourceAdmission"] != expected.get("sourceAdmission")
             or build["firmware"] != expected.get("firmware")
+            or build["runtimeData"] != expected.get("runtimeData")
             or build["configure"] != expected.get("configure")
             or build["version"] != "9.2.0" or build["target"] != "x86_64-softmmu" or build["nativeArchitecture"] != native
             or build["sourceArchiveSha256"] != "f859f0bc65e1f533d040bbe8c92bcfecee5af2c921a6687c652fb44d089bd894"

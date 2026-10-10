@@ -90,7 +90,9 @@ assertions. Do not change host policy or private checkout ancestor permissions.
 The profile rechecks the complete runtime inventory, native executable roles,
 signed-package identities, fixed QEMU9.2 source/VNC-source/firmware/configure
 identities, current producer recipe and both actual build hashes. It uses the
-private signed MIT acceptor, not host MIT metadata or an arbitrary executable
+same release's pinned default `en-us` VNC keymap and `kvmvapic.bin` PC ROM;
+these startup inputs are copied into the private data directory and inventoried.
+It uses the private signed MIT acceptor, not host MIT metadata or an arbitrary executable
 override. The existing ten Rust integration tests and their lifetimes,
 deadlines and security assertions run unchanged, including both credential
 sources, offline service tickets with both KDCs stopped, concurrent realms,

@@ -2293,6 +2293,38 @@ print('source FIFO refused; no descriptor or decoder child remains')
             self.assertEqual(self.producer.sha(source / "ui/vnc-auth-sasl.c"), self.producer.VNC_SHA256)
             self.assertTrue((source / "python/wheels/meson-1.5.0-py3-none-any.whl").is_file())
             self.assertFalse((source / "roms/edk2/EmulatorPkg/Unix/Host/X11IncludeHack").is_symlink())
+            runtime = pathlib.Path(directory) / 'runtime'
+            runtime.mkdir(mode=0o700)
+            self.producer.stage_qemu_runtime_data(runtime, source)
+            expected = {
+                'usr/share/seabios/bios.bin': self.producer.FIRMWARE['bios-256k.bin'],
+                'usr/share/seabios/vgabios-stdvga.bin': self.producer.FIRMWARE['vgabios-stdvga.bin'],
+                'usr/share/qemu/keymaps/en-us': '52cf4c523e686078699ed58761c7e1443080305237a5f67a3716832570c5c8e5',
+                'usr/share/qemu/kvmvapic.bin': 'cdf057a71b07e3b52b19cbe210bdefa59250d01a9810b960f7fe1f98eed95a27',
+            }
+            self.assertEqual({str(path.relative_to(runtime)): self.producer.sha(path)
+                              for path in runtime.rglob('*') if path.is_file()}, expected)
+            # The fixed VNC default has no recursive keymap include dependency.
+            keymap = runtime / 'usr/share/qemu/keymaps/en-us'
+            self.assertFalse(any(line.startswith('include ') for line in keymap.read_text().splitlines()))
+            # A changed original refuses before creating a destination prefix.
+            changed = source / 'pc-bios/keymaps/en-us'
+            original = changed.read_bytes()
+            changed.write_bytes(original + b'public substituted data')
+            refused = pathlib.Path(directory) / 'refused-runtime'
+            refused.mkdir(mode=0o700)
+            with self.assertRaisesRegex(ValueError, 'runtime data refused'):
+                self.producer.stage_qemu_runtime_data(refused, source)
+            self.assertEqual(list(refused.iterdir()), [])
+            changed.write_bytes(original)
+            # A destination alias cannot redirect public ROM/keymap writes.
+            outside = pathlib.Path(directory) / 'outside'
+            outside.mkdir(mode=0o700)
+            (refused / 'usr/share').mkdir(parents=True)
+            (refused / 'usr/share/qemu').symlink_to(outside, target_is_directory=True)
+            with self.assertRaisesRegex(ValueError, 'runtime data refused'):
+                self.producer.stage_qemu_runtime_data(refused, source)
+            self.assertEqual(list(outside.iterdir()), [])
 
     def test_arm_layout_does_not_synthesize_absent_lib64_target(self):
         with tempfile.TemporaryDirectory(dir=self.parent) as directory:

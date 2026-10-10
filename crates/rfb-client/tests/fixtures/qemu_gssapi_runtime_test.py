@@ -210,13 +210,18 @@ class RuntimeInputs(unittest.TestCase):
         binary.chmod(0o755)
         digest = hashlib.sha256(binary.read_bytes()).hexdigest()
         baseline['files'][str(binary.relative_to(self.runtime))] = digest
+        for name in pins['RUNTIME_DATA']:
+            path = self.runtime / 'usr/share/qemu' / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b'public nonexecuted runtime-data canary: ' + name.encode())
+            baseline['files'][str(path.relative_to(self.runtime))] = hashlib.sha256(path.read_bytes()).hexdigest()
         baseline['fullQemuProvider'] = 'source-pinned-private-noble-v2'
         baseline['snapshot'] = pins['SNAPSHOT']
         baseline['signedIndexOrigin'] = pins['SNAPSHOT_ORIGIN']
         baseline['qemuBuild'] = {
             'version': '9.2.0', 'target': 'x86_64-softmmu', 'nativeArchitecture': 'x86_64',
             'sourceArchiveSha256': pins['QEMU_SHA256'], 'vncSourceSha256': pins['VNC_SHA256'],
-            'firmware': pins['FIRMWARE'], 'configure': pins['CONFIGURE'],
+            'firmware': pins['FIRMWARE'], 'runtimeData': pins['RUNTIME_DATA'], 'configure': pins['CONFIGURE'],
             'recipeSha256': hashlib.sha256(recipe.read_bytes()).hexdigest(),
             'binarySha256': digest, 'secondBuildSha256': digest,
         }
@@ -233,7 +238,7 @@ class RuntimeInputs(unittest.TestCase):
                                       contract_root=contract, local_source_qemu=True)
         verify()
         for field in ('version', 'target', 'nativeArchitecture', 'sourceArchiveSha256',
-                      'vncSourceSha256', 'firmware', 'configure', 'recipeSha256',
+                      'vncSourceSha256', 'firmware', 'runtimeData', 'configure', 'recipeSha256',
                       'binarySha256', 'secondBuildSha256'):
             with self.subTest(field=field):
                 original = baseline['qemuBuild'][field]
