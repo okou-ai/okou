@@ -7,6 +7,7 @@ import {
 import { onboardingStatusContract } from "@okouai/api-contracts/contracts/onboarding";
 import { teamsBotIngressResponseSchema } from "@okouai/api-contracts/contracts/teams-bot";
 import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
+import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 
@@ -18,6 +19,8 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatThreadRoutes } from "../chat-threads";
 import { onboardingStatusRoutes } from "../onboarding-status";
 import { teamsConnectRoutes } from "../teams-connect";
+import { userPreferencesRoutes } from "../user-preferences";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
 import {
   postTeamsActivityForTest,
@@ -29,6 +32,7 @@ import {
 
 const context = testContext();
 const mocks = createRouteMocks(context);
+const runs = createRunsApi(context);
 function authHeaders() {
   return { authorization: "Bearer clerk-session" };
 }
@@ -37,6 +41,10 @@ function configureTeamsProvider(fixture: TeamsConnectFixture) {
   const deliveries: { readonly url: string; readonly body: unknown }[] = [];
   setupTeamsConnectTestEnv();
   mockEnv("MICROSOFT_TEAMS_BOT_APP_PASSWORD", "test-teams-password");
+  // Every test database has the managed Auto key, so a member's Teams message
+  // launches a real run; give it an executor and storage downloads.
+  runs.configureRunnerGroup();
+  runs.acceptStorageDownloads();
   context.mocks.s3.send.mockResolvedValue({});
   context.mocks.ably.publish.mockResolvedValue(undefined);
   context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
@@ -127,6 +135,17 @@ async function postActivity(activity: Record<string, unknown>) {
 
 async function connect(fixture: TeamsConnectFixture): Promise<void> {
   mocks.clerk.session(fixture.userId, fixture.orgId);
+  // The signed-in app initializes preferences, which establishes the member's
+  // memory before any run can mount it.
+  await accept(
+    setupApp({ context, routes: userPreferencesRoutes })(
+      userPreferencesContract,
+    ).initialize({
+      headers: authHeaders(),
+      body: { timezone: "UTC", locale: "en-US" },
+    }),
+    [200],
+  );
   await accept(
     setupApp({ context, routes: teamsConnectRoutes })(
       teamsConnectContract,
