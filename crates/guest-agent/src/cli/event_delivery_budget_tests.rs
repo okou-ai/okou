@@ -171,8 +171,7 @@ async fn sender_preserves_normal_bytes_and_accounts_for_exact_citation_envelopes
                             let mut payload: Value =
                                 serde_json::from_slice(request.body_ref()).unwrap();
                             request.body_ref().len() <= LIMIT
-                                && request
-                                    .body_string()
+                                && String::from_utf8_lossy(request.body_ref())
                                     .contains("bytes truncated for delivery")
                                 && payload["piMemoryCitationTransport"]
                                     == expected_json["piMemoryCitationTransport"]
