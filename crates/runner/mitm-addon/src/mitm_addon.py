@@ -166,6 +166,21 @@ class _BufferedRequestBodyCheck:
     reason: str = ""
 
 
+@dataclass(frozen=True)
+class _FirewallRequestIdentity:
+    authority: TrustedAuthority
+    method: str
+    scheme: str
+
+
+def _capture_firewall_request_identity(flow: http.HTTPFlow) -> _FirewallRequestIdentity:
+    return _FirewallRequestIdentity(
+        authority=get_trusted_authority(flow),
+        method=flow.request.method,
+        scheme=flow.request.scheme,
+    )
+
+
 # ============================================================================
 # Addon Configuration
 # ============================================================================
@@ -490,20 +505,53 @@ def _builtin_host_policy_error_for_firewall_allow(
     return None
 
 
-def _has_current_direct_connector_auth_binding(
+def _firewall_request_identity_is_current(
     flow: http.HTTPFlow,
-    *,
-    admitted_server: connection.Server,
-    require_connected: bool,
+    expected: _FirewallRequestIdentity,
 ) -> bool:
-    if flow.server_conn is not admitted_server:
+    return (
+        flow_metadata.trusted_authority_host(flow.metadata) == expected.authority.host
+        and flow.request.port == expected.authority.port
+        and flow.request.method == expected.method
+        and flow.request.scheme == expected.scheme
+    )
+
+
+def _connector_auth_destination_is_current(
+    flow: http.HTTPFlow,
+    current: request_classification.FirewallAllow,
+) -> bool:
+    if flow.error is not None or flow.request.scheme != "https" or ctx.options.ssl_insecure:
         return False
-    if require_connected and not flow.server_conn.connected:
+    if flow.server_conn.connected:
+        return not flow.server_conn.error and _admit_connector_auth_request(
+            flow,
+            platform_connector_auth=current.platform_connector_auth,
+        )
+    if flow.request.stream or request_streaming.streamed_request_size(flow) is not None:
         return False
-    return upstream_destination_binding.flow_matches_direct_bound_destination(
+    # An unavailable original Server may retain an acquisition error. The current
+    # HTTP flow is still pre-forward; normal acquisition owns its transport outcome.
+    direct_binding_matches = upstream_destination_binding.flow_matches_direct_bound_destination(
         flow,
         allowed_kinds=frozenset(("connector_auth",)),
     )
+    if request_classification.firewall_allow_uses_public_destination(current.firewall_allow):
+        # TLS authenticates a host, not its public routability. Keep the existing
+        # pending-binding path, but never substitute DNS for a lost/failed endpoint.
+        return direct_binding_matches and not flow.server_conn.error
+
+    authority = get_trusted_authority(flow)
+    wire_authority = flow.request.authority
+    wire_headers = flow.request.headers.fields
+    # Public request.host selects normal acquisition and its TLS hostname.
+    # This is credential preparation, not replacement-socket admission/replay.
+    flow.request.host = authority.host
+    flow.request.authority = wire_authority
+    flow.request.headers.fields = wire_headers
+    if not direct_binding_matches:
+        upstream_admission.forget_server_binding(flow.server_conn)
+    return True
 
 
 def _buffered_auth_body_header_check(
@@ -1066,8 +1114,7 @@ async def _try_firewall_request_stream_from_headers(
     _maybe_normalize_accept_encoding_for_body_inspection(flow, allow, sandbox_info)
     _start_request_timing(flow)
     expected_run_id = flow_metadata.run_id(flow.metadata)
-    admitted_server = flow.server_conn
-    require_connected = flow.server_conn.connected
+    expected_request = _capture_firewall_request_identity(flow)
     try:
         result = await try_apply_stream_safe_firewall_auth_for_requestheaders(
             flow,
@@ -1078,8 +1125,7 @@ async def _try_firewall_request_stream_from_headers(
                     flow,
                     allow,
                     expected_run_id=expected_run_id,
-                    admitted_server=admitted_server,
-                    require_connected=require_connected,
+                    expected_request=expected_request,
                 )
             ),
         )
@@ -1112,8 +1158,7 @@ async def _try_firewall_request_stream_from_headers(
             flow,
             allow,
             expected_run_id=expected_run_id,
-            admitted_server=admitted_server,
-            require_connected=require_connected,
+            expected_request=expected_request,
             request_end_stream=request_end_stream is True,
         )
         if flow.response is None:
@@ -1158,27 +1203,23 @@ def _revalidate_current_firewall_authorization_for_request(
     allow: matching.FirewallAllow,
     *,
     expected_run_id: str,
-    admitted_server: connection.Server,
-    require_connected: bool,
+    expected_request: _FirewallRequestIdentity,
 ) -> bool:
-    if _firewall_allow_injects_ordinary_upstream_credentials(
-        allow
-    ) and not _has_current_direct_connector_auth_binding(
-        flow,
-        admitted_server=admitted_server,
-        require_connected=require_connected,
-    ):
-        _block_upstream_destination_unbound(flow, reason="connector_auth")
-        return False
-
-    current_classification = _current_firewall_authorization_classification(flow)
+    current_classification = _current_firewall_authorization_classification(
+        flow, original_authority=expected_request.authority
+    )
     current_allow = _equivalent_current_firewall_allow(
         current_classification,
         expected_allow=allow,
         expected_run_id=expected_run_id,
     )
-    if current_allow is None:
+    if current_allow is None or not _firewall_request_identity_is_current(flow, expected_request):
         _block_current_firewall_authorization(flow, current_classification)
+        return False
+    if _firewall_allow_injects_ordinary_upstream_credentials(
+        allow
+    ) and not _connector_auth_destination_is_current(flow, current_allow):
+        _block_upstream_destination_unbound(flow, reason="connector_auth")
         return False
 
     host_policy_error = _builtin_host_policy_error_for_firewall_allow(
@@ -1198,6 +1239,8 @@ def _revalidate_current_firewall_authorization_for_request(
 
 def _current_firewall_authorization_classification(
     flow: http.HTTPFlow,
+    *,
+    original_authority: TrustedAuthority,
 ) -> request_classification.RequestClassification:
     preserved_probe_metadata = {
         key: flow.metadata[key]
@@ -1213,7 +1256,16 @@ def _current_firewall_authorization_classification(
         flow,
         preserved_probe_metadata,
     )
-    return _classify_request_for_flow(flow)
+    classification = _classify_request_for_flow(flow)
+    # Reclassify the actual request, but retain the pre-injection log target.
+    flow.metadata[metadata_keys.ORIGINAL_URL] = original_authority.url
+    http_network_log.set_target(
+        flow,
+        url=original_authority.url,
+        host=original_authority.host,
+        port=original_authority.port,
+    )
+    return classification
 
 
 def _equivalent_current_firewall_allow(
@@ -1237,26 +1289,21 @@ def _firewall_authorization_is_current_for_requestheaders(
     allow: matching.FirewallAllow,
     *,
     expected_run_id: str,
-    admitted_server: connection.Server,
-    require_connected: bool,
+    expected_request: _FirewallRequestIdentity,
 ) -> bool:
-    if not _has_current_direct_connector_auth_binding(
-        flow,
-        admitted_server=admitted_server,
-        require_connected=require_connected,
-    ):
-        return False
-    current_classification = _current_firewall_authorization_classification(flow)
+    current_classification = _current_firewall_authorization_classification(
+        flow, original_authority=expected_request.authority
+    )
     current_allow = _equivalent_current_firewall_allow(
         current_classification,
         expected_allow=allow,
         expected_run_id=expected_run_id,
     )
-    return current_allow is not None and (
-        _builtin_host_policy_error_for_firewall_allow(
-            flow,
-            current_allow.firewall_allow,
-        )
+    return (
+        current_allow is not None
+        and _firewall_request_identity_is_current(flow, expected_request)
+        and _connector_auth_destination_is_current(flow, current_allow)
+        and _builtin_host_policy_error_for_firewall_allow(flow, current_allow.firewall_allow)
         is None
     )
 
@@ -1304,14 +1351,21 @@ def _block_current_firewall_authorization(
     flow: http.HTTPFlow,
     classification: request_classification.RequestClassification,
 ) -> None:
-    _clear_stale_firewall_authorization_metadata(flow)
-    if isinstance(classification, request_classification.BlockingRequestClassification):
-        _block_request_classification(flow, classification)
-        return
-    _block_firewall_authorization_changed(
-        flow,
-        current_decision=classification.kind,
-    )
+    original_url, host, port = http_network_log.target(flow)
+    try:
+        _clear_stale_firewall_authorization_metadata(flow)
+        if isinstance(classification, request_classification.BlockingRequestClassification):
+            _block_request_classification(flow, classification)
+            return
+        _block_firewall_authorization_changed(
+            flow,
+            current_decision=classification.kind,
+        )
+    finally:
+        # Initial authority denial owns its diagnostic target. Post-auth denial
+        # must retain the pre-injection target, not an injected query credential.
+        flow.metadata[metadata_keys.ORIGINAL_URL] = original_url
+        http_network_log.set_target(flow, url=original_url, host=host, port=port)
 
 
 async def _prepare_codex_catalog_request_with_upstream_revalidation(
@@ -1319,8 +1373,7 @@ async def _prepare_codex_catalog_request_with_upstream_revalidation(
     allow: matching.FirewallAllow,
     *,
     expected_run_id: str,
-    admitted_server: connection.Server,
-    require_connected: bool,
+    expected_request: _FirewallRequestIdentity,
     request_end_stream: bool,
 ) -> None:
     """Coordinate catalog preparation with post-wait provider revalidation.
@@ -1346,8 +1399,7 @@ async def _prepare_codex_catalog_request_with_upstream_revalidation(
             flow,
             allow,
             expected_run_id=expected_run_id,
-            admitted_server=admitted_server,
-            require_connected=require_connected,
+            expected_request=expected_request,
         )
 
 
@@ -1476,8 +1528,7 @@ async def request(flow: http.HTTPFlow) -> None:
                 is_billable_firewall(allow.name, sandbox_info),
             )
             expected_run_id = flow_metadata.run_id(flow.metadata)
-            admitted_server = flow.server_conn
-            require_connected = flow.server_conn.connected
+            expected_request = _capture_firewall_request_identity(flow)
             auth_result = await handle_firewall_request(
                 flow,
                 allow,
@@ -1487,8 +1538,7 @@ async def request(flow: http.HTTPFlow) -> None:
                         flow,
                         allow,
                         expected_run_id=expected_run_id,
-                        admitted_server=admitted_server,
-                        require_connected=require_connected,
+                        expected_request=expected_request,
                     )
                 ),
             )
@@ -1503,8 +1553,7 @@ async def request(flow: http.HTTPFlow) -> None:
                     flow,
                     allow,
                     expected_run_id=expected_run_id,
-                    admitted_server=admitted_server,
-                    require_connected=require_connected,
+                    expected_request=expected_request,
                     request_end_stream=True,
                 )
             return

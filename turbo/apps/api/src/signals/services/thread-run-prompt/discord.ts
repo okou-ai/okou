@@ -1,3 +1,4 @@
+import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { computed, type Computed } from "ccstate";
 import { CONVERSATION_GUIDANCE } from "../../../lib/conversation-guidance";
 import {
@@ -7,15 +8,16 @@ import {
 import type { createDiscordThreadContext } from "../discord-thread-prompt-context.service";
 import { resolveIntegrationNotePrompt } from "../integration-note-prompt.service";
 import type { RunPromptAndSkills } from "../run-prompt-and-skills";
-import type { ThreadPromptSource } from "./types";
+import type { PickedThreadInputEvent } from "./types";
 
 export function createDiscordThreadPrompt(
-  source$: Computed<Promise<ThreadPromptSource | null>>,
+  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   context$: ReturnType<typeof createDiscordThreadContext>,
+  featureSwitches$: Computed<Promise<FeatureSwitchContext>>,
 ): Computed<Promise<RunPromptAndSkills | null>> {
   return computed(async (get) => {
-    const source = await get(source$);
-    if (source?.event.contextType !== "discord") {
+    const pickedEvent = await get(pickedEvent$);
+    if (pickedEvent?.contextType !== "discord") {
       return null;
     }
     const context = await get(context$);
@@ -24,7 +26,7 @@ export function createDiscordThreadPrompt(
     }
     const message = requiredUserMessageForEvent(
       "input.prompt",
-      source.event.userMessage,
+      pickedEvent.userMessage,
     );
     if (!message) {
       throw new Error("Discord input is missing its canonical user message");
@@ -46,7 +48,7 @@ export function createDiscordThreadPrompt(
           ].join("\n"),
           resolveIntegrationNotePrompt({
             triggerSource: "discord",
-            featureSwitchContext: source.featureSwitchContext,
+            featureSwitchContext: await get(featureSwitches$),
           }),
           ...(context.conversationContext === null
             ? []

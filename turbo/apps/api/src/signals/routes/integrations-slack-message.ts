@@ -9,7 +9,7 @@ import { createSlackClient } from "../external/slack-message-client";
 import { slackOrgInstallation } from "../services/slack-data.service";
 import {
   resolveSlackTargetChannel$,
-  slackMessageSendFooterText,
+  slackMessageSendFooterText$,
 } from "../services/slack-message-context.service";
 import { buildFooterBlocks } from "../../lib/slack-blocks";
 import type { RouteEntry } from "../route-entry";
@@ -26,9 +26,6 @@ const noInstallation = Object.freeze({
 
 const sendMessageInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  const authRunId =
-    "runId" in auth && typeof auth.runId === "string" ? auth.runId : undefined;
-
   const bodyResult = await get(
     bodyResultOf(integrationsSlackMessageContract.sendMessage),
   );
@@ -48,7 +45,7 @@ const sendMessageInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   const client = createSlackClient(installation.botToken);
 
-  const footerText = await get(slackMessageSendFooterText({ authRunId }));
+  const footerText = await get(slackMessageSendFooterText$);
   signal.throwIfAborted();
 
   const target = await set(

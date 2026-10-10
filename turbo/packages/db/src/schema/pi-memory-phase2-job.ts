@@ -90,7 +90,6 @@ export const piMemoryPhase2Jobs = pgTable(
       "last_maintenance_selection_digest",
       { length: 64 },
     ),
-    lastMaintenanceCheckpointId: uuid("last_maintenance_checkpoint_id"),
     lastMaintenanceCheckpointVersionId: varchar(
       "last_maintenance_checkpoint_version_id",
       { length: 64 },

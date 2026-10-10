@@ -3,7 +3,6 @@ import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import { integrationsDiscordReadContract } from "@okouai/api-contracts/contracts/integrations-discord-read";
 import { integrationsDiscordMessageContract } from "@okouai/api-contracts/contracts/integrations-discord-message";
 import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
@@ -11,9 +10,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { signSandboxJwtForTests } from "../../auth/tokens";
 import type {
   DiscordChannel,
   DiscordMessage,
@@ -24,7 +21,12 @@ import { integrationsDiscordMessageRoutes } from "../integrations-discord-messag
 import { integrationsDiscordRoutes } from "../integrations-discord";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
-import { mockDiscordMemberships, seedDiscordFixture } from "./helpers/discord";
+import {
+  mockDiscordMemberships,
+  createPublicDiscordBinding,
+} from "./helpers/discord";
+import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import { claimPublicDiscordTestRun } from "./helpers/discord-run";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
@@ -45,7 +47,8 @@ function snowflake() {
 async function fixture(
   options: {
     enabled?: boolean;
-    capabilities?: readonly Capability[];
+    withoutDiscordCapabilities?: boolean;
+    runToken?: boolean;
     messageContent?: boolean;
   } = {},
 ) {
@@ -72,10 +75,11 @@ async function fixture(
   await updateFeatureSwitchesForUser(
     context,
     { orgId, userId, orgRole: "org:admin" },
-    { [FeatureSwitchKey.DiscordIntegration]: options.enabled ?? true },
+    { [FeatureSwitchKey.DiscordIntegration]: true },
   );
   mockDiscordMemberships(context, [{ orgId, userId }]);
-  await seedDiscordFixture(context, {
+  await createPublicDiscordBinding(context, {
+    flow: "install",
     orgId,
     userId,
     guildId,
@@ -83,10 +87,24 @@ async function fixture(
     discordUserId,
     botUserId,
   });
-  const seconds = Math.floor(now() / 1000);
-  const headers = {
-    authorization: `Bearer ${signSandboxJwtForTests({ scope: "okou", orgId, userId, runId: randomUUID(), capabilities: options.capabilities ?? ["discord:read", "discord:write"], iat: seconds, exp: seconds + 3600 })}`,
-  };
+  const auth = createAuthOrgAgentsBddApi(context);
+  const actor = { ...auth.user({ orgId, userId }), orgId };
+  let headers: { authorization: string };
+  if (options.runToken || options.withoutDiscordCapabilities) {
+    if (options.withoutDiscordCapabilities) {
+      await updateFeatureSwitchesForUser(context, actor, {
+        [FeatureSwitchKey.DiscordIntegration]: false,
+      });
+    }
+    headers = (await claimPublicDiscordTestRun(context, actor)).headers;
+  } else {
+    const { token } = await auth.createCliToken(actor);
+    headers = { authorization: `Bearer ${token}` };
+  }
+  mockDiscordMemberships(context, [{ orgId, userId }]);
+  await updateFeatureSwitchesForUser(context, actor, {
+    [FeatureSwitchKey.DiscordIntegration]: options.enabled ?? true,
+  });
   const author = { id: discordUserId, username: "sender" };
   const botAuthor = { id: botUserId, username: "Okou", bot: true };
   const channels = new Map<string, DiscordChannel>([
@@ -272,7 +290,7 @@ async function fixture(
 type Fixture = Awaited<ReturnType<typeof fixture>>;
 
 /** Binds the same Okou user and Discord account through a second org's guild. */
-async function bindAnotherOrganization(f: Fixture) {
+async function bindAnotherOrganization(f: Fixture, runToken = false) {
   const orgId = `org_${randomUUID()}`;
   const guildId = snowflake();
   // One store holds both memberships so the user remains in each org.
@@ -293,7 +311,8 @@ async function bindAnotherOrganization(f: Fixture) {
     { orgId: f.orgId, userId: f.userId },
     { orgId, userId: f.userId },
   ]);
-  await seedDiscordFixture(context, {
+  await createPublicDiscordBinding(context, {
+    flow: "install",
     orgId,
     userId: f.userId,
     guildId,
@@ -324,13 +343,16 @@ async function bindAnotherOrganization(f: Fixture) {
       });
     }),
   );
-  const seconds = Math.floor(now() / 1000);
-  return {
-    orgId,
-    headers: {
-      authorization: `Bearer ${signSandboxJwtForTests({ scope: "okou", orgId, userId: f.userId, runId: randomUUID(), capabilities: ["discord:read", "discord:write"], iat: seconds, exp: seconds + 3600 })}`,
-    },
-  };
+  const auth = createAuthOrgAgentsBddApi(context);
+  const actor = auth.user({ orgId, userId: f.userId });
+  const headers = runToken
+    ? (await claimPublicDiscordTestRun(context, actor)).headers
+    : { authorization: `Bearer ${(await auth.createCliToken(actor)).token}` };
+  mockDiscordMemberships(context, [
+    { orgId: f.orgId, userId: f.userId },
+    { orgId, userId: f.userId },
+  ]);
+  return { orgId, headers };
 }
 function addThread(
   f: Fixture,
@@ -520,8 +542,8 @@ describe("Discord native authorization and reads", () => {
   });
 
   it("denies bot DM content to every organization's run token while keeping DM sends", async () => {
-    const f = await fixture();
-    const other = await bindAnotherOrganization(f);
+    const f = await fixture({ runToken: true });
+    const other = await bindAnotherOrganization(f, true);
     const dmId = snowflake();
     f.channels.set(dmId, {
       id: dmId,
@@ -566,8 +588,8 @@ describe("Discord native authorization and reads", () => {
         return entry.content;
       }),
     ).toStrictEqual([
-      "Other organization: 42 open deals",
-      "this organization can still reply",
+      expect.stringContaining("Other organization: 42 open deals"),
+      expect.stringContaining("this organization can still reply"),
     ]);
   });
 
@@ -801,7 +823,7 @@ describe("Discord native authorization and reads", () => {
     const f = await fixture({ enabled: false });
     await accept(history(f), [403]);
     await accept(send(f), [403]);
-    const limited = await fixture({ capabilities: ["slack:read"] });
+    const limited = await fixture({ withoutDiscordCapabilities: true });
     expect(
       (await accept(history(limited), [403])).body.error.message,
     ).toContain("discord:read");

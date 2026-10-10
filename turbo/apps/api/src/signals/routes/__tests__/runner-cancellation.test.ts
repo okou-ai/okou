@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { runnersCancellationContract } from "@okouai/api-contracts/contracts/runners";
-import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -8,8 +7,8 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { now, withMockNowForTest } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { runnerCancellationRoutes } from "../runner-cancellation";
-import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
-import { createBddApi } from "./helpers/api-bdd";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 
@@ -78,55 +77,186 @@ async function read(f: Fixture) {
 }
 
 describe("Run cancellation reconciliation", () => {
-  it("reads a historical claim with both Runner identity attributes absent", async () => {
-    // Official claims now require a Runner identity. The existing historical
-    // fixture endpoint represents older rows that production can still read.
+  it("reconciles cancellation and completion for a PAT claim without official attribution", async () => {
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
-    const actor = bdd.user();
-    const runnerGroup = runs.configureRunnerGroup();
-    const state = setupApp({
-      context,
-      routes: testCronCleanupSandboxesStateRoutes,
-    })(testCronCleanupSandboxesStateContract);
-    const seeded = await accept(
-      state.action({
-        body: {
-          action: "seed-run",
-          status: "completed",
-          user_id: actor.userId,
-          org_id: actor.orgId,
-          runner_group: runnerGroup,
-        },
-      }),
-      [200],
-    );
-    const runId = String(seeded.body.run_id);
+    const webhooks = createWebhookCallbackApi(context);
+    const workspaces = createAuthOrgAgentsBddApi(context);
+    const actors = [bdd.user(), bdd.user()];
+    const ownedRuns: {
+      readonly actor: ApiTestUser;
+      readonly runId: string;
+      sandboxToken?: string;
+      acknowledged: boolean;
+    }[] = [];
     onTestFinished(async () => {
-      bdd.acceptAgentStorageWrites();
-      await bdd.requestDeleteAgent(
-        actor,
-        String(seeded.body.compose_id),
-        [204, 404],
-      );
+      for (const owned of [...ownedRuns].reverse()) {
+        const current = await runs.readRun(owned.actor, owned.runId);
+        if (current.status === "pending" || current.status === "running") {
+          await runs.requestCancelRun(owned.actor, owned.runId, [200]);
+        }
+        if (owned.sandboxToken && !owned.acknowledged) {
+          await webhooks.requestAgentComplete(
+            { runId: owned.runId, exitCode: 1, error: "Run cancelled" },
+            { authorization: `Bearer ${owned.sandboxToken}` },
+            [200],
+          );
+        }
+        await flushWaitUntilForTest();
+      }
+      for (const actor of [...actors].reverse()) {
+        workspaces.mockClerkOrg(actor);
+        await workspaces.deleteOrg(actor);
+        await flushWaitUntilForTest();
+      }
     });
-    const response = await accept(
+    bdd.acceptAgentStorageWrites();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    const runnerGroup = runs.configureRunnerGroup();
+    const query = {
+      runnerGroup,
+      runnerId: randomUUID(),
+      heartbeatGeneration: 5_000_000_000,
+    };
+
+    for (const actor of actors) {
+      await runs.grantProEntitlement(actor);
+      await runs.ensurePersonalSubscriptionModel(actor);
+      const agent = await bdd.createAgent(actor, {
+        displayName: "PAT cancellation agent",
+        description: "Exercises cancellation with a current PAT claim.",
+        visibility: "private",
+      });
+      const pat = await runs.createCliToken(actor);
+      // A peer Run in the same organization also exercises token/path isolation.
+      for (let index = 0; index < (actor === actors[0] ? 2 : 1); index++) {
+        const run = await runs.createThreadRun(actor, {
+          agentId: agent.agentId,
+          prompt: "reconcile a PAT-claimed Run",
+        });
+        const owned: (typeof ownedRuns)[number] = {
+          actor,
+          runId: run.runId,
+          acknowledged: false,
+        };
+        ownedRuns.push(owned);
+        const claim = await runs.requestClaimRunnerJobAs(
+          `Bearer ${pat.token}`,
+          run.runId,
+          [200],
+          {
+            runnerIdentity: { runnerId: randomUUID(), heartbeatGeneration: 13 },
+          },
+        );
+        if (claim.status !== 200) {
+          throw new Error("Expected public PAT claim to succeed");
+        }
+        owned.sandboxToken = claim.body.sandboxToken;
+        const runner = await runs.requestRunRunner(actor, run.runId, [200]);
+        expect(runner.body).toMatchObject({
+          runnerId: null,
+          runnerHeartbeatGeneration: null,
+        });
+      }
+    }
+
+    const [target, peer, foreign] = ownedRuns;
+    if (
+      !target?.sandboxToken ||
+      !peer?.sandboxToken ||
+      !foreign?.sandboxToken
+    ) {
+      throw new Error("Expected three publicly claimed PAT Runs");
+    }
+    const headers = { authorization: `Bearer ${target.sandboxToken}` };
+    const readTarget = async () => {
+      return await accept(
+        client().get({ params: { runId: target.runId }, headers, query }),
+        [200],
+      );
+    };
+    const healthy = await readTarget();
+    expect(healthy.body).toStrictEqual({
+      protocolVersion: 1,
+      runId: target.runId,
+      state: "present",
+      mode: null,
+    });
+    expect(healthy.headers.get("cache-control")).toBe("no-store");
+
+    const wrongGroup = await accept(
       client().get({
-        params: { runId },
-        headers: {
-          authorization: `Bearer ${runs.sandboxTokenForRun(actor, runId)}`,
-        },
-        query: {
-          runnerGroup,
-          runnerId: randomUUID(),
-          heartbeatGeneration: 5_000_000_000,
-        },
+        params: { runId: target.runId },
+        headers,
+        query: { ...query, runnerGroup: "vm0/another-group" },
       }),
       [200],
     );
-    expect(response.body).toStrictEqual({
+    expect(wrongGroup.body).toStrictEqual({
       protocolVersion: 1,
-      runId,
+      runId: target.runId,
+      state: "unavailable",
+    });
+    for (const other of [peer, foreign]) {
+      const response = await accept(
+        client().get({
+          params: { runId: target.runId },
+          headers: { authorization: `Bearer ${other.sandboxToken}` },
+          query,
+        }),
+        [401],
+      );
+      expect(response.body).toStrictEqual({
+        error: {
+          code: "UNAUTHORIZED",
+          message: "Not authenticated or runId mismatch",
+        },
+      });
+    }
+
+    await runs.requestCancelRun(target.actor, target.runId, [200]);
+    await flushWaitUntilForTest();
+    const cancelled = {
+      protocolVersion: 1,
+      runId: target.runId,
+      state: "present",
+      mode: "cooperative",
+    };
+    expect((await readTarget()).body).toStrictEqual(cancelled);
+    await webhooks.requestAgentComplete(
+      { runId: target.runId, exitCode: 1, error: "Run cancelled" },
+      headers,
+      [200],
+    );
+    target.acknowledged = true;
+    await expect(
+      runs.readRun(target.actor, target.runId),
+    ).resolves.toMatchObject({
+      status: "cancelled",
+    });
+    expect((await readTarget()).body).toStrictEqual(cancelled);
+
+    await webhooks.requestAgentComplete(
+      { runId: peer.runId, exitCode: 1, error: "test execution failed" },
+      { authorization: `Bearer ${peer.sandboxToken}` },
+      [200],
+    );
+    peer.acknowledged = true;
+    await expect(runs.readRun(peer.actor, peer.runId)).resolves.toMatchObject({
+      status: "failed",
+    });
+    const completed = await accept(
+      client().get({
+        params: { runId: peer.runId },
+        headers: { authorization: `Bearer ${peer.sandboxToken}` },
+        query,
+      }),
+      [200],
+    );
+    expect(completed.body).toStrictEqual({
+      protocolVersion: 1,
+      runId: peer.runId,
       state: "present",
       mode: null,
     });

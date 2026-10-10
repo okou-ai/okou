@@ -30,7 +30,7 @@ import {
   mockCodexDeviceAuthProvider,
   createAuthDeviceApiActions,
 } from "./helpers/api-bdd-auth-device";
-import type { TestTerminalRunStatus } from "./helpers/api-bdd-run-timeout";
+import type { TestTerminalRunStatus } from "./helpers/run-terminal-status";
 type SubscriptionType = "claude-code-oauth-token" | "codex-oauth-token";
 const context = testContext();
 const runs = createRunsApi(context);
@@ -260,7 +260,7 @@ async function finish(
         exitCode: status === "completed" ? 0 : 1,
         ...(status === "completed"
           ? {
-              checkpoint: {
+              completion: {
                 cliAgentType: claim.cliAgentType,
                 cliAgentSessionId: `subscription-${runId}`,
                 cliAgentSessionHistoryHash: createHash("sha256")
@@ -792,6 +792,37 @@ describe("personal subscription run identity", () => {
     ).toMatchObject({ modelProviders: [{ id: accountB }] });
   }, 20_000);
 
+  it.each(["claude-code-oauth-token", "codex-oauth-token"] as const)(
+    "rejects reactivation of a retained disconnected %s account",
+    async (type) => {
+      const f = await fixture(type);
+      const runId = await f.start();
+      const claim = await f.claim(runId);
+      const captured = accountId(claim, type);
+      onTestFinished(async () => {
+        await runs.requestCancelRun(f.actor, runId, [200]);
+      });
+      const replacement = await connect(f.actor, type, "identity-b");
+      await support.activatePersonalModelProviderAccount(
+        f.actor,
+        captured,
+        [404],
+      );
+      const listed = await support.listPersonalModelProviders(f.actor, [200]);
+      expect(listed.body).toMatchObject({
+        modelProviders: [{ id: replacement.id, isActive: true }],
+      });
+      // The real authenticated Runner still owns its captured retained bundle.
+      await expect(resolve(claim, type)).resolves.toMatchObject({
+        Authorization: `Bearer ${f.connected.token}`,
+      });
+      await support.activatePersonalModelProviderAccount(
+        f.actor,
+        replacement.id,
+      );
+    },
+  );
+
   it("reuses the same Claude identity across a reconnect", async () => {
     const f = await fixture("claude-code-oauth-token");
     const runId = await f.start();
@@ -1003,12 +1034,26 @@ describe("exact subscription selection", () => {
       onTestFinished(async () => {
         await runs.requestCancelRun(f.actor, runId, [200]);
       });
+      const launched = await reads.requestReadLogById(f.actor, runId, [200]);
+      expect(launched.body).toMatchObject({
+        selectedModel: model,
+        modelRuntimeProvider: type,
+        modelRuntimeModel: model,
+      });
       const claim = await f.claim(runId);
       expect(claim.environment?.[modelEnv]).toBe(model);
       expect(Object.values(claim.environment ?? {})).not.toContain(
         f.connected.token,
       );
       expect(accountId(claim, type)).toBe(f.connected.id);
+      // Queue claim consumes the transient context; a later preference is not execution provenance.
+      await runs.updateUserModelPreference(f.actor, f.model);
+      const captured = await reads.requestReadLogById(f.actor, runId, [200]);
+      expect(captured.body).toMatchObject({
+        selectedModel: model,
+        modelRuntimeProvider: type,
+        modelRuntimeModel: claim.environment?.[modelEnv],
+      });
       await expect(resolve(claim, type)).resolves.toMatchObject({
         Authorization: `Bearer ${f.connected.token}`,
         ...(type === "codex-oauth-token"
@@ -1075,11 +1120,11 @@ describe("member-effective model contract", () => {
     const misc = createMiscRoutesApi(context);
     const ownerModels = await misc.listRunModels(f.actor);
     const memberModels = await misc.listRunModels(member);
-    expect(availableModel(ownerModels, null)).toMatchObject({
+    expect(availableModel(ownerModels, "auto")).toMatchObject({
       modelLabel: "Auto",
     });
-    expect(availableModel(ownerModels, null)).toStrictEqual(
-      availableModel(memberModels, null),
+    expect(availableModel(ownerModels, "auto")).toStrictEqual(
+      availableModel(memberModels, "auto"),
     );
     expect(availableModel(ownerModels, f.model)).toMatchObject({
       memberEffective: {
@@ -1123,7 +1168,7 @@ describe("member-effective model contract", () => {
         models.models.map((entry) => {
           return entry.model;
         }),
-      ).toStrictEqual([null]);
+      ).toStrictEqual(["auto"]);
     },
   );
 });
@@ -1368,9 +1413,7 @@ describe("personal priority credential and session boundaries", () => {
     const history = Buffer.from(`subscription history ${sent.runId}`);
     const hash = createHash("sha256").update(history).digest("hex");
     context.sessionHistoryBlobs.set(hash, history);
-    await createWebhookCallbackApi(
-      context,
-    ).requestAgentCheckpointPrepareHistory(
+    await createWebhookCallbackApi(context).requestAgentSessionHistoryPrepare(
       {
         runId: sent.runId,
         hash,

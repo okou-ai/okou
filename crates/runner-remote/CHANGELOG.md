@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.11.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.10.16...runner-remote-v0.11.0) (2026-10-10)
+
+
+### Features
+
+* **ssh:** add tailscale configuration and current authority ([#37651](https://github.com/okou-ai/okou/issues/37651)) ([00b9386](https://github.com/okou-ai/okou/commit/00b93867968c441677ecb76962c0c251358a15ae))
+
+## [0.10.16](https://github.com/okou-ai/okou/compare/runner-remote-v0.10.15...runner-remote-v0.10.16) (2026-10-10)
+
+## [0.10.15](https://github.com/okou-ai/okou/compare/runner-remote-v0.10.14...runner-remote-v0.10.15) (2026-10-09)
+
+## [0.10.14](https://github.com/okou-ai/okou/compare/runner-remote-v0.10.13...runner-remote-v0.10.14) (2026-10-09)
+
+
+### Documentation
+
+* keep reusable engineering standards and remove feature records ([#38387](https://github.com/okou-ai/okou/issues/38387)) ([6507d86](https://github.com/okou-ai/okou/commit/6507d86c83ca37e7a8790e4efd66eb6a84267295))
+
 ## [0.10.13](https://github.com/okou-ai/okou/compare/runner-remote-v0.10.12...runner-remote-v0.10.13) (2026-10-09)
 
 ## [0.10.12](https://github.com/okou-ai/okou/compare/runner-remote-v0.10.11...runner-remote-v0.10.12) (2026-10-09)

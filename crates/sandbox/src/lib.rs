@@ -17,6 +17,7 @@
 //! Configuration, result, and error types are shared here so provider crates
 //! can expose a consistent lifecycle and failure model.
 
+mod backing_process;
 mod config;
 mod control;
 mod dns_readiness;
@@ -30,6 +31,7 @@ mod sandbox;
 mod snapshot;
 mod types;
 
+pub use backing_process::{BackingProcessIdentity, SandboxBackingProcess};
 pub use config::{
     BlockRateLimits, DeviceRateLimits, FactoryConfig, HostCpuPlacementConfig, HostCpuPlacementMode,
     NetworkRateLimits, ResourceLimits, RuntimeConfig, SandboxConfig, SandboxId, SnapshotRef,

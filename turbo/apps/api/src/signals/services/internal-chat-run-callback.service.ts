@@ -138,10 +138,6 @@ import {
 } from "./model-selection.service";
 import type { PiCatalogModel } from "@okouai/core/pi-execution";
 import { shouldUsePiExecution } from "./pi-sandbox-config";
-import {
-  additionalVolumesForRun,
-  type PresentationTemplateVolume,
-} from "./presentation-template-data.service";
 import { sendUserPushNotifications } from "./push-notifications.service";
 import { formatRunErrorForRunOwner$ } from "./run-error-format.service";
 import { saveRunSummary$ } from "./run-summary.service";
@@ -399,11 +395,6 @@ export interface CreateQueuedChatRunInput {
   readonly agentId: string;
   readonly prompt: string;
   readonly appendSystemPrompt: string;
-  /**
-   * Guidance packages to mount for this run, one per uploaded template the
-   * queued message selected and its sender may still access.
-   */
-  readonly presentationTemplateVolumes: readonly PresentationTemplateVolume[];
   readonly threadId: string;
   readonly connectorSourceId?: string;
   readonly queuedMessage: QueuedUserMessage;
@@ -692,7 +683,6 @@ export function buildQueuedRunCommand(
         : {}),
       ...(input.realAgentInPreview ? { realAgentInPreview: true } : {}),
       ...(input.captureNetworkBodies ? { captureNetworkBodies: true } : {}),
-      ...additionalVolumesForRun(input.presentationTemplateVolumes),
     },
   };
 }
@@ -2096,15 +2086,6 @@ async function runTerminalChatCallbackSideEffects(args: {
       error,
     });
   });
-}
-
-export function buildComputerUseSystemPrompt(displayName: string): string {
-  return [
-    "# Computer Use",
-    `Computer Use is enabled for this run on ${displayName}.`,
-    "Use Okou CLI computer-use commands to inspect apps, read app state, and perform desktop actions.",
-    "The computer may go offline while this run is active. If a command reports that the computer is unavailable or offline, ask the user to reconnect Okou Computer Use on that computer, then retry.",
-  ].join("\n");
 }
 
 function truncatePrior(value: string): string {

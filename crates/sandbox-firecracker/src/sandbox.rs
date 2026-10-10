@@ -2482,6 +2482,13 @@ impl Sandbox for FirecrackerSandbox {
         self.process_group_pid
     }
 
+    fn backing_process(&self) -> Option<Arc<dyn sandbox::SandboxBackingProcess>> {
+        self.runtime.process_exit.as_ref().map(|exit| {
+            let retained: Arc<dyn sandbox::SandboxBackingProcess> = Arc::new(exit.clone());
+            retained
+        })
+    }
+
     fn bind_run_control(&mut self, run_id: &str) -> sandbox::Result<()> {
         if run_id.is_empty() {
             return Err(SandboxError::Configuration {

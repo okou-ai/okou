@@ -1,4 +1,3 @@
-import { isDesktopAuthFlow } from "./desktop-auth-flow.ts";
 import * as Sentry from "@sentry/browser";
 import type { BrowserOptions, Contexts, User } from "@sentry/browser";
 
@@ -86,26 +85,11 @@ export function createPlatformSentryOptions(
     // Preserve native fetch errors for application-level error handling.
     enhanceFetchErrorMessages: false,
 
-    // The desktop auth pages carry one-time codes and tickets in their URLs, so
-    // their breadcrumbs stay local. This is a credential boundary, not noise
-    // suppression, and Sentry-side filtering cannot replace it because the
-    // event would have to reach Sentry to be dropped. Shared worker console
-    // breadcrumbs are dropped for payload size only.
+    // Shared worker console breadcrumbs are dropped for payload size only.
     beforeBreadcrumb(breadcrumb) {
-      if (runtime === "page" && isDesktopAuthFlow()) {
-        return null;
-      }
       return runtime === "shared-worker" && breadcrumb.category === "console"
         ? null
         : breadcrumb;
-    },
-
-    // Noise filtering lives in Sentry (inbound filters and discarded issues) so
-    // that a suppressed signature keeps a visible `filtered` counter instead of
-    // disappearing into an undifferentiated client discard. The only client
-    // rule left is the desktop auth credential boundary above.
-    beforeSend(event) {
-      return runtime === "page" && isDesktopAuthFlow() ? null : event;
     },
   };
 }

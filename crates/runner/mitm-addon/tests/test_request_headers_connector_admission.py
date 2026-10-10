@@ -456,8 +456,6 @@ async def test_firewall_allow_header_auth_revalidates_connection_after_auth_wait
         peername=("93.184.216.34", 443),
     )
     flow.metadata["preexisting"] = "keep"
-    original_headers = flow.request.headers.fields
-    original_path = flow.request.path
     auth_resolution_entered = asyncio.Event()
     release_auth_resolution = asyncio.Event()
 
@@ -492,17 +490,15 @@ async def test_firewall_allow_header_auth_revalidates_connection_after_auth_wait
     assert flow.response is None
     assert flow.error is None
     assert flow.metadata["preexisting"] == "keep"
+    assert callable(flow.request.stream)
+    assert flow.request.headers["Authorization"] == "Bearer resolved"
+    assert dict(flow.request.query) == {"client": "visible", "api_key": "resolved"}
+    assert flow.request.headers["Host"] == "service.example.com"
     if disconnect_during_auth:
-        _assert_no_request_stream(flow)
-        assert flow.request.headers.fields == original_headers
-        assert flow.request.path == original_path
-        for key in request_classification.REQUEST_HEADERS_PROBE_METADATA_KEYS:
-            assert key not in flow.metadata
+        assert flow.request.host == "service.example.com"
+        assert not flow.server_conn.connected
         assert flow.server_conn.id not in upstream_destination_binding.binding_snapshot_for_tests()
     else:
-        assert callable(flow.request.stream)
-        assert flow.request.headers["Authorization"] == "Bearer resolved"
-        assert dict(flow.request.query) == {"client": "visible", "api_key": "resolved"}
         assert flow.server_conn.id in upstream_destination_binding.binding_snapshot_for_tests()
 
 
@@ -835,9 +831,9 @@ async def test_firewall_allow_small_bounded_body_retargets_unconnected_upstream(
 
         await mitm_addon.request(flow)
 
-    # Header prebinding, request dispatch, and the post-auth authorization guard
-    # each validate the current trusted authority before credential mutation.
-    assert validated_flows == [flow, flow, flow]
+    # Prebinding, dispatch, identity capture and post-auth validation/target
+    # selection each validate trusted authority before credential mutation.
+    assert validated_flows == [flow, flow, flow, flow, flow]
     auth_fetch.assert_awaited_once()
     assert flow.response is None
     assert flow.request.headers["Authorization"] == "Bearer resolved"

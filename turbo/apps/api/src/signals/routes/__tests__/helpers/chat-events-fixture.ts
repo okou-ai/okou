@@ -97,8 +97,6 @@ export const GPT_PI_BDD_MODELS = [
 
 export type PiGptBddModel = (typeof GPT_PI_BDD_MODELS)[number];
 
-const GPT_PI_USAGE_MODELS = GPT_PI_BDD_MODELS;
-
 export const USER_OWNED_GPT_FAST_BDD_ROUTES = GPT_PI_BDD_MODELS.map(
   (selectedModel) => {
     return {
@@ -112,41 +110,8 @@ export const USER_OWNED_GPT_FAST_BDD_ROUTES = GPT_PI_BDD_MODELS.map(
   },
 );
 
-const GPT_USAGE_PRICING = [
-  "tokens.input",
-  "tokens.output",
-  "tokens.cache_read",
-  "tokens.cache_creation",
-  "tokens.input.long_context",
-  "tokens.output.long_context",
-  "tokens.cache_read.long_context",
-  "tokens.cache_creation.long_context",
-  "tokens.input.fast",
-  "tokens.output.fast",
-  "tokens.cache_read.fast",
-  "tokens.cache_creation.fast",
-  "tokens.input.long_context.fast",
-  "tokens.output.long_context.fast",
-  "tokens.cache_read.long_context.fast",
-  "tokens.cache_creation.long_context.fast",
-].flatMap((category) => {
-  return GPT_PI_USAGE_MODELS.map((provider) => {
-    return {
-      kind: "model",
-      provider,
-      category,
-      unitPrice: 1,
-      unitSize: 1_000_000,
-    };
-  });
-});
-
 export type PiUsageProvider =
-  | "claude-fable-5-1"
-  | "deepseek-v4-flash"
-  | "deepseek-v4.1-flash"
-  | "okou-1.0"
-  | (typeof GPT_PI_USAGE_MODELS)[number];
+  "claude-fable-5-1" | "deepseek-v4-flash" | "deepseek-v4.1-flash" | "okou-1.0";
 
 type UserMessage = Extract<
   ChatEvent,
@@ -220,26 +185,9 @@ export function requireOrgId(actor: ApiTestUser): string {
   return actor.orgId;
 }
 
-export async function createGptUsagePricingResolution(): Promise<
-  UsagePricingFixture["resolution"]
-> {
-  const pricing = await createUsagePricingFixture({
-    configured: GPT_USAGE_PRICING,
-  });
-  onTestFinished(pricing.cleanup);
-  return pricing.resolution;
-}
-
 export async function createPiUsagePricingResolution(
   provider: PiUsageProvider,
 ): Promise<UsagePricingFixture["resolution"]> {
-  if (
-    GPT_PI_USAGE_MODELS.some((model) => {
-      return model === provider;
-    })
-  ) {
-    return await createGptUsagePricingResolution();
-  }
   const categories =
     provider === "okou-1.0"
       ? [
@@ -840,7 +788,7 @@ export function createChatEventsFixture(context: TestContext) {
     if (options.sessionHistory !== undefined) {
       const historyBytes = Buffer.from(history, "utf8");
       context.sessionHistoryBlobs.set(historyHash, historyBytes);
-      await webhooks.requestAgentCheckpointPrepareHistory(
+      await webhooks.requestAgentSessionHistoryPrepare(
         {
           runId,
           hash: historyHash,
@@ -856,7 +804,7 @@ export function createChatEventsFixture(context: TestContext) {
       {
         runId,
         exitCode: 0,
-        checkpoint: {
+        completion: {
           cliAgentType: options.cliAgentType ?? "claude-code",
           cliAgentSessionId: options.cliAgentSessionId ?? `bdd-cli-${runId}`,
           cliAgentSessionHistoryHash: historyHash,
@@ -1345,13 +1293,13 @@ export function createChatEventsFixture(context: TestContext) {
       readonly provider: "openai" | "openai-codex" | "deepseek" | "openrouter";
       readonly model: string;
     };
-    readonly checkpointObjects: Map<string, Buffer>;
+    readonly historyObjects: Map<string, Buffer>;
     readonly claim: Awaited<ReturnType<typeof claimChatRun>>;
     readonly prompt: string;
     readonly run: { readonly runId: string; readonly threadId: string };
     readonly usagePricingResolution?: UsagePricingFixture["resolution"];
   }): Promise<void> {
-    const h0 = piSandboxBaseSession(args.claim.claim, args.checkpointObjects);
+    const h0 = piSandboxBaseSession(args.claim.claim, args.historyObjects);
     const session = MemoryPiSession.fromJsonl(h0.toString("utf8"));
     session.appendMessage({
       role: "user",
@@ -1377,7 +1325,7 @@ export function createChatEventsFixture(context: TestContext) {
     });
     const h2 = session.toJsonl();
     const h2Hash = createHash("sha256").update(h2).digest("hex");
-    await webhooks.requestAgentCheckpointPrepareHistory(
+    await webhooks.requestAgentSessionHistoryPrepare(
       {
         runId: args.run.runId,
         hash: h2Hash,
@@ -1388,7 +1336,7 @@ export function createChatEventsFixture(context: TestContext) {
       args.claim.sandboxHeaders,
       [200],
     );
-    args.checkpointObjects.set(
+    args.historyObjects.set(
       `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${h2Hash}.blob`,
       Buffer.from(h2, "utf8"),
     );
@@ -1412,7 +1360,7 @@ export function createChatEventsFixture(context: TestContext) {
         runId: args.run.runId,
         exitCode: 0,
         lastEventSequence: 2,
-        checkpoint: {
+        completion: {
           cliAgentType: "pi",
           cliAgentSessionId: args.run.threadId,
           cliAgentSessionHistoryHash: h2Hash,

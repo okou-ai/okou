@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.45.0](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.44.16...sandbox-firecracker-v0.45.0) (2026-10-10)
+
+
+### Features
+
+* **sandbox:** retain provider-owned backing exit capability ([#38484](https://github.com/okou-ai/okou/issues/38484)) ([945dc1c](https://github.com/okou-ai/okou/commit/945dc1c3debea81f5ec5ef089b3eae3f2206f487))
+
+## [0.44.16](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.44.15...sandbox-firecracker-v0.44.16) (2026-10-10)
+
+## [0.44.15](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.44.14...sandbox-firecracker-v0.44.15) (2026-10-09)
+
+## [0.44.14](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.44.13...sandbox-firecracker-v0.44.14) (2026-10-09)
+
+
+### Refactoring
+
+* **ci:** rename runner image waiter to test prepare ([#38382](https://github.com/okou-ai/okou/issues/38382)) ([0955640](https://github.com/okou-ai/okou/commit/095564075558fc1deed004294f398fcddcac1163))
+
 ## [0.44.13](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.44.12...sandbox-firecracker-v0.44.13) (2026-10-09)
 
 

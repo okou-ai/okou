@@ -278,13 +278,6 @@ export interface ClerkOrganizationsApi {
   deleteOrganization(organizationId: string): Promise<ClerkOrganization>;
 }
 
-export interface ClerkSignInTokensApi {
-  createSignInToken(params: {
-    userId: string;
-    expiresInSeconds: number;
-  }): Promise<{ readonly token: string }>;
-}
-
 export interface ClerkMachineToMachineApi {
   createToken(params: {
     machineSecretKey: string;
@@ -309,7 +302,6 @@ export interface ClerkClient {
   readonly sessions: ClerkSessionsApi;
   readonly users: ClerkUsersApi;
   readonly organizations: ClerkOrganizationsApi;
-  readonly signInTokens: ClerkSignInTokensApi;
   readonly m2m: ClerkMachineToMachineApi;
 }
 
@@ -766,11 +758,6 @@ const clerkClient = singleton((): ClerkClient => {
       },
       deleteOrganization: (organizationId) => {
         return sdk.organizations.deleteOrganization(organizationId);
-      },
-    },
-    signInTokens: {
-      createSignInToken: (params) => {
-        return sdk.signInTokens.createSignInToken(params);
       },
     },
     m2m: {

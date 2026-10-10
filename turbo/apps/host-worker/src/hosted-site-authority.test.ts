@@ -341,6 +341,54 @@ it("serves version-bound OG in the initial HTML while preserving authored metada
   expect(response.headers.get("Cache-Control")).toBe("private, no-store");
 });
 
+it.each(["demo", `dpl-${deploymentId}`])(
+  "normalizes authored image URLs on %s when artifact previews are enabled",
+  async (alias) => {
+    server.use(
+      http.get(endpoint, () => {
+        return HttpResponse.json({ allowed: true });
+      }),
+      http.get("https://authority.test/api/artifact-og/metadata", () => {
+        return HttpResponse.json({
+          available: true,
+          title: "Report",
+          description: "Summary",
+          url: `https://${alias}.okou.app/`,
+          imageUrl: "https://authority.test/platform-cover.png",
+        });
+      }),
+    );
+    const response = await fetchWorker(
+      new Request(`https://${alias}.okou.app/`),
+      {
+        ...environment(
+          true,
+          undefined,
+          "okou",
+          true,
+          '<html><head><meta property="og:image" content="cover.png"><meta property="og:image:width" content="1200"></head><body><img src="cover.png"></body></html>',
+        ),
+        ARTIFACT_OG_API_ORIGIN: "https://authority.test",
+      },
+    );
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    expect(html).toContain(
+      `property="og:image" content="https://${alias}.okou.app/cover.png"`,
+    );
+    expect(html).toContain('property="og:image:width" content="1200"');
+    expect(html).toContain('<body><img src="cover.png"></body>');
+    expect(html).not.toContain("platform-cover.png");
+    expect(html).toContain('property="og:title" content="Report"');
+    expect(html).toContain(
+      `name="twitter:image" content="https://${alias}.okou.app/cover.png"`,
+    );
+    expect(response.headers.get("ETag")).toBeNull();
+    expect(response.headers.get("Content-Length")).toBeNull();
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+  },
+);
+
 it.each(["disabled", "unavailable"])(
   "keeps public HTML readable when OG is %s",
   async (state) => {
@@ -354,11 +402,14 @@ it.each(["disabled", "unavailable"])(
           : new HttpResponse(null, { status: 503 });
       }),
     );
+    const original =
+      '<head><meta property="og:image" content="cover.png"></head><body>Report</body>';
     const response = await fetchWorker(new Request("https://demo.okou.app/"), {
-      ...environment(),
+      ...environment(true, undefined, "okou", true, original),
       ARTIFACT_OG_API_ORIGIN: "https://authority.test",
     });
     expect(response.status).toBe(200);
-    expect(await response.text()).toBe("<p>ok</p>");
+    expect(await response.text()).toBe(original);
+    expect(response.headers.get("ETag")).toBe('"hosted"');
   },
 );

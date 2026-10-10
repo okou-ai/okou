@@ -21,6 +21,7 @@ import { db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { publishSshClientInvalidation } from "./ssh-client-invalidation.service";
 import { publishSshRunnerInvalidation$ } from "./ssh-runtime-wakeup.service";
+import { commitThreadSshOverride$ } from "./chat-ssh-override.service";
 
 const L = logger("ChatRemoteAccess");
 
@@ -408,16 +409,7 @@ export const setThreadRemoteAccessOverride$ = command(
     // deleted after the reads above; that lost race is the same "not found".
     const written = await settle<unknown>(
       protocol === "ssh"
-        ? db
-            .insert(chatThreadSshAccessOverrides)
-            .values(values)
-            .onConflictDoUpdate({
-              target: [
-                chatThreadSshAccessOverrides.chatThreadId,
-                chatThreadSshAccessOverrides.connectionId,
-              ],
-              set: { enabled },
-            })
+        ? set(commitThreadSshOverride$, owner, enabled, signal)
         : db
             .insert(chatThreadVncAccessOverrides)
             .values(values)
@@ -435,6 +427,9 @@ export const setThreadRemoteAccessOverride$ = command(
         return null;
       }
       throw written.error;
+    }
+    if (protocol === "ssh" && written.value === null) {
+      return null;
     }
     const result = toThreadAccess(host, enabled);
     await set(notifyRemoteAccessChange$, owner, protocol, owner.chatThreadId);
@@ -462,14 +457,9 @@ export const clearThreadRemoteAccessOverride$ = command(
       return null;
     }
     if (protocol === "ssh") {
-      await db
-        .delete(chatThreadSshAccessOverrides)
-        .where(
-          and(
-            eq(chatThreadSshAccessOverrides.chatThreadId, owner.chatThreadId),
-            eq(chatThreadSshAccessOverrides.connectionId, owner.connectionId),
-          ),
-        );
+      if (!(await set(commitThreadSshOverride$, owner, null, signal))) {
+        return null;
+      }
     } else {
       await db
         .delete(chatThreadVncAccessOverrides)

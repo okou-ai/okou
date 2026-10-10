@@ -291,8 +291,6 @@ async function fetchFirecrawlScrape(
           parsers: [],
           proxy: firecrawlProxy(request.mode),
           skipTlsVerification: false,
-          maxAge: 0,
-          storeInCache: false,
           timeout: FIRECRAWL_PROVIDER_TIMEOUT_MS,
         }),
         signal: AbortSignal.any([

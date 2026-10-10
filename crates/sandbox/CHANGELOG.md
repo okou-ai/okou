@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.25.0](https://github.com/okou-ai/okou/compare/sandbox-v0.24.1...sandbox-v0.25.0) (2026-10-10)
+
+
+### Features
+
+* **sandbox:** retain provider-owned backing exit capability ([#38484](https://github.com/okou-ai/okou/issues/38484)) ([945dc1c](https://github.com/okou-ai/okou/commit/945dc1c3debea81f5ec5ef089b3eae3f2206f487))
+
+## [0.24.1](https://github.com/okou-ai/okou/compare/sandbox-v0.24.0...sandbox-v0.24.1) (2026-10-09)
+
+
+### Refactoring
+
+* **runner:** move runtime reactor into runner-supervisor ([#38393](https://github.com/okou-ai/okou/issues/38393)) ([a5a1dd3](https://github.com/okou-ai/okou/commit/a5a1dd3ae25f19d65baed071cb15fa2a456cfb0a))
+
 ## [0.24.0](https://github.com/okou-ai/okou/compare/sandbox-v0.23.5...sandbox-v0.24.0) (2026-09-30)
 
 

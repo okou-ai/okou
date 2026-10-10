@@ -4,11 +4,7 @@ import {
   autoRunBillingProvider,
   autoRunPricingLongContextMinTotalInputTokens,
   isAutoSelectedModel,
-  AUTO_RUN_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS,
-  AUTO_RUN_MODEL,
-  AUTO_RUN_PRICING_PROVIDER,
   AUTO_RUN_PROVIDER,
-  AUTO_RUN_UPSTREAM_MODEL,
 } from "@okouai/core/auto-run-model";
 import { modelRoutes } from "@okouai/db/schema/model-route";
 import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
@@ -56,37 +52,6 @@ export type CatalogRoute = Readonly<{
   longContextMinTotalInputTokens: number | null;
 }>;
 
-function autoCatalogRoute(): CatalogRoute {
-  return {
-    model: AUTO_RUN_MODEL,
-    providerType: "built-in",
-    concreteProviderType: AUTO_RUN_PROVIDER,
-    subscriptionType: null,
-    upstreamModel: AUTO_RUN_UPSTREAM_MODEL,
-    enabled: true,
-    priority: 0,
-    serviceTiers: [],
-    defaultServiceTier: null,
-    efforts: [],
-    defaultEffort: null,
-    pricingKind: MODEL_USAGE_PRICING_KIND,
-    pricingProvider: AUTO_RUN_PRICING_PROVIDER,
-    longContextMinTotalInputTokens:
-      AUTO_RUN_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS,
-  };
-}
-
-function autoCatalogModel(): CatalogModel {
-  return {
-    model: AUTO_RUN_MODEL,
-    displayName: "Auto",
-    sortOrder: 0,
-    replacedBy: null,
-    builtInOnRestrictedPlans: true,
-    piRouteClass: "gpt-codex",
-  };
-}
-
 export type ModelCatalog = Readonly<{
   models: readonly CatalogModel[];
   routes: readonly CatalogRoute[];
@@ -107,12 +72,13 @@ export function modelCatalogForOrg(
     ...catalog,
     autoUpstreamModel: openrouterPreset ?? catalog.autoUpstreamModel,
     routes: catalog.routes.map((route) => {
-      return route.model === "okou-1.0" &&
+      return route.model === AUTO_SELECTED_MODEL &&
         route.providerType === "built-in" &&
         route.concreteProviderType === "openrouter-codex"
         ? {
             ...route,
             upstreamModel: openrouterPreset ?? route.upstreamModel,
+            pricingProvider: openrouterPreset ?? route.upstreamModel,
           }
         : route;
     }),
@@ -176,35 +142,59 @@ export function validateModelCatalog(
   models: readonly CatalogModel[],
   routes: readonly CatalogRoute[],
 ): ModelCatalog {
+  const systemDefault = models.find((model) => {
+    return model.model === AUTO_SELECTED_MODEL;
+  });
+  if (!systemDefault || systemDefault.replacedBy !== null) {
+    throw new ModelCatalogInvariantError(
+      "canonical Auto catalog row is missing or retired",
+    );
+  }
+  const currentModels = models
+    .filter((model) => {
+      return model.model !== "okou-1.0";
+    })
+    .map((model) => {
+      return {
+        ...model,
+        replacedBy:
+          model.replacedBy === "okou-1.0"
+            ? AUTO_SELECTED_MODEL
+            : model.replacedBy,
+      };
+    });
+  const currentRoutes = routes.filter((route) => {
+    return route.model !== "okou-1.0";
+  });
+  const autoRoute = currentRoutes.find((route) => {
+    return (
+      route.model === AUTO_SELECTED_MODEL &&
+      route.providerType === "built-in" &&
+      route.enabled
+    );
+  });
+  if (!autoRoute || autoRoute.concreteProviderType !== AUTO_RUN_PROVIDER) {
+    throw new ModelCatalogInvariantError(
+      "canonical Auto route is missing or unsupported",
+    );
+  }
   const byModel = new Map(
-    models.map((row) => {
+    currentModels.map((row) => {
       return [row.model, row];
     }),
   );
-  for (const row of models) {
+  for (const row of currentModels) {
     followReplacementChain(byModel, row);
   }
-  const systemDefault = autoCatalogModel();
-  byModel.set(AUTO_RUN_MODEL, systemDefault);
   for (const route of routes) {
     validateRoutePricingLink(route);
   }
   return {
-    models: [
-      systemDefault,
-      ...models.filter((model) => {
-        return model.model !== AUTO_RUN_MODEL;
-      }),
-    ],
-    routes: [
-      autoCatalogRoute(),
-      ...routes.filter((route) => {
-        return route.model !== AUTO_RUN_MODEL;
-      }),
-    ],
+    models: currentModels,
+    routes: currentRoutes,
     systemDefault,
     systemDefaultModel: systemDefault.model,
-    autoUpstreamModel: AUTO_RUN_UPSTREAM_MODEL,
+    autoUpstreamModel: autoRoute.upstreamModel,
     byModel,
   };
 }
@@ -305,7 +295,7 @@ export function resolveCatalogModel(
   catalog: ModelCatalog,
   model: string,
 ): CatalogModelResolution {
-  if (model === AUTO_SELECTED_MODEL) {
+  if (isAutoSelectedModel(model)) {
     return { kind: "active", model, resolvedModel: model, chain: [model] };
   }
   const row = catalog.byModel.get(model);
@@ -365,20 +355,28 @@ export function catalogAutoRoute(
   catalog: ModelCatalog,
   model: string,
 ): CatalogRoute | null {
-  return isAutoSelectedModel(model)
-    ? {
-        ...autoCatalogRoute(),
-        model,
-        upstreamModel: catalog.autoUpstreamModel,
-        longContextMinTotalInputTokens:
-          autoRunPricingLongContextMinTotalInputTokens(model),
-        // Canonical decisions use runtime pricing; retained PR1 captures keep the legacy key.
-        pricingProvider: autoRunBillingProvider(
-          model,
-          catalog.autoUpstreamModel,
-        ),
-      }
-    : null;
+  if (!isAutoSelectedModel(model)) {
+    return null;
+  }
+  const route = catalog.routes.find((candidate) => {
+    return (
+      candidate.model === AUTO_SELECTED_MODEL &&
+      candidate.providerType === "built-in" &&
+      candidate.enabled
+    );
+  });
+  if (!route) {
+    throw new ModelCatalogInvariantError("canonical Auto route is missing");
+  }
+  return {
+    ...route,
+    model,
+    upstreamModel: catalog.autoUpstreamModel,
+    longContextMinTotalInputTokens:
+      autoRunPricingLongContextMinTotalInputTokens(model),
+    // Canonical decisions use runtime pricing; retained PR1 captures keep the legacy key.
+    pricingProvider: autoRunBillingProvider(model, catalog.autoUpstreamModel),
+  };
 }
 
 /**

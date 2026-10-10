@@ -1,10 +1,22 @@
+import { discordOauthStates } from "@okouai/db/schema/discord-oauth-state";
+import { discordOrgGrants } from "@okouai/db/schema/discord-org-grant";
 import { chatDiscordContext } from "@okouai/db/schema/chat-discord-context";
 import { discordChatIngress } from "@okouai/db/schema/discord-chat-ingress";
 import { discordChatThreadRoutes } from "@okouai/db/schema/discord-chat-thread-route";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
 import { discordOrgInstallations } from "@okouai/db/schema/discord-org-installation";
 import { discordUserDmPreferences } from "@okouai/db/schema/discord-user-dm-preference";
-import { and, asc, eq, getTableColumns, gt, inArray, lte } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  getTableColumns,
+  gt,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+} from "drizzle-orm";
 import { z } from "zod";
 
 import { command } from "ccstate";
@@ -17,6 +29,9 @@ export const discordExportKindSchema = z.enum([
   "routes",
   "ingress",
   "contexts",
+  "oauth-attempts",
+  "installation-consents",
+  "personal-consents",
 ]);
 
 type DiscordExportKind = z.infer<typeof discordExportKindSchema>;
@@ -29,6 +44,41 @@ interface DiscordExportArgs {
 }
 
 const PAGE_SIZE = 100;
+
+const readDiscordOauthAttemptsPage$ = command(
+  async ({ get }, args: DiscordExportArgs, signal: AbortSignal) => {
+    const db = get(db$);
+    const { userId, cursor, startedAt } = args;
+    const rows = await db
+      .select({
+        key: discordOauthStates.id,
+        // Capability hashes and the OAuth redirect URI are not user content.
+        row: {
+          id: discordOauthStates.id,
+          orgId: discordOauthStates.orgId,
+          userId: discordOauthStates.userId,
+          flow: discordOauthStates.flow,
+          phase: discordOauthStates.phase,
+          guildId: discordOauthStates.guildId,
+          createdAt: discordOauthStates.createdAt,
+          expiresAt: discordOauthStates.expiresAt,
+        },
+      })
+      .from(discordOauthStates)
+      .where(
+        and(
+          eq(discordOauthStates.userId, userId),
+          isNotNull(discordOauthStates.completionTokenHash),
+          lte(discordOauthStates.createdAt, startedAt),
+          cursor ? gt(discordOauthStates.id, cursor) : undefined,
+        ),
+      )
+      .orderBy(asc(discordOauthStates.id))
+      .limit(PAGE_SIZE);
+    signal.throwIfAborted();
+    return rows;
+  },
+);
 
 /** Each page is account-scoped, including ingress accepted before a route exists. */
 const readDiscordInstallationsPage$ = command(
@@ -55,6 +105,88 @@ const readDiscordInstallationsPage$ = command(
   },
 );
 
+const readDiscordConnectionsPage$ = command(
+  async ({ get }, args: DiscordExportArgs, signal: AbortSignal) => {
+    const db = get(db$);
+    const { userId, cursor, startedAt } = args;
+    const rows = await db
+      .select({
+        key: discordOrgConnections.id,
+        row: getTableColumns(discordOrgConnections),
+      })
+      .from(discordOrgConnections)
+      .where(
+        and(
+          eq(discordOrgConnections.userId, userId),
+          lte(discordOrgConnections.createdAt, startedAt),
+          cursor ? gt(discordOrgConnections.id, cursor) : undefined,
+        ),
+      )
+      .orderBy(asc(discordOrgConnections.id))
+      .limit(PAGE_SIZE);
+    signal.throwIfAborted();
+    return rows;
+  },
+);
+
+const readDiscordPersonalConsentsPage$ = command(
+  async ({ get }, args: DiscordExportArgs, signal: AbortSignal) => {
+    const db = get(db$);
+    const { userId, cursor, startedAt } = args;
+    const rows = await db
+      .select({
+        key: discordOauthStates.id,
+        row: {
+          id: discordOauthStates.id,
+          orgId: discordOauthStates.orgId,
+          userId: discordOauthStates.userId,
+          flow: discordOauthStates.flow,
+          guildId: discordOauthStates.verifiedGuildId,
+          discordUserId: discordOauthStates.verifiedDiscordUserId,
+          botUserId: discordOauthStates.verifiedBotUserId,
+          createdAt: discordOauthStates.createdAt,
+        },
+      })
+      .from(discordOauthStates)
+      .where(
+        and(
+          eq(discordOauthStates.userId, userId),
+          isNull(discordOauthStates.completionTokenHash),
+          lte(discordOauthStates.createdAt, startedAt),
+          cursor ? gt(discordOauthStates.id, cursor) : undefined,
+        ),
+      )
+      .orderBy(asc(discordOauthStates.id))
+      .limit(PAGE_SIZE);
+    signal.throwIfAborted();
+    return rows;
+  },
+);
+
+const readDiscordInstallationConsentsPage$ = command(
+  async ({ get }, args: DiscordExportArgs, signal: AbortSignal) => {
+    const db = get(db$);
+    const { userId, cursor, startedAt } = args;
+    const rows = await db
+      .select({
+        key: discordOrgGrants.id,
+        row: getTableColumns(discordOrgGrants),
+      })
+      .from(discordOrgGrants)
+      .where(
+        and(
+          eq(discordOrgGrants.initiatedByUserId, userId),
+          lte(discordOrgGrants.createdAt, startedAt),
+          cursor ? gt(discordOrgGrants.id, cursor) : undefined,
+        ),
+      )
+      .orderBy(asc(discordOrgGrants.id))
+      .limit(PAGE_SIZE);
+    signal.throwIfAborted();
+    return rows;
+  },
+);
+
 export const readDiscordUserExportPage$ = command(
   async ({ get, set }, args: DiscordExportArgs, signal: AbortSignal) => {
     const db = get(db$);
@@ -66,25 +198,20 @@ export const readDiscordUserExportPage$ = command(
 
     const read = async () => {
       switch (args.kind) {
+        case "personal-consents": {
+          return await set(readDiscordPersonalConsentsPage$, args, signal);
+        }
+        case "installation-consents": {
+          return await set(readDiscordInstallationConsentsPage$, args, signal);
+        }
+        case "oauth-attempts": {
+          return await set(readDiscordOauthAttemptsPage$, args, signal);
+        }
         case "installations": {
           return await set(readDiscordInstallationsPage$, args, signal);
         }
         case "connections": {
-          return await db
-            .select({
-              key: discordOrgConnections.id,
-              row: getTableColumns(discordOrgConnections),
-            })
-            .from(discordOrgConnections)
-            .where(
-              and(
-                eq(discordOrgConnections.userId, userId),
-                lte(discordOrgConnections.createdAt, startedAt),
-                cursor ? gt(discordOrgConnections.id, cursor) : undefined,
-              ),
-            )
-            .orderBy(asc(discordOrgConnections.id))
-            .limit(PAGE_SIZE);
+          return await set(readDiscordConnectionsPage$, args, signal);
         }
         case "dm-preferences": {
           return await db

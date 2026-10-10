@@ -156,9 +156,6 @@ export interface ApiTestMocks {
       readonly getOrganizationMembershipList: AsyncMock;
       readonly updateUserMetadata: AsyncMock;
     };
-    readonly signInTokens: {
-      readonly createSignInToken: AsyncMock;
-    };
     readonly m2m: {
       readonly createToken: AsyncMock;
     };
@@ -197,6 +194,9 @@ export interface ApiTestMocks {
     readonly delay: SignalTimerDelayMock;
   };
   readonly slack: {
+    readonly createClient: Mock<
+      (...args: SlackWebClientConstructorArguments) => void
+    >;
     readonly assistant: {
       readonly threads: {
         readonly setStatus: AsyncMock;
@@ -341,7 +341,10 @@ interface ResendClientMock {
     readonly send: ApiTestMocks["resend"]["send"];
   };
 }
-type SlackWebClientMock = Omit<ApiTestMocks["slack"], "fetchFile">;
+type SlackWebClientMock = Omit<
+  ApiTestMocks["slack"],
+  "fetchFile" | "createClient"
+>;
 type AxiomLoggerMock = Omit<ApiTestMocks["axiomLogging"], "useRealTransport">;
 type AxiomJSTransportMock = Readonly<Record<string, never>>;
 
@@ -407,15 +410,14 @@ const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
         vi.fn<(...args: unknown[]) => Promise<unknown>>(),
       updateUserMetadata: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
     },
-    signInTokens: {
-      createSignInToken: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
-    },
     m2m: {
       createToken: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
     },
   };
 
   const slack = {
+    createClient:
+      vi.fn<(...args: SlackWebClientConstructorArguments) => void>(),
     assistant: {
       threads: {
         setStatus: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
@@ -1210,7 +1212,8 @@ vi.mock("@slack/web-api", () => {
   return {
     WebClient: vi.fn<
       (...args: SlackWebClientConstructorArguments) => SlackWebClientMock
-    >(function () {
+    >(function (...args) {
+      apiTestMocks.slack.createClient(...args);
       const client: SlackWebClientMock = {
         assistant: {
           threads: {
@@ -1528,7 +1531,6 @@ export function resetApiTestMocks(): void {
   apiTestMocks.clerk.users.getUserList.mockResolvedValue({ data: [] });
   apiTestMocks.clerk.users.getOrganizationMembershipList.mockReset();
   apiTestMocks.clerk.users.updateUserMetadata.mockReset();
-  apiTestMocks.clerk.signInTokens.createSignInToken.mockReset();
   apiTestMocks.clerk.m2m.createToken.mockReset();
   apiTestMocks.s3.send.mockReset();
   apiTestMocks.s3.getSignedUrl.mockReset();

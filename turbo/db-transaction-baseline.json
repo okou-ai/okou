@@ -77,16 +77,6 @@
       "owner": "startBuiltinConnectorOpenIdInner$"
     },
     {
-      "id": "TX-0016",
-      "file": "turbo/apps/api/src/signals/routes/discord-state-preview.ts",
-      "owner": "seedDiscordState$"
-    },
-    {
-      "id": "TX-0017",
-      "file": "turbo/apps/api/src/signals/routes/discord-state-preview.ts",
-      "owner": "deleteDiscordState$"
-    },
-    {
       "id": "TX-0018",
       "file": "turbo/apps/api/src/signals/routes/feishu-oauth.ts",
       "owner": "persistFeishuOAuthConnection"
@@ -95,11 +85,6 @@
       "id": "TX-0019",
       "file": "turbo/apps/api/src/signals/routes/integrations-agentphone.ts",
       "owner": "sendAgentPhoneVerificationText$"
-    },
-    {
-      "id": "TX-0020",
-      "file": "turbo/apps/api/src/signals/routes/integrations-discord.ts",
-      "owner": "uninstallDiscordOrganization"
     },
     {
       "id": "TX-0021",
@@ -112,99 +97,9 @@
       "owner": "failPoisonQueuedJob"
     },
     {
-      "id": "TX-0023",
-      "file": "turbo/apps/api/src/signals/routes/slack-state-preview.ts",
-      "owner": "commitSlackStarterDefault$"
-    },
-    {
-      "id": "TX-0024",
-      "file": "turbo/apps/api/src/signals/routes/test-connector-credential-storage-state.ts",
-      "owner": "seedAutomaticOAuthBinding"
-    },
-    {
-      "id": "TX-0025",
-      "file": "turbo/apps/api/src/signals/routes/test-connector-credential-storage-state.ts",
-      "owner": "deleteCustomCredentialValues"
-    },
-    {
-      "id": "TX-0026",
-      "file": "turbo/apps/api/src/signals/routes/test-connector-credential-storage-state.ts",
-      "owner": "seedOwnedSecret"
-    },
-    {
-      "id": "TX-0027",
-      "file": "turbo/apps/api/src/signals/routes/test-cron-cleanup-sandboxes-state.ts",
-      "owner": "seedRunForAction"
-    },
-    {
-      "id": "TX-0028",
-      "file": "turbo/apps/api/src/signals/routes/test-cron-cleanup-sandboxes-state.ts",
-      "owner": "seedRunForAction"
-    },
-    {
-      "id": "TX-0029",
-      "file": "turbo/apps/api/src/signals/routes/test-cron-cleanup-sandboxes-state.ts",
-      "owner": "seedHostedPublication"
-    },
-    {
-      "id": "TX-0030",
-      "file": "turbo/apps/api/src/signals/routes/test-cron-cleanup-sandboxes-state.ts",
-      "owner": "seedOwnershipUsage"
-    },
-    {
-      "id": "TX-0031",
-      "file": "turbo/apps/api/src/signals/routes/test-cron-cleanup-sandboxes-state.ts",
-      "owner": "deleteRunOwnershipForAction"
-    },
-    {
-      "id": "TX-0032",
-      "file": "turbo/apps/api/src/signals/routes/test-cron-cleanup-sandboxes-state.ts",
-      "owner": "transitionRunTerminalForAction"
-    },
-    {
       "id": "TX-0033",
       "file": "turbo/apps/api/src/signals/routes/test-official-workflow-catalog-state.ts",
       "owner": "seedPreviousSchemaRelease$"
-    },
-    {
-      "id": "TX-0034",
-      "file": "turbo/apps/api/src/signals/routes/test-ssh-connection-state.ts",
-      "owner": "createRuntime"
-    },
-    {
-      "id": "TX-0035",
-      "file": "turbo/apps/api/src/signals/routes/test-telegram-state.ts",
-      "owner": "seedOrgDefaultAgentForAction"
-    },
-    {
-      "id": "TX-0036",
-      "file": "turbo/apps/api/src/signals/routes/test-usage-pack-subscription-state.ts",
-      "owner": "seedUsagePackState"
-    },
-    {
-      "id": "TX-0037",
-      "file": "turbo/apps/api/src/signals/routes/test-usage-pack-subscription-state.ts",
-      "owner": "seedLegacyMigrationState"
-    },
-    {
-      "id": "TX-0038",
-      "file": "turbo/apps/api/src/signals/routes/test-usage-state.ts",
-      "owner": "seedUsageStateFixture"
-    },
-    {
-      "id": "TX-0039",
-      "file": "turbo/apps/api/src/signals/routes/test-usage-state.ts",
-      "owner": "seedRun$"
-    },
-    {
-      "id": "TX-0040",
-      "file": "turbo/apps/api/src/signals/routes/test-usage-state.ts",
-      "owner": "insertFixtureUsage$"
-    },
-    {
-      "id": "TX-0041",
-      "file": "turbo/apps/api/src/signals/routes/test-usage-state.ts",
-      "owner": "materializeHourlyUsage$"
     },
     {
       "id": "TX-0042",
@@ -497,21 +392,6 @@
       "owner": "deleteClerkOrganizationLifecycleData$"
     },
     {
-      "id": "TX-0100",
-      "file": "turbo/apps/api/src/signals/services/clerk-agent-lifecycle.service.ts",
-      "owner": "deletePublicationFencesAfterAuthorityRemoval$"
-    },
-    {
-      "id": "TX-0101",
-      "file": "turbo/apps/api/src/signals/services/cli-auth.service.ts",
-      "owner": "testUserId$"
-    },
-    {
-      "id": "TX-0103",
-      "file": "turbo/apps/api/src/signals/services/cloudflare-access.service.ts",
-      "owner": "createCloudflareAccessConfig$"
-    },
-    {
       "id": "TX-0104",
       "file": "turbo/apps/api/src/signals/services/cloudflare-access.service.ts",
       "owner": "updateCloudflareAccessConfig$"
@@ -542,11 +422,6 @@
       "owner": "applyTeamsAuthorizationScope$"
     },
     {
-      "id": "TX-0110",
-      "file": "turbo/apps/api/src/signals/services/connector-account-lifecycle.service.ts",
-      "owner": "renameConnectorAccount$"
-    },
-    {
       "id": "TX-0111",
       "file": "turbo/apps/api/src/signals/services/connector-account-lifecycle.service.ts",
       "owner": "setDefaultGoogleFormsAccount$"
@@ -560,11 +435,6 @@
       "id": "TX-0113",
       "file": "turbo/apps/api/src/signals/services/connector-catalog-sync.service.ts",
       "owner": "publishCandidate$/result"
-    },
-    {
-      "id": "TX-0114",
-      "file": "turbo/apps/api/src/signals/services/connector-check.service.ts",
-      "owner": "resolveConnectorCheck$"
     },
     {
       "id": "TX-0115",
@@ -747,26 +617,6 @@
       "owner": "admitCanonicalDiscordChatEvent$"
     },
     {
-      "id": "TX-0151",
-      "file": "turbo/apps/api/src/signals/services/discord-data.service.ts",
-      "owner": "selectDiscordDmBinding"
-    },
-    {
-      "id": "TX-0152",
-      "file": "turbo/apps/api/src/signals/services/discord-data.service.ts",
-      "owner": "deleteDiscordBinding"
-    },
-    {
-      "id": "TX-0153",
-      "file": "turbo/apps/api/src/signals/services/discord-gateway-lifecycle.service.ts",
-      "owner": "commitDiscordGuildRemoval$"
-    },
-    {
-      "id": "TX-0154",
-      "file": "turbo/apps/api/src/signals/services/discord-owner-cleanup.service.ts",
-      "owner": "deleteDiscordUserData$"
-    },
-    {
       "id": "TX-0155",
       "file": "turbo/apps/api/src/signals/services/discord-route-admission.service.ts",
       "owner": "persistDiscordAdmissionDestination"
@@ -887,11 +737,6 @@
       "owner": "recordManagedUsage$"
     },
     {
-      "id": "TX-0179",
-      "file": "turbo/apps/api/src/signals/services/mcp-chat-discovery.service.ts",
-      "owner": "listMcpAgents$"
-    },
-    {
       "id": "TX-0180",
       "file": "turbo/apps/api/src/signals/services/mcp-chat-message-history.service.ts",
       "owner": "readHistorySnapshot$"
@@ -900,11 +745,6 @@
       "id": "TX-0181",
       "file": "turbo/apps/api/src/signals/services/mcp-chat-search-query.ts",
       "owner": "mcpChatSearchCandidates$"
-    },
-    {
-      "id": "TX-0182",
-      "file": "turbo/apps/api/src/signals/services/mcp-chat-threads.service.ts",
-      "owner": "threadQuery$"
     },
     {
       "id": "TX-0183",
@@ -920,11 +760,6 @@
       "id": "TX-0185",
       "file": "turbo/apps/api/src/signals/services/model-provider-account.service.ts",
       "owner": "writePersonalAccount"
-    },
-    {
-      "id": "TX-0186",
-      "file": "turbo/apps/api/src/signals/services/model-provider-account.service.ts",
-      "owner": "activatePersonalModelProviderAccount$"
     },
     {
       "id": "TX-0187",
@@ -1182,16 +1017,6 @@
       "owner": "recordRunUploadedFile$"
     },
     {
-      "id": "TX-0238",
-      "file": "turbo/apps/api/src/signals/services/runner-ssh.service.ts",
-      "owner": "pinRunnerSsh"
-    },
-    {
-      "id": "TX-0239",
-      "file": "turbo/apps/api/src/signals/services/runner-ssh.service.ts",
-      "owner": "recordRunnerSshObservation"
-    },
-    {
       "id": "TX-0240",
       "file": "turbo/apps/api/src/signals/services/runner-wss-ticket.service.ts",
       "owner": "issueRunnerWssTicket$"
@@ -1240,21 +1065,6 @@
       "id": "TX-0249",
       "file": "turbo/apps/api/src/signals/services/social-data.service.ts",
       "owner": "createSocialDataJob$/result"
-    },
-    {
-      "id": "TX-0250",
-      "file": "turbo/apps/api/src/signals/services/ssh-connection.service.ts",
-      "owner": "commitSshConnectionCreation$"
-    },
-    {
-      "id": "TX-0251",
-      "file": "turbo/apps/api/src/signals/services/ssh-connection.service.ts",
-      "owner": "commitSshConnectionUpdate$"
-    },
-    {
-      "id": "TX-0252",
-      "file": "turbo/apps/api/src/signals/services/ssh-credential.service.ts",
-      "owner": "updateSshCredential$"
     },
     {
       "id": "TX-0253",
@@ -1312,11 +1122,6 @@
       "owner": "deleteIfStillEligible"
     },
     {
-      "id": "TX-0265",
-      "file": "turbo/apps/api/src/signals/services/usage-event-cleanup.service.ts",
-      "owner": "deleteUsageData$"
-    },
-    {
       "id": "TX-0266",
       "file": "turbo/apps/api/src/signals/services/usage-pack-allocation-change.service.ts",
       "owner": "persistUsagePackChangePreview$"
@@ -1367,19 +1172,9 @@
       "owner": "persistSuccessfulPayment$"
     },
     {
-      "id": "TX-0276",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
-      "owner": "claimInvitationCreation$"
-    },
-    {
       "id": "TX-0277",
       "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
       "owner": "persistInvitation$"
-    },
-    {
-      "id": "TX-0278",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
-      "owner": "finalizeRefund$"
     },
     {
       "id": "TX-0279",
@@ -1397,11 +1192,6 @@
       "owner": "activateAcceptedPurchase$"
     },
     {
-      "id": "TX-0282",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
-      "owner": "markLateAcceptanceForRefund$"
-    },
-    {
       "id": "TX-0283",
       "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
       "owner": "recordInvitationAcceptance$"
@@ -1410,11 +1200,6 @@
       "id": "TX-0284",
       "file": "turbo/apps/api/src/signals/services/usage-pack-pending-snapshot.service.ts",
       "owner": "writeUsagePackPendingSnapshots"
-    },
-    {
-      "id": "TX-0285",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-pending-snapshot.service.ts",
-      "owner": "repairUsagePackPendingSnapshotGuards"
     },
     {
       "id": "TX-0286",
@@ -1567,11 +1352,6 @@
       "owner": "updateVncConnection$"
     },
     {
-      "id": "TX-0317",
-      "file": "turbo/apps/api/src/signals/services/vnc-credential.service.ts",
-      "owner": "updateVncCredential$"
-    },
-    {
       "id": "TX-0318",
       "file": "turbo/apps/api/src/signals/services/vnc-owner-lifecycle.service.ts",
       "owner": "eraseVncOwnerData$"
@@ -1595,11 +1375,6 @@
       "id": "TX-0322",
       "file": "turbo/apps/api/src/signals/services/webhooks-clerk-cleanup.service.ts",
       "owner": "deleteClerkExportReferences"
-    },
-    {
-      "id": "TX-0323",
-      "file": "turbo/apps/api/src/signals/services/webhooks-clerk-cleanup.service.ts",
-      "owner": "deleteClerkSshResources"
     },
     {
       "id": "TX-0324",
@@ -1752,11 +1527,6 @@
       "owner": "<module>"
     },
     {
-      "id": "TX-0354",
-      "file": "turbo/packages/db/scripts/audit-pi-memory-candidate-references.sql",
-      "owner": "<module>"
-    },
-    {
       "id": "TX-0355",
       "file": "turbo/packages/db/scripts/billing-attribution.ts",
       "owner": "<module>"
@@ -1895,21 +1665,6 @@
       "id": "TX-0382",
       "file": "turbo/packages/db/scripts/test-connector-permission-baseline-retirement.ts",
       "owner": "<module>"
-    },
-    {
-      "id": "TX-0383",
-      "file": "turbo/packages/db/scripts/test-discord-chat-permanent.ts",
-      "owner": "validatePermanentDiscordChat"
-    },
-    {
-      "id": "TX-0384",
-      "file": "turbo/packages/db/scripts/test-discord-foundation-permanent.ts",
-      "owner": "validatePermanentDiscordFoundation/rejectWrite"
-    },
-    {
-      "id": "TX-0385",
-      "file": "turbo/packages/db/scripts/test-discord-foundation-permanent.ts",
-      "owner": "validatePermanentDiscordFoundation"
     },
     {
       "id": "TX-0386",

@@ -907,20 +907,6 @@
     }
   },
   "auth": {
-    "desktop": {
-      "phases": {
-        "completed": "Anda sudah masuk ke Desktop. Anda dapat menutup jendela ini.",
-        "connecting": "Menghubungkan sesi desktop Anda.",
-        "consumed": "Menyelesaikan proses masuk di Desktop. Biarkan jendela ini terbuka.",
-        "failed": "Proses masuk tidak dapat diselesaikan. Mulai lagi dari Desktop atau coba lagi di browser ini.",
-        "no-workspaces": "Buat atau bergabung dengan ruang kerja di aplikasi web, lalu masuk lagi dari Desktop.",
-        "pending": "Buka Desktop untuk melanjutkan masuk.",
-        "selecting": "Pilih ruang kerja untuk komputer ini."
-      },
-      "reopen": "Buka Desktop",
-      "retry": "Coba lagi",
-      "title": "Masuk ke Desktop"
-    },
     "documentTitles": {
       "signIn": "Masuk",
       "signUp": "Daftar"
@@ -5322,6 +5308,14 @@
     },
     "clearSearch": "Hapus pencarian",
     "custom": "Kustom",
+    "delete": {
+      "cancel": "Batal",
+      "confirm": "Hapus templat",
+      "deleting": "Menghapus...",
+      "description": "\"{{title}}\" akan dihapus untuk semua orang yang dapat melihatnya. Tindakan ini tidak dapat dibatalkan.",
+      "failed": "Templat tidak dapat dihapus. Coba lagi.",
+      "title": "Hapus templat?"
+    },
     "detail": {
       "back": "Templat kustom",
       "page": "Halaman {{number}}"
@@ -6303,22 +6297,33 @@
     "connected": "Terhubung",
     "connectedWithDetail": "Terhubung ({{detail}})",
     "discord": {
-      "accountSetup": "Akun Anda belum terhubung. Menghubungkan akun Discord baru belum tersedia.",
-      "adminSetup": "Penyiapan server belum tersedia. Konfigurasi yang sudah terverifikasi dapat terus menggunakan Discord.",
+      "accountSetup": "Hubungkan akun Discord Anda melalui persetujuan resmi di browser.",
+      "adminSetup": "Instal Okou ke server Discord Anda, lalu hubungkan akun Anda.",
+      "approvalConfirmed": "Persetujuan browser dikonfirmasi. Tutup tab ini untuk menyelesaikan di tab Works semula.",
+      "approvalFailed": "Konfirmasi gagal. Masuk dengan akun dan organisasi Okou semula atau mulai ulang otorisasi.",
+      "approvalPrompt": "Konfirmasi dengan akun dan organisasi Okou yang sama seperti tab Works semula. Konfirmasi saja belum menghubungkan akun Anda.",
+      "approve": "Konfirmasi persetujuan Discord",
+      "approving": "Mengonfirmasi…",
+      "authorizationError": "Otorisasi Discord tidak dapat diselesaikan. Coba lagi dari kartu ini.",
+      "authorizing": "Mengotorisasi…",
+      "browserConsent": "Selesaikan persetujuan Discord dan konfirmasi dengan akun Okou di tab tersebut. Menutup tab saja tidak menghubungkan akun Anda.",
       "chooseDmServer": "Pilih server",
       "description": "Tandai Okou di server atau kirim pesan langsung ke bot.",
       "disconnect": "Putuskan koneksi Discord",
       "dmServer": "Server default untuk pesan langsung",
+      "install": "Instal ke Discord",
       "limitedContext": "Konteks terbatas: Okou mungkin tidak menerima pesan biasa di kanal. Tandai Okou dan sertakan detail yang dibutuhkannya.",
       "loadError": "Tidak dapat memuat status Discord.",
       "loading": "Memuat status Discord…",
-      "memberSetup": "Tanyakan akses Discord kepada admin organisasi. Penyiapan server belum tersedia.",
+      "memberSetup": "Minta admin organisasi menginstal Okou ke server Discord Anda.",
       "moreOptions": "Opsi Discord lainnya",
+      "pendingConsent": "Tab ini tidak memiliki bukti otorisasi. Tutup dan mulai ulang otorisasi dari tab Works semula.",
+      "popupBlocked": "Izinkan popup untuk mengotorisasi Discord, lalu coba lagi.",
       "retry": "Coba lagi",
       "server": "Server: {{name}}",
       "suspended": "Discord untuk sementara tidak tersedia. Koneksi yang ada tetap disimpan.",
       "title": "Discord",
-      "unconfigured": "Discord belum tersedia untuk organisasi ini.",
+      "unconfigured": "Discord belum dikonfigurasi untuk organisasi ini.",
       "uninstall": "Hapus Discord",
       "uninstallDescription": "Ini memutuskan koneksi Discord untuk semua orang di organisasi ini. Organisasi lain tetap terhubung.",
       "uninstallTitle": "Hapus Discord dari organisasi ini?"

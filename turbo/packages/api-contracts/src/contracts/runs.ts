@@ -163,7 +163,6 @@ const getRunResponseSchema = z.object({
       output: z.string().optional(),
       executionTimeMs: z.number().optional(),
       agentSessionId: z.string().optional(),
-      checkpointId: z.string().optional(),
       conversationId: z.string().optional(),
     })
     .passthrough()
@@ -208,8 +207,6 @@ export const runStorageOutputSchema = z.object({
 
 /** Completion outputs, including those saved after failure/cancellation recovery. */
 const runResultSchema = z.object({
-  // Historical results may retain this opaque field.
-  checkpointId: z.string().optional(),
   // Only writeback outputs are persisted. Read-only versions belong to launch mounts.
   storageOutputs: z.array(runStorageOutputSchema).optional(),
   agentSessionId: z.string(),

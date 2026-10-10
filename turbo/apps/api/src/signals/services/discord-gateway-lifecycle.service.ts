@@ -1,16 +1,27 @@
 import { createHash } from "node:crypto";
 import { command } from "ccstate";
-import { eq } from "drizzle-orm";
+import {
+  and,
+  count,
+  eq,
+  exists,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  or,
+  sql,
+} from "drizzle-orm";
+import { discordOauthStates } from "@okouai/db/schema/discord-oauth-state";
+import { discordOrgGrants } from "@okouai/db/schema/discord-org-grant";
 import { discordGatewayReceipts } from "@okouai/db/schema/discord-gateway-receipt";
-import { discordOrgInstallations } from "@okouai/db/schema/discord-org-installation";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
-
 import { writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import {
-  discordOrgAdminsWhere,
-  discordChangedUserIds,
+  discordCleanupRecipients,
+  discordRemovalProjection,
   publishDiscordChanged,
 } from "./discord-realtime.service";
 
@@ -22,68 +33,109 @@ interface DiscordGuildRemoval {
 
 const commitDiscordGuildRemoval$ = command(
   async ({ set }, args: DiscordGuildRemoval, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    const db = set(writeDb$);
     const eventDigest = createHash("sha256")
       .update(JSON.stringify([args.applicationId, args.eventId]))
       .digest("hex");
-    // The receipt and guild revocation commit together, with recipients captured
-    // before cascades and the installation locked before its connections.
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0153; new non-billing transactions are prohibited.
-    return await set(writeDb$).transaction(async (tx) => {
-      const [receipt] = await tx
-        .insert(discordGatewayReceipts)
-        .values({ eventDigest, createdAt: nowDate() })
-        .onConflictDoNothing()
-        .returning({ eventDigest: discordGatewayReceipts.eventDigest });
-      signal.throwIfAborted();
-      if (!receipt) {
-        return { outcome: "duplicate" as const, userIds: [] };
-      }
-      const [installation] = await tx
-        .select({ orgId: discordOrgInstallations.orgId })
-        .from(discordOrgInstallations)
-        .where(eq(discordOrgInstallations.guildId, args.guildId))
-        .for("update");
-      signal.throwIfAborted();
-      if (!installation) {
-        return { outcome: "accepted" as const, userIds: [] };
-      }
-      const connections = await tx
-        .select({ userId: discordOrgConnections.userId })
-        .from(discordOrgConnections)
-        .where(eq(discordOrgConnections.guildId, args.guildId));
-      signal.throwIfAborted();
-      const admins = await tx
-        .select({ userId: orgMembersCache.userId })
-        .from(orgMembersCache)
-        .where(discordOrgAdminsWhere(installation.orgId));
-      signal.throwIfAborted();
-      const userIds = discordChangedUserIds(
-        admins.map((admin) => {
-          return admin.userId;
-        }),
-        connections.map((connection) => {
-          return connection.userId;
-        }),
+    const receipt = db
+      .$with("claimed_discord_guild_removal")
+      .as(
+        db
+          .insert(discordGatewayReceipts)
+          .values({ eventDigest, createdAt: nowDate() })
+          .onConflictDoNothing()
+          .returning({ eventDigest: discordGatewayReceipts.eventDigest }),
       );
-      await tx
-        .delete(discordOrgInstallations)
-        .where(eq(discordOrgInstallations.guildId, args.guildId));
-      signal.throwIfAborted();
-      return { outcome: "accepted" as const, userIds };
-    });
+    const revoked = db.$with("revoked_discord_guild_member_grants").as(
+      db
+        .delete(discordOauthStates)
+        .where(
+          and(
+            or(
+              eq(discordOauthStates.guildId, args.guildId),
+              eq(discordOauthStates.verifiedGuildId, args.guildId),
+            ),
+            exists(db.select({ id: receipt.eventDigest }).from(receipt)),
+          ),
+        )
+        .returning({
+          userId: discordOauthStates.userId,
+          completionTokenHash: discordOauthStates.completionTokenHash,
+        }),
+    );
+    const consents = db.$with("revoked_discord_guild_installation_grants").as(
+      db
+        .delete(discordOrgGrants)
+        .where(
+          and(
+            or(
+              eq(discordOrgGrants.requestedGuildId, args.guildId),
+              eq(discordOrgGrants.verifiedGuildId, args.guildId),
+            ),
+            exists(db.select({ id: receipt.eventDigest }).from(receipt)),
+            gte(db.select({ count: count() }).from(revoked), 0),
+          ),
+        )
+        .returning({
+          orgId: discordOrgGrants.orgId,
+          approvedAt: discordOrgGrants.approvedAt,
+        }),
+    );
+    const removed = db
+      .$with("removed_discord_gateway_guild")
+      .as(
+        db
+          .select({ orgId: consents.orgId })
+          .from(consents)
+          .where(isNotNull(consents.approvedAt)),
+      );
+    const hasRemoval = exists(
+      db.select({ orgId: removed.orgId }).from(removed),
+    );
+    const admins = db
+      .select(discordRemovalProjection(sql`${orgMembersCache.userId}`, true))
+      .from(orgMembersCache)
+      .where(
+        and(
+          eq(orgMembersCache.role, "admin"),
+          inArray(
+            orgMembersCache.orgId,
+            db.select({ orgId: removed.orgId }).from(removed),
+          ),
+        ),
+      );
+    const connections = db
+      .select(
+        discordRemovalProjection(sql`${discordOrgConnections.userId}`, true),
+      )
+      .from(discordOrgConnections)
+      .where(and(eq(discordOrgConnections.guildId, args.guildId), hasRemoval));
+    const grantOwners = db
+      .select(discordRemovalProjection(sql`${revoked.userId}`, true))
+      .from(revoked)
+      .where(and(isNull(revoked.completionTokenHash), hasRemoval));
+    const recipients = db.$with("discord_gateway_cleanup_recipients").as(
+      db
+        .select(discordRemovalProjection(sql`NULL`, false))
+        .from(receipt)
+        .unionAll(admins)
+        .unionAll(connections)
+        .unionAll(grantOwners),
+    );
+    return await db
+      .with(receipt, revoked, consents, removed, recipients)
+      .select({ removed: recipients.removed, userId: recipients.userId })
+      .from(recipients);
   },
 );
 
 export const uninstallDiscordGuild$ = command(
-  async (
-    { set },
-    args: DiscordGuildRemoval,
-    signal: AbortSignal,
-  ): Promise<"accepted" | "duplicate"> => {
-    const result = await set(commitDiscordGuildRemoval$, args, signal);
-    // Committed changes publish even if the request was cancelled after commit.
-    await publishDiscordChanged(result.userIds);
+  async ({ set }, args: DiscordGuildRemoval, signal: AbortSignal) => {
+    const rows = await set(commitDiscordGuildRemoval$, args, signal);
+    const recipients = discordCleanupRecipients(rows, []);
+    await publishDiscordChanged(recipients.userIds);
     signal.throwIfAborted();
-    return result.outcome;
+    return rows.length > 0 ? ("accepted" as const) : ("duplicate" as const);
   },
 );

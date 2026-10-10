@@ -145,6 +145,7 @@ function privateResponses() {
 }
 
 beforeEach(() => {
+  mockEnv("APP_URL", "https://app.okou.ai");
   mockEnv("DISCORD_PUBLIC_KEY", publicKey);
   mockEnv("DISCORD_APPLICATION_ID", applicationId);
   mockEnv("DISCORD_BOT_TOKEN", randomBytes(32).toString("hex"));
@@ -156,7 +157,10 @@ describe("Discord private account interactions", () => {
     const replies = privateResponses();
     const request = signedRequest(command("help"));
     await accept(client().post(request), [202]);
-    expect((await replies.delivered).content).toContain("/okou disconnect");
+    const message = await replies.delivered;
+    expect(message.content).toContain("/okou disconnect");
+    expect(message.content).toContain("[Works](https://app.okou.ai/works)");
+    expect(message.content).toContain("official Discord browser consent");
     await accept(client().post(request), [202]);
     expect(replies.messages).toHaveLength(1);
     expect(replies.callbacks[0]).toStrictEqual({
@@ -170,7 +174,9 @@ describe("Discord private account interactions", () => {
     const replies = privateResponses();
     await accept(client().post(signedRequest(command("connect"))), [202]);
     const message = await replies.delivered;
-    expect(message.content).toContain("onboarding is not available yet");
+    expect(message.content).toContain("[Works](https://app.okou.ai/works)");
+    expect(message.content).toContain("sign in to Okou");
+    expect(message.content).toContain("ask an organization admin");
     expect(message.content).toContain("does not connect or verify an account");
     expect(message.components).toStrictEqual([]);
   });

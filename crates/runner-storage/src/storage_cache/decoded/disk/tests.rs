@@ -1,5 +1,7 @@
 use super::*;
 
+mod bounded;
+
 fn files() -> Vec<StorageFile> {
     vec![StorageFile {
         path: "nested/file".into(),

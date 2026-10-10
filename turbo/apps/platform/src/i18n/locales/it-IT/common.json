@@ -927,20 +927,6 @@
     }
   },
   "auth": {
-    "desktop": {
-      "phases": {
-        "completed": "Hai effettuato l’accesso a Desktop. Puoi chiudere questa finestra.",
-        "connecting": "Connessione della sessione desktop in corso.",
-        "consumed": "Accesso a Desktop in fase di completamento. Lascia aperta questa finestra.",
-        "failed": "Impossibile completare l’accesso. Ricomincia da Desktop o riprova in questo browser.",
-        "no-workspaces": "Crea uno spazio di lavoro o unisciti a uno nell’app web, poi accedi di nuovo da Desktop.",
-        "pending": "Apri Desktop per continuare ad accedere.",
-        "selecting": "Scegli uno spazio di lavoro per questo computer."
-      },
-      "reopen": "Apri Desktop",
-      "retry": "Riprova",
-      "title": "Accedi a Desktop"
-    },
     "documentTitles": {
       "signIn": "Accedi",
       "signUp": "Iscriviti"
@@ -5418,6 +5404,14 @@
     },
     "clearSearch": "Cancella ricerca",
     "custom": "Personalizzati",
+    "delete": {
+      "cancel": "Annulla",
+      "confirm": "Elimina modello",
+      "deleting": "Eliminazione...",
+      "description": "\"{{title}}\" verrà rimosso per tutti coloro che possono vederlo. Questa azione non può essere annullata.",
+      "failed": "Impossibile eliminare il modello. Riprova.",
+      "title": "Eliminare il modello?"
+    },
     "detail": {
       "back": "Modelli personalizzati",
       "page": "Pagina {{number}}"
@@ -6411,22 +6405,33 @@
     "connected": "Connesso",
     "connectedWithDetail": "Connesso ({{detail}})",
     "discord": {
-      "accountSetup": "Il tuo account non è connesso. Non è ancora possibile connettere un nuovo account Discord.",
-      "adminSetup": "La configurazione dei server non è ancora disponibile. Le configurazioni esistenti già verificate possono continuare a usare Discord.",
+      "accountSetup": "Connetti il tuo account Discord tramite il consenso ufficiale nel browser.",
+      "adminSetup": "Installa Okou sul tuo server Discord, quindi connetti il tuo account.",
+      "approvalConfirmed": "Consenso del browser confermato. Chiudi questa scheda per terminare nella scheda Works originale.",
+      "approvalFailed": "Conferma non riuscita. Accedi con l’account e l’organizzazione Okou originali o riavvia l’autorizzazione.",
+      "approvalPrompt": "Conferma con lo stesso account e la stessa organizzazione Okou della scheda Works originale. La sola conferma non connette il tuo account.",
+      "approve": "Conferma il consenso Discord",
+      "approving": "Conferma…",
+      "authorizationError": "Non è stato possibile completare l’autorizzazione Discord. Riprova da questa scheda.",
+      "authorizing": "Autorizzazione in corso…",
+      "browserConsent": "Completa il consenso Discord e conferma con il tuo account Okou in quella scheda. Chiuderla da sola non connette il tuo account.",
       "chooseDmServer": "Scegli un server",
       "description": "Menziona Okou in un server o invia un messaggio diretto al bot.",
       "disconnect": "Disconnetti Discord",
       "dmServer": "Server predefinito per i messaggi diretti",
+      "install": "Installa su Discord",
       "limitedContext": "Contesto limitato: Okou potrebbe non ricevere i normali messaggi dei canali. Menziona Okou e includi i dettagli di cui ha bisogno.",
       "loadError": "Impossibile caricare lo stato di Discord.",
       "loading": "Caricamento dello stato di Discord…",
-      "memberSetup": "Chiedi a un amministratore dell’organizzazione informazioni sull’accesso a Discord. La configurazione dei server non è ancora disponibile.",
+      "memberSetup": "Chiedi a un amministratore dell’organizzazione di installare Okou sul tuo server Discord.",
       "moreOptions": "Altre opzioni di Discord",
+      "pendingConsent": "Questa scheda non ha una prova di autorizzazione. Chiudila e riavvia l’autorizzazione dalla scheda Works originale.",
+      "popupBlocked": "Consenti i popup per autorizzare Discord, quindi riprova.",
       "retry": "Riprova",
       "server": "Server: {{name}}",
       "suspended": "Discord è temporaneamente non disponibile. Le connessioni esistenti vengono mantenute.",
       "title": "Discord",
-      "unconfigured": "Discord non è ancora disponibile per questa organizzazione.",
+      "unconfigured": "Discord non è ancora configurato per questa organizzazione.",
       "uninstall": "Rimuovi Discord",
       "uninstallDescription": "Questa operazione disconnette da Discord tutte le persone di questa organizzazione. Le altre organizzazioni mantengono le proprie connessioni.",
       "uninstallTitle": "Rimuovere Discord da questa organizzazione?"

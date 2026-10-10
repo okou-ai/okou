@@ -189,7 +189,7 @@ function logAgentRunCompletionOutcome(
 function runOutputInputForCompletion(
   input: CompleteAgentRunInput,
 ): AgentRunOutputInput | null {
-  const completion = input.body.completion ?? input.body.checkpoint;
+  const completion = input.body.completion;
   if (!completion) {
     return null;
   }

@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.3.2](https://github.com/okou-ai/okou/compare/runner-storage-v0.3.1...runner-storage-v0.3.2) (2026-10-10)
+
+## [0.3.1](https://github.com/okou-ai/okou/compare/runner-storage-v0.3.0...runner-storage-v0.3.1) (2026-10-10)
+
+
+### Performance Improvements
+
+* **storage:** activate bounded large decoded storage (2/2) ([#38420](https://github.com/okou-ai/okou/issues/38420)) ([f7923e0](https://github.com/okou-ai/okou/commit/f7923e0524b6ead555699ab520036e0c7d34dd28))
+
+## [0.3.0](https://github.com/okou-ai/okou/compare/runner-storage-v0.2.11...runner-storage-v0.3.0) (2026-10-09)
+
+
+### Features
+
+* **storage:** prepare large decoded storage readers (1/2) ([#38396](https://github.com/okou-ai/okou/issues/38396)) ([fe12503](https://github.com/okou-ai/okou/commit/fe12503564388499b06ba2b42f45b33fe641a032))
+
+## [0.2.11](https://github.com/okou-ai/okou/compare/runner-storage-v0.2.10...runner-storage-v0.2.11) (2026-10-09)
+
+
+### Documentation
+
+* keep reusable engineering standards and remove feature records ([#38387](https://github.com/okou-ai/okou/issues/38387)) ([6507d86](https://github.com/okou-ai/okou/commit/6507d86c83ca37e7a8790e4efd66eb6a84267295))
+
 ## [0.2.10](https://github.com/okou-ai/okou/compare/runner-storage-v0.2.9...runner-storage-v0.2.10) (2026-10-09)
 
 ## [0.2.9](https://github.com/okou-ai/okou/compare/runner-storage-v0.2.8...runner-storage-v0.2.9) (2026-10-09)

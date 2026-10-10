@@ -1,21 +1,13 @@
 import { randomUUID } from "node:crypto";
 
 import { cliTokens } from "@okouai/db/schema/cli-tokens";
-import { orgCache } from "@okouai/db/schema/org-cache";
-import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
-import { userCache } from "@okouai/db/schema/user-cache";
-import { command, computed, type Computed } from "ccstate";
-import { and, desc, eq, ne } from "drizzle-orm";
+import { command } from "ccstate";
 
 import { generateCliToken } from "../auth/tokens";
-import { clerk$ } from "../external/clerk";
-import { db$, writeDb$ } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 
 const CLI_TOKEN_EXPIRES_IN_SECONDS = 90 * 24 * 60 * 60;
-
-const FAR_FUTURE_CACHE_MS = 365 * 24 * 60 * 60 * 1000;
-const USER_CACHE_TTL_MS = 15 * 60 * 1000;
 
 interface IssuedCliToken {
   readonly token: string;
@@ -50,173 +42,5 @@ export const issueCliToken$ = command(
     });
 
     return { token, expiresIn: CLI_TOKEN_EXPIRES_IN_SECONDS };
-  },
-);
-
-interface TestUserIdArgs {
-  readonly email: string;
-  readonly refresh: boolean;
-}
-
-export const testUserId$ = command(
-  async (
-    { get, set },
-    args: TestUserIdArgs,
-    signal: AbortSignal,
-  ): Promise<string> => {
-    const refreshStartedAt = nowDate();
-    const db = get(db$);
-
-    if (!args.refresh) {
-      const [cached] = await db
-        .select({ userId: userCache.userId, cachedAt: userCache.cachedAt })
-        .from(userCache)
-        .where(eq(userCache.email, args.email))
-        .orderBy(desc(userCache.cachedAt))
-        .limit(1);
-      signal.throwIfAborted();
-      if (
-        cached &&
-        refreshStartedAt.getTime() - cached.cachedAt.getTime() <
-          USER_CACHE_TTL_MS
-      ) {
-        return cached.userId;
-      }
-    }
-
-    // Resolve through Clerk before touching the database: no external I/O
-    // inside a transaction. Concurrent refreshes may each call Clerk; the
-    // user_id primary-key upsert below makes their writes converge.
-    const { data: users } = await get(clerk$).users.getUserList({
-      emailAddress: [args.email],
-    });
-    signal.throwIfAborted();
-    const user = users[0];
-    if (!user) {
-      throw new Error(`Test user not found for email: ${args.email}`);
-    }
-
-    const resolvedEmail =
-      user.emailAddresses?.find((entry) => {
-        return entry.id === user.primaryEmailAddressId;
-      })?.emailAddress ??
-      user.emailAddresses?.[0]?.emailAddress ??
-      args.email;
-    const name =
-      [user.firstName, user.lastName].filter(Boolean).join(" ") || null;
-    const cachedAt = nowDate();
-
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0101; new non-billing transactions are prohibited.
-    await set(writeDb$).transaction(async (tx) => {
-      await tx
-        .delete(userCache)
-        .where(
-          and(
-            eq(userCache.email, resolvedEmail),
-            ne(userCache.userId, user.id),
-          ),
-        );
-      await tx
-        .insert(userCache)
-        .values({
-          userId: user.id,
-          email: resolvedEmail,
-          name,
-          imageUrl: user.imageUrl ?? null,
-          cachedAt,
-        })
-        .onConflictDoUpdate({
-          target: userCache.userId,
-          set: {
-            email: resolvedEmail,
-            name,
-            imageUrl: user.imageUrl ?? null,
-            cachedAt,
-          },
-        });
-    });
-    signal.throwIfAborted();
-    return user.id;
-  },
-);
-
-function clerkRoleToCacheRole(role: string): "admin" | "member" {
-  return role === "org:admin" ? "admin" : "member";
-}
-
-export function testUserOrgId(
-  userId: string,
-): Computed<Promise<string | null>> {
-  return computed(async (get): Promise<string | null> => {
-    const [cached] = await get(db$)
-      .select({ orgId: orgMembersCache.orgId })
-      .from(orgMembersCache)
-      .where(eq(orgMembersCache.userId, userId))
-      .orderBy(desc(orgMembersCache.cachedAt))
-      .limit(1);
-    return cached?.orgId ?? null;
-  });
-}
-
-export const resolveTestOrgId$ = command(
-  async (
-    { get, set },
-    userId: string,
-    signal: AbortSignal,
-  ): Promise<string> => {
-    const cachedOrgId = await get(testUserOrgId(userId));
-    signal.throwIfAborted();
-    if (cachedOrgId) {
-      return cachedOrgId;
-    }
-
-    // Concurrent first resolutions may each call Clerk; the org_cache and
-    // org_members_cache primary-key upserts make their writes converge.
-    const memberships = await get(clerk$).users.getOrganizationMembershipList({
-      userId,
-    });
-    signal.throwIfAborted();
-    const membership = [...memberships.data].sort((a, b) => {
-      return a.createdAt - b.createdAt;
-    })[0];
-    if (!membership) {
-      throw new Error(`Test user ${userId} has no organization membership`);
-    }
-
-    const org = membership.organization;
-    const cachedAt = new Date(nowDate().getTime() + FAR_FUTURE_CACHE_MS);
-    const writeDb = set(writeDb$);
-    await writeDb
-      .insert(orgCache)
-      .values({
-        orgId: org.id,
-        name: org.name,
-        cachedAt,
-      })
-      .onConflictDoUpdate({
-        target: orgCache.orgId,
-        set: {
-          name: org.name,
-          cachedAt,
-        },
-      });
-    signal.throwIfAborted();
-    await writeDb
-      .insert(orgMembersCache)
-      .values({
-        orgId: org.id,
-        userId,
-        role: clerkRoleToCacheRole(membership.role),
-        cachedAt,
-      })
-      .onConflictDoUpdate({
-        target: [orgMembersCache.orgId, orgMembersCache.userId],
-        set: {
-          role: clerkRoleToCacheRole(membership.role),
-          cachedAt,
-        },
-      });
-    signal.throwIfAborted();
-    return org.id;
   },
 );

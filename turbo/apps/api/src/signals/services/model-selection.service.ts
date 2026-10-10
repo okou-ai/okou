@@ -55,7 +55,7 @@ export interface ModelFirstPin {
   readonly modelProviderId: string | null;
   readonly modelProviderType: string | null;
   readonly modelProviderCredentialScope: ModelProviderCredentialScope | null;
-  readonly selectedModel: string | null;
+  readonly selectedModel: string;
 }
 export interface DefaultModelFirstPin extends ModelFirstPin {
   readonly serviceTier: ChatThreadServiceTier | null;
@@ -105,7 +105,7 @@ function unavailablePersonalPin(
         modelProviderId: null,
         modelProviderType: route.providerType,
         modelProviderCredentialScope: "member",
-        selectedModel: canonicalModel,
+        selectedModel: route.model,
       }
     : null;
 }
@@ -329,7 +329,6 @@ export function replacementSubscriptionRequired(
     ),
   };
 }
-export type ProviderModelSupport = "validate" | "trust-enqueued";
 export function validateCodexServiceTier(params: {
   readonly catalog: ModelCatalog;
   readonly pin: ModelFirstPin;

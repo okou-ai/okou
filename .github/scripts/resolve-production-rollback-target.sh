@@ -46,6 +46,10 @@ readonly VIDEO_GENERATION_RETIREMENT_COMMIT=45b537a596a153a91b76c3bc7223187840f5
 # #38129 moved both memory stages to Luna. DeepSeek route retirement makes
 # earlier APIs unsafe: they would admit work with a deleted execution binding.
 readonly PI_MEMORY_LUNA_ROUTING_COMMIT=77357abdb29ce96b2caf9ee679299602757844dc
+# #38096 permanently moved OpenRouter Pi captures to generation 5. Current
+# API/Runner/CLI readers no longer execute unversioned contexts, so a rollback
+# must not restore the generation 1 writer or its disabled-switch path.
+readonly PI_OPENROUTER_VERSIONED_WRITER_COMMIT=a635ec3afa20cdb5df9c8125afe6cec24ef53e16
 readonly PUBLIC_BRAND_RETIREMENT_PATH=turbo/packages/db/src/migrations/1255_retire_public_brand.sql
 readonly AGENT_RUN_HEARTBEAT_DROP_PATH=turbo/packages/db/src/migrations/1259_drop_agent_runs_last_heartbeat_at.sql
 readonly PERSONAL_SUBSCRIPTION_ACCOUNT_ONLY_PATH=turbo/packages/db/src/migrations/1260_personal_subscription_account_only.sql
@@ -53,6 +57,7 @@ readonly CHAT_THREAD_SNAPSHOT_JSONB_DROP_PATH=turbo/packages/db/src/migrations/1
 readonly STRIPE_PORTAL_PURPOSE_ONLY_PATH=.github/rollback-floors/stripe-portal-purpose-only
 readonly CHAT_EVENT_SCHEMA_HEADER_RETIRED_PATH=.github/rollback-floors/chat-event-schema-header-retired
 readonly CHAT_EVENT_V8_PATH=.github/rollback-floors/chat-event-v8
+readonly CHECKPOINT_WRITER_PREPARATION_PATH=turbo/apps/api/src/signals/services/pi-memory-phase2-input-revision.ts
 readonly BROWSER_SESSION_MUTATIONS_PATH=.github/rollback-floors/browser-session-mutations
 readonly RETIRED_PREFERENCE_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1274_drop_retired_voice_reasoning_collection_columns.sql
 readonly RETIRED_INTEGRATION_AGENT_TABLES_DROP_PATH=turbo/packages/db/src/migrations/1282_drop_retired_integration_agent_tables.sql
@@ -139,6 +144,9 @@ if ! git merge-base --is-ancestor "$VIDEO_GENERATION_RETIREMENT_COMMIT" "$TARGET
 fi
 if ! git merge-base --is-ancestor "$PI_MEMORY_LUNA_ROUTING_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates Pi memory Luna routing: ${PI_MEMORY_LUNA_ROUTING_COMMIT}."
+fi
+if ! git merge-base --is-ancestor "$PI_OPENROUTER_VERSIONED_WRITER_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the versioned Pi OpenRouter writer: ${PI_OPENROUTER_VERSIONED_WRITER_COMMIT}."
 fi
 
 # The preparatory catalog release stops writing/reading payload and removes it
@@ -412,6 +420,17 @@ if [[ ! "$browser_session_mutations_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$browser_session_mutations_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Browser session mutation contract: ${browser_session_mutations_commit}."
+fi
+
+# Generic checkpoint contraction requires the already deployed explicit-column
+# memory revision writer. Resolve its actual merged preparation commit.
+checkpoint_writer_preparation_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$CHECKPOINT_WRITER_PREPARATION_PATH" | sed -n '1p')
+if [[ ! "$checkpoint_writer_preparation_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged checkpoint writer preparation on main."
+fi
+if ! git merge-base --is-ancestor "$checkpoint_writer_preparation_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates checkpoint writer preparation: ${checkpoint_writer_preparation_commit}."
 fi
 
 # Migration 1282 drops the retired integration agent preference and

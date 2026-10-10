@@ -1,13 +1,6 @@
 import { command, type Command } from "ccstate";
 import { createElement } from "react";
-import { isDesktopAuthFlow } from "../lib/desktop-auth-flow.ts";
-import { setupDesktopAuthPage } from "./desktop-auth/desktop-auth.ts";
-import {
-  clerk$,
-  setupClerk$,
-  setupClerkUser$,
-  watchOrgSwitch$,
-} from "./auth.ts";
+import { clerk$, setupClerkUser$, watchOrgSwitch$ } from "./auth.ts";
 import {
   setupAuthenticatedRealtime$,
   setupAuthenticatedBootstrapData$,
@@ -110,6 +103,7 @@ import {
 } from "./external/feature-switch.ts";
 import { checkUnifiedSettingsParam$ } from "./okou-page/settings/settings-dialog.ts";
 import { captureInvitationRedirect$ } from "./invitation-redirect.ts";
+import { captureDiscordApprovalFragment$ } from "./okou-page/discord-oauth-approval.ts";
 import {
   pwaNavigationEnabled$,
   setupPwaNavigation$,
@@ -182,32 +176,6 @@ const setupPwaMeRoute$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 const ROUTE_CONFIG = [
-  {
-    path: ROUTES.desktopAuthStart,
-    setup: setupPageWrapper(setupDesktopAuthPage("start")),
-    analytics: false,
-  },
-  {
-    path: ROUTES.desktopAuthCallback,
-    setup: setupPageWrapper(setupDesktopAuthPage("callback")),
-    analytics: false,
-  },
-  {
-    path: ROUTES.desktopAuthConsume,
-    setup: setupPageWrapper(setupDesktopAuthPage("consume")),
-    analytics: false,
-  },
-  {
-    path: ROUTES.desktopAuthToken,
-    setup: setupPageWrapper(setupDesktopAuthPage("token")),
-    analytics: false,
-  },
-  {
-    path: ROUTES.desktopAuthSelectOrg,
-    setup: setupPageWrapper(setupDesktopAuthPage("select-org")),
-    analytics: false,
-  },
-
   {
     path: ROUTES.sharedArtifact,
     setup: setupPageWrapper(setupSharedArtifact$),
@@ -593,18 +561,6 @@ const completeBootstrap$ = command(
 
     render();
 
-    // These public protocol pages also run before an embedded Clerk session exists.
-    // Hosted Clerk task continuations retain the same ownership via redirect_url.
-    if (isDesktopAuthFlow()) {
-      await Promise.all([
-        set(setupClerk$, signal),
-        set(watchOrgSwitch$, signal),
-        set(setupRoutes$, signal),
-      ]);
-      signal.throwIfAborted();
-      return;
-    }
-
     set(handleSlackRedirect$);
 
     // Route setup may make one-time feature-gated decisions.
@@ -637,6 +593,7 @@ export const bootstrap$ = command(
     render: () => void,
     signal: AbortSignal,
   ): Promise<void> => {
+    set(captureDiscordApprovalFragment$, signal);
     set(initializeAppVersion$, appVersion);
     set(initBootstrapPhaseTiming$);
     set(captureInvitationRedirect$);
@@ -663,12 +620,8 @@ export const bootstrap$ = command(
 
     // Keep failures that happen before the first React render observable.
     set(listenSharedWorkerFailure$, signal);
-    const sharedDatabaseSetup = isDesktopAuthFlow()
-      ? Promise.resolve()
-      : set(setupSharedDatabaseBridge$, signal);
-    if (!isDesktopAuthFlow()) {
-      set(setupAuthenticatedRealtime$, signal);
-    }
+    const sharedDatabaseSetup = set(setupSharedDatabaseBridge$, signal);
+    set(setupAuthenticatedRealtime$, signal);
     const ready = set(completeBootstrap$, render, signal);
 
     await Promise.all([

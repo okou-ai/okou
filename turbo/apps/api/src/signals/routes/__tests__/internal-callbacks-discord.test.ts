@@ -1,5 +1,4 @@
-import { Buffer } from "node:buffer";
-import { createHash } from "node:crypto";
+import { prepareRunnerSessionHistory } from "./helpers/runner-session-history";
 import { revokedChatEventIds } from "@okouai/api-contracts/contracts/chat-events";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
@@ -12,7 +11,8 @@ import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
 import {
-  deleteDiscordFixture,
+  removePublicDiscordBinding,
+  mockDiscordMemberships,
   mockDiscordApplication,
 } from "./helpers/discord";
 import {
@@ -32,7 +32,8 @@ const webhooks = createWebhookCallbackApi(context);
 const trackDiscordFixture = createFixtureTracker(
   async (fixture: { actor: ConnectedDiscordActor; deleted: boolean }) => {
     if (!fixture.deleted) {
-      await deleteDiscordFixture(context, fixture.actor.fixture);
+      mockDiscordMemberships(context, [fixture.actor]);
+      await removePublicDiscordBinding(context, fixture.actor.fixture);
     }
   },
 );
@@ -128,24 +129,17 @@ async function completeRun(args: {
     );
   }
   const history = `Discord conversation history ${args.runId}`;
-  const hash = createHash("sha256").update(history).digest("hex");
-  const size = Buffer.byteLength(history);
-  await webhooks.requestAgentCheckpointPrepareHistory(
-    {
-      runId: args.runId,
-      hash,
-      rawSize: size,
-      encodedSize: size,
-      encoding: "identity",
-    },
+  const hash = await prepareRunnerSessionHistory(
+    context,
+    args.runId,
     headers,
-    [200],
+    history,
   );
   await webhooks.requestAgentComplete(
     {
       runId: args.runId,
       exitCode: 0,
-      checkpoint: {
+      completion: {
         cliAgentType: "claude-code",
         cliAgentSessionId: `discord-session-${args.runId}`,
         cliAgentSessionHistoryHash: hash,
@@ -329,7 +323,7 @@ describe("canonical Discord terminal replies", () => {
       const started = await startDiscordRun();
       const claim = await claimRun(started.actor, started.runId);
       if (revocation === "binding") {
-        await deleteDiscordFixture(context, started.actor.fixture);
+        await removePublicDiscordBinding(context, started.actor.fixture);
         started.fixture.deleted = true;
       } else {
         started.provider.deniedChannels.add(started.channelId);
@@ -461,7 +455,7 @@ describe("canonical Discord terminal replies", () => {
           "Use the confidential follow-up details.",
         );
       }
-      await deleteDiscordFixture(context, started.actor.fixture);
+      await removePublicDiscordBinding(context, started.actor.fixture);
       started.fixture.deleted = true;
       await expect(
         runs.nextSteerableInput(claim.sandboxToken, started.runId),
@@ -811,7 +805,7 @@ describe("Discord processing status", () => {
         return undefined;
       };
       if (revocation === "binding") {
-        await deleteDiscordFixture(context, started.actor.fixture);
+        await removePublicDiscordBinding(context, started.actor.fixture);
         started.fixture.deleted = true;
       } else {
         started.provider.deniedMembers.add(started.actor.discordUserId);

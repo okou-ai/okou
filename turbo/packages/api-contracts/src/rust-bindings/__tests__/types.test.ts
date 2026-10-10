@@ -13,15 +13,14 @@ import {
 import { modelProviderCodexRuntimeConfigSchema } from "../../contracts/model-providers";
 import {
   piLaunchConfigSchema,
-  piModelConfigLegacySchema,
   piModelConfigV2Schema,
   sessionHistoryEncodingSchema,
   storageMountEntrySchema,
 } from "../../contracts/runners";
 import { fileEntryWithHashSchema } from "../../contracts/storages";
 import {
-  webhookCheckpointsContract,
-  webhookCheckpointsPrepareHistoryContract,
+  runCompletionMetadataSchema,
+  webhookSessionHistoryPrepareContract,
   webhookStoragesCommitContract,
   webhookStoragesPrepareContract,
 } from "../../contracts/webhooks";
@@ -83,11 +82,6 @@ const expectedBindings = [
   },
   {
     rustModulePath: ["runners", "runs"],
-    rustTypeName: "PiModelConfig",
-    direction: "response",
-  },
-  {
-    rustModulePath: ["runners", "runs"],
     rustTypeName: "PiModelConfigV2",
     direction: "response",
   },
@@ -125,36 +119,6 @@ const expectedBindings = [
     rustModulePath: ["runners", "storage"],
     rustTypeName: "StorageMountEntry",
     direction: "response",
-  },
-  {
-    rustModulePath: ["webhooks", "agent", "checkpoints"],
-    rustTypeName: "ArtifactSnapshot",
-    direction: "request",
-  },
-  {
-    rustModulePath: ["webhooks", "agent", "checkpoints"],
-    rustTypeName: "Request",
-    direction: "request",
-  },
-  {
-    rustModulePath: ["webhooks", "agent", "checkpoints"],
-    rustTypeName: "Response",
-    direction: "response",
-  },
-  {
-    rustModulePath: ["webhooks", "agent", "checkpoints", "prepare_history"],
-    rustTypeName: "Request",
-    direction: "request",
-  },
-  {
-    rustModulePath: ["webhooks", "agent", "checkpoints", "prepare_history"],
-    rustTypeName: "Response",
-    direction: "response",
-  },
-  {
-    rustModulePath: ["webhooks", "agent", "checkpoints", "prepare_history"],
-    rustTypeName: "SessionHistoryEncoding",
-    direction: "request",
   },
   {
     rustModulePath: ["webhooks", "agent", "session_history", "prepare"],
@@ -387,9 +351,8 @@ describe("Rust type bindings", () => {
 
     expect(secondRender).toBe(firstRender);
     expect(firstRender).toContain("pub mod webhooks {");
-    expect(firstRender).toContain("pub mod checkpoints {");
+    expect(firstRender).toContain("pub mod session_history {");
     expect(firstRender).toContain("pub mod complete {");
-    expect(firstRender).toContain("pub mod prepare_history {");
     expect(firstRender).toContain("pub mod prepare {");
     expect(firstRender).toContain("pub struct FileEntryWithHash {");
     expect(firstRender).toContain(
@@ -414,13 +377,9 @@ describe("Rust type bindings", () => {
     expect(firstRender).toContain("pub struct StorageMountEntry {");
     expect(firstRender).toContain("pub struct CodexRuntimeConfig {");
     expect(firstRender).toContain("pub struct PiLaunchConfig {");
-    expect(firstRender).toContain("pub struct PiModelConfig {");
-    expect(firstRender).toContain("pub enum PiModelConfigProvider {");
-    expect(firstRender).toContain("pub enum PiModelConfigThinkingLevel {");
-    expect(firstRender).toContain("pub enum PiModelConfigServiceTier {");
-    expect(firstRender).toContain("pub enum PiModelConfigApiKeyEnv {");
     expect(firstRender).toContain("pub struct PiModelConfigV2 {");
     expect(firstRender).toContain("pub enum PiModelConfigV3 {");
+    expect(firstRender).toContain("pub struct PiModelConfigV5 {");
     expect(firstRender).toContain(
       "pub enum PiModelConfigV3OpenaiCodexResponsesServiceTier {",
     );
@@ -452,31 +411,28 @@ describe("Rust type bindings", () => {
       /#\[derive\(\n\s+Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize,\n\s+\)\]\n\s+pub enum SessionHistoryEncoding \{/,
     );
     expect(firstRender).toContain(
-      "/// Request body for creating a recoverable agent checkpoint.",
-    );
-    expect(firstRender).toContain("pub struct ArtifactSnapshot {");
-    expect(firstRender).not.toContain("pub struct RequestArtifactSnapshot {");
-    expect(firstRender).not.toContain("pub struct ResponseArtifactsItem {");
-    expect(firstRender).toContain(
-      "pub artifact_snapshots: Option<Vec<ArtifactSnapshot>>,",
+      "/// Final Run output metadata included with completion.",
     );
     expect(firstRender).toContain(
-      "pub artifacts: Option<Vec<ArtifactSnapshot>>,",
+      "pub struct RequestCompletionArtifactSnapshot {",
+    );
+    expect(firstRender).toContain(
+      "pub artifact_snapshots: Option<Vec<RequestCompletionArtifactSnapshot>>,",
+    );
+    expect(firstRender).toContain("pub completion: Option<RequestCompletion>,");
+    expect(firstRender).toMatch(
+      /pub missing_root_policy:\s+Option<RequestCompletionArtifactSnapshotMissingRootPolicy>,/,
+    );
+    expect(firstRender).toContain(
+      "pub volume_versions_snapshot: Option<RequestCompletionVolumeVersionsSnapshot>,",
     );
     expect(firstRender).toMatch(
-      /pub missing_root_policy: Option<\n\s+crate::generated::types::runners::storage::ArtifactEntryMissingRootPolicy,\n\s+>,/,
-    );
-    expect(firstRender).toContain(
-      "pub volume_versions_snapshot: Option<RequestVolumeVersionsSnapshot>,",
-    );
-    expect(firstRender).toMatch(
-      /pub cli_agent_session_history_disposition:\n\s+Option<RequestCliAgentSessionHistoryDisposition>,/,
+      /pub cli_agent_session_history_disposition:\n\s+Option<RequestCompletionCliAgentSessionHistoryDisposition>,/,
     );
     expect(firstRender).toContain(
       "pub versions: std::collections::BTreeMap<String, String>,",
     );
-    expect(firstRender).toContain("pub struct RequestCheckpoint {");
-    expect(firstRender).toContain("pub checkpoint: Option<RequestCheckpoint>,");
+    expect(firstRender).toContain("pub struct RequestCompletion {");
     expect(firstRender).toContain("pub exit_code: i32,");
     expect(firstRender).toContain("pub enum RequestFailureReason {");
     expect(firstRender).toContain("pub failure_reason: Option<String>,");
@@ -535,14 +491,6 @@ describe("Rust type bindings", () => {
         );
       },
     );
-    const modelBinding: RustTypeBinding | undefined = rustTypeBindings.find(
-      ({ rustModulePath, rustTypeName }) => {
-        return (
-          rustTypeName === "PiModelConfig" &&
-          rustModulePath.join("/") === "runners/runs"
-        );
-      },
-    );
     const modelV2Binding: RustTypeBinding | undefined = rustTypeBindings.find(
       ({ rustModulePath, rustTypeName }) => {
         return (
@@ -558,35 +506,10 @@ describe("Rust type bindings", () => {
     expect(z.toJSONSchema(launchBinding.schema)).toEqual(
       z.toJSONSchema(piLaunchConfigSchema.unwrap()),
     );
-    expect(modelBinding?.schema).toBe(piModelConfigLegacySchema);
     expect(modelV2Binding?.schema).toBe(piModelConfigV2Schema);
     expect(z.toJSONSchema(piLaunchConfigSchema.unwrap())).toMatchObject({
       required: ["schemaVersion"],
       properties: { schemaVersion: { const: 2 } },
-    });
-    expect(z.toJSONSchema(piModelConfigLegacySchema)).toMatchObject({
-      required: [
-        "provider",
-        "baseUrl",
-        "model",
-        "apiKeyEnv",
-        "credentialSecretName",
-      ],
-      properties: {
-        provider: {
-          enum: ["openrouter", "codex"],
-        },
-        apiKeyEnv: {
-          enum: ["OPENAI_API_KEY", "CHATGPT_ACCESS_TOKEN"],
-        },
-        thinkingLevel: {
-          enum: ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
-        },
-        catalogModel: { type: "string", minLength: 1 },
-        serviceTier: {
-          enum: ["priority"],
-        },
-      },
     });
     expect(z.toJSONSchema(piModelConfigV2Schema)).toMatchObject({
       required: [
@@ -650,95 +573,49 @@ describe("Rust type bindings", () => {
     expect(commitFileSchema).toEqual(requestFileSchema);
   });
 
-  it("keeps checkpoint policy override aligned with the runner policy schema", () => {
+  it("keeps completion output policy aligned with the runner policy schema", () => {
     const runnerPolicySchema = z.toJSONSchema(
       storageMountEntrySchema.shape.missingRootPolicy,
     );
-    const checkpointPolicySchema = z.toJSONSchema(
-      webhookCheckpointsContract.create.body.shape.artifactSnapshots.unwrap()
-        .element.shape.missingRootPolicy,
+    const completionPolicySchema = z.toJSONSchema(
+      runCompletionMetadataSchema.shape.artifactSnapshots.unwrap().element.shape
+        .missingRootPolicy,
     );
-
-    expect(checkpointPolicySchema).toEqual(runnerPolicySchema);
+    expect(completionPolicySchema).toEqual(runnerPolicySchema);
   });
 
-  it("reuses canonical checkpoint artifact and encoding schemas", () => {
-    const checkpointModule = "webhooks/agent/checkpoints";
-    const prepareHistoryModule = "webhooks/agent/checkpoints/prepare_history";
-    const artifactSchema =
-      webhookCheckpointsContract.create.body.shape.artifactSnapshots.unwrap()
-        .element;
-    const responseArtifactSchema =
-      webhookCheckpointsContract.create.responses[200].shape.artifacts.unwrap()
-        .element;
-    const requestEncodingSchema =
-      webhookCheckpointsPrepareHistoryContract.prepare.body.shape.encoding.unwrap();
-    const responseEncodingSchema =
-      webhookCheckpointsPrepareHistoryContract.prepare.responses[200].shape.encoding.unwrap();
-    const artifactBinding: RustTypeBinding | undefined = rustTypeBindings.find(
-      ({ rustModulePath, rustTypeName }) => {
-        return (
-          rustModulePath.join("/") === checkpointModule &&
-          rustTypeName === "ArtifactSnapshot"
-        );
+  it("reuses native history upload encoding and size schemas", () => {
+    const module = "webhooks/agent/session_history/prepare";
+    const bindings: readonly RustTypeBinding[] = rustTypeBindings.filter(
+      ({ rustModulePath }) => {
+        return rustModulePath.join("/") === module;
       },
     );
-    const checkpointRequestBinding: RustTypeBinding | undefined =
-      rustTypeBindings.find(({ rustModulePath, rustTypeName }) => {
-        return (
-          rustModulePath.join("/") === checkpointModule &&
-          rustTypeName === "Request"
-        );
-      });
-    const checkpointResponseBinding: RustTypeBinding | undefined =
-      rustTypeBindings.find(({ rustModulePath, rustTypeName }) => {
-        return (
-          rustModulePath.join("/") === checkpointModule &&
-          rustTypeName === "Response"
-        );
-      });
-    const encodingBinding: RustTypeBinding | undefined = rustTypeBindings.find(
-      ({ rustModulePath, rustTypeName }) => {
-        return (
-          rustModulePath.join("/") === prepareHistoryModule &&
-          rustTypeName === "SessionHistoryEncoding"
-        );
-      },
-    );
-    const prepareRequestBinding: RustTypeBinding | undefined =
-      rustTypeBindings.find(({ rustModulePath, rustTypeName }) => {
-        return (
-          rustModulePath.join("/") === prepareHistoryModule &&
-          rustTypeName === "Request"
-        );
-      });
-    const prepareResponseBinding: RustTypeBinding | undefined =
-      rustTypeBindings.find(({ rustModulePath, rustTypeName }) => {
-        return (
-          rustModulePath.join("/") === prepareHistoryModule &&
-          rustTypeName === "Response"
-        );
-      });
-
-    expect(responseArtifactSchema).toBe(artifactSchema);
-    expect(artifactBinding?.schema).toBe(artifactSchema);
-    expect(checkpointRequestBinding?.fieldTypeOverrides).toEqual({
-      artifactSnapshots: "Vec<ArtifactSnapshot>",
-    });
-    expect(checkpointResponseBinding?.fieldTypeOverrides).toEqual({
-      artifacts: "Vec<ArtifactSnapshot>",
-    });
-    expect(requestEncodingSchema).toBe(sessionHistoryEncodingSchema);
-    expect(responseEncodingSchema).toBe(sessionHistoryEncodingSchema);
-    expect(encodingBinding?.schema).toBe(sessionHistoryEncodingSchema);
-    expect(prepareRequestBinding?.fieldTypeOverrides).toEqual({
+    expect(
+      webhookSessionHistoryPrepareContract.prepare.body.shape.encoding.unwrap(),
+    ).toBe(sessionHistoryEncodingSchema);
+    expect(
+      webhookSessionHistoryPrepareContract.prepare.responses[200].shape.encoding.unwrap(),
+    ).toBe(sessionHistoryEncodingSchema);
+    expect(
+      bindings.find(({ rustTypeName }) => {
+        return rustTypeName === "SessionHistoryEncoding";
+      })?.schema,
+    ).toBe(sessionHistoryEncodingSchema);
+    expect(
+      bindings.find(({ rustTypeName }) => {
+        return rustTypeName === "Request";
+      })?.fieldTypeOverrides,
+    ).toEqual({
       rawSize: "u64",
       encodedSize: "u64",
       encoding: "SessionHistoryEncoding",
     });
-    expect(prepareResponseBinding?.fieldTypeOverrides).toEqual({
-      encoding: "SessionHistoryEncoding",
-    });
+    expect(
+      bindings.find(({ rustTypeName }) => {
+        return rustTypeName === "Response";
+      })?.fieldTypeOverrides,
+    ).toEqual({ encoding: "SessionHistoryEncoding" });
   });
 
   it("renders common JSON schema shapes", () => {

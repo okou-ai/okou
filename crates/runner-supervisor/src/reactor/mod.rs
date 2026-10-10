@@ -27,7 +27,7 @@
 //! - teardown drains heartbeat work and drops discovery before provider
 //!   shutdown.
 //!
-//! See `docs/runner-reactor-progress.md` for the shared-resource audit and
+//! See `docs/runner/runner-reactor-progress.md` for the shared-resource audit and
 //! cancellation/teardown ownership rules.
 
 use std::collections::BTreeMap;

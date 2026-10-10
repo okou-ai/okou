@@ -979,38 +979,34 @@ const claimInvitationCreation$ = command(
   ): Promise<UsagePackInvitationPurchaseRow | null> => {
     signal?.throwIfAborted();
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0276; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      const staleBefore = new Date(
-        nowDate().getTime() - RECONCILIATION_DELAY_MS,
-      );
-      const [claimed] = await tx
-        .update(usagePackInvitationPurchases)
-        .set({ status: "creating_invitation", updatedAt: nowDate() })
-        .where(
-          and(
-            eq(usagePackInvitationPurchases.id, purchaseId),
-            isNull(usagePackInvitationPurchases.clerkInvitationId),
-            isNull(usagePackInvitationPurchases.allocationId),
-            or(
-              eq(usagePackInvitationPurchases.status, "payment_succeeded"),
-              ...(allowRecovery
-                ? [
-                    and(
-                      eq(
-                        usagePackInvitationPurchases.status,
-                        "creating_invitation",
-                      ),
-                      lte(usagePackInvitationPurchases.updatedAt, staleBefore),
+    const staleBefore = new Date(nowDate().getTime() - RECONCILIATION_DELAY_MS);
+    const [claimed] = await db
+      .update(usagePackInvitationPurchases)
+      .set({ status: "creating_invitation", updatedAt: nowDate() })
+      .where(
+        and(
+          eq(usagePackInvitationPurchases.id, purchaseId),
+          isNull(usagePackInvitationPurchases.clerkInvitationId),
+          isNull(usagePackInvitationPurchases.allocationId),
+          or(
+            eq(usagePackInvitationPurchases.status, "payment_succeeded"),
+            ...(allowRecovery
+              ? [
+                  and(
+                    eq(
+                      usagePackInvitationPurchases.status,
+                      "creating_invitation",
                     ),
-                  ]
-                : []),
-            ),
+                    lte(usagePackInvitationPurchases.updatedAt, staleBefore),
+                  ),
+                ]
+              : []),
           ),
-        )
-        .returning();
-      return claimed ?? null;
-    });
+        ),
+      )
+      .returning();
+    signal?.throwIfAborted();
+    return claimed ?? null;
   },
 );
 
@@ -1294,12 +1290,10 @@ const finalizeRefund$ = command(
   ): Promise<void> => {
     signal?.throwIfAborted();
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0278; new non-billing transactions are prohibited.
-    await db.transaction(async (tx) => {
-      // Conditional transition first: only the claimed refund attempt that is
-      // still refunding completes; a lost or stale attempt is a no-op.
-      const at = nowDate();
-      const [refunded] = await tx
+    const at = nowDate();
+    // Only the winning refund transition retires its currently stored allocation.
+    const refundedPurchase = db.$with("refunded_purchase").as(
+      db
         .update(usagePackInvitationPurchases)
         .set({
           status: "refunded",
@@ -1319,17 +1313,14 @@ const finalizeRefund$ = command(
         )
         .returning({
           allocationId: usagePackInvitationPurchases.allocationId,
-        });
-      if (!refunded) {
-        return;
-      }
-      if (refunded.allocationId) {
-        await tx
-          .update(usagePackAllocations)
-          .set({ status: "inactive", updatedAt: at })
-          .where(eq(usagePackAllocations.id, refunded.allocationId));
-      }
-    });
+        }),
+    );
+    await db
+      .with(refundedPurchase)
+      .update(usagePackAllocations)
+      .set({ status: "inactive", updatedAt: at })
+      .from(refundedPurchase)
+      .where(eq(usagePackAllocations.id, refundedPurchase.allocationId));
   },
 );
 
@@ -2426,30 +2417,28 @@ const markLateAcceptanceForRefund$ = command(
   ): Promise<boolean> => {
     signal?.throwIfAborted();
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0282; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      // Conditional transition: only a still-acceptable purchase moves to
-      // refund_pending; anything else is a deterministic "not marked".
-      const [marked] = await tx
-        .update(usagePackInvitationPurchases)
-        .set({
-          status: "refund_pending",
-          failureReason: "invitation_accepted_after_period",
-          acceptedUserId: args.userId,
-          acceptedAt: args.acceptedAt,
-          updatedAt: nowDate(),
-        })
-        .where(
-          and(
-            eq(usagePackInvitationPurchases.id, candidate.id),
-            inArray(usagePackInvitationPurchases.status, [
-              ...ACCEPTABLE_INVITATION_PURCHASE_STATUSES,
-            ]),
-          ),
-        )
-        .returning({ id: usagePackInvitationPurchases.id });
-      return marked !== undefined;
-    });
+    // Conditional transition: only a still-acceptable purchase moves to
+    // refund_pending; anything else is a deterministic "not marked".
+    const [marked] = await db
+      .update(usagePackInvitationPurchases)
+      .set({
+        status: "refund_pending",
+        failureReason: "invitation_accepted_after_period",
+        acceptedUserId: args.userId,
+        acceptedAt: args.acceptedAt,
+        updatedAt: nowDate(),
+      })
+      .where(
+        and(
+          eq(usagePackInvitationPurchases.id, candidate.id),
+          inArray(usagePackInvitationPurchases.status, [
+            ...ACCEPTABLE_INVITATION_PURCHASE_STATUSES,
+          ]),
+        ),
+      )
+      .returning({ id: usagePackInvitationPurchases.id });
+    signal?.throwIfAborted();
+    return marked !== undefined;
   },
 );
 

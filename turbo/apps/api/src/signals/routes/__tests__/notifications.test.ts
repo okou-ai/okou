@@ -69,8 +69,8 @@ async function runningAgent(enabled = true) {
     displayName: "Mail notification agent",
     visibility: "private",
   });
-  if (enabled) {
-    await feature(actor, true);
+  if (!enabled) {
+    await feature(actor, false);
   }
   await runs.heartbeatRunner(runnerGroup);
   const run = await runs.createThreadRun(actor, {

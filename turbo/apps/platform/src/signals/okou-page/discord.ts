@@ -1,5 +1,7 @@
 import { command, computed, state } from "ccstate";
 import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
+import { discordOauthContract } from "@okouai/api-contracts/contracts/discord-oauth";
+import { i18n } from "../../i18n/index.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
@@ -7,6 +9,16 @@ import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { pageVersion$ } from "../page-signal.ts";
 import { setAblyInvalidationLoop$ } from "../realtime.ts";
+import { searchParams$ } from "../route.ts";
+import { resetSignal, waitLoopUntil, withCleanup } from "../utils.ts";
+
+export const discordAuthorizationFailed$ = computed((get) => {
+  return get(searchParams$).get("discord") === "error";
+});
+
+export const discordAuthorizationPending$ = computed((get) => {
+  return get(searchParams$).get("discord") === "pending";
+});
 
 const reloadVersion$ = state(0);
 
@@ -35,6 +47,99 @@ const refreshDiscordOrg$ = command(
     set(reloadDiscordOrg$);
     await get(discordOrgData$);
     signal.throwIfAborted();
+  },
+);
+
+export class DiscordPopupBlockedError extends Error {
+  constructor() {
+    super(
+      i18n.t(($) => {
+        return $.works.discord.popupBlocked;
+      }),
+    );
+    this.name = "DiscordPopupBlockedError";
+  }
+}
+
+const resetDiscordAuthorization$ = resetSignal();
+
+export const startDiscordAuthorization$ = command(
+  async (
+    { get, set },
+    flow: "install" | "connect",
+    guildId: string | null,
+    signal: AbortSignal,
+  ) => {
+    signal.throwIfAborted();
+    if (!get(featureSwitch$)[FeatureSwitchKey.DiscordIntegration]) {
+      return;
+    }
+    const flowSignal = set(resetDiscordAuthorization$, signal);
+    const standalone =
+      window.matchMedia?.("(display-mode: standalone)").matches ?? false;
+    // Preserve the click's browser activation before awaiting authenticated HTTP.
+    const popup = window.open(
+      "about:blank",
+      "_blank",
+      standalone ? undefined : "width=600,height=700",
+    );
+    if (!popup) {
+      throw new DiscordPopupBlockedError();
+    }
+    const closePopup = () => {
+      popup.close();
+    };
+    flowSignal.addEventListener("abort", closePopup, { once: true });
+    return await withCleanup(
+      (async () => {
+        const client = get(apiClient$)(discordOauthContract);
+        const result = await accept(
+          client.start({
+            body: { flow, ...(guildId ? { guildId } : {}) },
+            fetchOptions: { signal: flowSignal, credentials: "include" },
+          }),
+          [200],
+          flowSignal,
+        );
+        flowSignal.throwIfAborted();
+        // This proof stays only in this route-owned operation, never in browser
+        // storage, a redirect, postMessage, or an OAuth provider request.
+        const completionToken = result.body.completionToken;
+        const attemptState = new URL(
+          result.body.authorizationUrl,
+        ).searchParams.get("state");
+        if (!attemptState) {
+          throw new Error(
+            "Discord authorization did not return an attempt state",
+          );
+        }
+        popup.location.href = result.body.authorizationUrl;
+        await waitLoopUntil(
+          () => {
+            return popup.closed;
+          },
+          250,
+          flowSignal,
+          { retryTransientErrors: false, testIntervalMs: 10 },
+        );
+        flowSignal.throwIfAborted();
+        // Callback verification alone cannot bind an account. Complete under
+        // the current authenticated owner with the original browser's proof.
+        await accept(
+          client.complete({
+            body: { state: attemptState, completionToken },
+            fetchOptions: { signal: flowSignal, credentials: "include" },
+          }),
+          [200],
+          flowSignal,
+        );
+        await set(refreshDiscordOrg$, flowSignal);
+      })(),
+      () => {
+        flowSignal.removeEventListener("abort", closePopup);
+        closePopup();
+      },
+    );
   },
 );
 

@@ -118,87 +118,6 @@ pub mod runners {
             pub maintenance: Option<PiLaunchConfigMaintenance>,
         }
 
-        /// Model providers supported by the Pi runtime contract.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum PiModelConfigProvider {
-            /// OpenRouter provider.
-            #[serde(rename = "openrouter")]
-            Openrouter,
-            /// Codex provider.
-            #[serde(rename = "codex")]
-            Codex,
-        }
-
-        /// Thinking levels supported by Pi sessions.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum PiModelConfigThinkingLevel {
-            /// Disable model thinking.
-            #[serde(rename = "off")]
-            Off,
-            /// Minimal thinking.
-            #[serde(rename = "minimal")]
-            Minimal,
-            /// Low thinking.
-            #[serde(rename = "low")]
-            Low,
-            /// Medium thinking.
-            #[serde(rename = "medium")]
-            Medium,
-            /// High thinking.
-            #[serde(rename = "high")]
-            High,
-            /// Extra-high thinking.
-            #[serde(rename = "xhigh")]
-            Xhigh,
-            /// Maximum thinking.
-            #[serde(rename = "max")]
-            Max,
-        }
-
-        /// Provider request service tiers supported by the Pi runtime.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum PiModelConfigServiceTier {
-            /// OpenAI priority service tier.
-            #[serde(rename = "priority")]
-            Priority,
-        }
-
-        /// Environment variables supported for Pi provider credentials.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum PiModelConfigApiKeyEnv {
-            /// OpenAI-compatible API key.
-            #[serde(rename = "OPENAI_API_KEY")]
-            OPENAIAPIKEY,
-            /// ChatGPT access token.
-            #[serde(rename = "CHATGPT_ACCESS_TOKEN")]
-            CHATGPTACCESSTOKEN,
-        }
-
-        /// API-owned non-secret Pi model configuration.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct PiModelConfig {
-            /// Model provider selected for the Pi runtime.
-            pub provider: PiModelConfigProvider,
-            /// Base URL used for model requests.
-            pub base_url: String,
-            /// Provider model identifier sent with requests.
-            pub model: String,
-            /// Optional native Pi catalog model used only for trusted capabilities and limits.
-            #[serde(default, skip_serializing_if = "Option::is_none")]
-            pub catalog_model: Option<String>,
-            /// Explicit Pi thinking level. Legacy payloads omit this field and retain Pi's medium default.
-            #[serde(default, skip_serializing_if = "Option::is_none")]
-            pub thinking_level: Option<PiModelConfigThinkingLevel>,
-            /// Per-run provider request service tier. Legacy and standard payloads omit this field.
-            #[serde(default, skip_serializing_if = "Option::is_none")]
-            pub service_tier: Option<PiModelConfigServiceTier>,
-            /// Environment variable containing the provider key.
-            pub api_key_env: PiModelConfigApiKeyEnv,
-            /// API-owned credential secret backing the environment entry.
-            pub credential_secret_name: String,
-        }
-
         /// Native Pi request dialects supported by this generation.
         #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
         pub enum PiModelConfigV2Dialect {
@@ -1032,6 +951,22 @@ pub mod runners {
             pub generation: i64,
         }
 
+        /// Write-only OAuth authority for trusted ephemeral registration; never SDK, guest or log data.
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+        pub struct ResolveResponseResolvedTailscaleTailscale {
+            /// Bounded zeroizing OAuth client ID.
+            pub client_id: crate::SecretText<4096>,
+            /// Bounded zeroizing OAuth client secret.
+            pub client_secret: crate::SecretText<4096>,
+            /// Exact selected configuration UUID.
+            pub config_id: String,
+            /// Effective network generation.
+            pub generation: i64,
+            /// Bounded permitted registration tags.
+            pub tags: Vec<String>,
+        }
+
         /// Private JIT response. Never Debug, clone, serialize, persist or send to guest.
         pub enum ResolveResponse {
             /// Current authority not available; no secrets.
@@ -1085,6 +1020,23 @@ pub mod runners {
                 /// Private Access authority for the exact saved recipient.
                 access: ResolveResponseResolvedAccessAccess,
             },
+            /// Authorized SSH/network handoff; requires qualified native carrier.
+            ResolvedTailscale {
+                /// Current destination, private to Runner.
+                host: String,
+                /// Current destination port.
+                port: u64,
+                /// Current login identity.
+                username: String,
+                /// Current configuration generation.
+                generation: i64,
+                /// Existing pin, or first-use trust required.
+                learned_host_key: Option<ResolveResponseResolvedLearnedHostKey>,
+                /// SSH authentication after protected carrier and host proof.
+                authentication: ResolveResponseResolvedAccessAuthentication,
+                /// Private network authority, never guest data or an SSH login.
+                tailscale: ResolveResponseResolvedTailscaleTailscale,
+            },
         }
 
         impl<'de> serde::Deserialize<'de> for ResolveResponse {
@@ -1100,6 +1052,8 @@ pub mod runners {
                     ResolvedPassword,
                     #[serde(rename = "resolved_access")]
                     ResolvedAccess,
+                    #[serde(rename = "resolved_tailscale")]
+                    ResolvedTailscale,
                 }
                 #[derive(serde::Deserialize)]
                 #[serde(field_identifier)]
@@ -1126,6 +1080,8 @@ pub mod runners {
                     Authentication,
                     #[serde(rename = "access")]
                     Access,
+                    #[serde(rename = "tailscale")]
+                    Tailscale,
                 }
                 struct Visitor;
                 impl<'de> serde::de::Visitor<'de> for Visitor {
@@ -1153,6 +1109,7 @@ pub mod runners {
                         let mut authentication =
                             None::<ResolveResponseResolvedAccessAuthentication>;
                         let mut access = None::<ResolveResponseResolvedAccessAccess>;
+                        let mut tailscale = None::<ResolveResponseResolvedTailscaleTailscale>;
                         while let Some(field) = map.next_key::<Field>()? {
                             match field {
                                 Field::Outcome => {
@@ -1243,6 +1200,14 @@ pub mod runners {
                                     }
                                     access = Some(map.next_value()?);
                                 }
+                                Field::Tailscale => {
+                                    if tailscale.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    tailscale = Some(map.next_value()?);
+                                }
                             }
                         }
                         match (
@@ -1257,9 +1222,11 @@ pub mod runners {
                             password,
                             authentication,
                             access,
+                            tailscale,
                         ) {
                             (
                                 Some(Kind::Unavailable),
+                                None,
                                 None,
                                 None,
                                 None,
@@ -1280,6 +1247,7 @@ pub mod runners {
                                 Some(learned_host_key),
                                 Some(private_key),
                                 Some(passphrase),
+                                None,
                                 None,
                                 None,
                                 None,
@@ -1304,6 +1272,7 @@ pub mod runners {
                                 Some(password),
                                 None,
                                 None,
+                                None,
                             ) => Ok(ResolveResponse::ResolvedPassword {
                                 host,
                                 port,
@@ -1324,6 +1293,7 @@ pub mod runners {
                                 None,
                                 Some(authentication),
                                 Some(access),
+                                None,
                             ) => Ok(ResolveResponse::ResolvedAccess {
                                 host,
                                 port,
@@ -1332,6 +1302,28 @@ pub mod runners {
                                 learned_host_key,
                                 authentication,
                                 access,
+                            }),
+                            (
+                                Some(Kind::ResolvedTailscale),
+                                Some(host),
+                                Some(port),
+                                Some(username),
+                                Some(generation),
+                                Some(learned_host_key),
+                                None,
+                                None,
+                                None,
+                                Some(authentication),
+                                None,
+                                Some(tailscale),
+                            ) => Ok(ResolveResponse::ResolvedTailscale {
+                                host,
+                                port,
+                                username,
+                                generation,
+                                learned_host_key,
+                                authentication,
+                                tailscale,
                             }),
                             _ => Err(serde::de::Error::custom("invalid authority outcome fields")),
                         }
@@ -2507,138 +2499,6 @@ pub mod runners {
 pub mod webhooks {
     /// Agent webhook DTOs exchanged between sandboxes and the API.
     pub mod agent {
-        /// DTOs for creating recoverable agent checkpoints.
-        pub mod checkpoints {
-            /// Artifact version captured by an agent checkpoint.
-            #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            pub struct ArtifactSnapshot {
-                /// User-facing artifact name referenced by the run.
-                pub name: String,
-                /// Artifact version selected for the checkpoint.
-                pub version: String,
-                /// Guest filesystem path where the artifact is mounted.
-                pub mount_path: String,
-                /// Optional policy retained when the artifact mount root is missing.
-                #[serde(default, skip_serializing_if = "Option::is_none")]
-                pub missing_root_policy: Option<
-                    crate::generated::types::runners::storage::ArtifactEntryMissingRootPolicy,
-                >,
-            }
-
-            /// Reason a checkpoint intentionally omits resumable CLI agent session history.
-            #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-            pub enum RequestCliAgentSessionHistoryDisposition {
-                /// The native history was oversized and had no safe bounded generation.
-                #[serde(rename = "discarded_oversized")]
-                DiscardedOversized,
-                /// The native history was missing, unsafe, ambiguous, or otherwise unusable.
-                #[serde(rename = "unavailable")]
-                Unavailable,
-            }
-
-            /// Volume versions captured by an agent checkpoint.
-            #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            pub struct RequestVolumeVersionsSnapshot {
-                /// Volume names mapped to their captured versions.
-                pub versions: std::collections::BTreeMap<String, String>,
-            }
-
-            /// Request body for creating a recoverable agent checkpoint.
-            #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            pub struct Request {
-                /// Agent run identifier bound to the sandbox token.
-                pub run_id: String,
-                /// CLI agent implementation that produced the session.
-                pub cli_agent_type: String,
-                /// CLI agent session identifier being checkpointed.
-                pub cli_agent_session_id: String,
-                /// Optional SHA-256 hash of the uploaded CLI agent session history.
-                #[serde(default, skip_serializing_if = "Option::is_none")]
-                pub cli_agent_session_history_hash: Option<String>,
-                /// Optional reason resumable CLI agent session history was intentionally omitted.
-                #[serde(default, skip_serializing_if = "Option::is_none")]
-                pub cli_agent_session_history_disposition:
-                    Option<RequestCliAgentSessionHistoryDisposition>,
-                /// Optional artifact versions captured by the checkpoint.
-                #[serde(default, skip_serializing_if = "Option::is_none")]
-                pub artifact_snapshots: Option<Vec<ArtifactSnapshot>>,
-                /// Optional volume versions captured by the checkpoint.
-                #[serde(default, skip_serializing_if = "Option::is_none")]
-                pub volume_versions_snapshot: Option<RequestVolumeVersionsSnapshot>,
-            }
-
-            /// Response body returned after creating an agent checkpoint.
-            #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            pub struct Response {
-                /// Created checkpoint identifier.
-                pub checkpoint_id: String,
-                /// Agent session associated with the checkpoint.
-                pub agent_session_id: String,
-                /// Conversation captured by the checkpoint.
-                pub conversation_id: String,
-                /// Optional artifact versions captured by the checkpoint.
-                #[serde(default, skip_serializing_if = "Option::is_none")]
-                pub artifacts: Option<Vec<ArtifactSnapshot>>,
-                /// Optional volume versions captured by the checkpoint.
-                #[serde(default, skip_serializing_if = "Option::is_none")]
-                pub volumes: Option<std::collections::BTreeMap<String, String>>,
-            }
-
-            /// DTOs for preparing direct session-history uploads.
-            pub mod prepare_history {
-                /// Request body for preparing a session-history upload.
-                #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-                #[serde(rename_all = "camelCase")]
-                pub struct Request {
-                    /// Agent run identifier bound to the sandbox token.
-                    pub run_id: String,
-                    /// SHA-256 hash of the uncompressed session history.
-                    pub hash: String,
-                    /// Uncompressed session-history size in bytes.
-                    pub raw_size: u64,
-                    /// Encoded session-history size in bytes.
-                    pub encoded_size: u64,
-                    /// Optional encoding used for the uploaded bytes.
-                    #[serde(default, skip_serializing_if = "Option::is_none")]
-                    pub encoding: Option<SessionHistoryEncoding>,
-                }
-
-                /// Response body returned when preparing session history.
-                #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-                #[serde(rename_all = "camelCase")]
-                pub struct Response {
-                    /// Optional presigned URL for uploading new content.
-                    #[serde(default, skip_serializing_if = "Option::is_none")]
-                    pub presigned_url: Option<String>,
-                    /// Whether the requested session history already exists.
-                    pub existing: bool,
-                    /// Optional encoding of the persisted session history.
-                    #[serde(default, skip_serializing_if = "Option::is_none")]
-                    pub encoding: Option<SessionHistoryEncoding>,
-                }
-
-                /// Encoding used for persisted CLI agent session history.
-                #[derive(
-                    Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize,
-                )]
-                pub enum SessionHistoryEncoding {
-                    /// Uncompressed session history bytes.
-                    #[serde(rename = "identity")]
-                    Identity,
-                    /// Gzip-compressed session history bytes.
-                    #[serde(rename = "gzip")]
-                    Gzip,
-                    /// Zstandard-compressed session history bytes.
-                    #[serde(rename = "zstd")]
-                    Zstd,
-                }
-            }
-        }
-
         /// DTOs for atomically completing agent runs.
         pub mod complete {
             /// Outcome of the sandbox reuse decision.
@@ -2773,74 +2633,6 @@ pub mod webhooks {
                 pub volume_versions_snapshot: Option<RequestCompletionVolumeVersionsSnapshot>,
             }
 
-            /// Reason a final checkpoint intentionally omits resumable CLI agent session history.
-            #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-            pub enum RequestCheckpointCliAgentSessionHistoryDisposition {
-                /// The native history exceeded the bounded checkpoint limit.
-                #[serde(rename = "discarded_oversized")]
-                DiscardedOversized,
-                /// The native history was unavailable or unusable.
-                #[serde(rename = "unavailable")]
-                Unavailable,
-            }
-
-            /// Policy used when a final checkpoint artifact root is missing.
-            #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-            pub enum RequestCheckpointArtifactSnapshotMissingRootPolicy {
-                /// Treat a missing artifact root as an error.
-                #[serde(rename = "fail")]
-                Fail,
-                /// Preserve the parent artifact version when the root is missing.
-                #[serde(rename = "preserveParentVersion")]
-                PreserveParentVersion,
-            }
-
-            /// Artifact version captured by a final checkpoint.
-            #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            pub struct RequestCheckpointArtifactSnapshot {
-                /// User-facing artifact name referenced by the run.
-                pub name: String,
-                /// Artifact version selected for the checkpoint.
-                pub version: String,
-                /// Guest filesystem path where the artifact is mounted.
-                pub mount_path: String,
-                /// Optional policy retained when the artifact mount root is missing.
-                #[serde(default, skip_serializing_if = "Option::is_none")]
-                pub missing_root_policy: Option<RequestCheckpointArtifactSnapshotMissingRootPolicy>,
-            }
-
-            /// Volume versions captured by a final checkpoint.
-            #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            pub struct RequestCheckpointVolumeVersionsSnapshot {
-                /// Volume names mapped to their captured versions.
-                pub versions: std::collections::BTreeMap<String, String>,
-            }
-
-            /// Final checkpoint metadata included with completion.
-            #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            pub struct RequestCheckpoint {
-                /// CLI agent implementation that produced the session.
-                pub cli_agent_type: String,
-                /// CLI agent session identifier being checkpointed.
-                pub cli_agent_session_id: String,
-                /// Optional SHA-256 hash of uploaded CLI agent session history.
-                #[serde(default, skip_serializing_if = "Option::is_none")]
-                pub cli_agent_session_history_hash: Option<String>,
-                /// Optional reason resumable session history was omitted.
-                #[serde(default, skip_serializing_if = "Option::is_none")]
-                pub cli_agent_session_history_disposition:
-                    Option<RequestCheckpointCliAgentSessionHistoryDisposition>,
-                /// Optional artifact versions captured by the checkpoint.
-                #[serde(default, skip_serializing_if = "Option::is_none")]
-                pub artifact_snapshots: Option<Vec<RequestCheckpointArtifactSnapshot>>,
-                /// Optional volume versions captured by the checkpoint.
-                #[serde(default, skip_serializing_if = "Option::is_none")]
-                pub volume_versions_snapshot: Option<RequestCheckpointVolumeVersionsSnapshot>,
-            }
-
             /// Request body for completing an agent run.
             #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
             #[serde(rename_all = "camelCase")]
@@ -2870,9 +2662,6 @@ pub mod webhooks {
                 /// Native history and published file outputs saved with completion.
                 #[serde(default, skip_serializing_if = "Option::is_none")]
                 pub completion: Option<RequestCompletion>,
-                /// Legacy Guest metadata adapter; remove after deployed Guests drain.
-                #[serde(default, skip_serializing_if = "Option::is_none")]
-                pub checkpoint: Option<RequestCheckpoint>,
             }
 
             /// Known failure reason emitted by current Rust producers.

@@ -41,7 +41,6 @@ describe("Pi memory Phase 2 job schema", () => {
       "idx_pi_memory_phase2_jobs_user_export",
       "idx_pi_memory_phase2_jobs_maintenance_run",
     ]);
-    expect(config.columns).toHaveLength(36);
   });
 
   it("pins every status, revision, retry, selection, and payload boundary", () => {

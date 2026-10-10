@@ -55,6 +55,12 @@ export const discordHistoryMessageSchema = z.object({
   }),
   timestamp: z.string(),
   url: z.string().url(),
+  replyTo: z
+    .object({
+      messageId: discordSnowflakeSchema,
+      channelId: discordSnowflakeSchema.optional(),
+    })
+    .optional(),
   attachments: z.array(
     z.object({
       id: discordSnowflakeSchema,

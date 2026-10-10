@@ -194,7 +194,10 @@ impl Authority {
             )
             .await?;
         let (host, port, username, generation, learned_host_key, auth, transport) = match response {
-            ResolveResponse::Unavailable => return Err(FailureReason::Unavailable),
+            ResolveResponse::Unavailable | ResolveResponse::ResolvedTailscale { .. } => {
+                // No qualified private carrier in this foundation PR. Never infer Direct.
+                return Err(FailureReason::Unavailable);
+            }
             ResolveResponse::ResolvedAccess {
                 host,
                 port,

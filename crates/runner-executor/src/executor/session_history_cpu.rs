@@ -1511,13 +1511,44 @@ mod tests {
     use super::*;
 
     fn raw_job(history: Vec<u8>, framework: EffectiveCliFramework) -> SessionHistoryCpuJob {
+        let expected_raw_size = history.len() as u64;
+        let expected_hash = hex::encode(Sha256::digest(&history));
         SessionHistoryCpuJob::raw(
             "sess-123".into(),
-            history.clone(),
-            history.len() as u64,
-            hex::encode(Sha256::digest(&history)),
+            history,
+            expected_raw_size,
+            expected_hash,
             framework,
         )
+    }
+
+    #[test]
+    fn owned_raw_job_fixture_preserves_payload_and_validation_metadata() {
+        for history in [Vec::new(), b"abc".to_vec(), b"\0\xffraw\r\n".to_vec()] {
+            let expected_hash = hex::encode(Sha256::digest(&history));
+            for framework in [
+                EffectiveCliFramework::ClaudeCode,
+                EffectiveCliFramework::Codex,
+            ] {
+                let job = raw_job(history.clone(), framework);
+                let SessionHistoryCpuJobKind::Raw {
+                    cli_agent_session_id,
+                    bytes,
+                    expected_raw_size,
+                    expected_hash: actual_hash,
+                    framework: actual_framework,
+                } = job.kind
+                else {
+                    panic!("raw fixture must select a raw job");
+                };
+                assert_eq!(cli_agent_session_id, "sess-123");
+                assert_eq!(bytes, history);
+                assert_eq!(expected_raw_size, history.len() as u64);
+                assert_eq!(actual_hash, expected_hash);
+                assert_eq!(actual_framework, framework);
+                assert!(job.prefix_attribution.is_none());
+            }
+        }
     }
 
     fn codex_zstd_job(history: &[u8]) -> SessionHistoryCpuJob {

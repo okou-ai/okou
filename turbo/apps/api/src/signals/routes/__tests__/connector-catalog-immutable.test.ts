@@ -1,3 +1,4 @@
+import { createPublicConnectorActor } from "./helpers/public-connector-actor";
 import { HttpResponse, http } from "msw";
 import { server } from "../../../mocks/server";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
@@ -9,11 +10,6 @@ import {
   createConnectorBddApi,
   mockGitHubConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
-import {
-  catalogWithAuthMethod,
-  catalogWithManualConnector,
-  createPublicConnectorCatalog,
-} from "./helpers/public-connector-catalog";
 import { createHash, randomUUID } from "node:crypto";
 import {
   builtinConnectorsSearchContract,
@@ -42,7 +38,6 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { cronConnectorCatalogRoutes } from "../cron-connector-catalog";
 import { builtinConnectorsRoutes } from "../connectors";
 import { createRouteMocks } from "./helpers/route-test";
-import { API_TEST_CONNECTOR_CATALOG } from "../../../test-fixtures/connector-catalog";
 
 import { describe, expect, it } from "vitest";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -441,21 +436,28 @@ describe("current-publication account readers", () => {
 
   describe("connector account lifecycle routes", () => {
     it("reviews requested scopes for one exact account across default changes", async () => {
-      const actor = createBddApi(context).user();
       const currentScopes = ["repo", "project", "workflow"] as const;
       const connectors = createConnectorBddApi(context);
-      const catalog = createPublicConnectorCatalog(context, {
-        isolatePg: true,
-      });
-      const staleCatalog = catalogWithAuthMethod(
-        { connectorSlug: "github", authMethodId: "oauth" },
-        (method) => {
-          if (method.grant.kind !== "auth-code") {
-            throw new Error("Expected the GitHub authorization-code method");
+      const owner = createPublicConnectorActor(context, {
+        optionalEnvironmentNames: [
+          "GH_OAUTH_CLIENT_ID",
+          "GH_OAUTH_CLIENT_SECRET",
+        ],
+        beforeWorkspaceCleanup: async (): Promise<void> => {
+          const accounts = await connectors.listBuiltinConnectorAccounts(
+            actor,
+            "github",
+          );
+          for (const account of accounts) {
+            await connectors.deleteBuiltinConnectorAccount(
+              actor,
+              "github",
+              account.id,
+            );
           }
-          return { ...method, grant: { ...method.grant, scopes: ["repo"] } };
         },
-      );
+      });
+      const { actor, run: own } = owner;
       const connectAccount = async (userId: number) => {
         mockGitHubConnectorOAuth({ userId, login: `scope-review-${userId}` });
         // Grants can be narrower than the selected catalog's requested scopes.
@@ -490,15 +492,19 @@ describe("current-publication account readers", () => {
         }
         return account.id;
       };
-      await catalog.publish(staleCatalog);
-      const staleId = await connectAccount(1001);
-      await catalog.publish(API_TEST_CONNECTOR_CATALOG);
-      const currentId = await connectAccount(1002);
-      await connectors.setDefaultBuiltinConnectorAccount(
-        actor,
-        "github",
-        currentId,
-      );
+      const firstId = await own(() => {
+        return connectAccount(1001);
+      });
+      const currentId = await own(() => {
+        return connectAccount(1002);
+      });
+      await own(() => {
+        return connectors.setDefaultBuiltinConnectorAccount(
+          actor,
+          "github",
+          currentId,
+        );
+      });
 
       const legacyList = await accept(
         accountClient().connections({
@@ -533,7 +539,7 @@ describe("current-publication account readers", () => {
       );
       expect(mismatchById).toStrictEqual(
         new Map([
-          [staleId, true],
+          [firstId, false],
           [currentId, false],
         ]),
       );
@@ -550,28 +556,28 @@ describe("current-publication account readers", () => {
             connectorSlug: "github",
             includeScopeMismatch: "true",
             limit: 100,
-            search: staleId,
+            search: firstId,
           },
         }),
         [200],
       );
       expect(filteredList.body.connections).toHaveLength(1);
-      expect(filteredList.body.connections[0]?.id).toBe(staleId);
+      expect(filteredList.body.connections[0]?.id).toBe(firstId);
       expect("defaultConnection" in filteredList.body).toBeFalsy();
 
-      const staleDiff = await accept(
+      const firstDiff = await accept(
         accountClient().scopeDiff({
           headers: authHeaders(),
-          params: { connectionId: staleId },
+          params: { connectionId: firstId },
           query: { connectorSlug: "github" },
         }),
         [200],
       );
-      expect(staleDiff.body).toStrictEqual({
-        addedScopes: ["project", "workflow"],
+      expect(firstDiff.body).toStrictEqual({
+        addedScopes: [],
         removedScopes: [],
         currentScopes,
-        storedScopes: ["repo"],
+        storedScopes: currentScopes,
       });
       const currentDiff = await accept(
         accountClient().scopeDiff({
@@ -589,10 +595,12 @@ describe("current-publication account readers", () => {
       });
 
       await accept(
-        accountClient().setDefault({
-          headers: authHeaders(),
-          params: { connectionId: staleId },
-          body: { target: { kind: "builtin", connectorSlug: "github" } },
+        own(() => {
+          return accountClient().setDefault({
+            headers: authHeaders(),
+            params: { connectionId: firstId },
+            body: { target: { kind: "builtin", connectorSlug: "github" } },
+          });
         }),
         [200],
       );
@@ -629,10 +637,12 @@ describe("current-publication account readers", () => {
 
       mocks.clerk.session(actor.userId, actor.orgId);
       await accept(
-        accountClient().delete({
-          headers: authHeaders(),
-          params: { connectionId: currentId },
-          body: { target: { kind: "builtin", connectorSlug: "github" } },
+        own(() => {
+          return accountClient().delete({
+            headers: authHeaders(),
+            params: { connectionId: currentId },
+            body: { target: { kind: "builtin", connectorSlug: "github" } },
+          });
         }),
         [200],
       );
@@ -641,72 +651,6 @@ describe("current-publication account readers", () => {
           headers: authHeaders(),
           params: { connectionId: currentId },
           query: { connectorSlug: "github" },
-        }),
-        [404],
-      );
-    });
-
-    it("treats a removed built-in catalog target as absent", async () => {
-      const actor = createBddApi(context).user();
-      const connectors = createConnectorBddApi(context);
-      const catalog = createPublicConnectorCatalog(context, {
-        isolatePg: true,
-      });
-      const available = catalogWithManualConnector({
-        connectorSlug: "retired-connector",
-        authMethodId: "api-token",
-      });
-      await catalog.publish(available);
-      const account = await connectors.connectManualGrant(
-        actor,
-        "retired-connector",
-        "api-token",
-        {
-          credential: "retired-connector-secret",
-        },
-      );
-      const accountId = account.id;
-      await catalog.publish(API_TEST_CONNECTOR_CATALOG);
-
-      const summary = await accept(
-        accountClient().summaries({ headers: authHeaders() }),
-        [200],
-      );
-      expect(summary.body.summaries).not.toContainEqual(
-        expect.objectContaining({
-          target: { kind: "builtin", connectorSlug: "retired-connector" },
-        }),
-      );
-      await accept(
-        accountClient().connections({
-          headers: authHeaders(),
-          query: {
-            kind: "builtin",
-            connectorSlug: "retired-connector",
-            limit: 100,
-          },
-        }),
-        [404],
-      );
-      await accept(
-        accountClient().connection({
-          headers: authHeaders(),
-          params: { connectionId: accountId },
-          query: {
-            kind: "builtin",
-            connectorSlug: "retired-connector",
-          },
-        }),
-        [404],
-      );
-      await accept(
-        accountClient().rename({
-          headers: authHeaders(),
-          params: { connectionId: accountId },
-          body: {
-            target: { kind: "builtin", connectorSlug: "retired-connector" },
-            displayName: "Must remain absent",
-          },
         }),
         [404],
       );

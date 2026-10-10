@@ -2018,11 +2018,17 @@ mod tests {
             "piSessionId": "22222222-2222-4222-8222-222222222222",
             "piLaunchConfig": { "schemaVersion": 2 },
             "piModelConfig": {
+                "schemaVersion": 5,
+                "dialect": "openai-completions",
+                "transport": "sse",
                 "provider": "openrouter",
                 "baseUrl": "https://openrouter.ai/api/v1",
                 "model": "openai/gpt-6-luna",
-                "apiKeyEnv": "OPENAI_API_KEY",
-                "credentialSecretName": "OPENROUTER_API_KEY"
+                "credentialBindings": [{
+                    "kind": "api-key",
+                    "environment": "OPENAI_API_KEY",
+                    "secretName": "OPENROUTER_API_KEY"
+                }]
             },
             "platformEnvironment": {},
             "connectorRuntimeTargets": []

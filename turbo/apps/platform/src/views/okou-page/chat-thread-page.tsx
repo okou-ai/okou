@@ -268,7 +268,10 @@ import type {
   ChatEvent,
 } from "../../signals/chat-page/chat-event-types.ts";
 import { optimisticEventIds$ } from "../../signals/chat-page/optimistic-chat-events.ts";
-import { AUTO_RUN_MODEL, sameSelectedModel } from "@okouai/core/auto-run-model";
+import {
+  AUTO_SELECTED_MODEL,
+  sameSelectedModel,
+} from "@okouai/core/auto-run-model";
 import type { ChatRunModelSelection } from "../../signals/chat-page/chat-event-state.ts";
 import type { AgentReferenceSignals } from "../../signals/chat-page/agent-reference-signals.ts";
 import type { AssistantErrorRecovery } from "../../signals/chat-page/assistant-error-recovery.ts";
@@ -3334,9 +3337,9 @@ function ChatThreadNextRunModelNotice({
     return withChatScrollLayout(null);
   }
 
-  // Runs record Auto under its internal run model.
+  // Selected identity is separate from a Run's immutable captured runtime.
   const selectedRunSelection: ChatRunModelSelection = {
-    selectedModel: selectedSelection.selectedModel ?? AUTO_RUN_MODEL,
+    selectedModel: selectedSelection.selectedModel ?? AUTO_SELECTED_MODEL,
     ...(selectedSelection.codexServiceTier === "fast"
       ? { serviceTier: "priority" as const }
       : {}),
@@ -4959,7 +4962,7 @@ function InsufficientCreditsCard() {
 
   // Credits arriving while the card is on screen replaces this copy and the
   // action inside the element below, rather than swapping the element itself:
-  // `docs/chat-cards.md` keeps the mounted card's box in layout through every
+  // `docs/chat.md#chat-cards` keeps the mounted card's box in layout through every
   // asynchronous state change.
   const { headline, helper } = hasAvailableCredits
     ? creditsAvailableCopy()
@@ -5295,7 +5298,7 @@ function AssistantRecoveryActions({
 
 /**
  * The contents of one error card, chosen by the caller and handed to the single
- * `AssistantErrorCard` element it keeps mounted. `docs/chat-cards.md` requires
+ * `AssistantErrorCard` element it keeps mounted. `docs/chat.md#chat-cards` requires
  * the sized element itself to survive every asynchronous state change: the
  * failure-recovery classification lands after the transcript has already
  * scrolled, and replacing the card component at that moment removes its box

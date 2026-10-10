@@ -3,7 +3,7 @@ import {
   modelCatalogContract,
 } from "@okouai/api-contracts/contracts/model-catalog";
 import {
-  AUTO_RUN_MODEL,
+  AUTO_SELECTED_MODEL,
   AUTO_RUN_PROVIDER,
   AUTO_RUN_UPSTREAM_MODEL,
 } from "@okouai/core/auto-run-model";
@@ -33,17 +33,17 @@ const getModelCatalogInner$ = command(async ({ get }, signal: AbortSignal) => {
     body: {
       models: [
         {
-          model: AUTO_RUN_MODEL,
+          model: AUTO_SELECTED_MODEL,
           displayName: "Auto",
           sortOrder: 0,
           replacedBy: null,
-          resolvedModel: AUTO_RUN_MODEL,
+          resolvedModel: AUTO_SELECTED_MODEL,
           builtInOnRestrictedPlans: true,
           piRouteClass: "gpt-codex" as const,
         },
         ...catalog.models
           .filter((row) => {
-            return row.model !== AUTO_RUN_MODEL;
+            return row.model !== AUTO_SELECTED_MODEL;
           })
           .map((row) => {
             const resolution = resolveCatalogModel(catalog, row.model);
@@ -67,7 +67,7 @@ const getModelCatalogInner$ = command(async ({ get }, signal: AbortSignal) => {
       ],
       routes: [
         {
-          model: AUTO_RUN_MODEL,
+          model: AUTO_SELECTED_MODEL,
           providerType: "built-in",
           concreteProviderType: AUTO_RUN_PROVIDER,
           subscriptionType: null,
@@ -89,7 +89,7 @@ const getModelCatalogInner$ = command(async ({ get }, signal: AbortSignal) => {
           },
         ),
       ],
-      systemDefaultModel: AUTO_RUN_MODEL,
+      systemDefaultModel: AUTO_SELECTED_MODEL,
     },
   };
 });

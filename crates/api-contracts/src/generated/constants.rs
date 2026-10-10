@@ -131,9 +131,6 @@ pub mod runners {
     /// Additive Pi generation with dialect-constrained request tiers.
     pub const PI_MODEL_CONFIG_DIALECT_TIER_GENERATION: u32 = 3;
 
-    /// Legacy unversioned Pi model configuration generation.
-    pub const PI_MODEL_CONFIG_LEGACY_GENERATION: u32 = 1;
-
     /// Maximum resume session history blob size accepted by the API, runner, and guest verifier.
     /// Rust and TypeScript components use this shared contract value when validating resume history refs, downloads, and idle-reuse verification.
     pub const RESUME_SESSION_HISTORY_MAX_BYTES: u64 = 134217728;

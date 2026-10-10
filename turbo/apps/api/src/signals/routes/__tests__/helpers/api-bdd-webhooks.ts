@@ -4,7 +4,6 @@ import { emailInboundContract } from "@okouai/api-contracts/contracts/email";
 import {
   webhookBuiltInGenerationFalContract,
   runCompletionMetadataSchema,
-  webhookCheckpointsPrepareHistoryContract,
   webhookSessionHistoryPrepareContract,
   webhookClerkContract,
   webhookCompleteContract,
@@ -61,8 +60,8 @@ type AgentCompleteBody = z.infer<
 type AgentRunOutputsBody = z.infer<typeof runCompletionMetadataSchema> & {
   readonly runId: string;
 };
-type AgentCheckpointPrepareHistoryBody = z.infer<
-  (typeof webhookCheckpointsPrepareHistoryContract.prepare)["body"]
+type AgentSessionHistoryPrepareBody = z.infer<
+  (typeof webhookSessionHistoryPrepareContract.prepare)["body"]
 >;
 type AgentHeartbeatBody = z.infer<
   (typeof webhookHeartbeatContract.send)["body"]
@@ -274,24 +273,44 @@ export function createWebhookCallbackApi(context: TestContext) {
     async postStripeEvent(
       event: unknown,
       statuses: readonly (200 | 500)[],
+      run?: <T>(operation: () => Promise<T>) => Promise<T>,
     ): Promise<StripeWebhookResponse> {
-      context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
-      const response = await createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      }).request("/api/webhooks/stripe", {
-        method: "POST",
-        headers: { "stripe-signature": "t=1,v1=bdd" },
-        body: serializedContractBody(event),
-      });
-      const body = await parseRawResponseBody(response);
-      const status = response.status;
-      if ((status !== 200 && status !== 500) || !statuses.includes(status)) {
-        throw new Error(
-          `Expected Stripe webhook status in [${statuses.join(", ")}], received ${status}: ${JSON.stringify(body)}`,
+      const bodyText = serializedContractBody(event);
+      if (run) {
+        let consumed = false;
+        context.mocks.stripe.webhooks.constructEvent.mockImplementation(
+          (payload) => {
+            if (consumed || String(payload) !== bodyText) {
+              throw new Error(
+                "Unexpected owned Stripe webhook body or duplicate verification",
+              );
+            }
+            consumed = true;
+            return event;
+          },
         );
+      } else {
+        context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
       }
-      return { status, body };
+      const execute = async (): Promise<StripeWebhookResponse> => {
+        const response = await createApp({
+          signal: context.signal,
+          routes: TEST_APP_ROUTES,
+        }).request("/api/webhooks/stripe", {
+          method: "POST",
+          headers: { "stripe-signature": "t=1,v1=bdd" },
+          body: bodyText,
+        });
+        const body = await parseRawResponseBody(response);
+        const status = response.status;
+        if ((status !== 200 && status !== 500) || !statuses.includes(status)) {
+          throw new Error(
+            `Expected Stripe webhook status in [${statuses.join(", ")}], received ${status}: ${JSON.stringify(body)}`,
+          );
+        }
+        return { status, body };
+      };
+      return await (run ? run(execute) : execute());
     },
 
     acceptNextStripeWebhookEvent(event: unknown): void {
@@ -481,8 +500,7 @@ export function createWebhookCallbackApi(context: TestContext) {
       signal?: AbortSignal,
       usagePricingResolution?: UsagePricingResolution,
     ) {
-      const historyHash = (body.completion ?? body.checkpoint)
-        ?.cliAgentSessionHistoryHash;
+      const historyHash = body.completion?.cliAgentSessionHistoryHash;
       if (historyHash !== undefined) {
         const sessionHistoryBlob = registerKnownSessionHistoryBlob(
           context,
@@ -492,9 +510,7 @@ export function createWebhookCallbackApi(context: TestContext) {
         if (sessionHistoryBlob && statuses.includes(200)) {
           await accept(
             setupApp({ context, routes: webhooksAgentSessionHistoryRoutes })(
-              body.completion
-                ? webhookSessionHistoryPrepareContract
-                : webhookCheckpointsPrepareHistoryContract,
+              webhookSessionHistoryPrepareContract,
             ).prepare({
               headers,
               body: {
@@ -569,14 +585,14 @@ export function createWebhookCallbackApi(context: TestContext) {
       );
     },
 
-    async requestAgentCheckpointPrepareHistory(
-      body: AgentCheckpointPrepareHistoryBody,
+    async requestAgentSessionHistoryPrepare(
+      body: AgentSessionHistoryPrepareBody,
       headers: SandboxWebhookHeaders,
       statuses: readonly (200 | 400 | 401 | 404 | 500)[],
     ) {
       return await accept(
         setupApp({ context, routes: webhooksAgentSessionHistoryRoutes })(
-          webhookCheckpointsPrepareHistoryContract,
+          webhookSessionHistoryPrepareContract,
         ).prepare({
           headers,
           body,
@@ -585,17 +601,17 @@ export function createWebhookCallbackApi(context: TestContext) {
       );
     },
 
-    async requestAgentCheckpointPrepareHistoryUnchecked(
+    async requestAgentSessionHistoryPrepareUnchecked(
       body: unknown,
       headers: SandboxWebhookHeaders,
       statuses: readonly (400 | 401 | 404 | 500)[],
     ) {
       return await accept(
         setupApp({ context, routes: webhooksAgentSessionHistoryRoutes })(
-          webhookCheckpointsPrepareHistoryContract,
+          webhookSessionHistoryPrepareContract,
         ).prepare({
           headers,
-          body: body as AgentCheckpointPrepareHistoryBody,
+          body: body as AgentSessionHistoryPrepareBody,
         }),
         statuses,
       );

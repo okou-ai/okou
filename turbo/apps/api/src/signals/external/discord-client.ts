@@ -1,15 +1,16 @@
 import { z } from "zod";
+import { discordSnowflakeSchema } from "@okouai/api-contracts/contracts/integrations-discord-read";
 import {
   discordApplicationSchema,
   type DiscordApplication,
 } from "@okouai/api-contracts/contracts/discord-application";
-
 import { safeJsonParse, settle } from "../utils";
+
+export { discordSnowflakeSchema };
 
 const DISCORD_API_ORIGIN = "https://discord.com/api/v10";
 const REQUEST_TIMEOUT_MS = 15_000;
 
-export const discordSnowflakeSchema = z.string().regex(/^[1-9]\d{0,19}$/u);
 const permissionsSchema = z.string().regex(/^\d+$/u);
 
 export const discordUserSchema = z.object({
@@ -84,6 +85,13 @@ export const discordAttachmentSchema = z.object({
   description: z.string().optional(),
 });
 
+export const discordMessageReferenceSchema = z.object({
+  type: z.number().int().nonnegative().optional(),
+  message_id: discordSnowflakeSchema.optional(),
+  channel_id: discordSnowflakeSchema.optional(),
+  guild_id: discordSnowflakeSchema.optional(),
+});
+
 export const discordMessageSchema = z.object({
   id: discordSnowflakeSchema,
   channel_id: discordSnowflakeSchema,
@@ -92,17 +100,12 @@ export const discordMessageSchema = z.object({
   timestamp: z.iso.datetime({ offset: true }),
   edited_timestamp: z.iso.datetime({ offset: true }).nullable().optional(),
   attachments: z.array(discordAttachmentSchema),
+  mentions: z.array(discordUserSchema).optional(),
   webhook_id: discordSnowflakeSchema.optional(),
   type: z.number().int().nonnegative().optional(),
   flags: z.number().int().nonnegative().optional(),
   nonce: z.union([z.string(), z.number().int()]).transform(String).optional(),
-  message_reference: z
-    .object({
-      message_id: discordSnowflakeSchema.optional(),
-      channel_id: discordSnowflakeSchema.optional(),
-      guild_id: discordSnowflakeSchema.optional(),
-    })
-    .optional(),
+  message_reference: discordMessageReferenceSchema.optional(),
   thread: discordChannelSchema.optional(),
 });
 

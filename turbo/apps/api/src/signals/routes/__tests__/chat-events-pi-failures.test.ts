@@ -1,22 +1,17 @@
+import { publicChatActor } from "./helpers/public-chat-actor";
 import { expectThreadModelCredits } from "./helpers/public-thread-usage";
 import { createHash, randomUUID } from "node:crypto";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { env } from "../../../lib/env";
-import {
-  createChatEventsFixture,
-  createGptUsagePricingResolution,
-} from "./helpers/chat-events-fixture";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 
 const context = testContext();
 const {
   api,
   chat,
-  entitledChatActor,
   configureSubscriptionPiModel,
-  sendChatRun,
-  claimChatRun,
   cancelChatRun,
   mockPiCheckpointObjectStore,
   piSandboxBaseSession,
@@ -31,34 +26,39 @@ function blobEntriesOf(objects: ReadonlyMap<string, Buffer>) {
 
 describe("CHAT-02: model-first routing", () => {
   it("preserves an ordinary Pi stop checkpoint for referenced Sandbox continuation", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    const usagePricingResolution = await createGptUsagePricingResolution();
-    await configureSubscriptionPiModel(actor, {}, "gpt-6-luna");
+    const {
+      run: own,
+      actor,
+      agentId,
+      runnerGroup,
+      claimChatRun,
+      sendChatRun,
+    } = await publicChatActor(context);
+    await own(async () => {
+      return await configureSubscriptionPiModel(actor, {}, "gpt-6-luna");
+    });
 
     const objects = mockPiCheckpointObjectStore();
     const answer = "the last complete canonical answer";
     const firstPrompt = "create the last complete checkpoint";
-    const first = await sendChatRun(
-      actor,
-      {
-        agentId,
-        model: "gpt-6-luna",
-        prompt: firstPrompt,
-      },
-      usagePricingResolution,
-    );
+    const first = await sendChatRun(actor, {
+      agentId,
+      model: "gpt-6-luna",
+      prompt: firstPrompt,
+    });
     const firstClaim = await claimChatRun(runnerGroup, first.runId);
     // The first turn has no stored history, so the Sandbox starts fresh.
     expect(firstClaim.claim.resumeSession).toBeNull();
     expect(firstClaim.claim.piSessionId).toBe(first.threadId);
-    await completeSandboxFirstPiRun({
-      actor,
-      answer,
-      checkpointObjects: objects,
-      claim: firstClaim,
-      prompt: firstPrompt,
-      run: first,
-      usagePricingResolution,
+    await own(async () => {
+      return await completeSandboxFirstPiRun({
+        actor,
+        answer,
+        historyObjects: objects,
+        claim: firstClaim,
+        prompt: firstPrompt,
+        run: first,
+      });
     });
     const blobEntries = blobEntriesOf(objects);
     expect(blobEntries).toHaveLength(1);
@@ -69,15 +69,11 @@ describe("CHAT-02: model-first routing", () => {
     expect(h0.toString("utf8")).toContain(answer);
     const h0Hash = createHash("sha256").update(h0).digest("hex");
 
-    const resumed = await sendChatRun(
-      actor,
-      {
-        agentId,
-        threadId: first.threadId,
-        prompt: "continue the preserved canonical session with tools",
-      },
-      usagePricingResolution,
-    );
+    const resumed = await sendChatRun(actor, {
+      agentId,
+      threadId: first.threadId,
+      prompt: "continue the preserved canonical session with tools",
+    });
     const claimed = await claimChatRun(runnerGroup, resumed.runId);
     const resumeSession = claimed.claim.resumeSession;
     expect(resumeSession).toMatchObject({
@@ -91,17 +87,28 @@ describe("CHAT-02: model-first routing", () => {
       new URL(resumeSession.historyRef.url).searchParams.get("object"),
     ).toBe(`${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${h0Hash}.blob`);
     expect(piSandboxBaseSession(claimed.claim, objects)).toStrictEqual(h0);
-    await cancelChatRun(actor, resumed.runId, claimed.sandboxHeaders);
+    await own(async () => {
+      return await cancelChatRun(actor, resumed.runId, claimed.sandboxHeaders);
+    });
     expect(blobEntriesOf(objects)).toStrictEqual(blobEntries);
   }, 90_000);
 
   it("preserves subscription H0 and active input during referenced Sandbox transfer", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    await configureSubscriptionPiModel(actor, {
-      accountId: "model-handoff-account",
+    const {
+      run: own,
+      actor,
+      agentId,
+      runnerGroup,
+      claimChatRun,
+      sendChatRun,
+      requestSendEvent,
+    } = await publicChatActor(context);
+    await own(async () => {
+      return await configureSubscriptionPiModel(actor, {
+        accountId: "model-handoff-account",
+      });
     });
-    const usagePricingResolution = await createGptUsagePricingResolution();
-    const checkpointObjects = mockPiCheckpointObjectStore();
+    const historyObjects = mockPiCheckpointObjectStore();
     const firstPrompt = "establish original subscription history";
     const first = await sendChatRun(actor, {
       agentId,
@@ -109,15 +116,16 @@ describe("CHAT-02: model-first routing", () => {
       prompt: firstPrompt,
     });
     const firstClaim = await claimChatRun(runnerGroup, first.runId);
-    await completeSandboxFirstPiRun({
-      actor,
-      answer: "previous settled subscription answer",
-      checkpointObjects,
-      claim: firstClaim,
-      prompt: firstPrompt,
-      responsesModel: { provider: "openai-codex", model: "gpt-6-luna" },
-      run: first,
-      usagePricingResolution,
+    await own(async () => {
+      return await completeSandboxFirstPiRun({
+        actor,
+        answer: "previous settled subscription answer",
+        historyObjects,
+        claim: firstClaim,
+        prompt: firstPrompt,
+        responsesModel: { provider: "openai-codex", model: "gpt-6-luna" },
+        run: first,
+      });
     });
     const prompt = "resume from the settled subscription H0";
     const run = await sendChatRun(actor, {
@@ -128,7 +136,7 @@ describe("CHAT-02: model-first routing", () => {
     });
     const { claim } = await claimChatRun(runnerGroup, run.runId);
     const activeInputEventId = randomUUID();
-    await chat.requestSendEvent(
+    await requestSendEvent(
       actor,
       {
         agentId,
@@ -153,7 +161,7 @@ describe("CHAT-02: model-first routing", () => {
       sessionId: first.threadId,
       historyRef: { kind: "blob", hash: expect.any(String) },
     });
-    const h0 = piSandboxBaseSession(claim, checkpointObjects).toString("utf8");
+    const h0 = piSandboxBaseSession(claim, historyObjects).toString("utf8");
     expect(h0).toContain("previous settled subscription answer");
     expect(h0).not.toContain(prompt);
     await expect(
@@ -182,8 +190,10 @@ describe("CHAT-02: model-first routing", () => {
     ).toStrictEqual([]);
     expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
     await expectThreadModelCredits(context, actor, run.threadId, 0);
-    await cancelChatRun(actor, run.runId, {
-      authorization: `Bearer ${claim.sandboxToken}`,
+    await own(async () => {
+      return await cancelChatRun(actor, run.runId, {
+        authorization: `Bearer ${claim.sandboxToken}`,
+      });
     });
   }, 90_000);
 });

@@ -18,7 +18,6 @@ import {
   PI_MEMORY_SUMMARY_MAX_TOKENS,
   PI_MEMORY_SUMMARY_SOURCE_MAX_TOKENS,
   piMemoryRecallSelectionSchema,
-  piModelConfigLegacySchema,
   piModelConfigSchema,
   piModelConfigV2Schema,
   piModelConfigV3Schema,
@@ -227,8 +226,16 @@ describe("Pi sandbox execution contract", () => {
       provider: "openrouter",
       baseUrl: "https://openrouter.ai/api/v1",
       model: "openai/gpt-6-luna",
-      apiKeyEnv: "OPENAI_API_KEY",
-      credentialSecretName: "OPENROUTER_API_KEY",
+      schemaVersion: 5,
+      dialect: "openai-completions",
+      transport: "sse",
+      credentialBindings: [
+        {
+          kind: "api-key",
+          environment: "OPENAI_API_KEY",
+          secretName: "OPENROUTER_API_KEY",
+        },
+      ],
     },
   };
   const piRunnerContext = {
@@ -247,61 +254,6 @@ describe("Pi sandbox execution contract", () => {
       reason: "noReuseKey" as const,
     },
   };
-
-  it("preserves canonical Gen1 request policy", () => {
-    expect(piModelConfigSchema.parse(piStoredContext.piModelConfig)).toEqual(
-      piStoredContext.piModelConfig,
-    );
-    expect(
-      piModelConfigSchema.parse({
-        provider: "openrouter",
-        baseUrl: "https://openrouter.ai/api/v1",
-        model: "openai/gpt-6-luna",
-        thinkingLevel: "low",
-        serviceTier: "priority",
-        apiKeyEnv: "OPENAI_API_KEY",
-        credentialSecretName: "OPENROUTER_API_KEY",
-      }),
-    ).toMatchObject({
-      thinkingLevel: "low",
-      serviceTier: "priority",
-    });
-    expect(
-      piModelConfigSchema.safeParse({
-        provider: "openrouter",
-        baseUrl: "https://openrouter.ai/api/v1",
-        model: "openai/gpt-6-luna",
-        thinkingLevel: "low",
-        serviceTier: "fast",
-        apiKeyEnv: "OPENAI_API_KEY",
-        credentialSecretName: "OPENROUTER_API_KEY",
-      }).success,
-    ).toBe(false);
-  });
-
-  it.each([
-    undefined,
-    "openai-responses",
-    "openai-completions",
-    "openai-codex-responses",
-  ])(
-    "rejects an extra Gen1 api key with value %s at the wire boundary",
-    (api) => {
-      const config = { ...piStoredContext.piModelConfig, api };
-      const result = piModelConfigLegacySchema.safeParse(config);
-      expect(result.error?.issues).toEqual([
-        expect.objectContaining({ code: "unrecognized_keys", keys: ["api"] }),
-      ]);
-      expect(piModelConfigSchema.safeParse(config).success).toBe(false);
-      expect(
-        storedExecutionContextSchema.safeParse({
-          ...storedContext,
-          ...piStoredContext,
-          piModelConfig: config,
-        }).success,
-      ).toBe(false);
-    },
-  );
 
   it("accepts only the exact generation 5 Chat Completions route", () => {
     const chatCompletions = {
@@ -401,9 +353,6 @@ describe("Pi sandbox execution contract", () => {
         publicResponses,
       );
       expect(piModelConfigSchema.parse(codexResponses)).toEqual(codexResponses);
-      expect(piModelConfigLegacySchema.safeParse(codexResponses).success).toBe(
-        false,
-      );
 
       for (const serviceTier of [
         undefined,

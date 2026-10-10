@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.3.1](https://github.com/okou-ai/okou/compare/runner-host-v0.3.0...runner-host-v0.3.1) (2026-10-10)
+
+## [0.3.0](https://github.com/okou-ai/okou/compare/runner-host-v0.2.18...runner-host-v0.3.0) (2026-10-10)
+
+
+### Features
+
+* **runner:** add passive host memory observation and calibration ([#38370](https://github.com/okou-ai/okou/issues/38370)) ([851e18c](https://github.com/okou-ai/okou/commit/851e18cbe272e59863a06cb3193c3c4e92891c1a))
+
+
+### Refactoring
+
+* **runner:** move orphan workspace gc ownership into host ([#38476](https://github.com/okou-ai/okou/issues/38476)) ([46ed3bd](https://github.com/okou-ai/okou/commit/46ed3bd317356e59b9811bdbd788ce4245a216a8))
+
+## [0.2.18](https://github.com/okou-ai/okou/compare/runner-host-v0.2.17...runner-host-v0.2.18) (2026-10-09)
+
+
+### Refactoring
+
+* **runner:** move runtime reactor into runner-supervisor ([#38393](https://github.com/okou-ai/okou/issues/38393)) ([a5a1dd3](https://github.com/okou-ai/okou/commit/a5a1dd3ae25f19d65baed071cb15fa2a456cfb0a))
+
 ## [0.2.17](https://github.com/okou-ai/okou/compare/runner-host-v0.2.16...runner-host-v0.2.17) (2026-10-09)
 
 ## [0.2.16](https://github.com/okou-ai/okou/compare/runner-host-v0.2.15...runner-host-v0.2.16) (2026-10-09)

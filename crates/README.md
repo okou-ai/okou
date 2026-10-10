@@ -9,7 +9,7 @@ control and RPC services, shared contracts, and developer/test support.
 | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | runner                   | Process-wide composition, `start` boot/configuration/lock policy, operational CLI and build packaging                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | runner-executor          | Claimed-run sandbox execution, session history, results, diagnostics and per-run telemetry                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| runner-host              | Runner host filesystem and persisted process identity, live process registry, local control IPC, systemd identity/query/selected-config primitives, GC filesystem accounting and identity-aware lock cleanup, shared byte formatting, locks, paths and logging                                                                                                                                                                                                                                                                                                                                           |
+| runner-host              | Runner host filesystem and persisted process identity, live process registry, local control IPC, systemd identity/query/selected-config primitives, orphan-workspace GC, filesystem accounting and identity-aware lock cleanup, shared byte formatting, locks, paths and logging                                                                                                                                                                                                                                                                                                                         |
 | runner-lifecycle         | Active-run handoff, idle sandbox, memory prefetch, status, workspace image and cache snapshot lifecycle                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | runner-network           | Runner proxy process/recovery, DNS, CA, network log capture and bounded upload                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | runner-provider          | API/local job discovery, claiming, completion, active input, cancellation and queue coordination                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
@@ -115,6 +115,26 @@ Moved tracing targets follow their Host/Storage owners without old-target aliase
 or duplicate records. This boundary alone does not establish whole-workload
 memory improvement or complete the parent cold-build acceptance gate.
 
+### Orphan-workspace GC ownership
+
+`runner-host::gc::workspaces` owns initial free-lock discovery, process and live
+registry snapshots, later held-lease acquisition, orphan deletion and retry-lock
+cleanup, together with all 34 original private scenarios. Its concrete policy
+accepts a caller-supplied minimum age; immutable report accessors keep workspace,
+allocated-byte and base-dir-lock counts independent. Runner retains the
+600-second default, CLI/dry-run and global GC policy, workspace-before-general-lock
+ordering, typed error presentation and phase/total report composition.
+
+The fixed pass reference, initially held-lock exclusion, complete ownership
+snapshots, later held lease, raw-byte lock identity, fail-closed discovery,
+symlink checks and retry metadata remain one Host-owned invariant. Root's general
+lock pass uses the same canonical base-dir-lock classifier. Shared GC fixtures
+and immutable report fixtures use Host's existing non-default `test-support`
+feature; production report fields and candidate/lease/removal-hook state stay
+private. Tracing targets follow `runner_host::gc::workspaces` without old-target
+aliases or duplicate records; messages, severity and fields are unchanged.
+This ownership boundary alone does not establish a whole-workload memory benefit.
+
 ### Runtime reactor ownership
 
 `runner-supervisor::reactor` owns the concrete retained loop, ordered sandbox
@@ -182,9 +202,9 @@ binary overrides must use flags and environment keys matching the runner revisio
 
 ## Runner Operations
 
-- [Host configuration and I/O capacity](../docs/runner-host-configuration.md):
+- [Host configuration and I/O capacity](../docs/runner/runner-host-configuration.md):
   configure host-local concurrency and aggregate I/O capacity overrides.
-- [Multi-architecture rollout](../docs/runner-multi-architecture.md): select,
+- [Multi-architecture rollout](../docs/runner/runner-multi-architecture.md): select,
   build, deploy, and validate architecture-specific runner artifacts.
 
 ### Local control socket limits
@@ -491,4 +511,4 @@ cargo clippy --profile local --all-targets
 ```
 
 For affected-crate commands and serialized execution, see
-[memory-constrained Rust testing](../docs/testing/rust-testing.md#memory-constrained-environments).
+[memory-constrained Rust testing](../docs/runner/rust-testing.md#memory-constrained-environments).

@@ -907,20 +907,6 @@
     }
   },
   "auth": {
-    "desktop": {
-      "phases": {
-        "completed": "Desktop にサインインしました。このウィンドウを閉じられます。",
-        "connecting": "デスクトップのセッションを接続しています。",
-        "consumed": "Desktop でサインインを完了しています。このウィンドウを開いたままにしてください。",
-        "failed": "サインインを完了できませんでした。Desktop からやり直すか、このブラウザーで再試行してください。",
-        "no-workspaces": "ウェブアプリでワークスペースを作成するか参加してから、Desktop で再度サインインしてください。",
-        "pending": "Desktop を開いてサインインを続けてください。",
-        "selecting": "このコンピューターで使うワークスペースを選んでください。"
-      },
-      "reopen": "Desktop を開く",
-      "retry": "再試行",
-      "title": "Desktop にサインイン"
-    },
     "documentTitles": {
       "signIn": "サインイン",
       "signUp": "サインアップ"
@@ -5322,6 +5308,14 @@
     },
     "clearSearch": "検索をクリア",
     "custom": "カスタム",
+    "delete": {
+      "cancel": "キャンセル",
+      "confirm": "テンプレートを削除",
+      "deleting": "削除中...",
+      "description": "「{{title}}」は、閲覧できるすべてのユーザーから削除されます。この操作は取り消せません。",
+      "failed": "テンプレートを削除できませんでした。もう一度お試しください。",
+      "title": "テンプレートを削除しますか？"
+    },
     "detail": {
       "back": "カスタムテンプレート",
       "page": "{{number}} ページ目"
@@ -6303,22 +6297,33 @@
     "connected": "接続済み",
     "connectedWithDetail": "接続されました ({{detail}})",
     "discord": {
-      "accountSetup": "アカウントが接続されていません。新しい Discord アカウントの接続はまだ利用できません。",
-      "adminSetup": "サーバーのセットアップはまだ利用できません。検証済みの既存の設定では、引き続き Discord を利用できます。",
+      "accountSetup": "Discord の公式ブラウザー認証でアカウントを接続してください。",
+      "adminSetup": "Discord サーバーに Okou をインストールし、アカウントを接続してください。",
+      "approvalConfirmed": "ブラウザーの同意を確認しました。このタブを閉じ、元の Works タブで接続を完了してください。",
+      "approvalFailed": "確認できませんでした。元の Okou アカウントと組織でログインするか、認証をやり直してください。",
+      "approvalPrompt": "元の Works タブと同じ Okou アカウントと組織で確認してください。同意の確認だけではアカウントは接続されません。",
+      "approve": "Discord の同意を確認",
+      "approving": "確認中…",
+      "authorizationError": "Discord の認証を完了できませんでした。このカードから再試行してください。",
+      "authorizing": "認証中…",
+      "browserConsent": "Discord の同意を完了し、そのタブで Okou アカウントによる確認を行ってください。タブを閉じるだけでは接続されません。",
       "chooseDmServer": "サーバーを選択",
       "description": "サーバーで Okou にメンションするか、ボットにダイレクトメッセージを送信してください。",
       "disconnect": "Discord の接続を解除",
       "dmServer": "ダイレクトメッセージの既定のサーバー",
+      "install": "Discord にインストール",
       "limitedContext": "コンテキストの制限: Okou は通常のチャンネルメッセージを受信できない場合があります。Okou にメンションし、必要な詳細情報を含めてください。",
       "loadError": "Discord の状態を読み込めませんでした。",
       "loading": "Discord の状態を読み込み中…",
-      "memberSetup": "Discord へのアクセスについては、組織の管理者にお問い合わせください。サーバーのセットアップはまだ利用できません。",
+      "memberSetup": "組織の管理者に Discord サーバーへの Okou のインストールを依頼してください。",
       "moreOptions": "その他の Discord オプション",
+      "pendingConsent": "このタブには認証の証明がありません。閉じて、元の Works タブから認証をやり直してください。",
+      "popupBlocked": "Discord の認証のためにポップアップを許可し、再試行してください。",
       "retry": "再試行",
       "server": "サーバー: {{name}}",
       "suspended": "Discord は一時的に利用できません。既存の接続は保持されます。",
       "title": "Discord",
-      "unconfigured": "この組織では、Discord はまだ利用できません。",
+      "unconfigured": "この組織では、Discord がまだ設定されていません。",
       "uninstall": "Discord を削除",
       "uninstallDescription": "この組織の全員が Discord から切断されます。他の組織の接続は維持されます。",
       "uninstallTitle": "この組織から Discord を削除しますか？"

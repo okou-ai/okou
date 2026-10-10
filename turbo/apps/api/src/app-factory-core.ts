@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { httpInstrumentationMiddleware } from "@hono/otel";
+import { DISCORD_OAUTH_CALLBACK_PATH } from "./lib/discord-oauth-telemetry";
 import * as Sentry from "@sentry/node";
 import {
   CLIENT_FORCE_UPGRADE_STATUS,
@@ -570,7 +571,19 @@ export function createAppWithRoutes({
   // (db queries, outbound fetches) parent to it via standard context
   // propagation; correlate them to a route by their `trace_id`, not by
   // copying `http.route` onto each child span.
-  app.use("*", httpInstrumentationMiddleware({ serviceName: "vm0-api" }));
+  const instrumentHttpRequest = httpInstrumentationMiddleware({
+    serviceName: "vm0-api",
+    captureRequestHeaders: [],
+    captureResponseHeaders: [],
+  });
+  // @hono/otel captures url.full before handlers run. This callback carries
+  // provider code/state and returns a secret approval fragment in Location.
+  // Exclude it BEFORE span creation; its path/status Axiom log remains below.
+  app.use("*", (context, next) => {
+    return context.req.path.replace(/\/$/u, "") === DISCORD_OAUTH_CALLBACK_PATH
+      ? next()
+      : instrumentHttpRequest(context, next);
+  });
 
   app.use("*", async (c, next) => {
     const startedAt = now();

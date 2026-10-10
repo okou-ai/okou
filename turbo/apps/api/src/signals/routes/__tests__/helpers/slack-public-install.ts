@@ -102,19 +102,23 @@ export function createPublicSlackOrgApi(context: TestContext) {
     readonly botToken?: string;
     readonly botScopes?: string | null;
     readonly teamName?: string;
+    readonly installer?: ApiTestUser;
+    readonly run?: <T>(operation: () => Promise<T>) => Promise<T>;
   }): Promise<{
     readonly slackWorkspaceId: string;
     readonly slackWorkspaceName: string;
   }> {
     mockEnv("SLACK_OAUTH_CLIENT_ID", "slack-bdd-client-id");
     mockOptionalEnv("SLACK_OAUTH_CLIENT_SECRET", "slack-bdd-client-secret");
-    const installer = bdd.user({ orgId: args.orgId, orgRole: "org:admin" });
+    const installer =
+      args.installer ?? bdd.user({ orgId: args.orgId, orgRole: "org:admin" });
     const teamName = args.teamName ?? "Test Org Workspace";
     const { teamId } = await integrations.installSlackWorkspace(installer, {
       ...(args.botToken === undefined ? {} : { botToken: args.botToken }),
       // Like the former seeded installation, scopes default to unreported.
       botScopes: args.botScopes === undefined ? null : args.botScopes,
       teamName,
+      run: args.run,
     });
     await settleSlackNotifications();
     return { slackWorkspaceId: teamId, slackWorkspaceName: teamName };
@@ -125,6 +129,7 @@ export function createPublicSlackOrgApi(context: TestContext) {
     readonly orgId: string;
     readonly userId: string;
     readonly slackWorkspaceId: string;
+    readonly run?: <T>(operation: () => Promise<T>) => Promise<T>;
   }): Promise<{ readonly slackUserId: string }> {
     const slackUserId = uniqueSlackUserId();
     await integrations.connectSlackUser(
@@ -134,10 +139,20 @@ export function createPublicSlackOrgApi(context: TestContext) {
         orgRole: "org:admin",
       }),
       { workspaceId: args.slackWorkspaceId, slackUserId },
+      { run: args.run },
     );
     await settleSlackNotifications();
     return { slackUserId };
   }
 
-  return { installOrg, installForOrg, connectMember };
+  /** Slack's signed uninstall event removes the OAuth-created binding. */
+  async function uninstallWorkspace(slackWorkspaceId: string): Promise<void> {
+    integrations.configureSlackAppMocks();
+    await integrations.postSlackEvent(slackWorkspaceId, {
+      type: "app_uninstalled",
+    });
+    await flushWaitUntilForTest();
+  }
+
+  return { installOrg, installForOrg, connectMember, uninstallWorkspace };
 }

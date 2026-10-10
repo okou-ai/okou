@@ -1,3 +1,4 @@
+import { publicChatActor } from "./helpers/public-chat-actor";
 import { createHash, randomUUID } from "node:crypto";
 import { gzipSync, zstdCompressSync } from "node:zlib";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
@@ -59,7 +60,7 @@ describe("CHAT-02: model-first routing", () => {
     async (encoding) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       await configureSubscriptionPiModel(actor);
-      const checkpointObjects = mockPiCheckpointObjectStore();
+      const historyObjects = mockPiCheckpointObjectStore();
       let resourceDownloads = 0;
       server.use(
         http.get(PI_RESOURCE_ARCHIVE_DOWNLOAD_URL, () => {
@@ -119,7 +120,7 @@ describe("CHAT-02: model-first routing", () => {
       const invalidHash = createHash("sha256")
         .update(randomUUID())
         .digest("hex");
-      await webhooks.requestAgentCheckpointPrepareHistory(
+      await webhooks.requestAgentSessionHistoryPrepare(
         {
           runId: run.runId,
           hash: invalidHash,
@@ -136,7 +137,7 @@ describe("CHAT-02: model-first routing", () => {
           : encoding === "gzip"
             ? "blob.gz"
             : "blob.zst";
-      checkpointObjects.set(
+      historyObjects.set(
         `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${invalidHash}.${invalidSuffix}`,
         encoded,
       );
@@ -144,7 +145,7 @@ describe("CHAT-02: model-first routing", () => {
         {
           runId: run.runId,
           exitCode: 0,
-          checkpoint: {
+          completion: {
             cliAgentType: "pi",
             cliAgentSessionId: run.threadId,
             cliAgentSessionHistoryHash: invalidHash,
@@ -161,7 +162,7 @@ describe("CHAT-02: model-first routing", () => {
       await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
         status: "running",
       });
-      await webhooks.requestAgentCheckpointPrepareHistory(
+      await webhooks.requestAgentSessionHistoryPrepare(
         {
           runId: run.runId,
           hash,
@@ -179,12 +180,12 @@ describe("CHAT-02: model-first routing", () => {
             ? "blob.gz"
             : "blob.zst";
       const blobKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${hash}.${suffix}`;
-      checkpointObjects.set(blobKey, encoded);
+      historyObjects.set(blobKey, encoded);
       const completed = await webhooks.requestAgentComplete(
         {
           runId: run.runId,
           exitCode: 0,
-          checkpoint: {
+          completion: {
             cliAgentType: "pi",
             cliAgentSessionId: run.threadId,
             cliAgentSessionHistoryHash: hash,
@@ -240,7 +241,7 @@ describe("CHAT-02: model-first routing", () => {
             );
           }),
       ).toBeFalsy();
-      await webhooks.requestAgentCheckpointPrepareHistory(
+      await webhooks.requestAgentSessionHistoryPrepare(
         {
           runId: resumed.runId,
           hash: "f".repeat(64),
@@ -266,7 +267,7 @@ describe("CHAT-02: model-first routing", () => {
     async (prompt) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       await publishPendingPiInstructions(actor, agentId);
-      const checkpointObjects = mockPiCheckpointObjectStore();
+      const historyObjects = mockPiCheckpointObjectStore();
       let resourceDownloads = 0;
       server.use(
         http.get(PI_RESOURCE_ARCHIVE_DOWNLOAD_URL, () => {
@@ -341,7 +342,7 @@ describe("CHAT-02: model-first routing", () => {
             new URL(resumeSession.historyRef.url).searchParams.get("object"),
           ).toBe(`${bucket}/blobs/${hash}.blob`);
         }
-        const h0 = piSandboxBaseSession(claim.claim, checkpointObjects);
+        const h0 = piSandboxBaseSession(claim.claim, historyObjects);
         if (turn === 2) {
           expect(h0).toStrictEqual(expectedH0);
         }
@@ -374,7 +375,7 @@ describe("CHAT-02: model-first routing", () => {
         await completeSandboxFirstPiRun({
           actor,
           answer,
-          checkpointObjects,
+          historyObjects,
           claim,
           prompt: originalPrompt,
           run,
@@ -409,7 +410,7 @@ describe("CHAT-02: model-first routing", () => {
           applicationSession = completedSession;
         }
         expect(completedSession).toBe(applicationSession);
-        const blob = [...checkpointObjects.entries()]
+        const blob = [...historyObjects.entries()]
           .filter(([key]) => {
             return key.startsWith(`${bucket}/blobs/`);
           })
@@ -430,14 +431,24 @@ describe("CHAT-02: model-first routing", () => {
   it.each(["okou-1.0", "gpt-6-luna"] as const)(
     "claims %s with Sandbox credentials and bills duplicate Sandbox usage once",
     async (selectedModel) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const {
+        run: own,
+        actor,
+        agentId,
+        runnerGroup,
+        claimChatRun,
+        sendChatRun,
+      } = await publicChatActor(context);
       const builtIn = selectedModel === "okou-1.0";
-      const usagePricingResolution =
-        await createPiUsagePricingResolution(selectedModel);
+      const usagePricingResolution = builtIn
+        ? await createPiUsagePricingResolution(selectedModel)
+        : undefined;
       if (builtIn) {
         await configureBuiltInPiModel(actor, selectedModel);
       } else {
-        await configureSubscriptionPiModel(actor, {}, selectedModel);
+        await own(async () => {
+          return await configureSubscriptionPiModel(actor, {}, selectedModel);
+        });
       }
       const upstreamModel = builtIn ? "@preset/okou-1-0" : selectedModel;
 
@@ -477,32 +488,44 @@ describe("CHAT-02: model-first routing", () => {
         quantity: 2,
       };
       const sandboxUsageReceipts = await Promise.all([
-        webhooks.requestAgentUsageEvent(
-          { runId: run.runId, events: [sandboxUsageEvent] },
-          claimed.sandboxHeaders,
-          [200],
-          usagePricingResolution,
-        ),
-        webhooks.requestAgentUsageEvent(
-          { runId: run.runId, events: [sandboxUsageEvent] },
-          claimed.sandboxHeaders,
-          [200],
-          usagePricingResolution,
-        ),
+        own(async () => {
+          return await webhooks.requestAgentUsageEvent(
+            { runId: run.runId, events: [sandboxUsageEvent] },
+            claimed.sandboxHeaders,
+            [200],
+            usagePricingResolution,
+          );
+        }),
+        own(async () => {
+          return await webhooks.requestAgentUsageEvent(
+            { runId: run.runId, events: [sandboxUsageEvent] },
+            claimed.sandboxHeaders,
+            [200],
+            usagePricingResolution,
+          );
+        }),
       ]);
       expect(
         sandboxUsageReceipts.map((receipt) => {
           return receipt.body;
         }),
       ).toStrictEqual([{ success: true }, { success: true }]);
-      await api.requestCancelRun(
-        actor,
-        run.runId,
-        [200],
-        usagePricingResolution,
-      );
+      await own(async () => {
+        return await api.requestCancelRun(
+          actor,
+          run.runId,
+          [200],
+          usagePricingResolution,
+        );
+      });
       await waitForRunStatus(actor, run.runId, "cancelled");
-      await failChatRun(run.runId, claimed.sandboxHeaders, "Run cancelled");
+      await own(async () => {
+        return await failChatRun(
+          run.runId,
+          claimed.sandboxHeaders,
+          "Run cancelled",
+        );
+      });
       await flushWaitUntilForTest();
       // Metered Auto records the guest output once. Personal subscription
       // model traffic is not admitted to the platform billing ledger.

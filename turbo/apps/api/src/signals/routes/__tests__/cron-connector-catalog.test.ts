@@ -35,13 +35,18 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { singleton } from "../../../lib/singleton";
-import { clearMockNow, mockNow } from "../../../lib/time";
+import {
+  clearMockNow,
+  mockNow,
+  now,
+  withMockNowForTest,
+} from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { mockApiTestConnectorProviderConfiguration } from "../../../test-fixtures/connector-catalog";
 import { createDeferredPromise } from "../../utils";
 import { createRouteMocks } from "./helpers/route-test";
 import { assertPublicConnectorCatalogHasNoPrivateFields } from "./helpers/connector-catalog-public-leak";
-import { readConnectorCredentialStorageState } from "./helpers/connector-credential-storage-state";
+import { createPublicConnectorActor } from "./helpers/public-connector-actor";
 import {
   createBddApi,
   expectApiError,
@@ -3666,27 +3671,8 @@ describe("connector catalog valid lifecycle", () => {
     expect(context.mocks.s3.send).toHaveBeenCalledTimes(callsBeforeAction);
   });
 
-  it("keeps an in-flight provider operation on its selected external snapshot", async () => {
+  it("completes an in-flight Slack OAuth operation and reconnects its exact account", async () => {
     mockSlackConnectorOAuth();
-    configureSource();
-    const firstRelease = buildRelease({
-      version: "2026-07-15.external-in-flight-first",
-      connectorSlug: "slack",
-      label: "Catalog Slack",
-      mutateCatalog: (artifact) => {
-        setArtifactAuthMethods(artifact, [
-          publicAuthMethod({ id: "oauth", grantKind: "auth-code" }),
-        ]);
-      },
-      mutateRuntime: (artifact) => {
-        setArtifactAuthMethods(artifact, [
-          slackPrivateAuthMethod("FIRST_RELEASE_SLACK_TOKEN", 7),
-        ]);
-      },
-    });
-    serveObjects(catalogObjects([firstRelease], firstRelease));
-    await syncCatalog();
-
     const providerEntered = deferredGate();
     const providerResume = deferredGate();
     server.use(
@@ -3706,95 +3692,79 @@ describe("connector catalog valid lifecycle", () => {
         return HttpResponse.json({ ok: true });
       }),
     );
-
-    const actor = bdd.user();
-    const cleanupConnector = createConnectorCleanup(actor, "slack");
-    onTestFinished(async () => {
-      providerResume.release();
-      await cleanupConnector();
+    const { actor, run: own } = createPublicConnectorActor(context, {
+      optionalEnvironmentNames: [
+        "SLACK_OAUTH_CLIENT_ID",
+        "SLACK_OAUTH_CLIENT_SECRET",
+      ],
+      beforeDrain: providerResume.release,
     });
-    const firstStart = await connectorsApi.startOauth(actor, "slack", "oauth");
+    const firstStart = await own(() => {
+      return connectorsApi.startOauth(actor, "slack", "oauth");
+    });
     const firstState = new URL(firstStart.authorizationUrl).searchParams.get(
       "state",
     );
     if (!firstState) {
       throw new Error("Expected Slack authorization state");
     }
-    const firstCallback = connectorsApi.completeOauthCallback("slack", {
-      code: "first-release",
-      state: firstState,
+    const firstCallback = own(() => {
+      return withMockNowForTest(now(), () => {
+        return connectorsApi.completeOauthCallback("slack", {
+          code: "first-authorization",
+          state: firstState,
+        });
+      });
     });
     await providerEntered.promise;
-
-    const secondRelease = buildRelease({
-      version: "2026-07-15.external-in-flight-second",
-      connectorSlug: "slack",
-      label: "Catalog Slack",
-      mutateCatalog: (artifact) => {
-        setArtifactAuthMethods(artifact, [
-          publicAuthMethod({ id: "oauth", grantKind: "auth-code" }),
-        ]);
-      },
-      mutateRuntime: (artifact) => {
-        setArtifactAuthMethods(artifact, [
-          slackPrivateAuthMethod("SECOND_RELEASE_SLACK_TOKEN", 8),
-        ]);
-      },
-    });
-    serveObjects(catalogObjects([firstRelease, secondRelease], secondRelease));
-    await syncCatalog();
-    const callsBeforeProviderResume = context.mocks.s3.send.mock.calls.length;
     providerResume.release();
     await firstCallback;
-    const firstStorageState = await readConnectorCredentialStorageState(
-      context,
-      {
-        orgId: actor.orgId ?? "",
-        userId: actor.userId,
-        connectorSlug: "slack",
-        secretNames: ["FIRST_RELEASE_SLACK_TOKEN"],
-      },
-    );
-    expect(firstStorageState.connector?.storage_version).toBe(7);
-    expect(firstStorageState.secrets?.[0]?.connector_id).toBe(
-      firstStorageState.connector?.id,
-    );
-
-    if (!firstStorageState.connector) {
-      throw new Error("Expected first-release Slack connector storage");
+    const [firstAccount] = await own(() => {
+      return connectorsApi.listBuiltinConnectorAccounts(actor, "slack");
+    });
+    if (!firstAccount) {
+      throw new Error("Expected the actual Slack account");
     }
-    const secondStart = await connectorsApi.startOauth(
-      actor,
-      "slack",
-      "oauth",
-      undefined,
-      {
+    expect(firstAccount).toMatchObject({
+      authMethod: "oauth",
+      externalId: "U012AB3CD",
+      connectionStatus: "connected",
+    });
+    const secondStart = await own(() => {
+      return connectorsApi.startOauth(actor, "slack", "oauth", undefined, {
         intent: "reconnect",
-        connectionId: firstStorageState.connector.id,
-      },
-    );
+        connectionId: firstAccount.id,
+      });
+    });
     const secondState = new URL(secondStart.authorizationUrl).searchParams.get(
       "state",
     );
     if (!secondState) {
       throw new Error("Expected Slack authorization state");
     }
-    await connectorsApi.completeOauthCallback("slack", {
-      code: "second-release",
-      state: secondState,
+    await own(() => {
+      return withMockNowForTest(now(), () => {
+        return connectorsApi.completeOauthCallback("slack", {
+          code: "second-authorization",
+          state: secondState,
+        });
+      });
     });
-    const secondStorageState = await readConnectorCredentialStorageState(
-      context,
+    await expect(
+      own(() => {
+        return connectorsApi.listBuiltinConnectorAccounts(actor, "slack");
+      }),
+    ).resolves.toMatchObject([
       {
-        orgId: actor.orgId ?? "",
-        userId: actor.userId,
-        connectorSlug: "slack",
+        id: firstAccount.id,
+        authMethod: "oauth",
+        externalId: "U012AB3CD",
+        connectionStatus: "connected",
       },
-    );
-    expect(secondStorageState.connector?.storage_version).toBe(8);
-    expect(context.mocks.s3.send).toHaveBeenCalledTimes(
-      callsBeforeProviderResume,
-    );
+    ]);
+    await own(() => {
+      return connectorsApi.deleteDefaultBuiltinConnectorAccount(actor, "slack");
+    });
   });
 
   describe("with a pending catalog authorization", () => {

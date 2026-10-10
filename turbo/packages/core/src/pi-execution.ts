@@ -4,7 +4,7 @@ import {
   type PiRouteClass,
 } from "@okouai/api-contracts/contracts/model-catalog";
 import {
-  AUTO_RUN_MODEL,
+  AUTO_SELECTED_MODEL,
   AUTO_RUN_PROVIDER,
   isAutoSelectedModel,
 } from "./auto-run-model";
@@ -51,7 +51,7 @@ export function piCatalogModel(
 ): PiCatalogModel | null {
   if (isAutoSelectedModel(model)) {
     return {
-      model: AUTO_RUN_MODEL,
+      model: AUTO_SELECTED_MODEL,
       piRouteClass: "gpt-codex",
       own: new Map(),
     };
@@ -136,7 +136,7 @@ export function piRouteCatalogIdentities(
   args: PiRouteArgs,
 ): readonly PiRuntimeIdentity[] {
   if (isAutoRoute(args)) {
-    return [{ provider: "openrouter", model: AUTO_RUN_MODEL }];
+    return [{ provider: "openrouter", model: AUTO_SELECTED_MODEL }];
   }
   const model = args.catalogModel;
   if (

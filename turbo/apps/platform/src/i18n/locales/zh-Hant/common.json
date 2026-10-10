@@ -907,20 +907,6 @@
     }
   },
   "auth": {
-    "desktop": {
-      "phases": {
-        "completed": "Desktop已登入，可以關閉這個視窗了。",
-        "connecting": "正在連線你的Desktop會話。",
-        "consumed": "正在Desktop中完成登入，請保持這個視窗開啟。",
-        "failed": "登入沒能完成。請從Desktop重新開始，或在這個瀏覽器裡重試。",
-        "no-workspaces": "請先在網頁端建立或加入一個工作區，然後從Desktop重新登入。",
-        "pending": "開啟Desktop繼續登入。",
-        "selecting": "為這臺電腦選擇一個工作區。"
-      },
-      "reopen": "開啟Desktop",
-      "retry": "重試",
-      "title": "登入Desktop"
-    },
     "documentTitles": {
       "signIn": "登入",
       "signUp": "註冊"
@@ -5322,6 +5308,14 @@
     },
     "clearSearch": "清除搜尋",
     "custom": "自定義",
+    "delete": {
+      "cancel": "取消",
+      "confirm": "刪除範本",
+      "deleting": "正在刪除...",
+      "description": "「{{title}}」將對所有可以看到它的人移除。此操作無法復原。",
+      "failed": "無法刪除範本，請再試一次。",
+      "title": "刪除範本？"
+    },
     "detail": {
       "back": "自定義模板",
       "page": "第{{number}}頁"
@@ -6303,22 +6297,33 @@
     "connected": "已連線",
     "connectedWithDetail": "已連線（{{detail}}）",
     "discord": {
-      "accountSetup": "你的帳號尚未連線。暫時無法連接新的Discord帳號。",
-      "adminSetup": "伺服器設定功能尚未開放。現有已驗證的設定仍可繼續使用Discord。",
+      "accountSetup": "透過Discord官方瀏覽器授權連接你的帳號。",
+      "adminSetup": "將Okou安裝到你的Discord伺服器，再連接帳號。",
+      "approvalConfirmed": "已確認瀏覽器授權。請關閉此分頁，在原先的Works分頁中完成連線。",
+      "approvalFailed": "確認失敗。請使用原先的Okou帳號和組織登入，或重新發起授權。",
+      "approvalPrompt": "請使用與原先Works分頁相同的Okou帳號和組織確認。僅確認授權不會連接帳號。",
+      "approve": "確認Discord授權",
+      "approving": "正在確認…",
+      "authorizationError": "未能完成Discord授權。請在此卡片重試。",
+      "authorizing": "正在授權…",
+      "browserConsent": "完成Discord授權，並在該分頁使用Okou帳號確認。僅關閉分頁不會連接帳號。",
       "chooseDmServer": "選擇伺服器",
       "description": "在伺服器中提及Okou，或傳送私人訊息給機器人。",
       "disconnect": "中斷Discord連線",
       "dmServer": "私人訊息預設伺服器",
+      "install": "安裝到Discord",
       "limitedContext": "上下文受限：Okou可能無法接收頻道中的一般訊息。請提及Okou，並提供所需的詳細資訊。",
       "loadError": "無法載入Discord狀態。",
       "loading": "正在載入Discord狀態…",
-      "memberSetup": "請向組織管理員瞭解Discord存取權限。伺服器設定功能尚未開放。",
+      "memberSetup": "請組織管理員將Okou安裝到你的Discord伺服器。",
       "moreOptions": "更多Discord選項",
+      "pendingConsent": "此分頁已無授權憑據。請關閉它，並從原先的Works分頁重新發起授權。",
+      "popupBlocked": "請允許彈出視窗以授權Discord，然後重試。",
       "retry": "重試",
       "server": "伺服器：{{name}}",
       "suspended": "Discord暫時無法使用。現有連線會保留。",
       "title": "Discord",
-      "unconfigured": "此組織暫時無法使用Discord。",
+      "unconfigured": "此組織尚未設定Discord。",
       "uninstall": "移除Discord",
       "uninstallDescription": "這會中斷此組織所有成員與Discord的連線。其他組織的連線會保留。",
       "uninstallTitle": "從此組織移除Discord？"

@@ -32,6 +32,25 @@ export const agentRuns = pgTable(
   },
   (table) => {
     return [
+      check(
+        "agent_runs_selected_model_check",
+        sql`${table.selectedModel} IS NULL OR char_length(${table.selectedModel}) > 0`,
+      ),
+      check(
+        "agent_runs_executable_builtin_capture_check",
+        sql`NOT (
+          ${table.modelProvider} = 'built-in' AND
+          ${table.launchSnapshot} IS NOT NULL AND
+          ${table.status} IN ('pending', 'running')
+        ) OR (
+          ${table.selectedModel} IS NOT NULL AND
+          ${table.modelRuntimeProvider} IS NOT NULL AND
+          char_length(${table.modelRuntimeProvider}) > 0 AND
+          ${table.modelRuntimeModel} IS NOT NULL AND
+          char_length(${table.modelRuntimeModel}) > 0 AND
+          ${table.builtInModelKeyId} IS NOT NULL
+        )`,
+      ),
       // Composite index for user listing with time-based sorting
       index("idx_agent_runs_user_created").on(
         table.userId,
