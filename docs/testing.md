@@ -286,6 +286,11 @@ contract, not a waiver for constructing private business scenarios.
 
 API test files should not import DB schema, API service files, or the logger.
 
+The API service-directory test ban has no named file exceptions. Remove stale
+test and import exemptions when their owning cases are moved or deleted. Keep
+bootstrap and logger infrastructure exemptions limited to their documented
+responsibilities; they do not permit private business fixtures.
+
 This lint rule is not about making code look tidy. It is a reminder that the
 test is crossing the external behavior boundary and starting to control internal
 implementation. Go back to the endpoint first and see whether the case can be

@@ -5,14 +5,14 @@ import { hostContract } from "@okouai/api-contracts/contracts/host";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { hostRoutes } from "../../routes/host";
-import { expectApiError } from "../../routes/__tests__/helpers/api-bdd";
-import { hostedTextFile } from "../../routes/__tests__/helpers/api-bdd-host-files";
-import { createHostMapsBddApi } from "../../routes/__tests__/helpers/api-bdd-host-maps";
+import { hostRoutes } from "../host";
+import { expectApiError } from "./helpers/api-bdd";
+import { hostedTextFile } from "./helpers/api-bdd-host-files";
+import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
 import {
   createChatEventsFixture,
   okouTokenFromClaim,
-} from "../../routes/__tests__/helpers/chat-events-fixture";
+} from "./helpers/chat-events-fixture";
 
 const context = testContext();
 const fixture = createChatEventsFixture(context);
