@@ -3359,9 +3359,13 @@ describe("INT-01: Slack app deep webhook flows", () => {
       "agents.sessions.setStatus",
       { channel_id: channelId, thread_ts: threadTs, status: "processing" },
     );
-    expect(context.mocks.slack.chat.postMessage).not.toHaveBeenCalledWith(
+    expect(
+      context.mocks.slack.chat.postMessage,
+    ).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({
-        text: "Stopped your tasks and cleared their queued messages in this thread.",
+        channel: channelId,
+        thread_ts: threadTs,
+        text: "Run cancelled",
       }),
     );
     expect(context.mocks.slack.chat.postEphemeral).not.toHaveBeenCalled();
@@ -3383,6 +3387,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       "agents.sessions.setStatus",
       { channel_id: channelId, thread_ts: threadTs, status: "active" },
     );
+    expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledTimes(1);
     expect(context.mocks.slack.chat.postEphemeral).not.toHaveBeenCalled();
     await integrations.postSlackEvent(teamId, {
       type: "app_mention",
@@ -3457,6 +3462,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       ...stopEvent,
       user: otherSlackUserId,
     });
+    expect(context.mocks.slack.chat.postMessage).not.toHaveBeenCalled();
     expect(context.mocks.slack.chat.postEphemeral).toHaveBeenLastCalledWith(
       expect.objectContaining({
         channel: channelId,
@@ -3482,9 +3488,13 @@ describe("INT-01: Slack app deep webhook flows", () => {
     await expect(
       runs.readRunnerCancellation(claim.sandboxToken, runId, runnerGroup),
     ).resolves.toMatchObject({ state: "present", mode: "cooperative" });
-    expect(context.mocks.slack.chat.postMessage).not.toHaveBeenCalledWith(
+    expect(
+      context.mocks.slack.chat.postMessage,
+    ).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({
-        text: "Stopped your tasks and cleared their queued messages in this thread.",
+        channel: channelId,
+        thread_ts: threadTs,
+        text: "Run cancelled",
       }),
     );
     expect(context.mocks.slack.chat.postEphemeral).not.toHaveBeenCalled();
@@ -3766,9 +3776,13 @@ describe("INT-01: Slack app deep webhook flows", () => {
         status: "processing",
       },
     );
-    expect(context.mocks.slack.chat.postMessage).not.toHaveBeenCalledWith(
+    expect(
+      context.mocks.slack.chat.postMessage,
+    ).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({
-        text: "Stopped your tasks and cleared their queued messages in this thread.",
+        channel: channelId,
+        thread_ts: threadTs,
+        text: "Run cancelled",
       }),
     );
     expect(
@@ -3782,6 +3796,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       }),
     );
     context.mocks.slack.apiCall.mockClear();
+    context.mocks.slack.chat.postMessage.mockClear();
     context.mocks.slack.chat.postEphemeral.mockClear();
     await integrations.postSlackEvent(teamId, {
       ...stopEvent,
@@ -3790,9 +3805,13 @@ describe("INT-01: Slack app deep webhook flows", () => {
     await flushWaitUntilForTest();
     expect((await runs.readRun(member, memberRun.id)).status).toBe("cancelled");
     expect((await runs.readRun(actor, runId)).status).toBe("cancelled");
-    expect(context.mocks.slack.chat.postMessage).not.toHaveBeenCalledWith(
+    expect(
+      context.mocks.slack.chat.postMessage,
+    ).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({
-        text: "Stopped your tasks and cleared their queued messages in this thread.",
+        channel: channelId,
+        thread_ts: threadTs,
+        text: "Run cancelled",
       }),
     );
     expect(context.mocks.slack.chat.postEphemeral).not.toHaveBeenCalled();
