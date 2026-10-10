@@ -1,6 +1,6 @@
 import { HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
-import { accept, testContext } from "../../../__tests__/test-context";
+import { testContext } from "../../../__tests__/test-context";
 
 import { mockNow, withMockNowForTest } from "../../../lib/time";
 
@@ -12,7 +12,7 @@ const {
   stableManifest,
   darwinArm64Release,
   okouZipUrl,
-  feedRequest,
+  appcastRequest,
   countingManifestHandler,
 } = createDesktopUpdatePublicApi(context);
 
@@ -28,17 +28,23 @@ describe("desktop update routes", () => {
         }),
       );
 
-      const warmed = await accept(feedRequest(), [200]);
-      expect(warmed.body.currentRelease).toBe("1.2.3");
+      const warmed = await appcastRequest();
+      expect(warmed.status).toBe(200);
+      expect(await warmed.text()).toContain(
+        "<sparkle:version>1.2.3</sparkle:version>",
+      );
 
       countingManifestHandler(() => {
         return HttpResponse.error();
       });
       mockNow(initialNow + 30 * 60_000 - 1);
 
-      const stale = await accept(feedRequest(), [200]);
+      const stale = await appcastRequest();
+      expect(stale.status).toBe(200);
 
-      expect(stale.body.currentRelease).toBe("1.2.3");
+      expect(await stale.text()).toContain(
+        "<sparkle:version>1.2.3</sparkle:version>",
+      );
     });
   });
 });

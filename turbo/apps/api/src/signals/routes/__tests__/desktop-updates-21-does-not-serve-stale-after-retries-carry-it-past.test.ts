@@ -1,6 +1,6 @@
 import { HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
-import { accept, testContext } from "../../../__tests__/test-context";
+import { testContext } from "../../../__tests__/test-context";
 
 import { mockNow, withMockNowForTest } from "../../../lib/time";
 
@@ -12,7 +12,7 @@ const {
   stableManifest,
   darwinArm64Release,
   okouZipUrl,
-  feedRequest,
+  appcastRequest,
   countingManifestHandler,
 } = createDesktopUpdatePublicApi(context);
 
@@ -27,7 +27,7 @@ describe("desktop update routes", () => {
           "1.2.3": darwinArm64Release("1.2.3", okouZipUrl("1.2.3")),
         }),
       );
-      await accept(feedRequest(), [200]);
+      expect((await appcastRequest()).status).toBe(200);
 
       mockNow(initialNow + 30 * 60_000 - 1);
       countingManifestHandler(() => {
@@ -38,9 +38,12 @@ describe("desktop update routes", () => {
         return HttpResponse.error();
       });
 
-      const response = await accept(feedRequest(), [503]);
+      const response = await appcastRequest();
+      expect(response.status).toBe(503);
 
-      expect(response.body.error.code).toBe("DESKTOP_UPDATE_UNAVAILABLE");
+      await expect(response.json()).resolves.toMatchObject({
+        error: { code: "DESKTOP_UPDATE_UNAVAILABLE" },
+      });
     });
   });
 });

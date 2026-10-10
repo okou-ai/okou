@@ -4,6 +4,7 @@ import {
   DESKTOP_UPDATE_LINE_OKOU,
   desktopUpdatesContract,
   type DesktopUpdateLine,
+  type SquirrelMacReleases,
 } from "@okouai/api-contracts/contracts/desktop-updates";
 import { command } from "ccstate";
 
@@ -13,13 +14,14 @@ import { logger } from "../../lib/log";
 import { setResHeader$ } from "../context/hono";
 import { pathParamsOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
+import { desktopElectronMigrationRelease } from "../services/desktop-electron-migration-release";
 import {
   DESKTOP_UPDATE_MANIFEST_LOG_TYPE,
   DESKTOP_UPDATE_MANIFEST_PROVIDER,
   desktopUpdateManifestUnavailable,
   loadDesktopDmgDownloadUrl,
   loadDesktopReleasePageUrl,
-  loadDesktopUpdateFeed,
+  loadDesktopUpdateRelease,
   type DesktopUpdateManifestUnavailable,
 } from "../services/desktop-updates.service";
 import { settle } from "../utils";
@@ -246,36 +248,34 @@ const getProductDesktopReleasePage$ = command(
   },
 );
 
-const getProductDesktopUpdateFeed$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const { product, ...params } = get(productFeedParams$);
-    if (product === DESKTOP_UPDATE_LINE_LEGACY_OKOU) {
-      return notFound("This desktop update line is retired.");
-    }
-    const loaded = await settleManifestLoad(
-      loadDesktopUpdateFeed({ line: product, ...params }, signal),
-      signal,
-    );
-    if (!loaded.ok) {
-      return set(desktopUpdateUnavailable$, {
-        line: product,
-        route: desktopUpdatesContract.productFeed.path,
-        unavailable: loaded.unavailable,
-      });
-    }
-    const feed = loaded.value;
-    signal.throwIfAborted();
-
-    if (!feed) {
-      return notFound("No desktop update is available for this feed.");
-    }
-
-    return {
-      status: 200 as const,
-      body: feed,
-    };
-  },
-);
+const getProductDesktopUpdateFeed$ = command(({ get, set }) => {
+  const { product } = get(productFeedParams$);
+  if (product === DESKTOP_UPDATE_LINE_LEGACY_OKOU) {
+    return notFound("This desktop update line is retired.");
+  }
+  // The contract permits only stable/darwin/arm64. This hop must not advance
+  // with the Native manifest, even when the manifest host is unavailable.
+  const release = desktopElectronMigrationRelease;
+  set(setResHeader$, "Cache-Control", "no-store");
+  return {
+    status: 200 as const,
+    body: {
+      currentRelease: release.version,
+      releases: [
+        {
+          version: release.version,
+          updateTo: {
+            name: release.name,
+            version: release.version,
+            pub_date: release.pubDate,
+            notes: release.notes,
+            url: release.url,
+          },
+        },
+      ],
+    } satisfies SquirrelMacReleases,
+  };
+});
 
 function xmlText(value: string): string {
   return value.replace(/[&<>"']/g, (character) => {
@@ -309,7 +309,7 @@ const getProductDesktopAppcast$ = command(
       return notFound("This desktop update line is retired.");
     }
     const loaded = await settleManifestLoad(
-      loadDesktopUpdateFeed({ line: product, ...params }, signal),
+      loadDesktopUpdateRelease({ line: product, ...params }, signal),
       signal,
     );
     if (!loaded.ok) {
@@ -323,28 +323,24 @@ const getProductDesktopAppcast$ = command(
     if (!loaded.value) {
       return notFound("No desktop update is available for this feed.");
     }
-    // Both generations receive the same channel and blocked-version decisions.
     // ZIP bundles are authenticated by Sparkle against the installed app's
     // Developer ID designated requirement (same trust boundary as Squirrel).
     const minimum = desktopMinimumSupportedVersion();
-    const items = loaded.value.releases
-      .map(({ updateTo }) => {
-        return `<item>
-      <title>${xmlText(updateTo.name)}</title>
-      <pubDate>${xmlText(new Date(updateTo.pub_date).toUTCString())}</pubDate>
-      <description>${xmlText(updateTo.notes)}</description>
-      <sparkle:version>${xmlText(updateTo.version)}</sparkle:version>
-      <sparkle:shortVersionString>${xmlText(updateTo.version)}</sparkle:shortVersionString>
+    const release = loaded.value;
+    const item = `<item>
+      <title>${xmlText(release.name)}</title>
+      <pubDate>${xmlText(new Date(release.pubDate).toUTCString())}</pubDate>
+      <description>${xmlText(release.notes)}</description>
+      <sparkle:version>${xmlText(release.version)}</sparkle:version>
+      <sparkle:shortVersionString>${xmlText(release.version)}</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-      ${minimum !== null && desktopVersionIsSupported(updateTo.version, minimum) ? `<sparkle:criticalUpdate sparkle:version="${xmlText(minimum)}"/>` : ""}
-      <enclosure url="${xmlText(updateTo.url)}" type="application/octet-stream"/>
+      ${minimum !== null && desktopVersionIsSupported(release.version, minimum) ? `<sparkle:criticalUpdate sparkle:version="${xmlText(minimum)}"/>` : ""}
+      <enclosure url="${xmlText(release.url)}" type="application/octet-stream"/>
     </item>`;
-      })
-      .join("\n");
     return new Response(
       `<?xml version="1.0" encoding="utf-8"?>
 <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel>
-<title>Okou Desktop</title>${items}</channel></rss>`,
+<title>Okou Desktop</title>${item}</channel></rss>`,
       {
         headers: {
           "Content-Type": "application/rss+xml; charset=utf-8",

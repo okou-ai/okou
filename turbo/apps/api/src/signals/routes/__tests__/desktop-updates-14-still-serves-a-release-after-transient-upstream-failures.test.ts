@@ -1,6 +1,6 @@
 import { HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
-import { accept, testContext } from "../../../__tests__/test-context";
+import { testContext } from "../../../__tests__/test-context";
 
 import { createDesktopUpdatePublicApi } from "./helpers/desktop-update-public";
 
@@ -9,7 +9,7 @@ const {
   stableManifest,
   darwinArm64Release,
   okouZipUrl,
-  feedRequest,
+  appcastRequest,
   countingManifestHandler,
 } = createDesktopUpdatePublicApi(context);
 
@@ -27,9 +27,12 @@ describe("desktop update routes", () => {
       );
     });
 
-    const response = await accept(feedRequest(), [200]);
+    const response = await appcastRequest();
+    expect(response.status).toBe(200);
 
-    expect(response.body.currentRelease).toBe("1.2.3");
+    expect(await response.text()).toContain(
+      "<sparkle:version>1.2.3</sparkle:version>",
+    );
     expect(upstream.attempts()).toBe(3);
     // Absorbed, so it must not reach the error channel that pages a human.
     expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();

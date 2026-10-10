@@ -1,6 +1,6 @@
 import { HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
-import { accept, testContext } from "../../../__tests__/test-context";
+import { testContext } from "../../../__tests__/test-context";
 
 import { mockNow, withMockNowForTest } from "../../../lib/time";
 
@@ -13,7 +13,7 @@ const {
   stableManifest,
   darwinArm64Release,
   okouZipUrl,
-  feedRequest,
+  appcastRequest,
   countingManifestHandler,
 } = createDesktopUpdatePublicApi(context);
 
@@ -28,7 +28,7 @@ describe("desktop update routes", () => {
           "1.2.3": darwinArm64Release("1.2.3", okouZipUrl("1.2.3")),
         }),
       );
-      await accept(feedRequest(), [200]);
+      expect((await appcastRequest()).status).toBe(200);
 
       countingManifestHandler(() => {
         return new HttpResponse(null, { status: 404 });
@@ -36,7 +36,7 @@ describe("desktop update routes", () => {
       mockNow(initialNow + 5 * 60_000);
 
       const response = await appRequest(
-        "http://api.test/api/desktop/updates/ai-okou-desktop/stable/darwin/arm64/RELEASES.json",
+        "http://api.test/api/desktop/updates/ai-okou-desktop/stable/darwin/arm64/appcast.xml",
       );
 
       expect(response.status).toBe(500);

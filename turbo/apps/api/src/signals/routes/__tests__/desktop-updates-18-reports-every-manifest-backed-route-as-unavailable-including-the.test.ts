@@ -1,11 +1,11 @@
 import { HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
-import { accept, testContext } from "../../../__tests__/test-context";
+import { testContext } from "../../../__tests__/test-context";
 
 import { createDesktopUpdatePublicApi } from "./helpers/desktop-update-public";
 
 const context = testContext();
-const { appRequest, feedRequest, countingManifestHandler } =
+const { appRequest, appcastRequest, countingManifestHandler } =
   createDesktopUpdatePublicApi(context);
 
 // Default Vitest file isolation gives this scenario a fresh module cache.
@@ -15,8 +15,11 @@ describe("desktop update routes", () => {
       return HttpResponse.error();
     });
 
-    const feedResponse = await accept(feedRequest(), [503]);
-    expect(feedResponse.body.error.code).toBe("DESKTOP_UPDATE_UNAVAILABLE");
+    const feedResponse = await appcastRequest();
+    expect(feedResponse.status).toBe(503);
+    await expect(feedResponse.json()).resolves.toMatchObject({
+      error: { code: "DESKTOP_UPDATE_UNAVAILABLE" },
+    });
 
     // The redirect routes read the same manifest, so they share the status.
     // The Platform download button uses this neutral DMG route.

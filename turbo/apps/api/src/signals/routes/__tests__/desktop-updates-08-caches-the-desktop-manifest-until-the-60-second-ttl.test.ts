@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { accept, testContext } from "../../../__tests__/test-context";
+import { testContext } from "../../../__tests__/test-context";
 
 import { mockNow, withMockNowForTest } from "../../../lib/time";
 
@@ -7,7 +7,7 @@ import { createDesktopUpdatePublicApi } from "./helpers/desktop-update-public";
 
 const context = testContext();
 const {
-  client,
+  appcastRequest,
   mockDesktopUpdateManifest,
   stableManifest,
   darwinArm64Release,
@@ -26,18 +26,11 @@ describe("desktop update routes", () => {
         }),
       );
 
-      const firstResponse = await accept(
-        client().productFeed({
-          params: {
-            product: "ai-okou-desktop",
-            channel: "stable",
-            platform: "darwin",
-            arch: "arm64",
-          },
-        }),
-        [200],
+      const firstResponse = await appcastRequest();
+      expect(firstResponse.status).toBe(200);
+      expect(await firstResponse.text()).toContain(
+        "<sparkle:version>0.2.1</sparkle:version>",
       );
-      expect(firstResponse.body.currentRelease).toBe("0.2.1");
 
       mockDesktopUpdateManifest(
         stableManifest("0.2.2", {
@@ -46,33 +39,19 @@ describe("desktop update routes", () => {
       );
       mockNow(initialNow + 59_999);
 
-      const cachedResponse = await accept(
-        client().productFeed({
-          params: {
-            product: "ai-okou-desktop",
-            channel: "stable",
-            platform: "darwin",
-            arch: "arm64",
-          },
-        }),
-        [200],
+      const cachedResponse = await appcastRequest();
+      expect(cachedResponse.status).toBe(200);
+      expect(await cachedResponse.text()).toContain(
+        "<sparkle:version>0.2.1</sparkle:version>",
       );
-      expect(cachedResponse.body.currentRelease).toBe("0.2.1");
 
       mockNow(initialNow + 60_000);
 
-      const refreshedResponse = await accept(
-        client().productFeed({
-          params: {
-            product: "ai-okou-desktop",
-            channel: "stable",
-            platform: "darwin",
-            arch: "arm64",
-          },
-        }),
-        [200],
+      const refreshedResponse = await appcastRequest();
+      expect(refreshedResponse.status).toBe(200);
+      expect(await refreshedResponse.text()).toContain(
+        "<sparkle:version>0.2.2</sparkle:version>",
       );
-      expect(refreshedResponse.body.currentRelease).toBe("0.2.2");
     });
   });
 });

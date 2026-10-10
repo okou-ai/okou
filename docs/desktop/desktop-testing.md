@@ -70,5 +70,6 @@ workflow or release ownership. Release Please workspace coverage must recognize
 the standalone `desktop` component.
 
 The API's Desktop update-route tests protect both legacy `RELEASES.json` and
-native `appcast.xml` responses, shared blocked-version selection, retired lines,
-XML escaping, and manifest-unavailable behavior.
+native `appcast.xml` responses, the frozen Electron migration hop, Native
+blocked-version selection, retired lines, XML escaping, and manifest-unavailable
+behavior.
