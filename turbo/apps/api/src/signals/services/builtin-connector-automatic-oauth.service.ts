@@ -945,15 +945,12 @@ const refreshAutomatic = command(
         isAutomaticOAuthInvalidClient(refreshed.error) &&
         binding.registrationMethod === "dcr"
       ) {
-        // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0079; new non-billing transactions are prohibited.
-        await db.transaction(async (tx) => {
-          await tx.execute(
-            retireBuiltinDcrRegistrationSql(
-              contractOwner(args.orgId, contract),
-              binding.dcrRegistration.id,
-            ),
-          );
-        });
+        await db.execute(
+          retireBuiltinDcrRegistrationSql(
+            contractOwner(args.orgId, contract),
+            binding.dcrRegistration.id,
+          ),
+        );
         signal.throwIfAborted();
         return { kind: "unavailable", reason: "reconnect" };
       }
