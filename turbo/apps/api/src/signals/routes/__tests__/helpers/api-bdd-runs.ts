@@ -279,6 +279,43 @@ function runnerHeartbeatBody(
   };
 }
 
+/** Match the normal mixed-plan subscription and invoice from Stripe. */
+function paidConcurrencyLineItems(args: {
+  readonly quantity: number | undefined;
+  readonly tier: "pro" | "team";
+  readonly suffix: string;
+  readonly periodEndUnix: number;
+}) {
+  if (args.quantity === undefined) {
+    return { items: [], lines: [] };
+  }
+  if (args.tier !== "team") {
+    throw new Error("Paid concurrency requires the normal Team plan");
+  }
+  return {
+    items: [
+      {
+        id: `si_bdd_concurrency_${args.suffix}`,
+        price: { id: "price_bdd_concurrency" },
+        quantity: args.quantity,
+        current_period_end: args.periodEndUnix,
+      },
+    ],
+    lines: [
+      {
+        id: `il_bdd_concurrency_${args.suffix}`,
+        price: { id: "price_bdd_concurrency" },
+        quantity: args.quantity,
+        parent: { type: "subscription_item_details" },
+        period: {
+          start: args.periodEndUnix - 30 * 86_400,
+          end: args.periodEndUnix,
+        },
+      },
+    ],
+  };
+}
+
 export function createRunsApi(
   context: TestContext,
   systemSkillStorageResolution?: SystemSkillStorageResolution,
@@ -508,6 +545,7 @@ export function createRunsApi(
         readonly customerId?: string;
         readonly subscriptionId?: string;
         readonly tier?: "pro" | "team";
+        readonly additionalConcurrency?: number;
         readonly periodEndUnix?: number;
         readonly subscriptionMetadata?: Record<string, string>;
         readonly cancelAtUnix?: number | null;
@@ -539,6 +577,12 @@ export function createRunsApi(
       const invoiceId = `in_bdd_${suffix}`;
       const periodEndUnix =
         options.periodEndUnix ?? Math.floor(now() / 1000) + 30 * 86_400;
+      const concurrency = paidConcurrencyLineItems({
+        quantity: options.additionalConcurrency,
+        tier,
+        suffix,
+        periodEndUnix,
+      });
       context.mocks.stripe.customers.retrieve.mockResolvedValue({
         id: customerId,
         metadata: { orgId: actor.orgId },
@@ -559,6 +603,7 @@ export function createRunsApi(
                 id: tier === "team" ? "price_bdd_team" : "price_bdd_pro",
               },
             },
+            ...concurrency.items,
           ],
         },
       });
@@ -586,6 +631,7 @@ export function createRunsApi(
                     end: periodEndUnix,
                   },
                 },
+                ...concurrency.lines,
               ],
             },
           },
@@ -639,6 +685,21 @@ export function createRunsApi(
               billingStatus: billingStatus.body,
             },
           },
+        );
+      }
+      if (
+        options.additionalConcurrency !== undefined &&
+        (billingStatus.body.concurrencyLimit !==
+          10 + options.additionalConcurrency ||
+          !billingStatus.body.concurrencySubscriptions.some((subscription) => {
+            return (
+              subscription.id === subscriptionId &&
+              subscription.quantity === options.additionalConcurrency
+            );
+          }))
+      ) {
+        throw new Error(
+          "Paid concurrency invoice did not reach the public billing status",
         );
       }
 

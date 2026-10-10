@@ -26,6 +26,7 @@ export function createPublicComputerUseScenario(
   context: TestContext,
   options: {
     readonly tier?: "pro" | "team";
+    readonly additionalConcurrency?: number;
     readonly optionalEnvironmentNames?: readonly string[];
     readonly retainProviderState?: () => () => void;
   } = {},
@@ -292,6 +293,7 @@ export function createPublicComputerUseScenario(
         await run(() => {
           return runs.grantProEntitlement(actor, {
             tier: options.tier,
+            additionalConcurrency: options.additionalConcurrency,
             run,
             onExternalStateReady: (restore) => {
               restoreSetupWebhook = restore;

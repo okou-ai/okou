@@ -62,7 +62,10 @@ async function createAgentReadFixture(
       `Unread construction phases ${JSON.stringify({ threadCount, phases })}\n`,
     );
   });
-  const lifecycle = createPublicComputerUseScenario(context, { tier: "team" });
+  const lifecycle = createPublicComputerUseScenario(context, {
+    tier: "team",
+    ...(threadCount > 10 ? { additionalConcurrency: 118 } : {}),
+  });
   const orgId = `org_${randomUUID()}`;
   const owner = lifecycle.user({ orgId });
   const actor = lifecycle.user({ orgId });
@@ -79,9 +82,9 @@ async function createAgentReadFixture(
     });
     recordPhase("agent created");
     const threadIds: string[] = [];
-    // A normal Team subscription admits ten concurrent Runs. Join every
-    // accepted send/cancel before starting the next batch or propagating an error.
-    const batchSize = 10;
+    // Team plus its normal paid concurrency add-on admits the largest matrix.
+    // Join every accepted send/cancel before starting the next batch or propagating an error.
+    const batchSize = 128;
     for (let start = 0; start < threadCount; start += batchSize) {
       context.signal.throwIfAborted();
       threadIds.push(
@@ -146,7 +149,7 @@ async function appendCancelledRun(args: {
   return threadId;
 }
 
-/** Join a normal Team-sized batch, locating each actual Run through public logs. */
+/** Join a normally admitted batch, locating each actual Run through public logs. */
 async function appendCancelledRuns(args: {
   readonly actor: ApiTestUser;
   readonly agentId: string;
@@ -186,8 +189,8 @@ async function appendCancelledRuns(args: {
       return result.value;
     });
     const pages = await Promise.allSettled(
-      (["pending", "queued"] as const).map((status) => {
-        return runReads.requestListLogs(
+      (["pending", "queued"] as const).map(async (status) => {
+        let page = await runReads.requestListLogs(
           args.actor,
           {
             agentId: args.agentId,
@@ -196,14 +199,35 @@ async function appendCancelledRuns(args: {
           },
           [200],
         );
+        const entries = [...page.body.data];
+        const cursors = new Set<string>();
+        while (page.body.pagination.hasMore) {
+          const cursor = page.body.pagination.nextCursor;
+          if (!cursor || cursors.has(cursor)) {
+            throw new Error("Expected an advancing public Run-list cursor");
+          }
+          cursors.add(cursor);
+          page = await runReads.requestListLogs(
+            args.actor,
+            {
+              agentId: args.agentId,
+              status,
+              limit: 100,
+              cursor,
+            },
+            [200],
+          );
+          entries.push(...page.body.data);
+        }
+        expect(page.body.pagination.hasMore).toBeFalsy();
+        return entries;
       }),
     );
     const active = pages.flatMap((result) => {
       if (result.status === "rejected") {
         throw result.reason;
       }
-      expect(result.value.body.pagination.hasMore).toBeFalsy();
-      return result.value.body.data;
+      return result.value;
     });
     args.recordPhase?.("logs read");
     const launched = accepted.map((sent) => {
