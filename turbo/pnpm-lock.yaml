@@ -61,6 +61,9 @@ importers:
       dotenv-cli:
         specifier: ^11.0.0
         version: 11.0.0
+      esbuild:
+        specifier: 0.28.2
+        version: 0.28.2
       eslint:
         specifier: ^9.39.4
         version: 9.39.4(jiti@2.7.0)
@@ -70,6 +73,9 @@ importers:
       knip:
         specifier: ^6.35.1
         version: 6.35.1
+      miniflare:
+        specifier: 5.20260903.0-alpha
+        version: 5.20260903.0-alpha(@types/node@24.13.4)(bufferutil@4.1.0)(utf-8-validate@6.0.6)
       prettier:
         specifier: ^3.9.9
         version: 3.9.9

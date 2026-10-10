@@ -1054,6 +1054,9 @@ jobs:
       - name: Test App Worker
         working-directory: turbo
         run: pnpm -F @okouai/app-worker test
+      - name: Test artifact OG in Workers runtime
+        working-directory: turbo
+        run: pnpm test:artifact-og-workers
       - name: Test ESLint Config
         working-directory: turbo
         run: pnpm -F @okouai/eslint-config test
