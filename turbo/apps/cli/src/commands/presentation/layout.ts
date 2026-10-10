@@ -22,12 +22,27 @@ const tableSchema = boxSchema.extend({
   fills: z.array(z.array(z.string())),
 });
 
+const orderedListSchema = boxSchema.extend({
+  numbers: z.array(z.number().int().min(1).max(32_767)),
+  markers: z.array(
+    z.object({
+      color: z.string(),
+      font: z.string(),
+      size: z.number().positive(),
+      gap: z.number().positive(),
+      offset: z.number().finite(),
+      leading: z.number().nonnegative(),
+    }),
+  ),
+});
+
 export const layoutSchema = z.object({
   pages: z.array(
     z.object({
       width: z.number().positive(),
       height: z.number().positive(),
       tables: z.array(tableSchema),
+      orderedLists: z.array(orderedListSchema),
       textBoxes: z.array(textBoxSchema),
       texts: z.array(z.string()),
     }),
@@ -310,12 +325,40 @@ export const PREPARE_LAYOUT = String.raw`((selector, activated) => {
         return Array.from({length:cell.colSpan},() => fill);
       })),
     }));
+    const orderedLists = Array.from(slide.querySelectorAll('ol')).filter(list => {
+      const rect = list.getBoundingClientRect();
+      return visible(list) && rect.width>0 && rect.height>0 && Array.from(list.children).some(child=>child.tagName==='LI');
+    }).map(list => {
+      let number = list.hasAttribute('start') ? Number(list.getAttribute('start')) : 1;
+      const items = Array.from(list.children).filter(child => child.tagName === 'LI');
+      const numbers = items.map(item => {
+        if (item.hasAttribute('value')) number = Number(item.getAttribute('value'));
+        return number++;
+      });
+      const context = document.createElement('canvas').getContext('2d');
+      if (!context) throw new Error('No canvas context for native marker measurement');
+      const rect = list.getBoundingClientRect(), listStyle = getComputedStyle(list);
+      const markers = items.map((item,index) => {
+        const marker = getComputedStyle(item,'::marker');
+        const first = textNodes(item)[0];
+        if (!first) throw new Error('Native list item has no visible text');
+        const range = document.createRange();
+        range.selectNodeContents(first);
+        const text = Array.from(range.getClientRects()).find(rect => rect.width>0 && rect.height>0);
+        if (!text) throw new Error('Native list item has no text geometry');
+        context.font = marker.fontStyle+' '+marker.fontWeight+' '+marker.fontSize+' '+marker.fontFamily;
+        const lineHeight = parseFloat(getComputedStyle(item).lineHeight);
+        const leading = Number.isFinite(lineHeight) ? Math.max(0,(lineHeight-text.height)/2) : 0;
+        return {color:color(marker.color),font:families(marker)[0],size:parseFloat(marker.fontSize),gap:context.measureText(numbers[index]+'. ').width,offset:text.left-rect.left-parseFloat(listStyle.paddingLeft),leading};
+      });
+      return {...box(list),numbers,markers};
+    });
     const textBoxes = prepared.filter(part => slide.contains(part.span)).map(part => ({
       ...box(part.span), ...fonts(part.style), strike:part.style.textDecorationLine.includes('line-through'),
       underlineColor:part.style.textDecorationLine.includes('underline') ? color(part.style.textDecorationColor) : '',
       underlineWidth:parseFloat(part.style.textDecorationThickness) || 0,
     }));
-    return {width:rect.width,height:rect.height,tables,textBoxes,texts:textNodes(slide).map(node => node.nodeValue.trim())};
+    return {width:rect.width,height:rect.height,tables,orderedLists,textBoxes,texts:textNodes(slide).map(node => node.nodeValue.trim())};
   });
   return JSON.stringify({pages,activated,fragmented});
 })`;

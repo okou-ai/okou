@@ -85,9 +85,11 @@ function pack(entries: ReadonlyMap<string, Buffer>): Buffer {
 }
 
 function attribute(xml: string, name: string): number {
-  const match = [...xml.matchAll(/\b(x|y|cx|cy)="([^"]+)"/gu)].find((entry) => {
-    return entry[1] === name;
-  });
+  const match = [...xml.matchAll(/\b(x|y|cx|cy|lIns)="([^"]+)"/gu)].find(
+    (entry) => {
+      return entry[1] === name;
+    },
+  );
   if (match === undefined)
     throw new Error(`Missing PPTX geometry attribute ${name}`);
   const value = Number(match[2]);
@@ -135,14 +137,90 @@ export function applyGeometry(
       if (off === undefined) return shape;
       const x = attribute(off, "x");
       const y = attribute(off, "y");
-      const box = page.textBoxes.find((box) => {
+      const matches = (box: { readonly x: number; readonly y: number }) => {
         return (
           Math.abs(x - offsetX - box.x * scale) < 3 &&
           Math.abs(y - offsetY - box.y * scale) < 3
         );
-      });
-      if (box === undefined) return shape;
-      let fixed = shape.replace(
+      };
+      const list = page.orderedLists.find(matches);
+      let numbered = shape;
+      if (list !== undefined) {
+        const markers = [...shape.matchAll(/<a:buAutoNum\b[^>]*\/>/gu)];
+        if (
+          markers.length !== list.numbers.length ||
+          list.markers.length !== list.numbers.length
+        )
+          throw new Error(
+            "Native ordered-list paragraphs disagree with browser items",
+          );
+        const body = /<a:bodyPr\b[^>]*>/u.exec(shape)?.[0];
+        const extent = /<a:ext\b[^>]*\/>/u.exec(shape)?.[0];
+        const first = list.markers[0];
+        if (body === undefined || extent === undefined || first === undefined)
+          throw new Error("Native ordered list has no text frame");
+        const originalInset = attribute(body, "lIns") / scale;
+        const inset = Math.min(
+          ...list.markers.map((marker) => {
+            return originalInset + marker.offset - marker.gap;
+          }),
+        );
+        const shift = Math.min(0, inset) * scale;
+        const leading = first.leading * scale;
+        numbered = shape
+          .replace(
+            body,
+            body.replace(
+              /\blIns="[^"]*"/u,
+              `lIns="${Math.round(Math.max(0, inset) * scale).toString()}"`,
+            ),
+          )
+          .replace(
+            off,
+            `<a:off x="${Math.round(x + shift).toString()}" y="${Math.round(y - leading).toString()}"/>`,
+          )
+          .replace(
+            extent,
+            `<a:ext cx="${Math.round(attribute(extent, "cx") - shift).toString()}" cy="${Math.round(attribute(extent, "cy") + leading).toString()}"/>`,
+          );
+        let index = 0;
+        numbered = numbered.replace(/<a:p\b[\s\S]*?<\/a:p>/gu, (paragraph) => {
+          if (!paragraph.includes("<a:buAutoNum")) return paragraph;
+          const number = list.numbers[index];
+          const marker = list.markers[index++];
+          if (number === undefined || marker === undefined)
+            throw new Error("Missing measured ordered-list marker");
+          return paragraph.replace(
+            /<a:pPr\b([^>]*)>([\s\S]*?)<\/a:pPr>/u,
+            (_match: string, attributes: string, properties: string) => {
+              const clean = properties
+                .replace(/<a:buClr\b[\s\S]*?<\/a:buClr>/gu, "")
+                .replace(
+                  /<a:bu(?:ClrTx|SzTx|SzPct|SzPts|Font)\b[^>]*\/>/gu,
+                  "",
+                );
+              const paint = marker.color
+                ? `<a:buClr><a:srgbClr val="${marker.color}"/></a:buClr>`
+                : "";
+              const font = `<a:buFont typeface="${xmlValue(marker.font)}"/>`;
+              const size = `<a:buSzPts val="${Math.round((marker.size * scale) / 127).toString()}"/>`;
+              const numbered = clean.replace(
+                /<a:buAutoNum\b[^>]*\/>/u,
+                `${paint}${size}${font}<a:buAutoNum type="arabicPeriod" startAt="${number.toString()}"/>`,
+              );
+              const position = attributes.replace(
+                /\s+(?:marL|indent)="[^"]*"/gu,
+                "",
+              );
+              const left = (originalInset + marker.offset - inset) * scale;
+              return `<a:pPr${position} marL="${Math.round(left).toString()}" indent="${Math.round(-marker.gap * scale).toString()}">${numbered}</a:pPr>`;
+            },
+          );
+        });
+      }
+      const box = page.textBoxes.find(matches);
+      if (box === undefined) return numbered;
+      let fixed = numbered.replace(
         /(<a:bodyPr\b[^>]*?)\s+wrap="[^"]*"/gu,
         '$1 wrap="none"',
       );

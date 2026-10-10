@@ -104,6 +104,33 @@ const PLAN_PAINT = String.raw`((selector) => {
       const features=[];
       let mode='background';
       if (style.backgroundImage!=='none') features.push('background-image');
+      const radii=['TopLeft','TopRight','BottomRight','BottomLeft'].map(corner=>style['border'+corner+'Radius']);
+      if (new Set(radii).size>1 || radii.some(radius=>{const axes=radius.split(/\s+/);return axes.length>1 && axes[0]!==axes[1];})) features.push('complex-corners');
+      if (radii.some(radius=>parseFloat(radius)>0) && (['hidden','clip'].includes(style.overflowX) || ['hidden','clip'].includes(style.overflowY)) && (texts(element).length || element.children.length)) { features.push('rounded-overflow'); mode='content'; }
+      const sides=['Top','Right','Bottom','Left'].map(side=>[style['border'+side+'Width'],style['border'+side+'Style'],style['border'+side+'Color']].join(' '));
+      if (new Set(sides).size>1 || ['Top','Right','Bottom','Left'].some(side=>!['none','solid'].includes(style['border'+side+'Style'])) || (style.outlineStyle!=='none' && parseFloat(style.outlineWidth)>0) || style.borderImageSource!=='none') features.push('complex-border');
+      if (style.boxShadow!=='none') features.push('box-shadow');
+      if (style.textShadow!=='none' && texts(element).length) { features.push('text-shadow'); mode='content'; }
+      if (element.matches('ul,ol')) {
+        const items=Array.from(element.children).filter(child=>child.tagName==='LI');
+        const numbered=element.tagName==='OL';
+        let number=element.hasAttribute('start') ? Number(element.getAttribute('start')) : 1;
+        let transformed=false;
+        for (let ancestor=element;ancestor && slide.contains(ancestor);ancestor=ancestor.parentElement) {
+          if (getComputedStyle(ancestor).transform!=='none') transformed=true;
+        }
+        const special=features.length || transformed || element.querySelector('ul,ol') || element.hasAttribute('reversed') || items.some(item=>{
+          const itemStyle=getComputedStyle(item);
+          if (item.hasAttribute('value')) number=Number(item.getAttribute('value'));
+          const invalid=numbered && (!Number.isInteger(number) || number<1 || number>32767 || itemStyle.listStyleType!=='decimal');
+          number+=1;
+          const marker=getComputedStyle(item,'::marker');
+          const styledMarker=marker.fontSize!==itemStyle.fontSize || marker.fontWeight!==itemStyle.fontWeight || marker.fontStyle!==itemStyle.fontStyle || marker.fontFamily!==itemStyle.fontFamily || (!numbered && (marker.color!==itemStyle.color || !['disc','circle','square'].includes(itemStyle.listStyleType)));
+          const lineLayout=itemStyle.lineHeight!==style.lineHeight || ['marginTop','marginBottom','paddingTop','paddingBottom'].some(property=>parseFloat(itemStyle[property])!==0);
+          return invalid || styledMarker || lineLayout || !item.textContent.trim() || itemStyle.display==='none' || itemStyle.visibility!=='visible' || itemStyle.direction==='rtl' || item.querySelector('br,p,div,table,img,svg,canvas') || !['normal','none'].includes(marker.content) || ['flex','grid','inline-flex','inline-grid'].includes(itemStyle.display);
+        });
+        if (special) { features.push('complex-list'); mode='content'; }
+      }
       if ((style.backgroundClip==='text' || style.webkitBackgroundClip==='text') || parseFloat(style.webkitTextStrokeWidth)>0) { features.push('text-paint'); mode='content'; }
       if (style.filter!=='none') { features.push('filter'); mode='content'; }
       if (style.backdropFilter!=='none') { features.push('backdrop-filter'); mode='content'; }
@@ -145,6 +172,16 @@ const PLAN_PAINT = String.raw`((selector) => {
       const style=getComputedStyle(element);
       const id=targets.length;
       let padding=0;
+      for (const shadow of [style.boxShadow,style.textShadow]) {
+        for (const layer of shadow.match(/(?:rgba?\([^)]*\)|[^,])+/g) || []) {
+          if (layer.includes('inset')) continue;
+          const lengths=Array.from(layer.matchAll(/(-?[\d.]+)px/g),match=>Number(match[1]));
+          if (lengths.length<2) continue;
+          const blur=lengths[2] || 0, spread=lengths[3] || 0;
+          padding=Math.max(padding,Math.abs(lengths[0])+3*blur+spread,Math.abs(lengths[1])+3*blur+spread);
+        }
+      }
+      if (style.outlineStyle!=='none') padding=Math.max(padding,parseFloat(style.outlineWidth)+Math.max(0,parseFloat(style.outlineOffset)));
       for (const match of style.filter.matchAll(/blur\(([\d.]+)px\)/g)) padding+=Number(match[1])*3;
       targets.push({element,slide,mode:candidate.mode,save});
       return {id,mode:candidate.mode,features:[...new Set(candidate.features)],tag:element.tagName,textStrings:candidate.mode==='content'?texts(element).length:0,x:rect.left-root.left,y:rect.top-root.top,w:rect.width,h:rect.height,padding};
@@ -205,6 +242,9 @@ const INSTALL_PAINT = String.raw`(async (id, box) => {
     set('z-index','-2147483647');
     element.style.setProperty('background','transparent','important');
     element.style.setProperty('border-color','transparent','important');
+    element.style.setProperty('box-shadow','none','important');
+    element.style.setProperty('outline','none','important');
+    element.style.setProperty('border-image','none','important');
     element.prepend(image);
   } else {
     set('z-index',getComputedStyle(element).zIndex);

@@ -158,6 +158,21 @@ const state = {
     rows: number[];
     fills: string[][];
   }[],
+  orderedLists: [] as {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    numbers: number[];
+    markers: {
+      color: string;
+      font: string;
+      size: number;
+      gap: number;
+      offset: number;
+      leading: number;
+    }[];
+  }[],
   /** Every expression the command evaluated in the page, in order. */
   evaluated: [] as string[],
   openedUrls: [] as string[],
@@ -229,12 +244,13 @@ function fakeEval(expression: string): string {
           state.pageTexts.slice(0, 1),
           state.pageTexts.slice(1),
         ]
-      ).map((texts) => {
+      ).map((texts, index) => {
         return {
           width: 1600,
           height: 900,
           texts,
           tables: state.tables,
+          orderedLists: index === 0 ? state.orderedLists : [],
           textBoxes: state.textBoxes,
         };
       }),
@@ -365,6 +381,7 @@ describe("okou presentation convert", () => {
     state.slideXml = undefined;
     state.textBoxes = [];
     state.tables = [];
+    state.orderedLists = [];
     state.evaluated = [];
     state.openedUrls = [];
     state.slideCount = 2;
@@ -401,6 +418,79 @@ describe("okou presentation convert", () => {
     expect(parts.get("ppt/slides/slide2.xml")).toBe(
       slideXml(["Second line"]).replace("<a:spAutoFit/>", "<a:noAutofit/>"),
     );
+  });
+
+  it("preserves ordered-list start and explicit item values", async () => {
+    state.slideXml = [
+      slideXml(["Eight", "Twelve", "Thirteen"])
+        .replaceAll(
+          "<a:p>",
+          '<a:p><a:pPr><a:buAutoNum type="arabicPeriod" startAt="1"/></a:pPr>',
+        )
+        .replace(
+          '<a:bodyPr wrap="square">',
+          '<a:bodyPr wrap="square" lIns="0">',
+        ),
+      slideXml(["Second line"]),
+    ];
+    state.orderedLists = [
+      {
+        x: 0,
+        y: 0,
+        w: 100,
+        h: 100,
+        numbers: [8, 12, 13],
+        markers: [8, 12, 13].map(() => {
+          return {
+            color: "2563EB",
+            font: "Liberation Sans",
+            size: 32,
+            gap: 30,
+            offset: 0,
+            leading: 0,
+          };
+        }),
+      },
+    ];
+    await convert([]);
+    const xml = readZip(readFileSync(outPath)).get("ppt/slides/slide1.xml");
+    expect(xml).toContain('startAt="8"');
+    expect(xml).toContain('startAt="12"');
+    expect(xml).toContain('startAt="13"');
+    expect(xml).toContain('<a:buClr><a:srgbClr val="2563EB"/></a:buClr>');
+    expect(xml).toContain('<a:buFont typeface="Liberation Sans"/>');
+    expect(xml).toContain('marL="228594" indent="-228594"');
+  });
+
+  it("rejects ordered-list geometry with a mismatched paragraph count", async () => {
+    state.slideXml = [
+      slideXml(["Eight"]).replace(
+        "<a:p>",
+        '<a:p><a:pPr><a:buAutoNum type="arabicPeriod" startAt="1"/></a:pPr>',
+      ),
+      slideXml(["Second line"]),
+    ];
+    state.orderedLists = [
+      {
+        x: 0,
+        y: 0,
+        w: 100,
+        h: 100,
+        numbers: [8, 9],
+        markers: [8, 9].map(() => {
+          return {
+            color: "2563EB",
+            font: "Liberation Sans",
+            size: 32,
+            gap: 30,
+            offset: 0,
+            leading: 0,
+          };
+        }),
+      },
+    ];
+    await expect(convert([])).rejects.toThrow(/process\.exit/u);
+    expect(stderr()).toContain("paragraphs disagree with browser items");
   });
 
   it("reads the cached renderer into a local deck", async () => {
