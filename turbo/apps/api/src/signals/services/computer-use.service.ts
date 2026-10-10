@@ -25,10 +25,10 @@ import {
   type ComputerUseWriteCommandKind,
   type StoredScreenshotPointer,
 } from "@okouai/api-contracts/contracts/computer-use";
+import { computerUseHosts } from "@okouai/db/runtime/computer-use-host";
 import {
   computerUseCommandAuditEvents,
   computerUseCommands,
-  computerUseHosts,
 } from "@okouai/db/schema/computer-use-host";
 
 import { desktopMinimumSupportedVersion } from "../../lib/desktop-compatibility";
@@ -255,7 +255,7 @@ export function computerUseHostIsOnline(
   host: {
     readonly status: string;
     readonly appVersion: string;
-    readonly tokenHash: string | null;
+    readonly sessionId: string | null;
     readonly revokedAt: Date | null;
     readonly lastSeenAt: Date;
   },
@@ -263,7 +263,7 @@ export function computerUseHostIsOnline(
 ): boolean {
   const minimum = desktopMinimumSupportedVersion();
   return (
-    host.tokenHash === null &&
+    host.sessionId !== null &&
     (minimum === null || desktopVersionIsSupported(host.appVersion, minimum)) &&
     host.status === "online" &&
     host.revokedAt === null &&
@@ -883,7 +883,6 @@ export const startComputerUseHost$ = command(
         userId: params.userId,
         installationId: params.installationId,
         displayName,
-        tokenHash: null,
         sessionId: params.sessionId,
         sessionValidatedAt: now,
         connectionGeneration: 1,
@@ -908,7 +907,6 @@ export const startComputerUseHost$ = command(
         ),
         set: {
           displayName,
-          tokenHash: null,
           sessionId: params.sessionId,
           sessionValidatedAt: now,
           connectionGeneration: sql`${computerUseHosts.connectionGeneration} + 1`,
@@ -949,7 +947,7 @@ const COMPUTER_USE_HOST_LIVENESS_REFRESH_MS = 30 * 1000;
 function computerUseHostLivenessIsFresh(
   host: {
     readonly appVersion: string;
-    readonly tokenHash: string | null;
+    readonly sessionId: string | null;
     readonly status: string;
     readonly revokedAt: Date | null;
     readonly lastSeenAt: Date;
@@ -1086,7 +1084,6 @@ export const stopComputerUseHost$ = command(
       .update(computerUseHosts)
       .set({
         status: "offline",
-        tokenHash: null,
         connectionGeneration: sql`${computerUseHosts.connectionGeneration} + 1`,
         updatedAt: now,
       })

@@ -9,6 +9,25 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.725.1](https://github.com/okou-ai/okou/compare/api-v1.725.0...api-v1.725.1) (2026-10-10)
+
+
+### Refactoring
+
+* **api:** own builtin device-auth awaiting restoration ([#38655](https://github.com/okou-ai/okou/issues/38655)) ([cdb5fef](https://github.com/okou-ai/okou/commit/cdb5fef32849d3b4d831e15a7a949c169e799749))
+* **api:** remove automatic dcr refresh retirement transaction ([#38667](https://github.com/okou-ai/okou/issues/38667)) ([ba896c8](https://github.com/okou-ai/okou/commit/ba896c8bf58671c1aaaeaa101d5627a7bdca3b84))
+* **api:** retire tx-0233 private artifact completion transaction ([#38652](https://github.com/okou-ai/okou/issues/38652)) ([eac7c26](https://github.com/okou-ai/okou/commit/eac7c264465a9905726144d65bbb9d44a352f81e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.549.1
+    * @okouai/core bumped to 8.741.1
+    * @okouai/db bumped to 1.330.3
+    * @okouai/pi-agent-runtime bumped to 1.49.6
+
 ## [1.725.0](https://github.com/okou-ai/okou/compare/api-v1.724.0...api-v1.725.0) (2026-10-10)
 
 

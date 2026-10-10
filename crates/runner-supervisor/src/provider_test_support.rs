@@ -70,6 +70,9 @@ pub struct MockJobProvider {
     poll_delay: Option<Duration>,
     ready_discovery: Arc<StdMutex<VecDeque<JobCandidate>>>,
     claim_results: StdMutex<HashMap<RunId, Option<MockClaim>>>,
+    claim_controls: Arc<StdMutex<HashMap<RunId, Arc<MockOperationControl>>>>,
+    claim_max_in_flight: Arc<AtomicUsize>,
+    shutdown_with_claim_in_flight: Arc<AtomicBool>,
     claim_candidates: Arc<StdMutex<Vec<JobCandidate>>>,
     completions: Arc<StdMutex<Vec<Completion>>>,
     heartbeats: Arc<StdMutex<Vec<HeartbeatState>>>,
@@ -111,6 +114,9 @@ pub struct MockJobProvider {
 pub struct MockProviderHandle {
     startup_readiness: Arc<MockStartupReadiness>,
     pub discover_tx: mpsc::UnboundedSender<JobCandidate>,
+    claim_controls: Arc<StdMutex<HashMap<RunId, Arc<MockOperationControl>>>>,
+    claim_max_in_flight: Arc<AtomicUsize>,
+    shutdown_with_claim_in_flight: Arc<AtomicBool>,
     ready_discovery: Arc<StdMutex<VecDeque<JobCandidate>>>,
     claim_candidates: Arc<StdMutex<Vec<JobCandidate>>>,
     pub completions: Arc<StdMutex<Vec<Completion>>>,
@@ -200,7 +206,7 @@ impl MockOperationControl {
         }
     }
 
-    async fn run_while_blocked(&self, on_enter: impl FnOnce(usize)) {
+    async fn run_while_blocked(&self, on_enter: impl FnOnce(usize)) -> MockOperationInFlight<'_> {
         // Subscribe before entering so an unblock during `on_enter` releases
         // this call even if a later block starts the next gate cycle.
         let release = self.release.notified();
@@ -212,6 +218,7 @@ impl MockOperationControl {
         if self.blocked.load(Ordering::SeqCst) {
             release.await;
         }
+        in_flight
     }
 }
 
@@ -322,6 +329,9 @@ impl MockJobProvider {
         let heartbeat_max_in_flight = Arc::new(AtomicUsize::new(0));
         let panic_next_heartbeat = Arc::new(AtomicBool::new(false));
         let claim_control = Arc::new(MockOperationControl::default());
+        let claim_controls = Arc::new(StdMutex::new(HashMap::new()));
+        let claim_max_in_flight = Arc::new(AtomicUsize::new(0));
+        let shutdown_with_claim_in_flight = Arc::new(AtomicBool::new(false));
         let completion_control = Arc::new(MockOperationControl::default());
         let completion_after_finalization = Arc::new(AtomicBool::new(false));
         let provider = Arc::new(Self {
@@ -330,6 +340,9 @@ impl MockJobProvider {
             poll_delay,
             ready_discovery: Arc::clone(&ready_discovery),
             claim_results: StdMutex::new(HashMap::new()),
+            claim_controls: Arc::clone(&claim_controls),
+            claim_max_in_flight: Arc::clone(&claim_max_in_flight),
+            shutdown_with_claim_in_flight: Arc::clone(&shutdown_with_claim_in_flight),
             claim_candidates: Arc::clone(&claim_candidates),
             completions: Arc::clone(&completions),
             heartbeats: Arc::clone(&heartbeats),
@@ -350,6 +363,9 @@ impl MockJobProvider {
         let handle = MockProviderHandle {
             startup_readiness,
             discover_tx: tx,
+            claim_controls,
+            claim_max_in_flight,
+            shutdown_with_claim_in_flight,
             ready_discovery,
             claim_candidates,
             completions,
@@ -567,6 +583,38 @@ impl MockProviderHandle {
         self.claim_control.wait_in_flight(expected, timeout).await
     }
 
+    fn claim_control_for(&self, run_id: RunId) -> Arc<MockOperationControl> {
+        Arc::clone(
+            self.claim_controls
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .entry(run_id)
+                .or_default(),
+        )
+    }
+
+    pub fn block_claim(&self, run_id: RunId) {
+        self.claim_control_for(run_id).block();
+    }
+
+    pub fn unblock_claim(&self, run_id: RunId) {
+        self.claim_control_for(run_id).unblock();
+    }
+
+    pub async fn wait_run_claim_in_flight(&self, run_id: RunId, timeout: Duration) -> bool {
+        self.claim_control_for(run_id)
+            .wait_in_flight(1, timeout)
+            .await
+    }
+
+    pub fn max_claim_in_flight(&self) -> usize {
+        self.claim_max_in_flight.load(Ordering::SeqCst)
+    }
+
+    pub fn shutdown_with_claim_in_flight(&self) -> bool {
+        self.shutdown_with_claim_in_flight.load(Ordering::SeqCst)
+    }
+
     pub fn deferred_poll_deadlines(&self) -> Vec<Instant> {
         self.deferred_poll_deadlines
             .lock()
@@ -649,7 +697,21 @@ impl JobProvider for MockJobProvider {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .push(candidate.clone());
-        self.claim_control.run_while_blocked(|_| {}).await;
+        let _in_flight = self
+            .claim_control
+            .run_while_blocked(|count| {
+                self.claim_max_in_flight.fetch_max(count, Ordering::SeqCst);
+            })
+            .await;
+        let control = self
+            .claim_controls
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&run_id)
+            .cloned();
+        if let Some(control) = control {
+            control.run_while_blocked(|_| {}).await;
+        }
         let MockClaim {
             context,
             active_input_source,
@@ -738,6 +800,10 @@ impl JobProvider for MockJobProvider {
     /// If `discover()` is still alive and holding the Mutex, this deadlocks.
     /// The main loop must `drop(discover_fut)` before calling this.
     async fn shutdown(&self) {
+        if self.claim_control.in_flight() > 0 {
+            self.shutdown_with_claim_in_flight
+                .store(true, Ordering::SeqCst);
+        }
         let _lock = self.discovery.lock().await;
     }
 }

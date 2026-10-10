@@ -1786,11 +1786,11 @@ def _should_retain_model_websocket_tracking(flow: http.HTTPFlow) -> bool:
 
 async def responseinspection(flow: http.HTTPFlow) -> None:
     """Join the bounded inspector at the version-locked transport checkpoint."""
-    await response_streaming.drain_connector_inspection(flow)
+    await response_streaming.drain_response_inspection(flow)
 
 
 def response(flow: http.HTTPFlow) -> Awaitable[None] | None:
-    if response_streaming.has_pending_connector_inspection(flow):
+    if response_streaming.has_pending_response_inspection(flow):
         return _complete_response(flow, _handle_response_after_inspection(flow))
     try:
         continuation = _handle_response(flow)
@@ -1975,7 +1975,7 @@ def _finish_response_handling(
 
 
 def error(flow: http.HTTPFlow) -> Awaitable[None] | None:
-    if response_streaming.has_pending_connector_inspection(flow):
+    if response_streaming.has_pending_response_inspection(flow):
         return _complete_error_after_inspection(flow)
     try:
         _handle_error(flow)

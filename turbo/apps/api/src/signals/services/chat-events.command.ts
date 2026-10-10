@@ -30,7 +30,7 @@ import {
   chatEvents,
   type ChatEventAttachFileMetadata,
 } from "@okouai/db/schema/chat-event";
-import { computerUseHosts } from "@okouai/db/schema/computer-use-host";
+import { computerUseHosts } from "@okouai/db/runtime/computer-use-host";
 import { chatNetworkBodyCaptures } from "@okouai/db/schema/chat-network-body-capture";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";

@@ -259,14 +259,6 @@ export {
   type BuiltinConnectorsSlugCallbackContract,
 } from "./connectors-slug-callback";
 export {
-  testRuntimeStateActionBodySchema,
-  testRuntimeStateActionResponseSchema,
-  testRuntimeStateContract,
-  type TestRuntimeStateActionBody,
-  type TestRuntimeStateActionResponse,
-  type TestRuntimeStateContract,
-} from "./test-runtime-state";
-export {
   cronCompactChatThreadSnapshotsContract,
   cronCleanupSandboxesContract,
   cronCleanupXResourceReadsContract,

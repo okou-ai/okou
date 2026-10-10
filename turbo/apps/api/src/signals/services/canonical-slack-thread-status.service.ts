@@ -5,10 +5,20 @@ import { slackChatIngress } from "@okouai/db/schema/slack-chat-ingress";
 import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
-import { and, eq, inArray, isNull, notExists } from "drizzle-orm";
+import {
+  and,
+  eq,
+  exists,
+  inArray,
+  isNull,
+  notExists,
+  or,
+  sql,
+} from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 
+import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { db$, writeDb$ } from "../external/db";
 import { createSlackClient } from "../external/slack-message-client";
 import { decryptPersistentSecretValue } from "./crypto.utils";
@@ -86,15 +96,6 @@ const loadCanonicalSlackThreadStatusBinding$ = command(
   },
 );
 
-function hasPhysicalThreadWork(
-  rows: readonly { readonly payload: string }[],
-  target: CanonicalSlackThreadStatusTarget,
-): boolean {
-  const spans = (target.routeThreadTs ?? target.threadTs) !== target.threadTs;
-  return rows.some((row) => {
-    return !spans || slackPhysicalThreadTs(row.payload) === target.threadTs;
-  });
-}
 function slackPhysicalThreadTs(payload: string): string {
   const parsed = slackStatusIngressPayloadSchema.parse(
     JSON.parse(payload) as unknown,
@@ -102,8 +103,8 @@ function slackPhysicalThreadTs(payload: string): string {
   return parsed.event.thread_ts ?? parsed.event.ts;
 }
 
-// Read one snapshot across the transactional ingress-to-queue and queue-to-run
-// handoffs; combining opposite sides of a commit could invent an idle state.
+// One statement sees ingress, queue and run handoffs in the same snapshot,
+// including both main-DM and explicit routes into the physical Slack thread.
 const canonicalSlackThreadHasOutstandingWork$ = command(
   async (
     { set },
@@ -112,103 +113,83 @@ const canonicalSlackThreadHasOutstandingWork$ = command(
     signal: AbortSignal,
   ): Promise<boolean> => {
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0089; new non-billing transactions are prohibited.
-    return await db.transaction(
-      async (tx) => {
-        const routeThreadTs = target.routeThreadTs ?? target.threadTs;
-        const routes = await tx
-          .select({
-            id: slackChatThreadRoutes.id,
-            chatThreadId: slackChatThreadRoutes.chatThreadId,
-          })
-          .from(slackChatThreadRoutes)
-          .innerJoin(
-            slackOrgConnections,
-            eq(slackOrgConnections.id, slackChatThreadRoutes.connectionId),
-          )
-          .where(
-            and(
-              eq(slackOrgConnections.slackWorkspaceId, workspaceId),
-              eq(slackChatThreadRoutes.channelId, target.channelId),
-              eq(slackChatThreadRoutes.threadTs, routeThreadTs),
-            ),
-          );
-        signal.throwIfAborted();
-        const routeIds = routes.map((route) => {
-          return route.id;
-        });
-        const chatThreadIds = routes.map((route) => {
-          return route.chatThreadId;
-        });
-        if (routeIds.length === 0 || chatThreadIds.length === 0) {
-          return false;
-        }
-
-        const activeIngress = await tx
-          .select({ payload: slackChatIngress.payload })
-          .from(slackChatIngress)
-          .where(
-            and(
-              inArray(slackChatIngress.routeId, routeIds),
-              inArray(slackChatIngress.status, ACTIVE_INGRESS_STATUSES),
-            ),
-          );
-        signal.throwIfAborted();
-        if (hasPhysicalThreadWork(activeIngress, target)) {
-          return true;
-        }
-        const queuedSlackMessages = await tx
-          .select({ payload: slackChatIngress.payload })
-          .from(chatEvents)
-          .innerJoin(slackChatIngress, eq(slackChatIngress.id, chatEvents.id))
-          .where(
-            and(
-              inArray(chatEvents.chatThreadId, chatThreadIds),
-              chatEventTypeIn(["input.prompt"]),
-              eq(chatEvents.contextType, "slack"),
-              isNull(chatEvents.runId),
-              notExists(
-                tx
-                  .select({ id: slackQueueEventRevoker.id })
-                  .from(slackQueueEventRevoker)
-                  .where(
-                    eq(slackQueueEventRevoker.revokesEventId, chatEvents.id),
-                  ),
-              ),
-            ),
-          );
-        signal.throwIfAborted();
-        // Claim atomically appends a revoking replacement with an active run, so the
-        // pending event keeps the physical Slack thread busy during that handoff.
-        if (hasPhysicalThreadWork(queuedSlackMessages, target)) {
-          return true;
-        }
-        const activeRuns = await tx
-          .select({ payload: slackChatIngress.payload })
-          .from(agentRuns)
-          .innerJoin(
-            chatEvents,
-            and(
-              eq(chatEvents.runId, agentRuns.id),
-              chatEventTypeIn(["input.prompt"]),
-            ),
-          )
-          .innerJoin(
-            slackChatIngress,
-            eq(slackChatIngress.id, chatEvents.revokesEventId),
-          )
-          .where(
-            and(
-              inArray(agentRuns.chatThreadId, chatThreadIds),
-              inArray(agentRuns.status, ACTIVE_RUN_STATUSES),
-              eq(agentRuns.triggerSource, "slack"),
-            ),
-          );
-        signal.throwIfAborted();
-        return hasPhysicalThreadWork(activeRuns, target);
-      },
-      { isolationLevel: "repeatable read" },
-    );
+    const physicalThread = sql`coalesce(${slackChatIngress.payload}::jsonb -> 'event' ->> 'thread_ts', ${slackChatIngress.payload}::jsonb -> 'event' ->> 'ts') = ${target.threadTs}`;
+    const activeIngress = db
+      .select({ id: slackChatIngress.id })
+      .from(slackChatIngress)
+      .where(
+        and(
+          eq(slackChatIngress.routeId, slackChatThreadRoutes.id),
+          inArray(slackChatIngress.status, ACTIVE_INGRESS_STATUSES),
+          physicalThread,
+        ),
+      );
+    const queuedSlackMessages = db
+      .select({ id: chatEvents.id })
+      .from(chatEvents)
+      .innerJoin(slackChatIngress, eq(slackChatIngress.id, chatEvents.id))
+      .where(
+        and(
+          eq(chatEvents.chatThreadId, slackChatThreadRoutes.chatThreadId),
+          chatEventTypeIn(["input.prompt"]),
+          eq(chatEvents.contextType, "slack"),
+          isNull(chatEvents.runId),
+          physicalThread,
+          notExists(
+            db
+              .select({ id: slackQueueEventRevoker.id })
+              .from(slackQueueEventRevoker)
+              .where(eq(slackQueueEventRevoker.revokesEventId, chatEvents.id)),
+          ),
+        ),
+      );
+    const activeRuns = db
+      .select({ id: agentRuns.id })
+      .from(agentRuns)
+      .innerJoin(
+        chatEvents,
+        and(
+          eq(chatEvents.runId, agentRuns.id),
+          chatEventTypeIn(["input.prompt"]),
+        ),
+      )
+      .innerJoin(
+        slackChatIngress,
+        eq(slackChatIngress.id, chatEvents.revokesEventId),
+      )
+      .where(
+        and(
+          eq(agentRuns.chatThreadId, slackChatThreadRoutes.chatThreadId),
+          inArray(agentRuns.status, ACTIVE_RUN_STATUSES),
+          eq(agentRuns.triggerSource, "slack"),
+          physicalThread,
+        ),
+      );
+    const [work] = await db
+      .select({ id: slackChatThreadRoutes.id })
+      .from(slackChatThreadRoutes)
+      .innerJoin(
+        slackOrgConnections,
+        eq(slackOrgConnections.id, slackChatThreadRoutes.connectionId),
+      )
+      .where(
+        and(
+          eq(slackOrgConnections.slackWorkspaceId, workspaceId),
+          eq(slackChatThreadRoutes.channelId, target.channelId),
+          or(
+            eq(slackChatThreadRoutes.threadTs, target.threadTs),
+            eq(slackChatThreadRoutes.threadTs, INTEGRATION_DM_SESSION_KEY),
+          ),
+          or(
+            exists(activeIngress),
+            exists(queuedSlackMessages),
+            exists(activeRuns),
+          ),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return work !== undefined;
   },
 );
 
@@ -249,12 +230,13 @@ export const canonicalSlackThreadStatusTargetForIngress$ = command(
   },
 );
 
-export const refreshCanonicalSlackThreadStatus$ = command(
+const syncCanonicalSlackThreadStatus$ = command(
   async (
     { set },
     target: CanonicalSlackThreadStatusTarget,
+    mode: "always" | "if_idle",
     signal: AbortSignal,
-  ): Promise<boolean> => {
+  ): Promise<"active" | "processing" | undefined> => {
     const binding = await set(
       loadCanonicalSlackThreadStatusBinding$,
       target,
@@ -262,58 +244,21 @@ export const refreshCanonicalSlackThreadStatus$ = command(
     );
     signal.throwIfAborted();
     if (!binding) {
-      return false;
-    }
-    const featureContext = await set(
-      loadUserFeatureSwitchContext$,
-      binding.orgId,
-      binding.userId,
-      signal,
-    );
-    signal.throwIfAborted();
-    const botToken = await decryptPersistentSecretValue(
-      binding.encryptedBotToken,
-      featureContext,
-    );
-    signal.throwIfAborted();
-    await createSlackClient(botToken).setThreadStatus(
-      target.channelId,
-      target.threadTs,
-      "is thinking...",
-    );
-    signal.throwIfAborted();
-    return true;
-  },
-);
-
-export const clearCanonicalSlackThreadStatusIfIdle$ = command(
-  async (
-    { set },
-    target: CanonicalSlackThreadStatusTarget,
-    signal: AbortSignal,
-  ): Promise<boolean> => {
-    const binding = await set(
-      loadCanonicalSlackThreadStatusBinding$,
-      target,
-      signal,
-    );
-    signal.throwIfAborted();
-    if (!binding) {
-      return false;
+      return undefined;
     }
     if (
-      await set(
+      mode === "if_idle" &&
+      (await set(
         canonicalSlackThreadHasOutstandingWork$,
         target,
         binding.workspaceId,
         signal,
-      )
+      ))
     ) {
       signal.throwIfAborted();
-      return false;
+      return "processing";
     }
     signal.throwIfAborted();
-
     const featureContext = await set(
       loadUserFeatureSwitchContext$,
       binding.orgId,
@@ -327,7 +272,16 @@ export const clearCanonicalSlackThreadStatusIfIdle$ = command(
     );
     signal.throwIfAborted();
     const client = createSlackClient(botToken);
-    let appliedStatus = "";
+    // A delayed progress callback or Stop retry must not revive stopped work.
+    let appliedStatus = (await set(
+      canonicalSlackThreadHasOutstandingWork$,
+      target,
+      binding.workspaceId,
+      signal,
+    ))
+      ? "is thinking..."
+      : "";
+    signal.throwIfAborted();
     while (true) {
       await client.setThreadStatus(
         target.channelId,
@@ -349,9 +303,36 @@ export const clearCanonicalSlackThreadStatusIfIdle$ = command(
         : "";
       signal.throwIfAborted();
       if (desiredStatus === appliedStatus) {
-        return appliedStatus === "";
+        return appliedStatus === "" ? "active" : "processing";
       }
       appliedStatus = desiredStatus;
     }
+  },
+);
+
+export const reconcileCanonicalSlackThreadStatus$ = command(
+  async (
+    { set },
+    target: CanonicalSlackThreadStatusTarget,
+    signal: AbortSignal,
+  ) => {
+    return await set(syncCanonicalSlackThreadStatus$, target, "always", signal);
+  },
+);
+
+export const clearCanonicalSlackThreadStatusIfIdle$ = command(
+  async (
+    { set },
+    target: CanonicalSlackThreadStatusTarget,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    return (
+      (await set(
+        syncCanonicalSlackThreadStatus$,
+        target,
+        "if_idle",
+        signal,
+      )) === "active"
+    );
   },
 );

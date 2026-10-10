@@ -851,7 +851,8 @@ async function artifactPageResponse(
     const result = await apiFetcher(url, {
       headers: metaRequestHeaders(requestUrl, origin),
       cache: "no-store",
-      redirect: "error",
+      // Workers supports manual redirects; the non-OK check below rejects them.
+      redirect: "manual",
       signal: globalThis.AbortSignal.any([
         request.signal,
         globalThis.AbortSignal.timeout(3000),

@@ -33,7 +33,7 @@ Use only \`okou notify mail --kind morning-brief\` to send to the user's account
 
 Read the server-provided Automation identity block in this run's prompt. Use its exact \`automationId\` and \`automationEventId\` to form the idempotency key \`morning-brief:<automationId>:<automationEventId>\`. This identity comes from Okou, not from the external event payload. Never use the current clock, only a calendar date, or a Run ID: retries of one event must reuse its key, while separate manual requests must remain distinct even when they share a timestamp.
 
-During API rollout, an older automation prompt may omit the Automation identity block. Only for that older prompt, use \`morning-brief:<automationId>:<event-type>:<event-time>\` from its Automation event data, taking the exact \`firedAt\` for a schedule event or \`requestedAt\` for a manual event, including its UTC suffix. If a resumed event already submitted a notification, retain its original key and exact content rather than switching key formats. If neither server-provided event identity is available, do not invent a key or send; report the missing context in the Chat.
+If the Automation identity block or either ID is missing, do not invent a key or send a new notification; report the missing context in the Chat. If a resumed event already submitted a notification, retain its original key and exact subject and body instead of deriving a replacement key from the current prompt.
 
 Save the final briefing to a UTF-8 Markdown file, within the CLI's 8000-character body limit. Choose a concise subject within its 180-character limit, then call:
 

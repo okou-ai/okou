@@ -7,13 +7,16 @@ for environment setup, commands, and executable coverage.
 
 ## Cooperative response inspection
 
-Connector parsers may opt into bounded owner-loop work steps. A response callback
-processes at most eight row/fragment steps in total across all its decoded feeds;
-remaining work resumes with an explicit event-loop yield before each quantum.
-Rows retain their existing syntax and identity limits. Blank and invalid lines
-also consume steps. Decoder output remains lazy, so a pending callback retains
-one wire input, the current decoder output and the parser's bounded partial
-line, not a queue of later wire callbacks. Zlib and identity output deliveries
+Model SSE scanners and opted-in connector parsers use bounded owner-loop work
+steps. A response callback processes at most eight steps in total across all
+its decoded feeds; remaining work resumes with an explicit event-loop yield
+before each quantum. SSE steps cover at most one blank-line event boundary or
+4 KiB of decoded framing/data, including ignored, malformed and unterminated
+lines. Provider-specific JSON limits and usage semantics remain unchanged.
+Connector steps retain their existing row/fragment syntax and identity limits;
+blank and invalid lines also consume steps. Decoder output remains lazy, so a
+pending callback retains one wire input, the current decoder output and bounded
+parser state, not a queue of later wire callbacks. Zlib and identity output deliveries
 are hard chunk-bounded. Brotli keeps its existing documented soft output-batch
 limit: an accepted binding batch may exceed a delivery chunk and remain retained
 until consumed, but rejected expansion overshoot is released before yielding.
@@ -34,15 +37,21 @@ Response/error completion joins the same pending owner before finalization and
 cleanup. Cancellation or abandonment closes retained iterators, publishes
 explicit unparsed state and logs an inspection-interruption underbilling risk;
 it never reports the uninspected suffix as observed zero. Previously accepted
-row source events remain intact. Original wire bytes, row ordinals and normal
+connector row source events and model usage observations remain intact. Model
+abandonment marks parse_error/interrupted coverage and does not finalize a
+partially inspected trailing SSE event. Normal completion and connection errors
+join pending work before existing decoder and trailing-event finalization.
+Original wire bytes, row ordinals, model usage update semantics and normal
 compressed failure/trailing-line semantics are unchanged. Runner and addon ship
 together with the pinned runtime; no external wire or database migration is
 required.
 
-Executable coverage: `tests/test_x_cooperative_streaming.py` exercises row and
-accounting semantics, and `tests/test_mitmproxy_response_inspection.py` uses the
-real runtime read loop, native HTTP stream hooks and fixture-owned TCP peers to
-verify fairness, byte forwarding and read backpressure. These tests do not claim
+Executable coverage: `tests/test_x_cooperative_streaming.py` exercises connector
+row accounting; `tests/test_model_sse_cooperative_streaming.py` covers model
+protocols, partitions, event/fragment bounds and terminal/cancellation handling.
+`tests/test_mitmproxy_response_inspection.py` uses the real runtime read loop,
+native HTTP stream hooks and fixture-owned TCP peers for both paths to verify
+fairness, byte forwarding and read backpressure. These tests do not claim
 production latency or a production load soak.
 
 ## Platform connector authorization path policy

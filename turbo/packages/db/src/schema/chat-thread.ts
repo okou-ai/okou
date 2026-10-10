@@ -20,6 +20,10 @@ export const chatThreads = pgTable(
     return [
       unique("uq_chat_threads_id_user").on(table.id, table.userId),
       check(
+        "chat_threads_canonical_selection_check",
+        sql`${table.selectedModel} NOT IN ('okou-1.0', 'okou-1.0-pro', 'okou-1.0-max') AND ${table.selectedModel} NOT LIKE '@preset/%'`,
+      ),
+      check(
         "chat_threads_selected_model_check",
         sql`char_length(${table.selectedModel}) > 0`,
       ),

@@ -3,6 +3,15 @@ SELECT jsonb_build_object(
   'legacy_run_selected', (SELECT count(*) FROM agent_runs WHERE selected_model IN ('okou-1.0','okou-1.0-pro','okou-1.0-max')),
   'uncaptured_runs_by_lifecycle', (SELECT jsonb_object_agg(status,n) FROM (SELECT status,count(*) n FROM agent_runs WHERE selected_model IS NULL GROUP BY status) s),
   'personal_runtime_gaps_by_lifecycle', (SELECT jsonb_object_agg(status,n) FROM (SELECT status,count(*) n FROM agent_runs WHERE model_provider IN ('codex-oauth-token','claude-code-oauth-token') AND (model_runtime_model IS NULL OR model_runtime_provider IS NULL) GROUP BY status) s),
+  'runtime_capture_classes', (SELECT COALESCE(jsonb_agg(s), '[]'::jsonb) FROM (
+    SELECT status, model_provider, launch_snapshot IS NOT NULL AS has_launch,
+      CASE WHEN model_runtime_provider IS NULL AND model_runtime_model IS NULL THEN 'uncaptured'
+        WHEN model_runtime_provider IS NULL OR model_runtime_model IS NULL THEN 'partial'
+        ELSE 'paired' END AS capture, count(*) AS runs
+    FROM agent_runs GROUP BY status, model_provider, has_launch, capture
+  ) s),
+  'raw_managed_model_rows', (SELECT count(*) FROM usage_event WHERE kind = 'model'),
+  'compacted_managed_model_rows', (SELECT count(*) FROM usage_event_hourly_rollup WHERE kind = 'model'),
   'canonical_catalog', (SELECT count(*) FROM run_model_catalog WHERE model = 'auto' AND replaced_by IS NULL),
   'canonical_routes', (SELECT count(*) FROM model_routes WHERE model = 'auto' AND provider_type = 'built-in' AND enabled),
   'legacy_alias_relationships', (SELECT count(*) FROM run_model_catalog WHERE replaced_by = 'okou-1.0' OR (model IN ('okou-1.0-pro','okou-1.0-max') AND replaced_by IS DISTINCT FROM 'auto')),

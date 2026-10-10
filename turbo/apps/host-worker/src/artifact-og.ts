@@ -35,7 +35,8 @@ export async function withArtifactOg(
   try {
     const result = await fetch(url, {
       cache: "no-store",
-      redirect: "error",
+      // Workers supports manual redirects; the non-OK check below rejects them.
+      redirect: "manual",
       signal: AbortSignal.any([request.signal, AbortSignal.timeout(3000)]),
     });
     if (!result.ok)

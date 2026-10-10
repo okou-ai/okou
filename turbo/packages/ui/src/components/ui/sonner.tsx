@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { Toaster as Sonner, toast } from "sonner";
+import { Toaster as Sonner, toast, type ExternalToast } from "sonner";
 
 type ToasterProps = React.ComponentProps<typeof Sonner> & {
   readonly onReady?: () => void;
@@ -111,4 +111,22 @@ function Toaster({ onReady, ...props }: ToasterProps) {
   return createPortal(toaster, document.body);
 }
 
-export { Toaster, toast };
+// A quiet text action for reversible feedback such as Undo, where the primary
+// fill would overstate the action. Sonner's button rules are unlayered, so the
+// colour rides on its per-toast style slot and the gap from a one-line message
+// needs an important margin.
+const TEXT_TOAST_ACTION = {
+  actionButtonStyle: {
+    background: "transparent",
+    color: "hsl(var(--foreground))",
+    fontSize: "inherit",
+    height: "auto",
+    lineHeight: "1.5",
+    padding: 0,
+  },
+  classNames: {
+    actionButton: "!ml-4 underline-offset-4 hover:underline active:opacity-80",
+  },
+} as const satisfies Pick<ExternalToast, "actionButtonStyle" | "classNames">;
+
+export { Toaster, toast, TEXT_TOAST_ACTION };

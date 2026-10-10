@@ -27,7 +27,7 @@ function researchAgent() {
 
 function setupInstructionsPage(
   initialContent: string,
-  onUpdate?: (content: string) => void,
+  onUpdate?: (content: string) => void | Promise<void>,
 ): Promise<void> {
   let savedContent = initialContent;
   context.mocks.api(agentsByIdContract.get, ({ respond }) => {
@@ -39,11 +39,14 @@ function setupInstructionsPage(
       filename: "AGENTS.md",
     });
   });
-  context.mocks.api(agentInstructionsContract.update, ({ body, respond }) => {
-    savedContent = body.content;
-    onUpdate?.(body.content);
-    return respond(200, researchAgent());
-  });
+  context.mocks.api(
+    agentInstructionsContract.update,
+    async ({ body, respond }) => {
+      await onUpdate?.(body.content);
+      savedContent = body.content;
+      return respond(200, researchAgent());
+    },
+  );
 
   return setupPage({
     context,
@@ -74,6 +77,37 @@ test("Discard restores saved instructions and exits editing", async () => {
     );
   });
   expect(screen.queryByTestId("unsaved-bar")).not.toBeInTheDocument();
+});
+
+test("Saving instructions disables both unsaved actions until the update completes", async () => {
+  const update = context.mocks.deferred<void>();
+  await setupInstructionsPage("Review release notes", () => {
+    return update.promise;
+  });
+  const editor = await instructionsEditor();
+  await fill(editor, "Check launch readiness");
+  const unsavedBar = await screen.findByTestId("unsaved-bar");
+  const save = within(unsavedBar).getByTestId("save-button");
+  const discard = within(unsavedBar).getByTestId("discard-button");
+  expect(save).toBeEnabled();
+  expect(discard).toBeEnabled();
+
+  click(save);
+
+  await waitFor(() => {
+    expect(save).toBeDisabled();
+  });
+  expect(discard).toBeDisabled();
+
+  update.resolve();
+
+  await expect(
+    screen.findByText("Instructions saved"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.queryByTestId("unsaved-bar")).not.toBeInTheDocument();
+  await expect(instructionsEditor()).resolves.toHaveTextContent(
+    "Check launch readiness",
+  );
 });
 
 test("A user can format and save agent instructions", async () => {

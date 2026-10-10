@@ -1,4 +1,5 @@
 import { now } from "../../lib/time";
+import { logger } from "../../lib/log";
 import type { DiscordAppConfig } from "./discord-config";
 import type { DiscordOauthEvidence } from "./discord-oauth-binding.service";
 import { loadDiscordGuildAccess } from "./discord-provider-access";
@@ -15,6 +16,8 @@ import {
   fetchDiscordOauthBotApplication,
   findDiscordOauthGuild,
 } from "../external/discord-oauth-client";
+
+const L = logger("DiscordOauthVerification");
 
 export type DiscordOauthVerificationError =
   | "provider_error"
@@ -53,11 +56,13 @@ async function verifyIdentity(args: GrantArgs, signal: AbortSignal) {
   const token = exchanged.data;
   const scopes =
     args.flow === "install" ? DISCORD_INSTALL_SCOPES : DISCORD_CONNECT_SCOPES;
-  if (
-    !scopes.every((scope) => {
-      return token.scope.split(/\s+/u).includes(scope);
-    })
-  ) {
+  const missingTokenScopes = scopes.filter((scope) => {
+    return !token.scope.split(/\s+/u).includes(scope);
+  });
+  if (missingTokenScopes.length > 0) {
+    L.warn("Discord OAuth token is missing required scopes", {
+      missingScopes: missingTokenScopes,
+    });
     return failed("invalid_authorization");
   }
   const authorization = await fetchDiscordOauthAuthorization(
@@ -74,6 +79,14 @@ async function verifyIdentity(args: GrantArgs, signal: AbortSignal) {
     }) ||
     Date.parse(authorization.data.expires) <= now()
   ) {
+    L.warn("Discord OAuth authorization evidence did not match", {
+      applicationMatches:
+        authorization.data.application.id === args.config.applicationId,
+      missingScopes: scopes.filter((scope) => {
+        return !authorization.data.scopes.includes(scope);
+      }),
+      expired: Date.parse(authorization.data.expires) <= now(),
+    });
     return failed("invalid_authorization");
   }
   const user = await fetchDiscordOauthUser(token.access_token, signal);
@@ -81,6 +94,10 @@ async function verifyIdentity(args: GrantArgs, signal: AbortSignal) {
     return user;
   }
   if (user.data.bot || user.data.id !== authorization.data.user.id) {
+    L.warn("Discord OAuth user identity did not match", {
+      isBot: user.data.bot === true,
+      userMatches: user.data.id === authorization.data.user.id,
+    });
     return failed("invalid_authorization");
   }
   return { ok: true as const, data: { token, user: user.data } };
@@ -99,6 +116,7 @@ async function verifyBot(
   }
   // This endpoint is the current BOT application's authority for this exact token.
   if (application.data.id !== config.applicationId) {
+    L.warn("Discord OAuth bot token belongs to a different application");
     return failed("invalid_authorization");
   }
   const bot = await discordClient.fetchDiscordCurrentUser(config, signal);
@@ -112,6 +130,12 @@ async function verifyBot(
     (application.data.bot !== undefined &&
       bot.data.id !== application.data.bot.id)
   ) {
+    L.warn("Discord OAuth bot identity did not match", {
+      isBot: bot.data.bot === true,
+      applicationBotMatches:
+        application.data.bot === undefined ||
+        bot.data.id === application.data.bot.id,
+    });
     return failed("invalid_authorization");
   }
   return { ok: true, data: bot.data.id };
@@ -164,6 +188,7 @@ export async function revalidateDiscordOauthEvidence(
     return bot;
   }
   if (bot.data !== evidence.botUserId) {
+    L.warn("Discord OAuth bot identity changed before completion");
     return failed("invalid_authorization");
   }
   const resolved = await loadDiscordGuildAccess(

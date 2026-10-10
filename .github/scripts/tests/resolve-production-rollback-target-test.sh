@@ -22,7 +22,9 @@ printf 'git %s\n' "$*" >>"$MOCK_BOUNDARY_LOG"
 case "${1:-}" in
   fetch|cat-file) exit 0 ;;
   merge-base)
-    if [ "${3:-}" = "9fa8da0d3d25e75e0dcfdd3292e1e2bbe6fe262f" ]; then
+    if [ "${3:-}" = "4545454545454545454545454545454545454545" ]; then
+      [ "${MOCK_COMPUTER_USE_HOST_SESSION_ONLY_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "9fa8da0d3d25e75e0dcfdd3292e1e2bbe6fe262f" ]; then
       [ "${MOCK_CHAT_THREAD_PROVENANCE_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "febec8a3399be74b0f14a89cb9f42e39dd5ce69f" ]; then
       [ "${MOCK_BLANK_RUNNER_FLOOR_VALID:-1}" = "1" ]
@@ -50,6 +52,8 @@ case "${1:-}" in
       [ "${MOCK_PI_MEMORY_LUNA_ROUTING_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "a635ec3afa20cdb5df9c8125afe6cec24ef53e16" ]; then
       [ "${MOCK_PI_OPENROUTER_VERSIONED_WRITER_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "b6919718b6d856dfa3a7c500b6e899dd3fde7674" ]; then
+      [ "${MOCK_MODEL_EXECUTION_CAPTURE_WRITER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "3d93ff8d4b4a07a5888e3030e69b340f40da0ad4" ]; then
       [ "${MOCK_CHAT_THREAD_SNAPSHOT_R2_ONLY_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "2222222222222222222222222222222222222222" ]; then
@@ -105,7 +109,9 @@ case "${1:-}" in
     fi
     ;;
   log)
-    if [[ "$*" == *1255_retire_public_brand.sql* ]]; then
+    if [[ "$*" == *src/runtime/computer-use-host.ts* ]]; then
+      printf '%s\n' "${MOCK_COMPUTER_USE_HOST_SESSION_ONLY_COMMIT-4545454545454545454545454545454545454545}"
+    elif [[ "$*" == *1255_retire_public_brand.sql* ]]; then
       printf '%s\n' "${MOCK_PUBLIC_BRAND_RETIREMENT_COMMIT-2222222222222222222222222222222222222222}"
     elif [[ "$*" == *1259_drop_agent_runs_last_heartbeat_at.sql* ]]; then
       printf '%s\n' "${MOCK_AGENT_RUN_HEARTBEAT_DROP_COMMIT-3333333333333333333333333333333333333333}"
@@ -292,6 +298,14 @@ runner_matrix=$(sed -n 's/^runner_matrix=//p' "$output_file")
 jq -e 'length == 2 and .[0].id == "arm64" and .[1].id == "x86_64"' >/dev/null <<<"$runner_matrix" || fail "unexpected Runner matrix"
 
 grep -Fxq "git merge-base --is-ancestor a635ec3afa20cdb5df9c8125afe6cec24ef53e16 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the versioned Pi OpenRouter writer floor"
+grep -Fxq "git merge-base --is-ancestor b6919718b6d856dfa3a7c500b6e899dd3fde7674 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the model execution capture writer floor"
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the model execution capture writer" \
+  run_resolver "${tmp_dir}/model-execution-capture-floor.output" MOCK_MODEL_EXECUTION_CAPTURE_WRITER_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/model-execution-capture-floor.output" ] || fail "pre-capture writer must not publish rollback outputs"
+if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+  fail "pre-capture writer must fail before artifact or host access"
+fi
 
 : >"${tmp_dir}/boundaries.log"
 assert_failure "Rollback target predates the versioned Pi OpenRouter writer" \
@@ -586,6 +600,24 @@ assert_failure "Rollback target predates the chat thread provenance runtime remo
 [ ! -s "${tmp_dir}/chat-thread-provenance-floor.output" ] || fail "provenance-dependent API must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "chat thread provenance floor must fail before artifact or host access"
+fi
+
+for preparation_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged Computer Use session-only host mapping" \
+    run_resolver "${tmp_dir}/computer-use-host-history.output" "MOCK_COMPUTER_USE_HOST_SESSION_ONLY_COMMIT=${preparation_commit}"
+  [ ! -s "${tmp_dir}/computer-use-host-history.output" ] || fail "invalid host preparation history must not publish outputs"
+  if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+    fail "invalid host preparation history must fail before artifact or host access"
+  fi
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the Computer Use session-only host mapping" \
+  run_resolver "${tmp_dir}/computer-use-host-floor.output" MOCK_COMPUTER_USE_HOST_SESSION_ONLY_FLOOR_VALID=0
+grep -Fq '4545454545454545454545454545454545454545' "${tmp_dir}/failure.err" || fail "host preparation rejection must identify the canonical main commit"
+[ ! -s "${tmp_dir}/computer-use-host-floor.output" ] || fail "token-hash-dependent API must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "host preparation floor must fail before artifact or host access"
 fi
 
 for preparation_commit in "" invalid; do

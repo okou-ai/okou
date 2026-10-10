@@ -46,11 +46,20 @@ type RunMetadataInput = Readonly<
     Partial<Omit<RunMetadataValues, "triggerSource">>
 >;
 
+// Execution/account/usage provenance is captured at launch, never repinned by
+// later display, timing or autonomy updates. Historical repair has its own CAS.
+type MutableRunMetadataValues = Pick<
+  RunMetadataValues,
+  | "autonomyBudget"
+  | "apiStartedAt"
+  | "firstAssistantEventAcknowledgedAt"
+  | "summary"
+>;
 type RunMetadataPatch = {
-  [Key in keyof RunMetadataValues]: Readonly<
-    Pick<RunMetadataValues, Key> & Partial<RunMetadataValues>
+  [Key in keyof MutableRunMetadataValues]: Readonly<
+    Pick<MutableRunMetadataValues, Key> & Partial<MutableRunMetadataValues>
   >;
-}[keyof RunMetadataValues];
+}[keyof MutableRunMetadataValues];
 
 interface RunMetadataWriteArgs {
   readonly patch: RunMetadataPatch;

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.3.0...runner-lifecycle-v0.4.0) (2026-10-10)
+
+
+### Features
+
+* **runner:** coordinate process-local memory operations ([#38572](https://github.com/okou-ai/okou/issues/38572)) ([3cd1a24](https://github.com/okou-ai/okou/commit/3cd1a241d1461a7497b5c5d36ee0a2ac47a521e2))
+
 ## [0.3.0](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.2.2...runner-lifecycle-v0.3.0) (2026-10-10)
 
 

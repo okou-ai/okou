@@ -46,7 +46,7 @@ _MODEL_SSE_USAGE_FINISH = "model_sse_usage_finish"
 _CONNECTOR_RESPONSE_FINISH = "connector_response_finish"
 _CONNECTOR_RESPONSE_REPORT_ON_INTERRUPTION = "connector_response_report_on_interruption"
 _RESPONSE_STREAM_CALLBACK = "_response_stream_callback"
-_CONNECTOR_RESPONSE_INSPECTION = "_connector_response_inspection"
+_RESPONSE_INSPECTION = "_response_inspection"
 
 _ANTHROPIC_MESSAGES_SSE_PROTOCOL = "anthropic_messages_sse"
 _OPENAI_CHAT_COMPLETIONS_SSE_PROTOCOL = "openai_chat_completions_sse"
@@ -256,9 +256,40 @@ def _configure_response_inspection_stream(
                 )
 
             finished = False
+            inspection_failed = False
+
+            def fail_sse_inspection(error: str) -> None:
+                nonlocal inspection_failed
+                inspection_failed = True
+                run_usage.observe(flow, usage_dict)
+                run_usage.mark(flow, "parse_error")
+                run_usage.mark(flow, "interrupted")
+                log_usage_underbilling(
+                    flow_metadata.proxy_log_path(flow.metadata),
+                    "Deferred model SSE response inspection was interrupted",
+                    "response_inspection_interrupted",
+                    "risk",
+                    run_id=flow_metadata.run_id(flow.metadata),
+                    firewall_name=flow_metadata.firewall_name(flow.metadata),
+                    usage_protocol=usage_protocol,
+                    parse_error=error,
+                )
+
+            sse_inspection = response_inspection.CooperativeResponseInspection(
+                lambda chunk: response_inspection.decoded_steps(
+                    decode_session.iter_chunks, parser_fn.feed_steps, chunk
+                ),
+                fail_sse_inspection,
+            )
+            flow.metadata[_RESPONSE_INSPECTION] = sse_inspection
 
             def finish_sse_response() -> None:
                 nonlocal finished
+                if inspection_failed:
+                    # Only accepted prefix events survive abandonment. Finishing
+                    # the scanner here could turn an uninspected suffix into usage.
+                    finished = True
+                    return
                 if not finished:
                     decode_error = decode_session.finish_error()
                     if decode_error is None:
@@ -282,7 +313,7 @@ def _configure_response_inspection_stream(
 
             flow.metadata[metadata_keys.MODEL_PROVIDER_USAGE] = usage_dict
             flow.metadata[_MODEL_SSE_USAGE_FINISH] = finish_sse_response
-            return _ResponseStreamSetup(decode_session.feed, False)
+            return _ResponseStreamSetup(sse_inspection.feed, False)
 
         extractor = usage.create_model_json_response_inspector(model_protocol)
         decode_session = _make_response_decode_session(
@@ -413,7 +444,7 @@ def _configure_response_inspection_stream(
                 ),
                 fail_inspection,
             )
-            flow.metadata[_CONNECTOR_RESPONSE_INSPECTION] = connector_inspection
+            flow.metadata[_RESPONSE_INSPECTION] = connector_inspection
         if connector_parser.report_on_interruption:
             flow.metadata[_CONNECTOR_RESPONSE_REPORT_ON_INTERRUPTION] = True
         if connector_parser.finish is not None or connector_parser.finish_decode_error is not None:
@@ -571,21 +602,21 @@ def configure_response_stream(
     flow.metadata[_RESPONSE_STREAM_CALLBACK] = stream_and_observe
 
 
-def has_pending_connector_inspection(flow: http.HTTPFlow) -> bool:
-    inspection = flow.metadata.get(_CONNECTOR_RESPONSE_INSPECTION)
+def has_pending_response_inspection(flow: http.HTTPFlow) -> bool:
+    inspection = flow.metadata.get(_RESPONSE_INSPECTION)
     return isinstance(inspection, response_inspection.CooperativeResponseInspection) and (
         inspection.has_pending()
     )
 
 
-async def drain_connector_inspection(flow: http.HTTPFlow) -> None:
-    inspection = flow.metadata.get(_CONNECTOR_RESPONSE_INSPECTION)
+async def drain_response_inspection(flow: http.HTTPFlow) -> None:
+    inspection = flow.metadata.get(_RESPONSE_INSPECTION)
     if isinstance(inspection, response_inspection.CooperativeResponseInspection):
         await inspection.drain()
 
 
-def abandon_connector_inspection(flow: http.HTTPFlow) -> None:
-    inspection = flow.metadata.get(_CONNECTOR_RESPONSE_INSPECTION)
+def abandon_response_inspection(flow: http.HTTPFlow) -> None:
+    inspection = flow.metadata.get(_RESPONSE_INSPECTION)
     if isinstance(inspection, response_inspection.CooperativeResponseInspection):
         inspection.close()
 
@@ -637,6 +668,8 @@ def finalize_model_sse_usage(flow: http.HTTPFlow) -> None:
     The registered parser finalizer mutates the usage dictionary stored in
     ``metadata_keys.MODEL_PROVIDER_USAGE`` during response stream setup.
     """
+    if has_pending_response_inspection(flow):
+        raise RuntimeError("pending response inspection must be joined before finalization")
     finish = flow.metadata.pop(_MODEL_SSE_USAGE_FINISH, None)
     if finish is not None:
         finish()
@@ -650,7 +683,7 @@ def observe_interrupted_model_json(flow: http.HTTPFlow) -> None:
 
 
 def _finish_connector_response_state(flow: http.HTTPFlow) -> None:
-    if has_pending_connector_inspection(flow):
+    if has_pending_response_inspection(flow):
         raise RuntimeError("pending response inspection must be joined before finalization")
     finish = flow.metadata.pop(_CONNECTOR_RESPONSE_FINISH, None)
     if finish is not None:
@@ -695,7 +728,7 @@ def release_response_stream_state(flow: http.HTTPFlow) -> None:
     replaced ``flow.response.stream`` callbacks and only disables the callback
     installed by this module.
     """
-    inspection = flow.metadata.pop(_CONNECTOR_RESPONSE_INSPECTION, None)
+    inspection = flow.metadata.pop(_RESPONSE_INSPECTION, None)
     if isinstance(inspection, response_inspection.CooperativeResponseInspection):
         inspection.close()
     stream_callback = flow.metadata.pop(_RESPONSE_STREAM_CALLBACK, None)

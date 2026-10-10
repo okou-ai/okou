@@ -1,5 +1,5 @@
 import { and, eq, isNull, getTableColumns, sql } from "drizzle-orm";
-import { computerUseHosts } from "@okouai/db/schema/computer-use-host";
+import { computerUseHosts } from "@okouai/db/runtime/computer-use-host";
 
 import { nowDate } from "../../lib/time";
 import { pgTextDecoder } from "../../lib/db-structured-result";
@@ -34,7 +34,6 @@ export function computerUseHostAuthorityCondition(
     eq(computerUseHosts.orgId, authority.orgId),
     eq(computerUseHosts.sessionId, authority.sessionId),
     eq(computerUseHosts.connectionGeneration, authority.connectionGeneration),
-    isNull(computerUseHosts.tokenHash),
     eq(computerUseHosts.status, "online"),
   );
 }

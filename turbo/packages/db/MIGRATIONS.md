@@ -47,6 +47,15 @@ to the last migration in the most recent production release. When that removes a
 referenced migration tag from the journal, the consistency suite fails and the
 expired transition validator must be deleted.
 
+- `scripts/test-computer-use-host-token-retirement-preparation.ts` protects the
+  session-only Computer Use mapping and its preparation migration: retired
+  hashes are cleared, session-less hosts become offline, and device identities,
+  chat bindings, generations and command/audit history survive. It exercises
+  runtime and root-schema reads/writes before and after a disposable column
+  deletion. Retain it until physical contraction is released and incompatible
+  serving/rollback APIs have drained; promote surviving invariants to the
+  permanent suite before retiring this transition validator.
+
 ### Retired invitation transition validators
 
 The #32575 cleanup removes the invitation transition validators and frozen

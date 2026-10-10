@@ -63,7 +63,7 @@ import type { BuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.se
 import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
 import {
   clearCanonicalSlackThreadStatusIfIdle$,
-  refreshCanonicalSlackThreadStatus$,
+  reconcileCanonicalSlackThreadStatus$,
 } from "./canonical-slack-thread-status.service";
 import {
   insertAssistantEvents$,
@@ -2215,6 +2215,7 @@ async function chatThreadForRunFromDb(
 }
 
 export interface QueuedMessageModelRoute {
+  readonly featureSwitchContext: FeatureSwitchContext;
   readonly memberAccountSnapshot?: MemberModelAccountSnapshot | null;
   readonly modelPin: ModelFirstPin;
   readonly effectiveModelProvider: string | null | undefined;
@@ -2232,6 +2233,7 @@ export function routeQueuedMessagePiExecution(args: {
 }) {
   const piExecution = shouldUsePiExecution({
     chatThreadId: args.input.threadId,
+    featureSwitchContext: args.modelRoute.featureSwitchContext,
     modelProviderType: args.modelRoute.effectiveModelProvider,
     catalogModel: args.modelRoute.piCatalogModel,
     codexServiceTier: args.modelRoute.codexServiceTier,
@@ -3456,7 +3458,7 @@ const processChatInternalCallback$ = command(
         waitUntil(
           tapError(
             set(
-              refreshCanonicalSlackThreadStatus$,
+              reconcileCanonicalSlackThreadStatus$,
               {
                 chatThreadId: payload.data.threadId,
                 channelId: payload.data.slackDelivery.channelId,

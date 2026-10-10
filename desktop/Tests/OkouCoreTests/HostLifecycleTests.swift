@@ -826,6 +826,8 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
 
   func testExpiredServerClaimDoesNotStartNativeHelper() async throws {
     let reported = expectation(description: "Expired claim was reported")
+    let idle = expectation(description: "Expired command queue was drained")
+    let claims = RequestCount()
     let configuration = URLSessionConfiguration.ephemeral
     configuration.protocolClasses = [URLProtocolFixture.self]
     let session = URLSession(configuration: configuration)
@@ -836,18 +838,23 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
         connection.reply(
           registeredHostResponse())
       } else if path.hasSuffix("/next") {
-        connection.reply(
-          .object([
-            "status": .string("command"),
-            "command": .object([
-              "id": .string("expired"), "kind": .string("apps.list"),
-              "status": .string("running"), "hostId": .null, "hostName": .null,
-              "payload": .object([:]), "timeoutMs": .number(1000),
-              "createdAt": .string("2026-10-07T00:00:00.000Z"),
-              "claimedAt": .string("2026-10-07T00:00:02.000Z"), "completedAt": .null,
-            ]),
-          ]))
-      } else if path.hasSuffix("/complete") {
+        if claims.next() == 1 {
+          connection.reply(
+            .object([
+              "status": .string("command"),
+              "command": .object([
+                "id": .string("expired"), "kind": .string("apps.list"),
+                "status": .string("running"), "hostId": .null, "hostName": .null,
+                "payload": .object([:]), "timeoutMs": .number(1000),
+                "createdAt": .string("2026-10-07T00:00:00.000Z"),
+                "claimedAt": .string("2026-10-07T00:00:02.000Z"), "completedAt": .null,
+              ]),
+            ]))
+        } else {
+          connection.reply(.object(["status": .string("idle")]))
+          idle.fulfill()
+        }
+      } else if path.hasSuffix("/expired/complete") {
         XCTAssertEqual(connection.body["status"].string, "failed")
         XCTAssertEqual(connection.body["error"]["code"].string, "command_timeout")
         connection.reply(.object([:]))
@@ -865,7 +872,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
       notifications: NotificationBoundary(),
       tokenProvider: { _ in "clerk-session" }, onChange: { _ in })
     await runtime.start()
-    await fulfillment(of: [reported], timeout: 3)
+    await fulfillment(of: [reported, idle], timeout: 3)
     await runtime.stop()
   }
   func testAuthenticationRefreshesRejectedTokenBeforeReportingTheSameResult() async throws {
