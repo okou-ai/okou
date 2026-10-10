@@ -1,6 +1,7 @@
 import { createRule } from "../utils.ts";
 import {
   apiTestingDoc,
+  isEntry,
   lintedFile,
   moduleSpecifierVisitors,
   resolvedModule,
@@ -109,7 +110,7 @@ export const noTestPrivateAccess = createRule<[Options], "privateAccess">({
     const file = lintedFile(context);
     const allowed = new Set<PrivateAccessKind>(
       (options.infrastructure ?? [])
-        .filter((entry) => entry.file === file)
+        .filter((entry) => isEntry(file, entry.file))
         .flatMap((entry) => entry.kinds),
     );
     return moduleSpecifierVisitors((node, specifier) => {

@@ -442,8 +442,9 @@ operations, not compliance with this construction and observation standard.
 [external behavior boundary](#external-behavior-boundary) statically. Every
 test-related diagnostic links to one of the sections below. The rules apply to
 API test modules: `__tests__/`, `*.test.ts`, `*.spec.ts`, `*.suite.ts`,
-`*.cases.ts`, benchmarks, `test-fixtures/`, `helpers/` and executable
-acceptance entrypoints under `scripts/`.
+`*.cases.ts`, benchmarks, `test-fixtures/` (including helpers under these
+directories) and executable `acceptance.ts`/`fixture.ts` entrypoints under
+`scripts/`.
 
 ### No Private State Access
 

@@ -48,6 +48,11 @@ tester.run("no-test-only-routes", noTestOnlyRoutes, {
       errors: [{ messageId: "testRouteModule" }],
     },
     {
+      filename: join(process.cwd(), "src/signals/routes/test-runtime/index.ts"),
+      code: "export const testRoutes = [];",
+      errors: [{ messageId: "testRouteModule" }],
+    },
+    {
       filename: contract,
       code: 'const route = { method: "POST", path: "/api/test/runtime-state/action" };',
       errors: [{ messageId: "testApiPath" }],

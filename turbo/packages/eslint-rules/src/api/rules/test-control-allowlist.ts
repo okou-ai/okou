@@ -2,6 +2,7 @@ import { AST_NODE_TYPES, type TSESTree } from "@typescript-eslint/utils";
 import { createRule } from "../utils.ts";
 import {
   apiTestingDoc,
+  isEntry,
   isTestModule,
   lintedFile,
   resolvedModule,
@@ -102,14 +103,16 @@ export const testControlAllowlist = createRule<
   },
   create(context, [options]) {
     const file = lintedFile(context);
-    const allowed = new Map<string, Set<string>>();
-    for (const entry of options.controls ?? []) {
-      allowed.set(
-        entry.file.replace(/\.[cm]?[jt]s$/, ""),
-        new Set(entry.exports),
-      );
+    const controls = (options.controls ?? []).map((entry) => {
+      return {
+        module: entry.file.replace(/\.[cm]?[jt]s$/, ""),
+        exports: new Set(entry.exports),
+      };
+    });
+    function allowedExports(module: string): ReadonlySet<string> | undefined {
+      return controls.find((entry) => isEntry(module, entry.module))?.exports;
     }
-    const ownExports = allowed.get(file.replace(/\.[cm]?[jt]s$/, ""));
+    const ownExports = allowedExports(file.replace(/\.[cm]?[jt]s$/, ""));
 
     if (!isTestModule(file)) {
       function checkExport(node: TSESTree.Node, name: string | undefined) {
@@ -145,7 +148,7 @@ export const testControlAllowlist = createRule<
       if (resolved === undefined || isTestModule(`${resolved}.ts`)) {
         return;
       }
-      if (!allowed.get(resolved)?.has(name)) {
+      if (!allowedExports(resolved)?.has(name)) {
         context.report({
           node,
           messageId: "unlistedImport",

@@ -1,4 +1,4 @@
-import { dirname, relative, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { AST_NODE_TYPES, type TSESTree } from "@typescript-eslint/utils";
 
 /** Repository-relative API testing guide; every test-boundary message links here. */
@@ -6,33 +6,45 @@ export function apiTestingDoc(anchor: string): string {
   return `docs/api/api-testing.md#${anchor}`;
 }
 
-/** Normalized linted file path relative to the ESLint working directory. */
-export function lintedFile(context: { filename: string; cwd: string }): string {
-  return relative(context.cwd, context.filename).replaceAll("\\", "/");
+/** Normalized absolute path of the linted file. */
+export function lintedFile(context: { filename: string }): string {
+  return context.filename.replaceAll("\\", "/");
 }
 
 /**
- * Path of a relative module specifier, relative to the ESLint working
- * directory and without a TypeScript/JavaScript extension. Bare package
- * specifiers return undefined.
+ * Whether a normalized path is the exact package-relative entry. Matching on
+ * the path suffix keeps exceptions independent of ESLint's working directory.
+ */
+export function isEntry(path: string, entry: string): boolean {
+  return path === entry || path.endsWith(`/${entry}`);
+}
+
+/**
+ * Normalized absolute path of a relative module specifier, without a
+ * TypeScript/JavaScript extension. Bare package specifiers return undefined.
  */
 export function resolvedModule(
-  context: { filename: string; cwd: string },
+  context: { filename: string },
   specifier: string,
 ): string | undefined {
   if (!specifier.startsWith(".")) {
     return undefined;
   }
-  return relative(context.cwd, resolve(dirname(context.filename), specifier))
+  return resolve(dirname(context.filename), specifier)
     .replaceAll("\\", "/")
     .replace(/\.(?:[cm]?[jt]s|tsx|jsx)$/, "");
 }
 
-/** API test, suite, case, fixture and helper modules. */
+/**
+ * API test, suite, case, benchmark, fixture and helper modules plus
+ * executable acceptance entrypoints. Mirrors `apiTestModuleFiles` in the API
+ * ESLint config.
+ */
 export function isTestModule(file: string): boolean {
   return (
-    /(^|\/)(__tests__|test-fixtures|helpers)\//.test(file) ||
-    /\.(test|spec|suite|cases)\.[cm]?[jt]s$/.test(file)
+    /(^|\/)(__tests__|__benches__|test-fixtures)\//.test(file) ||
+    /\.(test|spec|suite|cases|bench)\.[cm]?[jt]s$/.test(file) ||
+    /(^|\/)scripts\/(.*\/)?(acceptance|fixture)\.[cm]?[jt]s$/.test(file)
   );
 }
 

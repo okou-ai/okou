@@ -143,8 +143,9 @@ function exactTestPaths(label, files) {
   return files;
 }
 
-// API tests, suites, cases, fixtures, helpers and executable acceptance
-// entrypoints. They construct and observe cases only through production
+// API tests, suites, cases, benchmarks, fixtures, their helpers and
+// executable acceptance entrypoints; mirrors isTestModule in
+// @okouai/eslint-rules. They construct and observe cases only through production
 // interfaces; see docs/api/api-testing.md#no-private-state-access.
 const apiTestModuleFiles = [
   "src/**/__tests__/**/*.ts",
@@ -155,7 +156,6 @@ const apiTestModuleFiles = [
   "src/**/*.suite.ts",
   "src/**/*.cases.ts",
   "src/**/test-fixtures/**/*.ts",
-  "src/**/helpers/**/*.ts",
   "scripts/**/acceptance.ts",
   "scripts/**/fixture.ts",
 ];

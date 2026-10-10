@@ -1,6 +1,6 @@
 import { AST_NODE_TYPES, type TSESTree } from "@typescript-eslint/utils";
 import { createRule } from "../utils.ts";
-import { apiTestingDoc, lintedFile } from "../test-boundary.ts";
+import { apiTestingDoc, isEntry, lintedFile } from "../test-boundary.ts";
 
 /** Helpers that mint, encrypt or verify credentials outside a real flow. */
 const credentialForgingHelpers = [
@@ -60,11 +60,12 @@ export const noTestCredentialForging = createRule<[Options], "forged">({
       },
     ],
     messages: {
-      forged: `Do not use {{name}} in API tests. Obtain credentials through the real sign-in, chat send or Runner claim flow; the legacy consumer list may only shrink. See ${apiTestingDoc("credentials-from-real-flows")}.`,
+      forged: `Do not use {{name}} in API tests. Obtain credentials through the real sign-in, chat send, heartbeat or Runner claim flow; the legacy consumer list may only shrink. See ${apiTestingDoc("credentials-from-real-flows")}.`,
     },
   },
   create(context, [options]) {
-    if ((options.legacyConsumers ?? []).includes(lintedFile(context))) {
+    const file = lintedFile(context);
+    if ((options.legacyConsumers ?? []).some((entry) => isEntry(file, entry))) {
       return {};
     }
     function check(node: TSESTree.Node, name: string | undefined) {

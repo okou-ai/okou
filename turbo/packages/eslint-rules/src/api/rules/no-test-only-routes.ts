@@ -60,7 +60,7 @@ export const noTestOnlyRoutes = createRule({
     }
     return {
       Program(node: TSESTree.Program) {
-        if (!testModule && /(^|\/)routes\/(.*\/)?test-[^/]*$/.test(file)) {
+        if (!testModule && /(^|\/)routes\/(.*\/)?test-[^/]*(\/|$)/.test(file)) {
           context.report({ node, messageId: "testRouteModule" });
         }
       },
