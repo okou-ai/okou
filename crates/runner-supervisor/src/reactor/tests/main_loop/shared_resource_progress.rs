@@ -235,20 +235,16 @@ async fn routine_gc_progresses_while_the_reactor_waits_for_the_idle_pool() {
     let entered = Arc::new(tokio::sync::Notify::new());
     let release = Arc::new(tokio::sync::Semaphore::new(0));
     let paths = RunnerPaths::new(env._temp_dir.path().join("cache-runner"));
-    let capacity_path = runner_host::paths::workspace_image_cache_capacity_lock_path(
-        &paths.base_dir().join("locks"),
-    );
-    let routine_path = runner_host::paths::workspace_image_cache_routine_gc_lock_path(
-        &paths.base_dir().join("locks"),
-    );
-    Arc::get_mut(&mut config.exec_config)
-        .unwrap()
-        .workspace_cache = Some(
-        WorkspaceImageCache::new(paths)
+    let capacity_path =
+        runner_host::paths::home_image_cache_capacity_lock_path(&paths.base_dir().join("locks"));
+    let routine_path =
+        runner_host::paths::home_image_cache_routine_gc_lock_path(&paths.base_dir().join("locks"));
+    Arc::get_mut(&mut config.exec_config).unwrap().home_cache = Some(
+        HomeImageCache::new(paths)
             .with_routine_gc_test_gate(Arc::clone(&entered), Arc::clone(&release)),
     );
     let (trigger, receiver) = tokio::sync::mpsc::unbounded_channel();
-    config.test_hooks.manual_workspace_cache_gc_rx = Some(receiver);
+    config.test_hooks.manual_home_cache_gc_rx = Some(receiver);
     let mut reactor = Box::pin(run(config));
     tokio::select! {
         result = &mut reactor => panic!("reactor exited during startup: {result:?}"),
@@ -291,20 +287,16 @@ async fn teardown_joins_routine_gc_before_releasing_its_owner_lock() {
     let entered = Arc::new(tokio::sync::Notify::new());
     let release = Arc::new(tokio::sync::Semaphore::new(0));
     let paths = RunnerPaths::new(env._temp_dir.path().join("cache-runner"));
-    let capacity_path = runner_host::paths::workspace_image_cache_capacity_lock_path(
-        &paths.base_dir().join("locks"),
-    );
-    let routine_path = runner_host::paths::workspace_image_cache_routine_gc_lock_path(
-        &paths.base_dir().join("locks"),
-    );
-    Arc::get_mut(&mut config.exec_config)
-        .unwrap()
-        .workspace_cache = Some(
-        WorkspaceImageCache::new(paths)
+    let capacity_path =
+        runner_host::paths::home_image_cache_capacity_lock_path(&paths.base_dir().join("locks"));
+    let routine_path =
+        runner_host::paths::home_image_cache_routine_gc_lock_path(&paths.base_dir().join("locks"));
+    Arc::get_mut(&mut config.exec_config).unwrap().home_cache = Some(
+        HomeImageCache::new(paths)
             .with_routine_gc_test_gate(Arc::clone(&entered), Arc::clone(&release)),
     );
     let (trigger, receiver) = tokio::sync::mpsc::unbounded_channel();
-    config.test_hooks.manual_workspace_cache_gc_rx = Some(receiver);
+    config.test_hooks.manual_home_cache_gc_rx = Some(receiver);
     let mut reactor = Box::pin(run(config));
     tokio::select! {
         result = &mut reactor => panic!("reactor exited during startup: {result:?}"),

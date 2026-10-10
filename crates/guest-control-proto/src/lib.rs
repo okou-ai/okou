@@ -60,8 +60,8 @@
 //! | 0x1B | G→H       | guest_state_restore_result | same payload as `exec_result`, with empty stdout and stderr bounded to 64 KiB |
 //! | 0x1C | G→H       | exec_agent_ready | `[4B containment_create_us][4B placement_broker_setup_us][4B shell_spawn_us][4B bootstrap_ready_wait_us]` |
 //! | 0x1D | H→G       | write_private_files | same payload as `write_files`; result is `write_files_result` with the request sequence |
-//! | 0x1E | H→G       | workspace_drive_mount | (empty) |
-//! | 0x1F | G→H       | workspace_drive_mount_result | same payload as `exec_result`, with both streams captured and bounded to 64 KiB each |
+//! | 0x1E | H→G       | home_drive_mount | fixed ASCII `home-drive-v1` paired-layout tag |
+//! | 0x1F | G→H       | home_drive_mount_result | same payload as `exec_result`, with both streams captured and bounded to 64 KiB each |
 //! | 0x20 | H→G       | file_write_status | (empty); read-only, available while quiescing |
 //! | 0x21 | G→H       | file_write_status_result | `[4B latest_write_seq][1B stage]`; see [`FileWriteStatus`] |
 //! | 0x22 | H→G       | write_file_stream_begin | `[1B codec=1][4B raw_len][2B path_len][path][1B flags][4B content_len=0]` |
@@ -73,7 +73,7 @@
 //! Request-scoped operation messages must use non-zero sequence numbers. This
 //! covers `write_file`, `write_files`, `write_private_files`, `exec_start`, `exec_cancel`,
 //! `exec_control`, `guest_dns_readiness`, `guest_storage_manifest`, and
-//! `guest_state_restore`, `workspace_drive_mount`, `file_write_status`, and
+//! `guest_state_restore`, `home_drive_mount`, `file_write_status`, and
 //! `write_file_stream_begin`; replies reuse the original non-zero request sequence.
 //! `write_file_stream_begin`, `write_file_stream_data`, `write_file_stream_end`, and
 //! `write_file_stream_credit` share that sequence. Credits count DATA frames, not bytes;
@@ -266,13 +266,13 @@ pub use payloads::guest_storage_manifest::{
     encode_guest_storage_manifest_request, encode_guest_storage_manifest_request_frame_into,
     encode_guest_storage_manifest_result, encode_guest_storage_manifest_result_frame_into,
 };
+pub use payloads::home_drive_mount::{
+    HOME_DRIVE_MOUNT_OUTPUT_LIMIT_BYTES, decode_home_drive_mount_request,
+    decode_home_drive_mount_result, encode_home_drive_mount_request_frame_into,
+    encode_home_drive_mount_result, encode_home_drive_mount_result_frame_into,
+};
 pub use payloads::memory_snapshot::{
     MEMORY_SNAPSHOT_PAYLOAD_SIZE, MemorySnapshot, decode_memory_snapshot,
-};
-pub use payloads::workspace_drive_mount::{
-    WORKSPACE_DRIVE_MOUNT_OUTPUT_LIMIT_BYTES, decode_workspace_drive_mount_request,
-    decode_workspace_drive_mount_result, encode_workspace_drive_mount_request_frame_into,
-    encode_workspace_drive_mount_result, encode_workspace_drive_mount_result_frame_into,
 };
 pub use payloads::write_file::{
     WriteFileBatchEntry, decode_write_file, decode_write_file_result, decode_write_files,
@@ -288,10 +288,10 @@ pub use wire::{
     MSG_EXEC_CONTROL, MSG_EXEC_CONTROL_RESULT, MSG_EXEC_OUTPUT, MSG_EXEC_RESULT, MSG_EXEC_START,
     MSG_EXEC_STARTED, MSG_FILE_WRITE_STATUS, MSG_FILE_WRITE_STATUS_RESULT, MSG_GUEST_DNS_READINESS,
     MSG_GUEST_DNS_READINESS_RESULT, MSG_GUEST_STATE_RESTORE, MSG_GUEST_STATE_RESTORE_RESULT,
-    MSG_GUEST_STORAGE_MANIFEST, MSG_GUEST_STORAGE_MANIFEST_RESULT, MSG_MEMORY_SNAPSHOT,
-    MSG_MEMORY_SNAPSHOT_RESULT, MSG_OPERATIONS_QUIESCED, MSG_OPERATIONS_RESUMED, MSG_PING,
-    MSG_PONG, MSG_QUIESCE_OPERATIONS, MSG_READY, MSG_RESUME_OPERATIONS, MSG_SHUTDOWN,
-    MSG_SHUTDOWN_ACK, MSG_WORKSPACE_DRIVE_MOUNT, MSG_WORKSPACE_DRIVE_MOUNT_RESULT, MSG_WRITE_FILE,
+    MSG_GUEST_STORAGE_MANIFEST, MSG_GUEST_STORAGE_MANIFEST_RESULT, MSG_HOME_DRIVE_MOUNT,
+    MSG_HOME_DRIVE_MOUNT_RESULT, MSG_MEMORY_SNAPSHOT, MSG_MEMORY_SNAPSHOT_RESULT,
+    MSG_OPERATIONS_QUIESCED, MSG_OPERATIONS_RESUMED, MSG_PING, MSG_PONG, MSG_QUIESCE_OPERATIONS,
+    MSG_READY, MSG_RESUME_OPERATIONS, MSG_SHUTDOWN, MSG_SHUTDOWN_ACK, MSG_WRITE_FILE,
     MSG_WRITE_FILE_RESULT, MSG_WRITE_FILE_STREAM_BEGIN, MSG_WRITE_FILE_STREAM_CREDIT,
     MSG_WRITE_FILE_STREAM_DATA, MSG_WRITE_FILE_STREAM_END, MSG_WRITE_FILES, MSG_WRITE_FILES_RESULT,
     MSG_WRITE_PRIVATE_FILES, VSOCK_PORT, WRITE_FILE_FLAG_APPEND, WRITE_FILE_FLAG_PRIVATE,

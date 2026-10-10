@@ -7,18 +7,18 @@ use crate::idle_prune_control::request;
 use sandbox_mock::{MockLifecycleGate, MockSandboxOverrides};
 
 #[tokio::test]
-async fn prune_idle_publishes_workspace_cache_before_acknowledging() {
+async fn prune_idle_publishes_home_cache_before_acknowledging() {
+    use crate::home_promotion::test_support::HomePromotionFixture;
     use crate::idle_pool::{IdleParkRequest, IdleParkRequestParts, ParkResult};
-    use crate::workspace_promotion::test_support::WorkspacePromotionFixture;
     use sandbox::{ResourceLimits, SandboxConfig, SandboxFactory};
-    let fixture = WorkspacePromotionFixture::new("thread:pruned-workspace").await;
+    let fixture = HomePromotionFixture::new("thread:pruned-workspace").await;
     let (config, env) = mock_run_config(test_profiles(), 2, 4096, 1);
     let home = config.paths.home.clone();
     let base = config.paths.base_dir.clone();
     let identity = config.runner.identity;
     let overrides = Arc::new(MockSandboxOverrides::new());
     crate::idle_reuse_preparation::add_healthy_reuse_preparation_matcher(&overrides);
-    runner_lifecycle::workspace_promotion::test_support::add_healthy_cache_preparation_matcher(
+    runner_lifecycle::home_promotion::test_support::add_healthy_cache_preparation_matcher(
         &overrides,
     );
     let factory: Arc<Box<dyn SandboxFactory>> = Arc::new(Box::new(
@@ -32,7 +32,7 @@ async fn prune_idle_publishes_workspace_cache_before_acknowledging() {
                 memory_mb: 4096,
             },
             device_rate_limits: None,
-            workspace_drive: None,
+            home_drive: None,
         })
         .await
         .unwrap();
@@ -44,6 +44,7 @@ async fn prune_idle_publishes_workspace_cache_before_acknowledging() {
         reuse_key: fixture.reuse_key.clone(),
         sandbox_id: fixture.sandbox_id,
         profile_name: "vm0/default".into(),
+        rootfs_hash: "test-rootfs".into(),
         device_rate_limits: None,
         budget_lease: lease,
         source_ip: "10.0.0.1".into(),
@@ -51,8 +52,8 @@ async fn prune_idle_publishes_workspace_cache_before_acknowledging() {
         restored_session_identity: None,
         history_generation_run_id: None,
         guest_timezone_intent: crate::guest_timezone::GuestTimezoneIntent::Unknown,
-        workspace_image_size_bytes: b"workspace image".len() as u64,
-        workspace_promotion: Some(fixture.promotion),
+        home_image_size_bytes: crate::home_promotion::test_support::TEST_HOME_IMAGE_SIZE_BYTES,
+        home_promotion: Some(fixture.promotion),
         handoff: None,
     });
     let candidate = match park.park_for_idle().await {
@@ -70,11 +71,11 @@ async fn prune_idle_publishes_workspace_cache_before_acknowledging() {
         .unwrap()
         .unwrap();
     assert_eq!(report.completed, 1);
-    let cached = fixture.cache.held_workspace_states().await;
+    let cached = fixture.cache.held_home_states().await;
     assert_eq!(cached.len(), 1);
     assert_eq!(cached[0].reuse_key, fixture.reuse_key);
     shutdown(&env, runner).await;
-    assert_eq!(fixture.cache.held_workspace_states().await.len(), 1);
+    assert_eq!(fixture.cache.held_home_states().await.len(), 1);
 }
 
 #[tokio::test]

@@ -7,7 +7,7 @@ use tokio_util::task::AbortOnDropHandle;
 
 use super::*;
 use crate::idle_pool::IdleSandboxKind;
-use runner_types::types::WorkspaceReuseResult;
+use runner_types::types::HomeReuseResult;
 
 const WAIT: Duration = Duration::from_secs(2);
 
@@ -38,21 +38,20 @@ async fn assert_spawn_before_receipt(kind: Option<IdleSandboxKind>) {
         .set_control_target_for_test(control_dir.path().to_path_buf(), "generation-1".into());
     let mut context = minimal_context();
     let params = JobParams {
-        workspace_disk_mb: 16,
+        home_disk_mb: 16,
         ..default_params()
     };
     if kind.is_none() {
         let runner_paths = RunnerPaths::new(dir.path().join("runner"));
-        let cache = WorkspaceImageCache::new(runner_paths.clone());
+        let cache = HomeImageCache::new(runner_paths.clone());
         let session_id = "registry-observation-workspace";
         context.reuse_key = Some(format!("thread:workspace-cache-{session_id}"));
         context.resume_session = Some(ResumeSession::inline(
             session_id.into(),
             r#"{"type":"init"}"#.into(),
         ));
-        seed_workspace_image_cache(&cache, &runner_paths, session_id, params.workspace_disk_mb)
-            .await;
-        config.workspace_cache = Some(cache);
+        seed_home_image_cache(&cache, &runner_paths, session_id, params.home_disk_mb).await;
+        config.home_cache = Some(cache);
     }
     let config = Arc::new(config);
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
@@ -73,7 +72,7 @@ async fn assert_spawn_before_receipt(kind: Option<IdleSandboxKind>) {
                         params: &params,
                         source_ip: sandbox.source_ip().to_string(),
                         sandbox,
-                        workspace_image: None,
+                        home_image: None,
                         kind,
                     },
                     &context,
@@ -81,7 +80,7 @@ async fn assert_spawn_before_receipt(kind: Option<IdleSandboxKind>) {
                     RunStart {
                         restore_guest_state: true,
                         reuse_result: SandboxReuseResult::Reused,
-                        workspace_reuse_result: WorkspaceReuseResult::SandboxReused,
+                        home_reuse_result: HomeReuseResult::SandboxReused,
                         prev_storage: None,
                     },
                     &mut telemetry,
@@ -127,10 +126,7 @@ async fn assert_spawn_before_receipt(kind: Option<IdleSandboxKind>) {
     let outcome = tokio::time::timeout(WAIT, task).await.unwrap().unwrap();
     assert_eq!(outcome.exit_code(), 0);
     if kind.is_none() {
-        assert_eq!(
-            outcome.workspace_reuse_result,
-            Some(WorkspaceReuseResult::Reused)
-        );
+        assert_eq!(outcome.home_reuse_result, Some(HomeReuseResult::Reused));
     }
     assert_proxy_registry_empty(dir.path()).await;
 }

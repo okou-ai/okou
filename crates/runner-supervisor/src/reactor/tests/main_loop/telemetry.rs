@@ -5,7 +5,7 @@ use super::super::support::{
     seed_idle_pool_with_speculative_timezone, shutdown, test_profiles, test_runner_identity,
     wait_budget_count, wait_cancel_handle, wait_cancel_token_removed, wait_discover_entered,
 };
-use crate::workspace_image_cache::WorkspaceImageCache;
+use crate::home_image_cache::HomeImageCache;
 use runner_host::paths::RunnerPaths;
 
 #[tokio::test]
@@ -21,7 +21,7 @@ async fn telemetry_flush_includes_start_loop_claim_phase_spans() {
                 .body_includes("runner_claim_resume_session_validation")
                 .body_includes("runner_claim_device_rate_limits")
                 .body_includes("runner_claim_idle_reuse_lookup")
-                .body_includes("runner_claim_workspace_cache_state_lookup")
+                .body_includes("runner_claim_home_cache_state_lookup")
                 .body_includes("runner_claim_active_status_publish")
                 .body_includes("runner_claim_spawn_job_setup")
                 .body_includes("runner_claim_task_schedule_wait")
@@ -104,7 +104,7 @@ async fn telemetry_flush_classifies_no_resource_finalization() {
 }
 
 #[tokio::test]
-async fn telemetry_flush_classifies_workspace_cache_finalization() {
+async fn telemetry_flush_classifies_home_cache_finalization() {
     use httpmock::prelude::*;
 
     let server = MockServer::start_async().await;
@@ -112,7 +112,7 @@ async fn telemetry_flush_classifies_workspace_cache_finalization() {
         .mock_async(|when, then| {
             when.method(POST)
                 .path("/api/webhooks/agent/telemetry")
-                .body_includes("runner_host_finalization_workspace_cache")
+                .body_includes("runner_host_finalization_home_cache")
                 .body_includes("runner_host_completion_fallback")
                 .body_includes("runner_active_reuse_key_released");
             then.status(200)
@@ -129,7 +129,7 @@ async fn telemetry_flush_classifies_workspace_cache_finalization() {
     profiles
         .get_mut("vm0/default")
         .expect("default profile should exist")
-        .workspace_disk_mb = 16;
+        .home_disk_mb = 16;
     let (mut config, env) = mock_run_config_with_overrides_and_api_url(
         profiles,
         8,
@@ -139,14 +139,14 @@ async fn telemetry_flush_classifies_workspace_cache_finalization() {
         &server.base_url(),
     );
     let runner_paths = RunnerPaths::new(config.paths.base_dir.clone());
-    let workspace_cache = WorkspaceImageCache::shared(
+    let home_cache = HomeImageCache::shared(
         runner_paths.clone(),
         &config.paths.home,
         &config.runner.group,
     );
     Arc::get_mut(&mut config.exec_config)
         .expect("test executor config should be unique")
-        .workspace_cache = Some(workspace_cache);
+        .home_cache = Some(home_cache);
     let run_handle = tokio::spawn(run(config));
 
     wait_discover_entered(&env, Duration::from_secs(5)).await;
@@ -155,22 +155,19 @@ async fn telemetry_flush_classifies_workspace_cache_finalization() {
         &env,
         run_id,
         "vm0/default",
-        Some(context_with_session(
-            run_id,
-            "sess-telemetry-workspace-cache",
-        )),
+        Some(context_with_session(run_id, "sess-telemetry-home-cache")),
     );
     wait_gate
         .wait_entered(1, Duration::from_secs(5))
         .await
-        .expect("wait_process should enter before the workspace image is written");
+        .expect("wait_process should enter before the home image is written");
     let sandbox_id = overrides
         .create_configs()
         .into_iter()
         .next()
         .expect("sandbox create config should be recorded")
         .id;
-    let active_image = runner_paths.active_workspace_image(&sandbox_id);
+    let active_image = runner_paths.active_home_image(&sandbox_id);
     tokio::fs::create_dir_all(active_image.parent().expect("image should have a parent"))
         .await
         .unwrap();
@@ -786,6 +783,7 @@ async fn assert_finalizing_activation_failure_retains_lease_until_completion(dir
         sandbox_mock::MockSandboxFactory::with_overrides(Arc::clone(&overrides)),
     ));
     let candidate = ParkedIdleCandidateBuilder::new(reuse_key, lease)
+        .with_rootfs_hash(test_profiles()["vm0/default"].rootfs_hash.clone())
         .with_history_generation_run_id(predecessor_run_id)
         .with_factory(factory)
         .with_sandbox(Box::new(sandbox_mock::MockSandbox::with_overrides(

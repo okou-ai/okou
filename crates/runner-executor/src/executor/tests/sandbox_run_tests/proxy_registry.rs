@@ -284,7 +284,7 @@ async fn execute_reused_sandbox_proxy_register_failure_returns_sandbox_before_ag
                 params: &default_params(),
                 sandbox,
                 source_ip,
-                workspace_image: None,
+                home_image: None,
                 kind: crate::idle_pool::IdleSandboxKind::Exact,
             },
             &ctx,
@@ -292,7 +292,7 @@ async fn execute_reused_sandbox_proxy_register_failure_returns_sandbox_before_ag
             RunStart {
                 restore_guest_state: true,
                 reuse_result: runner_types::types::SandboxReuseResult::Reused,
-                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::SandboxReused,
+                home_reuse_result: runner_types::types::HomeReuseResult::SandboxReused,
                 prev_storage: Some(&prev_storage),
             },
             &mut telemetry,
@@ -380,7 +380,7 @@ async fn execute_inner_proxy_unregister_failure_marks_successful_run_failed() {
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
+            home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
             prev_storage: None,
         },
         &mut telemetry,

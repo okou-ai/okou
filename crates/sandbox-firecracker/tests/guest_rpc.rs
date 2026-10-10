@@ -6,8 +6,8 @@ use std::{error::Error, io, path::PathBuf, time::Duration};
 
 use runner_rpc_proto::{Delivery, ErrorCode, Response, ResponseWriter};
 use sandbox::{
-    EXEC_OUTPUT_LIMIT_64_KIB, ExecRequest, ExecTermination, FactoryConfig, ResourceLimits,
-    RuntimeConfig, Sandbox, SandboxConfig, SandboxRuntime, SnapshotRef, WorkspaceDriveConfig,
+    EXEC_OUTPUT_LIMIT_64_KIB, ExecRequest, ExecTermination, FactoryConfig, HomeDriveConfig,
+    ResourceLimits, RuntimeConfig, Sandbox, SandboxConfig, SandboxRuntime, SnapshotRef,
 };
 use sandbox_firecracker::FirecrackerRuntime;
 use serde_json::{Value, json, value::RawValue};
@@ -62,7 +62,7 @@ async fn exercise_factories(runtime: &FirecrackerRuntime, base: PathBuf) -> Test
                     memory_mb: 4096,
                 },
                 device_rate_limits: None,
-                workspace_drive: Some(WorkspaceDriveConfig {
+                home_drive: Some(HomeDriveConfig {
                     size_mb: 16384,
                     seed_image: None,
                 }),

@@ -6,4 +6,4 @@ mod file;
 mod guest_dns_readiness;
 mod guest_state_restore;
 mod guest_storage_manifest;
-mod workspace_drive_mount;
+mod home_drive_mount;

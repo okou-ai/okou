@@ -579,7 +579,7 @@ profiles:
     vcpu: 2
     memory_mb: 4096
     rootfs_disk_mb: 8192
-    workspace_disk_mb: 10240
+    home_disk_mb: 10240
 server:
   url: http://localhost:0
   token: token

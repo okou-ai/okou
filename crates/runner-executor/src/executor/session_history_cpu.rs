@@ -4,8 +4,7 @@
 //! process from the logical CPU count reported by `host::cpu_count()`. Its
 //! production capacity is half that count (integer division), clamped to a
 //! minimum of one and a maximum of four permits. The pool is stored in the
-//! shared `ExecutorConfig`, so downloaded history, workspace-sidecar history,
-//! and inline Codex timestamp extraction contend for the same CPU budget.
+//! shared `ExecutorConfig`, so downloaded history, inline Codex timestamp extraction contend for the same CPU budget.
 //!
 //! `SessionHistoryCpuPool::materialize` acquires an owned semaphore permit
 //! before spawning the blocking task and moves that permit into
@@ -28,8 +27,7 @@
 //! decompress when needed, verify SHA-256, and extract a Codex timestamp when
 //! applicable. The inline Codex path performs the UTF-8 and timestamp work
 //! through the same pool. The downloaded-history materializer in
-//! `session_history_download.rs` and the workspace-sidecar materializer in
-//! `workspace_session_history_materializer.rs` use the pool for their raw,
+//! `session_history_download.rs` use the pool for their raw,
 //! gzip, and zstd jobs; `agent_run.rs` uses it for inline Codex history.
 
 use std::fmt;
@@ -450,10 +448,6 @@ impl SessionHistoryCpuJob {
 }
 
 impl SessionHistoryCpuTimings {
-    pub(super) fn admission_wait(self) -> Duration {
-        self.admission_wait
-    }
-
     pub(super) fn validation(self) -> Option<SessionHistoryCpuPhaseTiming> {
         self.validation
     }

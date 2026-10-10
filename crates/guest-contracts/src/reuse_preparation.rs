@@ -16,7 +16,7 @@ pub const REUSE_PREPARATION_EXIT_CONTAINMENT_FAILED: i32 = 5;
 ///
 /// This value is reserved for the composed runner wrapper and must not be used
 /// for a guest-helper failure.
-pub const REUSE_PREPARATION_EXIT_WORKSPACE_MOUNT_FAILED: i32 = 6;
+pub const REUSE_PREPARATION_EXIT_HOME_MOUNT_FAILED: i32 = 6;
 
 /// Runtime directories that must remain available after reuse preparation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

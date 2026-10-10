@@ -10,7 +10,7 @@ use super::super::cow::{
     SnapshotCowDevice, destroy_snapshot_cow_after_error,
     destroy_snapshot_cow_and_cleanup_attempt_dir,
 };
-use super::super::output::cleanup_workspace_image_file_sync;
+use super::super::output::cleanup_home_image_file_sync;
 use super::super::publish::SnapshotPublishAttempt;
 use super::process::{SnapshotProcess, SnapshotProcessCleanupReport};
 
@@ -33,14 +33,14 @@ async fn destroy_snapshot_cow_after_workflow_error(cow_device: SnapshotCowDevice
 // The path is known at attempt construction; cleanup is required only after
 // image creation starts.
 #[derive(Default)]
-pub(super) enum AttemptWorkspaceImage {
+pub(super) enum AttemptHomeImage {
     NotCreated(PathBuf),
     Owned(PathBuf),
     #[default]
     Cleaned,
 }
 
-impl AttemptWorkspaceImage {
+impl AttemptHomeImage {
     fn new(path: PathBuf) -> Self {
         Self::NotCreated(path)
     }
@@ -55,11 +55,11 @@ impl AttemptWorkspaceImage {
             Self::Owned(path) => {
                 *self = Self::Owned(path);
                 Err(SnapshotError::Setup(
-                    "snapshot attempt workspace image creation already started".into(),
+                    "snapshot attempt home image creation already started".into(),
                 ))
             }
             Self::Cleaned => Err(SnapshotError::Setup(
-                "snapshot attempt workspace image already cleaned before prepare".into(),
+                "snapshot attempt home image already cleaned before prepare".into(),
             )),
         }
     }
@@ -68,10 +68,10 @@ impl AttemptWorkspaceImage {
         match self {
             Self::Owned(path) => Ok(path),
             Self::NotCreated(_) => Err(SnapshotError::Setup(
-                "snapshot attempt workspace image not prepared before spawn".into(),
+                "snapshot attempt home image not prepared before spawn".into(),
             )),
             Self::Cleaned => Err(SnapshotError::Setup(
-                "snapshot attempt workspace image already cleaned before spawn".into(),
+                "snapshot attempt home image already cleaned before spawn".into(),
             )),
         }
     }
@@ -84,9 +84,9 @@ impl AttemptWorkspaceImage {
         let Self::Owned(path) = self else {
             return true;
         };
-        let cleaned = cleanup_workspace_image_file_sync(path, warning);
+        let cleaned = cleanup_home_image_file_sync(path, warning);
         if cleaned {
-            cleanup_empty_workspace_image_parent_dir(path);
+            cleanup_empty_home_image_parent_dir(path);
             *self = Self::Cleaned;
         }
         cleaned
@@ -98,7 +98,7 @@ pub(super) struct SnapshotCleanupPresence {
     pub(super) has_device_pool: bool,
     pub(super) has_netns_pool: bool,
     pub(super) has_cow_device: bool,
-    pub(super) has_workspace_image: bool,
+    pub(super) has_home_image: bool,
     pub(super) has_publish_attempt: bool,
     pub(super) has_network: bool,
     pub(super) has_child: bool,
@@ -111,7 +111,7 @@ impl SnapshotCleanupPresence {
         self.has_device_pool
             || self.has_netns_pool
             || self.has_cow_device
-            || self.has_workspace_image
+            || self.has_home_image
             || self.has_publish_attempt
             || self.has_network
             || self.has_child
@@ -125,7 +125,7 @@ pub(super) struct SnapshotCleanupResources {
     pub(super) netns_pool: Option<NetnsPool>,
     pub(super) device_pool: Option<DevicePoolHandle>,
     pub(super) cow_device: Option<SnapshotCowDevice>,
-    pub(super) workspace_image: AttemptWorkspaceImage,
+    pub(super) home_image: AttemptHomeImage,
     pub(super) publish_attempt: Option<SnapshotPublishAttempt>,
     pub(super) network: Option<NetnsLease>,
     pub(super) process: SnapshotProcess,
@@ -135,21 +135,21 @@ impl SnapshotCleanupResources {
     pub(super) fn new(
         device_pool: DevicePoolHandle,
         cow_device: SnapshotCowDevice,
-        workspace_image_path: PathBuf,
+        home_image_path: PathBuf,
     ) -> Self {
         Self {
             device_pool: Some(device_pool),
             cow_device: Some(cow_device),
-            workspace_image: AttemptWorkspaceImage::new(workspace_image_path),
+            home_image: AttemptHomeImage::new(home_image_path),
             ..Self::default()
         }
     }
 
     #[cfg(test)]
-    pub(super) fn without_cow_for_test(workspace_image_path: PathBuf) -> Self {
+    pub(super) fn without_cow_for_test(home_image_path: PathBuf) -> Self {
         Self {
             netns_pool: Some(NetnsPool::inactive_for_test()),
-            workspace_image: AttemptWorkspaceImage::new(workspace_image_path),
+            home_image: AttemptHomeImage::new(home_image_path),
             ..Self::default()
         }
     }
@@ -160,7 +160,7 @@ impl SnapshotCleanupResources {
             has_device_pool: self.device_pool.is_some(),
             has_netns_pool: self.netns_pool.is_some(),
             has_cow_device: self.cow_device.is_some(),
-            has_workspace_image: self.workspace_image.has_cleanup_work(),
+            has_home_image: self.home_image.has_cleanup_work(),
             has_publish_attempt: self
                 .publish_attempt
                 .as_ref()
@@ -177,9 +177,7 @@ impl SnapshotCleanupResources {
     }
 
     pub(super) async fn destroy_cow_after_setup_error(&mut self, context: &'static str) {
-        self.cleanup_workspace_image(
-            "failed to cleanup snapshot workspace image after setup error",
-        );
+        self.cleanup_home_image("failed to cleanup snapshot home image after setup error");
         if let Some(cow_device) = self.cow_device.take() {
             destroy_snapshot_cow_after_error(context, cow_device).await;
         }
@@ -209,13 +207,13 @@ impl SnapshotCleanupResources {
         let kept_cow = match self.resolve_success_publish().await {
             Ok(kept_cow) => kept_cow,
             Err(err) => {
-                self.cleanup_workspace_image(
-                    "failed to cleanup snapshot workspace image after publish preparation error",
+                self.cleanup_home_image(
+                    "failed to cleanup snapshot home image after publish preparation error",
                 );
                 return Err(err);
             }
         };
-        self.cleanup_workspace_image("failed to cleanup snapshot workspace image after success");
+        self.cleanup_home_image("failed to cleanup snapshot home image after success");
         Ok(kept_cow)
     }
 
@@ -229,17 +227,15 @@ impl SnapshotCleanupResources {
     }
 
     pub(super) async fn cleanup_failure(&mut self) {
-        self.cleanup_workspace_image(
-            "failed to cleanup snapshot workspace image after workflow error",
-        );
+        self.cleanup_home_image("failed to cleanup snapshot home image after workflow error");
         if let Some(cow_device) = self.cow_device.take() {
             destroy_snapshot_cow_after_workflow_error(cow_device).await;
         }
         self.cleanup_publish_attempt().await;
     }
 
-    pub(super) fn cleanup_workspace_image(&mut self, warning: &'static str) -> bool {
-        self.workspace_image.cleanup(warning)
+    pub(super) fn cleanup_home_image(&mut self, warning: &'static str) -> bool {
+        self.home_image.cleanup(warning)
     }
 
     pub(super) async fn cleanup_publish_attempt(&mut self) -> bool {
@@ -306,7 +302,7 @@ pub(super) struct SnapshotCleanupReport {
     pub(super) stderr_forwarder_finished: bool,
     pub(super) network_released: bool,
     pub(super) publish_cleaned: bool,
-    pub(super) workspace_image_cleaned: bool,
+    pub(super) home_image_cleaned: bool,
     pub(super) cow_destroyed: bool,
     pub(super) device_pool_cleaned: bool,
     pub(super) netns_pool_cleaned: bool,
@@ -326,7 +322,7 @@ impl SnapshotCleanupFinalizer {
     pub(super) async fn run(mut self) {
         let process = self.finalize_process().await;
         let network_released = self.release_network().await;
-        let workspace_image_cleaned = self.cleanup_workspace_image();
+        let home_image_cleaned = self.cleanup_home_image();
         let publish_cleaned = self.cleanup_publish_attempt().await;
         let cow_destroyed = self.resources.destroy_cow_during_cancellation().await;
         let device_pool_cleaned = self.cleanup_device_pool().await;
@@ -341,7 +337,7 @@ impl SnapshotCleanupFinalizer {
             stderr_forwarder_finished: process.stderr_forwarder_finished,
             network_released,
             publish_cleaned,
-            workspace_image_cleaned,
+            home_image_cleaned,
             cow_destroyed,
             device_pool_cleaned,
             netns_pool_cleaned,
@@ -355,7 +351,7 @@ impl SnapshotCleanupFinalizer {
             stderr_forwarder_finished = report.stderr_forwarder_finished,
             network_released = report.network_released,
             publish_cleaned = report.publish_cleaned,
-            workspace_image_cleaned = report.workspace_image_cleaned,
+            home_image_cleaned = report.home_image_cleaned,
             cow_destroyed = report.cow_destroyed,
             device_pool_cleaned = report.device_pool_cleaned,
             netns_pool_cleaned = report.netns_pool_cleaned,
@@ -406,15 +402,14 @@ impl SnapshotCleanupFinalizer {
         self.resources.cleanup_publish_attempt().await
     }
 
-    fn cleanup_workspace_image(&mut self) -> bool {
-        if !self.resources.workspace_image.has_cleanup_work() {
+    fn cleanup_home_image(&mut self) -> bool {
+        if !self.resources.home_image.has_cleanup_work() {
             return true;
         }
         #[cfg(test)]
-        self.cleanup_events.push("workspace_image");
-        self.resources.cleanup_workspace_image(
-            "failed to cleanup snapshot workspace image during cancellation cleanup",
-        )
+        self.cleanup_events.push("home_image");
+        self.resources
+            .cleanup_home_image("failed to cleanup snapshot home image during cancellation cleanup")
     }
 
     async fn cleanup_device_pool(&mut self) -> bool {
@@ -431,8 +426,8 @@ impl SnapshotCleanupFinalizer {
     }
 }
 
-fn cleanup_empty_workspace_image_parent_dir(workspace_image: &Path) {
-    let Some(parent) = workspace_image.parent() else {
+fn cleanup_empty_home_image_parent_dir(home_image: &Path) {
+    let Some(parent) = home_image.parent() else {
         return;
     };
 
@@ -447,7 +442,7 @@ fn cleanup_empty_workspace_image_parent_dir(workspace_image: &Path) {
             tracing::warn!(
                 error = %e,
                 dir = %parent.display(),
-                "failed to cleanup empty snapshot workspace image attempt dir"
+                "failed to cleanup empty snapshot home image attempt dir"
             );
         }
     }
@@ -464,7 +459,7 @@ impl Drop for SnapshotCleanupFinalizer {
             has_device_pool = presence.has_device_pool,
             has_netns_pool = presence.has_netns_pool,
             has_cow_device = presence.has_cow_device,
-            has_workspace_image = presence.has_workspace_image,
+            has_home_image = presence.has_home_image,
             has_publish_attempt = presence.has_publish_attempt,
             has_network = presence.has_network,
             has_child = presence.has_child,

@@ -56,10 +56,6 @@ use super::session_restore::{
     plan_fresh_session_restore, restore_session, restored_session_identity_from_context,
 };
 use super::telemetry::{RunnerSpawnTiming, record_api_startup_boundaries};
-use super::workspace_session_history_materializer::{
-    WorkspaceSessionHistoryMaterialization, WorkspaceSessionHistoryPhaseTiming,
-    WorkspaceSessionHistoryTimings,
-};
 use super::{
     EXIT_SIGKILL, ExecutionFailure, ExecutorConfig, JOB_TIMEOUT, JOB_TIMEOUT_EXIT_CODE,
     ResourceFailureDiagnostics, ResourceFailureKind, RunnerError, RunnerResult,
@@ -76,11 +72,11 @@ use crate::restored_session_identity::{
 use crate::storage_plan::{StoragePlan, build_storage_plan};
 use crate::telemetry::{
     HistoryTransferSource, JobTelemetry, SessionHistoryTelemetryMetadata,
-    WorkspaceSessionHistoryTelemetry, session_history_prefix_extension_action_type,
+    session_history_prefix_extension_action_type,
 };
 use guest_contracts::guest_binary::AGENT_PATH;
 use runner_provider::ActiveInputSource;
-use runner_types::types::{ExecutionContext, WorkspaceReuseResult};
+use runner_types::types::{ExecutionContext, HomeReuseResult};
 
 const AGENT_START_STDERR_CAPTURE_LIMIT_BYTES: u32 = 64 * 1024;
 const SESSION_HISTORY_DOWNLOAD_TELEMETRY_ERROR: &str = "session history download failed";
@@ -90,8 +86,6 @@ const SESSION_HISTORY_MATERIALIZATION_WAIT_TELEMETRY_ERROR: &str =
     "session history materialization failed";
 const SESSION_HISTORY_IDENTITY_REUSE_VERIFY_TELEMETRY_ERROR: &str =
     "session history identity reuse verification failed";
-const WORKSPACE_SESSION_HISTORY_PHASE_TELEMETRY_ERROR: &str =
-    "workspace session history phase failed";
 const STORAGE_CACHE_POPULATE_FAILED: &str = "storage-cache-populate-failed";
 const STORAGE_DOWNLOAD_FAILED: &str = "storage-download-failed";
 const SESSION_HISTORY_IDENTITY_VERIFY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -127,6 +121,7 @@ enum SessionHistoryIdentityReason {
     VerifyRequestMismatch,
     VerifyMissingVerifier,
     VerifyHelperFailed,
+    VerifyHelperCancelled,
     VerifyHelperTimedOut,
     VerifyHelperInvalidArgs,
     VerifyHelperMetadataRead,
@@ -161,6 +156,7 @@ impl SessionHistoryIdentityReason {
             Self::VerifyRequestMismatch => "session_history_identity_verify_request_mismatch",
             Self::VerifyMissingVerifier => "session_history_identity_verify_missing_verifier",
             Self::VerifyHelperFailed => "session_history_identity_verify_helper_failed",
+            Self::VerifyHelperCancelled => "session_history_identity_verify_helper_cancelled",
             Self::VerifyHelperTimedOut => "session_history_identity_verify_helper_timed_out",
             Self::VerifyHelperInvalidArgs => "session_history_identity_verify_helper_invalid_args",
             Self::VerifyHelperMetadataRead => {
@@ -358,45 +354,6 @@ fn record_session_history_restore_fallback(
     }
 }
 
-fn record_workspace_session_history_phase(
-    telemetry: &mut JobTelemetry,
-    action_type: &'static str,
-    phase: Option<WorkspaceSessionHistoryPhaseTiming>,
-) {
-    if let Some(phase) = phase {
-        telemetry.record(
-            action_type,
-            phase.elapsed(),
-            phase.success(),
-            (!phase.success()).then_some(WORKSPACE_SESSION_HISTORY_PHASE_TELEMETRY_ERROR),
-        );
-    }
-}
-
-fn record_workspace_session_history_timings(
-    telemetry: &mut JobTelemetry,
-    timings: WorkspaceSessionHistoryTimings,
-) {
-    record_workspace_session_history_phase(
-        telemetry,
-        "session_history_workspace_cache_file_read",
-        timings.file_read(),
-    );
-    if let Some(wait) = timings.cpu_admission_wait() {
-        telemetry.record(
-            "session_history_workspace_cache_cpu_pool_wait",
-            wait,
-            true,
-            None,
-        );
-    }
-    record_workspace_session_history_phase(
-        telemetry,
-        "session_history_workspace_cache_materialization",
-        timings.materialization(),
-    );
-}
-
 async fn materialize_inline_resume_session(
     context: &ExecutionContext,
     config: &ExecutorConfig,
@@ -480,6 +437,20 @@ async fn verify_restored_session_identity_for_reuse(
     let runtime_dir = runtime_dir.to_owned();
     let session_id_hash = session_id_hash.to_owned();
     let history_hash = history_hash.to_owned();
+    let metadata = sandbox
+        .read_file(&metadata_path, FINAL_SESSION_HISTORY_IDENTITY_READ_LIMIT)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|bytes| SessionHistoryIdentity::from_json_slice(&bytes).ok())
+        .ok_or(SessionHistoryIdentityReason::VerifyHelperInvalidMetadata)?;
+    if super::home_history::current_source(context, &metadata.history_source).as_ref()
+        != Some(&metadata.history_source)
+        || !super::home_history::expected_history(context)
+            .is_some_and(|expected| expected.matches_identity(&metadata))
+    {
+        return Err(SessionHistoryIdentityReason::VerifyRequestMismatch);
+    }
     let request = SessionHistoryIdentityVerifyRequest {
         metadata_path: &metadata_path,
         runtime_dir: &runtime_dir,
@@ -537,7 +508,8 @@ fn session_history_identity_reason_from_helper_result(
             }
             _ => SessionHistoryIdentityReason::VerifyHelperFailed,
         },
-        ExecTermination::Cancelled | ExecTermination::StartFailed | ExecTermination::WaitFailed => {
+        ExecTermination::Cancelled => SessionHistoryIdentityReason::VerifyHelperCancelled,
+        ExecTermination::StartFailed | ExecTermination::WaitFailed => {
             SessionHistoryIdentityReason::VerifyHelperFailed
         }
     }
@@ -1216,7 +1188,7 @@ fn append_process_diagnostic(stderr: &mut String, diagnostic: &str) {
 pub(super) struct RunStart<'a> {
     pub(super) restore_guest_state: bool,
     pub(super) reuse_result: SandboxReuseResult,
-    pub(super) workspace_reuse_result: WorkspaceReuseResult,
+    pub(super) home_reuse_result: HomeReuseResult,
     pub(super) prev_storage: Option<&'a crate::storage_fingerprints::StorageFingerprints>,
 }
 
@@ -1511,10 +1483,6 @@ struct StagedSessionRestore {
     transfer_source: HistoryTransferSource,
     transfer: crate::telemetry::HistoryTransferMeasurements,
     staging_elapsed: Duration,
-    workspace_completion: Option<(
-        WorkspaceSessionHistoryTimings,
-        WorkspaceSessionHistoryTelemetry,
-    )>,
 }
 
 enum StagedSessionRestorePreparation {
@@ -1560,10 +1528,6 @@ async fn write_staged_session(
     session: MaterializedResumeSession,
     source: HistoryTransferSource,
     staging_path: &str,
-    workspace_completion: Option<(
-        WorkspaceSessionHistoryTimings,
-        WorkspaceSessionHistoryTelemetry,
-    )>,
     telemetry: &mut JobTelemetry,
 ) -> RunnerResult<StagedSessionRestore> {
     let plan = plan_fresh_session_restore(context, &session, SandboxReuseResult::PoolMiss)?
@@ -1596,7 +1560,6 @@ async fn write_staged_session(
         transfer_source: source,
         transfer,
         staging_elapsed: elapsed,
-        workspace_completion,
     })
 }
 
@@ -1612,29 +1575,6 @@ fn record_staged_history_transfer_outcome(
         staged.transfer_source,
         CliFramework::from(effective_cli_framework(&context.cli_agent_type)).as_cli_agent_type(),
         success.then(|| staged.transfer.clone()),
-    );
-}
-
-fn record_staged_workspace_restore_outcome(
-    telemetry: &mut JobTelemetry,
-    staged: &StagedSessionRestore,
-    elapsed: Duration,
-    success: bool,
-) {
-    let Some((timings, history_telemetry)) = staged.workspace_completion else {
-        return;
-    };
-    telemetry.record_workspace_session_history_restore(
-        elapsed,
-        success,
-        (!success).then_some(WORKSPACE_SESSION_HISTORY_PHASE_TELEMETRY_ERROR),
-        history_telemetry,
-    );
-    telemetry.record(
-        "session_history_workspace_cache_restore",
-        timings.host_service_time().saturating_add(elapsed),
-        success,
-        (!success).then_some("restore_error"),
     );
 }
 
@@ -1668,9 +1608,9 @@ async fn prepare_staged_session_restore(
         return Ok(StagedSessionRestorePreparation::Serial(plan));
     }
 
-    let mut local_materializer = None;
-    let mut remote_materializer = match plan {
-        SessionHistoryRestorePlan::SkipVerified(_) => {
+    let remote_materializer = match plan {
+        SessionHistoryRestorePlan::SkipVerified(_)
+        | SessionHistoryRestorePlan::HomeCacheCandidate { .. } => {
             return Err(RunnerError::Internal(
                 "verify-first history plan reached staged restore".into(),
             ));
@@ -1701,127 +1641,7 @@ async fn prepare_staged_session_restore(
             record_session_history_restore_fallback(telemetry, fallback);
             Some(materializer)
         }
-        SessionHistoryRestorePlan::LocalSidecar {
-            materializer,
-            fallback,
-        } => {
-            record_session_history_restore_fallback(telemetry, fallback);
-            local_materializer = Some(materializer);
-            None
-        }
     };
-
-    if let Some(local_materializer) = local_materializer {
-        let completed_before_restore = local_materializer.is_finished();
-        let wait_started = Instant::now();
-        let materialization = local_materializer.finish(cancel).await;
-        let materialization_wait = if completed_before_restore {
-            Duration::ZERO
-        } else {
-            wait_started.elapsed()
-        };
-        let materialization_succeeded = matches!(
-            &materialization,
-            WorkspaceSessionHistoryMaterialization::Materialized { .. }
-        );
-        telemetry.record(
-            "session_history_workspace_cache_materialization_wait",
-            materialization_wait,
-            materialization_succeeded,
-            (!materialization_succeeded).then_some(WORKSPACE_SESSION_HISTORY_PHASE_TELEMETRY_ERROR),
-        );
-        match materialization {
-            WorkspaceSessionHistoryMaterialization::Materialized {
-                session,
-                timings,
-                telemetry: history_telemetry,
-            } => {
-                record_workspace_session_history_timings(telemetry, timings);
-                match write_staged_session(
-                    sandbox,
-                    context,
-                    session,
-                    HistoryTransferSource::WorkspaceCache,
-                    staging_path,
-                    Some((timings, history_telemetry)),
-                    telemetry,
-                )
-                .await
-                {
-                    Ok(staged) => {
-                        return Ok(StagedSessionRestorePreparation::Ready(Box::new(staged)));
-                    }
-                    Err(error) => {
-                        if cancel.is_cancelled() || matches!(&error, RunnerError::Cancelled) {
-                            return Err(error);
-                        }
-                        telemetry.record_workspace_session_history_restore(
-                            Duration::ZERO,
-                            false,
-                            Some(WORKSPACE_SESSION_HISTORY_PHASE_TELEMETRY_ERROR),
-                            history_telemetry,
-                        );
-                        telemetry.record(
-                            "session_history_workspace_cache_restore",
-                            timings.host_service_time(),
-                            false,
-                            Some("restore_error"),
-                        );
-                        telemetry.record(
-                            "session_history_workspace_cache_miss",
-                            Duration::ZERO,
-                            true,
-                            Some("restore_error"),
-                        );
-                        warn!(
-                            run_id = %context.run_id,
-                            error = %error,
-                            "workspace session history sidecar staging failed; falling back to remote history"
-                        );
-                        remote_materializer = Some(SessionHistoryMaterializer::start_cancellable(
-                            &config.http,
-                            &config.session_history_cpu,
-                            context.resume_session.as_ref(),
-                            effective_cli_framework(&context.cli_agent_type),
-                            cancel.clone(),
-                            Some(&config.session_history_probe),
-                        ));
-                    }
-                }
-            }
-            WorkspaceSessionHistoryMaterialization::Failed { timings, error } => {
-                record_workspace_session_history_timings(telemetry, timings);
-                if cancel.is_cancelled() || matches!(&error, RunnerError::Cancelled) {
-                    return Err(error);
-                }
-                telemetry.record(
-                    "session_history_workspace_cache_restore",
-                    timings.host_service_time(),
-                    false,
-                    Some("materialize_error"),
-                );
-                telemetry.record(
-                    "session_history_workspace_cache_miss",
-                    Duration::ZERO,
-                    true,
-                    Some("materialize_error"),
-                );
-                warn!(
-                    run_id = %context.run_id,
-                    error = %error,
-                    "workspace session history sidecar materialization failed; falling back to remote history"
-                );
-                remote_materializer = Some(SessionHistoryMaterializer::start_cancellable(
-                    &config.http,
-                    &config.session_history_cpu,
-                    context.resume_session.as_ref(),
-                    effective_cli_framework(&context.cli_agent_type),
-                    cancel.clone(),
-                    Some(&config.session_history_probe),
-                ));
-            }
-        }
-    }
 
     let Some(remote_materializer) = remote_materializer else {
         return Ok(StagedSessionRestorePreparation::Missing);
@@ -1913,17 +1733,9 @@ async fn prepare_staged_session_restore(
     let Some(session) = session else {
         return Ok(StagedSessionRestorePreparation::Missing);
     };
-    write_staged_session(
-        sandbox,
-        context,
-        session,
-        source,
-        staging_path,
-        None,
-        telemetry,
-    )
-    .await
-    .map(|staged| StagedSessionRestorePreparation::Ready(Box::new(staged)))
+    write_staged_session(sandbox, context, session, source, staging_path, telemetry)
+        .await
+        .map(|staged| StagedSessionRestorePreparation::Ready(Box::new(staged)))
 }
 
 async fn populate_storage_plan(
@@ -2200,12 +2012,13 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
         mut pre_spawn_admission_lease,
         guest_state_prepared,
     } = controls;
-    let staged_history_eligible = start.workspace_reuse_result == WorkspaceReuseResult::Reused
+    let staged_history_eligible = start.home_reuse_result == HomeReuseResult::Reused
         && start.reuse_result != SandboxReuseResult::Reused
         && context.resume_session.is_some()
         && !matches!(
             &session_history_restore_plan,
             SessionHistoryRestorePlan::SkipVerified(_)
+                | SessionHistoryRestorePlan::HomeCacheCandidate { .. }
         );
     let pre_spawn_started = Instant::now();
 
@@ -2350,9 +2163,6 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                             record_staged_history_transfer_outcome(
                                 telemetry, context, &staged, elapsed, false,
                             );
-                            record_staged_workspace_restore_outcome(
-                                telemetry, &staged, elapsed, false,
-                            );
                             true
                         }
                         Ok(StagedSessionRestorePreparation::Missing) => false,
@@ -2421,7 +2231,6 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                         record_staged_history_transfer_outcome(
                             telemetry, context, &staged, elapsed, false,
                         );
-                        record_staged_workspace_restore_outcome(telemetry, &staged, elapsed, false);
                         true
                     }
                     StagedSessionRestorePreparation::Missing => false,
@@ -2467,12 +2276,6 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                         record_staged_history_transfer_outcome(
                             telemetry,
                             context,
-                            &staged,
-                            staged.staging_elapsed,
-                            false,
-                        );
-                        record_staged_workspace_restore_outcome(
-                            telemetry,
                             &staged,
                             staged.staging_elapsed,
                             false,
@@ -2574,8 +2377,9 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                                         .staging_elapsed
                                         .saturating_add(publication_elapsed)
                                         .saturating_add(elapsed);
-                                    record_staged_workspace_restore_outcome(
+                                    record_staged_history_transfer_outcome(
                                         telemetry,
+                                        context,
                                         &staged,
                                         restore_elapsed,
                                         false,
@@ -2590,8 +2394,9 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                                         .staging_elapsed
                                         .saturating_add(publication_elapsed)
                                         .saturating_add(elapsed);
-                                    record_staged_workspace_restore_outcome(
+                                    record_staged_history_transfer_outcome(
                                         telemetry,
+                                        context,
                                         &staged,
                                         restore_elapsed,
                                         false,
@@ -2610,12 +2415,6 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                                 restore_elapsed,
                                 false,
                             );
-                            record_staged_workspace_restore_outcome(
-                                telemetry,
-                                &staged,
-                                restore_elapsed,
-                                false,
-                            );
                             return Err(RunnerError::Internal(
                                 "publish request unexpectedly discarded staged history".into(),
                             ));
@@ -2626,12 +2425,6 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                             record_staged_history_transfer_outcome(
                                 telemetry,
                                 context,
-                                &staged,
-                                restore_elapsed,
-                                false,
-                            );
-                            record_staged_workspace_restore_outcome(
-                                telemetry,
                                 &staged,
                                 restore_elapsed,
                                 false,
@@ -2653,12 +2446,6 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                             true,
                         );
                     }
-                    record_staged_workspace_restore_outcome(
-                        telemetry,
-                        &staged,
-                        restore_elapsed,
-                        true,
-                    );
                     telemetry.record("session_restore", restore_elapsed, true, None);
                     telemetry.record_with_outcome(
                         "session_history_workspace_staged_restore",
@@ -2749,8 +2536,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
     let mut session_restore_diagnostics = staged_restore_diagnostics;
     let mut pre_run_restored_session_identity = None;
     if let Some(session_history_restore_plan) = session_history_restore_plan {
-    let mut local_session_history_materializer = None;
-    let mut session_history_materializer = match session_history_restore_plan {
+    let session_history_materializer = match session_history_restore_plan {
         SessionHistoryRestorePlan::SkipVerified(identity) => {
             let verification_started = Instant::now();
             let verification_result =
@@ -2776,6 +2562,9 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                     None
                 }
                 Err(reason) => {
+                    if reason == SessionHistoryIdentityReason::VerifyHelperCancelled || cancel.is_cancelled() {
+                        return Err(RunnerError::Cancelled);
+                    }
                     telemetry.record(
                         SessionHistoryRestoreFallback::StaleIdleIdentity.action_type(),
                         Duration::ZERO,
@@ -2820,148 +2609,26 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             record_session_history_restore_fallback(telemetry, fallback);
             Some(materializer)
         }
-        SessionHistoryRestorePlan::LocalSidecar {
-            materializer,
-            fallback,
-        } => {
-            record_session_history_restore_fallback(telemetry, fallback);
-            local_session_history_materializer = Some(materializer);
-            None
+        SessionHistoryRestorePlan::HomeCacheCandidate { binding, fallback } => {
+            let verification_started = Instant::now();
+            let verified = super::home_history::verify_home_candidate(sandbox, context, binding, &cancel).await?;
+            telemetry.record("session_history_home_cache_verify", verification_started.elapsed(), verified, None);
+            if verified {
+                telemetry.record("session_history_home_cache_hit", Duration::ZERO, true, None);
+                telemetry.record("session_history_restore_skip", Duration::ZERO, true, None);
+                telemetry.record_history_transfer(verification_started.elapsed(), HistoryTransferSource::HomeCache,
+                    CliFramework::from(effective_cli_framework(&context.cli_agent_type)).as_cli_agent_type(), None);
+                None
+            } else {
+                record_session_history_restore_fallback(telemetry, fallback);
+                telemetry.record("session_history_home_cache_miss", Duration::ZERO, true, None);
+                Some(SessionHistoryMaterializer::start_cancellable(
+                    &config.http, &config.session_history_cpu, context.resume_session.as_ref(),
+                    effective_cli_framework(&context.cli_agent_type), cancel.clone(), Some(&config.session_history_probe),
+                ))
+            }
         }
     };
-    if let Some(local_materializer) = local_session_history_materializer {
-        let completed_before_restore = local_materializer.is_finished();
-        let materialization_wait_started = Instant::now();
-        let local_materialization = local_materializer.finish(&cancel).await;
-        let materialization_wait = if completed_before_restore {
-            Duration::ZERO
-        } else {
-            materialization_wait_started.elapsed()
-        };
-        let materialization_succeeded = matches!(
-            &local_materialization,
-            WorkspaceSessionHistoryMaterialization::Materialized { .. }
-        );
-        telemetry.record(
-            "session_history_workspace_cache_materialization_wait",
-            materialization_wait,
-            materialization_succeeded,
-            (!materialization_succeeded).then_some(
-                WORKSPACE_SESSION_HISTORY_PHASE_TELEMETRY_ERROR,
-            ),
-        );
-        match local_materialization {
-            WorkspaceSessionHistoryMaterialization::Materialized {
-                session,
-                timings,
-                telemetry: history_telemetry,
-            } => {
-                record_workspace_session_history_timings(telemetry, timings);
-                let guest_restore_started = Instant::now();
-                let restore_result = restore_session(sandbox, context, &session).await;
-                let guest_restore_elapsed = guest_restore_started.elapsed();
-                telemetry.record_history_transfer(
-                    guest_restore_elapsed,
-                    HistoryTransferSource::WorkspaceCache,
-                    CliFramework::from(effective_cli_framework(&context.cli_agent_type))
-                        .as_cli_agent_type(),
-                    restore_result.as_ref().ok().map(|diagnostics| diagnostics.transfer.clone()),
-                );
-                telemetry.record_workspace_session_history_restore(
-                    guest_restore_elapsed,
-                    restore_result.is_ok(),
-                    restore_result
-                        .is_err()
-                        .then_some(WORKSPACE_SESSION_HISTORY_PHASE_TELEMETRY_ERROR),
-                    history_telemetry,
-                );
-                match restore_result {
-                    Ok(diagnostics) => {
-                        telemetry.record(
-                            "session_history_workspace_cache_restore",
-                            timings
-                                .host_service_time()
-                                .saturating_add(guest_restore_elapsed),
-                            true,
-                            None,
-                        );
-                        telemetry.record("session_restore", guest_restore_elapsed, true, None);
-                        session_restore_diagnostics = Some(diagnostics);
-                    }
-                    Err(error) => {
-                        telemetry.record(
-                            "session_restore",
-                            guest_restore_elapsed,
-                            false,
-                            Some(&error.to_string()),
-                        );
-                        if cancel.is_cancelled() || matches!(&error, RunnerError::Cancelled) {
-                            return Err(error);
-                        }
-                        telemetry.record(
-                            "session_history_workspace_cache_restore",
-                            timings
-                                .host_service_time()
-                                .saturating_add(guest_restore_elapsed),
-                            false,
-                            Some("restore_error"),
-                        );
-                        telemetry.record(
-                            "session_history_workspace_cache_miss",
-                            Duration::ZERO,
-                            true,
-                            Some("restore_error"),
-                        );
-                        warn!(
-                            run_id = %context.run_id,
-                            error = %error,
-                            "workspace session history sidecar restore failed; falling back to remote history"
-                        );
-                        session_history_materializer =
-                            Some(SessionHistoryMaterializer::start_cancellable(
-                                &config.http,
-                                &config.session_history_cpu,
-                                context.resume_session.as_ref(),
-                                effective_cli_framework(&context.cli_agent_type),
-                                cancel.clone(),
-                                Some(&config.session_history_probe),
-                            ));
-                    }
-                }
-            }
-            WorkspaceSessionHistoryMaterialization::Failed { timings, error } => {
-                record_workspace_session_history_timings(telemetry, timings);
-                if cancel.is_cancelled() || matches!(&error, RunnerError::Cancelled) {
-                    return Err(error);
-                }
-                telemetry.record(
-                    "session_history_workspace_cache_restore",
-                    timings.host_service_time(),
-                    false,
-                    Some("materialize_error"),
-                );
-                telemetry.record(
-                    "session_history_workspace_cache_miss",
-                    Duration::ZERO,
-                    true,
-                    Some("materialize_error"),
-                );
-                warn!(
-                    run_id = %context.run_id,
-                    error = %error,
-                    "workspace session history sidecar materialization failed; falling back to remote history"
-                );
-                session_history_materializer = Some(SessionHistoryMaterializer::start_cancellable(
-                    &config.http,
-                    &config.session_history_cpu,
-                    context.resume_session.as_ref(),
-                    effective_cli_framework(&context.cli_agent_type),
-                    cancel.clone(),
-                    Some(&config.session_history_probe),
-                ));
-            }
-        }
-    }
     if let Some(session_history_materializer) = session_history_materializer {
         // Finish any remaining history materialization immediately before
         // restoring it into the guest.
@@ -3110,7 +2777,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
         &config.api_url,
         sandbox.id(),
         start.reuse_result,
-        start.workspace_reuse_result,
+        start.home_reuse_result,
     ) {
         Ok(env_map) => env_map,
         Err(error) => {
@@ -3242,14 +2909,14 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                 context,
                 telemetry,
                 start.reuse_result,
-                start.workspace_reuse_result,
+                start.home_reuse_result,
                 timing.shell_started_at,
                 timing.ready_at,
             );
             info!(
                 run_id = %context.run_id,
                 sandbox_reuse = ?start.reuse_result,
-                workspace_reuse = ?start.workspace_reuse_result,
+                workspace_reuse = ?start.home_reuse_result,
                 shell_spawn_ms = timing.shell_started_at.saturating_duration_since(t).as_millis(),
                 agent_ready_ms = timing.ready_at.saturating_duration_since(t).as_millis(),
                 containment_create_us = timing.containment_create.as_micros(),

@@ -13,9 +13,9 @@ use super::sandbox_run::{
 };
 use super::{ExecuteOutcome, ExecutionFailure, ExecutorConfig, JobParams, NewSandboxDispatch};
 use crate::error::RunnerError;
+use crate::home_image_cache::HomeImageLease;
 use crate::idle_pool::IdleSandboxKind;
 use crate::telemetry::JobTelemetry;
-use crate::workspace_image_cache::WorkspaceImageLease;
 use runner_types::types::ExecutionContext;
 
 const BLANK_PREFETCH_REPLACEMENT: &str = "runner_blank_sandbox_retry_without_codex_prefetch";
@@ -26,7 +26,7 @@ pub(super) struct ReusedSandboxRun<'a> {
     pub(super) params: &'a JobParams,
     pub(super) sandbox: Box<dyn Sandbox>,
     pub(super) source_ip: String,
-    pub(super) workspace_image: Option<WorkspaceImageLease>,
+    pub(super) home_image: Option<HomeImageLease>,
     pub(super) kind: IdleSandboxKind,
 }
 
@@ -74,7 +74,7 @@ pub(super) async fn execute_reused_sandbox(
                 ExecutionFailure::from_error(error.to_string()),
                 run.sandbox,
                 run.source_ip,
-                run.workspace_image,
+                run.home_image,
             );
         }
     };
@@ -103,7 +103,7 @@ pub(super) async fn execute_reused_sandbox(
     };
     if let Some(PreparedGuestRuntime::SandboxUnusable(error)) = prepared_guest_runtime {
         // Drop the retired blank's lease without publishing or freezing its image.
-        drop(run.workspace_image);
+        drop(run.home_image);
         return replace_unusable_blank(
             run.factory,
             run.params,
@@ -132,7 +132,7 @@ pub(super) async fn execute_reused_sandbox(
         inputs,
     )
     .await;
-    outcome.workspace_image = run.workspace_image;
+    outcome.home_image = run.home_image;
     outcome
 }
 

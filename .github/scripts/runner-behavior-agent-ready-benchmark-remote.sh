@@ -5,7 +5,7 @@ BIN_DIR=$1
 GROUP=$2
 INVOCATION_ID=$3
 AGENT_READY_BENCHMARK_SAMPLES=$4
-MAX_WORKSPACE_PROMOTION_RETRIES=3
+MAX_HOME_PROMOTION_RETRIES=3
 AGENT_READY_BENCHMARK_RAW=""
 AGENT_READY_LAST_RUN_ID=""
 AGENT_READY_SAMPLE_ERROR=""
@@ -185,13 +185,13 @@ record_agent_ready_benchmark_sample() {
     }' >> "$AGENT_READY_BENCHMARK_RAW"
 }
 
-read_workspace_promotion_log() {
+read_home_promotion_log() {
   local run_id=$1
   local line=""
   for _ in $(seq 1 50); do
     line=$(sudo journalctl --no-pager "_SYSTEMD_INVOCATION_ID=$INVOCATION_ID" 2>&1 \
       | grep -F "run_id=$run_id" \
-      | grep -E 'workspace image cache (promoted|promotion skipped)' \
+      | grep -E 'home image cache (promoted|promotion skipped)|home image publication (failed|rejected)' \
       | tail -n 1) || true
     if [ -n "$line" ]; then
       printf '%s\n' "$line"
@@ -202,20 +202,20 @@ read_workspace_promotion_log() {
   return 1
 }
 
-print_workspace_promotion_diagnostics() {
+print_home_promotion_diagnostics() {
   local run_id=$1
   local logs=""
   local lines=""
-  echo "--- Workspace cache promotion logs for run ${run_id} ---" >&2
+  echo "--- Home cache promotion logs for run ${run_id} ---" >&2
   logs=$(sudo journalctl --no-pager "_SYSTEMD_INVOCATION_ID=$INVOCATION_ID" 2>&1) \
     || true
   lines=$(printf '%s\n' "$logs" \
     | grep -F "run_id=$run_id" \
-    | grep -F 'workspace image cache') || true
+    | grep -E 'home image cache|home image publication') || true
   if [ -n "$lines" ]; then
     printf '%s\n' "$lines" >&2
   else
-    echo "No workspace image cache logs found" >&2
+    echo "No home image cache logs found" >&2
   fi
 }
 
@@ -226,59 +226,59 @@ for index in $(seq 1 "$AGENT_READY_BENCHMARK_SAMPLES"); do
     || true
 done
 
-WORKSPACE_BENCHMARK_THREAD_ID=$(cat /proc/sys/kernel/random/uuid)
-WORKSPACE_BENCHMARK_EVICTOR_THREAD_ID=$(cat /proc/sys/kernel/random/uuid)
+HOME_BENCHMARK_THREAD_ID=$(cat /proc/sys/kernel/random/uuid)
+HOME_BENCHMARK_EVICTOR_THREAD_ID=$(cat /proc/sys/kernel/random/uuid)
 if ! submit_agent_ready_benchmark_run \
-  "$WORKSPACE_BENCHMARK_THREAD_ID" agent-ready-workspace; then
-  fail "workspace-cache Agent-ready benchmark warmup failed: $AGENT_READY_SUBMIT_ERROR"
+  "$HOME_BENCHMARK_THREAD_ID" agent-ready-home; then
+  fail "home-cache Agent-ready benchmark warmup failed: $AGENT_READY_SUBMIT_ERROR"
 fi
-WORKSPACE_BENCHMARK_RUN_ID=$AGENT_READY_SUBMIT_RUN_ID
-WORKSPACE_BENCHMARK_SUCCESSFUL_SAMPLES=0
-WORKSPACE_BENCHMARK_PROMOTION_ATTEMPTS=0
-WORKSPACE_BENCHMARK_MAX_PROMOTION_ATTEMPTS=$((
-  AGENT_READY_BENCHMARK_SAMPLES + MAX_WORKSPACE_PROMOTION_RETRIES
+HOME_BENCHMARK_RUN_ID=$AGENT_READY_SUBMIT_RUN_ID
+HOME_BENCHMARK_SUCCESSFUL_SAMPLES=0
+HOME_BENCHMARK_PROMOTION_ATTEMPTS=0
+HOME_BENCHMARK_MAX_PROMOTION_ATTEMPTS=$((
+  AGENT_READY_BENCHMARK_SAMPLES + MAX_HOME_PROMOTION_RETRIES
 ))
 
-while [ "$WORKSPACE_BENCHMARK_SUCCESSFUL_SAMPLES" -lt "$AGENT_READY_BENCHMARK_SAMPLES" ]; do
-  WORKSPACE_BENCHMARK_PROMOTION_ATTEMPTS=$((WORKSPACE_BENCHMARK_PROMOTION_ATTEMPTS + 1))
+while [ "$HOME_BENCHMARK_SUCCESSFUL_SAMPLES" -lt "$AGENT_READY_BENCHMARK_SAMPLES" ]; do
+  HOME_BENCHMARK_PROMOTION_ATTEMPTS=$((HOME_BENCHMARK_PROMOTION_ATTEMPTS + 1))
   if ! submit_agent_ready_benchmark_run \
-    "$WORKSPACE_BENCHMARK_EVICTOR_THREAD_ID" agent-ready-workspace-evictor; then
-    fail "workspace-cache Agent-ready benchmark eviction failed: $AGENT_READY_SUBMIT_ERROR"
+    "$HOME_BENCHMARK_EVICTOR_THREAD_ID" agent-ready-home-evictor; then
+    fail "home-cache Agent-ready benchmark eviction failed: $AGENT_READY_SUBMIT_ERROR"
   fi
 
-  if ! promotion_log=$(read_workspace_promotion_log "$WORKSPACE_BENCHMARK_RUN_ID"); then
-    print_workspace_promotion_diagnostics "$WORKSPACE_BENCHMARK_RUN_ID"
-    fail "workspace-cache promotion outcome was not found for run $WORKSPACE_BENCHMARK_RUN_ID"
+  if ! promotion_log=$(read_home_promotion_log "$HOME_BENCHMARK_RUN_ID"); then
+    print_home_promotion_diagnostics "$HOME_BENCHMARK_RUN_ID"
+    fail "home-cache promotion outcome was not found for run $HOME_BENCHMARK_RUN_ID"
   fi
 
-  if grep -F 'workspace image cache promotion skipped: capacity lock busy' \
+  if grep -F 'home image cache promotion skipped: capacity lock busy' \
     <<<"$promotion_log" >/dev/null; then
-    if [ "$WORKSPACE_BENCHMARK_PROMOTION_ATTEMPTS" \
-      -ge "$WORKSPACE_BENCHMARK_MAX_PROMOTION_ATTEMPTS" ]; then
-      print_workspace_promotion_diagnostics "$WORKSPACE_BENCHMARK_RUN_ID"
-      fail "workspace-cache promotion capacity lock remained busy after ${WORKSPACE_BENCHMARK_PROMOTION_ATTEMPTS} attempts"
+    if [ "$HOME_BENCHMARK_PROMOTION_ATTEMPTS" \
+      -ge "$HOME_BENCHMARK_MAX_PROMOTION_ATTEMPTS" ]; then
+      print_home_promotion_diagnostics "$HOME_BENCHMARK_RUN_ID"
+      fail "home-cache promotion capacity lock remained busy after ${HOME_BENCHMARK_PROMOTION_ATTEMPTS} attempts"
     fi
-    echo "RETRY: workspace-cache promotion capacity lock was busy for run ${WORKSPACE_BENCHMARK_RUN_ID}"
+    echo "RETRY: home-cache promotion capacity lock was busy for run ${HOME_BENCHMARK_RUN_ID}"
     if ! submit_agent_ready_benchmark_run \
-      "$WORKSPACE_BENCHMARK_THREAD_ID" agent-ready-workspace; then
-      fail "workspace-cache Agent-ready benchmark re-prime failed: $AGENT_READY_SUBMIT_ERROR"
+      "$HOME_BENCHMARK_THREAD_ID" agent-ready-home; then
+      fail "home-cache Agent-ready benchmark re-prime failed: $AGENT_READY_SUBMIT_ERROR"
     fi
-    WORKSPACE_BENCHMARK_RUN_ID=$AGENT_READY_SUBMIT_RUN_ID
+    HOME_BENCHMARK_RUN_ID=$AGENT_READY_SUBMIT_RUN_ID
     continue
   fi
 
-  if ! grep -F 'workspace image cache promoted' <<<"$promotion_log" >/dev/null; then
-    print_workspace_promotion_diagnostics "$WORKSPACE_BENCHMARK_RUN_ID"
-    fail "unexpected workspace-cache promotion outcome for run $WORKSPACE_BENCHMARK_RUN_ID"
+  if ! grep -F 'home image cache promoted' <<<"$promotion_log" >/dev/null; then
+    print_home_promotion_diagnostics "$HOME_BENCHMARK_RUN_ID"
+    fail "unexpected home-cache promotion outcome for run $HOME_BENCHMARK_RUN_ID"
   fi
 
   if ! record_agent_ready_benchmark_sample \
-    workspace-cache PoolMiss Reused \
-    "$WORKSPACE_BENCHMARK_THREAD_ID" agent-ready-workspace; then
-    fail "workspace-cache sample failed after confirmed promotion: $AGENT_READY_SAMPLE_ERROR"
+    home-cache PoolMiss Reused \
+    "$HOME_BENCHMARK_THREAD_ID" agent-ready-home; then
+    fail "home-cache sample failed after confirmed promotion: $AGENT_READY_SAMPLE_ERROR"
   fi
-  WORKSPACE_BENCHMARK_RUN_ID=$AGENT_READY_LAST_RUN_ID
-  WORKSPACE_BENCHMARK_SUCCESSFUL_SAMPLES=$((WORKSPACE_BENCHMARK_SUCCESSFUL_SAMPLES + 1))
+  HOME_BENCHMARK_RUN_ID=$AGENT_READY_LAST_RUN_ID
+  HOME_BENCHMARK_SUCCESSFUL_SAMPLES=$((HOME_BENCHMARK_SUCCESSFUL_SAMPLES + 1))
 done
 
 EXACT_REUSE_THREAD_ID=$(cat /proc/sys/kernel/random/uuid)
@@ -311,7 +311,7 @@ jq -s '
         p99: percentile($values; 0.99)
       };
   . as $records
-  | ["fresh", "workspace-cache", "exact-reuse"]
+  | ["fresh", "home-cache", "exact-reuse"]
   | map(
       . as $path
       | [$records[] | select(.path == $path)] as $rows

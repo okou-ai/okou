@@ -1,7 +1,5 @@
 //! Final session-history identity helpers for checkpoint and runner reuse.
 
-mod resources;
-
 use crate::env;
 use crate::error::AgentError;
 use crate::session_history;
@@ -16,18 +14,14 @@ use guest_contracts::session_history_identity::{
     SESSION_HISTORY_IDENTITY_VERIFY_EXIT_HISTORY_READ,
     SESSION_HISTORY_IDENTITY_VERIFY_EXIT_HISTORY_TOO_LARGE,
     SESSION_HISTORY_IDENTITY_VERIFY_EXIT_INVALID_METADATA,
-    SESSION_HISTORY_IDENTITY_VERIFY_EXIT_METADATA_READ,
-    SESSION_HISTORY_SIDECAR_EXPORT_EXIT_WRITE_FAILURE, SessionHistoryFramework,
+    SESSION_HISTORY_IDENTITY_VERIFY_EXIT_METADATA_READ, SessionHistoryFramework,
     SessionHistoryIdentity, SessionHistoryIdentityError, SessionHistoryIdentityExpectation,
-    SessionHistoryRefKind, SessionHistorySidecarExportFailure, SessionHistorySidecarExportMetadata,
-    SessionHistorySidecarExportTimings, SessionHistorySidecarIoErrorClass,
-    SessionHistorySidecarRepresentation, SessionHistorySourceRef,
+    SessionHistoryRefKind, SessionHistorySourceRef,
 };
 use sha2::{Digest, Sha256};
 use std::fmt;
 use std::io;
 use std::path::Path;
-use std::time::{Duration, Instant};
 
 /// Build final session-history identity metadata for a successful checkpoint.
 pub(crate) fn build_final_session_history_identity(
@@ -78,101 +72,7 @@ pub fn verify_final_session_history_identity_file(
     verify_final_session_history_identity(&identity)
 }
 
-/// Export a verified final session-history sidecar from one source snapshot.
-///
-/// The bounded metadata at `metadata_path` is validated before the declared
-/// framework and decoded history size are checked against the source shape and
-/// guest resume budget. The resolved history source is then consumed once: the
-/// decoded size and SHA-256 identity are verified from the same snapshot that
-/// supplies the exported bytes.
-///
-/// History is exported as [`SessionHistorySidecarRepresentation::Raw`] after
-/// decoding unless it is native Codex zstd whose encoded form fits the export
-/// budget. That native representation is preserved as
-/// [`SessionHistorySidecarRepresentation::CodexZstd`]; an oversized encoded
-/// form falls back to decoded raw history. Identity size and hash fields always
-/// describe decoded history, while
-/// [`SessionHistorySidecarExportMetadata::encoded_size`] is the exact length of
-/// the selected output representation.
-///
-/// After verification, `export_path` is created or truncated through
-/// [`crate::paths::write_private`] and inherits that helper's platform-specific
-/// runtime-private permission and symlink handling. The write is not
-/// transactional: callers must consume the sidecar only after this function
-/// returns successfully, because an output error may leave a created,
-/// truncated, or partial file.
-///
-/// The guest `export-session-history-sidecar` helper serializes the returned
-/// metadata for runner, which uses the representation and exact encoded length
-/// to validate and copy the exported file.
-///
-/// # Returns
-///
-/// On success, returns the representation, exact byte length written to
-/// `export_path`, and phase timings. Timings exclude helper process startup,
-/// result serialization, exit, and subsequent host copying.
-///
-/// # Errors
-///
-/// Returns [`SessionHistorySidecarExportError::Verification`] when identity
-/// metadata or source history cannot be verified. Returns
-/// [`SessionHistorySidecarExportError::OutputWrite`] when the verified
-/// sidecar bytes cannot be created or written at `export_path`.
-pub fn export_final_session_history_sidecar_file(
-    metadata_path: impl AsRef<Path>,
-    export_path: impl AsRef<Path>,
-) -> Result<SessionHistorySidecarExportMetadata, SessionHistorySidecarExportError> {
-    let started = Instant::now();
-    let identity = read_final_session_history_identity(metadata_path)?;
-    let history_source = validated_history_source(&identity)?;
-    verify_final_session_history_identity_constraints(&identity)?;
-    let metadata_done = Instant::now();
-    let resolved = session_history::resolve_session_history_from_source(history_source)
-        .map_err(SessionHistoryIdentityVerifyError::HistoryRead)?;
-    let resolve_done = Instant::now();
-    let read_resources = resources::snapshot();
-    let prepared = resolved
-        .prepare_sidecar(
-            identity.history_size_bytes,
-            RESUME_SESSION_HISTORY_MAX_BYTES,
-        )
-        .map_err(map_session_history_digest_error)?;
-    verify_final_session_history_digest(&identity, &prepared.digest)?;
-    let read_verify_done = Instant::now();
-    let write_resources = resources::snapshot();
-    let source = prepared.into_source();
-    let (representation, bytes) = match source {
-        session_history::SessionHistoryCheckpointSource::Decoded(bytes) => {
-            (SessionHistorySidecarRepresentation::Raw, bytes)
-        }
-        session_history::SessionHistoryCheckpointSource::CodexZstd { encoded } => {
-            (SessionHistorySidecarRepresentation::CodexZstd, encoded)
-        }
-    };
-    crate::paths::write_private(export_path.as_ref(), &bytes)
-        .map_err(SessionHistorySidecarExportError::OutputWrite)?;
-    let finished = Instant::now();
-    let finished_resources = resources::snapshot();
-    Ok(SessionHistorySidecarExportMetadata {
-        representation,
-        encoded_size: bytes.len() as u64,
-        timings: SessionHistorySidecarExportTimings {
-            metadata_us: duration_us(metadata_done.duration_since(started)),
-            resolve_us: duration_us(resolve_done.duration_since(metadata_done)),
-            read_verify_us: duration_us(read_verify_done.duration_since(resolve_done)),
-            write_us: duration_us(finished.duration_since(read_verify_done)),
-            total_us: duration_us(finished.duration_since(started)),
-            read_verify_resources: resources::delta(read_resources, write_resources),
-            write_resources: resources::delta(write_resources, finished_resources),
-        },
-    })
-}
-
-fn duration_us(duration: Duration) -> u64 {
-    u64::try_from(duration.as_micros()).unwrap_or(u64::MAX)
-}
-
-fn read_final_session_history_identity(
+pub(crate) fn read_final_session_history_identity(
     metadata_path: impl AsRef<Path>,
 ) -> Result<SessionHistoryIdentity, SessionHistoryIdentityVerifyError> {
     let metadata_path = metadata_path.as_ref();
@@ -202,7 +102,7 @@ fn read_final_session_history_identity(
         .map_err(SessionHistoryIdentityVerifyError::InvalidMetadata)
 }
 
-fn verify_final_session_history_identity(
+pub(crate) fn verify_final_session_history_identity(
     identity: &SessionHistoryIdentity,
 ) -> Result<(), SessionHistoryIdentityVerifyError> {
     let history_source = validated_history_source(identity)?;
@@ -213,6 +113,84 @@ fn verify_final_session_history_identity(
     )
     .map_err(map_session_history_digest_error)?;
     verify_final_session_history_digest(identity, &digest)
+}
+
+/// Verify the actual named file belongs to the retained home mount, including
+/// bounded Pi source uniqueness and inode/mtime revalidation after hashing.
+pub(crate) fn verify_retained_home_identity(
+    identity: &SessionHistoryIdentity,
+) -> Result<(), SessionHistoryIdentityVerifyError> {
+    let source = validated_history_source(identity)?;
+    verify_final_session_history_identity_constraints(identity)?;
+    if let SessionHistorySourceRef::Pi {
+        session_path,
+        session_id,
+    } = source
+    {
+        verify_unique_pi_source(session_path, session_id)
+            .map_err(SessionHistoryIdentityVerifyError::HistoryRead)?;
+    }
+    let digest = session_history::resolve_session_history_from_source(source)
+        .map_err(SessionHistoryIdentityVerifyError::HistoryRead)?
+        .digest_retained_home(identity.history_size_bytes)
+        .map_err(map_session_history_digest_error)?;
+    verify_final_session_history_digest(identity, &digest)
+}
+
+fn verify_unique_pi_source(path: &str, session_id: &str) -> Result<(), AgentError> {
+    #[cfg(target_os = "linux")]
+    {
+        let source_path = Path::new(path);
+        let parent = source_path
+            .parent()
+            .ok_or_else(|| AgentError::Checkpoint("invalid Pi history source".into()))?;
+        let directory = crate::nofollow_fs::Dir::open_absolute(parent)
+            .map_err(|_| AgentError::Checkpoint("unsafe Pi history source".into()))?;
+        let mut count = 0usize;
+        for (index, entry) in directory
+            .read_dir()
+            .map_err(|_| AgentError::Checkpoint("Pi history lookup failed".into()))?
+            .enumerate()
+        {
+            if index >= 16_384 {
+                return Err(AgentError::Checkpoint(
+                    "Pi history lookup exceeds budget".into(),
+                ));
+            }
+            let entry =
+                entry.map_err(|_| AgentError::Checkpoint("Pi history lookup failed".into()))?;
+            let candidate = parent.join(entry.file_name());
+            if candidate.to_str().is_some_and(|candidate| {
+                crate::session_metadata::is_pi_session_history_path(candidate, session_id)
+            }) {
+                // A competing symlink or nonregular entry is not silently ignored.
+                let file = directory
+                    .open_child_file(&entry.file_name())
+                    .map_err(|_| AgentError::Checkpoint("unsafe Pi history candidate".into()))?;
+                if !file.metadata().is_ok_and(|metadata| metadata.is_file()) {
+                    return Err(AgentError::Checkpoint(
+                        "invalid Pi history candidate".into(),
+                    ));
+                }
+                count += 1;
+                if candidate != source_path || count > 1 {
+                    return Err(AgentError::Checkpoint("ambiguous Pi history source".into()));
+                }
+            }
+        }
+        if count == 1 {
+            Ok(())
+        } else {
+            Err(AgentError::Checkpoint("Pi history source missing".into()))
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (path, session_id);
+        Err(AgentError::Checkpoint(
+            "Pi history verification requires descriptor safety".into(),
+        ))
+    }
 }
 
 fn verify_final_session_history_identity_constraints(
@@ -298,62 +276,6 @@ impl fmt::Display for SessionHistoryIdentityBuildError {
 }
 
 impl std::error::Error for SessionHistoryIdentityBuildError {}
-
-/// Error returned while exporting a verified final session-history sidecar.
-#[derive(Debug)]
-pub enum SessionHistorySidecarExportError {
-    /// Identity metadata or source history verification failed.
-    Verification(SessionHistoryIdentityVerifyError),
-    /// The verified sidecar output could not be created or written.
-    OutputWrite(io::Error),
-}
-
-impl SessionHistorySidecarExportError {
-    /// Return the stable helper exit code for this export failure.
-    pub fn helper_exit_code(&self) -> i32 {
-        match self {
-            Self::Verification(error) => error.helper_exit_code(),
-            Self::OutputWrite(_) => SESSION_HISTORY_SIDECAR_EXPORT_EXIT_WRITE_FAILURE,
-        }
-    }
-
-    /// Return safe output-failure metadata when the export write failed.
-    pub fn output_failure(&self) -> Option<SessionHistorySidecarExportFailure> {
-        let Self::OutputWrite(error) = self else {
-            return None;
-        };
-        Some(SessionHistorySidecarExportFailure {
-            io_error_class: sidecar_io_error_class(error),
-        })
-    }
-}
-
-impl From<SessionHistoryIdentityVerifyError> for SessionHistorySidecarExportError {
-    fn from(error: SessionHistoryIdentityVerifyError) -> Self {
-        Self::Verification(error)
-    }
-}
-
-impl fmt::Display for SessionHistorySidecarExportError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Verification(error) => write!(f, "{error}"),
-            Self::OutputWrite(_) => f.write_str("session history sidecar could not be written"),
-        }
-    }
-}
-
-impl std::error::Error for SessionHistorySidecarExportError {}
-
-fn sidecar_io_error_class(error: &io::Error) -> SessionHistorySidecarIoErrorClass {
-    match error.kind() {
-        io::ErrorKind::NotFound => SessionHistorySidecarIoErrorClass::NotFound,
-        io::ErrorKind::PermissionDenied => SessionHistorySidecarIoErrorClass::PermissionDenied,
-        io::ErrorKind::StorageFull => SessionHistorySidecarIoErrorClass::StorageFull,
-        io::ErrorKind::QuotaExceeded => SessionHistorySidecarIoErrorClass::QuotaExceeded,
-        _ => SessionHistorySidecarIoErrorClass::Unknown,
-    }
-}
 
 /// Error returned while verifying final identity metadata.
 #[derive(Debug)]
@@ -479,22 +401,6 @@ mod tests {
             source,
         )
         .unwrap()
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn classifies_sidecar_storage_exhaustion_without_error_text() {
-        let storage_full = io::Error::from_raw_os_error(libc::ENOSPC);
-        let unknown = io::Error::other("sensitive path");
-
-        assert_eq!(
-            sidecar_io_error_class(&storage_full),
-            SessionHistorySidecarIoErrorClass::StorageFull
-        );
-        assert_eq!(
-            sidecar_io_error_class(&unknown),
-            SessionHistorySidecarIoErrorClass::Unknown
-        );
     }
 
     #[test]

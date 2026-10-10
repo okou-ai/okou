@@ -2,12 +2,12 @@ use super::super::super::*;
 use super::super::support::{
     context_with_session, mock_run_config_with_overrides, push_job, seed_idle_pool, shutdown,
     test_profiles, wait_budget_count, wait_cancel_handle, wait_cancel_token_removed,
-    wait_status_idle_reuse_keys_and_active_runs, wait_workspace_cache_reuse_keys,
+    wait_home_cache_reuse_keys, wait_status_idle_reuse_keys_and_active_runs,
 };
 use super::support::assert_successful_completion_for_run;
 
+use crate::home_image_cache::HomeImageCache;
 use crate::idle_pool::ParkingState;
-use crate::workspace_image_cache::WorkspaceImageCache;
 use runner_host::paths::RunnerPaths;
 use sandbox_mock::MockLifecycleGate;
 
@@ -109,8 +109,8 @@ async fn park_failure_destroys_sandbox_and_skips_pool() {
 }
 
 #[tokio::test]
-async fn park_failure_promotes_workspace_cache_before_destroy() {
-    assert_workspace_cache_after_park_cleanup(
+async fn park_failure_promotes_home_cache_before_destroy() {
+    assert_home_cache_after_park_cleanup(
         "sess-park-fail-cache",
         |overrides| {
             overrides.push_park_result(Err(sandbox::SandboxError::IdleTransition {
@@ -125,8 +125,8 @@ async fn park_failure_promotes_workspace_cache_before_destroy() {
 }
 
 #[tokio::test]
-async fn non_reusable_park_destroy_panic_preserves_workspace_cache_and_cleanup() {
-    assert_workspace_cache_after_park_cleanup(
+async fn non_reusable_park_destroy_panic_preserves_home_cache_and_cleanup() {
+    assert_home_cache_after_park_cleanup(
         "sess-severe-retention-destroy-panic-cache",
         |overrides| {
             overrides.push_park_result(Ok(severe_memory_retention()));
@@ -139,8 +139,8 @@ async fn non_reusable_park_destroy_panic_preserves_workspace_cache_and_cleanup()
 }
 
 #[tokio::test]
-async fn park_panic_skips_workspace_cache_before_destroy() {
-    assert_workspace_cache_after_park_cleanup(
+async fn park_panic_skips_home_cache_before_destroy() {
+    assert_home_cache_after_park_cleanup(
         "sess-park-panic-cache",
         |overrides| overrides.push_park_panic("simulated park panic"),
         false,
@@ -149,7 +149,7 @@ async fn park_panic_skips_workspace_cache_before_destroy() {
     .await;
 }
 
-async fn assert_workspace_cache_after_park_cleanup(
+async fn assert_home_cache_after_park_cleanup(
     session_id: &str,
     configure_park: impl FnOnce(&sandbox_mock::MockSandboxOverrides),
     expect_cache: bool,
@@ -162,18 +162,16 @@ async fn assert_workspace_cache_after_park_cleanup(
     let counter = Arc::clone(&overrides);
 
     let mut profiles = test_profiles();
-    profiles.get_mut("vm0/default").unwrap().workspace_disk_mb = 16;
+    profiles.get_mut("vm0/default").unwrap().home_disk_mb = 16;
     let (mut config, env) =
         mock_run_config_with_overrides(profiles, 8, 32768, 4, Arc::clone(&overrides));
     let runner_paths = RunnerPaths::new(config.paths.base_dir.clone());
-    let workspace_cache = WorkspaceImageCache::shared(
+    let home_cache = HomeImageCache::shared(
         runner_paths.clone(),
         &config.paths.home,
         &config.runner.group,
     );
-    Arc::get_mut(&mut config.exec_config)
-        .unwrap()
-        .workspace_cache = Some(workspace_cache.clone());
+    Arc::get_mut(&mut config.exec_config).unwrap().home_cache = Some(home_cache.clone());
     let budget = Arc::clone(&config.capacity.budget);
     let idle_pool = Arc::clone(&config.shared.idle_pool);
     let run_handle = tokio::spawn(run(config));
@@ -185,14 +183,14 @@ async fn assert_workspace_cache_after_park_cleanup(
     wait_gate
         .wait_entered(1, Duration::from_secs(5))
         .await
-        .expect("wait_process should enter before the active workspace image is written");
+        .expect("wait_process should enter before the active home image is written");
     let sandbox_id = counter
         .create_configs()
         .into_iter()
         .next()
         .expect("sandbox create config should be recorded before wait_process entry")
         .id;
-    let active_image = runner_paths.active_workspace_image(&sandbox_id);
+    let active_image = runner_paths.active_home_image(&sandbox_id);
     tokio::fs::create_dir_all(active_image.parent().unwrap())
         .await
         .unwrap();
@@ -216,10 +214,9 @@ async fn assert_workspace_cache_after_park_cleanup(
     assert_eq!(counter.unpark_call_count(), expected_unpark_calls);
     assert_eq!(counter.destroy_call_count(), 1);
     if expect_cache {
-        wait_workspace_cache_reuse_keys(&workspace_cache, &[session_id], Duration::from_secs(2))
-            .await;
+        wait_home_cache_reuse_keys(&home_cache, &[session_id], Duration::from_secs(2)).await;
     } else {
-        let held = workspace_cache.held_workspace_states().await;
+        let held = home_cache.held_home_states().await;
         assert!(held.is_empty());
     }
 
@@ -336,8 +333,8 @@ async fn repeated_non_reusable_parks_use_fresh_sandboxes() {
 }
 
 #[tokio::test]
-async fn cancellation_during_sandbox_park_promotes_workspace_cache_before_destroy() {
-    assert_workspace_cache_after_late_cancellation(
+async fn cancellation_during_sandbox_park_promotes_home_cache_before_destroy() {
+    assert_home_cache_after_late_cancellation(
         "sess-cancel-during-park-cache",
         LateCancellationPoint::DuringPark,
     )
@@ -345,8 +342,8 @@ async fn cancellation_during_sandbox_park_promotes_workspace_cache_before_destro
 }
 
 #[tokio::test]
-async fn cancellation_before_idle_pool_transfer_promotes_workspace_cache_before_destroy() {
-    assert_workspace_cache_after_late_cancellation(
+async fn cancellation_before_idle_pool_transfer_promotes_home_cache_before_destroy() {
+    assert_home_cache_after_late_cancellation(
         "sess-cancel-before-pool-cache",
         LateCancellationPoint::BeforeIdlePoolTransfer,
     )
@@ -401,7 +398,7 @@ async fn assert_post_destroy_cleanup(
     assert_eq!(idle_pool.lock().await.len(), expected_idle_len);
 }
 
-async fn assert_workspace_cache_after_late_cancellation(
+async fn assert_home_cache_after_late_cancellation(
     session_id: &str,
     cancellation_point: LateCancellationPoint,
 ) {
@@ -415,18 +412,16 @@ async fn assert_workspace_cache_after_late_cancellation(
     let counter = Arc::clone(&overrides);
 
     let mut profiles = test_profiles();
-    profiles.get_mut("vm0/default").unwrap().workspace_disk_mb = 16;
+    profiles.get_mut("vm0/default").unwrap().home_disk_mb = 16;
     let (mut config, env) =
         mock_run_config_with_overrides(profiles, 8, 32768, 4, Arc::clone(&overrides));
     let runner_paths = RunnerPaths::new(config.paths.base_dir.clone());
-    let workspace_cache = WorkspaceImageCache::shared(
+    let home_cache = HomeImageCache::shared(
         runner_paths.clone(),
         &config.paths.home,
         &config.runner.group,
     );
-    Arc::get_mut(&mut config.exec_config)
-        .unwrap()
-        .workspace_cache = Some(workspace_cache.clone());
+    Arc::get_mut(&mut config.exec_config).unwrap().home_cache = Some(home_cache.clone());
     let budget = Arc::clone(&config.capacity.budget);
     let idle_pool = Arc::clone(&config.shared.idle_pool);
     let cancel_tokens = config.provider.cancel_tokens.clone();
@@ -440,14 +435,14 @@ async fn assert_workspace_cache_after_late_cancellation(
     wait_gate
         .wait_entered(1, Duration::from_secs(5))
         .await
-        .expect("wait_process should enter before the active workspace image is written");
+        .expect("wait_process should enter before the active home image is written");
     let sandbox_id = counter
         .create_configs()
         .into_iter()
         .next()
         .expect("sandbox create config should be recorded before wait_process entry")
         .id;
-    let active_image = runner_paths.active_workspace_image(&sandbox_id);
+    let active_image = runner_paths.active_home_image(&sandbox_id);
     tokio::fs::create_dir_all(active_image.parent().unwrap())
         .await
         .unwrap();
@@ -496,7 +491,7 @@ async fn assert_workspace_cache_after_late_cancellation(
     destroy_gate.release_one();
 
     assert_post_destroy_cleanup(&budget, &idle_pool, Some(&cancel_tokens), run_id, 0, 0).await;
-    wait_workspace_cache_reuse_keys(&workspace_cache, &[session_id], Duration::from_secs(2)).await;
+    wait_home_cache_reuse_keys(&home_cache, &[session_id], Duration::from_secs(2)).await;
 
     shutdown(&env, run_handle).await;
 }

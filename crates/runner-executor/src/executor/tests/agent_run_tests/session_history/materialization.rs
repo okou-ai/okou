@@ -2,30 +2,20 @@ use std::io::Write;
 use std::sync::Arc;
 
 use flate2::{Compression, write::GzEncoder};
-use httpmock::prelude::*;
-use sandbox::{SandboxError, SandboxOperation, SandboxOperationReason};
-use sandbox_mock::MockLifecycleGate;
 use sha2::{Digest, Sha256};
 use tokio::sync::{Notify, oneshot};
 
 use super::{history_prefix_attribution, serve_history_once};
 use crate::executor::agent_run::{RunControls, RunStart, run_in_sandbox};
-use crate::executor::tests::agent_run_tests::support::{
-    assert_failed_action_error_once, assert_no_action, assert_successful_action_once,
-    local_sidecar_restore_plan,
-};
+use crate::executor::tests::agent_run_tests::support::assert_failed_action_error_once;
 use crate::executor::tests::support::{
     RUN_IN_SANDBOX_TEST_TIMEOUT, minimal_context, test_executor_config, test_telemetry,
 };
 use crate::executor::{
-    SessionHistoryCpuPool, SessionHistoryMaterializer, SessionHistoryRestorePlan,
-    effective_cli_framework,
+    SessionHistoryMaterializer, SessionHistoryRestorePlan, effective_cli_framework,
 };
-use crate::telemetry::{JobTelemetry, SessionHistoryTelemetrySnapshot};
+use crate::telemetry::SessionHistoryTelemetrySnapshot;
 use crate::test_fixtures::session_history::OneShotSessionHistoryServer;
-use crate::workspace_image_cache::{
-    WorkspaceSessionHistorySidecar, WorkspaceSessionHistorySidecarRepresentation,
-};
 use runner_types::types::{
     ResumeSession, ResumeSessionHistory, ResumeSessionHistoryDownloadSource,
     ResumeSessionHistoryEncoding, ResumeSessionHistoryRef, ResumeSessionHistoryRefKind,
@@ -42,22 +32,6 @@ fn zstd_bytes(raw: &[u8]) -> Vec<u8> {
     zstd::encode_all(raw, 0).unwrap()
 }
 
-fn assert_workspace_restore_metadata(telemetry: &JobTelemetry, expected: serde_json::Value) {
-    let ops = telemetry.pending_workspace_history_restore_payloads();
-    assert_eq!(
-        ops.len(),
-        1,
-        "expected one local restore operation: {ops:?}"
-    );
-    let metadata: serde_json::Map<String, serde_json::Value> = ops[0]
-        .as_object()
-        .unwrap()
-        .iter()
-        .filter(|(key, _)| key.starts_with("session_history_"))
-        .map(|(key, value)| (key.clone(), value.clone()))
-        .collect();
-    assert_eq!(serde_json::Value::Object(metadata), expected);
-}
 async fn serve_history_once_after_request(
     body: &'static [u8],
     request_received: oneshot::Sender<()>,
@@ -159,7 +133,7 @@ async fn run_in_sandbox_materializes_resume_session_history_ref_before_restore()
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
+            home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
             prev_storage: None,
         },
         &mut telemetry,
@@ -177,6 +151,124 @@ async fn run_in_sandbox_materializes_resume_session_history_ref_before_restore()
     );
     assert_eq!(writes[0].content, history);
     history_server.assert_served().await;
+}
+
+#[tokio::test]
+async fn unverifiable_home_candidates_use_owned_authoritative_restore_after_preparation() {
+    use guest_contracts::home_cache_history::{
+        HomeCacheHistoryProof, HomeCacheHistoryProofBinding,
+    };
+    use guest_contracts::session_history_identity::SessionHistoryIdentity;
+    for (wrong_source, response) in [
+        (
+            false,
+            sandbox::ExecResult::new(0, br#"{"verified":false}"#.to_vec(), Vec::new()),
+        ),
+        (
+            false,
+            sandbox::ExecResult::new(0, b"corrupt report".to_vec(), Vec::new()),
+        ),
+        (false, sandbox::ExecResult::new(2, Vec::new(), Vec::new())),
+        (true, sandbox::ExecResult::new(0, Vec::new(), Vec::new())),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let config = test_executor_config(dir.path()).await;
+        let history = br#"{"type":"init"}"#;
+        let history_server = serve_history_once(history).await;
+        let mut ctx = minimal_context();
+        ctx.resume_session = Some(ResumeSession {
+            cli_agent_session_id: "session-home-fallback".into(),
+            history: ResumeSessionHistory::Ref {
+                history_ref: ResumeSessionHistoryRef {
+                    kind: ResumeSessionHistoryRefKind::Blob,
+                    hash: hex::encode(Sha256::digest(history)),
+                    url: history_server.url(),
+                    encoding: ResumeSessionHistoryEncoding::Identity,
+                    raw_size: history.len() as u64,
+                    encoded_size: history.len() as u64,
+                    download_source: None,
+                },
+            },
+        });
+        let expected = crate::executor::home_history::expected_history(&ctx).unwrap();
+        let mut source = crate::executor::tests::agent_run_tests::support::claude_history_source(
+            "session-home-fallback",
+        );
+        if wrong_source
+            && let guest_contracts::session_history_identity::SessionHistorySourceRef::ClaudeCode {
+                config_dir,
+                ..
+            } = &mut source
+        {
+            *config_dir = "/home/user/stale-config".into();
+        }
+        let identity = SessionHistoryIdentity::new(
+            expected.framework,
+            expected.session_id_hash,
+            expected.history_ref_kind,
+            expected.history_hash,
+            expected.history_size_bytes,
+            source,
+        )
+        .unwrap();
+        let proof = HomeCacheHistoryProof {
+            format_version: 1,
+            generation: uuid::Uuid::new_v4().to_string(),
+            identity,
+        };
+        let binding = HomeCacheHistoryProofBinding {
+            sha256: hex::encode(Sha256::digest(proof.to_json_vec().unwrap())),
+            proof,
+        };
+        let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+        overrides.add_exec_result_matcher("verify-home-cache-history", response);
+        let sandbox =
+            crate::executor::tests::support::create_overridden_sandbox(overrides.clone()).await;
+        let mut telemetry = test_telemetry(&config, &ctx);
+        let result = run_in_sandbox(
+            &*sandbox,
+            &ctx,
+            &config,
+            RunStart {
+                restore_guest_state: false,
+                reuse_result: SandboxReuseResult::PoolMiss,
+                home_reuse_result: runner_types::types::HomeReuseResult::Reused,
+                prev_storage: None,
+            },
+            &mut telemetry,
+            RunControls::new(tokio_util::sync::CancellationToken::new(), None)
+                .with_session_history_restore_plan(SessionHistoryRestorePlan::HomeCacheCandidate {
+                    binding,
+                    fallback: None,
+                }),
+        )
+        .await
+        .unwrap();
+        assert!(result.failure.is_none());
+        history_server.assert_served().await;
+        let writes = overrides.write_file_calls();
+        assert_eq!(writes.len(), 1);
+        assert_eq!(writes[0].content, history);
+        assert_eq!(
+            writes[0].path,
+            "/home/user/.claude/projects/-home-user-workspace/session-home-fallback.jsonl"
+        );
+        assert!(
+            !telemetry
+                .pending_ops_snapshot()
+                .iter()
+                .any(|op| op.0 == "session_history_restore_skip"
+                    || op.0 == "session_history_home_cache_hit")
+        );
+        assert_eq!(
+            overrides
+                .exec_calls()
+                .iter()
+                .filter(|call| call.cmd.contains("verify-home-cache-history"))
+                .count(),
+            if wrong_source { 0 } else { 1 }
+        );
+    }
 }
 
 #[tokio::test]
@@ -211,7 +303,7 @@ async fn run_in_sandbox_records_gzip_session_history_download_encoding() {
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
+            home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
             prev_storage: None,
         },
         &mut telemetry,
@@ -323,7 +415,7 @@ async fn run_in_sandbox_records_zstd_session_history_download_encoding() {
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
+            home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
             prev_storage: None,
         },
         &mut telemetry,
@@ -458,7 +550,7 @@ async fn run_in_sandbox_uses_prestarted_session_history_materializer() {
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
+            home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
             prev_storage: None,
         },
         &mut telemetry,
@@ -545,683 +637,6 @@ async fn run_in_sandbox_uses_prestarted_session_history_materializer() {
 }
 
 #[tokio::test]
-async fn run_in_sandbox_restores_session_history_from_workspace_sidecar() {
-    let dir = tempfile::tempdir().unwrap();
-    let config = test_executor_config(dir.path()).await;
-    let sandbox = sandbox_mock::MockSandbox::new("test");
-    let history = br#"{"type":"init"}"#;
-    let remote_history = zstd_bytes(history);
-    let sidecar_path = dir.path().join("session-history.blob");
-    tokio::fs::write(&sidecar_path, history).await.unwrap();
-    let server = MockServer::start_async().await;
-    let history_mock = server
-        .mock_async(|when, then| {
-            when.method(GET).path("/history.blob");
-            then.status(200).body(&remote_history);
-        })
-        .await;
-    let mut ctx = minimal_context();
-    ctx.resume_session = Some(ResumeSession {
-        cli_agent_session_id: "sess-sidecar-123".into(),
-        history: ResumeSessionHistory::Ref {
-            history_ref: ResumeSessionHistoryRef {
-                kind: ResumeSessionHistoryRefKind::Blob,
-                hash: hex::encode(Sha256::digest(history)),
-                url: server.url("/history.blob?token=secret"),
-                encoding: ResumeSessionHistoryEncoding::Zstd,
-                raw_size: history.len() as u64,
-                encoded_size: remote_history.len() as u64,
-                download_source: None,
-            },
-        },
-    });
-
-    let cancel = tokio_util::sync::CancellationToken::new();
-    let restore_plan = local_sidecar_restore_plan(
-        &ctx,
-        &config,
-        WorkspaceSessionHistorySidecar {
-            path: sidecar_path,
-            representation: WorkspaceSessionHistorySidecarRepresentation::Raw,
-            encoded_size: history.len() as u64,
-        },
-        cancel.clone(),
-    )
-    .await;
-    let mut telemetry = test_telemetry(&config, &ctx);
-    let result = run_in_sandbox(
-        &sandbox,
-        &ctx,
-        &config,
-        RunStart {
-            restore_guest_state: false,
-            reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
-            prev_storage: None,
-        },
-        &mut telemetry,
-        RunControls::new(cancel, None).with_session_history_restore_plan(restore_plan),
-    )
-    .await
-    .unwrap();
-
-    assert!(result.failure.is_none());
-    let writes = sandbox.write_file_calls();
-    assert_eq!(writes.len(), 1);
-    assert_eq!(
-        writes[0].path,
-        "/home/user/.claude/projects/-home-user-workspace/sess-sidecar-123.jsonl"
-    );
-    assert_eq!(writes[0].content, history);
-    history_mock.assert_calls_async(0).await;
-    let ops = telemetry.pending_ops_snapshot();
-    assert_successful_action_once(&ops, "session_history_workspace_cache_restore");
-    assert_successful_action_once(&ops, "session_restore");
-    assert_no_action(&ops, "session_history_download");
-    let transfers = telemetry.pending_history_transfer_payloads();
-    assert_eq!(transfers.len(), 1);
-    assert_eq!(
-        transfers[0]["session_history_transfer_source"],
-        "workspace_cache"
-    );
-    assert_eq!(
-        transfers[0]["session_history_codec_decision"],
-        "below_threshold"
-    );
-    assert_eq!(
-        transfers[0]["session_history_transfer_bytes"],
-        history.len()
-    );
-    assert!(transfers[0].get("session_history_wire_bytes").is_none());
-    assert_workspace_restore_metadata(
-        &telemetry,
-        serde_json::json!({
-            "session_history_framework": "claude-code",
-            "session_history_raw_bytes": history.len(),
-            "session_history_source_bytes": history.len(),
-            "session_history_guest_bytes": history.len(),
-            "session_history_source_representation": "raw",
-            "session_history_restore_representation": "raw",
-            "session_history_restore_reason": "raw_source",
-        }),
-    );
-}
-
-#[tokio::test]
-async fn run_in_sandbox_falls_back_when_workspace_sidecar_hash_mismatches() {
-    let dir = tempfile::tempdir().unwrap();
-    let config = test_executor_config(dir.path()).await;
-    let sandbox = sandbox_mock::MockSandbox::new("test");
-    let history = br#"{"type":"init"}"#;
-    let corrupt_history = vec![b'x'; history.len()];
-    let sidecar_path = dir.path().join("session-history.blob");
-    tokio::fs::write(&sidecar_path, corrupt_history)
-        .await
-        .unwrap();
-    let server = MockServer::start_async().await;
-    let history_mock = server
-        .mock_async(|when, then| {
-            when.method(GET).path("/history.blob");
-            then.status(200).body(history);
-        })
-        .await;
-    let mut ctx = minimal_context();
-    ctx.resume_session = Some(ResumeSession {
-        cli_agent_session_id: "sess-sidecar-fallback-123".into(),
-        history: ResumeSessionHistory::Ref {
-            history_ref: ResumeSessionHistoryRef {
-                kind: ResumeSessionHistoryRefKind::Blob,
-                hash: hex::encode(Sha256::digest(history)),
-                url: server.url("/history.blob?token=secret"),
-                encoding: ResumeSessionHistoryEncoding::Identity,
-                raw_size: history.len() as u64,
-                encoded_size: history.len() as u64,
-                download_source: None,
-            },
-        },
-    });
-
-    let cancel = tokio_util::sync::CancellationToken::new();
-    let restore_plan = local_sidecar_restore_plan(
-        &ctx,
-        &config,
-        WorkspaceSessionHistorySidecar {
-            path: sidecar_path,
-            representation: WorkspaceSessionHistorySidecarRepresentation::Raw,
-            encoded_size: history.len() as u64,
-        },
-        cancel.clone(),
-    )
-    .await;
-    let mut telemetry = test_telemetry(&config, &ctx);
-    let result = run_in_sandbox(
-        &sandbox,
-        &ctx,
-        &config,
-        RunStart {
-            restore_guest_state: false,
-            reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
-            prev_storage: None,
-        },
-        &mut telemetry,
-        RunControls::new(cancel, None).with_session_history_restore_plan(restore_plan),
-    )
-    .await
-    .unwrap();
-
-    assert!(result.failure.is_none());
-    let writes = sandbox.write_file_calls();
-    assert_eq!(writes.len(), 1);
-    assert_eq!(
-        writes[0].path,
-        "/home/user/.claude/projects/-home-user-workspace/sess-sidecar-fallback-123.jsonl"
-    );
-    assert_eq!(writes[0].content, history);
-    history_mock.assert_calls_async(1).await;
-    let ops = telemetry.pending_ops_snapshot();
-    assert_failed_action_error_once(
-        &ops,
-        "session_history_workspace_cache_restore",
-        "materialize_error",
-    );
-    assert_successful_action_once(&ops, "session_history_download");
-}
-
-#[tokio::test]
-async fn run_in_sandbox_falls_back_when_workspace_sidecar_open_fails() {
-    let dir = tempfile::tempdir().unwrap();
-    let config = test_executor_config(dir.path()).await;
-    let sandbox = sandbox_mock::MockSandbox::new("test");
-    let history = br#"{"type":"init"}"#;
-    let server = MockServer::start_async().await;
-    let history_mock = server
-        .mock_async(|when, then| {
-            when.method(GET).path("/history.blob");
-            then.status(200).body(history);
-        })
-        .await;
-    let mut ctx = minimal_context();
-    ctx.resume_session = Some(ResumeSession {
-        cli_agent_session_id: "sess-sidecar-open-fallback".into(),
-        history: ResumeSessionHistory::Ref {
-            history_ref: ResumeSessionHistoryRef {
-                kind: ResumeSessionHistoryRefKind::Blob,
-                hash: hex::encode(Sha256::digest(history)),
-                url: server.url("/history.blob?token=secret"),
-                encoding: ResumeSessionHistoryEncoding::Identity,
-                raw_size: history.len() as u64,
-                encoded_size: history.len() as u64,
-                download_source: None,
-            },
-        },
-    });
-
-    let cancel = tokio_util::sync::CancellationToken::new();
-    let restore_plan = local_sidecar_restore_plan(
-        &ctx,
-        &config,
-        WorkspaceSessionHistorySidecar {
-            path: dir.path().join("missing-session-history.blob"),
-            representation: WorkspaceSessionHistorySidecarRepresentation::Raw,
-            encoded_size: history.len() as u64,
-        },
-        cancel.clone(),
-    )
-    .await;
-    let mut telemetry = test_telemetry(&config, &ctx);
-    let result = run_in_sandbox(
-        &sandbox,
-        &ctx,
-        &config,
-        RunStart {
-            restore_guest_state: false,
-            reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
-            prev_storage: None,
-        },
-        &mut telemetry,
-        RunControls::new(cancel, None).with_session_history_restore_plan(restore_plan),
-    )
-    .await
-    .unwrap();
-
-    assert!(result.failure.is_none());
-    let writes = sandbox.write_file_calls();
-    assert_eq!(writes.len(), 1);
-    assert_eq!(writes[0].content, history);
-    history_mock.assert_calls_async(1).await;
-    let ops = telemetry.pending_ops_snapshot();
-    assert_failed_action_error_once(
-        &ops,
-        "session_history_workspace_cache_restore",
-        "materialize_error",
-    );
-    assert_failed_action_error_once(
-        &ops,
-        "session_history_workspace_cache_file_read",
-        "workspace session history phase failed",
-    );
-    assert_successful_action_once(&ops, "session_history_download");
-}
-
-#[tokio::test]
-async fn run_in_sandbox_falls_back_when_workspace_sidecar_guest_restore_fails() {
-    let dir = tempfile::tempdir().unwrap();
-    let config = test_executor_config(dir.path()).await;
-    let sandbox = sandbox_mock::MockSandbox::new("test");
-    sandbox.push_write_file_result(Err(SandboxError::Operation {
-        operation: SandboxOperation::WriteFile,
-        reason: SandboxOperationReason::Guest,
-        message: "local restore write failed".into(),
-    }));
-    let history = br#"{"type":"init"}"#;
-    let sidecar_path = dir.path().join("session-history.blob");
-    tokio::fs::write(&sidecar_path, history).await.unwrap();
-    let server = MockServer::start_async().await;
-    let history_mock = server
-        .mock_async(|when, then| {
-            when.method(GET).path("/history.blob");
-            then.status(200).body(history);
-        })
-        .await;
-    let mut ctx = minimal_context();
-    ctx.resume_session = Some(ResumeSession {
-        cli_agent_session_id: "sess-sidecar-restore-fallback".into(),
-        history: ResumeSessionHistory::Ref {
-            history_ref: ResumeSessionHistoryRef {
-                kind: ResumeSessionHistoryRefKind::Blob,
-                hash: hex::encode(Sha256::digest(history)),
-                url: server.url("/history.blob?token=secret"),
-                encoding: ResumeSessionHistoryEncoding::Identity,
-                raw_size: history.len() as u64,
-                encoded_size: history.len() as u64,
-                download_source: None,
-            },
-        },
-    });
-
-    let cancel = tokio_util::sync::CancellationToken::new();
-    let restore_plan = local_sidecar_restore_plan(
-        &ctx,
-        &config,
-        WorkspaceSessionHistorySidecar {
-            path: sidecar_path,
-            representation: WorkspaceSessionHistorySidecarRepresentation::Raw,
-            encoded_size: history.len() as u64,
-        },
-        cancel.clone(),
-    )
-    .await;
-    let mut telemetry = test_telemetry(&config, &ctx);
-    let result = run_in_sandbox(
-        &sandbox,
-        &ctx,
-        &config,
-        RunStart {
-            restore_guest_state: false,
-            reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
-            prev_storage: None,
-        },
-        &mut telemetry,
-        RunControls::new(cancel, None).with_session_history_restore_plan(restore_plan),
-    )
-    .await
-    .unwrap();
-
-    assert!(result.failure.is_none());
-    let writes = sandbox.write_file_calls();
-    assert_eq!(writes.len(), 2);
-    assert_eq!(writes[0].content, history);
-    assert_eq!(writes[1].content, history);
-    history_mock.assert_calls_async(1).await;
-    let ops = telemetry.pending_ops_snapshot();
-    assert_failed_action_error_once(
-        &ops,
-        "session_history_workspace_cache_restore",
-        "restore_error",
-    );
-    assert_failed_action_error_once(
-        &ops,
-        "session_history_workspace_cache_guest_restore",
-        "workspace session history phase failed",
-    );
-    let transfers = telemetry.pending_history_transfer_payloads();
-    assert_eq!(transfers.len(), 2);
-    assert_eq!(transfers[0]["success"], false);
-    assert_eq!(
-        transfers[0]["session_history_transfer_source"],
-        "workspace_cache"
-    );
-    assert_eq!(transfers[0]["error"], "restore_error");
-    assert!(transfers[0].get("session_history_transfer_bytes").is_none());
-    assert!(transfers[0].get("session_history_wire_bytes").is_none());
-    assert!(transfers[0].get("session_history_selection_ms").is_none());
-    assert_eq!(transfers[1]["success"], true);
-    assert_eq!(
-        transfers[1]["session_history_transfer_source"],
-        "downloaded"
-    );
-    assert_eq!(
-        transfers[1]["session_history_transfer_bytes"],
-        history.len()
-    );
-    assert_successful_action_once(&ops, "session_history_download");
-    assert_workspace_restore_metadata(
-        &telemetry,
-        serde_json::json!({
-            "session_history_framework": "claude-code",
-            "session_history_raw_bytes": history.len(),
-            "session_history_source_bytes": history.len(),
-            "session_history_source_representation": "raw",
-            "session_history_restore_representation": "raw",
-            "session_history_restore_reason": "raw_source",
-        }),
-    );
-}
-
-#[tokio::test]
-async fn run_in_sandbox_restores_codex_zstd_sidecar_with_session_timestamp() {
-    let dir = tempfile::tempdir().unwrap();
-    let config = test_executor_config(dir.path()).await;
-    let sandbox = sandbox_mock::MockSandbox::new("test");
-    let session_id = "019e9154-c304-70f0-adde-36efb1be1701";
-    let history = br#"{"type":"session_meta","payload":{"timestamp":"2026-06-04T07:18:08Z"}}"#;
-    let mut history = history.to_vec();
-    history.push(b'\n');
-    let compressed_history = zstd_bytes(&history);
-    let sidecar_path = dir.path().join("session-history.blob");
-    tokio::fs::write(&sidecar_path, &compressed_history)
-        .await
-        .unwrap();
-    let server = MockServer::start_async().await;
-    let history_mock = server
-        .mock_async(|when, then| {
-            when.method(GET).path("/history.blob");
-            then.status(200).body(&compressed_history);
-        })
-        .await;
-    let mut ctx = minimal_context();
-    ctx.cli_agent_type = "codex".into();
-    ctx.resume_session = Some(ResumeSession {
-        cli_agent_session_id: session_id.into(),
-        history: ResumeSessionHistory::Ref {
-            history_ref: ResumeSessionHistoryRef {
-                kind: ResumeSessionHistoryRefKind::Blob,
-                hash: hex::encode(Sha256::digest(&history)),
-                url: server.url("/history.blob?token=secret"),
-                encoding: ResumeSessionHistoryEncoding::Zstd,
-                raw_size: history.len() as u64,
-                encoded_size: compressed_history.len() as u64,
-                download_source: None,
-            },
-        },
-    });
-
-    let cancel = tokio_util::sync::CancellationToken::new();
-    let restore_plan = local_sidecar_restore_plan(
-        &ctx,
-        &config,
-        WorkspaceSessionHistorySidecar {
-            path: sidecar_path,
-            representation: WorkspaceSessionHistorySidecarRepresentation::CodexZstd,
-            encoded_size: compressed_history.len() as u64,
-        },
-        cancel.clone(),
-    )
-    .await;
-    let mut telemetry = test_telemetry(&config, &ctx);
-    let result = run_in_sandbox(
-        &sandbox,
-        &ctx,
-        &config,
-        RunStart {
-            restore_guest_state: false,
-            reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
-            prev_storage: None,
-        },
-        &mut telemetry,
-        RunControls::new(cancel, None).with_session_history_restore_plan(restore_plan),
-    )
-    .await
-    .unwrap();
-
-    assert!(result.failure.is_none());
-    let writes = sandbox.write_file_calls();
-    assert_eq!(writes.len(), 1);
-    assert_eq!(
-        writes[0].path,
-        "/home/user/.codex/sessions/2026/06/04/rollout-2026-06-04T07-18-08-019e9154-c304-70f0-adde-36efb1be1701.jsonl.zst"
-    );
-    assert_eq!(writes[0].content, compressed_history);
-    assert!(
-        sandbox
-            .exec_calls()
-            .iter()
-            .all(|call| !call.cmd.contains("collect_matching_session_entries")),
-        "fresh workspace restore must not scan retained Codex sessions"
-    );
-    history_mock.assert_calls_async(0).await;
-    assert_workspace_restore_metadata(
-        &telemetry,
-        serde_json::json!({
-            "session_history_framework": "codex",
-            "session_history_raw_bytes": history.len(),
-            "session_history_source_bytes": compressed_history.len(),
-            "session_history_guest_bytes": compressed_history.len(),
-            "session_history_source_representation": "codex_zstd",
-            "session_history_restore_representation": "codex_zstd",
-            "session_history_restore_reason": "retained_zstd",
-        }),
-    );
-}
-
-#[tokio::test]
-async fn run_in_sandbox_materializes_prune_eligible_codex_zstd_sidecar_as_raw() {
-    let dir = tempfile::tempdir().unwrap();
-    let mut config = test_executor_config(dir.path()).await;
-    let sandbox = sandbox_mock::MockSandbox::new("test");
-    let session_id = "019e9154-c304-70f0-adde-36efb1be1701";
-    let history =
-        b"{\"type\":\"session_meta\",\"payload\":{\"timestamp\":\"2026-06-04T07:18:08Z\"}}\n";
-    let compressed_history = zstd_bytes(history);
-    config.session_history_cpu =
-        SessionHistoryCpuPool::with_test_codex_raw_restore_threshold(1, history.len() as u64 - 1);
-    let sidecar_path = dir.path().join("session-history.blob");
-    tokio::fs::write(&sidecar_path, &compressed_history)
-        .await
-        .unwrap();
-    let server = MockServer::start_async().await;
-    let history_mock = server
-        .mock_async(|when, then| {
-            when.method(GET).path("/history.blob");
-            then.status(200).body(&compressed_history);
-        })
-        .await;
-    let mut ctx = minimal_context();
-    ctx.cli_agent_type = "codex".into();
-    ctx.resume_session = Some(ResumeSession {
-        cli_agent_session_id: session_id.into(),
-        history: ResumeSessionHistory::Ref {
-            history_ref: ResumeSessionHistoryRef {
-                kind: ResumeSessionHistoryRefKind::Blob,
-                hash: hex::encode(Sha256::digest(history)),
-                url: server.url("/history.blob?token=secret"),
-                encoding: ResumeSessionHistoryEncoding::Zstd,
-                raw_size: history.len() as u64,
-                encoded_size: compressed_history.len() as u64,
-                download_source: None,
-            },
-        },
-    });
-
-    let cancel = tokio_util::sync::CancellationToken::new();
-    let restore_plan = local_sidecar_restore_plan(
-        &ctx,
-        &config,
-        WorkspaceSessionHistorySidecar {
-            path: sidecar_path,
-            representation: WorkspaceSessionHistorySidecarRepresentation::CodexZstd,
-            encoded_size: compressed_history.len() as u64,
-        },
-        cancel.clone(),
-    )
-    .await;
-    let mut telemetry = test_telemetry(&config, &ctx);
-    let result = run_in_sandbox(
-        &sandbox,
-        &ctx,
-        &config,
-        RunStart {
-            restore_guest_state: false,
-            reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
-            prev_storage: None,
-        },
-        &mut telemetry,
-        RunControls::new(cancel, None).with_session_history_restore_plan(restore_plan),
-    )
-    .await
-    .unwrap();
-
-    assert!(result.failure.is_none());
-    let writes = sandbox.write_file_calls();
-    assert_eq!(writes.len(), 1);
-    assert_eq!(
-        writes[0].path,
-        "/home/user/.codex/sessions/2026/06/04/rollout-2026-06-04T07-18-08-019e9154-c304-70f0-adde-36efb1be1701.jsonl"
-    );
-    assert_eq!(writes[0].content, history);
-    history_mock.assert_calls_async(0).await;
-    assert_workspace_restore_metadata(
-        &telemetry,
-        serde_json::json!({
-            "session_history_framework": "codex",
-            "session_history_raw_bytes": history.len(),
-            "session_history_source_bytes": compressed_history.len(),
-            "session_history_guest_bytes": history.len(),
-            "session_history_source_representation": "codex_zstd",
-            "session_history_restore_representation": "raw",
-            "session_history_restore_reason": "codex_pruning_guard",
-        }),
-    );
-}
-
-#[tokio::test]
-async fn run_in_sandbox_restores_codex_raw_sidecar_with_session_timestamp() {
-    let dir = tempfile::tempdir().unwrap();
-    let config = test_executor_config(dir.path()).await;
-    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
-    let sandbox = sandbox_mock::MockSandbox::with_overrides("test", Arc::clone(&overrides));
-    let write_gate = MockLifecycleGate::new();
-    sandbox.set_write_file_lifecycle_gate(write_gate.clone());
-    let session_id = "019e9154-c304-70f0-adde-36efb1be1701";
-    let mut history =
-        "{\"type\":\"session_meta\",\"payload\":{\"timestamp\":\"2026-06-04T07:18:08Z\"}}\n"
-            .to_string();
-    history.push_str(&"{}\n".repeat(22 * 1024));
-    assert!(history.len() > 64 * 1024);
-    let sidecar_path = dir.path().join("session-history.jsonl");
-    tokio::fs::write(&sidecar_path, history.as_bytes())
-        .await
-        .unwrap();
-    let server = MockServer::start_async().await;
-    let history_mock = server
-        .mock_async(|when, then| {
-            when.method(GET).path("/history.blob");
-            then.status(200).body(history.clone());
-        })
-        .await;
-    let mut ctx = minimal_context();
-    ctx.cli_agent_type = "codex".into();
-    ctx.resume_session = Some(ResumeSession {
-        cli_agent_session_id: session_id.into(),
-        history: ResumeSessionHistory::Ref {
-            history_ref: ResumeSessionHistoryRef {
-                kind: ResumeSessionHistoryRefKind::Blob,
-                hash: hex::encode(Sha256::digest(history.as_bytes())),
-                url: server.url("/history.blob?token=secret"),
-                encoding: ResumeSessionHistoryEncoding::Identity,
-                raw_size: history.len() as u64,
-                encoded_size: history.len() as u64,
-                download_source: None,
-            },
-        },
-    });
-
-    let cancel = tokio_util::sync::CancellationToken::new();
-    let restore_plan = local_sidecar_restore_plan(
-        &ctx,
-        &config,
-        WorkspaceSessionHistorySidecar {
-            path: sidecar_path,
-            representation: WorkspaceSessionHistorySidecarRepresentation::Raw,
-            encoded_size: history.len() as u64,
-        },
-        cancel.clone(),
-    )
-    .await;
-    let mut telemetry = test_telemetry(&config, &ctx);
-    let run = run_in_sandbox(
-        &sandbox,
-        &ctx,
-        &config,
-        RunStart {
-            restore_guest_state: false,
-            reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::Reused,
-            prev_storage: None,
-        },
-        &mut telemetry,
-        RunControls::new(cancel, None).with_session_history_restore_plan(restore_plan),
-    );
-    tokio::pin!(run);
-    tokio::select! {
-        _ = &mut run => panic!("workspace run reached spawn before session restore gate"),
-        entered = write_gate.wait_entered(1, RUN_IN_SANDBOX_TEST_TIMEOUT) => {
-            entered.expect("workspace session restore should reach the guest write gate");
-        }
-    }
-
-    assert!(
-        overrides.start_agent_process_calls().is_empty(),
-        "agent process must not start before workspace session restore completes"
-    );
-    assert!(
-        sandbox
-            .exec_calls()
-            .iter()
-            .all(|call| !call.cmd.contains("collect_matching_session_entries")),
-        "fresh workspace restore must not scan retained Codex sessions"
-    );
-    write_gate.release_one();
-    let result = tokio::time::timeout(RUN_IN_SANDBOX_TEST_TIMEOUT, &mut run)
-        .await
-        .expect("workspace run should finish after session restore is released")
-        .unwrap();
-
-    assert!(result.failure.is_none());
-    let writes = sandbox.write_file_calls();
-    assert_eq!(writes.len(), 1);
-    assert_eq!(
-        writes[0].path,
-        "/home/user/.codex/sessions/2026/06/04/rollout-2026-06-04T07-18-08-019e9154-c304-70f0-adde-36efb1be1701.jsonl"
-    );
-    assert_eq!(writes[0].content, history.as_bytes());
-    assert_eq!(overrides.start_agent_process_calls().len(), 1);
-    assert!(
-        sandbox
-            .exec_calls()
-            .iter()
-            .all(|call| !call.cmd.contains("collect_matching_session_entries")),
-        "fresh workspace restore must not scan retained Codex sessions"
-    );
-    history_mock.assert_calls_async(0).await;
-}
-
-#[tokio::test]
 async fn run_in_sandbox_restores_large_inline_codex_history_without_cleanup() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
@@ -1244,7 +659,7 @@ async fn run_in_sandbox_restores_large_inline_codex_history_without_cleanup() {
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
+            home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
             prev_storage: None,
         },
         &mut telemetry,
@@ -1331,7 +746,7 @@ async fn run_in_sandbox_records_completed_prestarted_materializer_failure() {
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
+            home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
             prev_storage: None,
         },
         &mut telemetry,

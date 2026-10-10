@@ -65,7 +65,10 @@ fn expected_runtime_destinations() -> BTreeMap<&'static str, &'static str> {
         ("guest-init", guest_binary::INIT_PATH),
         ("guest-state-restore", guest_binary::STATE_RESTORE_PATH),
         ("guest-write-file", guest_binary::WRITE_FILE_PATH),
-        ("guest-workspace-mount", guest_binary::WORKSPACE_MOUNT_PATH),
+        (
+            "guest-home-mount",
+            guest_contracts::home_mount::HOME_MOUNT_PATH,
+        ),
         ("guest-tool-exec", guest_binary::TOOL_EXEC_PATH),
         ("runner-rpc-client", guest_binary::RUNNER_RPC_CLIENT_PATH),
         ("claude-mock", guest_binary::CLAUDE_MOCK_PATH),

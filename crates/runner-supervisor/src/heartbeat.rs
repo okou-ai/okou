@@ -8,30 +8,34 @@ use tracing::{Instrument, info};
 
 use runner_host::runner_process_identity::RunnerProcessIdentity;
 use runner_lifecycle::active_runs::ActiveRuns;
+use runner_lifecycle::home_image_cache::snapshot::{
+    HomeCacheRefreshOutcome, HomeCacheStateSnapshot, filter_current_held_home_states,
+};
+use runner_lifecycle::home_image_cache::{
+    HomeCacheChange, HomeImageCache, HomeImageProfileIdentity,
+};
 use runner_lifecycle::idle_pool::IdlePool;
 use runner_lifecycle::lifecycle::RunnerMode;
 use runner_lifecycle::resource_budget::ResourceBudget;
-use runner_lifecycle::workspace_image_cache::snapshot::{
-    WorkspaceCacheRefreshOutcome, WorkspaceCacheStateSnapshot, filter_current_held_workspace_states,
-};
-use runner_lifecycle::workspace_image_cache::{WorkspaceCacheChange, WorkspaceImageCache};
 use runner_provider::JobProvider;
 use runner_types::types::{
-    HeartbeatState, HeldSandboxState, HeldWorkspaceState, MAX_ACTIVE_REUSE_PRODUCERS,
+    HeartbeatState, HeldHomeState, HeldSandboxState, MAX_ACTIVE_REUSE_PRODUCERS,
     MAX_HELD_SANDBOX_STATES,
 };
 
 /// Period between routine heartbeat ticks sent to the server. First tick is
 /// deferred by one period via `interval_at`.
 pub const HEARTBEAT_PERIOD: Duration = Duration::from_secs(10);
-const WORKSPACE_CACHE_COMMIT_WAIT: Duration = Duration::from_secs(2);
+const HOME_CACHE_COMMIT_WAIT: Duration = Duration::from_secs(2);
 
 /// Resource shape projected from Runner configuration for heartbeat policy.
 #[derive(Clone)]
 pub struct HeartbeatProfile {
     pub vcpu: u32,
     pub memory_mb: u32,
-    pub workspace_disk_mb: u32,
+    /// Full configured rootfs identity, never a display/normalized prefix.
+    pub rootfs_hash: String,
+    pub home_disk_mb: u32,
 }
 
 /// Host-local WSS ingress service state sampled for each heartbeat, never a browser reachability proof.
@@ -60,9 +64,9 @@ pub struct HeartbeatContext {
     profiles: Arc<BTreeMap<String, HeartbeatProfile>>,
     budget: Arc<ResourceBudget>,
     provider: Arc<dyn JobProvider>,
-    workspace_cache: Option<WorkspaceImageCache>,
+    home_cache: Option<HomeImageCache>,
     active_runs: ActiveRuns,
-    workspace_cache_snapshot: WorkspaceCacheStateSnapshot,
+    home_cache_snapshot: HomeCacheStateSnapshot,
     wss_ingress_service_probe: WssIngressServiceProbe,
 }
 
@@ -73,9 +77,9 @@ pub struct HeartbeatContextInit<'a> {
     pub profiles: &'a BTreeMap<String, HeartbeatProfile>,
     pub budget: &'a Arc<ResourceBudget>,
     pub provider: Arc<dyn JobProvider>,
-    pub workspace_cache: Option<WorkspaceImageCache>,
+    pub home_cache: Option<HomeImageCache>,
     pub active_runs: &'a ActiveRuns,
-    pub workspace_cache_snapshot: WorkspaceCacheStateSnapshot,
+    pub home_cache_snapshot: HomeCacheStateSnapshot,
     pub wss_ingress_service_probe: WssIngressServiceProbe,
 }
 
@@ -88,9 +92,9 @@ impl HeartbeatContext {
             profiles: Arc::new(init.profiles.clone()),
             budget: Arc::clone(init.budget),
             provider: init.provider,
-            workspace_cache: init.workspace_cache,
+            home_cache: init.home_cache,
             active_runs: init.active_runs.clone(),
-            workspace_cache_snapshot: init.workspace_cache_snapshot,
+            home_cache_snapshot: init.home_cache_snapshot,
             wss_ingress_service_probe: init.wss_ingress_service_probe,
         }
     }
@@ -111,44 +115,41 @@ pub struct HeartbeatController {
 
 struct HeartbeatRequest {
     force_send: bool,
-    refresh_workspace_cache: bool,
-    workspace_cache_change: Option<WorkspaceCacheChange>,
+    refresh_home_cache: bool,
+    home_cache_change: Option<HomeCacheChange>,
 }
 
 impl HeartbeatRequest {
     fn ordinary() -> Self {
         Self {
             force_send: true,
-            refresh_workspace_cache: false,
-            workspace_cache_change: None,
+            refresh_home_cache: false,
+            home_cache_change: None,
         }
     }
 
-    fn initial_workspace_cache_snapshot() -> Self {
+    fn initial_home_cache_snapshot() -> Self {
         Self {
             force_send: true,
-            refresh_workspace_cache: false,
-            workspace_cache_change: None,
+            refresh_home_cache: false,
+            home_cache_change: None,
         }
     }
 
-    fn workspace_cache(change: WorkspaceCacheChange) -> Self {
+    fn home_cache(change: HomeCacheChange) -> Self {
         Self {
             force_send: false,
-            refresh_workspace_cache: true,
-            workspace_cache_change: Some(change),
+            refresh_home_cache: true,
+            home_cache_change: Some(change),
         }
     }
 
     fn merge(mut self, other: Self) -> Self {
         self.force_send |= other.force_send;
-        self.refresh_workspace_cache |= other.refresh_workspace_cache;
-        match (
-            self.workspace_cache_change.as_mut(),
-            other.workspace_cache_change,
-        ) {
+        self.refresh_home_cache |= other.refresh_home_cache;
+        match (self.home_cache_change.as_mut(), other.home_cache_change) {
             (Some(existing), Some(incoming)) => existing.merge(incoming),
-            (None, Some(incoming)) => self.workspace_cache_change = Some(incoming),
+            (None, Some(incoming)) => self.home_cache_change = Some(incoming),
             (Some(_) | None, None) => {}
         }
         self
@@ -169,27 +170,24 @@ impl HeartbeatController {
         self.request_inner(mode, HeartbeatRequest::ordinary())
     }
 
-    pub fn request_workspace_cache(
+    pub fn request_home_cache(
         &mut self,
         mode: RunnerMode,
-        change: WorkspaceCacheChange,
+        change: HomeCacheChange,
     ) -> HeartbeatResult<()> {
-        self.request_inner(mode, HeartbeatRequest::workspace_cache(change))
+        self.request_inner(mode, HeartbeatRequest::home_cache(change))
     }
 
-    pub fn request_initial_workspace_cache_snapshot(
-        &mut self,
-        mode: RunnerMode,
-    ) -> HeartbeatResult<()> {
-        self.request_inner(mode, HeartbeatRequest::initial_workspace_cache_snapshot())
+    pub fn request_initial_home_cache_snapshot(&mut self, mode: RunnerMode) -> HeartbeatResult<()> {
+        self.request_inner(mode, HeartbeatRequest::initial_home_cache_snapshot())
     }
 
-    pub fn request_initial_workspace_cache(
+    pub fn request_initial_home_cache(
         &mut self,
         mode: RunnerMode,
-        change: WorkspaceCacheChange,
+        change: HomeCacheChange,
     ) -> HeartbeatResult<()> {
-        let mut request = HeartbeatRequest::workspace_cache(change);
+        let mut request = HeartbeatRequest::home_cache(change);
         request.force_send = true;
         self.request_inner(mode, request)
     }
@@ -293,13 +291,13 @@ impl HeartbeatController {
     }
 }
 
-pub struct InitialWorkspaceCacheRefreshOutcome {
-    pub states: Vec<HeldWorkspaceState>,
+pub struct InitialHomeCacheRefreshOutcome {
+    pub states: Vec<HeldHomeState>,
     pub locked_commit_keys: BTreeSet<String>,
     pub loaded_cache_keys: BTreeSet<String>,
 }
 
-/// Collect current runner state, refresh the local workspace-cache snapshot, and
+/// Collect current runner state, refresh the local home-cache snapshot, and
 /// send a heartbeat to the server.
 async fn send_heartbeat(
     hb: &HeartbeatContext,
@@ -323,22 +321,22 @@ async fn send_heartbeat(
         mode,
     );
     drop(pool);
-    let cache_change = request.workspace_cache_change.as_ref();
-    let previous_workspace_states = cache_change.map(|_| {
-        hb.workspace_cache_snapshot
-            .current_held_workspace_states(&hb.active_runs, None)
+    let cache_change = request.home_cache_change.as_ref();
+    let previous_home_states = cache_change.map(|_| {
+        hb.home_cache_snapshot
+            .current_held_home_states(&hb.active_runs, None)
     });
-    let refresh = if request.refresh_workspace_cache {
-        refresh_workspace_cache_snapshot_after_change(
-            &hb.workspace_cache_snapshot,
-            hb.workspace_cache.as_ref(),
+    let refresh = if request.refresh_home_cache {
+        refresh_home_cache_snapshot_after_change(
+            &hb.home_cache_snapshot,
+            hb.home_cache.as_ref(),
             &hb.profiles,
             cache_change,
         )
         .await
     } else {
-        WorkspaceCacheRefreshOutcome {
-            states: hb.workspace_cache_snapshot.loaded_workspace_cache_states(),
+        HomeCacheRefreshOutcome {
+            states: hb.home_cache_snapshot.loaded_home_cache_states(),
             changed: false,
         }
     };
@@ -351,19 +349,21 @@ async fn send_heartbeat(
     producers.dedup_by_key(|entry| entry.run_id);
     producers.truncate(MAX_ACTIVE_REUSE_PRODUCERS);
     state.active_reuse_producers = producers;
-    state.held_workspace_states =
-        filter_current_held_workspace_states(refresh.states, &hb.active_runs, None);
+    state.held_home_states = filter_home_states_for_profiles(
+        filter_current_held_home_states(refresh.states, &hb.active_runs, None),
+        &hb.profiles,
+    );
     if let Some(change) = cache_change
         && !request.force_send
-        && previous_workspace_states
+        && previous_home_states
             .as_ref()
-            .is_some_and(|previous| *previous == state.held_workspace_states)
+            .is_some_and(|previous| *previous == state.held_home_states)
     {
         info!(
             changed = false,
             snapshot_changed = refresh.changed,
             elapsed_ms = duration_ms(change.observed_at.elapsed()),
-            "workspace cache change reconciled"
+            "home cache change reconciled"
         );
         return;
     }
@@ -373,7 +373,7 @@ async fn send_heartbeat(
         running = state.running_count,
         reusable_sandboxes = state.held_sandbox_states.len(),
         active_reuse_producers = state.active_reuse_producers.len(),
-        workspace_states = state.held_workspace_states.len(),
+        home_states = state.held_home_states.len(),
         "heartbeat"
     );
     hb.provider.heartbeat(&state).await;
@@ -382,78 +382,80 @@ async fn send_heartbeat(
             changed = true,
             snapshot_changed = refresh.changed,
             elapsed_ms = duration_ms(change.observed_at.elapsed()),
-            "workspace cache change heartbeat completed"
+            "home cache change heartbeat completed"
         );
     }
 }
 
-/// Scans the workspace cache and commits the result to the shared snapshot.
+/// Scans the home cache and commits the result to the shared snapshot.
 ///
 /// The revision is captured before the asynchronous scan, and no snapshot
 /// mutex is held across the await. The returned value is the committed
 /// snapshot, which may also contain updates merged from concurrent promotions.
-pub async fn refresh_initial_workspace_cache_snapshot(
-    snapshot: &WorkspaceCacheStateSnapshot,
-    workspace_cache: Option<&WorkspaceImageCache>,
+pub async fn refresh_initial_home_cache_snapshot(
+    snapshot: &HomeCacheStateSnapshot,
+    home_cache: Option<&HomeImageCache>,
     profiles: &BTreeMap<String, HeartbeatProfile>,
-) -> InitialWorkspaceCacheRefreshOutcome {
-    let refresh = snapshot.begin_workspace_cache_refresh();
-    let Some(cache) = workspace_cache else {
-        let outcome = snapshot.finish_workspace_cache_refresh(refresh, Vec::new());
-        return InitialWorkspaceCacheRefreshOutcome {
+) -> InitialHomeCacheRefreshOutcome {
+    let refresh = snapshot.begin_home_cache_refresh();
+    let Some(cache) = home_cache else {
+        let outcome = snapshot.finish_home_cache_refresh(refresh, Vec::new());
+        return InitialHomeCacheRefreshOutcome {
             states: outcome.states,
             locked_commit_keys: BTreeSet::new(),
             loaded_cache_keys: BTreeSet::new(),
         };
     };
-    let profile_image_sizes_bytes = profile_image_sizes_bytes(profiles);
+    // Inventory must validate both full rootfs identity and home shape. Wire capabilities
+    // cannot represent these checks and must never be synthesized from incompatible metadata.
+    let profile_home_identities = profile_home_identities(profiles);
     let (states, locked_commit_keys, loaded_cache_keys) = cache
-        .initial_held_workspace_states_for_profiles(&profile_image_sizes_bytes)
+        .initial_held_home_states_for_profiles(&profile_home_identities)
         .await;
-    let outcome = snapshot.finish_workspace_cache_refresh(refresh, states);
-    InitialWorkspaceCacheRefreshOutcome {
+    let outcome = snapshot.finish_home_cache_refresh(refresh, states);
+    InitialHomeCacheRefreshOutcome {
         states: outcome.states,
         locked_commit_keys,
         loaded_cache_keys,
     }
 }
 
-async fn refresh_workspace_cache_snapshot_after_change(
-    snapshot: &WorkspaceCacheStateSnapshot,
-    workspace_cache: Option<&WorkspaceImageCache>,
+async fn refresh_home_cache_snapshot_after_change(
+    snapshot: &HomeCacheStateSnapshot,
+    home_cache: Option<&HomeImageCache>,
     profiles: &BTreeMap<String, HeartbeatProfile>,
-    change: Option<&WorkspaceCacheChange>,
-) -> WorkspaceCacheRefreshOutcome {
-    let refresh = snapshot.begin_workspace_cache_refresh();
-    let states = workspace_cache_states(
-        workspace_cache,
+    change: Option<&HomeCacheChange>,
+) -> HomeCacheRefreshOutcome {
+    let refresh = snapshot.begin_home_cache_refresh();
+    let states = home_cache_states(
+        home_cache,
         profiles,
         change.map(|change| {
             (
                 &change.committed_cache_keys,
-                tokio::time::Instant::now() + WORKSPACE_CACHE_COMMIT_WAIT,
+                tokio::time::Instant::now() + HOME_CACHE_COMMIT_WAIT,
             )
         }),
     )
     .await;
-    snapshot.finish_workspace_cache_refresh(refresh, states)
+    snapshot.finish_home_cache_refresh(refresh, states)
 }
 
-async fn workspace_cache_states(
-    workspace_cache: Option<&WorkspaceImageCache>,
+async fn home_cache_states(
+    home_cache: Option<&HomeImageCache>,
     profiles: &BTreeMap<String, HeartbeatProfile>,
     commits: Option<(&BTreeSet<String>, tokio::time::Instant)>,
-) -> Vec<HeldWorkspaceState> {
-    let Some(cache) = workspace_cache else {
+) -> Vec<HeldHomeState> {
+    let Some(cache) = home_cache else {
         return Vec::new();
     };
 
-    let profile_image_sizes_bytes = profile_image_sizes_bytes(profiles);
+    let profile_home_identities = profile_home_identities(profiles);
     match commits {
         Some((committed_cache_keys, deadline)) if !committed_cache_keys.is_empty() => {
             cache
-                .held_workspace_states_for_profiles_after_commits(
-                    &profile_image_sizes_bytes,
+                .held_home_states_for_profiles_after_commits(
+                    &profile_home_identities,
                     committed_cache_keys,
                     deadline,
                 )
@@ -461,22 +463,44 @@ async fn workspace_cache_states(
         }
         Some(_) | None => {
             cache
-                .held_workspace_states_for_profiles(&profile_image_sizes_bytes)
+                .held_home_states_for_profiles(&profile_home_identities)
                 .await
         }
     }
 }
 
-fn profile_image_sizes_bytes(profiles: &BTreeMap<String, HeartbeatProfile>) -> BTreeMap<&str, u64> {
+fn profile_home_identities(
+    profiles: &BTreeMap<String, HeartbeatProfile>,
+) -> BTreeMap<&str, HomeImageProfileIdentity<'_>> {
     profiles
         .iter()
         .map(|(name, profile)| {
             (
                 name.as_str(),
-                u64::from(profile.workspace_disk_mb) * 1024 * 1024,
+                HomeImageProfileIdentity {
+                    rootfs_hash: profile.rootfs_hash.as_str(),
+                    image_size_bytes: u64::from(profile.home_disk_mb) * 1024 * 1024,
+                },
             )
         })
         .collect()
+}
+
+/// Cached snapshots are advisory, but may advertise only the current configured
+/// profiles/version. Their underlying image/rootfs/shape identity was validated by
+/// inventory or a successful generation-owned publication under its lease.
+fn filter_home_states_for_profiles(
+    mut states: Vec<HeldHomeState>,
+    profiles: &BTreeMap<String, HeartbeatProfile>,
+) -> Vec<HeldHomeState> {
+    for state in &mut states {
+        state.home_caches.retain(|cache| {
+            profiles.contains_key(&cache.profile)
+                && cache.home_affinity_version == runner_types::types::HOME_AFFINITY_VERSION
+        });
+    }
+    states.retain(|state| !state.home_caches.is_empty());
+    states
 }
 
 fn filter_current_held_sandbox_states(
@@ -562,9 +586,10 @@ pub fn collect_heartbeat_state(
         running_count,
         admittable_profiles,
         held_sandbox_states: idle_pool.held_sandbox_states(),
+        // Bounded PR2 outgoing envelope; home evidence is never copied here.
         held_workspace_states: Vec::new(),
-        // Reader preparation does not establish support for existing workspace images.
-        home_affinity_version: None,
+        // Only the paired home-drive Runner implementation advertises this bridge.
+        home_affinity_version: Some(runner_types::types::HOME_AFFINITY_VERSION),
         held_home_states: Vec::new(),
         active_reuse_producers: Vec::new(),
         wss_ingress_service_active: false,
@@ -583,16 +608,15 @@ use crate::duration::duration_ms;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use api_contracts::generated::constants::runners::paths::CANONICAL_WORKING_DIR;
     use futures_util::FutureExt;
     use runner_host::paths::RunnerPaths;
+    use runner_lifecycle::home_image_cache::{
+        HomeCacheTerminalStatus, HomeImageLeaseIdentity, HomeImagePrepareRequest,
+    };
     use runner_lifecycle::idle_pool::{
         IdlePoolConfig, ParkResult, ParkedIdleCandidate, test_support::ParkedIdleCandidateBuilder,
     };
-    use runner_lifecycle::workspace_image_cache::{
-        WorkspaceCacheTerminalStatus, WorkspaceImageLeaseIdentity, WorkspaceImagePrepareRequest,
-    };
-    use runner_types::types::{ReusableSandboxState, WorkspaceCacheCapability};
+    use runner_types::types::{HomeCacheCapability, ReusableSandboxState};
     use sandbox::SandboxId;
     use tracing_subscriber::prelude::*;
     use tracing_test_support::{CapturedEvent, CapturedEvents};
@@ -643,7 +667,9 @@ mod tests {
             HeartbeatProfile {
                 vcpu: 2,
                 memory_mb: 4096,
-                workspace_disk_mb: 1,
+                rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                    .into(),
+                home_disk_mb: 1,
             },
         );
         m
@@ -667,39 +693,36 @@ mod tests {
         .build()
     }
 
-    fn refresh_snapshot(snapshot: &WorkspaceCacheStateSnapshot, states: Vec<HeldWorkspaceState>) {
-        let refresh = snapshot.begin_workspace_cache_refresh();
-        snapshot.finish_workspace_cache_refresh(refresh, states);
+    fn refresh_snapshot(snapshot: &HomeCacheStateSnapshot, states: Vec<HeldHomeState>) {
+        let refresh = snapshot.begin_home_cache_refresh();
+        snapshot.finish_home_cache_refresh(refresh, states);
     }
 
     fn test_active_runs() -> ActiveRuns {
         ActiveRuns::new(Arc::new(tokio::sync::Notify::new()))
     }
 
-    fn workspace_cache(profile: &str) -> WorkspaceCacheCapability {
-        WorkspaceCacheCapability {
+    fn home_cache(profile: &str) -> HomeCacheCapability {
+        HomeCacheCapability {
             profile: profile.to_owned(),
-            workspace_affinity_version: runner_types::types::WORKSPACE_AFFINITY_VERSION,
+            home_affinity_version: runner_types::types::HOME_AFFINITY_VERSION,
         }
     }
 
-    fn held_workspace_state(
+    fn held_home_state(
         reuse_key: &str,
         last_completed_at: &str,
         profiles: &[&str],
-    ) -> HeldWorkspaceState {
-        HeldWorkspaceState {
+    ) -> HeldHomeState {
+        HeldHomeState {
             reuse_key: reuse_key.to_owned(),
             last_completed_at: last_completed_at.to_owned(),
-            workspace_caches: profiles
-                .iter()
-                .map(|profile| workspace_cache(profile))
-                .collect(),
+            home_caches: profiles.iter().map(|profile| home_cache(profile)).collect(),
         }
     }
 
-    async fn seed_workspace_cache_state(
-        cache: &WorkspaceImageCache,
+    async fn seed_home_cache_state(
+        cache: &HomeImageCache,
         paths: &RunnerPaths,
         reuse_key: &str,
         completed_at: &str,
@@ -707,19 +730,21 @@ mod tests {
         let run_id = runner_types::ids::RunId::new_v4();
         let sandbox_id = SandboxId::new_v4();
         let lease = cache
-            .prepare(WorkspaceImagePrepareRequest {
-                identity: WorkspaceImageLeaseIdentity {
+            .prepare(HomeImagePrepareRequest {
+                identity: HomeImageLeaseIdentity {
                     run_id,
                     sandbox_id,
                     profile_name: "vm0/default",
                     reuse_key: Some(reuse_key),
-                    working_dir: CANONICAL_WORKING_DIR,
+                    working_dir:
+                        api_contracts::generated::constants::runners::paths::CANONICAL_WORKING_DIR,
+                    rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                     image_size_bytes: 1024 * 1024,
                 },
-                workspace_drive_required: true,
+                home_drive_required: true,
             })
             .await;
-        let active_image = paths.active_workspace_image(&sandbox_id);
+        let active_image = paths.active_home_image(&sandbox_id);
         tokio::fs::create_dir_all(active_image.parent().unwrap())
             .await
             .unwrap();
@@ -733,7 +758,7 @@ mod tests {
             lease
                 .promote(
                     run_id,
-                    WorkspaceCacheTerminalStatus::Success,
+                    HomeCacheTerminalStatus::Success,
                     completed_at.into(),
                     &runner_storage::storage_fingerprints::StorageFingerprints::default(),
                 )
@@ -767,8 +792,8 @@ mod tests {
             .unwrap_or_else(|| panic!("missing event {message:?}; captured={events:#?}"))
     }
 
-    fn workspace_cache_change(cache_key: &str) -> WorkspaceCacheChange {
-        WorkspaceCacheChange {
+    fn home_cache_change(cache_key: &str) -> HomeCacheChange {
+        HomeCacheChange {
             observed_at: tokio::time::Instant::now(),
             committed_cache_keys: BTreeSet::from([cache_key.to_owned()]),
         }
@@ -777,29 +802,28 @@ mod tests {
     #[test]
     fn ordinary_heartbeat_forces_send_without_dropping_coalesced_cache_commits() {
         let ordinary = HeartbeatRequest::ordinary();
-        let cache_then_ordinary = HeartbeatRequest::workspace_cache(workspace_cache_change("a"))
+        let cache_then_ordinary = HeartbeatRequest::home_cache(home_cache_change("a"))
             .merge(HeartbeatRequest::ordinary());
-        let ordinary_then_cache = HeartbeatRequest::ordinary().merge(
-            HeartbeatRequest::workspace_cache(workspace_cache_change("b")),
-        );
+        let ordinary_then_cache = HeartbeatRequest::ordinary()
+            .merge(HeartbeatRequest::home_cache(home_cache_change("b")));
 
         assert!(ordinary.force_send);
-        assert!(!ordinary.refresh_workspace_cache);
-        assert!(ordinary.workspace_cache_change.is_none());
+        assert!(!ordinary.refresh_home_cache);
+        assert!(ordinary.home_cache_change.is_none());
         assert!(cache_then_ordinary.force_send);
-        assert!(cache_then_ordinary.refresh_workspace_cache);
+        assert!(cache_then_ordinary.refresh_home_cache);
         assert_eq!(
             cache_then_ordinary
-                .workspace_cache_change
+                .home_cache_change
                 .unwrap()
                 .committed_cache_keys,
             BTreeSet::from(["a".to_owned()])
         );
         assert!(ordinary_then_cache.force_send);
-        assert!(ordinary_then_cache.refresh_workspace_cache);
+        assert!(ordinary_then_cache.refresh_home_cache);
         assert_eq!(
             ordinary_then_cache
-                .workspace_cache_change
+                .home_cache_change
                 .unwrap()
                 .committed_cache_keys,
             BTreeSet::from(["b".to_owned()])
@@ -836,7 +860,9 @@ mod tests {
             HeartbeatProfile {
                 vcpu: 4,
                 memory_mb: 8192,
-                workspace_disk_mb: 10240,
+                rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                    .into(),
+                home_disk_mb: 10240,
             },
         );
         let pool = IdlePool::new(IdlePoolConfig { max_idle: 0 });
@@ -935,9 +961,9 @@ mod tests {
             profiles: &profiles,
             budget: &budget,
             provider: provider.clone(),
-            workspace_cache: None,
+            home_cache: None,
             active_runs: &active_runs,
-            workspace_cache_snapshot: WorkspaceCacheStateSnapshot::new(),
+            home_cache_snapshot: HomeCacheStateSnapshot::new(),
             wss_ingress_service_probe,
         });
 
@@ -965,19 +991,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let paths = RunnerPaths::new(dir.path().join("runner"));
         tokio::fs::create_dir_all(paths.base_dir()).await.unwrap();
-        let cache = WorkspaceImageCache::new(paths.clone());
-        seed_workspace_cache_state(&cache, &paths, reuse_key, "2026-06-01T00:00:00.000Z").await;
+        let cache = HomeImageCache::new(paths.clone());
+        seed_home_cache_state(&cache, &paths, reuse_key, "2026-06-01T00:00:00.000Z").await;
         let profiles = test_profiles();
         let budget = Arc::new(ResourceBudget::new(8, 32768, 1.0, 4));
         let active_runs = test_active_runs();
         let provider = Arc::new(RecordingProvider::default());
-        let workspace_cache_snapshot = WorkspaceCacheStateSnapshot::new();
-        refresh_initial_workspace_cache_snapshot(
-            &workspace_cache_snapshot,
-            Some(&cache),
-            &profiles,
-        )
-        .await;
+        let home_cache_snapshot = HomeCacheStateSnapshot::new();
+        refresh_initial_home_cache_snapshot(&home_cache_snapshot, Some(&cache), &profiles).await;
         let hb = HeartbeatContext::new(HeartbeatContextInit {
             idle_pool: &idle_pool,
             runner_identity: test_runner_identity(),
@@ -985,9 +1006,9 @@ mod tests {
             profiles: &profiles,
             budget: &budget,
             provider,
-            workspace_cache: Some(cache),
+            home_cache: Some(cache),
             active_runs: &active_runs,
-            workspace_cache_snapshot: workspace_cache_snapshot.clone(),
+            home_cache_snapshot: home_cache_snapshot.clone(),
             wss_ingress_service_probe: Arc::new(|| Box::pin(async { false })),
         });
 
@@ -1011,7 +1032,7 @@ mod tests {
         assert_eq!(
             heartbeat_event
                 .fields
-                .get("workspace_states")
+                .get("home_states")
                 .map(String::as_str),
             Some("1")
         );
@@ -1023,18 +1044,17 @@ mod tests {
                 );
             }
         }
-        let cached_states =
-            workspace_cache_snapshot.current_held_workspace_states(&active_runs, None);
+        let cached_states = home_cache_snapshot.current_held_home_states(&active_runs, None);
         assert_eq!(cached_states.len(), 1);
         assert_eq!(cached_states[0].reuse_key, reuse_key);
         assert_eq!(
-            cached_states[0].workspace_caches,
-            vec![workspace_cache("vm0/default")]
+            cached_states[0].home_caches,
+            vec![home_cache("vm0/default")]
         );
     }
 
     #[tokio::test]
-    async fn initial_workspace_cache_heartbeat_uses_loaded_snapshot() {
+    async fn initial_home_cache_heartbeat_uses_loaded_snapshot() {
         let reuse_key = "thread:loaded-initial-snapshot";
         let idle_pool = Arc::new(tokio::sync::Mutex::new(IdlePool::new(IdlePoolConfig {
             max_idle: 1,
@@ -1042,29 +1062,29 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let paths = RunnerPaths::new(dir.path().join("runner"));
         tokio::fs::create_dir_all(paths.base_dir()).await.unwrap();
-        let cache = WorkspaceImageCache::new(paths.clone());
-        seed_workspace_cache_state(&cache, &paths, reuse_key, "2026-06-01T00:00:00.000Z").await;
+        let cache = HomeImageCache::new(paths.clone());
+        seed_home_cache_state(&cache, &paths, reuse_key, "2026-06-01T00:00:00.000Z").await;
         let profiles = test_profiles();
         let budget = Arc::new(ResourceBudget::new(8, 32768, 1.0, 4));
         let active_runs = test_active_runs();
         let provider = Arc::new(RecordingProvider::default());
-        let workspace_cache_snapshot = WorkspaceCacheStateSnapshot::new();
+        let home_cache_snapshot = HomeCacheStateSnapshot::new();
         refresh_snapshot(
-            &workspace_cache_snapshot,
-            vec![held_workspace_state(
+            &home_cache_snapshot,
+            vec![held_home_state(
                 reuse_key,
                 "2026-06-01T00:00:00.000Z",
                 &["vm0/default"],
             )],
         );
-        let cache_key = runner_host::paths::scoped_workspace_image_cache_key(
+        let cache_key = runner_host::paths::scoped_home_image_cache_key(
             "",
             "vm0/default",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             reuse_key,
-            CANONICAL_WORKING_DIR,
             1024 * 1024,
         );
-        let metadata = runner_lifecycle::test_fixtures::runner_workspace_image_cache_dir(&paths)
+        let metadata = runner_lifecycle::test_fixtures::runner_home_image_cache_dir(&paths)
             .join(cache_key)
             .join("metadata.json");
         tokio::fs::remove_file(metadata).await.unwrap();
@@ -1075,9 +1095,9 @@ mod tests {
             profiles: &profiles,
             budget: &budget,
             provider: provider.clone(),
-            workspace_cache: Some(cache),
+            home_cache: Some(cache),
             active_runs: &active_runs,
-            workspace_cache_snapshot,
+            home_cache_snapshot,
             wss_ingress_service_probe: Arc::new(|| Box::pin(async { false })),
         });
 
@@ -1085,7 +1105,7 @@ mod tests {
             &hb,
             RunnerMode::Running,
             42,
-            HeartbeatRequest::initial_workspace_cache_snapshot(),
+            HeartbeatRequest::initial_home_cache_snapshot(),
         )
         .await;
 
@@ -1094,9 +1114,11 @@ mod tests {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         assert_eq!(heartbeats.len(), 1);
+        assert_eq!(heartbeats[0].home_affinity_version, Some(1));
+        assert!(heartbeats[0].held_workspace_states.is_empty());
         assert_eq!(
-            heartbeats[0].held_workspace_states,
-            vec![held_workspace_state(
+            heartbeats[0].held_home_states,
+            vec![held_home_state(
                 reuse_key,
                 "2026-06-01T00:00:00.000Z",
                 &["vm0/default"],
@@ -1105,23 +1127,101 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn workspace_cache_states_filter_claimed_reuse_key() {
+    async fn home_inventory_requires_current_full_rootfs_and_exact_home_shape() {
         let dir = tempfile::tempdir().unwrap();
         let paths = RunnerPaths::new(dir.path().join("runner"));
         tokio::fs::create_dir_all(paths.base_dir()).await.unwrap();
-        let cache = WorkspaceImageCache::new(paths.clone());
-        seed_workspace_cache_state(&cache, &paths, "sess-cache", "2026-06-01T00:00:00.000Z").await;
-        seed_workspace_cache_state(&cache, &paths, "sess-claimed", "2026-06-01T00:00:01.000Z")
-            .await;
+        let cache = HomeImageCache::new(paths.clone());
+        seed_home_cache_state(
+            &cache,
+            &paths,
+            "thread:profile-identity",
+            "2026-06-01T00:00:00.000Z",
+        )
+        .await;
+        let mut profiles = test_profiles();
+        assert_eq!(
+            home_cache_states(Some(&cache), &profiles, None).await.len(),
+            1
+        );
+        // Same display prefix, different full rootfs: no affinity from the old generation.
+        profiles.get_mut("vm0/default").unwrap().rootfs_hash =
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab".into();
+        assert!(
+            home_cache_states(Some(&cache), &profiles, None)
+                .await
+                .is_empty()
+        );
+        let snapshot = HomeCacheStateSnapshot::new();
+        let initial = refresh_initial_home_cache_snapshot(&snapshot, Some(&cache), &profiles).await;
+        assert!(initial.states.is_empty());
+        profiles.get_mut("vm0/default").unwrap().rootfs_hash =
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into();
+        profiles.get_mut("vm0/default").unwrap().home_disk_mb = 2;
+        assert!(
+            home_cache_states(Some(&cache), &profiles, None)
+                .await
+                .is_empty()
+        );
+        profiles.get_mut("vm0/default").unwrap().home_disk_mb = 1;
+        assert_eq!(
+            home_cache_states(Some(&cache), &profiles, None).await.len(),
+            1
+        );
+        profiles.clear();
+        assert!(
+            home_cache_states(Some(&cache), &profiles, None)
+                .await
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn cached_home_snapshot_only_advertises_current_profiles_and_paired_wire_capability() {
+        let profiles = test_profiles();
+        let filtered = filter_home_states_for_profiles(
+            vec![held_home_state(
+                "thread:configured",
+                "2026-06-01T00:00:00.000Z",
+                &["vm0/default", "vm0/removed"],
+            )],
+            &profiles,
+        );
+        assert_eq!(filtered[0].home_caches, vec![home_cache("vm0/default")]);
+        let budget = ResourceBudget::new(8, 32768, 1.0, 4);
+        let pool = IdlePool::new(IdlePoolConfig { max_idle: 1 });
+        let state = collect_heartbeat_state(
+            test_snapshot_metadata(),
+            &profiles,
+            &budget,
+            &pool,
+            RunnerMode::Running,
+        );
+        assert_eq!(state.home_affinity_version, Some(1));
+        assert!(state.held_workspace_states.is_empty());
+        assert!(
+            state.held_home_states.is_empty(),
+            "inventory is populated only by eligible cache evidence"
+        );
+    }
+
+    #[tokio::test]
+    async fn home_cache_states_filter_claimed_reuse_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunnerPaths::new(dir.path().join("runner"));
+        tokio::fs::create_dir_all(paths.base_dir()).await.unwrap();
+        let cache = HomeImageCache::new(paths.clone());
+        seed_home_cache_state(&cache, &paths, "sess-cache", "2026-06-01T00:00:00.000Z").await;
+        seed_home_cache_state(&cache, &paths, "sess-claimed", "2026-06-01T00:00:01.000Z").await;
         let active_runs = test_active_runs();
         let profiles = test_profiles();
-        let cache_states = workspace_cache_states(Some(&cache), &profiles, None).await;
+        let cache_states = home_cache_states(Some(&cache), &profiles, None).await;
         let states =
-            filter_current_held_workspace_states(cache_states, &active_runs, Some("sess-claimed"));
+            filter_current_held_home_states(cache_states, &active_runs, Some("sess-claimed"));
 
         assert!(
             states.iter().any(|state| state.reuse_key == "sess-cache"),
-            "unrelated workspace cache should remain advertised"
+            "unrelated home cache should remain advertised"
         );
         assert!(
             !states.iter().any(|state| state.reuse_key == "sess-claimed"),
@@ -1151,9 +1251,9 @@ mod tests {
             profiles: &profiles,
             budget: &budget,
             provider: provider.clone(),
-            workspace_cache: None,
+            home_cache: None,
             active_runs: &active_runs,
-            workspace_cache_snapshot: WorkspaceCacheStateSnapshot::new(),
+            home_cache_snapshot: HomeCacheStateSnapshot::new(),
             wss_ingress_service_probe: Arc::new(|| Box::pin(async { false })),
         });
 

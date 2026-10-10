@@ -47,7 +47,7 @@
   "crates/tracing-test-support": "0.2.0",
   "crates/runner-rpc-client": "0.4.0",
   "crates/runner-rpc-proto": "0.4.0",
-  "crates/guest-workspace-mount": "0.1.2",
+  "crates/guest-home-mount": "0.1.2",
   "crates/linux-mountinfo": "0.1.1",
   "crates/rfb-client": "0.21.4",
   "ios": "0.8.0",
