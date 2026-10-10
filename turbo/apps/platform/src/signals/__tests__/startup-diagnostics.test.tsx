@@ -4,7 +4,7 @@ import { screen, waitFor } from "@testing-library/react";
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { beforeEach, expect, test, vi } from "vitest";
 
-import { setupPage } from "../../__tests__/page-helper.ts";
+import { setupPage, startPage } from "../../__tests__/page-helper.ts";
 import { ROUTES } from "../route-paths.ts";
 import { testContext } from "./test-helpers.ts";
 
@@ -49,6 +49,38 @@ function mockMissingConversation(): void {
     return respond(200, { events: [], hasMore: false });
   });
 }
+
+test("A failed stylesheet keeps Loading visible without reporting completed startup", async () => {
+  const originalStylesheetLoaded = window.__mainStylesheetLoaded;
+  window.__mainStylesheetLoaded = Promise.resolve("failed");
+  context.signal.addEventListener(
+    "abort",
+    () => {
+      if (originalStylesheetLoaded) {
+        window.__mainStylesheetLoaded = originalStylesheetLoaded;
+      } else {
+        delete window.__mainStylesheetLoaded;
+      }
+    },
+    { once: true },
+  );
+
+  // Failed CSS deliberately prevents the skeleton-hidden readiness boundary.
+  // startPage owns that pending promise; synchronize on the rendered route.
+  await startPage({
+    context,
+    path: "/agents",
+    host: "app.okou.ai",
+    env: PAGE_ENV,
+  });
+
+  await expect(
+    screen.findByRole("heading", { name: "Agents" }),
+  ).resolves.toBeInTheDocument();
+  expect(screen.getByRole("status", { name: "Loading" })).toBeVisible();
+  expect(capturedEvents("app_first_skeleton_hide")).toStrictEqual([]);
+  expect(capturedEvents(BOOTSTRAP_PHASE_TIMING_EVENT)).toStrictEqual([]);
+});
 
 test("Startup timing is bounded and anonymous", async () => {
   mockMissingConversation();
