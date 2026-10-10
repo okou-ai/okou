@@ -1385,7 +1385,7 @@ describe("runner resume session contract", () => {
     ).toBe(false);
   });
 
-  it("bounds profile-qualified workspace cache heartbeat state", () => {
+  it("bounds profile-qualified home cache heartbeat state", () => {
     const heartbeat = {
       runnerId: "33333333-3333-4333-8333-333333333333",
       group: "vm0/test",
@@ -1451,7 +1451,7 @@ describe("runner resume session contract", () => {
     ).toBe(false);
     expect(
       heldHomeStateSchema.safeParse({
-        reuseKey: "thread:without-workspace",
+        reuseKey: "thread:without-home",
         lastCompletedAt: "2026-07-15T00:00:00.000Z",
         homeCaches: [],
       }).success,
