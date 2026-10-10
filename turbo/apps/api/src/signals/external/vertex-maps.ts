@@ -11,12 +11,7 @@ import {
 import { z } from "zod";
 
 import { logger } from "../../lib/log";
-import {
-  onRejection,
-  readBoundedResponseText,
-  safeJsonParse,
-  startUntrackedBestEffortCleanup,
-} from "../utils";
+import { onRejection, readBoundedResponseText, safeJsonParse } from "../utils";
 import { gcpLlmAccessToken, gcpLlmConfiguration } from "./gcp-llm-auth";
 import {
   gcpLlmTransportReason,
@@ -395,8 +390,27 @@ async function requestVertexMaps(
   );
   assertProviderActive();
   if (!response.ok) {
-    if (response.body) {
-      startUntrackedBestEffortCleanup(response.body.cancel());
+    const errorBody = await readBoundedResponseText(response, 4096);
+    assertProviderActive();
+    if (errorBody.kind === "text") {
+      const providerError = z
+        .object({
+          error: z.object({
+            code: z.number().optional(),
+            status: z.string().optional(),
+            message: z.string().optional(),
+          }),
+        })
+        .safeParse(safeJsonParse(errorBody.text));
+      if (providerError.success) {
+        L.warn("Native Maps request contract rejected", {
+          status: providerError.data.error.status,
+          code: providerError.data.error.code,
+          message: providerError.data.error.message
+            ?.replace(/"[^"\n]*"|'[^'\n]*'/gu, "[redacted]")
+            .slice(0, 600),
+        });
+      }
     }
     throw new VertexMapsError(response.status, "http");
   }
