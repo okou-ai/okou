@@ -35,6 +35,7 @@ pub struct MockSandbox {
     id: String,
     source_ip: String,
     run_control_id: Option<String>,
+    backing_process: Option<Arc<dyn SandboxBackingProcess>>,
     exec_results: Mutex<VecDeque<Result<ExecResult>>>,
     exec_calls: Mutex<Vec<ExecCall>>,
     storage_manifest_calls: Mutex<Vec<StorageManifestCall>>,
@@ -87,6 +88,7 @@ impl MockSandbox {
             id: id.into(),
             source_ip: "10.0.0.1".into(),
             run_control_id: None,
+            backing_process: None,
             exec_results: Mutex::new(VecDeque::new()),
             exec_calls: Mutex::new(Vec::new()),
             storage_manifest_calls: Mutex::new(Vec::new()),
@@ -114,6 +116,15 @@ impl MockSandbox {
             overrides,
             stdout_tx: Mutex::new(None),
         }
+    }
+
+    /// Attach an explicit external backing capability for this exact instance.
+    ///
+    /// Generic stop/kill success does not complete its provider wait. Use a
+    /// distinct capability for each backing even if Sandbox labels match.
+    pub fn with_backing_process(mut self, backing: Arc<dyn SandboxBackingProcess>) -> Self {
+        self.backing_process = Some(backing);
+        self
     }
 
     /// Override the source IP returned by this sandbox.
@@ -676,6 +687,10 @@ fn apply_exec_output_limits(mut result: ExecResult, limits: ExecOutputLimits) ->
 
 #[async_trait]
 impl Sandbox for MockSandbox {
+    fn backing_process(&self) -> Option<Arc<dyn SandboxBackingProcess>> {
+        self.backing_process.clone()
+    }
+
     fn id(&self) -> &str {
         &self.id
     }
