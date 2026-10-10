@@ -17,6 +17,28 @@ RUN apt-get update && apt-get install -y \
     jq \
     && rm -rf /var/lib/apt/lists/*
 
+# Keep these aligned with crates/runner/mitm-addon/.python-version and pyproject.toml.
+ARG PYTHON_VERSION=3.14.0
+ARG UV_VERSION=0.12.17
+RUN ARCH=$(dpkg --print-architecture) \
+    && case "$ARCH" in \
+        amd64) UV_TARGET="x86_64-unknown-linux-gnu" ;; \
+        arm64) UV_TARGET="aarch64-unknown-linux-gnu" ;; \
+        *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;; \
+    esac \
+    && curl -fsSL "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-${UV_TARGET}.tar.gz" -o /tmp/uv.tar.gz \
+    && tar -xzf /tmp/uv.tar.gz -C /tmp \
+    && install -m 0755 "/tmp/uv-${UV_TARGET}/uv" /usr/local/bin/uv \
+    && install -m 0755 "/tmp/uv-${UV_TARGET}/uvx" /usr/local/bin/uvx \
+    && rm -f /tmp/uv.tar.gz "/tmp/uv-${UV_TARGET}/uv" "/tmp/uv-${UV_TARGET}/uvx" \
+    && rmdir "/tmp/uv-${UV_TARGET}" \
+    && test "$(uv --version)" = "uv ${UV_VERSION} (${UV_TARGET})" \
+    && test "$(uvx --version)" = "uvx ${UV_VERSION} (${UV_TARGET})" \
+    && UV_PYTHON_INSTALL_DIR=/opt/python UV_PYTHON_BIN_DIR=/usr/local/bin \
+        uv python install --default "${PYTHON_VERSION}" \
+    && test "$(python --version)" = "Python ${PYTHON_VERSION}" \
+    && test "$(python3 --version)" = "Python ${PYTHON_VERSION}"
+
 # Install Node.js 22
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y nodejs \
