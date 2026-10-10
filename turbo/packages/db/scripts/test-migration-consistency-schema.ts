@@ -437,11 +437,11 @@ async function validateCanonicalChatEventStorage(dbUrl: string): Promise<void> {
     const event = await client.query<{ id: string; seqId: string }>(
       `
         INSERT INTO "chat_thread_events" (
-          "user_id", "org_id", "seq_id", "chat_thread_id", "kind", "agent_id", "title"
+          "user_id", "org_id", "seq_id", "chat_thread_id", "kind", "agent_id", "title", "selected_model"
         )
         VALUES (
           'append-only-test-user', 'append-only-test-org', 1,
-          $1, 'created', $2, 'append-only migration test'
+          $1, 'created', $2, 'append-only migration test', 'auto'
         )
         RETURNING "id", "seq_id" AS "seqId"
       `,

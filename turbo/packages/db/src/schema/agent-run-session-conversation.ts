@@ -51,6 +51,66 @@ export const agentRuns = pgTable(
           ${table.builtInModelKeyId} IS NOT NULL
         )`,
       ),
+      check(
+        "agent_runs_canonical_selection_check",
+        sql`${table.selectedModel} IS NULL OR (
+          ${table.selectedModel} NOT IN ('okou-1.0', 'okou-1.0-pro', 'okou-1.0-max') AND
+          ${table.selectedModel} NOT LIKE '@preset/%'
+        )`,
+      ),
+      // Terminal historical executions may have no retained runtime evidence.
+      // A partial pair is never an uncaptured execution.
+      check(
+        "agent_runs_runtime_pair_check",
+        sql`(${table.modelRuntimeProvider} IS NULL AND ${table.modelRuntimeModel} IS NULL) OR (
+          ${table.modelRuntimeProvider} IS NOT NULL AND char_length(${table.modelRuntimeProvider}) > 0 AND
+          ${table.modelRuntimeModel} IS NOT NULL AND char_length(${table.modelRuntimeModel}) > 0
+        )`,
+      ),
+      check(
+        "agent_runs_personal_capture_check",
+        sql`${table.modelProvider} NOT IN ('codex-oauth-token', 'claude-code-oauth-token') OR COALESCE((
+          ${table.builtInModelKeyId} IS NULL AND ${table.modelUsageProvider} IS NULL AND
+          ${table.modelLongContextMinTotalInputTokens} IS NULL AND
+          (NOT (${table.launchSnapshot} IS NOT NULL AND ${table.status} IN ('pending', 'running')) OR
+            ${table.selectedModel} IS NOT NULL) AND
+          (
+            (${table.modelRuntimeModel} IS NULL AND NOT (
+              ${table.launchSnapshot} IS NOT NULL AND ${table.status} IN ('pending', 'running')
+            )) OR (
+              ${table.modelRuntimeModel} IS NOT NULL AND
+              ${table.modelRuntimeProvider} = ${table.modelProvider} AND
+              (${table.selectedModel} IS NULL OR ${table.selectedModel} <> 'auto') AND
+              ${table.modelProviderId} IS NOT NULL AND
+              ${table.modelProviderAccountIdentity} IS NOT NULL AND
+              char_length(${table.modelProviderAccountIdentity}) > 0
+            )
+          )
+        ), false)`,
+      ),
+      check(
+        "agent_runs_builtin_capture_owner_check",
+        sql`${table.modelProvider} <> 'built-in' OR COALESCE((
+          ${table.modelProviderId} IS NULL AND ${table.modelProviderAccountIdentity} IS NULL AND
+          (${table.modelRuntimeModel} IS NULL OR (
+            ${table.builtInModelKeyId} IS NOT NULL AND
+            ${table.modelRuntimeProvider} NOT IN ('codex-oauth-token', 'claude-code-oauth-token')
+          )) AND (NOT (
+            ${table.launchSnapshot} IS NOT NULL AND ${table.status} IN ('pending', 'running') AND
+            ${table.selectedModel} IS NOT DISTINCT FROM 'auto'
+          ) OR ${table.modelUsageProvider} IS NOT NULL)
+        ), false)`,
+      ),
+      check(
+        "agent_runs_usage_capture_check",
+        sql`(${table.modelLongContextMinTotalInputTokens} IS NULL OR (
+          ${table.modelUsageProvider} IS NOT NULL AND ${table.modelLongContextMinTotalInputTokens} > 0
+        )) AND (${table.modelUsageProvider} IS NULL OR COALESCE((
+          char_length(${table.modelUsageProvider}) > 0 AND ${table.modelProvider} = 'built-in' AND
+          ${table.modelRuntimeProvider} IS NOT NULL AND ${table.modelRuntimeModel} IS NOT NULL AND
+          ${table.builtInModelKeyId} IS NOT NULL
+        ), false))`,
+      ),
       // Composite index for user listing with time-based sorting
       index("idx_agent_runs_user_created").on(
         table.userId,

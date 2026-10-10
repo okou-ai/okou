@@ -2010,6 +2010,20 @@
       "when": 1791592037849,
       "tag": "1364_prepare_canonical_auto_catalog",
       "breakpoints": true
+    },
+    {
+      "idx": 1365,
+      "version": "7",
+      "when": 1791595811403,
+      "tag": "1365_enforce_canonical_model_capture",
+      "breakpoints": true
+    },
+    {
+      "idx": 1366,
+      "version": "7",
+      "when": 1791595822484,
+      "tag": "1366_validate_canonical_model_capture",
+      "breakpoints": true
     }
   ]
 }

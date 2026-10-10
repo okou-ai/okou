@@ -122,7 +122,7 @@ export async function validateCanonicalModelSelections(databaseUrl: string) {
       /agent_runs_executable_builtin_capture_check/,
     );
     await db.query(
-      `UPDATE agent_runs SET selected_model='auto',model_runtime_provider='openrouter-codex',model_runtime_model='@preset/captured',built_in_model_key_id=$1,status='running' WHERE id=$2`,
+      `UPDATE agent_runs SET selected_model='auto',model_runtime_provider='openrouter-codex',model_runtime_model='@preset/captured',model_usage_provider='@preset/captured',built_in_model_key_id=$1,status='running' WHERE id=$2`,
       [randomUUID(), run],
     );
     await assert.rejects(
@@ -130,6 +130,100 @@ export async function validateCanonicalModelSelections(databaseUrl: string) {
         run,
       ]),
       /agent_runs_executable_builtin_capture_check/,
+    );
+    for (const change of [
+      `model_usage_provider=NULL`,
+      `model_provider_id='${randomUUID()}'`,
+      `model_provider_account_identity='personal-account'`,
+      `built_in_model_key_id=NULL`,
+      `model_long_context_min_total_input_tokens=0`,
+    ]) {
+      await assert.rejects(
+        db.query(`UPDATE agent_runs SET ${change} WHERE id=$1`, [run]),
+        /builtin_capture_owner_check|executable_builtin_capture_check|usage_capture_check/,
+      );
+    }
+    for (const selected of [
+      "okou-1.0",
+      "okou-1.0-pro",
+      "okou-1.0-max",
+      "@preset/runtime-only",
+    ]) {
+      for (const statement of [
+        `UPDATE chat_threads SET selected_model=$1 WHERE id='${thread}'`,
+        `UPDATE org_members_metadata SET selected_model=$1 WHERE org_id='${org}' AND user_id='${user}'`,
+        `UPDATE agent_runs SET selected_model=$1 WHERE id='${run}'`,
+        `UPDATE chat_events SET model_selection=jsonb_build_object('selectedModel',$1::text) WHERE id='${input}'`,
+        `UPDATE chat_events SET payload=jsonb_build_object('userMessage',jsonb_build_object('parts',jsonb_build_array(jsonb_build_object('type','model','selectedModel',$1::text)))) WHERE id='${input}'`,
+      ]) {
+        await assert.rejects(
+          db.query(statement, [selected]),
+          /canonical_(selection|annotation)_check/,
+        );
+      }
+    }
+    await assert.rejects(
+      db.query(
+        `INSERT INTO chat_thread_events (user_id,org_id,chat_thread_id,seq_id,kind) VALUES ($1,$2,$3,3,'model_selection_updated')`,
+        [user, org, thread],
+      ),
+      /chat_thread_events_canonical_selection_check/,
+    );
+    // A canonical historical personal ID need not exist in today's catalog.
+    await db.query(
+      `UPDATE agent_runs SET status='completed', model_provider='codex-oauth-token',
+      selected_model='retained-personal-model', model_runtime_provider=NULL, model_runtime_model=NULL,
+      model_usage_provider=NULL, built_in_model_key_id=NULL WHERE id=$1`,
+      [run],
+    );
+    await assert.rejects(
+      db.query(`UPDATE agent_runs SET status='running' WHERE id=$1`, [run]),
+      /personal_capture_check/,
+    );
+    await assert.rejects(
+      db.query(
+        `UPDATE agent_runs SET model_runtime_model='original-upstream' WHERE id=$1`,
+        [run],
+      ),
+      /runtime_pair_check|personal_capture_check/,
+    );
+    await db.query(
+      `UPDATE agent_runs SET model_runtime_provider='codex-oauth-token', model_runtime_model='original-upstream',
+      model_provider_id=$1, model_provider_account_identity='permanent-account', status='pending' WHERE id=$2`,
+      [randomUUID(), run],
+    );
+    for (const change of [
+      `model_provider_account_identity=NULL`,
+      `model_provider_id=NULL`,
+      `model_runtime_provider='claude-code-oauth-token'`,
+      `built_in_model_key_id='${randomUUID()}'`,
+    ]) {
+      await assert.rejects(
+        db.query(`UPDATE agent_runs SET ${change} WHERE id=$1`, [run]),
+        /personal_capture_check/,
+      );
+    }
+    await db.query(`UPDATE agent_runs SET status='completed' WHERE id=$1`, [
+      run,
+    ]);
+    // Known execution does not retroactively invent a missing selected decision.
+    await db.query(`UPDATE agent_runs SET selected_model=NULL WHERE id=$1`, [
+      run,
+    ]);
+    assert.deepEqual(
+      (
+        await db.query(
+          `SELECT model_runtime_model,model_provider_account_identity,built_in_model_key_id FROM agent_runs WHERE id=$1`,
+          [run],
+        )
+      ).rows,
+      [
+        {
+          model_runtime_model: "original-upstream",
+          model_provider_account_identity: "permanent-account",
+          built_in_model_key_id: null,
+        },
+      ],
     );
   } finally {
     await db.query(`DELETE FROM agent_runs WHERE id=$1`, [run]);

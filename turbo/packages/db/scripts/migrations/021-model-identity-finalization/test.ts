@@ -5,6 +5,13 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { Client } from "pg";
 import { z } from "zod";
+import postgres from "postgres";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { eq } from "drizzle-orm";
+import { agentRuns } from "../../../src/runtime/agent-run";
+import { applyPendingMigrations } from "../../migration-runner";
+import { validateCanonicalModelSelections } from "../../test-canonical-model-selections-permanent";
+import { DRIZZLE_MIGRATE_OUT } from "../../../drizzle.config";
 
 const databaseUrl = process.env.DATABASE_URL;
 assert(databaseUrl, "DATABASE_URL_required_for_disposable_test_database");
@@ -51,17 +58,24 @@ function cli(mode: string, extra: string[] = [], readOnly = false) {
   assert.equal(result.status, 0, result.stderr);
   return reportSchema.parse(JSON.parse(result.stdout));
 }
-try {
-  const migrated = spawnSync(
-    process.execPath,
-    [
-      "--import",
-      "tsx",
-      fileURLToPath(new URL("../../migrate.ts", import.meta.url)),
-    ],
-    { env, encoding: "utf8" },
+const sql = postgres(url.toString(), { max: 1, onnotice: () => {} });
+const journal = z
+  .object({ entries: z.array(z.object({ tag: z.string(), when: z.number() })) })
+  .parse(
+    JSON.parse(
+      await readFile(`${DRIZZLE_MIGRATE_OUT}/meta/_journal.json`, "utf8"),
+    ),
   );
-  assert.equal(migrated.status, 0, migrated.stderr);
+const addition = journal.entries.find((entry) => {
+  return entry.tag === "1365_enforce_canonical_model_capture";
+});
+const validation = journal.entries.find((entry) => {
+  return entry.tag === "1366_validate_canonical_model_capture";
+});
+assert(addition && validation, "final_constraint_migrations_required");
+try {
+  // Historical operator inputs belong on the prepared Release 1 schema.
+  await applyPendingMigrations(sql, { beforeMillis: addition.when });
   const session = randomUUID();
   await db.query(
     "INSERT INTO agent_sessions (id,user_id,org_id) VALUES ($1,'identity-test-owner','identity-test-org')",
@@ -281,10 +295,125 @@ try {
     cli("events", ["--migrate"]).classifications.unconsumed_decision,
     1,
   );
+  // Finish the retained decision through explicit revocation, then run the
+  // independently authorized operator page before constraint installation.
+  await db.query(
+    `INSERT INTO chat_events (chat_thread_id,seq_id,event_type,revokes_event_id)
+    SELECT chat_thread_id,4,'control.revoke',id FROM chat_events WHERE chat_thread_id=$1 AND seq_id=3`,
+    [thread],
+  );
+  assert.equal(cli("events", ["--migrate"]).updated, 1);
+  const partial = randomUUID();
+  await db.query(
+    `INSERT INTO agent_runs (id,session_id,user_id,org_id,status,prompt,trigger_source,autonomy_budget,model_runtime_provider)
+    VALUES ($1,$2,'identity-test-owner','identity-test-org','completed','unknown','web',0,'codex-oauth-token')`,
+    [partial, session],
+  );
+  const preflight = spawnSync(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      fileURLToPath(new URL("backfill.ts", import.meta.url)),
+      "--mode",
+      "preflight",
+      "--before",
+      "2026-01-02T00:00:00Z",
+    ],
+    {
+      env: { ...env, PGOPTIONS: "-c default_transaction_read_only=on" },
+      encoding: "utf8",
+    },
+  );
+  assert.equal(preflight.status, 2, preflight.stderr);
+  assert.equal(JSON.parse(preflight.stdout).agent_runs_runtime_pair_check, 1);
+  await applyPendingMigrations(sql, { beforeMillis: validation.when });
+  assert.equal(
+    (
+      await db.query(`SELECT bool_and(NOT convalidated) AS pending FROM pg_constraint WHERE conname IN
+    ('agent_runs_runtime_pair_check','chat_events_canonical_selection_check')`)
+    ).rows[0].pending,
+    true,
+  );
+  // NOT VALID is immediately enforced on new writes, not a writer grace period.
+  await assert.rejects(
+    db.query(`UPDATE agent_runs SET prompt='touch partial' WHERE id=$1`, [
+      partial,
+    ]),
+    /runtime_pair_check/,
+  );
+  await assert.rejects(applyPendingMigrations(sql), /runtime_pair_check/);
+  await db.query(
+    `UPDATE agent_runs SET model_runtime_provider=NULL WHERE id=$1`,
+    [partial],
+  );
+  await applyPendingMigrations(sql);
+  assert.equal(
+    (
+      await db.query(`SELECT bool_and(convalidated) AS ready FROM pg_constraint WHERE conname IN
+    ('agent_runs_runtime_pair_check','chat_events_canonical_selection_check')`)
+    ).rows[0].ready,
+    true,
+  );
+
+  // Release 1's runtime mapping/column factory is unchanged: execute its actual
+  // implicit SELECT, UPDATE RETURNING and INSERT column lists after tightening.
+  const orm = drizzle(db);
+  const original = await orm
+    .select()
+    .from(agentRuns)
+    .where(eq(agentRuns.id, legacy));
+  const returned = await orm
+    .update(agentRuns)
+    .set({ summary: "late finalization" })
+    .where(eq(agentRuns.id, legacy))
+    .returning();
+  assert.equal(
+    returned[0]?.modelUsageProvider,
+    original[0]?.modelUsageProvider,
+  );
+  const inserted = await orm
+    .insert(agentRuns)
+    .values({
+      id: randomUUID(),
+      sessionId: session,
+      userId: "identity-test-owner",
+      orgId: "identity-test-org",
+      status: "completed",
+      prompt: "uncaptured",
+    })
+    .returning();
+  assert.equal(inserted[0]?.selectedModel, null);
+  assert.equal(inserted[0]?.modelRuntimeModel, null);
+  await validateCanonicalModelSelections(url.toString());
+  for (const mode of ["preflight", "verify"]) {
+    const reconciliation = spawnSync(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        fileURLToPath(new URL("backfill.ts", import.meta.url)),
+        "--mode",
+        mode,
+        "--before",
+        "2026-01-02T00:00:00Z",
+      ],
+      {
+        env: { ...env, PGOPTIONS: "-c default_transaction_read_only=on" },
+        encoding: "utf8",
+      },
+    );
+    assert.equal(reconciliation.status, 0, reconciliation.stderr);
+    const report = JSON.parse(reconciliation.stdout);
+    if (mode === "preflight")
+      assert.equal(report.agent_runs_runtime_pair_check, 0);
+    else assert.equal(report.compacted_managed_model_rows, 1);
+  }
   console.log(
-    "model identity finalization: real schema, read-only previews, bounded commits/concurrent replay, cutoff, execution/account provenance, compacted history preservation, optional decisions and catalog compatibility passed",
+    "model identity: prepared operator pages, reconciliation, separately committed CHECK/VALIDATE, immediate new-write enforcement, lifecycle exceptions and Release 1 ORM shapes passed",
   );
 } finally {
+  await sql.end();
   await db.end();
   await admin.query(`DROP DATABASE "${name}" WITH (FORCE)`);
   await admin.end();

@@ -150,19 +150,11 @@ export function validateModelCatalog(
       "canonical Auto catalog row is missing or retired",
     );
   }
-  const currentModels = models
-    .filter((model) => {
-      return model.model !== "okou-1.0";
-    })
-    .map((model) => {
-      return {
-        ...model,
-        replacedBy:
-          model.replacedBy === "okou-1.0"
-            ? AUTO_SELECTED_MODEL
-            : model.replacedBy,
-      };
-    });
+  // Retained execution consumers still need the physical legacy row/route.
+  // Migration 1364 has rebound selected replacement lineage to canonical Auto.
+  const currentModels = models.filter((model) => {
+    return model.model !== "okou-1.0";
+  });
   const currentRoutes = routes.filter((route) => {
     return route.model !== "okou-1.0";
   });
