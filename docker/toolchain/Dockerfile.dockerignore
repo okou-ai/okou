@@ -1,12 +1,6 @@
 # Repository-root build context: send only canonical uv inputs and this Dockerfile.
 **
-!docker/
-!docker/toolchain/
 !docker/toolchain/Dockerfile
 !docker/toolchain/Dockerfile.dockerignore
-!crates/
-!crates/runner/
-!crates/runner/scripts/
 !crates/runner/scripts/build-template.sh
-!scripts/
 !scripts/toolchain-version.sh
