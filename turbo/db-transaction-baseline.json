@@ -1312,11 +1312,6 @@
       "owner": "updateVncConnection$"
     },
     {
-      "id": "TX-0318",
-      "file": "turbo/apps/api/src/signals/services/vnc-owner-lifecycle.service.ts",
-      "owner": "eraseVncOwnerData$"
-    },
-    {
       "id": "TX-0319",
       "file": "turbo/apps/api/src/signals/services/webhooks-clerk-cleanup.service.ts",
       "owner": "cancelOrgRuns"
