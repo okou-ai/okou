@@ -1022,11 +1022,6 @@
       "owner": "consumeRunnerWssTicket$"
     },
     {
-      "id": "TX-0242",
-      "file": "turbo/apps/api/src/signals/services/runner-wss-ticket.service.ts",
-      "owner": "revokeRunnerWssTickets$"
-    },
-    {
       "id": "TX-0243",
       "file": "turbo/apps/api/src/signals/services/slack-chat-ingress.service.ts",
       "owner": "findSlackChatThreadRoute$"
