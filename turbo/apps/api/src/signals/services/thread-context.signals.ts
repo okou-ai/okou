@@ -15,6 +15,10 @@ import {
 import type { ChatThreadRequestRow } from "./chat-thread-request-facts";
 import { createDiscordThreadContext } from "./discord-thread-prompt-context.service";
 import { createRunTemplates } from "./run-templates.service";
+import {
+  type ConnectedAccounts,
+  createConnectedAccountsSignals,
+} from "./thread-connected-accounts.signals";
 import { createThreadAutomationContext } from "./thread-automation-context.service";
 import { createThreadModelSignals } from "./thread-model.signals";
 import {
@@ -76,6 +80,14 @@ export interface ThreadContext {
   readonly modelRoute$: ThreadModels["modelRoute$"];
   readonly providerFramework$: ThreadModels["providerFramework$"];
   readonly dispatchTiming$: ThreadModels["dispatchTiming$"];
+  /** Connector scope and catalog of the execution identity. */
+  readonly connectorScope$: ConnectedAccounts["connectorScope$"];
+  readonly connectorCatalog$: ConnectedAccounts["connectorCatalog$"];
+  /** Connector accounts chosen from thread, source and default selections. */
+  readonly connectorSelection$: ConnectedAccounts["connectorSelection$"];
+  readonly connectorSnapshot$: ConnectedAccounts["connectorSnapshot$"];
+  readonly connectorThreadSelections$: ConnectedAccounts["threadSelections$"];
+  readonly selectedConnectorSources$: ConnectedAccounts["selectedStoredConnectorSources$"];
 }
 
 export function createThreadContext(
@@ -137,6 +149,18 @@ export function createThreadContext(
     pickedEvent$,
     executionBootstrap$,
   );
+  const connectorSourceId$ = createConnectorSourceId(
+    pickedEvent$,
+    automationContext$,
+    feishuContext$,
+  );
+  const connectedAccounts = createConnectedAccountsSignals(
+    pickedEvent$,
+    executionBootstrap$,
+    executionThread$,
+    connectorSourceId$,
+    model.dispatchTiming$,
+  );
   return {
     sessionRead$,
     session$,
@@ -159,6 +183,13 @@ export function createThreadContext(
     modelRoute$: model.modelRoute$,
     providerFramework$: model.providerFramework$,
     dispatchTiming$: model.dispatchTiming$,
+    connectorScope$: connectedAccounts.connectorScope$,
+    connectorCatalog$: connectedAccounts.connectorCatalog$,
+    connectorSelection$: connectedAccounts.connectorSelection$,
+    connectorSnapshot$: connectedAccounts.connectorSnapshot$,
+    connectorThreadSelections$: connectedAccounts.threadSelections$,
+    selectedConnectorSources$:
+      connectedAccounts.selectedStoredConnectorSources$,
   };
 }
 
@@ -251,6 +282,28 @@ function createExecutionThread(
         : null;
     },
   );
+}
+
+function createConnectorSourceId(
+  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
+  automationContext$: ThreadContext["automationContext$"],
+  feishuContext$: ThreadContext["feishuContext$"],
+) {
+  return computed(async (get): Promise<string | undefined> => {
+    const event = await get(pickedEvent$);
+    // Only these inputs carry the integration account that delivered them.
+    switch (event?.contextType) {
+      case "automation": {
+        return (await get(automationContext$))?.connectorSourceId ?? undefined;
+      }
+      case "feishu": {
+        return (await get(feishuContext$))?.connectorSourceId;
+      }
+      default: {
+        return undefined;
+      }
+    }
+  });
 }
 
 function createThreadExecutionBootstrap(

@@ -24,7 +24,6 @@ import {
 import {
   type BuiltinConnectorRuntimeContext,
   type ConnectorEnvBindingSet,
-  type ConnectedAccounts,
   type ConnectedAccountsError,
   type EffectiveConnectorScope,
   emptyBuiltinConnectorRuntimeContext,
@@ -53,19 +52,16 @@ function isConnectorRuntimeError(
  * Turns the selected connector accounts into runtime environment, credentials
  * and the permission manifest for the execution identity.
  */
-export function createConnectorRuntimeSignals(
-  threadContext: ThreadContext,
-  connectedAccounts: ConnectedAccounts,
-) {
+export function createConnectorRuntimeSignals(threadContext: ThreadContext) {
   const execution$ = threadContext.executionBootstrap$;
   const runtimeInputs = createConnectorRuntimeInputSignals(
     execution$,
     threadContext.dispatchTiming$,
-    connectedAccounts,
+    threadContext,
   );
   const secretPlan = createEagerSecretPlanSignals(runtimeInputs);
   const connectorSecrets = createConnectorSecretSignals(
-    connectedAccounts,
+    threadContext,
     secretPlan,
   );
   return {
@@ -74,7 +70,7 @@ export function createConnectorRuntimeSignals(
     eagerSecretPlan$: secretPlan.eagerSecretPlan$,
     eagerCredentialContext$: connectorSecrets.eagerCredentialContext$,
     environment$: createConnectorEnvironmentSignal(
-      connectedAccounts,
+      threadContext,
       connectorSecrets,
     ),
   };
@@ -87,11 +83,11 @@ type ConnectorRuntimeInputSignals = ReturnType<
 function createConnectorRuntimeInputSignals(
   execution$: ThreadContext["executionBootstrap$"],
   dispatchTiming$: ThreadContext["dispatchTiming$"],
-  connectedAccounts: ConnectedAccounts,
+  threadContext: ThreadContext,
 ) {
   const { connectorCatalog$, connectorScope$, connectorSelection$ } =
-    connectedAccounts;
-  const { connectorSnapshot$ } = connectedAccounts;
+    threadContext;
+  const { connectorSnapshot$ } = threadContext;
   const bodyEnvironment$ = createRunBodyEnvironmentSignal(execution$);
   const permissionPolicies$ = computed(async (get) => {
     const execution = await get(execution$);
@@ -213,16 +209,16 @@ function createEagerSecretPlanSignals(inputs: ConnectorRuntimeInputSignals) {
 type ConnectorSecretSignals = ReturnType<typeof createConnectorSecretSignals>;
 
 function createConnectorSecretSignals(
-  connectedAccounts: ConnectedAccounts,
+  threadContext: ThreadContext,
   plan: EagerSecretPlanSignals,
 ) {
-  const { selectedStoredConnectorSources$ } = connectedAccounts;
+  const { selectedConnectorSources$ } = threadContext;
   const { eagerSecretPlan$ } = plan;
   const encryptedRows$ = computed(
     async (get): Promise<readonly StoredConnectorEncryptedSecretRow[]> => {
       const [plan, sources] = await Promise.all([
         get(eagerSecretPlan$),
-        get(selectedStoredConnectorSources$),
+        get(selectedConnectorSources$),
       ]);
       if (isConnectorRuntimeError(plan) || plan.names.size === 0) {
         return [];
@@ -315,10 +311,10 @@ function createConnectorSecretSignals(
 
 /** The connector source's contribution to the Run environment. */
 function createConnectorEnvironmentSignal(
-  connectedAccounts: ConnectedAccounts,
+  threadContext: ThreadContext,
   connectorSecrets: ConnectorSecretSignals,
 ) {
-  const { connectorSnapshot$ } = connectedAccounts;
+  const { connectorSnapshot$ } = threadContext;
   const { connectorContext$ } = connectorSecrets;
   const environment$ = computed(
     async (get): Promise<Environment | ConnectorRuntimeError> => {

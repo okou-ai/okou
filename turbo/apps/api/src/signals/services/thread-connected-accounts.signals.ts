@@ -22,7 +22,10 @@ import { now, nowDate } from "../../lib/time";
 import { db$ } from "../external/db";
 import { safeSync } from "../utils";
 import { agentConnectorScopeFromRows } from "./agent-connector-scope.service";
-import type { BootstrapConnectorObservation } from "./agent-run-context.signals";
+import type {
+  AgentRunContextSignals,
+  BootstrapConnectorObservation,
+} from "./agent-run-context.signals";
 import type {
   ApiDispatchTimingCollector,
   ApiDispatchTimingDimensions,
@@ -69,8 +72,15 @@ import type {
   ConnectorSourceResult,
   ConnectorSourceSnapshot,
 } from "./execution-connector-sources.service";
-import type { ThreadContext } from "./thread-context.signals";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
+
+type ExecutionBootstrap$ = Computed<Promise<AgentRunContextSignals>>;
+type ExecutionThread$ = Computed<
+  Promise<PickedThreadInputEvent["thread"] | null>
+>;
+/** The integration account that delivered the picked input, if any. */
+type ConnectorSourceId$ = Computed<Promise<string | undefined>>;
+type DispatchTiming$ = Computed<ApiDispatchTimingCollector>;
 
 export type ConnectedAccountsError = ReturnType<typeof badRequestMessage>;
 
@@ -104,11 +114,22 @@ export interface ConnectedAccounts {
  */
 export function createConnectedAccountsSignals(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
-  threadContext: ThreadContext,
+  execution$: ExecutionBootstrap$,
+  executionThread$: ExecutionThread$,
+  connectorSourceId$: ConnectorSourceId$,
+  dispatchTiming$: DispatchTiming$,
 ): ConnectedAccounts {
-  const execution$ = threadContext.executionBootstrap$;
-  const inputs = createConnectorInputSignals(pickedEvent$, threadContext);
-  const accounts = createThreadAccountSignals(execution$, inputs);
+  const inputs = createConnectorInputSignals(
+    pickedEvent$,
+    execution$,
+    executionThread$,
+    dispatchTiming$,
+  );
+  const accounts = createThreadAccountSignals(
+    execution$,
+    connectorSourceId$,
+    inputs,
+  );
   const prepared = createConnectorPreparationSignals(inputs, accounts);
   const storedRows = createStoredConnectorRowSignals(
     execution$,
@@ -195,9 +216,10 @@ type ConnectorInputSignals = ReturnType<typeof createConnectorInputSignals>;
 
 function createConnectorInputSignals(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
-  threadContext: ThreadContext,
+  execution$: ExecutionBootstrap$,
+  executionThread$: ExecutionThread$,
+  dispatchTiming$: DispatchTiming$,
 ) {
-  const execution$ = threadContext.executionBootstrap$;
   const connectorInput$ = computed(async (get) => {
     const [event, execution] = await Promise.all([
       get(pickedEvent$),
@@ -210,7 +232,7 @@ function createConnectorInputSignals(
       orgId: execution.orgId,
       userId: execution.userId,
       chatThreadId: event.chatThreadId,
-      timing: get(threadContext.dispatchTiming$),
+      timing: get(dispatchTiming$),
     };
   });
   const connectorScope$ = computed(
@@ -248,24 +270,6 @@ function createConnectorInputSignals(
   const featureSwitchContext$ = computed(async (get) => {
     return await get((await get(execution$)).featureSwitches$);
   });
-  const connectorSourceId$ = computed(async (get) => {
-    const event = await get(pickedEvent$);
-    // Only these inputs carry the integration account that delivered them.
-    switch (event?.contextType) {
-      case "automation": {
-        return (
-          (await get(threadContext.automationContext$))?.connectorSourceId ??
-          undefined
-        );
-      }
-      case "feishu": {
-        return (await get(threadContext.feishuContext$))?.connectorSourceId;
-      }
-      default: {
-        return undefined;
-      }
-    }
-  });
   const customConnectorDefinitions$ = computed(async (get) => {
     const { timing } = await get(connectorInput$);
     return await timing.measure(
@@ -277,7 +281,7 @@ function createConnectorInputSignals(
     );
   });
   const ownedThread$ = computed(async (get) => {
-    const thread = await get(threadContext.executionThread$);
+    const thread = await get(executionThread$);
     if (!thread) {
       return null;
     }
@@ -292,7 +296,6 @@ function createConnectorInputSignals(
     connectorScope$,
     connectorCatalog$,
     featureSwitchContext$,
-    connectorSourceId$,
     customConnectorDefinitions$,
     ownedThread$,
   };
@@ -301,11 +304,11 @@ function createConnectorInputSignals(
 type ThreadAccountSignals = ReturnType<typeof createThreadAccountSignals>;
 
 function createThreadAccountSignals(
-  execution$: ThreadContext["executionBootstrap$"],
+  execution$: ExecutionBootstrap$,
+  connectorSourceId$: ConnectorSourceId$,
   inputs: ConnectorInputSignals,
 ) {
-  const { connectorInput$, connectorScope$, connectorSourceId$, ownedThread$ } =
-    inputs;
+  const { connectorInput$, connectorScope$, ownedThread$ } = inputs;
   const threadSelections$ = computed(
     async (get): Promise<readonly ConnectorAccountSelection[]> => {
       const { chatThreadId } = await get(connectorInput$);
@@ -493,7 +496,7 @@ type StoredConnectorRowSignals = ReturnType<
 >;
 
 function createStoredConnectorRowSignals(
-  execution$: ThreadContext["executionBootstrap$"],
+  execution$: ExecutionBootstrap$,
   accounts: ThreadAccountSignals,
   prepared: ConnectorPreparationSignals,
 ) {
@@ -574,7 +577,7 @@ function createStoredConnectorRowSignals(
 }
 
 function createStoredConnectorSnapshotSignals(
-  execution$: ThreadContext["executionBootstrap$"],
+  execution$: ExecutionBootstrap$,
   inputs: ConnectorInputSignals,
   storedRows: StoredConnectorRowSignals,
 ) {
@@ -653,7 +656,7 @@ type CustomConnectorStorageSignals = ReturnType<
 >;
 
 function createCustomConnectorStorageSignals(
-  execution$: ThreadContext["executionBootstrap$"],
+  execution$: ExecutionBootstrap$,
   inputs: ConnectorInputSignals,
   accounts: ThreadAccountSignals,
 ) {

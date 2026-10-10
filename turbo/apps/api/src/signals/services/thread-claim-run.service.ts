@@ -27,7 +27,6 @@ import {
 } from "./run-prompt-and-skills";
 import {
   type ConnectorScopeSource,
-  createConnectedAccountsSignals,
   type EffectiveConnectorScope,
   isEmptyRunConnectorScope,
   type RunConnectorCatalogSelection,
@@ -2885,14 +2884,7 @@ export function createThreadClaimRunObjects(
     },
   );
   const executionContext$ = threadContext.executionBootstrap$;
-  const connectedAccounts = createConnectedAccountsSignals(
-    pickedEvent$,
-    threadContext,
-  );
-  const connectorRuntime = createConnectorRuntimeSignals(
-    threadContext,
-    connectedAccounts,
-  );
+  const connectorRuntime = createConnectorRuntimeSignals(threadContext);
   const preCreateBootstrapMetadata$ = computed(async (get) => {
     const startedAt = now();
     const selected = await get(executionContext$);
@@ -2995,7 +2987,7 @@ export function createThreadClaimRunObjects(
     },
   );
   const preCreateConnectorCatalogConnectorCatalog$ =
-    connectedAccounts.connectorCatalog$;
+    threadContext.connectorCatalog$;
   const preCreatePermissionPoliciesPermissionPolicies$ =
     connectorRuntime.permissionPolicies$;
   const sessionPrompt$ = computed(async (get) => {
@@ -3183,8 +3175,8 @@ export function createThreadClaimRunObjects(
     framework$: runFramework$,
     modelRoute$: modelRoute$,
   };
-  const connectorSelection$ = connectedAccounts.connectorSelection$;
-  const connectorSnapshot$ = connectedAccounts.connectorSnapshot$;
+  const connectorSelection$ = threadContext.connectorSelection$;
+  const connectorSnapshot$ = threadContext.connectorSnapshot$;
   const preCreateExecutionConnectors = {
     connectorSelection$,
     connectorSnapshot$,
@@ -5016,7 +5008,7 @@ export function createThreadClaimRunObjects(
         // Connector reads start independently of prompt/model material. A
         // prefetch miss joins the same loader once for this selected identity.
         get((await get(executionContext$)).connectors$),
-        get(connectedAccounts.threadSelections$),
+        get(threadContext.connectorThreadSelections$),
       ]);
       signal.throwIfAborted();
       if (launch.kind === "rejected") {
