@@ -20,13 +20,12 @@ function button(name: string) {
   }
   return found;
 }
-async function openDebug(notify = true, debug = true) {
+async function openDebug(debug = true) {
   await setupPage({
     context,
     path: "/agents?settings=debug",
     featureSwitches: {
       [FeatureSwitchKey.OkouDebug]: debug,
-      [FeatureSwitchKey.NotifyMail]: notify,
     },
   });
   await screen.findByRole("heading", { name: debug ? "Debug" : "Preference" });
@@ -149,21 +148,15 @@ test("explains unsubscribe skips without claiming an email was sent", async () =
   ).not.toBeInTheDocument();
 });
 
-test.each([
-  [false, true],
-  [true, false],
-])(
-  "hides the test action without both switches (%s, %s)",
-  async (notify, debug) => {
-    context.mocks.api(debugMorningBriefEmailContract.send, () => {
-      throw new Error("Hidden action must not send");
-    });
-    await openDebug(notify, debug);
-    expect(
-      screen.queryByText("Morning Brief test email"),
-    ).not.toBeInTheDocument();
-  },
-);
+test("hides the test action without Okou Debug", async () => {
+  context.mocks.api(debugMorningBriefEmailContract.send, () => {
+    throw new Error("Hidden action must not send");
+  });
+  await openDebug(false);
+  expect(
+    screen.queryByText("Morning Brief test email"),
+  ).not.toBeInTheDocument();
+});
 
 test("supports keyboard activation with one submission", async () => {
   let requests = 0;

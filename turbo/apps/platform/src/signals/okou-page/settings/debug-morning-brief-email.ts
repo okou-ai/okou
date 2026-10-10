@@ -18,10 +18,7 @@ interface TestEmail {
 const request$ = state<TestEmail | null>(null);
 export const debugMorningBriefEmailEnabled$ = computed(async (get) => {
   const features = await get(featureSwitch$);
-  return (
-    features[FeatureSwitchKey.OkouDebug] &&
-    features[FeatureSwitchKey.NotifyMail]
-  );
+  return features[FeatureSwitchKey.OkouDebug];
 });
 const currentRequest$ = computed(async (get) => {
   const request = get(request$);

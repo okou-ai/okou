@@ -4,8 +4,6 @@ import type {
   NotificationResponse,
   NotifyMailBody,
 } from "@okouai/api-contracts/contracts/notifications";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { emailOutbox } from "@okouai/db/schema/email-outbox";
 import { emailSuppressions } from "@okouai/db/schema/email-suppression";
@@ -23,7 +21,6 @@ import {
 import { env, optionalEnv } from "../../lib/env";
 import { isMorningBriefNotificationSource } from "../../lib/morning-brief-notification-source";
 import { db$, writeDb$ } from "../external/db";
-import { userFeatureSwitchOverrides } from "./feature-switches.service";
 import { emailSubscription$ } from "./email-subscription.service";
 import {
   buildFromAddress,
@@ -50,17 +47,6 @@ function response(
     reason: receipt.reason,
     deduplicated,
   };
-}
-
-export function mailNotificationsEnabled(owner: Owner) {
-  const overrides$ = userFeatureSwitchOverrides(owner.orgId, owner.userId);
-  return computed(async (get) => {
-    const overrides = await get(overrides$);
-    return isFeatureEnabled(FeatureSwitchKey.NotifyMail, {
-      ...owner,
-      overrides,
-    });
-  });
 }
 
 function notificationKeyScope(owner: Owner, key: string) {

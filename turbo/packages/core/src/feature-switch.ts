@@ -56,11 +56,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Capture and publish sandbox covers for HTML artifacts.",
     enabled: false,
   },
-  [FeatureSwitchKey.NotifyMail]: {
-    maintainer: "lancy@okou.ai",
-    description: "Allow agents to send Okou email notifications to their user",
-    enabled: true,
-  },
   [FeatureSwitchKey.HomeTaskRecommendations]: {
     maintainer: "yuma@okou.ai",
     description:
