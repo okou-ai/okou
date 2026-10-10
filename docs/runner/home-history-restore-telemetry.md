@@ -102,5 +102,5 @@ guide does not authorize rollout, floor activation, SQL execution or cache purge
 
 Compare containing artifact/API cohorts, source, framework, size, representation,
 outcome and missing-field coverage. Removing duplicate body I/O is not a measured
-startup speedup; controlled native resume/append/checkpoint evidence and live
+startup speedup; controlled native resume/append/finalization evidence and live
 post-deployment measurements remain separate requirements.

@@ -352,8 +352,8 @@ mod tests {
             });
         }
 
-        let active_runs = test_active_runs();
-        let states = snapshot.current_held_home_states(&active_runs, None);
+        // Observe stored state directly; the current view applies its own cap.
+        let states = snapshot.loaded_home_cache_states();
 
         assert_eq!(states.len(), MAX_HELD_HOME_STATES);
         assert!(!states.iter().any(|state| state.reuse_key == "sess-0000"));

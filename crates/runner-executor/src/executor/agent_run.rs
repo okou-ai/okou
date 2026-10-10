@@ -2846,7 +2846,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
 
     // Guest-agent receives JOB_TIMEOUT as the user execution budget. The
     // sandbox supervisor remains a later hard fallback so guest-agent can
-    // terminate the CLI and create a recovery checkpoint first.
+    // terminate the CLI and persist recovery outputs first.
     let host_oom_evidence_since = host_oom_evidence_since_now();
     let t = Instant::now();
     let handle = sandbox
@@ -3016,7 +3016,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
     }
 
     // Supervise normal exit or cancellation. A user request first asks
-    // guest-agent to checkpoint recovery state and exit; hard cancellation and
+    // guest-agent to persist recovery state and exit; hard cancellation and
     // bounded fallback use the existing supervised-process cancellation path.
     let guest_process_pid = handle.guest_pid;
     let mut process_cancel = handle.take_cancel_handle();

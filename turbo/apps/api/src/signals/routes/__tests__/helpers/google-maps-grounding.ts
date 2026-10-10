@@ -3,7 +3,7 @@ import { HttpResponse } from "msw";
 import { mockGoogleLlm } from "./google-voice";
 
 export const VERTEX_MAPS_URL =
-  /^https:\/\/aiplatform\.googleapis\.com\/v1beta1\/projects\/[^/]+\/locations\/global\/publishers\/google\/models\/gemini-2\.5-flash:generateContent$/u;
+  /^https:\/\/aiplatform\.googleapis\.com\/v1beta1\/projects\/[^/]+\/locations\/global\/publishers\/google\/models\/gemini-3\.1-flash-lite:generateContent$/u;
 
 interface GroundingSource {
   readonly title: string;
@@ -26,32 +26,39 @@ interface VertexMapsResponseOptions {
   }[];
   readonly sources?: readonly GroundingSource[];
   readonly supports?: readonly GroundingSupport[];
+  readonly mapsQueries?: number;
+  readonly cachedInputTokens?: number;
   readonly inputTokens?: number;
   readonly candidateTokens?: number;
   readonly thoughtTokens?: number;
 }
 
-export function vertexMapsResponse(options: VertexMapsResponseOptions = {}) {
+export function vertexMapsContent(options: VertexMapsResponseOptions = {}) {
   const answer = options.answer ?? "Café Central is open nearby.";
+  const mapsQueries = options.mapsQueries ?? 1;
   const sources =
     options.sources ??
-    ([
-      {
-        title: "Café Central",
-        uri: "https://maps.google.com/?cid=123",
-      },
-    ] as const);
+    (mapsQueries === 0
+      ? []
+      : ([
+          {
+            title: "Café Central",
+            uri: "https://maps.google.com/?cid=123",
+          },
+        ] as const));
   const supports =
     options.supports ??
-    ([
-      {
-        startIndex: 0,
-        endIndex: Buffer.byteLength(answer),
-        text: answer,
-        sourceIndices: [0],
-      },
-    ] as const);
-  return HttpResponse.json({
+    (mapsQueries === 0
+      ? []
+      : ([
+          {
+            startIndex: 0,
+            endIndex: Buffer.byteLength(answer),
+            text: answer,
+            sourceIndices: [0],
+          },
+        ] as const));
+  return {
     candidates: [
       {
         finishReason: "STOP",
@@ -60,6 +67,9 @@ export function vertexMapsResponse(options: VertexMapsResponseOptions = {}) {
           parts: options.parts ?? [{ text: answer }],
         },
         groundingMetadata: {
+          retrievalQueries: Array.from({ length: mapsQueries }, (_, index) => {
+            return `coffee query ${index}`;
+          }),
           groundingChunks: sources.map((source) => {
             return { maps: source };
           }),
@@ -83,6 +93,7 @@ export function vertexMapsResponse(options: VertexMapsResponseOptions = {}) {
     ],
     usageMetadata: {
       promptTokenCount: options.inputTokens ?? 100,
+      cachedContentTokenCount: options.cachedInputTokens ?? 0,
       candidatesTokenCount: options.candidateTokens ?? 40,
       thoughtsTokenCount: options.thoughtTokens ?? 10,
       // Maps-provided tool input is reported separately and is not billable.
@@ -93,8 +104,12 @@ export function vertexMapsResponse(options: VertexMapsResponseOptions = {}) {
         (options.thoughtTokens ?? 10) +
         999,
     },
-    modelVersion: "gemini-2.5-flash",
-  });
+    modelVersion: "gemini-3.1-flash-lite",
+  };
+}
+
+export function vertexMapsResponse(options: VertexMapsResponseOptions = {}) {
+  return HttpResponse.json(vertexMapsContent(options));
 }
 
 export function mockGoogleMapsGrounding() {

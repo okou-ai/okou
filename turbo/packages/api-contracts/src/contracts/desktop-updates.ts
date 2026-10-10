@@ -54,12 +54,13 @@ const squirrelMacReleasesSchema = z.object({
 export type SquirrelMacReleases = z.infer<typeof squirrelMacReleasesSchema>;
 
 /**
- * Every route that resolves a release reads the same upstream release-asset
- * manifest, so they all share the same `503`: the manifest host was
+ * Native appcast and release/download routes read the same upstream release-asset
+ * manifest, so they share the same `503`: the manifest host was
  * unreachable, the API retried within its bound, and no manifest recent enough
  * to serve was cached. It is deliberately distinct from `404` ("this feed
  * resolves to no release") and from `500` ("the manifest is missing or
- * invalid"), which stay loud because they need a human.
+ * invalid"), which stay loud because they need a human. The frozen Squirrel
+ * migration feed is independent of this mutable manifest.
  */
 export const desktopUpdatesContract = c.router({
   compatibility: {
@@ -172,6 +173,6 @@ export const desktopUpdatesContract = c.router({
       404: apiErrorSchema,
       503: apiErrorSchema,
     },
-    summary: "Get an identity-specific desktop auto-update feed",
+    summary: "Get the fixed Electron-to-Native desktop migration feed",
   },
 });

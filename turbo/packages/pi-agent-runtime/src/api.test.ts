@@ -32,7 +32,7 @@ describe("Pi API facade", () => {
       messageCount: 0,
       hasPendingToolCalls: false,
       pendingToolIds: [],
-      isSettledCheckpoint: false,
+      isSettledHistory: false,
     });
     expect(JSON.parse(jsonl.split("\n")[0] ?? "{}")).toMatchObject({
       id: SESSION_ID,
@@ -137,12 +137,12 @@ describe("Pi API facade", () => {
       messageCount: 1,
       hasPendingToolCalls: false,
       pendingToolIds: [],
-      isSettledCheckpoint: true,
+      isSettledHistory: true,
     });
   });
 
   it.each(["empty", "partial"] as const)(
-    "accepts %s error checkpoints without dropping completed work",
+    "accepts %s error history without dropping completed work",
     (content) => {
       const session = MemoryPiSession.create({
         cwd: "/home/user/workspace",
@@ -179,14 +179,14 @@ describe("Pi API facade", () => {
         messageCount: 4,
         hasPendingToolCalls: false,
         pendingToolIds: [],
-        isSettledCheckpoint: true,
+        isSettledHistory: true,
       });
       expect(MemoryPiSession.fromJsonl(jsonl).toJsonl()).toBe(jsonl);
       expect(session.toJsonl()).toBe(jsonl);
     },
   );
 
-  it("keeps aborted and unresolved error checkpoints unsettled", () => {
+  it("keeps aborted and unresolved error history unsettled", () => {
     for (const message of [
       fauxAssistantMessage("cancelled", { stopReason: "aborted" }),
       fauxAssistantMessage(fauxToolCall("read", { path: "README.md" }), {
@@ -198,7 +198,7 @@ describe("Pi API facade", () => {
         id: SESSION_ID,
       });
       session.appendMessage(message);
-      expect(inspectPiSessionJsonl(session.toJsonl()).isSettledCheckpoint).toBe(
+      expect(inspectPiSessionJsonl(session.toJsonl()).isSettledHistory).toBe(
         false,
       );
     }

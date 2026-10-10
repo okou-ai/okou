@@ -71,17 +71,16 @@ const DISCORD_RESPONSE_WINDOW_MS = 3500;
 const STALE_CONTROL =
   "This control has expired or your access has changed. Run the command again.";
 const NO_MODEL_CONVERSATION =
-  "Start or enter an existing Okou conversation before using `/okou model`.";
+  "Start or enter an existing Okou conversation before using `/model`.";
 function discordHelp(): string {
   return [
     "**Okou in Discord**",
     "Mention Okou in a server channel to start a conversation, or message the bot directly.",
-    "`/okou connect` — connect your account through authenticated App Works",
-    "`/okou disconnect` — disconnect your account from this workspace",
-    "`/okou switch` — show the workspace default agent used in Discord",
-    "`/okou model` — choose an allowed model for this conversation",
-    "`/okou org` — choose the workspace for bot DMs",
-    "Existing server threads keep their agent and model unless you run `/okou model` inside them. Long task replies arrive from the bot.",
+    "`/connect` — view your connection, connect through App Works, or choose your workspace for bot DMs",
+    "`/disconnect` — disconnect your account from this workspace",
+    "`/switch` — show the workspace default agent used in Discord",
+    "`/model` — choose an allowed model for this conversation",
+    "Existing server threads keep their agent and model unless you run `/model` inside them. Long task replies arrive from the bot.",
     discordSetupGuidance(),
   ].join("\n");
 }
@@ -136,6 +135,23 @@ const discordChannelFailure$ = command(
   },
 );
 
+const discordConnectionStatus$ = command(
+  async (
+    { get },
+    binding: DiscordVerifiedBinding,
+    signal: AbortSignal,
+  ): Promise<DiscordAccountMessage> => {
+    const agent = await get(discordEffectiveAgent(binding));
+    signal.throwIfAborted();
+    const agentStatus = agent
+      ? `Current agent: ${discordAccountLabel(agent.displayName || agent.name)}.`
+      : "No accessible workspace default agent is configured. Ask a workspace admin to set one in Okou.";
+    return discordAccountMessage(
+      `Your account already has a verified connection to this workspace. ${agentStatus} Mention Okou in a server channel or message the bot to start chatting. Manage your connection in [Works](${new URL("/works", env("APP_URL")).toString()}).`,
+    );
+  },
+);
+
 const discordOrgPicker$ = command(
   async (
     { get, set },
@@ -149,13 +165,27 @@ const discordOrgPicker$ = command(
   ): Promise<DiscordAccountMessage> => {
     if (args.actor.guildId) {
       return discordAccountMessage(
-        "In a server, Okou uses that server's workspace. Use `/okou org` in a direct message to the bot to choose your DM workspace.",
+        "In a server, Okou uses that server's workspace. Use `/connect` in a direct message to the bot to choose your DM workspace.",
       );
     }
     const bindings = await get(discordSenderBindings(args.actor.discordUserId));
     signal.throwIfAborted();
     if (bindings.length === 0) {
       return discordAccountMessage(discordSetupGuidance());
+    }
+    if (
+      bindings.length === 1 &&
+      args.page === undefined &&
+      args.selection === undefined
+    ) {
+      const binding = bindings[0]!;
+      const channelFailure = await set(
+        discordChannelFailure$,
+        binding,
+        args.actor,
+        signal,
+      );
+      return channelFailure ?? set(discordConnectionStatus$, binding, signal);
     }
     if (args.selection !== undefined) {
       const selected = bindings.find((binding) => {
@@ -183,7 +213,7 @@ const discordOrgPicker$ = command(
       );
       return discordAccountMessage(
         saved
-          ? "Workspace selected for bot DMs. Use `/okou model` in an existing conversation to change its model."
+          ? "Workspace selected for bot DMs. Use `/model` in an existing conversation to change its model."
           : STALE_CONTROL,
       );
     }
@@ -347,7 +377,7 @@ const discordModelPicker$ = command(
       });
       if (!option) {
         return discordAccountMessage(
-          "You no longer have access to that model. Run `/okou model` again.",
+          "You no longer have access to that model. Run `/model` again.",
         );
       }
       // Revalidate after the run model lookup before writing to the original route.
@@ -388,7 +418,7 @@ const discordModelPicker$ = command(
           ? `Model selected for this conversation: ${option.label}.`
           : threadModel.kind === "no_thread"
             ? STALE_CONTROL
-            : "You no longer have access to that model. Run `/okou model` again.",
+            : "You no longer have access to that model. Run `/model` again.",
       );
     }
     return discordAccountPicker({
@@ -405,7 +435,7 @@ const discordModelPicker$ = command(
 
 const discordBoundAccountAction$ = command(
   async (
-    { get, set },
+    { set },
     args: {
       readonly action:
         DiscordCommandName | DiscordPickerState["action"] | undefined;
@@ -419,14 +449,7 @@ const discordBoundAccountAction$ = command(
     signal: AbortSignal,
   ): Promise<DiscordAccountMessage> => {
     if (args.action === "connect") {
-      const agent = await get(discordEffectiveAgent(args.binding));
-      signal.throwIfAborted();
-      const agentStatus = agent
-        ? `Current agent: ${discordAccountLabel(agent.displayName || agent.name)}.`
-        : "No accessible workspace default agent is configured. Ask a workspace admin to set one in Okou.";
-      return discordAccountMessage(
-        `Your account already has a verified connection to this workspace. ${agentStatus} Mention Okou in a server channel or message the bot to start chatting. Manage your connection in [Works](${new URL("/works", env("APP_URL")).toString()}).`,
-      );
+      return set(discordConnectionStatus$, args.binding, signal);
     }
     if (args.action === "disconnect") {
       const disconnected = await set(
@@ -484,13 +507,13 @@ const discordAccountAction$ = command(
         selection = interaction.data.values[0];
       }
     }
-    const subcommand: DiscordCommandName | undefined =
-      interaction.type === 2 ? interaction.data.options[0].name : undefined;
-    const action = subcommand ?? control?.action;
+    const commandName: DiscordCommandName | undefined =
+      interaction.type === 2 ? interaction.data.name : undefined;
+    const action = commandName ?? control?.action;
     if (action === "help") {
       return discordAccountMessage(discordHelp());
     }
-    if (action === "org") {
+    if (action === "org" || (action === "connect" && !actor.guildId)) {
       return set(
         discordOrgPicker$,
         { actor, botToken, page: control?.page, selection },

@@ -41,11 +41,11 @@ public struct DesktopCompatibility: Sendable {
     // Additive rollout: an older API has no policy route. It cannot erase a
     // confirmed rejection/floor. #38098 owns removal after API rollback drains.
     if response.status == 404 { return }
-    guard response.status == 200, let object = response.body.object,
-      let value = object["minimumSupportedVersion"],
-      value == .null || value.string.flatMap(DesktopVersion.init) != nil
+    guard response.status == 200,
+      let policy = try? response.decode(DesktopCompatibilityPolicy.self),
+      policy.minimumSupportedVersion.map({ DesktopVersion($0) != nil }) ?? true
     else { throw DesktopFailure("invalid_policy", "Unable to verify Desktop version support") }
-    minimumSupportedVersion = value.string
+    minimumSupportedVersion = policy.minimumSupportedVersion
     rejected = false
   }
   public func permitsUpdate(_ version: String) -> Bool {

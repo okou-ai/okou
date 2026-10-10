@@ -36,7 +36,7 @@ const {
   waitForRunStatus,
   completeChatRunOk,
   cancelChatRun,
-  mockPiCheckpointObjectStore,
+  mockPiObjectStore,
   mockPiResourceArchiveDownloads,
   piSandboxBaseSession,
 } = createChatEventsFixture(context);
@@ -319,7 +319,7 @@ describe("CHAT-02: run-level model overrides", () => {
       );
 
       mockPiResourceArchiveDownloads();
-      const historyObjects = mockPiCheckpointObjectStore();
+      const historyObjects = mockPiObjectStore();
 
       const prompt = "use the Okou CLI through native subscription Luna";
       const run = await sendChatRun(actor, {

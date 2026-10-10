@@ -28,7 +28,7 @@ const RUN_SCOPED_ENV_READER_NAMES: &[&str] = &[
 const RUN_SCOPED_PATH_READER_NAMES: &[&str] = &[
     "runtime_dir",
     "session_id_file",
-    "checkpoint_error_file",
+    "finalization_error_file",
     "final_session_history_identity_file",
     "failure_diagnostic_file",
     "system_log_file",

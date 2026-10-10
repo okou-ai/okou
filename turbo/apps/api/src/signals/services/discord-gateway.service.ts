@@ -1,4 +1,6 @@
 import { command } from "ccstate";
+import { discordChatIngress } from "@okouai/db/schema/discord-chat-ingress";
+import { eq } from "drizzle-orm";
 import {
   createErrorResponse,
   type ApiErrorKey,
@@ -27,7 +29,6 @@ import { safeJsonParse, tapError } from "../utils";
 import { processCanonicalDiscordIngress$ } from "./canonical-discord-ingress-processor.service";
 import {
   admitCanonicalDiscordChatEvent$,
-  findCanonicalDiscordIngressByMessage,
   hasCanonicalDiscordMessageReceipt,
 } from "./discord-chat-ingress.service";
 import { getDiscordAppConfig } from "./discord-config";
@@ -58,7 +59,12 @@ async function existingMessageResponse(
   message: DiscordMessageCreate,
   signal: AbortSignal,
 ): Promise<Response | undefined> {
-  const previous = await findCanonicalDiscordIngressByMessage(db, message.id);
+  const messageId = message.id;
+  const [previous] = await db
+    .select({ id: discordChatIngress.id, payload: discordChatIngress.payload })
+    .from(discordChatIngress)
+    .where(eq(discordChatIngress.messageId, messageId))
+    .limit(1);
   signal.throwIfAborted();
   if (previous) {
     const acceptedEnvelope = discordGatewayEnvelopeSchema.parse(

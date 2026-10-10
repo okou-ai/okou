@@ -1295,23 +1295,23 @@ test("Mark the current conversation unread after navigating away", async () => {
   );
 });
 
-test("An open native-only thread reads each newer delivery without a terminal Run", async () => {
+test("An open thread with runless messages reads each newer delivery without a terminal Run", async () => {
   const firstAt = "2026-03-10T00:04:00Z";
   const secondAt = "2026-03-10T00:05:00Z";
   const thirdAt = "2026-03-10T00:06:00Z";
   mockNow(Date.parse("2026-03-10T00:04:30Z"), context.signal);
   prepareDefaultAgent();
   mockSidebarThreadStory([
-    createThread(EXISTING_THREAD_ID, "Native brief"),
+    createThread(EXISTING_THREAD_ID, "Runless updates"),
     createThread(INCIDENT_THREAD_ID, "Other conversation"),
   ]);
 
   const rows = mockChatEventRows([
     {
-      id: "native-brief-1",
+      id: "runless-message-1",
       threadId: EXISTING_THREAD_ID,
       eventType: "output.message" as const,
-      content: "First native brief",
+      content: "First runless update",
       seqId: 1,
       createdAt: firstAt,
     },
@@ -1381,7 +1381,9 @@ test("An open native-only thread reads each newer delivery without a terminal Ru
     path: `/chats/${EXISTING_THREAD_ID}`,
     sharedWorkerTestTransport: "message-port",
   });
-  await expect(screen.findByText("First native brief")).resolves.toBeVisible();
+  await expect(
+    screen.findByText("First runless update"),
+  ).resolves.toBeVisible();
   await waitFor(() => {
     expect(markedThrough).toStrictEqual([firstAt]);
   });
@@ -1391,10 +1393,10 @@ test("An open native-only thread reads each newer delivery without a terminal Ru
   rows.push(
     ...mockChatEventRows([
       {
-        id: "native-brief-2",
+        id: "runless-message-2",
         threadId: EXISTING_THREAD_ID,
         eventType: "output.message" as const,
-        content: "Second native brief",
+        content: "Second runless update",
         seqId: 2,
         createdAt: secondAt,
       },
@@ -1414,17 +1416,19 @@ test("An open native-only thread reads each newer delivery without a terminal Ru
       markedThrough: [firstAt, secondAt],
       secondMarkStarted: true,
     });
-  await expect(screen.findByText("Second native brief")).resolves.toBeVisible();
+  await expect(
+    screen.findByText("Second runless update"),
+  ).resolves.toBeVisible();
 
   mockNow(Date.parse("2026-03-10T00:06:30Z"), context.signal);
   unreadAt = thirdAt;
   rows.push(
     ...mockChatEventRows([
       {
-        id: "native-brief-3",
+        id: "runless-message-3",
         threadId: EXISTING_THREAD_ID,
         eventType: "output.message" as const,
-        content: "Third native brief",
+        content: "Third runless update",
         seqId: 3,
         createdAt: thirdAt,
       },
@@ -1435,7 +1439,9 @@ test("An open native-only thread reads each newer delivery without a terminal Ru
   releaseSecondMark.resolve();
 
   // A pending indicator refresh must not block the actual message delivery.
-  await expect(screen.findByText("Third native brief")).resolves.toBeVisible();
+  await expect(
+    screen.findByText("Third runless update"),
+  ).resolves.toBeVisible();
   releaseThirdIndicators.resolve();
   await waitFor(() => {
     expect(markedThrough).toStrictEqual([firstAt, secondAt, thirdAt]);
@@ -1453,8 +1459,8 @@ test("An open native-only thread reads each newer delivery without a terminal Ru
 
   click(threadLinkByTitle("Other conversation"));
   await waitFor(() => {
-    expect(threadLinkByTitle("Native brief")).toHaveAccessibleName(
-      "Native brief",
+    expect(threadLinkByTitle("Runless updates")).toHaveAccessibleName(
+      "Runless updates",
     );
   });
 });

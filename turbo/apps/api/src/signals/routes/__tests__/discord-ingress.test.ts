@@ -1308,7 +1308,7 @@ describe("canonical Discord ingress", () => {
     );
     await flushWaitUntilForTest();
     expect(noticesTo(dmId)).toHaveLength(1);
-    expect(noticesTo(dmId)[0]?.content).toContain("/okou connect");
+    expect(noticesTo(dmId)[0]?.content).toContain("/connect");
     // A relay retry of the same event and a follow-up DM send nothing more.
     await postDiscordMessage(context, first);
     await postDiscordMessage(context, strangerDm("are you there?"));
@@ -1344,7 +1344,7 @@ describe("canonical Discord ingress", () => {
     expect(noticesTo(dmId)).toHaveLength(2);
   });
 
-  it("asks a DM sender with several workspaces to choose one with /okou org", async () => {
+  it("asks a DM sender with several workspaces to choose one with /connect", async () => {
     const first = await connected();
     const provider = mockDiscordProvider(first);
     const second = await track(
@@ -1372,7 +1372,7 @@ describe("canonical Discord ingress", () => {
     expect(provider.sentMessages).toHaveLength(1);
     expect(provider.sentMessages[0]).toMatchObject({
       channel_id: provider.dmChannelId,
-      content: expect.stringContaining("/okou org"),
+      content: expect.stringContaining("/connect"),
     });
     await expect(discordChatThreads(context, first)).resolves.toHaveLength(0);
     await expect(discordChatThreads(context, second)).resolves.toHaveLength(0);

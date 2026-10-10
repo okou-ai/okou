@@ -13,7 +13,6 @@
 1 discover-runner-pr-namespaces-test.sh
 1 embedded-cli-workflow-test.sh
 1 fetch-okou-desktop-artifact-test.sh
-1 kms-production-source-audit-test.sh
 1 neon-credential-mask-test.sh
 1 publish-okou-app-assets-test.sh
 1 publish-okou-cli-versioned-artifact-test.sh
@@ -38,8 +37,6 @@
 2 docker-toolchain-workflow-test.sh
 2 implicit-npm-audit-test.sh
 2 ios-testflight-workflow-test.sh
-2 kms-production-target-test.sh
-2 kms-recovery-snapshot-inspect-test.sh
 2 native-only-ci-test.sh
 2 nbd-cow-upload-test.sh
 2 normalize-github-app-private-key-test.sh
@@ -106,7 +103,6 @@
 4 dev-runner-test.sh
 4 fetch-okou-app-artifact-test.sh
 4 kms-production-exit-check-test.sh
-4 kms-production-retirement-test.sh
 4 neon-connection-string-ssl-test.sh
 4 provision-runner-kvm-test.sh
 4 prune-runner-idle-test.sh

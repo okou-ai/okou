@@ -149,7 +149,7 @@
 //! It accepts only the canonical managed runtime parent
 //! `/home/user/.vm0/guest-agent/runs`. Both requested anchors must pass the existing
 //! containment, no-follow, mount and identity checks before mutation. Once required
-//! checkpoint, identity and log readers finish, it removes all completed runtime
+//! finalization, identity and log readers finish, it removes all completed runtime
 //! children (including current/retained anchors) and managed Codex auth. It does not
 //! delete ordinary user files, framework histories/catalogs or package caches.
 //! Unlike idle preparation, Runner does not apply a rootfs-reserve gate to its

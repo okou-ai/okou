@@ -6,7 +6,7 @@ import { MAX_FILE_SIZE_BYTES } from "@okouai/api-contracts/contracts/storages";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
-import { piMemoryPhase2Checkpoints } from "@okouai/db/schema/pi-memory-phase2-checkpoint";
+import { piMemoryPhase2PublicationReceipts } from "@okouai/db/schema/pi-memory-phase2-publication-receipt";
 import { storageVersionLineage } from "@okouai/db/schema/storage-version-lineage";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { command } from "ccstate";
@@ -36,7 +36,7 @@ import {
   storageCommitPublicationPlan,
   sandboxStorageRunIsActive,
   maintenancePublicationBinding,
-  maintenanceCheckpointBinding,
+  maintenanceReceiptBinding,
   totalSize,
   terminalStorageCommitPersistedStateMatches,
   storageCommitSuccess,
@@ -47,7 +47,7 @@ interface StorageChanges {
   readonly deleted?: readonly string[];
 }
 
-export interface PiMemoryPhase2CheckpointAttestation {
+export interface PiMemoryPhase2PublicationAttestation {
   readonly schemaVersion: number;
   readonly leaseToken: string;
   readonly claimedRevision: number;
@@ -63,7 +63,7 @@ interface PrepareStorageUploadInput {
   readonly parentVersionId?: string;
   readonly baseVersion?: string;
   readonly changes?: StorageChanges;
-  readonly maintenanceAttestation?: PiMemoryPhase2CheckpointAttestation;
+  readonly maintenanceAttestation?: PiMemoryPhase2PublicationAttestation;
 }
 
 interface PrepareStorageInput extends PrepareStorageUploadInput {
@@ -81,7 +81,7 @@ interface CommitStorageUploadInput {
   readonly runId?: string;
   readonly parentVersionId?: string;
   readonly message?: string;
-  readonly maintenanceAttestation?: PiMemoryPhase2CheckpointAttestation;
+  readonly maintenanceAttestation?: PiMemoryPhase2PublicationAttestation;
 }
 
 interface CommitStorageInput extends CommitStorageUploadInput {
@@ -252,12 +252,12 @@ const guardMaintenancePreparation$ = command(
     }
     const [receipt] = await db
       .select()
-      .from(piMemoryPhase2Checkpoints)
+      .from(piMemoryPhase2PublicationReceipts)
       .where(storageMaintenanceReceiptCondition(binding))
       .limit(1);
     signal.throwIfAborted();
     if (receipt) {
-      return notFound("Pi memory maintenance checkpoint already committed");
+      return notFound("Pi memory maintenance publication already committed");
     }
     const [active] = await db
       .select({ memoryStorageId: piMemoryPhase2Jobs.memoryStorageId })
@@ -746,7 +746,7 @@ const readSandboxReceipt$ = command(
   async ({ get }, binding: MaintenanceReceiptBinding, signal: AbortSignal) => {
     const [receipt] = await get(db$)
       .select()
-      .from(piMemoryPhase2Checkpoints)
+      .from(piMemoryPhase2PublicationReceipts)
       .where(storageMaintenanceReceiptCondition(binding))
       .limit(1);
     signal.throwIfAborted();
@@ -801,7 +801,7 @@ export const commitSandboxStorageUpload$ = command(
     if ("status" in mounted) {
       return mounted;
     }
-    const binding = maintenanceCheckpointBinding(input);
+    const binding = maintenanceReceiptBinding(input);
     const receipt = binding
       ? await set(readSandboxReceipt$, binding, signal)
       : undefined;
@@ -811,7 +811,7 @@ export const commitSandboxStorageUpload$ = command(
         computeContentHashFromHashes(args.storageId, args.files) !==
           receipt.versionId
       ) {
-        return notFound("Pi memory maintenance checkpoint replay mismatch");
+        return notFound("Pi memory maintenance publication replay mismatch");
       }
       const version = await set(
         findStorageVersion$,
@@ -827,7 +827,7 @@ export const commitSandboxStorageUpload$ = command(
             fileCount: version.fileCount,
             deduplicated: true,
           })
-        : notFound("Pi memory maintenance checkpoint version not found");
+        : notFound("Pi memory maintenance publication version not found");
     }
     const terminalRetry = !sandboxStorageRunIsActive(mounted.runStatus);
     if (terminalRetry) {

@@ -68,13 +68,13 @@ export function validatePiSessionEntries(
   }
 }
 
-/** Keep strict checkpoint parsing around the pinned SDK's official migrations. */
+/** Keep strict native-history parsing around the pinned SDK's official migrations. */
 export function parseValidatedPiSessionJsonl(jsonl: string): {
   readonly header: SessionHeader;
   readonly entries: SessionEntry[];
 } {
   // The SDK parser skips malformed lines for interactive recovery. Canonical
-  // checkpoint boundaries cannot silently drop records.
+  // native-history boundaries cannot silently drop records.
   assertStrictJsonl(jsonl);
   const fileEntries = parseSessionEntries(jsonl);
   const header = fileEntries[0];

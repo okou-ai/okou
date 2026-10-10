@@ -2,7 +2,7 @@ import { computed } from "ccstate";
 import { and, asc, eq, sql, sum } from "drizzle-orm";
 import { z } from "zod";
 import { modelSettingsSchema } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { userCache } from "@okouai/db/schema/user-cache";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { userDisabledPaidTools } from "@okouai/db/schema/user-disabled-paid-tools";

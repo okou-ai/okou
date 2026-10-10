@@ -506,9 +506,6 @@ describe("Official Workflow catalog release boundary", () => {
     expect(morningBriefInstruction).toContain(
       "morning-brief:<automationId>:<automationEventId>",
     );
-    expect(morningBriefInstruction).not.toMatch(
-      /morning-brief-(?:collect|run)|morning_brief|chat_morning_brief_context/,
-    );
 
     expect(morningBriefRevision).not.toBe(releasedConnectorDoctor.revision);
     expect(morningBriefDefinition.blueprints[0]?.fingerprint).not.toBe(

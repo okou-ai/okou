@@ -19,7 +19,7 @@ const {
   entitledChatActor,
   configureSubscriptionPiModel,
   mockPiResourceArchiveDownloads,
-  mockPiCheckpointObjectStore,
+  mockPiObjectStore,
   completeSandboxFirstPiRun,
   completeChatRunOk,
   sendChatRun,
@@ -133,7 +133,7 @@ describe("Codex execution switch", () => {
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     await configureSubscriptionPiModel(actor, {}, "gpt-6-luna");
     mockPiResourceArchiveDownloads(true);
-    const historyObjects = mockPiCheckpointObjectStore();
+    const historyObjects = mockPiObjectStore();
 
     const prompt = "start this conversation on Pi";
     const first = await sendChatRun(actor, { agentId, prompt });

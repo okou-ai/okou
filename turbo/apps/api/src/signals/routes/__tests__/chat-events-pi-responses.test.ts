@@ -40,7 +40,7 @@ const {
   waitForRunStatus,
   completeChatRunOk,
   cancelChatRun,
-  mockPiCheckpointObjectStore,
+  mockPiObjectStore,
   completeSandboxFirstPiRun,
   piSandboxBaseSession,
   mockPiResourceArchiveDownloads,
@@ -231,7 +231,7 @@ describe("CHAT-02: model-first routing", () => {
     });
 
     mockPiResourceArchiveDownloads();
-    const historyObjects = mockPiCheckpointObjectStore();
+    const historyObjects = mockPiObjectStore();
     const seedPrompt = "seed the canonical Pi binding";
     const first = await sendChatRun(actor, {
       agentId,
@@ -410,7 +410,7 @@ describe("CHAT-02: model-first routing", () => {
     });
 
     mockPiResourceArchiveDownloads();
-    const historyObjects = mockPiCheckpointObjectStore();
+    const historyObjects = mockPiObjectStore();
     const prompts = [
       "start standard Luna in the canonical Pi session",
       "continue fast Luna in the same Pi session",
@@ -624,7 +624,7 @@ describe("CHAT-02: model-first routing", () => {
     });
 
     mockPiResourceArchiveDownloads();
-    const historyObjects = mockPiCheckpointObjectStore();
+    const historyObjects = mockPiObjectStore();
     const prompt = "promote queued fast Luna through the callback";
     const answer = "queued fast Luna Sandbox answer";
 

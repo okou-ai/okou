@@ -238,7 +238,7 @@ async fn run_event_failure_case(
     Ok(EventFailureRun {
         process_exit_code: output.status.code(),
         stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-        error_message: std::fs::read_to_string(paths.checkpoint_error_file())?,
+        error_message: std::fs::read_to_string(paths.finalization_error_file())?,
         diagnostic,
     })
 }

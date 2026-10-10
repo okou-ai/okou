@@ -13,7 +13,7 @@ const {
   chat,
   configureSubscriptionPiModel,
   cancelChatRun,
-  mockPiCheckpointObjectStore,
+  mockPiObjectStore,
   piSandboxBaseSession,
   completeSandboxFirstPiRun,
 } = createChatEventsFixture(context);
@@ -25,7 +25,7 @@ function blobEntriesOf(objects: ReadonlyMap<string, Buffer>) {
 }
 
 describe("CHAT-02: model-first routing", () => {
-  it("preserves an ordinary Pi stop checkpoint for referenced Sandbox continuation", async () => {
+  it("preserves an ordinary Pi stop history for referenced Sandbox continuation", async () => {
     const {
       run: own,
       actor,
@@ -38,9 +38,9 @@ describe("CHAT-02: model-first routing", () => {
       return await configureSubscriptionPiModel(actor, {}, "gpt-6-luna");
     });
 
-    const objects = mockPiCheckpointObjectStore();
+    const objects = mockPiObjectStore();
     const answer = "the last complete canonical answer";
-    const firstPrompt = "create the last complete checkpoint";
+    const firstPrompt = "create the last complete history";
     const first = await sendChatRun(actor, {
       agentId,
       model: "gpt-6-luna",
@@ -64,7 +64,7 @@ describe("CHAT-02: model-first routing", () => {
     expect(blobEntries).toHaveLength(1);
     const h0 = blobEntries[0]?.[1];
     if (!h0) {
-      throw new Error("Expected the ordinary stop checkpoint");
+      throw new Error("Expected the ordinary stop history");
     }
     expect(h0.toString("utf8")).toContain(answer);
     const h0Hash = createHash("sha256").update(h0).digest("hex");
@@ -108,7 +108,7 @@ describe("CHAT-02: model-first routing", () => {
         accountId: "model-handoff-account",
       });
     });
-    const historyObjects = mockPiCheckpointObjectStore();
+    const historyObjects = mockPiObjectStore();
     const firstPrompt = "establish original subscription history";
     const first = await sendChatRun(actor, {
       agentId,

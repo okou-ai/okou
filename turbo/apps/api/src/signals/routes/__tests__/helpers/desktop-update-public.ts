@@ -93,15 +93,10 @@ export function createDesktopUpdatePublicApi(context: TestContext) {
     return `https://github.com/okou-ai/okou/releases/download/okou-desktop-v${version}/Okou-darwin-arm64-${version}.zip`;
   }
 
-  function feedRequest() {
-    return client().productFeed({
-      params: {
-        product: "ai-okou-desktop",
-        channel: "stable",
-        platform: "darwin",
-        arch: "arm64",
-      },
-    });
+  function appcastRequest() {
+    return appRequest(
+      "/api/desktop/updates/ai-okou-desktop/stable/darwin/arm64/appcast.xml",
+    );
   }
   function countingManifestHandler(respond: (attempt: number) => Response): {
     readonly attempts: () => number;
@@ -121,7 +116,7 @@ export function createDesktopUpdatePublicApi(context: TestContext) {
   }
   return {
     client,
-    feedRequest,
+    appcastRequest,
     countingManifestHandler,
     appRequest,
     mockDesktopUpdateManifest,

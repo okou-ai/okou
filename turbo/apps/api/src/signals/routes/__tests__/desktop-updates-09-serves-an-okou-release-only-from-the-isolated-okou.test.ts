@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { accept, testContext } from "../../../__tests__/test-context";
+import { testContext } from "../../../__tests__/test-context";
 
 import { createDesktopUpdatePublicApi } from "./helpers/desktop-update-public";
 
 const context = testContext();
 const {
-  client,
+  appcastRequest,
   mockDesktopUpdateManifest,
   stableManifest,
   darwinArm64Release,
@@ -22,32 +22,17 @@ describe("desktop update routes", () => {
       }),
     );
 
-    const response = await accept(
-      client().productFeed({
-        params: {
-          product: "ai-okou-desktop",
-          channel: "stable",
-          platform: "darwin",
-          arch: "arm64",
-        },
-      }),
-      [200],
-    );
+    const response = await appcastRequest();
+    expect(response.status).toBe(200);
 
-    expect(response.body).toStrictEqual({
-      currentRelease: "1.2.3",
-      releases: [
-        {
-          version: "1.2.3",
-          updateTo: {
-            name: "Okou 1.2.3",
-            version: "1.2.3",
-            pub_date: "2026-06-08T00:00:00.000Z",
-            url: zipUrl,
-            notes: "Release 1.2.3",
-          },
-        },
-      ],
-    });
+    const responseXml = await response.text();
+
+    expect(responseXml).toContain("<sparkle:version>1.2.3</sparkle:version>");
+    expect(responseXml).toContain("<title>Okou 1.2.3</title>");
+    expect(responseXml).toContain(
+      "<pubDate>Mon, 08 Jun 2026 00:00:00 GMT</pubDate>",
+    );
+    expect(responseXml).toContain("<description>Release 1.2.3</description>");
+    expect(responseXml).toContain(`<enclosure url="${zipUrl}"`);
   });
 });

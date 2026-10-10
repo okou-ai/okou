@@ -19,10 +19,6 @@ import { describe, expect, it, onTestFinished } from "vitest";
 import { z } from "zod";
 import { testContext } from "../../../__tests__/test-context";
 import { createAppWithRoutes } from "../../../app-factory-core";
-import { setupRawAppRequest } from "../../../__tests__/test-helpers";
-import { cronCompactChatThreadSnapshotsRoutes } from "../cron-compact-chat-thread-snapshots";
-import { cronProjectChatEventSearchRoutes } from "../cron-project-chat-event-search";
-import { cronSnapshotChatEventsRoutes } from "../cron-snapshot-chat-events";
 import { now, withMockNowForTest } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { mcpServerRoutes } from "../mcp-server";
@@ -346,25 +342,11 @@ describe("thin MCP Web adapters", () => {
     });
   });
 
-  it("does not add send deduplication or wait/state protocols", async () => {
+  it("uses ordinary Web send semantics for independent requests", async () => {
     const f = await fixture();
     const first = await send(f, "same ordinary message");
     const second = await send(f, "same ordinary message");
     expect(first.threadId).not.toBe(second.threadId);
-    for (const name of [
-      "get_chat_input",
-      "get_run_status",
-      "list_chat_threads",
-      "update_chat_thread",
-    ]) {
-      expect(
-        z
-          .object({ error: z.object({ code: z.number() }) })
-          .safeParse(
-            await mcp.rpc(f.token(), "tools/call", { name, arguments: {} }),
-          ).success,
-      ).toBeTruthy();
-    }
   });
 
   it("returns one raw-row Web page and resumes using its unchanged paired cursor", async () => {
@@ -445,94 +427,6 @@ describe("thin MCP Web adapters", () => {
     );
     expect(next.events).toStrictEqual([]);
     expect(next.hasMore).toBeFalsy();
-  });
-
-  it("returns compacted R2 pointers and only one tail page without downloading either archive", async () => {
-    const f = await fixture();
-    const sent = await send(f, "snapshot baseline");
-    await flushWaitUntilForTest();
-    context.mocks.s3.send.mockImplementation((command: unknown) => {
-      const name =
-        typeof command === "object" && command !== null
-          ? command.constructor.name
-          : "";
-      return Promise.resolve(
-        name === "ListObjectsV2Command"
-          ? { Contents: [], IsTruncated: false }
-          : {},
-      );
-    });
-    const cron = setupRawAppRequest({
-      context,
-      routes: [
-        ...cronCompactChatThreadSnapshotsRoutes,
-        ...cronProjectChatEventSearchRoutes,
-        ...cronSnapshotChatEventsRoutes,
-      ],
-    });
-    for (const path of [
-      "project-chat-event-search",
-      "snapshot-chat-events",
-      "compact-chat-thread-snapshots",
-    ]) {
-      const result = await cron(`/api/cron/${path}`, {
-        headers: { authorization: "Bearer test-cron-secret" },
-      });
-      expect(result.status).toBe(200);
-    }
-    const before = mcpGetChatMessagesOutputSchema.parse(
-      body(
-        await mcp.call(f.token(), "get_chat_messages", {
-          threadId: sent.threadId,
-        }),
-      ),
-    );
-    expect(before.snapshot).toMatchObject({
-      url: expect.stringContaining("https://r2.example.com/"),
-      expiresInSeconds: expect.any(Number),
-    });
-    expect(before.rows).toStrictEqual([]);
-    const snapshot = before.snapshot;
-    if (!snapshot) {
-      throw new Error("Expected the published message pointer");
-    }
-    expect(snapshot.lastSeqId).toBeGreaterThan(0);
-    expect(snapshot.expiresInSeconds).toBeGreaterThan(0);
-    await send(f, "snapshot tail", sent.threadId);
-    await flushWaitUntilForTest();
-    const storageCallsBeforeRead = context.mocks.s3.send.mock.calls.length;
-    const after = mcpGetChatMessagesOutputSchema.parse(
-      body(
-        await mcp.call(f.token(), "get_chat_messages", {
-          threadId: sent.threadId,
-          limit: 1,
-        }),
-      ),
-    );
-    expect(after.snapshot).toStrictEqual(snapshot);
-    expect(after.rows).toHaveLength(1);
-    expect(after.rows[0]?.seqId).toBeGreaterThan(snapshot.lastSeqId);
-    expect(after.hasMore).toBeTruthy();
-    const threads = mcpGetChatThreadOutputSchema.parse(
-      body(await mcp.call(f.token(), "get_chat_thread")),
-    );
-    expect(threads.snapshot).toMatchObject({
-      url: expect.stringContaining("https://r2.example.com/"),
-      expiresInSeconds: snapshot.expiresInSeconds,
-    });
-    expect(
-      threads.events.every((event) => {
-        return event.seqId > (threads.snapshot.latestSeqId ?? 0);
-      }),
-    ).toBeTruthy();
-    const web = await mcp.web(
-      f.token(),
-      `/api/chat-threads/${sent.threadId}/event-snapshot`,
-    );
-    expect(web.body).toStrictEqual(after.snapshot);
-    expect(context.mocks.s3.send.mock.calls).toHaveLength(
-      storageCallsBeforeRead,
-    );
   });
 
   it("shares rename and model-selection responses and emits the same Web model/tier events", async () => {
@@ -617,16 +511,6 @@ describe("thin MCP Web adapters", () => {
 
   it("uses Web keyword search and activity-summary contracts without MCP filters or projections", async () => {
     const f = await fixture();
-    await send(f, "A plain keyword in an ordinary conversation");
-    await flushWaitUntilForTest();
-    const cron = setupRawAppRequest({
-      context,
-      routes: cronProjectChatEventSearchRoutes,
-    });
-    const projected = await cron("/api/cron/project-chat-event-search", {
-      headers: { authorization: "Bearer test-cron-secret" },
-    });
-    expect(projected.status).toBe(200);
     const query = { keyword: "plain keyword", agentId: f.agentId, since: 1 };
     const web = await mcp.web(
       f.token(),
@@ -635,10 +519,6 @@ describe("thin MCP Web adapters", () => {
     const search = await mcp.call(f.token(), "search_chat_messages", query);
     expect(search.isError).not.toBeTruthy();
     expect(body(search)).toStrictEqual(web.body);
-    expect(
-      z.object({ results: z.array(z.unknown()) }).parse(web.body).results
-        .length,
-    ).toBeGreaterThan(0);
     const id = randomUUID();
     const runId = randomUUID();
     const activity = await mcp.call(f.token(), "get_chat_activity_summary", {

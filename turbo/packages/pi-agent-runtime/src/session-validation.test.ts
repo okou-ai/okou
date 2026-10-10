@@ -127,7 +127,7 @@ describe("native Pi history structural boundaries", () => {
       messageCount: 0,
       pendingToolIds: [],
       hasPendingToolCalls: false,
-      isSettledCheckpoint: false,
+      isSettledHistory: false,
     });
   }, 150_000);
   it.each([null, 1, 2])(
@@ -169,7 +169,7 @@ describe("native Pi history structural boundaries", () => {
         { role: "custom", extra: { preserved: true } },
         { role: "assistant", legacyField: "preserved" },
       ]);
-      expect(migrated.isSettledCheckpoint()).toBe(true);
+      expect(migrated.isSettledHistory()).toBe(true);
     },
   );
   it("preserves SDK multiple roots, branches, labels, compaction and custom records", () => {
@@ -207,7 +207,7 @@ describe("native Pi history structural boundaries", () => {
     expect(memory.buildSessionContext()).toEqual(
       JSON.parse(JSON.stringify(native.buildSessionContext())),
     );
-    expect(memory.isSettledCheckpoint()).toBe(true);
+    expect(memory.isSettledHistory()).toBe(true);
   });
   it("preserves legacy null message content through the official projection", () => {
     const history = jsonl([
@@ -224,7 +224,7 @@ describe("native Pi history structural boundaries", () => {
     ]);
     expect(inspectPiSessionJsonl(history)).toMatchObject({
       messageCount: 1,
-      isSettledCheckpoint: true,
+      isSettledHistory: true,
     });
   });
 
@@ -256,7 +256,7 @@ describe("native Pi history structural boundaries", () => {
     ]);
     expect(inspectPiSessionJsonl(jsonl([]))).toMatchObject({
       messageCount: 0,
-      isSettledCheckpoint: false,
+      isSettledHistory: false,
     });
   });
   it("rejects direct persisted RPC startup before rewriting files or executing runtime work", async () => {

@@ -190,6 +190,9 @@ importers:
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(@cloudflare/workers-types@5.20260924.1)(@electric-sql/pglite@0.5.8)(@opentelemetry/api@1.9.1)(@types/pg@8.21.0)(pg@8.23.0)(postgres@3.4.9)
+      entities:
+        specifier: 7.0.1
+        version: 7.0.1
       google-auth-library:
         specifier: ^10.9.0
         version: 10.9.0
@@ -969,15 +972,6 @@ importers:
 
   packages/db:
     dependencies:
-      '@aws-sdk/client-kms':
-        specifier: ^3.1144.0
-        version: 3.1144.0
-      '@aws-sdk/client-s3':
-        specifier: ^3.1144.0
-        version: 3.1144.0
-      '@clerk/backend':
-        specifier: ^3.13.1
-        version: 3.13.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@okouai/api-contracts':
         specifier: workspace:*
         version: link:../api-contracts
@@ -1018,9 +1012,6 @@ importers:
       eslint:
         specifier: ^9.34.0
         version: 9.39.4(jiti@2.7.0)
-      msw:
-        specifier: ^2.13.2
-        version: 2.13.2(@types/node@24.3.0)(@typescript/typescript6@6.0.2)
       oxlint:
         specifier: ^1.75.0
         version: 1.75.0(oxlint-tsgolint@7.0.2001)

@@ -1,4 +1,4 @@
-use super::{FileEntry, PiMemoryPhase2CheckpointAttestation};
+use super::{FileEntry, PiMemoryPhase2PublicationAttestation};
 use crate::constants;
 use crate::error::AgentError;
 use crate::http::HttpClient;
@@ -15,7 +15,7 @@ pub(super) struct PrepareSnapshotRequest<'a> {
     pub(super) storage_id: &'a str,
     pub(super) files: &'a [FileEntry],
     pub(super) parent_version_id: &'a str,
-    pub(super) maintenance_attestation: Option<&'a PiMemoryPhase2CheckpointAttestation>,
+    pub(super) maintenance_attestation: Option<&'a PiMemoryPhase2PublicationAttestation>,
 }
 
 pub(super) struct PreparedSnapshot {
@@ -47,7 +47,7 @@ pub(super) struct CommitSnapshotRequest<'a> {
     pub(super) parent_version_id: &'a str,
     pub(super) files: &'a [FileEntry],
     pub(super) message: Option<&'a str>,
-    pub(super) maintenance_attestation: Option<&'a PiMemoryPhase2CheckpointAttestation>,
+    pub(super) maintenance_attestation: Option<&'a PiMemoryPhase2PublicationAttestation>,
 }
 
 #[derive(Serialize)]
@@ -59,7 +59,7 @@ struct PrepareSnapshotPayload<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     parent_version_id: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    maintenance_attestation: Option<&'a PiMemoryPhase2CheckpointAttestation>,
+    maintenance_attestation: Option<&'a PiMemoryPhase2PublicationAttestation>,
 }
 
 #[derive(Serialize)]
@@ -74,7 +74,7 @@ struct CommitSnapshotPayload<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     message: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    maintenance_attestation: Option<&'a PiMemoryPhase2CheckpointAttestation>,
+    maintenance_attestation: Option<&'a PiMemoryPhase2PublicationAttestation>,
 }
 
 pub(super) async fn prepare_snapshot(

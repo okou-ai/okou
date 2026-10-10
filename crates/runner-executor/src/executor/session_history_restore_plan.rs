@@ -342,7 +342,7 @@ mod tests {
             "/home/user/.vm0/guest-agent/runs/previous/final-session-history-identity.json",
             "/home/user/.vm0/guest-agent/runs/previous",
         )
-        .expect("checkpointed final identity")
+        .expect("finalized final identity")
     }
 
     fn build_plan(
@@ -385,7 +385,7 @@ mod tests {
     }
 
     #[test]
-    fn restore_plan_skips_matching_checkpointed_final_identity() {
+    fn restore_plan_skips_matching_finalized_final_identity() {
         let history_hash = "a".repeat(64);
         let context = context_with_history_ref_and_size(&history_hash, 12);
         let metadata_path =
@@ -404,12 +404,12 @@ mod tests {
                 assert_eq!(identity.history_size_bytes(), Some(12));
                 assert_eq!(identity.final_metadata_path(), Some(metadata_path));
             }
-            _ => panic!("matching checkpointed final identity should skip restore"),
+            _ => panic!("matching finalized final identity should skip restore"),
         }
     }
 
     #[test]
-    fn restore_plan_skips_matching_codex_checkpointed_final_identity() {
+    fn restore_plan_skips_matching_codex_finalized_final_identity() {
         let history_hash = "a".repeat(64);
         let mut context = execution_context_for_test(RunId::new_v4());
         context.cli_agent_type = "codex".into();
@@ -446,7 +446,7 @@ mod tests {
         .unwrap();
         let restored_identity =
             RestoredSessionIdentity::from_final_metadata(metadata, metadata_path, runtime_dir)
-                .expect("checkpointed final identity");
+                .expect("finalized final identity");
 
         let plan = build_plan(
             &context,
@@ -460,7 +460,7 @@ mod tests {
                 assert_eq!(identity.history_size_bytes(), Some(12));
                 assert_eq!(identity.final_metadata_path(), Some(metadata_path));
             }
-            _ => panic!("matching Codex checkpointed final identity should skip restore"),
+            _ => panic!("matching Codex finalized final identity should skip restore"),
         }
     }
 

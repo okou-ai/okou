@@ -84,6 +84,7 @@
     "packages/api-contracts": {
       "entry": [
         "src/runtime-api-schema/cli.ts",
+        "src/swift-bindings/generate.ts",
         "src/**/__tests__/**/*.{test,spec}.ts",
         "src/**/*.{test,spec}.ts"
       ],

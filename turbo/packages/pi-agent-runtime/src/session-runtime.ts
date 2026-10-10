@@ -110,7 +110,7 @@ function recordConfiguredThinkingLevel(
   effective: ModelThinkingLevel,
 ): void {
   // The SDK restores messages but does not record a changed launch effort on an
-  // existing branch. Persist the effective level before a handoff/checkpoint.
+  // existing branch. Persist the effective level before a handoff/finalization.
   if (
     configured !== undefined &&
     sessionManager.buildSessionContext().thinkingLevel !== effective

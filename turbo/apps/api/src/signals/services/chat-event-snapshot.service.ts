@@ -86,7 +86,7 @@ const ownedThread = (threadId: string, userId: string, orgId?: string) => {
     orgId === undefined
       ? undefined
       : exists(sql`(SELECT 1 FROM ${agents}
-      WHERE ${agents.id} = ${chatThreads.agentId} AND ${agents.orgId} = ${orgId})`),
+      WHERE ${eq(agents.id, chatThreads.agentId)} AND ${eq(agents.orgId, orgId)})`),
   );
 };
 

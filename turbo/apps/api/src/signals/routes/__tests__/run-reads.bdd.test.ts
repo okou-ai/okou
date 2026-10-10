@@ -42,7 +42,7 @@ import { refreshConcurrencyEntitlement } from "./helpers/stripe-billing-webhook"
  * pinning, concurrency caps, and the production capture gate).
  *
  * Direct runs are constructed through createAgentRun$; route boundaries cover
- * runner claims and sandbox webhooks (events/checkpoint/complete). Axiom reads
+ * runner claims and sandbox webhooks (events/outputs/complete). Axiom reads
  * are answered by an APL-dispatching mock.
  */
 
@@ -86,7 +86,7 @@ async function createThreadAgent(
   actor: ApiTestUser,
   prefix: string,
 ): Promise<{ readonly agentId: string }> {
-  // The Claude Code route (no Pi route), matching completeRun's checkpoints.
+  // The Claude Code route (no Pi route), matching completeRun's native history.
   await api.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });
@@ -204,7 +204,8 @@ function s3BytesBody(bytes: Buffer): AsyncIterable<Buffer> {
 
 /**
  * Marks a claimed run completed through the sandbox webhooks. Successful
- * completion requires a checkpoint, so one is included atomically.
+ * completion includes the required native session identity and history references
+ * atomically.
  */
 async function completeRun(
   runId: string,
@@ -684,7 +685,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
 
     const run = await api.createThreadRun(actor, {
       agentId: compose.agentId,
-      prompt: "create compressed checkpoint",
+      prompt: "create compressed history",
     });
     const claim = await api.claimRunnerJob(run.runId);
     const headers = sandboxHeaders(claim.sandboxToken);
@@ -781,7 +782,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
 
     const run = await api.createThreadRun(actor, {
       agentId: compose.agentId,
-      prompt: "create zstd compressed checkpoint",
+      prompt: "create zstd compressed history",
     });
     const claim = await api.claimRunnerJob(run.runId);
     const headers = sandboxHeaders(claim.sandboxToken);
@@ -1093,7 +1094,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
         "https://r2.example.com/storages/presigned?sig=bdd",
       );
 
-      // The session-history blob for checkpointed conversations is hash-only
+      // The session-history blob for persisted conversations is hash-only
       // in R2 — answer the GetObject for it while keeping other s3 sends inert.
       const history = '{"type":"init"}\n{"type":"human","text":"hi"}\n';
       const historyHash = createHash("sha256").update(history).digest("hex");
@@ -1278,7 +1279,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       const continued = await api.createThreadRun(actor, {
         agentId: agent.agentId,
         threadId: r1.threadId,
-        prompt: "continue the checkpointed session",
+        prompt: "continue the persisted session",
       });
       fixture.registerRun(continued.runId);
       const continuedClaim = await api.claimRunnerJob(continued.runId);
@@ -2241,7 +2242,7 @@ describe("RUN-04: agent run telemetry families", () => {
     }
   });
 
-  it("bounds run context Axiom scans around the run creation time", async () => {
+  it("reads fresh run context within the creation-time window after a cached miss", async () => {
     const actor = await entitledActor();
     await api.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
@@ -2265,13 +2266,41 @@ describe("RUN-04: agent run telemetry families", () => {
     if (!Number.isFinite(runCreatedAtMs)) {
       throw new Error("Expected the created run to have a valid creation time");
     }
-    dispatchAxiomQueries({
-      [agentRun.runId]: {
-        runContext: [{ runId: agentRun.runId, sessionId: "bdd-bounded" }],
+    let snapshotVisible = false;
+    context.mocks.axiom.query.mockImplementation(
+      (apl: unknown, options: unknown) => {
+        if (
+          typeof apl !== "string" ||
+          !apl.includes("['run-context']") ||
+          !apl.includes(agentRun.runId)
+        ) {
+          return Promise.resolve([]);
+        }
+        // The provider retains its initial cached miss even after ingestion.
+        const freshRead =
+          typeof options === "object" &&
+          options !== null &&
+          "noCache" in options &&
+          options.noCache === true;
+        return Promise.resolve(
+          freshRead && snapshotVisible
+            ? [{ runId: agentRun.runId, sessionId: "bdd-bounded" }]
+            : [],
+        );
       },
-    });
+    );
     const queryStartIndex = axiomCallCount();
 
+    const pendingContext = await api.requestRunContext(
+      actor,
+      agentRun.runId,
+      [404],
+    );
+    expect(pendingContext.body).toStrictEqual({
+      error: { message: "Run context not available", code: "NOT_FOUND" },
+    });
+
+    snapshotVisible = true;
     const contextRead = await api.requestRunContext(
       actor,
       agentRun.runId,
@@ -2291,11 +2320,15 @@ describe("RUN-04: agent run telemetry families", () => {
       .filter(([apl]) => {
         return typeof apl === "string" && apl.includes("['run-context']");
       });
-    expect(runContextQueries).toHaveLength(1);
-    expect(runContextQueries[0]?.[1]).toStrictEqual({
-      startTime: new Date(runCreatedAtMs - HOUR_MS).toISOString(),
-      endTime: new Date(runCreatedAtMs + HOUR_MS).toISOString(),
-    });
+    expect(runContextQueries).toHaveLength(2);
+    for (const [apl, options] of runContextQueries) {
+      expect(apl).toContain(`| where runId == "${agentRun.runId}"`);
+      expect(options).toStrictEqual({
+        noCache: true,
+        startTime: new Date(runCreatedAtMs - HOUR_MS).toISOString(),
+        endTime: new Date(runCreatedAtMs + HOUR_MS).toISOString(),
+      });
+    }
   });
 
   it("maps agent run context, network, and runner metadata from axiom snapshots", async () => {

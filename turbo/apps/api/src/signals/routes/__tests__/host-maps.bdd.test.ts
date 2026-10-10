@@ -677,11 +677,11 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
       location: { latitude: 48.21, longitude: 16.37 },
       languageCode: "de_AT",
       provider: "google-maps-grounding",
-      model: "gemini-2.5-flash",
+      model: "gemini-3.1-flash-lite",
       billingCategory: "provider_cost_usd_micros",
-      billingQuantity: 25_155,
-      providerCostUsd: 0.025155,
-      creditsCharged: 32,
+      billingQuantity: 14_100,
+      providerCostUsd: 0.0141,
+      creditsCharged: 18,
       answer,
       sources: [
         {
@@ -698,7 +698,12 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
         },
       ],
       attribution: "Google Maps",
-      usage: { inputTokens: 100, outputTokens: 50 },
+      usage: {
+        inputTokens: 100,
+        cachedInputTokens: 0,
+        outputTokens: 50,
+        mapsQueries: 1,
+      },
     });
     expect(providerAuthorization).toBe("Bearer synthetic-google-token");
     expect(providerBody).toMatchObject({
@@ -717,7 +722,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
         },
       },
       generationConfig: {
-        thinkingConfig: { thinkingBudget: 0 },
+        thinkingConfig: { thinkingLevel: "LOW" },
         maxOutputTokens: 2048,
       },
     });
@@ -727,12 +732,15 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
       "No implicit user location is available",
     );
     expect(serializedProviderBody).toContain(
+      "The user explicitly supplied latitude 48.21 and longitude 16.37",
+    );
+    expect(serializedProviderBody).toContain(
       "Do not assist with high-risk uses of maps",
     );
     expect(providerCalls).toBe(1);
 
     const settled = await billing.readBillingStatus(admin);
-    expect(settled.credits).toBe(before.credits - 32);
+    expect(settled.credits).toBe(before.credits - 18);
 
     server.use(
       http.post(VERTEX_MAPS_URL, () => {
@@ -996,8 +1004,8 @@ describe("CHAIN-BILLING-MEDIA/FILE-01: run-scoped agent-token attribution", () =
       expect(mapsSearch.body).toMatchObject({
         provider: "google-maps-grounding",
         billingCategory: "provider_cost_usd_micros",
-        billingQuantity: 25_155,
-        creditsCharged: 32,
+        billingQuantity: 14_100,
+        creditsCharged: 18,
       });
       expect(mapsRequests).toBe(1);
 
@@ -1027,7 +1035,7 @@ describe("CHAIN-BILLING-MEDIA/FILE-01: run-scoped agent-token attribution", () =
       expect(recompleted).toStrictEqual(completed);
 
       const settled = await billing.readBillingStatus(actor);
-      expect(settled.credits).toBe(before.credits - 32);
+      expect(settled.credits).toBe(before.credits - 18);
     });
   });
 });

@@ -23,7 +23,7 @@ const {
   waitForThreadMessages,
   completeChatRunOk,
   cancelChatRun,
-  mockPiCheckpointObjectStore,
+  mockPiObjectStore,
   mockPiResourceArchiveDownloads,
   completeSandboxFirstPiRun,
   piSandboxBaseSession,
@@ -44,7 +44,7 @@ describe("CHAT-02: personal subscription model selection", () => {
     });
 
     mockPiResourceArchiveDownloads();
-    const historyObjects = mockPiCheckpointObjectStore();
+    const historyObjects = mockPiObjectStore();
     let threadId: string | undefined;
     let sessionId: string | null | undefined;
     const models = [...GPT_PI_BDD_MODELS, "gpt-6-luna"] as const;
@@ -111,7 +111,7 @@ describe("CHAT-02: personal subscription model selection", () => {
     });
 
     mockPiResourceArchiveDownloads();
-    const historyObjects = mockPiCheckpointObjectStore();
+    const historyObjects = mockPiObjectStore();
     const firstPiAnswer = "first Pi generation answer";
     const returnedPiAnswer = "returned Pi generation answer";
     const repeatedPiAnswer = "repeated Pi generation answer";
@@ -248,7 +248,7 @@ describe("CHAT-02: personal subscription model selection", () => {
     const piFollowUpClaim = await claimChatRun(runnerGroup, piFollowUp.runId);
     const resumedPiSession = piFollowUpClaim.claim.resumeSession;
     if (!resumedPiSession || !("historyRef" in resumedPiSession)) {
-      throw new Error("Expected the Pi follow-up to resume a blob checkpoint");
+      throw new Error("Expected the Pi follow-up to resume a blob history");
     }
     expect(resumedPiSession).toMatchObject({
       sessionId: firstPi.threadId,

@@ -8,8 +8,11 @@ engineering constraints, not a claim of source or production retirement completi
 
 - For schema changes, follow [migration workflows](../../.claude/skills/database-development/references/migrations.md)
   and [DB migrations](../../turbo/packages/db/MIGRATIONS.md). Use Drizzle to generate
-  metadata; do not hand-edit journals or snapshots. Numbered external-data
-  migration scripts are permanent history, self-contained and dry-run by default.
+  metadata; do not hand-edit journals or snapshots. Maintained numbered
+  external-data operators are self-contained and dry-run by default. Retire
+  accepted one-time operators and their dedicated support; recover an exact Git
+  revision only after revalidating targets, prerequisites and authorization.
+  Preserve shipped SQL, generated metadata and permanent schema invariants.
 - For selections, decoding, or SQL rewrites, read [query contracts](../../.claude/skills/database-development/references/query-contracts.md).
   TypeScript generics do not decode PostgreSQL results. Preserve nullability,
   precision, provenance, bindings, returned outcomes, and material query cost.

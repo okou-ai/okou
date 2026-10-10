@@ -500,7 +500,7 @@ async function completeSlackTriggeredRun(args: {
   }
 }
 
-interface PiCheckpointS3Command {
+interface PiObjectStoreCommand {
   readonly constructor?: { readonly name?: string };
   readonly input?: {
     readonly Body?: unknown;
@@ -512,7 +512,7 @@ interface PiCheckpointS3Command {
   };
 }
 
-function piS3ObjectKey(candidate: PiCheckpointS3Command): string | undefined {
+function piS3ObjectKey(candidate: PiObjectStoreCommand): string | undefined {
   const bucket = candidate.input?.Bucket;
   const key = candidate.input?.Key;
   return typeof bucket === "string" && typeof key === "string"
@@ -530,9 +530,9 @@ function requiredPiS3ObjectBody(body: unknown): Buffer {
   throw new Error("Expected Pi S3 writes to use string or byte bodies");
 }
 
-function deletePiCheckpointObjects(
+function deletePiHistoryObjects(
   objects: Map<string, Buffer>,
-  candidate: PiCheckpointS3Command,
+  candidate: PiObjectStoreCommand,
 ): void {
   const bucket = candidate.input?.Bucket;
   if (typeof bucket !== "string") {
@@ -545,10 +545,10 @@ function deletePiCheckpointObjects(
   }
 }
 
-function mockPiCheckpointObjectStore(): Map<string, Buffer> {
+function mockPiObjectStore(): Map<string, Buffer> {
   const objects = new Map<string, Buffer>();
   for (const [command] of context.mocks.s3.send.mock.calls) {
-    const candidate = command as PiCheckpointS3Command;
+    const candidate = command as PiObjectStoreCommand;
     const objectKey = piS3ObjectKey(candidate);
     const body = candidate.input?.Body;
     if (
@@ -566,7 +566,7 @@ function mockPiCheckpointObjectStore(): Map<string, Buffer> {
   }
   const fallback = context.mocks.s3.send.getMockImplementation();
   context.mocks.s3.send.mockImplementation((command: unknown) => {
-    const candidate = command as PiCheckpointS3Command;
+    const candidate = command as PiObjectStoreCommand;
     const objectKey = piS3ObjectKey(candidate);
     if (candidate.constructor?.name === "PutObjectCommand" && objectKey) {
       objects.set(objectKey, requiredPiS3ObjectBody(candidate.input?.Body));
@@ -584,7 +584,7 @@ function mockPiCheckpointObjectStore(): Map<string, Buffer> {
       }
     }
     if (candidate.constructor?.name === "DeleteObjectsCommand") {
-      deletePiCheckpointObjects(objects, candidate);
+      deletePiHistoryObjects(objects, candidate);
       return Promise.resolve({});
     }
     return fallback?.(command) ?? Promise.resolve({});
@@ -687,7 +687,7 @@ async function establishCanonicalSlackHistory(args: SlackPiActorSetup) {
     assistantText: "Historical Claude answer",
   });
   await flushWaitUntilForTest();
-  const historyObjects = mockPiCheckpointObjectStore();
+  const historyObjects = mockPiObjectStore();
   mockPiResourceArchiveDownloads(historyObjects);
 
   const { chatThreadId } = await ownedThreadWhere(
@@ -5301,7 +5301,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     await integrations.postSlackEvent(teamId, {
       type: "app_mention",
       user: slackUser1,
-      text: "resume a broken checkpoint",
+      text: "resume a broken history",
       ts: threadT3,
       channel: channelId,
     });
@@ -5311,7 +5311,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       {
         runId: run4Id,
         exitCode: 1,
-        error: "Cannot continue session from checkpoint",
+        error: "Cannot continue session from history",
       },
       { authorization: `Bearer ${claim4.sandboxToken}` },
       [200],
@@ -5319,7 +5319,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     await flushWaitUntilAndAssert(() => {
       expect(context.mocks.slack.chat.postMessage).toHaveBeenLastCalledWith(
         expect.objectContaining({
-          text: "Cannot continue session from checkpoint",
+          text: "Cannot continue session from history",
         }),
       );
     });

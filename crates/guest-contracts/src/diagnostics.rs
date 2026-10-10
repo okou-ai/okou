@@ -679,8 +679,9 @@ pub enum FailureClass {
     /// Uploading events failed.
     EventUploadFailed,
     /// Publishing session history or artifacts during Run finalization failed.
-    /// The historical variant and wire value remain stable for captured diagnostics.
-    CheckpointFailed,
+    /// The historical wire value remains stable for captured diagnostics.
+    #[serde(rename = "checkpoint_failed")]
+    FinalizationFailed,
 }
 
 impl FailureClass {
@@ -693,7 +694,7 @@ impl FailureClass {
             Self::CliNonzero => "cli_nonzero",
             Self::ClaudeZeroTurnNoHistory => "claude_zero_turn_no_history",
             Self::EventUploadFailed => "event_upload_failed",
-            Self::CheckpointFailed => "checkpoint_failed",
+            Self::FinalizationFailed => "checkpoint_failed",
         }
     }
 }
@@ -1454,7 +1455,11 @@ mod tests {
     }
 
     #[test]
-    fn failure_diagnostic_serializes_session_history_limit_reason() {
+    fn failure_diagnostic_preserves_finalization_wire_class_and_history_limit_reason() {
+        assert_eq!(
+            FailureClass::FinalizationFailed.as_str(),
+            "checkpoint_failed"
+        );
         assert_eq!(
             FailureReason::SessionHistoryLimit.as_str(),
             "session_history_limit"
@@ -1462,7 +1467,7 @@ mod tests {
 
         for framework in [AgentFramework::Codex, AgentFramework::ClaudeCode] {
             let diagnostic = FailureDiagnostic::new(
-                FailureClass::CheckpointFailed,
+                FailureClass::FinalizationFailed,
                 framework,
                 PromptMetadata::from_prompt("continue"),
             )
@@ -1470,6 +1475,7 @@ mod tests {
             .with_failure_reason(FailureReason::SessionHistoryLimit);
 
             let json = serde_json::to_value(&diagnostic).unwrap();
+            assert_eq!(json["failureClass"], "checkpoint_failed");
             assert_eq!(json["failureReason"], "session_history_limit");
 
             let round_trip: FailureDiagnostic = serde_json::from_value(json).unwrap();

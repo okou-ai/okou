@@ -85,7 +85,7 @@ const JOB_TIMEOUT: Duration = Duration::from_secs(AGENT_EXECUTION_TIMEOUT_SECOND
 /// Exit code used when the runner's job timeout stops an agent process.
 const JOB_TIMEOUT_EXIT_CODE: i32 = guest_contracts::diagnostics::AGENT_EXECUTION_TIMEOUT_EXIT_CODE;
 /// Bounded best-effort window after the execution budget for recovery
-/// checkpointing and final telemetry. This covers normal checkpoint latency
+/// finalization and final telemetry. This covers normal finalization latency
 /// plus a full presigned-upload timeout without letting an unavailable backend
 /// hold runner capacity indefinitely.
 const JOB_FINALIZATION_GRACE_TIMEOUT: Duration = Duration::from_secs(90);

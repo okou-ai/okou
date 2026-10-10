@@ -16,7 +16,7 @@ describe("desktop update routes", () => {
     });
 
     const response = await appRequest(
-      "http://api.test/api/desktop/updates/ai-okou-desktop/stable/darwin/arm64/RELEASES.json",
+      "http://api.test/api/desktop/updates/ai-okou-desktop/stable/darwin/arm64/appcast.xml",
     );
 
     expect(response.status).toBe(503);
