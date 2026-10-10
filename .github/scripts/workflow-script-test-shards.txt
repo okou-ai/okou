@@ -54,6 +54,7 @@
 2 runner-host-architecture-groups-test.sh
 2 runner-image-architecture-test.sh
 2 runner-image-workflow-test.sh
+2 runner-profile-benchmark-test.sh
 2 runner-rust-cache-prewarm-workflow-test.sh
 2 runner-token-env-alias-test.sh
 2 setup-r2-sccache-test.sh
