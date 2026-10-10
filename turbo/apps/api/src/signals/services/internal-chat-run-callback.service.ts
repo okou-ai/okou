@@ -63,7 +63,7 @@ import type { BuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.se
 import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
 import {
   clearCanonicalSlackThreadStatusIfIdle$,
-  refreshCanonicalSlackThreadStatus$,
+  reconcileCanonicalSlackThreadStatus$,
 } from "./canonical-slack-thread-status.service";
 import {
   insertAssistantEvents$,
@@ -3458,7 +3458,7 @@ const processChatInternalCallback$ = command(
         waitUntil(
           tapError(
             set(
-              refreshCanonicalSlackThreadStatus$,
+              reconcileCanonicalSlackThreadStatus$,
               {
                 chatThreadId: payload.data.threadId,
                 channelId: payload.data.slackDelivery.channelId,

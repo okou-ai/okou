@@ -297,11 +297,6 @@
       "owner": "recordIngressFailure"
     },
     {
-      "id": "TX-0089",
-      "file": "turbo/apps/api/src/signals/services/canonical-slack-thread-status.service.ts",
-      "owner": "canonicalSlackThreadHasOutstandingWork$"
-    },
-    {
       "id": "TX-0090",
       "file": "turbo/apps/api/src/signals/services/chat-event-history.service.ts",
       "owner": "readSharedThreadChatEventHistory$"
