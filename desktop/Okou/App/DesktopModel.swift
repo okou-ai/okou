@@ -301,7 +301,7 @@ final class DesktopModel: ObservableObject {
         await clearIdentity(expected: expected)
         return
       }
-      guard org.status == 200, let workspace = try? org.decode(Organization.self),
+      guard org.status == 200, let workspace = try? org.decode(CurrentOrganization.self),
         workspace.id == orgId
       else {
         throw DesktopFailure("authentication_unavailable", "Unable to verify Desktop workspace")

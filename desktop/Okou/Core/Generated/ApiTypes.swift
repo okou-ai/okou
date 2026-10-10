@@ -414,7 +414,7 @@ public struct AuthenticatedUser: Codable, Equatable, Sendable {
 }
 
 /// `GET /api/org` success body.
-public struct Organization: Codable, Equatable, Sendable {
+public struct CurrentOrganization: Codable, Equatable, Sendable {
   /// Known wire values are constants; unknown values decode with their raw string.
   public struct Role: RawRepresentable, Codable, Hashable, Sendable {
     public let rawValue: String

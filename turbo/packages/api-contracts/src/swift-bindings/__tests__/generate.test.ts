@@ -341,7 +341,7 @@ describe("desktop bindings", () => {
       "DesktopUpgradeRequired",
       "DesktopCompatibilityPolicy",
       "AuthenticatedUser",
-      "Organization",
+      "CurrentOrganization",
       "FeatureSwitches",
       "ApiError",
     ]) {

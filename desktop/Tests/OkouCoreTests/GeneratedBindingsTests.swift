@@ -101,8 +101,9 @@ final class GeneratedBindingsTests: XCTestCase {
       AuthenticatedUser.self, #"{"userId":"user_1","email":"a@b.test","orgId":null}"#)
     XCTAssertNil(user.orgId)
     XCTAssertNil(user.sessionId)
-    let workspace = try decode(Organization.self, #"{"id":"org_1","name":"Okou","role":"owner"}"#)
-    XCTAssertEqual(workspace.role, Organization.Role(rawValue: "owner"))
+    let workspace = try decode(
+      CurrentOrganization.self, #"{"id":"org_1","name":"Okou","role":"owner"}"#)
+    XCTAssertEqual(workspace.role, CurrentOrganization.Role(rawValue: "owner"))
     XCTAssertNil(workspace.tier)
     let switches = try decode(
       FeatureSwitches.self, #"{"switches":{},"effectiveSwitches":{"_debug":true}}"#)

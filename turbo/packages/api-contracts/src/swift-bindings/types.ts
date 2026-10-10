@@ -67,7 +67,7 @@ export const swiftTypeBindings = [
   },
   {
     schema: orgResponseSchema,
-    swiftTypeName: "Organization",
+    swiftTypeName: "CurrentOrganization",
     doc: ["`GET /api/org` success body."],
   },
   {
