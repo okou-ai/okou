@@ -31,6 +31,9 @@ use runner_types::ids::RunId;
 mod tests;
 
 const ACTIVE_INPUT_CONTROL_TIMEOUT: Duration = Duration::from_secs(1);
+// Retain a timely Guest result (including its response allowance), but do not
+// let writer backpressure retain the sandbox indefinitely during shutdown.
+const ACTIVE_INPUT_SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
 const FIRST_ACTIVE_INPUT_SEQUENCE: u64 = 1;
 
 pub(super) struct ActiveInputForwarder {
@@ -59,9 +62,8 @@ impl ActiveInputForwarder {
     /// Stop live forwarding while the caller still owns the live sandbox.
     pub(super) async fn stop(self) {
         self.stop.cancel();
-        // A cancelled process-control future has an unknown write outcome. The
-        // provider already bounds each control call, so retain ownership until
-        // it resolves.
+        // The in-flight call drains for a bounded grace inside the task. Join
+        // after its I/O guards have run, before releasing sandbox ownership.
         if let Err(error) = self.task.await {
             warn!(error = %error, "active-input forwarder task failed");
         }
@@ -232,10 +234,37 @@ async fn forward(
     if stop.is_cancelled() || job_cancel.is_cancelled() {
         return ForwardDisposition::Stop;
     }
-    // Once started, retain the control future until its write outcome is known.
-    let outcome = control
-        .control_owned_outcome(event_id, payload, ACTIVE_INPUT_CONTROL_TIMEOUT)
-        .await;
+    // The Guest-local timeout does not bound writer queuing or frame writing.
+    // Retain this same future on cancellation so a timely outcome survives.
+    let operation = control.control_owned_outcome(event_id, payload, ACTIVE_INPUT_CONTROL_TIMEOUT);
+    tokio::pin!(operation);
+    let outcome = tokio::select! {
+        biased;
+        outcome = operation.as_mut() => outcome,
+        () = async {
+            tokio::select! {
+                () = stop.cancelled() => {},
+                () = job_cancel.cancelled() => {},
+            }
+        } => {
+            match tokio::time::timeout(ACTIVE_INPUT_SHUTDOWN_GRACE, operation.as_mut()).await {
+                Ok(outcome) => outcome,
+                Err(_) => {
+                    // Dropping the provider future runs its partial-write and
+                    // response-abandonment guards. No delivery proof survives:
+                    // stop, even in local mode, rather than retrying this input.
+                    warn!(
+                        run_id = %run_id,
+                        outcome = "shutdown_timeout",
+                        delivery = "unknown",
+                        grace_ms = ACTIVE_INPUT_SHUTDOWN_GRACE.as_millis(),
+                        "active-input control did not finish during shutdown"
+                    );
+                    return ForwardDisposition::Stop;
+                }
+            }
+        }
+    };
     classify_control_outcome(run_id, mode, outcome)
 }
 

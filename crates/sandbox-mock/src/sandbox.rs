@@ -516,6 +516,16 @@ impl MockSandbox {
         {
             return Err(error);
         }
+        if controlled
+            && let Some(overrides) = &self.overrides
+            && let Some(handle) = overrides
+                .process
+                .start_agent_process_handles
+                .lock_ignoring_poison()
+                .pop_front()
+        {
+            return Ok(handle);
+        }
         let (mut tx, rx) = match request.output {
             ProcessOutputMode::Stream { queue_capacity, .. } => {
                 let (tx, rx) = tokio::sync::mpsc::channel(queue_capacity.max(1));

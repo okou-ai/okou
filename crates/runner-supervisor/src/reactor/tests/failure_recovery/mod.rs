@@ -1,3 +1,4 @@
+mod active_input;
 mod cooperative_cancellation;
 mod create_destroy;
 mod outer_panic;

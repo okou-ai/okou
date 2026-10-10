@@ -203,6 +203,8 @@ pub(crate) struct ProcessOverrideState {
     /// FIFO queue of start-process errors consumed by factory-created
     /// sandboxes. Empty queue follows the default successful start behavior.
     pub(crate) start_process_errors: Mutex<VecDeque<SandboxError>>,
+    /// Real provider handles returned FIFO by controlled Agent starts.
+    pub(crate) start_agent_process_handles: Mutex<VecDeque<GuestProcessHandle>>,
     /// When `Some`, `wait_process` returns a wait-process operation error to
     /// simulate timeout or crash.
     pub(crate) wait_process_error: Option<String>,
@@ -264,6 +266,7 @@ impl Default for ProcessOverrideState {
             wait_process_gate: None,
             wait_process_lifecycle_gate: Mutex::new(None),
             start_process_errors: Mutex::new(VecDeque::new()),
+            start_agent_process_handles: Mutex::new(VecDeque::new()),
             wait_process_error: None,
             wait_process_error_reason: SandboxOperationReason::Timeout,
             wait_process_exits: Mutex::new(VecDeque::new()),
@@ -457,6 +460,16 @@ impl MockSandboxOverrides {
         let mut overrides = Self::with_wait_process_error(msg);
         overrides.process.wait_process_error_reason = reason;
         overrides
+    }
+
+    /// Return a provider-owned process handle from the next Agent start.
+    /// Ordinary process starts do not consume it; the handle retains its real
+    /// control, cancellation, output and wait lifetimes.
+    pub fn push_start_agent_process_handle(&self, handle: GuestProcessHandle) {
+        self.process
+            .start_agent_process_handles
+            .lock_ignoring_poison()
+            .push_back(handle);
     }
 
     /// Queue a full `wait_process` exit applied to the next matching wait call.
