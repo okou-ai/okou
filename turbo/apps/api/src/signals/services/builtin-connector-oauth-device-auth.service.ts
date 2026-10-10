@@ -7,7 +7,6 @@ import { Buffer } from "node:buffer";
 import { createHash, randomBytes } from "node:crypto";
 
 import type {
-  BuiltinConnectorResponse,
   BuiltinConnectorOauthDeviceAuthSessionPollResponse,
   BuiltinConnectorOauthDeviceAuthSessionStartResponse,
 } from "@okouai/api-contracts/contracts/connector-schemas";
@@ -834,20 +833,6 @@ const completeClaimedSession$ = command(
   },
 );
 
-async function completeSessionResponse(
-  args: {
-    readonly connectorLoader: () => Promise<BuiltinConnectorResponse | null>;
-  },
-  signal: AbortSignal,
-): Promise<PollSuccess> {
-  const connector = await args.connectorLoader();
-  signal.throwIfAborted();
-  if (!connector) {
-    throw new Error("Completed OAuth connector not found");
-  }
-  return { status: 200, body: { status: "complete", connector } };
-}
-
 const authorizeDeviceSessionConnector$ = command(
   async (
     { set },
@@ -889,27 +874,28 @@ const completedDeviceSessionResponse$ = command(
     },
     signal: AbortSignal,
   ) => {
-    const response = await completeSessionResponse(
-      {
-        connectorLoader: () => {
-          if (!args.session.completedConnectorId) {
-            throw new Error(
-              "Completed OAuth device session is missing its connector ID",
-            );
-          }
-          return get(
-            builtinConnectorById({
-              orgId: args.orgId,
-              userId: args.userId,
-              connectorSlug: args.method.connectorSlug,
-              connectorId: args.session.completedConnectorId,
-              snapshot: args.method.snapshot,
-            }),
-          );
-        },
-      },
-      signal,
+    if (!args.session.completedConnectorId) {
+      throw new Error(
+        "Completed OAuth device session is missing its connector ID",
+      );
+    }
+    const connector = await get(
+      builtinConnectorById({
+        orgId: args.orgId,
+        userId: args.userId,
+        connectorSlug: args.method.connectorSlug,
+        connectorId: args.session.completedConnectorId,
+        snapshot: args.method.snapshot,
+      }),
     );
+    signal.throwIfAborted();
+    if (!connector) {
+      throw new Error("Completed OAuth connector not found");
+    }
+    const response: PollSuccess = {
+      status: 200,
+      body: { status: "complete", connector },
+    };
     const error = await set(
       authorizeDeviceSessionConnector$,
       { ...args, connectorSlug: args.method.connectorSlug },
