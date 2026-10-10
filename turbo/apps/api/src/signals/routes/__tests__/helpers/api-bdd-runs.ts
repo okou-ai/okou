@@ -54,7 +54,7 @@ import { apiTestS3PresignedUrl } from "../../../../__tests__/mocks";
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { createAppWithRoutes } from "../../../../app-factory-core";
-import { mockEnv, mockOptionalEnv } from "../../../../lib/env";
+import { env, mockOptionalEnv } from "../../../../lib/env";
 import { now, withNowScopeForTest } from "../../../../lib/time";
 import { mockStripeClient } from "../../../external/stripe-client";
 import { agentsRoutes } from "../../agents";
@@ -503,12 +503,14 @@ export function createRunsApi(context: TestContext) {
           return operation();
         });
       mockStripeClient(context.mocks.stripe as unknown as StripeSDK);
-      mockEnv("OKOU_PRICE_PRO", "price_bdd_pro");
-      mockEnv("OKOU_PRICE_TEAM", "price_bdd_team");
-      mockEnv("ATOM_GRANT_PRICE", "price_bdd_atom_grant");
-      mockEnv("OKOU_PRICE_CONCURRENCY", "price_bdd_concurrency");
       mockOptionalEnv("STRIPE_WEBHOOK_SECRET", "whsec_bdd_stripe");
       const tier = options.tier ?? "pro";
+      const priceId = env(
+        tier === "team" ? "OKOU_PRICE_TEAM" : "OKOU_PRICE_PRO",
+      )?.[0];
+      if (!priceId) {
+        throw new Error(`Expected a configured ${tier} subscription price`);
+      }
 
       // Stripe identities persist across files in the shared test database.
       const suffix = randomUUID();
@@ -534,7 +536,7 @@ export function createRunsApi(context: TestContext) {
           data: [
             {
               price: {
-                id: tier === "team" ? "price_bdd_team" : "price_bdd_pro",
+                id: priceId,
               },
             },
           ],
@@ -556,7 +558,7 @@ export function createRunsApi(context: TestContext) {
               data: [
                 {
                   price: {
-                    id: tier === "team" ? "price_bdd_team" : "price_bdd_pro",
+                    id: priceId,
                   },
                   parent: { type: "subscription_item_details" },
                   period: {
