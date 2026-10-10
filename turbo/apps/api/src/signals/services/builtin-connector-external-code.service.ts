@@ -28,7 +28,7 @@ import { command } from "ccstate";
 import { and, eq, inArray, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
-import { executeRawRows } from "../../lib/db-raw-rows";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { optionalEnv } from "../../lib/env";
 import { nowDate } from "../../lib/time";
@@ -766,17 +766,16 @@ const createExternalCodeSession$ = command(
           ),
         ),
       );
-    const [session] = await executeRawRows(
-      writeDb,
-      sql`
+    const [session] = parseRawRows(
+      createdExternalCodeSessionSchema,
+      await writeDb.execute(sql`
         WITH created_external_code_session AS (
           ${createSession.getSQL()}
         ), superseded_external_code_sessions AS (
           ${supersedePendingSessions.getSQL()}
         )
         SELECT id FROM created_external_code_session
-      `,
-      createdExternalCodeSessionSchema,
+      `),
     );
     signal.throwIfAborted();
     if (!session) {
