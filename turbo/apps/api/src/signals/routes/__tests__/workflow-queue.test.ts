@@ -180,10 +180,12 @@ async function createScheduleAutomation(
 
 async function postWorkflowWebhook(
   automation: WebhookAutomation,
-  payload: string,
+  payload: string | Readonly<Record<string, unknown>>,
   signal: AbortSignal = context.signal,
 ): Promise<{ readonly status: number; readonly body: unknown }> {
-  const rawBody = JSON.stringify({ event: payload });
+  const rawBody = JSON.stringify(
+    typeof payload === "string" ? { event: payload } : payload,
+  );
   const timestamp = Math.floor(now() / 1000);
   const response = await createApp({ signal, routes: TEST_APP_ROUTES }).request(
     `/api/webhooks/workflow-automations/${automation.token}`,
@@ -554,13 +556,26 @@ describe("workflow queue", () => {
     await bdd.readMe(scenario.actor);
     const automation = await createWebhookAutomation(scenario);
 
+    // Ordinary webhook bodies exercise nested key order through real JSONB
+    // persistence, both before and after queue drain.
+    const firstBody = {
+      event: "first friendly event",
+      details: { zebra: "first", a: 1 },
+      items: [
+        { z: "second", a: 2 },
+        { longer: true, b: null },
+      ],
+    };
+    const secondBody = {
+      event: "queued friendly event",
+      items: [{ zebra: "queued", a: false }, ["last", "first"]],
+      details: { longer: { zebra: 3, a: 4 }, b: null },
+    };
     const firstRunId = await expectAcceptedRunId(
-      await postWorkflowWebhook(automation, "first friendly event"),
+      await postWorkflowWebhook(automation, firstBody),
       automation.threadId,
     );
-    expectAccepted(
-      await postWorkflowWebhook(automation, "queued friendly event"),
-    );
+    expectAccepted(await postWorkflowWebhook(automation, secondBody));
 
     const automationEvents = await wf.readThreadEvents(automation.threadId);
     const claimedEvent = automationEvents.find((event) => {
@@ -612,6 +627,25 @@ describe("workflow queue", () => {
     expect(secondClaim.appendSystemPrompt).toContain(
       `Email: ${scenario.actor.email}`,
     );
+
+    for (const [runId, claim, body] of [
+      [firstRunId, firstClaim, firstBody],
+      [runIds[1]!, secondClaim, secondBody],
+    ] as const) {
+      const publicRun = await runsApi.readRun(scenario.actor, runId);
+      expect(claim.prompt).toBe(publicRun.prompt);
+      const eventData = claim.prompt.match(
+        /\nEvent data:\n([\s\S]*?)\n\nAutomation identity:\n/u,
+      )?.[1];
+      if (!eventData) {
+        throw new Error("Expected the Runner's public automation event data");
+      }
+      const parsedEvent: unknown = JSON.parse(eventData);
+      const event = z.object({ parsedJson: z.unknown() }).parse(parsedEvent);
+      // Structural equality ignores object key order; compare exact JSON.
+      expect(JSON.stringify(event.parsedJson)).toBe(JSON.stringify(body));
+      expect(claim.prompt).not.toContain(automation.secret);
+    }
 
     await runsApi.requestCancelRun(scenario.actor, runIds[1]!, [200]);
   });
