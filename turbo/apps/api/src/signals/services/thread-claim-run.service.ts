@@ -86,10 +86,8 @@ import {
   providerUnavailable,
 } from "../../lib/error";
 import { logger } from "../../lib/log";
-import { VERCEL_AUTOMATION_BYPASS_ENV } from "../../lib/preview-automation-bypass";
 
 import { now, nowDate } from "../../lib/time";
-import { previewAutomationBypass$ } from "../context/hono";
 import { waitUntil } from "../context/wait-until";
 import { type Db, db$, type ReadonlyDb, writeDb$ } from "../external/db";
 import {
@@ -2970,7 +2968,11 @@ export function createThreadClaimRunObjects(
     connectorSnapshot$,
   };
   const preCreateBodyEnvironmentEnvironment$ = bootstrap.bodyEnvironment$;
-  const environment$ = createEnvironmentSignals(bootstrap, threadContext);
+  const environment$ = createEnvironmentSignals(
+    bootstrap,
+    pickedEvent$,
+    threadContext,
+  );
   // Start environment preparation, including credential decryption, before
   // runner preparation awaits it.
   const preloadEnvironment$ = command(
@@ -3488,19 +3490,9 @@ export function createThreadClaimRunObjects(
     if (!selected || "status" in selected) {
       throw new Error("Run context requires an authorized ready input");
     }
-    const previewAutomationBypass = get(previewAutomationBypass$);
-    const args = previewAutomationBypass
-      ? {
-          ...selected.args,
-          platformEnvironment: {
-            ...selected.args.platformEnvironment,
-            [VERCEL_AUTOMATION_BYPASS_ENV]: previewAutomationBypass,
-          },
-        }
-      : selected.args;
     return {
       db: get(db$),
-      args,
+      args: selected.args,
       timing: selected.input.timing,
     };
   });
@@ -4337,7 +4329,6 @@ export function createThreadClaimRunObjects(
           apiStartTime: args.apiStartTime,
           includeOkouTokenSecret: args.includeOkouTokenSecret,
           chatThreadId: args.chatThreadId,
-          platformEnvironment: args.platformEnvironment,
           // Thread launches carry no producer Pi launch options or
           // artifact root-policy override.
           piLaunchConfig: undefined,
@@ -7868,10 +7859,7 @@ function claimRunStoredContextDraft<
     {
       ...args,
       body,
-      platformEnvironment: {
-        ...platformEnvironment,
-        ...args.environment.platformEnvironment,
-      },
+      platformEnvironment,
       runId: args.run.id,
     },
     encrypted.encryptedSecrets,
@@ -8032,7 +8020,6 @@ interface BuildRunnerJobPayloadInput {
   readonly additionalVolumeSources: AdditionalVolumeSources;
   readonly includeOkouTokenSecret: boolean | undefined;
   readonly chatThreadId: string | undefined;
-  readonly platformEnvironment: Record<string, string> | undefined;
   readonly userTimezone: string | undefined;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly timing: ApiDispatchTimingCollector;
@@ -8154,7 +8141,7 @@ function prepareRunnerStorageInput(input: StorageMaterializationInput) {
     writebackArtifacts: runnerWritebackArtifacts(args),
     group: preparedRunnerGroup(),
     platformEnvironment: {
-      ...args.platformEnvironment,
+      ...args.environment.platformEnvironment,
       ...okouToken.platformEnvironment,
     },
   };
@@ -8469,51 +8456,6 @@ function agentRunsCreateForbidden(
   };
 }
 
-function buildAgentRunPlatformEnvironment(args: {
-  readonly agentId: string;
-  readonly triggerSource: TriggerSource;
-  readonly chatThreadId: string | undefined;
-  readonly codexServiceTier: "fast" | undefined;
-  readonly reasoningEffort?: ReasoningEffort | null;
-}): Record<string, string> {
-  const integrationByTriggerSource: Partial<Record<TriggerSource, string>> = {
-    web: "web",
-    agent: "web",
-    slack: "slack",
-    discord: "discord",
-    teams: "teams",
-    feishu: "feishu",
-    lark: "lark",
-    telegram: "telegram",
-    agentphone: "phone",
-    github: "github",
-  };
-  const currentIntegration = integrationByTriggerSource[args.triggerSource];
-  return {
-    OKOU_APP_URL: env("APP_URL"),
-    OKOU_AGENT_ID: args.agentId,
-    ...(currentIntegration
-      ? { OKOU_CURRENT_INTEGRATION: currentIntegration }
-      : {}),
-    ...(args.reasoningEffort !== null && args.reasoningEffort !== undefined
-      ? { OKOU_REASONING_EFFORT: args.reasoningEffort }
-      : {}),
-    // Chat-mode automation (and web) runs carry their thread id so the
-    // in-sandbox CLI can bind a newly created automation to it (the create
-    // flow reads $OKOU_CHAT_THREAD_ID when no thread is given).
-    ...(args.chatThreadId
-      ? {
-          OKOU_CHAT_THREAD_ID: args.chatThreadId,
-        }
-      : {}),
-    ...(args.codexServiceTier
-      ? {
-          OKOU_CODEX_SERVICE_TIER: args.codexServiceTier,
-        }
-      : {}),
-  };
-}
-
 function agentRunTimingDimensions(args: {
   readonly origin: AgentRunOrigin;
   readonly command: ThreadRunCommand;
@@ -8630,7 +8572,6 @@ interface ProductRunArgs {
   readonly chatThreadId?: string;
   readonly connectorSourceId?: string;
   readonly threadSessionResolution?: ChatThreadSessionResolution;
-  readonly platformEnvironment?: Record<string, string>;
   readonly callbacks?: readonly RunCallback[];
   readonly includeOkouTokenSecret?: boolean;
   readonly preloadedAgentExecutionObservation?: AgentExecutionRequestObservation;
@@ -8665,13 +8606,6 @@ function buildProductRunArgs(
     ...(args.threadSessionResolution
       ? { threadSessionResolution: args.threadSessionResolution }
       : {}),
-    platformEnvironment: buildAgentRunPlatformEnvironment({
-      agentId: args.agent.id,
-      triggerSource: command.triggerSource ?? "web",
-      chatThreadId: command.chatThreadId,
-      codexServiceTier: command.codexServiceTier,
-      reasoningEffort: command.reasoningEffort,
-    }),
     callbacks: command.callbacks,
     includeOkouTokenSecret: true,
     ...(args.authorizedRequestObservation
