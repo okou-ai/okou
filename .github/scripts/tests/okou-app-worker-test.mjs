@@ -661,7 +661,7 @@ assert.equal(
 );
 assert.ok(
   tagAttributeValues(okouPage.html, "link", "href").includes(
-    "https://static.okou.io/public/okou-favicon-adaptive-b4eda9221bb7.svg",
+    "https://static.okou.io/public/okou-favicon-adaptive-602cc090ab4e.svg",
   ),
 );
 assert.equal(

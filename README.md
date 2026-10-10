@@ -1,8 +1,8 @@
 <h2 align="center">
   <a href="https://www.okou.ai">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://static.okou.io/web/assets/okou/brand/2026-09-04-f27a4cc3/logo-light.svg">
-      <img src="https://static.okou.io/web/assets/okou/brand/2026-09-04-f27a4cc3/logo-dark.svg" alt="Okou" width="420">
+      <source media="(prefers-color-scheme: dark)" srcset="https://static.okou.io/web/assets/okou/brand/2026-10-09-rudy-final/logo-light.svg">
+      <img src="https://static.okou.io/web/assets/okou/brand/2026-10-09-rudy-final/logo-dark.svg" alt="Okou" width="420">
     </picture>
   </a>
   <br><br>
