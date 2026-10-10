@@ -39,7 +39,7 @@ import { parseRawRows } from "../../lib/db-raw-rows";
 import { badRequestMessage, notFound } from "../../lib/error";
 import { optionalEnv } from "../../lib/env";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import {
   decryptPersistentSecretValue,
@@ -512,51 +512,20 @@ async function parseEncryptedProviderState(args: {
   });
 }
 
-async function retainClaimForCompletion(
-  args: {
-    readonly writeDb: Db;
-    readonly session: BuiltinConnectorDeviceAuthSessionRow;
-    readonly claimStartedAt: Date;
-  },
-  signal: AbortSignal,
-): Promise<boolean> {
-  // Keep the exact polling claim through credential persistence and completion.
-  // A replacement session or reclaimed provider poll must not publish credentials.
-  const [claim] = await args.writeDb
-    .update(builtinConnectorOauthDeviceAuthorizationSessions)
-    .set({ status: "polling" })
-    .where(
-      and(
-        eq(
-          builtinConnectorOauthDeviceAuthorizationSessions.id,
-          args.session.id,
-        ),
-        eq(
-          builtinConnectorOauthDeviceAuthorizationSessions.orgId,
-          args.session.orgId,
-        ),
-        eq(
-          builtinConnectorOauthDeviceAuthorizationSessions.userId,
-          args.session.userId,
-        ),
-        eq(
-          builtinConnectorOauthDeviceAuthorizationSessions.connectorSlug,
-          args.session.connectorSlug,
-        ),
-        eq(
-          builtinConnectorOauthDeviceAuthorizationSessions.authMethod,
-          args.session.authMethod,
-        ),
-        eq(builtinConnectorOauthDeviceAuthorizationSessions.status, "polling"),
-        eq(
-          builtinConnectorOauthDeviceAuthorizationSessions.updatedAt,
-          args.claimStartedAt,
-        ),
-      ),
-    )
-    .returning({ id: builtinConnectorOauthDeviceAuthorizationSessions.id });
-  signal.throwIfAborted();
-  return Boolean(claim);
+function retainedDeviceAuthClaimCondition(
+  session: BuiltinConnectorDeviceAuthSessionRow,
+  claimStartedAt: Date,
+) {
+  const sessions = builtinConnectorOauthDeviceAuthorizationSessions;
+  return and(
+    eq(sessions.id, session.id),
+    eq(sessions.orgId, session.orgId),
+    eq(sessions.userId, session.userId),
+    eq(sessions.connectorSlug, session.connectorSlug),
+    eq(sessions.authMethod, session.authMethod),
+    eq(sessions.status, "polling"),
+    eq(sessions.updatedAt, claimStartedAt),
+  );
 }
 
 function lostDeviceAuthClaimResponse(
@@ -656,43 +625,30 @@ const markClaimTerminal$ = command(
   },
 );
 
-async function markClaimComplete(
-  args: {
-    readonly writeDb: Db;
-    readonly session: BuiltinConnectorDeviceAuthSessionRow;
-    readonly claimStartedAt: Date;
-    readonly connectorId: string;
+function deviceAuthTokenConnectionInput(
+  args: PollClaimedSessionArgs & {
+    readonly result: OAuthDeviceAuthCompleteResultBase;
   },
-  signal: AbortSignal,
-): Promise<void> {
-  const completedAt = nowDate();
-  const [completedSession] = await args.writeDb
-    .update(builtinConnectorOauthDeviceAuthorizationSessions)
-    .set({
-      status: "complete",
-      completedConnectorId: args.connectorId,
-      updatedAt: completedAt,
-      completedAt,
-    })
-    .where(
-      and(
-        eq(
-          builtinConnectorOauthDeviceAuthorizationSessions.id,
-          args.session.id,
-        ),
-        eq(builtinConnectorOauthDeviceAuthorizationSessions.status, "polling"),
-        eq(
-          builtinConnectorOauthDeviceAuthorizationSessions.updatedAt,
-          args.claimStartedAt,
-        ),
-      ),
-    )
-    .returning({ id: builtinConnectorOauthDeviceAuthorizationSessions.id });
-  signal.throwIfAborted();
-  if (!completedSession) {
-    throw new Error("Retained OAuth device authorization claim disappeared");
-  }
+) {
+  const { session } = args;
+  return {
+    orgId: args.orgId,
+    userId: args.userId,
+    runtimeMethod: args.resolvedMethod.runtimeMethod,
+    snapshot: args.resolvedMethod.snapshot,
+    outputs: args.result.token.outputs,
+    userInfo: args.result.token.userInfo,
+    oauthRequestedScopes: deviceRequestedOauthScopes(
+      session.oauthRequestedScopes,
+      args.resolvedMethod,
+    ),
+    oauthGrantedScopes: args.result.token.scopes,
+    expiresIn: args.result.token.expiresIn,
+    extraConnectorSecrets: args.result.token.extraConnectorSecrets,
+    account: session.accountMutation,
+  };
 }
+
 const completeClaimedSession$ = command(
   async (
     { set },
@@ -704,22 +660,7 @@ const completeClaimedSession$ = command(
     const { session, claimStartedAt } = args;
     const prepared = await set(
       prepareBuiltinConnectorTokenConnection$,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        runtimeMethod: args.resolvedMethod.runtimeMethod,
-        snapshot: args.resolvedMethod.snapshot,
-        outputs: args.result.token.outputs,
-        userInfo: args.result.token.userInfo,
-        oauthRequestedScopes: deviceRequestedOauthScopes(
-          session.oauthRequestedScopes,
-          args.resolvedMethod,
-        ),
-        oauthGrantedScopes: args.result.token.scopes,
-        expiresIn: args.result.token.expiresIn,
-        extraConnectorSecrets: args.result.token.extraConnectorSecrets,
-        account: session.accountMutation,
-      },
+      deviceAuthTokenConnectionInput(args),
       signal,
     );
     let postCommitAbort: unknown = null;
@@ -743,12 +684,15 @@ const completeClaimedSession$ = command(
         write,
         signal,
       );
-      if (
-        !(await retainClaimForCompletion(
-          { writeDb: tx, session, claimStartedAt },
-          signal,
-        ))
-      ) {
+      // Keep the exact polling claim through credential persistence and completion.
+      // A replacement session or reclaimed provider poll must not publish credentials.
+      const [retainedClaim] = await tx
+        .update(sessions)
+        .set({ status: "polling" })
+        .where(retainedDeviceAuthClaimCondition(session, claimStartedAt))
+        .returning({ id: sessions.id });
+      signal.throwIfAborted();
+      if (!retainedClaim) {
         const [currentSession] = await tx
           .select(deviceAuthSessionSelection)
           .from(sessions)
@@ -795,15 +739,29 @@ const completeClaimedSession$ = command(
         signal.throwIfAborted();
         return lostDeviceAuthClaimResponse(currentSession, session);
       }
-      await markClaimComplete(
-        {
-          writeDb: tx,
-          session,
-          claimStartedAt,
-          connectorId: connectionResult.connectorRow.id,
-        },
-        signal,
-      );
+      const completedAt = nowDate();
+      const [completedSession] = await tx
+        .update(sessions)
+        .set({
+          status: "complete",
+          completedConnectorId: connectionResult.connectorRow.id,
+          updatedAt: completedAt,
+          completedAt,
+        })
+        .where(
+          and(
+            eq(sessions.id, session.id),
+            eq(sessions.status, "polling"),
+            eq(sessions.updatedAt, claimStartedAt),
+          ),
+        )
+        .returning({ id: sessions.id });
+      signal.throwIfAborted();
+      if (!completedSession) {
+        throw new Error(
+          "Retained OAuth device authorization claim disappeared",
+        );
+      }
       return connectionResult;
     });
     if (signal.aborted) {
