@@ -81,43 +81,35 @@ create_fixture() {
 create_fixture "$arm_target" "$arm_digest" "$arm_artifact"
 create_fixture "$x86_target" "$x86_digest" "$x86_artifact"
 
-cat > "${TMPDIR}/bin/gh" <<'BASH'
-#!/usr/bin/env bash
-set -euo pipefail
-printf '%s\n' "$*" >> "$GH_LOG"
-if [ "$1" = "api" ]; then
-  endpoint="${*: -1}"
-  if [[ "$endpoint" == *'/actions/artifacts?'* ]]; then
-    name=${endpoint#*name=}
-    name=${name%%&*}
-    if [ "${GH_SCENARIO:-all-hit}" = "all-miss" ] ||
-      { [ "${GH_SCENARIO:-all-hit}" = "mixed" ] && [ "$name" = "$X86_ARTIFACT" ]; }; then
-      printf '[{"artifacts":[]}]\n'
-    else
-      printf '[{"artifacts":[{"id":120,"name":"%s","expired":false,"size_in_bytes":1000,"created_at":"2026-07-22T00:00:00Z","workflow_run":{"id":20,"head_branch":"main","head_sha":"%s"}}]}]\n' \
-        "$name" "$MAIN_HEAD"
-    fi
-    exit 0
-  fi
-  exit 2
-fi
-if [ "$1" = "run" ] && [ "$2" = "download" ]; then
-  artifact_name=""
-  output_dir=""
-  while [ "$#" -gt 0 ]; do
-    case "$1" in
-      -n) artifact_name=$2; shift 2 ;;
-      -D) output_dir=$2; shift 2 ;;
-      *) shift ;;
-    esac
-  done
-  mkdir -p "$output_dir"
-  cp "${FIXTURES}/${artifact_name}.json" "${output_dir}/manifest.json"
-  exit 0
-fi
-exit 2
-BASH
-chmod +x "${TMPDIR}/bin/gh"
+cat > "${TMPDIR}/bin/curl" <<'PYTHON'
+#!/usr/bin/env python3
+import io, json, os, pathlib, sys, urllib.parse, zipfile
+args = sys.argv[1:]; url = urllib.parse.urlsplit(args[-1])
+assert url.hostname == 'api.github.com' and 'Authorization: Bearer fixture-token' in sys.stdin.read()
+with open(os.environ['GH_LOG'],'a') as log: log.write(url.path+'\n')
+output = pathlib.Path(args[args.index('--output')+1]); headers = pathlib.Path(args[args.index('--dump-header')+1])
+headers.write_text('HTTP/2 200\r\n')
+if url.path.endswith('/actions/artifacts'):
+    name = urllib.parse.parse_qs(url.query)['name'][0]
+    scenario = os.environ.get('GH_SCENARIO','all-hit')
+    artifacts = []
+    if scenario != 'all-miss' and not (scenario == 'mixed' and name == os.environ['X86_ARTIFACT']):
+        artifact_id = 120 if name == os.environ['ARM_ARTIFACT'] else 121
+        artifacts = [{'id':artifact_id,'name':name,'expired':False,'size_in_bytes':1000,
+          'created_at':'2026-07-22T00:00:00Z','workflow_run':{'id':20,'head_branch':'main','head_sha':os.environ['MAIN_HEAD']}}]
+    output.write_text(json.dumps({'artifacts':artifacts}))
+elif url.path.endswith('/zip'):
+    artifact = int(url.path.split('/')[-2])
+    assert artifact in (120,121)
+    name = os.environ['ARM_ARTIFACT'] if artifact == 120 else os.environ['X86_ARTIFACT']
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive,'w') as zipped:
+        zipped.writestr('manifest.json',(pathlib.Path(os.environ['FIXTURES'])/(name+'.json')).read_bytes())
+    output.write_bytes(archive.getvalue())
+else: raise AssertionError('unexpected external API endpoint')
+print('200',end='')
+PYTHON
+chmod +x "${TMPDIR}/bin/curl"
 
 cat > "${TMPDIR}/bin/aws" <<'BASH'
 #!/usr/bin/env bash
@@ -155,6 +147,7 @@ run_plan() {
   local scenario=$1 output_dir=$2
   PATH="${TMPDIR}/bin:${PATH}" \
   GH_LOG="${TMPDIR}/gh.log" \
+  GH_TOKEN=fixture-token \
   AWS_LOG="${TMPDIR}/aws.log" \
   GH_SCENARIO="$scenario" \
   FIXTURES="${TMPDIR}/fixtures" \

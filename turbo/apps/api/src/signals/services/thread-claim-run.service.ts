@@ -4,7 +4,6 @@ import {
   CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
   CANONICAL_CODEX_HOME_DIR,
   CANONICAL_CODEX_MEMORY_MOUNT_PATH,
-  type ConnectorRuntimeTargetRegistration,
   DEFAULT_PROFILE,
   PI_AGENT_DIR,
   PI_MEMORY_ROOT,
@@ -27,12 +26,36 @@ import {
 } from "@okouai/core/auto-run-model";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
-import { assertRequiredOfficialWorkflows } from "./official-workflow-observation.service";
 import {
   resolveRunSkillVolumes,
   type SkillVolume,
 } from "./run-prompt-and-skills";
+import {
+  type ConnectorScopeSource,
+  type EffectiveConnectorScope,
+  isEmptyRunConnectorScope,
+  type RunConnectorCatalogSelection,
+  runConnectorCatalogSelection,
+} from "./thread-connected-accounts.signals";
+import { countBucket } from "./dispatch-count-bucket";
+import {
+  type PersistedRunEnvironmentSnapshot,
+  pendingOkouTokenSecrets,
+  resolveRunBodyEnvironment,
+  type RunBodyEnvironment,
+  selectedAgentRunVariables,
+  withoutLegacyAgentRunEnvironmentEntries,
+} from "./run-body-environment";
 import { createThreadContext } from "./thread-context.signals";
+import { createEnvironmentSignals } from "./thread-environment.signals";
+import {
+  emptyEnvironment,
+  type Environment,
+  environmentPermissionManifest,
+  mergeEnvironments,
+} from "./run-environment";
+import { createConnectorRuntimeSignals } from "./thread-connector-runtime.signals";
+import { createOfficialWorkflowSignals } from "./thread-official-workflow.signals";
 import type {
   QueuedModelContext,
   ThreadModelError,
@@ -80,22 +103,14 @@ import {
 import { recordSandboxOperation } from "../external/sandbox-op-log";
 import { getOfficialTelegramBotConfig } from "../external/telegram-official";
 import { safeSync, settle, tapError } from "../utils";
-import {
-  agentConnectorScopeFromRows,
-  type AgentConnectorScopeSnapshot,
-} from "./agent-connector-scope.service";
+import type { AgentConnectorScopeSnapshot } from "./agent-connector-scope.service";
 import { activatePendingRun$ as activateCommittedRun$ } from "./agent-run-activation.service";
 import type { PendingRunActivation } from "./agent-run-activation.types";
-import {
-  type AgentRunContextSignals,
-  type BootstrapConnectorObservation,
-  createEagerConnectorCredentialContext,
-} from "./agent-run-context.signals";
+import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import type {
   AgentRunModelPin,
   AgentRunPreCreateSource,
   AgentRunRequestAgent,
-  PermissionManifest,
   ResolvedModelProviderEnvironment,
   RunCallback,
 } from "./agent-run-contracts";
@@ -122,7 +137,6 @@ import {
   type ExecutionCallback,
   prepareCallbacks$ as prepareExecutionCallbacks$,
 } from "./execution-callbacks.service";
-import type { ConnectorSourceSnapshot } from "./execution-connector-sources.service";
 import { encryptExecutionSecrets$ } from "./execution-secrets.service";
 import {
   createResolvedExecutionStorageObjects,
@@ -209,10 +223,6 @@ import { INITIAL_AUTONOMY_BUDGET } from "./autonomy-budget.constants";
 import { childAutonomyBudget } from "./autonomy-budget.service";
 import type { BuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
 import {
-  type BuiltinConnectorCredentialAccess,
-  resolveBuiltinConnectorCredentialAccess,
-} from "./builtin-connector-credential-access.service";
-import {
   canonicalChatEventUserMessage,
   canonicalChatInputModelSelection,
   parseCanonicalChatEventRequiredOfficialWorkflowIds,
@@ -236,52 +246,11 @@ import {
   resolveChatThreadSessionSnapshot,
 } from "./chat-session-continuity.service";
 import { agentRunSourceAnnotation } from "./chat-user-message.service";
-import { connectorAccountTargetKey } from "./connector-account-resolution.service";
-import {
-  type ConnectorRuntimeMethod,
-  type ConnectorRuntimeSelection,
-  connectorScopeForRuntimeSnapshot,
-  getConnectorRuntimeConnector,
-} from "./connector-catalog-runtime.service";
-import {
-  allAllowPolicyForPermissions,
-  buildCustomConnectorRuntimeContext,
-  type BuildCustomConnectorRuntimeContextArgs,
-  collectPermissionNames,
-  compactRecord,
-  type CustomConnectorRuntimeContext,
-  type CustomConnectorRuntimeDataRows,
-  customConnectorRuntimeFirewall,
-  loadEffectiveCustomConnectorPermissionBundle,
-  resolveConnectorNetworkPolicy,
-  resolveCustomConnectorBaseUrlVars,
-  runtimeFirewall,
-} from "./connector-runtime-preparation.service";
-import {
-  type ConnectorServerFirewallExecutionMetadata,
-  type ConnectorServerFirewallPermissionIndex,
-  expandConnectorServerFirewallPolicies,
-} from "./connector-server-firewall-catalog.service";
-import {
-  customConnectorAccountAuthMethodIsCompatible,
-  type CustomConnectorRuntimeStorageRow,
-  customConnectorRuntimeStorageSnapshot,
-} from "./custom-connector-credential-access.service";
-import {
-  type CustomConnectorPermissionBundle,
-  customConnectorPermissionBundleDependencySlug,
-} from "./custom-connector-permission-bundle.service";
-import {
-  CUSTOM_CONNECTOR_OAUTH_ACCESS_TOKEN_SECRET_NAME,
-  CUSTOM_CONNECTOR_OAUTH_REFRESH_TOKEN_SECRET_NAME,
-  customConnectorManualAuthReferencesMemberField,
-  customConnectorMissingRequiredFieldKeys,
-  customConnectorValueMarkerKey,
-} from "./custom-connector.service";
+import { compactRecord } from "./connector-runtime-preparation.service";
+import { customConnectorPermissionBundleDependencySlug } from "./custom-connector-permission-bundle.service";
 
 import { DiscordQueuedLaunchUnavailableError } from "./discord-queued-launch-context.service";
 import { isMemberSubscriptionRoute } from "./effective-model-route.service";
-import { ORG_SENTINEL_USER_ID } from "./feature-switch-scope";
 
 import { recordGetStartedWorkflowSql } from "./get-started-workflow.service";
 import { formatIntegrationRunError$ } from "./integration-run-errors.service";
@@ -294,21 +263,11 @@ import {
 
 import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
-import type {
-  ConnectorAccountSelection,
-  ConnectorAccountTarget,
-} from "@okouai/api-contracts/contracts/connector-accounts";
-import {
-  type ConnectorAuthMethodId,
-  type ConnectorSlug,
-  connectorSlugSchema,
-} from "@okouai/api-contracts/contracts/connector-identity";
-import { isIntegrationManagedCustomConnectorProviderAdapter } from "@okouai/api-contracts/contracts/custom-connectors";
+import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import {
   getFrameworkForType,
-  getModelProviderFirewall,
   isBuiltInModelProviderType,
   type ModelProviderCredentialScope,
 } from "@okouai/api-contracts/contracts/model-providers";
@@ -326,26 +285,8 @@ import {
   type RunStatus,
   unifiedRunRequestSchema,
 } from "@okouai/api-contracts/contracts/runs";
-import {
-  connectorAuthMethodRuntimeMetadata,
-  type ConnectorRuntimeBindingEntry,
-} from "@okouai/connectors/connector-auth-method";
-import {
-  type FirewallPermissionGrant,
-  permissionGrantsToFirewallPolicies,
-} from "@okouai/connectors/firewall-metadata/policy";
-import {
-  canonicalizeFirewallBaseUrlVarsForExecution,
-  type ExecutionFirewallEntry,
-  type ExecutionFirewalls,
-  type ExpandedFirewallConfig,
-  extractSecretNamesFromApis,
-  type Firewall,
-  FirewallBaseUrlResolutionError,
-  type FirewallPolicies,
-  type FirewallPolicy,
-  type NetworkPolicies,
-} from "@okouai/connectors/firewall-types";
+import type { FirewallPermissionGrant } from "@okouai/connectors/firewall-metadata/policy";
+import type { FirewallPolicies } from "@okouai/connectors/firewall-types";
 import {
   type FeatureSwitchContext,
   getAllFeatureStates,
@@ -366,11 +307,6 @@ import {
   SYSTEM_ORG_ID,
   VOLUME_ORG_USER_ID,
 } from "@okouai/core/storage-names";
-import {
-  expandVariables,
-  expandVariablesInString,
-  extractAndGroupVariables,
-} from "@okouai/core/variable-expander";
 import {
   isValidVersionPrefix,
   MIN_VERSION_PREFIX_LENGTH,
@@ -395,8 +331,6 @@ import {
 } from "@okouai/db/schema/chat-event";
 
 import { chatNetworkBodyCaptures } from "@okouai/db/schema/chat-network-body-capture";
-
-import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 
 import { memorySummaryProjections } from "@okouai/db/schema/memory-summary-projection";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
@@ -442,14 +376,9 @@ import {
   chatThreadRequestSelection,
 } from "./chat-thread-request-facts";
 import {
-  builtinConnectorRuntimeCredentialStatusWithMethod,
-  type ConnectorCredentialStatus,
-} from "./connector-credential-status.service";
-import {
   cacheRowsFromProjection,
   storageVersionCacheKeySql,
 } from "./execution-storage-cache-read.service";
-import { defaultFirewallPolicyForPermissionIndex } from "./firewall-network-policy.service";
 import { historyGenerationRunIdForStoredExecutionContext } from "./history-generation-run";
 import { billingRunAttributionWrite } from "./managed-usage-attribution";
 import {
@@ -665,7 +594,6 @@ function queuedPromptRunInput(args: {
     orgId: input.agent.orgId,
     userId: input.userId,
     agentId: input.agent.id,
-    expectedThreadAgentId: input.expectedThreadAgentId,
     threadSessionResolution: args.session,
     featureSwitchContext: args.features,
     prompt: args.promptAndSkills.userPrompt,
@@ -741,22 +669,6 @@ function queuedPromptPreparationRejection(
                 : "CONFLICT",
         message: error.message,
       },
-    },
-  };
-}
-
-function missingQueuedAgentRejection(
-  head: ChatQueueHeadContext,
-): ChatQueueRunAssembly {
-  return {
-    kind: "rejected",
-    rejection: {
-      userId: head.userId,
-      error: {
-        code: "BAD_REQUEST",
-        message: "The organization default agent is unavailable",
-      },
-      delivery: { kind: "source", head },
     },
   };
 }
@@ -944,13 +856,6 @@ interface AssembledWorkflowAutomationRun {
   readonly launchRecord: Extract<ClaimLaunchRecord, { kind: "automation" }>;
 }
 
-function workflowAutomationRunOwner(automation: {
-  readonly orgId: string;
-  readonly ownerUserId: string;
-}) {
-  return { orgId: automation.orgId, userId: automation.ownerUserId };
-}
-
 function automationSelectionCommand(
   args: Pick<
     AssembleWorkflowAutomationRunArgs,
@@ -961,17 +866,22 @@ function automationSelectionCommand(
     | "connectorSourceId"
   >,
   model: Extract<ModelContext, { readonly ok: true }>,
-  timing: ApiDispatchTimingCollector,
+  identity: {
+    readonly timing: ApiDispatchTimingCollector;
+    readonly owner: { readonly orgId: string; readonly userId: string };
+    readonly agentId: string;
+  },
 ): ThreadRunSelection &
   Pick<
     ThreadRunCommand,
     "chatThreadId" | "queueFirstAssociation" | "agentRunModelPin"
   > {
-  const { automation, agentId, chatThreadId } = args.due;
+  const { automation, chatThreadId } = args.due;
+  const { timing } = identity;
   return {
-    owner: workflowAutomationRunOwner(automation),
+    owner: identity.owner,
     body: {
-      agentId,
+      agentId: identity.agentId,
       ...workflowModelProviderBody(model.effectiveModelProvider),
     },
     apiStartTime: args.apiStartTime,
@@ -1208,17 +1118,10 @@ function finalizeClaimRunContext(
   };
 }
 
-type ClaimProducerBinding =
-  | { readonly kind: "automation"; readonly queueEventId: string }
-  | {
-      readonly kind: "reassign-agent";
-      readonly agentId: string;
-      readonly expectedAgentId: string;
-      readonly userId: string;
-      readonly threadId: string;
-      readonly orgId: string;
-    }
-  | null;
+type ClaimProducerBinding = {
+  readonly kind: "automation";
+  readonly queueEventId: string;
+} | null;
 
 type ClaimQueueRunCommandArgs = ThreadRunCommand;
 
@@ -1390,69 +1293,6 @@ function claimLaunchRecord(record: ClaimLaunchRecord): ClaimLaunchRecord {
 
 type RunnerInputResult =
   ReturnType<typeof prepareRunnerStorageInput> | CreateRunErrorResult | null;
-
-function customConnectorSourceStorageRows(
-  snapshot: ConnectorSourceSnapshot,
-): readonly CustomConnectorRuntimeStorageRow[] {
-  const { source, connection, customBinding: binding } = snapshot;
-  if (source.kind !== "custom" || !binding) {
-    return [];
-  }
-  const credentialId = (name: string) => {
-    return (
-      snapshot.credentials.find((credential) => {
-        return credential.name === name;
-      })?.id ?? null
-    );
-  };
-  const base = {
-    id: source.sourceId,
-    updatedAt: connection.updatedAt,
-    customConnectorId: source.customConnectorId,
-    storedAuthMethod: connection.authMethod,
-    storedStorageVersion: connection.storageVersion,
-    storedNeedsReconnect: connection.needsReconnect,
-    tokenExpiresAt: connection.tokenExpiresAt,
-    definitionAuthMethod: binding.definitionAuthMode,
-    definitionMcpTransport: binding.definitionMcpTransport,
-    definitionStorageVersion: binding.definitionStorageVersion,
-    oauthAccessTokenId: credentialId(
-      CUSTOM_CONNECTOR_OAUTH_ACCESS_TOKEN_SECRET_NAME,
-    ),
-    oauthRefreshTokenId: credentialId(
-      CUSTOM_CONNECTOR_OAUTH_REFRESH_TOKEN_SECRET_NAME,
-    ),
-    automaticOAuthBindingId: binding.automaticOAuthBindingId,
-  };
-  // Saved values only count for a compatible auth method at the exact current
-  // definition storage version; secrets never apply to unauthenticated access.
-  const current =
-    customConnectorAccountAuthMethodIsCompatible(
-      binding.definitionAuthMode,
-      connection.authMethod,
-    ) && connection.storageVersion === binding.definitionStorageVersion;
-  const values = current
-    ? [
-        ...(connection.authMethod === "none"
-          ? []
-          : snapshot.credentials.map((credential) => {
-              return {
-                kind: "secret" as const,
-                key: credential.name,
-                storedValue: credential.encryptedValue,
-              };
-            })),
-        ...Object.entries(snapshot.variables).map(([key, storedValue]) => {
-          return { kind: "variable" as const, key, storedValue };
-        }),
-      ]
-    : [];
-  return values.length === 0
-    ? [{ ...base, kind: null, key: null, storedValue: null }]
-    : values.map((value) => {
-        return { ...base, ...value };
-      });
-}
 
 type PendingClaimRun = {
   readonly kind: "pending";
@@ -1727,7 +1567,6 @@ export function createThreadClaimRunObjects(
         }
       : null;
   });
-  const queuedIdentityContext$ = threadContext.executionBootstrap$;
   const resolveQueuedModel$ = threadContext.queuedModel$;
   const promptInputInput$ = computed(
     async (get): Promise<QueuedPromptGraphInput> => {
@@ -1832,25 +1671,19 @@ export function createThreadClaimRunObjects(
       };
     },
   );
-  const promptAgentAgent$ = threadContext.agentSelection$;
-  const promptExecutionContext$ = threadContext.executionBootstrap$;
   const promptArgsArgs$ = computed(
     async (get): Promise<CreateQueuedChatRunInputArgs> => {
       const { head, timing } = await get(promptInputInput$);
       const db = get(db$);
-      const [queuedMessage, agent] = await Promise.all([
-        get(promptQueuedMessageQueuedMessage$),
-        get(promptAgentAgent$),
-      ]);
-      if (!queuedMessage || queuedMessage.id !== head.id || !agent) {
-        throw new Error("Prompt preparation lost its selected head or agent");
+      const queuedMessage = await get(promptQueuedMessageQueuedMessage$);
+      if (!queuedMessage || queuedMessage.id !== head.id) {
+        throw new Error("Prompt preparation lost its selected head");
       }
       return {
         db,
         threadId: head.chatThreadId,
         userId: head.userId,
-        agent: { id: agent.agentId, orgId: head.orgId },
-        expectedThreadAgentId: agent.expectedThreadAgentId,
+        agent: { id: context.agentId, orgId: head.orgId },
         queuedMessage,
         timing,
       };
@@ -1986,18 +1819,13 @@ export function createThreadClaimRunObjects(
         input: args,
         modelRoute: model.route,
       });
-      const thread = await get(threadRow$);
-      if (
-        !thread ||
-        thread.id !== args.threadId ||
-        thread.userId !== args.userId ||
-        thread.agentId !== (args.expectedThreadAgentId ?? args.agent.id)
-      ) {
+      const thread = (await get(pickedEvent$))?.thread;
+      if (!thread) {
         throw new Error(
           "Chat thread not found while resolving session binding",
         );
       }
-      const agent = await get((await get(promptExecutionContext$)).agent$);
+      const agent = await get(context.agent$);
       return resolveChatThreadSessionSnapshot(
         capturedChatThreadSessionSnapshot(
           thread,
@@ -2134,20 +1962,11 @@ export function createThreadClaimRunObjects(
       if (!head) {
         return { kind: "not-ready" };
       }
-      const selected = await settle(
-        Promise.all([
-          get(promptQueuedMessageQueuedMessage$),
-          get(promptAgentAgent$),
-        ]),
-      );
+      const selected = await settle(get(promptQueuedMessageQueuedMessage$));
       if (!selected.ok) {
         return queuedPromptPreparationRejection(selected.error, head);
       }
-      const [queued, agent] = selected.value;
-      if (queued?.id !== head.id) {
-        return { kind: "not-ready" };
-      }
-      return agent ? null : missingQueuedAgentRejection(head);
+      return selected.value?.id === head.id ? null : { kind: "not-ready" };
     },
   );
   const initializeQueuedPrompt$ = command(
@@ -2203,17 +2022,13 @@ export function createThreadClaimRunObjects(
           rejection: queuedMessageRejection(runInput),
         };
       }
-      const agent = await get(promptAgentAgent$);
-      if (!agent) {
-        return missingQueuedAgentRejection(head);
-      }
       return {
         kind: "assembled",
         run: {
           ...buildQueuedRunCommand(runInput, head.apiStartTime),
           timing: input.runTiming,
         },
-        producerBinding: agent.producerBinding ?? null,
+        producerBinding: null,
         rejection: { kind: "prompt", runInput },
         launchRecord: {
           kind: "prompt",
@@ -2251,7 +2066,6 @@ export function createThreadClaimRunObjects(
       apiStartTime: head.apiStartTime,
       agentId: args.agent.id,
       chatThreadId: args.threadId,
-      expectedThreadAgentId: args.expectedThreadAgentId,
       queueFirstAssociation: {
         threadId: args.threadId,
         eventId: args.queuedMessage.id,
@@ -2285,7 +2099,6 @@ export function createThreadClaimRunObjects(
           ...workflowModelProviderBody(routedModel.effectiveModelProvider),
         },
         chatThreadId: args.threadId,
-        expectedThreadAgentId: args.expectedThreadAgentId,
         queueFirstAssociation: identity.queueFirstAssociation,
         agentRunModelPin: {
           modelProvider: routedModel.effectiveModelProvider ?? null,
@@ -2369,15 +2182,6 @@ export function createThreadClaimRunObjects(
       queuedMessage: args.queuedMessage,
       ...queuedIntegrationLaunchFields(material, args.agent.id),
     });
-  });
-  const promptExecutionResourcesConnectorSourceId$ = computed(async (get) => {
-    const head = await get(head$);
-    // Web/agent prompts never carry an integration account source. Do not wait
-    // for prompt material just to discover this already-known absence.
-    if (head?.contextType === "web" || head?.contextType === "agent_run") {
-      return undefined;
-    }
-    return (await get(availableMaterial$))?.connectorSourceId;
   });
   const event$ = automationContext$;
   const capturedAutomationTarget$ = threadContext.automationTarget$;
@@ -2603,9 +2407,9 @@ export function createThreadClaimRunObjects(
       }
       return {
         timing: get(workflowAutomationLaunchReadGraphTiming$),
-        owner: workflowAutomationRunOwner(args.due.automation),
+        owner: { orgId: context.orgId, userId: context.userId },
         apiStartTime: args.apiStartTime,
-        agentId: args.due.agentId,
+        agentId: context.agentId,
         chatThreadId: args.due.chatThreadId,
         queueFirstAssociation: {
           threadId: args.due.chatThreadId,
@@ -2624,7 +2428,7 @@ export function createThreadClaimRunObjects(
       return identity && model.ok && args
         ? {
             timing: identity.timing,
-            command: automationSelectionCommand(args, model, identity.timing),
+            command: automationSelectionCommand(args, model, identity),
           }
         : null;
     },
@@ -2719,10 +2523,8 @@ export function createThreadClaimRunObjects(
     },
   );
   const workflowAutomationLaunchAssembly$ = assembleWorkflowAutomationRun$;
-  const {
-    event$: queuedAutomationAssemblerEvent$,
-    target$: queuedAutomationAssemblerTarget$,
-  } = queuedAutomationRunSources;
+  const { target$: queuedAutomationAssemblerTarget$ } =
+    queuedAutomationRunSources;
   const { launchMaterial$: queuedAutomationAssemblerLaunchMaterial$ } =
     material;
   // A head whose automation input can no longer be read is rejected from its
@@ -2910,12 +2712,6 @@ export function createThreadClaimRunObjects(
     }
     return (await get(queuedAutomationAssemblerLaunchMaterial$))?.callbacks;
   });
-  const queuedAutomationAssemblerConnectorSourceId$ = computed(async (get) => {
-    return (
-      (await get(queuedAutomationAssemblerEvent$))?.connectorSourceId ??
-      undefined
-    );
-  });
   const queuedAutomationAssemblerCommand$ = computed(async (get) => {
     const assembly = await get(queuedAutomationAssemblerAssembly$);
     return assembly.kind === "assembled" ? assembly.run : null;
@@ -2961,13 +2757,6 @@ export function createThreadClaimRunObjects(
         : get(promptExecutionResourcesCallbackInputs$);
     },
   );
-  const connectorSourceId$ = computed(async (get) => {
-    return get(
-      (await get(isAutomation$))
-        ? queuedAutomationAssemblerConnectorSourceId$
-        : promptExecutionResourcesConnectorSourceId$,
-    );
-  });
   const threadSession$ = computed(
     async (get): Promise<ChatThreadSessionResolution | undefined> => {
       return (await get(isAutomation$))
@@ -2995,7 +2784,6 @@ export function createThreadClaimRunObjects(
           apiStartTime: input.apiStartTime,
           body: { agentId: input.agentId },
           chatThreadId: input.chatThreadId,
-          expectedThreadAgentId: input.expectedThreadAgentId,
           queueFirstAssociation: input.queueFirstAssociation,
         },
       };
@@ -3014,22 +2802,10 @@ export function createThreadClaimRunObjects(
       },
     );
   });
-  const preCreateRequestObservationRequestObservation$ = computed(
-    async (get) => {
-      const { command } = await get(selectedIdentityInputIdentityInput$);
-      const agentId = await get(preCreateAgentIdAgentId$);
-      return agentId
-        ? matchingAuthorizedRequestObservation(command, agentId)
-        : undefined;
-    },
-  );
   const preCreateAgentAgent$ = computed(
     async (get): Promise<AgentRunRecord | null> => {
       const { timing } = await get(selectedIdentityInputIdentityInput$);
-      const [agentId, observation] = await Promise.all([
-        get(preCreateAgentIdAgentId$),
-        get(preCreateRequestObservationRequestObservation$),
-      ]);
+      const agentId = await get(preCreateAgentIdAgentId$);
       if (!agentId) {
         return null;
       }
@@ -3037,26 +2813,23 @@ export function createThreadClaimRunObjects(
         timing,
         "api_dispatch_pre_create_agent_load_agent",
         async () => {
-          if (observation) {
-            return observation.agent;
-          }
           // Authorization waits only for the context's Agent snapshot.
-          return await get((await get(executionContext$)).agent$);
-        },
-        {
-          authorized_request_agent_source:
-            observation === undefined ? "database" : "request_observation",
+          return await get(context.agent$);
         },
       );
     },
   );
-  const executionContext$ = threadContext.executionBootstrap$;
+  const connectorRuntime = createConnectorRuntimeSignals(
+    context,
+    threadContext,
+  );
   const preCreateBootstrapMetadata$ = computed(async (get) => {
     const startedAt = now();
-    const selected = await get(executionContext$);
+    const selected = context;
     const [
       { timing },
       selection,
+      connectorScope,
       memberMetadata,
       permissionGrants,
       workflows,
@@ -3064,6 +2837,7 @@ export function createThreadClaimRunObjects(
     ] = await Promise.all([
       get(selectedIdentityInputIdentityInput$),
       get(selected.connectorSelection$),
+      get(selected.connectorScope$),
       get(selected.memberMetadata$),
       get(selected.permissionGrants$),
       get(selected.workflows$),
@@ -3081,14 +2855,6 @@ export function createThreadClaimRunObjects(
           : { bootstrap_prefetch_miss_reason: prefetchOutcome }),
       },
     );
-    const connectorScope = agentConnectorScopeFromRows({
-      connectorRows: selection.builtinConnectorSlugs.map((connectorSlug) => {
-        return {
-          connectorSlug,
-        };
-      }),
-      customConnectorRows: selection.customConnectors,
-    });
     const metadataSlugs = new Set(
       selection.customConnectors.flatMap((connector) => {
         const ref = connector.permissionBundleRef;
@@ -3154,44 +2920,15 @@ export function createThreadClaimRunObjects(
   );
   const preCreateConnectorCatalogConnectorCatalog$ = computed(
     async (get): Promise<RunConnectorCatalogSelection> => {
-      const [catalog, metadata] = await Promise.all([
-        get((await get(executionContext$)).catalog$),
-        get(preCreateBootstrapMetadata$),
+      const [scope, catalog] = await Promise.all([
+        get(context.connectorScope$),
+        get(context.catalog$),
       ]);
-      if (isEmptyRunConnectorScope(metadata)) {
-        return { kind: "empty" };
-      }
-      if (!catalog) {
-        throw new Error("Scoped connector catalog is missing from bootstrap");
-      }
-      return { kind: "scoped", selection: catalog };
+      return runConnectorCatalogSelection(scope, catalog);
     },
   );
-  const preCreatePermissionPoliciesPermissionPolicies$ = computed(
-    async (get) => {
-      const { timing } = await get(selectedIdentityInputIdentityInput$);
-      const [bootstrap, catalog] = await Promise.all([
-        get(preCreateBootstrapMetadata$),
-        get(preCreateConnectorCatalogConnectorCatalog$),
-      ]);
-      return await measureAgentRunPreCreate(
-        timing,
-        "api_dispatch_pre_create_agent_resolve_firewall_metadata",
-        async () => {
-          const stored = permissionGrantsToFirewallPolicies(
-            bootstrap.permissionGrants,
-          );
-          return catalog.kind === "empty"
-            ? stored
-            : await expandConnectorServerFirewallPolicies({
-                catalog: catalog.selection.serverFirewalls,
-                stored,
-                connectorSlugs: [...bootstrap.allowedConnectorSlugs],
-              });
-        },
-      );
-    },
-  );
+  const preCreatePermissionPoliciesPermissionPolicies$ =
+    connectorRuntime.permissionPolicies$;
   const sessionPrompt$ = computed(async (get) => {
     return (await get(selectedCommand$))?.appendSystemPrompt;
   });
@@ -3204,14 +2941,12 @@ export function createThreadClaimRunObjects(
         accountResult,
         catalogResult,
         policiesResult,
-        observationResult,
       ] = await Promise.all([
         get(preCreateBootstrapBootstrap$),
         get(preCreateAgentAgent$),
         get(preCreateSubscriptionAccountSubscriptionAccount$),
         get(preCreateConnectorCatalogConnectorCatalog$),
         get(preCreatePermissionPoliciesPermissionPolicies$),
-        get(preCreateRequestObservationRequestObservation$),
       ]);
       const bootstrap = bootstrapResult;
       const agent = agentResult;
@@ -3221,7 +2956,6 @@ export function createThreadClaimRunObjects(
       }
       const catalog = catalogResult;
       const policies = policiesResult;
-      const observation = observationResult;
       if (!agent) {
         throw new Error("Agent disappeared after preparation authorization");
       }
@@ -3232,7 +2966,7 @@ export function createThreadClaimRunObjects(
         timing,
         connectorCatalogSelection: catalog,
         runPermissionPolicies: policies,
-        authorizedRequestObservation: observation ?? {
+        authorizedRequestObservation: {
           userId: account.command.owner.userId,
           orgId: account.command.owner.orgId,
           agent,
@@ -3241,7 +2975,13 @@ export function createThreadClaimRunObjects(
       };
     },
   );
-  const cloudBrowserEnabled$ = threadContext.cloudBrowserEnabled$;
+  const cloudBrowserEnabled$ = computed(async (get) => {
+    const thread = (await get(pickedEvent$))?.thread;
+    if (!thread) {
+      throw new Error("Agent prompt requires a chat thread");
+    }
+    return thread.cloudBrowserEnabled;
+  });
   const preCreatePreparedInput$ = computed(async (get) => {
     const [input, resolution, appendSystemPrompt, fullCommand, catalog] =
       await Promise.all([
@@ -3293,16 +3033,9 @@ export function createThreadClaimRunObjects(
       ),
     };
   });
-  const preCreateExecutionInput$ = preCreateInput$;
-  const preCreateExecutionIdentityInput$ = selectedIdentityInputIdentityInput$;
-  const preCreateExecutionAgent$ = preCreateAgentAgent$;
   const preCreateExecutionBootstrapMetadata$ = preCreateBootstrapMetadata$;
-  const preCreateExecutionConnectorCatalog$ =
-    preCreateConnectorCatalogConnectorCatalog$;
-  const preCreateExecutionPermissionPolicies$ =
-    preCreatePermissionPoliciesPermissionPolicies$;
   const runDisabledPaidToolsSnapshot$ = computed(async (get) => {
-    const selected = await get(executionContext$);
+    const selected = context;
     return {
       orgId: selected.orgId,
       userId: selected.userId,
@@ -3310,7 +3043,7 @@ export function createThreadClaimRunObjects(
     };
   });
   const runMemberSnapshot$ = computed(async (get) => {
-    const selected = await get(executionContext$);
+    const selected = context;
     return {
       orgId: selected.orgId,
       userId: selected.userId,
@@ -3318,7 +3051,7 @@ export function createThreadClaimRunObjects(
     };
   });
   const runEnvironmentSnapshot$ = computed(async (get) => {
-    const selected = await get(executionContext$);
+    const selected = context;
     return {
       orgId: selected.orgId,
       userId: selected.userId,
@@ -3338,8 +3071,11 @@ export function createThreadClaimRunObjects(
   });
   const runFramework$ = threadContext.requestedFramework$;
   const modelRoute$ = threadContext.modelRoute$;
-  const promptAndSkillVolumes$ =
-    createPromptAndSkillVolumesSignals(threadContext);
+  const promptAndSkillVolumes$ = createPromptAndSkillVolumesSignals(
+    context,
+    pickedEvent$,
+    threadContext,
+  );
   const preparedPromptAndSkillVolumes$ = computed(
     async (get): Promise<PromptAndSkillVolumes | CreateRunErrorResult> => {
       if (!(await get(isAutomation$))) {
@@ -3375,807 +3111,23 @@ export function createThreadClaimRunObjects(
     framework$: runFramework$,
     modelRoute$: modelRoute$,
   };
-  const connectorInput$ = computed(
-    async (get): Promise<RunConnectorReadInput> => {
-      const { command, timing } = await get(preCreateExecutionIdentityInput$);
-      const db = get(db$);
-      return {
-        db,
-        timing,
-        args: {
-          orgId: command.owner.orgId,
-          userId: command.owner.userId,
-          chatThreadId: command.chatThreadId,
-          includeOkouTokenSecret: true,
-        },
-      };
-    },
-  );
-  const preCreateConnectorScope$ = computed(
-    async (get): Promise<EffectiveConnectorScope> => {
-      const metadata = await get(preCreateExecutionBootstrapMetadata$);
-      return {
-        allowedConnectorSlugs: metadata.allowedConnectorSlugs,
-        allowedCustomConnectorIds: metadata.allowedCustomConnectorIds,
-        customConnectorGrants: metadata.customConnectorGrants,
-        source: isEmptyRunConnectorScope(metadata) ? "empty" : "stored_agent",
-      };
-    },
-  );
-  const preCreateConnectorFeatureSwitchContext$ = computed(async (get) => {
-    return (await get(preCreateExecutionBootstrapMetadata$))
-      .featureSwitchContext;
-  });
-  const runCustomConnectorDefinitionRows$ = computed(async (get) => {
-    const { timing } = await get(connectorInput$);
-    return await timing.measure(
-      "api_dispatch_prepare_context_load_custom_connector_rows",
-      "nested",
-      async () => {
-        return await get(
-          (await get(executionContext$)).customConnectorDefinitions$,
-        );
-      },
-    );
-  });
-  const runOwnedConnectorThread$ = computed(async (get) => {
-    const { args } = await get(connectorInput$);
-    if (args.chatThreadId === undefined) {
-      return null;
-    }
-    const [agent, { command }, thread] = await Promise.all([
-      get(preCreateAgentAgent$),
-      get(selectedIdentityInputIdentityInput$),
-      get(threadRow$),
-    ]);
-    if (!agent || agent.orgId !== args.orgId) {
-      return null;
-    }
-    return thread?.id === args.chatThreadId &&
-      thread.userId === args.userId &&
-      thread.agentId === (command.expectedThreadAgentId ?? agent.id)
-      ? { agentId: thread.agentId }
-      : null;
-  });
-  const runThreadSelectionRow$ = computed(
-    async (get): Promise<readonly ConnectorAccountSelection[]> => {
-      const { db, args } = await get(connectorInput$);
-      const thread = await get(runOwnedConnectorThread$);
-      if (!thread || args.chatThreadId === undefined) {
-        return [];
-      }
-      const rows = await db
-        .select({
-          connectorId: chatThreadConnectorSelections.connectorId,
-          connectorSlug: chatThreadConnectorSelections.connectorSlug,
-          customConnectorId: chatThreadConnectorSelections.customConnectorId,
-        })
-        .from(chatThreadConnectorSelections)
-        .where(
-          eq(chatThreadConnectorSelections.chatThreadId, args.chatThreadId),
-        )
-        .orderBy(
-          asc(chatThreadConnectorSelections.connectorSlug),
-          asc(chatThreadConnectorSelections.customConnectorId),
-        );
-      const scope = await get(preCreateConnectorScope$);
-      return rows
-        .map((row) => {
-          return {
-            connectionId: row.connectorId,
-            target: runConnectorTargetFromRow(row),
-          };
-        })
-        .filter((selection) => {
-          return runConnectorTargetIsAuthorized(scope, selection.target);
-        });
-    },
-  );
-  const runConnectorAccountRows$ = computed(async (get) => {
-    return (await get((await get(executionContext$)).connectors$))
-      .connectorAccounts;
-  });
-  const runThreadConnectorSelectionThreadSelections$ = computed(
-    async (
-      get,
-    ): Promise<
-      ThreadConnectorSelectionIds | CreateRunErrorResult | undefined
-    > => {
-      const { args } = await get(connectorInput$);
-      if (args.chatThreadId === undefined) {
-        return undefined;
-      }
-      const [thread, selections, accountRows, scope, connectorSourceId] =
-        await Promise.all([
-          get(runOwnedConnectorThread$),
-          get(runThreadSelectionRow$),
-          get(runConnectorAccountRows$),
-          get(preCreateConnectorScope$),
-          get(connectorSourceId$),
-        ]);
-      if (!thread) {
-        return badRequestMessage("Chat thread is no longer available");
-      }
-      const byId = new Map(
-        accountRows.map((row) => {
-          return [row.connectorId, row];
-        }),
-      );
-      const projectedSelections = selections.filter((selection) => {
-        const row = byId.get(selection.connectionId);
-        return (
-          row !== undefined &&
-          connectorAccountTargetKey(runConnectorTargetFromRow(row)) ===
-            connectorAccountTargetKey(selection.target) &&
-          (row.customConnectorId === null ||
-            (row.customDefinitionId !== null &&
-              !isIntegrationManagedCustomConnectorProviderAdapter(
-                row.providerAdapter,
-              )))
-        );
-      });
-      const sourceRow = connectorSourceId
-        ? byId.get(connectorSourceId)
-        : undefined;
-      const sourceTarget = sourceRow
-        ? runConnectorTargetFromRow(sourceRow)
-        : undefined;
-      const source =
-        sourceRow &&
-        sourceTarget &&
-        runConnectorTargetIsAuthorized(scope, sourceTarget)
-          ? { connectionId: sourceRow.connectorId, target: sourceTarget }
-          : null;
-      return runThreadConnectorCandidates(projectedSelections, source);
-    },
-  );
-  const runThreadConnectorSelectionAccountCandidates$ = computed(
-    async (get) => {
-      const [selections, rows, scope] = await Promise.all([
-        get(runThreadConnectorSelectionThreadSelections$),
-        get(runConnectorAccountRows$),
-        get(preCreateConnectorScope$),
-      ]);
-      return isRouteError(selections)
-        ? new Map<string, readonly string[]>()
-        : runConnectorAccountCandidatesFromRows({
-            requests: runConnectorAccountRequests(scope, selections),
-            rows,
-          });
-    },
-  );
-  const threadSelections$ = runThreadConnectorSelectionThreadSelections$;
-  const accountCandidates$ = runThreadConnectorSelectionAccountCandidates$;
-  const runConnectorSelection$ = computed(
-    async (get): Promise<RunConnectorSelection | CreateRunErrorResult> => {
-      const [connectorCatalogSelection, threadConnectorSelectionIds] =
-        await Promise.all([
-          get(preCreateExecutionConnectorCatalog$),
-          get(threadSelections$),
-        ]);
-      if (isRouteError(threadConnectorSelectionIds)) {
-        return threadConnectorSelectionIds;
-      }
-      const scope = await get(preCreateConnectorScope$);
-      return {
-        connectorCatalogSelection,
-        threadConnectorSelectionIds,
-        connectorScope:
-          connectorCatalogSelection.kind === "scoped"
-            ? connectorScopeForRuntimeSnapshot(
-                scope,
-                connectorCatalogSelection.selection,
-              )
-            : scope,
-      };
-    },
-  );
-  const runConnectorPreparation$ = computed(
-    async (get): Promise<RunConnectorPreparation | CreateRunErrorResult> => {
-      const input = await get(connectorInput$);
-      const selection = await get(runConnectorSelection$);
-      if (isRouteError(selection)) {
-        return selection;
-      }
-      const {
-        connectorCatalogSelection,
-        connectorScope,
-        threadConnectorSelectionIds,
-      } = selection;
-      if (connectorCatalogSelection.kind === "empty") {
-        return { selection, stored: null, custom: null };
-      }
-      const connectorCatalogSnapshot = connectorCatalogSelection.selection;
-      const allowedConnectorSlugs = [
-        ...new Set(
-          connectorScope.allowedConnectorSlugs.filter((slug) => {
-            return (
-              getConnectorRuntimeConnector(connectorCatalogSnapshot, slug)
-                ?.catalogConnector.mcp === undefined ||
-              input.args.includeOkouTokenSecret === true
-            );
-          }),
-        ),
-      ];
-      return {
-        selection,
-        stored:
-          allowedConnectorSlugs.length === 0
-            ? null
-            : {
-                orgId: input.args.orgId,
-                userId: input.args.userId,
-                allowedConnectorSlugs,
-                connectorIdCandidatesBySlug:
-                  threadConnectorSelectionIds?.connectorIdCandidatesBySlug,
-                scopeSource: connectorScope.source,
-                connectorCatalogSnapshot,
-              },
-        custom:
-          connectorScope.allowedCustomConnectorIds.length === 0
-            ? null
-            : {
-                orgId: input.args.orgId,
-                userId: input.args.userId,
-                allowedCustomConnectorIds:
-                  connectorScope.allowedCustomConnectorIds,
-                connectorIdCandidatesByCustomConnectorId:
-                  threadConnectorSelectionIds?.connectorIdCandidatesByCustomConnectorId,
-                customConnectorGrants: connectorScope.customConnectorGrants,
-                connectorCatalogSnapshot,
-              },
-      };
-    },
-  );
-  const runStoredConnectorRow$ = computed(
-    async (
-      get,
-    ): Promise<readonly StoredConnectorMaterializationSnapshotRow[]> => {
-      const bootstrap = await get((await get(executionContext$)).connectors$);
-      const byId = new Map(
-        bootstrap.connectorSources.flatMap((result) => {
-          return result.kind === "available"
-            ? [[result.snapshot.source.sourceId, result.snapshot] as const]
-            : [];
-        }),
-      );
-      return bootstrap.connectorAccounts.flatMap((row) => {
-        const source = byId.get(row.connectorId);
-        return row.connectorSlug !== null && source
-          ? [
-              {
-                ...row,
-                connectorSlug: row.connectorSlug,
-                secretNames: source.credentials.map((credential) => {
-                  return credential.name;
-                }),
-                variableValues: source.variables,
-              },
-            ]
-          : [];
-      });
-    },
-  );
-  const selectedStoredConnectorRows$ = computed(async (get) => {
-    const [preparation, rows, candidates] = await Promise.all([
-      get(runConnectorPreparation$),
-      get(runStoredConnectorRow$),
-      get(accountCandidates$),
-    ]);
-    if (isRouteError(preparation)) {
-      return preparation;
-    }
-    const args = preparation.stored;
-    if (!args) {
-      return null;
-    }
-    const available = new Set(
-      allowedStoredConnectorRows(
-        rows,
-        args.allowedConnectorSlugs,
-        args.connectorCatalogSnapshot,
-        nowDate(),
-      ).map((row) => {
-        return row.access.connectorId;
-      }),
-    );
-    const selectedIds = new Set(
-      args.allowedConnectorSlugs.flatMap((connectorSlug) => {
-        const ids =
-          candidates.get(
-            connectorAccountTargetKey({ kind: "builtin", connectorSlug }),
-          ) ?? [];
-        const id = ids.find((candidate) => {
-          return available.has(candidate);
-        });
-        return id ? [id] : [];
-      }),
-    );
-    return {
-      args,
-      rows: rows.filter((row) => {
-        return selectedIds.has(row.connectorId);
-      }),
-    };
-  });
-  const selectedStoredConnectorSources$ = computed(async (get) => {
-    const selected = await get(selectedStoredConnectorRows$);
-    if (!selected || isRouteError(selected)) {
-      return [];
-    }
-    const ids = new Set(
-      selected.rows.map((row) => {
-        return row.connectorId;
-      }),
-    );
-    return (
-      await get((await get(executionContext$)).connectors$)
-    ).connectorSources.filter((result) => {
-      const source =
-        result.kind === "available" ? result.snapshot.source : result.source;
-      return source.kind === "builtin" && ids.has(source.sourceId);
-    });
-  });
-  const runStoredConnectorSnapshot$ = computed(
-    async (
-      get,
-    ): Promise<
-      StoredConnectorMaterializationSnapshot | null | CreateRunErrorResult
-    > => {
-      const [selected, sources] = await Promise.all([
-        get(selectedStoredConnectorRows$),
-        get(selectedStoredConnectorSources$),
-      ]);
-      if (!selected || isRouteError(selected)) {
-        return selected;
-      }
-      const available = new Map(
-        sources.flatMap((result) => {
-          return result.kind === "available"
-            ? [[result.snapshot.source.sourceId, result.snapshot] as const]
-            : [];
-        }),
-      );
-      const rows = selected.rows.flatMap((row) => {
-        const source = available.get(row.connectorId);
-        return source
-          ? [
-              {
-                ...row,
-                variableValues: source.variables,
-                secretNames: source.credentials.map((credential) => {
-                  return credential.name;
-                }),
-              },
-            ]
-          : [];
-      });
-      return materializeStoredConnectorSnapshotRows(
-        {
-          rows,
-          allowedConnectorSlugs: selected.args.allowedConnectorSlugs,
-          connectorCatalogSnapshot: selected.args.connectorCatalogSnapshot,
-          timingDimensions: storedConnectorTimingDimensions({
-            scopeSource: selected.args.scopeSource,
-          }),
-        },
-        (await get(connectorInput$)).timing,
-      );
-    },
-  );
-  const runCustomConnectorSources$ = computed(async (get) => {
-    const [candidates, scope] = await Promise.all([
-      get(accountCandidates$),
-      get(preCreateConnectorScope$),
-    ]);
-    // Every candidate is an exact saved source; Thread still owns choosing the
-    // first admissible candidate per connector below.
-    const sources = scope.allowedCustomConnectorIds.flatMap(
-      (customConnectorId) => {
-        return (
-          candidates.get(
-            connectorAccountTargetKey({ kind: "custom", customConnectorId }),
-          ) ?? []
-        ).map((sourceId) => {
-          return { kind: "custom" as const, customConnectorId, sourceId };
-        });
-      },
-    );
-    const ids = new Set(
-      sources.map((source) => {
-        return source.sourceId;
-      }),
-    );
-    const context = await get((await get(executionContext$)).connectors$);
-    return {
-      sources: context.connectorSources.filter((result) => {
-        const source =
-          result.kind === "available" ? result.snapshot.source : result.source;
-        return source.kind === "custom" && ids.has(source.sourceId);
-      }),
-      observation: context.observation,
-      scopeSource: scope.source,
-      requestedCustomCount: scope.allowedCustomConnectorIds.length,
-    };
-  });
-  const runCustomConnectorStoredRows$ = computed(
-    async (get): Promise<readonly CustomConnectorRuntimeStorageRow[]> => {
-      const { timing } = await get(connectorInput$);
-      const startedAt = now();
-      const result = await get(runCustomConnectorSources$);
-      const finishedAt = now();
-      bestEffortTelemetry(() => {
-        const dimensions = connectorContextTimingDimensions(result);
-        timing.recordElapsed(
-          "api_dispatch_prepare_context_load_custom_connector_value_rows",
-          "nested",
-          startedAt,
-          finishedAt,
-          dimensions,
-        );
-        recordConnectorContextObservation(
-          timing,
-          result.observation,
-          dimensions,
-        );
-      });
-      const projectionStartedAt = performance.now();
-      const rows = result.sources.flatMap((source) => {
-        return source.kind === "available"
-          ? customConnectorSourceStorageRows(source.snapshot)
-          : [];
-      });
-      bestEffortTelemetry(() => {
-        timing.recordDuration(
-          "api_dispatch_prepare_context_project_custom_connector_value_rows",
-          "nested",
-          performance.now() - projectionStartedAt,
-          now(),
-          connectorContextTimingDimensions(result),
-        );
-      });
-      return rows;
-    },
-  );
-  const runCustomConnectorPermissionBundles$ = computed(async (get) => {
-    const [preparation, connectors, storageRows, candidates] =
-      await Promise.all([
-        get(runConnectorPreparation$),
-        get(runCustomConnectorDefinitionRows$),
-        get(runCustomConnectorStoredRows$),
-        get(accountCandidates$),
-      ]);
-    if (isRouteError(preparation) || !preparation.custom) {
-      return new Map<
-        string,
-        CustomConnectorPermissionBundle | null | undefined
-      >();
-    }
-    const snapshot = preparation.custom.connectorCatalogSnapshot;
-    const entries = await Promise.all(
-      connectors.map(async (connector) => {
-        const rows = customConnectorCandidateRuntimeRows({
-          connector,
-          storageRows,
-          candidateIds:
-            candidates.get(
-              connectorAccountTargetKey({
-                kind: "custom",
-                customConnectorId: connector.id,
-              }),
-            ) ?? [],
-        });
-        const row = rows.find((candidate) => {
-          return (
-            customConnectorNewRunRowIsAdmissible(candidate) &&
-            resolveCustomConnectorBaseUrlVars({
-              row: candidate,
-              provided: undefined,
-              hasProvided: false,
-            }) !== undefined
-          );
-        });
-        if (!row) {
-          return [connector.id, null] as const;
-        }
-        const bundle = await loadEffectiveCustomConnectorPermissionBundle({
-          row,
-          snapshot,
-        });
-        return [connector.id, bundle] as const;
-      }),
-    );
-    return new Map(entries);
-  });
-  const runCustomConnectorContext$ = computed(
-    async (
-      get,
-    ): Promise<CustomConnectorRuntimeContext | CreateRunErrorResult> => {
-      const [
-        preparation,
-        connectors,
-        storageRows,
-        candidates,
-        featureSwitchContext,
-        permissionBundlesByConnectorId,
-      ] = await Promise.all([
-        get(runConnectorPreparation$),
-        get(runCustomConnectorDefinitionRows$),
-        get(runCustomConnectorStoredRows$),
-        get(accountCandidates$),
-        get(preCreateConnectorFeatureSwitchContext$),
-        get(runCustomConnectorPermissionBundles$),
-      ]);
-      if (isRouteError(preparation)) {
-        return preparation;
-      }
-      if (!preparation.custom) {
-        return emptyCustomConnectorRuntimeContext();
-      }
-      const args = preparation.custom;
-      const chosenRows = await Promise.all(
-        connectors.map(async (connector) => {
-          const rows = customConnectorCandidateRuntimeRows({
-            connector,
-            storageRows,
-            candidateIds:
-              candidates.get(
-                connectorAccountTargetKey({
-                  kind: "custom",
-                  customConnectorId: connector.id,
-                }),
-              ) ?? [],
-          });
-          for (const row of rows) {
-            const context = await buildNewRunCustomConnectorRuntimeContext({
-              rows: [row],
-              permissionBundlesByConnectorId,
-              featureSwitchContext,
-              connectorCatalogSnapshot: args.connectorCatalogSnapshot,
-              grants: args.customConnectorGrants,
-            });
-            if (context.targets.length > 0) {
-              return row;
-            }
-          }
-          return {
-            connector,
-            values: [],
-            credentialAccess: { kind: "absent" as const },
-          };
-        }),
-      );
-      return await (
-        await get(connectorInput$)
-      ).timing.measure(
-        "api_dispatch_prepare_context_build_custom_connector_firewalls",
-        "nested",
-        async () => {
-          return await buildNewRunCustomConnectorRuntimeContext({
-            rows: chosenRows,
-            permissionBundlesByConnectorId,
-            featureSwitchContext,
-            connectorCatalogSnapshot: args.connectorCatalogSnapshot,
-            grants: args.customConnectorGrants,
-          });
-        },
-      );
-    },
-  );
-  const runConnectorReadConnectorSnapshot$ = computed(
-    async (
-      get,
-    ): Promise<RunConnectorContextSnapshot | CreateRunErrorResult> => {
-      const input = await get(connectorInput$);
-      const scope = await get(preCreateConnectorScope$);
-      return await input.timing.measure(
-        "api_dispatch_prepare_context_load_connector_contexts",
-        "nested",
-        async () => {
-          const [preparation, storedConnectorSnapshot, customConnectorContext] =
-            await Promise.all([
-              get(runConnectorPreparation$),
-              get(runStoredConnectorSnapshot$),
-              get(runCustomConnectorContext$),
-            ]);
-          if (isRouteError(preparation)) {
-            return preparation;
-          }
-          if (isRouteError(storedConnectorSnapshot)) {
-            return storedConnectorSnapshot;
-          }
-          if (isRouteError(customConnectorContext)) {
-            return customConnectorContext;
-          }
-          return {
-            storedConnectorSnapshot,
-            storedConnectorMetadataContext: storedConnectorContextFromSnapshot(
-              storedConnectorSnapshot,
-            ),
-            customConnectorContext,
-          };
-        },
-        storedConnectorTimingDimensions({
-          scopeSource: scope.source,
-        }),
-      );
-    },
-  );
-  const connectorSelection$ = runConnectorSelection$;
-  const connectorSnapshot$ = runConnectorReadConnectorSnapshot$;
+  const connectorSelection$ = threadContext.connectorSelection$;
+  const connectorSnapshot$ = threadContext.connectorSnapshot$;
   const preCreateExecutionConnectors = {
-    connectorSelection$: connectorSelection$,
-    connectorSnapshot$: connectorSnapshot$,
+    connectorSelection$,
+    connectorSnapshot$,
   };
-  const preCreateBodyEnvironmentEnvironment$ = computed(async (get) => {
-    const [agent, environment] = await Promise.all([
-      get(preCreateExecutionAgent$),
-      get(runEnvironmentSnapshot$),
-    ]);
-    if (!agent) {
-      throw new Error("Agent disappeared after preparation authorization");
-    }
-    if (isRouteError(environment)) {
-      return environment;
-    }
-    return resolveRunBodyEnvironment({
-      runVars: selectedAgentRunVariables(agent.id),
-      runSecrets: pendingOkouTokenSecrets(undefined),
-      persistedEnvironment: environment,
-      canonicalOkouRuntime: true,
-    });
-  });
-  const inputs$ = computed(
-    async (get): Promise<RunPreparedConnectorInputs | CreateRunErrorResult> => {
-      const [
-        input,
-        selection,
-        snapshot,
-        modelProvider,
-        body,
-        policies,
-        metadata,
-        agent,
-      ] = await Promise.all([
-        get(preCreateExecutionIdentityInput$),
-        get(connectorSelection$),
-        get(connectorSnapshot$),
-        get(modelRoute$),
-        get(preCreateBodyEnvironmentEnvironment$),
-        get(preCreateExecutionPermissionPolicies$),
-        get(preCreateExecutionBootstrapMetadata$),
-        get(preCreateExecutionAgent$),
-      ]);
-      if (isRouteError(body)) {
-        return body;
-      }
-      if (isRouteError(modelProvider)) {
-        return modelProvider;
-      }
-      if (isRouteError(selection)) {
-        return selection;
-      }
-      if (isRouteError(snapshot)) {
-        return snapshot;
-      }
-      if (!agent) {
-        throw new Error("Authorized selected run preparation is missing");
-      }
-      return {
-        db: get(db$),
-        timing: input.timing,
-        connectorScope: selection.connectorScope,
-        connectorCatalogSelection: selection.connectorCatalogSelection,
-        body: { ...body, permissionPolicies: policies ?? undefined },
-        modelProvider,
-        ...snapshot,
-        featureSwitchContext: metadata.featureSwitchContext,
-      };
-    },
+  const {
+    bodyEnvironment$: preCreateBodyEnvironmentEnvironment$,
+    eagerSecretPlan$: runConnectorEagerSecretPlan$,
+    eagerCredentialContext$,
+    environment$: connectorEnvironment$,
+  } = connectorRuntime;
+  const environment$ = createEnvironmentSignals(
+    context,
+    threadContext,
+    connectorEnvironment$,
   );
-  const permissionManifest$ = computed(async (get) => {
-    const input = await get(inputs$);
-    return isRouteError(input)
-      ? input
-      : await input.timing.measure(
-          "api_dispatch_prepare_context_build_permission_manifest",
-          "nested",
-          async () => {
-            return await buildPreparedPermissionManifest(input);
-          },
-        );
-  });
-  const runConnectorEagerSecretPlan$ = computed(async (get) => {
-    const [input, permissionManifest] = await Promise.all([
-      get(inputs$),
-      get(permissionManifest$),
-    ]);
-    if (isRouteError(input)) {
-      return input;
-    }
-    if (isRouteError(permissionManifest)) {
-      return permissionManifest;
-    }
-    const snapshot = input.storedConnectorSnapshot;
-    const connectorContext =
-      storedConnectorExecutionContextFromSnapshot(snapshot);
-    const eagerInputs = eagerStoredConnectorSecretInputs({
-      modelProvider: input.modelProvider,
-      connectorContext,
-    });
-    const names = snapshot
-      ? eagerStoredConnectorSecretNames({
-          snapshot,
-          referencedEnvironmentSecretAliases:
-            eagerInputs.referencedEnvironmentSecretAliases,
-          storedEnvironment: eagerInputs.eagerStoredEnvironment,
-          environmentSecretPlaceholders:
-            permissionManifest?.environmentSecretPlaceholders,
-          overriddenSecretAliases: overriddenRuntimeSecretAliases([
-            input.modelProvider?.secrets,
-            input.modelProvider?.secretConnectorMap,
-            input.body.secrets,
-          ]),
-        })
-      : new Set<string>();
-    return {
-      input,
-      connectorContext,
-      permissionManifest,
-      names,
-      bindingSets:
-        snapshot?.bindingSets.filter((bindingSet) => {
-          return !bindingSet.isMcp;
-        }) ?? [],
-      timingDimensions: storedConnectorTimingDimensions({
-        scopeSource: input.connectorScope.source,
-        connectorCount: snapshot?.allowedConnectorRows.length ?? 0,
-      }),
-    };
-  });
-  const runConnectorEncryptedRows$ = computed(
-    async (get): Promise<readonly StoredConnectorEncryptedSecretRow[]> => {
-      const [plan, sources] = await Promise.all([
-        get(runConnectorEagerSecretPlan$),
-        get(selectedStoredConnectorSources$),
-      ]);
-      if (isRouteError(plan) || plan.names.size === 0) {
-        return [];
-      }
-      // Account identity, revision and values were captured in one statement.
-      // Only catalog-owned names from the selected binding sets may escape it.
-      const keys = new Set(
-        plan.bindingSets.flatMap((bindingSet) => {
-          return storedConnectorCredentialNames({
-            runtimeBindings: bindingSet.runtimeBindings,
-            kind: "secret",
-            names: plan.names,
-          }).map((name) => {
-            return JSON.stringify([bindingSet.access.connectorId, name]);
-          });
-        }),
-      );
-      return sources.flatMap((result) => {
-        return result.kind === "available"
-          ? result.snapshot.credentials.filter((credential) => {
-              return keys.has(
-                JSON.stringify([
-                  result.snapshot.source.sourceId,
-                  credential.name,
-                ]),
-              );
-            })
-          : [];
-      });
-    },
-  );
-  const eagerCredentialContext$ = computed(async (get) => {
-    const resolveStartedAt = performance.now();
-    return createEagerConnectorCredentialContext(
-      await get(runConnectorEncryptedRows$),
-      resolveStartedAt,
-    );
-  });
   // Capture the exact eager plan before preloading its read-only context.
   const preloadEagerCredentials$ = command(
     async ({ get }, signal: AbortSignal): Promise<void> => {
@@ -4188,109 +3140,13 @@ export function createThreadClaimRunObjects(
       waitUntil(settle(get(context.credentials$)));
     },
   );
-  // Stored connector secrets, decrypted once per graph; KMS decryption has no
-  // side effects (Ethan 2026-10-02).
-  const decryptedSecrets$ = computed(async (get) => {
-    const selection = await get(selectionInput$);
-    if (!selection) {
-      return {};
-    }
-    const [plan, rows] = await Promise.all([
-      get(runConnectorEagerSecretPlan$),
-      get(runConnectorEncryptedRows$),
-    ]);
-    if (isRouteError(plan)) {
-      return {};
-    }
-    const { credentials: decrypted } = await get(
-      (await get(eagerCredentialContext$)).credentials$,
-    );
-    return Object.fromEntries(
-      rows.map((row) => {
-        const result = decrypted.get(row.id);
-        if (!result) {
-          throw new Error(
-            "Selected connector credential is missing from bootstrap",
-          );
-        }
-        if (!result.ok) {
-          throw result.error;
-        }
-        return [row.name, result.value];
-      }),
-    );
-  });
-  const connectorContext$ = computed(
-    async (get): Promise<PreparedConnectorContext | CreateRunErrorResult> => {
-      const [plan, secrets] = await Promise.all([
-        get(runConnectorEagerSecretPlan$),
-        get(decryptedSecrets$),
-      ]);
-      if (isRouteError(plan)) {
-        return plan;
-      }
-      return {
-        connectorContext: {
-          ...plan.connectorContext,
-          secrets: mergeRecords(
-            plan.connectorContext.secrets,
-            resolveStoredConnectorSecrets(plan.bindingSets, secrets),
-          ),
-        },
-        permissionManifest: plan.permissionManifest,
-      };
-    },
+  const prepared = { environment$ };
+  const workflow = createOfficialWorkflowSignals(
+    context,
+    pickedEvent$,
+    threadContext,
   );
-  const prepared = { connectorContext$: connectorContext$ };
-  const workflowModelError$ = computed(async (get) => {
-    const [requestedFramework, modelProvider] = await Promise.all([
-      get(runFramework$),
-      get(modelRoute$),
-    ]);
-    if (isRouteError(requestedFramework)) {
-      return requestedFramework;
-    }
-    return isRouteError(modelProvider) ? modelProvider : null;
-  });
-  const admittedWorkflowObservation$ = computed(async (get) => {
-    if (await get(workflowModelError$)) {
-      return undefined;
-    }
-    const selected = await get(executionContext$);
-    const [observation, { command }] = await Promise.all([
-      get(selected.officialWorkflowObservation$),
-      get(preCreateExecutionInput$),
-    ]);
-    assertRequiredOfficialWorkflows(
-      observation,
-      command.requiredOfficialWorkflowIds ?? [],
-    );
-    return observation;
-  });
-  const officialWorkflow$ = computed(
-    async (get): Promise<PreparedOfficialWorkflow> => {
-      const result = await settle(
-        Promise.all([
-          get(workflowModelError$),
-          get(admittedWorkflowObservation$),
-        ]),
-      );
-      if (!result.ok) {
-        if (result.error instanceof OfficialWorkflowRunAdmissionError) {
-          return conflict(result.error.message);
-        }
-        throw result.error;
-      }
-      const [modelError, observation] = result.value;
-      return modelError ?? observation;
-    },
-  );
-  const workflow = {
-    officialWorkflow$: officialWorkflow$,
-    officialWorkflowFacts$: computed(async (get) => {
-      return await get((await get(executionContext$)).officialWorkflows$);
-    }),
-  };
+  const { officialWorkflow$ } = workflow;
   const userTimezone$ = computed(async (get) => {
     return (
       (await get(preCreateExecutionBootstrapMetadata$)).userInfo.timezone ??
@@ -4327,7 +3183,6 @@ export function createThreadClaimRunObjects(
       if (!agent) {
         throw new Error("Agent disappeared after preparation authorization");
       }
-      const threadId = command.chatThreadId;
       const route = command.threadSessionRoute;
       if (!route) {
         throw new Error("Thread-bound agent run is missing its model route");
@@ -4336,13 +3191,8 @@ export function createThreadClaimRunObjects(
         timing,
         "api_dispatch_pre_create_agent_resolve_thread_session",
         async () => {
-          const thread = await get(threadRow$);
-          if (
-            !thread ||
-            thread.id !== threadId ||
-            thread.userId !== command.owner.userId ||
-            thread.agentId !== (command.expectedThreadAgentId ?? agent.id)
-          ) {
+          const thread = (await get(pickedEvent$))?.thread;
+          if (!thread) {
             throw new Error(
               "Chat thread not found while resolving session binding",
             );
@@ -4502,7 +3352,7 @@ export function createThreadClaimRunObjects(
       requests: selection.requests,
       timing: selection.args.timing,
     };
-    const prefetched = await get((await get(executionContext$)).storage$);
+    const prefetched = await get(context.storage$);
     const ownedRequests = input.requests.filter((request) => {
       return !prefetched.lookupKeys.has(
         storageIndexKey(
@@ -4678,7 +3528,7 @@ export function createThreadClaimRunObjects(
       selected.plan.requested.input.storageIndex,
       selected.plan.sessionWriteback?.input.storageIndex ?? new Map(),
     );
-    const cache = await get((await get(executionContext$)).storageCache$);
+    const cache = await get(context.storageCache$);
     const versions = exactStorageVersionsFromIndex(mounts, storageIndex);
     const rows = [
       ...cache.rows,
@@ -4911,8 +3761,7 @@ export function createThreadClaimRunObjects(
     };
   });
   const body = { bodyContext$: runBodyBodyContext$, framework$: runFramework$ };
-  const { connectorContext$: runRuntimeConnectorContext$ } =
-    selectedRunContextShared;
+  const { environment$: runRuntimeEnvironment$ } = selectedRunContextShared;
   const runRuntimeRuntimeContext$ = computed(async (get) => {
     const [
       bodyResult,
@@ -4925,13 +3774,13 @@ export function createThreadClaimRunObjects(
       get(modelRoute$),
       get(connectorSelection$),
       get(connectorSnapshot$),
-      get(runRuntimeConnectorContext$),
+      get(runRuntimeEnvironment$),
     ]);
     const selection = selectionResult;
     const bodyContext = bodyResult;
     const modelProvider = modelResult;
     const snapshot = snapshotResult;
-    const connectors = connectorResult;
+    const environment = connectorResult;
     if (isRouteError(bodyContext)) {
       return bodyContext;
     }
@@ -4944,20 +3793,20 @@ export function createThreadClaimRunObjects(
     if (isRouteError(snapshot)) {
       return snapshot;
     }
-    if (isRouteError(connectors)) {
-      return connectors;
+    if (isRouteError(environment)) {
+      return environment;
     }
     const catalog = await get(claimCatalog$);
     const usage = prepareModelUsageContext({
       catalog,
       modelProvider,
-      permissionManifest: connectors.permissionManifest,
+      permissionManifest: environmentPermissionManifest(environment),
       routePricing: runRoutePricingFromSnapshot(
         {
           modelProvider,
           serviceTier: (await get(contextInput$)).args.codexServiceTier,
         },
-        await get((await get(executionContext$)).modelPricing$),
+        await get(context.modelPricing$),
       ),
     });
     if ("kind" in usage) {
@@ -4968,8 +3817,9 @@ export function createThreadClaimRunObjects(
         ? modelProviderFramework(modelProvider)
         : bodyContext.requestedFramework,
       modelProvider,
-      ...connectors,
-      customConnectorContext: snapshot.customConnectorContext,
+      environment,
+      mcpConnectorSlugs:
+        snapshot.storedConnectorMetadataContext.mcpConnectorSlugs,
       ...usage,
       connectorScope: selection.connectorScope,
       connectorCatalogSelection: selection.connectorCatalogSelection,
@@ -4981,8 +3831,9 @@ export function createThreadClaimRunObjects(
       ? get(selectedRunContextShared.userTimezone$)
       : ((await get(runMemberSnapshot$)).member?.timezone ?? undefined);
   });
-  const runMemberImageModel$ = threadContext.selectedImageModel$;
-  const imageModel$ = runMemberImageModel$;
+  const imageModel$ = computed((get) => {
+    return get(context.selectedImageModel$);
+  });
   const disabledPaidTools$ = computed(async (get) => {
     return (await get(selectedRunContextShared.disabledPaidTools$)).toolIds;
   });
@@ -5042,17 +3893,6 @@ export function createThreadClaimRunObjects(
         cliAgentType: piSandbox ? "pi" : framework,
       },
     });
-    const validation = validateRunEnvironmentReferences({
-      body,
-      modelProvider,
-      connectorContext: runtimeContext.connectorContext,
-      customConnectorContext: runtimeContext.customConnectorContext,
-      permissionManifest: runtimeContext.permissionManifest,
-      validateEnvironmentReferences: args.validateEnvironmentReferences,
-    });
-    if (validation) {
-      return validation;
-    }
     const promptAndSkills = await get(preparedPromptAndSkillVolumes$);
     if (isRouteError(promptAndSkills)) {
       return promptAndSkills;
@@ -5072,9 +3912,8 @@ export function createThreadClaimRunObjects(
       framework,
       piSandbox,
       modelProvider,
-      connectorContext: runtimeContext.connectorContext,
-      customConnectorContext: runtimeContext.customConnectorContext,
-      permissionManifest: runtimeContext.permissionManifest,
+      environment: runtimeContext.environment,
+      mcpConnectorSlugs: runtimeContext.mcpConnectorSlugs,
       billableFirewalls: runtimeContext.billableFirewalls,
       modelUsageProvider: runtimeContext.modelUsageProvider,
       modelUsageLongContextMinTotalInputTokens:
@@ -5113,8 +3952,7 @@ export function createThreadClaimRunObjects(
   const runAdmissionCheckCheckAdmission$ = command(
     async ({ get }, input: RunAdmissionInput, signal: AbortSignal) => {
       signal.throwIfAborted();
-      const identity = await get(queuedIdentityContext$);
-      signal.throwIfAborted();
+      const identity = context;
       const [models, memberModels] = await Promise.all([
         get(identity.modelFacts$),
         get(identity.memberModels$),
@@ -5837,31 +4675,15 @@ export function createThreadClaimRunObjects(
     if (!(await get(selectionInput$))) {
       return null;
     }
-    const [environment, connectors, model, snapshot] = await Promise.all([
+    const [body, environment] = await Promise.all([
       get(preCreateBodyEnvironmentEnvironment$),
-      get(connectorContext$),
-      get(modelRoute$),
-      get(connectorSnapshot$),
+      get(environment$),
     ]);
     if (isRouteError(environment)) {
       return environment;
     }
-    if (isRouteError(connectors)) {
-      return connectors;
-    }
-    if (isRouteError(model)) {
-      return model;
-    }
-    if (isRouteError(snapshot)) {
-      return snapshot;
-    }
     return {
-      secrets: buildStoredExecutionSecrets({
-        connectorContext: connectors.connectorContext,
-        modelProvider: model,
-        bodySecrets: environment.secrets,
-        customConnectorContext: snapshot.customConnectorContext,
-      }).secrets,
+      secrets: buildStoredExecutionSecrets(environment, body.secrets).secrets,
     };
   });
   const prepareEncryptedSecrets$ = command(
@@ -6124,8 +4946,8 @@ export function createThreadClaimRunObjects(
         get(storageMounts$),
         // Connector reads start independently of prompt/model material. A
         // prefetch miss joins the same loader once for this selected identity.
-        get((await get(executionContext$)).connectors$),
-        get(runThreadSelectionRow$),
+        get(context.connectors$),
+        get(threadContext.connectorThreadSelections$),
       ]);
       signal.throwIfAborted();
       if (launch.kind === "rejected") {
@@ -6178,7 +5000,7 @@ export function createThreadClaimRunObjects(
     },
   );
   const claimAdmissionFacts$ = computed(async (get) => {
-    const selected = await get(executionContext$);
+    const selected = context;
     const [planCapabilities, featureSwitchContext] = await Promise.all([
       get(selected.plan$),
       get(selected.featureSwitches$),
@@ -6395,13 +5217,6 @@ export function createThreadClaimRunObjects(
     ): Promise<ClaimRunCommit> => {
       signal.throwIfAborted();
       const { input, identity, callbackRows, launch } = context;
-      if (
-        input.args.orgId !== claim.orgId ||
-        input.args.chatThreadId !== claim.chatThreadId ||
-        context.head.chatThreadId !== claim.chatThreadId
-      ) {
-        throw new Error("Prepared run does not belong to this thread claim");
-      }
       const commit: CommitPreparedLaunchArgs = {
         createArgs: input.args,
         enforceBuiltInCredits: input.enforceBuiltInCredits,
@@ -8048,15 +6863,6 @@ type AgentRunStorageSelection =
       readonly requests: readonly StorageRequest[];
     };
 
-const COUNT_BUCKET_DIMENSIONS = [
-  "0",
-  "1",
-  "2_4",
-  "5_8",
-  "9_16",
-  "17_plus",
-] as const;
-
 function frameworkSkillsMountPath(framework: SupportedFramework): string {
   return framework === "codex"
     ? `${CANONICAL_CODEX_HOME_DIR}/skills`
@@ -8076,25 +6882,6 @@ function resolvedSessionStorage(session: {
     artifacts: projectLegacyWritebackArtifacts(session.storageMounts),
     persistedStorageMounts: session.storageMounts,
   };
-}
-
-function countBucket(count: number): (typeof COUNT_BUCKET_DIMENSIONS)[number] {
-  if (count <= 0) {
-    return "0";
-  }
-  if (count === 1) {
-    return "1";
-  }
-  if (count <= 4) {
-    return "2_4";
-  }
-  if (count <= 8) {
-    return "5_8";
-  }
-  if (count <= 16) {
-    return "9_16";
-  }
-  return "17_plus";
 }
 
 function canonicalPiMemoryMount<
@@ -8279,16 +7066,6 @@ interface AgentExecutionRequestObservation {
   readonly agentOrgId: string;
 }
 
-type ConnectorScopeSource = "explicit" | "stored_agent" | "empty";
-
-interface EffectiveConnectorScope {
-  readonly allowedConnectorSlugs: readonly ConnectorSlug[];
-  readonly allowedCustomConnectorIds: readonly string[];
-  readonly customConnectorGrants:
-    readonly AgentCustomConnectorGrant[] | undefined;
-  readonly source: ConnectorScopeSource;
-}
-
 interface ExplicitConnectorScope {
   readonly allowedConnectorSlugs: readonly ConnectorSlug[];
   readonly allowedCustomConnectorIds: readonly string[];
@@ -8437,18 +7214,6 @@ function timingDimensionsForCreateArgs(args: {
     run_preparation_retry_count: "0",
     ...args.timingDimensions,
   };
-}
-
-interface BuiltinConnectorRuntimeContext {
-  readonly secrets: Record<string, string> | undefined;
-  readonly vars: Record<string, string> | undefined;
-  readonly secretConnectorMap: Record<string, string> | undefined;
-  readonly secretConnectorMetadataMap:
-    Record<string, SecretConnectorMetadata> | undefined;
-  readonly connectorSlugs: readonly ConnectorSlug[];
-  readonly mcpConnectorSlugs: readonly ConnectorSlug[];
-  readonly connectorSourceIdBySlug: Readonly<Record<string, string>>;
-  readonly storedEnvironment: Record<string, string> | undefined;
 }
 
 function agentRunModelProviderValues(
@@ -9075,797 +7840,6 @@ function committedAtomicLaunchResponse(args: {
 }
 // --- Thread-private implementation: connector context ---
 
-const CONNECTOR_SECRET_REF_PREFIX = "$secrets.";
-
-const CONNECTOR_VAR_REF_PREFIX = "$vars.";
-
-interface ThreadConnectorSelectionIds {
-  /** Candidates are ordered from run-scoped source to persisted preference. */
-  readonly connectorIdCandidatesBySlug: ReadonlyMap<
-    ConnectorSlug,
-    readonly string[]
-  >;
-  readonly connectorIdCandidatesByCustomConnectorId: ReadonlyMap<
-    string,
-    readonly string[]
-  >;
-}
-
-function isEmptyRunConnectorScope(scope: {
-  readonly allowedConnectorSlugs: readonly ConnectorSlug[];
-  readonly allowedCustomConnectorIds: readonly string[];
-}): boolean {
-  return (
-    scope.allowedConnectorSlugs.length === 0 &&
-    scope.allowedCustomConnectorIds.length === 0
-  );
-}
-
-function emptyCustomConnectorRuntimeContext(): CustomConnectorRuntimeContext {
-  return {
-    firewalls: [],
-    reservedSecretAliases: undefined,
-    permissionPolicies: undefined,
-    targets: [],
-    customConnectorIdByFirewallName: {},
-    customConnectorSourceIdByFirewallName: {},
-  };
-}
-
-function connectorEnvironmentTemplate(
-  envName: string,
-  valueRef: string,
-): string {
-  if (valueRef.startsWith(CONNECTOR_SECRET_REF_PREFIX)) {
-    return `\${{ secrets.${envName} }}`;
-  }
-  if (valueRef.startsWith(CONNECTOR_VAR_REF_PREFIX)) {
-    return `\${{ vars.${envName} }}`;
-  }
-  return valueRef;
-}
-
-function addConnectorEnvironmentTemplate(
-  environment: Record<string, string>,
-  envName: string,
-  valueRef: string,
-): void {
-  if (envName in environment) {
-    return;
-  }
-  environment[envName] = connectorEnvironmentTemplate(envName, valueRef);
-}
-
-function effectiveStoredConnectorEnvironment(args: {
-  readonly additionalEnvironment: Record<string, string> | undefined;
-  readonly storedConnectorEnvironment: Record<string, string> | undefined;
-}): Record<string, string> | undefined {
-  if (!args.storedConnectorEnvironment) {
-    return undefined;
-  }
-
-  const overrides = args.additionalEnvironment;
-  if (!overrides) {
-    return args.storedConnectorEnvironment;
-  }
-
-  const environment: Record<string, string> = {};
-  for (const [key, value] of Object.entries(args.storedConnectorEnvironment)) {
-    if (overrides[key] === undefined) {
-      environment[key] = value;
-    }
-  }
-  return compactRecord(environment);
-}
-
-interface StoredConnectorRuntimeRow {
-  readonly automaticAuthType: "none" | "oauth" | null;
-  readonly access: BuiltinConnectorCredentialAccess;
-  readonly connectorSlug: ConnectorSlug;
-  readonly connectorStateRevision: bigint;
-  readonly authMethod: ConnectorAuthMethodId;
-  readonly runtimeMethod: ConnectorRuntimeMethod;
-  readonly isMcp: boolean;
-  readonly needsReconnect: boolean;
-  readonly tokenExpiresAt: Date | null;
-}
-
-interface StoredConnectorRuntimeRowCandidate {
-  readonly automaticAuthType: "none" | "oauth" | null;
-  readonly connectorId: string;
-  readonly connectorSlug: string;
-  readonly authMethod: string;
-  readonly connectorStateRevision: bigint;
-  readonly needsReconnect: boolean;
-  readonly orgId: string;
-  readonly storageVersion: number;
-  readonly tokenExpiresAt: Date | null;
-  readonly userId: string;
-}
-
-interface StoredConnectorMaterializationSnapshotRow extends StoredConnectorRuntimeRowCandidate {
-  readonly secretNames: readonly string[];
-  readonly variableValues: Readonly<Record<string, string>>;
-}
-
-interface ConnectorEnvBindingSet {
-  readonly access: BuiltinConnectorCredentialAccess;
-  readonly connectorSlug: ConnectorSlug;
-  readonly connectorStateRevision: bigint;
-  readonly authMethod: ConnectorAuthMethodId;
-  readonly runtimeBindings: readonly ConnectorRuntimeBindingEntry[];
-  readonly isMcp: boolean;
-}
-
-interface StoredConnectorRequirements {
-  readonly secretNames: Set<string>;
-  readonly variableNames: Set<string>;
-}
-
-interface StoredConnectorMaterializationPlan {
-  readonly allowedConnectorRows: readonly StoredConnectorRuntimeRow[];
-  readonly bindingSets: readonly ConnectorEnvBindingSet[];
-}
-
-interface StoredConnectorSecretRow {
-  readonly name: string;
-}
-
-interface StoredConnectorEncryptedSecretRow extends StoredConnectorSecretRow {
-  readonly id: string;
-  readonly encryptedValue: string;
-}
-
-interface StoredConnectorMaterializationSnapshot {
-  readonly allowedConnectorRows: readonly StoredConnectorRuntimeRow[];
-  readonly bindingSets: readonly ConnectorEnvBindingSet[];
-  readonly secretRows: readonly StoredConnectorSecretRow[];
-  readonly variableValues: Record<string, string>;
-}
-
-interface ResolvedStoredConnectorMetadata {
-  readonly vars: Record<string, string>;
-  readonly secretConnectorMap: Record<string, string>;
-  readonly secretConnectorMetadataMap: Record<string, SecretConnectorMetadata>;
-  readonly environment: Record<string, string>;
-}
-
-function emptyBuiltinConnectorRuntimeContext(): BuiltinConnectorRuntimeContext {
-  return {
-    secrets: undefined,
-    vars: undefined,
-    secretConnectorMap: undefined,
-    secretConnectorMetadataMap: undefined,
-    connectorSlugs: [],
-    mcpConnectorSlugs: [],
-    connectorSourceIdBySlug: {},
-    storedEnvironment: undefined,
-  };
-}
-
-function allowedStoredConnectorRows(
-  rows: readonly StoredConnectorRuntimeRowCandidate[],
-  allowedConnectorSlugs: readonly ConnectorSlug[],
-  snapshot: ConnectorRuntimeSelection,
-  now: Date,
-): readonly StoredConnectorRuntimeRow[] {
-  const validRows = rows.flatMap((row) => {
-    const accessResult = resolveBuiltinConnectorCredentialAccess({
-      snapshot,
-      stored: {
-        automaticAuthType: row.automaticAuthType,
-        authMethodId: row.authMethod,
-        connectorId: row.connectorId,
-        connectorSlug: row.connectorSlug,
-        orgId: row.orgId,
-        storageVersion: row.storageVersion,
-        userId: row.userId,
-      },
-    });
-    if (accessResult.kind !== "ok") {
-      return [];
-    }
-    const { access } = accessResult;
-    return [
-      {
-        access,
-        connectorSlug: access.runtimeMethod.connectorSlug,
-        connectorStateRevision: row.connectorStateRevision,
-        authMethod: access.runtimeMethod.authMethodId,
-        automaticAuthType: row.automaticAuthType,
-        runtimeMethod: access.runtimeMethod,
-        isMcp:
-          getConnectorRuntimeConnector(snapshot, row.connectorSlug)
-            ?.catalogConnector.mcp !== undefined,
-        needsReconnect: row.needsReconnect,
-        tokenExpiresAt: row.tokenExpiresAt,
-      },
-    ];
-  });
-  return validRows.filter((row) => {
-    return (
-      allowedConnectorSlugs.includes(row.connectorSlug) &&
-      storedConnectorRuntimeCredentialStatus(row, now) === "available"
-    );
-  });
-}
-
-function storedConnectorRuntimeCredentialStatus(
-  row: StoredConnectorRuntimeRow,
-  now: Date,
-): ConnectorCredentialStatus {
-  return builtinConnectorRuntimeCredentialStatusWithMethod({
-    method: row.runtimeMethod.method,
-    automaticAuthType: row.automaticAuthType,
-    storedNeedsReconnect: row.needsReconnect,
-    tokenExpiresAt: row.tokenExpiresAt,
-    now,
-  });
-}
-
-function connectorEnvBindingSets(
-  rows: readonly StoredConnectorRuntimeRow[],
-): readonly ConnectorEnvBindingSet[] {
-  return rows.map((row) => {
-    const metadata = connectorAuthMethodRuntimeMetadata(
-      row.runtimeMethod.method,
-    );
-    return {
-      access: row.access,
-      connectorSlug: row.connectorSlug,
-      connectorStateRevision: row.connectorStateRevision,
-      authMethod: row.authMethod,
-      runtimeBindings: metadata.runtimeBindings,
-      isMcp: row.isMcp,
-    };
-  });
-}
-
-function storedConnectorCredentialNames(args: {
-  readonly runtimeBindings: readonly ConnectorRuntimeBindingEntry[];
-  readonly kind: "secret" | "variable";
-  readonly names?: ReadonlySet<string>;
-}): readonly string[] {
-  return [
-    ...new Set(
-      args.runtimeBindings.flatMap(({ source }) => {
-        if (
-          (args.kind === "secret" && source.kind !== "connector-secret") ||
-          (args.kind === "variable" && source.kind !== "connector-variable") ||
-          (args.names !== undefined && !args.names.has(source.name))
-        ) {
-          return [];
-        }
-        return [source.name];
-      }),
-    ),
-  ];
-}
-
-function storedConnectorRequirementsByConnector(
-  bindingSets: readonly ConnectorEnvBindingSet[],
-): ReadonlyMap<string, StoredConnectorRequirements> {
-  return new Map(
-    bindingSets.map((bindingSet) => {
-      return [
-        bindingSet.access.connectorId,
-        {
-          secretNames: new Set(
-            storedConnectorCredentialNames({
-              runtimeBindings: bindingSet.runtimeBindings,
-              kind: "secret",
-            }),
-          ),
-          variableNames: new Set(
-            storedConnectorCredentialNames({
-              runtimeBindings: bindingSet.runtimeBindings,
-              kind: "variable",
-            }),
-          ),
-        },
-      ] as const;
-    }),
-  );
-}
-
-function storedConnectorRuntimeVariables(
-  bindingSets: readonly ConnectorEnvBindingSet[],
-  connectorVariables: Record<string, string>,
-): Record<string, string> {
-  const vars: Record<string, string> = {};
-  for (const { runtimeBindings } of bindingSets) {
-    for (const { envName, source } of runtimeBindings) {
-      if (source.kind !== "connector-variable") {
-        continue;
-      }
-      const value = connectorVariables[source.name];
-      if (value !== undefined) {
-        vars[envName] = value;
-      }
-    }
-  }
-  return vars;
-}
-
-function connectorSourceIdsBySlug(
-  bindingSets: readonly ConnectorEnvBindingSet[],
-): Readonly<Record<string, string>> {
-  return Object.fromEntries(
-    bindingSets.map((bindingSet) => {
-      return [bindingSet.connectorSlug, bindingSet.access.connectorId];
-    }),
-  );
-}
-
-function resolveStoredConnectorSecrets(
-  bindingSets: readonly ConnectorEnvBindingSet[],
-  connectorSecrets: Record<string, string>,
-): Record<string, string> {
-  const secrets: Record<string, string> = {};
-  for (const { runtimeBindings } of bindingSets) {
-    for (const { envName, source } of runtimeBindings) {
-      if (source.kind !== "connector-secret") {
-        continue;
-      }
-      const secretValue = connectorSecrets[source.name];
-      if (secretValue !== undefined) {
-        secrets[envName] = secretValue;
-      }
-    }
-  }
-  return secrets;
-}
-
-function resolveStoredConnectorMetadata(
-  bindingSets: readonly ConnectorEnvBindingSet[],
-  connectorVariables: Record<string, string>,
-  availableSecretNames: ReadonlySet<string>,
-): ResolvedStoredConnectorMetadata {
-  const vars: Record<string, string> = {};
-  const secretConnectorMap: Record<string, string> = {};
-  const secretConnectorMetadataMap: Record<string, SecretConnectorMetadata> =
-    {};
-  const environment: Record<string, string> = {};
-
-  for (const { access, connectorSlug, runtimeBindings, isMcp } of bindingSets) {
-    if (isMcp) {
-      // Resolve MCP bindings from the matched account at the firewall boundary.
-      // Global aliases could otherwise collide with another connector or a
-      // caller-owned sandbox secret.
-      continue;
-    }
-    for (const { envName, valueRef, optional, source } of runtimeBindings) {
-      switch (source.kind) {
-        case "connector-secret": {
-          if (availableSecretNames.has(source.name) || !optional) {
-            addConnectorEnvironmentTemplate(environment, envName, valueRef);
-          }
-          break;
-        }
-        case "connector-variable": {
-          const variableValue = connectorVariables[source.name];
-          if (variableValue !== undefined) {
-            vars[envName] = variableValue;
-          }
-          if (variableValue !== undefined || !optional) {
-            addConnectorEnvironmentTemplate(environment, envName, valueRef);
-          }
-          break;
-        }
-        case "platform-secret": {
-          break;
-        }
-      }
-    }
-
-    // Firewall auth templates can only reference env aliases from envBindings;
-    // store the alias that points at the connector runtime secret, not the
-    // backing secret name. Refreshability is resolved later from access metadata.
-    for (const { envName, source } of runtimeBindings) {
-      if (source.kind === "connector-secret") {
-        secretConnectorMap[envName] = connectorSlug;
-        secretConnectorMetadataMap[envName] = {
-          sourceType: "connector",
-          sourceId: access.connectorId,
-        };
-      } else if (source.kind === "platform-secret") {
-        secretConnectorMap[envName] = connectorSlug;
-        secretConnectorMetadataMap[envName] = { sourceType: "platform-secret" };
-      }
-    }
-  }
-
-  return {
-    vars,
-    secretConnectorMap,
-    secretConnectorMetadataMap,
-    environment,
-  };
-}
-
-function storedConnectorContextFromSnapshot(
-  snapshot: StoredConnectorMaterializationSnapshot | null,
-): BuiltinConnectorRuntimeContext {
-  if (!snapshot) {
-    return emptyBuiltinConnectorRuntimeContext();
-  }
-  return {
-    secrets: undefined,
-    vars: compactRecord(
-      storedConnectorRuntimeVariables(
-        snapshot.bindingSets,
-        snapshot.variableValues,
-      ),
-    ),
-    secretConnectorMap: undefined,
-    secretConnectorMetadataMap: undefined,
-    connectorSlugs: snapshot.allowedConnectorRows.map((row) => {
-      return row.connectorSlug;
-    }),
-    mcpConnectorSlugs: snapshot.allowedConnectorRows.flatMap((row) => {
-      return row.isMcp ? [row.connectorSlug] : [];
-    }),
-    connectorSourceIdBySlug: connectorSourceIdsBySlug(snapshot.bindingSets),
-    storedEnvironment: undefined,
-  };
-}
-
-function availableStoredConnectorSecretNames(
-  rows: readonly StoredConnectorSecretRow[],
-): ReadonlySet<string> {
-  return new Set(
-    rows.map((row) => {
-      return row.name;
-    }),
-  );
-}
-
-function storedConnectorExecutionContextFromSnapshot(
-  snapshot: StoredConnectorMaterializationSnapshot | null,
-): BuiltinConnectorRuntimeContext {
-  if (!snapshot) {
-    return emptyBuiltinConnectorRuntimeContext();
-  }
-  const resolved = resolveStoredConnectorMetadata(
-    snapshot.bindingSets,
-    snapshot.variableValues,
-    availableStoredConnectorSecretNames(snapshot.secretRows),
-  );
-  return {
-    ...storedConnectorContextFromSnapshot(snapshot),
-    vars: compactRecord(resolved.vars),
-    secretConnectorMap: compactRecord(resolved.secretConnectorMap),
-    secretConnectorMetadataMap: compactRecord(
-      resolved.secretConnectorMetadataMap,
-    ),
-    storedEnvironment: compactRecord(resolved.environment),
-  };
-}
-
-function referencedEnvironmentSecretAliases(
-  environment: Record<string, string> | undefined,
-): ReadonlySet<string> {
-  if (!environment) {
-    return new Set();
-  }
-  return new Set(
-    extractAndGroupVariables(environment).secrets.map((ref) => {
-      return ref.name;
-    }),
-  );
-}
-
-function eagerStoredConnectorSecretNames(args: {
-  readonly snapshot: StoredConnectorMaterializationSnapshot;
-  readonly storedEnvironment: Record<string, string> | undefined;
-  readonly referencedEnvironmentSecretAliases: ReadonlySet<string>;
-  readonly environmentSecretPlaceholders:
-    Readonly<Record<string, string>> | undefined;
-  readonly overriddenSecretAliases: ReadonlySet<string>;
-}): ReadonlySet<string> {
-  const names = new Set<string>();
-
-  for (const { runtimeBindings, isMcp } of args.snapshot.bindingSets) {
-    if (isMcp) {
-      continue;
-    }
-    for (const { envName, source } of runtimeBindings) {
-      const isNeededByStoredEnvironment =
-        args.storedEnvironment?.[envName] !== undefined;
-      const isNeededByExplicitEnvironment =
-        args.referencedEnvironmentSecretAliases.has(envName);
-      if (
-        source.kind !== "connector-secret" ||
-        (!isNeededByStoredEnvironment && !isNeededByExplicitEnvironment) ||
-        args.environmentSecretPlaceholders?.[envName] !== undefined ||
-        args.overriddenSecretAliases.has(envName)
-      ) {
-        continue;
-      }
-      names.add(source.name);
-    }
-  }
-  return names;
-}
-
-function eagerStoredConnectorSecretInputs(args: {
-  readonly modelProvider: ResolvedModelProviderEnvironment | null;
-  readonly connectorContext: BuiltinConnectorRuntimeContext;
-}): {
-  readonly eagerStoredEnvironment: Record<string, string> | undefined;
-  readonly referencedEnvironmentSecretAliases: ReadonlySet<string>;
-} {
-  const additionalEnvironment = args.modelProvider?.environment;
-  return {
-    eagerStoredEnvironment: effectiveStoredConnectorEnvironment({
-      additionalEnvironment,
-      storedConnectorEnvironment: args.connectorContext.storedEnvironment,
-    }),
-    referencedEnvironmentSecretAliases: referencedEnvironmentSecretAliases(
-      additionalEnvironment,
-    ),
-  };
-}
-
-function buildStoredConnectorMaterializationPlan(args: {
-  readonly connectorRows: readonly StoredConnectorRuntimeRowCandidate[];
-  readonly allowedConnectorSlugs: readonly ConnectorSlug[];
-  readonly connectorCatalogSnapshot: ConnectorRuntimeSelection;
-}): StoredConnectorMaterializationPlan | null {
-  const allowedConnectorRows = allowedStoredConnectorRows(
-    args.connectorRows,
-    args.allowedConnectorSlugs,
-    args.connectorCatalogSnapshot,
-    nowDate(),
-  );
-  if (allowedConnectorRows.length === 0) {
-    return null;
-  }
-
-  const bindingSets = connectorEnvBindingSets(allowedConnectorRows);
-  return {
-    allowedConnectorRows,
-    bindingSets,
-  };
-}
-
-function materializeStoredConnectorSnapshotRows(
-  args: {
-    readonly rows: readonly StoredConnectorMaterializationSnapshotRow[];
-    readonly allowedConnectorSlugs: readonly ConnectorSlug[];
-    readonly connectorCatalogSnapshot: ConnectorRuntimeSelection;
-    readonly timingDimensions: ApiDispatchTimingDimensions;
-  },
-  timing?: ApiDispatchTimingCollector,
-): StoredConnectorMaterializationSnapshot | null {
-  const startedAt = now();
-  const result = safeSync(() => {
-    const plan = buildStoredConnectorMaterializationPlan({
-      connectorRows: args.rows,
-      allowedConnectorSlugs: args.allowedConnectorSlugs,
-      connectorCatalogSnapshot: args.connectorCatalogSnapshot,
-    });
-    if (!plan) {
-      return null;
-    }
-
-    const requirementsByConnector = storedConnectorRequirementsByConnector(
-      plan.bindingSets,
-    );
-    const secretRows: StoredConnectorSecretRow[] = [];
-    const variableValues: Record<string, string> = {};
-    for (const row of args.rows) {
-      const requirements = requirementsByConnector.get(row.connectorId);
-      if (!requirements) {
-        continue;
-      }
-      for (const name of row.secretNames) {
-        if (requirements.secretNames.has(name)) {
-          secretRows.push({ name });
-        }
-      }
-      for (const [name, value] of Object.entries(row.variableValues)) {
-        if (requirements.variableNames.has(name)) {
-          variableValues[name] = value;
-        }
-      }
-    }
-
-    return {
-      allowedConnectorRows: plan.allowedConnectorRows,
-      bindingSets: plan.bindingSets,
-      secretRows,
-      variableValues,
-    } satisfies StoredConnectorMaterializationSnapshot;
-  });
-  if ("error" in result) {
-    timing?.recordElapsed(
-      "api_dispatch_prepare_context_materialize_stored_connector_snapshot",
-      "nested",
-      startedAt,
-      now(),
-      {
-        ...args.timingDimensions,
-        stored_connector_candidate_count_bucket: countBucket(args.rows.length),
-      },
-    );
-    throw result.error;
-  }
-  const snapshot = result.ok;
-  timing?.recordElapsed(
-    "api_dispatch_prepare_context_materialize_stored_connector_snapshot",
-    "nested",
-    startedAt,
-    now(),
-    {
-      ...args.timingDimensions,
-      stored_connector_candidate_count_bucket: countBucket(args.rows.length),
-      stored_connector_count_bucket: countBucket(
-        snapshot?.allowedConnectorRows.length ?? 0,
-      ),
-      stored_connector_secret_count_bucket: countBucket(
-        snapshot?.secretRows.length ?? 0,
-      ),
-    },
-  );
-  return snapshot;
-}
-
-interface StoredConnectorMaterializationArgs {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly allowedConnectorSlugs: readonly ConnectorSlug[];
-  readonly connectorIdCandidatesBySlug:
-    ReadonlyMap<ConnectorSlug, readonly string[]> | undefined;
-  readonly scopeSource: ConnectorScopeSource;
-  readonly connectorCatalogSnapshot: ConnectorRuntimeSelection;
-}
-
-function customConnectorRequiredMemberCredentialsAreComplete(
-  row: CustomConnectorRuntimeDataRows[number],
-): boolean {
-  return (
-    customConnectorMissingRequiredFieldKeys({
-      fields: row.connector.fields,
-      markers: row.values,
-    }).length === 0
-  );
-}
-
-function customConnectorNewRunRowIsAdmissible(
-  row: CustomConnectorRuntimeDataRows[number],
-): boolean {
-  return (
-    row.credentialAccess.kind === "current" &&
-    row.credentialAccess.runtimeAvailable &&
-    (row.connector.authMode !== "manual" ||
-      customConnectorManualAuthReferencesMemberField(row.connector)) &&
-    customConnectorRequiredMemberCredentialsAreComplete(row)
-  );
-}
-
-async function buildNewRunCustomConnectorRuntimeContext(
-  args: BuildCustomConnectorRuntimeContextArgs,
-): Promise<CustomConnectorRuntimeContext> {
-  // Active targets call the shared builder directly so credential loss does
-  // not remove their pinned firewall. Only new runs apply this admission gate.
-  return await buildCustomConnectorRuntimeContext({
-    ...args,
-    rows: args.rows.filter(customConnectorNewRunRowIsAdmissible),
-  });
-}
-
-function connectorContextTimingDimensions(args: {
-  readonly observation: BootstrapConnectorObservation | undefined;
-  readonly scopeSource: ConnectorScopeSource;
-  readonly requestedCustomCount: number;
-  readonly sources: readonly unknown[];
-}): ApiDispatchTimingDimensions {
-  const observation = args.observation;
-  return {
-    connector_context_schema: "shared_v2",
-    connector_value_rows_semantics: "shared_context_wait_v1",
-    connector_scope_source: args.scopeSource,
-    connector_context_requested_custom_count_bucket: countBucket(
-      args.requestedCustomCount,
-    ),
-    connector_context_candidate_custom_count_bucket: countBucket(
-      args.sources.length,
-    ),
-    connector_context_observation: !observation
-      ? "missing"
-      : observation.query && observation.materialize && observation.sources
-        ? "complete"
-        : "partial",
-    ...(observation
-      ? {
-          connector_context_returned_row_count_bucket: countBucket(
-            observation.returnedRowCount,
-          ),
-          connector_context_account_count_bucket: countBucket(
-            observation.accountCount,
-          ),
-          connector_context_custom_account_count_bucket: countBucket(
-            observation.customAccountCount,
-          ),
-          connector_context_stored_value_count_bucket: countBucket(
-            observation.storedValueCount,
-          ),
-          connector_context_pool_capture:
-            observation.acquisitions.length === 1
-              ? "single"
-              : observation.acquisitions.length === 0
-                ? "missing"
-                : "multiple",
-        }
-      : {}),
-  };
-}
-
-function recordConnectorContextObservation(
-  timing: ApiDispatchTimingCollector,
-  observation: BootstrapConnectorObservation | undefined,
-  dimensions: ApiDispatchTimingDimensions,
-): void {
-  if (!observation) {
-    return;
-  }
-  const stages = [
-    [
-      "api_dispatch_prepare_context_connector_context_environment_query",
-      observation.query,
-    ],
-    [
-      "api_dispatch_prepare_context_connector_context_environment_materialize",
-      observation.materialize,
-    ],
-    [
-      "api_dispatch_prepare_context_connector_context_sources_materialize",
-      observation.sources,
-    ],
-  ] as const;
-  for (const [actionType, duration] of stages) {
-    if (duration) {
-      timing.recordDuration(
-        actionType,
-        "nested",
-        duration.durationMs,
-        duration.finishedAt,
-        dimensions,
-      );
-    }
-  }
-  // This canonical statement should acquire exactly one client. Do not invent
-  // zero wait or combine multiple acquisition intervals if coverage differs.
-  const [acquisition] = observation.acquisitions;
-  if (observation.acquisitions.length === 1 && acquisition) {
-    timing.recordDuration(
-      "api_dispatch_prepare_context_connector_context_pool_acquire",
-      "nested",
-      acquisition.durationMs,
-      acquisition.finishedAt,
-      { ...dimensions, connector_context_pool_acquire_path: acquisition.path },
-    );
-  }
-}
-
-function storedConnectorTimingDimensions(args: {
-  readonly scopeSource: ConnectorScopeSource;
-  readonly connectorCount?: number;
-}): ApiDispatchTimingDimensions {
-  return {
-    connector_scope_source: args.scopeSource,
-    ...(args.connectorCount !== undefined
-      ? { stored_connector_count_bucket: countBucket(args.connectorCount) }
-      : {}),
-  };
-}
-
-interface PreparedConnectorContext {
-  readonly connectorContext: BuiltinConnectorRuntimeContext;
-  readonly permissionManifest: PermissionManifest | undefined;
-}
-
 function connectorScopeFromCreateArgs(args: {
   readonly connectorScope: ExplicitConnectorScope;
 }): EffectiveConnectorScope {
@@ -9880,255 +7854,6 @@ function connectorScopeFromCreateArgs(args: {
   };
 }
 
-interface RunPreparedConnectorInputs {
-  readonly db: ReadonlyDb;
-  readonly connectorScope: EffectiveConnectorScope;
-  readonly connectorCatalogSelection: RunConnectorCatalogSelection;
-  readonly body: Pick<CreateRunBody, "permissionPolicies" | "vars" | "secrets">;
-  readonly modelProvider: ResolvedModelProviderEnvironment | null;
-  readonly storedConnectorSnapshot: StoredConnectorMaterializationSnapshot | null;
-  readonly storedConnectorMetadataContext: BuiltinConnectorRuntimeContext;
-  readonly customConnectorContext: CustomConnectorRuntimeContext;
-  readonly featureSwitchContext: FeatureSwitchContext;
-  readonly timing: ApiDispatchTimingCollector;
-}
-
-interface RunConnectorSelection {
-  readonly connectorCatalogSelection: RunConnectorCatalogSelection;
-  readonly threadConnectorSelectionIds: ThreadConnectorSelectionIds | undefined;
-  readonly connectorScope: EffectiveConnectorScope;
-}
-
-interface RunConnectorReadInput {
-  readonly db: ReadonlyDb;
-  readonly timing: ApiDispatchTimingCollector;
-  readonly args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly chatThreadId?: string;
-    /** Exact connector that delivered this run's durable integration input. */
-    readonly connectorSourceId?: string;
-    readonly includeOkouTokenSecret?: boolean;
-  };
-}
-
-interface RunConnectorContextSnapshot {
-  readonly storedConnectorSnapshot: StoredConnectorMaterializationSnapshot | null;
-  readonly storedConnectorMetadataContext: BuiltinConnectorRuntimeContext;
-  readonly customConnectorContext: CustomConnectorRuntimeContext;
-}
-
-interface RunConnectorPreparation {
-  readonly selection: RunConnectorSelection;
-  readonly stored: StoredConnectorMaterializationArgs | null;
-  readonly custom: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly allowedCustomConnectorIds: readonly string[];
-    readonly connectorIdCandidatesByCustomConnectorId:
-      ReadonlyMap<string, readonly string[]> | undefined;
-    readonly customConnectorGrants:
-      readonly AgentCustomConnectorGrant[] | undefined;
-    readonly connectorCatalogSnapshot: ConnectorRuntimeSelection;
-  } | null;
-}
-
-interface RunThreadConnectorSelectionRow {
-  readonly connectorId: string;
-  readonly connectorSlug: string | null;
-  readonly customConnectorId: string | null;
-}
-
-function runConnectorTargetFromRow(
-  row: Pick<
-    RunThreadConnectorSelectionRow,
-    "connectorSlug" | "customConnectorId"
-  >,
-): ConnectorAccountTarget {
-  if (row.connectorSlug !== null && row.customConnectorId === null) {
-    return {
-      kind: "builtin",
-      connectorSlug: connectorSlugSchema.parse(row.connectorSlug),
-    };
-  }
-  if (row.customConnectorId !== null && row.connectorSlug === null) {
-    return { kind: "custom", customConnectorId: row.customConnectorId };
-  }
-  throw new Error("Expected exactly one thread connector selection target");
-}
-
-function runConnectorTargetIsAuthorized(
-  scope: EffectiveConnectorScope,
-  target: ConnectorAccountTarget,
-): boolean {
-  return target.kind === "builtin"
-    ? scope.allowedConnectorSlugs.includes(
-        connectorSlugSchema.parse(target.connectorSlug),
-      )
-    : scope.allowedCustomConnectorIds.includes(target.customConnectorId);
-}
-
-function runThreadConnectorCandidates(
-  selections: readonly ConnectorAccountSelection[],
-  source: ConnectorAccountSelection | null,
-): ThreadConnectorSelectionIds {
-  const candidates = new Map<string, readonly ConnectorAccountSelection[]>();
-  for (const selection of selections) {
-    candidates.set(connectorAccountTargetKey(selection.target), [selection]);
-  }
-  if (source) {
-    const key = connectorAccountTargetKey(source.target);
-    const selected = candidates.get(key)?.[0];
-    candidates.set(
-      key,
-      selected && selected.connectionId !== source.connectionId
-        ? [source, selected]
-        : [source],
-    );
-  }
-  const connectorIdCandidatesBySlug = new Map<
-    ConnectorSlug,
-    readonly string[]
-  >();
-  const connectorIdCandidatesByCustomConnectorId = new Map<
-    string,
-    readonly string[]
-  >();
-  for (const values of candidates.values()) {
-    const first = values[0];
-    if (!first) {
-      continue;
-    }
-    const ids = values.map((value) => {
-      return value.connectionId;
-    });
-    if (first.target.kind === "builtin") {
-      connectorIdCandidatesBySlug.set(
-        connectorSlugSchema.parse(first.target.connectorSlug),
-        ids,
-      );
-    } else {
-      connectorIdCandidatesByCustomConnectorId.set(
-        first.target.customConnectorId,
-        ids,
-      );
-    }
-  }
-  return {
-    connectorIdCandidatesBySlug,
-    connectorIdCandidatesByCustomConnectorId,
-  };
-}
-
-interface RunConnectorAccountRequest {
-  readonly target: ConnectorAccountTarget;
-  readonly sourceIds: readonly string[];
-}
-
-interface RunConnectorAccountRow {
-  readonly connectorId: string;
-  readonly connectorSlug: string | null;
-  readonly customConnectorId: string | null;
-  readonly isDefault: boolean;
-}
-
-function runConnectorAccountRequests(
-  scope: EffectiveConnectorScope,
-  selections: ThreadConnectorSelectionIds | undefined,
-): readonly RunConnectorAccountRequest[] {
-  return [
-    ...scope.allowedConnectorSlugs.map(
-      (connectorSlug): RunConnectorAccountRequest => {
-        return {
-          target: { kind: "builtin", connectorSlug },
-          sourceIds:
-            selections?.connectorIdCandidatesBySlug?.get(connectorSlug) ?? [],
-        };
-      },
-    ),
-    ...scope.allowedCustomConnectorIds.map(
-      (customConnectorId): RunConnectorAccountRequest => {
-        return {
-          target: { kind: "custom", customConnectorId },
-          sourceIds:
-            selections?.connectorIdCandidatesByCustomConnectorId?.get(
-              customConnectorId,
-            ) ?? [],
-        };
-      },
-    ),
-  ];
-}
-
-function runConnectorAccountCandidatesFromRows(args: {
-  readonly requests: readonly RunConnectorAccountRequest[];
-  readonly rows: readonly RunConnectorAccountRow[];
-}): ReadonlyMap<string, readonly string[]> {
-  const byId = new Map(
-    args.rows.map((row) => {
-      return [row.connectorId, row];
-    }),
-  );
-  const defaultsByTarget = new Map<string, string[]>();
-  for (const row of args.rows) {
-    if (!row.isDefault) {
-      continue;
-    }
-    const key = connectorAccountTargetKey(runConnectorTargetFromRow(row));
-    const ids = defaultsByTarget.get(key) ?? [];
-    ids.push(row.connectorId);
-    defaultsByTarget.set(key, ids);
-  }
-  return new Map(
-    args.requests.map((request) => {
-      const key = connectorAccountTargetKey(request.target);
-      const explicit = request.sourceIds.filter((id) => {
-        const row = byId.get(id);
-        return (
-          row !== undefined &&
-          connectorAccountTargetKey(runConnectorTargetFromRow(row)) === key
-        );
-      });
-      const defaults = defaultsByTarget.get(key) ?? [];
-      return [
-        key,
-        [...new Set([...explicit, ...(defaults.length === 1 ? defaults : [])])],
-      ];
-    }),
-  );
-}
-
-function customConnectorCandidateRuntimeRows(args: {
-  readonly connector: CustomConnectorRuntimeDataRows[number]["connector"];
-  readonly candidateIds: readonly string[];
-  readonly storageRows: readonly CustomConnectorRuntimeStorageRow[];
-}): CustomConnectorRuntimeDataRows {
-  const { connector } = args;
-  const declaredFields = new Set(
-    connector.fields.map(customConnectorValueMarkerKey),
-  );
-  const ids: readonly (string | undefined)[] = args.candidateIds.length
-    ? args.candidateIds
-    : [undefined];
-  return ids.map((id) => {
-    const storage = customConnectorRuntimeStorageSnapshot(
-      [connector],
-      args.storageRows,
-      new Map(id ? [[connector.id, id]] : []),
-    );
-    const credentialAccess = storage.accesses.get(connector.id);
-    if (!credentialAccess) {
-      throw new Error("Expected custom connector credential access");
-    }
-    return {
-      connector,
-      credentialAccess,
-      values: storage.values.filter((value) => {
-        return declaredFields.has(customConnectorValueMarkerKey(value));
-      }),
-    };
-  });
-}
 // --- Thread-private implementation: model provider environment ---
 
 function modelProviderFramework(
@@ -10217,7 +7942,6 @@ interface ThreadRunCommand {
   readonly connectorSourceId?: string;
   readonly threadSessionRoute?: ChatThreadSessionRoute;
   /** A producer may atomically move an integration thread to this run's agent. */
-  readonly expectedThreadAgentId?: string;
   readonly computerUseHostId?: string;
   readonly modelProviderId?: string;
   readonly modelProviderCredentialScope?: ModelProviderCredentialScope;
@@ -10310,13 +8034,6 @@ function withOkouTokenSecret(
   };
 }
 
-function pendingOkouTokenSecrets(secrets: CreateRunBody["secrets"]) {
-  return {
-    ...withoutLegacyAgentRunEnvironmentEntries(secrets),
-    OKOU_TOKEN: "__pending_okou_token__",
-  };
-}
-
 interface StoredExecutionSecrets {
   // Runtime secret namespace encrypted into executionContext.encryptedSecrets.
   // Keys are the `NAME` in `${{ secrets.NAME }}`; connector/model-provider
@@ -10335,160 +8052,6 @@ type BuiltStoredExecutionContextDraft = Omit<
 > & {
   readonly context: Omit<StoredExecutionContext, "storageMounts">;
 };
-
-function expandEnvironment(args: {
-  readonly vars: Record<string, string> | undefined;
-  readonly secrets: Record<string, string> | undefined;
-  readonly additionalEnvironment: Record<string, string> | undefined;
-  readonly environmentSecretPlaceholders:
-    Readonly<Record<string, string>> | undefined;
-  readonly storedConnectorEnvironment: Record<string, string> | undefined;
-  readonly connectorVars: Record<string, string> | undefined;
-}): Record<string, string> | null {
-  const storedConnectorEnvironment = expandStoredConnectorEnvironment({
-    environment: effectiveStoredConnectorEnvironment({
-      additionalEnvironment: args.additionalEnvironment,
-      storedConnectorEnvironment: args.storedConnectorEnvironment,
-    }),
-    vars: args.connectorVars,
-    secrets: args.secrets,
-    environmentSecretPlaceholders: args.environmentSecretPlaceholders,
-  });
-  const mergedEnvironment = args.additionalEnvironment;
-  if (!mergedEnvironment) {
-    return storedConnectorEnvironment ?? null;
-  }
-
-  const { result } = expandVariables(mergedEnvironment, {
-    vars: args.vars,
-    secrets: {
-      ...args.secrets,
-      ...args.environmentSecretPlaceholders,
-    },
-  });
-  return mergeRecords(result, storedConnectorEnvironment) ?? null;
-}
-
-function expandStoredConnectorEnvironment(args: {
-  readonly environment: Record<string, string> | undefined;
-  readonly vars: Record<string, string> | undefined;
-  readonly secrets: Record<string, string> | undefined;
-  readonly environmentSecretPlaceholders:
-    Readonly<Record<string, string>> | undefined;
-}): Record<string, string> | undefined {
-  if (!args.environment) {
-    return undefined;
-  }
-
-  const expanded: Record<string, string> = {};
-  const secretSources = mergeRecords(
-    args.secrets,
-    args.environmentSecretPlaceholders,
-  );
-  for (const [key, value] of Object.entries(args.environment)) {
-    const expansion = expandVariablesInString(value, {
-      vars: args.vars,
-      secrets: secretSources,
-    });
-    if (expansion.missingVars.length > 0) {
-      throw new Error(
-        `Stored connector environment is missing required values: ${formatMissingReferences(expansion.missingVars)}`,
-      );
-    }
-    expanded[key] = expansion.result;
-  }
-  return compactRecord(expanded);
-}
-
-function formatMissingReferences(
-  refs: readonly { readonly source: string; readonly name: string }[],
-): string {
-  return refs
-    .map((ref) => {
-      return `${ref.source}.${ref.name}`;
-    })
-    .join(", ");
-}
-
-function withoutLegacyAgentRunEnvironmentEntries<T>(
-  values: Readonly<Record<string, T>> | undefined,
-): Record<string, T> | undefined {
-  if (!values) {
-    return undefined;
-  }
-  const canonical: Record<string, T> = {};
-  for (const [key, value] of Object.entries(values)) {
-    if (!key.startsWith("ZERO_")) {
-      canonical[key] = value;
-    }
-  }
-  return compactRecord(canonical);
-}
-
-function filterSecretConnectorMap(args: {
-  readonly secretConnectorMap: Record<string, string> | undefined;
-  readonly overriddenSecrets: readonly (
-    Readonly<Record<string, unknown>> | undefined
-  )[];
-}): Record<string, string> | undefined {
-  if (!args.secretConnectorMap) {
-    return undefined;
-  }
-
-  const overridden = new Set<string>();
-  for (const secrets of args.overriddenSecrets) {
-    for (const key of Object.keys(secrets ?? {})) {
-      overridden.add(key);
-    }
-  }
-  const filtered = Object.fromEntries(
-    Object.entries(args.secretConnectorMap).filter(([key]) => {
-      return !overridden.has(key);
-    }),
-  );
-  return compactRecord(filtered);
-}
-
-function filterSecretConnectorMetadataMap(args: {
-  readonly secretConnectorMetadataMap:
-    Record<string, SecretConnectorMetadata> | undefined;
-  readonly secretConnectorMap: Record<string, string> | undefined;
-}): Record<string, SecretConnectorMetadata> | undefined {
-  if (!args.secretConnectorMetadataMap || !args.secretConnectorMap) {
-    return undefined;
-  }
-
-  const filtered: Record<string, SecretConnectorMetadata> = {};
-  for (const key of Object.keys(args.secretConnectorMap)) {
-    const metadata = args.secretConnectorMetadataMap[key];
-    if (metadata) {
-      filtered[key] = metadata;
-    }
-  }
-  return compactRecord(filtered);
-}
-
-function overriddenRuntimeSecretAliases(
-  records: readonly (Record<string, string> | undefined)[],
-): ReadonlySet<string> {
-  const aliases = new Set<string>();
-  for (const record of records) {
-    for (const key of Object.keys(record ?? {})) {
-      aliases.add(key);
-    }
-  }
-  return aliases;
-}
-
-function storedConnectorRuntimeTargets(args: {
-  readonly permissionManifest: PermissionManifest | undefined;
-  readonly customTargets: readonly ConnectorRuntimeTargetRegistration[];
-}): ConnectorRuntimeTargetRegistration[] {
-  return [
-    ...(args.permissionManifest?.builtinRuntimeTargets ?? []),
-    ...args.customTargets,
-  ];
-}
 
 function buildStoredPlatformEnvironment(args: {
   readonly platformEnvironment: Record<string, string> | undefined;
@@ -10584,9 +8147,7 @@ function buildStoredExecutionContextDraft(
     readonly framework: SupportedFramework;
     readonly piSandbox: PiModelConfig | undefined;
     readonly modelProvider: ResolvedModelProviderEnvironment | null;
-    readonly connectorContext: BuiltinConnectorRuntimeContext;
-    readonly customConnectorContext: CustomConnectorRuntimeContext;
-    readonly permissionManifest: PermissionManifest | undefined;
+    readonly environment: Environment;
     readonly billableFirewalls: readonly string[];
     readonly modelUsageProvider: string | undefined;
     readonly modelUsageLongContextMinTotalInputTokens: number;
@@ -10600,34 +8161,21 @@ function buildStoredExecutionContextDraft(
   },
   encryptedSecrets: BuiltStoredExecutionContextDraft["context"]["encryptedSecrets"],
 ): BuiltStoredExecutionContextDraft {
-  const permissions = args.permissionManifest;
-  const executionSecrets = buildStoredExecutionSecrets({
-    connectorContext: args.connectorContext,
-    modelProvider: args.modelProvider,
-    bodySecrets: args.body.secrets,
-    customConnectorContext: args.customConnectorContext,
-  });
+  const permissions = environmentPermissionManifest(args.environment);
+  const executionSecrets = buildStoredExecutionSecrets(
+    args.environment,
+    args.body.secrets,
+  );
   const secretNames = executionSecrets.secrets
     ? Object.keys(executionSecrets.secrets)
     : [];
   const secretValues = executionSecrets.secrets
     ? Object.values(executionSecrets.secrets)
     : [];
-  const connectorRuntimeTargets = storedConnectorRuntimeTargets({
-    permissionManifest: permissions,
-    customTargets: args.customConnectorContext.targets,
-  });
   // Newly constructed API context: remove the reserved namespace from the
   // fully expanded untrusted environment before the trusted overlay.
   const expandedEnvironment = withoutOkouNamespaceEntries(
-    expandEnvironment({
-      vars: args.body.vars,
-      secrets: executionSecrets.secrets,
-      additionalEnvironment: args.modelProvider?.environment,
-      environmentSecretPlaceholders: permissions?.environmentSecretPlaceholders,
-      storedConnectorEnvironment: args.connectorContext.storedEnvironment,
-      connectorVars: args.connectorContext.vars,
-    }),
+    args.environment.environment ?? null,
   );
   const platformEnvironment = buildStoredPlatformEnvironment({
     platformEnvironment: args.platformEnvironment,
@@ -10659,7 +8207,7 @@ function buildStoredExecutionContextDraft(
       environment,
       platformEnvironment,
       secretValueEnvironmentKeys,
-      vars: args.connectorContext.vars ?? null,
+      vars: args.environment.vars ?? null,
       resumeSession: args.resolved.resumeSession ?? null,
       encryptedSecrets,
       secretConnectorMap: executionSecrets.secretConnectorMap,
@@ -10671,7 +8219,7 @@ function buildStoredExecutionContextDraft(
       userTimezone: args.userTimezone,
       firewalls: permissions?.firewalls,
       networkPolicies: permissions?.networkPolicies,
-      connectorRuntimeTargets,
+      connectorRuntimeTargets: [...args.environment.runtimeTargets],
       disallowedTools: args.body.disallowedTools,
       tools: args.body.tools,
       settings: args.body.settings,
@@ -10699,60 +8247,22 @@ function resolveBuiltStoredExecutionContext(
   };
 }
 
-function buildStoredExecutionSecrets(args: {
-  readonly connectorContext: BuiltinConnectorRuntimeContext;
-  readonly modelProvider: ResolvedModelProviderEnvironment | null;
-  readonly bodySecrets: Record<string, string> | undefined;
-  readonly customConnectorContext: CustomConnectorRuntimeContext;
-}): StoredExecutionSecrets {
-  const filteredConnectorMap = filterSecretConnectorMap({
-    secretConnectorMap: args.connectorContext.secretConnectorMap,
-    overriddenSecrets: [
-      args.modelProvider?.secrets,
-      args.modelProvider?.secretConnectorMap,
-      args.bodySecrets,
-      args.customConnectorContext.reservedSecretAliases,
-    ],
-  });
-  const filteredModelProviderMap = filterSecretConnectorMap({
-    secretConnectorMap: args.modelProvider?.secretConnectorMap,
-    overriddenSecrets: [
-      args.bodySecrets,
-      args.customConnectorContext.reservedSecretAliases,
-    ],
-  });
-  const filteredConnectorMetadataMap = filterSecretConnectorMetadataMap({
-    secretConnectorMetadataMap:
-      args.connectorContext.secretConnectorMetadataMap,
-    secretConnectorMap: filteredConnectorMap,
-  });
-  const filteredModelProviderMetadataMap = filterSecretConnectorMetadataMap({
-    secretConnectorMetadataMap: args.modelProvider?.secretConnectorMetadataMap,
-    secretConnectorMap: filteredModelProviderMap,
-  });
-  const secretConnectorMap =
-    mergeRecords(filteredConnectorMap, filteredModelProviderMap) ?? null;
-  const secretConnectorMetadataMap =
-    mergeRecords(
-      filteredConnectorMetadataMap,
-      filteredModelProviderMetadataMap,
-    ) ?? null;
-  const secrets = mergeRecords(
-    args.connectorContext.secrets,
-    args.modelProvider?.secrets,
-    args.bodySecrets,
-  );
-  // The merged map is the runtime `secrets.NAME` namespace consumed by firewall
-  // auth and environment expansion. Stored connectors and model providers enter
-  // this map under env binding aliases; raw DB storage names stay behind the
-  // access metadata used during refresh/lookup.
+/** Final runtime secret namespace: the Run environment plus body secrets. */
+function buildStoredExecutionSecrets(
+  environment: Environment,
+  bodySecrets: Record<string, string> | undefined,
+): StoredExecutionSecrets {
+  const merged = mergeEnvironments([
+    environment,
+    { ...emptyEnvironment(), secrets: bodySecrets },
+  ]);
   return {
     // An explicitly empty namespace still supports dynamic firewall secrets.
     secrets:
-      secrets ??
-      (args.bodySecrets !== undefined || secretConnectorMap ? {} : undefined),
-    secretConnectorMap,
-    secretConnectorMetadataMap,
+      merged.secrets ??
+      (bodySecrets !== undefined || merged.secretConnectorMap ? {} : undefined),
+    secretConnectorMap: merged.secretConnectorMap ?? null,
+    secretConnectorMetadataMap: merged.secretConnectorMetadataMap ?? null,
   };
 }
 
@@ -10770,9 +8280,10 @@ interface BuildRunnerJobPayloadInput {
   readonly launchSnapshot: AgentRunFullLaunchSnapshot;
   readonly piSandbox: PiModelConfig | undefined;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
-  readonly connectorContext: BuiltinConnectorRuntimeContext;
-  readonly customConnectorContext: CustomConnectorRuntimeContext;
-  readonly permissionManifest: PermissionManifest | undefined;
+  /** Connector and model-provider environment, before the Okou token. */
+  readonly environment: Environment;
+  /** Built-in MCP connectors whose accounts the Okou token carries. */
+  readonly mcpConnectorSlugs: readonly ConnectorSlug[];
   readonly billableFirewalls: readonly string[];
   readonly modelUsageProvider: string | undefined;
   readonly modelUsageLongContextMinTotalInputTokens: number;
@@ -10822,16 +8333,14 @@ function preparedRunnerJobBody(
   if (!args.includeOkouTokenSecret) {
     return args.body;
   }
-  const customConnectorSourceEntries =
-    args.customConnectorContext.targets.flatMap((target) => {
-      return target.kind === "custom" && target.sourceId
-        ? [[target.customConnectorId, target.sourceId] as const]
-        : [];
-    });
-  const builtinMcpSlugs = new Set(args.connectorContext.mcpConnectorSlugs);
-  const builtinConnectorSourceEntries = (
-    args.permissionManifest?.builtinRuntimeTargets ?? []
-  ).flatMap((target) => {
+  const { runtimeTargets } = args.environment;
+  const customConnectorSourceEntries = runtimeTargets.flatMap((target) => {
+    return target.kind === "custom" && target.sourceId
+      ? [[target.customConnectorId, target.sourceId] as const]
+      : [];
+  });
+  const builtinMcpSlugs = new Set(args.mcpConnectorSlugs);
+  const builtinConnectorSourceEntries = runtimeTargets.flatMap((target) => {
     return target.kind === "builtin" &&
       target.sourceId !== undefined &&
       builtinMcpSlugs.has(target.connectorSlug)
@@ -11012,43 +8521,6 @@ interface MaterializedRunnerStorage {
   readonly piResources: PreparedPiLaunchResources | undefined;
 }
 
-async function buildPreparedPermissionManifest(args: {
-  readonly connectorCatalogSelection: RunConnectorCatalogSelection;
-  readonly body: Pick<CreateRunBody, "permissionPolicies" | "vars" | "secrets">;
-  readonly modelProvider: ResolvedModelProviderEnvironment | null;
-  readonly storedConnectorMetadataContext: BuiltinConnectorRuntimeContext;
-  readonly customConnectorContext: CustomConnectorRuntimeContext;
-  readonly timing: ApiDispatchTimingCollector;
-}): Promise<PermissionManifest | undefined | CreateRunErrorResult> {
-  const result = await settle(
-    buildPermissionManifest({
-      connectorCatalogSelection: args.connectorCatalogSelection,
-      modelProvider: args.modelProvider,
-      permissionPolicies: args.body.permissionPolicies,
-      vars: args.body.vars,
-      connectorVars: args.storedConnectorMetadataContext.vars,
-      connectorSlugs: args.storedConnectorMetadataContext.connectorSlugs,
-      connectorSourceIdBySlug:
-        args.storedConnectorMetadataContext.connectorSourceIdBySlug,
-      customConnectorFirewalls: args.customConnectorContext.firewalls,
-      customConnectorPermissionPolicies:
-        args.customConnectorContext.permissionPolicies,
-      customConnectorIdByFirewallName:
-        args.customConnectorContext.customConnectorIdByFirewallName,
-      customConnectorSourceIdByFirewallName:
-        args.customConnectorContext.customConnectorSourceIdByFirewallName,
-      timing: args.timing,
-    }),
-  );
-  if (result.ok) {
-    return result.value;
-  }
-  if (result.error instanceof FirewallBaseUrlResolutionError) {
-    return badRequestMessage(result.error.message);
-  }
-  throw result.error;
-}
-
 function finalizedMaterializedLaunch(
   storage: MaterializedRunnerStorage,
   contextDraft: BuiltStoredExecutionContextDraft,
@@ -11090,16 +8562,6 @@ interface ResolveAgentExecutionOptions {
   readonly sessionSnapshot?: ChatThreadExecutionSnapshot;
 }
 
-interface PersistedRunEnvironmentVariable {
-  readonly name: string;
-  readonly value: string;
-  readonly userId: string;
-}
-
-interface PersistedRunEnvironmentSnapshot {
-  readonly variables: readonly PersistedRunEnvironmentVariable[];
-}
-
 function forbidden(message: string): ApiErrorResponse<403, "FORBIDDEN"> {
   return {
     status: 403,
@@ -11127,98 +8589,6 @@ function isRouteError(value: unknown): value is CreateRunErrorResult {
     typeof (value as { readonly status: unknown }).status === "number" &&
     (value as { readonly status: number }).status !== 201
   );
-}
-
-function missingEnvironmentReferences(args: {
-  readonly vars: Record<string, string> | undefined;
-  readonly secrets: Record<string, string> | undefined;
-  readonly environmentSecretPlaceholders:
-    Readonly<Record<string, string>> | undefined;
-  readonly additionalEnvironment: Record<string, string> | undefined;
-  readonly storedConnectorEnvironment: Record<string, string> | undefined;
-  readonly connectorVars: Record<string, string> | undefined;
-}): string[] {
-  assertStoredConnectorEnvironmentReferences({
-    environment: effectiveStoredConnectorEnvironment({
-      additionalEnvironment: args.additionalEnvironment,
-      storedConnectorEnvironment: args.storedConnectorEnvironment,
-    }),
-    vars: args.connectorVars,
-    secrets: args.secrets,
-    environmentSecretPlaceholders: args.environmentSecretPlaceholders,
-  });
-  const environment = args.additionalEnvironment;
-  const environmentMissing = missingReferencesInEnvironment({
-    environment,
-    vars: args.vars,
-    secrets: args.secrets,
-    environmentSecretPlaceholders: args.environmentSecretPlaceholders,
-  });
-  return environmentMissing;
-}
-
-function missingReferencesInEnvironment(args: {
-  readonly environment: Record<string, string> | undefined;
-  readonly vars: Record<string, string> | undefined;
-  readonly secrets: Record<string, string> | undefined;
-  readonly environmentSecretPlaceholders:
-    Readonly<Record<string, string>> | undefined;
-}): string[] {
-  if (!args.environment) {
-    return [];
-  }
-  const grouped = extractAndGroupVariables(args.environment);
-  const missingVars = grouped.vars
-    .filter((ref) => {
-      return args.vars?.[ref.name] === undefined;
-    })
-    .map((ref) => {
-      return `vars.${ref.name}`;
-    });
-  const missingSecrets = grouped.secrets
-    .filter((ref) => {
-      return (
-        args.secrets?.[ref.name] === undefined &&
-        args.environmentSecretPlaceholders?.[ref.name] === undefined
-      );
-    })
-    .map((ref) => {
-      return `secrets.${ref.name}`;
-    });
-  return [...missingVars, ...missingSecrets];
-}
-
-function assertStoredConnectorEnvironmentReferences(args: {
-  readonly environment: Record<string, string> | undefined;
-  readonly vars: Record<string, string> | undefined;
-  readonly secrets: Record<string, string> | undefined;
-  readonly environmentSecretPlaceholders:
-    Readonly<Record<string, string>> | undefined;
-}): void {
-  const missing = missingReferencesInEnvironment(args);
-  if (missing.length > 0) {
-    throw new Error(
-      `Stored connector environment is missing required values: ${missing.join(", ")}`,
-    );
-  }
-}
-
-function buildMergedVariables(args: {
-  readonly persistedEnvironment: PersistedRunEnvironmentSnapshot;
-  readonly runVars: Record<string, string> | undefined;
-}): Record<string, string> | undefined {
-  const orgVars: Record<string, string> = {};
-  const userVars: Record<string, string> = {};
-  for (const row of args.persistedEnvironment.variables) {
-    if (row.userId === ORG_SENTINEL_USER_ID) {
-      orgVars[row.name] = row.value;
-    } else {
-      userVars[row.name] = row.value;
-    }
-  }
-
-  const merged = { ...orgVars, ...userVars, ...args.runVars };
-  return Object.keys(merged).length > 0 ? merged : undefined;
 }
 
 interface RunAgentObservation {
@@ -11446,32 +8816,6 @@ function buildResolvedRunBody(args: {
   };
 }
 
-type RunBodyEnvironment = Pick<CreateRunBody, "vars" | "secrets">;
-
-function resolveRunBodyEnvironment(args: {
-  readonly runVars: CreateRunBody["vars"];
-  readonly runSecrets: CreateRunBody["secrets"];
-  readonly persistedEnvironment: PersistedRunEnvironmentSnapshot;
-  readonly canonicalOkouRuntime: boolean;
-}): RunBodyEnvironment {
-  const mergedVars = buildMergedVariables({
-    persistedEnvironment: args.persistedEnvironment,
-    runVars: args.runVars,
-  });
-  // Inject only current Run credentials and authorized provider/connector
-  // bindings; unreferenced org/user secrets remain outside the sandbox.
-  const mergedSecrets = args.runSecrets;
-
-  return {
-    vars: args.canonicalOkouRuntime
-      ? withoutLegacyAgentRunEnvironmentEntries(mergedVars)
-      : mergedVars,
-    secrets: args.canonicalOkouRuntime
-      ? withoutLegacyAgentRunEnvironmentEntries(mergedSecrets)
-      : mergedSecrets,
-  };
-}
-
 // Emitted as the agent_run_origin observability dimension. The values name what
 // started the run, so the fallback is "direct" (not started by an automation)
 // rather than a restatement that this is an agent run.
@@ -11595,10 +8939,6 @@ function createRunBody(args: {
   };
 }
 
-function selectedAgentRunVariables(agentId: string) {
-  return { OKOU_AGENT_ID: agentId };
-}
-
 function measureAgentRunPreCreate<T>(
   timing: ApiDispatchTimingCollector | undefined,
   actionType: ApiDispatchTimingActionType,
@@ -11674,7 +9014,6 @@ interface ProductRunArgs {
   readonly enforceBuiltInCredits?: boolean;
   readonly requiredOfficialWorkflowIds?: readonly string[];
   readonly connectorScope: ExplicitConnectorScope;
-  readonly validateEnvironmentReferences?: boolean;
   readonly agentRunModelPin?: AgentRunModelPin;
   readonly timing?: ApiDispatchTimingCollector;
   readonly timingDimensions?: ApiDispatchTimingDimensions;
@@ -11730,7 +9069,6 @@ function buildProductRunArgs(args: ProductRunArgsInput): ProductRunArgs {
       customConnectorGrants: args.customConnectorGrants,
       source: "stored_agent",
     },
-    validateEnvironmentReferences: false,
     agentRunMetadata: {
       ...command.agentRunMetadata,
       codexServiceTier: command.codexServiceTier,
@@ -11763,7 +9101,6 @@ interface AgentRunIdentityInput {
   readonly agentId: string;
   readonly apiStartTime: number;
   readonly chatThreadId: string;
-  readonly expectedThreadAgentId?: string;
   readonly queueFirstAssociation: QueueFirstRunAssociation;
 }
 interface AgentRunGraphInput {
@@ -11771,24 +9108,6 @@ interface AgentRunGraphInput {
   readonly timing: ApiDispatchTimingCollector;
 }
 
-function matchingAuthorizedRequestObservation(
-  args: ThreadRunIdentity,
-  agentId: string,
-): AuthorizedAgentRunRequestObservation | undefined {
-  const observation = args.authorizedRequestObservation;
-  if (
-    !observation ||
-    observation.userId !== args.owner.userId ||
-    observation.orgId !== args.owner.orgId ||
-    observation.agent.id !== agentId ||
-    observation.agent.orgId !== args.owner.orgId ||
-    observation.featureSwitchContext.userId !== args.owner.userId ||
-    observation.featureSwitchContext.orgId !== args.owner.orgId
-  ) {
-    return undefined;
-  }
-  return observation;
-}
 // --- Thread-private implementation: execution context prompts ---
 
 const AUTO_MEMORY_MISSING_ROOT_POLICY: ArtifactMissingRootPolicy =
@@ -11836,37 +9155,6 @@ function artifactsForRun(args: {
       },
     ],
   };
-}
-
-function validateRunEnvironmentReferences(args: {
-  readonly body: CreateRunBody;
-  readonly modelProvider: ResolvedModelProviderEnvironment | null;
-  readonly connectorContext: BuiltinConnectorRuntimeContext;
-  readonly customConnectorContext: CustomConnectorRuntimeContext;
-  readonly permissionManifest: PermissionManifest | undefined;
-  readonly validateEnvironmentReferences: boolean | undefined;
-}): CreateRunErrorResult | null {
-  const validationSecrets = buildStoredExecutionSecrets({
-    connectorContext: args.connectorContext,
-    modelProvider: args.modelProvider,
-    bodySecrets: args.body.secrets,
-    customConnectorContext: args.customConnectorContext,
-  });
-  if (args.validateEnvironmentReferences === false) {
-    return null;
-  }
-  const missing = missingEnvironmentReferences({
-    vars: args.body.vars,
-    secrets: validationSecrets.secrets,
-    environmentSecretPlaceholders:
-      args.permissionManifest?.environmentSecretPlaceholders,
-    additionalEnvironment: args.modelProvider?.environment,
-    storedConnectorEnvironment: args.connectorContext.storedEnvironment,
-    connectorVars: args.connectorContext.vars,
-  });
-  return missing.length === 0
-    ? null
-    : badRequestMessage(`Missing required values: ${missing.join(", ")}`);
 }
 
 function preparedRunAdditionalVolumes(args: {
@@ -11946,8 +9234,6 @@ function resolveCompatibleDirectResumeSession(args: {
     : { ...args.resolved, resumeSession: undefined };
 }
 
-type PreparedOfficialWorkflow =
-  OfficialWorkflowObservation | CreateRunErrorResult | undefined;
 // --- Thread-private implementation: Pi launch resources ---
 
 function noContentPiMemoryRecall(args: {
@@ -12067,28 +9353,7 @@ function runnerJobPayload(args: {
 
 // --- Private implementation: connector context ---
 
-type RunConnectorCatalogSelection =
-  | { readonly kind: "empty" }
-  | {
-      readonly kind: "scoped";
-      readonly selection: ConnectorRuntimeSelection;
-    };
-
-function mergeRecords<T>(
-  ...records: readonly (Record<string, T> | undefined)[]
-): Record<string, T> | undefined {
-  const merged: Record<string, T> = {};
-  for (const record of records) {
-    if (record) {
-      Object.assign(merged, record);
-    }
-  }
-  return compactRecord(merged);
-}
 // --- Private implementation: Runner payload ---
-
-const DEFAULT_FIREWALL_SECRET_PLACEHOLDER =
-  "c0ffee5afe10ca1c0ffee5afe10ca1c0ffee5afe";
 
 interface BuiltStoredExecutionContext {
   readonly context: StoredExecutionContext;
@@ -12101,27 +9366,6 @@ interface BuiltStoredExecutionContext {
 
 function isOfficialRunnerGroup(group: string): boolean {
   return group.split("/")[0] === "vm0";
-}
-
-function firewallSecretPlaceholdersFromFirewalls(
-  firewalls: readonly ExpandedFirewallConfig[] | undefined,
-): Record<string, string> | undefined {
-  if (!firewalls || firewalls.length === 0) {
-    return undefined;
-  }
-
-  const placeholders: Record<string, string> = {};
-  for (const firewall of firewalls) {
-    const secretNames = extractSecretNamesFromApis(firewall.apis);
-    for (const name of secretNames) {
-      placeholders[name] = DEFAULT_FIREWALL_SECRET_PLACEHOLDER;
-    }
-    for (const [name, value] of Object.entries(firewall.placeholders ?? {})) {
-      placeholders[name] = value;
-    }
-  }
-
-  return Object.keys(placeholders).length > 0 ? placeholders : undefined;
 }
 
 function withoutOkouNamespaceEntries<T>(
@@ -12137,438 +9381,6 @@ function withoutOkouNamespaceEntries<T>(
     }
   }
   return compactRecord(untrusted) ?? null;
-}
-
-async function loadRequiredFirewallPermissionIndex(args: {
-  readonly snapshot: ConnectorRuntimeSelection;
-  readonly connectorSlug: string;
-}): Promise<ConnectorServerFirewallPermissionIndex> {
-  const index = await args.snapshot.serverFirewalls.loadPermissionIndex(
-    args.connectorSlug,
-  );
-  if (!index) {
-    throw new Error(
-      `Missing connector server firewall permission metadata: ${args.connectorSlug}`,
-    );
-  }
-  return index;
-}
-
-function getRequiredFirewallExecutionMetadata(
-  snapshot: ConnectorRuntimeSelection,
-  connectorSlug: string,
-): ConnectorServerFirewallExecutionMetadata {
-  const metadata = snapshot.serverFirewalls.getExecutionMetadata(connectorSlug);
-  if (!metadata) {
-    throw new Error(
-      `Missing connector server firewall execution metadata: ${connectorSlug}`,
-    );
-  }
-  return metadata;
-}
-
-const BASE_URL_VAR_PATTERN = /\$\{\{\s*vars\.([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g;
-
-const BASE_URL_VALIDATION_SECRET_TEMPLATE = [
-  "$",
-  "{{ secrets.__OKOU_FIREWALL_BASE_URL_VALIDATION }}",
-].join("");
-
-function builtinFirewallEntry(
-  firewall: ExpandedFirewallConfig,
-  vars: Record<string, string> | undefined,
-): ExecutionFirewallEntry {
-  const names = new Set<string>();
-  for (const api of firewall.apis) {
-    for (const match of api.base.matchAll(BASE_URL_VAR_PATTERN)) {
-      names.add(match[1]!);
-    }
-  }
-  if (names.size === 0) {
-    return { kind: "builtin", name: firewall.name };
-  }
-
-  const baseUrlVars = canonicalizeFirewallBaseUrlVarsForExecution(
-    [runtimeFirewall(firewall)],
-    vars,
-  );
-  return { kind: "builtin", name: firewall.name, baseUrlVars };
-}
-
-function baseUrlValidationAuth(
-  credentialed: boolean,
-): Firewall["apis"][number]["auth"] {
-  return credentialed
-    ? {
-        headers: {
-          Authorization: `Bearer ${BASE_URL_VALIDATION_SECRET_TEMPLATE}`,
-        },
-      }
-    : {};
-}
-
-function builtinFirewallEntryForMetadata(
-  metadata: ConnectorServerFirewallExecutionMetadata,
-  vars: Record<string, string> | undefined,
-  sourceId: string,
-): ExecutionFirewallEntry {
-  if (metadata.baseUrlVarNames.length === 0) {
-    return {
-      kind: "builtin",
-      name: metadata.connectorSlug,
-      sourceId,
-    };
-  }
-
-  const validationFirewall: Firewall = {
-    name: metadata.connectorSlug,
-    apis: metadata.baseUrlTemplates.map((template) => {
-      return {
-        base: template.base,
-        ...(template.hostPolicy !== undefined
-          ? { hostPolicy: template.hostPolicy }
-          : {}),
-        auth: baseUrlValidationAuth(template.credentialed),
-        permissions: [],
-      };
-    }),
-  };
-  const baseUrlVars = canonicalizeFirewallBaseUrlVarsForExecution(
-    [validationFirewall],
-    vars,
-  );
-  return {
-    kind: "builtin",
-    name: metadata.connectorSlug,
-    baseUrlVars,
-    sourceId,
-  };
-}
-
-function customConnectorInlineFirewallEntry(
-  firewall: ExpandedFirewallConfig,
-  customConnectorIdByFirewallName: Readonly<Record<string, string>>,
-  customConnectorSourceIdByFirewallName: Readonly<Record<string, string>>,
-): ExecutionFirewallEntry {
-  const customConnectorId = customConnectorIdByFirewallName[firewall.name];
-  if (!customConnectorId) {
-    throw new Error("Missing Custom connector identity for inline firewall");
-  }
-  return {
-    kind: "inline",
-    customConnectorId,
-    ...(customConnectorSourceIdByFirewallName[firewall.name] === undefined
-      ? {}
-      : { sourceId: customConnectorSourceIdByFirewallName[firewall.name] }),
-    firewall: customConnectorRuntimeFirewall(firewall),
-  };
-}
-
-function applyConnectorPolicies(
-  connectorFirewalls: readonly ExpandedFirewallConfig[],
-  policies: FirewallPolicies | undefined,
-  entryForFirewall: (
-    firewall: ExpandedFirewallConfig,
-  ) => ExecutionFirewallEntry,
-  defaultPolicyForFirewall: (
-    firewall: ExpandedFirewallConfig,
-    permissionNames: readonly string[],
-  ) => FirewallPolicy,
-): Pick<PermissionManifest, "firewalls" | "networkPolicies"> {
-  const firewalls: ExecutionFirewalls = [];
-  const networkPolicies: NetworkPolicies = {};
-
-  for (const firewall of connectorFirewalls) {
-    const policy = policies?.[firewall.name];
-    const permissionNames = collectPermissionNames(firewall.apis);
-    const defaultPolicy = defaultPolicyForFirewall(firewall, permissionNames);
-    firewalls.push(entryForFirewall(firewall));
-
-    networkPolicies[firewall.name] = resolveConnectorNetworkPolicy({
-      permissionNames,
-      defaultPolicy,
-      policy,
-    });
-  }
-
-  return { firewalls, networkPolicies };
-}
-
-function modelProviderPermissionManifest(
-  modelProvider: ResolvedModelProviderEnvironment | null,
-  vars: Record<string, string> | undefined,
-): PermissionManifest | undefined {
-  if (!modelProvider) {
-    return undefined;
-  }
-
-  const firewall = getModelProviderFirewall(
-    modelProvider.concreteType ?? modelProvider.type,
-  );
-  if (!firewall) {
-    return undefined;
-  }
-
-  const permissionNames = collectPermissionNames(firewall.apis);
-  const denySet = new Set(firewall.defaultPolicies?.deny ?? []);
-  const askSet = new Set(firewall.defaultPolicies?.ask ?? []);
-  return {
-    firewalls: [builtinFirewallEntry(firewall, vars)],
-    environmentSecretPlaceholders: firewallSecretPlaceholdersFromFirewalls([
-      firewall,
-    ]),
-    billableFirewalls: [],
-    networkPolicies: {
-      [firewall.name]: {
-        allow: permissionNames.filter((name) => {
-          return !denySet.has(name) && !askSet.has(name);
-        }),
-        deny: [...denySet],
-        ask: [...askSet],
-        unknownPolicy: firewall.defaultPolicies?.unknownPolicy ?? "allow",
-      },
-    },
-  };
-}
-
-interface BuiltinConnectorManifestSource {
-  readonly metadata: ConnectorServerFirewallExecutionMetadata;
-  readonly permissionIndex: ConnectorServerFirewallPermissionIndex;
-  readonly isMcp: boolean;
-}
-
-function applyBuiltinConnectorMetadataPolicies(
-  sources: readonly BuiltinConnectorManifestSource[],
-  policies: FirewallPolicies | undefined,
-  vars: Record<string, string> | undefined,
-  connectorSourceIdBySlug: Readonly<Record<string, string>>,
-): PermissionManifest {
-  const firewalls: ExecutionFirewalls = [];
-  const networkPolicies: NetworkPolicies = {};
-  const environmentSecretPlaceholders: Record<string, string> = {};
-  const billableFirewalls: string[] = [];
-
-  for (const source of sources) {
-    const name = source.metadata.connectorSlug;
-    const permissionNames = [...source.permissionIndex.permissionNames];
-    const defaultPolicy = defaultFirewallPolicyForPermissionIndex(
-      source.permissionIndex,
-    );
-    const policy = policies?.[name];
-    const sourceId = connectorSourceIdBySlug[name];
-    if (sourceId === undefined) {
-      throw new Error("Missing built-in connector source identity");
-    }
-    firewalls.push(
-      builtinFirewallEntryForMetadata(source.metadata, vars, sourceId),
-    );
-    if (!source.isMcp) {
-      Object.assign(
-        environmentSecretPlaceholders,
-        source.metadata.placeholderValues,
-      );
-    }
-    if (source.metadata.billable) {
-      billableFirewalls.push(name);
-    }
-
-    networkPolicies[name] = resolveConnectorNetworkPolicy({
-      permissionNames,
-      defaultPolicy,
-      policy,
-    });
-  }
-
-  return {
-    firewalls,
-    networkPolicies,
-    environmentSecretPlaceholders: compactRecord(environmentSecretPlaceholders),
-    billableFirewalls,
-  };
-}
-
-function builtinRuntimeTargetRegistration(
-  firewall: ExecutionFirewallEntry,
-): NonNullable<PermissionManifest["builtinRuntimeTargets"]>[number] {
-  if (firewall.kind !== "builtin") {
-    throw new Error("Builtin connector manifest contains an inline firewall");
-  }
-  return {
-    kind: "builtin",
-    connectorSlug: connectorSlugSchema.parse(firewall.name),
-    ...(firewall.baseUrlVars === undefined
-      ? {}
-      : { baseUrlVars: { ...firewall.baseUrlVars } }),
-    ...(firewall.sourceId === undefined ? {} : { sourceId: firewall.sourceId }),
-  };
-}
-
-function mergePermissionManifests(args: {
-  readonly connectorManifest: PermissionManifest;
-  readonly customConnectorManifest: Pick<
-    PermissionManifest,
-    "firewalls" | "networkPolicies"
-  >;
-  readonly providerManifest: PermissionManifest | undefined;
-  readonly customConnectorFirewalls: readonly ExpandedFirewallConfig[];
-}): PermissionManifest | undefined {
-  const builtinRuntimeTargets = args.connectorManifest.firewalls.map(
-    builtinRuntimeTargetRegistration,
-  );
-  const firewalls = [
-    ...(args.providerManifest?.firewalls ?? []),
-    ...args.connectorManifest.firewalls,
-    ...args.customConnectorManifest.firewalls,
-  ];
-
-  if (firewalls.length === 0) {
-    return undefined;
-  }
-
-  return {
-    firewalls,
-    builtinRuntimeTargets,
-    environmentSecretPlaceholders: mergeRecords(
-      args.providerManifest?.environmentSecretPlaceholders,
-      args.connectorManifest.environmentSecretPlaceholders,
-      firewallSecretPlaceholdersFromFirewalls(args.customConnectorFirewalls),
-    ),
-    billableFirewalls: [
-      ...(args.providerManifest?.billableFirewalls ?? []),
-      ...args.connectorManifest.billableFirewalls,
-    ],
-    networkPolicies: {
-      ...args.providerManifest?.networkPolicies,
-      ...args.connectorManifest.networkPolicies,
-      ...args.customConnectorManifest.networkPolicies,
-    },
-  };
-}
-
-interface BuildPermissionManifestArgs {
-  readonly connectorCatalogSelection: RunConnectorCatalogSelection;
-  readonly modelProvider: ResolvedModelProviderEnvironment | null;
-  readonly permissionPolicies: FirewallPolicies | undefined;
-  readonly vars: Record<string, string> | undefined;
-  readonly connectorVars?: Record<string, string>;
-  readonly connectorSlugs?: readonly ConnectorSlug[];
-  readonly connectorSourceIdBySlug?: Readonly<Record<string, string>>;
-  readonly customConnectorFirewalls?: readonly ExpandedFirewallConfig[];
-  readonly customConnectorPermissionPolicies?: FirewallPolicies;
-  readonly customConnectorIdByFirewallName?: Readonly<Record<string, string>>;
-  readonly customConnectorSourceIdByFirewallName?: Readonly<
-    Record<string, string>
-  >;
-  readonly timing?: ApiDispatchTimingCollector;
-}
-
-async function buildPermissionManifest(
-  args: BuildPermissionManifestArgs,
-): Promise<PermissionManifest | undefined> {
-  const connectorBaseUrlVars = mergeRecords(args.vars, args.connectorVars);
-  const customConnectorFirewalls = args.customConnectorFirewalls ?? [];
-
-  const builtinSources = await measureApiDispatchTiming(
-    args.timing,
-    "api_dispatch_prepare_context_load_builtin_permission_indexes",
-    "nested",
-    async () => {
-      if (args.connectorCatalogSelection.kind === "empty") {
-        return [];
-      }
-      const snapshot = args.connectorCatalogSelection.selection;
-      const builtinConnectorSlugs = (
-        args.connectorSlugs ?? Object.keys(args.permissionPolicies ?? {})
-      ).filter((connectorSlug) => {
-        return snapshot.serverFirewalls.has(connectorSlug);
-      });
-      return await Promise.all(
-        builtinConnectorSlugs.map(async (connectorSlug) => {
-          const metadata = getRequiredFirewallExecutionMetadata(
-            snapshot,
-            connectorSlug,
-          );
-          const permissionIndex = await loadRequiredFirewallPermissionIndex({
-            snapshot,
-            connectorSlug,
-          });
-          return {
-            metadata,
-            permissionIndex,
-            isMcp: snapshot.serverFirewalls.isMcp(connectorSlug),
-          };
-        }),
-      );
-    },
-  );
-
-  const connectorManifest = await measureApiDispatchTiming(
-    args.timing,
-    "api_dispatch_prepare_context_apply_builtin_permission_policies",
-    "nested",
-    () => {
-      return Promise.resolve(
-        applyBuiltinConnectorMetadataPolicies(
-          builtinSources,
-          args.permissionPolicies,
-          connectorBaseUrlVars,
-          args.connectorSourceIdBySlug ?? {},
-        ),
-      );
-    },
-  );
-  const customConnectorManifest = await measureApiDispatchTiming(
-    args.timing,
-    "api_dispatch_prepare_context_apply_custom_permission_policies",
-    "nested",
-    () => {
-      return Promise.resolve(
-        applyConnectorPolicies(
-          customConnectorFirewalls,
-          mergeRecords(
-            args.permissionPolicies,
-            args.customConnectorPermissionPolicies,
-          ),
-          (firewall) => {
-            return customConnectorInlineFirewallEntry(
-              firewall,
-              args.customConnectorIdByFirewallName ?? {},
-              args.customConnectorSourceIdByFirewallName ?? {},
-            );
-          },
-          (_firewall, permissionNames) => {
-            return allAllowPolicyForPermissions(permissionNames);
-          },
-        ),
-      );
-    },
-  );
-  const providerManifest = await measureApiDispatchTiming(
-    args.timing,
-    "api_dispatch_prepare_context_apply_model_provider_permission_policy",
-    "nested",
-    () => {
-      return Promise.resolve(
-        modelProviderPermissionManifest(args.modelProvider, args.vars),
-      );
-    },
-  );
-
-  return await measureApiDispatchTiming(
-    args.timing,
-    "api_dispatch_prepare_context_merge_permission_manifest",
-    "nested",
-    () => {
-      return Promise.resolve(
-        mergePermissionManifests({
-          connectorManifest,
-          customConnectorManifest,
-          providerManifest,
-          customConnectorFirewalls,
-        }),
-      );
-    },
-  );
 }
 
 function sanitizeEnvironment(
@@ -13566,15 +10378,11 @@ function tailFacts(
     requestMemory:
       Boolean(claim) &&
       isFeatureEnabled(FeatureSwitchKey.PiMemory, args.featureSwitchContext),
-    threadAgentId:
-      claim?.producer?.kind === "reassign-agent"
-        ? claim.producer.expectedAgentId
-        : args.context.resolved.agentId,
+    threadAgentId: args.context.resolved.agentId,
     threadBindingFencesOwnership:
       Boolean(admission.validatedThreadSession) &&
       admission.validatedThreadSession?.threadAgentId ===
-        args.context.resolved.agentId &&
-      claim?.producer?.kind !== "reassign-agent",
+        args.context.resolved.agentId,
     needsBinding:
       Boolean(args.createArgs.chatThreadId) &&
       !admission.validatedThreadSession,
@@ -13586,16 +10394,8 @@ function assertPendingLaunchClaim(
   args: PreparedCommitPreparedLaunchArgs,
   claim: PendingLaunchClaim | undefined,
 ) {
-  if (
-    claim &&
-    (args.createArgs.orgId !== claim.orgId ||
-      args.createArgs.chatThreadId !== claim.chatThreadId ||
-      args.createArgs.queueFirstAssociation?.threadId !== claim.chatThreadId ||
-      !args.createArgs.agentRunModelPin)
-  ) {
-    throw new Error(
-      "Chat run commit requires its captured input association and model pin",
-    );
+  if (claim && !args.createArgs.agentRunModelPin) {
+    throw new Error("Chat run commit requires its captured model pin");
   }
 }
 

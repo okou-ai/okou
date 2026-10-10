@@ -171,10 +171,23 @@ higher cache-hit rate or measured build acceleration.
 Targets without an available cache reference use the normal compile job, which
 uploads the binary directly to the existing content-addressed R2 cache. Only
 after verifying that object does it publish a small R2 manifest scoped to the
-workflow run and input digest. Image-build and cache-index
-jobs download the fresh binary from R2; neither transfers binary payloads through
-GitHub artifacts or uploads the binary again. The cache-index job retains the
-existing shadow comparison and optional small GitHub manifest publication.
+workflow run and input digest. The same target's compiler job then runs the
+existing fresh-output shadow comparison and optionally publishes its small
+GitHub reuse manifest, without waiting for another architecture's compiler or a
+separately scheduled index job. Retained R2 byte verification and proven conflict
+rejection happen before index upload; the upload remains immutable and optional.
+Image-build jobs independently download and validate their fresh R2 bytes.
+Neither binary payloads nor combined architecture bundles pass through GitHub
+artifacts, and image consumers do not upload the binary again.
+
+Discovery and shadow comparison use bounded GitHub REST API reads, including
+exact artifact-ID downloads; no GitHub CLI bootstrap is required. Artifact
+storage redirects receive no GitHub authorization, and index archives must
+contain one bounded regular manifest. GitHub remains only a discovery index; a successfully
+published target can be reused while unrelated producer-workflow jobs are still
+running. Completed-run/source eligibility remains specific to the separate
+shadow audit, not ordinary trusted-R2 cache reuse. Image builds retain their
+aggregate compiler gate and required per-submission verification.
 
 Fresh publication and download are required: missing configuration, storage
 failures, invalid manifests, or binary hash/size mismatches fail the job. Cache-hit

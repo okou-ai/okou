@@ -130,7 +130,7 @@ const apiTestExternalBehaviorMessage =
   "API tests must exercise external behavior through API endpoints. Do not test internal implementation details. See docs/testing.md#external-behavior.";
 
 const apiTestDirectDbImportMessage =
-  "API tests must not import DB handles directly. Exercise setup and assertions through API endpoints; add a test route only when an external-behavior exception is justified.";
+  "API tests must not import DB handles directly. Use existing production APIs for setup and assertions; do not add test-only endpoints.";
 
 const apiTestLoggerImportMessage =
   "API tests must not observe the logger. Assert HTTP responses and effects instead; see docs/testing.md#external-behavior.";
@@ -711,60 +711,8 @@ export default [
         {
           selector: "Program",
           message:
-            "Service-directory tests must live behind API endpoint boundaries. Put coverage under routes/__tests__ or document a narrow exception in services/__tests__.",
+            "API service-directory tests are prohibited. Exercise behavior through production entry points under routes/__tests__.",
         },
-      ],
-    },
-  },
-  {
-    // Keep finite persisted/state-machine contract matrices as narrow
-    // exceptions. Route tests cover constructible behavior, while these exact
-    // transition inputs are not available through production APIs. Being an
-    // exception to the service-directory ban is not an exception to the
-    // diagnostics gate, so these files carry those selectors too.
-    files: [
-      // Bounded job ownership needs real row-lock competition, expired leases,
-      // handler-version skew and publication rollback unavailable through HTTP.
-      "src/signals/services/__tests__/background-job.service.test.ts",
-      // The Morning Brief source budget is a deployed 20-second constant, not
-      // a request input, and shortening it through the preview endpoint would
-      // ship a debug parameter. This suite drives the route's own admission
-      // and collection composition so the deadline and a caller's
-      // cancellation can reach a provider body that is still streaming; every
-      // other reader contract stays on the Gmail preview endpoint.
-      "src/signals/services/__tests__/morning-brief-connector-reader.service.test.ts",
-      // Morning Brief composition reduces five providers to one bounded
-      // request. The preview route can only exercise the sources an owner
-      // has actually connected, so these exact byte, deadline, identity,
-      // retention and language-precedence boundaries have no HTTP ingress.
-      "src/signals/services/__tests__/morning-brief-composition.test.ts",
-      // Hosting trigger coexistence, ownership locks and allocation rollback
-      // require isolated PostgreSQL schemas; route suites cover product APIs.
-      "src/signals/services/__tests__/hosted-site-scope.service.test.ts",
-      "src/signals/services/__tests__/workflow-automation-context.test.ts",
-      // #34693 and #34711 need the persisted membership fence in both
-      // overlapping commit orders, the foreign-key cascades that invalidate a
-      // copy, account deletion and the refresh outcome, none of which any
-      // production endpoint exposes. The Settings routes cover the rest.
-      "src/signals/services/__tests__/morning-brief-preference-projection.service.test.ts",
-      // #34815 needs both commit orders of a Morning Brief classification and a
-      // collection, an Agent transfer arriving mid-read, and the automation
-      // binding and queue admission producers. No endpoint suspends a
-      // transaction at a row lock or fires an automation into a chosen thread;
-      // the preview route suite owns every constructible case.
-      "src/signals/services/__tests__/morning-brief-chat-collection.service.test.ts",
-      // #35016 needs both commit orders of a Morning Brief binding reuse and a
-      // thread deletion over the two row locks their cycle ran through. The one
-      // endpoint that reaches an existing binding continues into queue
-      // admission once its binding transaction commits, so it cannot be
-      // suspended at that boundary; deletion stays the real endpoint and the
-      // route suite owns the constructible reuse cases.
-    ],
-    rules: {
-      "no-restricted-syntax": [
-        "error",
-        ...restrictedSyntax,
-        ...apiTestDiagnosticsSyntax,
       ],
     },
   },
@@ -850,38 +798,9 @@ export default [
       // Central test lifecycle owns connection-pool teardown; it does not
       // construct or assert API behavior.
       "src/__tests__/test-context.ts",
-      // A finite event-type matrix locks persisted payload rendering and
-      // policy lookup byte-for-byte; individual provider routes cannot cover
-      // every lookup-table row without duplicating the contract under test.
-      "src/signals/services/__tests__/workflow-automation-context.test.ts",
-      // Bounded job ownership needs row locks, expired leases, handler-version
-      // skew and transaction rollback that callers cannot construct via HTTP.
-      "src/signals/services/__tests__/background-job.service.test.ts",
-      // Hosting trigger coexistence, ownership locks and allocation rollback
-      // require isolated PostgreSQL schemas; route suites cover product APIs.
-      "src/signals/services/__tests__/hosted-site-scope.service.test.ts",
       // The logger is the subject here, not a diagnostic: this suite covers the
       // app factory's log wiring and flush ownership, which no route exposes.
       "src/__tests__/app-factory.test.ts",
-      // #34693 and #34711's persisted membership fence, foreign-key cascades,
-      // account deletion and refresh outcome have no HTTP ingress; the Settings
-      // routes own everything else.
-      "src/signals/services/__tests__/morning-brief-preference-projection.service.test.ts",
-      // The source budget is a deployed 20-second constant, not a request
-      // input, and shortening it through the endpoint would ship a debug
-      // parameter. This suite drives the route's own admission and collection
-      // composition so a deadline and a cancellation can reach a provider body
-      // that is still streaming; every other reader contract stays on the
-      // Gmail preview endpoint.
-      "src/signals/services/__tests__/morning-brief-connector-reader.service.test.ts",
-      // #34815's classification/read commit orders, mid-read Agent transfer and
-      // workflow-driven provenance producers need suspended PostgreSQL
-      // transactions and a chosen destination thread, neither of which an HTTP
-      // caller can construct; the preview route suite owns the rest.
-      "src/signals/services/__tests__/morning-brief-chat-collection.service.test.ts",
-      // #35016's binding reuse and thread deletion have to arrive in both
-      // orders on the same two rows, which needs a suspended PostgreSQL
-      // transaction; the reuse route suite owns the constructible cases.
     ],
     rules: {
       "no-restricted-imports": [
@@ -926,9 +845,8 @@ export default [
       // that `restrictedSyntax` bans everywhere else.
       "src/__tests__/env-stub.ts",
       "src/__tests__/global-setup-env.ts",
-      // Service-directory tests are answered by their own blocks above: the
-      // file is either banned outright or is a named exception that carries
-      // these selectors alongside the shared ones.
+      // Preserve the unconditional Program ban above: this later syntax
+      // override must not replace it. This exclusion permits no service tests.
       "src/signals/services/**/*.test.ts",
       // The stub definition site installs the logger and telemetry mocks that
       // this rule stops tests from reading; it asserts nothing itself.

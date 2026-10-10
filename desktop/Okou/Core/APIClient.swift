@@ -18,7 +18,7 @@ public actor APIClient {
   }
   /// Includes SDK lookup, one forced refresh on 401, and HTTP in one budget.
   public func authenticatedRequest(
-    _ path: String, body: JSONValue, timeout: TimeInterval,
+    _ path: String, body: JSONValue? = nil, timeout: TimeInterval,
     tokenProvider: @escaping @Sendable (Bool) async throws -> String
   ) async throws -> APIResponse {
     try await withThrowingTaskGroup(of: APIResponse.self) { group in

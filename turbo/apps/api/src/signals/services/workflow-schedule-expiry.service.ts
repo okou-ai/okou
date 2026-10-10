@@ -3,7 +3,7 @@ import { workflowScheduleSkips } from "@okouai/db/schema/workflow-schedule-skip"
 import { and, eq, sql } from "drizzle-orm";
 
 import { command } from "ccstate";
-import { writeDb$ } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 
 import { calculateNextRun } from "./time-automation";
 
@@ -92,62 +92,64 @@ interface ExpiredScheduleInput {
  */
 export const skipExpiredWorkflowSchedule$ = command(
   async (
-    { set },
+    { get, set },
     args: ExpiredScheduleInput,
     signal: AbortSignal,
   ): Promise<"skipped" | "moved" | "held"> => {
-    const db = set(writeDb$);
+    const readDb = get(db$);
     signal.throwIfAborted();
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0343; new non-billing transactions are prohibited.
-    const result = await db.transaction(async (tx) => {
-      const [initial] = await tx
-        .select({
-          id: workflowAutomations.id,
-          orgId: workflowAutomations.orgId,
-          ownerUserId: workflowAutomations.ownerUserId,
-          workflowId: workflowAutomations.workflowId,
-          officialBlueprintKey: workflowAutomations.officialBlueprintKey,
-        })
-        .from(workflowAutomations)
-        .where(eq(workflowAutomations.id, args.automationId))
-        .limit(1);
-      if (!initial) {
-        return "moved";
-      }
-      const [snapshot] = await tx
-        .select({
-          row: workflowAutomations,
-          version: sql`${workflowAutomations}.xmin::text`.mapWith(
-            pgTextDecoder,
-          ),
-        })
-        .from(workflowAutomations)
-        .where(eq(workflowAutomations.id, args.automationId))
-        .limit(1);
-      const current = snapshot?.row;
-      if (!stillExpired(current, initial, args) || !snapshot) {
-        return "moved";
-      }
-      const [pending] = await tx
-        .select({
-          held: workflowScheduleAlreadyClaimedSql(current, args.anchor).mapWith(
-            workflowAutomations.enabled,
-          ),
-        })
-        .from(workflowAutomations)
-        .where(eq(workflowAutomations.id, current.id))
-        .limit(1);
-      if (pending?.held) {
-        return "held";
-      }
-      const nextRunAt = futureAfterSkip(current, args.at);
-      if (
-        current.scheduleType !== "once" &&
-        (nextRunAt === null || nextRunAt.getTime() <= args.at.getTime())
-      ) {
-        return "held";
-      }
-      const [applied] = await tx
+    const [initial] = await readDb
+      .select({
+        id: workflowAutomations.id,
+        orgId: workflowAutomations.orgId,
+        ownerUserId: workflowAutomations.ownerUserId,
+        workflowId: workflowAutomations.workflowId,
+        officialBlueprintKey: workflowAutomations.officialBlueprintKey,
+      })
+      .from(workflowAutomations)
+      .where(eq(workflowAutomations.id, args.automationId))
+      .limit(1);
+    signal.throwIfAborted();
+    if (!initial) {
+      return "moved";
+    }
+    const [snapshot] = await readDb
+      .select({
+        row: workflowAutomations,
+        version: sql`${workflowAutomations}.xmin::text`.mapWith(pgTextDecoder),
+      })
+      .from(workflowAutomations)
+      .where(eq(workflowAutomations.id, args.automationId))
+      .limit(1);
+    signal.throwIfAborted();
+    const current = snapshot?.row;
+    if (!stillExpired(current, initial, args) || !snapshot) {
+      return "moved";
+    }
+    const [pending] = await readDb
+      .select({
+        held: workflowScheduleAlreadyClaimedSql(current, args.anchor).mapWith(
+          workflowAutomations.enabled,
+        ),
+      })
+      .from(workflowAutomations)
+      .where(eq(workflowAutomations.id, current.id))
+      .limit(1);
+    signal.throwIfAborted();
+    if (pending?.held) {
+      return "held";
+    }
+    const nextRunAt = futureAfterSkip(current, args.at);
+    if (
+      current.scheduleType !== "once" &&
+      (nextRunAt === null || nextRunAt.getTime() <= args.at.getTime())
+    ) {
+      return "held";
+    }
+
+    const db = set(writeDb$);
+    const advanced = db.$with("advanced").as(
+      db
         .update(workflowAutomations)
         .set(expiredScheduleValues(current, nextRunAt, args.at))
         .where(
@@ -157,23 +159,35 @@ export const skipExpiredWorkflowSchedule$ = command(
             sql`NOT ${workflowScheduleAlreadyClaimedSql(current, args.anchor)}`,
           ),
         )
-        .returning({ id: workflowAutomations.id });
-      if (!applied) {
-        return "moved";
-      }
-      await tx
+        .returning({ id: workflowAutomations.id }),
+    );
+    const recorded = db.$with("recorded").as(
+      db
         .insert(workflowScheduleSkips)
-        .values({
-          automationId: current.id,
-          scheduledAnchorAt: args.anchor,
-          skippedAt: args.at,
-        })
-        .onConflictDoNothing();
-      signal.throwIfAborted();
-      return "skipped" as const;
-    });
+        .select(
+          db
+            .select({
+              automationId: advanced.id,
+              scheduledAnchorAt:
+                sql`${sql.param(args.anchor, workflowScheduleSkips.scheduledAnchorAt)}`
+                  .mapWith(workflowScheduleSkips.scheduledAnchorAt)
+                  .as("scheduled_anchor_at"),
+              skippedAt:
+                sql`${sql.param(args.at, workflowScheduleSkips.skippedAt)}`
+                  .mapWith(workflowScheduleSkips.skippedAt)
+                  .as("skipped_at"),
+            })
+            .from(advanced),
+        )
+        .onConflictDoNothing(),
+    );
+    // Both writes are atomic; an existing marker does not erase an advancement.
+    const [applied] = await db
+      .with(advanced, recorded)
+      .select({ id: advanced.id })
+      .from(advanced);
     signal.throwIfAborted();
-    return result;
+    return applied ? "skipped" : "moved";
   },
 );
 

@@ -1,10 +1,8 @@
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { morningBriefScheduleClaims } from "@okouai/db/schema/morning-brief-schedule-claim";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import type { ThreadRunContext } from "./thread-claim-run.service";
-import { chatThreadEventInsertSql } from "./chat-thread-event.service";
 import { pendingLaunchUpdateSql } from "./pending-launch-sql";
 
 export interface PendingLaunchClaim {
@@ -45,22 +43,6 @@ export function pendingLaunchClaimProducerStatements(
         updated_at = ${sql.param(nowDate(), morningBriefScheduleClaims.updatedAt)}
       WHERE ${eq(morningBriefScheduleClaims.queueEventId, producer.queueEventId)}
         AND ${isNull(morningBriefScheduleClaims.runId)}`,
-    ];
-  }
-  if (producer?.kind === "reassign-agent") {
-    return [
-      sql`UPDATE ${chatThreads} SET agent_id = ${producer.agentId}::uuid
-        WHERE ${eq(chatThreads.id, producer.threadId)}
-          AND ${eq(chatThreads.userId, producer.userId)}
-          AND ${eq(chatThreads.agentId, producer.expectedAgentId)}`,
-      chatThreadEventInsertSql({
-        kind: "sort_touched",
-        chatThreadId: producer.threadId,
-        userId: producer.userId,
-        orgId: producer.orgId,
-        agentId: producer.agentId,
-        reassignedAgentId: producer.agentId,
-      }),
     ];
   }
   return [];

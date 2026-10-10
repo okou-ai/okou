@@ -152,10 +152,6 @@ export interface ThreadModelSignals {
   readonly providerFramework$: Computed<
     Promise<SupportedFramework | ThreadModelError>
   >;
-  /** Actual execution framework, including a successfully materialized Pi route. */
-  readonly framework$: Computed<
-    Promise<SupportedFramework | "pi" | ThreadModelError>
-  >;
 }
 
 type ThreadModelSelectionSignal = Computed<
@@ -169,24 +165,18 @@ type ThreadModelProviderInputSignal = Computed<
 export function createThreadModelSignals(
   bootstrap: AgentRunContextSignals,
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
-  selectedBootstrap$: Computed<Promise<AgentRunContextSignals>>,
 ): ThreadModelSignals {
   const dispatchTiming$ = computed(() => {
     return new ApiDispatchTimingCollector();
   });
-  const queuedModel$ = createQueuedModel(
-    bootstrap,
-    pickedEvent$,
-    selectedBootstrap$,
-  );
+  const queuedModel$ = createQueuedModel(bootstrap, pickedEvent$);
   const selection$ = createModelSelection(
     bootstrap,
     pickedEvent$,
-    selectedBootstrap$,
     queuedModel$,
   );
   const subscriptionSelection$ = createSubscriptionSelection(
-    selectedBootstrap$,
+    bootstrap,
     selection$,
     dispatchTiming$,
   );
@@ -196,18 +186,14 @@ export function createThreadModelSignals(
     dispatchTiming$,
   );
   const requestedFramework$ = createRequestedFramework(
-    selectedBootstrap$,
+    bootstrap,
     providerInput$,
   );
   const providerContext$ = createProviderContext(
     providerInput$,
     requestedFramework$,
   );
-  const modelEnvironment$ = createModelEnvironment(
-    bootstrap,
-    selectedBootstrap$,
-    providerContext$,
-  );
+  const modelEnvironment$ = createModelEnvironment(bootstrap, providerContext$);
   const modelRoute$ = createModelRoute(providerContext$, modelEnvironment$);
   const providerFramework$ = computed(
     async (get): Promise<SupportedFramework | ThreadModelError> => {
@@ -219,14 +205,6 @@ export function createThreadModelSignals(
           : getFrameworkForType(model.type);
     },
   );
-  const framework$ = computed(
-    async (get): Promise<SupportedFramework | "pi" | ThreadModelError> => {
-      const model = await get(modelRoute$);
-      return model && !("status" in model) && model.piModelConfig
-        ? "pi"
-        : get(providerFramework$);
-    },
-  );
   return {
     dispatchTiming$,
     queuedModel$,
@@ -234,17 +212,15 @@ export function createThreadModelSignals(
     requestedFramework$,
     modelRoute$,
     providerFramework$,
-    framework$,
   };
 }
 
 function createQueuedModel(
   bootstrap: AgentRunContextSignals,
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
-  selectedBootstrap$: Computed<Promise<AgentRunContextSignals>>,
 ) {
   const memberSnapshot$ = computed(async (get) => {
-    const selected = await get(selectedBootstrap$);
+    const selected = bootstrap;
     const { accounts, providers } = await get(selected.memberModels$);
     return {
       orgId: selected.orgId,
@@ -253,8 +229,8 @@ function createQueuedModel(
       providers,
     };
   });
-  const memberRoutes$ = computed(async (get) => {
-    return get((await get(selectedBootstrap$)).memberRoutes$);
+  const memberRoutes$ = computed((get) => {
+    return get(bootstrap.memberRoutes$);
   });
   const subscriptionModels$ = computed(async (get) => {
     return memberSubscriptionModelRoutesFromCatalog(
@@ -280,7 +256,6 @@ function createQueuedModel(
   const builtInRuntimeRoute$ = createBuiltInRuntimeRoute(bootstrap, modelPin$);
   const providerAdmission$ = createProviderAdmission(
     bootstrap,
-    selectedBootstrap$,
     memberRoutes$,
     modelPin$,
   );
@@ -381,7 +356,6 @@ function createBuiltInRuntimeRoute(
 
 function createProviderAdmission(
   bootstrap: AgentRunContextSignals,
-  selectedBootstrap$: Computed<Promise<AgentRunContextSignals>>,
   memberRoutes$: AgentRunContextSignals["memberRoutes$"],
   modelPin$: Computed<
     Promise<ModelFirstPin | ReturnType<typeof badRequestMessage>>
@@ -422,7 +396,7 @@ function createProviderAdmission(
         hasSpendableCredits: true,
       };
     }
-    const balance = await get((await get(selectedBootstrap$)).credits$);
+    const balance = await get(bootstrap.credits$);
     return {
       effectiveModelProvider,
       cliAgentType,
@@ -438,7 +412,6 @@ function createProviderAdmission(
 function createModelSelection(
   bootstrap: AgentRunContextSignals,
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
-  selectedBootstrap$: Computed<Promise<AgentRunContextSignals>>,
   queuedModel$: ThreadModelSignals["queuedModel$"],
 ) {
   const selection$ = computed(
@@ -471,7 +444,7 @@ function createModelSelection(
         };
       }
       const [selected, catalog] = await Promise.all([
-        get(selectedBootstrap$),
+        bootstrap,
         get(bootstrap.modelCatalog$),
       ]);
       const piExecution = shouldUsePiExecution({
@@ -518,7 +491,7 @@ function createModelSelection(
 }
 
 function createSubscriptionSelection(
-  selectedBootstrap$: Computed<Promise<AgentRunContextSignals>>,
+  bootstrap: AgentRunContextSignals,
   selection$: ThreadModelSelectionSignal,
   dispatchTiming$: ThreadModelSignals["dispatchTiming$"],
 ) {
@@ -544,7 +517,7 @@ function createSubscriptionSelection(
             command: selection,
             providerType,
             modelProviderId: pin.modelProviderId,
-            snapshot: await get((await get(selectedBootstrap$)).memberModels$),
+            snapshot: await get(bootstrap.memberModels$),
           });
           const account =
             candidates.find((candidate) => {
@@ -601,7 +574,7 @@ function createProviderInput(
 }
 
 function createRequestedFramework(
-  selectedBootstrap$: Computed<Promise<AgentRunContextSignals>>,
+  bootstrap: AgentRunContextSignals,
   providerInput$: ThreadModelProviderInputSignal,
 ) {
   const requestedFramework$ = computed(
@@ -618,7 +591,7 @@ function createRequestedFramework(
       if (!args.modelProviderId) {
         return getValidatedFramework(undefined);
       }
-      const member = await get((await get(selectedBootstrap$)).memberModels$);
+      const member = await get(bootstrap.memberModels$);
       const provider =
         member.providers.find((row) => {
           return row.id === args.modelProviderId;
@@ -655,7 +628,6 @@ function createProviderContext(
 
 function createModelEnvironment(
   bootstrap: AgentRunContextSignals,
-  selectedBootstrap$: Computed<Promise<AgentRunContextSignals>>,
   providerContext$: ReturnType<typeof createProviderContext>,
 ) {
   const modelEnvironment$ = computed(
@@ -665,10 +637,6 @@ function createModelEnvironment(
         return null;
       }
       const args = context.environmentArgs;
-      const identity = await get(selectedBootstrap$);
-      if (identity.orgId !== args.orgId || identity.userId !== args.userId) {
-        throw new Error("Model source snapshot identity mismatch");
-      }
       if (isBuiltInModelProviderType(args.modelProviderType)) {
         const route = args.builtInModelRuntimeRoute;
         if (
@@ -680,7 +648,7 @@ function createModelEnvironment(
           return null;
         }
         const source = managedSourceFromSnapshot(
-          (await get(identity.managedModelKeys$)).find((key) => {
+          (await get(bootstrap.managedModelKeys$)).find((key) => {
             return key.id === route.modelKeyId;
           }),
         );
@@ -694,7 +662,7 @@ function createModelEnvironment(
         return null;
       }
       const source = memberAccountSourceFromSnapshot(
-        await get(identity.memberModels$),
+        await get(bootstrap.memberModels$),
         args.modelProviderId,
       );
       if (!source) {
@@ -804,12 +772,10 @@ function personalSubscriptionAccountCandidates(args: {
   readonly snapshot: MemberModelAccountSnapshot;
 }) {
   const snapshot = args.snapshot;
-  if (
-    snapshot.orgId !== args.command.owner.orgId ||
-    snapshot.userId !== args.command.owner.userId ||
-    !isPersonalSubscriptionProviderType(args.providerType)
-  ) {
-    throw new Error("Subscription account snapshot identity mismatch");
+  if (!isPersonalSubscriptionProviderType(args.providerType)) {
+    throw new Error(
+      "Subscription account snapshot requires a subscription provider",
+    );
   }
   return snapshot.accounts.filter((account) => {
     if (

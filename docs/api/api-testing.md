@@ -19,6 +19,13 @@ turbo/apps/api/src/signals/routes/__tests__/
 +-- agents.test.ts
 ```
 
+API service-directory tests are prohibited; there are no file exceptions. A
+service that belongs to the API is exercised through its production caller,
+including
+authenticated Runner requests and signed provider webhooks where applicable.
+Moving a private service test into the route directory does not satisfy this
+boundary; its setup, execution, and assertions must all use those entry points.
+
 ## Route Test Structure
 
 ```typescript
