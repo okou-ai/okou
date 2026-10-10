@@ -168,16 +168,19 @@ impl RunnerPaths {
             .join("builtin-firewall-catalog-cache.json.lock")
     }
 
-    pub fn homes_dir(&self) -> PathBuf {
-        self.base_dir.join("homes")
+    /// Factory-owned host workspaces contain COW state and the active home image.
+    /// This host layout is independent of the guest `/home/user` mount and cwd.
+    pub fn workspaces_dir(&self) -> PathBuf {
+        self.base_dir.join("workspaces")
     }
 
-    pub fn home_dir(&self, sandbox_id: &impl std::fmt::Display) -> PathBuf {
-        self.homes_dir().join(sandbox_id.to_string())
+    pub fn workspace_dir(&self, sandbox_id: &impl std::fmt::Display) -> PathBuf {
+        self.workspaces_dir().join(sandbox_id.to_string())
     }
 
+    /// The same backing image created and bound by the Firecracker factory.
     pub fn active_home_image(&self, sandbox_id: &impl std::fmt::Display) -> PathBuf {
-        self.home_dir(sandbox_id).join("home.ext4")
+        self.workspace_dir(sandbox_id).join("home.ext4")
     }
 }
 
@@ -573,7 +576,7 @@ mod tests {
         let paths = RunnerPaths::new(PathBuf::from("/runner"));
         assert_eq!(
             paths.active_home_image(&"sandbox"),
-            PathBuf::from("/runner/homes/sandbox/home.ext4")
+            PathBuf::from("/runner/workspaces/sandbox/home.ext4")
         );
         assert_eq!(
             HomePaths::with_root(PathBuf::from("/host")).home_image_cache_dir(),

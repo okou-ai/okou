@@ -968,13 +968,23 @@ async fn execute_inner_does_not_retry_home_cache_hit_after_proxy_register_failur
         .await
         .unwrap();
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    let create_gate = MockLifecycleGate::new();
+    overrides.set_create_lifecycle_gate(create_gate.clone());
     let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
     let server = MockServer::start_async().await;
     let history = br#"{"type":"init"}"#;
+    let history_requested = Arc::new(tokio::sync::Notify::new());
+    let responder_requested = Arc::clone(&history_requested);
     let history_mock = server
         .mock_async(|when, then| {
             when.method(GET).path("/history.blob");
-            then.status(200).body(history);
+            then.respond_with(move |_| {
+                responder_requested.notify_one();
+                httpmock::HttpMockResponse::builder()
+                    .status(200)
+                    .body(history.as_slice())
+                    .build()
+            });
         })
         .await;
     let mut ctx = minimal_context();
@@ -997,9 +1007,8 @@ async fn execute_inner_does_not_retry_home_cache_hit_after_proxy_register_failur
     .await;
     let mut telemetry = test_telemetry(&config, &ctx);
 
-    let result = tokio::time::timeout(
-        RUN_IN_SANDBOX_TEST_TIMEOUT,
-        execute_new_sandbox_with_prepared_notifier(
+    let result = tokio::time::timeout(RUN_IN_SANDBOX_TEST_TIMEOUT, async {
+        let execution = execute_new_sandbox_with_prepared_notifier(
             &factory,
             &ctx,
             NewSandboxDispatch {
@@ -1020,8 +1029,21 @@ async fn execute_inner_does_not_retry_home_cache_hit_after_proxy_register_failur
                 prepared_run_payload: prepare_run_payload_for_run(&ctx).unwrap(),
                 sandbox_prepared: None,
             },
-        ),
-    )
+        );
+        tokio::pin!(execution);
+        tokio::select! {
+            _ = &mut execution => panic!("execution escaped the create gate before history GET"),
+            () = async {
+                create_gate.wait_entered(1, RUN_IN_SANDBOX_TEST_TIMEOUT)
+                    .await.expect("sandbox create must enter its gate");
+                history_requested.notified().await;
+            } => {}
+        }
+        // The remote owner is proven to have started before registration can
+        // fail. Cancellation may otherwise legitimately win before its first GET.
+        create_gate.release_one();
+        execution.await
+    })
     .await
     .expect("proxy registration failure must drain the prestart history owner");
 
@@ -1038,7 +1060,7 @@ async fn execute_inner_does_not_retry_home_cache_hit_after_proxy_register_failur
     assert_eq!(
         overrides.create_configs().len(),
         1,
-        "proxy registration failure must not retry with a fresh workspace image"
+        "proxy registration failure must not retry with a fresh home image"
     );
     assert_eq!(overrides.destroy_call_count(), 1);
     assert!(
@@ -1047,7 +1069,7 @@ async fn execute_inner_does_not_retry_home_cache_hit_after_proxy_register_failur
     );
     assert!(
         expected_seed.exists(),
-        "proxy registration failure must not invalidate the unrelated workspace cache hit"
+        "proxy registration failure must not invalidate the unrelated home cache hit"
     );
     // A lease alone is not retained-history authority. The normal prestart
     // download overlaps creation until current preparation and live proof can

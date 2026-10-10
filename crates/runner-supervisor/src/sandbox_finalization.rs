@@ -1688,7 +1688,7 @@ mod tests {
                 home_drive_required: true,
             })
             .await;
-        tokio::fs::create_dir_all(paths.home_dir(&sandbox_id))
+        tokio::fs::create_dir_all(paths.workspace_dir(&sandbox_id))
             .await
             .unwrap();
         tokio::fs::write(
@@ -2452,7 +2452,7 @@ mod tests {
                 home_drive_required: true,
             })
             .await;
-        tokio::fs::create_dir_all(paths.home_dir(&sandbox_id))
+        tokio::fs::create_dir_all(paths.workspace_dir(&sandbox_id))
             .await
             .unwrap();
         tokio::fs::write(
@@ -2517,7 +2517,7 @@ mod tests {
                 home_drive_required: true,
             })
             .await;
-        tokio::fs::create_dir_all(paths.home_dir(&sandbox_id))
+        tokio::fs::create_dir_all(paths.workspace_dir(&sandbox_id))
             .await
             .unwrap();
         tokio::fs::write(
@@ -2793,7 +2793,7 @@ mod tests {
                 home_drive_required: true,
             })
             .await;
-        tokio::fs::create_dir_all(paths.home_dir(&sandbox_id))
+        tokio::fs::create_dir_all(paths.workspace_dir(&sandbox_id))
             .await
             .unwrap();
         tokio::fs::write(
@@ -2868,7 +2868,7 @@ mod tests {
             home_image.result(),
             runner_lifecycle::home_image_cache::HomeCacheCheckoutResult::Miss
         );
-        tokio::fs::create_dir_all(paths.home_dir(&sandbox_id))
+        tokio::fs::create_dir_all(paths.workspace_dir(&sandbox_id))
             .await
             .unwrap();
         tokio::fs::write(
@@ -3136,7 +3136,7 @@ mod tests {
                 home_drive_required: true,
             })
             .await;
-        tokio::fs::create_dir_all(paths.home_dir(&sandbox_id))
+        tokio::fs::create_dir_all(paths.workspace_dir(&sandbox_id))
             .await
             .unwrap();
         tokio::fs::write(

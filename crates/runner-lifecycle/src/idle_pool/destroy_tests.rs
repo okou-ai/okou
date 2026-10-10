@@ -144,7 +144,7 @@ async fn idle_destroy_job_destroy_panic_preserves_home_cache_and_releases_budget
             .unwrap(),
         "successful promotion must move the image out before sandbox destruction"
     );
-    tokio::fs::remove_dir_all(paths.home_dir(&fixture.sandbox_id))
+    tokio::fs::remove_dir_all(paths.workspace_dir(&fixture.sandbox_id))
         .await
         .unwrap();
     assert_eq!(
@@ -240,7 +240,7 @@ async fn idle_destroy_job_publishes_frozen_home_only_after_successful_kill() {
             .unwrap(),
         "successful promotion must move the image out before sandbox destruction"
     );
-    tokio::fs::remove_dir_all(paths.home_dir(&fixture.sandbox_id))
+    tokio::fs::remove_dir_all(paths.workspace_dir(&fixture.sandbox_id))
         .await
         .unwrap();
     assert_eq!(

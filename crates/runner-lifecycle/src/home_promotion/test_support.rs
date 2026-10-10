@@ -159,7 +159,7 @@ impl HomePromotionFixture {
                 home_drive_required: true,
             })
             .await;
-        tokio::fs::create_dir_all(paths.home_dir(&sandbox_id))
+        tokio::fs::create_dir_all(paths.workspace_dir(&sandbox_id))
             .await
             .unwrap();
         tokio::fs::write(paths.active_home_image(&sandbox_id), test_home_image())

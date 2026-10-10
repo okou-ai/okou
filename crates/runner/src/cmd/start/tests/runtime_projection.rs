@@ -66,3 +66,26 @@ fn runtime_profile_projection_preserves_concrete_inputs_without_startup_effects(
     );
     assert!(!base_dir.exists(), "projection must not start a factory");
 }
+
+#[test]
+fn active_home_publication_path_matches_firecracker_backing_image() {
+    let temp = tempfile::tempdir().unwrap();
+    let base_dir = temp.path().join("runner-not-created");
+    let runner = RunnerPaths::new(base_dir.clone());
+    let factory = sandbox_firecracker::FactoryPaths::new(base_dir.clone());
+    let sandbox_id = sandbox::SandboxId::new_v4();
+    let workspace = factory.workspace(&sandbox_id.to_string());
+    let sandbox = sandbox_firecracker::SandboxPaths::new(workspace.clone());
+
+    assert_eq!(runner.workspace_dir(&sandbox_id), workspace);
+    assert_eq!(runner.active_home_image(&sandbox_id), sandbox.home_image());
+    assert_eq!(sandbox.home_image().parent(), Some(workspace.as_path()));
+    assert_eq!(
+        sandbox.home_device_bind().parent(),
+        Some(workspace.as_path())
+    );
+    assert!(
+        !base_dir.exists(),
+        "path agreement must not allocate or relocate host resources"
+    );
+}
