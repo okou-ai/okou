@@ -2569,6 +2569,51 @@ mod tests {
         (output, captured.entries())
     }
 
+    async fn advance_pending_discovery_retry<F>(
+        mut discovery: std::pin::Pin<&mut F>,
+        captured: &CapturedEvents,
+        message: &str,
+        delay: Duration,
+    ) where
+        F: std::future::Future,
+    {
+        // Drive real HTTP on running time until the retry observation is recorded
+        // and this owned future has registered its next wait before returning Pending.
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            std::future::poll_fn(|cx| {
+                assert!(
+                    discovery.as_mut().poll(cx).is_pending(),
+                    "discovery returned before {message}"
+                );
+                if captured.entries().iter().any(|event| {
+                    event
+                        .fields
+                        .get("message")
+                        .is_some_and(|actual| actual == message)
+                }) {
+                    std::task::Poll::Ready(())
+                } else {
+                    std::task::Poll::Pending
+                }
+            }),
+        )
+        .await
+        .expect("discovery must reach its retry wait before advancing time");
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), discovery.as_mut())
+                .await
+                .is_err(),
+            "discovery must remain pending before the retry delay"
+        );
+
+        // Keep discovery unpolled during the timer phase; resume before its next
+        // HTTP request so virtual time cannot outrun the real peer's socket I/O.
+        tokio::time::pause();
+        tokio::time::advance(delay).await;
+        tokio::time::resume();
+    }
+
     async fn assert_completion_retry_delay<F>(
         mut completion: std::pin::Pin<&mut F>,
         captured: &CapturedEvents,
@@ -4082,13 +4127,23 @@ mod tests {
             Arc::new(PollWakeups::new(false)),
         );
 
-        let (discovered, events) = capture_api_provider_events(async {
-            tokio::time::timeout(Duration::from_secs(10), provider.discover())
-                .await
-                .expect("discovery should recover on the existing wakeup retry")
-                .expect("poll candidate after incomplete response")
-        })
+        let captured = CapturedEvents::default();
+        let subscriber = tracing_subscriber::registry().with(captured.clone());
+        let discovery = tokio::time::timeout(Duration::from_secs(10), provider.discover())
+            .with_subscriber(subscriber);
+        tokio::pin!(discovery);
+        advance_pending_discovery_retry(
+            discovery.as_mut(),
+            &captured,
+            "poll failed, will retry",
+            POLL_WAKEUP_RETRY,
+        )
         .await;
+        let discovered = discovery
+            .await
+            .expect("discovery should recover on the existing wakeup retry")
+            .expect("poll candidate after incomplete response");
+        let events = captured.entries();
         let requests = server.assert_finished_with_requests().await;
 
         assert_eq!(discovered.run_id(), run_id);
@@ -4706,10 +4761,20 @@ mod tests {
             "claim retry must wait for its transient cooldown"
         );
 
-        tokio::time::sleep_until(
-            excluded_poll_observed_at + CLAIM_TRANSIENT_COOLDOWN + Duration::from_millis(50),
+        let cooldown_elapsed_at =
+            excluded_poll_observed_at + CLAIM_TRANSIENT_COOLDOWN + Duration::from_millis(50);
+        let cooldown = tokio::time::sleep_until(cooldown_elapsed_at);
+        tokio::pin!(cooldown);
+        assert!(futures_util::poll!(cooldown.as_mut()).is_pending());
+        // The peer has received the excluded request and is holding its response.
+        // Advance only this armed timer, then resume before releasing the real I/O.
+        tokio::time::pause();
+        tokio::time::advance(
+            cooldown_elapsed_at.saturating_duration_since(tokio::time::Instant::now()),
         )
         .await;
+        tokio::time::resume();
+        cooldown.await;
         release_excluded_poll_tx
             .send(())
             .expect("excluded poll response should still be waiting for release");
@@ -6167,7 +6232,19 @@ mod tests {
                 "runId": run_id, "prompt": "legacy retry", "sandboxToken": "test-token", "cliAgentType": "claude_code", "platformEnvironment": {}, "connectorRuntimeTargets": []
             }));
         }).await;
-        let candidate = tokio::time::timeout(Duration::from_secs(10), provider.discover())
+        let captured = CapturedEvents::default();
+        let subscriber = tracing_subscriber::registry().with(captured.clone());
+        let discovery = tokio::time::timeout(Duration::from_secs(10), provider.discover())
+            .with_subscriber(subscriber);
+        tokio::pin!(discovery);
+        advance_pending_discovery_retry(
+            discovery.as_mut(),
+            &captured,
+            "poll: API returned candidate excluded by claim cooldown",
+            CLAIM_TRANSIENT_COOLDOWN,
+        )
+        .await;
+        let candidate = discovery
             .await
             .expect("bounded retry poll")
             .expect("retry candidate");
