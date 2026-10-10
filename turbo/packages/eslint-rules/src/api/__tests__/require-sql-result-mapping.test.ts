@@ -26,6 +26,17 @@ ruleTester.run("require-sql-result-mapping", requireSqlResultMapping, {
   valid: [
     {
       code: `${preamble}
+        import { orgMembersMetadata } from "@okouai${"/db/runtime/org-members-metadata"}";
+        import { sql } from "drizzle-orm";
+        import { nullableDriverValueDecoder } from "../../apps/api/src/lib/db-structured-result";
+        db.select({
+          modelSettings: sql\`COALESCE(\${orgMembersMetadata.modelSettings}, '{}'::jsonb)\`.mapWith(orgMembersMetadata.modelSettings),
+          cloudBrowser: sql\`NULL::boolean\`.mapWith(nullableDriverValueDecoder(orgMembersMetadata.cloudBrowserEnabledByDefault)),
+        }).from(orgMembersMetadata);
+      `,
+    },
+    {
+      code: `${preamble}
         import { connectorCatalogEntries } from "@okouai${"/db/runtime/connector-catalog"}";
         import { sql } from "drizzle-orm";
         import { nullableDriverValueDecoder } from "../../apps/api/src/lib/db-structured-result";
@@ -146,6 +157,14 @@ ruleTester.run("require-sql-result-mapping", requireSqlResultMapping, {
     },
   ],
   invalid: [
+    {
+      code: `${preamble}
+        import { orgMembersMetadata } from "@okouai${"/db/runtime/org-members-metadata"}";
+        import { sql } from "drizzle-orm";
+        db.select({ modelSettings: sql\`COALESCE(\${orgMembersMetadata.modelSettings}, '{}'::jsonb)\` }).from(orgMembersMetadata);
+      `,
+      errors: [{ messageId: "unmappedResult" }],
+    },
     {
       code: `
         import { sql } from "drizzle-orm";

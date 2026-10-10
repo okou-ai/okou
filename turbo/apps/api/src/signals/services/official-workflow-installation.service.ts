@@ -23,7 +23,7 @@ import {
   officialWorkflowCatalogReleases,
 } from "@okouai/db/schema/official-workflow-catalog";
 import { agents } from "@okouai/db/schema/agent";
-import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";

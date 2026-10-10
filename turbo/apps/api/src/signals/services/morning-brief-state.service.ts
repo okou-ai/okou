@@ -24,8 +24,7 @@ import { workflowUserAutomationThreadOwnerCondition } from "./workflow-user-auto
  * The canonical read of the Morning Brief state a member actually owns.
  *
  * Settings reads the selected Official installation, its current automation
- * and its canonical thread binding here. This is a read-only functional view,
- * not a Native migration executor.
+ * and its canonical thread binding here. This is a read-only functional view.
  */
 
 interface MorningBriefInstallation {
@@ -86,7 +85,7 @@ interface MorningBriefInstallationScope {
   readonly chatThreadId: string | null;
 }
 
-export type MorningBriefMigrationState =
+export type MorningBriefState =
   | (MorningBriefStateBase & { readonly kind: "absent" })
   | (MorningBriefStateBase &
       MorningBriefInstallationScope & { readonly kind: "pending" })
@@ -298,12 +297,12 @@ const loadMorningBriefAutomationState$ = command(
  * This composes current reads, not a transaction snapshot. Re-read after a
  * conditional write when acting on these facts.
  */
-export const loadMorningBriefMigrationState$ = command(
+export const loadMorningBriefState$ = command(
   async (
     { set },
     owner: MorningBriefMemberIdentity,
     signal: AbortSignal,
-  ): Promise<MorningBriefMigrationState> => {
+  ): Promise<MorningBriefState> => {
     const ownership = await set(loadMorningBriefOwnership$, owner, signal);
     const selected = ownership.installation;
     const additionalInstallations = ownership.installations.filter(({ id }) => {
