@@ -204,6 +204,8 @@ def main():
         "--textfile-dir", default="/var/lib/vm0-monitoring/textfile-collector"
     )
     args = parser.parse_args()
+    if not Path(args.runner).is_absolute():
+        parser.error("--runner must be an absolute path")
     text = "".join(
         f"# TYPE {PREFIX}{name} gauge\n{PREFIX}{name} 0\n"
         for name in (
@@ -214,8 +216,6 @@ def main():
         )
     )
     try:
-        if not Path(args.runner).is_absolute():
-            raise ValueError("Runner path must be absolute")
         text = gauges(read_snapshot(args.runner))
     except (OSError, ValueError, KeyError, TypeError, OverflowError, RecursionError):
         # Replace old successful metrics, not a stale-success or measured-empty result.

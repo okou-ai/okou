@@ -212,6 +212,33 @@ class CollectorTests(unittest.TestCase):
             self.producer(body)
             self.unavailable(self.collect())
 
+    def test_relative_runner_path_fails_without_refreshing_snapshot(self):
+        previous = self.publish(snapshot())
+        for runner in ("runner", "./runner"):
+            with self.subTest(runner=runner):
+                result = subprocess.run(
+                    [
+                        "python3",
+                        "-I",
+                        "-B",
+                        str(SCRIPT),
+                        "--runner",
+                        runner,
+                        "--textfile-dir",
+                        str(self.output),
+                    ],
+                    cwd=self.root,
+                    capture_output=True,
+                    timeout=5,
+                    check=False,
+                )
+                self.assertEqual(result.returncode, 2)
+                self.assertEqual(result.stdout, b"")
+                self.assertIn(b"--runner must be an absolute path", result.stderr)
+                self.assertEqual(
+                    (self.output / "home-image-cache.prom").read_text(), previous
+                )
+
     def test_failed_overlarge_and_timed_out_processes_are_unavailable(self):
         for body in (
             "sys.exit(2)\n",
