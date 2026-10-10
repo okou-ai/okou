@@ -31,12 +31,13 @@ Persistence timeouts do not bound a wait that happens before persistence starts.
 
 ## Ownership and shutdown
 
-| Work                  | Owner and progress rule                                                                                                                                                                                  | Shutdown                                                                                                                                                                                                                                                                                                                          |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Heartbeat             | One independently scheduled task; triggers coalesce into at most one pending request. The next send uses live state and lifecycle mode. Shared immutable configuration is allocated once per controller. | Natural drain flushes a Stopping snapshot. Common teardown joins the active send before provider shutdown. Abnormal controller drop aborts the task; dropping a client request does not retract a remote request, so snapshot generation/sequence fencing remains required.                                                       |
-| Status retry          | One independently scheduled task. State generations, ordered persistence, and atomic-write continuation remain authoritative.                                                                            | Join the retry before final status publication. If the reactor itself is cancelled, the task retains ownership until it finishes.                                                                                                                                                                                                 |
-| Routine home-cache GC | One independently scheduled task, with a host-global routine flock owning inventory/entry cleanup; capacity protects completion cadence and budget collection.                                           | Join before dependent teardown. Do not abort the task during normal shutdown: filesystem deletion may outlive a dropped async future. If the reactor itself is cancelled, the task retains its locks through completion rather than releasing them over unfinished I/O. Process/runtime termination remains an abnormal boundary. |
-| Poll wakeups          | Short synchronous mutex sections protect only in-memory scheduling state. No I/O, await, or long nested work is permitted under this lock.                                                               | Notification registration before state recheck, generation fencing, deferred-poll caps, and cancellation remain unchanged.                                                                                                                                                                                                        |
+| Work                  | Owner and progress rule                                                                                                                                                                                  | Shutdown                                                                                                                                                                                                                                                                                                                                                                                            |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Heartbeat             | One independently scheduled task; triggers coalesce into at most one pending request. The next send uses live state and lifecycle mode. Shared immutable configuration is allocated once per controller. | Natural drain flushes a Stopping snapshot. Common teardown joins the active send before provider shutdown. Abnormal controller drop aborts the task; dropping a client request does not retract a remote request, so snapshot generation/sequence fencing remains required.                                                                                                                         |
+| Admission / claim     | Up to four independently scheduled transactions; authoritative budget and exclusive sandbox reservations remain stricter. Completed results retain a slot until Reactor consumes them.                   | Soft drain stops new admission and settles in-flight results before idle drain or natural completion. Common teardown joins all admissions before idle/provider shutdown. Dropping task handles does not abort pending remote requests; unconsumed successful results schedule tracked no-sandbox completion and rollback. Process/runtime termination remains an abnormal reconciliation boundary. |
+| Status retry          | One independently scheduled task. State generations, ordered persistence, and atomic-write continuation remain authoritative.                                                                            | Join the retry before final status publication. If the reactor itself is cancelled, the task retains ownership until it finishes.                                                                                                                                                                                                                                                                   |
+| Routine home-cache GC | One independently scheduled task, with a host-global routine flock owning inventory/entry cleanup; capacity protects completion cadence and budget collection.                                           | Join before dependent teardown. Do not abort the task during normal shutdown: filesystem deletion may outlive a dropped async future. If the reactor itself is cancelled, the task retains its locks through completion rather than releasing them over unfinished I/O. Process/runtime termination remains an abnormal boundary.                                                                   |
+| Poll wakeups          | Short synchronous mutex sections protect only in-memory scheduling state. No I/O, await, or long nested work is permitted under this lock.                                                               | Notification registration before state recheck, generation fencing, deferred-poll caps, and cancellation remain unchanged.                                                                                                                                                                                                                                                                          |
 
 Task join failures stop the reactor through its existing lifecycle and common
 teardown path and are returned as terminal errors. Ordinary optional GC or status
@@ -84,11 +85,34 @@ owner tests' injected filesystem budget, so it does not measure production
 ## Other retained work
 
 - Discovery remains pinned across reactor turns: restarting it on each tick
-  would reset polling timers and discard provider-local state. The direct inbox
-  releases its batch lock before returning a candidate; inline batch updates
-  follow a completed discovery. Claim cooldown updates have no shared retained
-  lock holder that depends on the reactor to resume. PollWakeups is synchronous
-  because both retained discovery and inline callbacks access its state.
+  would reset polling timers and discard provider-local state. Candidate
+  consumption is gated by available admission slots as well as existing resource
+  policy. After submission, discovery waits for local reservation readiness (or
+  an early admission rejection) before re-evaluating capacity; remote claims
+  remain concurrent. This prevents discovery from outrunning resource reservation.
+  The direct inbox releases its batch lock before returning a candidate;
+  ready batches submit bounded admission tasks rather than awaiting each claim.
+  In-flight Run IDs are deduplicated; original resource/cancellation authorities
+  still reject duplicate or ineligible ownership. Claim cooldown updates have no
+  shared retained lock holder that depends on the reactor to resume. PollWakeups
+  stays synchronous and provider defer/generation rules are unchanged.
+- API claim requests own temporary poll exclusions until they settle. Poll uses
+  the existing `excludedRunIds` field, prioritizes in-flight claims within its
+  contract limit, and preserves the full cooldown inventory for local filtering.
+  An empty excluded response, or an API returning an in-flight Run despite the
+  exclusions, does not rearm immediate backlog polling. Settlement retires only
+  that request's registration and wakes the existing scheduler. This avoids
+  repeatedly rediscovering a still-queued claim while unrelated work is waiting;
+  no API schema or failure-cooldown policy changes.
+- Admission/claim tasks are independent, but post-claim activation and executor
+  dispatch remain Reactor-owned. Completed claims may therefore retain bounded
+  reservations while activation waits on shared resources. Finalizing reuse
+  wakeups observed with all admission slots occupied are retained until a slot
+  opens; original preference deadlines remain authoritative. Ordinary shutdown
+  never aborts an uncertain claim HTTP request. A completed result lost before
+  activation uses the existing completion/rollback policy, including exact
+  speculative resources; it does not fabricate a remote result for a failed or
+  uncertain request.
 - Home-cache watcher work remains retained with ownership of its watcher
   and drained filesystem events. Its classification does not own an idle-pool or
   status waiter needed by an inline reactor branch.
@@ -173,8 +197,13 @@ a production incident's cause or a new kernel/runtime progress guarantee.
 entry point under forced pool, status-state, and persistence-ordering contention.
 It also checks heartbeat-owner failure and GC progress/completion ownership.
 Existing heartbeat tests cover coalescing, monotonic sequences, live-mode
-follow-ups, and no overlapping requests; provider tests cover wakeup scheduling
-and generation/defer semantics.
+follow-ups, and no overlapping heartbeat requests; provider tests cover wakeup
+scheduling and generation/defer semantics. `main_loop/parallel_claim.rs` uses
+provider-boundary gates through real `run()` to check claim overlap, a fast
+execution completing behind an earlier blocked claim, finite backpressure,
+resource/duplicate protection, rejection rollback, soft/hard lifecycle settlement,
+and recovery of pending or completed-but-unconsumed claims on Reactor drop.
+These tests establish ordering and ownership, not production startup savings.
 
 Helper ownership and lifecycle tests run through `run()` with real
 pipe-controlled children and gated child waits. Proxy recovery tests also check

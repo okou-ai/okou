@@ -29,7 +29,7 @@ use runner_provider::{
 use runner_types::ids::RunId;
 use runner_types::types::{HOME_AFFINITY_VERSION, HeldHomeState, reuse_key_kind};
 use sandbox::SandboxId;
-use tokio::sync::{Notify, watch};
+use tokio::sync::{Notify, oneshot, watch};
 use tracing::{info, warn};
 
 use crate::blank_pool::BlankPoolDiagnostics;
@@ -261,10 +261,14 @@ impl LocalAdmission {
 }
 
 /// Prepare a candidate and complete its admission-to-claim transaction in one owner.
-/// The caller must await this operation in a non-interruptible discovery branch.
+/// Its owner must keep the transaction alive until claim settlement and resource
+/// handoff. Normal shutdown joins independently scheduled admissions, never aborts them.
+/// `admission_ready` signals after reservation/cancellation registration and before
+/// claim; an early rejection closes it so discovery can re-evaluate capacity.
 pub async fn admit_and_claim(
     request: PreClaimRequest<'_>,
     ctx: &PreClaimResources<'_>,
+    admission_ready: oneshot::Sender<()>,
 ) -> PreClaimOutcome {
     let PreClaimRequest {
         candidate,
@@ -302,6 +306,7 @@ pub async fn admit_and_claim(
             device_rate_limits,
         },
         ctx,
+        admission_ready,
     )
     .await
     {
@@ -313,6 +318,7 @@ pub async fn admit_and_claim(
 async fn claim_with_local_admission(
     request: ClaimAdmissionRequest<'_>,
     ctx: &PreClaimResources<'_>,
+    admission_ready: oneshot::Sender<()>,
 ) -> Option<AdmittedClaim> {
     let ClaimAdmissionRequest {
         prepared,
@@ -391,13 +397,17 @@ async fn claim_with_local_admission(
             return None;
         }
     }
-    // claim() runs in the branch handler: non-interruptible, so a valid
-    // successful claim is always paired with complete().
+    // The admission task is not aborted during normal shutdown. A valid
+    // successful claim must transfer to activation or complete-with-rollback.
     let LocalAdmission {
         resource,
         cancellation,
         blank_pool_selection,
     } = admission;
+    // Let discovery re-evaluate authoritative capacity only after this task
+    // reserved its resource and registered cancellation. A missing receiver
+    // means Reactor disappeared, not that this owned claim should be aborted.
+    let _ = admission_ready.send(());
     let claim_started_at = Instant::now();
     let (claimed, admitted_resource, claim_returned_at) = match resource {
         LocalAdmissionResource::Fresh(budget_lease) => {
