@@ -2,7 +2,12 @@ import { command, computed, state, type Computed } from "ccstate";
 
 import { providerUnavailable } from "../../lib/error";
 import { logger } from "../../lib/log";
-import { clerkReadUnavailable } from "../external/clerk";
+import {
+  clerkReadUnavailable,
+  ClerkOAuthVerificationUnavailableError,
+  isClerkOAuthAccessToken,
+  verifyClerkOAuthAccessToken,
+} from "../external/clerk";
 import { settle } from "../utils";
 import { waitUntil } from "../context/wait-until";
 import {
@@ -13,6 +18,7 @@ import {
   verifyOkouToken,
 } from "./tokens";
 import { clerkSessionAuth$ } from "./clerk-session";
+import { mcpServerConfig } from "../../lib/mcp-server-config";
 import { logTemporaryAuthFailure$ } from "./temporary-auth-diagnostics";
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import { AgentAuthContext, AuthContext, CliAuth } from "../../types/auth";
@@ -32,6 +38,8 @@ import {
 const L = logger("AuthContext");
 
 export interface AuthOptions {
+  /** Accept an organization OAuth grant only for this operation's scope. */
+  readonly oauthScope?: string | readonly string[];
   readonly requiredCapability?: Capability;
   readonly acceptAnySandboxCapability?: boolean;
   readonly requireOrganization?: boolean;
@@ -258,6 +266,32 @@ const resolvedAuthContext$ = command(
       return null;
     }
 
+    if (isClerkOAuthAccessToken(token)) {
+      if (!options.oauthScope) {
+        return null;
+      }
+      const config = mcpServerConfig();
+      const principal = config
+        ? await verifyClerkOAuthAccessToken(token, config)
+        : null;
+      signal.throwIfAborted();
+      if (principal) {
+        const membership = await set(
+          getMemberRoleAndUpdateCache$,
+          principal.orgId,
+          principal.userId,
+          signal,
+        );
+        if (membership.kind !== "member") {
+          return null;
+        }
+        return { tokenType: "oauth", ...principal, orgRole: membership.role };
+      }
+      // Expired or invalid OAuth must never fall through to a different
+      // identity supplied by a browser session/cookie.
+      return null;
+    }
+
     return await get(clerkSessionAuth$);
   },
 );
@@ -340,6 +374,12 @@ export const requiredAuthContext$ = command(
       signal,
     );
     if (!resolved.ok) {
+      if (resolved.error instanceof ClerkOAuthVerificationUnavailableError) {
+        set(setResHeader$, "Cache-Control", "no-store");
+        return providerUnavailable(
+          "OAuth verification is temporarily unavailable",
+        );
+      }
       if (resolved.error instanceof MemberRoleRefreshUnavailableError) {
         L.error("Membership refresh unavailable during authentication", {
           type: "membership_refresh_unavailable",
@@ -375,6 +415,21 @@ export const requiredAuthContext$ = command(
 
     const authContext = resolved.value;
     if (authContext) {
+      if (
+        authContext.tokenType === "oauth" &&
+        (!options.oauthScope ||
+          !authContext.scopes.includes("user:org:read") ||
+          !(typeof options.oauthScope === "string"
+            ? authContext.scopes.includes(options.oauthScope)
+            : options.oauthScope.some((scope) => {
+                return authContext.scopes.includes(scope);
+              })))
+      ) {
+        return {
+          status: 403,
+          body: { error: { message: "Insufficient scope", code: "FORBIDDEN" } },
+        };
+      }
       if (options.requireOrganization && !authContext.orgId) {
         const status = options.missingOrganizationStatus ?? 400;
         if (status === 401) {

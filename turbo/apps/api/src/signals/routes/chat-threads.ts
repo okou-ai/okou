@@ -215,6 +215,7 @@ const getChatEventSnapshotInner$ = command(
       chatThreadEventSnapshot({
         threadId: params.threadId,
         userId: auth.userId,
+        ...(auth.tokenType === "oauth" ? { orgId: auth.orgId } : {}),
       }),
       signal,
     );
@@ -254,6 +255,7 @@ const listChatEventRowsInner$ = command(
       chatThreadEventRows({
         threadId: params.threadId,
         userId: auth.userId,
+        ...(auth.tokenType === "oauth" ? { orgId: auth.orgId } : {}),
         limit: query.limit,
         ...(query.sinceEventId === undefined
           ? { sinceSeqId: 0 as const }
@@ -364,6 +366,7 @@ export const chatThreadRoutes: readonly RouteEntry[] = [
         requireOrganization: true,
         missingOrganizationStatus: 401,
         requiredCapability: "chat-thread:read",
+        oauthScope: "okou:chat:read",
       },
       listChatIndicatorsInner$,
     ),
@@ -375,6 +378,7 @@ export const chatThreadRoutes: readonly RouteEntry[] = [
         requireOrganization: true,
         missingOrganizationStatus: 401,
         requiredCapability: "chat-thread:read",
+        oauthScope: "okou:chat:read",
       },
       getChatThreadSnapshotInner$,
     ),
@@ -386,6 +390,7 @@ export const chatThreadRoutes: readonly RouteEntry[] = [
         requireOrganization: true,
         missingOrganizationStatus: 401,
         requiredCapability: "chat-thread:read",
+        oauthScope: "okou:chat:read",
       },
       listChatThreadLifecycleEventsInner$,
     ),
@@ -416,14 +421,14 @@ export const chatThreadRoutes: readonly RouteEntry[] = [
   {
     route: chatThreadEventsContract.snapshot,
     handler: authRoute(
-      { requiredCapability: "chat-event:read" },
+      { requiredCapability: "chat-event:read", oauthScope: "okou:chat:read" },
       getChatEventSnapshotInner$,
     ),
   },
   {
     route: chatThreadEventsContract.rows,
     handler: authRoute(
-      { requiredCapability: "chat-event:read" },
+      { requiredCapability: "chat-event:read", oauthScope: "okou:chat:read" },
       listChatEventRowsInner$,
     ),
   },
@@ -434,6 +439,7 @@ export const chatThreadRoutes: readonly RouteEntry[] = [
         requireOrganization: true,
         missingOrganizationStatus: 401,
         requiredCapability: "chat-event:read",
+        oauthScope: "okou:chat:read",
       },
       searchChatInner$,
     ),

@@ -65,6 +65,7 @@ import {
   type ModelSelectionBootstrap,
 } from "./model-selection.service";
 import { queuedChatThreadEnqueuePlan } from "./queued-chat-thread.service";
+import { mcpClientDisplayName } from "./mcp-client-display-name.service";
 
 import {
   cancelRun$,
@@ -179,14 +180,6 @@ type OrganizationAuthContext = AuthContext & {
 interface NormalSendArgs {
   readonly body: NormalSendBody;
   readonly auth: OrganizationAuthContext;
-  /** Only the verified /mcp service supplies this; never read it from the send body. */
-  readonly mcpSource?: Extract<
-    UserMessageDocument["parts"][number],
-    {
-      type: "source";
-      kind: "mcp";
-    }
-  >;
   readonly userId: string;
   readonly orgId: string;
   readonly preloadedAgent?: AgentForChatSend;
@@ -1143,11 +1136,21 @@ function normalSendUserMessage(
   if (agentRunSource !== null) {
     return withAgentRunSourceAnnotation(args.body.userMessage, agentRunSource);
   }
-  return args.mcpSource === undefined
+  return args.auth.tokenType !== "oauth"
     ? args.body.userMessage
     : {
         ...args.body.userMessage,
-        parts: [...args.body.userMessage.parts, args.mcpSource],
+        parts: [
+          ...args.body.userMessage.parts,
+          {
+            type: "source",
+            kind: "mcp",
+            clientId: args.auth.clientId,
+            ...(args.auth.clientName === undefined
+              ? {}
+              : { clientName: args.auth.clientName }),
+          },
+        ],
       };
 }
 /**
@@ -1558,17 +1561,6 @@ const prepareNormalSend$ = command(
       })
     ) {
       return badRequestMessage("MCP source annotations are server-managed");
-    }
-    if (
-      args.mcpSource !== undefined &&
-      (args.auth.tokenType !== "oauth" ||
-        !("clientId" in args.auth) ||
-        args.auth.clientId !== args.mcpSource.clientId ||
-        args.body.userMessage.parts.some((part) => {
-          return part.type !== "text";
-        }))
-    ) {
-      return badRequestMessage("MCP source requires a verified OAuth client");
     }
     const existingThreadId = args.body.threadId;
     const authorized =
@@ -2458,11 +2450,16 @@ export const handleSendChatEvent$ = command(
     if (!isNormalSendBody(body)) {
       return badRequestMessage("Prompt is required");
     }
+    const clientName =
+      auth.tokenType === "oauth"
+        ? await mcpClientDisplayName(auth.clientId, signal)
+        : undefined;
+    signal.throwIfAborted();
     return await set(
       sendNormalEvent$,
       {
         body,
-        auth,
+        auth: auth.tokenType === "oauth" ? { ...auth, clientName } : auth,
         userId: auth.userId,
         orgId: auth.orgId,
       },

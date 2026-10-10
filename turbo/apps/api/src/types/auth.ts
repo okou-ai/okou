@@ -65,6 +65,9 @@ export type AgentAuthContext =
 export type AuthContext =
   | {
       readonly tokenType: "oauth";
+      readonly scopes: readonly string[];
+      readonly clientId: string;
+      readonly clientName?: string;
       readonly userId: string;
       readonly orgId: string;
       readonly orgRole: ApiOrgRole;

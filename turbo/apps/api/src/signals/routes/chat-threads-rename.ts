@@ -51,6 +51,7 @@ export const chatThreadRenameRoutes: readonly RouteEntry[] = [
         requireOrganization: true,
         missingOrganizationStatus: 401,
         requiredCapability: "chat-thread:write",
+        oauthScope: "okou:chat:manage",
       },
       renameInner$,
     ),

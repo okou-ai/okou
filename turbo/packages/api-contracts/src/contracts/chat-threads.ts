@@ -316,7 +316,8 @@ const persistedChatThreadServiceTierSchema = z
   .default(null)
   .transform((tier) => {
     return tier === "priority" ? tier : null;
-  });
+  })
+  .pipe(chatThreadServiceTierSchema.nullable());
 
 const chatThreadSnapshotProjectionSchema = z.object({
   id: z.string().uuid(),
@@ -1118,7 +1119,7 @@ const chatNormalSendBodyShape = {
   captureNetworkBodies: z.boolean().optional(),
 } as const;
 
-const chatEventNormalSendBodySchema = z
+export const chatEventNormalSendBodySchema = z
   .object({
     ...chatNormalSendBodyShape,
     // Client-generated UUID used as the user event's primary key.
