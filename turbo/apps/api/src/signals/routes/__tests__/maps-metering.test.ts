@@ -133,7 +133,7 @@ describe("Maps Interactions usage and citations", () => {
       http.post(VERTEX_MAPS_URL, () => {
         return vertexMapsResponse({
           mapsQueries: 2,
-          content: [{ type: "text", text: answer }],
+          content: [{ text: answer }],
         });
       }),
     );
@@ -182,19 +182,19 @@ describe("Maps Interactions usage and citations", () => {
     { name: "missing usage", usage: undefined },
     {
       name: "missing query telemetry",
-      usage: { ...validUsage, grounding_tool_count: undefined },
+      usage: { ...validUsage, groundingToolCount: undefined },
     },
     {
       name: "missing Maps entry",
-      usage: { ...validUsage, grounding_tool_count: [] },
+      usage: { ...validUsage, groundingToolCount: [] },
     },
     {
       name: "duplicate Maps counts",
       usage: {
         ...validUsage,
-        grounding_tool_count: [
-          { type: "google_maps", count: 1 },
-          { type: "google_maps", count: 2 },
+        groundingToolCount: [
+          { type: "GOOGLE_MAPS", count: 1 },
+          { type: "GOOGLE_MAPS", count: 2 },
         ],
       },
     },
@@ -202,47 +202,47 @@ describe("Maps Interactions usage and citations", () => {
       name: "negative count",
       usage: {
         ...validUsage,
-        grounding_tool_count: [{ type: "google_maps", count: -1 }],
+        groundingToolCount: [{ type: "GOOGLE_MAPS", count: -1 }],
       },
     },
     {
       name: "fractional count",
       usage: {
         ...validUsage,
-        grounding_tool_count: [{ type: "google_maps", count: 1.5 }],
+        groundingToolCount: [{ type: "GOOGLE_MAPS", count: 1.5 }],
       },
     },
     {
       name: "zero count despite Maps activity",
       usage: {
         ...validUsage,
-        grounding_tool_count: [{ type: "google_maps", count: 0 }],
+        groundingToolCount: [{ type: "GOOGLE_MAPS", count: 0 }],
       },
     },
     {
       name: "unexpected billed tool",
       usage: {
         ...validUsage,
-        grounding_tool_count: [
-          { type: "google_maps", count: 1 },
-          { type: "google_search", count: 2 },
+        groundingToolCount: [
+          { type: "GOOGLE_MAPS", count: 1 },
+          { type: "GOOGLE_SEARCH", count: 2 },
         ],
       },
     },
     {
       name: "cached count larger than the prompt",
-      usage: { ...validUsage, total_cached_tokens: 101 },
+      usage: { ...validUsage, totalCachedTokens: 101 },
     },
     {
       name: "unrepresentable output token total",
-      usage: { ...validUsage, total_output_tokens: Number.MAX_SAFE_INTEGER },
+      usage: { ...validUsage, totalOutputTokens: Number.MAX_SAFE_INTEGER },
     },
     {
       name: "unrepresentable provider cost",
       usage: {
         ...validUsage,
-        grounding_tool_count: [
-          { type: "google_maps", count: Number.MAX_SAFE_INTEGER },
+        groundingToolCount: [
+          { type: "GOOGLE_MAPS", count: Number.MAX_SAFE_INTEGER },
         ],
       },
     },
@@ -273,7 +273,7 @@ describe("Maps Interactions usage and citations", () => {
     },
   );
 
-  it.each(["failed", "incomplete", "requires_action", "in_progress"])(
+  it.each(["FAILED", "INCOMPLETE", "REQUIRES_ACTION", "IN_PROGRESS"])(
     "rejects a %s interaction instead of returning partial output",
     async (status) => {
       const { billing, actor } = await setupMaps();
@@ -332,7 +332,7 @@ describe("Maps Interactions usage and citations", () => {
       http.post(VERTEX_MAPS_URL, () => {
         return HttpResponse.json({
           ...vertexMapsInteraction(),
-          model: "gemini-3.8-flash",
+          modelInteraction: { model: "gemini-3.8-flash" },
         });
       }),
     );
@@ -356,10 +356,11 @@ describe("Maps Interactions usage and citations", () => {
     const first = "北京咖啡";
     const second = "Café";
     const firstSource = {
-      type: "place_citation" as const,
-      name: "北京咖啡",
-      url: "https://maps.google.com/?cid=456",
-      end_index: Buffer.byteLength(first),
+      placeCitation: {
+        name: "北京咖啡",
+        url: "https://maps.google.com/?cid=456",
+      },
+      endIndex: Buffer.byteLength(first),
     };
     server.use(
       http.post(VERTEX_MAPS_URL, () => {
@@ -367,35 +368,40 @@ describe("Maps Interactions usage and citations", () => {
           ...vertexMapsInteraction({ mapsQueries: 3 }),
           steps: [
             {
-              type: "thought",
-              signature: "private-signature",
-              summary: [{ type: "text", text: "private reasoning" }],
+              thought: {
+                signature: "private-signature",
+                summary: [{ text: { text: "private reasoning" } }],
+              },
             },
             {
-              type: "model_output",
-              content: [
-                { type: "text", text: prefix },
-                { type: "text", text: first, annotations: [firstSource] },
-              ],
+              modelOutput: {
+                content: [
+                  { text: { text: prefix } },
+                  { text: { text: first, annotations: [firstSource] } },
+                ],
+              },
             },
             {
-              type: "model_output",
-              content: [
-                {
-                  type: "text",
-                  text: second,
-                  annotations: [
-                    {
-                      type: "place_citation",
-                      name: "Café Central",
-                      url: "https://maps.google.com/?cid=123",
-                      start_index: 0,
-                      end_index: Buffer.byteLength(second),
+              modelOutput: {
+                content: [
+                  {
+                    text: {
+                      text: second,
+                      annotations: [
+                        {
+                          placeCitation: {
+                            name: "Café Central",
+                            url: "https://maps.google.com/?cid=123",
+                          },
+                          startIndex: 0,
+                          endIndex: Buffer.byteLength(second),
+                        },
+                      ],
                     },
-                  ],
-                },
-                { type: "text", text: first, annotations: [firstSource] },
-              ],
+                  },
+                  { text: { text: first, annotations: [firstSource] } },
+                ],
+              },
             },
           ],
         });
@@ -453,7 +459,9 @@ describe("Maps Interactions usage and citations", () => {
       { query: "Coffee near me" },
       [200],
     );
-    expect(body).toMatchObject({ tools: [{ type: "google_maps" }] });
+    expect(body).toMatchObject({
+      interaction: { tools: [{ googleMaps: {} }] },
+    });
     expect(JSON.stringify(body)).not.toMatch(/latitude|longitude/u);
     expect(search.body).toMatchObject({
       answer: "Please provide a city or location.",

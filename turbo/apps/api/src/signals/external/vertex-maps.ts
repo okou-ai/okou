@@ -27,7 +27,6 @@ const L = logger("VertexMaps");
 export const VERTEX_MAPS_MODEL = "gemini-3.5-flash-lite";
 export const VERTEX_MAPS_PROVIDER = "google-maps-grounding";
 const LOCATION = "global";
-const INTERACTIONS_API_REVISION = "2026-05-20";
 const PROVIDER_TIMEOUT_MS = 30_000;
 const MAX_PROVIDER_RESPONSE_BYTES = 512 * 1024;
 
@@ -42,14 +41,11 @@ const MAPS_SYSTEM_INSTRUCTION = [
 
 const tokenCountSchema = z.number().int().nonnegative().safe();
 const placeCitationSchema = z.object({
-  type: z.literal("place_citation"),
-  name: z.string(),
-  url: z.string(),
-  start_index: tokenCountSchema.optional(),
-  end_index: tokenCountSchema.optional(),
+  placeCitation: z.object({ name: z.string(), url: z.string() }),
+  startIndex: tokenCountSchema.optional(),
+  endIndex: tokenCountSchema.optional(),
 });
 const textContentSchema = z.object({
-  type: z.literal("text"),
   text: z.string(),
   annotations: z
     .array(placeCitationSchema)
@@ -57,30 +53,31 @@ const textContentSchema = z.object({
     .optional(),
 });
 const responseSchema = z.object({
-  model: z.string().optional(),
+  modelInteraction: z.object({ model: z.string() }).optional(),
   status: z.string(),
   errors: z.array(z.object({ code: z.string().optional() })).optional(),
   steps: z
     .array(
-      z.discriminatedUnion("type", [
+      z.union([
         z.object({
-          type: z.literal("model_output"),
-          content: z.array(textContentSchema),
+          modelOutput: z.object({
+            content: z.array(z.object({ text: textContentSchema })),
+          }),
         }),
-        z.object({
-          type: z.enum(["thought", "google_maps_call", "google_maps_result"]),
-        }),
+        z.object({ thought: z.object({}) }),
+        z.object({ toolCall: z.object({ googleMapsCall: z.object({}) }) }),
+        z.object({ toolResult: z.object({ googleMapsResult: z.object({}) }) }),
       ]),
     )
     .optional(),
   usage: z.unknown().optional(),
 });
 const usageSchema = z.object({
-  total_input_tokens: tokenCountSchema,
-  total_cached_tokens: tokenCountSchema.optional(),
-  total_output_tokens: tokenCountSchema,
-  total_thought_tokens: tokenCountSchema.optional(),
-  grounding_tool_count: z.array(
+  totalInputTokens: tokenCountSchema,
+  totalCachedTokens: tokenCountSchema.optional(),
+  totalOutputTokens: tokenCountSchema,
+  totalThoughtTokens: tokenCountSchema.optional(),
+  groundingToolCount: z.array(
     z.object({ type: z.string(), count: tokenCountSchema }),
   ),
 });
@@ -126,35 +123,29 @@ export interface VertexMapsResult {
 }
 
 function vertexEndpoint(project: string): string {
-  return `https://aiplatform.googleapis.com/v1beta1/projects/${project}/locations/${LOCATION}/interactions`;
+  return `https://aiplatform.googleapis.com/v1beta1/projects/${project}/locations/${LOCATION}/interactions:create`;
 }
 
 function providerRequestBody(request: MapsSearchRequest) {
   return {
-    model: VERTEX_MAPS_MODEL,
-    input: request.query,
-    system_instruction: request.languageCode
-      ? `${MAPS_SYSTEM_INSTRUCTION}\nUse language ${request.languageCode} for the answer and Maps search queries.`
-      : MAPS_SYSTEM_INSTRUCTION,
     store: false,
     stream: false,
     background: false,
-    service_tier: "standard",
-    tools: [
-      {
-        type: "google_maps",
-        ...(request.location
-          ? {
-              latitude: request.location.latitude,
-              longitude: request.location.longitude,
-            }
-          : {}),
+    interaction: {
+      modelInteraction: {
+        model: VERTEX_MAPS_MODEL,
+        generationConfig: {
+          thinkingLevel: "THINKING_LEVEL_MINIMAL",
+          thinkingSummaries: "THINKING_SUMMARIES_NONE",
+          maxOutputTokens: 2048,
+        },
       },
-    ],
-    generation_config: {
-      thinking_level: "minimal",
-      thinking_summaries: "none",
-      max_output_tokens: 2048,
+      stringContent: request.query,
+      systemInstruction: request.languageCode
+        ? `${MAPS_SYSTEM_INSTRUCTION}\nUse language ${request.languageCode} for the answer and Maps search queries.`
+        : MAPS_SYSTEM_INSTRUCTION,
+      serviceTier: "SERVICE_TIER_STANDARD",
+      tools: [{ googleMaps: request.location ?? {} }],
     },
   };
 }
@@ -209,8 +200,8 @@ function parseAnswer(contents: readonly TextContent[]) {
   for (const content of contents) {
     for (const annotation of content.annotations ?? []) {
       const source = safeSource({
-        title: annotation.name,
-        uri: annotation.url,
+        title: annotation.placeCitation.name,
+        uri: annotation.placeCitation.url,
       });
       if (!source) {
         throw new VertexMapsError(502, "invalid_source");
@@ -227,25 +218,25 @@ function parseAnswer(contents: readonly TextContent[]) {
       if (sources.length > MAPS_SEARCH_MAX_SOURCES) {
         throw new VertexMapsError(502, "invalid_source");
       }
-      if (annotation.end_index === undefined) {
-        if (annotation.start_index !== undefined) {
+      if (annotation.endIndex === undefined) {
+        if (annotation.startIndex !== undefined) {
           throw new VertexMapsError(502, "invalid_citation");
         }
         // The provider may supply attribution without a text span.
         continue;
       }
-      const localStartByte = annotation.start_index ?? 0;
+      const localStartByte = annotation.startIndex ?? 0;
       const text = utf8Segment(
         content.text,
         localStartByte,
-        annotation.end_index,
+        annotation.endIndex,
       );
       if (!text || citations.length >= MAPS_SEARCH_MAX_CITATIONS) {
         throw new VertexMapsError(502, "invalid_citation");
       }
       citations.push({
         startByte: startByte + localStartByte,
-        endByte: startByte + annotation.end_index,
+        endByte: startByte + annotation.endIndex,
         text,
         sourceIndices: [sourceIndex],
       });
@@ -275,67 +266,90 @@ function parseUsage(
   if (!parsed.success) {
     throw new VertexMapsError(502, "invalid_usage");
   }
-  const mapsCounts = parsed.data.grounding_tool_count.filter((item) => {
-    return item.type === "google_maps";
+  const mapsCounts = parsed.data.groundingToolCount.filter((item) => {
+    return item.type === "GOOGLE_MAPS";
   });
   const mapsQueries = mapsCounts[0]?.count;
-  const cachedInputTokens = parsed.data.total_cached_tokens ?? 0;
-  // Maps tool input is separately reported in total_tool_use_tokens and free.
+  const cachedInputTokens = parsed.data.totalCachedTokens ?? 0;
+  // Maps tool input is separately reported in totalToolUseTokens and free.
   // Thought tokens are charged at the output rate.
   const outputTokens =
-    parsed.data.total_output_tokens + (parsed.data.total_thought_tokens ?? 0);
+    parsed.data.totalOutputTokens + (parsed.data.totalThoughtTokens ?? 0);
   // Require an explicit aggregate count, including zero. Tool steps, places,
   // and citation counts are not substitutes for provider usage telemetry.
   if (
     mapsCounts.length !== 1 ||
     mapsQueries === undefined ||
     (hasMapsActivity && mapsQueries === 0) ||
-    cachedInputTokens > parsed.data.total_input_tokens ||
+    cachedInputTokens > parsed.data.totalInputTokens ||
     !Number.isSafeInteger(outputTokens) ||
-    parsed.data.grounding_tool_count.some((item) => {
-      return item.type !== "google_maps" && item.count !== 0;
+    parsed.data.groundingToolCount.some((item) => {
+      return item.type !== "GOOGLE_MAPS" && item.count !== 0;
     })
   ) {
     throw new VertexMapsError(502, "invalid_usage");
   }
   return {
-    inputTokens: parsed.data.total_input_tokens,
+    inputTokens: parsed.data.totalInputTokens,
     cachedInputTokens,
     outputTokens,
     mapsQueries,
   };
 }
 
+function nativeResponseShape(value: unknown, path = "", depth = 0): string[] {
+  if (depth > 8 || value === null || typeof value !== "object") {
+    return [];
+  }
+  if (Array.isArray(value)) {
+    return value.slice(0, 3).flatMap((item) => {
+      return nativeResponseShape(item, `${path}[]`, depth + 1);
+    });
+  }
+  return Object.entries(value)
+    .slice(0, 30)
+    .flatMap(([key, item]) => {
+      const childPath = `${path}.${key}`;
+      return [childPath, ...nativeResponseShape(item, childPath, depth + 1)];
+    });
+}
+
 function parseVertexMapsResponse(body: string): VertexMapsResult {
-  const parsed = responseSchema.safeParse(safeJsonParse(body));
+  const decoded = safeJsonParse(body);
+  L.warn("Native Maps response field paths", {
+    paths: [...new Set(nativeResponseShape(decoded))],
+  });
+  const parsed = responseSchema.safeParse(decoded);
   if (!parsed.success) {
     throw new VertexMapsError(502, "invalid_response");
   }
-  if (parsed.data.status !== "completed") {
+  if (parsed.data.status !== "COMPLETED") {
     throw new VertexMapsError(
       502,
-      parsed.data.status === "incomplete"
+      parsed.data.status === "INCOMPLETE"
         ? "output_truncated"
         : "not_completed",
     );
   }
   if (
-    parsed.data.model !== VERTEX_MAPS_MODEL ||
+    parsed.data.modelInteraction?.model !== VERTEX_MAPS_MODEL ||
     !parsed.data.steps ||
     parsed.data.errors?.length
   ) {
     throw new VertexMapsError(502, "invalid_response");
   }
   const contents = parsed.data.steps.flatMap((step) => {
-    return step.type === "model_output" ? step.content : [];
+    return "modelOutput" in step
+      ? step.modelOutput.content.map((content) => {
+          return content.text;
+        })
+      : [];
   });
   const answer = parseAnswer(contents);
   const hasMapsActivity =
     answer.sources.length > 0 ||
     parsed.data.steps.some((step) => {
-      return (
-        step.type === "google_maps_call" || step.type === "google_maps_result"
-      );
+      return "toolCall" in step || "toolResult" in step;
     });
   return {
     ...answer,
@@ -373,7 +387,6 @@ async function requestVertexMaps(
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json; charset=utf-8",
-        "Api-Revision": INTERACTIONS_API_REVISION,
       },
       body: JSON.stringify(providerRequestBody(request)),
       signal: requestSignal,

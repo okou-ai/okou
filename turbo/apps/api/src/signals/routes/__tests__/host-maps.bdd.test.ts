@@ -650,14 +650,12 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
 
     let providerCalls = 0;
     let providerAuthorization: string | null = null;
-    let providerRevision: string | null = null;
     let providerBody: unknown;
     const answer = "Café Central is open nearby.";
     server.use(
       http.post(VERTEX_MAPS_URL, async ({ request }) => {
         providerCalls += 1;
         providerAuthorization = request.headers.get("authorization");
-        providerRevision = request.headers.get("api-revision");
         providerBody = await request.json();
         return vertexMapsResponse({ answer });
       }),
@@ -708,25 +706,22 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
       },
     });
     expect(providerAuthorization).toBe("Bearer synthetic-google-token");
-    expect(providerRevision).toBe("2026-05-20");
     expect(providerBody).toMatchObject({
-      model: "gemini-3.5-flash-lite",
-      input: "best café near me",
       store: false,
       background: false,
       stream: false,
-      service_tier: "standard",
-      tools: [
-        {
-          type: "google_maps",
-          latitude: 48.21,
-          longitude: 16.37,
+      interaction: {
+        modelInteraction: {
+          model: "gemini-3.5-flash-lite",
+          generationConfig: {
+            thinkingLevel: "THINKING_LEVEL_MINIMAL",
+            thinkingSummaries: "THINKING_SUMMARIES_NONE",
+            maxOutputTokens: 2048,
+          },
         },
-      ],
-      generation_config: {
-        thinking_level: "minimal",
-        thinking_summaries: "none",
-        max_output_tokens: 2048,
+        stringContent: "best café near me",
+        serviceTier: "SERVICE_TIER_STANDARD",
+        tools: [{ googleMaps: { latitude: 48.21, longitude: 16.37 } }],
       },
     });
     const serializedProviderBody = JSON.stringify(providerBody);
@@ -774,13 +769,13 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
         return vertexMapsResponse({
           content: [
             {
-              type: "text",
               text: answer,
               annotations: [
                 {
-                  type: "place_citation",
-                  name: "Untrusted source",
-                  url: "https://example.com/place",
+                  placeCitation: {
+                    name: "Untrusted source",
+                    url: "https://example.com/place",
+                  },
                 },
               ],
             },
@@ -805,14 +800,14 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
         return vertexMapsResponse({
           content: [
             {
-              type: "text",
               text: "Café",
               annotations: [
                 {
-                  type: "place_citation",
-                  name: "Café Central",
-                  url: "https://maps.google.com/?cid=123",
-                  end_index: 4,
+                  placeCitation: {
+                    name: "Café Central",
+                    url: "https://maps.google.com/?cid=123",
+                  },
+                  endIndex: 4,
                 },
               ],
             },
@@ -835,7 +830,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
       http.post(VERTEX_MAPS_URL, () => {
         providerCalls += 1;
         return HttpResponse.json({
-          status: "failed",
+          status: "FAILED",
           errors: [{ message: "private-provider-safety-detail" }],
         });
       }),
@@ -947,17 +942,17 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
         return vertexMapsResponse({
           answer,
           content: [
-            { type: "text", text: prefix },
+            { text: prefix },
             {
-              type: "text",
               text: `${citedText} Central.`,
               annotations: [
                 {
-                  type: "place_citation",
-                  name: "Café Central",
-                  url: "https://maps.google.com/?cid=123",
-                  start_index: 0,
-                  end_index: Buffer.byteLength(citedText),
+                  placeCitation: {
+                    name: "Café Central",
+                    url: "https://maps.google.com/?cid=123",
+                  },
+                  startIndex: 0,
+                  endIndex: Buffer.byteLength(citedText),
                 },
               ],
             },
