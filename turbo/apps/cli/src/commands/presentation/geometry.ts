@@ -1,6 +1,9 @@
 import { crc32, deflateRawSync, inflateRawSync } from "zlib";
 
+import { SaxesParser } from "saxes";
+
 import type { Layout } from "./layout";
+import { applyNativePaint, type NativePaint } from "./native";
 
 /** The renderer writes ordinary, non-encrypted ZIP entries. Reject other methods. */
 export function pptxEntries(archive: Buffer): Map<string, Buffer> {
@@ -188,6 +191,7 @@ export function applyGeometry(
   layout: Layout,
   width: number,
   height: number,
+  nativePaint: NativePaint = {},
 ): Buffer {
   const entries = pptxEntries(deck);
   for (let pageIndex = 0; pageIndex < layout.pages.length; pageIndex += 1) {
@@ -317,11 +321,7 @@ export function applyGeometry(
           '<a:rPr$1 strike="sngStrike">',
         );
       if (box.underlineColor) {
-        const line =
-          box.underlineWidth > 0
-            ? `<a:uLn w="${Math.round(box.underlineWidth * scale).toString()}"><a:solidFill><a:srgbClr val="${box.underlineColor}"/></a:solidFill></a:uLn>`
-            : "";
-        const underline = `${line}<a:uFill><a:solidFill><a:srgbClr val="${box.underlineColor}"/></a:solidFill></a:uFill>`;
+        const underline = `<a:uFill><a:solidFill><a:srgbClr val="${box.underlineColor}"/></a:solidFill></a:uFill>`;
         fixed = fixed.replace(/<a:rPr\b[^>]*>[\s\S]*?<\/a:rPr>/gu, (run) => {
           const anchor =
             /<a:(?:latin|ea|cs|sym|hlinkClick|hlinkMouseOver|extLst)\b/u;
@@ -413,16 +413,78 @@ export function applyGeometry(
     entries.set(
       name,
       Buffer.from(
-        separateRoundedText(
-          xml,
-          page.roundedTextShapes,
+        applyNativePaint(
+          separateRoundedText(
+            xml,
+            page.roundedTextShapes,
+            scale,
+            offsetX,
+            offsetY,
+          ),
+          nativePaint[String(pageIndex + 1)],
           scale,
-          offsetX,
-          offsetY,
         ),
         "utf8",
       ),
     );
   }
   return pack(entries);
+}
+
+/** Check identifiers before handing a package to a presentation editor. */
+export function inspectNativeStructure(deck: Buffer): {
+  page: number;
+  objects: number;
+  pictures: number;
+  paths: number;
+  gradients: number;
+  tables: number;
+  formulas: number;
+}[] {
+  const pages = [];
+  for (const [name, content] of pptxEntries(deck)) {
+    if (name.endsWith(".xml") || name.endsWith(".rels")) {
+      const parser = new SaxesParser({ xmlns: true });
+      parser.on("error", (error) => {
+        throw new Error(
+          `Invalid presentation XML in ${name}: ${error.message}`,
+        );
+      });
+      parser.write(content.toString("utf8")).close();
+    }
+    const match = /^ppt\/slides\/slide(\d+)\.xml$/u.exec(name);
+    if (!match) continue;
+    const page = Number(match[1]),
+      xml = content.toString("utf8");
+    const ids = [...xml.matchAll(/<p:cNvPr\b[^>]*\bid="(\d+)"/gu)].map(
+      (match) => {
+        return match[1];
+      },
+    );
+    const unique = new Set(ids);
+    if (unique.size !== ids.length)
+      throw new Error(
+        `Page ${page.toString()} has duplicate native object IDs`,
+      );
+    for (const reference of xml.matchAll(
+      /<(?:p:spTgt|a:stCxn|a:endCxn)\b[^>]*\b(?:spid|id)="(\d+)"/gu,
+    )) {
+      if (!unique.has(reference[1]))
+        throw new Error(
+          `Page ${page.toString()} has an unresolved native object reference`,
+        );
+    }
+    pages.push({
+      page,
+      objects: ids.length,
+      pictures: [...xml.matchAll(/<p:pic>/gu)].length,
+      paths: [...xml.matchAll(/<a:custGeom>/gu)].length,
+      gradients: [...xml.matchAll(/<a:gradFill\b/gu)].length,
+      tables: [...xml.matchAll(/<a:tbl>/gu)].length,
+      formulas: [...xml.matchAll(/name="okou-equation-\d+"/gu)].length,
+    });
+  }
+  return pages.sort((a, b) => {
+    return a.page - b.page;
+  });
 }

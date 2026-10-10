@@ -37,7 +37,7 @@ function slideXml(texts: readonly string[]): string {
     })
     .join("");
   return (
-    `<?xml version="1.0" encoding="UTF-8"?><p:sld xmlns:a="a" xmlns:p="p"><p:cSld><p:spTree>` +
+    `<?xml version="1.0" encoding="UTF-8"?><p:sld xmlns:a="a" xmlns:p="p" xmlns:r="r"><p:cSld><p:spTree>` +
     `<p:sp><p:spPr><a:xfrm><a:off x="0" y="86"/><a:ext cx="100" cy="100"/></a:xfrm></p:spPr>` +
     `<p:txBody><a:bodyPr wrap="square" lIns="0" rIns="0"><a:spAutoFit/></a:bodyPr>` +
     `${runs}</p:txBody></p:sp>` +
@@ -170,25 +170,34 @@ const state = {
   slideCount: 2,
   /** Base64 the fake page holds for the chunked transfer. */
   transferable: "",
+  nativePaint: {} as Record<string, unknown>,
+  snapshotFailure: false,
 };
 
 function deckBase64(): string {
+  const document = (index: number): string | undefined => {
+    const value = state.slideXml?.[index];
+    if (value === undefined || value.includes("<p:sld ")) return value;
+    return slideXml([]).replace(
+      /<p:spTree>[\s\S]*?<\/p:spTree>/u,
+      `<p:spTree>${value}</p:spTree>`,
+    );
+  };
   const texts = state.deckTexts ?? state.pageTexts;
   const entries: (readonly [string, string])[] = [
     ["[Content_Types].xml", "<Types/>"],
     ["ppt/media/", ""],
     [
       "ppt/presentation.xml",
-      '<p:presentation><p:sldSz cx="12192000" cy="6858000"/></p:presentation>',
+      '<p:presentation xmlns:p="p"><p:sldSz cx="12192000" cy="6858000"/></p:presentation>',
     ],
     [
       "ppt/slides/slide1.xml",
-      state.slideXml?.[0] ??
-        slideXml(state.deckPages?.[0] ?? texts.slice(0, 1)),
+      document(0) ?? slideXml(state.deckPages?.[0] ?? texts.slice(0, 1)),
     ],
     [
       "ppt/slides/slide2.xml",
-      state.slideXml?.[1] ?? slideXml(state.deckPages?.[1] ?? texts.slice(1)),
+      document(1) ?? slideXml(state.deckPages?.[1] ?? texts.slice(1)),
     ],
   ];
   return storedZip(entries).toString("base64");
@@ -207,6 +216,7 @@ function fakeEval(expression: string): string {
   // `.length`, so a looser branch above it would answer for both.
   if (expression.includes("scored.sort")) return encoded(".stage");
   if (expression.includes("No visible slide supplies")) return "0";
+  if (expression.includes("data-okou-capture-")) return "1";
   if (expression.includes("window.__okouRestoreLayout =")) {
     return encoded({
       pages: (
@@ -234,6 +244,7 @@ function fakeEval(expression: string): string {
     return encoded({
       slides: state.slideCount,
       unsupported: state.unsupported,
+      nativePaint: state.nativePaint,
       length: state.transferable.length,
     });
   }
@@ -271,6 +282,11 @@ vi.mock("child_process", () => {
           }
           return "";
         }
+        if (command === process.execPath) {
+          if (state.snapshotFailure)
+            throw new Error("ws://private-layout-endpoint?secret=secret-value");
+          return "[]";
+        }
         if (command === "npm") {
           // `npm pack` writes a tarball the command then unpacks.
           writeFileSync(join(options?.cwd ?? ".", "renderer.tgz"), "tarball");
@@ -285,6 +301,29 @@ vi.mock("child_process", () => {
               "items.push(bgItem);",
               "async function elementToCanvasImage(node, widthPx, heightPx) {",
               "async function capturePseudoElementCanvas(node, pseudoType, widthPx, heightPx) {",
+              "const result = prepareRenderItem(node,",
+              "if (node.nodeType === 1) {\n      const beforeStyle",
+              "if (node.nodeType === 1) {\n      const afterStyle",
+              "if ((nodeTag === 'ul' || nodeTag === 'ol') && !isComplexHierarchy(node))",
+              "return compareKeys(a.zIndex, b.zIndex);",
+              "item.options.objectName = transportVal;",
+              "cNvPr.setAttribute('name', shapeName);",
+              "collect(root, []);",
+              "${intTableNum * slide._slideNum + 1}",
+              "strSlideXml += ' </a:outerShdw>';",
+              "console.warn(`[pptx-normalizer] ${relativePath} has parser errors, skipping.`);\n          continue;",
+              ...[
+                "blur || 8",
+                "offset || 4",
+                "angle || 270",
+                "opacity || 0.75",
+              ].flatMap((value) => {
+                return [
+                  "slideItemObj.options.shadow." + value,
+                  "slideItemObj.options.shadow." + value,
+                ];
+              }),
+              "else if (opts.hyperlink) {\n          runProps += ' u=\"sng\"';",
             ].join("\n"),
           );
           return "";
@@ -347,6 +386,8 @@ describe("okou presentation convert", () => {
     state.deckTexts = undefined;
     state.sourcePages = undefined;
     state.unsupported = [];
+    state.nativePaint = {};
+    state.snapshotFailure = false;
     state.deckPages = undefined;
     state.slideXml = undefined;
     state.textBoxes = [];
@@ -471,6 +512,10 @@ describe("okou presentation convert", () => {
 
   it("retains multiline paragraphs and unique identities when splitting multiple rounded shapes", async () => {
     state.pageTexts = ["First line", "Second line"];
+    state.sourcePages = [
+      ["First line", "Second line", "Additional label"],
+      ["Second line"],
+    ];
     const rounded = (id: number, texts: readonly string[]): string => {
       return (
         `<p:sp><p:nvSpPr><p:cNvPr id="${id.toString()}" name="Rounded text"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>` +
@@ -486,7 +531,7 @@ describe("okou presentation convert", () => {
       );
     };
     state.slideXml = [
-      `<p:sld xmlns:a="a" xmlns:p="p"><p:cSld><p:spTree>${rounded(7, ["First line", "Second line"])}${rounded(21, ["Additional label"])}</p:spTree></p:cSld></p:sld>`,
+      `<p:sld xmlns:a="a" xmlns:p="p" xmlns:r="r"><p:cSld><p:spTree>${rounded(7, ["First line", "Second line"])}${rounded(21, ["Additional label"])}</p:spTree></p:cSld></p:sld>`,
       slideXml(["Second line"]),
     ];
     await convert(["--verify"]);
@@ -580,7 +625,7 @@ describe("okou presentation convert", () => {
     await convert([]);
 
     expect(state.evaluated.join("")).toContain(
-      `file://${join(cacheHome, "okou", "presentation-convert", "native-v1", RENDERER_BUNDLE)}`,
+      `file://${join(cacheHome, "okou", "presentation-convert", "native-v2", RENDERER_BUNDLE)}`,
     );
   });
 
@@ -602,7 +647,7 @@ describe("okou presentation convert", () => {
           cacheHome,
           "okou",
           "presentation-convert",
-          "native-v1",
+          "native-v2",
           RENDERER_BUNDLE,
         ),
       ),
@@ -643,6 +688,182 @@ describe("okou presentation convert", () => {
     state.sourcePages = [["A", "AB"], []];
     state.deckPages = [["AB", "A"], []];
     await expect(convert(["--verify"])).resolves.toBeUndefined();
+  });
+
+  it.each(["Hellodeck", "hello deck"])(
+    "rejects lost whitespace or changed case: %s",
+    async (rendered) => {
+      state.sourcePages = [["Hello deck"], []];
+      state.deckPages = [[rendered], []];
+      await expect(convert(["--verify", "--json"])).rejects.toThrow(
+        /process\.exit/u,
+      );
+      expect(String(vi.mocked(console.log).mock.calls.at(-1)?.[0])).toContain(
+        "Page 1: Hello deck",
+      );
+    },
+  );
+
+  it("sanitizes browser protocol failures and restores the borrowed page", async () => {
+    state.snapshotFailure = true;
+    await expect(convert(["--session", "existing"])).rejects.toThrow(
+      /process\.exit/u,
+    );
+    expect(stderr()).toContain("Cannot capture the selected browser");
+    expect(stderr()).not.toContain("secret-value");
+    expect(state.evaluated.at(-1)).toBe("window.__okouRestoreLayout?.()");
+  });
+
+  it("writes native paint by object identity without changing custom paths or border fills", async () => {
+    const path =
+      '<a:custGeom><a:pathLst><a:path w="100" h="100"><a:moveTo><a:pt x="0" y="0"/></a:moveTo><a:lnTo><a:pt x="100" y="100"/></a:lnTo></a:path></a:pathLst></a:custGeom>';
+    const border =
+      '<a:ln w="12700"><a:solidFill><a:srgbClr val="123456"/></a:solidFill></a:ln>';
+    const paint =
+      '<p:sp><p:nvSpPr><p:cNvPr id="2" name="gradient-owner"/></p:nvSpPr><p:spPr>' +
+      path +
+      '<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>' +
+      border +
+      "</p:spPr></p:sp>";
+    state.slideXml = [
+      paint +
+        paint
+          .replace('name="gradient-owner"', 'name="same-position-unrelated"')
+          .replace('id="2"', 'id="3"'),
+      slideXml([]),
+    ];
+    state.nativePaint = {
+      "1": {
+        "gradient-owner": {
+          fill: {
+            kind: "linear",
+            angle: 45,
+            stops: [
+              { position: 0, color: "2563EB", alpha: 1 },
+              { position: 1, color: "F43F5E", alpha: 0.5 },
+            ],
+          },
+        },
+      },
+    };
+    await convert([]);
+    const slide =
+      readZip(readFileSync(outPath)).get("ppt/slides/slide1.xml") ?? "";
+    const shapes = slide.match(/<p:sp>[\s\S]*?<\/p:sp>/gu) ?? [];
+    expect(shapes).toHaveLength(2);
+    expect(shapes[0]).toContain(path);
+    expect(shapes[0]).toContain(border);
+    expect(shapes[0]).toContain("</a:custGeom><a:gradFill");
+    expect(shapes[0]).toContain("</a:gradFill><a:ln");
+    expect(shapes[1]).not.toContain("<a:gradFill");
+    expect(shapes[1]).toContain('val="FFFFFF"');
+  });
+
+  it("rejects duplicate generated text even at full source coverage", async () => {
+    state.sourcePages = [["01", "Plan"], []];
+    state.deckPages = [["01", "Plan", "01"], []];
+    await expect(convert(["--verify", "--json"])).rejects.toThrow(
+      /process\.exit/u,
+    );
+    expect(stderr()).toContain("Unexpected native text");
+    expect(String(vi.mocked(console.log).mock.calls.at(-1)?.[0])).toContain(
+      '"unexpected":["Page 1: 01"]',
+    );
+  });
+
+  it("groups measured equation glyphs with unique identities and native coordinates", async () => {
+    const shape = (id: number, text: string) => {
+      return `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="math-${id}"/></p:nvSpPr><p:spPr><a:xfrm><a:off x="100" y="200"/><a:ext cx="1000" cy="500"/></a:xfrm></p:spPr><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>${text}</a:t></a:r></a:p></p:txBody></p:sp>`;
+    };
+    state.slideXml = [shape(2, "x") + shape(3, "2"), slideXml([])];
+    state.nativePaint = {
+      "1": { "math-2": { mathGroup: 7 }, "math-3": { mathGroup: 7 } },
+    };
+    await convert([]);
+    const slide =
+      readZip(readFileSync(outPath)).get("ppt/slides/slide1.xml") ?? "";
+    expect(slide).toContain('<p:cNvPr id="4" name="okou-equation-7"');
+    expect(slide).toContain(
+      '<a:chOff x="100" y="200"/><a:chExt cx="1000" cy="500"/>',
+    );
+    expect(slide.match(/name="math-2"/gu)).toHaveLength(1);
+    expect(slide.match(/name="math-3"/gu)).toHaveLength(1);
+    expect(slide).toContain("<a:t>x</a:t>");
+    expect(slide).toContain("<a:t>2</a:t>");
+  });
+
+  it("writes source-image crop and grayscale for self-closing blip nodes", async () => {
+    state.slideXml = [
+      '<p:pic><p:nvPicPr><p:cNvPr id="2" name="source"/></p:nvPicPr><p:blipFill><a:blip r:embed="rId1"/><a:stretch><a:fillRect/></a:stretch></p:blipFill></p:pic>',
+      slideXml([]),
+    ];
+    state.nativePaint = {
+      "1": { source: { grayscale: true, crop: [0.25, 0, 0.25, 0] } },
+    };
+    await convert([]);
+    const slide =
+      readZip(readFileSync(outPath)).get("ppt/slides/slide1.xml") ?? "";
+    expect(slide).toContain(
+      '<a:blip r:embed="rId1"><a:grayscl/></a:blip><a:srcRect l="25000" t="0" r="25000" b="0"/>',
+    );
+    expect(slide).toContain("<a:stretch><a:fillRect/></a:stretch>");
+  });
+
+  it("preserves physical path coordinates while matching a CSS radial extent", async () => {
+    state.slideXml = [
+      '<p:sp><p:nvSpPr><p:cNvPr id="2" name="radial"/></p:nvSpPr><p:spPr><a:xfrm><a:off x="100" y="200"/><a:ext cx="1000" cy="500"/></a:xfrm><a:custGeom><a:pathLst><a:path w="1000" h="500"><a:moveTo><a:pt x="0" y="0"/></a:moveTo><a:lnTo><a:pt x="1000" y="500"/></a:lnTo></a:path></a:pathLst></a:custGeom></p:spPr></p:sp>',
+      slideXml([]),
+    ];
+    state.nativePaint = {
+      "1": {
+        radial: {
+          fill: {
+            kind: "radial",
+            center: [0.5, 0.5],
+            radius: [1, 1],
+            stops: [
+              { position: 0, color: "FFFFFF", alpha: 1 },
+              { position: 1, color: "000000", alpha: 1 },
+            ],
+          },
+        },
+      },
+    };
+    await convert([]);
+    const slide =
+      readZip(readFileSync(outPath)).get("ppt/slides/slide1.xml") ?? "";
+    const off = /<a:off x="(-?\d+)" y="(-?\d+)"/u.exec(slide);
+    const point = /<a:moveTo><a:pt x="(-?\d+)" y="(-?\d+)"/u.exec(slide);
+    expect(Number(off?.[1]) + Number(point?.[1])).toBe(100);
+    expect(Number(off?.[2]) + Number(point?.[2])).toBe(200);
+    expect(slide).toContain('<a:ext cx="1414" cy="707"/>');
+    expect(slide).toContain(
+      '<a:fillToRect l="50000" t="50000" r="50000" b="50000"/>',
+    );
+    expect(slide).not.toContain("<p:pic");
+  });
+
+  it("rejects malformed presentation XML before writing a package", async () => {
+    state.slideXml = [
+      slideXml(["Label"]).replace("<a:xfrm>", "<a:innerShdw>"),
+      slideXml([]),
+    ];
+    await expect(convert([])).rejects.toThrow(/process\.exit/u);
+    expect(stderr()).toContain("Invalid presentation XML");
+    expect(existsSync(outPath)).toBe(false);
+  });
+
+  it("rejects duplicate slide object identities before writing a package", async () => {
+    state.slideXml = [
+      slideXml(["Hello deck"]).replace(
+        "<p:spPr>",
+        '<p:nvSpPr><p:cNvPr id="2"/><p:cNvPr id="2"/></p:nvSpPr><p:spPr>',
+      ),
+      slideXml([]),
+    ];
+    await expect(convert([])).rejects.toThrow(/process\.exit/u);
+    expect(stderr()).toContain("duplicate native object IDs");
+    expect(existsSync(outPath)).toBe(false);
   });
 
   it("treats discretionary break markers as layout rather than missing letters", async () => {

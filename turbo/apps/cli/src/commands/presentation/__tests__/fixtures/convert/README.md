@@ -13,6 +13,52 @@ previous artifacts as controls, without silently repairing either side. This
 is still experimental, **not a production-ready fidelity replacement**.
 Do not treat a successful `--verify` result as visual acceptance.
 
+## Browser-measured native adapter
+
+`native-layout-regressions.html` adds six pages covering resolved counters and
+markers, accumulated transforms, editable path paint, text paint and source
+image tiling, CSS stacking, and ancestor-gradient projection. The adapter reads
+the browser's layout and paint order before materializing text. Each emitted
+object has a measured source identity; generated content has one owner.
+
+- Shapes retain native paths, independent borders, rounded corners, and linear
+  or radial fills. Repeated linear stops preserve hard edges and transparent
+  endpoints retain CSS color interpolation. Tables share the fill serializer.
+- Image URL backgrounds retain source pixels and use native placement, tiling,
+  crop, and supported image effects. HTML/CSS decoration is never rasterized.
+- MathML fractions, roots, scripts, and token glyphs become a native group of
+  editable text and rules. Browser-resolved math fonts and `math-auto` Latin
+  glyphs are retained. This is component editing, **not semantic OfficeMath
+  editing**; `math-semantic-editing` reports that boundary.
+- Resolved list markers are editable text, including reversed, negative and
+  Roman markers. They are static browser-resolved values, not automatically
+  renumbering PowerPoint paragraphs.
+
+The JSON result includes page-scoped `unsupported` entries (with feature,
+reason and bounds), `layout.pages[].clippedSource`, native object counts in
+`structure`, and missing **and unexpected** text in `verify`. Formula groups
+are counted separately from ordinary text. Verification preserves word
+boundaries and case, rejects duplicate generated text, validates XML throughout
+the package, and rejects duplicate object IDs or unresolved shape references
+before writing the output. Invalid renderer XML fails before normalization can
+silently skip a page.
+
+Visual acceptance remains necessary. Current boundaries include conic fills,
+arbitrary transformed glyph clipping, perspective and skewed text, group
+opacity and blending, backdrop blur, multiple/spread shadows, and unsupported
+filters. LibreOffice does not reliably display native text gradient/outline
+paint or inset shadows; those XML properties are not proof of cross-viewer
+fidelity. Font metrics and baseline offsets also need viewer-specific review.
+Do not solve these boundaries with generated images or claim full fidelity
+from a text or structural pass.
+
+Run the focused command tests (without the full local suite):
+
+```bash
+pnpm exec vitest run src/commands/presentation/__tests__/convert.test.ts \
+  src/commands/presentation/__tests__/screenshot.test.ts
+```
+
 ## Native export policy
 
 HTML text and CSS shapes/effects must not become generated image replacements.

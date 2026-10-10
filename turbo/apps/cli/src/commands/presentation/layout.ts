@@ -52,6 +52,9 @@ export const layoutSchema = z.object({
       textBoxes: z.array(textBoxSchema),
       roundedTextShapes: z.array(roundedTextSchema),
       texts: z.array(z.string()),
+      clippedSource: z
+        .array(z.object({ original: z.string(), visible: z.string() }))
+        .default([]),
     }),
   ),
   activated: z.number().int().nonnegative(),
@@ -169,6 +172,15 @@ export const PREPARE_LAYOUT = String.raw`((selector, activated) => {
   const fragment = (node, splitWords) => {
     const style = snapshotStyle(node.parentElement);
     const preserve = style.whiteSpace.startsWith('pre');
+    const clip={left:-Infinity,top:-Infinity,right:Infinity,bottom:Infinity};
+    let ellipsis=false,ellipsisRight=Infinity;
+    for(let ancestor=node.parentElement;ancestor;ancestor=ancestor.parentElement){
+      const s=getComputedStyle(ancestor),r=ancestor.getBoundingClientRect();
+      if(['hidden','clip','scroll','auto'].includes(s.overflowX)){clip.left=Math.max(clip.left,r.left+parseFloat(s.borderLeftWidth));clip.right=Math.min(clip.right,r.right-parseFloat(s.borderRightWidth));}
+      if(['hidden','clip','scroll','auto'].includes(s.overflowY)){clip.top=Math.max(clip.top,r.top+parseFloat(s.borderTopWidth));clip.bottom=Math.min(clip.bottom,r.bottom-parseFloat(s.borderBottomWidth));}
+      if(s.textOverflow==='ellipsis'||Number(s.webkitLineClamp)>0){ellipsis=true;ellipsisRight=Math.min(ellipsisRight,r.right-parseFloat(s.borderRightWidth)-parseFloat(s.paddingRight));}
+      if(slides.includes(ancestor))break;
+    }
     const segments = Array.from(new Intl.Segmenter(undefined,{granularity:'grapheme'}).segment(node.nodeValue));
     const result = [];
     let current = null;
@@ -178,10 +190,14 @@ export const PREPARE_LAYOUT = String.raw`((selector, activated) => {
       range.setStart(node, segment.index);
       range.setEnd(node, end);
       const rect = Array.from(range.getClientRects()).find(rect => rect.width > 0 && rect.height > 0);
-      if (!rect || segment.segment === '\n' || segment.segment === '\r' || segment.segment === '\t') { current = null; continue; }
-      const value = preserve ? segment.segment : segment.segment.replace(/[\n\r\t]/g,' ');
+      if (!rect) { if(preserve || !/\s/.test(segment.segment)) current = null; continue; }
+      if (preserve && /[\n\r]/.test(segment.segment)) { current=null;continue; }
+      if(rect.top>=clip.bottom-.5||rect.bottom<=clip.top+.5||rect.left<clip.left-.5||rect.right>clip.right+.5){result.clipped=true;continue;}
+      let value = preserve ? segment.segment : segment.segment.replace(/[\n\r\t]/g,' ');
+      if(style.textTransform==='uppercase')value=value.toUpperCase();else if(style.textTransform==='lowercase')value=value.toLowerCase();else if(style.textTransform==='capitalize'&&(segment.index===0||/\s/.test(node.nodeValue[segment.index-1])))value=value.toUpperCase();
+      if(splitWords&&/[ \t\u00a0]/.test(value)&&result.length){const previous=result.at(-1);previous.text+=value;previous.right=Math.max(previous.right,rect.right);current=null;continue;}
       if (!current || Math.abs(rect.top - current.top) > 1 || (splitWords && /[ \t\u00a0]/.test(value))) {
-        current = {text:value,left:rect.left,top:rect.top,right:rect.right,bottom:rect.bottom,style,href:node.parentElement.closest('a[href]')?.href || ''};
+        current = {text:value,left:rect.left,top:rect.top,right:rect.right,bottom:rect.bottom,style,source:node.parentElement,paintRect:(()=>{const r=node.parentElement.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height}})(),href:node.parentElement.closest('a[href]')?.href || ''};
         result.push(current);
       } else {
         current.text += value;
@@ -191,9 +207,23 @@ export const PREPARE_LAYOUT = String.raw`((selector, activated) => {
       }
       if (splitWords && /[ \t\u00a0]/.test(value)) current = null;
     }
-    return result.filter(part => part.text.trim());
+    if(result.clipped&&ellipsis&&result.length){
+      const last=result.at(-1),context=document.createElement('canvas').getContext('2d');
+      context.font=style.fontStyle+' '+style.fontWeight+' '+style.fontSize+' '+style.fontFamily;
+      context.letterSpacing=style.letterSpacing==='normal'?'0px':style.letterSpacing;context.wordSpacing=style.wordSpacing==='normal'?'0px':style.wordSpacing;
+      const limit=Math.min(clip.right,ellipsisRight);
+      const chars=Array.from(new Intl.Segmenter(undefined,{granularity:'grapheme'}).segment(last.text.trimEnd()),s=>s.segment);
+      while(chars.length&&context.measureText(chars.join('')+'…').width>limit-last.left)chars.pop();
+      last.text=chars.join('')+'…';last.right=Math.min(limit,last.left+context.measureText(last.text).width);
+    }
+    const filtered=result.filter(part => part.text.trim());filtered.clipped=result.clipped;return filtered;
   };
-  const sourceTexts = slides.map(slide => textNodes(slide).map(node => node.nodeValue.trim()));
+  const clippedSource=slides.map(()=>[]);
+  const sourceTexts = slides.map((slide,index) => {
+    const texts=textNodes(slide).flatMap(node=>{const g=window.__okouNative?.geometry(node.parentElement);if(g&&(!g.similarity||Math.abs(g.rotation)>.0001))return [node.nodeValue.replace(/\s+/g,' ').trim()];const parts=fragment(node,false);if(parts.clipped)clippedSource[index].push({original:node.nodeValue.trim(),visible:parts.map(p=>p.text).join(' ')});return parts.map(p=>p.text.trim());});
+    for(const element of [slide,...slide.querySelectorAll('*')])for(const item of window.__okouNative?.nodes.get(element)?.generated||[])if(item.text.trim())texts.push(item.text.trim());
+    return texts;
+  });
   const inlineTree = owner => Array.from(owner.querySelectorAll('*')).every(child => {
     const style = getComputedStyle(child);
     return child.tagName === 'BR' || ((style.display === 'inline' || style.display === 'inline-block' || style.display === 'contents') && !child.matches('svg,img,canvas,math,ruby,rt,video,iframe'));
@@ -233,7 +263,7 @@ export const PREPARE_LAYOUT = String.raw`((selector, activated) => {
   const candidates = [];
   for (const slide of slides) {
     for (const owner of slide.querySelectorAll('*')) {
-      if (!visible(owner) || owner.closest('table,svg,math,pre,ruby,rt') || !inlineTree(owner)) continue;
+      if (!visible(owner) || owner.closest('table,svg,math,ruby,rt') || !inlineTree(owner)) continue;
       const style = getComputedStyle(owner);
       if (style.display === 'inline' || style.writingMode !== 'horizontal-tb') continue;
       const nodes = textNodes(owner);
@@ -257,7 +287,7 @@ export const PREPARE_LAYOUT = String.raw`((selector, activated) => {
       const naturalWrap = nodes.some(node => fragment(node,false).length > 1);
       const spacing = nodes.some(node => parseFloat(getComputedStyle(node.parentElement).wordSpacing) > 0 || /\t|\u00a0{2}/.test(node.nodeValue));
       const scripts = nodes.some(node => /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/.test(node.nodeValue) || getComputedStyle(node.parentElement).direction === 'rtl');
-      if (decorated || naturalWrap || spacing || scripts || owner.querySelector('sup,sub')) candidates.push({owner,nodes,decorated});
+      if (decorated || naturalWrap || spacing || scripts || owner.querySelector('sup,sub,br') || style.whiteSpace.startsWith('pre') || nodes.some(node=>fragment(node,false).clipped)) candidates.push({owner,nodes,decorated});
     }
   }
   const relativeOpacity = (element,owner) => {
@@ -301,10 +331,15 @@ export const PREPARE_LAYOUT = String.raw`((selector, activated) => {
     for (const part of parts) {
       const span = document.createElement(part.href ? 'a' : 'span');
       if (part.href) span.href = part.href;
-      for (const property of ['font-family','font-size','font-weight','font-style','font-variant','letter-spacing','text-transform','text-decoration','color','direction']) span.style.setProperty(property,part.style.getPropertyValue(property));
+      for (const property of ['font-family','font-size','font-weight','font-style','font-variant','letter-spacing','text-transform','text-decoration','color','direction','-webkit-text-stroke-width','-webkit-text-stroke-color']) span.style.setProperty(property,part.style.getPropertyValue(property));
       Object.assign(span.style,{position:'absolute',display:'block',left:(part.left-originX)+'px',top:(part.top-originY)+'px',width:(part.right-part.left)+'px',height:(part.bottom-part.top)+'px',padding:'0',margin:'0',lineHeight:'normal',whiteSpace:'pre',background:'transparent'});
       span.style.opacity = String(part.opacity);
       span.textContent = part.text;
+      if(window.__okouNative){
+        const meta=window.__okouNative.nodes.get(part.source)||window.__okouNative.nodes.get(owner);
+        if(meta)window.__okouNative.nodes.set(span,{...meta,generated:[]});
+        if(part.style.backgroundClip==='text'||part.style.webkitBackgroundClip==='text'){span.__okouTextPaint=part.style;span.__okouTextPaintRect=part.paintRect;}
+      }
       owner.append(span);
       prepared.push({span,style:part.style});
     }
@@ -328,6 +363,7 @@ export const PREPARE_LAYOUT = String.raw`((selector, activated) => {
       })),
     }));
     const orderedLists = Array.from(slide.querySelectorAll('ol')).filter(list => {
+      if(window.__okouNative)return false;
       const rect = list.getBoundingClientRect();
       return visible(list) && rect.width>0 && rect.height>0 && !list.reversed && getComputedStyle(list).listStyleType==='decimal' && Array.from(list.children).some(child=>child.tagName==='LI');
     }).flatMap(list => {
@@ -404,7 +440,7 @@ export const PREPARE_LAYOUT = String.raw`((selector, activated) => {
       underlineColor:part.style.textDecorationLine.includes('underline') ? color(part.style.textDecorationColor) : '',
       underlineWidth:parseFloat(part.style.textDecorationThickness) || 0,
     }));
-    return {width:rect.width,height:rect.height,tables,orderedLists,textBoxes,roundedTextShapes,texts:sourceTexts[index]};
+    return {width:rect.width,height:rect.height,tables,orderedLists,textBoxes,roundedTextShapes,texts:sourceTexts[index],clippedSource:clippedSource[index]};
   });
   return JSON.stringify({pages,activated,fragmented});
 })`;

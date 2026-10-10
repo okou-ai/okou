@@ -21,10 +21,11 @@ import { pathToFileURL } from "url";
 
 import chalk from "chalk";
 import { Command, InvalidArgumentError } from "commander";
+import { z } from "zod";
 
 import { decodeSandboxTokenPayload } from "../../lib/api/sandbox-token";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
-import { applyGeometry, pptxEntries } from "./geometry";
+import { applyGeometry, inspectNativeStructure, pptxEntries } from "./geometry";
 import {
   layoutSchema,
   PREPARE_LAYOUT,
@@ -32,11 +33,13 @@ import {
   type Layout,
 } from "./layout";
 import { nativeRenderer } from "./renderer";
+import { INSTALL_NATIVE, nativePaintSchema } from "./native";
+import { captureBrowserLayout } from "./snapshot";
 import { browser, childPath, operatorPath, SETTLE, TIMEOUT_MS } from "./shared";
 
 const RENDERER_PACKAGE = "dom-to-pptx@2.1.2";
 const RENDERER_BUNDLE = "dom-to-pptx.bundle.js";
-const RENDERER_CACHE_VERSION = "native-v1";
+const RENDERER_CACHE_VERSION = "native-v2";
 const RENDERER_CDN = `https://cdn.jsdelivr.net/npm/${RENDERER_PACKAGE}/dist/${RENDERER_BUNDLE}`;
 const DEFAULT_VIEWPORT_WIDTH = 1600;
 const DEFAULT_VIEWPORT_HEIGHT = 900;
@@ -82,9 +85,34 @@ interface VerifyReport {
   readonly matchedStrings: number;
   readonly coverage: number;
   readonly missing: readonly string[];
+  readonly unexpected: readonly string[];
   readonly scope: "native-text";
   readonly visualComparison: "not-performed";
 }
+
+const renderMetaSchema = z.object({
+  slides: z.number().int().positive(),
+  length: z.number().int().positive(),
+  nativePaint: nativePaintSchema,
+  unsupported: z.array(
+    z.object({
+      page: z.number().int().positive(),
+      tag: z.string(),
+      images: z.number().int().nonnegative(),
+      node: z.number().int().optional(),
+      feature: z.string().optional(),
+      reason: z.string().optional(),
+      box: z
+        .object({
+          x: z.number().finite(),
+          y: z.number().finite(),
+          w: z.number().nonnegative(),
+          h: z.number().nonnegative(),
+        })
+        .optional(),
+    }),
+  ),
+});
 
 interface Rendered {
   readonly deck: Buffer;
@@ -93,11 +121,7 @@ interface Rendered {
   readonly texts: readonly string[];
   readonly pageTexts: readonly (readonly string[])[];
   readonly layout: Layout;
-  readonly unsupported: readonly {
-    page: number;
-    tag: string;
-    images: number;
-  }[];
+  readonly unsupported: z.infer<typeof renderMetaSchema>["unsupported"];
 }
 
 function positiveNumber(value: string): number {
@@ -269,6 +293,8 @@ function render(options: Options): Rendered {
     if (typeof activated !== "number" || !Number.isInteger(activated)) {
       throw new Error("Page activation returned no count");
     }
+    captureBrowserLayout(page, selector);
+    page.evaluate(`(${INSTALL_NATIVE})(${JSON.stringify(selector)})`);
     const layout = layoutSchema.parse(
       page.evaluate(
         `${PREPARE_LAYOUT}(${JSON.stringify(selector)},${activated.toString()})`,
@@ -306,14 +332,15 @@ function render(options: Options): Rendered {
         return 1;
       })()`,
     ]);
-    const meta = page.evaluate(`(async()=>{
+    const meta = renderMetaSchema.parse(
+      page.evaluate(`(async()=>{
       const nodes = Array.from(document.querySelectorAll(${JSON.stringify(selector)}));
       if (nodes.length === 0) throw new Error("No slides matched " + ${JSON.stringify(selector)});
       const unsupported = [];
       const blob = await window.domToPptx.exportToPptx(nodes, {
         width: ${options.width.toString()},
         height: ${options.height.toString()},
-        includePseudoElements: true,
+        includePseudoElements: false,
         skipDownload: true,
         onUnsupported: item => unsupported.push(item),
       });
@@ -324,26 +351,17 @@ function render(options: Options): Rendered {
         binary += String.fromCharCode.apply(null, bytes.subarray(index, index + step));
       }
       window.__okouPptx = btoa(binary);
-      return JSON.stringify({ slides: nodes.length, length: window.__okouPptx.length, unsupported });
-    })()`);
-    if (
-      typeof meta !== "object" ||
-      meta === null ||
-      typeof (meta as { length?: unknown }).length !== "number"
-    ) {
-      throw new Error("Renderer returned no deck");
-    }
-    const { slides, length, unsupported } = meta as {
-      slides: number;
-      length: number;
-      unsupported: Rendered["unsupported"];
-    };
+      return JSON.stringify({ slides: nodes.length, length: window.__okouPptx.length, unsupported:[...unsupported,...window.__okouNative.diagnostics], nativePaint:window.__okouNative.paints });
+    })()`),
+    );
+    const { slides, length, unsupported, nativePaint } = meta;
     return {
       deck: applyGeometry(
         transfer(page, length),
         layout,
         options.width,
         options.height,
+        nativePaint,
       ),
       selector,
       slides,
@@ -365,7 +383,10 @@ function render(options: Options): Rendered {
 }
 
 function normalizeForCompare(value: string): string {
-  return value.replace(/[\s\u00ad\u200b]/gu, "").toLowerCase();
+  return value
+    .replace(/[\u00ad\u200b]/gu, "")
+    .replace(/\s+/gu, " ")
+    .trim();
 }
 
 function deckText(deck: Buffer): { slides: number; pages: readonly string[] } {
@@ -380,7 +401,12 @@ function deckText(deck: Buffer): { slides: number; pages: readonly string[] } {
   const pages: string[] = [];
   for (const name of slideNames) {
     const parts: string[] = [];
-    const xml = entries.get(name)?.toString("utf8") ?? "";
+    const xml = (entries.get(name)?.toString("utf8") ?? "").replace(
+      /<p:grpSp>[\s\S]*?<\/p:grpSp>/gu,
+      (group) => {
+        return group.includes('name="okou-equation-') ? "" : group;
+      },
+    );
     for (const run of xml.matchAll(/<a:r>[\s\S]*?<\/a:r>/gu)) {
       const properties = /<a:rPr\b[\s\S]*?<\/a:rPr>/u.exec(run[0])?.[0] ?? "";
       const fill =
@@ -409,6 +435,7 @@ function deckText(deck: Buffer): { slides: number; pages: readonly string[] } {
 function verifyDeck(rendered: Rendered): VerifyReport {
   const { slides, pages } = deckText(rendered.deck);
   const missing: string[] = [];
+  const unexpected: string[] = [];
   let matched = 0;
   for (let index = 0; index < rendered.pageTexts.length; index += 1) {
     const text = pages[index] ?? "";
@@ -440,6 +467,14 @@ function verifyDeck(rendered: Rendered): VerifyReport {
         missing.push(`Page ${(index + 1).toString()}: ${entry}`);
       }
     }
+    const extra = text
+      .split("")
+      .map((character, position) => {
+        return claimed[position] ? " " : character;
+      })
+      .join("")
+      .trim();
+    if (extra) unexpected.push(`Page ${(index + 1).toString()}: ${extra}`);
   }
   return {
     slides,
@@ -447,6 +482,7 @@ function verifyDeck(rendered: Rendered): VerifyReport {
     matchedStrings: matched,
     coverage: rendered.texts.length === 0 ? 1 : matched / rendered.texts.length,
     missing: missing.slice(0, 20),
+    unexpected: unexpected.slice(0, 20),
     scope: "native-text",
     visualComparison: "not-performed",
   };
@@ -462,6 +498,8 @@ function requirePresentationConvertCapability(): void {
 }
 
 function coverageFailure(report: VerifyReport): string {
+  if (report.unexpected.length > 0 && report.coverage >= TEXT_COVERAGE_FLOOR)
+    return "Unexpected native text was exported; inspect duplicate generated content and clipped source ranges";
   const percent = (report.coverage * 100).toFixed(1);
   const floor = (TEXT_COVERAGE_FLOOR * 100).toFixed(0);
   return `Editable-text coverage ${percent}% is below the ${floor}% floor; listed source text is not native editable text. Compare the source and PPT page screenshots`;
@@ -472,10 +510,13 @@ async function convert(options: Options): Promise<void> {
   const rendered = render(options);
   const target =
     options.out ?? `${basename(options.input, extname(options.input))}.pptx`;
+  const structure = inspectNativeStructure(rendered.deck);
   const out = operatorPath(target);
   writeFileSync(out, rendered.deck);
   const report = options.verify ? verifyDeck(rendered) : undefined;
-  const failed = report !== undefined && report.coverage < TEXT_COVERAGE_FLOOR;
+  const failed =
+    report !== undefined &&
+    (report.coverage < TEXT_COVERAGE_FLOOR || report.unexpected.length > 0);
 
   if (options.json === true) {
     console.log(
@@ -488,8 +529,19 @@ async function convert(options: Options): Promise<void> {
         layout: {
           activatedSlides: rendered.layout.activated,
           fragmentedOwners: rendered.layout.fragmented,
+          clippedSource: rendered.layout.pages
+            .map((page, index) => {
+              return {
+                page: index + 1,
+                texts: page.clippedSource,
+              };
+            })
+            .filter((page) => {
+              return page.texts.length > 0;
+            }),
         },
         unsupported: rendered.unsupported,
+        structure,
       }),
     );
     if (failed) {
@@ -499,7 +551,7 @@ async function convert(options: Options): Promise<void> {
   }
   if (rendered.unsupported.length > 0) {
     process.stderr.write(
-      `${rendered.unsupported.length.toString()} elements require unsupported image-based exports; those images were omitted. Compare the source and PPT page screenshots.\n`,
+      `${rendered.unsupported.length.toString()} unsupported native rendering features were detected. No HTML image fallback was used. Inspect the JSON diagnostics and compare the source and PPT pages.\n`,
     );
   }
   if (failed) {
