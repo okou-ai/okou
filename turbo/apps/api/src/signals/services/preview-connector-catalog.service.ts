@@ -5,15 +5,14 @@ import {
   validateConnectorCatalogCandidateBytes,
 } from "@okouai/connectors/connector-catalog/artifacts/loader";
 import { CONNECTOR_CATALOG_MAX_RAW_BYTES } from "@okouai/connectors/connector-catalog/contracts";
+import { connectorCatalog } from "@okouai/db/runtime/connector-catalog";
 import { command } from "ccstate";
+import { ne } from "drizzle-orm";
 
 import { env } from "../../lib/env";
 import { writeDb$ } from "../external/db";
 import { downloadS3BufferWithMaxBytes } from "../external/s3";
-import {
-  prepareImmutableCatalogEntries$,
-  publishImmutableCatalogPointer,
-} from "./connector-catalog-immutable.service";
+import { prepareImmutableCatalogEntries$ } from "./connector-catalog-immutable.service";
 import {
   connectorCatalogSource,
   type ConnectorCatalogSource,
@@ -44,6 +43,28 @@ const loadPreviewCatalogCandidate$ = command(
   },
 );
 
+const publishPreviewCatalogPointer$ = command(
+  async (
+    { set },
+    args: { readonly schemaVersion: number; readonly hash: string },
+    signal: AbortSignal,
+  ) => {
+    signal.throwIfAborted();
+    await set(writeDb$)
+      .insert(connectorCatalog)
+      .values({ schemaVersion: args.schemaVersion, hash: args.hash })
+      .onConflictDoUpdate({
+        target: connectorCatalog.schemaVersion,
+        set: { hash: args.hash },
+        setWhere: ne(connectorCatalog.hash, args.hash),
+      })
+      .returning({ hash: connectorCatalog.hash });
+    // The atomic statement has committed; cancellation skips the response,
+    // while replay can reuse the complete generation and the same pointer.
+    signal.throwIfAborted();
+  },
+);
+
 // Preview initialization of the complete validated official publication, not
 // a new publication. Entry preparation is the production synchronizer's: it
 // registers bundled skills for, then writes, every entry missing at this hash.
@@ -67,14 +88,14 @@ export const seedPreviewConnectorCatalog$ = command(
       signal,
     );
     signal.throwIfAborted();
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0232; new non-billing transactions are prohibited.
-    await set(writeDb$).transaction(async (tx) => {
-      await publishImmutableCatalogPointer(tx, {
+    await set(
+      publishPreviewCatalogPointer$,
+      {
         schemaVersion: candidate.artifact.artifactSchemaVersion,
         hash,
-      });
-      signal.throwIfAborted();
-    });
+      },
+      signal,
+    );
     signal.throwIfAborted();
     return {
       catalogVersion: candidate.identity.catalogVersion,

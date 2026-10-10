@@ -922,11 +922,6 @@
       "owner": "claimWork$"
     },
     {
-      "id": "TX-0232",
-      "file": "turbo/apps/api/src/signals/services/preview-connector-catalog.service.ts",
-      "owner": "seedPreviewConnectorCatalog$"
-    },
-    {
       "id": "TX-0234",
       "file": "turbo/apps/api/src/signals/services/provider-usage-publication.service.ts",
       "owner": "recordRunnerUsageBatch$"
