@@ -11,7 +11,7 @@ import { mailNotifications } from "@okouai/db/schema/mail-notification";
 import { users } from "@okouai/db/schema/user";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import { command, computed } from "ccstate";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, count, eq, gte, inArray, sql } from "drizzle-orm";
 import {
   conflict,
   notConfigured,
@@ -354,23 +354,27 @@ export const eraseMailNotifications$ = command(
       owner.userId ? eq(mailNotifications.userId, owner.userId) : undefined,
       owner.orgId ? eq(mailNotifications.orgId, owner.orgId) : undefined,
     );
-    const erased = db
-      .$with("erased_mail_notifications")
-      .as(
-        db
-          .delete(mailNotifications)
-          .where(scope)
-          .returning({ outboxId: mailNotifications.outboxId }),
-      );
-    // Use the deleted receipts' identities; receipts may have no surviving outbox.
+    const erasedOutbox = db.$with("erased_email_outbox").as(
+      db
+        .delete(emailOutbox)
+        .where(
+          inArray(
+            emailOutbox.id,
+            db
+              .select({ id: mailNotifications.outboxId })
+              .from(mailNotifications)
+              .where(scope),
+          ),
+        )
+        .returning({ id: emailOutbox.id }),
+    );
+    // Exhaust the outbox DELETE before locking receipts, matching completion/TTL
+    // order. COUNT also keeps receipts eligible when no outbox survives.
     await db
-      .with(erased)
-      .delete(emailOutbox)
+      .with(erasedOutbox)
+      .delete(mailNotifications)
       .where(
-        inArray(
-          emailOutbox.id,
-          db.select({ id: erased.outboxId }).from(erased),
-        ),
+        and(scope, gte(db.select({ count: count() }).from(erasedOutbox), 0)),
       );
     // SQL has committed; cancellation stops the caller's remaining cleanup.
     signal.throwIfAborted();
