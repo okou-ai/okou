@@ -21,6 +21,7 @@ import { onboardingStatusRoutes } from "../onboarding-status";
 import { teamsConnectRoutes } from "../teams-connect";
 import { userPreferencesRoutes } from "../user-preferences";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRouteMocks } from "./helpers/route-test";
 import {
   postTeamsActivityForTest,
@@ -33,6 +34,7 @@ import {
 const context = testContext();
 const mocks = createRouteMocks(context);
 const runs = createRunsApi(context);
+const webhooks = createWebhookCallbackApi(context);
 function authHeaders() {
   return { authorization: "Bearer clerk-session" };
 }
@@ -43,7 +45,7 @@ function configureTeamsProvider(fixture: TeamsConnectFixture) {
   mockEnv("MICROSOFT_TEAMS_BOT_APP_PASSWORD", "test-teams-password");
   // Every test database has the managed Auto key, so a member's Teams message
   // launches a real run; give it an executor and storage downloads.
-  runs.configureRunnerGroup();
+  const runnerGroup = runs.configureRunnerGroup();
   runs.acceptStorageDownloads();
   context.mocks.s3.send.mockResolvedValue({});
   context.mocks.ably.publish.mockResolvedValue(undefined);
@@ -119,7 +121,7 @@ function configureTeamsProvider(fixture: TeamsConnectFixture) {
       },
     ),
   );
-  return deliveries;
+  return { deliveries, runnerGroup };
 }
 
 async function postActivity(activity: Record<string, unknown>) {
@@ -163,7 +165,7 @@ async function connect(fixture: TeamsConnectFixture): Promise<void> {
 
 async function setupTeamsRoute() {
   const fixture = teamsConnectFixture();
-  const deliveries = configureTeamsProvider(fixture);
+  const { deliveries, runnerGroup } = configureTeamsProvider(fixture);
   mocks.clerk.session(fixture.userId, fixture.orgId);
   const app = await setupApp({
     context,
@@ -182,7 +184,7 @@ async function setupTeamsRoute() {
     }),
   );
   await connect(fixture);
-  return { fixture, deliveries };
+  return { fixture, deliveries, runnerGroup };
 }
 
 async function createdThreads(fixture: TeamsConnectFixture) {
@@ -199,7 +201,7 @@ async function createdThreads(fixture: TeamsConnectFixture) {
   });
 }
 
-async function inputRows(fixture: TeamsConnectFixture, threadId: string) {
+async function threadRows(fixture: TeamsConnectFixture, threadId: string) {
   mocks.clerk.session(fixture.userId, fixture.orgId);
   const result = await accept(
     setupApp({ context, routes: chatThreadRoutes })(
@@ -212,11 +214,47 @@ async function inputRows(fixture: TeamsConnectFixture, threadId: string) {
     [200],
   );
   expect(result.body.hasMore).toBeFalsy();
+  return result.body.rows;
+}
+
+async function inputRows(fixture: TeamsConnectFixture, threadId: string) {
   // Count each ingested input once: a launched run adds an input.prompt
   // replacement row that revokes the queued input.
-  return result.body.rows.filter((row) => {
+  return (await threadRows(fixture, threadId)).filter((row) => {
     return row.eventType === "input.prompt" && row.revokesEventId === null;
   });
+}
+
+/** Runs launched for the thread's inputs, in launch order. */
+async function launchedRunIds(
+  fixture: TeamsConnectFixture,
+  threadId: string,
+): Promise<string[]> {
+  return (await threadRows(fixture, threadId)).flatMap((row) => {
+    return row.eventType === "input.prompt" &&
+      row.revokesEventId !== null &&
+      row.runId !== null
+      ? [row.runId]
+      : [];
+  });
+}
+
+/** The Runner claims a run and reports a failed exit with its own token. */
+async function failClaimedRun(
+  runnerGroup: string,
+  runId: string | undefined,
+): Promise<void> {
+  if (!runId) {
+    throw new Error("Expected a launched Teams run");
+  }
+  await runs.heartbeatRunner(runnerGroup);
+  const claim = await runs.claimRunnerJob(runId);
+  await webhooks.requestAgentComplete(
+    { runId, exitCode: 1, error: "Agent exited" },
+    { authorization: `Bearer ${claim.sandboxToken}` },
+    [200],
+  );
+  await flushWaitUntilForTest();
 }
 
 function message(fixture: TeamsConnectFixture, id: string, text: string) {
@@ -302,8 +340,9 @@ describe("Teams route ownership through public ingress", () => {
   });
 
   it("reuses a personal thread when Teams changes the conversation destination", async () => {
-    const { fixture, deliveries } = await setupTeamsRoute();
+    const { fixture, deliveries, runnerGroup } = await setupTeamsRoute();
     const destination = `personal-new-${fixture.fixtureId}`;
+    const previousDestination = `personal-old-${fixture.fixtureId}`;
     const personal = (id: string, conversationId: string) => {
       return teamsMessageActivityForTest(fixture, {
         id: `${fixture.fixtureId}-${id}`,
@@ -317,19 +356,38 @@ describe("Teams route ownership through public ingress", () => {
         entities: [],
       });
     };
-    await postActivity(
-      personal("first personal message", `personal-old-${fixture.fixtureId}`),
-    );
+    await postActivity(personal("first personal message", previousDestination));
     const first = await createdThreads(fixture);
     const threadId = onlyThreadId(first);
     await postActivity(personal("second personal message", destination));
     await expect(createdThreads(fixture)).resolves.toStrictEqual(first);
     const rows = await inputRows(fixture, threadId);
     expect(rows).toHaveLength(2);
+
+    // The first run ends through the Runner, which launches the queued second
+    // input; its terminal reply follows the conversation's new destination.
+    await failClaimedRun(
+      runnerGroup,
+      (await launchedRunIds(fixture, threadId))[0],
+    );
+    const launched = await launchedRunIds(fixture, threadId);
+    expect(launched).toHaveLength(2);
+    await failClaimedRun(runnerGroup, launched[1]);
+
+    const secondActivity = encodeURIComponent(
+      `${fixture.fixtureId}-second personal message`,
+    );
+    expect(
+      deliveries.map((delivery) => {
+        return delivery.url;
+      }),
+    ).not.toContain(
+      `${fixture.serviceUrl}v3/conversations/${encodeURIComponent(previousDestination)}/activities/${secondActivity}`,
+    );
     expect(deliveries).toStrictEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          url: `${fixture.serviceUrl}v3/conversations/${encodeURIComponent(destination)}/activities/${encodeURIComponent(`${fixture.fixtureId}-second personal message`)}`,
+          url: `${fixture.serviceUrl}v3/conversations/${encodeURIComponent(destination)}/activities/${secondActivity}`,
           body: expect.objectContaining({
             type: "message",
             text: expect.any(String),
