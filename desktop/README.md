@@ -80,14 +80,17 @@ native launches and upgrades retain the new native session. The native applicati
 reads `desktop-preferences.json` and preserves the existing
 `computerUseInstallationId`, `keepAwakeEnabled`, and unrelated settings.
 
-The legacy `RELEASES.json` endpoint and mutable release manifest continue serving
-the same ZIP. Old Electron/Squirrel versions replace the entire `.app`. On
-macOS 11+, their relaunch step executes
-`Contents/Frameworks/Squirrel.framework/Resources/ShipIt ___launch___ APP` inside
-the new app. `LegacyRelaunch/` supplies that path with a small native Swift
-launcher. The minimal framework envelope is only for code-signing compatibility;
-the app does not load it. Keep the bridge in future native releases because old
-installations can skip versions.
+The legacy `RELEASES.json` endpoint pins the retained signed Native 0.52.2
+migration ZIP. Installed Electron/Squirrel clients replace the entire `.app`
+and execute `Contents/Frameworks/Squirrel.framework/Resources/ShipIt` inside
+that retained package to relaunch. Keep the original 0.52.2 release assets
+available without replacing their bytes or redirecting their URLs. The API's
+fixed migration policy is independent of the mutable Native release manifest.
+
+Current Native packages omit the Squirrel framework and relaunch bridge. Before
+publishing these packages, the frozen-feed API must be deployed, old serving
+APIs must drain, and rollback targets must contain the frozen migration policy.
+The migration and automatic-update acceptance remains tracked in #37888.
 
 Subsequent native updates use Sparkle 2.10, the API's `appcast.xml`, and the same
 Developer ID designated requirement. Code-signing-only validation is supported

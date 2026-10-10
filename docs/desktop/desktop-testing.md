@@ -21,8 +21,8 @@ window targeting, screenshots, and input recovery in the existing backend.
 
 Build each affected packaged configuration with `desktop/scripts/build.py`.
 Use `--development` for preview isolation. Packaging must retain the Clerk
-resource bundle, native backend, same production bundle ID, and legacy Swift
-ShipIt relaunch bridge. `--smoke-test` checks startup without touching account
+resource bundle, native backend, same production bundle ID, and Sparkle updater. `--smoke-test` checks startup
+without touching account
 state or registering a host. `--auth-smoke-test` initializes the real Clerk SDK
 and reports the Keychain service and signed-in state without registering a host.
 Clean CI builds must start signed out in the new production/preview namespaces.
@@ -47,7 +47,9 @@ Use the actual packaged app for these cases:
 
 For distribution changes, test signed ZIP and mounted DMG startup, validate
 Developer ID and notarization, and exercise the actual old Squirrel replacement
-and relaunch path in an isolated installation. A fabricated feed alone does not
+and relaunch into the retained migration ZIP in an isolated installation, then
+its Native Sparkle continuation into the current package. A fabricated feed alone
+does not
 prove that an installed updater can start the native app. Preserve the real
 production feed and installation while using the isolated updater harness.
 

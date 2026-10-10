@@ -102,43 +102,6 @@ def build(version, development, output):
         "@executable_path/../Frameworks",
         app / "Contents/MacOS/computer-use-helper",
     )
-    bridge = app / "Contents/Frameworks/Squirrel.framework"
-    resources = bridge / "Versions/A/Resources"
-    resources.mkdir(parents=True)
-    run(
-        "xcrun",
-        "swiftc",
-        "-O",
-        "-target",
-        "arm64-apple-macos14.0",
-        ROOT / "LegacyRelaunch/main.swift",
-        "-o",
-        resources / "ShipIt",
-    )
-    run(
-        "xcrun",
-        "swiftc",
-        "-O",
-        "-target",
-        "arm64-apple-macos14.0",
-        "-emit-library",
-        ROOT / "LegacyRelaunch/Compatibility.swift",
-        "-o",
-        bridge / "Versions/A/Squirrel",
-    )
-    (bridge / "Versions/Current").symlink_to("A")
-    (bridge / "Resources").symlink_to("Versions/Current/Resources")
-    (bridge / "Squirrel").symlink_to("Versions/Current/Squirrel")
-    with (resources / "Info.plist").open("wb") as file:
-        plistlib.dump(
-            {
-                "CFBundleIdentifier": f"{identifier}.legacy-relaunch",
-                "CFBundleExecutable": "Squirrel",
-                "CFBundlePackageType": "FMWK",
-                "CFBundleVersion": "1",
-            },
-            file,
-        )
     return app
 
 
