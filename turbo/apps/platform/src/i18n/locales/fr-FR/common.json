@@ -927,20 +927,6 @@
     }
   },
   "auth": {
-    "desktop": {
-      "phases": {
-        "completed": "Vous êtes connecté à Desktop. Vous pouvez fermer cette fenêtre.",
-        "connecting": "Connexion de votre session de bureau.",
-        "consumed": "Finalisation de la connexion dans Desktop. Gardez cette fenêtre ouverte.",
-        "failed": "La connexion n’a pas pu aboutir. Recommencez depuis Desktop ou réessayez dans ce navigateur.",
-        "no-workspaces": "Créez ou rejoignez un espace de travail dans l’application web, puis reconnectez-vous depuis Desktop.",
-        "pending": "Ouvrez Desktop pour poursuivre la connexion.",
-        "selecting": "Choisissez un espace de travail pour cet ordinateur."
-      },
-      "reopen": "Ouvrir Desktop",
-      "retry": "Réessayer",
-      "title": "Se connecter à Desktop"
-    },
     "documentTitles": {
       "signIn": "Se connecter",
       "signUp": "S'inscrire"

@@ -286,6 +286,39 @@ final class ChatClientTests: XCTestCase {
     }
   }
 
+  func testAPIRequestsAdvertiseIOSClientIdentity() async throws {
+    struct ClientHeaders: Sendable {
+      let type, version, sessionID, requestID: String?
+    }
+    let observed = Mutex<[ClientHeaders]>([])
+    let handler: ChatHTTPFixture.Handler = { request in
+      observed.withLock {
+        $0.append(
+          ClientHeaders(
+            type: request.value(forHTTPHeaderField: "X-Client-Type"),
+            version: request.value(forHTTPHeaderField: "X-Client-Version"),
+            sessionID: request.value(forHTTPHeaderField: "X-Client-Session-Id"),
+            requestID: request.value(forHTTPHeaderField: "X-Client-Request-Id")))
+      }
+      return ChatHTTPResponse(status: 204, body: "")
+    }
+    let fixture = ChatHTTPFixture(clientVersion: "4.5.6", handler: handler)
+    let otherFixture = ChatHTTPFixture(clientVersion: "4.5.6", handler: handler)
+    try await fixture.client.data("/api/indicators")
+    try await fixture.client.data("/api/chat-threads/\(fixtureThread)/pin", method: "POST")
+    try await otherFixture.client.data("/api/indicators")
+
+    let headers = observed.withLock { $0 }
+    XCTAssertEqual(headers.map(\.type), ["iOS", "iOS", "iOS"])
+    XCTAssertEqual(headers.map(\.version), ["4.5.6", "4.5.6", "4.5.6"])
+    let sessionID = try XCTUnwrap(headers.first?.sessionID)
+    XCTAssertNotNil(UUID(uuidString: sessionID))
+    XCTAssertEqual(sessionID, sessionID.lowercased())
+    XCTAssertEqual(headers.map(\.sessionID).dropLast(), [sessionID, sessionID])
+    XCTAssertNotEqual(headers.last?.sessionID, sessionID)
+    XCTAssertEqual(Set(headers.compactMap(\.requestID)).count, 3)
+  }
+
   func testUpgradeRequiredBlocksHistory() async throws {
     let fixture = ChatHTTPFixture { _ in
       ChatHTTPResponse(

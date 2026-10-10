@@ -79,9 +79,9 @@ describe("Computer Use host session concurrency", () => {
         // one-running-command-per-host unique index make every losing poll
         // report idle, whatever the interleaving.
         const claims = await Promise.all([
-          computerUse.claimNextComputerUseCommand(host.hostToken),
-          computerUse.claimNextComputerUseCommand(host.hostToken),
-          computerUse.claimNextComputerUseCommand(host.hostToken),
+          computerUse.claimNextComputerUseCommand(host.connection),
+          computerUse.claimNextComputerUseCommand(host.connection),
+          computerUse.claimNextComputerUseCommand(host.connection),
         ]);
 
         expect(
@@ -115,9 +115,9 @@ describe("Computer Use host session concurrency", () => {
         // Whichever heartbeat writes second either reads the revived row or
         // loses its row-version guard and re-reads it, so only one publishes.
         const beats = await Promise.all([
-          computerUse.heartbeatComputerUseHost(host.hostToken),
-          computerUse.heartbeatComputerUseHost(host.hostToken),
-          computerUse.heartbeatComputerUseHost(host.hostToken),
+          computerUse.heartbeatComputerUseHost(host.connection),
+          computerUse.heartbeatComputerUseHost(host.connection),
+          computerUse.heartbeatComputerUseHost(host.connection),
         ]);
         expect(beats).toMatchObject([
           { ok: true, hostId: host.hostId },
@@ -154,17 +154,17 @@ describe("Computer Use host session concurrency", () => {
           app: "Finder",
           timeoutMs: 15_000,
         });
-        await computerUse.claimNextComputerUseCommand(host.hostToken);
+        await computerUse.claimNextComputerUseCommand(host.connection);
 
         const responses = await Promise.all([
           computerUse.requestCompleteComputerUseCommand(
-            host.hostToken,
+            host.connection,
             created.commandId,
             { status: "succeeded", result: {} },
             [200],
           ),
           computerUse.requestCompleteComputerUseCommand(
-            host.hostToken,
+            host.connection,
             created.commandId,
             { status: "succeeded", result: {} },
             [200],
@@ -197,8 +197,8 @@ describe("Computer Use host session concurrency", () => {
         const host = await startHost(actor);
 
         const responses = await Promise.all([
-          computerUse.requestStopComputerUseHost(host.hostToken, [200, 401]),
-          computerUse.requestStopComputerUseHost(host.hostToken, [200, 401]),
+          computerUse.requestStopComputerUseHost(host.connection, [200, 409]),
+          computerUse.requestStopComputerUseHost(host.connection, [200, 409]),
         ]);
         expect(
           responses
@@ -206,12 +206,12 @@ describe("Computer Use host session concurrency", () => {
               return response.status;
             })
             .sort(),
-        ).toStrictEqual([200, 401]);
+        ).toStrictEqual([200, 409]);
         const afterStop = await computerUse.requestComputerUseHeartbeat(
-          host.hostToken,
-          [401],
+          host.connection,
+          [409],
         );
-        expect(afterStop.status).toBe(401);
+        expect(afterStop.status).toBe(409);
         const listed = await computerUse.listComputerUseHosts(actor);
         expect(listed.hosts).toMatchObject([
           { id: host.hostId, status: "offline" },

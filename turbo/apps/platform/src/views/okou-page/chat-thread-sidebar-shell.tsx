@@ -76,12 +76,20 @@ export function ChatThreadSidebarShell({
   animateEntry,
   open,
   sidebar,
+  workspace,
 }: {
   readonly children: ReactNode;
   readonly layout: ChatLayoutSignals;
   readonly animateEntry: boolean;
   readonly open: boolean;
   readonly sidebar: ReactNode;
+  readonly workspace?: {
+    readonly beside: "chat-list" | "nav-rail";
+    readonly header: ReactNode;
+    readonly footer: ReactNode;
+    readonly pwaNavigation: boolean;
+    readonly fullscreen: boolean;
+  };
 }) {
   const transitionRef = useSet(layout.transitionOnRef$);
   const syncActiveBrowserFitAction = useSet(syncActiveBrowserFitAction$);
@@ -103,12 +111,8 @@ export function ChatThreadSidebarShell({
     syncActiveBrowserFitAction();
   }
 
-  return withChatScrollLayout(
-    <div
-      ref={transitionRef}
-      className="flex flex-1 min-h-0 bg-transparent"
-      style={style}
-    >
+  const panes = (
+    <>
       <div
         className={cn(
           "min-w-0 min-h-0",
@@ -124,6 +128,10 @@ export function ChatThreadSidebarShell({
         onTransitionEnd={handleSidebarTransitionEnd}
         className={cn(
           "flex min-h-0 min-w-0 overflow-hidden",
+          workspace && "md:rounded-xl xl:rounded-l-none",
+          workspace?.pwaNavigation &&
+            !workspace.fullscreen &&
+            "[--okou-safe-b:0px]",
           transition,
           open && animateEntry && "duration-[180ms]",
           open
@@ -134,6 +142,35 @@ export function ChatThreadSidebarShell({
       >
         {sidebar}
       </div>
+    </>
+  );
+
+  return withChatScrollLayout(
+    <div
+      ref={transitionRef}
+      // The shell frame must not establish a stacking context or containing
+      // block: its sidebar's fixed surface needs to compete inside #root.
+      className={`${cn(
+        "flex flex-1 min-h-0",
+        workspace &&
+          "min-w-0 flex-col md:m-2 md:rounded-xl md:border md:border-border [anchor-name:--workspace-canvas]",
+        workspace?.beside === "chat-list" && "md:ml-0",
+      )} ${
+        workspace
+          ? "bg-workspace-canvas bg-workspace-canvas-image bg-[length:100%_100%]"
+          : "bg-transparent"
+      }`}
+      style={style}
+    >
+      {workspace ? (
+        <>
+          {workspace.header}
+          <div className="flex min-h-0 min-w-0 flex-1">{panes}</div>
+          {workspace.footer}
+        </>
+      ) : (
+        panes
+      )}
     </div>,
   );
 }

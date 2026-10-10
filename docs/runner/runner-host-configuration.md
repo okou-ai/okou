@@ -272,19 +272,10 @@ wait. The bounded numeric summary is private helper output, not persisted cache
 metadata. Existing export admission, timeouts and the 5-second warning threshold
 remain unchanged.
 
-## Runner Operator Server Configuration
+## Host-Local Overrides
 
-`runner config` requires the control-plane URL and Runner token through the
-explicit `--api-url` and `--token` flags or the canonical
-`OKOU_API_BACKEND_URL` and `OKOU_RUNNER_TOKEN` environment variables.
-`runner start` accepts the same flags and canonical environment variables as
-overrides, then falls back to the `server` values in `runner.yaml`.
-
-The API URL must be an absolute HTTP(S) URL without credentials, a query
-string, or a fragment. The Runner normalizes the accepted URL before storing or
-using it. Clap help and diagnostics identify the supported environment names
-without displaying their values, and the token is preserved without trimming
-or logging it.
+For control-plane URL and authentication options, use `runner config --help`
+and `runner start --help`.
 
 The runner reads host-local overrides from `/etc/vm0-runner/host.env` once
 during startup. A missing file is equivalent to an empty file: the runner uses

@@ -1,18 +1,22 @@
-name: Deploy Disabled Discord Gateway
+name: Deploy Discord Gateway
 
 on:
   workflow_dispatch:
     inputs:
       environment:
-        description: "Deploy the relay without starting a Gateway session"
+        description: "Target GitHub and Cloudflare environment"
         type: choice
         options: [test, production]
         default: test
         required: true
+      enable_gateway:
+        description: "Allow Gateway startup; initial bootstrap still requires authenticated /start"
+        type: boolean
+        default: false
+        required: true
 
 permissions:
   contents: read
-  id-token: write
 
 env:
   npm_config_audit: "false"
@@ -45,23 +49,15 @@ jobs:
         working-directory: turbo
         run: pnpm --filter @okouai/discord-gateway-worker run build
 
-      - name: Fetch environment Discord configuration
-        id: discord-config
-        uses: dopplerhq/secrets-fetch-action@451892f16195f9ac360e1a5bcbf0b5fd0e957534 # v2.0.0
-        with:
-          auth-method: oidc
-          doppler-identity-id: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
-          doppler-project: vm0
-          doppler-config: ${{ inputs.environment == 'production' && 'prd' || 'dev' }}
-
-      - name: Deploy disabled relay with encrypted bindings
+      - name: Deploy relay with encrypted bindings
         env:
           GATEWAY_ENVIRONMENT: ${{ inputs.environment }}
+          GATEWAY_ENABLED: ${{ inputs.enable_gateway }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_WORKER_DEPLOY_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CF_ACCOUNT_ID }}
-          DISCORD_APPLICATION_ID: ${{ steps.discord-config.outputs.DISCORD_APPLICATION_ID }}
-          DISCORD_BOT_TOKEN: ${{ steps.discord-config.outputs.DISCORD_BOT_TOKEN }}
-          DISCORD_GATEWAY_SECRET: ${{ steps.discord-config.outputs.DISCORD_GATEWAY_SECRET }}
-          DISCORD_GATEWAY_CONTROL_SECRET: ${{ steps.discord-config.outputs.DISCORD_GATEWAY_CONTROL_SECRET }}
-          DISCORD_API_ORIGIN: ${{ steps.discord-config.outputs.DISCORD_API_ORIGIN }}
-        run: bash .github/scripts/deploy-discord-gateway.sh "$GATEWAY_ENVIRONMENT"
+          DISCORD_APPLICATION_ID: ${{ vars.DISCORD_APPLICATION_ID }}
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          DISCORD_GATEWAY_SECRET: ${{ secrets.DISCORD_GATEWAY_SECRET }}
+          DISCORD_GATEWAY_CONTROL_SECRET: ${{ secrets.DISCORD_GATEWAY_CONTROL_SECRET }}
+          DISCORD_API_ORIGIN: ${{ vars.DISCORD_API_ORIGIN }}
+        run: bash .github/scripts/deploy-discord-gateway.sh "$GATEWAY_ENVIRONMENT" "$GATEWAY_ENABLED"

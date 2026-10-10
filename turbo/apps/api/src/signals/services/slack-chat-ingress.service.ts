@@ -138,18 +138,6 @@ const ROUTE_COLUMNS = {
   chatThreadId: slackChatThreadRoutes.chatThreadId,
 } as const;
 
-async function loadSlackChatThreadRoute(
-  tx: Tx,
-  key: SlackChatThreadRouteKey,
-): Promise<SlackChatThreadRouteBinding | undefined> {
-  const [route] = await tx
-    .select(ROUTE_COLUMNS)
-    .from(slackChatThreadRoutes)
-    .where(slackChatThreadRouteWhere(key))
-    .limit(1);
-  return route;
-}
-
 /** A DM route follows the latest destination through one conditional update. */
 async function adoptSlackChatThreadRoute(
   tx: Tx,
@@ -199,7 +187,11 @@ export const ensureCanonicalSlackChatThreadRoute$ = command(
     const db = set(writeDb$);
     // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0244; new non-billing transactions are prohibited.
     const result = await db.transaction(async (tx) => {
-      const existing = await loadSlackChatThreadRoute(tx, args);
+      const [existing] = await tx
+        .select(ROUTE_COLUMNS)
+        .from(slackChatThreadRoutes)
+        .where(slackChatThreadRouteWhere(args))
+        .limit(1);
       if (existing) {
         return await adoptSlackChatThreadRoute(tx, existing, args);
       }
@@ -238,7 +230,11 @@ export const ensureCanonicalSlackChatThreadRoute$ = command(
         return route;
       }
       // ON CONFLICT waited for the winner's commit; read it once.
-      const winner = await loadSlackChatThreadRoute(tx, args);
+      const [winner] = await tx
+        .select(ROUTE_COLUMNS)
+        .from(slackChatThreadRoutes)
+        .where(slackChatThreadRouteWhere(args))
+        .limit(1);
       if (!winner) {
         throw new Error(
           "Failed to resolve Slack chat thread route after conflict",

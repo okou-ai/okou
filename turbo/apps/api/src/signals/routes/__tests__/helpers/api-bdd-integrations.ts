@@ -907,7 +907,7 @@ export function createBddIntegrationApi(context: TestContext) {
       mockEnv("OKOU_WEB_URL", "https://www.okou.test");
       mockEnv("OKOU_API_BACKEND_URL", SLACK_APP_INTERNAL_API_URL);
       context.mocks.s3.send.mockResolvedValue({ ContentLength: 1024 });
-      context.mocks.slack.assistant.threads.setStatus.mockResolvedValue({
+      context.mocks.slack.apiCall.mockResolvedValue({
         ok: true,
       });
       context.mocks.slack.chat.postMessage.mockResolvedValue({
@@ -968,7 +968,7 @@ export function createBddIntegrationApi(context: TestContext) {
     },
 
     clearSlackCallHistory(): void {
-      context.mocks.slack.assistant.threads.setStatus.mockClear();
+      context.mocks.slack.apiCall.mockClear();
       context.mocks.slack.chat.getPermalink.mockClear();
       context.mocks.slack.chat.postMessage.mockClear();
       context.mocks.slack.chat.postEphemeral.mockClear();

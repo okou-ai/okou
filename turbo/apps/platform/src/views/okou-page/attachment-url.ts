@@ -7,6 +7,7 @@ import { isAllowedDevArtifactFetchUrl } from "../../lib/dev-artifact-fetch-url.t
 import { resolvePublicArtifactsBaseUrl } from "../../lib/platform-host.ts";
 import { i18n } from "../../i18n/index.ts";
 import { logger } from "../../signals/log.ts";
+import { createObjectUrlResource } from "../../signals/object-url-resource.ts";
 import { throwIfAbort } from "../../signals/utils.ts";
 import { writeToClipboard } from "../../signals/okou-page/clipboard.ts";
 
@@ -16,6 +17,7 @@ const LEGACY_FILE_PATH_PATTERN = /^\/f\/([^/]+)\/([^/]+)\/([^/]+)$/;
 const ARTIFACT_FILE_PATH_PATTERN = /^\/artifacts\/([^/]+)\/([^/]+)\/([^/]+)$/;
 const CLERK_USER_ID_PREFIX = "user_";
 const DEV_ARTIFACT_FETCH_PROXY_PATH = "/__okou-dev-artifact-fetch";
+const BLOB_DOWNLOAD_CLEANUP_DELAY_MS = 60_000;
 
 export function attachmentFilenameFromUrl(url: string): string {
   const path = url.split("?")[0].split("#")[0];
@@ -201,19 +203,36 @@ export function readableAttachmentResourceUrl(url: string): string {
   return `${DEV_ARTIFACT_FETCH_PROXY_PATH}?url=${encodeURIComponent(url)}`;
 }
 
-export function triggerBlobDownload(blob: Blob, filename: string): void {
-  const blobUrl = URL.createObjectURL(blob);
-  triggerAnchorDownload(blobUrl, filename);
-  URL.revokeObjectURL(blobUrl);
+export function triggerBlobDownload(
+  blob: Blob,
+  filename: string,
+  signal: AbortSignal,
+): void {
+  const resource = createObjectUrlResource(blob, signal);
+  const anchor = createDownloadAnchor(resource.url, filename);
+  const cleanup = () => {
+    window.clearTimeout(timer);
+    signal.removeEventListener("abort", cleanup);
+    anchor.remove();
+    resource.release();
+  };
+  // Safari can resolve the download after click() returns. Keep both the link
+  // and its bytes alive for that handoff, then release them on expiry or abort.
+  const timer = window.setTimeout(cleanup, BLOB_DOWNLOAD_CLEANUP_DELAY_MS);
+  signal.addEventListener("abort", cleanup, { once: true });
+  anchor.click();
 }
 
-function triggerAnchorDownload(url: string, filename: string): void {
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+function createDownloadAnchor(
+  url: string,
+  filename: string,
+): HTMLAnchorElement {
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.hidden = true;
+  document.body.appendChild(anchor);
+  return anchor;
 }
 
 // Fetch the asset as a blob so downloads are delivered from a same-origin
@@ -252,12 +271,14 @@ export async function downloadAttachmentUrl(
     signal.throwIfAborted();
     // Generic files intentionally use native browser delivery. Previewable
     // media keeps the blob path so a download cannot replace the chat page.
-    triggerAnchorDownload(publicAttachmentUrl(url), filename);
+    const anchor = createDownloadAnchor(publicAttachmentUrl(url), filename);
+    anchor.click();
+    anchor.remove();
     return;
   }
   const blob = await fetchBlobForDownload(url, signal, cache);
   if (blob !== null) {
-    triggerBlobDownload(blob, filename);
+    triggerBlobDownload(blob, filename, signal);
     return;
   }
   toast.error(

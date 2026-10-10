@@ -183,6 +183,11 @@ still fail verification. The recovery inventory also includes
 `cloudflare_access_configs.encrypted_client_id` and `encrypted_client_secret`
 under primary key `id`. This table may be absent in snapshots from before its
 rollout; if present, both fields and the primary key are required and verified.
+The same rule covers `tailscale_configs.encrypted_client_id` and
+`encrypted_client_secret` under primary key `id`: snapshots before the Tailscale
+migration may omit the entire table, but a present table must have both columns
+and its exact primary key. Read-only recovery authenticates both ciphertexts,
+rejects source-key dependencies and malformed storage, and does not update them.
 It also includes `vnc_credentials.encrypted_password` under the exact primary
 key `id`. The VNC table may be absent in older snapshots; when present, the
 password column and primary key must match the inventory and every stored

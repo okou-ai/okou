@@ -4,7 +4,6 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
-  NotifyMail = "notifyMail",
   Dummy = "_dummy",
   AhrefsConnector = "ahrefsConnector",
   BillConnector = "billConnector",
@@ -41,6 +40,7 @@ export enum FeatureSwitchKey {
   ZapierConnector = "zapierConnector",
   PrivateArtifacts = "privateArtifacts",
   ArtifactPreviews = "artifactPreviews",
+  StablePreviewFullscreen = "stablePreviewFullscreen",
   SidebarSubscriptionUsage = "sidebarSubscriptionUsage",
   PwaNavigation = "pwaNavigation",
   FeishuIntegration = "_feishuIntegration",

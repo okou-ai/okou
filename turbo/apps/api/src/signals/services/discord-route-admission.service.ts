@@ -355,27 +355,6 @@ const createDiscordAdmissionRoute$ = command(
   },
 );
 
-async function attachDiscordAdmissionRoute(
-  db: Db,
-  { ingress, claim }: DiscordAdmissionContext,
-  routeId: string,
-  signal: AbortSignal,
-): Promise<boolean> {
-  const [attached] = await db
-    .update(discordChatIngress)
-    .set({ routeId })
-    .where(
-      and(
-        eq(discordChatIngress.id, ingress.id),
-        eq(discordChatIngress.claimToken, claim.claimToken),
-        eq(discordChatIngress.status, "processing"),
-      ),
-    )
-    .returning({ id: discordChatIngress.id });
-  signal.throwIfAborted();
-  return Boolean(attached);
-}
-
 const resolveCanonicalDiscordRoute$ = command(
   async (
     { get, set },
@@ -417,11 +396,25 @@ const resolveCanonicalDiscordRoute$ = command(
         signal,
       );
     }
-    if (
-      !ingress.routeId &&
-      !(await attachDiscordAdmissionRoute(db, context, route.id, signal))
-    ) {
-      return undefined;
+    if (!ingress.routeId) {
+      const routeId = route.id;
+      const { ingress: attachmentIngress, claim } = context;
+      const [attached] = await db
+        .update(discordChatIngress)
+        .set({ routeId })
+        .where(
+          and(
+            eq(discordChatIngress.id, attachmentIngress.id),
+            eq(discordChatIngress.claimToken, claim.claimToken),
+            eq(discordChatIngress.status, "processing"),
+          ),
+        )
+        .returning({ id: discordChatIngress.id });
+      signal.throwIfAborted();
+      const routeAttached = Boolean(attached);
+      if (!routeAttached) {
+        return undefined;
+      }
     }
     return route;
   },

@@ -1,3 +1,4 @@
+import type { ComputerUseTestConnection } from "./helpers/api-bdd-computer-use";
 import { randomUUID } from "node:crypto";
 
 import { aroundEach, describe, expect, it } from "vitest";
@@ -15,7 +16,10 @@ const CASE_TIMEOUT_MS = 30_000;
 
 interface StoredContentFixture {
   readonly commandId: string;
-  readonly host: { readonly hostId: string; readonly hostToken: string };
+  readonly host: {
+    readonly hostId: string;
+    readonly connection: ComputerUseTestConnection;
+  };
   readonly bytes: Buffer;
   readonly contentType: string;
 }
@@ -65,7 +69,7 @@ function createScenario() {
       app: "Safari",
     });
     const claimed = await computerUse.claimNextComputerUseCommand(
-      host.hostToken,
+      host.connection,
     );
     expect(claimed).toMatchObject({
       status: "command",
@@ -73,7 +77,7 @@ function createScenario() {
     });
     const bytes = Buffer.from("private screenshot bytes 中文🙂");
     await computerUse.completeComputerUseCommandWith(
-      host.hostToken,
+      host.connection,
       created.commandId,
       {
         status: "succeeded",
@@ -267,9 +271,9 @@ describe("Computer Use binary content reads", () => {
         });
         const queued = await requestContent(actor, created.commandId, [404]);
         expectOpaqueNotFound(queued.body);
-        await computerUse.claimNextComputerUseCommand(host.hostToken);
+        await computerUse.claimNextComputerUseCommand(host.connection);
         await computerUse.completeComputerUseCommandWith(
-          host.hostToken,
+          host.connection,
           created.commandId,
           {
             status: "succeeded",

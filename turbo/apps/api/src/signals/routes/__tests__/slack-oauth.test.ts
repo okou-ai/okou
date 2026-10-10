@@ -247,7 +247,7 @@ describe("Slack OAuth API routes", () => {
       const scopes = redirectUrl.searchParams.get("scope")?.split(",") ?? [];
       expect(scopes).toContain("app_mentions:read");
       expect(scopes).toContain("chat:write");
-      expect(scopes).not.toContain("assistant:write");
+      expect(scopes).toContain("assistant:write");
       expect(scopes).toContain("channels:history");
       expect(scopes).toContain("im:history");
       expect(scopes).toContain("im:read");

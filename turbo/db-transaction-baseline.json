@@ -132,11 +132,6 @@
       "owner": "deleteAgentRows$"
     },
     {
-      "id": "TX-0048",
-      "file": "turbo/apps/api/src/signals/services/agent-run-output.service.ts",
-      "owner": "prepareSessionHistoryUpload$"
-    },
-    {
       "id": "TX-0049",
       "file": "turbo/apps/api/src/signals/services/agent-run-terminal-transition.service.ts",
       "owner": "cancelRun$"
@@ -1007,16 +1002,6 @@
       "owner": "recordRunUploadedFile$"
     },
     {
-      "id": "TX-0238",
-      "file": "turbo/apps/api/src/signals/services/runner-ssh.service.ts",
-      "owner": "pinRunnerSsh"
-    },
-    {
-      "id": "TX-0239",
-      "file": "turbo/apps/api/src/signals/services/runner-ssh.service.ts",
-      "owner": "recordRunnerSshObservation"
-    },
-    {
       "id": "TX-0240",
       "file": "turbo/apps/api/src/signals/services/runner-wss-ticket.service.ts",
       "owner": "issueRunnerWssTicket$"
@@ -1025,11 +1010,6 @@
       "id": "TX-0241",
       "file": "turbo/apps/api/src/signals/services/runner-wss-ticket.service.ts",
       "owner": "consumeRunnerWssTicket$"
-    },
-    {
-      "id": "TX-0242",
-      "file": "turbo/apps/api/src/signals/services/runner-wss-ticket.service.ts",
-      "owner": "revokeRunnerWssTickets$"
     },
     {
       "id": "TX-0243",
@@ -1067,11 +1047,6 @@
       "owner": "createSocialDataJob$/result"
     },
     {
-      "id": "TX-0250",
-      "file": "turbo/apps/api/src/signals/services/ssh-connection.service.ts",
-      "owner": "commitSshConnectionCreation$"
-    },
-    {
       "id": "TX-0253",
       "file": "turbo/apps/api/src/signals/services/storage-volume-upload.service.ts",
       "owner": "commitPreparedVolumeUpload$"
@@ -1100,11 +1075,6 @@
       "id": "TX-0259",
       "file": "turbo/apps/api/src/signals/services/telegram-chat-ingress.service.ts",
       "owner": "ensureTelegramChatThreadRoute$"
-    },
-    {
-      "id": "TX-0260",
-      "file": "turbo/apps/api/src/signals/services/telegram-chat-ingress.service.ts",
-      "owner": "createTelegramChatThread$"
     },
     {
       "id": "TX-0261",
@@ -1182,19 +1152,9 @@
       "owner": "persistInvitation$"
     },
     {
-      "id": "TX-0278",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
-      "owner": "finalizeRefund$"
-    },
-    {
       "id": "TX-0279",
       "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
       "owner": "refundPurchase$"
-    },
-    {
-      "id": "TX-0280",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
-      "owner": "claimAcceptedPurchaseActivation$"
     },
     {
       "id": "TX-0281",
@@ -1387,11 +1347,6 @@
       "owner": "deleteClerkExportReferences"
     },
     {
-      "id": "TX-0323",
-      "file": "turbo/apps/api/src/signals/services/webhooks-clerk-cleanup.service.ts",
-      "owner": "deleteClerkSshResources"
-    },
-    {
       "id": "TX-0324",
       "file": "turbo/apps/api/src/signals/services/webhooks-stripe.service.ts",
       "owner": "grantAtomMemberCredits$"
@@ -1525,16 +1480,6 @@
       "id": "TX-0350",
       "file": "turbo/apps/api/src/test-fixtures/connector-catalog.ts",
       "owner": "publishFixtureGeneration"
-    },
-    {
-      "id": "TX-0352",
-      "file": "turbo/packages/db/scripts/audit-historical-session-blob-references.sql",
-      "owner": "<module>"
-    },
-    {
-      "id": "TX-0353",
-      "file": "turbo/packages/db/scripts/audit-hosted-publication-history.sql",
-      "owner": "<module>"
     },
     {
       "id": "TX-0355",

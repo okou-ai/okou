@@ -908,20 +908,6 @@
     }
   },
   "auth": {
-    "desktop": {
-      "phases": {
-        "completed": "Desktop is signed in. You can close this window.",
-        "connecting": "Connecting your desktop session.",
-        "consumed": "Finishing sign-in in Desktop. Keep this window open.",
-        "failed": "Sign-in could not finish. Start again from Desktop, or retry in this browser.",
-        "no-workspaces": "Create or join a workspace in the web app, then sign in again from Desktop.",
-        "pending": "Open Desktop to continue signing in.",
-        "selecting": "Choose a workspace for this computer."
-      },
-      "reopen": "Open Desktop",
-      "retry": "Try again",
-      "title": "Sign in to Desktop"
-    },
     "documentTitles": {
       "signIn": "Sign in",
       "signUp": "Sign up"

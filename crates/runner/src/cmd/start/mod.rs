@@ -80,7 +80,10 @@ pub struct StartArgs {
     /// Path to runner.yaml config file
     #[arg(long, short)]
     pub(crate) config: PathBuf,
-    /// Okou API URL (overrides config; `OKOU_API_BACKEND_URL`)
+    /// Okou API URL (overrides config; `OKOU_API_BACKEND_URL`).
+    /// Must be an absolute URL without credentials, query, or fragment.
+    /// HTTPS is required except for HTTP hosts normalized to localhost, IPv4 loopback
+    /// (127.0.0.0/8), or IPv6 loopback (::1). Private network addresses require HTTPS.
     #[arg(long, env = "OKOU_API_BACKEND_URL", hide_env_values = true)]
     api_url: Option<String>,
     /// Runner authentication token (overrides config; `OKOU_RUNNER_TOKEN`)

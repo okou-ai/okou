@@ -9,6 +9,7 @@ import {
 import { closeDbPool } from "../lib/db";
 import desktopCompatibilityConfig from "../lib/desktop-compatibility.json";
 import { clearMockedEnv } from "../lib/env";
+import iosClientCompatibilityConfig from "../lib/ios-client-compatibility.json";
 import { clearMockListStripeInvoices } from "../signals/external/stripe-client";
 import { clearAllDetached, settleIncludingAbort } from "../signals/utils";
 import { flushWaitUntilForTest } from "../signals/context/wait-until";
@@ -25,6 +26,11 @@ export const desktopCompatibility: { minimumSupportedVersion: string | null } =
   desktopCompatibilityConfig;
 const shippedDesktopMinimumVersion =
   desktopCompatibility.minimumSupportedVersion;
+
+export const iosClientCompatibility: {
+  minimumSupportedVersion: string | null;
+} = iosClientCompatibilityConfig;
+const shippedIosMinimumVersion = iosClientCompatibility.minimumSupportedVersion;
 
 function formatBody(body: unknown): string {
   if (typeof body === "string") {
@@ -102,6 +108,7 @@ export function testContext(): TestContext {
     clearMockedEnv();
     clearMockListStripeInvoices();
     desktopCompatibility.minimumSupportedVersion = shippedDesktopMinimumVersion;
+    iosClientCompatibility.minimumSupportedVersion = shippedIosMinimumVersion;
   });
 
   afterAll(async () => {

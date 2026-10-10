@@ -951,6 +951,22 @@ pub mod runners {
             pub generation: i64,
         }
 
+        /// Write-only OAuth authority for trusted ephemeral registration; never SDK, guest or log data.
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+        pub struct ResolveResponseResolvedTailscaleTailscale {
+            /// Bounded zeroizing OAuth client ID.
+            pub client_id: crate::SecretText<4096>,
+            /// Bounded zeroizing OAuth client secret.
+            pub client_secret: crate::SecretText<4096>,
+            /// Exact selected configuration UUID.
+            pub config_id: String,
+            /// Effective network generation.
+            pub generation: i64,
+            /// Bounded permitted registration tags.
+            pub tags: Vec<String>,
+        }
+
         /// Private JIT response. Never Debug, clone, serialize, persist or send to guest.
         pub enum ResolveResponse {
             /// Current authority not available; no secrets.
@@ -1004,6 +1020,23 @@ pub mod runners {
                 /// Private Access authority for the exact saved recipient.
                 access: ResolveResponseResolvedAccessAccess,
             },
+            /// Authorized SSH/network handoff; requires qualified native carrier.
+            ResolvedTailscale {
+                /// Current destination, private to Runner.
+                host: String,
+                /// Current destination port.
+                port: u64,
+                /// Current login identity.
+                username: String,
+                /// Current configuration generation.
+                generation: i64,
+                /// Existing pin, or first-use trust required.
+                learned_host_key: Option<ResolveResponseResolvedLearnedHostKey>,
+                /// SSH authentication after protected carrier and host proof.
+                authentication: ResolveResponseResolvedAccessAuthentication,
+                /// Private network authority, never guest data or an SSH login.
+                tailscale: ResolveResponseResolvedTailscaleTailscale,
+            },
         }
 
         impl<'de> serde::Deserialize<'de> for ResolveResponse {
@@ -1019,6 +1052,8 @@ pub mod runners {
                     ResolvedPassword,
                     #[serde(rename = "resolved_access")]
                     ResolvedAccess,
+                    #[serde(rename = "resolved_tailscale")]
+                    ResolvedTailscale,
                 }
                 #[derive(serde::Deserialize)]
                 #[serde(field_identifier)]
@@ -1045,6 +1080,8 @@ pub mod runners {
                     Authentication,
                     #[serde(rename = "access")]
                     Access,
+                    #[serde(rename = "tailscale")]
+                    Tailscale,
                 }
                 struct Visitor;
                 impl<'de> serde::de::Visitor<'de> for Visitor {
@@ -1072,6 +1109,7 @@ pub mod runners {
                         let mut authentication =
                             None::<ResolveResponseResolvedAccessAuthentication>;
                         let mut access = None::<ResolveResponseResolvedAccessAccess>;
+                        let mut tailscale = None::<ResolveResponseResolvedTailscaleTailscale>;
                         while let Some(field) = map.next_key::<Field>()? {
                             match field {
                                 Field::Outcome => {
@@ -1162,6 +1200,14 @@ pub mod runners {
                                     }
                                     access = Some(map.next_value()?);
                                 }
+                                Field::Tailscale => {
+                                    if tailscale.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    tailscale = Some(map.next_value()?);
+                                }
                             }
                         }
                         match (
@@ -1176,9 +1222,11 @@ pub mod runners {
                             password,
                             authentication,
                             access,
+                            tailscale,
                         ) {
                             (
                                 Some(Kind::Unavailable),
+                                None,
                                 None,
                                 None,
                                 None,
@@ -1199,6 +1247,7 @@ pub mod runners {
                                 Some(learned_host_key),
                                 Some(private_key),
                                 Some(passphrase),
+                                None,
                                 None,
                                 None,
                                 None,
@@ -1223,6 +1272,7 @@ pub mod runners {
                                 Some(password),
                                 None,
                                 None,
+                                None,
                             ) => Ok(ResolveResponse::ResolvedPassword {
                                 host,
                                 port,
@@ -1243,6 +1293,7 @@ pub mod runners {
                                 None,
                                 Some(authentication),
                                 Some(access),
+                                None,
                             ) => Ok(ResolveResponse::ResolvedAccess {
                                 host,
                                 port,
@@ -1251,6 +1302,28 @@ pub mod runners {
                                 learned_host_key,
                                 authentication,
                                 access,
+                            }),
+                            (
+                                Some(Kind::ResolvedTailscale),
+                                Some(host),
+                                Some(port),
+                                Some(username),
+                                Some(generation),
+                                Some(learned_host_key),
+                                None,
+                                None,
+                                None,
+                                Some(authentication),
+                                None,
+                                Some(tailscale),
+                            ) => Ok(ResolveResponse::ResolvedTailscale {
+                                host,
+                                port,
+                                username,
+                                generation,
+                                learned_host_key,
+                                authentication,
+                                tailscale,
                             }),
                             _ => Err(serde::de::Error::custom("invalid authority outcome fields")),
                         }

@@ -68,6 +68,7 @@ fn lifecycle_gate_released_count(gate: &MockLifecycleGate) -> u64 {
     gate.released_count()
 }
 
+mod backing_process;
 mod control;
 mod exec;
 mod factory_runtime;

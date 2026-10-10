@@ -8,7 +8,12 @@ export interface ArtifactOgMetadata {
   readonly url: string;
 }
 
-export const GENERIC_ARTIFACT_TITLE = "Shared artifact";
+export const ARTIFACT_OG_BRAND = {
+  title: "Okou",
+  description: "Okou, your team's shared AI teammate.",
+  imageUrl: "https://static.okou.io/web/okou-og-image-373c892e.png",
+} as const;
+
 export const GENERIC_ARTIFACT_DESCRIPTION =
   "Open in Okou to view this artifact.";
 
@@ -203,8 +208,9 @@ export function normalizeArtifactImageUrls(
 export function artifactOgHtml(
   html: string,
   metadata: ArtifactOgMetadata,
-  replace: boolean,
+  mode: "fill-missing" | "replace-social" | "replace-all",
 ): string {
+  const replace = mode !== "fill-missing";
   const parsed = inspectHtml(html);
   const authoredImage = !replace
     ? parsed.tags.find((tag) => {
@@ -230,7 +236,9 @@ export function artifactOgHtml(
       tag.name.startsWith("og:") || tag.name.startsWith("twitter:");
     if (
       replace &&
-      (social || ["title", "description", "canonical"].includes(tag.name))
+      (social ||
+        (mode === "replace-all" &&
+          ["title", "description", "canonical"].includes(tag.name)))
     ) {
       edits.push({ ...tag, text: "" });
     } else if (!replace && supported.has(tag.name)) {
@@ -258,9 +266,10 @@ export function artifactOgHtml(
       return `<meta ${name.startsWith("og:") ? "property" : "name"}="${name}" content="${escapeUTF8(content)}">`;
     })
     .join("");
-  const extra = replace
-    ? `<title>${escapeUTF8(metadata.title)}</title><meta name="description" content="${escapeUTF8(metadata.description)}"><link rel="canonical" href="${escapeUTF8(metadata.url)}">`
-    : "";
+  const extra =
+    mode === "replace-all"
+      ? `<title>${escapeUTF8(metadata.title)}</title><meta name="description" content="${escapeUTF8(metadata.description)}"><link rel="canonical" href="${escapeUTF8(metadata.url)}">`
+      : "";
   const at = parsed.headEnd ?? parsed.documentStart;
   edits.push({
     start: at,

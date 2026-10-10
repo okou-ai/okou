@@ -1,3 +1,4 @@
+import { command, computed, type Computed } from "ccstate";
 import { publishSshClientInvalidation } from "./ssh-client-invalidation.service";
 import {
   sshHostKeySchema,
@@ -7,19 +8,25 @@ import {
   runnerSshAccessResolvedSchema,
   type RunnerSshResolveResponse,
   type RunnerSshObservationRequest,
+  runnerSshTailscaleResolvedSchema,
 } from "@okouai/api-contracts/contracts/runner-ssh";
 import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
+import { tailscaleConfigs } from "@okouai/db/schema/tailscale-config";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
-import { sshConnections } from "@okouai/db/schema/ssh-connection";
-import { sshConnectionObservations } from "@okouai/db/schema/ssh-connection-observation";
+import {
+  sshConnectionNeedsRebind,
+  sshConnections,
+} from "@okouai/db/schema/ssh-connection";
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
-import { and, eq, lt, ne, or, sql } from "drizzle-orm";
+import { and, eq, or } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
-import type { Db } from "../external/db";
+import { db$ } from "../external/db";
 import { decryptStoredSecretValue } from "./crypto.utils";
+import { commitRunnerSshPinAttempt$ } from "./runner-ssh-pin.service";
+import { commitRunnerSshObservationAttempt$ } from "./runner-ssh-observation.service";
 import { runThreadSshAccess } from "./run-thread-remote-access.service";
 
 type SshResolveInput = RunnerSshResolveRequest & {
@@ -28,153 +35,148 @@ type SshResolveInput = RunnerSshResolveRequest & {
 type SshPinInput = RunnerSshPinRequest & {
   readonly runId: string;
 };
+type SshObservationInput = RunnerSshObservationRequest & {
+  readonly runId: string;
+};
 const unavailable = Object.freeze({ outcome: "unavailable" as const });
 
-function currentConnectionQuery(
-  db: Pick<Db, "select">,
-  input: SshResolveInput,
-  lockAuthority: boolean,
-) {
-  const query = db
-    .select({
-      id: sshConnections.id,
-      orgId: agentRuns.orgId,
-      userId: agentRuns.userId,
-      host: sshConnections.host,
-      port: sshConnections.port,
-      username: sshCredentials.username,
-      authMethod: sshCredentials.authMethod,
-      encryptedPassword: sshCredentials.encryptedPassword,
-      generation: sshConnections.generation,
-      algorithm: sshConnections.learnedHostKeyAlgorithm,
-      fingerprint: sshConnections.learnedHostKeyFingerprint,
-      encryptedPrivateKey: sshCredentials.encryptedPrivateKey,
-      encryptedPassphrase: sshCredentials.encryptedPassphrase,
-      accessId: sshConnections.cloudflareAccessId,
-      needsRebind: sshConnections.needsRebind,
-      access: {
-        id: cloudflareAccessConfigs.id,
-        generation: cloudflareAccessConfigs.generation,
-        encryptedClientId: cloudflareAccessConfigs.encryptedClientId,
-        encryptedClientSecret: cloudflareAccessConfigs.encryptedClientSecret,
-      },
-    })
-    .from(agentRuns)
-    .innerJoin(
-      agentSessions,
-      and(
-        eq(agentSessions.id, agentRuns.sessionId),
-        eq(agentSessions.orgId, agentRuns.orgId),
-        eq(agentSessions.userId, agentRuns.userId),
-      ),
-    )
-    .innerJoin(
-      agents,
-      and(
-        eq(agents.id, agentSessions.agentId),
-        eq(agents.orgId, agentRuns.orgId),
-        or(eq(agents.visibility, "public"), eq(agents.owner, agentRuns.userId)),
-      ),
-    )
-    .innerJoin(
-      sshConnections,
-      and(
-        eq(sshConnections.id, input.connectionId),
-        eq(sshConnections.orgId, agentRuns.orgId),
-        eq(sshConnections.userId, agentRuns.userId),
-      ),
-    )
-    .innerJoin(
-      sshCredentials,
-      and(
-        eq(sshCredentials.id, sshConnections.credentialId),
-        eq(sshCredentials.orgId, agentRuns.orgId),
-        eq(sshCredentials.userId, agentRuns.userId),
-      ),
-    )
-    .leftJoin(
-      cloudflareAccessConfigs,
-      and(
-        eq(cloudflareAccessConfigs.id, sshConnections.cloudflareAccessId),
-        eq(cloudflareAccessConfigs.orgId, agentRuns.orgId),
-        or(
-          eq(cloudflareAccessConfigs.scope, "organization"),
-          and(
-            eq(cloudflareAccessConfigs.scope, "personal"),
-            eq(cloudflareAccessConfigs.userId, agentRuns.userId),
-          ),
-        ),
-      ),
-    )
-    .where(
-      and(
-        eq(agentRuns.id, input.runId),
-        eq(agentRuns.status, "running"),
-        eq(agentRuns.runnerId, input.runnerIdentity.runnerId),
-        eq(
-          agentRuns.runnerHeartbeatGeneration,
-          input.runnerIdentity.heartbeatGeneration,
-        ),
-        runThreadSshAccess(),
-      ),
-    );
-  return lockAuthority
-    ? query.for("share", {
-        of: [agentRuns, agentSessions, agents, sshCredentials],
-      })
-    : query;
+// Shared schema selections and predicates are pure data, never query executors.
+const connectionFields = Object.freeze({
+  id: sshConnections.id,
+  orgId: agentRuns.orgId,
+  userId: agentRuns.userId,
+  host: sshConnections.host,
+  port: sshConnections.port,
+  username: sshCredentials.username,
+  authMethod: sshCredentials.authMethod,
+  encryptedPassword: sshCredentials.encryptedPassword,
+  generation: sshConnections.generation,
+  algorithm: sshConnections.learnedHostKeyAlgorithm,
+  fingerprint: sshConnections.learnedHostKeyFingerprint,
+  encryptedPrivateKey: sshCredentials.encryptedPrivateKey,
+  encryptedPassphrase: sshCredentials.encryptedPassphrase,
+  transport: sshConnections.transport,
+  accessId: sshConnections.cloudflareAccessId,
+  tailscaleId: sshConnections.tailscaleId,
+  tailscale: {
+    id: tailscaleConfigs.id,
+    generation: tailscaleConfigs.generation,
+    tags: tailscaleConfigs.tags,
+    encryptedClientId: tailscaleConfigs.encryptedClientId,
+    encryptedClientSecret: tailscaleConfigs.encryptedClientSecret,
+  },
+  needsRebind: sshConnectionNeedsRebind,
+  access: {
+    id: cloudflareAccessConfigs.id,
+    generation: cloudflareAccessConfigs.generation,
+    encryptedClientId: cloudflareAccessConfigs.encryptedClientId,
+    encryptedClientSecret: cloudflareAccessConfigs.encryptedClientSecret,
+  },
+});
+const sessionAuthority = and(
+  eq(agentSessions.id, agentRuns.sessionId),
+  eq(agentSessions.orgId, agentRuns.orgId),
+  eq(agentSessions.userId, agentRuns.userId),
+);
+const agentAuthority = and(
+  eq(agents.id, agentSessions.agentId),
+  eq(agents.orgId, agentRuns.orgId),
+  or(eq(agents.visibility, "public"), eq(agents.owner, agentRuns.userId)),
+);
+const credentialAuthority = and(
+  eq(sshCredentials.id, sshConnections.credentialId),
+  eq(sshCredentials.orgId, agentRuns.orgId),
+  eq(sshCredentials.userId, agentRuns.userId),
+);
+const cloudflareAuthority = and(
+  eq(cloudflareAccessConfigs.id, sshConnections.cloudflareAccessId),
+  eq(cloudflareAccessConfigs.orgId, agentRuns.orgId),
+  or(
+    eq(cloudflareAccessConfigs.scope, "organization"),
+    and(
+      eq(cloudflareAccessConfigs.scope, "personal"),
+      eq(cloudflareAccessConfigs.userId, agentRuns.userId),
+    ),
+  ),
+);
+const tailscaleAuthority = and(
+  eq(tailscaleConfigs.id, sshConnections.tailscaleId),
+  eq(tailscaleConfigs.orgId, agentRuns.orgId),
+  or(
+    eq(tailscaleConfigs.scope, "organization"),
+    and(
+      eq(tailscaleConfigs.scope, "personal"),
+      eq(tailscaleConfigs.userId, agentRuns.userId),
+    ),
+  ),
+);
+function connectionAuthority(input: SshResolveInput) {
+  return and(
+    eq(sshConnections.id, input.connectionId),
+    eq(sshConnections.orgId, agentRuns.orgId),
+    eq(sshConnections.userId, agentRuns.userId),
+  );
+}
+function runAuthority(input: SshResolveInput) {
+  return and(
+    eq(agentRuns.id, input.runId),
+    eq(agentRuns.status, "running"),
+    eq(agentRuns.runnerId, input.runnerIdentity.runnerId),
+    eq(
+      agentRuns.runnerHeartbeatGeneration,
+      input.runnerIdentity.heartbeatGeneration,
+    ),
+    runThreadSshAccess(),
+  );
 }
 
-async function currentConnection(
-  db: Pick<Db, "select">,
-  input: SshResolveInput,
-  lockAuthority: boolean,
-  signal: AbortSignal,
+// Connect the request dependency once, before route commands execute. The
+// joined snapshot is the JIT handoff; KMS never runs under authority locks.
+export function createCurrentRunnerSshConnection(
+  input$: Computed<Promise<SshResolveInput | null>>,
 ) {
-  const [row] = await currentConnectionQuery(db, input, lockAuthority);
-  signal.throwIfAborted();
-  if (!row) {
-    return null;
-  }
-  if (row.needsRebind) {
-    return null;
-  }
-  if (row.accessId === null) {
-    return row;
-  }
-  // The FK makes a missing local config a broken invariant, not an external miss.
-  if (row.access === null) {
-    throw new Error("SSH Cloudflare Access is missing");
-  }
-  if (lockAuthority) {
-    // PostgreSQL cannot lock the nullable side of the outer join above. The
-    // caller holds the host; lock its non-null protected configuration here.
-    const [authority] = await db
-      .select({ id: cloudflareAccessConfigs.id })
-      .from(cloudflareAccessConfigs)
-      .where(
-        and(
-          eq(cloudflareAccessConfigs.id, row.accessId),
-          eq(cloudflareAccessConfigs.orgId, row.orgId),
-          or(
-            eq(cloudflareAccessConfigs.scope, "organization"),
-            and(
-              eq(cloudflareAccessConfigs.scope, "personal"),
-              eq(cloudflareAccessConfigs.userId, row.userId),
-            ),
-          ),
-          eq(cloudflareAccessConfigs.generation, row.access.generation),
-        ),
-      )
-      .for("share");
-    signal.throwIfAborted();
-    if (!authority) {
+  return computed(async (get) => {
+    const input = await get(input$);
+    if (!input) {
       return null;
     }
+    const [row] = await get(db$)
+      .select(connectionFields)
+      .from(agentRuns)
+      .innerJoin(agentSessions, sessionAuthority)
+      .innerJoin(agents, agentAuthority)
+      .innerJoin(sshConnections, connectionAuthority(input))
+      .innerJoin(sshCredentials, credentialAuthority)
+      .leftJoin(cloudflareAccessConfigs, cloudflareAuthority)
+      .leftJoin(tailscaleConfigs, tailscaleAuthority)
+      .where(runAuthority(input));
+    return row ?? null;
+  });
+}
+type Connection = NonNullable<
+  Awaited<
+    ReturnType<ReturnType<typeof createCurrentRunnerSshConnection>["read"]>
+  >
+>;
+
+function availableConnection(row: Connection | null | undefined) {
+  if (!row || row.needsRebind) {
+    return null;
+  }
+  if (
+    row.transport === "tailscale" &&
+    (row.tailscale === null || row.tailscaleId === null)
+  ) {
+    throw new Error("SSH Tailscale configuration is missing");
+  }
+  if (
+    row.transport === "cloudflare_access" &&
+    (row.access === null || row.accessId === null)
+  ) {
+    throw new Error("SSH Cloudflare Access is missing");
   }
   return row;
 }
-
 function learnedHostKey(row: {
   readonly algorithm: string | null;
   readonly fingerprint: string | null;
@@ -188,241 +190,208 @@ function learnedHostKey(row: {
   });
 }
 
-export async function resolveRunnerSsh(
-  db: Pick<Db, "select">,
-  input: SshResolveInput,
-  signal: AbortSignal,
-): Promise<RunnerSshResolveResponse> {
-  const row = await currentConnection(db, input, false, signal);
-  if (!row) {
-    return unavailable;
-  }
-  const hostKey = learnedHostKey(row);
-  // The joined snapshot is the authority handoff. Never hold DB locks across KMS.
-  const common = {
-    host: row.host,
-    port: row.port,
-    username: row.username,
-    generation: row.generation,
-    learnedHostKey: hostKey,
-  };
-  const access = row.accessId === null ? null : row.access;
-  const accessCredentials =
-    access === null
-      ? null
-      : {
-          configId: access.id,
-          generation: access.generation,
-          clientId: await decryptStoredSecretValue(access.encryptedClientId),
-          clientSecret: await decryptStoredSecretValue(
-            access.encryptedClientSecret,
-          ),
-        };
-  signal.throwIfAborted();
-  if (row.authMethod === "password") {
-    if (
-      row.encryptedPassword === null ||
-      row.encryptedPrivateKey !== null ||
-      row.encryptedPassphrase !== null
-    ) {
-      throw new Error("SSH password credential has an invalid stored shape");
-    }
-    const password = await decryptStoredSecretValue(row.encryptedPassword);
+// Decryption follows the request's cancellation, so this semantic handoff stays
+// in a command. Its only input is the captured joined record, never a DB handle.
+export const resolveRunnerSsh$ = command(
+  async (
+    _,
+    selected: Connection | null,
+    signal: AbortSignal,
+  ): Promise<RunnerSshResolveResponse> => {
     signal.throwIfAborted();
+    const row = availableConnection(selected);
+    if (!row) {
+      return unavailable;
+    }
+    const hostKey = learnedHostKey(row);
+    const common = {
+      host: row.host,
+      port: row.port,
+      username: row.username,
+      generation: row.generation,
+      learnedHostKey: hostKey,
+    };
+    const network = row.transport === "tailscale" ? row.tailscale : null;
+    const tailscaleCredentials =
+      network === null
+        ? null
+        : {
+            configId: network.id,
+            generation: network.generation,
+            tags: network.tags,
+            clientId: await decryptStoredSecretValue(network.encryptedClientId),
+            clientSecret: await decryptStoredSecretValue(
+              network.encryptedClientSecret,
+            ),
+          };
+    signal.throwIfAborted();
+    const access = row.transport === "cloudflare_access" ? row.access : null;
+    const accessCredentials =
+      access === null
+        ? null
+        : {
+            configId: access.id,
+            generation: access.generation,
+            clientId: await decryptStoredSecretValue(access.encryptedClientId),
+            clientSecret: await decryptStoredSecretValue(
+              access.encryptedClientSecret,
+            ),
+          };
+    signal.throwIfAborted();
+    if (row.authMethod === "password") {
+      if (
+        row.encryptedPassword === null ||
+        row.encryptedPrivateKey !== null ||
+        row.encryptedPassphrase !== null
+      ) {
+        throw new Error("SSH password credential has an invalid stored shape");
+      }
+      const password = await decryptStoredSecretValue(row.encryptedPassword);
+      signal.throwIfAborted();
+      if (tailscaleCredentials) {
+        return runnerSshTailscaleResolvedSchema.parse({
+          outcome: "resolved_tailscale",
+          ...common,
+          tailscale: tailscaleCredentials,
+          authentication: { method: "password", password },
+        });
+      }
+      if (accessCredentials) {
+        return runnerSshAccessResolvedSchema.parse({
+          outcome: "resolved_access",
+          ...common,
+          authentication: { method: "password", password },
+          access: accessCredentials,
+        });
+      }
+      return { outcome: "resolved_password", ...common, password };
+    }
+    if (row.encryptedPrivateKey === null || row.encryptedPassword !== null) {
+      throw new Error("SSH private-key credential has an invalid stored shape");
+    }
+    const privateKey = await decryptStoredSecretValue(row.encryptedPrivateKey);
+    signal.throwIfAborted();
+    const passphrase =
+      row.encryptedPassphrase === null
+        ? null
+        : await decryptStoredSecretValue(row.encryptedPassphrase);
+    signal.throwIfAborted();
+    if (tailscaleCredentials) {
+      return runnerSshTailscaleResolvedSchema.parse({
+        outcome: "resolved_tailscale",
+        ...common,
+        tailscale: tailscaleCredentials,
+        authentication: { method: "private_key", privateKey, passphrase },
+      });
+    }
     if (accessCredentials) {
       return runnerSshAccessResolvedSchema.parse({
         outcome: "resolved_access",
         ...common,
-        authentication: { method: "password", password },
+        authentication: { method: "private_key", privateKey, passphrase },
         access: accessCredentials,
       });
     }
-    return { outcome: "resolved_password", ...common, password };
-  }
-  if (row.encryptedPrivateKey === null || row.encryptedPassword !== null) {
-    throw new Error("SSH private-key credential has an invalid stored shape");
-  }
-  const privateKey = await decryptStoredSecretValue(row.encryptedPrivateKey);
-  signal.throwIfAborted();
-  const passphrase =
-    row.encryptedPassphrase === null
-      ? null
-      : await decryptStoredSecretValue(row.encryptedPassphrase);
-  signal.throwIfAborted();
-  if (accessCredentials) {
-    return runnerSshAccessResolvedSchema.parse({
-      outcome: "resolved_access",
-      ...common,
-      authentication: { method: "private_key", privateKey, passphrase },
-      access: accessCredentials,
-    });
-  }
-  return { outcome: "resolved", ...common, privateKey, passphrase };
-}
-
-export async function pinRunnerSsh(
-  db: Db,
-  input: SshPinInput,
-  signal: AbortSignal,
-): Promise<RunnerSshPinResponse> {
-  const initial = await currentConnection(db, input, false, signal);
-  if (!initial) {
-    return unavailable;
-  }
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0238; new non-billing transactions are prohibited.
-  const result = await db.transaction<RunnerSshPinResponse>(async (tx) => {
-    // Same row as owner edit/reset, scoped only after non-locking authorization.
-    const [locked] = await tx
-      .select({ id: sshConnections.id })
-      .from(sshConnections)
-      .where(
-        and(
-          eq(sshConnections.id, initial.id),
-          eq(sshConnections.orgId, initial.orgId),
-          eq(sshConnections.userId, initial.userId),
-        ),
-      )
-      .for("update");
-    signal.throwIfAborted();
-    if (!locked) {
-      return unavailable;
-    }
-    const row = await currentConnection(tx, input, true, signal);
-    if (!row) {
-      return unavailable;
-    }
-    const existing = learnedHostKey(row);
-    if (existing) {
-      if (
-        existing.algorithm !== input.observedHostKey.algorithm ||
-        existing.fingerprint !== input.observedHostKey.fingerprint
-      ) {
-        return { outcome: "host_key_mismatch" };
-      }
-      return row.generation === input.expectedGeneration + 1
-        ? { outcome: "matched", generation: row.generation }
-        : { outcome: "configuration_changed" };
-    }
-    if (
-      row.generation !== input.expectedGeneration ||
-      row.generation === 2_147_483_647
-    ) {
-      return { outcome: "configuration_changed" };
-    }
-    await tx
-      .update(sshConnections)
-      .set({
-        learnedHostKeyAlgorithm: input.observedHostKey.algorithm,
-        learnedHostKeyFingerprint: input.observedHostKey.fingerprint,
-        generation: sql`${sshConnections.generation} + 1`,
-        updatedAt: nowDate(),
-      })
-      .where(eq(sshConnections.id, row.id));
-    signal.throwIfAborted();
-    return { outcome: "pinned", generation: row.generation + 1 };
-  });
-  if (result.outcome === "pinned") {
-    await publishSshClientInvalidation({
-      orgId: initial.orgId,
-      userId: initial.userId,
-    });
-  }
-  signal.throwIfAborted();
-  return result;
-}
-
-export async function recordRunnerSshObservation(
-  db: Db,
-  input: RunnerSshObservationRequest & {
-    readonly runId: string;
+    return { outcome: "resolved", ...common, privateKey, passphrase };
   },
-  signal: AbortSignal,
-): Promise<{ readonly outcome: "recorded" | "ignored" | "unavailable" }> {
-  const initial = await currentConnection(db, input, false, signal);
-  if (!initial) {
-    return unavailable;
-  }
+);
+
+export const pinRunnerSsh$ = command(
+  async (
+    { set },
+    args: { readonly input: SshPinInput; readonly initial: Connection | null },
+    signal: AbortSignal,
+  ): Promise<RunnerSshPinResponse> => {
+    signal.throwIfAborted();
+    const initial = availableConnection(args.initial);
+    if (!initial) {
+      return unavailable;
+    }
+    let attempt = await set(
+      commitRunnerSshPinAttempt$,
+      args.input,
+      initial,
+      signal,
+    );
+    if (attempt.retry) {
+      // Drift gated off every effect. Only this known-unwritten case gets one
+      // fresh statement; exceptions and uncertain effects are never replayed.
+      attempt = await set(
+        commitRunnerSshPinAttempt$,
+        args.input,
+        initial,
+        signal,
+      );
+    }
+    signal.throwIfAborted();
+    if (attempt.result.outcome === "pinned") {
+      await publishSshClientInvalidation({
+        orgId: initial.orgId,
+        userId: initial.userId,
+      });
+    }
+    signal.throwIfAborted();
+    return attempt.result;
+  },
+);
+
+function observationTime(initial: Connection, input: SshObservationInput) {
   if (
     initial.accessId === null &&
     input.failureReason !== null &&
     input.failureReason.startsWith("access_")
   ) {
-    return { outcome: "ignored" };
+    return null;
   }
   const observedAt = new Date(input.observedAt);
-  // Fleet clocks need not be exact, but cannot poison future observation ordering.
-  if (observedAt.getTime() > nowDate().getTime() + 60_000) {
-    return { outcome: "ignored" };
-  }
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0239; new non-billing transactions are prohibited.
-  const result = await db.transaction<{
-    readonly outcome: "recorded" | "ignored" | "unavailable";
-    readonly notify: boolean;
-  }>(async (tx) => {
-    const [locked] = await tx
-      .select({ id: sshConnections.id })
-      .from(sshConnections)
-      .where(
-        and(
-          eq(sshConnections.id, initial.id),
-          eq(sshConnections.orgId, initial.orgId),
-          eq(sshConnections.userId, initial.userId),
-        ),
-      )
-      .for("update");
-    signal.throwIfAborted();
-    if (!locked) {
-      return { ...unavailable, notify: false };
-    }
-    const row = await currentConnection(tx, input, true, signal);
-    if (!row) {
-      return { ...unavailable, notify: false };
-    }
-    if (row.generation !== input.expectedGeneration) {
-      return { outcome: "ignored", notify: false };
-    }
-    const [previous] = await tx
-      .select({ failureReason: sshConnectionObservations.failureReason })
-      .from(sshConnectionObservations)
-      .where(
-        and(
-          eq(sshConnectionObservations.connectionId, row.id),
-          eq(sshConnectionObservations.generation, row.generation),
-        ),
-      );
-    const values = {
-      connectionId: row.id,
-      generation: row.generation,
-      observedAt,
-      failureReason: input.failureReason,
-    };
-    const [written] = await tx
-      .insert(sshConnectionObservations)
-      .values(values)
-      .onConflictDoUpdate({
-        target: sshConnectionObservations.connectionId,
-        set: values,
-        setWhere: or(
-          ne(sshConnectionObservations.generation, row.generation),
-          lt(sshConnectionObservations.observedAt, observedAt),
-        ),
-      })
-      .returning({ connectionId: sshConnectionObservations.connectionId });
-    signal.throwIfAborted();
-    return {
-      outcome: written ? "recorded" : "ignored",
-      notify:
-        Boolean(written) &&
-        (input.failureReason !== null ||
-          (previous !== undefined && previous.failureReason !== null)),
-    };
-  });
-  if (result.notify) {
-    await publishSshClientInvalidation({
-      orgId: initial.orgId,
-      userId: initial.userId,
-    });
-  }
-  signal.throwIfAborted();
-  return { outcome: result.outcome };
+  // Fleet clocks must not poison future observation ordering.
+  return observedAt.getTime() > nowDate().getTime() + 60_000
+    ? null
+    : observedAt;
 }
+
+export const recordRunnerSshObservation$ = command(
+  async (
+    { set },
+    args: {
+      readonly input: SshObservationInput;
+      readonly initial: Connection | null;
+    },
+    signal: AbortSignal,
+  ): Promise<{ readonly outcome: "recorded" | "ignored" | "unavailable" }> => {
+    signal.throwIfAborted();
+    const initial = availableConnection(args.initial);
+    if (!initial) {
+      return unavailable;
+    }
+    const observedAt = observationTime(initial, args.input);
+    if (!observedAt) {
+      return { outcome: "ignored" };
+    }
+    let result = await set(
+      commitRunnerSshObservationAttempt$,
+      args.input,
+      initial,
+      observedAt,
+      signal,
+    );
+    if (result.retry) {
+      result = await set(
+        commitRunnerSshObservationAttempt$,
+        args.input,
+        initial,
+        observedAt,
+        signal,
+      );
+    }
+    signal.throwIfAborted();
+    if (result.notify) {
+      await publishSshClientInvalidation({
+        orgId: initial.orgId,
+        userId: initial.userId,
+      });
+    }
+    signal.throwIfAborted();
+    return { outcome: result.outcome };
+  },
+);

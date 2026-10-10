@@ -46,18 +46,27 @@ export function WorkspaceCanvasBackdrop({
 export function WorkspaceInset({
   beside = "chat-list",
   children,
+  framed = true,
+  className,
 }: {
   readonly beside?: "chat-list" | "nav-rail" | "nothing";
   readonly children: ReactNode;
+  /** A shell-owned sidebar supplies the shared frame outside this boundary. */
+  readonly framed?: boolean;
+  readonly className?: string;
 }) {
   const fixedLayout =
     useGet(featureSwitch$)[FeatureSwitchKey.ChatComposerLayout];
 
   return (
     <div
-      className={`relative z-0 before:absolute before:inset-0 before:-z-1 before:bg-workspace-canvas before:bg-workspace-canvas-image before:bg-[length:100%_100%] before:content-[''] flex min-h-0 min-w-0 flex-1 flex-col bg-background md:m-2 md:rounded-xl md:border md:border-border [anchor-name:--workspace-canvas] ${
-        fixedLayout ? "md:overflow-clip" : "md:overflow-hidden"
-      } ${beside === "chat-list" ? "md:ml-0" : ""}`}
+      className={`relative z-0 flex min-h-0 min-w-0 flex-1 flex-col ${
+        framed
+          ? "before:absolute before:inset-0 before:-z-1 before:bg-workspace-canvas before:bg-workspace-canvas-image before:bg-[length:100%_100%] before:content-[''] bg-background md:m-2 md:rounded-xl md:border md:border-border [anchor-name:--workspace-canvas]"
+          : "bg-transparent"
+      } ${fixedLayout ? "md:overflow-clip" : "md:overflow-hidden"} ${
+        framed && beside === "chat-list" ? "md:ml-0" : ""
+      } ${className ?? ""}`}
       data-testid="workspace-inset"
       // The chrome the sheet is framed against, so the rendered layout case is
       // readable as data rather than inferred from the margin utility.

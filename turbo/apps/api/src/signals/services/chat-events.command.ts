@@ -2009,7 +2009,7 @@ const recallRejected = Object.freeze({
   message: "Only queued user messages can be recalled",
 } satisfies Extract<AppendEventResult, { readonly ok: false }>);
 
-const appendRecallChatEvent$ = command(
+export const appendRecallChatEvent$ = command(
   async (
     { set },
     params: {
@@ -2188,7 +2188,7 @@ const validateNormalRevocationTarget$ = command(
     return undefined;
   },
 );
-const appendInterruptUserMessage$ = command(
+export const appendInterruptUserMessage$ = command(
   async (
     { set },
     params: {

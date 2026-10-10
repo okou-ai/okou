@@ -907,20 +907,6 @@
     }
   },
   "auth": {
-    "desktop": {
-      "phases": {
-        "completed": "Anda sudah masuk ke Desktop. Anda dapat menutup jendela ini.",
-        "connecting": "Menghubungkan sesi desktop Anda.",
-        "consumed": "Menyelesaikan proses masuk di Desktop. Biarkan jendela ini terbuka.",
-        "failed": "Proses masuk tidak dapat diselesaikan. Mulai lagi dari Desktop atau coba lagi di browser ini.",
-        "no-workspaces": "Buat atau bergabung dengan ruang kerja di aplikasi web, lalu masuk lagi dari Desktop.",
-        "pending": "Buka Desktop untuk melanjutkan masuk.",
-        "selecting": "Pilih ruang kerja untuk komputer ini."
-      },
-      "reopen": "Buka Desktop",
-      "retry": "Coba lagi",
-      "title": "Masuk ke Desktop"
-    },
     "documentTitles": {
       "signIn": "Masuk",
       "signUp": "Daftar"

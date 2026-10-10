@@ -481,98 +481,55 @@ async function markClaimAwaiting(
   return Boolean(session);
 }
 
-async function expireSession(
-  args: {
-    readonly writeDb: Db;
-    readonly session: BuiltinConnectorDeviceAuthSessionRow;
-    readonly now: Date;
-  },
-  signal: AbortSignal,
-): Promise<PollSuccess> {
-  const [expiredSession] = await args.writeDb
-    .update(builtinConnectorOauthDeviceAuthorizationSessions)
-    .set({
-      status: "expired",
-      errorCode: "expired_token",
-      errorMessage: "OAuth device authorization session expired",
-      updatedAt: args.now,
-      completedAt: args.now,
-    })
-    .where(
-      and(
-        eq(
-          builtinConnectorOauthDeviceAuthorizationSessions.id,
-          args.session.id,
-        ),
-        or(
+const expireDeviceAuthSession$ = command(
+  async (
+    { set },
+    args: {
+      readonly session: BuiltinConnectorDeviceAuthSessionRow;
+      readonly now: Date;
+    },
+    signal: AbortSignal,
+  ): Promise<PollSuccess> => {
+    const writeDb = set(writeDb$);
+    const [expiredSession] = await writeDb
+      .update(builtinConnectorOauthDeviceAuthorizationSessions)
+      .set({
+        status: "expired",
+        errorCode: "expired_token",
+        errorMessage: "OAuth device authorization session expired",
+        updatedAt: args.now,
+        completedAt: args.now,
+      })
+      .where(
+        and(
           eq(
-            builtinConnectorOauthDeviceAuthorizationSessions.status,
-            "awaiting_user_authorization",
+            builtinConnectorOauthDeviceAuthorizationSessions.id,
+            args.session.id,
           ),
-          eq(
-            builtinConnectorOauthDeviceAuthorizationSessions.status,
-            "polling",
-          ),
-        ),
-      ),
-    )
-    .returning(deviceAuthSessionSelection);
-  signal.throwIfAborted();
-
-  if (!expiredSession) {
-    return await claimNoLongerCurrentResponse(
-      {
-        writeDb: args.writeDb,
-        session: args.session,
-      },
-      signal,
-    );
-  }
-  return { status: 200, body: terminalErrorBody(expiredSession) };
-}
-
-async function claimSession(
-  args: {
-    readonly writeDb: Db;
-    readonly session: BuiltinConnectorDeviceAuthSessionRow;
-    readonly claimStartedAt: Date;
-  },
-  signal: AbortSignal,
-): Promise<BuiltinConnectorDeviceAuthSessionRow | null> {
-  const staleBefore = new Date(
-    args.claimStartedAt.getTime() - POLLING_STALE_MS,
-  );
-  const [claimedSession] = await args.writeDb
-    .update(builtinConnectorOauthDeviceAuthorizationSessions)
-    .set({ status: "polling", updatedAt: args.claimStartedAt })
-    .where(
-      and(
-        eq(
-          builtinConnectorOauthDeviceAuthorizationSessions.id,
-          args.session.id,
-        ),
-        or(
-          eq(
-            builtinConnectorOauthDeviceAuthorizationSessions.status,
-            "awaiting_user_authorization",
-          ),
-          and(
+          or(
+            eq(
+              builtinConnectorOauthDeviceAuthorizationSessions.status,
+              "awaiting_user_authorization",
+            ),
             eq(
               builtinConnectorOauthDeviceAuthorizationSessions.status,
               "polling",
             ),
-            lt(
-              builtinConnectorOauthDeviceAuthorizationSessions.updatedAt,
-              staleBefore,
-            ),
           ),
         ),
-      ),
-    )
-    .returning(deviceAuthSessionSelection);
-  signal.throwIfAborted();
-  return claimedSession ?? null;
-}
+      )
+      .returning(deviceAuthSessionSelection);
+    signal.throwIfAborted();
+
+    if (!expiredSession) {
+      return await claimNoLongerCurrentResponse(
+        { writeDb, session: args.session },
+        signal,
+      );
+    }
+    return { status: 200, body: terminalErrorBody(expiredSession) };
+  },
+);
 
 async function parseEncryptedProviderState(args: {
   readonly session: BuiltinConnectorDeviceAuthSessionRow;
@@ -1341,18 +1298,37 @@ export const pollBuiltinConnectorOauthDeviceAuthSession$ = command(
     }
 
     if (now > session.expiresAt) {
-      return await expireSession({ writeDb, session, now }, signal);
+      return await set(expireDeviceAuthSession$, { session, now }, signal);
     }
 
     const claimStartedAt = nowDate();
-    const claimedSession = await claimSession(
-      {
-        writeDb,
-        session,
-        claimStartedAt,
-      },
-      signal,
-    );
+    const staleBefore = new Date(claimStartedAt.getTime() - POLLING_STALE_MS);
+    const [claimedSession] = await writeDb
+      .update(builtinConnectorOauthDeviceAuthorizationSessions)
+      .set({ status: "polling", updatedAt: claimStartedAt })
+      .where(
+        and(
+          eq(builtinConnectorOauthDeviceAuthorizationSessions.id, session.id),
+          or(
+            eq(
+              builtinConnectorOauthDeviceAuthorizationSessions.status,
+              "awaiting_user_authorization",
+            ),
+            and(
+              eq(
+                builtinConnectorOauthDeviceAuthorizationSessions.status,
+                "polling",
+              ),
+              lt(
+                builtinConnectorOauthDeviceAuthorizationSessions.updatedAt,
+                staleBefore,
+              ),
+            ),
+          ),
+        ),
+      )
+      .returning(deviceAuthSessionSelection);
+    signal.throwIfAborted();
     if (!claimedSession) {
       return await claimNoLongerCurrentResponse({ writeDb, session }, signal);
     }

@@ -45,14 +45,19 @@ export const artifactOgContract = c.router({
       artifactOgTargetSchema,
       z.object({ version: z.string().max(200) }),
     ),
-    responses: { 200: imageResponse, 400: apiErrorSchema, 500: apiErrorSchema },
+    responses: {
+      200: imageResponse,
+      302: c.noBody(),
+      400: apiErrorSchema,
+      500: apiErrorSchema,
+    },
     summary:
       "Read a version-bound cover only while anonymous publication remains authorized",
   },
   defaultImage: {
     method: "GET",
     path: "/api/artifact-og/default.png",
-    responses: { 200: imageResponse },
-    summary: "Read the neutral artifact sharing cover",
+    responses: { 302: c.noBody() },
+    summary: "Redirect to the Okou brand sharing cover",
   },
 });

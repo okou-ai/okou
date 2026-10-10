@@ -8,6 +8,7 @@ import {
   CLIENT_TYPE_CLI,
   CLIENT_TYPE_DESKTOP,
   CLIENT_TYPE_HEADER,
+  CLIENT_TYPE_IOS,
   CLIENT_VERSION_HEADER,
 } from "@okouai/api-contracts/contracts/client-headers";
 import { AUTH_FAILURE_DIAGNOSTICS_EXPIRES_AT } from "@okouai/core/temporary-auth-diagnostics";
@@ -19,6 +20,7 @@ import { vi } from "vitest";
 import { createApp } from "../app-factory";
 import { createAppWithRoutes } from "../app-factory-core";
 import { mockEnv } from "../lib/env";
+import { iosMinimumSupportedVersion } from "../lib/ios-client-compatibility";
 import { mockNow } from "../lib/time";
 import webClientCompatibility from "../lib/web-client-compatibility.json";
 import { flushWaitUntilForTest } from "../signals/context/wait-until";
@@ -27,7 +29,7 @@ import { downloadS3Buffer } from "../signals/external/s3";
 import { healthRoutes } from "../signals/routes/health";
 import { chatThreadRoutes } from "../signals/routes/chat-threads";
 import { mailRoutes } from "../signals/routes/mail";
-import { accept, testContext } from "./test-context";
+import { accept, iosClientCompatibility, testContext } from "./test-context";
 import { setupApp } from "./test-helpers";
 const TEST_APP_ROUTES = Object.freeze([...healthRoutes, ...mailRoutes]);
 
@@ -1378,6 +1380,158 @@ describe("createApp", () => {
 
       expect(response.status).toBe(200);
     });
+  });
+
+  describe("iOS client compatibility", () => {
+    const IOS_MINIMUM_VERSION = "0.8.0";
+
+    it.each([
+      { method: "GET", path: "/health" },
+      { method: "POST", path: "/api/chat-threads" },
+    ])(
+      "force-upgrades iOS builds below the floor before $method $path route matching",
+      async ({ method, path }) => {
+        iosClientCompatibility.minimumSupportedVersion = IOS_MINIMUM_VERSION;
+        const app = createApp({
+          signal: context.signal,
+          routes: TEST_APP_ROUTES,
+        });
+        const response = await app.request(path, {
+          method,
+          headers: {
+            [CLIENT_TYPE_HEADER]: CLIENT_TYPE_IOS,
+            [CLIENT_VERSION_HEADER]: "0.7.4",
+          },
+        });
+
+        expect(response.status).toBe(CLIENT_FORCE_UPGRADE_STATUS);
+        await expect(response.json()).resolves.toStrictEqual({
+          error: {
+            code: "IOS_UPDATE_REQUIRED",
+            message: "Update Okou in TestFlight to continue.",
+          },
+          minimumSupportedVersion: IOS_MINIMUM_VERSION,
+        });
+        expect(response.headers.get("cache-control")).toBe("no-store");
+      },
+    );
+
+    it.each([IOS_MINIMUM_VERSION, "0.8.1", "1.0.0"])(
+      "allows iOS %s at or above the floor",
+      async (version) => {
+        iosClientCompatibility.minimumSupportedVersion = IOS_MINIMUM_VERSION;
+        const app = createApp({
+          signal: context.signal,
+          routes: TEST_APP_ROUTES,
+        });
+        const response = await app.request("/health", {
+          headers: {
+            [CLIENT_TYPE_HEADER]: CLIENT_TYPE_IOS,
+            [CLIENT_VERSION_HEADER]: version,
+          },
+        });
+
+        expect(response.status).toBe(200);
+      },
+    );
+
+    it("allows every iOS version while the floor is null", async () => {
+      iosClientCompatibility.minimumSupportedVersion = null;
+      const app = createApp({
+        signal: context.signal,
+        routes: TEST_APP_ROUTES,
+      });
+      const response = await app.request("/health", {
+        headers: {
+          [CLIENT_TYPE_HEADER]: CLIENT_TYPE_IOS,
+          [CLIENT_VERSION_HEADER]: "0.0.1",
+        },
+      });
+
+      expect(response.status).toBe(200);
+    });
+
+    it.each([undefined, "development", "0.7"])(
+      "preserves iOS requests without a parseable version (%s)",
+      async (version) => {
+        iosClientCompatibility.minimumSupportedVersion = IOS_MINIMUM_VERSION;
+        const app = createApp({
+          signal: context.signal,
+          routes: TEST_APP_ROUTES,
+        });
+        const headers = new Headers({ [CLIENT_TYPE_HEADER]: CLIENT_TYPE_IOS });
+        if (version !== undefined) {
+          headers.set(CLIENT_VERSION_HEADER, version);
+        }
+        const response = await app.request("/health", { headers });
+
+        expect(response.status).toBe(200);
+      },
+    );
+
+    it.each(["ios", "IOS"])(
+      "gates only the exact iOS client type, not %s",
+      async (clientType) => {
+        iosClientCompatibility.minimumSupportedVersion = IOS_MINIMUM_VERSION;
+        const app = createApp({
+          signal: context.signal,
+          routes: TEST_APP_ROUTES,
+        });
+        const response = await app.request("/health", {
+          headers: {
+            [CLIENT_TYPE_HEADER]: clientType,
+            [CLIENT_VERSION_HEADER]: "0.7.4",
+          },
+        });
+
+        expect(response.status).toBe(200);
+      },
+    );
+
+    it.each([CLIENT_TYPE_APP, CLIENT_TYPE_DESKTOP])(
+      "does not apply the iOS floor to %s clients",
+      async (clientType) => {
+        iosClientCompatibility.minimumSupportedVersion = "99.0.0";
+        const app = createApp({
+          signal: context.signal,
+          routes: TEST_APP_ROUTES,
+        });
+        const response = await app.request("/health", {
+          headers: {
+            [CLIENT_TYPE_HEADER]: clientType,
+            [CLIENT_VERSION_HEADER]: NEWER_WEB_CLIENT_VERSION,
+          },
+        });
+
+        expect(response.status).toBe(200);
+      },
+    );
+
+    it("preserves requests without a client type", async () => {
+      iosClientCompatibility.minimumSupportedVersion = IOS_MINIMUM_VERSION;
+      const app = createApp({
+        signal: context.signal,
+        routes: TEST_APP_ROUTES,
+      });
+      const response = await app.request("/health", {
+        headers: {
+          [CLIENT_VERSION_HEADER]: "0.7.4",
+        },
+      });
+
+      expect(response.status).toBe(200);
+    });
+
+    it.each(["0.8", "0.8.0-rc.1", "0.8.0+build.1"])(
+      "rejects %s as an iOS floor",
+      (floor) => {
+        iosClientCompatibility.minimumSupportedVersion = floor;
+
+        expect(() => {
+          return iosMinimumSupportedVersion();
+        }).toThrow("The iOS floor must be a stable x.y.z version");
+      },
+    );
   });
 
   describe("temporary authentication log wiring", () => {
