@@ -91,21 +91,19 @@ export const issueRunnerWssTicket$ = command(
       }
 
       // Tickets authorize only redemption; expired rows carry no live authority.
-      await tx
-        .delete(runnerWssTickets)
-        .where(
-          inArray(
-            runnerWssTickets.digest,
-            tx
-              .select({ digest: runnerWssTickets.digest })
-              .from(runnerWssTickets)
-              .where(lte(runnerWssTickets.createdAt, oldestRedeemableCreatedAt))
-              .orderBy(runnerWssTickets.createdAt)
-              .limit(100)
-              // Never wait on another issuer's ticket row while holding this Run.
-              .for("update", { skipLocked: true }),
-          ),
-        );
+      await tx.delete(runnerWssTickets).where(
+        inArray(
+          runnerWssTickets.digest,
+          tx
+            .select({ digest: runnerWssTickets.digest })
+            .from(runnerWssTickets)
+            .where(lte(runnerWssTickets.createdAt, oldestRedeemableCreatedAt))
+            .orderBy(runnerWssTickets.createdAt)
+            .limit(100)
+            // Never wait on another issuer's ticket row while holding this Run.
+            .for("update", { skipLocked: true }),
+        ),
+      );
 
       const [issued] = await tx
         .insert(runnerWssTickets)
