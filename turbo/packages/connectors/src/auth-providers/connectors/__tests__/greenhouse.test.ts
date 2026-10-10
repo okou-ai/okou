@@ -17,7 +17,7 @@ const INPUTS = {
   clientSecret: "synthetic-client-secret",
   userId: "123",
 };
-const METHOD_ID = "oauth-client-credentials";
+const METHOD_ID = "oauth";
 const METHOD = {
   storage: {
     version: 1,

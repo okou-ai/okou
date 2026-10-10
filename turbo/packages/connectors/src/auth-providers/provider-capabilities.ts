@@ -923,7 +923,7 @@ export const CONNECTOR_AUTH_PROVIDER_METHOD_REGISTRATIONS = [
   },
   {
     connectorSlug: "greenhouse",
-    authMethodId: "oauth-client-credentials",
+    authMethodId: "oauth",
     contract: {
       client: {
         kind: "none",

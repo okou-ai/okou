@@ -18,8 +18,5 @@ export const greenhouseProvider = {
         expiresIn: token.expiresIn,
       };
     },
-  } satisfies RefreshTokenAccessProvider<
-    "greenhouse",
-    "oauth-client-credentials"
-  >,
+  } satisfies RefreshTokenAccessProvider<"greenhouse", "oauth">,
 };

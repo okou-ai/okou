@@ -1034,11 +1034,7 @@ const CONNECTOR_AUTH_METHOD_PROVIDER_ENTRIES = [
     googleSearchConsoleProvider,
   ),
   authCodeRefreshProviderEntry("google-sheets", "oauth", googleSheetsProvider),
-  refreshProviderEntry(
-    "greenhouse",
-    "oauth-client-credentials",
-    greenhouseProvider,
-  ),
+  refreshProviderEntry("greenhouse", "oauth", greenhouseProvider),
   authCodeRefreshProviderEntry("gumroad", "oauth", gumroadProvider),
   authCodeRefreshProviderEntry("hubspot", "oauth", hubspotProvider),
   refreshProviderEntry("lark", "api-token", larkProvider),
