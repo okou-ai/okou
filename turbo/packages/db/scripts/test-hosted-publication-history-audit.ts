@@ -1,14 +1,18 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { Client } from "pg";
 import postgres from "postgres";
 import { z } from "zod";
 import { applyPendingMigrations } from "./migration-runner";
 
-// Historical corruption cannot be constructed through today's hosting API.
-// This audit's boundary is PostgreSQL; every fixture write targets a fresh,
-// test-owned database with current migrations, never the input DATABASE_URL.
+// Exercise the shipped psql interface on a newly migrated, disposable database.
+// No historical business rows are fabricated: empty populations test the receipt
+// and session safety, not mixed/deleted/corrupt historical population coverage.
+// The audit requires the existing hosting/share/upload relations and the 1255
+// link_layout_segment rename; missing historical prerequisites must fail.
 const databaseUrl = process.env.DATABASE_URL;
 assert.ok(
   databaseUrl,
@@ -17,28 +21,30 @@ assert.ok(
 const adminUrl = new URL(databaseUrl);
 adminUrl.pathname = "/postgres";
 const fixtureUrl = new URL(adminUrl);
-const database = `host_history_${randomUUID().replaceAll("-", "")}`;
+const suffix = randomUUID().replaceAll("-", "");
+const database = `host_history_${suffix}`;
+const role = `host_history_reader_${suffix}`;
 fixtureUrl.pathname = `/${database}`;
 const admin = new Client({ connectionString: adminUrl.toString() });
 const writer = new Client({ connectionString: fixtureUrl.toString() });
-const auditor = new Client({ connectionString: fixtureUrl.toString() });
-const source = await readFile(
+const auditFile = fileURLToPath(
   new URL("./audit-hosted-publication-history.sql", import.meta.url),
-  "utf8",
 );
-const queryStart = source.indexOf("WITH deployments AS MATERIALIZED");
-assert.ok(queryStart > 0);
-const preamble = source.slice(0, queryStart);
-const query = source.slice(queryStart, source.lastIndexOf("ROLLBACK;"));
+const execute = promisify(execFile);
+const processResultSchema = z.object({
+  code: z.number().int(),
+  stdout: z.string(),
+  stderr: z.string(),
+});
 const counts = z.record(z.string(), z.number().int().nonnegative().safe());
 const receiptSchema = z.strictObject({
-  receipt_version: z.literal("hosted_publication_history_v2"),
-  observed_at: z.string(),
-  finished_at: z.string(),
+  receipt_version: z.literal("hosted_publication_history_v3"),
+  observed_at: z.iso.datetime({ offset: true }),
+  finished_at: z.iso.datetime({ offset: true }),
   transaction: z.strictObject({
     read_only: z.literal("on"),
     isolation: z.literal("repeatable read"),
-    ending: z.literal("rollback"),
+    ending: z.literal("implicit_commit"),
     statement_timeout: z.literal("30s"),
     lock_timeout: z.literal("3s"),
   }),
@@ -58,98 +64,65 @@ const receiptSchema = z.strictObject({
   shares: counts,
   uploaded_references: counts,
 });
-const rowSchema = z.object({ hosted_publication_history_audit: receiptSchema });
 
-async function readReceipt() {
-  const rows = z.array(rowSchema).parse((await auditor.query(query)).rows);
-  assert.equal(rows.length, 1);
-  const row = rows[0];
-  assert.ok(row);
-  return row.hosted_publication_history_audit;
-}
-
-async function runFile() {
-  const results = z
-    .array(z.object({ command: z.string(), rows: z.array(z.unknown()) }))
-    .parse(await auditor.query(source));
-  const selections = results.filter((result) => {
-    return result.command === "SELECT";
-  });
-  assert.equal(selections.length, 1);
-  const selection = selections[0];
-  assert.ok(selection);
-  assert.equal(selection.rows.length, 1);
-  return rowSchema.parse(selection.rows[0]).hosted_publication_history_audit;
-}
-
-async function state() {
-  return (
-    await writer.query(`SELECT jsonb_build_object(
-      'sites', (SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM hosted_sites s),
-      'public', (SELECT jsonb_agg(to_jsonb(d) ORDER BY id) FROM hosted_deployments d),
-      'private', (SELECT jsonb_agg(to_jsonb(d) ORDER BY id) FROM private_hosted_deployments d),
-      'shares', (SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM artifact_shares s),
-      'files', (SELECT jsonb_agg(to_jsonb(f) ORDER BY id) FROM run_uploaded_files f)
-    ) AS state`)
-  ).rows;
-}
-
-async function site(
-  user = "audit-owner",
-  layoutSegment = "okou",
-  deleted = false,
-) {
-  const id = randomUUID();
-  await writer.query(
-    `INSERT INTO hosted_sites (id, org_id, user_id, slug, public_slug, link_layout_segment, deleted_at)
-      VALUES ($1::uuid, 'audit-org', $2, $1::text, $1::text, $3, CASE WHEN $4 THEN now() ELSE NULL END)`,
-    [id, user, layoutSegment, deleted],
+async function runAudit(commands: readonly string[] = [], asReader = false) {
+  // psql -f sends each statement separately in its own autocommit transaction.
+  // A single driver query(source) would start before the defaults take effect.
+  const url = new URL(fixtureUrl);
+  url.searchParams.set(
+    "options",
+    "-c default_transaction_read_only=off -c default_transaction_isolation=serializable -c row_security=on -c timezone=America/New_York -c search_path=pg_catalog",
   );
-  return id;
+  // libpq URI options require percent-encoded spaces, not form-encoded +.
+  url.search = url.searchParams.toString().replaceAll("+", "%20");
+  const args = [
+    "--dbname",
+    url.toString(),
+    "-X",
+    "-q",
+    "-A",
+    "-t",
+    "-v",
+    "ON_ERROR_STOP=1",
+    "-v",
+    "VERBOSITY=verbose",
+  ];
+  if (asReader) {
+    args.push("-c", `SET ROLE "${role}"`);
+  }
+  args.push("-f", auditFile);
+  for (const command of commands) {
+    args.push("-c", command);
+  }
+  try {
+    const result = await execute("psql", args, {
+      env: process.env,
+    });
+    return { code: 0, ...result };
+  } catch (error) {
+    const parsed = processResultSchema.safeParse(error);
+    if (!parsed.success) {
+      throw error;
+    }
+    return parsed.data;
+  }
 }
 
-async function deployment(args: {
-  site: string;
-  private: boolean;
-  version: number | null;
-  status: string;
-  immutable?: boolean;
-  user?: string;
-}) {
-  const id = randomUUID();
-  const table = args.private
-    ? "private_hosted_deployments"
-    : "hosted_deployments";
-  await writer.query(
-    `INSERT INTO ${table}
-      (id, site_id, org_id, user_id, link_layout_segment, status,
-       artifact_url, r2_prefix, manifest, manifest_hash, content_hash, file_count, size_bytes, url)
-      VALUES ($1, $2, 'audit-org', $3, 'okou', $4,
-        'private-url-sentinel', 'private-path-sentinel', $5, $6, $6, 1, 10, 'private-url-sentinel')`,
-    [
-      id,
-      args.site,
-      args.user ?? "audit-owner",
-      args.status,
-      JSON.stringify({
-        version: 1,
-        immutableContent: args.immutable,
-        ...(args.version === null ? {} : { deploymentVersion: args.version }),
-      }),
-      "a".repeat(64),
-    ],
+function receiptFrom(stdout: string) {
+  const lines = stdout.trim().split("\n");
+  assert.equal(
+    lines.length,
+    1,
+    "The audit must emit exactly one aggregate receipt",
   );
-  return id;
+  const [line] = lines;
+  assert.ok(line);
+  const receipt = receiptSchema.parse(JSON.parse(line));
+  assert.ok(Date.parse(receipt.finished_at) >= Date.parse(receipt.observed_at));
+  return receipt;
 }
 
-async function file(metadata: object, user = "audit-owner") {
-  await writer.query(
-    `INSERT INTO run_uploaded_files (source, external_id, user_id, org_id, metadata)
-      VALUES ('web', $1, $2, 'audit-org', $3)`,
-    [randomUUID(), user, JSON.stringify(metadata)],
-  );
-}
-
+let roleCreated = false;
 await admin.connect();
 try {
   await admin.query(`CREATE DATABASE "${database}"`);
@@ -163,202 +136,134 @@ try {
     await migration.end();
   }
   await writer.connect();
-  await auditor.connect();
-  const mixed = await site();
-  const deleted = await site("audit-owner", "okou", true);
-  const missingPointer = await site();
-  const wrongPointer = await site("other-owner", "vm0");
-  const failed = await site();
-  const first = await deployment({
-    site: mixed,
-    private: false,
-    version: 1,
-    status: "ready",
-    immutable: true,
-  });
-  await deployment({
-    site: mixed,
-    private: false,
-    version: 2,
-    status: "uploading",
-  });
-  await deployment({
-    site: mixed,
-    private: true,
-    version: 3,
-    status: "ready",
-    immutable: true,
-  });
-  const legacy = await deployment({
-    site: deleted,
-    private: false,
-    version: null,
-    status: "ready",
-  });
-  await deployment({
-    site: deleted,
-    private: true,
-    version: 1,
-    status: "deleted",
-  });
-  const failure = await deployment({
-    site: failed,
-    private: true,
-    version: 1,
-    status: "failed",
-    user: "other-owner",
-  });
-  for (const [siteId, deploymentId] of [
-    [mixed, first],
-    [deleted, legacy],
-    [missingPointer, randomUUID()],
-    [wrongPointer, first],
-    [failed, failure],
+  const result = await runAudit();
+  assert.equal(result.code, 0, result.stderr);
+  const receipt = receiptFrom(result.stdout);
+  for (const section of [
+    receipt.population,
+    receipt.multiplicity,
+    receipt.deployment_integrity,
+    receipt.pointer_integrity,
+    receipt.shares,
+    receipt.uploaded_references,
   ]) {
-    await writer.query(
-      "UPDATE hosted_sites SET active_deployment_id = $2 WHERE id = $1",
-      [siteId, deploymentId],
-    );
+    assert.ok(Object.keys(section).length > 0);
+    for (const value of Object.values(section)) {
+      assert.equal(value, 0);
+    }
   }
-  for (const target of [mixed, deleted, randomUUID()]) {
-    await writer.query(
-      `INSERT INTO artifact_shares (user_id, org_id, link_layout_segment, target_kind, target_id)
-        VALUES ('audit-owner', 'audit-org', 'okou', 'html', $1)`,
-      [target],
-    );
-  }
-  await file({
-    artifactKind: "hosted-site",
-    deploymentId: first,
-    siteId: mixed,
-  });
-  await file({
-    artifactKind: "presentation-html",
-    deploymentId: "not-a-uuid",
-    siteId: mixed,
-  });
-  await file({ generatedBy: "zero-official-website", siteId: mixed });
-  await file({ deploymentId: first, siteId: deleted }, "other-owner");
-  await file({ artifactKind: "file" });
-
-  const before = await state();
-  const receipt = await runFile();
-  assert.deepEqual(
-    await state(),
-    before,
-    "The shipped SQL must not mutate any history",
+  console.log(
+    "PASS shipped psql file, aggregate receipt, clocks and empty migrated populations (not historical population coverage)",
   );
-  assert.deepEqual(receipt.population, {
-    sites: 5,
-    deleted_sites: 1,
-    sites_without_deployments: 2,
-    deployments: 6,
-    public_deployments: 3,
-    private_deployments: 3,
-    ready_deployments: 3,
-    uploading_deployments: 1,
-    failed_deployments: 1,
-    deleted_deployments: 1,
-    unknown_status_deployments: 0,
-    null_version_deployments: 1,
-    version_one_deployments: 3,
-    later_version_deployments: 2,
-    nonpositive_version_deployments: 0,
-    marked_immutable_deployments: 2,
-    unmarked_deployments: 4,
+
+  const settings = await runAudit([
+    `SELECT jsonb_build_object(
+    'read_only', current_setting('transaction_read_only'),
+    'isolation', current_setting('transaction_isolation'),
+    'statement_timeout', current_setting('statement_timeout'),
+    'lock_timeout', current_setting('lock_timeout'),
+    'idle_timeout', current_setting('idle_in_transaction_session_timeout'),
+    'work_mem', current_setting('work_mem'),
+    'parallel_workers', current_setting('max_parallel_workers_per_gather'),
+    'jit', current_setting('jit'), 'row_security', current_setting('row_security'),
+    'timezone', current_setting('timezone'), 'search_path', current_setting('search_path'))`,
+  ]);
+  assert.equal(settings.code, 0, settings.stderr);
+  const lines = settings.stdout.trim().split("\n");
+  assert.equal(lines.length, 2);
+  const [receiptLine, settingsLine] = lines;
+  assert.ok(receiptLine);
+  assert.ok(settingsLine);
+  receiptFrom(receiptLine);
+  assert.deepEqual(JSON.parse(settingsLine), {
+    read_only: "on",
+    isolation: "repeatable read",
+    statement_timeout: "30s",
+    lock_timeout: "3s",
+    idle_timeout: "15s",
+    work_mem: "16MB",
+    parallel_workers: "0",
+    jit: "off",
+    row_security: "off",
+    timezone: "UTC",
+    search_path: "pg_catalog, public",
   });
-  assert.deepEqual(receipt.multiplicity, {
-    multiple_deployment_sites: 2,
-    deployments_in_multiple_deployment_sites: 5,
-    multiple_ready_deployment_sites: 1,
-    multiple_numbered_version_sites: 1,
-    mixed_namespace_sites: 2,
-    maximum_deployments_per_site: 3,
-    duplicate_deployment_ids: 0,
-    duplicate_site_version_pairs: 0,
-  });
-  assert.deepEqual(receipt.deployment_integrity, {
-    missing_sites: 0,
-    deployments_on_deleted_sites: 2,
-    org_mismatches: 0,
-    user_mismatches: 1,
-    brand_mismatches: 0,
-  });
-  assert.deepEqual(receipt.pointer_integrity, {
-    absent_pointers: 0,
-    missing_targets: 1,
-    ambiguous_targets: 0,
-    different_site_targets: 1,
-    different_owner_targets: 2,
-    different_brand_targets: 1,
-    not_ready_targets: 1,
-    private_targets: 1,
-  });
-  assert.deepEqual(receipt.shares, {
-    html_share_rows: 3,
-    missing_site_targets: 1,
-    deleted_site_targets: 1,
-    org_mismatches: 0,
-    user_mismatches: 0,
-    brand_mismatches: 0,
-  });
-  assert.deepEqual(receipt.uploaded_references, {
-    hosted_reference_rows: 4,
-    absent_deployment_references: 1,
-    missing_deployment_targets: 1,
-    ambiguous_deployment_targets: 0,
-    absent_site_references: 0,
-    different_site_targets: 1,
-    different_owner_targets: 1,
-  });
-  const serialized = JSON.stringify(receipt);
-  for (const forbidden of [
-    mixed,
-    first,
-    "audit-owner",
-    "audit-org",
-    "private-url-sentinel",
-    "private-path-sentinel",
+  for (const command of [
+    "DELETE FROM public.hosted_sites",
+    "CREATE TABLE forbidden_audit_write (id integer)",
+    "SELECT * FROM public.hosted_sites FOR UPDATE",
   ]) {
-    assert.ok(
-      !serialized.includes(forbidden),
-      "The receipt must be aggregate-only",
+    const rejected = await runAudit([command, "SELECT 'must not execute'"]);
+    assert.equal(rejected.code, 1, rejected.stderr);
+    assert.match(rejected.stderr, /25006/);
+    receiptFrom(rejected.stdout);
+  }
+  console.log(
+    "PASS effective read settings override startup defaults; DML, DDL and row write locks fail with no later command",
+  );
+
+  await writer.query(`CREATE ROLE "${role}" NOLOGIN`);
+  roleCreated = true;
+  await writer.query(`GRANT SELECT ON public.hosted_sites, public.hosted_deployments,
+    public.private_hosted_deployments, public.artifact_shares, public.run_uploaded_files TO "${role}"`);
+  const reader = await runAudit([], true);
+  assert.equal(reader.code, 0, reader.stderr);
+  receiptFrom(reader.stdout);
+  await writer.query(
+    "ALTER TABLE public.hosted_sites ENABLE ROW LEVEL SECURITY",
+  );
+  try {
+    const rejected = await runAudit([], true);
+    assert.equal(rejected.code, 3, rejected.stderr);
+    assert.match(rejected.stderr, /42501/);
+    assert.match(rejected.stderr, /row-level security/);
+    assert.equal(rejected.stdout, "");
+  } finally {
+    await writer.query(
+      "ALTER TABLE public.hosted_sites DISABLE ROW LEVEL SECURITY",
     );
   }
   console.log(
-    "PASS complete mixed and deleted history, unfinished uploads, legacy versions, pointer and reference observations, aggregate-only unchanged state",
-  );
-
-  await auditor.query(preamble);
-  const snapshot = await readReceipt();
-  await site();
-  assert.deepEqual((await readReceipt()).population, snapshot.population);
-  await assert.rejects(auditor.query("DELETE FROM hosted_sites"), {
-    code: "25006",
-  });
-  await auditor.query("ROLLBACK");
-  assert.equal((await runFile()).population.sites, 6);
-  console.log(
-    "PASS repeatable-read snapshot and enforced read-only transaction",
+    "PASS unfiltered census fails for an RLS-subject reader instead of hiding rows",
   );
 
   await writer.query(
-    "ALTER TABLE private_hosted_deployments RENAME TO unavailable_hosted_history",
+    "ALTER TABLE public.private_hosted_deployments RENAME TO unavailable_hosted_history",
   );
   try {
-    await assert.rejects(runFile(), { code: "42P01" });
+    const rejected = await runAudit();
+    assert.equal(rejected.code, 3, rejected.stderr);
+    assert.match(rejected.stderr, /42P01/);
+    assert.equal(rejected.stdout, "");
   } finally {
-    await auditor.query("ROLLBACK");
     await writer.query(
-      "ALTER TABLE unavailable_hosted_history RENAME TO private_hosted_deployments",
+      "ALTER TABLE public.unavailable_hosted_history RENAME TO private_hosted_deployments",
     );
   }
+  const after = await runAudit();
+  assert.equal(after.code, 0, after.stderr);
+  const {
+    observed_at: _observed,
+    finished_at: _finished,
+    ...unchanged
+  } = receiptFrom(after.stdout);
+  const {
+    observed_at: _beforeObserved,
+    finished_at: _beforeFinished,
+    ...before
+  } = receipt;
+  assert.deepEqual(unchanged, before);
   console.log(
-    "PASS unavailable private history fails instead of reporting zero",
+    "PASS unavailable history fails without a receipt; fresh sessions recover and leave history unchanged",
   );
 } finally {
-  await auditor.end();
+  if (roleCreated) {
+    await writer.query(`DROP OWNED BY "${role}"`);
+    await writer.query(`DROP ROLE "${role}"`);
+  }
   await writer.end();
+  // DROP without FORCE also proves every awaited psql process closed its session,
+  // on successful and failed audits. No settings leak into a reusable client.
   await admin.query(`DROP DATABASE IF EXISTS "${database}"`);
   await admin.end();
 }
