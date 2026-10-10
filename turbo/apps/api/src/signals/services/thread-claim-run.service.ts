@@ -217,7 +217,7 @@ import {
   type ApiDispatchTimingDimensionsInput,
   measureApiDispatchTiming,
 } from "./api-dispatch-timing.service";
-import { INITIAL_AUTONOMY_BUDGET } from "./autonomy-budget.constants";
+import { maxAutonomyBudget$ } from "../autonomy-budget-limit";
 import { childAutonomyBudget } from "./autonomy-budget.service";
 import type { BuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
 import {
@@ -478,9 +478,10 @@ function assertQueuedPromptContext(args: {
 function queuedUserMessageAutonomyBudget(
   contextType: QueuedUserMessageContextType,
   sourceAutonomyBudget: number | null,
+  maxAutonomyBudget: number,
 ): QueuedUserMessage["autonomyBudget"] {
   if (contextType !== "agent_run") {
-    return { kind: "ok", autonomyBudget: INITIAL_AUTONOMY_BUDGET };
+    return { kind: "ok", autonomyBudget: maxAutonomyBudget };
   }
   if (sourceAutonomyBudget === null) {
     return {
@@ -1636,6 +1637,7 @@ export function createThreadClaimRunObjects(
         autonomyBudget: queuedUserMessageAutonomyBudget(
           event.contextType,
           sourceBudget,
+          get(maxAutonomyBudget$),
         ),
       };
     },

@@ -316,6 +316,12 @@ const boundaryTestControls = [
     reason: "Detached-error ownership hooks for case teardown.",
   },
   {
+    file: "src/signals/autonomy-budget-limit.ts",
+    exports: ["updateMaxAutonomyBudgetForTest$"],
+    reason:
+      "Ethan-approved exception (#37440): lets tests drive the real delegation chain with a tiny limit instead of 32 hops; production stays at 32.",
+  },
+  {
     file: "src/signals/auth/tokens.ts",
     exports: [
       "signPatJwtForTests",

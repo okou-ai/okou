@@ -8,6 +8,7 @@ import {
 
 import {
   workflowAutomationsContract,
+  workflowsCollectionContract,
   workflowsDetailContract,
 } from "@okouai/api-contracts/contracts/workflows";
 import { HttpResponse, http } from "msw";
@@ -568,11 +569,13 @@ function configureNotionDatabaseMock(args?: {
 describe("okou workflow automations", () => {
   async function setupFixture(
     tier: "pro" | "team" = "pro",
+    options: { readonly maxAutonomyBudget?: number } = {},
   ): Promise<AutomationScenario> {
     // Fable keeps automation runs on the claimable native Runner route.
     const { actor, customerId, subscriptionId } = await wf.setupWorkflowOrg({
       tier,
       model: "claude-fable-5-1",
+      ...options,
     });
     if (!actor.orgId) {
       throw new Error("Expected an org-scoped workflow actor");
@@ -4351,5 +4354,158 @@ describe("okou workflow automations", () => {
     expect(chatEventDisplayText(workflowMessage!)).toBe(
       "A manual run of this workflow was requested.",
     );
+  });
+
+  it("spends one delegation hop per derived Automation and stops the chain at zero", async () => {
+    // A two-hop limit keeps the real chain short: the user-created root gets
+    // 2, each agent-created Automation spends exactly one hop, and the third
+    // derivation is refused.
+    const runnerGroup = runs.configureRunnerGroup();
+    const { actor, workflowId } = await setupFixture("pro", {
+      maxAutonomyBudget: 2,
+    });
+
+    async function claimRun(runId: string | null) {
+      if (!runId) {
+        throw new Error("Expected the Automation run to start");
+      }
+      await runs.heartbeatRunner(runnerGroup);
+      const claim = await runs.claimRunnerJob(runId);
+      const okouToken = claim.platformEnvironment.OKOU_TOKEN;
+      if (!okouToken) {
+        throw new Error("Expected the claimed run to receive OKOU_TOKEN");
+      }
+      return { runId, okouToken, sandboxToken: claim.sandboxToken };
+    }
+
+    // The user cancels and the Runner reports its exit, which releases the
+    // shared workflow Automation thread for the next run.
+    async function cancel(run: {
+      readonly runId: string;
+      readonly sandboxToken: string;
+    }): Promise<void> {
+      await runs.requestCancelRun(actor, run.runId, [200]);
+      await flushWaitUntilForTest();
+      await webhookCallbacks.requestAgentComplete(
+        { runId: run.runId, exitCode: 1, error: "Run cancelled" },
+        { authorization: `Bearer ${run.sandboxToken}` },
+        [200],
+      );
+      await flushWaitUntilForTest();
+    }
+
+    function createAs(authorization: string, intervalSeconds: number) {
+      return automationsClient().create({
+        headers: { authorization },
+        params: { workflowId },
+        body: { schedule: { type: "loop", intervalSeconds } },
+      });
+    }
+
+    const root = await accept(createAs("Bearer clerk-session", 3600), [201]);
+    const rootRun = await claimRun(
+      (await runAutomationNow(root.body.id)).runId,
+    );
+    const first = await accept(
+      createAs(`Bearer ${rootRun.okouToken}`, 3601),
+      [201],
+    );
+    await cancel(rootRun);
+
+    const firstRun = await claimRun(
+      (await runAutomationNow(first.body.id)).runId,
+    );
+    const second = await accept(
+      createAs(`Bearer ${firstRun.okouToken}`, 3602),
+      [201],
+    );
+    await cancel(firstRun);
+
+    const secondRun = await claimRun(
+      (await runAutomationNow(second.body.id)).runId,
+    );
+    const exhausted = `Bearer ${secondRun.okouToken}`;
+
+    const blockedCreate = await accept(createAs(exhausted, 3603), [409]);
+    expect(blockedCreate.body.error.code).toBe("AUTONOMY_BUDGET_EXHAUSTED");
+    const listed = await accept(
+      automationsClient().list({
+        headers: authHeaders(),
+        params: { workflowId },
+      }),
+      [200],
+    );
+    expect(
+      listed.body.map((automation) => {
+        return automation.id;
+      }),
+    ).toHaveLength(3);
+
+    await accept(
+      automationsClient().disable({
+        headers: authHeaders(),
+        params: { id: first.body.id },
+      }),
+      [200],
+    );
+    const blockedEnable = await accept(
+      automationsClient().enable({
+        headers: { authorization: exhausted },
+        params: { id: first.body.id },
+      }),
+      [409],
+    );
+    expect(blockedEnable.body.error.code).toBe("AUTONOMY_BUDGET_EXHAUSTED");
+    await expect(wf.readAutomation(first.body.id)).resolves.toMatchObject({
+      enabled: false,
+    });
+
+    const target = await wf.createAgent(actor, {
+      displayName: "Exhausted Copy Target Agent",
+    });
+    const blockedCopy = await accept(
+      detailClient().copy({
+        headers: { authorization: exhausted },
+        params: { workflowId },
+        body: { toAgentId: target.agentId },
+      }),
+      [409],
+    );
+    expect(blockedCopy.body.error.code).toBe("AUTONOMY_BUDGET_EXHAUSTED");
+    const targetWorkflows = await accept(
+      setupApp({ context, routes: workflowsRoutes })(
+        workflowsCollectionContract,
+      ).list({
+        headers: authHeaders(),
+        query: { agentId: target.agentId },
+      }),
+      [200],
+    );
+    expect(
+      targetWorkflows.body.map((workflow) => {
+        return workflow.name;
+      }),
+    ).not.toContain(WORKFLOW_NAME);
+
+    // The exhausted request is accepted; once the shared workflow Automation
+    // thread is idle its rejection appears there and no child run is linked.
+    await cancel(secondRun);
+    const blockedRun = await runAutomationNow(root.body.id, {
+      authorization: exhausted,
+    });
+    const events = await wf.readThreadEvents(blockedRun.chatThreadId);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        eventType: "input.rejected",
+        error: "autonomy_budget_exhausted",
+      }),
+    );
+    expect(
+      events.flatMap((event) => {
+        return event.eventType === "input.prompt" && event.runId
+          ? [event.runId]
+          : [];
+      }),
+    ).toStrictEqual([rootRun.runId, firstRun.runId, secondRun.runId]);
   });
 });

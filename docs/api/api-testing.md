@@ -489,7 +489,16 @@ never construct business state:
 - tracked `waitUntil` flushing and detached-error ownership hooks;
 - scoped application-clock control;
 - external client mocks such as the KMS client;
-- logger reset.
+- logger reset;
+- the delegation limit `updateMaxAutonomyBudgetForTest$`.
+
+The delegation limit is an exception Ethan approved in #37440. Production
+always grants a user-started chain the fixed 32-hop budget, and no API,
+configuration or environment value changes it. Tests lower it through
+`setupWorkflowOrg({ maxAutonomyBudget })` so the real Automation, copy and
+Runner claim chain reaches exhaustion in a few hops instead of 32. Test context
+restores the default after every case. Keep this control: it is not a private
+state driver, and it must not be cleaned up as one.
 
 Environment overrides use `mockEnv` from `src/lib/env`. Credential signers are
 listed only so the frozen consumers below keep compiling; they are governed by

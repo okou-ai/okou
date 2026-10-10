@@ -16,6 +16,7 @@ import {
   notFound,
   teamRequired,
 } from "../../lib/error";
+import { maxAutonomyBudget$ } from "../autonomy-budget-limit";
 import { childAutonomyBudget } from "../services/autonomy-budget.service";
 import {
   visibleWorkflowCondition,
@@ -184,7 +185,8 @@ const createAutomationInner$ = command(
       return bodyResult.response;
     }
 
-    let autonomyBudget: number | undefined;
+    // A user-created Automation roots a delegation chain at the current limit.
+    let autonomyBudget = get(maxAutonomyBudget$);
     const db = get(db$);
     if (auth.tokenType === "agent") {
       const [sourceRun] = await db
@@ -216,7 +218,7 @@ const createAutomationInner$ = command(
       member: memberFromAuth(auth),
       workflowId: params.workflowId,
       enabled: bodyResult.data.enabled ?? true,
-      ...(autonomyBudget === undefined ? {} : { autonomyBudget }),
+      autonomyBudget,
     };
     const result = await set(
       createWorkflowAutomation$,

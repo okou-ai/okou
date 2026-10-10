@@ -33,7 +33,7 @@ import { isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { safeSync, settle, settleIncludingAbort } from "../utils";
-import { INITIAL_AUTONOMY_BUDGET } from "./autonomy-budget.constants";
+import { AUTONOMY_BUDGET_CEILING } from "../autonomy-budget-limit";
 import { deleteWorkflow$ } from "./workflow-delete.service";
 import {
   acceptedCatalogFromRow,
@@ -444,7 +444,7 @@ function resolveBlueprint(
     (typeof autonomyBudget !== "number" ||
       !Number.isSafeInteger(autonomyBudget) ||
       autonomyBudget < 0 ||
-      autonomyBudget > INITIAL_AUTONOMY_BUDGET)
+      autonomyBudget > AUTONOMY_BUDGET_CEILING)
   ) {
     return {
       ok: false,
@@ -1190,7 +1190,7 @@ type OfficialAutomationPatchResult =
 
 function officialPatchMetadata(resolved: ResolvedBlueprint, currentTime: Date) {
   return {
-    autonomyBudget: resolved.autonomyBudget ?? INITIAL_AUTONOMY_BUDGET,
+    autonomyBudget: resolved.autonomyBudget ?? AUTONOMY_BUDGET_CEILING,
     officialAppliedFingerprint: resolved.blueprint.fingerprint,
     officialParameterBindings: [...resolved.bindings],
     officialResultEmailEnabled: resolved.blueprint.runtime.resultEmail,
