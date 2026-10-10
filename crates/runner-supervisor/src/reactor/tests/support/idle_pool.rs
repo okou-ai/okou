@@ -202,6 +202,7 @@ async fn seed_idle_pool_with_overrides_and_generation(
         .with_factory(factory_arc)
         .with_sandbox_id(sandbox_id)
         .with_profile_name(profile_name)
+        .with_rootfs_hash(super::env::TEST_ROOTFS_HASH)
         .with_guest_timezone_intent(guest_timezone_intent)
         .with_last_completed_at(TEST_LAST_COMPLETED_AT);
     let candidate = match history_generation_run_id {
@@ -272,6 +273,7 @@ pub(in super::super) async fn seed_idle_pool_with_home_promotion(
         .with_mock_sandbox_name("idle-home-promotion-test")
         .with_sandbox_id(sandbox_id)
         .with_profile_name(spec.profile_name)
+        .with_rootfs_hash(super::env::TEST_ROOTFS_HASH)
         .with_home_promotion(promotion)
         .with_last_completed_at(TEST_LAST_COMPLETED_AT)
         .build();
@@ -342,7 +344,8 @@ pub(in super::super) async fn seed_idle_pool_with_timing(
     let budget_lease =
         ResourceBudget::try_reserve_lease(budget, spec.vcpu, spec.memory_mb).unwrap();
     let builder = ParkedIdleCandidateBuilder::new(spec.reuse_key, budget_lease)
-        .with_profile_name(spec.profile_name);
+        .with_profile_name(spec.profile_name)
+        .with_rootfs_hash(super::env::TEST_ROOTFS_HASH);
     let candidate = match spec.history_generation_run_id {
         Some(run_id) => builder.with_history_generation_run_id(run_id).build(),
         None => builder.build(),

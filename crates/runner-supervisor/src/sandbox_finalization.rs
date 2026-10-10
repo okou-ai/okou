@@ -335,7 +335,7 @@ pub async fn finalize_claimed_run(
 }
 
 /// Keep fault injection outside the production finalization interface.
-#[cfg(feature = "test-support")]
+#[cfg(any(test, feature = "test-support"))]
 pub async fn finalize_claimed_run_with_test_hooks(
     sandbox: Option<Box<dyn Sandbox>>,
     active_lease: ActiveBudgetLease,
@@ -1626,7 +1626,8 @@ mod tests {
                 runner_id: "runner-test".into(),
                 reuse_result: SandboxReuseResult::PoolMiss,
                 profile_name: "vm0/default".into(),
-                rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+                rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                    .into(),
                 reuse_key: Some(session_id.into()),
                 cli_agent_session_id: Some(session_id.into()),
                 discovered_cli_agent_session_id: None,
@@ -1657,6 +1658,15 @@ mod tests {
         }
     }
 
+    const TEST_HOME_IMAGE_SIZE: usize = 1024 * 1024;
+
+    fn test_home_image(marker: &[u8]) -> Vec<u8> {
+        assert!(marker.len() <= TEST_HOME_IMAGE_SIZE);
+        let mut image = vec![0; TEST_HOME_IMAGE_SIZE];
+        image[..marker.len()].copy_from_slice(marker);
+        image
+    }
+
     async fn prepare_test_home_image_lease(
         paths: &RunnerPaths,
         cache: &HomeImageCache,
@@ -1667,12 +1677,13 @@ mod tests {
         let lease = cache
             .prepare(HomeImagePrepareRequest {
                 identity: HomeImageLeaseIdentity {
+                    working_dir: CANONICAL_WORKING_DIR,
                     run_id,
                     sandbox_id,
                     profile_name: "vm0/default",
                     reuse_key: Some(reuse_key),
                     rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                    image_size_bytes: b"image".len() as u64,
+                    image_size_bytes: TEST_HOME_IMAGE_SIZE as u64,
                 },
                 home_drive_required: true,
             })
@@ -1680,9 +1691,12 @@ mod tests {
         tokio::fs::create_dir_all(paths.home_dir(&sandbox_id))
             .await
             .unwrap();
-        tokio::fs::write(paths.active_home_image(&sandbox_id), b"image")
-            .await
-            .unwrap();
+        tokio::fs::write(
+            paths.active_home_image(&sandbox_id),
+            test_home_image(b"image"),
+        )
+        .await
+        .unwrap();
         lease
     }
 
@@ -1726,7 +1740,7 @@ mod tests {
         .unwrap()
     }
 
-    fn home_seed_path(lease: &HomeImageLease) -> std::path::PathBuf {
+    fn home_seed_path(lease: &mut HomeImageLease) -> std::path::PathBuf {
         let drive = lease.home_drive_config().expect("home drive configured");
         match drive.seed_image.expect("cache hit has a pinned seed") {
             sandbox::HomeDriveSeedImage::Move(path) | sandbox::HomeDriveSeedImage::Copy(path) => {
@@ -1746,6 +1760,7 @@ mod tests {
         let lease = cache
             .prepare(HomeImagePrepareRequest {
                 identity: HomeImageLeaseIdentity {
+                    working_dir: CANONICAL_WORKING_DIR,
                     run_id,
                     sandbox_id,
                     profile_name: "vm0/default",
@@ -2044,7 +2059,7 @@ mod tests {
         context.factory = factory;
         context.cleanup_state = cleanup_state.clone();
         context.home_image = Some(home_image);
-        context.home_image_size_bytes = b"image".len() as u64;
+        context.home_image_size_bytes = TEST_HOME_IMAGE_SIZE as u64;
 
         let (_finalization_ready, events) = capture_async_log_events(
             finalize_sandbox_for_completion(Some(sandbox), ActiveBudgetLease::new(lease), context),
@@ -2265,11 +2280,12 @@ mod tests {
                 } else {
                     let expected = cache
                         .expected_promotion_identity(HomeImagePromotionIdentityRequest {
+                            working_dir: CANONICAL_WORKING_DIR,
                             sandbox_id: seed_sandbox_id,
                             profile_name: "vm0/default",
                             reuse_key: &session_id,
                             rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                            image_size_bytes: b"image".len() as u64,
+                            image_size_bytes: TEST_HOME_IMAGE_SIZE as u64,
                         })
                         .expect("idle reuse promotion identity should be valid");
                     let lease = seed_promotion
@@ -2323,12 +2339,13 @@ mod tests {
                 let checkout = cache
                     .prepare(HomeImagePrepareRequest {
                         identity: HomeImageLeaseIdentity {
+                            working_dir: CANONICAL_WORKING_DIR,
                             run_id: RunId::new_v4(),
                             sandbox_id: SandboxId::new_v4(),
                             profile_name: "vm0/default",
                             reuse_key: Some(&session_id),
                             rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                            image_size_bytes: b"image".len() as u64,
+                            image_size_bytes: TEST_HOME_IMAGE_SIZE as u64,
                         },
                         home_drive_required: true,
                     })
@@ -2424,12 +2441,13 @@ mod tests {
         let home_image = cache
             .prepare(HomeImagePrepareRequest {
                 identity: HomeImageLeaseIdentity {
+                    working_dir: CANONICAL_WORKING_DIR,
                     run_id,
                     sandbox_id,
                     profile_name: "vm0/default",
                     reuse_key: Some("unused-context-session"),
                     rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                    image_size_bytes: b"image".len() as u64,
+                    image_size_bytes: TEST_HOME_IMAGE_SIZE as u64,
                 },
                 home_drive_required: true,
             })
@@ -2437,9 +2455,12 @@ mod tests {
         tokio::fs::create_dir_all(paths.home_dir(&sandbox_id))
             .await
             .unwrap();
-        tokio::fs::write(paths.active_home_image(&sandbox_id), b"image")
-            .await
-            .unwrap();
+        tokio::fs::write(
+            paths.active_home_image(&sandbox_id),
+            test_home_image(b"image"),
+        )
+        .await
+        .unwrap();
         let mut context = fixture.finalize_context(
             run_id,
             sandbox_id,
@@ -2450,7 +2471,7 @@ mod tests {
         context.cli_agent_session_id = None;
         context.discovered_cli_agent_session_id = Some("sess-guest".into());
         context.home_image = Some(home_image);
-        context.home_image_size_bytes = b"image".len() as u64;
+        context.home_image_size_bytes = TEST_HOME_IMAGE_SIZE as u64;
 
         let _finalization_ready = finalize_sandbox_for_completion(
             Some(Box::new(mock_sandbox_ready_for_idle_reuse(
@@ -2485,12 +2506,13 @@ mod tests {
         let home_image = cache
             .prepare(HomeImagePrepareRequest {
                 identity: HomeImageLeaseIdentity {
+                    working_dir: CANONICAL_WORKING_DIR,
                     run_id,
                     sandbox_id,
                     profile_name: "vm0/default",
                     reuse_key: Some("sess-mismatch"),
                     rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                    image_size_bytes: b"image".len() as u64,
+                    image_size_bytes: TEST_HOME_IMAGE_SIZE as u64,
                 },
                 home_drive_required: true,
             })
@@ -2498,9 +2520,12 @@ mod tests {
         tokio::fs::create_dir_all(paths.home_dir(&sandbox_id))
             .await
             .unwrap();
-        tokio::fs::write(paths.active_home_image(&sandbox_id), b"image")
-            .await
-            .unwrap();
+        tokio::fs::write(
+            paths.active_home_image(&sandbox_id),
+            test_home_image(b"image"),
+        )
+        .await
+        .unwrap();
         let overrides = Arc::new(MockSandboxOverrides::new());
         let (factory, sandbox) = sandbox_with_overrides(sandbox_id, Arc::clone(&overrides)).await;
         let mut context = fixture.finalize_context(
@@ -2512,7 +2537,7 @@ mod tests {
         );
         context.factory = factory;
         context.home_image = Some(home_image);
-        context.home_image_size_bytes = b"image".len() as u64 + 1;
+        context.home_image_size_bytes = TEST_HOME_IMAGE_SIZE as u64 + 1;
 
         let _finalization_ready =
             finalize_sandbox_for_completion(Some(sandbox), ActiveBudgetLease::new(lease), context)
@@ -2552,14 +2577,16 @@ mod tests {
         let cache = HomeImageCache::new(paths.clone());
         let reuse_key = "thread:rotating-provider";
         // Opaque image bytes model ordinary home + cwd state, not a second history body slot.
-        let home_bytes =
-            b"workspace/cache-marker\nhome-marker\n.npm/cache-marker\nclaude-session-a\n";
-        seed_home_cache_image(&paths, &cache, reuse_key, home_bytes).await;
+        let home_bytes = test_home_image(
+            b"workspace/cache-marker\nhome-marker\n.npm/cache-marker\nclaude-session-a\n",
+        );
+        seed_home_cache_image(&paths, &cache, reuse_key, &home_bytes).await;
         let run_id = RunId::new_v4();
         let sandbox_id = SandboxId::new_v4();
-        let home_image = cache
+        let mut home_image = cache
             .prepare(HomeImagePrepareRequest {
                 identity: HomeImageLeaseIdentity {
+                    working_dir: CANONICAL_WORKING_DIR,
                     run_id,
                     sandbox_id,
                     profile_name: "vm0/default",
@@ -2572,7 +2599,7 @@ mod tests {
             .await;
         assert!(home_image.is_cache_hit());
         assert!(home_image.history_proof_binding().is_none());
-        let seed = home_seed_path(&home_image);
+        let seed = home_seed_path(&mut home_image);
         assert_eq!(tokio::fs::read(&seed).await.unwrap(), home_bytes);
         let active_image = paths.active_home_image(&sandbox_id);
         tokio::fs::create_dir_all(active_image.parent().unwrap())
@@ -2615,9 +2642,10 @@ mod tests {
         assert_eq!(overrides.stop_call_count(), 1);
         assert_eq!(overrides.destroy_call_count(), 1);
         assert_eq!(cache.held_home_states().await[0].reuse_key, reuse_key);
-        let checkout = cache
+        let mut checkout = cache
             .prepare(HomeImagePrepareRequest {
                 identity: HomeImageLeaseIdentity {
+                    working_dir: CANONICAL_WORKING_DIR,
                     run_id: RunId::new_v4(),
                     sandbox_id: SandboxId::new_v4(),
                     profile_name: "vm0/default",
@@ -2630,7 +2658,9 @@ mod tests {
             .await;
         assert!(checkout.is_cache_hit());
         assert_eq!(
-            tokio::fs::read(home_seed_path(&checkout)).await.unwrap(),
+            tokio::fs::read(home_seed_path(&mut checkout))
+                .await
+                .unwrap(),
             home_bytes
         );
         // Image reuse and history authority are distinct: no finalized eligible proof means
@@ -2649,15 +2679,16 @@ mod tests {
         tokio::fs::create_dir_all(paths.base_dir()).await.unwrap();
         let cache = HomeImageCache::new(paths.clone());
         let reuse_key = "thread:provider-rotation";
-        let previous_home = b"ordinary-home-state\nclaude-a\n";
-        let next_home = b"ordinary-home-state\ncodex--b\n";
+        let previous_home = test_home_image(b"ordinary-home-state\nclaude-a\n");
+        let next_home = test_home_image(b"ordinary-home-state\ncodex--b\n");
         assert_eq!(previous_home.len(), next_home.len());
-        seed_home_cache_image(&paths, &cache, reuse_key, previous_home).await;
+        seed_home_cache_image(&paths, &cache, reuse_key, &previous_home).await;
         let run_id = RunId::new_v4();
         let sandbox_id = SandboxId::new_v4();
-        let home_image = cache
+        let mut home_image = cache
             .prepare(HomeImagePrepareRequest {
                 identity: HomeImageLeaseIdentity {
+                    working_dir: CANONICAL_WORKING_DIR,
                     run_id,
                     sandbox_id,
                     profile_name: "vm0/default",
@@ -2670,17 +2701,19 @@ mod tests {
             .await;
         assert!(home_image.is_cache_hit());
         assert_eq!(
-            tokio::fs::read(home_seed_path(&home_image)).await.unwrap(),
+            tokio::fs::read(home_seed_path(&mut home_image))
+                .await
+                .unwrap(),
             previous_home
         );
         let active_image = paths.active_home_image(&sandbox_id);
         tokio::fs::create_dir_all(active_image.parent().unwrap())
             .await
             .unwrap();
-        tokio::fs::rename(home_seed_path(&home_image), &active_image)
+        tokio::fs::rename(home_seed_path(&mut home_image), &active_image)
             .await
             .unwrap();
-        tokio::fs::write(&active_image, next_home).await.unwrap();
+        tokio::fs::write(&active_image, &next_home).await.unwrap();
         let next_session_id = "019e9154-c304-70f0-adde-36efb1be1701";
         let next_identity = test_verified_restored_session_identity(
             SessionHistoryFramework::Codex,
@@ -2708,9 +2741,10 @@ mod tests {
             context,
         )
         .await;
-        let checkout = cache
+        let mut checkout = cache
             .prepare(HomeImagePrepareRequest {
                 identity: HomeImageLeaseIdentity {
+                    working_dir: CANONICAL_WORKING_DIR,
                     run_id: RunId::new_v4(),
                     sandbox_id: SandboxId::new_v4(),
                     profile_name: "vm0/default",
@@ -2723,7 +2757,9 @@ mod tests {
             .await;
         assert!(checkout.is_cache_hit());
         assert_eq!(
-            tokio::fs::read(home_seed_path(&checkout)).await.unwrap(),
+            tokio::fs::read(home_seed_path(&mut checkout))
+                .await
+                .unwrap(),
             next_home
         );
         // Final identity alone is not a terminal source/live-byte proof. The fixture returns
@@ -2746,12 +2782,13 @@ mod tests {
         let home_image = cache
             .prepare(HomeImagePrepareRequest {
                 identity: HomeImageLeaseIdentity {
+                    working_dir: CANONICAL_WORKING_DIR,
                     run_id,
                     sandbox_id,
                     profile_name: "vm0/default",
                     reuse_key: Some(reuse_key),
                     rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                    image_size_bytes: b"image".len() as u64,
+                    image_size_bytes: TEST_HOME_IMAGE_SIZE as u64,
                 },
                 home_drive_required: true,
             })
@@ -2759,9 +2796,12 @@ mod tests {
         tokio::fs::create_dir_all(paths.home_dir(&sandbox_id))
             .await
             .unwrap();
-        tokio::fs::write(paths.active_home_image(&sandbox_id), b"image")
-            .await
-            .unwrap();
+        tokio::fs::write(
+            paths.active_home_image(&sandbox_id),
+            test_home_image(b"image"),
+        )
+        .await
+        .unwrap();
         let mut context = fixture.finalize_context(
             run_id,
             sandbox_id,
@@ -2776,7 +2816,7 @@ mod tests {
             SandboxReuseDisposition::Eligible(SandboxReuseTerminal::NonzeroExit);
         assert!(context.parking_gate.soft_drain());
         context.home_image = Some(home_image);
-        context.home_image_size_bytes = b"image".len() as u64;
+        context.home_image_size_bytes = TEST_HOME_IMAGE_SIZE as u64;
         let home_cache_snapshot = context.home_cache_snapshot.clone();
 
         let _finalization_ready = finalize_sandbox_for_completion(
@@ -2813,12 +2853,13 @@ mod tests {
         let home_image = cache
             .prepare(HomeImagePrepareRequest {
                 identity: HomeImageLeaseIdentity {
+                    working_dir: CANONICAL_WORKING_DIR,
                     run_id,
                     sandbox_id,
                     profile_name: "vm0/default",
                     reuse_key: Some(reuse_key),
                     rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                    image_size_bytes: b"image".len() as u64,
+                    image_size_bytes: TEST_HOME_IMAGE_SIZE as u64,
                 },
                 home_drive_required: true,
             })
@@ -2830,9 +2871,12 @@ mod tests {
         tokio::fs::create_dir_all(paths.home_dir(&sandbox_id))
             .await
             .unwrap();
-        tokio::fs::write(paths.active_home_image(&sandbox_id), b"image")
-            .await
-            .unwrap();
+        tokio::fs::write(
+            paths.active_home_image(&sandbox_id),
+            test_home_image(b"image"),
+        )
+        .await
+        .unwrap();
         let overrides = Arc::new(MockSandboxOverrides::new());
         let (factory, sandbox) = sandbox_with_overrides(sandbox_id, Arc::clone(&overrides)).await;
         let mut context = fixture.finalize_context(
@@ -2851,7 +2895,7 @@ mod tests {
             SandboxReuseDisposition::Eligible(SandboxReuseTerminal::NonzeroExit);
         assert!(context.parking_gate.soft_drain());
         context.home_image = Some(home_image);
-        context.home_image_size_bytes = b"image".len() as u64;
+        context.home_image_size_bytes = TEST_HOME_IMAGE_SIZE as u64;
         let home_cache_snapshot = context.home_cache_snapshot.clone();
 
         let _finalization_ready =
@@ -2870,23 +2914,26 @@ mod tests {
             inspection.entries[0].last_terminal_status,
             Some(HomeCacheTerminalStatus::NonzeroExit)
         );
-        let checkout = cache
+        let mut checkout = cache
             .prepare(HomeImagePrepareRequest {
                 identity: HomeImageLeaseIdentity {
+                    working_dir: CANONICAL_WORKING_DIR,
                     run_id: RunId::new_v4(),
                     sandbox_id: SandboxId::new_v4(),
                     profile_name: "vm0/default",
                     rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                     reuse_key: Some(reuse_key),
-                    image_size_bytes: b"image".len() as u64,
+                    image_size_bytes: TEST_HOME_IMAGE_SIZE as u64,
                 },
                 home_drive_required: true,
             })
             .await;
         assert!(checkout.is_cache_hit());
         assert_eq!(
-            tokio::fs::read(home_seed_path(&checkout)).await.unwrap(),
-            b"image"
+            tokio::fs::read(home_seed_path(&mut checkout))
+                .await
+                .unwrap(),
+            test_home_image(b"image")
         );
         assert!(
             checkout.history_proof_binding().is_none(),
@@ -2927,7 +2974,7 @@ mod tests {
         context.factory = factory;
         context.parking_gate.close();
         context.home_image = Some(home_image);
-        context.home_image_size_bytes = b"image".len() as u64;
+        context.home_image_size_bytes = TEST_HOME_IMAGE_SIZE as u64;
         let snapshot = context.home_cache_snapshot.clone();
         let finalization = tokio::spawn(finalize_sandbox_for_completion(
             Some(sandbox),
@@ -2953,7 +3000,7 @@ mod tests {
             tokio::fs::read(paths.active_home_image(&sandbox_id))
                 .await
                 .unwrap(),
-            b"image"
+            test_home_image(b"image")
         );
         assert!(
             cache.held_home_states().await.is_empty(),
@@ -2969,23 +3016,26 @@ mod tests {
         assert_eq!(overrides.stop_call_count(), 1);
         assert_eq!(overrides.destroy_call_count(), 1);
         assert_eq!(cache.held_home_states().await[0].reuse_key, reuse_key);
-        let checkout = cache
+        let mut checkout = cache
             .prepare(HomeImagePrepareRequest {
                 identity: HomeImageLeaseIdentity {
+                    working_dir: CANONICAL_WORKING_DIR,
                     run_id: RunId::new_v4(),
                     sandbox_id: SandboxId::new_v4(),
                     profile_name: "vm0/default",
                     rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                     reuse_key: Some(reuse_key),
-                    image_size_bytes: b"image".len() as u64,
+                    image_size_bytes: TEST_HOME_IMAGE_SIZE as u64,
                 },
                 home_drive_required: true,
             })
             .await;
         assert!(checkout.is_cache_hit());
         assert_eq!(
-            tokio::fs::read(home_seed_path(&checkout)).await.unwrap(),
-            b"image"
+            tokio::fs::read(home_seed_path(&mut checkout))
+                .await
+                .unwrap(),
+            test_home_image(b"image")
         );
         assert!(checkout.history_proof_binding().is_none());
         drop(ready);
@@ -3024,7 +3074,7 @@ mod tests {
             SandboxReuseDisposition::Eligible(SandboxReuseTerminal::NonzeroExit);
         assert!(context.parking_gate.soft_drain());
         context.home_image = Some(home_image);
-        context.home_image_size_bytes = b"image".len() as u64;
+        context.home_image_size_bytes = TEST_HOME_IMAGE_SIZE as u64;
         let home_cache_snapshot = context.home_cache_snapshot.clone();
 
         let _finalization_ready =
@@ -3075,12 +3125,13 @@ mod tests {
         let home_image = cache
             .prepare(HomeImagePrepareRequest {
                 identity: HomeImageLeaseIdentity {
+                    working_dir: CANONICAL_WORKING_DIR,
                     run_id,
                     sandbox_id,
                     profile_name: "vm0/default",
                     reuse_key: Some("sess-new"),
                     rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                    image_size_bytes: b"image".len() as u64,
+                    image_size_bytes: TEST_HOME_IMAGE_SIZE as u64,
                 },
                 home_drive_required: true,
             })
@@ -3088,9 +3139,12 @@ mod tests {
         tokio::fs::create_dir_all(paths.home_dir(&sandbox_id))
             .await
             .unwrap();
-        tokio::fs::write(paths.active_home_image(&sandbox_id), b"image")
-            .await
-            .unwrap();
+        tokio::fs::write(
+            paths.active_home_image(&sandbox_id),
+            test_home_image(b"image"),
+        )
+        .await
+        .unwrap();
         let mut context = fixture.finalize_context(
             run_id,
             sandbox_id,
@@ -3099,7 +3153,7 @@ mod tests {
             RunCancellationHandle::new(),
         );
         context.home_image = Some(home_image);
-        context.home_image_size_bytes = b"image".len() as u64;
+        context.home_image_size_bytes = TEST_HOME_IMAGE_SIZE as u64;
 
         let _finalization_ready = finalize_sandbox_for_completion(
             Some(Box::new({
@@ -3172,6 +3226,7 @@ mod tests {
             reuse_key: session_id.into(),
             sandbox_id: old_sandbox_id,
             profile_name: "vm0/default".into(),
+            rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
             device_rate_limits: None,
             budget_lease: existing_lease,
             storage_fingerprints:
@@ -3179,7 +3234,7 @@ mod tests {
             restored_session_identity: None,
             history_generation_run_id: None,
             guest_timezone_intent: GuestTimezoneIntent::Unknown,
-            home_image_size_bytes: b"image".len() as u64,
+            home_image_size_bytes: TEST_HOME_IMAGE_SIZE as u64,
             home_promotion: Some(old_promotion),
             handoff: None,
         })

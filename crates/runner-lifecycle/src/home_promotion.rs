@@ -18,7 +18,7 @@ use crate::helper_exec::{format_helper_exec_failure, helper_exec_succeeded};
 use crate::home_image_cache::{
     HomeCacheTerminalStatus, HomeImagePromotionContext, HomeImagePromotionOutcome,
 };
-use crate::home_mount::freeze_home_drive;
+use crate::home_mount::{ensure_home_drive_mounted, freeze_home_drive};
 
 const TERMINAL_CACHE_PREPARATION_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -47,6 +47,12 @@ pub async fn prepare_home_image_from_active_sandbox(
     // and own the sandbox exclusively. The helper captures a proof, cleans all
     // managed private namespaces, and returns before freeze. No body is copied.
     let result = AssertUnwindSafe(async {
+        // A privileged workload could have replaced the visible mount since
+        // startup. Cleanup must cover the actual whole-home filesystem, never
+        // a same-device subtree whose hidden private namespaces would survive.
+        ensure_home_drive_mounted(sandbox, promotion.run_id())
+            .await
+            .map_err(|failure| failure.error)?;
         prepare_terminal_cache_runtime(sandbox, &mut promotion).await?;
         freeze_home_drive(sandbox, promotion.run_id()).await
     })

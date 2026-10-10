@@ -19,7 +19,8 @@ pub(in super::super) fn test_runner_identity() -> RunnerProcessIdentity {
 }
 
 const TEST_PROFILE_HOME: &str = "fixture-home";
-const TEST_ROOTFS_HASH: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+pub(super) const TEST_ROOTFS_HASH: &str =
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 fn test_profile(
     name: &str,

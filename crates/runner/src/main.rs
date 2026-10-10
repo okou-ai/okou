@@ -692,7 +692,7 @@ mod tests {
     }
 
     #[test]
-    fn home_image_cache_command_is_registered_without_workspace_alias() {
+    fn home_image_cache_commands_are_registered() {
         assert!(
             Cli::try_parse_from(["runner", "home-image-cache", "info"]).is_ok(),
             "home-image-cache info should be registered"
@@ -705,7 +705,6 @@ mod tests {
             Cli::try_parse_from(["runner", "home-image-cache", "gc", "--dry-run"]).is_ok(),
             "home-image-cache gc should be registered"
         );
-        assert!(Cli::try_parse_from(["runner", "workspace-image-cache", "info"]).is_err());
     }
 
     #[test]

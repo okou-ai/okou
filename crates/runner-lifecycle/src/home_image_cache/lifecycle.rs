@@ -362,7 +362,7 @@ impl HomeImageCache {
     ) -> Result<HomeImagePromotionIdentity, HomeImagePromotionIdentityMismatch> {
         if request.rootfs_hash.is_empty()
             || request.image_size_bytes == 0
-            || request.image_size_bytes % (1024 * 1024) != 0
+            || !request.image_size_bytes.is_multiple_of(1024 * 1024)
         {
             return Err(HomeImagePromotionIdentityMismatch::RootfsHash);
         }
@@ -1180,7 +1180,7 @@ impl HomeImageCache {
         }
         if input.rootfs_hash.is_empty()
             || input.image_size_bytes == 0
-            || input.image_size_bytes % (1024 * 1024) != 0
+            || !input.image_size_bytes.is_multiple_of(1024 * 1024)
         {
             return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
         }
@@ -1460,7 +1460,7 @@ impl HomeImageLease {
             || !is_safe_guest_working_dir(&self.working_dir)
             || self.rootfs_hash.is_empty()
             || self.image_size_bytes == 0
-            || self.image_size_bytes % (1024 * 1024) != 0
+            || !self.image_size_bytes.is_multiple_of(1024 * 1024)
         {
             return None;
         }

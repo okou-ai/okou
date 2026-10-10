@@ -520,7 +520,7 @@ mod tests {
     async fn home_image_cache_gc_cleans_shared_cache_root() {
         let dir = tempfile::tempdir().unwrap();
         let home = HomePaths::with_root(dir.path().join("home"));
-        let key = home_image_cache_key("sess-1", "/workspace");
+        let key = home_image_cache_key("sess-1");
         let tmp = tmp_image_path(&home, &key, RunId::new_v4());
         tokio::fs::create_dir_all(tmp.parent().unwrap())
             .await
@@ -541,7 +541,7 @@ mod tests {
     async fn home_image_cache_gc_dry_run_preserves_files() {
         let dir = tempfile::tempdir().unwrap();
         let home = HomePaths::with_root(dir.path().join("home"));
-        let key = home_image_cache_key("sess-1", "/workspace");
+        let key = home_image_cache_key("sess-1");
         let tmp = tmp_image_path(&home, &key, RunId::new_v4());
         tokio::fs::create_dir_all(tmp.parent().unwrap())
             .await

@@ -28,7 +28,7 @@ enum StorageFingerprintKind {
         #[serde(rename = "vasVersionId")]
         vas_version_id: String,
     },
-    Tainted,
+    Tainted {},
 }
 
 impl StorageFingerprint {
@@ -50,12 +50,12 @@ impl StorageFingerprint {
 
     pub fn tainted() -> Self {
         Self {
-            kind: StorageFingerprintKind::Tainted,
+            kind: StorageFingerprintKind::Tainted {},
         }
     }
 
     pub fn is_tainted(&self) -> bool {
-        matches!(self.kind, StorageFingerprintKind::Tainted)
+        matches!(self.kind, StorageFingerprintKind::Tainted {})
     }
 
     pub fn matches(&self, name: &str, version: &str) -> bool {
@@ -64,7 +64,7 @@ impl StorageFingerprint {
                 vas_storage_name,
                 vas_version_id,
             } => vas_storage_name == name && vas_version_id == version,
-            StorageFingerprintKind::Tainted => false,
+            StorageFingerprintKind::Tainted {} => false,
         }
     }
 
@@ -73,14 +73,14 @@ impl StorageFingerprint {
             StorageFingerprintKind::Known {
                 vas_storage_name, ..
             } => Some(vas_storage_name),
-            StorageFingerprintKind::Tainted => None,
+            StorageFingerprintKind::Tainted {} => None,
         }
     }
 
     pub fn vas_version_id(&self) -> Option<&str> {
         match &self.kind {
             StorageFingerprintKind::Known { vas_version_id, .. } => Some(vas_version_id),
-            StorageFingerprintKind::Tainted => None,
+            StorageFingerprintKind::Tainted {} => None,
         }
     }
 }

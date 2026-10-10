@@ -126,7 +126,7 @@ async fn startup_finalization_classifies_cache_failures_and_preserves_healthy_ca
         let events = captured.entries();
         let promotion_failure = events.iter().find(|event| {
             event.fields.get("message").map(String::as_str)
-                == Some("home image cache promotion skipped because guest preparation failed")
+                == Some("home image publication rejected because guest preparation failed")
         });
         assert_eq!(promotion_failure.map(|event| event.level), expected_level);
         if let Some(event) = promotion_failure {

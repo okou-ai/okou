@@ -1,4 +1,3 @@
-use super::super::*;
 use super::support::*;
 use std::sync::Arc;
 
@@ -22,6 +21,40 @@ async fn routine_inventory_does_not_hold_capacity_while_blocked_at_scan_boundary
     release.add_permits(1);
     assert!(pending.await.unwrap().unwrap().is_some());
     assert_eq!(f.cache.held_home_states().await.len(), 1);
+}
+
+#[tokio::test]
+async fn multi_entry_inventory_scans_once_without_holding_capacity() {
+    let fixture = Fixture::new().await;
+    let first = fixture
+        .commit("first", b"first-home", "2026-10-09T09:00:00Z")
+        .await;
+    let second = fixture
+        .commit("second", b"second-home", "2026-10-09T09:00:01Z")
+        .await;
+    let entered = Arc::new(tokio::sync::Notify::new());
+    let release = Arc::new(tokio::sync::Semaphore::new(0));
+    let cache =
+        fixture
+            .cache
+            .clone()
+            .with_gc_inventory_test_gate(1, entered.clone(), release.clone());
+    fixture.cache.reset_gc_root_scan_count();
+    let pending =
+        tokio::spawn(async move { cache.try_routine_gc(std::time::Duration::ZERO).await });
+    entered.notified().await;
+    assert_eq!(fixture.cache.gc_root_scan_count(), 1);
+    let capacity = runner_host::lock::try_acquire(fixture.cache.capacity_lock_path())
+        .await
+        .unwrap();
+    drop(capacity);
+    release.add_permits(1);
+    assert!(pending.await.unwrap().unwrap().is_some());
+    assert!(fixture.image("first", &first).exists());
+    assert!(fixture.image("second", &second).exists());
+    let candidates = fixture.cache.gc_candidates().await.unwrap();
+    assert_eq!(candidates.len(), 2);
+    assert_eq!(fixture.cache.held_home_states().await.len(), 2);
 }
 
 #[tokio::test]

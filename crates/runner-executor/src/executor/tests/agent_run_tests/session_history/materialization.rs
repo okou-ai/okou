@@ -194,8 +194,13 @@ async fn unverifiable_home_candidates_use_owned_authoritative_restore_after_prep
         let mut source = crate::executor::tests::agent_run_tests::support::claude_history_source(
             "session-home-fallback",
         );
-        if wrong_source {
-            if let guest_contracts::session_history_identity::SessionHistorySourceRef::ClaudeCode {config_dir, ..} = &mut source { *config_dir = "/home/user/stale-config".into(); }
+        if wrong_source
+            && let guest_contracts::session_history_identity::SessionHistorySourceRef::ClaudeCode {
+                config_dir,
+                ..
+            } = &mut source
+        {
+            *config_dir = "/home/user/stale-config".into();
         }
         let identity = SessionHistoryIdentity::new(
             expected.framework,

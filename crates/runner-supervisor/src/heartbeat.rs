@@ -11,7 +11,9 @@ use runner_lifecycle::active_runs::ActiveRuns;
 use runner_lifecycle::home_image_cache::snapshot::{
     HomeCacheRefreshOutcome, HomeCacheStateSnapshot, filter_current_held_home_states,
 };
-use runner_lifecycle::home_image_cache::{HomeCacheChange, HomeImageCache, HomeImageProfileIdentity};
+use runner_lifecycle::home_image_cache::{
+    HomeCacheChange, HomeImageCache, HomeImageProfileIdentity,
+};
 use runner_lifecycle::idle_pool::IdlePool;
 use runner_lifecycle::lifecycle::RunnerMode;
 use runner_lifecycle::resource_budget::ResourceBudget;
@@ -734,6 +736,8 @@ mod tests {
                     sandbox_id,
                     profile_name: "vm0/default",
                     reuse_key: Some(reuse_key),
+                    working_dir:
+                        api_contracts::generated::constants::runners::paths::CANONICAL_WORKING_DIR,
                     rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                     image_size_bytes: 1024 * 1024,
                 },

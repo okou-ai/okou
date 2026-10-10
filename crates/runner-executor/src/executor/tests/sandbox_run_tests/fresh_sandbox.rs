@@ -1564,10 +1564,7 @@ async fn execute_job_home_mount_failure_drains_early_prefetch_before_destroy() {
 
     assert_eq!(outcome.exit_code(), 1);
     let error = outcome.error().unwrap();
-    assert!(
-        error.contains("mount workspace drive failed"),
-        "got: {error}"
-    );
+    assert!(error.contains("mount home drive failed"), "got: {error}");
     assert!(error.contains("mount denied"), "got: {error}");
     let operations = telemetry.pending_ops_with_outcome_snapshot();
     let unavailable = operations

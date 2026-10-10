@@ -18,6 +18,31 @@ fn terminal_report() -> TerminalHomeCachePreparationReport {
 }
 
 #[tokio::test]
+async fn changed_terminal_home_mount_rejects_before_cleanup_freeze_or_publication() {
+    let fixture = HomePromotionFixture::new("thread:terminal-mount-rejected").await;
+    let cache = fixture.cache.clone();
+    let overrides = Arc::new(MockSandboxOverrides::new());
+    add_healthy_cache_preparation_matcher(&overrides);
+    overrides.push_home_drive_mount_result(Ok(ExecResult::new(
+        64,
+        Vec::new(),
+        b"same-device subtree is not the whole home".to_vec(),
+    )));
+    let sandbox = MockSandbox::with_overrides(fixture.sandbox_id.to_string(), overrides.clone());
+    assert!(
+        prepare_home_image_from_active_sandbox(&sandbox, Some(fixture.promotion), "test")
+            .await
+            .is_none()
+    );
+    assert_eq!(overrides.home_drive_mount_calls(), 1);
+    assert!(
+        overrides.exec_calls().is_empty(),
+        "cleanup and freeze must not run"
+    );
+    assert!(cache.held_home_states().await.is_empty());
+}
+
+#[tokio::test]
 async fn parked_home_is_cleaned_then_frozen_but_not_published_before_termination() {
     let fixture = HomePromotionFixture::new("thread:parked-home").await;
     let overrides = Arc::new(MockSandboxOverrides::new());
@@ -29,6 +54,7 @@ async fn parked_home_is_cleaned_then_frozen_but_not_published_before_termination
             .await
             .unwrap();
     assert_eq!(overrides.terminal_unpark_call_count(), 1);
+    assert_eq!(overrides.home_drive_mount_calls(), 1);
     let calls = overrides.exec_calls();
     assert_eq!(calls.len(), 2);
     assert!(calls[0].cmd.ends_with("prepare-for-cache"));

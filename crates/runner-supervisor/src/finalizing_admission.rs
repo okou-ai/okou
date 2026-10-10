@@ -188,7 +188,7 @@ pub async fn select_finalizing_resource(
 }
 
 /// Observe the fallback capacity wait without changing production selection.
-#[cfg(feature = "test-support")]
+#[cfg(any(test, feature = "test-support"))]
 pub async fn select_finalizing_resource_with_test_hooks(
     request: FinalizingSelectionRequest<'_>,
     pre_spawn_timing: &mut RunnerPreSpawnTiming,

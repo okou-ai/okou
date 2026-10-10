@@ -715,7 +715,7 @@ impl SandboxFactory for ObservedMockSandboxFactory {
 
 const FRESH_SANDBOX_FACTORY_STAGE_ACTIONS: &[&str] = &[
     "runner_fresh_sandbox_factory_cow_pool_acquire",
-    "runner_fresh_sandbox_factory_home_dir_rename",
+    "runner_fresh_sandbox_factory_workspace_dir_rename",
     "runner_fresh_sandbox_factory_home_drive_prepare",
     "runner_fresh_sandbox_factory_home_seed_sparse_copy",
     "runner_fresh_sandbox_factory_home_fresh_format",

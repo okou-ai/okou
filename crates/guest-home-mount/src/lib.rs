@@ -79,7 +79,7 @@ fn mount_at(
     let mounts = parse_mountinfo(&fs::read(mountinfo)?)?;
     let mounted = match visible_mount(directory, &mounts)? {
         Some((mount, target_device)) if mount.target == directory.as_os_str().as_bytes() => {
-            validate_mount_device(mount.device, target_device, expected_device)?;
+            validate_home_mount(mount, target_device, expected_device)?;
             true
         }
         _ => false,
@@ -109,7 +109,7 @@ fn mount_at(
     if mount.target != directory.as_os_str().as_bytes() {
         return Err(invalid("home path is not the visible mountpoint"));
     }
-    validate_mount_device(mount.device, target_device, expected_device)?;
+    validate_home_mount(mount, target_device, expected_device)?;
     let home = open_directory(directory)?;
     let pinned = statx(&home, "", AtFlags::EMPTY_PATH, StatxFlags::MNT_ID)?;
     if pinned.stx_mask & StatxFlags::MNT_ID.bits() == 0 || pinned.stx_mnt_id != mount.id {
@@ -157,6 +157,17 @@ fn visible_mount<'a>(
         .find(|mount| mount.id == target.stx_mnt_id)
         .ok_or_else(|| invalid("visible home mount missing from mountinfo"))?;
     Ok(Some((mount, (target.stx_dev_major, target.stx_dev_minor))))
+}
+
+fn validate_home_mount(
+    mount: &linux_mountinfo::Mount,
+    target_device: (u32, u32),
+    expected: (u32, u32),
+) -> io::Result<()> {
+    if mount.root != b"/" {
+        return Err(invalid("home mount exposes only a filesystem subtree"));
+    }
+    validate_mount_device(mount.device, target_device, expected)
 }
 
 fn validate_mount_device(
@@ -450,6 +461,24 @@ mod tests {
         validate_mount_device(device, device, device).unwrap();
         assert!(validate_mount_device(device, device, (u32::MAX, u32::MAX)).is_err());
         assert!(validate_mount_device(device, (u32::MAX, u32::MAX), device).is_err());
+    }
+
+    #[test]
+    fn home_mount_rejects_same_device_subtree_before_namespace_initialization() {
+        let full = parse_mountinfo(b"42 25 253:17 / /home/user rw - ext4 /dev/vdb rw").unwrap();
+        validate_home_mount(full.first().unwrap(), (253, 17), (253, 17)).unwrap();
+        for root in [b"/bind-source".as_slice(), b"/space\\040subtree"] {
+            let mut record = b"43 42 253:17 ".to_vec();
+            record.extend_from_slice(root);
+            record.extend_from_slice(b" /home/user rw - ext4 /dev/vdb rw");
+            let subtree = parse_mountinfo(&record).unwrap();
+            assert_eq!(
+                validate_home_mount(subtree.first().unwrap(), (253, 17), (253, 17))
+                    .unwrap_err()
+                    .kind(),
+                io::ErrorKind::InvalidData
+            );
+        }
     }
 
     #[test]

@@ -686,6 +686,10 @@ mod tests {
                     assert_eq!(start.msg_type, guest_control_proto::MSG_EXEC_START);
                     let decoded = guest_control_proto::decode_exec_start(&start.payload).unwrap();
                     assert_eq!(decoded.command, command);
+                    assert_eq!(
+                        decoded.lifecycle,
+                        guest_control_proto::ExecLifecyclePolicy::OneShot
+                    );
                     assert_eq!(decoded.sudo, sudo);
                     assert!(decoded.env.is_empty());
                     assert!(
@@ -694,14 +698,8 @@ mod tests {
                             .any(|request| request.path == "/vm"
                                 || request.path == "/snapshot/create")
                     );
-                    let started = guest_control_proto::encode_exec_started(1234).unwrap();
-                    respond_guest_frame(
-                        &mut peer,
-                        guest_control_proto::MSG_EXEC_STARTED,
-                        start.seq,
-                        &started,
-                    )
-                    .await;
+                    // Snapshot prewarm/detach are one-shot operations: the peer
+                    // returns only their terminal result, never a workload PID.
                     let result = guest_control_proto::encode_exec_result(
                         ExecTermination::Exited { exit_code },
                         1,

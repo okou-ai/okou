@@ -23,6 +23,7 @@ pub struct ParkedIdleCandidateBuilder {
     reuse_key: String,
     sandbox_id: SandboxId,
     profile_name: String,
+    rootfs_hash: String,
     device_rate_limits: Option<DeviceRateLimits>,
     budget_lease: BudgetLease,
     source_ip: String,
@@ -45,6 +46,7 @@ impl ParkedIdleCandidateBuilder {
             reuse_key: reuse_key.into(),
             sandbox_id: SandboxId::new_v4(),
             profile_name: DEFAULT_PROFILE_NAME.into(),
+            rootfs_hash: "test-rootfs".into(),
             device_rate_limits: None,
             budget_lease,
             source_ip: DEFAULT_SOURCE_IP.into(),
@@ -79,6 +81,11 @@ impl ParkedIdleCandidateBuilder {
 
     pub fn with_profile_name(mut self, profile_name: impl Into<String>) -> Self {
         self.profile_name = profile_name.into();
+        self
+    }
+
+    pub fn with_rootfs_hash(mut self, rootfs_hash: impl Into<String>) -> Self {
+        self.rootfs_hash = rootfs_hash.into();
         self
     }
 
@@ -122,6 +129,7 @@ impl ParkedIdleCandidateBuilder {
             reuse_key,
             sandbox_id,
             profile_name,
+            rootfs_hash,
             device_rate_limits,
             budget_lease,
             source_ip,
@@ -136,7 +144,7 @@ impl ParkedIdleCandidateBuilder {
             identity: super::entry::IdleSandboxIdentity::Exact(reuse_key),
             sandbox_id,
             profile_name,
-            rootfs_hash: "test-rootfs".to_owned(),
+            rootfs_hash,
             device_rate_limits,
             source_ip,
             storage_fingerprints,

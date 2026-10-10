@@ -20,6 +20,7 @@ fn unicode_whitespace_in_root_and_target_is_path_data() {
                     [Mount {
                         id: 42,
                         device: (253, 17),
+                        root: root.as_bytes().to_vec(),
                         target: target.as_bytes().to_vec(),
                     }],
                 );
@@ -36,6 +37,7 @@ fn non_utf8_paths_do_not_invalidate_other_records() {
     let mounts = parse(input).collect::<io::Result<Vec<_>>>().unwrap();
 
     assert_eq!(mounts.len(), 2);
+    assert_eq!(mounts[0].root, b"/root/\xff");
     assert_eq!(mounts[0].target, b"/tmp/\xfe");
     assert_eq!(mounts[1].target, b"/tmp/ascii");
 }
@@ -60,10 +62,11 @@ fn only_kernel_field_delimiters_split_path_bytes() {
 
 #[test]
 fn decodes_all_kernel_escapes_once() {
-    let input = br"42 25 0:32 / /space\040tab\011newline\012backslash\134040 rw - ext4 /dev/vdb rw";
+    let input = br"42 25 0:32 /root\040tab\011newline\012backslash\134040 /space\040tab\011newline\012backslash\134040 rw - ext4 /dev/vdb rw";
 
     let mounts = parse(input).collect::<io::Result<Vec<_>>>().unwrap();
 
+    assert_eq!(mounts[0].root, b"/root tab\tnewline\nbackslash\\040");
     assert_eq!(mounts[0].target, b"/space tab\tnewline\nbackslash\\040");
 }
 
@@ -72,11 +75,14 @@ fn rejects_incomplete_and_non_kernel_path_escapes() {
     for escape in [
         r"\", r"\0", r"\04", r"\041", r"\000", r"\377", r"\777", r"\xyz",
     ] {
-        let input = format!("42 25 0:32 / /tmp/{escape} rw - ext4 /dev/vdb rw");
-
-        let error = parse(input.as_bytes()).next().unwrap().unwrap_err();
-
-        assert_eq!(error.kind(), io::ErrorKind::InvalidData, "{escape}");
+        for (root, target) in [
+            ("/".to_string(), format!("/tmp/{escape}")),
+            (format!("/root/{escape}"), "/tmp".to_string()),
+        ] {
+            let input = format!("42 25 0:32 {root} {target} rw - ext4 /dev/vdb rw");
+            let error = parse(input.as_bytes()).next().unwrap().unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::InvalidData, "{escape}");
+        }
     }
 }
 

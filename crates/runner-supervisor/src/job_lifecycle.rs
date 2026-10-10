@@ -240,10 +240,7 @@ impl CompletionPayload {
         }
     }
 
-    pub fn with_home_reuse_result(
-        mut self,
-        home_reuse_result: Option<HomeReuseResult>,
-    ) -> Self {
+    pub fn with_home_reuse_result(mut self, home_reuse_result: Option<HomeReuseResult>) -> Self {
         self.home_reuse_result = home_reuse_result;
         self
     }

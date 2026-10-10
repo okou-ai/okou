@@ -885,7 +885,8 @@ mod tests {
                 reuse_result: SandboxReuseResult::PoolMiss,
                 home_disk_mb: 0,
                 profile_name: "vm0/default".into(),
-                rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+                rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                    .into(),
                 reuse_key: Some(session_id.into()),
                 cli_agent_session_id: Some(session_id.into()),
                 storage_fingerprints: StorageFingerprints::default(),

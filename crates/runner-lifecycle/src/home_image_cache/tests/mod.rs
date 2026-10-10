@@ -1,3 +1,4 @@
+mod fs;
 mod gc;
 mod inspection;
 mod lifecycle;

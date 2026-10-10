@@ -943,14 +943,14 @@ async fn execute_inner_logs_home_cache_lock_error_separately() {
     )));
     let errors = captured_events_named(
         &events,
-        "workspace image cache lock unavailable; using fresh workspace image",
+        "home image cache lock unavailable; using fresh home image",
     );
     assert_eq!(errors.len(), 1, "events={events:#?}");
     assert!(errors[0].fields.contains_key("error"));
     assert!(
         captured_events_named(
             &events,
-            "workspace image cache lock remained busy; using fresh workspace image",
+            "home image cache lock remained busy; using fresh home image",
         )
         .is_empty(),
         "events={events:#?}"
@@ -1023,7 +1023,7 @@ async fn execute_inner_does_not_retry_home_cache_hit_after_proxy_register_failur
         ),
     )
     .await
-    .expect("proxy registration failure should drop the local materializer");
+    .expect("proxy registration failure must drain the prestart history owner");
 
     assert!(
         result.is_err(),
@@ -1049,7 +1049,10 @@ async fn execute_inner_does_not_retry_home_cache_hit_after_proxy_register_failur
         expected_seed.exists(),
         "proxy registration failure must not invalidate the unrelated workspace cache hit"
     );
-    history_mock.assert_calls_async(0).await;
+    // A lease alone is not retained-history authority. The normal prestart
+    // download overlaps creation until current preparation and live proof can
+    // be verified. Registration failure drains that one owner, without retry.
+    history_mock.assert_calls_async(1).await;
     assert_telemetry_action(
         &telemetry,
         "runner_fresh_sandbox_factory_create",

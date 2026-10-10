@@ -4,8 +4,8 @@ use crate::storage_fingerprints::StorageFingerprints;
 ///
 /// Filtering is applied independently to both the storage and artifact maps. The
 /// paths are normalized only for the membership check; retained entries keep
-/// their original map keys and fingerprint values. If the working directory or
-/// a mount path is unsafe, that entry is excluded.
+/// their original map keys and fingerprint values. Unsafe mount paths are
+/// excluded; the execution working directory does not select the image scope.
 pub(super) fn filter_storage_fingerprints_for_home(
     fingerprints: &StorageFingerprints,
 ) -> StorageFingerprints {
@@ -65,12 +65,12 @@ pub(super) fn normalize_safe_guest_working_dir(path: &str) -> Option<String> {
     Some(format!("/{}", components.join("/")))
 }
 
-/// Returns whether a mount path belongs to a working directory's workspace scope.
+/// Returns whether a mount path belongs to the supplied home-root scope.
 ///
 /// Both paths are normalized before comparison. An exact normalized match and
 /// a descendant with `/` at the component boundary are accepted; invalid paths
 /// are rejected. This intentionally avoids raw string-prefix matching, so
-/// `/workspace2` is not a descendant of `/workspace`.
+/// `/home/user2` is not a descendant of `/home/user`.
 pub(super) fn is_home_scoped_path(mount_path: &str, working_dir: &str) -> bool {
     let Some(mount_path) = normalize_safe_guest_working_dir(mount_path) else {
         return false;

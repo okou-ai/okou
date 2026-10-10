@@ -66,7 +66,7 @@ const RUNNER_FRESH_SANDBOX_FACTORY_CREATE: &str = "runner_fresh_sandbox_factory_
 const RUNNER_FRESH_SANDBOX_FACTORY_COW_POOL_ACQUIRE: &str =
     "runner_fresh_sandbox_factory_cow_pool_acquire";
 const RUNNER_FRESH_SANDBOX_FACTORY_WORKSPACE_DIR_RENAME: &str =
-    "runner_fresh_sandbox_factory_home_dir_rename";
+    "runner_fresh_sandbox_factory_workspace_dir_rename";
 // `home_drive_prepare` contains the seed-copy/fresh-format child stages;
 // downstream queries should not sum the parent and child durations together.
 const RUNNER_FRESH_SANDBOX_FACTORY_WORKSPACE_DRIVE_PREPARE: &str =
@@ -556,17 +556,7 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
     };
     controls.pre_spawn_admission_lease = Some(admission_lease);
     let prepare_started = Instant::now();
-    let mut home_image = prepare_home_image(
-        context,
-        sandbox_id,
-        config,
-        &params.profile_name,
-        params.home_disk_mb,
-        &params.rootfs_hash,
-        params.home_image_prepare_lock_policy,
-        telemetry,
-    )
-    .await;
+    let mut home_image = prepare_home_image(context, sandbox_id, config, params, telemetry).await;
     let prepared_storage = prepare_storage(
         context,
         home_image
@@ -958,10 +948,7 @@ pub(super) async fn prepare_home_image(
     context: &ExecutionContext,
     sandbox_id: SandboxId,
     config: &ExecutorConfig,
-    profile_name: &str,
-    home_disk_mb: u32,
-    rootfs_hash: &str,
-    lock_policy: HomeImagePrepareLockPolicy,
+    params: &JobParams,
     telemetry: &mut JobTelemetry,
 ) -> Option<HomeImageLease> {
     let cache = config.home_cache.as_ref()?;
@@ -971,18 +958,20 @@ pub(super) async fn prepare_home_image(
         identity: HomeImageLeaseIdentity {
             run_id: context.run_id,
             sandbox_id,
-            profile_name,
-            rootfs_hash,
+            profile_name: &params.profile_name,
+            rootfs_hash: &params.rootfs_hash,
             reuse_key,
             working_dir: CANONICAL_WORKING_DIR,
-            image_size_bytes: u64::from(home_disk_mb) * 1024 * 1024,
+            image_size_bytes: u64::from(params.home_disk_mb) * 1024 * 1024,
         },
         home_drive_required: true,
     };
-    let lease = match lock_policy {
+    let lease = match params.home_image_prepare_lock_policy {
         HomeImagePrepareLockPolicy::WaitForTransientContention => cache.prepare(request).await,
         HomeImagePrepareLockPolicy::ImmediateFallback => {
-            cache.prepare_with_lock_policy(request, lock_policy).await
+            cache
+                .prepare_with_lock_policy(request, params.home_image_prepare_lock_policy)
+                .await
         }
     };
     let prepare_error = home_image_prepare_error(lease.result());

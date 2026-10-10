@@ -6,13 +6,13 @@ use sandbox::SandboxId;
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 
+use crate::home_image_cache::{
+    HomeCacheCheckoutResult, HomeCacheTerminalStatus, HomeImageCache, HomeImageLeaseIdentity,
+    HomeImagePrepareRequest, HomeImagePromotionContext, HomeImagePromotionOutcome,
+    HomeImagePromotionRequest,
+};
 use crate::restored_session_identity::RestoredSessionIdentity;
 use crate::storage_fingerprints::StorageFingerprints;
-use crate::home_image_cache::{
-    HomeCacheCheckoutResult, HomeCacheTerminalStatus, HomeImageCache,
-    HomeImageLeaseIdentity, HomeImagePrepareRequest, HomeImagePromotionContext,
-    HomeImagePromotionOutcome, HomeImagePromotionRequest,
-};
 use runner_host::paths::RunnerPaths;
 use runner_types::ids::RunId;
 
@@ -20,9 +20,12 @@ pub fn add_healthy_cache_preparation_matcher(overrides: &sandbox_mock::MockSandb
     overrides.add_persistent_exec_matcher(sandbox_mock::ExecMatcher {
         pattern: "prepare-for-cache".to_string(),
         exit_code: 0,
-        stdout: serde_json::to_vec(&guest_contracts::home_cache_history::TerminalHomeCachePreparationReport {
-            cleanup: crate::idle_reuse_preparation::healthy_reuse_preparation_report(), history_proof: None,
-        })
+        stdout: serde_json::to_vec(
+            &guest_contracts::home_cache_history::TerminalHomeCachePreparationReport {
+                cleanup: crate::idle_reuse_preparation::healthy_reuse_preparation_report(),
+                history_proof: None,
+            },
+        )
         .unwrap(),
         stderr: Vec::new(),
     });
@@ -37,8 +40,17 @@ pub fn mock_sandbox_ready_for_cache_preparation(
 }
 
 pub const TEST_COMPLETED_AT: &str = "2026-06-03T00:00:00.000Z";
-const TEST_HOME_IMAGE: &[u8] = b"workspace image";
-pub const TEST_HOME_IMAGE_SIZE_BYTES: u64 = TEST_HOME_IMAGE.len() as u64;
+const TEST_HOME_IMAGE: &[u8] = b"home image";
+pub const TEST_HOME_IMAGE_SIZE_BYTES: u64 = 1024 * 1024;
+
+pub fn test_home_image() -> Vec<u8> {
+    let mut image = vec![0; TEST_HOME_IMAGE_SIZE_BYTES as usize];
+    image
+        .get_mut(..TEST_HOME_IMAGE.len())
+        .expect("fixture image holds the complete marker")
+        .copy_from_slice(TEST_HOME_IMAGE);
+    image
+}
 
 pub fn test_restored_session_identity(session_id: &str, history: &[u8]) -> RestoredSessionIdentity {
     let metadata = SessionHistoryIdentity::new(
@@ -150,12 +162,9 @@ impl HomePromotionFixture {
         tokio::fs::create_dir_all(paths.home_dir(&sandbox_id))
             .await
             .unwrap();
-        tokio::fs::write(
-            paths.active_home_image(&sandbox_id),
-            TEST_HOME_IMAGE,
-        )
-        .await
-        .unwrap();
+        tokio::fs::write(paths.active_home_image(&sandbox_id), test_home_image())
+            .await
+            .unwrap();
         let promotion = home_image
             .into_promotion_context(HomeImagePromotionRequest {
                 run_id,
@@ -165,7 +174,7 @@ impl HomePromotionFixture {
                 completed_at: TEST_COMPLETED_AT.into(),
                 storage_fingerprints: StorageFingerprints::default(),
             })
-            .expect("workspace image should be promotable");
+            .expect("home image should be promotable");
 
         Self {
             _dir: dir,

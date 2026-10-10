@@ -38,13 +38,13 @@ pub mod test_fixtures {
     #[cfg(test)]
     pub use runner_host::test_fixtures::ignored_child;
 
-    pub fn home_image_cache_key(reuse_key: &str, _working_dir: &str) -> String {
+    pub fn home_image_cache_key(reuse_key: &str) -> String {
         runner_host::paths::scoped_home_image_cache_key(
             "",
             "vm0/default",
             "test-rootfs",
             reuse_key,
-            5,
+            1024 * 1024,
         )
     }
 

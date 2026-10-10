@@ -929,6 +929,7 @@ mod tests {
             reuse_key: fixture.reuse_key.clone(),
             sandbox_id: fixture.sandbox_id,
             profile_name: "vm0/default".into(),
+            rootfs_hash: "test-rootfs".into(),
             device_rate_limits: None,
             budget_lease: lease,
             source_ip: "10.0.0.1".into(),
@@ -936,7 +937,8 @@ mod tests {
             restored_session_identity: None,
             history_generation_run_id: None,
             guest_timezone_intent: runner_lifecycle::guest_timezone::GuestTimezoneIntent::Unknown,
-            home_image_size_bytes: b"home image".len() as u64,
+            home_image_size_bytes:
+                runner_lifecycle::home_promotion::test_support::TEST_HOME_IMAGE_SIZE_BYTES,
             home_promotion: Some(fixture.promotion),
             handoff: None,
         });

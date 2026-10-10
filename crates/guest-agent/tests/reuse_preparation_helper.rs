@@ -1112,7 +1112,7 @@ async fn run_cache_helper(
             "OKOU_TEST_HOME_CACHE_HISTORY_PROOF_PATH",
             runtime_parent
                 .parent()
-                .unwrap()
+                .ok_or_else(|| std::io::Error::other("fixture runtime parent has no cache anchor"))?
                 .join("home-cache/session-history-proof.json"),
         )
         .arg("prepare-for-cache");
