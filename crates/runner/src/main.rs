@@ -551,6 +551,18 @@ mod tests {
         assert!(help.contains(API_URL_ENV));
         assert!(help.contains(TOKEN_ENV));
         assert_operator_values_hidden(&help);
+
+        let normalized_help = help.split_whitespace().collect::<Vec<_>>().join(" ");
+        for requirement in [
+            "absolute URL without credentials, query, or fragment",
+            "HTTPS is required except for HTTP hosts normalized to localhost, IPv4 loopback (127.0.0.0/8), or IPv6 loopback (::1)",
+            "Private network addresses require HTTPS",
+        ] {
+            assert!(
+                normalized_help.contains(requirement),
+                "runner {subcommand} help should document {requirement}: {normalized_help}"
+            );
+        }
     }
 
     #[tokio::test]
