@@ -1,6 +1,6 @@
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { telegramChatThreadRoutes } from "@okouai/db/schema/telegram-chat-thread-route";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import { writeDb$, type Db } from "../external/db";
 import { command } from "ccstate";
@@ -279,12 +279,20 @@ export const createTelegramChatThread$ = command(
     );
     const thread = integrationChatThreadValues(args, randomUUID(), defaults);
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0260; new non-billing transactions are prohibited.
-    await db.transaction(async (tx) => {
-      await tx.insert(chatThreads).values(thread);
-      await tx.execute(integrationThreadCreatedEventSql(args.orgId, thread));
-      signal.throwIfAborted();
-    });
+    const insert = db
+      .insert(chatThreads)
+      .values(thread)
+      .returning({ agentId: chatThreads.agentId });
+    // Use RETURNING: another CTE cannot read this inserted base row in the
+    // statement snapshot. Creation, sequence reservation and publication commit
+    // together, with the event's agent identity coming from the inserted row.
+    await db.execute(
+      integrationThreadCreatedEventSql(args.orgId, thread, {
+        cte: sql`inserted_thread AS (${insert.getSQL()})`,
+        gate: sql`EXISTS (SELECT 1 FROM inserted_thread)`,
+        agentId: sql`(SELECT agent_id FROM inserted_thread)`,
+      }),
+    );
     signal.throwIfAborted();
     return { chatThreadId: thread.id };
   },
