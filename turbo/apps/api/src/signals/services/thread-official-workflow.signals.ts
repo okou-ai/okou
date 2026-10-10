@@ -1,6 +1,6 @@
 import { computed, type Computed } from "ccstate";
 import { conflict } from "../../lib/error";
-import { safeSync, settle } from "../utils";
+import { settle } from "../utils";
 import { parseCanonicalChatEventRequiredOfficialWorkflowIds } from "./canonical-chat-event-read.service";
 import { assertRequiredOfficialWorkflows } from "./official-workflow-observation.service";
 import {
@@ -31,13 +31,13 @@ function createRequiredOfficialWorkflowIds(
         ? [target.automation.workflowId]
         : [];
     }
-    // Queued prompt parsing rejects malformed claims before a run is created.
-    const parsed = safeSync(() => {
-      return parseCanonicalChatEventRequiredOfficialWorkflowIds(
+    // Queued prompt parsing rejects malformed claims before a run is created;
+    // a violated claim contract must not become an empty requirement list.
+    return (
+      parseCanonicalChatEventRequiredOfficialWorkflowIds(
         event?.requiredOfficialWorkflowIds ?? null,
-      );
-    });
-    return "error" in parsed ? [] : (parsed.ok ?? []);
+      ) ?? []
+    );
   });
 }
 
