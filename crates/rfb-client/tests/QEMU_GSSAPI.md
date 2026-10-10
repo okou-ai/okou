@@ -293,7 +293,13 @@ pre-resumption exit wrapper. Twelve additional cases inject that exact wrapper
 handoff for package/QEMU/source/output originals and actual retirement query or
 restore failures, retaining tracebacks through EBADF/count/mask/source checks.
 The owner shields generator resumption before consuming callbacks; a failed
-context entry closes originals already registered with that same owner.
+context entry enters guarded retirement directly, without the interruptible
+`ExitStack.close` wrapper. Four additional isolated cases use naturally refused
+empty-package or wrong-size QEMU inputs and send the first SIGINT or raising
+SIGTERM at that owner's actual stdlib cleanup handoff. They retain the exception
+and original validation cause through EBADF, FD-count, mask and public-byte checks;
+no decoder or provider identity is substituted. This covers failed entry after
+acquisition, not general Python opcode/allocation atomicity.
 Partial retention remains incomplete data, not a completion record or permission
 to retry/overwrite. These scoped tests do not admit general atomic acquisition,
 arbitrary/repeated cleanup interruptions, constructor/reaper ownership,

@@ -178,7 +178,9 @@ class ArchiveContext(ArchiveDescriptorOwner):
                 (self, self.descriptors), *self.args, **self.kwargs)
             return self.enter_context(context)
         except BaseException:
-            self.close()
+            # Enter guarded retirement directly: ExitStack.close can receive an
+            # interrupt before it delegates to this owner's protected exit.
+            self.__exit__(None, None, None)
             raise
 
 

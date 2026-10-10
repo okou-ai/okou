@@ -1020,6 +1020,98 @@ print('generator handoff/mask failure propagated after actual original closure')
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn('actual original closure', result.stdout)
 
+    def test_failed_archive_entry_interrupt_closes_original_before_propagation(self):
+        # Invalid ordinary input fails before yield. The first handled signal at
+        # its stdlib cleanup handoff must not leave the original in a traceback.
+        script = '''
+import contextlib, errno, hashlib, importlib.util, os, pathlib, signal, sys
+spec = importlib.util.spec_from_file_location('actual_producer', sys.argv[1])
+producer = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(producer)
+base, site, case = pathlib.Path(sys.argv[2]), sys.argv[3], sys.argv[4]
+archive = base / 'public-rejected-input'
+public = b'' if site == 'package' else b'public wrong-size QEMU input'
+archive.write_bytes(public)
+digest = hashlib.sha256(public).hexdigest()
+original_open, original_mask = os.open, signal.pthread_sigmask
+cleanup_codes = (contextlib.ExitStack.close.__code__, contextlib.ExitStack.__exit__.__code__)
+prior = original_mask(signal.SIG_BLOCK, set())
+before = len(list(pathlib.Path('/proc/self/fd').iterdir()))
+opened, reached, terminated = [], [], []
+interrupted = None
+context = (producer.opened_package_archive(archive) if site == 'package'
+           else producer.opened_qemu_archive(archive))
+def terminate(signum, frame):
+    terminated.append(signum)
+    raise SystemExit(128 + signum)
+def observe_open(path, flags, *args, **kwargs):
+    descriptor = original_open(path, flags, *args, **kwargs)
+    if pathlib.Path(path) == archive:
+        opened.append(descriptor)
+    return descriptor
+def interrupt_cleanup(frame, event, argument):
+    # Select the first actual stdlib cleanup handoff of this failed owner.
+    # No production function, descriptor, mask result or close is replaced.
+    if (event == 'line' and frame.f_code in cleanup_codes
+            and frame.f_locals.get('self') is context and not reached):
+        assert len(opened) == 1 and os.fstat(opened[0]).st_size == len(public)
+        reached.append(frame.f_code.co_name)
+        os.kill(os.getpid(), signal.SIGINT if case == 'sigint' else signal.SIGTERM)
+    return interrupt_cleanup
+previous_handler = signal.signal(signal.SIGTERM, terminate)
+try:
+    os.open = observe_open
+    sys.settrace(interrupt_cleanup)
+    try:
+        with context:
+            raise AssertionError('invalid public archive admitted')
+    except (KeyboardInterrupt, SystemExit) as error:
+        interrupted = error
+    finally:
+        sys.settrace(None)
+        os.open = original_open
+        signal.signal(signal.SIGTERM, previous_handler)
+    assert len(reached) == 1 and interrupted is not None and len(opened) == 1
+    assert isinstance(interrupted, KeyboardInterrupt if case == 'sigint' else SystemExit)
+    if case == 'sigterm':
+        assert interrupted.code == 128 + signal.SIGTERM
+    assert terminated == ([signal.SIGTERM] if case == 'sigterm' else [])
+    refusal = interrupted.__context__
+    assert isinstance(refusal, ValueError)
+    assert str(refusal) == ('package compressed archive budget refused' if site == 'package'
+                            else 'source-pinned QEMU archive input refused')
+    for descriptor in opened:
+        try:
+            os.fstat(descriptor)
+        except OSError as error:
+            assert error.errno == errno.EBADF
+        else:
+            raise AssertionError('failed-entry original FD live with exception traceback retained')
+    assert len(list(pathlib.Path('/proc/self/fd').iterdir())) == before
+    assert original_mask(signal.SIG_BLOCK, set()) == prior
+    assert archive.read_bytes() == public
+    assert hashlib.sha256(archive.read_bytes()).hexdigest() == digest
+    print('first failed-entry cleanup signal propagated after actual original closure')
+finally:
+    sys.settrace(None)
+    os.open = original_open
+    signal.signal(signal.SIGTERM, previous_handler)
+    # A failing negative control retires only its exact retained owner. No
+    # guessed descriptor, callback replay after native close or GC dependency.
+    context.__exit__(None, None, None)
+    original_mask(signal.SIG_SETMASK, prior)
+'''
+        for site in ('package', 'qemu'):
+            for case in ('sigint', 'sigterm'):
+                with self.subTest(site=site, case=case), tempfile.TemporaryDirectory(dir=self.parent) as directory:
+                    result = subprocess.run(
+                        [sys.executable, '-I', '-S', '-B', '-c', script,
+                         str(ROOT / '.github/scripts/prepare-qemu-gssapi-fixture.py'), directory, site, case],
+                        capture_output=True, text=True, timeout=10,
+                        env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C.UTF-8'})
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertIn('after actual original closure', result.stdout)
+
     def test_opened_archive_bounds_reads_closes_fd_and_detects_actual_writer_change(self):
         with tempfile.TemporaryDirectory(dir=self.parent) as directory:
             base = pathlib.Path(directory)
