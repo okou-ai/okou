@@ -26,6 +26,28 @@ describe("FeatureSwitchKey", () => {
 });
 
 describe("isFeatureEnabled", () => {
+  it("defaults stable preview fullscreen on only for staff and honors explicit overrides", () => {
+    const key = FeatureSwitchKey.StablePreviewFullscreen;
+    for (const [context, enabled] of [
+      [{}, false],
+      [{ orgId: "org_external" }, false],
+      [{ email: "bingjie@okou.ai", orgId: "org_external" }, false],
+      [{ orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" }, true],
+    ] as const) {
+      expect(isFeatureEnabled(key, context)).toBe(enabled);
+      expect(getAllFeatureStates(context)[key]).toBe(enabled);
+      for (const override of [true, false]) {
+        const overrideContext = {
+          ...context,
+          overrides: { [key]: override },
+        };
+        expect(isFeatureEnabled(key, overrideContext)).toBe(override);
+        expect(getAllFeatureStates(overrideContext)[key]).toBe(override);
+      }
+    }
+    expect(getFeatureSwitchMetadata()[key].rolloutStage).toBe("beta");
+  });
+
   it("keeps artifact previews off for staff and external users until explicitly enabled", () => {
     for (const context of [
       {},
