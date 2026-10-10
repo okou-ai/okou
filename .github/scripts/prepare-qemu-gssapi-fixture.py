@@ -707,6 +707,10 @@ def decode_package_payload(archive, payload, limit, *, descriptor=None, control_
     argv += (["-f", source, "Package", "Version", "Architecture"] if control_fields else ["--fsys-tarfile", source])
     # dpkg's control reader can use intermediate files. Keep those in one owned
     # private directory rather than its ambient OS temporary-file fallback.
+    # Query without mutation before there is a child to clean up. A mask call
+    # may raise after changing the native state, so cleanup must not depend on
+    # a successfully returned old-mask value from the mutating call.
+    previous = signal.pthread_sigmask(signal.SIG_BLOCK, set())
     with tempfile.TemporaryDirectory(prefix="package-decode-", dir=archive.parent) as temporary:
         process = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=payload, stderr=subprocess.DEVNULL, start_new_session=True,
                                    pass_fds=() if descriptor is None else (descriptor,),
@@ -727,20 +731,23 @@ def decode_package_payload(archive, payload, limit, *, descriptor=None, control_
         except BaseException:
             # Defer caller interruption until the retained leader is reaped;
             # a pending raising SIGTERM must not interrupt this owned cleanup.
-            previous = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT, signal.SIGTERM})
             try:
-                # No wait/poll/reap has occurred in this phase; even an exited leader
-                # remains our zombie and reserves its original PID/group identity.
                 try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    # No signalable group was found; still reap the retained
-                    # leader below. Other signal errors must propagate.
-                    pass
-                try:
-                    process.wait(timeout=5)
-                except subprocess.TimeoutExpired as error:
-                    raise RuntimeError("package decoder cleanup unavailable") from error
+                    signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT, signal.SIGTERM})
+                finally:
+                    # Run owned cleanup even if the mask mutation itself raises.
+                    # No wait/poll/reap has occurred in this phase; even an exited
+                    # leader still reserves its original PID/group identity.
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        # No signalable group was found; still reap the retained
+                        # leader below. Other signal errors must propagate.
+                        pass
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired as error:
+                        raise RuntimeError("package decoder cleanup unavailable") from error
             finally:
                 signal.pthread_sigmask(signal.SIG_SETMASK, previous)
             raise

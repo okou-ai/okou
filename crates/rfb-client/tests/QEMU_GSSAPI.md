@@ -154,7 +154,11 @@ never authorizes a numeric group signal. SIGINT and SIGTERM are blocked only dur
 critical group termination and the five-second leader reap; the caller's mask is
 restored afterward. Inside this masked phase, a caller-installed raising SIGTERM
 handler is deferred until after the retained-leader reap. No handler or default
-SIGTERM disposition is changed.
+SIGTERM disposition is changed. The prior mask is captured by a nonmutating
+query before spawn, while no child is owned. Cleanup and restoration are guarded
+independently of the first mutating mask call: if native blocking succeeds but
+that call raises, the retained group is still terminated and its leader reaped
+before restoring the original caller mask and propagating the failure.
 Normal reaping is outside the signalling handler, so an interruption after
 `waitpid` cannot signal a released/recycled group. This is not proof of grandchild
 reaping or an external source seal. Both borrowed executable hashes enter bootstrap
@@ -223,8 +227,13 @@ execution receipt. A real-data isolated-caller regression injects initial SIGINT
 or raising SIGTERM after kernel-confirmed unreaped completion, then actual SIGTERM
 before the real group signal. It verifies the reserved decoder is reaped before
 the pending handler propagates, with unchanged original bytes and closed FDs;
-its negative teardown only reaps the already-exited owned child. Other real-data
-cancellation regressions inject actual SIGINT after unreaped completion and
+its negative teardown only reaps the already-exited owned child. Four additional
+isolated cases combine initial SIGINT or raising SIGTERM with an interrupt or
+allocation failure after actual native mask mutation. They verify unchanged
+input bytes and FD counts, restored masks, one reserved group signal, actual
+leader reaping and absence of private decoder directories. They do not admit
+constructor interruption, arbitrary raising handlers or concurrent reapers.
+Other real-data cancellation regressions inject actual SIGINT after unreaped completion and
 immediately after actual
 `waitpid`, before maintained `Popen.wait` return-code bookkeeping. Observers
 preserve real decoder/status syscalls; a possible unsafe signal attempt in the

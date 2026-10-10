@@ -951,6 +951,112 @@ finally:
                 self.assertEqual(result.stdout.strip(),
                                  'retained decoder reaped before pending SIGTERM; originals and descriptors unchanged')
 
+    def test_mask_failure_after_native_mutation_still_reaps_owned_decoder(self):
+        # Actual dpkg/prlimit and WNOWAIT reserve the exited leader. The public
+        # mask boundary changes the native mask before raising, as CPython can.
+        script = '''
+import hashlib, importlib.util, os, pathlib, signal, subprocess, sys, tempfile
+spec = importlib.util.spec_from_file_location('real_producer', sys.argv[1])
+producer = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(producer)
+archive = pathlib.Path(sys.argv[2])
+initial_signal, failure = int(sys.argv[3]), sys.argv[4]
+original = hashlib.sha256(archive.read_bytes()).digest()
+original_mask = signal.pthread_sigmask(signal.SIG_BLOCK, set())
+descriptors = len(list(pathlib.Path('/proc/self/fd').iterdir()))
+real_spawn, real_waitid, real_killpg = subprocess.Popen, os.waitid, os.killpg
+real_mask = signal.pthread_sigmask
+children, observations, signals, mutations = [], [], [], []
+interrupted = False
+
+def terminate(signum, frame):
+    raise SystemExit(128 + signum)
+
+def observe_spawn(*args, **kwargs):
+    child = real_spawn(*args, **kwargs)
+    children.append(child)
+    return child
+
+def cancel_after_observation(*args):
+    global interrupted
+    result = real_waitid(*args)
+    if result is not None and not interrupted:
+        interrupted = True
+        observations.append(result)
+        os.kill(os.getpid(), initial_signal)
+    return result
+
+def mutate_then_fail(how, values):
+    result = real_mask(how, values)
+    if how == signal.SIG_BLOCK and values == {signal.SIGINT, signal.SIGTERM}:
+        mutations.append(real_mask(signal.SIG_BLOCK, set()))
+        if failure == 'interrupt':
+            raise KeyboardInterrupt('after actual native mask mutation')
+        raise MemoryError('after actual native mask mutation')
+    return result
+
+def signal_reserved_group(pid, signum):
+    reserved = real_waitid(os.P_PID, pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+    assert reserved is not None and reserved.si_pid == children[0].pid
+    signals.append((pid, signum))
+    return real_killpg(pid, signum)
+
+previous = signal.signal(signal.SIGTERM, terminate)
+try:
+    subprocess.Popen = observe_spawn
+    os.waitid = cancel_after_observation
+    os.killpg = signal_reserved_group
+    signal.pthread_sigmask = mutate_then_fail
+    try:
+        with tempfile.TemporaryFile(dir=archive.parent) as output:
+            producer.decode_package_payload(archive, output, 10240)
+    except KeyboardInterrupt:
+        assert failure == 'interrupt'
+    except MemoryError:
+        assert failure == 'allocation'
+    else:
+        raise AssertionError('native-mask-call failure did not propagate')
+    assert len(children) == len(observations) == len(mutations) == 1
+    assert observations[0].si_code == os.CLD_EXITED and observations[0].si_status == 0
+    assert {signal.SIGINT, signal.SIGTERM}.issubset(mutations[0])
+    print('observed actual native mask and retained PID:', sorted(real_mask(signal.SIG_BLOCK, set())),
+          children[0].returncode, len(signals), flush=True)
+    assert real_mask(signal.SIG_BLOCK, set()) == original_mask, 'caller native mask not restored'
+    assert signals == [(children[0].pid, signal.SIGKILL)], 'retained decoder cleanup did not run'
+    assert children[0].returncode == 0, 'owned decoder was not reaped'
+    try:
+        real_waitid(os.P_PID, children[0].pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+    except ChildProcessError:
+        pass
+    else:
+        raise AssertionError('owned decoder reservation remains after failure')
+    assert len(list(pathlib.Path('/proc/self/fd').iterdir())) == descriptors
+    assert hashlib.sha256(archive.read_bytes()).digest() == original
+    assert not list(archive.parent.glob('package-decode-*'))
+    print('actual mutated-mask failure propagated after owned reap and mask restoration')
+finally:
+    subprocess.Popen, os.waitid, os.killpg = real_spawn, real_waitid, real_killpg
+    signal.pthread_sigmask = real_mask
+    signal.signal(signal.SIGTERM, previous)
+    # The red only leaves an exited, still-owned leader. Reap exactly that child
+    # and restore this isolated caller; never signal a released numeric group.
+    for child in children:
+        child.wait(timeout=5)
+    real_mask(signal.SIG_SETMASK, original_mask)
+'''
+        for initial_signal in (signal.SIGINT, signal.SIGTERM):
+            for failure in ('interrupt', 'allocation'):
+                with self.subTest(initial_signal=initial_signal, failure=failure), tempfile.TemporaryDirectory(dir=self.parent) as directory:
+                    base = pathlib.Path(directory)
+                    archive = self.public_payload_deb(base, b'\0' * 10240)
+                    result = subprocess.run([sys.executable, '-I', '-S', '-B', '-c', script,
+                                             str(pathlib.Path(self.producer.__file__)), str(archive),
+                                             str(int(initial_signal)), failure],
+                                            stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=10,
+                                            env={'PATH': os.defpath, 'LANG': 'C.UTF-8'})
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertIn('owned reap and mask restoration', result.stdout)
+
     def test_interrupt_after_real_waitpid_reap_never_signals_released_group(self):
         # Drive the maintained Popen.wait KeyboardInterrupt path immediately
         # AFTER its real waitpid, before returncode bookkeeping. No decoder
