@@ -6,6 +6,11 @@ input, materializes committed compiler inputs and reuses `compile.sh`. No
 production profile, deployment gate, reusable artifact or remote sccache is
 changed. Manual dispatch selects the source revision through the workflow ref.
 
+Candidates use Cargo `lto="thin"`/CGU4, `lto="thin"`/CGU8 and `lto=false`/CGU4.
+The `off-cgu4` lane disables cross-crate LTO but retains thin local LTO within
+each crate. It does not use `lto="off"`, which disables LTO completely; see
+[Cargo's profile contract](https://doc.rust-lang.org/cargo/reference/profiles.html#lto).
+
 Each lane prefetches registry sources, starts an empty local disk sccache and
 records one cold seed plus three warm trials. Cargo output is deleted at the
 same owned path between trials, so warm trials still rebuild/link the binaries.

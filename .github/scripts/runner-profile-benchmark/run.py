@@ -21,6 +21,7 @@ REPO = HERE.parents[2]
 PROFILES = {
     "baseline": {"lto": "thin", "codegen-units": 4},
     "thin-cgu8": {"lto": "thin", "codegen-units": 8},
+    # Cargo false retains thin local LTO; this lane disables cross-crate LTO.
     "off-cgu4": {"lto": "false", "codegen-units": 4},
 }
 LINKERS = {
