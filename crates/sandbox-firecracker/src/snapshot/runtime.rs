@@ -94,7 +94,7 @@ async fn run_with_firecracker(
 
     info!("guest connected");
 
-    // A snapshot may only capture the paired whole-home layout. The typed
+    // A snapshot may only capture the paired home layout. The typed
     // request rejects an older rootfs helper even if its generic ping works.
     super::super::sandbox::validate_guest_home_drive(&guest)
         .await

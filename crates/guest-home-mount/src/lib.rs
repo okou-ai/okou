@@ -1,4 +1,4 @@
-//! Fixed whole-home mounting and bounded initialization without shell launches.
+//! Fixed home mounting and bounded initialization without shell launches.
 //!
 //! The caller owns the mount tool's process group through timeout/disconnect.
 //! Every invocation observes the current visible mount; PID 1 or a snapshot's

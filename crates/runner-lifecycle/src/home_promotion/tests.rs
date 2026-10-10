@@ -26,7 +26,7 @@ async fn changed_terminal_home_mount_rejects_before_cleanup_freeze_or_publicatio
     overrides.push_home_drive_mount_result(Ok(ExecResult::new(
         64,
         Vec::new(),
-        b"same-device subtree is not the whole home".to_vec(),
+        b"same-device subtree is not the home mount".to_vec(),
     )));
     let sandbox = MockSandbox::with_overrides(fixture.sandbox_id.to_string(), overrides.clone());
     assert!(

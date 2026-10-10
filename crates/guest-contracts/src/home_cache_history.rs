@@ -1,4 +1,4 @@
-//! Bounded, generation-owned evidence for history retained in a whole-home image.
+//! Bounded, generation-owned evidence for history retained in a home image.
 //!
 //! Path validation proves lexical membership only. Consumers must still open the
 //! actual source without following symlinks and verify its current bytes.

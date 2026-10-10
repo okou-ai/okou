@@ -1,6 +1,6 @@
 use crate::storage_fingerprints::StorageFingerprints;
 
-/// Retains fingerprints in the fixed whole-home scope, independently of cwd.
+/// Retains fingerprints in the fixed home scope, independently of cwd.
 ///
 /// Filtering is applied independently to both the storage and artifact maps. The
 /// paths are normalized only for the membership check; retained entries keep

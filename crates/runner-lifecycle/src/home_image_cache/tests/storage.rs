@@ -4,7 +4,7 @@ use crate::storage_fingerprints::{StorageFingerprint, StorageFingerprints};
 use std::collections::HashMap;
 
 #[test]
-fn whole_home_scope_is_independent_of_cwd_and_lexical_only() {
+fn home_scope_is_independent_of_cwd_and_lexical_only() {
     let fingerprints = StorageFingerprints {
         storages: HashMap::from([
             (

@@ -1891,7 +1891,7 @@ impl SandboxReuseResult {
     }
 }
 
-/// Final outcome of whole-home reuse after sandbox preparation has settled.
+/// Final outcome of home reuse after sandbox preparation has settled.
 /// The temporary completion envelope still uses `workspaceReuseResult` until
 /// PR5 retires mixed-reader protocol fields. This type never reads old images.
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]

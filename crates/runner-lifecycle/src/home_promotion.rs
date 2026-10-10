@@ -1,4 +1,4 @@
-//! Terminal preparation of a generation-owned raw whole-home image.
+//! Terminal preparation of a generation-owned raw home image.
 
 use std::panic::AssertUnwindSafe;
 use std::time::Duration;
@@ -48,7 +48,7 @@ pub async fn prepare_home_image_from_active_sandbox(
     // managed private namespaces, and returns before freeze. No body is copied.
     let result = AssertUnwindSafe(async {
         // A privileged workload could have replaced the visible mount since
-        // startup. Cleanup must cover the actual whole-home filesystem, never
+        // startup. Cleanup must cover the actual home filesystem, never
         // a same-device subtree whose hidden private namespaces would survive.
         ensure_home_drive_mounted(sandbox, promotion.run_id())
             .await

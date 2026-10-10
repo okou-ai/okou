@@ -1,4 +1,4 @@
-//! Whole-home image cache. There is no old directory/layout/metadata reader.
+//! Home image cache. There is no old directory/layout/metadata reader.
 //!
 //! Entry locks own checkout, publication, and orphan reclamation. Promotion
 //! attempts capacity non-blockingly while holding entry; GC holds capacity and

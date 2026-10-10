@@ -50,7 +50,7 @@ sudo rm -rf "$GROUP_DIR"
 
 # Exercise the fixed helper against real guest mounts, before starting the
 # multi-turn service. These checks are confined to one disposable benchmark VM.
-echo "--- Whole-home mount helper boundaries ---"
+echo "--- Home mount helper boundaries ---"
 MOUNT_CHECKS=$(cat <<'GUEST_CHECKS'
 set -eu
 cd /tmp
@@ -192,12 +192,12 @@ chown root:root "$home"
 dd if=/dev/zero of=/dev/vdb bs=1M count=4 conv=notrunc status=none
 expect_rejection invalid-ext4
 test "$(stat -c %u:%g "$home")" = 0:0
-echo "PASS: native whole-home mount boundaries"
+echo "PASS: native home mount boundaries"
 GUEST_CHECKS
 )
 sudo "$BIN_DIR/runner" benchmark --config "$RUNNER_DIR/runner.yaml" \
   --profile vm0/default --sudo "$MOUNT_CHECKS" \
-  || fail "Whole-home mount helper boundaries failed"
+  || fail "Home mount helper boundaries failed"
 
 # Start transient runner service
 echo "--- Starting runner ---"
@@ -245,11 +245,11 @@ sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
   || fail "Turn 3: marker file found — chat thread isolation broken"
 echo "PASS: Turn 3 completed (new sandbox for different chat thread)"
 
-# A privileged guest can stack an unrelated mount over the whole home after a
+# A privileged guest can stack an unrelated mount over the home after a
 # turn starts. Idle admission must reject that sandbox; the next turn receives
-# a fresh whole-home mount backed by /dev/vdb.
+# a fresh home mount backed by /dev/vdb.
 TAMPER_SESSION_ID="e2e-keepalive-tampered-mount"
-echo "--- Tamper turn 1: replace whole-home mount before idle admission ---"
+echo "--- Tamper turn 1: replace home mount before idle admission ---"
 sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
   --chat-thread-id "$TAMPER_CHAT_THREAD_ID" \
   --session-id "$TAMPER_SESSION_ID" \
@@ -270,7 +270,7 @@ test ! -f /tmp/keepalive-tampered-mount-marker
 source=$(findmnt -rn -o SOURCE --target /home/user/workspace)
 test "$(readlink -f "$source")" = /dev/vdb' \
   || fail "Tamper turn 2 reused an unsafe sandbox or exposed the wrong home device"
-echo "PASS: tampered whole-home mount was rejected before reuse"
+echo "PASS: tampered home mount was rejected before reuse"
 
 # Hold an independently owned runner-exec normal operation while the supervised
 # turn completes. The atomic final-operation reservation must fail busy, and the

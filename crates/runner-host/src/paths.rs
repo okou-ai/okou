@@ -57,7 +57,7 @@ pub fn base_dir_lock_name(base_dir: &Path) -> String {
     format!("base-dir-{hash}.lock")
 }
 
-/// Complete identity of a host-shared, whole-home baseline. Cwd is deliberately
+/// Complete identity of a host-shared home baseline. Cwd is deliberately
 /// absent: execution-path validation is separate from image identity.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HomeImageCacheKey<'a> {
