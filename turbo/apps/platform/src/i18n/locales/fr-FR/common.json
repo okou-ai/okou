@@ -2844,7 +2844,7 @@
       "resize": "Redimensionner la barre latérale"
     },
     "toasts": {
-      "archived": "Discussion archivée. Une nouvelle réponse la ramène dans la boîte de réception.",
+      "archived": "Discussion archivée.",
       "archivedMuted": "Discussion archivée. Elle est en sourdine, les nouvelles réponses ne la ramèneront pas.",
       "copied": "Copié",
       "deleted": "Chat supprimé",

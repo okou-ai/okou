@@ -732,7 +732,7 @@ test("Hide the current chat after archiving it without changing its title", asyn
   expect(within(sidebar()).queryByText("🎉")).not.toBeInTheDocument();
   expect(pathname()).toBe(`/chats/${EXISTING_THREAD_ID}`);
   await expect(
-    screen.findByText("Chat archived. A new reply brings it back to Inbox."),
+    screen.findByText("Chat archived."),
   ).resolves.toBeInTheDocument();
   click(buttonByText("Show archived chats", sidebar()));
 
@@ -795,7 +795,7 @@ test("Archive and unarchive the current chat with the keyboard shortcut", async 
     ).not.toBeInTheDocument();
   });
   await expect(
-    screen.findByText("Chat archived. A new reply brings it back to Inbox."),
+    screen.findByText("Chat archived."),
   ).resolves.toBeInTheDocument();
 
   pressArchiveShortcut();

@@ -2844,7 +2844,7 @@
       "resize": "Cambiar el tamaño de la barra lateral"
     },
     "toasts": {
-      "archived": "Chat archivado. Una respuesta nueva lo devuelve a la bandeja de entrada.",
+      "archived": "Chat archivado.",
       "archivedMuted": "Chat archivado. Está silenciado, así que las respuestas nuevas no lo devolverán.",
       "copied": "Copiado",
       "deleted": "Chat eliminado",
