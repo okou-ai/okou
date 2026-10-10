@@ -20,9 +20,9 @@ import {
 } from "../external/discord-client";
 import { requireDiscordConversationAccess$ } from "./discord-access.service";
 import {
+  discordChatThreadRouteWhere,
   ensureCanonicalDiscordChatThreadRoute$,
   findDiscordChatThreadRoute,
-  refreshDiscordDirectMessageRouteDestination,
   type DiscordChatThreadRouteBinding,
 } from "./discord-chat-ingress.service";
 import {
@@ -359,11 +359,34 @@ const resolveCanonicalDiscordRoute$ = command(
       if (!selectedAssignedRoute) {
         throw new Error("Discord ingress route ownership is inconsistent");
       }
-      assignedRoute = await refreshDiscordDirectMessageRouteDestination(
-        db,
-        selectedAssignedRoute,
-        assignedRouteChannelId,
-      );
+      const route = selectedAssignedRoute;
+      const channelId = assignedRouteChannelId;
+      assignedRoute = route;
+      if (
+        route.sessionKey === INTEGRATION_DM_SESSION_KEY &&
+        (route.channelId !== channelId ||
+          (route.destinationChannelId !== null &&
+            route.destinationChannelId !== channelId))
+      ) {
+        const [updated] = await db
+          .update(discordChatThreadRoutes)
+          .set({ channelId, destinationChannelId: channelId })
+          .where(
+            and(
+              eq(discordChatThreadRoutes.id, route.id),
+              discordChatThreadRouteWhere(route),
+            ),
+          )
+          .returning({
+            channelId: discordChatThreadRoutes.channelId,
+            destinationChannelId: discordChatThreadRoutes.destinationChannelId,
+          });
+        signal.throwIfAborted();
+        if (!updated) {
+          throw new Error("Failed to update Discord DM route destination");
+        }
+        assignedRoute = { ...route, ...updated };
+      }
       signal.throwIfAborted();
     }
     signal.throwIfAborted();
