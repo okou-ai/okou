@@ -570,18 +570,6 @@ function parseRevisionPreviewToken(
   return result.success ? result.data : null;
 }
 
-async function loadMigrationSelections(
-  db: Pick<Db, "select">,
-  migrationId: string,
-): Promise<readonly MigrationSelectionRow[]> {
-  return await db
-    .select()
-    .from(usagePackSubscriptionMigrationSelections)
-    .where(
-      eq(usagePackSubscriptionMigrationSelections.migrationId, migrationId),
-    );
-}
-
 function legacyPlanItem(
   subscription: StripeSubscription,
   tier: SubscriptionCheckoutTier,
@@ -2859,7 +2847,12 @@ const reconcileMigration$ = command(
   ): Promise<AppliedMigrationResult> => {
     const db = set(writeDb$);
     const { migration, eventInvoice } = args;
-    const selections = await loadMigrationSelections(db, migration.id);
+    const selections: readonly MigrationSelectionRow[] = await db
+      .select()
+      .from(usagePackSubscriptionMigrationSelections)
+      .where(
+        eq(usagePackSubscriptionMigrationSelections.migrationId, migration.id),
+      );
     signal.throwIfAborted();
     const subscription = await getStripeClient().subscriptions.retrieve(
       migration.stripeSubscriptionId,
@@ -3102,7 +3095,15 @@ export const handleUsagePackMigrationInvoicePaid$ = command(
     const currentInvoice = await retrieveMigrationInvoice(invoice.id);
     signal.throwIfAborted();
     if (migration.stripeInvoiceId !== currentInvoice.id) {
-      const selections = await loadMigrationSelections(db, migration.id);
+      const selections: readonly MigrationSelectionRow[] = await db
+        .select()
+        .from(usagePackSubscriptionMigrationSelections)
+        .where(
+          eq(
+            usagePackSubscriptionMigrationSelections.migrationId,
+            migration.id,
+          ),
+        );
       signal.throwIfAborted();
       if (
         !migrationInvoiceMatchesSelections(
