@@ -7,8 +7,11 @@ import { db$ } from "../external/db";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import {
+  capturedChatThreadSessionSnapshot,
+  type ChatThreadSessionResolution,
   chatThreadSessionIdentity,
   createChatThreadSessionRead,
+  resolveChatThreadSessionSnapshot,
 } from "./chat-session-continuity.service";
 import type { ChatThreadRequestRow } from "./chat-thread-request-facts";
 import { createDiscordThreadContext } from "./discord-thread-prompt-context.service";
@@ -53,6 +56,10 @@ type ThreadModels = ReturnType<typeof createThreadModelSignals>;
 /** Read-only facts for one picked event, shared by admission and prompting. */
 export interface ThreadContext extends ThreadWorkflowContext {
   readonly sessionRead$: ReturnType<typeof createChatThreadSessionRead>;
+  /** Reuse or rotation of the thread's session for this run's model route. */
+  readonly threadSession$: Computed<
+    Promise<ChatThreadSessionResolution | null>
+  >;
   readonly session$: Computed<
     Promise<ReturnType<typeof chatThreadSessionIdentity>>
   >;
@@ -127,6 +134,12 @@ export function createThreadContext(
   );
   const computerUseHostGrant$ = createThreadHostGrant(bootstrap, thread$);
   const model = createThreadModelSignals(bootstrap, pickedEvent$);
+  const threadSession$ = createThreadSession(
+    bootstrap,
+    pickedEvent$,
+    sessionRead$,
+    model.subscriptionSelection$,
+  );
   const connectorSourceId$ = createConnectorSourceId(
     pickedEvent$,
     automationContext$,
@@ -140,6 +153,7 @@ export function createThreadContext(
   );
   return {
     sessionRead$,
+    threadSession$,
     session$,
     computerUseHostGrant$,
     slackContext$,
@@ -256,5 +270,39 @@ function createThreadHostGrant(
 function createRunIds() {
   return computed(() => {
     return { runId: randomUUID(), newSessionId: randomUUID() };
+  });
+}
+
+function createThreadSession(
+  bootstrap: AgentRunContextSignals,
+  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
+  sessionRead$: ReturnType<typeof createChatThreadSessionRead>,
+  selection$: ThreadModels["subscriptionSelection$"],
+) {
+  return computed(async (get): Promise<ChatThreadSessionResolution | null> => {
+    const [event, selection] = await Promise.all([
+      get(pickedEvent$),
+      get(selection$),
+    ]);
+    if (!event) {
+      throw new Error("Chat thread not found while resolving session binding");
+    }
+    // A rejected model selection never reaches session binding.
+    if ("status" in selection) {
+      return null;
+    }
+    const [read, agent] = await Promise.all([
+      get(sessionRead$),
+      get(bootstrap.agent$),
+    ]);
+    return resolveChatThreadSessionSnapshot(
+      capturedChatThreadSessionSnapshot(event.thread, read, agent),
+      {
+        route: {
+          selectedModel: selection.selectedModelOverride,
+          cliAgentType: selection.cliAgentType,
+        },
+      },
+    );
   });
 }

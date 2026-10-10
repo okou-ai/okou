@@ -230,13 +230,11 @@ import type {
   ChatQueueHeadRejection,
 } from "./chat-queue-run-assembly";
 import { resolveReasoningEffortForDispatch } from "./chat-reasoning-effort.service";
-import {
-  capturedChatThreadSessionSnapshot,
-  type ChatThreadExecutionSnapshot,
-  type ChatThreadSessionResolution,
-  type ChatThreadSessionResolutionAction,
-  type ChatThreadSessionRoute,
-  resolveChatThreadSessionSnapshot,
+import type {
+  ChatThreadExecutionSnapshot,
+  ChatThreadSessionResolution,
+  ChatThreadSessionResolutionAction,
+  ChatThreadSessionRoute,
 } from "./chat-session-continuity.service";
 import { compactRecord } from "./connector-runtime-preparation.service";
 
@@ -1486,7 +1484,6 @@ export function createThreadClaimRunObjects(
     },
   );
   const threadContext = createThreadContext(bootstrap, pickedEvent$);
-  const sessionRead$ = threadContext.sessionRead$;
   const slackContext$ = threadContext.slackContext$;
   const feishuContext$ = threadContext.feishuContext$;
   const teamsContext$ = threadContext.teamsContext$;
@@ -1763,41 +1760,7 @@ export function createThreadClaimRunObjects(
   const promptModelModel$ = computed(async (get) => {
     return await get(promptResolvePromptModelResolvePromptModel$);
   });
-  const promptSessionSession$ = computed(
-    async (get): Promise<ChatThreadSessionResolution | null> => {
-      const [args, model] = await Promise.all([
-        get(promptArgsArgs$),
-        get(promptModelModel$),
-      ]);
-      if ("error" in model) {
-        return null;
-      }
-      const { routedModel } = routeQueuedMessagePiExecution({
-        input: args,
-        modelRoute: model.route,
-      });
-      const thread = (await get(pickedEvent$))?.thread;
-      if (!thread) {
-        throw new Error(
-          "Chat thread not found while resolving session binding",
-        );
-      }
-      const agent = await get(bootstrap.agent$);
-      return resolveChatThreadSessionSnapshot(
-        capturedChatThreadSessionSnapshot(
-          thread,
-          await get(sessionRead$),
-          agent,
-        ),
-        {
-          route: {
-            selectedModel: routedModel.modelPin.selectedModel,
-            cliAgentType: routedModel.cliAgentType,
-          },
-        },
-      );
-    },
-  );
+  const promptSessionSession$ = threadContext.threadSession$;
   const runTemplates$ = threadContext.templates$;
   const promptHostHost$ = threadContext.computerUseHostGrant$;
   const promptCaptureCapture$ = computed(async (get) => {
@@ -2732,7 +2695,7 @@ export function createThreadClaimRunObjects(
   const threadSession$ = computed(
     async (get): Promise<ChatThreadSessionResolution | undefined> => {
       return (await get(isAutomation$))
-        ? get(preCreateThreadSessionThreadSession$)
+        ? ((await get(threadContext.threadSession$)) ?? undefined)
         : get(promptExecutionResourcesThreadSession$);
     },
   );
@@ -3011,44 +2974,6 @@ export function createThreadClaimRunObjects(
     runArgs$: preCreateRunArgsRunArgs$,
     shared: shared,
   };
-  const preCreateThreadSessionThreadSession$ = computed(
-    async (get): Promise<ChatThreadSessionResolution | undefined> => {
-      const { command, timing } = await get(preCreateInput$);
-      if (!command.chatThreadId) {
-        return undefined;
-      }
-      const agent = await get(preCreateAgentAgent$);
-      if (!agent) {
-        throw new Error("Agent disappeared after preparation authorization");
-      }
-      const route = command.threadSessionRoute;
-      if (!route) {
-        throw new Error("Thread-bound agent run is missing its model route");
-      }
-      return await measureAgentRunPreCreate(
-        timing,
-        "api_dispatch_pre_create_agent_resolve_thread_session",
-        async () => {
-          const thread = (await get(pickedEvent$))?.thread;
-          if (!thread) {
-            throw new Error(
-              "Chat thread not found while resolving session binding",
-            );
-          }
-          return resolveChatThreadSessionSnapshot(
-            capturedChatThreadSessionSnapshot(
-              thread,
-              await get(sessionRead$),
-              agent,
-            ),
-            {
-              route,
-            },
-          );
-        },
-      );
-    },
-  );
   const capturedSelectedStorageInput$ = computed(
     async (get): Promise<AgentRunStorageInput | CreateRunErrorResult> => {
       const [

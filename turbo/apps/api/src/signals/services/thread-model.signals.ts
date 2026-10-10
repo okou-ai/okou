@@ -111,6 +111,8 @@ export interface ThreadModelSelection {
   readonly codexServiceTier: "fast" | undefined;
   readonly reasoningEffort: ReasoningEffort | undefined;
   readonly piExecution: boolean;
+  /** The CLI runtime the run executes in; Pi when Pi execution applies. */
+  readonly cliAgentType: string | null;
   readonly queueFirstAssociation: QueueFirstRunAssociation;
 }
 
@@ -480,6 +482,7 @@ function createModelSelection(
           piExecution,
         }),
         piExecution,
+        cliAgentType: piExecution ? "pi" : model.providerAdmission.cliAgentType,
         queueFirstAssociation: {
           threadId: event.chatThreadId,
           eventId: event.id,
