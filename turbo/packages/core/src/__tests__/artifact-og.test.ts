@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { escapeUTF8 } from "entities/escape";
 import { artifactHtmlMetadata, artifactOgHtml } from "../artifact-og";
 
 const metadata = {
@@ -119,7 +120,7 @@ describe("artifact sharing HTML", () => {
         'property="og:title" content="Report &lt;draft&gt; &amp; &quot;review&quot;"',
       );
       expect(result).toContain(
-        `name="twitter:image" content="${metadata.imageUrl.replaceAll("&", "&amp;")}"`,
+        `name="twitter:image" content="${escapeUTF8(metadata.imageUrl)}"`,
       );
       expect(result.match(/<title>/gu)).toHaveLength(1);
       expect(result.match(/name="description"/gu)).toHaveLength(1);
