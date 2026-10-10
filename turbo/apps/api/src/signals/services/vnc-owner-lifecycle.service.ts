@@ -1,6 +1,6 @@
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";
-import { and, eq } from "drizzle-orm";
+import { and, count, eq, gte } from "drizzle-orm";
 
 import { command } from "ccstate";
 import { isClerkResourceNotFound, type ClerkClient } from "../external/clerk";
@@ -63,11 +63,25 @@ export const eraseVncOwnerData$ = command(
               eq(vncCredentials.orgId, scope.orgId),
               eq(vncCredentials.userId, scope.userId),
             );
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0318; new non-billing transactions are prohibited.
-    await db.transaction(async (tx) => {
-      await tx.delete(vncConnections).where(connectionCondition);
-      await tx.delete(vncCredentials).where(credentialCondition);
-      signal.throwIfAborted();
-    });
+    const removedConnections = db
+      .$with("removed_vnc_connections")
+      .as(
+        db
+          .delete(vncConnections)
+          .where(connectionCondition)
+          .returning({ id: vncConnections.id }),
+      );
+    await db
+      .with(removedConnections)
+      .delete(vncCredentials)
+      .where(
+        and(
+          credentialCondition,
+          // Consume the entire child deletion before RESTRICT checks on parents.
+          // The aggregate also permits unused credentials when no hosts exist.
+          gte(db.select({ count: count() }).from(removedConnections), 0),
+        ),
+      );
+    signal.throwIfAborted();
   },
 );
