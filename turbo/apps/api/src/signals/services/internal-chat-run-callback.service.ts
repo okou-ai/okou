@@ -107,8 +107,8 @@ import {
 } from "./feishu-chat-callback-payload";
 import { loadFeishuQueuedLaunchMaterial } from "./feishu-queued-launch-context.service";
 import {
-  deliverAgentPhoneChatAdmissionFailure,
-  dispatchAgentPhoneChatDeliveryOnce,
+  deliverAgentPhoneChatAdmissionFailure$,
+  dispatchAgentPhoneChatDeliveryOnce$,
 } from "./internal-agentphone-chat-run-callback.service";
 import {
   sendDiscordChatReply$,
@@ -2612,8 +2612,16 @@ const sendQueuedAdmissionFailure$ = command(
         return;
       }
       case "AgentPhone": {
-        await deliverAgentPhoneChatAdmissionFailure(
-          { ...base, agentId: channel.agentId, target: channel.target },
+        await set(
+          deliverAgentPhoneChatAdmissionFailure$,
+          {
+            chatThreadId: channel.chatThreadId,
+            userId: channel.userId,
+            orgId: channel.orgId,
+            chatEventId,
+            agentId: channel.agentId,
+            target: channel.target,
+          },
           signal,
         );
         return;
@@ -3084,18 +3092,6 @@ const dispatchCanonicalDeliveryCallbacks$ = command(
           );
         },
       },
-      {
-        name: "AgentPhone",
-        callbackId: args.agentphoneDeliveryCallbackId,
-        dispatch: (callbackId, dispatchSignal) => {
-          return dispatchAgentPhoneChatDeliveryOnce(
-            args.db,
-            callbackId,
-            args.status,
-            dispatchSignal,
-          );
-        },
-      },
     ];
     for (const channel of channels) {
       const callbackId = channel.callbackId;
@@ -3115,6 +3111,24 @@ const dispatchCanonicalDeliveryCallbacks$ = command(
             error: delivery.error,
           },
         );
+      }
+    }
+    if (args.agentphoneDeliveryCallbackId) {
+      const delivery = await settle(
+        set(
+          dispatchAgentPhoneChatDeliveryOnce$,
+          args.agentphoneDeliveryCallbackId,
+          args.status,
+          signal,
+        ),
+        signal,
+      );
+      if (!delivery.ok) {
+        log.error("Failed to finalize canonical AgentPhone delivery callback", {
+          runId: args.runId,
+          callbackId: args.agentphoneDeliveryCallbackId,
+          error: delivery.error,
+        });
       }
     }
     if (args.discordReply) {

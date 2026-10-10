@@ -2154,6 +2154,133 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(plainPromptUnlinked).not.toContain(SMS_RISK_WARNING);
   });
 
+  it("archives an outbound group reply once with the original recipients across concurrent provider-id replays", async () => {
+    const bdd = createBddApi(context);
+    const integrations = createBddIntegrationApi(context);
+    const ap = createAgentPhoneBddApi(context);
+    integrations.configureAgentPhoneProvider();
+    integrations.configureAgentPhoneWebhook();
+    const sends = ap.captureAgentPhoneSends();
+    const sender = bdd.user();
+    const recipient = bdd.user();
+    const laterRecipient = bdd.user();
+    const senderPhone = uniquePhoneHandle();
+    const recipientPhone = uniquePhoneHandle();
+    const laterPhone = uniquePhoneHandle();
+    await ap.linkViaWebhookConnectPrompt(sender, senderPhone, sends);
+    await ap.linkViaWebhookConnectPrompt(recipient, recipientPhone, sends);
+    await ap.linkViaWebhookConnectPrompt(laterRecipient, laterPhone, sends);
+
+    const conversationId = uniqueConversationId();
+    const groupId = bddGroupId(conversationId);
+    let providerId = `ap-outbound-${randomUUID()}`;
+    let roster = [
+      senderPhone,
+      recipientPhone,
+      recipientPhone,
+      "invalid-handle",
+    ];
+    const requests: unknown[] = [];
+    server.use(
+      http.get("https://api.agentphone.test/v1/conversations/:id", () => {
+        return HttpResponse.json({ participants: roster });
+      }),
+      http.post(
+        "https://api.agentphone.test/v1/messages",
+        async ({ request }) => {
+          expect(request.headers.get("authorization")).toBe(
+            "Bearer agentphone-bdd-key",
+          );
+          const body: unknown = await request.json();
+          requests.push(body);
+          return HttpResponse.json({
+            id: providerId,
+            channel: "imessage",
+            to_number: groupId,
+          });
+        },
+      ),
+    );
+    mockNow(now());
+    const sentAt = new Date(now()).toISOString();
+    async function sendHelp() {
+      return await ap.postAgentPhoneInboundMessage({
+        channel: "imessage",
+        from: senderPhone,
+        body: "/help @Okou",
+        conversationId,
+        isGroup: true,
+        participants: [{ identifier: senderPhone }],
+      });
+    }
+    await sendHelp();
+    await flushWaitUntilForTest();
+
+    async function outbound(actor: ApiTestUser) {
+      const history = await integrations.requestAgentPhoneGroupHistory(
+        actor,
+        { groupId, limit: 100 },
+        [200],
+      );
+      if (history.status !== 200) {
+        throw new Error("Expected the member's phone group history");
+      }
+      return history.body.messages.filter((message) => {
+        return message.direction === "outbound";
+      });
+    }
+    const archived = await outbound(sender);
+    expect(archived).toHaveLength(1);
+    expect(archived[0]).toMatchObject({
+      id: providerId,
+      conversationId,
+      fromNumber: AGENTPHONE_BDD_PHONE_NUMBER,
+      toNumber: groupId,
+      channel: "imessage",
+      mediaUrl: null,
+      receivedAt: sentAt,
+    });
+    await expect(outbound(recipient)).resolves.toStrictEqual(archived);
+    await expect(outbound(laterRecipient)).resolves.toStrictEqual([]);
+    await expect(
+      outbound({ ...recipient, orgId: `org_${randomUUID()}` }),
+    ).resolves.toStrictEqual([]);
+
+    roster = [senderPhone, laterPhone];
+    await Promise.all([sendHelp(), sendHelp()]);
+    await flushWaitUntilForTest();
+    expect(requests).toHaveLength(3);
+    for (const request of requests) {
+      expect(request).toMatchObject({
+        agent_id: AGENTPHONE_BDD_AGENT_ID,
+        to_number: groupId,
+        reply_to_message_id: expect.any(String),
+        body: expect.stringContaining("/help"),
+      });
+    }
+    await expect(outbound(sender)).resolves.toStrictEqual(archived);
+    await expect(outbound(recipient)).resolves.toStrictEqual(archived);
+    await expect(outbound(laterRecipient)).resolves.toStrictEqual([]);
+
+    mockNow(now() + 1000);
+    providerId = `ap-outbound-fresh-${randomUUID()}`;
+    await Promise.all([sendHelp(), sendHelp()]);
+    await flushWaitUntilForTest();
+    const newlyArchived = await outbound(laterRecipient);
+    expect(newlyArchived).toHaveLength(1);
+    expect(newlyArchived[0]).toMatchObject({
+      id: providerId,
+      toNumber: groupId,
+      channel: "imessage",
+    });
+    await expect(outbound(sender)).resolves.toStrictEqual([
+      ...archived,
+      ...newlyArchived,
+    ]);
+    await expect(outbound(recipient)).resolves.toStrictEqual(archived);
+    expect(requests).toHaveLength(5);
+  });
+
   it("limits archived group history to linked participants captured for each message", async () => {
     const bdd = createBddApi(context);
     const integrations = createBddIntegrationApi(context);

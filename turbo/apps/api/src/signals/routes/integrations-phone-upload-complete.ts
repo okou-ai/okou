@@ -21,7 +21,7 @@ import {
   agentPhoneChannelForLinkedHandle,
   resolveAgentPhoneAgentIdForUserLink,
   resolveAgentPhoneUserLinkForMember,
-  storeOutboundAgentPhoneMessage,
+  storeOutboundAgentPhoneMessage$,
 } from "../services/agentphone.service";
 import type { RouteEntry } from "../route-entry";
 import { settle } from "../utils";
@@ -179,7 +179,7 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
   signal.throwIfAborted();
 
-  await storeOutboundAgentPhoneMessage(db, {
+  await set(storeOutboundAgentPhoneMessage$, {
     agentphoneMessageId: sent.id,
     conversationId: null,
     agentphoneAgentId,
