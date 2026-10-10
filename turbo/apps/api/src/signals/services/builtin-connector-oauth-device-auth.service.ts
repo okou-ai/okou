@@ -194,7 +194,6 @@ type ResolvedBuiltinConnectorDeviceAuthClient = {
 };
 
 type PollClaimedSessionArgs = ResolvedBuiltinConnectorDeviceAuthClient & {
-  readonly writeDb: Db;
   readonly orgId: string;
   readonly userId: string;
   readonly session: BuiltinConnectorDeviceAuthSessionRow;
@@ -490,10 +489,7 @@ const expireDeviceAuthSession$ = command(
     signal.throwIfAborted();
 
     if (!expiredSession) {
-      return await claimNoLongerCurrentResponse(
-        { writeDb, session: args.session },
-        signal,
-      );
+      return await set(claimNoLongerCurrentResponse$, args.session, signal);
     }
     return { status: 200, body: terminalErrorBody(expiredSession) };
   },
@@ -563,22 +559,10 @@ async function retainClaimForCompletion(
   return Boolean(claim);
 }
 
-async function claimNoLongerCurrentResponse(
-  args: {
-    readonly writeDb: Db;
-    readonly session: BuiltinConnectorDeviceAuthSessionRow;
-  },
-  signal: AbortSignal,
-): Promise<PollSuccess> {
-  const [currentSession] = await args.writeDb
-    .select(deviceAuthSessionSelection)
-    .from(builtinConnectorOauthDeviceAuthorizationSessions)
-    .where(
-      eq(builtinConnectorOauthDeviceAuthorizationSessions.id, args.session.id),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-
+function lostDeviceAuthClaimResponse(
+  currentSession: BuiltinConnectorDeviceAuthSessionRow | undefined,
+  session: BuiltinConnectorDeviceAuthSessionRow,
+): PollSuccess {
   if (
     currentSession?.status === "denied" ||
     currentSession?.status === "expired" ||
@@ -586,60 +570,91 @@ async function claimNoLongerCurrentResponse(
   ) {
     return { status: 200, body: terminalErrorBody(currentSession) };
   }
-  return pendingResponse(args.session);
+  return pendingResponse(session);
 }
 
-async function markClaimTerminal(
-  args: {
-    readonly writeDb: Db;
-    readonly session: BuiltinConnectorDeviceAuthSessionRow;
-    readonly claimStartedAt: Date;
-    readonly result: Extract<
-      OAuthDeviceAuthPollResultBase,
-      {
-        readonly status: "denied" | "expired" | "error";
-      }
-    >;
+const claimNoLongerCurrentResponse$ = command(
+  async (
+    { set },
+    session: BuiltinConnectorDeviceAuthSessionRow,
+    signal: AbortSignal,
+  ): Promise<PollSuccess> => {
+    const writeDb = set(writeDb$);
+    const [currentSession] = await writeDb
+      .select(deviceAuthSessionSelection)
+      .from(builtinConnectorOauthDeviceAuthorizationSessions)
+      .where(
+        eq(builtinConnectorOauthDeviceAuthorizationSessions.id, session.id),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return lostDeviceAuthClaimResponse(currentSession, session);
   },
-  signal: AbortSignal,
-): Promise<PollSuccess> {
-  const completedAt = nowDate();
-  const [terminalSession] = await args.writeDb
-    .update(builtinConnectorOauthDeviceAuthorizationSessions)
-    .set({
+);
+
+type DeviceAuthTerminalResult = Extract<
+  OAuthDeviceAuthPollResultBase,
+  { readonly status: "denied" | "expired" | "error" }
+>;
+
+function terminalDeviceAuthClaimMutation(
+  args: {
+    readonly sessionId: string;
+    readonly claimStartedAt: Date;
+    readonly result: DeviceAuthTerminalResult;
+  },
+  completedAt: Date,
+) {
+  return {
+    values: {
       status: args.result.status,
       errorCode: args.result.error,
       errorMessage: args.result.errorDescription,
       updatedAt: completedAt,
       completedAt,
-    })
-    .where(
-      and(
-        eq(
-          builtinConnectorOauthDeviceAuthorizationSessions.id,
-          args.session.id,
-        ),
-        eq(builtinConnectorOauthDeviceAuthorizationSessions.status, "polling"),
-        eq(
-          builtinConnectorOauthDeviceAuthorizationSessions.updatedAt,
-          args.claimStartedAt,
-        ),
+    },
+    condition: and(
+      eq(builtinConnectorOauthDeviceAuthorizationSessions.id, args.sessionId),
+      eq(builtinConnectorOauthDeviceAuthorizationSessions.status, "polling"),
+      eq(
+        builtinConnectorOauthDeviceAuthorizationSessions.updatedAt,
+        args.claimStartedAt,
       ),
-    )
-    .returning(deviceAuthSessionSelection);
-  signal.throwIfAborted();
-
-  if (!terminalSession) {
-    return await claimNoLongerCurrentResponse(
-      {
-        writeDb: args.writeDb,
-        session: args.session,
-      },
-      signal,
-    );
-  }
-  return { status: 200, body: terminalErrorBody(terminalSession) };
+    ),
+  };
 }
+
+const markClaimTerminal$ = command(
+  async (
+    { set },
+    args: {
+      readonly session: BuiltinConnectorDeviceAuthSessionRow;
+      readonly claimStartedAt: Date;
+      readonly result: DeviceAuthTerminalResult;
+    },
+    signal: AbortSignal,
+  ): Promise<PollSuccess> => {
+    const mutation = terminalDeviceAuthClaimMutation(
+      {
+        sessionId: args.session.id,
+        claimStartedAt: args.claimStartedAt,
+        result: args.result,
+      },
+      nowDate(),
+    );
+    const writeDb = set(writeDb$);
+    const [terminalSession] = await writeDb
+      .update(builtinConnectorOauthDeviceAuthorizationSessions)
+      .set(mutation.values)
+      .where(mutation.condition)
+      .returning(deviceAuthSessionSelection);
+    signal.throwIfAborted();
+    if (!terminalSession) {
+      return await set(claimNoLongerCurrentResponse$, args.session, signal);
+    }
+    return { status: 200, body: terminalErrorBody(terminalSession) };
+  },
+);
 
 async function markClaimComplete(
   args: {
@@ -686,6 +701,7 @@ const completeClaimedSession$ = command(
     },
     signal: AbortSignal,
   ): Promise<PollSuccess> => {
+    const { session, claimStartedAt } = args;
     const prepared = await set(
       prepareBuiltinConnectorTokenConnection$,
       {
@@ -696,19 +712,20 @@ const completeClaimedSession$ = command(
         outputs: args.result.token.outputs,
         userInfo: args.result.token.userInfo,
         oauthRequestedScopes: deviceRequestedOauthScopes(
-          args.session.oauthRequestedScopes,
+          session.oauthRequestedScopes,
           args.resolvedMethod,
         ),
         oauthGrantedScopes: args.result.token.scopes,
         expiresIn: args.result.token.expiresIn,
         extraConnectorSecrets: args.result.token.extraConnectorSecrets,
-        account: args.session.accountMutation,
+        account: session.accountMutation,
       },
       signal,
     );
     let postCommitAbort: unknown = null;
     // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0084; new non-billing transactions are prohibited.
-    const result = await args.writeDb.transaction(async (tx) => {
+    const result = await set(writeDb$).transaction(async (tx) => {
+      const sessions = builtinConnectorOauthDeviceAuthorizationSessions;
       const [insertedWallet] = await tx
         .insert(orgMetadataCanonicalWrites)
         .values({ orgId: prepared.orgId })
@@ -728,18 +745,17 @@ const completeClaimedSession$ = command(
       );
       if (
         !(await retainClaimForCompletion(
-          {
-            writeDb: tx,
-            session: args.session,
-            claimStartedAt: args.claimStartedAt,
-          },
+          { writeDb: tx, session, claimStartedAt },
           signal,
         ))
       ) {
-        return await claimNoLongerCurrentResponse(
-          { writeDb: tx, session: args.session },
-          signal,
-        );
+        const [currentSession] = await tx
+          .select(deviceAuthSessionSelection)
+          .from(sessions)
+          .where(eq(sessions.id, session.id))
+          .limit(1);
+        signal.throwIfAborted();
+        return lostDeviceAuthClaimResponse(currentSession, session);
       }
       const connectionResult = await commitBuiltinConnectorTokenConnection(
         { ...write, resolution },
@@ -749,25 +765,41 @@ const completeClaimedSession$ = command(
         const rejection = connectorConnectionWriteRejection(
           connectionResult.status,
         );
-        return await markClaimTerminal(
+        const mutation = terminalDeviceAuthClaimMutation(
           {
-            writeDb: tx,
-            session: args.session,
-            claimStartedAt: args.claimStartedAt,
+            sessionId: session.id,
+            claimStartedAt,
             result: {
               status: "error",
               error: "connector_account_rejected",
               errorDescription: rejection.message,
             },
           },
-          signal,
+          nowDate(),
         );
+        const [terminalSession] = await tx
+          .update(sessions)
+          .set(mutation.values)
+          .where(mutation.condition)
+          .returning(deviceAuthSessionSelection);
+        signal.throwIfAborted();
+        if (terminalSession) {
+          const body = terminalErrorBody(terminalSession);
+          return { status: 200 as const, body };
+        }
+        const [currentSession] = await tx
+          .select(deviceAuthSessionSelection)
+          .from(sessions)
+          .where(eq(sessions.id, session.id))
+          .limit(1);
+        signal.throwIfAborted();
+        return lostDeviceAuthClaimResponse(currentSession, session);
       }
       await markClaimComplete(
         {
           writeDb: tx,
-          session: args.session,
-          claimStartedAt: args.claimStartedAt,
+          session,
+          claimStartedAt,
           connectorId: connectionResult.connectorRow.id,
         },
         signal,
@@ -908,13 +940,7 @@ const runClaimedSession$ = command(
         signal,
       );
       if (!restored) {
-        return await claimNoLongerCurrentResponse(
-          {
-            writeDb: args.writeDb,
-            session: args.session,
-          },
-          signal,
-        );
+        return await set(claimNoLongerCurrentResponse$, args.session, signal);
       }
       return {
         status: 200,
@@ -923,9 +949,9 @@ const runClaimedSession$ = command(
     }
 
     if (pollResult.status !== "complete") {
-      return await markClaimTerminal(
+      return await set(
+        markClaimTerminal$,
         {
-          writeDb: args.writeDb,
           session: args.session,
           claimStartedAt: args.claimStartedAt,
           result: pollResult,
@@ -963,13 +989,7 @@ const pollClaimedSession$ = command(
       signal,
     );
     if (!restored) {
-      return await claimNoLongerCurrentResponse(
-        {
-          writeDb: args.writeDb,
-          session: args.session,
-        },
-        signal,
-      );
+      return await set(claimNoLongerCurrentResponse$, args.session, signal);
     }
     throw result.error;
   },
@@ -1315,14 +1335,13 @@ export const pollBuiltinConnectorOauthDeviceAuthSession$ = command(
       .returning(deviceAuthSessionSelection);
     signal.throwIfAborted();
     if (!claimedSession) {
-      return await claimNoLongerCurrentResponse({ writeDb, session }, signal);
+      return await set(claimNoLongerCurrentResponse$, session, signal);
     }
 
     const response = await set(
       pollClaimedSession$,
       {
         ...resolvedClient,
-        writeDb,
         orgId: args.orgId,
         userId: args.userId,
         session: claimedSession,
