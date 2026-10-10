@@ -851,13 +851,6 @@ interface AssembledWorkflowAutomationRun {
   readonly launchRecord: Extract<ClaimLaunchRecord, { kind: "automation" }>;
 }
 
-function workflowAutomationRunOwner(automation: {
-  readonly orgId: string;
-  readonly ownerUserId: string;
-}) {
-  return { orgId: automation.orgId, userId: automation.ownerUserId };
-}
-
 function automationSelectionCommand(
   args: Pick<
     AssembleWorkflowAutomationRunArgs,
@@ -868,17 +861,22 @@ function automationSelectionCommand(
     | "connectorSourceId"
   >,
   model: Extract<ModelContext, { readonly ok: true }>,
-  timing: ApiDispatchTimingCollector,
+  identity: {
+    readonly timing: ApiDispatchTimingCollector;
+    readonly owner: { readonly orgId: string; readonly userId: string };
+    readonly agentId: string;
+  },
 ): ThreadRunSelection &
   Pick<
     ThreadRunCommand,
     "chatThreadId" | "queueFirstAssociation" | "agentRunModelPin"
   > {
-  const { automation, agentId, chatThreadId } = args.due;
+  const { automation, chatThreadId } = args.due;
+  const { timing } = identity;
   return {
-    owner: workflowAutomationRunOwner(automation),
+    owner: identity.owner,
     body: {
-      agentId,
+      agentId: identity.agentId,
       ...workflowModelProviderBody(model.effectiveModelProvider),
     },
     apiStartTime: args.apiStartTime,
@@ -2403,9 +2401,9 @@ export function createThreadClaimRunObjects(
       }
       return {
         timing: get(workflowAutomationLaunchReadGraphTiming$),
-        owner: workflowAutomationRunOwner(args.due.automation),
+        owner: { orgId: context.orgId, userId: context.userId },
         apiStartTime: args.apiStartTime,
-        agentId: args.due.agentId,
+        agentId: context.agentId,
         chatThreadId: args.due.chatThreadId,
         queueFirstAssociation: {
           threadId: args.due.chatThreadId,
@@ -2424,7 +2422,7 @@ export function createThreadClaimRunObjects(
       return identity && model.ok && args
         ? {
             timing: identity.timing,
-            command: automationSelectionCommand(args, model, identity.timing),
+            command: automationSelectionCommand(args, model, identity),
           }
         : null;
     },
@@ -2798,22 +2796,10 @@ export function createThreadClaimRunObjects(
       },
     );
   });
-  const preCreateRequestObservationRequestObservation$ = computed(
-    async (get) => {
-      const { command } = await get(selectedIdentityInputIdentityInput$);
-      const agentId = await get(preCreateAgentIdAgentId$);
-      return agentId
-        ? matchingAuthorizedRequestObservation(command, agentId)
-        : undefined;
-    },
-  );
   const preCreateAgentAgent$ = computed(
     async (get): Promise<AgentRunRecord | null> => {
       const { timing } = await get(selectedIdentityInputIdentityInput$);
-      const [agentId, observation] = await Promise.all([
-        get(preCreateAgentIdAgentId$),
-        get(preCreateRequestObservationRequestObservation$),
-      ]);
+      const agentId = await get(preCreateAgentIdAgentId$);
       if (!agentId) {
         return null;
       }
@@ -2821,15 +2807,8 @@ export function createThreadClaimRunObjects(
         timing,
         "api_dispatch_pre_create_agent_load_agent",
         async () => {
-          if (observation) {
-            return observation.agent;
-          }
           // Authorization waits only for the context's Agent snapshot.
           return await get(context.agent$);
-        },
-        {
-          authorized_request_agent_source:
-            observation === undefined ? "database" : "request_observation",
         },
       );
     },
@@ -2956,14 +2935,12 @@ export function createThreadClaimRunObjects(
         accountResult,
         catalogResult,
         policiesResult,
-        observationResult,
       ] = await Promise.all([
         get(preCreateBootstrapBootstrap$),
         get(preCreateAgentAgent$),
         get(preCreateSubscriptionAccountSubscriptionAccount$),
         get(preCreateConnectorCatalogConnectorCatalog$),
         get(preCreatePermissionPoliciesPermissionPolicies$),
-        get(preCreateRequestObservationRequestObservation$),
       ]);
       const bootstrap = bootstrapResult;
       const agent = agentResult;
@@ -2973,7 +2950,6 @@ export function createThreadClaimRunObjects(
       }
       const catalog = catalogResult;
       const policies = policiesResult;
-      const observation = observationResult;
       if (!agent) {
         throw new Error("Agent disappeared after preparation authorization");
       }
@@ -2984,7 +2960,7 @@ export function createThreadClaimRunObjects(
         timing,
         connectorCatalogSelection: catalog,
         runPermissionPolicies: policies,
-        authorizedRequestObservation: observation ?? {
+        authorizedRequestObservation: {
           userId: account.command.owner.userId,
           orgId: account.command.owner.orgId,
           agent,
@@ -3201,7 +3177,6 @@ export function createThreadClaimRunObjects(
       if (!agent) {
         throw new Error("Agent disappeared after preparation authorization");
       }
-      const threadId = command.chatThreadId;
       const route = command.threadSessionRoute;
       if (!route) {
         throw new Error("Thread-bound agent run is missing its model route");
@@ -3211,12 +3186,7 @@ export function createThreadClaimRunObjects(
         "api_dispatch_pre_create_agent_resolve_thread_session",
         async () => {
           const thread = (await get(pickedEvent$))?.thread;
-          if (
-            !thread ||
-            thread.id !== threadId ||
-            thread.userId !== command.owner.userId ||
-            thread.agentId !== agent.id
-          ) {
+          if (!thread) {
             throw new Error(
               "Chat thread not found while resolving session binding",
             );
@@ -5241,13 +5211,6 @@ export function createThreadClaimRunObjects(
     ): Promise<ClaimRunCommit> => {
       signal.throwIfAborted();
       const { input, identity, callbackRows, launch } = context;
-      if (
-        input.args.orgId !== claim.orgId ||
-        input.args.chatThreadId !== claim.chatThreadId ||
-        context.head.chatThreadId !== claim.chatThreadId
-      ) {
-        throw new Error("Prepared run does not belong to this thread claim");
-      }
       const commit: CommitPreparedLaunchArgs = {
         createArgs: input.args,
         enforceBuiltInCredits: input.enforceBuiltInCredits,
@@ -9114,24 +9077,6 @@ interface AgentRunGraphInput {
   readonly timing: ApiDispatchTimingCollector;
 }
 
-function matchingAuthorizedRequestObservation(
-  args: ThreadRunIdentity,
-  agentId: string,
-): AuthorizedAgentRunRequestObservation | undefined {
-  const observation = args.authorizedRequestObservation;
-  if (
-    !observation ||
-    observation.userId !== args.owner.userId ||
-    observation.orgId !== args.owner.orgId ||
-    observation.agent.id !== agentId ||
-    observation.agent.orgId !== args.owner.orgId ||
-    observation.featureSwitchContext.userId !== args.owner.userId ||
-    observation.featureSwitchContext.orgId !== args.owner.orgId
-  ) {
-    return undefined;
-  }
-  return observation;
-}
 // --- Thread-private implementation: execution context prompts ---
 
 const AUTO_MEMORY_MISSING_ROOT_POLICY: ArtifactMissingRootPolicy =
@@ -10418,16 +10363,8 @@ function assertPendingLaunchClaim(
   args: PreparedCommitPreparedLaunchArgs,
   claim: PendingLaunchClaim | undefined,
 ) {
-  if (
-    claim &&
-    (args.createArgs.orgId !== claim.orgId ||
-      args.createArgs.chatThreadId !== claim.chatThreadId ||
-      args.createArgs.queueFirstAssociation?.threadId !== claim.chatThreadId ||
-      !args.createArgs.agentRunModelPin)
-  ) {
-    throw new Error(
-      "Chat run commit requires its captured input association and model pin",
-    );
+  if (claim && !args.createArgs.agentRunModelPin) {
+    throw new Error("Chat run commit requires its captured model pin");
   }
 }
 

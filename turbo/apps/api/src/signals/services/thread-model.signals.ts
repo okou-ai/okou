@@ -638,10 +638,6 @@ function createModelEnvironment(
         return null;
       }
       const args = context.environmentArgs;
-      const identity = bootstrap;
-      if (identity.orgId !== args.orgId || identity.userId !== args.userId) {
-        throw new Error("Model source snapshot identity mismatch");
-      }
       if (isBuiltInModelProviderType(args.modelProviderType)) {
         const route = args.builtInModelRuntimeRoute;
         if (
@@ -653,7 +649,7 @@ function createModelEnvironment(
           return null;
         }
         const source = managedSourceFromSnapshot(
-          (await get(identity.managedModelKeys$)).find((key) => {
+          (await get(bootstrap.managedModelKeys$)).find((key) => {
             return key.id === route.modelKeyId;
           }),
         );
@@ -667,7 +663,7 @@ function createModelEnvironment(
         return null;
       }
       const source = memberAccountSourceFromSnapshot(
-        await get(identity.memberModels$),
+        await get(bootstrap.memberModels$),
         args.modelProviderId,
       );
       if (!source) {
@@ -777,12 +773,10 @@ function personalSubscriptionAccountCandidates(args: {
   readonly snapshot: MemberModelAccountSnapshot;
 }) {
   const snapshot = args.snapshot;
-  if (
-    snapshot.orgId !== args.command.owner.orgId ||
-    snapshot.userId !== args.command.owner.userId ||
-    !isPersonalSubscriptionProviderType(args.providerType)
-  ) {
-    throw new Error("Subscription account snapshot identity mismatch");
+  if (!isPersonalSubscriptionProviderType(args.providerType)) {
+    throw new Error(
+      "Subscription account snapshot requires a subscription provider",
+    );
   }
   return snapshot.accounts.filter((account) => {
     if (
