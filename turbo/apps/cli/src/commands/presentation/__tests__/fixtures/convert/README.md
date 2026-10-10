@@ -43,11 +43,22 @@ the package, and rejects duplicate object IDs or unresolved shape references
 before writing the output. Invalid renderer XML fails before normalization can
 silently skip a page.
 
+`shadow-contract.html` adds six pages for layered outer and inset shadows,
+transparent backgrounds, positive/negative spread, transformed and clipped
+silhouettes, independent corner radii, and collapsed layers. Each CSS shadow
+layer has its own editable group, ordered beneath the box or above its fill for
+inset shadows. Blurred opaque outer silhouettes retain native DrawingML shadow
+effects; other silhouettes use vector contour bands with geometric cutouts.
+Bands do not overlap, which avoids repeated low-alpha rounding in viewers.
+Contour blur is an approximation to Gaussian coverage, not a pixel-exact browser
+blur for every radius and shape. Inspect the corner transitions and very large
+blur radii separately. No shadow path captures or embeds a raster image.
+
 Visual acceptance remains necessary. Current boundaries include conic fills,
 arbitrary transformed glyph clipping, perspective and skewed text, group
-opacity and blending, backdrop blur, multiple/spread shadows, and unsupported
-filters. LibreOffice does not reliably display native text gradient/outline
-paint or inset shadows; those XML properties are not proof of cross-viewer
+opacity and blending, backdrop blur, and unsupported filters. LibreOffice does
+not reliably display native text gradient/outline paint; those XML properties
+are not proof of cross-viewer
 fidelity. Font metrics and baseline offsets also need viewer-specific review.
 Do not solve these boundaries with generated images or claim full fidelity
 from a text or structural pass.

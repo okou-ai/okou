@@ -24,6 +24,7 @@ const paintSchema = z.object({
   crop: z.tuple([z.number(), z.number(), z.number(), z.number()]).optional(),
   cells: z.array(z.array(fillSchema.nullable())).optional(),
   mathGroup: z.number().int().nonnegative().optional(),
+  shadowGroup: z.number().int().nonnegative().optional(),
 });
 export const nativePaintSchema = z.record(
   z.string(),
@@ -193,22 +194,13 @@ export function applyNativePaint(
   scale: number,
 ): string {
   if (paints === undefined) return xml;
-  const equations = new Map<number, string[]>();
+  const groups = new Map<string, string[]>();
   const output = xml.replace(
     /<p:(?:sp|pic|graphicFrame)\b[\s\S]*?<\/p:(?:sp|pic|graphicFrame)>/gu,
     (shape) => {
       const name = /<p:cNvPr\b[^>]*\bname="([^"]+)"/u.exec(shape)?.[1];
       const paint = name === undefined ? undefined : paints[name];
       if (paint === undefined) return shape;
-      if (paint.mathGroup !== undefined) {
-        const group = equations.get(paint.mathGroup);
-        if (group) {
-          group.push(shape);
-          return "";
-        }
-        equations.set(paint.mathGroup, [shape]);
-        return `<!--okou-equation:${paint.mathGroup.toString()}-->`;
-      }
       let result = shape.replace(
         /<a:innerShdw\b([^>]*)>/u,
         (_match: string, attrs: string) => {
@@ -280,6 +272,18 @@ export function applyNativePaint(
           });
         });
       }
+      const groupId = paint.mathGroup ?? paint.shadowGroup;
+      if (groupId !== undefined) {
+        const kind = paint.mathGroup !== undefined ? "equation" : "shadow";
+        const key = `${kind}:${groupId.toString()}`;
+        const group = groups.get(key);
+        if (group) {
+          group.push(result);
+          return "";
+        }
+        groups.set(key, [result]);
+        return `<!--okou-native-group:${key}-->`;
+      }
       return result;
     },
   );
@@ -291,11 +295,10 @@ export function applyNativePaint(
       }),
     ) + 1;
   return output.replace(
-    /<!--okou-equation:(\d+)-->/gu,
-    (_match: string, key: string) => {
-      const parts = equations.get(Number(key));
-      if (!parts?.length)
-        throw new Error("Native equation has no measured glyphs");
+    /<!--okou-native-group:(equation|shadow):(\d+)-->/gu,
+    (_match: string, kind: string, key: string) => {
+      const parts = groups.get(`${kind}:${key}`);
+      if (!parts?.length) throw new Error("Native paint group has no shapes");
       const shapes = parts.join("");
       const frames = [
         ...shapes.matchAll(
@@ -303,7 +306,7 @@ export function applyNativePaint(
         ),
       ];
       if (!frames.length)
-        throw new Error("Native equation has no coordinate frame");
+        throw new Error("Native paint group has no coordinate frame");
       const x = Math.min(
           ...frames.map((f) => {
             return Number(f[1]);
@@ -326,7 +329,7 @@ export function applyNativePaint(
             return Number(f[2]) + Number(f[4]);
           }),
         ) - y;
-      return `<p:grpSp><p:nvGrpSpPr><p:cNvPr id="${nextId++}" name="okou-equation-${key}" descr="Editable MathML glyphs and rules"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${w}" cy="${h}"/><a:chOff x="${x}" y="${y}"/><a:chExt cx="${w}" cy="${h}"/></a:xfrm></p:grpSpPr>${shapes}</p:grpSp>`;
+      return `<p:grpSp><p:nvGrpSpPr><p:cNvPr id="${nextId++}" name="okou-${kind}-${key}" descr="${kind === "equation" ? "Editable MathML glyphs and rules" : "Editable CSS box shadow"}"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${w}" cy="${h}"/><a:chOff x="${x}" y="${y}"/><a:chExt cx="${w}" cy="${h}"/></a:xfrm></p:grpSpPr>${shapes}</p:grpSp>`;
     },
   );
 }
@@ -692,7 +695,7 @@ export const INSTALL_NATIVE = String.raw`
     }
     return out;
   };
-  const rounded = (w, h, s) => {
+  const cornerRadii = (w, h, s) => {
     const corners = ['TopLeft', 'TopRight', 'BottomRight', 'BottomLeft'].map((name) => {
       const v = s['border' + name + 'Radius'].split(' ');
       return [
@@ -713,6 +716,10 @@ export const INSTALL_NATIVE = String.raw`
       c[0] *= factor;
       c[1] *= factor;
     }
+    return corners;
+  };
+  const rounded = (w, h, s) => {
+    const corners = cornerRadii(w, h, s);
     const points = [];
     const centers = [
       [corners[0][0], corners[0][1]],
@@ -801,10 +808,17 @@ export const INSTALL_NATIVE = String.raw`
         ['hidden', 'clip', 'scroll', 'auto'].includes(s.overflowY)
       ) {
         const g = geometry(ancestor);
-        out = polygon(
-          out,
-          rounded(g.w, g.h, s).map((p) => world(p, g)),
-        );
+        const widths = ['Top', 'Right', 'Bottom', 'Left'].map((side) => parseFloat(s['border' + side + 'Width']));
+        const radii = cornerRadii(g.w, g.h, s), style = {};
+        for (const [i, name] of ['TopLeft', 'TopRight', 'BottomRight', 'BottomLeft'].entries())
+          style['border' + name + 'Radius'] = [
+            Math.max(0, radii[i][0] - widths[i === 0 || i === 3 ? 3 : 1]),
+            Math.max(0, radii[i][1] - widths[i < 2 ? 0 : 2]),
+          ].map((v) => v + 'px').join(' ');
+        // Overflow clips at the padding edge; clipping at the outer border lets
+        // descendants and their shadows paint over the ancestor's border.
+        out = polygon(out, rounded(g.w - widths[1] - widths[3], g.h - widths[0] - widths[2], style)
+          .map((p) => world({ x: p.x + widths[3], y: p.y + widths[0] }, g)));
       }
       if (roots.includes(ancestor)) break;
     }
@@ -868,6 +882,190 @@ export const INSTALL_NATIVE = String.raw`
         ...extra,
       },
     };
+  };
+  const shadowLayers = (value, node) => {
+    if (value === 'none') return [];
+    return split(value).flatMap((layer) => {
+      const inset = /(?:^|\s)inset(?:\s|$)/.test(layer);
+      const match = /^(.*?)\s+(-?[\d.]+)px\s+(-?[\d.]+)px(?:\s+([\d.]+)px)?(?:\s+(-?[\d.]+)px)?$/.exec(
+        layer.replace(/(?:^|\s)inset(?=\s|$)/, '').trim(),
+      );
+      if (!match) {
+        diagnostic(node, 'shadow-syntax', 'Unmapped computed shadow layer: ' + layer);
+        return [];
+      }
+      return [{
+        color: color(match[1]),
+        x: Number(match[2]),
+        y: Number(match[3]),
+        blur: Number(match[4] || 0),
+        spread: Number(match[5] || 0),
+        inset,
+      }];
+    });
+  };
+  const area = (points) => points.reduce((sum, p, i) => {
+    const q = points[(i + 1) % points.length];
+    return sum + p.x * q.y - q.x * p.y;
+  }, 0) / 2;
+  // Subtract a convex contour as disjoint polygons. Combining those polygons
+  // in one DrawingML path paints translucent bands only once, including joins.
+  const subtract = (points, clip) => {
+    if (clip.length < 3) return [points];
+    if (area(clip) < 0) clip = [...clip].reverse();
+    const half = (input, a, b, sign) => {
+      const out = [];
+      const distance = (p) => sign * ((b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x));
+      for (let i = 0; i < input.length; i++) {
+        const p = input[i], q = input[(i + 1) % input.length];
+        const dp = distance(p), dq = distance(q);
+        if (dp >= 0) out.push(p);
+        if ((dp >= 0) !== (dq >= 0)) {
+          const t = dp / (dp - dq);
+          out.push({ x: p.x + t * (q.x - p.x), y: p.y + t * (q.y - p.y) });
+        }
+      }
+      return out;
+    };
+    const pieces = [];
+    let remaining = points;
+    for (let i = 0; i < clip.length && remaining.length >= 3; i++) {
+      const a = clip[i], b = clip[(i + 1) % clip.length];
+      if (Math.hypot(b.x - a.x, b.y - a.y) < 0.000001) continue;
+      const outside = half(remaining, a, b, -1);
+      if (Math.abs(area(outside)) > 0.0001) pieces.push(outside);
+      remaining = half(remaining, a, b, 1);
+    }
+    return pieces;
+  };
+  // Each layer owns the entire CSS box silhouette, independently of its fill.
+  // Geometric cutouts retain clear interiors without painting a fake background.
+  const shadowShape = (node, outer, holes, fill, config, clip) => {
+    let path = clipped(outer, node);
+    if (clip) path = polygon(path, clip);
+    if (path.length < 3) return null;
+    let paths = [path];
+    for (const hole of holes) paths = paths.flatMap((p) => subtract(p, hole));
+    paths = paths.filter((p) => Math.abs(area(p)) > 0.0001);
+    if (!paths.length) return null;
+    const points = paths.flat();
+    const left = Math.min(...points.map((p) => p.x)),
+      top = Math.min(...points.map((p) => p.y)),
+      right = Math.max(...points.map((p) => p.x)),
+      bottom = Math.max(...points.map((p) => p.y));
+    const item = shape(node, [{x:left,y:top},{x:right,y:top},{x:right,y:bottom},{x:left,y:bottom}], fill, config);
+    if (!item) return null;
+    const unit = config.scale / 96;
+    const x = (item.options.x - config.offX) / unit + config.rootX,
+      y = (item.options.y - config.offY) / unit + config.rootY;
+    item.options.points = paths.flatMap((points) => [
+      ...points.map((p, i) => ({ x: (p.x - x) * unit, y: (p.y - y) * unit, moveTo: i === 0 })),
+      { close: true },
+    ]);
+    return item;
+  };
+  const boxShadows = (node, s, g, config, opacity) => {
+    const layers = shadowLayers(s.boxShadow, node);
+    if (!layers.length) return [];
+    const corners = ['TopLeft', 'TopRight', 'BottomRight', 'BottomLeft'];
+    const radii = cornerRadii(g.w, g.h, s);
+    // CSS spread preserves sharp corners and gradually grows small radii.
+    const spreadRadius = (radius, amount) => {
+      if (radius === 0) return 0;
+      const growth = amount > 0 && radius < amount ? amount * (1 + (radius / amount - 1) ** 3) : amount;
+      return Math.max(0, radius + growth);
+    };
+    const contour = (x, y, w, h, radii) => {
+      if (w <= 0 || h <= 0) return [];
+      const style = {};
+      for (let i = 0; i < 4; i++)
+        style['border' + corners[i] + 'Radius'] = radii[i].map((v) => Math.max(0, v) + 'px').join(' ');
+      return rounded(w, h, style).map((p) => world({ x: p.x + x, y: p.y + y }, g));
+    };
+    const border = contour(0, 0, g.w, g.h, radii);
+    const widths = ['Top', 'Right', 'Bottom', 'Left'].map((side) => parseFloat(s['border' + side + 'Width']));
+    const innerRadii = radii.map(([rx, ry], i) => [
+      Math.max(0, rx - widths[i === 0 || i === 3 ? 3 : 1]),
+      Math.max(0, ry - widths[i < 2 ? 0 : 2]),
+    ]);
+    const padding = contour(widths[3], widths[0], g.w - widths[3] - widths[1], g.h - widths[0] - widths[2], innerRadii);
+    const clip = s.clipPath === 'none' ? null : outline(node, g, s).map((p) => world(p, g));
+    // A CSS blur has sigma = radius / 2. Non-overlapping native contour bands
+    // approximate its Gaussian coverage without repeated low-alpha compositing.
+    // Apply the box cutout after blurring, as required by CSS box-shadow.
+    const cdf = (x) => {
+      const t = 1 / (1 + 0.2316419 * Math.abs(x));
+      const tail = Math.exp(-x * x / 2) / Math.sqrt(2 * Math.PI) * t *
+        (0.319381530 + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))));
+      return x < 0 ? tail : 1 - tail;
+    };
+    // DrawingML can express an opaque, unclipped silhouette with a native effect.
+    // Give every such layer its own carrier; its opaque body is covered by the
+    // original box. Other silhouettes use native paths, with explicit cutouts.
+    let nativeOuter = color(s.backgroundColor).alpha === 1 && opacity === 1 &&
+      s.backgroundClip === 'border-box' && s.clipPath === 'none' && g.similarity;
+    for (let ancestor = node.parentElement; ancestor && !roots.includes(ancestor); ancestor = ancestor.parentElement) {
+      const style = getComputedStyle(ancestor);
+      if (['hidden', 'clip', 'scroll', 'auto'].includes(style.overflowX) ||
+          ['hidden', 'clip', 'scroll', 'auto'].includes(style.overflowY)) nativeOuter = false;
+    }
+    const items = [];
+    for (const layer of [...layers].reverse()) {
+      state.shadowGroup = (state.shadowGroup || 0) + 1;
+      const alpha = layer.color.alpha * opacity;
+      if (alpha === 0) continue;
+      if (nativeOuter && !layer.inset && layer.spread === 0 && layer.blur > 0) {
+        const x = g.matrix.a * layer.x + g.matrix.c * layer.y,
+          y = g.matrix.b * layer.x + g.matrix.d * layer.y;
+        const item = shape(node, rounded(g.w, g.h, s).map((p) => world(p, g)),
+          solid(s.backgroundColor), config, {
+            shadow: {
+              type: 'outer', angle: ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360,
+              offset: Math.hypot(x, y) * 0.75 * config.scale,
+              blur: layer.blur * g.sx * 0.75 * config.scale,
+              color: layer.color.color, opacity: alpha,
+            },
+          });
+        if (item) {
+          item._nativePaint.shadowGroup = state.shadowGroup;
+          item._paintPhase = -1;
+          items.push(item);
+        }
+        continue;
+      }
+      const sigma = layer.blur / 2;
+      const steps = sigma === 0 ? 1 : Math.min(128, Math.max(32, Math.ceil(6 * sigma)));
+      const silhouette = (distance) => {
+        const spread = layer.spread + distance;
+        return layer.inset ? contour(
+          widths[3] + layer.x + spread, widths[0] + layer.y + spread,
+          g.w - widths[3] - widths[1] - 2 * spread,
+          g.h - widths[0] - widths[2] - 2 * spread,
+          innerRadii.map((r) => r.map((v) => spreadRadius(v, -layer.spread) - distance)),
+        ) : contour(layer.x - spread, layer.y - spread,
+          g.w + 2 * spread, g.h + 2 * spread,
+          radii.map((r) => r.map((v) => spreadRadius(v, layer.spread) + distance)));
+      };
+      for (let i = 0; i <= (sigma === 0 ? 0 : steps); i++) {
+        const distance = sigma === 0 ? 0 : sigma * (3 - 6 * i / steps);
+        const nextDistance = sigma === 0 ? 0 : sigma * (3 - 6 * (i + 1) / steps);
+        const core = sigma === 0 || i === steps;
+        const coverage = core ? 1 : cdf(-(distance + nextDistance) / (2 * sigma));
+        const current = silhouette(distance);
+        const next = core ? [] : silhouette(nextDistance);
+        const outer = layer.inset ? (core ? padding : polygon(next, padding)) : current;
+        const holes = layer.inset ? [current] : [next, border];
+        const item = shadowShape(node, outer, holes, {
+          kind: 'solid', stops: [{ color: layer.color.color, alpha: alpha * coverage, position: 0 }],
+        }, config, clip);
+        if (item) {
+          item._nativePaint.shadowGroup = state.shadowGroup;
+          item._paintPhase = layer.inset ? 0.5 : -1;
+          items.push(item);
+        }
+      }
+    }
+    return items;
   };
   const font = (s, config) => ({
     fontFace: s.fontFamily
@@ -1258,6 +1456,7 @@ export const INSTALL_NATIVE = String.raw`
         queue.push(...tiles);
       });
     }
+    const borderStart = items.length;
     const borders = ['Top', 'Right', 'Bottom', 'Left'].map((side) => ({
       side,
       width: parseFloat(s['border' + side + 'Width']),
@@ -1468,42 +1667,21 @@ export const INSTALL_NATIVE = String.raw`
           ),
         );
     }
-    const shadow = (value) => {
-      if (value === 'none') return undefined;
-      const layers = split(value);
-      const m =
-        /^(rgba?\([^)]*\)|#[\da-f]+)\s+(-?[\d.]+)px\s+(-?[\d.]+)px(?:\s+([\d.]+)px)?(?:\s+(-?[\d.]+)px)?(?:\s+(inset))?$/.exec(
-          layers[0],
-        );
-      if (layers.length !== 1 || !m || Number(m[5] || 0) !== 0) {
-        diagnostic(
-          node,
-          'shadow',
-          'Multiple shadow layers or spread require additional native geometry',
-        );
-        return undefined;
-      }
-      const c = color(m[1]),
-        x = Number(m[2]),
-        y = Number(m[3]);
-      return {
-        type: m[6] ? 'inner' : 'outer',
-        angle: ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360,
-        offset: Math.hypot(x, y) * 0.75 * config.scale,
-        blur: Number(m[4] || 0) * 0.75 * config.scale,
-        color: c.color,
-        opacity: c.alpha * alpha,
-      };
+    // Borders sit above inset shadows; outer shadows sit below all box paint.
+    for (let i = borderStart; i < items.length; i++) items[i]._paintPhase = 1;
+    items.push(...boxShadows(node, s, g, config, alpha));
+    const textLayers = shadowLayers(s.textShadow, node);
+    if (textLayers.length > 1)
+      diagnostic(node, 'text-shadow', 'Multiple editable glyph shadows are not implemented');
+    const textLayer = textLayers.length === 1 ? textLayers[0] : undefined;
+    const textShadow = textLayer && {
+      type: 'outer',
+      angle: ((Math.atan2(textLayer.y, textLayer.x) * 180) / Math.PI + 360) % 360,
+      offset: Math.hypot(textLayer.x, textLayer.y) * 0.75 * config.scale,
+      blur: textLayer.blur * 0.75 * config.scale,
+      color: textLayer.color.color,
+      opacity: textLayer.color.alpha * alpha,
     };
-    const boxShadow = shadow(s.boxShadow);
-    if (boxShadow && background.alpha === 0 && !paints.length)
-      diagnostic(
-        node,
-        'shadow-silhouette',
-        'A transparent box shadow needs an independent native silhouette',
-      );
-    else if (boxShadow && items[0]) items[0].options.shadow = boxShadow;
-    const textShadow = shadow(s.textShadow);
     for (const item of original) {
       if (item.type === 'text') {
         delete item.options.fill;

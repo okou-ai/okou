@@ -794,6 +794,62 @@ describe("okou presentation convert", () => {
     expect(slide).toContain("<a:t>2</a:t>");
   });
 
+  it("keeps separate shadow layers editable with their paint, cutouts and order", async () => {
+    const path =
+      '<a:custGeom><a:pathLst><a:path w="1000" h="500"><a:moveTo><a:pt x="0" y="0"/></a:moveTo><a:lnTo><a:pt x="1000" y="0"/></a:lnTo><a:lnTo><a:pt x="1000" y="500"/></a:lnTo><a:close/><a:moveTo><a:pt x="50" y="50"/></a:moveTo><a:lnTo><a:pt x="50" y="450"/></a:lnTo><a:lnTo><a:pt x="950" y="450"/></a:lnTo><a:close/></a:path></a:pathLst></a:custGeom>';
+    const shape = (id: number) => {
+      return `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="shadow-${id}"/></p:nvSpPr><p:spPr><a:xfrm><a:off x="${id * 100}" y="200"/><a:ext cx="1000" cy="500"/></a:xfrm>${path}<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></p:spPr></p:sp>`;
+    };
+    state.slideXml = [shape(2) + shape(3) + shape(4), slideXml([])];
+    state.nativePaint = {
+      "1": {
+        "shadow-2": {
+          shadowGroup: 1,
+          fill: {
+            kind: "solid",
+            stops: [{ position: 0, color: "C7D2FE", alpha: 0.3 }],
+          },
+        },
+        "shadow-3": {
+          shadowGroup: 1,
+          fill: {
+            kind: "solid",
+            stops: [{ position: 0, color: "C7D2FE", alpha: 0.5 }],
+          },
+        },
+        "shadow-4": {
+          shadowGroup: 2,
+          fill: {
+            kind: "solid",
+            stops: [{ position: 0, color: "14B8A6", alpha: 1 }],
+          },
+        },
+      },
+    };
+    await convert([]);
+    const slide =
+      readZip(readFileSync(outPath)).get("ppt/slides/slide1.xml") ?? "";
+    const groups = slide.match(/<p:grpSp>[\s\S]*?<\/p:grpSp>/gu) ?? [];
+    expect(groups).toHaveLength(2);
+    expect(groups[0]).toContain('id="5" name="okou-shadow-1"');
+    expect(groups[0]).toContain(
+      '<a:chOff x="200" y="200"/><a:chExt cx="1100" cy="500"/>',
+    );
+    expect(groups[0]).toContain(
+      '<a:srgbClr val="C7D2FE"><a:alpha val="30000"/>',
+    );
+    expect(groups[0]).toContain(
+      '<a:srgbClr val="C7D2FE"><a:alpha val="50000"/>',
+    );
+    expect(groups[0]?.split(path)).toHaveLength(3);
+    expect(groups[1]).toContain('id="6" name="okou-shadow-2"');
+    expect(groups[1]).toContain(
+      '<a:srgbClr val="14B8A6"><a:alpha val="100000"/>',
+    );
+    expect(groups[1]).toContain(path);
+    expect(slide).not.toContain("<p:pic");
+  });
+
   it("writes source-image crop and grayscale for self-closing blip nodes", async () => {
     state.slideXml = [
       '<p:pic><p:nvPicPr><p:cNvPr id="2" name="source"/></p:nvPicPr><p:blipFill><a:blip r:embed="rId1"/><a:stretch><a:fillRect/></a:stretch></p:blipFill></p:pic>',
