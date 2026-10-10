@@ -247,11 +247,6 @@
       "owner": "publishAutomaticConnection$"
     },
     {
-      "id": "TX-0080",
-      "file": "turbo/apps/api/src/signals/services/builtin-connector-automatic-oauth.service.ts",
-      "owner": "refreshAutomatic"
-    },
-    {
       "id": "TX-0082",
       "file": "turbo/apps/api/src/signals/services/builtin-connector-credential-runtime.service.ts",
       "owner": "persistConnectorRefresh$"
