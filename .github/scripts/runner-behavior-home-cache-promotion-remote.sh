@@ -212,7 +212,7 @@ exit 42' 2>&1)
   REJECTION_LOGS=$(sudo journalctl --no-pager \
     "_SYSTEMD_INVOCATION_ID=$TURN1_INVOCATION_ID" 2>&1) \
     || fail "failed to read live-writer terminal preparation logs"
-  REJECTION_LINES=$(grep -F 'home image cache promotion skipped because guest preparation failed' \
+  REJECTION_LINES=$(grep -F 'home image publication rejected because guest preparation failed' \
     <<<"$REJECTION_LOGS" || true)
   if ! grep -F 'stale exec operation cgroup remains' <<<"$REJECTION_LINES" >/dev/null \
     || grep -F 'home image cache promoted' <<<"$REJECTION_LOGS" >/dev/null; then
@@ -317,9 +317,8 @@ test ! -e /home/user/workspace/nested/ephemeral'; then
   RESTORE_LOGS=$(sudo journalctl --no-pager \
     "_SYSTEMD_INVOCATION_ID=$RESTORE_INVOCATION_ID" 2>&1) \
     || fail "failed to read home cache restore runner logs"
-  if grep -F 'home image cache lock busy or unavailable; using fresh home image' \
-    <<<"$RESTORE_LOGS" \
-    | grep -F 'lock is already held by another process' >/dev/null; then
+  if grep -E 'home image cache lock (remained busy|busy without retry); using fresh home image' \
+    <<<"$RESTORE_LOGS" >/dev/null; then
     if [ "$ATTEMPT" -eq "$MAX_ATTEMPTS" ]; then
       fail "Home cache restore entry lock remained busy after ${MAX_ATTEMPTS} attempts"
     fi

@@ -1205,7 +1205,14 @@ impl HomeImageCache {
         let _capacity =
             match runner_host::lock::try_acquire_or_busy(self.capacity_lock_path()).await {
                 Ok(runner_host::lock::TryLock::Acquired(lock)) => lock,
-                Ok(runner_host::lock::TryLock::Busy) | Err(_) => {
+                Ok(runner_host::lock::TryLock::Busy) => {
+                    info!(run_id = %input.run_id, cache_key = input.cache_key,
+                        "home image cache promotion skipped: capacity lock busy");
+                    return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
+                }
+                Err(error) => {
+                    warn!(run_id = %input.run_id, cache_key = input.cache_key, %error,
+                        "home image cache promotion skipped: capacity lock unavailable");
                     return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
                 }
             };
@@ -1353,6 +1360,11 @@ impl HomeImageCache {
                 }
             }
         }
+        // Native acceptance and operational readers use this as a completion
+        // receipt, never as preparation or a candidate-image write acknowledgement.
+        info!(run_id = %input.run_id, cache_key = input.cache_key,
+            image_generation = %input.run_id, image_size_bytes = input.image_size_bytes,
+            "home image cache promoted");
         Ok(HomeImagePromotionOutcome::Promoted)
     }
 }

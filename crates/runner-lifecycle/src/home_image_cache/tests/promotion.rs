@@ -2,6 +2,8 @@ use super::super::*;
 use super::support::*;
 use crate::storage_fingerprints::StorageFingerprints;
 use std::os::unix::fs::{MetadataExt, symlink};
+use tracing_subscriber::prelude::*;
+use tracing_test_support::CapturedEvents;
 
 #[tokio::test]
 async fn immutable_generation_replaces_metadata_then_retires_superseded_image() {
@@ -10,9 +12,32 @@ async fn immutable_generation_replaces_metadata_then_retires_superseded_image() 
         .commit("thread", b"old-home", "2026-10-09T09:00:00Z")
         .await;
     let old_path = f.image("thread", &old);
+    let captured = CapturedEvents::default();
+    let guard =
+        tracing::subscriber::set_default(tracing_subscriber::registry().with(captured.clone()));
     let new = f
         .commit("thread", b"new-home", "2026-10-09T09:01:00Z")
         .await;
+    drop(guard);
+    let events = captured.entries();
+    let published: Vec<_> = events
+        .iter()
+        .filter(|event| {
+            event.fields.get("message").map(String::as_str) == Some("home image cache promoted")
+        })
+        .collect();
+    assert_eq!(published.len(), 1);
+    let event = published.first().unwrap();
+    assert_eq!(event.fields.get("run_id"), Some(&new.image_generation));
+    assert_eq!(
+        event.fields.get("image_generation"),
+        Some(&new.image_generation)
+    );
+    assert_eq!(event.fields.get("cache_key"), Some(&f.key("thread")));
+    assert_eq!(
+        event.fields.get("image_size_bytes"),
+        Some(&SIZE.to_string())
+    );
     assert_ne!(old.image_generation, new.image_generation);
     assert_ne!(old_path, f.image("thread", &new));
     assert!(!old_path.exists());
@@ -51,7 +76,14 @@ async fn each_publication_crash_window_preserves_a_complete_old_or_new_commit() 
             .inner
             .publication_fault
             .store(point as usize, std::sync::atomic::Ordering::SeqCst);
+        let captured = CapturedEvents::default();
+        let guard =
+            tracing::subscriber::set_default(tracing_subscriber::registry().with(captured.clone()));
         assert!(context.promote().await.is_err());
+        drop(guard);
+        assert!(captured.entries().iter().all(|event| {
+            event.fields.get("message").map(String::as_str) != Some("home image cache promoted")
+        }));
         drop(context);
         let observed = f.metadata("thread").await;
         let bytes = tokio::fs::read(f.image("thread", &observed)).await.unwrap();
@@ -115,16 +147,82 @@ async fn older_or_equal_terminal_time_and_busy_capacity_preserve_existing_bytes(
             StorageFingerprints::default(),
         )
         .await;
+    let captured = CapturedEvents::default();
+    let guard =
+        tracing::subscriber::set_default(tracing_subscriber::registry().with(captured.clone()));
     assert_eq!(
         context.promote().await.unwrap(),
         HomeImagePromotionOutcome::SkippedUnpublished
     );
+    drop(guard);
+    let events = captured.entries();
+    let busy = events
+        .iter()
+        .find(|event| {
+            event.fields.get("message").map(String::as_str)
+                == Some("home image cache promotion skipped: capacity lock busy")
+        })
+        .unwrap();
+    assert_eq!(
+        busy.fields.get("run_id"),
+        Some(&context.run_id().to_string())
+    );
+    assert!(events.iter().all(|event| {
+        event.fields.get("message").map(String::as_str) != Some("home image cache promoted")
+    }));
     drop(context);
     drop(capacity);
     assert_eq!(
         f.metadata("thread").await.image_generation,
         old.image_generation
     );
+}
+
+#[tokio::test]
+async fn unavailable_capacity_lock_is_not_reported_as_retryable_contention() {
+    let f = Fixture::new().await;
+    let context = f
+        .context(
+            "thread",
+            b"unpublished",
+            "2026-10-09T09:00:00Z",
+            HomeCacheTerminalStatus::Success,
+            StorageFingerprints::default(),
+        )
+        .await;
+    // An unusable lock pathname is not a lock held by a concurrent publisher.
+    std::fs::create_dir(f.cache.capacity_lock_path()).unwrap();
+    let captured = CapturedEvents::default();
+    let guard =
+        tracing::subscriber::set_default(tracing_subscriber::registry().with(captured.clone()));
+    assert_eq!(
+        context.promote().await.unwrap(),
+        HomeImagePromotionOutcome::SkippedUnpublished
+    );
+    drop(guard);
+    let events = captured.entries();
+    let unavailable = events
+        .iter()
+        .find(|event| {
+            event.fields.get("message").map(String::as_str)
+                == Some("home image cache promotion skipped: capacity lock unavailable")
+        })
+        .unwrap();
+    assert_eq!(
+        unavailable.fields.get("run_id"),
+        Some(&context.run_id().to_string())
+    );
+    assert!(events.iter().all(|event| {
+        !matches!(
+            event.fields.get("message").map(String::as_str),
+            Some(
+                "home image cache promoted"
+                    | "home image cache promotion skipped: capacity lock busy"
+            )
+        )
+    }));
+    assert!(f.paths.active_home_image(&context.sandbox_id()).exists());
+    assert!(!f.cache.entry_paths(&f.key("thread")).metadata().exists());
 }
 
 #[tokio::test]
