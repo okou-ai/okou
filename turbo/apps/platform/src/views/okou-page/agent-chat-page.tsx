@@ -23,7 +23,11 @@ import { detach, Reason } from "../../signals/utils.ts";
 import { ChatComposer } from "./chat-composer.tsx";
 import { StartCards } from "./start-cards.tsx";
 import { ComposerTaskChips } from "./composer-task-chips.tsx";
-import { ChatHomeCompliance } from "./chat-home-compliance.tsx";
+import {
+  ChatHomeCompliance,
+  useChatHomeComplianceVisible,
+} from "./chat-home-compliance.tsx";
+import { SCROLL_FADE_Y_END_SM } from "./scroll-fade.ts";
 import { HomeTaskRecommendations } from "./home-task-recommendations.tsx";
 import { GrowthEntryHeader } from "./growth-entry.tsx";
 import {
@@ -425,6 +429,7 @@ function AgentComposerPage() {
   const animateGreeting = useGet(chatGreetingShouldAnimate$);
   const finishGreetingEntrance = useSet(finishChatGreetingEntrance$);
   const greetingIdentity = `${currentChatAgentId ?? "none"}:${tagline}`;
+  const complianceVisible = useChatHomeComplianceVisible();
 
   const handleInputChange = (value: string) => {
     setInput(value);
@@ -435,7 +440,15 @@ function AgentComposerPage() {
     <div className="relative flex flex-1 flex-col min-h-0">
       <GrowthEntryHeader />
 
-      <main className="flex flex-1 min-h-0 flex-col overflow-y-auto px-4 sm:px-6">
+      <main
+        className={cn(
+          "flex flex-1 min-h-0 flex-col overflow-y-auto px-4 sm:px-6",
+          // On a short window the column scrolls above the compliance row;
+          // fade it rather than slicing it flat on the row's edge. Desktop
+          // only, because the row is: below `sm` the composer owns that edge.
+          complianceVisible && SCROLL_FADE_Y_END_SM,
+        )}
+      >
         {/* Below `sm` the composer is the page's footer. Every text tool a
             phone user already has puts the field within thumb reach at the
             bottom of the screen, and this page was the one surface that asked
@@ -538,8 +551,8 @@ function AgentComposerPage() {
             )}
           </div>
         </div>
-        <ChatHomeCompliance />
       </main>
+      <ChatHomeCompliance />
       <PersonalClaudeCodeDeviceAuthDialog />
       <PersonalCodexDeviceAuthDialog />
     </div>

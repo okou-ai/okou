@@ -1,4 +1,5 @@
 import { Badge } from "@okouai/ui";
+import { cn } from "@okouai/ui/lib/utils";
 import {
   Globe,
   HeartPulse,
@@ -102,8 +103,18 @@ export function SecurityDetailsLink({ className }: { className: string }) {
 /**
  * The five frameworks as status badges. Onboarding and the chat home show the
  * same list, so the claims cannot drift apart between the two surfaces.
+ *
+ * `quiet` is for a surface where the badges are ambient rather than the
+ * content: the icon and the status drop to the muted ramp, and the status
+ * keeps only a one-step contrast over the name.
  */
-export function ComplianceBadges({ className }: { className?: string }) {
+export function ComplianceBadges({
+  className,
+  quiet = false,
+}: {
+  className?: string;
+  quiet?: boolean;
+}) {
   const items = useComplianceItems();
 
   return (
@@ -111,10 +122,26 @@ export function ComplianceBadges({ className }: { className?: string }) {
       {items.map((item) => {
         return (
           <li key={item.name}>
-            <Badge className="text-xs text-muted-foreground">
-              <item.icon className="text-foreground" aria-hidden="true" />
+            <Badge
+              className={cn(
+                "text-xs",
+                quiet ? "text-gray-700" : "text-muted-foreground",
+              )}
+            >
+              <item.icon
+                className={quiet ? undefined : "text-foreground"}
+                aria-hidden="true"
+              />
               <span>{item.name}</span>
-              <span className="font-medium text-foreground">{item.status}</span>
+              <span
+                className={
+                  quiet
+                    ? "text-muted-foreground"
+                    : "font-medium text-foreground"
+                }
+              >
+                {item.status}
+              </span>
             </Badge>
           </li>
         );

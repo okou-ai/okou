@@ -87,3 +87,13 @@ export const SCROLL_FADE_Y_WHEN_OVERFLOWING = [
   "group-data-[overflow-y-start]:group-data-[overflow-y-end]:[-webkit-mask-image:linear-gradient(to_bottom,transparent_0,#000_20px,#000_calc(100%_-_20px),transparent_100%)]",
   "group-data-[overflow-y-start]:group-data-[overflow-y-end]:[mask-image:linear-gradient(to_bottom,transparent_0,#000_20px,#000_calc(100%_-_20px),transparent_100%)]",
 ].join(" ");
+
+/**
+ * `SCROLL_FADE_Y_END` from `sm` up, for a scroller whose bottom edge only meets
+ * another layer on desktop. Spelled out rather than prefixed at runtime because
+ * Tailwind only emits the utilities it finds written in the source.
+ */
+export const SCROLL_FADE_Y_END_SM = [
+  "sm:[-webkit-mask-image:linear-gradient(to_bottom,#000_calc(100%_-_20px),transparent_100%)]",
+  "sm:[mask-image:linear-gradient(to_bottom,#000_calc(100%_-_20px),transparent_100%)]",
+].join(" ");

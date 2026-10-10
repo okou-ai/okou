@@ -7,32 +7,38 @@ import {
   useComplianceTitle,
 } from "../components/compliance-badges.tsx";
 
+/** Whether the chat home carries the compliance row under its scroller. */
+export function useChatHomeComplianceVisible(): boolean {
+  const features = useLastResolved(featureSwitch$);
+  return features?.[FeatureSwitchKey.ChatHomeCompliance] ?? false;
+}
+
 /**
- * The compliance badges at the foot of the chat home. `mt-auto` takes the free
- * space under the composer column, so the row rests on the bottom of the
- * scrollport when the page is short and follows the content when it is not.
+ * The compliance badges at the foot of the chat home. The row sits outside the
+ * page's scroller, so it stays on the first screen however tall the composer
+ * column grows; the column scrolls above it instead.
  *
  * Desktop only: below `sm` the composer is the page's footer, and a row under
  * it would sit between the field and the home indicator.
  */
 export function ChatHomeCompliance() {
-  const features = useLastResolved(featureSwitch$);
+  const visible = useChatHomeComplianceVisible();
   const title = useComplianceTitle();
 
-  if (!(features?.[FeatureSwitchKey.ChatHomeCompliance] ?? false)) {
+  if (!visible) {
     return null;
   }
 
   return (
     <section
       aria-label={title}
-      className="mx-auto mt-auto hidden w-full max-w-[900px] flex-col items-center gap-3 pt-10 pb-6 sm:flex"
+      className="hidden shrink-0 flex-col items-center gap-2 px-6 pt-3 pb-5 sm:flex"
     >
-      <p className="flex flex-wrap items-baseline justify-center gap-x-2 text-xs text-muted-foreground">
+      <p className="flex flex-wrap items-baseline justify-center gap-x-2 text-xs text-gray-700">
         <span>{title}</span>
-        <SecurityDetailsLink className="text-foreground underline-offset-2 hover:underline" />
+        <SecurityDetailsLink className="underline decoration-gray-400 underline-offset-2 hover:text-foreground hover:decoration-current" />
       </p>
-      <ComplianceBadges className="flex flex-wrap justify-center gap-2" />
+      <ComplianceBadges quiet className="flex flex-wrap justify-center gap-2" />
     </section>
   );
 }
