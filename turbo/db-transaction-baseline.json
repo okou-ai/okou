@@ -127,11 +127,6 @@
       "owner": "linkAgentPhoneIdentity$"
     },
     {
-      "id": "TX-0053",
-      "file": "turbo/apps/api/src/signals/services/agentphone-shared.service.ts",
-      "owner": "storeOutboundAgentPhoneMessage"
-    },
-    {
       "id": "TX-0056",
       "file": "turbo/apps/api/src/signals/services/artifact-catalog.service.ts",
       "owner": "syncHostedArtifact$"

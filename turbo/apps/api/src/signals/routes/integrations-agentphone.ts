@@ -37,7 +37,7 @@ import {
   publishAgentPhoneUserChanged,
   publishAgentPhoneUserLinked,
   resolveAgentPhoneUserLinkForEvent,
-  sendAgentPhoneText,
+  sendAgentPhoneText$,
   storeInboundAgentPhoneMessage$,
   verifyAgentPhoneConnectSignature,
   verifyAgentPhoneWebhook,
@@ -1321,10 +1321,10 @@ const handleAgentPhoneConnectionCode$ = command(
             },
             signal,
           )
-        : sendAgentPhoneText(
+        : set(
+            sendAgentPhoneText$,
             event,
             agentPhoneConnectionCodeFailureReply(result),
-            undefined,
             signal,
           ),
       (error) => {

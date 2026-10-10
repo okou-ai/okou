@@ -52,10 +52,10 @@ import {
   isAgentPhoneChannel,
   isValidAgentPhoneHandle,
   normalizeAgentPhoneHandle,
-  resolveAgentPhoneConversationVisibilityRecipients,
+  resolveAgentPhoneConversationVisibilityRecipients$,
   resolveAgentPhoneUserLink,
   resolveOrgDefaultComposeId,
-  storeOutboundAgentPhoneMessage,
+  storeOutboundAgentPhoneMessage$,
   type AgentPhoneChannel,
   type AgentPhoneUserLink,
 } from "./agentphone-shared.service";
@@ -107,7 +107,7 @@ export {
   isAgentPhoneChannel,
   isValidAgentPhoneHandle,
   normalizeAgentPhoneHandle,
-  storeOutboundAgentPhoneMessage,
+  storeOutboundAgentPhoneMessage$,
   type AgentPhoneChannel,
 };
 
@@ -908,75 +908,76 @@ function appendAgentPhoneSlashCommandRiskWarning(
   return [body, AGENTPHONE_SMS_MMS_SLASH_COMMAND_RISK_MESSAGE].join("\n\n");
 }
 
-export async function sendAgentPhoneText(
-  event: AgentPhoneMessageEvent,
-  body: string,
-  db: Db | undefined,
-  signal: AbortSignal,
-): Promise<void> {
-  const isGroup = isAgentPhoneGroupEvent(event);
-  if (isGroup && !db) {
-    throw new Error("AgentPhone group reply requires a database handle");
-  }
-  if (isGroup && !event.conversationId) {
-    throw new Error("AgentPhone group reply is missing a conversation id");
-  }
-  const visibilityRecipients = isGroup
-    ? await resolveAgentPhoneConversationVisibilityRecipients(
-        db!,
-        event.conversationId!,
-        nowDate(),
-        signal,
-      )
-    : [];
-  signal.throwIfAborted();
-  const sent = await sendAgentPhoneMessage(
-    {
-      agentphoneAgentId: event.agentphoneAgentId,
-      toNumber: agentPhoneReplyDestination({
-        isGroup,
+export const sendAgentPhoneText$ = command(
+  async (
+    { set },
+    event: AgentPhoneMessageEvent,
+    body: string,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const isGroup = isAgentPhoneGroupEvent(event);
+    if (isGroup && !event.conversationId) {
+      throw new Error("AgentPhone group reply is missing a conversation id");
+    }
+    const visibilityRecipients = isGroup
+      ? await set(
+          resolveAgentPhoneConversationVisibilityRecipients$,
+          event.conversationId!,
+          nowDate(),
+          signal,
+        )
+      : [];
+    signal.throwIfAborted();
+    const sent = await sendAgentPhoneMessage(
+      {
+        agentphoneAgentId: event.agentphoneAgentId,
+        toNumber: agentPhoneReplyDestination({
+          isGroup,
+          groupId: event.groupId,
+          phoneHandle: event.fromNumber,
+        }),
+        ...(event.channel === "imessage"
+          ? { replyToMessageId: event.messageId }
+          : {}),
+        body,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+
+    if (isGroup) {
+      await set(storeOutboundAgentPhoneMessage$, {
+        agentphoneMessageId: sent.id,
+        conversationId: event.conversationId,
         groupId: event.groupId,
+        agentphoneAgentId: event.agentphoneAgentId,
         phoneHandle: event.fromNumber,
-      }),
-      ...(event.channel === "imessage"
-        ? { replyToMessageId: event.messageId }
-        : {}),
-      body,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
+        fromNumber: event.toNumber,
+        toNumber: sent.toNumber,
+        body,
+        channel: event.channel,
+        userChannel: event.channel,
+        visibilityRecipients,
+      });
+    }
+  },
+);
 
-  if (isGroup) {
-    await storeOutboundAgentPhoneMessage(db!, {
-      agentphoneMessageId: sent.id,
-      conversationId: event.conversationId,
-      groupId: event.groupId,
-      agentphoneAgentId: event.agentphoneAgentId,
-      phoneHandle: event.fromNumber,
-      fromNumber: event.toNumber,
-      toNumber: sent.toNumber,
-      body,
-      channel: event.channel,
-      userChannel: event.channel,
-      visibilityRecipients,
-    });
-  }
-}
-
-async function sendAgentPhoneSlashCommandText(
-  event: AgentPhoneMessageEvent,
-  body: string,
-  db: Db | undefined,
-  signal: AbortSignal,
-): Promise<void> {
-  await sendAgentPhoneText(
-    event,
-    appendAgentPhoneSlashCommandRiskWarning(body, event.channel),
-    db,
-    signal,
-  );
-}
+const sendAgentPhoneSlashCommandText$ = command(
+  async (
+    { set },
+    event: AgentPhoneMessageEvent,
+    body: string,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    await set(
+      sendAgentPhoneText$,
+      event,
+      appendAgentPhoneSlashCommandRiskWarning(body, event.channel),
+      signal,
+    );
+  },
+);
 
 async function refreshTypingIfSupported(
   event: AgentPhoneMessageEvent,
@@ -1032,120 +1033,132 @@ function formatHelpMessage(): string {
   ].join("\n");
 }
 
-async function sendConnectPrompt(
-  event: AgentPhoneMessageEvent,
-  options: { readonly slashCommand: boolean } | undefined,
-  db: Db | undefined,
-  signal: AbortSignal,
-): Promise<void> {
-  const body = formatConnectPrompt(event);
-  await sendAgentPhoneText(
-    event,
-    options?.slashCommand
-      ? appendAgentPhoneSlashCommandRiskWarning(body, event.channel)
-      : body,
-    db,
-    signal,
-  );
-}
-
-async function sendGroupConnectInDmPrompt(
-  event: AgentPhoneMessageEvent,
-  db: Db | undefined,
-  signal: AbortSignal,
-): Promise<void> {
-  await sendAgentPhoneText(
-    event,
-    AGENTPHONE_GROUP_CONNECT_IN_DM_MESSAGE,
-    db,
-    signal,
-  );
-}
-
-async function sendGroupAccountCommandBlockedMessage(
-  event: AgentPhoneMessageEvent,
-  db: Db | undefined,
-  signal: AbortSignal,
-): Promise<void> {
-  await sendAgentPhoneText(
-    event,
-    AGENTPHONE_GROUP_ACCOUNT_COMMAND_MESSAGE,
-    db,
-    signal,
-  );
-}
-
-async function blockUnauthorizedGroupAccountCommand(
-  args: {
-    readonly db: Db;
-    readonly event: AgentPhoneMessageEvent;
-    readonly commandText: string | undefined;
-    readonly userLink: AgentPhoneUserLink | null;
-  },
-  signal: AbortSignal,
-): Promise<boolean> {
-  if (
-    !isAgentPhoneGroupAccountCommand(args.event, args.commandText) ||
-    args.userLink
-  ) {
-    return false;
-  }
-
-  await sendGroupAccountCommandBlockedMessage(args.event, args.db, signal);
-  return true;
-}
-
-async function handleConnectCommand(
-  args: {
-    readonly db: Db;
-    readonly event: AgentPhoneMessageEvent;
-    readonly userLink: AgentPhoneUserLink | null;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  if (args.userLink) {
-    const { brandName } = BRAND_PRESENTATION;
-    await sendAgentPhoneSlashCommandText(
-      args.event,
-      `You are already connected. Send a message here to start using ${brandName}.`,
-      args.db,
+const sendConnectPrompt$ = command(
+  async (
+    { set },
+    event: AgentPhoneMessageEvent,
+    options: { readonly slashCommand: boolean } | undefined,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const body = formatConnectPrompt(event);
+    await set(
+      sendAgentPhoneText$,
+      event,
+      options?.slashCommand
+        ? appendAgentPhoneSlashCommandRiskWarning(body, event.channel)
+        : body,
       signal,
     );
-    return;
-  }
-  await sendConnectPrompt(args.event, { slashCommand: true }, args.db, signal);
-}
-
-async function handleDisconnectCommand(
-  args: {
-    readonly db: Db;
-    readonly event: AgentPhoneMessageEvent;
-    readonly userLink: AgentPhoneUserLink | null;
   },
-  signal: AbortSignal,
-): Promise<void> {
-  if (!args.userLink) {
-    await sendAgentPhoneSlashCommandText(
-      args.event,
-      "Error: This phone number is not connected.",
-      args.db,
+);
+
+const sendGroupConnectInDmPrompt$ = command(
+  async (
+    { set },
+    event: AgentPhoneMessageEvent,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    await set(
+      sendAgentPhoneText$,
+      event,
+      AGENTPHONE_GROUP_CONNECT_IN_DM_MESSAGE,
       signal,
     );
-    return;
-  }
+  },
+);
 
-  await args.db
-    .delete(agentphoneUserLinks)
-    .where(eq(agentphoneUserLinks.id, args.userLink.id));
-  signal.throwIfAborted();
+const sendGroupAccountCommandBlockedMessage$ = command(
+  async (
+    { set },
+    event: AgentPhoneMessageEvent,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    await set(
+      sendAgentPhoneText$,
+      event,
+      AGENTPHONE_GROUP_ACCOUNT_COMMAND_MESSAGE,
+      signal,
+    );
+  },
+);
 
-  await sendAgentPhoneSlashCommandText(
-    args.event,
-    `This phone number has been disconnected from ${BRAND_PRESENTATION.brandName}.`,
-    args.db,
-    signal,
-  );
-}
+const blockUnauthorizedGroupAccountCommand$ = command(
+  async (
+    { set },
+    args: {
+      readonly event: AgentPhoneMessageEvent;
+      readonly commandText: string | undefined;
+      readonly userLink: AgentPhoneUserLink | null;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    if (
+      !isAgentPhoneGroupAccountCommand(args.event, args.commandText) ||
+      args.userLink
+    ) {
+      return false;
+    }
+
+    await set(sendGroupAccountCommandBlockedMessage$, args.event, signal);
+    return true;
+  },
+);
+
+const handleConnectCommand$ = command(
+  async (
+    { set },
+    args: {
+      readonly event: AgentPhoneMessageEvent;
+      readonly userLink: AgentPhoneUserLink | null;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    if (args.userLink) {
+      const { brandName } = BRAND_PRESENTATION;
+      await set(
+        sendAgentPhoneSlashCommandText$,
+        args.event,
+        `You are already connected. Send a message here to start using ${brandName}.`,
+        signal,
+      );
+      return;
+    }
+    await set(sendConnectPrompt$, args.event, { slashCommand: true }, signal);
+  },
+);
+
+const handleDisconnectCommand$ = command(
+  async (
+    { set },
+    args: {
+      readonly event: AgentPhoneMessageEvent;
+      readonly userLink: AgentPhoneUserLink | null;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    if (!args.userLink) {
+      await set(
+        sendAgentPhoneSlashCommandText$,
+        args.event,
+        "Error: This phone number is not connected.",
+        signal,
+      );
+      return;
+    }
+
+    await set(writeDb$)
+      .delete(agentphoneUserLinks)
+      .where(eq(agentphoneUserLinks.id, args.userLink.id));
+    signal.throwIfAborted();
+
+    await set(
+      sendAgentPhoneSlashCommandText$,
+      args.event,
+      `This phone number has been disconnected from ${BRAND_PRESENTATION.brandName}.`,
+      signal,
+    );
+  },
+);
 
 function commandArgument(text: string): string {
   const trimmed = text.trim();
@@ -1231,7 +1244,6 @@ const handleModelCommand$ = command(
   async (
     { set },
     args: {
-      readonly db: Db;
       readonly event: AgentPhoneMessageEvent;
       readonly userLinkId: string;
       readonly orgId: string;
@@ -1259,10 +1271,10 @@ const handleModelCommand$ = command(
     );
     signal.throwIfAborted();
     if (currentModel.kind === "no_thread") {
-      await sendAgentPhoneSlashCommandText(
+      await set(
+        sendAgentPhoneSlashCommandText$,
         args.event,
         "Error: Start or enter an existing Okou conversation before using /model.",
-        args.db,
         signal,
       );
       return;
@@ -1284,10 +1296,10 @@ const handleModelCommand$ = command(
     });
 
     if (options.length === 0) {
-      await sendAgentPhoneSlashCommandText(
+      await set(
+        sendAgentPhoneSlashCommandText$,
         args.event,
         "Error: No models are configured for this workspace.",
-        args.db,
         signal,
       );
       return;
@@ -1295,10 +1307,10 @@ const handleModelCommand$ = command(
 
     const input = commandArgument(args.event.body);
     if (!input) {
-      await sendAgentPhoneSlashCommandText(
+      await set(
+        sendAgentPhoneSlashCommandText$,
         args.event,
         formatAgentPhoneModelOptionsMessage(options, currentSelectedModel),
-        args.db,
         signal,
       );
       return;
@@ -1306,14 +1318,14 @@ const handleModelCommand$ = command(
 
     const option = findModelOption(options, input);
     if (!option) {
-      await sendAgentPhoneSlashCommandText(
+      await set(
+        sendAgentPhoneSlashCommandText$,
         args.event,
         [
           `Error: Unknown model "${input}".`,
           "",
           formatAgentPhoneModelOptionsMessage(options, currentSelectedModel),
         ].join("\n"),
-        args.db,
         signal,
       );
       return;
@@ -1330,21 +1342,21 @@ const handleModelCommand$ = command(
       signal,
     );
     if (threadModel.kind !== "updated") {
-      await sendAgentPhoneSlashCommandText(
+      await set(
+        sendAgentPhoneSlashCommandText$,
         args.event,
         threadModel.kind === "no_thread"
           ? "Error: Start or enter an existing Okou conversation before using /model."
           : "Error: You don't have access to that model.",
-        args.db,
         signal,
       );
       return;
     }
     signal.throwIfAborted();
-    await sendAgentPhoneSlashCommandText(
+    await set(
+      sendAgentPhoneSlashCommandText$,
       args.event,
       `Switched to ${option.label}.`,
-      args.db,
       signal,
     );
   },
@@ -1354,7 +1366,6 @@ const dispatchAgentPhoneCommand$ = command(
   async (
     { set },
     args: {
-      readonly db: Db;
       readonly command: string | undefined;
       readonly event: AgentPhoneMessageEvent;
       readonly userLink: AgentPhoneUserLink | null;
@@ -1363,9 +1374,9 @@ const dispatchAgentPhoneCommand$ = command(
   ): Promise<boolean> => {
     switch (args.command) {
       case "connect": {
-        await handleConnectCommand(
+        await set(
+          handleConnectCommand$,
           {
-            db: args.db,
             event: args.event,
             userLink: args.userLink,
           },
@@ -1374,9 +1385,9 @@ const dispatchAgentPhoneCommand$ = command(
         return true;
       }
       case "disconnect": {
-        await handleDisconnectCommand(
+        await set(
+          handleDisconnectCommand$,
           {
-            db: args.db,
             event: args.event,
             userLink: args.userLink,
           },
@@ -1385,20 +1396,20 @@ const dispatchAgentPhoneCommand$ = command(
         return true;
       }
       case "help": {
-        await sendAgentPhoneSlashCommandText(
+        await set(
+          sendAgentPhoneSlashCommandText$,
           args.event,
           formatHelpMessage(),
-          args.db,
           signal,
         );
         return true;
       }
       case "model": {
         if (!args.userLink) {
-          await sendConnectPrompt(
+          await set(
+            sendConnectPrompt$,
             args.event,
             { slashCommand: true },
-            args.db,
             signal,
           );
           return true;
@@ -1406,7 +1417,6 @@ const dispatchAgentPhoneCommand$ = command(
         await set(
           handleModelCommand$,
           {
-            db: args.db,
             event: args.event,
             userLinkId: args.userLink.id,
             orgId: args.userLink.orgId,
@@ -1427,7 +1437,6 @@ const handleAgentPhoneCommandIfPresent$ = command(
   async (
     { set },
     args: {
-      readonly db: Db;
       readonly event: AgentPhoneMessageEvent;
       readonly userLink: AgentPhoneUserLink | null;
     },
@@ -1439,9 +1448,9 @@ const handleAgentPhoneCommandIfPresent$ = command(
     }
 
     if (
-      await blockUnauthorizedGroupAccountCommand(
+      await set(
+        blockUnauthorizedGroupAccountCommand$,
         {
-          db: args.db,
           event: args.event,
           commandText,
           userLink: args.userLink,
@@ -1455,7 +1464,6 @@ const handleAgentPhoneCommandIfPresent$ = command(
     return set(
       dispatchAgentPhoneCommand$,
       {
-        db: args.db,
         command: commandText,
         event: args.event,
         userLink: args.userLink,
@@ -1637,7 +1645,7 @@ const replyAgentPhoneChatQueueWait$ = command(
   ): Promise<void> => {
     const notice = chatQueueWaitNotice(reason);
     if (notice) {
-      await sendAgentPhoneText(event, notice, set(writeDb$), signal);
+      await set(sendAgentPhoneText$, event, notice, signal);
     }
   },
 );
@@ -1757,7 +1765,6 @@ export const handleAgentPhoneMessage$ = command(
       await set(
         handleAgentPhoneCommandIfPresent$,
         {
-          db,
           event: params.event,
           userLink: params.userLink,
         },
@@ -1770,21 +1777,21 @@ export const handleAgentPhoneMessage$ = command(
     const userLink = params.userLink;
     if (!userLink) {
       if (isAgentPhoneGroupEvent(params.event)) {
-        await sendGroupConnectInDmPrompt(params.event, db, signal);
+        await set(sendGroupConnectInDmPrompt$, params.event, signal);
         return;
       }
 
-      await sendConnectPrompt(params.event, undefined, db, signal);
+      await set(sendConnectPrompt$, params.event, undefined, signal);
       return;
     }
 
     const agent = await resolveAgentPhoneAgent(db, userLink);
     signal.throwIfAborted();
     if (!agent) {
-      await sendAgentPhoneText(
+      await set(
+        sendAgentPhoneText$,
         params.event,
         `The workspace default agent is not configured. Please choose an agent in ${BRAND_PRESENTATION.brandName} first.`,
-        db,
         signal,
       );
       return;
