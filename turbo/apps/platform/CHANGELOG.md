@@ -12,6 +12,25 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1009.0](https://github.com/okou-ai/okou/compare/app-v0.1008.2...app-v0.1009.0) (2026-10-10)
+
+
+### Features
+
+* add sidebar-first artifact previews behind a switch ([#38605](https://github.com/okou-ai/okou/issues/38605)) ([81341fb](https://github.com/okou-ai/okou/commit/81341fbbe6bd58b7a0e80823203a429e62e2887a))
+
+
+### Bug Fixes
+
+* **platform:** remove legacy fast model picker options ([#38619](https://github.com/okou-ai/okou/issues/38619)) ([7454454](https://github.com/okou-ai/okou/commit/745445415e26882f1ff09b1dd60fbe85adb5fbf8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.741.0
+
 ## [0.1008.2](https://github.com/okou-ai/okou/compare/app-v0.1008.1...app-v0.1008.2) (2026-10-10)
 
 

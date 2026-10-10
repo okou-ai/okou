@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.0](https://github.com/okou-ai/okou/compare/guest-control-server-v0.22.15...guest-control-server-v0.23.0) (2026-10-10)
+
+
+### Features
+
+* **runner:** retain home images with verified history ([#38498](https://github.com/okou-ai/okou/issues/38498)) ([8b100e4](https://github.com/okou-ai/okou/commit/8b100e433e5933242c418dbfe1c1f3efd15a9b87))
+
 ## [0.22.15](https://github.com/okou-ai/okou/compare/guest-control-server-v0.22.14...guest-control-server-v0.22.15) (2026-10-10)
 
 ## [0.22.14](https://github.com/okou-ai/okou/compare/guest-control-server-v0.22.13...guest-control-server-v0.22.14) (2026-10-10)

@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.5.2...runner-supervisor-v0.6.0) (2026-10-10)
+
+
+### Features
+
+* **runner:** retain home images with verified history ([#38498](https://github.com/okou-ai/okou/issues/38498)) ([8b100e4](https://github.com/okou-ai/okou/commit/8b100e433e5933242c418dbfe1c1f3efd15a9b87))
+
+
+### Bug Fixes
+
+* **runner:** bound active-input shutdown under guest backpressure ([#38591](https://github.com/okou-ai/okou/issues/38591)) ([648671b](https://github.com/okou-ai/okou/commit/648671bd07f959e25864029a81dbab13edef83c7))
+
 ## [0.5.2](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.5.1...runner-supervisor-v0.5.2) (2026-10-10)
 
 ## [0.5.1](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.5.0...runner-supervisor-v0.5.1) (2026-10-10)

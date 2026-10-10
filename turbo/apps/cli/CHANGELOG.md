@@ -1,5 +1,20 @@
 # Changelog
 
+## [9.385.0](https://github.com/okou-ai/okou/compare/cli-v9.384.2...cli-v9.385.0) (2026-10-10)
+
+
+### Features
+
+* **morning-brief:** let agents choose email delivery ([#38612](https://github.com/okou-ai/okou/issues/38612)) ([0f93208](https://github.com/okou-ai/okou/commit/0f93208a3ab70effb1b4bea0a9c3fd8b20dc6ee0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.741.0
+    * @okouai/pi-agent-runtime bumped to 1.49.5
+
 ## [9.384.2](https://github.com/okou-ai/okou/compare/cli-v9.384.1...cli-v9.384.2) (2026-10-10)
 
 
