@@ -796,7 +796,8 @@ def spawn(*args, **kwargs):
 
 def block_and_interrupt(how, values):
     previous = real_mask(how, values)
-    if seam == 'before-kill' and how == signal.SIG_BLOCK and not injected:
+    if (seam == 'before-kill' and how == signal.SIG_BLOCK
+            and set(values) == {signal.SIGINT, signal.SIGTERM} and not injected):
         injected.append(seam)
         signal.raise_signal(signal.SIGTERM)
     return previous
@@ -887,6 +888,156 @@ finally:
 
     def test_sigterm_after_leader_reap_finishes_actual_adopted_child_cleanup(self):
         self.check_actual_sigterm_cleanup('after-reap')
+
+    def test_mask_failure_after_native_mutation_reaps_actual_owned_group(self):
+        for failure in ('interrupt', 'allocation'):
+            for mode in ('exited', 'deadline'):
+                with self.subTest(failure=failure, mode=mode), \
+                        tempfile.TemporaryDirectory(dir=self.parent) as directory:
+                    base = pathlib.Path(directory)
+                    driver = '''
+import json, os, pathlib, signal, subprocess, sys, time
+import unittest.mock as mock
+sys.path.insert(0, sys.argv[1])
+import qemu_gssapi
+qemu_gssapi.own_test_descendants()
+record, failure, mode = pathlib.Path(sys.argv[2]), sys.argv[3], sys.argv[4]
+real_mask, real_spawn = signal.pthread_sigmask, subprocess.Popen
+real_signal, real_waitid = os.killpg, os.waitid
+original_mask = real_mask(signal.SIG_BLOCK, {signal.SIGUSR1})
+previous_mask = real_mask(signal.SIG_BLOCK, set())
+processes, injected, destructive = [], [], []
+expected = KeyboardInterrupt if failure == 'interrupt' else MemoryError
+
+def spawn(*args, **kwargs):
+    process = real_spawn(*args, **kwargs)
+    processes.append(process)
+    until = time.monotonic() + 5
+    while not pathlib.Path(str(record) + '.ready').exists():
+        if time.monotonic() >= until:
+            raise AssertionError('actual dummy descendants did not become ready')
+        time.sleep(0.01)
+    return process
+
+def block_then_fail(how, values):
+    previous = real_mask(how, values)
+    if how == signal.SIG_BLOCK and set(values) == {signal.SIGINT, signal.SIGTERM} and not injected:
+        injected.append(failure)
+        raise expected('after actual native fixture mask mutation')
+    return previous
+
+def observe_signal(group, value):
+    if value:
+        event = real_waitid(os.P_PID, group, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+        if mode == 'exited':
+            assert event is not None and (event.si_code, event.si_status) == (os.CLD_EXITED, 0)
+        destructive.append(group)
+    return real_signal(group, value)
+
+child = "import subprocess,pathlib,sys,time; p=subprocess.Popen([sys.executable,'-I','-S','-B','-c','import time;time.sleep(60)']); pathlib.Path(sys.argv[1]).write_text(str(p.pid)); pathlib.Path(sys.argv[1]+'.ready').write_text('ready')"
+if mode == 'deadline':
+    child += '; time.sleep(60)'
+descriptors = len(os.listdir('/proc/self/fd'))
+try:
+    with mock.patch.object(qemu_gssapi.subprocess, 'Popen', side_effect=spawn), \\
+            mock.patch.object(qemu_gssapi.signal, 'pthread_sigmask', side_effect=block_then_fail), \\
+            mock.patch.object(qemu_gssapi.os, 'killpg', side_effect=observe_signal):
+        try:
+            qemu_gssapi.run_tests([sys.executable, '-I', '-S', '-B', '-c', child, str(record)],
+                                 timeout=10 if mode == 'exited' else 0)
+        except expected as error:
+            assert str(error) == 'after actual native fixture mask mutation'
+        else:
+            raise AssertionError('native mask failure was lost')
+    current_mask = real_mask(signal.SIG_BLOCK, set())
+    print(json.dumps({'mask': sorted(map(int, current_mask)), 'returncode': processes[0].returncode,
+                      'destructive': destructive}), flush=True)
+    assert injected == [failure]
+    assert current_mask == previous_mask, 'caller native mask not restored'
+    assert destructive == [processes[0].pid], 'retained group was not killed exactly once'
+    assert processes[0].returncode is not None, 'owned leader was not reaped'
+    for owned in (processes[0].pid, int(record.read_text())):
+        try:
+            real_waitid(os.P_PID, owned, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+        except ChildProcessError:
+            pass
+        else:
+            raise AssertionError('owned leader/adopted child remained')
+        try:
+            os.kill(owned, 0)
+        except ProcessLookupError:
+            pass
+        else:
+            raise AssertionError('owned child remained live or unreaped')
+    try:
+        real_signal(processes[0].pid, 0)
+    except ProcessLookupError:
+        pass
+    else:
+        raise AssertionError('owned process group remained')
+    assert len(os.listdir('/proc/self/fd')) == descriptors
+finally:
+    # Independent negative-control teardown uses only retained child identities.
+    real_mask(signal.SIG_SETMASK, original_mask)
+    pids = [process.pid for process in processes]
+    if record.exists():
+        pids.append(int(record.read_text()))
+    for pid in pids:
+        try:
+            real_waitid(os.P_PID, pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+        except ChildProcessError:
+            continue
+        os.kill(pid, signal.SIGKILL)
+        until = time.monotonic() + 5
+        while real_waitid(os.P_PID, pid, os.WEXITED | os.WNOHANG | os.WNOWAIT) is None:
+            if time.monotonic() >= until:
+                raise AssertionError('independent dummy cleanup unavailable')
+            time.sleep(0.01)
+        os.waitpid(pid, 0)
+    print('independent owned dummy cleanup complete', flush=True)
+'''
+                    result = subprocess.run(
+                        [sys.executable, '-I', '-S', '-B', '-c', driver,
+                         str(pathlib.Path(qemu_gssapi.__file__).parent),
+                         str(base / 'descendant.pid'), failure, mode],
+                        capture_output=True, text=True, timeout=20,
+                        env={'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8'})
+                    self.assertIn('independent owned dummy cleanup complete', result.stdout)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_mask_query_failure_refuses_before_starting_a_real_child(self):
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            base = pathlib.Path(directory)
+            driver = '''
+import pathlib, signal, sys
+import unittest.mock as mock
+sys.path.insert(0, sys.argv[1])
+import qemu_gssapi
+real_mask = signal.pthread_sigmask
+injected = []
+def refuse_query(how, values):
+    if how == signal.SIG_BLOCK and not values and not injected:
+        injected.append(True)
+        raise MemoryError('prior mask unavailable')
+    return real_mask(how, values)
+with mock.patch.object(qemu_gssapi.signal, 'pthread_sigmask', side_effect=refuse_query):
+    try:
+        qemu_gssapi.run_tests([sys.executable, '-I', '-S', '-B', '-c',
+                             'import pathlib,sys;pathlib.Path(sys.argv[1]).write_text("started")',
+                             sys.argv[2]], timeout=10)
+    except MemoryError as error:
+        assert str(error) == 'prior mask unavailable'
+    else:
+        raise AssertionError('missing prior mask was admitted')
+assert injected == [True]
+assert not pathlib.Path(sys.argv[2]).exists(), 'child started before prior-mask refusal'
+'''
+            result = subprocess.run(
+                [sys.executable, '-I', '-S', '-B', '-c', driver,
+                 str(pathlib.Path(qemu_gssapi.__file__).parent), str(base / 'child-started')],
+                capture_output=True, text=True, timeout=20,
+                env={'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8'})
+            self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_ignored_sigchld_refuses_before_starting_a_real_child(self):
         with tempfile.TemporaryDirectory(dir=self.parent) as directory:

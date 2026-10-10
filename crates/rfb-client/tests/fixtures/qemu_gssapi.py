@@ -532,44 +532,48 @@ def run_tests(argv, *, env=None, timeout):
     # must retain the leader until its last destructive process-group signal.
     if signal.getsignal(signal.SIGCHLD) != signal.SIG_DFL:
         raise RuntimeError("independent fixture child ownership refused")
+    # Query without mutating while no child is owned. A blocking call can change
+    # the native mask and then raise before returning its previous-mask value.
+    previous = signal.pthread_sigmask(signal.SIG_BLOCK, set())
     process = subprocess.Popen(argv, env=env, cwd=REPO, start_new_session=True)
 
     def finish_owned_group():
-        # Both executable interruption handlers raise; defer them until the
-        # retained leader and its owned group have completed bounded cleanup.
-        previous = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT, signal.SIGTERM})
+        # Cleanup and restoration do not depend on the mutating call returning.
         try:
-            # WNOWAIT has not released the leader PID. Even an exited Cargo
-            # leader remains reserved while its same-group descendants are killed.
+            signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT, signal.SIGTERM})
+        finally:
             try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                # No signalable group was found; still reap the retained
-                # leader and check adopted children/group termination below.
-                pass
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired as error:
-                raise RuntimeError("owned test leader cleanup unconfirmed") from error
-            # No further destructive signal may use the now-reaped leader ID.
-            until = time.monotonic() + 5
-            while True:
+                # WNOWAIT has not released the leader PID. Even an exited Cargo
+                # leader remains reserved while its same-group descendants are killed.
                 try:
-                    child, _ = os.waitpid(-process.pid, os.WNOHANG)
-                    if child:
-                        continue
-                except ChildProcessError:
-                    # Adopted-child absence alone does not prove group removal.
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    # No signalable group was found; still reap the retained
+                    # leader and check adopted children/group termination below.
                     pass
                 try:
-                    os.killpg(process.pid, 0)
-                except ProcessLookupError:
-                    break
-                if time.monotonic() >= until:
-                    raise RuntimeError("owned test process-group termination unconfirmed")
-                time.sleep(0.01)
-        finally:
-            signal.pthread_sigmask(signal.SIG_SETMASK, previous)
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired as error:
+                    raise RuntimeError("owned test leader cleanup unconfirmed") from error
+                # No further destructive signal may use the now-reaped leader ID.
+                until = time.monotonic() + 5
+                while True:
+                    try:
+                        child, _ = os.waitpid(-process.pid, os.WNOHANG)
+                        if child:
+                            continue
+                    except ChildProcessError:
+                        # Adopted-child absence alone does not prove group removal.
+                        pass
+                    try:
+                        os.killpg(process.pid, 0)
+                    except ProcessLookupError:
+                        break
+                    if time.monotonic() >= until:
+                        raise RuntimeError("owned test process-group termination unconfirmed")
+                    time.sleep(0.01)
+            finally:
+                signal.pthread_sigmask(signal.SIG_SETMASK, previous)
 
     try:
         deadline = time.monotonic() + timeout
